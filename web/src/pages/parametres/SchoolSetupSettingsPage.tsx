@@ -6,6 +6,12 @@ import { ApiError } from "../../api/client";
 import { schoolSetupStatusApi, type SchoolSetupPayload } from "../../lib/schoolSetupStatusApi";
 import { dashboardSetupProgressLabel } from "../../lib/schoolSetupWeb";
 
+function schoolSetupStatusLabel(status: SchoolSetupPayload["status"]) {
+  if (status === "READY") return "configuration essentielle terminée";
+  if (status === "IN_PROGRESS") return "configuration en cours";
+  return "configuration à démarrer";
+}
+
 export function SchoolSetupSettingsPage() {
   const navigate = useNavigate();
   const [payload, setPayload] = useState<SchoolSetupPayload | null>(null);
@@ -35,7 +41,7 @@ export function SchoolSetupSettingsPage() {
       <FormLayout.Header>
         <SectionHeader
           title="Configuration de l'établissement"
-          description="Suivi des étapes essentielles à partir du statut canonique GET /v2/school-setup/status."
+          description="Suivez les étapes essentielles pour préparer votre établissement."
         />
       </FormLayout.Header>
       <FormLayout.Content>
@@ -48,7 +54,7 @@ export function SchoolSetupSettingsPage() {
         {payload ? (
           <div className="space-y-4">
             <p className="text-sm text-muted">
-              Progression : {dashboardSetupProgressLabel(payload)} · état {payload.status}
+              Progression : {dashboardSetupProgressLabel(payload)} · {schoolSetupStatusLabel(payload.status)}
             </p>
             <SchoolSetupWizard payload={payload} onLater={() => navigate("/etablissement", { replace: true })} />
           </div>
