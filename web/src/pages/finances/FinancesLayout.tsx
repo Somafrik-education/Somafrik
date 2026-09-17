@@ -3,7 +3,6 @@ import { AlertTriangle, CreditCard, Receipt } from "lucide-react";
 import { LoadingState, ErrorState } from "@/design-system";
 import { TabNav, type TabItem } from "../../components/layout/TabNav";
 import { useAuth } from "../../context/AuthContext";
-import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { buildDomainRouteHydrationKey, useDomainRouteHydrationStatus } from "../../lib/domainRouteHydration";
 import { demoRuntimeEnabled } from "../../lib/featureFlags";
 import { firstAllowedFinanceLeaf } from "../../lib/financeRouteAccess";
@@ -33,8 +32,12 @@ export function FinancesLayout() {
   const ctx = usePermissionContext();
   const tabs = FINANCE_TABS.filter((tab) => canReadView(ctx, tab.view));
   const location = useLocation();
-  const { activeSchoolCode } = useActiveSchool();
-  const hydrationKey = buildDomainRouteHydrationKey(location.key, location.pathname, activeSchoolCode);
+
+  // La Démo est un tenant établissement unique : le schoolCode de session est
+  // identique au scope utilisé par DomainRouteBootstrap. Ne pas dépendre ici
+  // d'ActiveSchoolProvider permet de conserver les tests RBAC de route isolés.
+  const schoolCode = String(ctx.user?.schoolCode ?? "").trim();
+  const hydrationKey = buildDomainRouteHydrationKey(location.key, location.pathname, schoolCode);
   const hydrationStatus = useDomainRouteHydrationStatus(hydrationKey);
 
   const demoWaiting = demoRuntimeEnabled && (hydrationStatus === "idle" || hydrationStatus === "loading");
