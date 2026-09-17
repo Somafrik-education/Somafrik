@@ -50,6 +50,14 @@ class TenantScopeService {
         return true;
       }
 
+      const principalId = this.principalSchoolId(principal);
+      const rowId = this.rowSchoolId(row);
+      // Autorité tenant = schoolId UUID. Les codes (school_code / login_code)
+      // ne sont jamais des alias équivalents lorsque les deux UUID sont présents.
+      if (principalId && rowId) {
+        return this.sameSchoolId(principalId, rowId);
+      }
+
       const rowSchools = this.rowSchoolCodes(row, schoolField);
       if (rowSchools.size) {
         return [...rowSchools].some((code) => principalSchools.has(code));
@@ -89,13 +97,34 @@ class TenantScopeService {
     );
   }
 
+  principalSchoolId(principal = {}) {
+    return this.normalizeSchoolId(
+      principal.effectiveSchoolId || principal.schoolId || principal.school_id,
+    );
+  }
+
+  rowSchoolId(row = {}) {
+    return this.normalizeSchoolId(row.schoolId || row.school_id);
+  }
+
+  normalizeSchoolId(value) {
+    return String(value ?? "").trim().toLowerCase();
+  }
+
+  sameSchoolId(left, right) {
+    const a = this.normalizeSchoolId(left);
+    const b = this.normalizeSchoolId(right);
+    return Boolean(a && b && a === b);
+  }
+
   principalSchoolCodes(principal = {}) {
+    // principal.financeLoginCode is a login_code display projection, not tenant
+    // authority: never unioned with schools.school_code as an equivalent key.
     return new Set(
       [
         principal.effectiveSchoolCode,
         principal.effectiveSchoolInternalCode,
         principal.schoolCode,
-        principal.financeLoginCode,
       ]
         .map((value) => this.normalizeSchoolCode(value))
         .filter((value) => value && value !== "*"),

@@ -5,6 +5,7 @@ import {
   SCHOOL_SCOPED_CANONICAL_KEYS,
 } from "./canonicalDomains";
 import { dedupeAssignments } from "./pedagogySync";
+import { sameSchoolId } from "./schoolCanonicalIdentity";
 import { isPendingSyncStatus } from "./syncOutbox";
 
 type Row = Record<string, unknown> & {
@@ -366,20 +367,50 @@ export function purgeSchoolScopedRowsForCode<T extends Row>(
   return (rows ?? []).filter((row) => normalizeSchoolCode(row.schoolCode) !== scope);
 }
 
+const FINANCE_PRESENTATION_KEYS = new Set([
+  "payments",
+  "paymentStatuses",
+  "feeGrids",
+  "schoolFeeItems",
+  "studentFees",
+]);
+
+function rowMatchesActiveSchool(
+  row: Row,
+  scope: string,
+  activeSchoolId: string,
+  domainKey: (typeof SCHOOL_SCOPED_CANONICAL_KEYS)[number],
+): boolean {
+  if (FINANCE_PRESENTATION_KEYS.has(domainKey) && activeSchoolId) {
+    const rowSchoolId = String(row.schoolId ?? "").trim();
+    if (rowSchoolId) return sameSchoolId(rowSchoolId, activeSchoolId);
+    // Ligne Finance sans UUID : le code d'affichage n'est pas une autorité tenant.
+    return false;
+  }
+  return normalizeSchoolCode(row.schoolCode) === scope;
+}
+
 /** Présentation : n'expose jamais les lignes d'un autre établissement que l'actif. L'état interne peut conserver A. */
 export function presentActiveSchoolState(
   state: BackOfficeState,
   activeSchoolCode: string,
+  activeSchoolId?: string,
 ): BackOfficeState {
   const scope = normalizeSchoolCode(activeSchoolCode);
   if (!scope || scope === "*") return state;
 
+  const schoolId = String(activeSchoolId ?? "").trim();
   const next: BackOfficeState = { ...state };
   for (const key of SCHOOL_SCOPED_CANONICAL_KEYS) {
     const list = state[key];
     if (Array.isArray(list)) {
-      (next as unknown as Record<string, unknown>)[key] = (list as Row[]).filter(
-        (row) => normalizeSchoolCode(row.schoolCode) === scope,
+      (next as unknown as Record<string, unknown>)[key] = (list as Row[]).filter((row) =>
+        rowMatchesActiveSchool(
+          row,
+          scope,
+          schoolId,
+          key as (typeof SCHOOL_SCOPED_CANONICAL_KEYS)[number],
+        ),
       );
     }
   }

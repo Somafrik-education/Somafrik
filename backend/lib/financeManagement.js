@@ -171,6 +171,7 @@ function mapPaymentRow(row) {
     publicId: code,
     reference: code,
     dbId: row.id,
+    schoolId: row.school_id || profile.schoolId || "",
     schoolCode: mappedSchoolCode(row, profile),
     countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     studentId: profile.studentId || row.student_code || row.student_id,
@@ -202,6 +203,7 @@ function mapPaymentRow(row) {
     cancelReason: row.cancel_reason || profile.cancelReason || "",
     cancelledBy: row.cancelled_by || profile.cancelledBy || null,
     ...profile.extra,
+    schoolId: row.school_id || profile.schoolId || "",
   };
 }
 
@@ -283,6 +285,7 @@ function mapItemRow(row) {
     id: row.item_code,
     dbId: row.id,
     feeGridId: profile.gridCode || row.grid_code,
+    schoolId: row.school_id || profile.schoolId || "",
     schoolCode: mappedSchoolCode(row, profile),
     countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     feeType: row.fee_type,
@@ -302,6 +305,7 @@ function mapReminderRow(row) {
     id: profile.publicId || row.id,
     dbId: row.id,
     studentId: profile.studentId || row.student_code || row.student_id,
+    schoolId: row.school_id || profile.schoolId || "",
     schoolCode: mappedSchoolCode(row, profile),
     countryIso: String(row.country_iso || row.countryIso || profile.countryIso || "").trim().toUpperCase(),
     recipient: row.recipient,
@@ -320,6 +324,7 @@ function mapStatusRow(row) {
   return {
     id: row.status_code,
     dbId: row.id,
+    schoolId: row.school_id || profile.schoolId || "",
     schoolCode: mappedSchoolCode(row, profile),
     code: row.status_code,
     label: row.label,
