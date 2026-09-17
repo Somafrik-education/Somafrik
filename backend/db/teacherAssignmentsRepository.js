@@ -11,6 +11,7 @@ const { sqlTeacherIdentityEquals } = require("../lib/teacherCodeAllocation");
 function mapAssignment(row) {
   return {
     id: row.id,
+    schoolId: row.school_id ?? row.schoolId ?? null,
     schoolCode: row.school_code,
     teacherId: row.teacher_code,
     teacherCode: row.teacher_code,

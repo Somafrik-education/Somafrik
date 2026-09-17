@@ -747,6 +747,11 @@ async function loadLiveTeacherAssignmentIdsForSync(repository, schoolId, teacher
   );
 }
 
+/** UUID membership Assignments. Pas un fallback de rôles JWT. */
+function resolveAssignmentsLiveSchoolId(principal = {}, schoolRef = {}) {
+  return asRef(schoolRef.schoolId || principal?.effectiveSchoolId || principal?.schoolId);
+}
+
 /**
  * Snapshot canonique live Assignments : userId + schoolId → rôles du tenant →
  * permissions du tenant → identité Teacher PostgreSQL si Enseignant →
@@ -759,15 +764,16 @@ async function loadLiveTeacherAssignmentIdsForSync(repository, schoolId, teacher
  */
 async function resolveLiveAssignmentsSyncSnapshot(repository, principal, schoolRef = {}) {
   const rawUserId = resolvePrincipalUserRef(principal);
-  const schoolId = asRef(schoolRef.schoolId);
+  const schoolId = resolveAssignmentsLiveSchoolId(principal, schoolRef);
+  const liveSchoolRef = { ...schoolRef, schoolId };
   const canonicalUserId = (await loadCanonicalPrincipalUserId(repository, rawUserId, schoolId)) || rawUserId;
   const scopedPrincipal = {
     ...principal,
     sub: canonicalUserId || principal?.sub,
     userId: canonicalUserId || principal?.userId,
   };
-  const roleKeys = await loadLiveRoleKeys(repository, scopedPrincipal, schoolRef);
-  const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
+  const roleKeys = await loadLiveRoleKeys(repository, scopedPrincipal, liveSchoolRef);
+  const permissions = await loadLivePermissions(repository, roleKeys, liveSchoolRef);
   const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
   const livePrincipal = {
     sub: scopedPrincipal?.sub,
@@ -775,7 +781,7 @@ async function resolveLiveAssignmentsSyncSnapshot(repository, principal, schoolR
     publicId: principal?.publicId,
     identifier: principal?.identifier,
     schoolCode: schoolRef.schoolCode ?? principal?.schoolCode,
-    effectiveSchoolId: schoolRef.schoolId ?? principal?.effectiveSchoolId,
+    effectiveSchoolId: schoolId || principal?.effectiveSchoolId,
     role: labels[0] || "",
     roles: labels,
     roleKeys,
@@ -798,7 +804,7 @@ async function resolveLiveAssignmentsSyncSnapshot(repository, principal, schoolR
     }
   }
 
-  const hashed = computeAssignmentsScopeHash(livePrincipal, schoolRef);
+  const hashed = computeAssignmentsScopeHash(livePrincipal, liveSchoolRef);
   hashed.principalTrace = {
     rawUserId,
     canonicalUserId,
@@ -1163,6 +1169,7 @@ module.exports = {
   assignmentsPermissionKeys,
   liveSnapshotHasAssignmentsRead,
   resolveLiveAssignmentsSyncSnapshot,
+  resolveAssignmentsLiveSchoolId,
   loadLiveTeacherIdentityForSchool,
   loadLiveTeacherAssignmentIdsForSync,
   loadCanonicalPrincipalUserId,

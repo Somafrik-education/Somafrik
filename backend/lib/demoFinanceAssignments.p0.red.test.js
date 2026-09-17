@@ -1,21 +1,27 @@
 "use strict";
 
 /**
- * DEMO-FINANCE-ASSIGNMENTS-P0 — GREEN-A Finance (tenant = schoolId UUID).
+ * DEMO-FINANCE-ASSIGNMENTS-P0 — GREEN-A Finance + GREEN-B Affectations.
  *
  * Triplet Démo :
  *   schoolId      UUID PostgreSQL
  *   schoolCode    SCH-BULK-CD-0001  (schools.school_code / JWT)
  *   loginCode     CD-IN-26-001      (schools.login_code / finance mappedSchoolCode)
  *
- * DEMO-PRES-RED-01 reste skippé — GREEN-B Affectations.
+ * DEMO-PRES-RED-01 : GREEN-B Affectations / Présences.
  */
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { TenantScopeService } = require("../services/tenantScopeService");
 const { mapPaymentRow, mapObligationRow } = require("./financeManagement");
 const { mapAssignment } = require("../db/teacherAssignmentsRepository");
-const { resolveAssignmentsSyncScope } = require("./mobileSyncScope");
+const {
+  resolveAssignmentsSyncScope,
+  resolveAssignmentsLiveSchoolId,
+  resolveLiveAssignmentsSyncSnapshot,
+} = require("./mobileSyncScope");
 const { isLegacySchoolCodeFormat, isV2SchoolLoginCode } = require("./schoolCodeV2");
 
 const DEMO_SCHOOL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -96,52 +102,158 @@ test("DEMO-FIN-RED-02 — mapPaymentRow émet schoolId ; filterRows JWT SCH-BULK
   );
 });
 
-test(
-  "DEMO-PRES-RED-01 — GET /api/assignments live roles vides ⇒ scope none alors qu'une affectation PG existe",
-  { skip: "GREEN-B Affectations : hors GREEN-A Finance" },
-  () => {
-    const pgRow = mapAssignment({
-      id: "ta-uuid-1",
-      school_id: DEMO_SCHOOL_ID,
-      school_code: DEMO_SCHOOL_CODE,
-      teacher_code: "TCH-SCH-BULK-CD-0001-001",
-      first_name: "Seke",
-      last_name: "Mwamba",
-      class_id: CLASS_1ERE_A_ID,
-      class_name: "1ère A",
-      class_code: "CLS-1ERE-A",
-      subject_name: "Mathématiques",
-      subject_code: "MATH",
-      academic_year_name: "2025-2026",
-      assignment_role: "primary",
-      status: "active",
-    });
+function canonicalAssignmentRow(overrides = {}) {
+  return mapAssignment({
+    id: "ta-uuid-1",
+    school_id: DEMO_SCHOOL_ID,
+    school_code: DEMO_SCHOOL_CODE,
+    teacher_code: "TCH-SCH-BULK-CD-0001-001",
+    first_name: "Seke",
+    last_name: "Mwamba",
+    class_id: CLASS_1ERE_A_ID,
+    class_name: "1ère A",
+    class_code: "CLS-1ERE-A",
+    subject_name: "Mathématiques",
+    subject_code: "MATH",
+    academic_year_name: "2025-2026",
+    assignment_role: "primary",
+    status: "active",
+    ...overrides,
+  });
+}
 
-    assert.equal(pgRow.classId, CLASS_1ERE_A_ID);
-    assert.equal(pgRow.className, "1ère A");
-    assert.equal(pgRow.status, "active");
-    assert.equal(pgRow.schoolCode, DEMO_SCHOOL_CODE);
-    assert.equal(pgRow.teacherId, "TCH-SCH-BULK-CD-0001-001");
+function liveRolesRepo(roleKeysBySchool = {}) {
+  return {
+    async listActiveUserRoleKeys() {
+      throw new Error("listActiveUserRoleKeys unscoped ne doit pas être appelé par Assignments");
+    },
+    async listActiveUserRoleKeysForSchool(_userId, schoolId) {
+      return roleKeysBySchool[String(schoolId)] ?? [];
+    },
+    async resolveEffectivePermissions() {
+      return { permissions: ["Affectations:READ", "Enseignants:READ"] };
+    },
+  };
+}
 
-    const jwtAdmin = resolveAssignmentsSyncScope({
-      role: "Admin School",
-      schoolCode: DEMO_SCHOOL_CODE,
-    });
-    assert.equal(jwtAdmin.scopeKind, "school-wide");
+test("DEMO-PRES-RED-01 — affectation PG canonique + Admin établissement live ⇒ school-wide", async () => {
+  const pgRow = canonicalAssignmentRow();
+  assert.equal(pgRow.classId, CLASS_1ERE_A_ID);
+  assert.equal(pgRow.classCode, "CLS-1ERE-A");
+  assert.equal(pgRow.status, "active");
+  assert.equal(pgRow.schoolId, DEMO_SCHOOL_ID);
+  assert.equal(pgRow.schoolCode, DEMO_SCHOOL_CODE);
+  assert.equal(pgRow.teacherId, "TCH-SCH-BULK-CD-0001-001");
 
-    const liveEmpty = resolveAssignmentsSyncScope({
+  const liveAdmin = resolveAssignmentsSyncScope({
+    role: "Admin School",
+    roles: ["Admin School"],
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolId: DEMO_SCHOOL_ID,
+    schoolCode: DEMO_SCHOOL_CODE,
+  });
+  assert.equal(liveAdmin.scopeKind, "school-wide");
+
+  const liveEmpty = resolveAssignmentsSyncScope({
+    role: "",
+    roles: [],
+    roleKeys: [],
+    schoolCode: DEMO_SCHOOL_CODE,
+  });
+  assert.equal(
+    liveEmpty.scopeKind,
+    "none",
+    "rôles live vides : fail-closed, aucun fallback JWT",
+  );
+
+  const snapshot = await resolveLiveAssignmentsSyncSnapshot(
+    liveRolesRepo({ [DEMO_SCHOOL_ID]: ["SCHOOL_ADMIN"] }),
+    {
+      sub: "user-demo-admin",
       role: "",
       roles: [],
       roleKeys: [],
       schoolCode: DEMO_SCHOOL_CODE,
-    });
-    assert.notEqual(
-      liveEmpty.scopeKind,
-      "none",
-      "Un Admin School Démo ne doit pas voir GET /api/assignments retomber en scope none (HTTP [])",
-    );
-  },
-);
+      schoolId: DEMO_SCHOOL_ID,
+    },
+    { schoolCode: DEMO_SCHOOL_CODE },
+  );
+  assert.equal(snapshot.scope.scopeKind, "school-wide");
+  assert.equal(
+    resolveAssignmentsLiveSchoolId(
+      { schoolId: DEMO_SCHOOL_ID, schoolCode: DEMO_SCHOOL_CODE },
+      { schoolCode: DEMO_SCHOOL_CODE },
+    ),
+    DEMO_SCHOOL_ID,
+  );
+
+  const assignmentsHandler = fs.readFileSync(path.join(__dirname, "../server.js"), "utf8");
+  assert.match(
+    assignmentsHandler,
+    /effectiveSchoolId \|\| req\.principal\.schoolId/,
+    "GET /api/assignments doit injecter users.school_id (principal.schoolId)",
+  );
+  const verifyDemo = fs.readFileSync(
+    path.join(__dirname, "../scripts/verify-demo-runtime-data.js"),
+    "utf8",
+  );
+  assert.match(verifyDemo, /\/api\/assignments/);
+});
+
+test("GREEN-B HTTP/runtime — Admin établissement + teacher_assignment actif ⇒ scope school-wide", async () => {
+  const rows = [canonicalAssignmentRow()];
+  const snapshot = await resolveLiveAssignmentsSyncSnapshot(
+    {
+      ...liveRolesRepo({ [DEMO_SCHOOL_ID]: ["SCHOOL_ADMIN"] }),
+      async listSchoolTeacherAssignments() {
+        return rows;
+      },
+    },
+    {
+      sub: "user-demo-admin",
+      role: "Admin School",
+      roles: ["Admin School"],
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolId: DEMO_SCHOOL_ID,
+      schoolCode: DEMO_SCHOOL_CODE,
+    },
+    { schoolCode: DEMO_SCHOOL_CODE, schoolId: DEMO_SCHOOL_ID },
+  );
+  assert.equal(snapshot.scope.scopeKind, "school-wide");
+  const listed =
+    snapshot.scope.scopeKind === "none"
+      ? []
+      : rows.filter((row) => row.schoolId === DEMO_SCHOOL_ID);
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].classId, CLASS_1ERE_A_ID);
+  assert.equal(listed[0].status, "active");
+});
+
+test("GREEN-B fail-closed — même classCode, schoolId étranger ⇒ 0 fuite", async () => {
+  const home = canonicalAssignmentRow();
+  const foreign = canonicalAssignmentRow({
+    id: "ta-foreign",
+    school_id: FOREIGN_SCHOOL_ID,
+    school_code: "SCH-BULK-CD-0002",
+    class_code: "CLS-1ERE-A",
+    class_id: CLASS_1ERE_A_ID,
+  });
+  const snapshot = await resolveLiveAssignmentsSyncSnapshot(
+    liveRolesRepo({ [FOREIGN_SCHOOL_ID]: [] }),
+    {
+      sub: "user-demo-admin",
+      schoolId: DEMO_SCHOOL_ID,
+      schoolCode: DEMO_SCHOOL_CODE,
+    },
+    { schoolCode: DEMO_SCHOOL_CODE, schoolId: FOREIGN_SCHOOL_ID },
+  );
+  assert.equal(snapshot.scope.scopeKind, "none");
+  const kept = tenantScope.filterRows([home, foreign], demoJwtPrincipal());
+  assert.deepEqual(
+    kept.map((row) => row.id),
+    ["ta-uuid-1"],
+  );
+});
 
 test("DEMO-TENANT-RED-01 — schoolId, school_code et login_code ne sont pas interchangeables", () => {
   assert.notEqual(DEMO_SCHOOL_ID, DEMO_SCHOOL_CODE);
