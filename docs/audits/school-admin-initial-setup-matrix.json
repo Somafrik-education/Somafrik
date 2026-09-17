@@ -1,0 +1,131 @@
+{
+  "auditId": "AUDIT-SCHOOL-ADMIN-INITIAL-SETUP",
+  "date": "2026-09-17",
+  "base": "5e01d33b0ed222c1882753840b4cc5a715b057ee",
+  "branch": "audit/school-admin-initial-setup",
+  "status": "HOLD_CTO",
+  "implementation": false,
+  "canonicalSetupSource": "derived_postgresql_not_client_storage",
+  "userFirstLoginSignals": ["users.must_change_password", "users.last_login_at"],
+  "schoolSetupStates": ["NOT_STARTED", "IN_PROGRESS", "READY"],
+  "recommendedReady": "READY_CORE",
+  "readyCore": ["current_or_open_academic_year", "at_least_one_term", "at_least_one_activated_level", "at_least_one_activated_group", "at_least_one_class"],
+  "readyOperationalExtra": ["at_least_one_teacher", "at_least_one_enrollment"],
+  "existingOnboarding": false,
+  "quickSetupButton": false,
+  "configurations": [
+    {
+      "id": "national_referential",
+      "mandatory": "yes_platform",
+      "schoolAdminCanWrite": false,
+      "web": "/referentiels-pedagogiques",
+      "mobile": false,
+      "api": "GET /api/education-reference/catalog"
+    },
+    {
+      "id": "establishment",
+      "mandatory": "yes_preexists",
+      "schoolAdminCanWrite": "profile_update_only",
+      "web": "/parametres/profil",
+      "mobile": "EstablishmentProfile",
+      "api": "PATCH /api/backoffice/establishments/:code"
+    },
+    {
+      "id": "academic_year",
+      "mandatory": "yes_for_classes",
+      "schoolAdminCanWrite": true,
+      "web": "/parametres/annee-scolaire",
+      "mobile": "SchoolYearSettings",
+      "api": "POST /api/v2/academic-years",
+      "blockIfAbsent": "CLASS create UI disabled + 400 academic year missing"
+    },
+    {
+      "id": "terms",
+      "mandatory": "conditional_pedagogy",
+      "schoolAdminCanWrite": true,
+      "web": "/parametres/annee-scolaire",
+      "mobile": "SchoolYearSettings",
+      "api": "PUT academic-periods",
+      "blockIfAbsent": "ACADEMIC_YEAR_REQUIRED; evaluations.term_id NOT NULL"
+    },
+    {
+      "id": "structure_activation",
+      "mandatory": "yes_for_classes",
+      "schoolAdminCanWrite": true,
+      "web": "/parametres/structure",
+      "mobile": "SchoolPedagogicalStructure",
+      "api": "PUT /api/education-reference/school-activation",
+      "blockIfAbsent": "CLASS_LEVEL_NOT_ACTIVATED / CLASS_GROUP_NOT_ACTIVATED"
+    },
+    {
+      "id": "subjects",
+      "mandatory": "conditional_assignments_notes",
+      "schoolAdminCanWrite": true,
+      "web": "/parametres/structure",
+      "mobile": "SchoolPedagogicalStructure",
+      "api": "POST /api/v2/subjects"
+    },
+    {
+      "id": "classes",
+      "mandatory": "yes_for_students",
+      "schoolAdminCanWrite": true,
+      "web": "/etablissement/classes",
+      "mobile": "Classes",
+      "api": "POST /api/classes"
+    },
+    {
+      "id": "teachers",
+      "mandatory": "conditional",
+      "schoolAdminCanWrite": true,
+      "web": "/etablissement/comptes-utilisateurs",
+      "mobile": "Users / TeacherMutationControls",
+      "api": "POST /api/backoffice/users/create-teacher",
+      "forbiddenApi": "POST /api/teachers TEACHER_IDENTITY_MUST_COME_FROM_USERS"
+    },
+    {
+      "id": "students",
+      "mandatory": "conditional_attendance_finance_report_cards",
+      "schoolAdminCanWrite": true,
+      "web": "/etablissement/classes/:classCode/eleves",
+      "mobile": "Students",
+      "api": "POST /api/classes/:classCode/students"
+    },
+    {
+      "id": "fee_grids",
+      "mandatory": "conditional_finance",
+      "schoolAdminCanWrite": true,
+      "web": "/finances/frais",
+      "mobile": false,
+      "api": "POST /api/finance/fee-grids"
+    },
+    {
+      "id": "notification_settings",
+      "mandatory": "no",
+      "schoolAdminCanWrite": true,
+      "web": "/parametres/notifications",
+      "mobile": false,
+      "api": "PATCH .../notification-settings"
+    },
+    {
+      "id": "announcements",
+      "mandatory": "no",
+      "schoolAdminCanWrite": true,
+      "web": "/annonces",
+      "mobile": "Announcements",
+      "api": "POST /api/backoffice/announcements"
+    }
+  ],
+  "parityGaps": [
+    "Mobile ClassMutationControls tells user to configure academic year on Web although SchoolYearSettings can create years",
+    "Web TeachersListPage has no create CTA; Mobile has dedicated teacher identity create",
+    "Finance fee grid configuration is Web-only",
+    "Notification policy configuration is Web-only",
+    "No setup-status endpoint yet — both clients would diverge if they stored local flags"
+  ],
+  "deadEnds": [
+    "SchoolsPage.createSchoolAdmin canonical write guard",
+    "Empty school dashboard with non-clickable missing-year alert",
+    "National referential empty — school_admin cannot seed",
+    "Country-admin provisioned school_admin pending Superadmin validation"
+  ]
+}
