@@ -111,13 +111,28 @@ describe("FIN-L3-07 — paiements historiques et scope établissement canonique"
       id: "u-admin",
       identifier: "admin",
       role: "Admin School",
+      schoolId: "school-uuid-sch-001",
       schoolCode: "SCH-001",
     } as SessionUser;
     const state = {
       students: [{ id: "stu-1", schoolCode: "SCH-001" }],
       payments: [
-        { id: "SCH-001-2026-PAY-0001", studentId: "stu-1", schoolCode: "SCH-001", amount: 50_000, status: "Payé" },
-        { id: "SCH-999-2026-PAY-0001", studentId: "stu-foreign", schoolCode: "SCH-999", amount: 1, status: "Payé" },
+        {
+          id: "SCH-001-2026-PAY-0001",
+          studentId: "stu-1",
+          schoolId: "school-uuid-sch-001",
+          schoolCode: "SCH-001",
+          amount: 50_000,
+          status: "Payé",
+        },
+        {
+          id: "SCH-999-2026-PAY-0001",
+          studentId: "stu-foreign",
+          schoolId: "school-uuid-sch-999",
+          schoolCode: "SCH-999",
+          amount: 1,
+          status: "Payé",
+        },
       ],
     } as unknown as BackOfficeState;
     const scoped = scopedPayments(user, state);

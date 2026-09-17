@@ -6264,6 +6264,10 @@ function buildPrincipal(response, rolePermissionsMap = null) {
         ? "Super Administrateur Somafrik"
         : display.role;
   const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
+  const schoolId =
+    !schoolCode || schoolCode === "*"
+      ? ""
+      : String(user.schoolId ?? school.id ?? school.schoolId ?? "").trim();
   const countryCode = user.countryCode || countryCodeFromScope(user.countryScope) || school.countryCode || countryCodeFromSchoolOrCountry(schoolCode, school.country);
   const permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
 
@@ -6284,6 +6288,7 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     role,
     roles: display.roles,
     roleKeys: display.roleKeys,
+    schoolId,
     schoolCode,
     countryCode,
     countryScope: user.countryScope ?? "",

@@ -3,7 +3,11 @@ import { isActiveUserAccount, normalize } from "./format";
 import { dedupeClassesByName } from "./classRules";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 import { scopedSchools } from "./scope";
-import { isLegacySchoolCode, resolveSessionSchoolIdentity } from "./schoolCanonicalIdentity";
+import {
+  isSchoolScopedRole,
+  resolveSessionSchoolIdentity,
+  sameSchoolId,
+} from "./schoolCanonicalIdentity";
 import { projectScopedStudents } from "./studentsScope";
 
 type Row = Record<string, unknown>;
@@ -236,32 +240,37 @@ function scopedByStudentIds(user: SessionUser | null, state: BackOfficeState, ke
   );
 }
 
+function sessionSchoolCodeAliases(user: SessionUser): Set<string> {
+  const aliases = new Set<string>();
+  for (const value of [user.schoolCode, user.schoolPublicCode]) {
+    const next = normalize(value);
+    if (next && next !== "*") aliases.add(next);
+  }
+  return aliases;
+}
+
 /**
  * Finance : les paiements sont un historique comptable de l'établissement.
+ * Autorité tenant = schoolId UUID. `schoolCode` / login_code restent des
+ * projections d'affichage, utilisées seulement si la ligne n'a pas d'UUID.
  * Un paiement du tenant ne doit pas disparaître lorsque l'élève n'est plus dans
- * le snapshot courant `students`. `payments.schoolCode` est le login_code V2 ;
- * le leftover `session.schoolCode` (CC-YYYY-NNNN) n'est pas une autorité tenant.
- * Un schoolCode de session non leftover (ex. SCH-001, login V2) reste un tenant valide.
+ * le snapshot courant `students`.
  */
 export function scopedPayments(user: SessionUser | null, state: BackOfficeState): Row[] {
   const schoolCode = user?.schoolCode;
   const rows = (state.payments ?? []) as Row[];
-  if (!schoolCode || schoolCode === "*") return rows;
+  if (!user || !schoolCode || schoolCode === "*") return rows;
+  if (!isSchoolScopedRole(user.role)) return rows;
 
-  const canonicalPublicCode = resolveSessionSchoolIdentity(user)?.publicCode;
-  const sessionTenantCode = isLegacySchoolCode(schoolCode) ? "" : normalize(schoolCode);
-  const studentIds = new Set(scopedStudents(user, state).map((student) => String(student.id ?? "")).filter(Boolean));
+  const identity = resolveSessionSchoolIdentity(user);
+  if (!identity?.schoolId) return [];
 
+  const aliases = sessionSchoolCodeAliases(user);
   return rows.filter((row) => {
+    const rowSchoolId = String(row.schoolId ?? "").trim();
+    if (rowSchoolId) return sameSchoolId(rowSchoolId, identity.schoolId);
     const rowCode = normalize(row.schoolCode);
-    const sameCanonicalSchool = Boolean(
-      canonicalPublicCode && rowCode === normalize(canonicalPublicCode),
-    );
-    const sameNonLeftoverSessionSchool = Boolean(sessionTenantCode && rowCode === sessionTenantCode);
-    const belongsToCurrentStudent = Boolean(
-      row.studentId && studentIds.has(String(row.studentId)),
-    );
-    return sameCanonicalSchool || sameNonLeftoverSessionSchool || belongsToCurrentStudent;
+    return Boolean(rowCode && aliases.has(rowCode));
   });
 }
 

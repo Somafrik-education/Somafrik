@@ -14,6 +14,7 @@ import {
 const admin: SessionUser = {
   id: "u-admin",
   role: "Admin School",
+  schoolId: "school-uuid-sch-001",
   schoolCode: "SCH-001",
   identifier: "admin",
   firstName: "Admin",

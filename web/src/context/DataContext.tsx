@@ -590,8 +590,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [update]);
 
   const presentedState = useMemo(
-    () => presentActiveSchoolState(state, presentationSchoolCode),
-    [state, presentationSchoolCode],
+    () => presentActiveSchoolState(state, presentationSchoolCode, session?.user?.schoolId),
+    [state, presentationSchoolCode, session?.user?.schoolId],
   );
 
   const value = useMemo<DataContextValue>(
