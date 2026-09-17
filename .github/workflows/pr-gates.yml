@@ -399,6 +399,18 @@ jobs:
           npm run verify:school-settings-data
           npm run verify:login-lockout-data
 
+      - name: School setup status LOT 0
+        if: needs.scope.outputs.platform == 'true'
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+          SOMAFRIK_DB_REQUIRED: "true"
+          SOMAFRIK_SKIP_DEMO_SEED: "true"
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}"
+          npm run verify:school-setup-status-lot0-red
+
       - name: Web tests
         if: needs.scope.outputs.web == 'true'
         run: npm --prefix web test

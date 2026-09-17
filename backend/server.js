@@ -312,6 +312,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/mvp/dashboard",
       "/api/v2/subjects",
       "/api/v2/academic-years",
+      "/api/v2/school-setup/status",
       "/api/v2/exams",
       "/api/v2/documents",
       "/api/v2/reports/advanced",
@@ -3809,6 +3810,19 @@ async function academicYearHttpPrincipal(req) {
   }
   return attachAcademicYearFixtureScope(req.principal);
 }
+
+app.get("/api/v2/school-setup/status", requireAuth, requirePermission("GET /api/v2/school-setup/status"), asyncHandler(async (req, res) => {
+  const { getSchoolSetupStatus } = require("./lib/schoolSetupStatus");
+  const payload = await getSchoolSetupStatus({
+    principal: req.principal,
+    query: req.query,
+    body: req.body,
+    headers: req.headers,
+    params: req.params,
+    one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
+  });
+  res.json(payload);
+}));
 
 app.get("/api/v2/academic-years", requireAuth, requirePermission("GET /api/v2/academic-years"), asyncHandler(async (req, res) => {
   const {
