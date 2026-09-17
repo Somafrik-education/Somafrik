@@ -224,14 +224,75 @@ function routeSnippet() {
   return SERVER.slice(start, start + 1600);
 }
 
-function assertTenantIsAOr400(resolve, input) {
+function isClosedStatus(statusCode) {
+  return statusCode === 400 || statusCode === 403 || statusCode === 401;
+}
+
+async function resolveTenant(mod, input) {
+  const result = mod.resolveSchoolSetupTenant(input);
+  return typeof result?.then === "function" ? await result : result;
+}
+
+function jwtOnlyAdmin({ sub, leftoverSchoolCode }) {
+  return {
+    role: "Admin School",
+    sub,
+    schoolCode: leftoverSchoolCode,
+    roleKeys: ["SCHOOL_ADMIN"],
+    permissions: ["Paramètres Établissement:READ"],
+  };
+}
+
+function assertJwtOnlyPrincipal(principal) {
+  for (const key of [
+    "usersSchoolId",
+    "usersLoginCode",
+    "effectiveSchoolId",
+    "effectiveSchoolCode",
+    "schoolId",
+    "academicYearSchoolId",
+    "academicYearLoginCode",
+  ]) {
+    assert.equal(principal[key], undefined, `champ synthétique interdit sur le principal JWT: ${key}`);
+  }
+}
+
+function membershipOneBySub(rowsBySub) {
+  return async (sql, params = []) => {
+    const text = String(sql);
+    if (/from\s+users/i.test(text) && /school_id/i.test(text)) {
+      const sub = String(params[0] ?? "");
+      return rowsBySub[sub] ?? null;
+    }
+    return null;
+  };
+}
+
+const MEMBERSHIP_A = {
+  school_id: SCHOOL_A_ID,
+  login_code: LOGIN_A,
+  id: SCHOOL_A_ID,
+};
+const MEMBERSHIP_LOOKUP = membershipOneBySub({
+  "admin-a-1": MEMBERSHIP_A,
+  "admin-a-2": MEMBERSHIP_A,
+});
+
+async function assertTenantIsAOrClosed(resolveOrMod, input) {
+  const resolve =
+    typeof resolveOrMod === "function"
+      ? resolveOrMod
+      : (payload) => resolveTenant(resolveOrMod, payload);
   try {
-    const tenant = resolve(input);
+    const tenant = await resolve(input);
     assert.equal(String(tenant.schoolId), SCHOOL_A_ID);
     assert.notEqual(String(tenant.schoolId), SCHOOL_B_ID);
     return tenant;
   } catch (error) {
-    assert.equal(error.statusCode, 400, "schoolCode client: ignorer (tenant JWT) ou 400, jamais école B");
+    assert.ok(
+      isClosedStatus(error.statusCode),
+      `schoolCode client: ignorer (tenant membership) ou 400/403, jamais école B (status=${error.statusCode})`,
+    );
     return null;
   }
 }
@@ -422,28 +483,29 @@ test("ST-12 — optional.* ne change jamais status", () => {
 // D4 — tenant JWT / membership only
 // ---------------------------------------------------------------------------
 
-test("ST-06 — schoolCode client (query/body/header/params) ignoré ou 400 ; jamais l'école B", () => {
-  const { resolveSchoolSetupTenant } = requireContract();
+test("ST-06 — schoolCode client (query/body/header/params) ignoré ou 400/403 ; jamais l'école B", async () => {
+  const mod = requireContract();
   const principal = schoolAdminA();
   const surfaces = clientSchoolCodeSurfaces(LOGIN_B);
-  assertTenantIsAOr400(resolveSchoolSetupTenant, { principal, ...surfaces });
-  assertTenantIsAOr400(resolveSchoolSetupTenant, { principal, query: { schoolCode: LOGIN_B } });
-  assertTenantIsAOr400(resolveSchoolSetupTenant, { principal, body: { schoolCode: SCHOOL_B_ID } });
-  assertTenantIsAOr400(resolveSchoolSetupTenant, {
+  await assertTenantIsAOrClosed(mod, { principal, ...surfaces, one: MEMBERSHIP_LOOKUP });
+  await assertTenantIsAOrClosed(mod, { principal, query: { schoolCode: LOGIN_B }, one: MEMBERSHIP_LOOKUP });
+  await assertTenantIsAOrClosed(mod, { principal, body: { schoolCode: SCHOOL_B_ID }, one: MEMBERSHIP_LOOKUP });
+  await assertTenantIsAOrClosed(mod, {
     principal,
     headers: { "x-somafrik-school-code": LOGIN_B },
+    one: MEMBERSHIP_LOOKUP,
   });
 });
 
-test("ST-06 — leftover JWT schoolCode B + membership A → tenant A, jamais B", () => {
-  const { resolveSchoolSetupTenant } = requireContract();
+test("ST-06 — leftover JWT schoolCode B + membership A → tenant A, jamais B", async () => {
+  const mod = requireContract();
   const leftover = schoolAdminA({
     schoolCode: LOGIN_B,
     schoolId: SCHOOL_B_ID,
   });
   assert.equal(leftover.usersSchoolId, SCHOOL_A_ID);
   assert.equal(leftover.effectiveSchoolId, SCHOOL_A_ID);
-  const tenant = resolveSchoolSetupTenant({ principal: leftover, query: {}, body: {}, headers: {} });
+  const tenant = await resolveTenant(mod, { principal: leftover, query: {}, body: {}, headers: {} });
   assert.equal(String(tenant.schoolId), SCHOOL_A_ID);
   assert.notEqual(String(tenant.schoolId), SCHOOL_B_ID);
 });
@@ -487,8 +549,120 @@ test("ST-06 — getSchoolSetupStatus ne charge jamais le snapshot de B depuis un
     assert.equal(payload.status, "READY", "école A READY, pas le NOT_STARTED/optional de B");
     assert.equal(payload.optional.students, false);
   } catch (error) {
-    assert.equal(error.statusCode, 400);
+    assert.ok(isClosedStatus(error.statusCode), `status=${error.statusCode}`);
   }
+});
+
+test("ST-06-RT-01 — membership PG autoritaire : principal JWT = sub + leftover schoolCode, sans champs synthétiques", async () => {
+  const mod = requireContract();
+  const principal = jwtOnlyAdmin({ sub: "admin-a-1", leftoverSchoolCode: LOGIN_B });
+  assertJwtOnlyPrincipal(principal);
+  const tenant = await resolveTenant(mod, {
+    principal,
+    query: {},
+    body: {},
+    headers: {},
+    one: MEMBERSHIP_LOOKUP,
+  });
+  assert.equal(String(tenant.schoolId), SCHOOL_A_ID);
+  assert.notEqual(String(tenant.schoolId), SCHOOL_B_ID);
+  const stores = await snapshotsBySchool();
+  const payload = await mod.getSchoolSetupStatus({
+    principal,
+    query: {},
+    body: {},
+    headers: {},
+    one: MEMBERSHIP_LOOKUP,
+    loadSnapshot: async (resolved) => {
+      assert.equal(String(resolved.schoolId), SCHOOL_A_ID);
+      return stores[resolved.schoolId];
+    },
+  });
+  assertPayloadShape(payload);
+  assert.equal(payload.status, "READY");
+});
+
+test("ST-06-RT-02 — JWT forgé : sub A + leftover schoolCode B → 403 ou payload A, jamais B", async () => {
+  const mod = requireContract();
+  const principal = jwtOnlyAdmin({ sub: "admin-a-1", leftoverSchoolCode: LOGIN_B });
+  assertJwtOnlyPrincipal(principal);
+  const stores = await snapshotsBySchool();
+  try {
+    const tenant = await resolveTenant(mod, {
+      principal,
+      query: {},
+      body: {},
+      headers: {},
+      one: MEMBERSHIP_LOOKUP,
+    });
+    assert.equal(String(tenant.schoolId), SCHOOL_A_ID);
+    const payload = await mod.getSchoolSetupStatus({
+      principal,
+      one: MEMBERSHIP_LOOKUP,
+      loadSnapshot: async (resolved) => {
+        assert.notEqual(String(resolved.schoolId), SCHOOL_B_ID);
+        return stores[resolved.schoolId] ?? snapshot();
+      },
+    });
+    assert.equal(payload.status, "READY");
+    assert.equal(payload.optional.students, false);
+  } catch (error) {
+    assert.ok(isClosedStatus(error.statusCode), `JWT forgé: 403/400/401 ou payload A, jamais B (status=${error.statusCode})`);
+  }
+});
+
+test("ST-06-RT-03 — header X-Somafrik-School-Code B forgé : 400/403 ou payload A, jamais B", async () => {
+  const mod = requireContract();
+  const principal = jwtOnlyAdmin({ sub: "admin-a-1", leftoverSchoolCode: LOGIN_A });
+  assertJwtOnlyPrincipal(principal);
+  const stores = await snapshotsBySchool();
+  try {
+    const payload = await mod.getSchoolSetupStatus({
+      principal,
+      query: {},
+      body: {},
+      headers: { "X-Somafrik-School-Code": LOGIN_B, "x-somafrik-school-code": LOGIN_B },
+      one: MEMBERSHIP_LOOKUP,
+      loadSnapshot: async (tenant) => {
+        assert.notEqual(String(tenant.schoolId), SCHOOL_B_ID);
+        return stores[tenant.schoolId] ?? snapshot();
+      },
+    });
+    assert.equal(payload.status, "READY");
+    assert.equal(payload.optional.students, false);
+  } catch (error) {
+    assert.ok(
+      isClosedStatus(error.statusCode),
+      `header forgé: 400/403 (middleware) ou payload A, jamais B (status=${error.statusCode})`,
+    );
+  }
+});
+
+test("ST-06-RT-04 — membership absent/invalide → fail-closed 401/403, jamais fallback leftover JWT", async () => {
+  const mod = requireContract();
+  const leftoverA = jwtOnlyAdmin({ sub: "admin-orphan", leftoverSchoolCode: LOGIN_A });
+  assertJwtOnlyPrincipal(leftoverA);
+  const emptyOne = membershipOneBySub({});
+  await assert.rejects(
+    () =>
+      resolveTenant(mod, {
+        principal: leftoverA,
+        query: {},
+        body: {},
+        headers: {},
+        one: emptyOne,
+      }),
+    (error) => error.statusCode === 401 || error.statusCode === 403,
+  );
+  await assert.rejects(
+    () =>
+      mod.getSchoolSetupStatus({
+        principal: leftoverA,
+        one: emptyOne,
+        loadSnapshot: async () => readyCore(),
+      }),
+    (error) => error.statusCode === 401 || error.statusCode === 403,
+  );
 });
 
 // ---------------------------------------------------------------------------
