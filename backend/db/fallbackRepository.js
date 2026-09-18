@@ -1359,11 +1359,13 @@ class FallbackRepository {
         ...clone(row),
         classId: row.classId ?? row.id,
         className: row.className ?? row.name,
-        students: enrollments.filter(
-          (enrollment) =>
-            enrollment.status === "active" &&
-            (enrollment.class_id === row.id || enrollment.class_id === row.classCode),
-        ).length,
+        students: enrollments.filter((enrollment) => {
+          const status = String(enrollment.status ?? "").toLowerCase();
+          return (
+            (status === "active" || status === "enrolled") &&
+            (enrollment.class_id === row.id || enrollment.class_id === row.classCode)
+          );
+        }).length,
       }));
   }
 
@@ -1707,7 +1709,7 @@ class FallbackRepository {
               class_id: params[2],
               academic_year_id: params[3],
               enrollment_date: new Date().toISOString().slice(0, 10),
-              status: "active",
+              status: text.includes("ENROLLED") ? "ENROLLED" : "active",
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             };
@@ -1733,18 +1735,24 @@ class FallbackRepository {
       if (text.includes("SELECT ST.ID, ST.STUDENT_CODE") && text.includes("FROM STUDENTS ST")) {
         return (
           (self._managedStudents ?? []).find(
-            (row) => row.student_code === params[0] && row.school_id === params[1],
+            (row) =>
+              (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+              row.school_id === params[1],
           ) ?? null
         );
       }
-      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE")) {
+      if (text.includes("FROM STUDENTS ST") && text.includes("ST.STUDENT_CODE = $1")) {
             const student = (self._managedStudents ?? []).find(
-              (row) => row.student_code === params[0] && row.school_id === params[1],
+              (row) =>
+                (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+                row.school_id === params[1],
             );
             if (!student) return null;
-            const enrollment = (self._managedEnrollments ?? []).find(
-              (row) => row.student_id === student.id && row.status === "active",
-            );
+            const enrollment = (self._managedEnrollments ?? []).find((row) => {
+              if (row.student_id !== student.id) return false;
+              const status = String(row.status ?? "").toLowerCase();
+              return status === "active" || status === "enrolled" || status === "approved";
+            });
             const cls = (self._managedClasses ?? []).find((row) => row.id === enrollment?.class_id || row.classCode === enrollment?.class_id);
             const year = (self._managedAcademicYears ?? []).find((item) => item.id === enrollment?.academic_year_id);
             const schoolCode =
@@ -1783,7 +1791,13 @@ class FallbackRepository {
             const classId = params[0];
             const schoolId = params[1];
             return (self._managedEnrollments ?? [])
-              .filter((row) => row.class_id === classId && row.status === "active")
+              .filter((row) => {
+                const status = String(row.status ?? "").toLowerCase();
+                return (
+                  row.class_id === classId &&
+                  (status === "active" || status === "enrolled")
+                );
+              })
               .map((enrollment) => {
                 const student = (self._managedStudents ?? []).find(
                   (row) => row.id === enrollment.student_id && row.school_id === schoolId,
@@ -1812,9 +1826,11 @@ class FallbackRepository {
             return (self._managedStudents ?? [])
               .filter((row) => row.school_id === schoolId)
               .map((student) => {
-                const enrollment = (self._managedEnrollments ?? []).find(
-                  (row) => row.student_id === student.id && row.status === "active",
-                );
+                const enrollment = (self._managedEnrollments ?? []).find((row) => {
+                  if (row.student_id !== student.id) return false;
+                  const status = String(row.status ?? "").toLowerCase();
+                  return status === "active" || status === "enrolled" || status === "approved";
+                });
                 const cls = (self._managedClasses ?? []).find(
                   (row) => row.id === enrollment?.class_id || row.classCode === enrollment?.class_id,
                 );

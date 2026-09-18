@@ -137,6 +137,12 @@ test("PARITY-032 C18 REST canonique PostgreSQL, pas de machine Expo", () => {
   assert.match(c18Http, /CLASS_OLD/);
   assert.match(c18Unit, /FINANCE_INJECTED_FAILURE/);
   assert.match(c18Unit, /state\.class_id, "class-a"/);
+  const fallback = read("backend/db/fallbackRepository.js");
+  assert.match(fallback, /ST\.STUDENT_CODE = \$1/);
+  assert.doesNotMatch(
+    fallback,
+    /includes\("WHERE ST\.STUDENT_CODE"\)/,
+  );
 });
 
 test("PARITY-032 migration C18 : dollar-quote PostgreSQL valide", () => {
