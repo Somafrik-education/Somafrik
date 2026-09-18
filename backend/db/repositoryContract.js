@@ -167,6 +167,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "createClientsRelation",
   "linkParent",
   "lookupParentIdentity",
+  "listParentRelations",
   "archiveParentRelation",
   "sendClientsMessage",
   "markClientsMessageRead",

@@ -3775,6 +3775,10 @@ class FallbackRepository {
     return this.getClientsStore().lookupParentIdentity(query, principal);
   }
 
+  listParentRelations(query, principal) {
+    return this.getClientsStore().listParentRelations(query, principal);
+  }
+
   archiveParentRelation(relationId, payload, principal, auditMeta) {
     return this.getClientsStore().archiveParentRelation(relationId, payload, principal, auditMeta);
   }

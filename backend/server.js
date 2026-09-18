@@ -2021,6 +2021,117 @@ app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:
   return res.json(enrollmentApiStudent(authorizedPg, schoolCode));
 }));
 
+async function authorizeEnrollmentStudentOr404(req, res, studentId) {
+  const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
+  if (typeof repository.getSchoolStudentByCode !== "function") {
+    throw new BusinessError(503, "Fiche élève PostgreSQL indisponible.");
+  }
+  const pgStudent = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(studentId, schoolCode),
+    schoolCode,
+  );
+  assertEnrollmentStudentAccess(principal, pgStudent);
+  const {
+    authorizeStudentReadForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const authorizedPg = authorizeStudentReadForPrincipal(
+    pgStudent,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
+    studentId,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  if (!authorizedPg) {
+    res.status(404).json({ message: "Eleve introuvable" });
+    return null;
+  }
+  return { principal, schoolCode, student: authorizedPg };
+}
+
+app.get("/api/students/:studentId/enrollments", requireAuth, requirePermission("GET /api/students/:studentId/enrollments"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  const { listEnrollments } = require("./lib/studentEnrollmentC18");
+  const items = await listEnrollments(repository, {
+    studentCode: req.params.studentId,
+    schoolCode: scoped.schoolCode,
+  });
+  res.json({ items });
+}));
+
+function refuseC18MutationForParentStudent(principal) {
+  const { isParentOrStudentRole } = require("./lib/studentEnrollmentC18");
+  if (isParentOrStudentRole(principal?.role)) {
+    throw new BusinessError(403, "Transitions C18 réservées à l'administration.");
+  }
+}
+
+app.post("/api/students/:studentId/enrollments/:enrollmentId/validate", requireAuth, requirePermission("POST /api/students/:studentId/enrollments/:enrollmentId/validate"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  refuseC18MutationForParentStudent(req.principal);
+  const { applyValidate } = require("./lib/studentEnrollmentC18");
+  const enrollment = await applyValidate(repository, {
+    studentCode: req.params.studentId,
+    enrollmentId: req.params.enrollmentId,
+    schoolCode: scoped.schoolCode,
+    reason: req.body?.reason,
+    principal: scoped.principal,
+  });
+  res.json(enrollment);
+}));
+
+app.post("/api/students/:studentId/enrollments/:enrollmentId/assign-class", requireAuth, requirePermission("POST /api/students/:studentId/enrollments/:enrollmentId/assign-class"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  refuseC18MutationForParentStudent(req.principal);
+  const { applyAssignClass } = require("./lib/studentEnrollmentC18");
+  const enrollment = await applyAssignClass(repository, {
+    studentCode: req.params.studentId,
+    enrollmentId: req.params.enrollmentId,
+    schoolCode: scoped.schoolCode,
+    classId: req.body?.classId,
+    classCode: req.body?.classCode,
+    effectiveDate: req.body?.effectiveDate,
+    principal: scoped.principal,
+  });
+  res.json(enrollment);
+}));
+
+app.post("/api/students/:studentId/enrollments/:enrollmentId/transfer", requireAuth, requirePermission("POST /api/students/:studentId/enrollments/:enrollmentId/transfer"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  refuseC18MutationForParentStudent(req.principal);
+  const { applyTransfer } = require("./lib/studentEnrollmentC18");
+  const enrollment = await applyTransfer(repository, {
+    studentCode: req.params.studentId,
+    enrollmentId: req.params.enrollmentId,
+    schoolCode: scoped.schoolCode,
+    destinationSchoolName: req.body?.destinationSchoolName,
+    reason: req.body?.reason,
+    transferNotes: req.body?.transferNotes,
+    principal: scoped.principal,
+  });
+  res.json(enrollment);
+}));
+
+app.post("/api/students/:studentId/enrollments/:enrollmentId/close", requireAuth, requirePermission("POST /api/students/:studentId/enrollments/:enrollmentId/close"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  refuseC18MutationForParentStudent(req.principal);
+  const { applyClose } = require("./lib/studentEnrollmentC18");
+  const enrollment = await applyClose(repository, {
+    studentCode: req.params.studentId,
+    enrollmentId: req.params.enrollmentId,
+    schoolCode: scoped.schoolCode,
+    reason: req.body?.reason,
+    closeNotes: req.body?.closeNotes,
+    principal: scoped.principal,
+  });
+  res.json(enrollment);
+}));
+
 app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/students/:id"), asyncHandler(async (req, res) => {
   const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
   const principal = await enrollmentHttpPrincipal(req);
@@ -3107,6 +3218,20 @@ app.get("/api/parents/identity", requireAuth, requirePermission("GET /api/parent
     ...result,
     user: result.user ? sanitizeUserForResponse(result.user) : null,
   });
+}));
+
+app.get("/api/parents/relations", requireAuth, requirePermission("GET /api/parents/relations"), asyncHandler(async (req, res) => {
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
+  const scopedPrincipal = { ...principal, schoolCode };
+  const studentId = String(req.query?.studentId ?? "").trim();
+  if (!studentId) {
+    return res.status(400).json({ message: "studentId requis." });
+  }
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, studentId);
+  if (!scoped) return;
+  const result = await repository.listParentRelations(req.query ?? {}, scopedPrincipal);
+  res.json(result);
 }));
 
 app.post("/api/parents/link", requireAuth, requirePermission("POST /api/parents/link"), asyncHandler(async (req, res) => {

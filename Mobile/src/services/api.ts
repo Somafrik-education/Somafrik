@@ -410,6 +410,46 @@ export function getStudents() {
   );
 }
 
+export function getSchoolStudent(studentId: string) {
+  return request<Record<string, unknown>>(`/students/${encodeURIComponent(studentId)}`).then((row) =>
+    attachStudentTenantIdentity((row && typeof row === "object" ? row : {}) as Record<string, unknown>),
+  );
+}
+
+export function getParentRelations(studentId: string) {
+  return request<{ items?: Record<string, unknown>[] } | Record<string, unknown>[]>(
+    `/parents/relations?studentId=${encodeURIComponent(studentId)}`,
+  ).then((payload) => (Array.isArray(payload) ? payload : payload?.items ?? []));
+}
+
+export function lookupParentIdentity(query: { phone?: string; email?: string }) {
+  const params = new URLSearchParams();
+  if (query.phone) params.set("phone", query.phone);
+  if (query.email) params.set("email", query.email);
+  const suffix = params.toString();
+  return request<Record<string, unknown>>(`/parents/identity${suffix ? `?${suffix}` : ""}`);
+}
+
+export function linkParent(payload: {
+  studentId: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  email?: string;
+}) {
+  return request<Record<string, unknown>>("/parents/link", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function archiveParentRelation(relationId: string) {
+  return request<Record<string, unknown>>(`/parents/relations/${encodeURIComponent(relationId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "archived" }),
+  });
+}
+
 export type PaymentStudentOption = {
   studentId: string;
   studentCode: string;

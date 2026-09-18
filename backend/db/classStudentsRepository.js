@@ -13,6 +13,8 @@ const {
   isStudentCanonicalCode,
 } = require("../lib/studentCanonicalIdentifier");
 
+const { normalizeEnrollmentStatus } = require("../lib/studentEnrollmentC18");
+
 const STUDENT_SELECT_COLUMNS = `
   st.id AS student_uuid,
   st.student_code,
@@ -30,6 +32,11 @@ const STUDENT_SELECT_COLUMNS = `
   st.school_id,
   s.school_code
 `;
+
+/** Roster (classe) : inscrit canonique + alias historique. */
+const ROSTER_ENROLLMENT_SQL = `lower(btrim(e.status)) IN ('active', 'enrolled')`;
+/** Annuaire / fiche : roster + validé sans classe. */
+const CURRENT_ENROLLMENT_SQL = `lower(btrim(e.status)) IN ('active', 'enrolled', 'approved')`;
 
 /**
  * @param {{
@@ -176,7 +183,7 @@ function createClassStudentsRepository(db) {
   function mapEnrollmentRow(row) {
     return {
       id: row.enrollment_id,
-      status: row.enrollment_status ?? "active",
+      status: normalizeEnrollmentStatus(row.enrollment_status ?? "active", "ENROLLED"),
       enrollmentDate: row.enrollment_date ? formatDate(row.enrollment_date) : "",
       classId: row.class_id ?? row.classId ?? null,
       classCode: row.class_code ?? "",
@@ -266,6 +273,34 @@ function createClassStudentsRepository(db) {
     const left = Date.parse(stored instanceof Date ? stored.toISOString() : String(stored ?? ""));
     const right = Date.parse(expected instanceof Date ? expected.toISOString() : String(expected ?? ""));
     return Number.isFinite(left) && Number.isFinite(right) && left === right;
+  }
+
+  function isMissingContactRelationsRelation(error) {
+    const code = String(error?.code ?? "").trim();
+    if (code === "42P01") return true;
+    const message = String(error?.message ?? error ?? "").toLowerCase();
+    return (
+      message.includes("contact_relations") &&
+      (message.includes("does not exist") ||
+        message.includes("n'existe pas") ||
+        message.includes("undefined_table") ||
+        message.includes("no such table"))
+    );
+  }
+
+  function mapGuardianRow(row) {
+    return {
+      id: String(row.id),
+      firstName: row.first_name ?? "",
+      lastName: row.last_name ?? "",
+      name: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
+      phone: row.phone ?? "",
+      email: row.email ?? "",
+      relationshipType: row.relation_type ?? "parent_student",
+      status: row.status ?? "active",
+      isPrimaryContact: false,
+      isLegalGuardian: true,
+    };
   }
 
   /**
@@ -444,7 +479,7 @@ function createClassStudentsRepository(db) {
     const enrollment = await tx.one(
       `INSERT INTO enrollments (
          school_id, student_id, class_id, academic_year_id, enrollment_date, status
-       ) VALUES ($1, $2, $3, $4, CURRENT_DATE, 'active')
+       ) VALUES ($1, $2, $3, $4, CURRENT_DATE, 'ENROLLED')
        RETURNING id, enrollment_date`,
       [school.id, student.id, classRow.id, classRow.academic_year_id],
     );
@@ -502,7 +537,7 @@ function createClassStudentsRepository(db) {
                 e.enrollment_date
          FROM students st
          JOIN schools s ON s.id = st.school_id
-         LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+         LEFT JOIN enrollments e ON e.student_id = st.id AND ${CURRENT_ENROLLMENT_SQL}
          LEFT JOIN classes cl ON cl.id = e.class_id
          LEFT JOIN academic_years ay ON ay.id = e.academic_year_id
          WHERE st.school_id = $1
@@ -614,7 +649,7 @@ function createClassStudentsRepository(db) {
              JOIN students st_enr ON st_enr.id = e.student_id
               AND st_enr.school_id = e.school_id
              WHERE e.school_id = $1
-               AND lower(btrim(e.status)) = 'active'
+               AND ${ROSTER_ENROLLMENT_SQL}
              ORDER BY e.student_id, e.updated_at DESC NULLS LAST, e.id DESC
            ) ae ON ae.student_id = st.id
            LEFT JOIN classes cl ON cl.id = ae.class_id
@@ -652,7 +687,7 @@ function createClassStudentsRepository(db) {
          WHERE e.school_id::text = $1
            AND st.school_id::text = $1
            AND cl.school_id::text = $1
-           AND lower(btrim(e.status)) = 'active'
+           AND ${ROSTER_ENROLLMENT_SQL}
            AND (cl.id = ANY($2::uuid[]) OR cl.class_code = ANY($3::text[]))`,
         [sid, ids, codes],
       );
@@ -743,7 +778,7 @@ function createClassStudentsRepository(db) {
          JOIN classes cl ON cl.id = e.class_id
          JOIN academic_years ay ON ay.id = e.academic_year_id
          WHERE e.class_id = $1
-           AND e.status = 'active'
+           AND ${ROSTER_ENROLLMENT_SQL}
            AND st.school_id = $2
          ORDER BY st.last_name ASC, st.first_name ASC, st.student_code ASC`,
         [classRow.id, school.id],
@@ -772,7 +807,7 @@ function createClassStudentsRepository(db) {
                 e.enrollment_date
          FROM students st
          JOIN schools s ON s.id = st.school_id
-         LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+         LEFT JOIN enrollments e ON e.student_id = st.id AND ${CURRENT_ENROLLMENT_SQL}
          LEFT JOIN classes cl ON cl.id = e.class_id
          LEFT JOIN academic_years ay ON ay.id = e.academic_year_id
          WHERE st.student_code = $1 AND st.school_id = $2
@@ -795,7 +830,7 @@ function createClassStudentsRepository(db) {
                 ay.name AS academic_year_name,
                 ay.status AS academic_year_status
          FROM enrollments e
-         JOIN classes cl ON cl.id = e.class_id
+         LEFT JOIN classes cl ON cl.id = e.class_id
          JOIN academic_years ay ON ay.id = e.academic_year_id
          WHERE e.student_id = $1 AND e.school_id = $2
          ORDER BY e.enrollment_date DESC NULLS LAST, e.created_at DESC NULLS LAST`,
@@ -819,11 +854,32 @@ function createClassStudentsRepository(db) {
         documents = [];
       }
 
+      let guardians = [];
+      try {
+        const guardianRows = await db.all(
+          `SELECT r.id, r.relation_type, r.status,
+                  c.first_name, c.last_name, c.phone, c.email
+             FROM contact_relations r
+             JOIN contacts c ON c.id = r.contact_id
+            WHERE r.student_id = $1
+              AND r.school_id = $2
+              AND lower(btrim(r.status)) = 'active'
+            ORDER BY r.created_at ASC`,
+          [row.student_uuid, school.id],
+        );
+        guardians = (guardianRows ?? []).map(mapGuardianRow);
+      } catch (error) {
+        if (!isMissingContactRelationsRelation(error)) {
+          throw error;
+        }
+        guardians = [];
+      }
+
       const base = mapStudentRow(row);
       return {
         ...base,
         enrollments: enrollments.map(mapEnrollmentRow),
-        guardians: [],
+        guardians,
         medical: emptyMedicalProfile(),
         documents: documents.map(mapDocumentRow),
         access: accessLinks(base.studentCode),

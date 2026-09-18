@@ -522,6 +522,27 @@ function createClientsPgStore(repo) {
           [id],
         );
       },
+      async listRelationsByStudent(schoolId, studentRef) {
+        return all(
+          `SELECT r.*, s.school_code,
+             trim(concat(c.first_name, ' ', c.last_name)) AS contact_name,
+             trim(concat(st.first_name, ' ', st.last_name)) AS student_name,
+             c.first_name AS contact_first_name,
+             c.last_name AS contact_last_name,
+             c.phone AS contact_phone,
+             c.email AS contact_email,
+             c.user_id AS contact_user_id,
+             st.student_code
+           FROM contact_relations r
+           JOIN schools s ON s.id = r.school_id
+           JOIN contacts c ON c.id = r.contact_id
+           JOIN students st ON st.id = r.student_id
+           WHERE r.school_id = $1
+             AND (st.id::text = $2 OR st.student_code = $2)
+           ORDER BY CASE WHEN r.status = 'active' THEN 0 ELSE 1 END, r.created_at DESC`,
+          [schoolId, studentRef],
+        );
+      },
       async getRelationByContactAndStudent(contactId, studentId) {
         return one(
           `SELECT r.*, s.school_code,
@@ -1572,6 +1593,8 @@ function createClientsPgStore(repo) {
     getSchoolById: (id) => bind({}).getSchoolById(id),
     getCountryByCode: (code) => bind({}).getCountryByCode(code),
     getUserById: (id) => bind({}).getUserById(id),
+    getStudentById: (id) => bind({}).getStudentById(id),
+    listRelationsByStudent: (schoolId, studentRef) => bind({}).listRelationsByStudent(schoolId, studentRef),
     getCanonicalLinkedStudentByUserId: (id) => bind({}).getCanonicalLinkedStudentByUserId(id),
     withTransaction(fn) {
       return repo.withTransaction((tx) => fn(bind(tx)));
@@ -1704,6 +1727,10 @@ function createClientsPgStore(repo) {
     lookupParentIdentity: (...args) => {
       const { lookupParentIdentity } = require("../lib/parentLinking");
       return lookupParentIdentity(store, ...args);
+    },
+    listParentRelations: (...args) => {
+      const { listParentRelations } = require("../lib/parentLinking");
+      return listParentRelations(store, ...args);
     },
     archiveParentRelation: (...args) => {
       const { archiveParentRelation } = require("../lib/parentLinking");

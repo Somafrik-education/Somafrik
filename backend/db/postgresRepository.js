@@ -101,6 +101,7 @@ class PostgresRepository {
     await this.ensureTeacherAssignmentsActiveUniqueness();
     await this.ensureUsersLoginIdentityConstraints();
     await this.ensureFinanceCanonicalSchema();
+    await this.ensureEnrollmentC18CanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
     await this.ensureTeacherCourseCanonicalReconcile();
     await this.ensurePlatformCanonicalSchema();
@@ -502,6 +503,11 @@ class PostgresRepository {
   async ensureFinanceCanonicalSchema() {
     const { FINANCE_SCHEMA_SQL } = require("./financeSchema");
     await this.query(FINANCE_SCHEMA_SQL);
+  }
+
+  async ensureEnrollmentC18CanonicalSchema() {
+    const { ENROLLMENT_C18_SCHEMA_SQL } = require("./enrollmentC18Schema");
+    await this.query(ENROLLMENT_C18_SCHEMA_SQL);
   }
 
   async ensurePedagogyCanonicalSchema() {
@@ -1396,6 +1402,10 @@ class PostgresRepository {
 
   lookupParentIdentity(query, principal) {
     return this.getClientsStore().lookupParentIdentity(query, principal);
+  }
+
+  listParentRelations(query, principal) {
+    return this.getClientsStore().listParentRelations(query, principal);
   }
 
   archiveParentRelation(relationId, payload, principal, auditMeta) {

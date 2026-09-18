@@ -625,7 +625,31 @@ function createClientsMemoryStore(seed = {}) {
           student_name: student
             ? `${student.first_name ?? ""} ${student.last_name ?? student.name ?? ""}`.trim()
             : "",
+          contact_first_name: contact?.first_name ?? "",
+          contact_last_name: contact?.last_name ?? "",
+          contact_phone: contact?.phone ?? "",
+          contact_email: contact?.email ?? "",
+          contact_user_id: contact?.user_id ?? null,
+          student_code: student?.student_code ?? student?.studentCode ?? "",
         };
+      },
+      async listRelationsByStudent(schoolId, studentRef) {
+        const student = tables.students.find(
+          (row) =>
+            String(row.school_id) === String(schoolId) &&
+            (String(row.id) === String(studentRef) ||
+              String(row.student_code ?? row.studentCode ?? "") === String(studentRef)),
+        );
+        if (!student) return [];
+        const matches = tables.relations.filter(
+          (relation) =>
+            String(relation.school_id) === String(schoolId) && String(relation.student_id) === String(student.id),
+        );
+        const rows = [];
+        for (const relation of matches) {
+          rows.push(await this.getRelationById(relation.id));
+        }
+        return rows.filter(Boolean);
       },
       async getRelationByContactAndStudent(contactId, studentId) {
         const matches = tables.relations.filter(
@@ -1197,6 +1221,8 @@ function createClientsMemoryStore(seed = {}) {
     getSchoolById: (id) => txApi.getSchoolById(id),
     getCountryByCode: (code) => txApi.getCountryByCode(code),
     getUserById: (id) => txApi.getUserById(id),
+    getStudentById: (id) => txApi.getStudentById(id),
+    listRelationsByStudent: (schoolId, studentRef) => txApi.listRelationsByStudent(schoolId, studentRef),
     getCanonicalLinkedStudentByUserId: (id) => txApi.getCanonicalLinkedStudentByUserId(id),
     async withTransaction(fn) {
       if (transactionDepth > 0) {
@@ -1402,6 +1428,10 @@ function createClientsMemoryStore(seed = {}) {
     lookupParentIdentity: (...args) => {
       const { lookupParentIdentity } = require("../lib/parentLinking");
       return lookupParentIdentity(store, ...args);
+    },
+    listParentRelations: (...args) => {
+      const { listParentRelations } = require("../lib/parentLinking");
+      return listParentRelations(store, ...args);
     },
     archiveParentRelation: (...args) => {
       const { archiveParentRelation } = require("../lib/parentLinking");
