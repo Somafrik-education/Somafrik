@@ -51,6 +51,23 @@ Correction-only depuis `e011be87` :
 - `matricule` additif sur le DTO `unpaidService.list` ;
 - dataset T1 30 000 + T2 20 000 (sans filtre 50 000 / Plusieurs périodes).
 
+## CI `1a7a1070` — LOT 4 vert, Risk-targeted flake hors Finance
+
+`1a7a1070` : **LOT 4 parity SUCCESS**. Scope / Quality / Secrets / Core / LOT 0–3 SUCCESS.
+
+**Required** rouge uniquement parce que `TARGETED=failure`.
+
+Risk-targeted a échoué dans l’étape Pedagogy, pas Finance :
+
+```
+pedagogyRepository.pg.test.js:880
+l'autre upsert concurrent doit 409 (verrou optimiste)
+```
+
+Aucun fichier pédagogie n’est dans le diff LOT 4. Le flag `pedagogy=true` vient d’un faux positif du classifieur de chemins : `preferences` contient la sous-chaîne `reference` (`roleDrawerPreferences.ts`, `roleNavigationPreferences.test.ts`). Le même gate Pedagogy était **SUCCESS** sur `0425489f`.
+
+Relance CI sur ce constat. Pas de mutation LOT 5.
+
 ## Reliquats hors LOT 4
 
 - PARITY-036 paiement parent
