@@ -65,10 +65,10 @@ Pas de table parallèle. Pas de suppression physique. Alias lecture `active` →
 - `POST /students`, AdminCrud create, `EntityPage` Expo, `POST /backoffice/relations` Mobile
 - LOT 3
 
-CI #707 HEAD `4e0bc1d2` : 5 checks restants.
+CI #707 HEAD `04fbaf73` : LOT 2 HTTP + Risk-targeted.
 
-1. HTTP C18 fixture : user rôle Élève avant ligne `students` → `STUDENT_CANONICAL_IDENTIFIER_REQUIRED`. Élèves d'abord, `user_code = STU-A-001`.
-2. ENR-07 : `POST /classes/:classCode/students` écrit `ENROLLED` ; finance lisait `e.status = 'active'` → 404. Lecture roster `active|enrolled`.
-3. Risk-targeted : fiche Mobile charge `GET /students/:id` ; le contrat identité n'exige plus `findStudentByIdentity` sur `StudentDetailScreen`.
+1. HTTP C18 : ne pas insérer `users.role = Élève` avec un `user_code` hors matricule canonique (trigger identité). JWT porte le rôle ; `users.role` reste NULL.
+2. Upgrade PG : JOIN roster `active|enrolled` (classe-first écrit `ENROLLED`).
+3. Finance / dataset : lecture `active|enrolled`.
 
 STOP : Draft. Pas Ready. Pas merge. Pas LOT 3.

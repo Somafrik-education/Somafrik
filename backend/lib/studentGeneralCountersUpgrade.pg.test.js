@@ -543,7 +543,7 @@ async function scenarioProductionLikeHttp() {
          e.status AS enrollment_status
        FROM students st
        JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
-       JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+       JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
        WHERE st.student_code = $1`,
       [studentCode],
     );

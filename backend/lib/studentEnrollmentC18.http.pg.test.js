@@ -184,7 +184,7 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
          ($2, $7, 'ADM-B', 'Binta', 'B', 'b@lot2.test', 'Admin School', 'active', FALSE),
          ($3, $6, 'ENS-A', 'Marc', 'Prof', 't@lot2.test', 'Enseignant', 'active', FALSE),
          ($4, $6, 'PAR-A', 'Parent', 'A', 'p@lot2.test', 'Parent', 'active', FALSE),
-         ($5, $6, 'STU-A-001', 'Eleve', 'User', 's@lot2.test', 'Élève / Étudiant', 'active', FALSE)`,
+         ($5, $6, 'USR-STU-A', 'Eleve', 'User', 's@lot2.test', NULL, 'active', FALSE)`,
       [USER_A, USER_B, USER_TEACHER, USER_PARENT, USER_STUDENT, schoolAId, schoolBId],
     );
     const classA = await pool.query(`SELECT id FROM classes WHERE class_code = $1`, [CLASS_A]);
