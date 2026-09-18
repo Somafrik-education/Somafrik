@@ -174,11 +174,6 @@ export default function HomeScreen({ navigation }: any) {
   const unreadMessages = messagesSnapshot.status === "success" || messagesSnapshot.status === "empty" ? unreadMessagesCount : 0;
   const teachersValue = String(teachersData.length);
   const teacherStudents = visibleStudents;
-  const teacherStudentIds = teacherStudents.map((student) => student.id);
-  const teacherPresenceStats = getPresenceStats(
-    presencesData.filter((presence) => isTodayPresence(presence.date)),
-    teacherStudentIds,
-  );
   const assignedClasses = teacherScopedClassLabels(session, teacherStudents, teacherScopeState);
   const sessionCourses = session?.user?.courses ?? [];
   const assignmentCourses = resolveTeacherAssignmentsForSession(session, teacherScopeState)
@@ -303,10 +298,8 @@ export default function HomeScreen({ navigation }: any) {
           "checkmark-circle-outline",
           isParentLike
             ? `${studentPresenceStats.attended}/${studentPresenceStats.total}`
-            : isTeacher
-              ? `${teacherPresenceStats.rate}%`
-              : establishmentPresenceValue,
-          isParentLike || isTeacher ? "Présence" : TODAY_PRESENCE_KPI_LABEL,
+            : establishmentPresenceValue,
+          isParentLike ? "Présence" : TODAY_PRESENCE_KPI_LABEL,
           "#16A34A",
           "#ECFDF5",
           () =>
@@ -545,29 +538,6 @@ function action(
   onPress: () => void,
 ): RoleDashboardAction {
   return { key, icon, label, onPress };
-}
-
-function isTodayPresence(dateValue?: string) {
-  return toDateKey(dateValue) === toDateKey(new Date());
-}
-
-function toDateKey(value?: string | Date) {
-  if (!value) return "";
-  if (value instanceof Date) {
-    return [
-      value.getFullYear(),
-      String(value.getMonth() + 1).padStart(2, "0"),
-      String(value.getDate()).padStart(2, "0"),
-    ].join("-");
-  }
-  const text = String(value).trim();
-  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-  const localMatch = text.match(/^(\d{2})-(\d{2})-(\d{4})/);
-  if (localMatch) return `${localMatch[3]}-${localMatch[2]}-${localMatch[1]}`;
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return toDateKey(parsed);
 }
 
 const footerStyles = StyleSheet.create({

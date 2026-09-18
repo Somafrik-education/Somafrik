@@ -79,6 +79,18 @@ export function validatePinPolicy(pin: string): string | null {
   return null;
 }
 
+/** Même contrat que le backend `POST /auth/change-password` : PIN 6 chiffres ou mot de passe 8+lettre+chiffre. */
+export function validateAccountSecret(secret: string): string | null {
+  const value = secret.trim();
+  if (!value) {
+    return null;
+  }
+  if (/^\d{6}$/.test(value)) {
+    return validatePinPolicy(value);
+  }
+  return validatePasswordPolicy(value);
+}
+
 export function findDuplicateLoginIdentifier(
   users: UserAccount[],
   candidate: Pick<UserAccount, "id" | "identifier" | "email" | "phone" | "schoolCode" | "publicId">,

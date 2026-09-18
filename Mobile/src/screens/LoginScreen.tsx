@@ -41,6 +41,7 @@ import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
 import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import { schoolLogoDisplayUri } from "../lib/schoolLogo";
 import { resetSchoolSetupWizardSessionDismiss } from "../lib/schoolSetupMobile";
+import { validateAccountSecret } from "../lib/userAccountRules";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -186,8 +187,11 @@ export default function LoginScreen({ navigation, route }: Props) {
     const nextPassword = newPassword.trim();
     const confirmation = confirmPassword.trim();
     const nextErrors: Record<string, string> = {};
-    if (nextPassword.length < 6) {
-      nextErrors.newPassword = "Le nouveau mot de passe doit contenir au moins 6 caractères.";
+    if (!nextPassword) {
+      nextErrors.newPassword = "Le mot de passe doit contenir au moins 8 caractères.";
+    } else {
+      const policyError = validateAccountSecret(nextPassword);
+      if (policyError) nextErrors.newPassword = policyError;
     }
     if (!confirmation) {
       nextErrors.confirmPassword = "La confirmation du mot de passe est obligatoire.";
