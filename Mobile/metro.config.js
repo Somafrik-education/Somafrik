@@ -4,6 +4,11 @@ const { withNativeWind } = require("nativewind/metro");
 
 const config = withNativeWind(getDefaultConfig(__dirname), { input: "./global.css" });
 
+config.watchFolders = [
+  ...(config.watchFolders || []),
+  path.resolve(__dirname, "../packages/help-catalog"),
+];
+
 // Recette Communication : entrée distincte, jamais un flag EXPO_PUBLIC_* dans le runtime livré.
 if (process.env.SOMAFRIK_COMMUNICATION_UX_SMOKE_ENTRY === "1") {
   const productionAppDir = path.resolve(__dirname);

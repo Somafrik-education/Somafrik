@@ -1,6 +1,6 @@
 # Catalogue d’aide Somafrik — HELP-V1A
 
-Catalogue embarqué Option A (HELP-01) : articles compilés depuis un sous-ensemble des guides utilisateurs, filtrés par plateforme, écran, rôle et permissions live.
+Catalogue embarqué Option A (HELP-01) : articles compilés depuis le comportement **actuel** du produit, filtrés par plateforme, écran, rôle, permissions et **catégorie**.
 
 Ce lot **ne monte aucun bouton**, aucun panneau, aucune API, aucune IA.
 
@@ -12,11 +12,12 @@ Ce lot **ne monte aucun bouton**, aucun panneau, aucune API, aucune IA.
 - `filterHelpArticles(context)` — corpus autorisé pour la session ;
 - `searchHelpArticles(context, query)` — recherche locale dans le corpus filtré ;
 - `suggestHelpArticles(context, { limit })` — 3 suggestions max pour l’écran courant ;
+- `groupHelpArticlesByCategory(context)` — catégories visibles pour le rôle (Démarrage, Scolarité, …) ;
 - `isHelpAvailable(context)` — faux sur vitrine, connexion, reset mot de passe, Support.
 
 ## Contrat d’article
 
-`id`, `title`, `roles`, `permissions`, `platforms`, `routeKeys`, `keywords`, `summary`, `steps`, `relatedArticles`.
+`id`, `title`, `category`, `order`, `roles`, `permissions`, `platforms`, `routeKeys`, `keywords`, `summary`, `steps`, `relatedArticles`.
 
 - **LECTURE** : autorisée ;
 - **NAVIGATION** : optionnelle, seulement si la permission de la cible est portée ;

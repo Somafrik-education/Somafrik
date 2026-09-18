@@ -8,6 +8,7 @@ import {
   SCHOOL_STAFF_ROLES,
 } from "./constants.js";
 import { freezeCatalog } from "./freeze.js";
+import { REFRESH_ARTICLES } from "./articles-refresh.js";
 
 const WEB = HELP_PLATFORM.WEB;
 const MOBILE = HELP_PLATFORM.MOBILE;
@@ -187,7 +188,7 @@ const ARTICLES = [
     permissions: Object.freeze(["Enseignants:READ"]),
     platforms: BOTH,
     routeKeys: Object.freeze([HELP_SCREEN.TEACHERS]),
-    keywords: Object.freeze(["enseignants", "liste", "affectations", "spécialité"]),
+    keywords: Object.freeze(["enseignants", "liste", "affectations", "spécialité", "professeur", "professeurs"]),
     steps: Object.freeze([
       "Ouvrez Mon établissement → Enseignants (Web) ou Enseignants (Mobile).",
       "Consultez l’identité, l’identifiant enseignant, le contact, la spécialité et les affectations lorsqu’ils sont affichés.",
@@ -375,7 +376,8 @@ const ARTICLES = [
     keywords: Object.freeze(["appel", "présent", "absent", "retard", "justifié", "enregistrer"]),
     steps: Object.freeze([
       "Pour chaque élève, choisissez Présent, Absent, Retard ou Justifié.",
-      "Utilisez Tous présents / Tout présent uniquement après avoir vérifié le roster.",
+      "Sur le Web, un élève sans saisie est proposé Présent. Sur Mobile, aucun statut n’est prérempli : chaque élève doit avoir un statut explicite, ou utilisez Tout présent.",
+      "Web : Tous présents. Mobile : Tout présent. Utilisez ces raccourcis uniquement après avoir vérifié le roster.",
       "Cliquez ou appuyez sur Enregistrer l’appel et attendez la confirmation.",
       "Si l’appel est conservé en file d’attente, il n’est pas encore confirmé serveur. Ne répétez pas immédiatement la saisie.",
     ]),
@@ -538,6 +540,7 @@ const ARTICLES = [
     steps: Object.freeze([
       "Ouvrez Notifications depuis la cloche Web ou le menu Mobile lorsque l’entrée est visible.",
       "La visibilité de la page dépend du rôle et de Notifications:READ.",
+      "Les notifications push appareil ne sont opérationnelles que sur l’application Mobile Android native. Expo Go et le Web n’enregistrent pas de push.",
     ]),
     relatedArticles: [],
     captureIds: [],
@@ -623,15 +626,18 @@ const ARTICLES = [
     keywords: Object.freeze(["paramètres", "configuration", "année scolaire", "structure", "profil", "parcours"]),
     steps: Object.freeze([
       "Ouvrez Paramètres (Web) ou Paramètres (Mobile) lorsque l’entrée est visible. Sur Web, cet espace est réservé à l’administrateur d’établissement.",
+      "Pour une école qui démarre, ouvrez d’abord Configuration de l’établissement (Assistant de configuration) ou le widget Configuration rapide.",
       "Parcours recommandé : 1. Profil établissement. 2. Année scolaire. 3. Périodes et barème. 4. Structure pédagogique. 5. Cours. 6. Classes (Mon établissement → Classes). 7. Utilisateurs. 8. Enseignants. 9. Affectations. 10. Finances. 11. Planning. 12. Notes.",
       "L’année scolaire se configure dans Paramètres → Année scolaire, sur Web et sur Mobile. Elle doit exister avant de créer les classes.",
       "Certaines cartes (Notifications, Apparence, Intégrations) affichent Bientôt : cette fonctionnalité n’est pas encore disponible.",
       "Rôles et droits, Sécurité et l’export de données se consultent ; ils ne sont pas tous des écrans de configuration.",
     ]),
     relatedArticles: Object.freeze([
+      "help/start/school-setup",
       "help/settings/profile",
       "help/settings/academic-year",
       "help/settings/pedagogical-structure",
+      "help/settings/notifications",
       "help/settings/coming-soon",
       "help/rbac/missing-action",
     ]),
@@ -1108,16 +1114,16 @@ const ARTICLES = [
     id: "help/settings/coming-soon",
     title: "Fonctions Paramètres bientôt disponibles",
     summary:
-      "Certaines cartes Paramètres sont visibles avec le badge Bientôt. Cette fonctionnalité n’est pas encore disponible.",
+      "Les cartes Apparence et Intégrations portent le badge Bientôt. Cette fonctionnalité n’est pas encore disponible.",
     roles: SCHOOL_SETTINGS_ROLES,
     permissions: Object.freeze(["Paramètres Établissement:READ"]),
     platforms: Object.freeze([WEB]),
     routeKeys: Object.freeze([HELP_SCREEN.SETTINGS_COMING_SOON, HELP_SCREEN.SETTINGS]),
-    keywords: Object.freeze(["bientôt", "notifications", "apparence", "intégrations", "coming soon"]),
+    keywords: Object.freeze(["bientôt", "apparence", "intégrations", "coming soon"]),
     steps: Object.freeze([
-      "Les cartes Notifications, Apparence et Intégrations peuvent apparaître dans le hub Paramètres.",
+      "Les cartes Apparence et Intégrations peuvent apparaître dans le hub Paramètres avec le badge Bientôt.",
       "Cette fonctionnalité n’est pas encore disponible. Aucune procédure de configuration n’est fournie.",
-      "Le logo se gère déjà dans Profil établissement (URL). La réception de messages ou notifications ailleurs n’équivaut pas à configurer ces cartes.",
+      "La carte Notifications est Disponible : ouvrez Paramètres → Notifications. Le logo se gère déjà dans Profil établissement (URL).",
     ]),
     relatedArticles: Object.freeze(["help/settings/overview", "help/settings/profile"]),
     captureIds: [],
@@ -1128,4 +1134,4 @@ const ARTICLES = [
   },
 ];
 
-export const HELP_CATALOG = freezeCatalog(ARTICLES);
+export const HELP_CATALOG = freezeCatalog([...ARTICLES, ...REFRESH_ARTICLES]);

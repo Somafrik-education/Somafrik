@@ -12,6 +12,8 @@ declare module "@somafrik/help-catalog" {
     readonly id: string;
     readonly title: string;
     readonly summary: string;
+    readonly category: string;
+    readonly order: number;
     readonly roles: readonly string[];
     readonly permissions: readonly string[];
     readonly platforms: readonly string[];
@@ -24,6 +26,12 @@ declare module "@somafrik/help-catalog" {
     readonly sourceGuide: string;
     readonly popular: boolean;
     readonly navigate: HelpNavigate | null;
+  }
+
+  export interface HelpCategoryGroup {
+    readonly id: string;
+    readonly label: string;
+    readonly articles: readonly HelpArticle[];
   }
 
   export interface HelpContext {
@@ -46,6 +54,8 @@ declare module "@somafrik/help-catalog" {
 
   export const HELP_PLATFORM: { readonly WEB: "web"; readonly MOBILE: "mobile" };
   export const HELP_CATALOG: readonly HelpArticle[];
+  export const HELP_CATEGORY_LABELS: Readonly<Record<string, string>>;
+  export const HELP_CATEGORY_ORDER: readonly string[];
 
   export function createHelpContext(input: HelpContextInput): HelpContext;
   export function isHelpAvailable(context: HelpContext): boolean;
@@ -60,4 +70,5 @@ declare module "@somafrik/help-catalog" {
     context: HelpContext,
     options?: { limit?: number },
   ): readonly HelpArticle[];
+  export function groupHelpArticlesByCategory(context: HelpContext): readonly HelpCategoryGroup[];
 }

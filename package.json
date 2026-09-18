@@ -46,6 +46,7 @@
     "verify:help-v1b-viewport": "node scripts/help-v1b-viewport-smoke.js",
     "verify:settings-functional-audit": "node scripts/verify-settings-functional-audit.js",
     "verify:help-settings": "node scripts/verify-help-settings.js",
+    "verify:help-user-guide": "node scripts/verify-help-user-guide.js",
     "verify:branding-master": "node --test scripts/verify-branding-master.test.js && node scripts/verify-branding-master.js",
     "verify:notes-p1-teacher-runtime": "node scripts/verify-notes-p1-teacher-runtime.js",
     "test:v2-api": "npm --prefix apps/api test",

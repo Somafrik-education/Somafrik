@@ -26,6 +26,9 @@ export const HELP_SCREEN = Object.freeze({
   SETTINGS_SECURITY: "settings-security",
   SETTINGS_SUBSCRIPTION: "settings-subscription",
   SETTINGS_COMING_SOON: "settings-coming-soon",
+  SETTINGS_SETUP: "settings-setup",
+  SETTINGS_NOTIFICATIONS: "settings-notifications",
+  REPORT_CARDS: "report-cards",
   PARENT_HOME: "parent-home",
   STUDENT_HOME: "student-home",
   SYNC: "sync",
@@ -41,6 +44,48 @@ export const HELP_MODULE = Object.freeze({
   ACCUEIL: "accueil",
   SYNC: "sync",
 });
+
+export const HELP_CATEGORY = Object.freeze({
+  DEMARRAGE: "demarrage",
+  ETABLISSEMENT: "etablissement",
+  UTILISATEURS: "utilisateurs",
+  SCOLARITE: "scolarite",
+  ENSEIGNANTS: "enseignants",
+  PRESENCES: "presences",
+  PEDAGOGIE: "pedagogie",
+  FINANCE: "finance",
+  COMMUNICATION: "communication",
+  COMPTE: "compte",
+  ASSISTANCE: "assistance",
+});
+
+export const HELP_CATEGORY_LABELS = Object.freeze({
+  [HELP_CATEGORY.DEMARRAGE]: "Démarrage",
+  [HELP_CATEGORY.ETABLISSEMENT]: "Établissement",
+  [HELP_CATEGORY.UTILISATEURS]: "Utilisateurs et accès",
+  [HELP_CATEGORY.SCOLARITE]: "Scolarité",
+  [HELP_CATEGORY.ENSEIGNANTS]: "Enseignants",
+  [HELP_CATEGORY.PRESENCES]: "Présences",
+  [HELP_CATEGORY.PEDAGOGIE]: "Pédagogie",
+  [HELP_CATEGORY.FINANCE]: "Finance",
+  [HELP_CATEGORY.COMMUNICATION]: "Communication",
+  [HELP_CATEGORY.COMPTE]: "Compte et sécurité",
+  [HELP_CATEGORY.ASSISTANCE]: "Assistance",
+});
+
+export const HELP_CATEGORY_ORDER = Object.freeze([
+  HELP_CATEGORY.DEMARRAGE,
+  HELP_CATEGORY.ETABLISSEMENT,
+  HELP_CATEGORY.UTILISATEURS,
+  HELP_CATEGORY.SCOLARITE,
+  HELP_CATEGORY.ENSEIGNANTS,
+  HELP_CATEGORY.PRESENCES,
+  HELP_CATEGORY.PEDAGOGIE,
+  HELP_CATEGORY.FINANCE,
+  HELP_CATEGORY.COMMUNICATION,
+  HELP_CATEGORY.COMPTE,
+  HELP_CATEGORY.ASSISTANCE,
+]);
 
 export const MODULE_BY_SCREEN = Object.freeze(
   Object.assign(Object.create(null), {
@@ -66,6 +111,9 @@ export const MODULE_BY_SCREEN = Object.freeze(
     [HELP_SCREEN.SETTINGS_SECURITY]: HELP_MODULE.PARAMETRES,
     [HELP_SCREEN.SETTINGS_SUBSCRIPTION]: HELP_MODULE.PARAMETRES,
     [HELP_SCREEN.SETTINGS_COMING_SOON]: HELP_MODULE.PARAMETRES,
+    [HELP_SCREEN.SETTINGS_SETUP]: HELP_MODULE.PARAMETRES,
+    [HELP_SCREEN.SETTINGS_NOTIFICATIONS]: HELP_MODULE.PARAMETRES,
+    [HELP_SCREEN.REPORT_CARDS]: HELP_MODULE.PEDAGOGIE,
     [HELP_SCREEN.PARENT_HOME]: HELP_MODULE.ACCUEIL,
     [HELP_SCREEN.STUDENT_HOME]: HELP_MODULE.ACCUEIL,
     [HELP_SCREEN.SYNC]: HELP_MODULE.SYNC,
