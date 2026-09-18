@@ -41,6 +41,9 @@ function sourceGuards() {
   const api = read("Mobile/src/services/api.ts");
   const gitignore = `${read(".gitignore")}\n${read("Mobile/.gitignore")}`;
   const httpTest = read("backend/lib/mobilePushDevices.http.pg.test.js");
+  const p0Contract = read("backend/lib/mobilePushP0.contract.test.js");
+  assert.match(p0Contract, /self-test doit renvoyer une preuve exploitable/);
+  assert.match(p0Contract, /l'échec ne doit pas être absorbé silencieusement/);
 
   assert.equal(fs.existsSync(path.join(ROOT, "backend/db/migrations/20260903_mobile_push_devices.sql")), false);
   assert.match(schema, /20260829_mobile_push_devices\.sql/);
@@ -98,6 +101,9 @@ function sourceGuards() {
   assert.match(service, /Auto-test push interdit en production/);
   assert.match(service, /Test Somafrik/);
   assert.match(service, /Les notifications push Somafrik fonctionnent correctement/);
+  assert.match(service, /SOMAFRIK_PUSH_CHANNEL_ID/);
+  assert.match(service, /publicPushProof|proof:/);
+  assert.doesNotMatch(service, /channelId:\s*"somafrik-default"/);
   assert.doesNotMatch(service, /SOMAFRIK_PUSH_RELEASE_PROFILE/);
   assert.doesNotMatch(service, /body\.releaseProfile/);
   assert.match(store, /ON CONFLICT \(expo_push_token\) DO UPDATE/);
@@ -128,9 +134,16 @@ function sourceGuards() {
   assert.match(httpTest, /rate limit/);
   assert.match(httpTest, /session \* : pas de ciblage multi-écoles/);
   assert.match(httpTest, /même user \+ autre école → token exclu/);
+  assert.match(httpTest, /self-test preuve exploitable/);
+  assert.match(httpTest, /somafrik-default-v2/);
+
+  const docsPush = read("docs/mobile/PUSH-PREVIEW-PREPROD.md");
+  assert.match(docsPush, /SOMAFRIK_PUSH_SELFTEST_ENABLED/);
+  assert.match(docsPush, /somafrik-default-v2/);
+  assert.match(docsPush, /FCM V1|EAS/);
 
   assert.match(appConfig, /expo-notifications/);
-  assert.match(appConfig, /somafrik-default/);
+  assert.match(appConfig, /somafrik-default-v2/);
   assert.doesNotMatch(appConfig, /android\.permission\.POST_NOTIFICATIONS/);
   assert.doesNotMatch(appConfig, /android\.permission\.VIBRATE/);
   assert.match(appConfig, /googleServicesFile/);
@@ -143,6 +156,14 @@ function sourceGuards() {
   assert.doesNotMatch(mobile, /releaseProfile:/);
   assert.match(runtime, /getLastNotificationResponse/);
   assert.match(runtime, /canPersistFullSession/);
+  assert.match(runtime, /observePushRegistrationFailure/);
+  assert.doesNotMatch(runtime, /registerAuthenticatedPushDevice\(\)\.catch\(\(\) => undefined\)/);
+  assert.match(mobile, /push device registration failed/);
+  assert.match(mobile, /getLastPushRegistrationOutcome/);
+  assert.doesNotMatch(mobile, /if \(resolvedExpoGoConfig != null\) return false/);
+  assert.match(mobile, /hostUri/);
+  assert.match(mobile, /debuggerHost/);
+  assert.match(mobile, /export function isNativePushCompatible/);
   assert.match(tap, /consumeInitialPushResponse/);
   assert.match(tap, /isAuthenticated/);
   assert.match(tap, /dismissPendingPushNavigation/);
@@ -178,10 +199,12 @@ function main() {
   sourceGuards();
   run(process.execPath, ["backend/lib/mobilePushDevicesService.test.js"], "push devices unit");
   run(process.execPath, ["--test", "backend/lib/mobilePushDevices.tenant.test.js"], "push tenant school_id");
+  run(process.execPath, ["backend/lib/mobilePushP0.contract.test.js"], "P0 #645 contrat preview/preprod");
   run(process.execPath, ["backend/lib/expoPushService.test.js"], "expo push unit");
   run(process.execPath, ["backend/lib/expoPushReceiptsWorker.test.js"], "expo receipts différés");
   run(process.execPath, ["backend/lib/rateLimit.push-selftest.test.js"], "rate limit self-test");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.test.ts"], "mobile push unit");
+  run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.p0.test.ts"], "P0 #645 mobile preview");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationTap.test.ts"], "mobile cold-start tap");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile finance notification navigation");
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");

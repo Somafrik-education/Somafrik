@@ -90,7 +90,7 @@ function createExpoPushService({
   async function sendToTokens(tokens, message) {
     const unique = [...new Set((tokens || []).map((token) => String(token || "").trim()).filter(Boolean))];
     if (!unique.length) {
-      return { sent: 0, ticketCount: 0, revoked: [], pendingReceipts: [] };
+      return { sent: 0, ticketCount: 0, revoked: [], pendingReceipts: [], publicTickets: [] };
     }
     const payload = unique.map((to) => ({
       to,
@@ -108,11 +108,19 @@ function createExpoPushService({
     const tickets = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
     const unregistered = collectUnregistered(tickets, unique);
     const pendingReceipts = [];
-    tickets.forEach((ticket, index) => {
+    const publicTickets = tickets.map((ticket, index) => {
       const receiptId = String(ticket?.id ?? "").trim();
       if (ticket?.status === "ok" && receiptId) {
         pendingReceipts.push({ receiptId, expoPushToken: unique[index] });
       }
+      return {
+        status: ticket?.status === "ok" ? "ok" : "error",
+        id: receiptId || null,
+        error:
+          ticket?.status === "error"
+            ? String(ticket?.details?.error || ticket?.error || "error").slice(0, 80)
+            : null,
+      };
     });
     // Les receipts Expo ne sont PAS consultés ici : ticket ≠ livraison.
     if (pendingReceipts.length && typeof store?.enqueuePushReceipts === "function") {
@@ -124,6 +132,7 @@ function createExpoPushService({
       ticketCount: tickets.length,
       revoked,
       pendingReceipts,
+      publicTickets,
       at: now(),
     };
   }

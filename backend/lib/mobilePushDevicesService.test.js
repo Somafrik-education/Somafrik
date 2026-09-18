@@ -172,6 +172,7 @@ async function main() {
   const sent = await sendSelfTest(store, principal, { confirm: TEST_CONFIRM }, pushClient, env);
   assert.equal(sent.sent, 1);
   assert.equal(expoCalled, 1);
+  assert.equal(sent.proof.channelId, "somafrik-default-v2");
 
   await throwsStatusAsync(
     () => sendSelfTest(store, teacher, { confirm: TEST_CONFIRM }, pushClient, env),
