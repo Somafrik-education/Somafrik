@@ -73,7 +73,10 @@ export function createHelpContext(input: HelpContextInput): HelpContext;
 export function isHelpAvailable(context: HelpContext): boolean;
 export function articleMatchesContext(article: HelpArticle, context: HelpContext): boolean;
 export function navigationIsAllowed(article: HelpArticle, context: HelpContext): boolean;
-export function sessionHasPermission(context: HelpContext, permission: string | null | undefined): boolean;
+export function sessionHasPermission(
+  permissions: readonly string[] | null | undefined,
+  required: string | null | undefined,
+): boolean;
 export function moduleForScreen(screen: string | null | undefined): string | null;
 export function resolveHelpScreen(input: {
   platform?: HelpPlatform;
