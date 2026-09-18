@@ -58,6 +58,7 @@ import {
 import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import { OFFLINE_COPY } from "../lib/offlineModeSpec";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { DISPLAY_DATE_HINT, toApiDate } from "../lib/dates";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentDetail">;
 
@@ -119,6 +120,7 @@ export default function StudentDetailScreen({
   const [c18Enrollments, setC18Enrollments] = useState<C18Enrollment[]>([]);
   const [c18Error, setC18Error] = useState("");
   const [classCodeInput, setClassCodeInput] = useState("");
+  const [assignEffectiveDate, setAssignEffectiveDate] = useState("");
   const [transferDest, setTransferDest] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -341,12 +343,20 @@ export default function StudentDetailScreen({
               value={classCodeInput}
               onChangeText={setClassCodeInput}
             />
+            <TextInput
+              style={styles.input}
+              placeholder={`Date effective (${DISPLAY_DATE_HINT})`}
+              value={assignEffectiveDate}
+              onChangeText={setAssignEffectiveDate}
+              testID={STUDENT_FICHE_LOT2_TEST_IDS.c18AssignEffectiveDate}
+            />
             <TouchableOpacity
               style={styles.create}
               onPress={() =>
                 void runC18(() =>
                   assignStudentEnrollmentClass(canonicalStudentId, enrollmentId, {
                     classCode: classCodeInput.trim(),
+                    effectiveDate: toApiDate(assignEffectiveDate) || undefined,
                   }),
                 )
               }

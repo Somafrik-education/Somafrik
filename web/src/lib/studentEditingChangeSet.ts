@@ -386,6 +386,9 @@ export function normalizeEnrollmentClassChanges(
   if ("className" in changes) {
     normalized.className = normalizeOptionalText(changes.className);
   }
+  if ("effectiveDate" in changes) {
+    normalized.effectiveDate = normalizeCivilDate(changes.effectiveDate);
+  }
   return normalized;
 }
 
@@ -442,6 +445,9 @@ export function buildAssignEnrollmentClassChangeSet(
   }
   if ("className" in changes) {
     pushChange(items, "className", current.className, nextClassName);
+  }
+  if ("effectiveDate" in changes) {
+    pushChange(items, "effectiveDate", null, changes.effectiveDate ?? null);
   }
 
   if (

@@ -210,6 +210,114 @@ function illegalTransition(message) {
   return error;
 }
 
+function txDb(repository, tx) {
+  if (tx && typeof tx.one === "function") {
+    return {
+      one: (sql, params) => tx.one(sql, params),
+      all: (sql, params) => tx.all(sql, params),
+      query: (sql, params) => tx.query(sql, params),
+    };
+  }
+  return repository;
+}
+
+async function runC18Mutation(repository, work) {
+  if (typeof repository.withTransaction === "function") {
+    return repository.withTransaction((tx) => work(txDb(repository, tx), tx));
+  }
+  return work(repository, null);
+}
+
+function schoolLogin(school, fallback) {
+  return asTrimmed(school?.login_code || school?.loginCode || fallback);
+}
+
+async function persistC18Audit(repository, payload, tx) {
+  if (typeof repository.recordAudit !== "function") return;
+  await repository.recordAudit(payload, tx && typeof tx.query === "function" ? tx : null);
+}
+
+function c18AuditPayload({
+  action,
+  principal,
+  school,
+  student,
+  enrollmentId,
+  fromStatus,
+  toStatus,
+  previousClass = null,
+  nextClass = null,
+  reason = null,
+  destination = null,
+  effectiveDate = null,
+  schoolCode,
+}) {
+  const login = schoolLogin(school, schoolCode);
+  return {
+    schoolCode: login,
+    userId: principal?.sub ?? null,
+    action: `c18_${action}`,
+    entityType: "enrollment",
+    entityId: String(enrollmentId),
+    oldValue: {
+      status: fromStatus,
+      classId: previousClass?.classId ?? null,
+      classCode: previousClass?.classCode ?? null,
+    },
+    newValue: {
+      action,
+      actorId: principal?.sub ?? null,
+      actorRole: principal?.role ?? null,
+      schoolCode: login,
+      studentId: student?.id ? String(student.id) : null,
+      studentCode: asTrimmed(student?.student_code || student?.studentCode),
+      enrollmentId: String(enrollmentId),
+      fromStatus,
+      toStatus,
+      classId: nextClass?.classId ?? null,
+      classCode: nextClass?.classCode ?? null,
+      className: nextClass?.className ?? null,
+      previousClassId: previousClass?.classId ?? null,
+      previousClassCode: previousClass?.classCode ?? null,
+      reason: asTrimmed(reason) || null,
+      destination: asTrimmed(destination) || null,
+      effectiveDate: asTrimmed(effectiveDate) || null,
+    },
+  };
+}
+
+async function reloadMapped(db, repository, input) {
+  const { student, school } = await requireSchoolStudent(repository, input.studentCode, input.schoolCode);
+  const row = await db.one(
+    `${ENROLLMENT_SELECT}
+     WHERE e.id::text = $1
+       AND e.student_id = $2
+       AND e.school_id = $3
+     LIMIT 1`,
+    [asTrimmed(input.enrollmentId), student.id, school.id],
+  );
+  if (!row) throw createHttpError(404, "Inscription introuvable.");
+  return mapC18EnrollmentRow(row, student.student_code);
+}
+
+async function syncC18Finance(repository, tx, financeInput, actor, classChanged) {
+  const payload = {
+    ...financeInput,
+    reason: classChanged ? "class_transfer" : "enrollment_active",
+  };
+  if (tx && typeof repository.ensureEnrollmentObligationsInTx === "function") {
+    await repository.ensureEnrollmentObligationsInTx(tx, payload, actor);
+    return;
+  }
+  if (classChanged && typeof repository.ensureEnrollmentObligations === "function") {
+    await repository.ensureEnrollmentObligations(payload, actor);
+    return;
+  }
+  if (typeof repository.syncEnrollmentFinanceObligations === "function") {
+    await repository.syncEnrollmentFinanceObligations(payload, actor);
+  }
+}
+
 async function applyValidate(repository, input) {
   assertC18Engine(repository);
   const loaded = await loadEnrollment(repository, input);
@@ -218,17 +326,34 @@ async function applyValidate(repository, input) {
     throw illegalTransition(`Validation refusée depuis ${current}.`);
   }
   const next = nextStatusAfterValidate();
-  const saved = await repository.one(
-    `UPDATE enrollments
-        SET status = $3,
-            validated_at = COALESCE(validated_at, NOW()),
-            updated_at = NOW()
-      WHERE id = $1 AND school_id = $2
-      RETURNING id`,
-    [loaded.row.id, loaded.school.id, next],
-  );
-  if (!saved) throw createHttpError(404, "Inscription introuvable.");
-  return (await loadEnrollment(repository, input)).mapped;
+  return runC18Mutation(repository, async (db, tx) => {
+    const saved = await db.one(
+      `UPDATE enrollments
+          SET status = $3,
+              validated_at = COALESCE(validated_at, NOW()),
+              updated_at = NOW()
+        WHERE id = $1 AND school_id = $2
+        RETURNING id`,
+      [loaded.row.id, loaded.school.id, next],
+    );
+    if (!saved) throw createHttpError(404, "Inscription introuvable.");
+    await persistC18Audit(
+      repository,
+      c18AuditPayload({
+        action: "validate",
+        principal: input.principal,
+        school: loaded.school,
+        student: loaded.student,
+        enrollmentId: loaded.row.id,
+        fromStatus: current,
+        toStatus: next,
+        reason: input.reason,
+        schoolCode: input.schoolCode,
+      }),
+      tx,
+    );
+    return reloadMapped(db, repository, input);
+  });
 }
 
 async function applyAssignClass(repository, input) {
@@ -276,25 +401,11 @@ async function applyAssignClass(repository, input) {
     ]);
   }
 
-  const saved = await repository.one(
-    `UPDATE enrollments
-        SET class_id = $3,
-            status = $4,
-            assigned_at = COALESCE(assigned_at, NOW()),
-            class_effective_date = CASE
-              WHEN enrollments.class_id IS DISTINCT FROM $3
-                THEN COALESCE($5::date, enrollments.class_effective_date)
-              ELSE COALESCE(enrollments.class_effective_date, enrollments.enrollment_date)
-            END,
-            updated_at = NOW()
-      WHERE id = $1 AND school_id = $2
-      RETURNING id`,
-    [loaded.row.id, loaded.school.id, klass.id, next, effectiveDate],
-  );
-  if (!saved) throw createHttpError(404, "Inscription introuvable.");
-
-  const schoolLogin = await repository.one(`SELECT login_code FROM schools WHERE id = $1`, [loaded.school.id]);
-  const login = asTrimmed(schoolLogin?.login_code);
+  const schoolLoginRow =
+    loaded.school.login_code || loaded.school.loginCode
+      ? loaded.school
+      : await repository.one(`SELECT login_code FROM schools WHERE id = $1`, [loaded.school.id]);
+  const login = schoolLogin(schoolLoginRow, input.schoolCode);
   const actor =
     input.principal || { role: "system", schoolCode: login, financeLoginCode: login, sub: "c18-assign-class" };
   const financeInput = {
@@ -307,13 +418,48 @@ async function applyAssignClass(repository, input) {
       ? { classId: previousClass.id, classCode: previousClass.class_code, className: previousClass.name }
       : null,
   };
-  if (classChanged && typeof repository.ensureEnrollmentObligations === "function") {
-    await repository.ensureEnrollmentObligations({ ...financeInput, reason: "class_transfer" }, actor);
-  } else if (typeof repository.syncEnrollmentFinanceObligations === "function") {
-    await repository.syncEnrollmentFinanceObligations({ ...financeInput, reason: "enrollment_active" }, actor);
-  }
 
-  return (await loadEnrollment(repository, input)).mapped;
+  return runC18Mutation(repository, async (db, tx) => {
+    const saved = await db.one(
+      `UPDATE enrollments
+          SET class_id = $3,
+              status = $4,
+              assigned_at = COALESCE(assigned_at, NOW()),
+              class_effective_date = CASE
+                WHEN enrollments.class_id IS DISTINCT FROM $3
+                  THEN COALESCE($5::date, enrollments.class_effective_date)
+                ELSE COALESCE(enrollments.class_effective_date, enrollments.enrollment_date)
+              END,
+              updated_at = NOW()
+        WHERE id = $1 AND school_id = $2
+        RETURNING id, class_id, status, class_effective_date`,
+      [loaded.row.id, loaded.school.id, klass.id, next, effectiveDate],
+    );
+    if (!saved) throw createHttpError(404, "Inscription introuvable.");
+
+    await syncC18Finance(repository, tx, financeInput, actor, classChanged);
+
+    await persistC18Audit(
+      repository,
+      c18AuditPayload({
+        action: "assign-class",
+        principal: input.principal,
+        school: { ...loaded.school, login_code: login },
+        student: loaded.student,
+        enrollmentId: loaded.row.id,
+        fromStatus: current,
+        toStatus: next,
+        previousClass: previousClass
+          ? { classId: String(previousClass.id), classCode: previousClass.class_code, className: previousClass.name }
+          : null,
+        nextClass: { classId: String(klass.id), classCode: klass.class_code, className: klass.name },
+        effectiveDate,
+        schoolCode: login,
+      }),
+      tx,
+    );
+    return reloadMapped(db, repository, input);
+  });
 }
 
 async function applyTransfer(repository, input) {
@@ -326,19 +472,37 @@ async function applyTransfer(repository, input) {
   const destination = asTrimmed(input.destinationSchoolName);
   if (!destination) throw createHttpError(400, "Établissement de destination requis.");
   const notes = asTrimmed(input.reason || input.transferNotes);
-  const saved = await repository.one(
-    `UPDATE enrollments
-        SET status = $3,
-            transferred_at = NOW(),
-            transfer_destination = $4,
-            transfer_notes = $5,
-            updated_at = NOW()
-      WHERE id = $1 AND school_id = $2
-      RETURNING id`,
-    [loaded.row.id, loaded.school.id, nextStatusAfterTransfer(), destination, notes || null],
-  );
-  if (!saved) throw createHttpError(404, "Inscription introuvable.");
-  return (await loadEnrollment(repository, input)).mapped;
+  return runC18Mutation(repository, async (db, tx) => {
+    const saved = await db.one(
+      `UPDATE enrollments
+          SET status = $3,
+              transferred_at = NOW(),
+              transfer_destination = $4,
+              transfer_notes = $5,
+              updated_at = NOW()
+        WHERE id = $1 AND school_id = $2
+        RETURNING id`,
+      [loaded.row.id, loaded.school.id, nextStatusAfterTransfer(), destination, notes || null],
+    );
+    if (!saved) throw createHttpError(404, "Inscription introuvable.");
+    await persistC18Audit(
+      repository,
+      c18AuditPayload({
+        action: "transfer",
+        principal: input.principal,
+        school: loaded.school,
+        student: loaded.student,
+        enrollmentId: loaded.row.id,
+        fromStatus: current,
+        toStatus: nextStatusAfterTransfer(),
+        reason: notes,
+        destination,
+        schoolCode: input.schoolCode,
+      }),
+      tx,
+    );
+    return reloadMapped(db, repository, input);
+  });
 }
 
 async function applyClose(repository, input) {
@@ -349,18 +513,35 @@ async function applyClose(repository, input) {
     throw illegalTransition(`Clôture refusée depuis ${current}.`);
   }
   const notes = asTrimmed(input.reason || input.closeNotes);
-  const saved = await repository.one(
-    `UPDATE enrollments
-        SET status = $3,
-            closed_at = NOW(),
-            close_notes = $4,
-            updated_at = NOW()
-      WHERE id = $1 AND school_id = $2
-      RETURNING id`,
-    [loaded.row.id, loaded.school.id, nextStatusAfterClose(), notes || null],
-  );
-  if (!saved) throw createHttpError(404, "Inscription introuvable.");
-  return (await loadEnrollment(repository, input)).mapped;
+  return runC18Mutation(repository, async (db, tx) => {
+    const saved = await db.one(
+      `UPDATE enrollments
+          SET status = $3,
+              closed_at = NOW(),
+              close_notes = $4,
+              updated_at = NOW()
+        WHERE id = $1 AND school_id = $2
+        RETURNING id`,
+      [loaded.row.id, loaded.school.id, nextStatusAfterClose(), notes || null],
+    );
+    if (!saved) throw createHttpError(404, "Inscription introuvable.");
+    await persistC18Audit(
+      repository,
+      c18AuditPayload({
+        action: "close",
+        principal: input.principal,
+        school: loaded.school,
+        student: loaded.student,
+        enrollmentId: loaded.row.id,
+        fromStatus: current,
+        toStatus: nextStatusAfterClose(),
+        reason: notes,
+        schoolCode: input.schoolCode,
+      }),
+      tx,
+    );
+    return reloadMapped(db, repository, input);
+  });
 }
 
 function isParentOrStudentRole(role) {

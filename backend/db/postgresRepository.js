@@ -1753,6 +1753,10 @@ class PostgresRepository {
     return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
   }
 
+  ensureEnrollmentObligationsInTx(tx, input, principal, auditMeta) {
+    return this.getFinanceStore().ensureEnrollmentObligationsInTx(tx, input, principal, auditMeta);
+  }
+
   async syncEnrollmentFinanceObligations(input = {}, principal) {
     const {
       isUnswallowableFinanceSyncError,

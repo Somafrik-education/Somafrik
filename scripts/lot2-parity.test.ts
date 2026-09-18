@@ -113,6 +113,30 @@ test("PARITY-032 C18 REST canonique PostgreSQL, pas de machine Expo", () => {
   const financePg = read("backend/db/financePgStore.js");
   assert.match(financePg, /ROSTER_ENROLLMENT_SQL/);
   assert.doesNotMatch(financePg, /e\.status = 'active'/);
+
+  assert.match(c18, /persistC18Audit/);
+  assert.match(c18, /repository\.recordAudit/);
+  assert.match(c18, /withTransaction/);
+  assert.match(c18, /ensureEnrollmentObligationsInTx/);
+  assert.match(c18, /classChanged && !effectiveDate/);
+  const httpRepo = read("web/src/lib/studentEnrollmentHttpRepository.ts");
+  const webActions = read("web/src/components/students/StudentEnrollmentActions.tsx");
+  const c18Unit = read("backend/lib/studentEnrollmentC18.test.js");
+  assert.match(httpRepo, /toApiDate\(command\.changes\.effectiveDate\)/);
+  assert.match(webActions, /assignEffectiveDate/);
+  assert.match(webActions, /enrollment-assign-effective-date/);
+  assert.match(mobileApi, /effectiveDate\?: string/);
+  assert.match(mobileFiche, /toApiDate\(assignEffectiveDate\)/);
+  assert.match(c18Http, /latestAudit\("c18_validate"\)/);
+  assert.match(c18Http, /latestAudit\("c18_assign-class"\)/);
+  assert.match(c18Http, /latestAudit\("c18_transfer"\)/);
+  assert.match(c18Http, /latestAudit\("c18_close"\)/);
+  assert.match(c18Http, /noDate\.status, 409/);
+  assert.match(c18Http, /effectiveDate: "2026-09-18"/);
+  assert.match(c18Http, /moved\.status, 200/);
+  assert.match(c18Http, /CLASS_OLD/);
+  assert.match(c18Unit, /FINANCE_INJECTED_FAILURE/);
+  assert.match(c18Unit, /state\.class_id, "class-a"/);
 });
 
 test("PARITY-032 migration C18 : dollar-quote PostgreSQL valide", () => {

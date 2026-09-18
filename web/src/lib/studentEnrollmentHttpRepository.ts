@@ -7,6 +7,7 @@ import type {
 import type { StudentWorkspaceCommandRepository } from "./studentEditingRepository";
 import { studentEnrollmentC18Api, type C18Enrollment } from "./studentEnrollmentC18Api";
 import { normalizeStudentEnrollmentStatus } from "./studentEnrollmentStatus";
+import { toApiDate } from "./dates";
 
 function deriveVersion(updatedAt: string | null | undefined): number {
   if (!updatedAt) return 1;
@@ -60,14 +61,21 @@ function httpFailure(error: unknown): StudentCommandFailure {
   return { success: false, code: "VALIDATION_ERROR", errors };
 }
 
-function success(data: EditableEnrollment): StudentCommandResult<EditableEnrollment> {
+function success(
+  data: EditableEnrollment,
+  commandType:
+    | "VALIDATE_ENROLLMENT"
+    | "ASSIGN_ENROLLMENT_CLASS"
+    | "TRANSFER_ENROLLMENT"
+    | "CLOSE_ENROLLMENT",
+): StudentCommandResult<EditableEnrollment> {
   return {
     success: true,
     updatedAggregate: data,
     newVersion: data.version,
     updatedAt: data.updatedAt,
     changeSet: {
-      commandType: "VALIDATE_ENROLLMENT",
+      commandType,
       isEmpty: false,
       occurredAt: data.updatedAt,
       changes: [],
@@ -75,7 +83,7 @@ function success(data: EditableEnrollment): StudentCommandResult<EditableEnrollm
     auditEvent: {
       id: `c18-${data.enrollmentId}-${data.updatedAt}`,
       studentId: data.studentId,
-      commandType: "VALIDATE_ENROLLMENT",
+      commandType,
       actorId: "backend",
       actorRole: "backend",
       occurredAt: data.updatedAt,
@@ -98,12 +106,17 @@ export function wrapRepositoryWithHttpC18(
     mapC18EnrollmentToEditable(row, options.studentId, options.schoolCode);
 
   async function run(
+    commandType:
+      | "VALIDATE_ENROLLMENT"
+      | "ASSIGN_ENROLLMENT_CLASS"
+      | "TRANSFER_ENROLLMENT"
+      | "CLOSE_ENROLLMENT",
     fn: () => Promise<C18Enrollment>,
   ): Promise<StudentCommandResult<EditableEnrollment>> {
     try {
       const editable = map(await fn());
       options.onUpdated?.(editable);
-      return success(editable);
+      return success(editable, commandType);
     } catch (error) {
       return httpFailure(error);
     }
@@ -112,7 +125,7 @@ export function wrapRepositoryWithHttpC18(
   return {
     ...base,
     validateEnrollment: (command) =>
-      run(() =>
+      run("VALIDATE_ENROLLMENT", () =>
         studentEnrollmentC18Api.validate(command.studentId, command.enrollmentId, {
           reason: command.reason ?? undefined,
         }),
@@ -122,22 +135,24 @@ export function wrapRepositoryWithHttpC18(
       const looksUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
         classRef,
       );
-      return run(() =>
+      const effectiveDate = toApiDate(command.changes.effectiveDate) || undefined;
+      return run("ASSIGN_ENROLLMENT_CLASS", () =>
         studentEnrollmentC18Api.assignClass(command.studentId, command.enrollmentId, {
           classId: looksUuid ? classRef : undefined,
           classCode: looksUuid ? undefined : classRef || undefined,
+          effectiveDate,
         }),
       );
     },
     transferEnrollment: (command) =>
-      run(() =>
+      run("TRANSFER_ENROLLMENT", () =>
         studentEnrollmentC18Api.transfer(command.studentId, command.enrollmentId, {
           destinationSchoolName: command.changes.destinationSchoolName,
           reason: command.reason ?? undefined,
         }),
       ),
     closeEnrollment: (command) =>
-      run(() =>
+      run("CLOSE_ENROLLMENT", () =>
         studentEnrollmentC18Api.close(command.studentId, command.enrollmentId, {
           reason: command.reason ?? undefined,
         }),

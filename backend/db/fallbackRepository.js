@@ -3129,6 +3129,10 @@ class FallbackRepository {
     return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
   }
 
+  ensureEnrollmentObligationsInTx(tx, input, principal, auditMeta) {
+    return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
+  }
+
   listFinanceStudentFees(principal) {
     return this.getFinanceStore().listFinanceStudentFees(principal);
   }

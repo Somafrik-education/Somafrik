@@ -29,6 +29,8 @@ const LOGIN_A = "CD-LAC-26-001";
 const LEFTOVER_B = "BI-2026-0001";
 const LOGIN_B = "BI-BUJ-26-001";
 const CLASS_A = "CLS-LAC-6A";
+const CLASS_A2 = "CLS-LAC-6B";
+const CLASS_OLD = "CLS-LAC-OLD";
 const CLASS_B = "CLS-BUJ-6A";
 
 const USER_A = "cccccccc-cccc-4ccc-8ccc-cccccccccc01";
@@ -164,10 +166,15 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
       `INSERT INTO academic_years (school_id, name, is_current, status) VALUES ($1, '2026-2027', TRUE, 'open') RETURNING id`,
       [schoolBId],
     );
+    const yearOld = await pool.query(
+      `INSERT INTO academic_years (school_id, name, is_current, status) VALUES ($1, '2025-2026', FALSE, 'closed') RETURNING id`,
+      [schoolAId],
+    );
     await pool.query(
       `INSERT INTO classes (school_id, academic_year_id, class_code, name, status)
-       VALUES ($1, $2, $3, '6ème A Lac', 'active'), ($4, $5, $6, '6ème A Buj', 'active')`,
-      [schoolAId, yearA.rows[0].id, CLASS_A, schoolBId, yearB.rows[0].id, CLASS_B],
+       VALUES ($1, $2, $3, '6ème A Lac', 'active'), ($4, $5, $6, '6ème A Buj', 'active'),
+              ($1, $2, $7, '6ème B Lac', 'active'), ($1, $8, $9, 'Ancienne Lac', 'active')`,
+      [schoolAId, yearA.rows[0].id, CLASS_A, schoolBId, yearB.rows[0].id, CLASS_B, CLASS_A2, yearOld.rows[0].id, CLASS_OLD],
     );
     await pool.query(
       `INSERT INTO students (id, school_id, student_code, first_name, last_name, status)
@@ -340,6 +347,31 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
     });
     assert.equal(reverse.status, 409, "terminal: pas de retour arrière");
 
+    async function latestAudit(action) {
+      const rows = await pool.query(
+        `SELECT action, entity_type, entity_id, old_value, new_value
+           FROM audit_logs WHERE action = $1 ORDER BY created_at DESC LIMIT 1`,
+        [action],
+      );
+      assert.equal(rows.rowCount, 1, `audit ${action} manquant`);
+      const row = rows.rows[0];
+      const parsed = typeof row.new_value === "string" ? JSON.parse(row.new_value) : row.new_value;
+      return { ...row, parsed };
+    }
+    const auditValidate = await latestAudit("c18_validate");
+    assert.equal(auditValidate.entity_type, "enrollment");
+    assert.equal(auditValidate.parsed.action, "validate");
+    assert.equal(auditValidate.parsed.fromStatus, "PENDING_REVIEW");
+    assert.equal(auditValidate.parsed.toStatus, "APPROVED");
+    assert.equal(String(auditValidate.parsed.actorId), USER_A);
+    const auditAssignFirst = await latestAudit("c18_assign-class");
+    assert.equal(auditAssignFirst.parsed.action, "assign-class");
+    assert.equal(auditAssignFirst.parsed.toStatus, "ENROLLED");
+    const auditTransfer = await latestAudit("c18_transfer");
+    assert.equal(auditTransfer.parsed.action, "transfer");
+    assert.equal(auditTransfer.parsed.toStatus, "TRANSFERRED");
+    assert.equal(auditTransfer.parsed.destination, "Lycée Horizon");
+
     const teacherOwn = await request(`/students/${encodeURIComponent(codeA)}`, { token: tokenTeacher });
     assert.equal(teacherOwn.status, 200, JSON.stringify(teacherOwn.data));
     const teacherOther = await request(`/students/${encodeURIComponent(codeB)}`, { token: tokenTeacher });
@@ -370,6 +402,48 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
       body: {},
     });
     assert.equal(studentMut.status, 403);
+
+    const noDate = await request(`/students/${encodeURIComponent(codeA)}/enrollments/${ownEnrollmentId}/assign-class`, {
+      method: "POST",
+      token: tokenA,
+      body: { classCode: CLASS_A2 },
+    });
+    assert.equal(noDate.status, 409, JSON.stringify(noDate.data));
+    const wrongYear = await request(`/students/${encodeURIComponent(codeA)}/enrollments/${ownEnrollmentId}/assign-class`, {
+      method: "POST",
+      token: tokenA,
+      body: { classCode: CLASS_OLD, effectiveDate: "2026-09-18" },
+    });
+    assert.equal(wrongYear.status, 409, JSON.stringify(wrongYear.data));
+    const tenantAssign = await request(`/students/${encodeURIComponent(codeA)}/enrollments/${ownEnrollmentId}/assign-class`, {
+      method: "POST",
+      token: tokenB,
+      body: { classCode: CLASS_A2, effectiveDate: "2026-09-18" },
+    });
+    assert.ok(tenantAssign.status === 403 || tenantAssign.status === 404, `tenant assign status=${tenantAssign.status}`);
+    const moved = await request(`/students/${encodeURIComponent(codeA)}/enrollments/${ownEnrollmentId}/assign-class`, {
+      method: "POST",
+      token: tokenA,
+      body: { classCode: CLASS_A2, effectiveDate: "2026-09-18" },
+    });
+    assert.equal(moved.status, 200, JSON.stringify(moved.data));
+    assert.equal(moved.data.status, "ENROLLED");
+    assert.equal(moved.data.classCode, CLASS_A2);
+    const auditMoved = await latestAudit("c18_assign-class");
+    assert.equal(auditMoved.parsed.effectiveDate, "2026-09-18");
+    assert.equal(auditMoved.parsed.toStatus, "ENROLLED");
+    assert.equal(auditMoved.parsed.classCode, CLASS_A2);
+    const closed = await request(`/students/${encodeURIComponent(codeA)}/enrollments/${ownEnrollmentId}/close`, {
+      method: "POST",
+      token: tokenA,
+      body: { reason: "fin d'année" },
+    });
+    assert.equal(closed.status, 200, JSON.stringify(closed.data));
+    assert.equal(closed.data.status, "CLOSED");
+    const auditClose = await latestAudit("c18_close");
+    assert.equal(auditClose.parsed.action, "close");
+    assert.equal(auditClose.parsed.fromStatus, "ENROLLED");
+    assert.equal(auditClose.parsed.toStatus, "CLOSED");
 
     const relationsMissing = await request("/parents/relations", { token: tokenA });
     assert.equal(relationsMissing.status, 400);

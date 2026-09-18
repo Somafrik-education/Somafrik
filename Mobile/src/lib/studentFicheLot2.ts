@@ -12,6 +12,7 @@ export const STUDENT_FICHE_LOT2_TEST_IDS = {
   guardiansEmpty: "student-fiche-guardians-empty",
   c18ValidateButton: "student-fiche-c18-validate",
   c18AssignButton: "student-fiche-c18-assign-class",
+  c18AssignEffectiveDate: "student-fiche-c18-assign-effective-date",
   c18TransferButton: "student-fiche-c18-transfer",
   c18CloseButton: "student-fiche-c18-close",
 } as const;

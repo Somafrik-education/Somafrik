@@ -28,4 +28,5 @@ test("C18 Mobile : boutons selon statut backend, pas de nextStatus local", () =>
   const ficheSrc = fs.readFileSync(path.join(ROOT, "src/screens/StudentDetailScreen.tsx"), "utf8");
   assert.doesNotMatch(accessSrc, /nextStatusAfter/);
   assert.doesNotMatch(ficheSrc, /nextStatusAfter/);
+  assert.match(ficheSrc, /toApiDate\(assignEffectiveDate\)/);
 });

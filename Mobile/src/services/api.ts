@@ -447,7 +447,7 @@ export function validateStudentEnrollment(studentId: string, enrollmentId: strin
 export function assignStudentEnrollmentClass(
   studentId: string,
   enrollmentId: string,
-  body: { classCode?: string; classId?: string },
+  body: { classCode?: string; classId?: string; effectiveDate?: string },
 ) {
   return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "assign-class"), {
     method: "POST",
