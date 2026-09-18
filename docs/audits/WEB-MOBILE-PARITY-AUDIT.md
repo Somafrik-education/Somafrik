@@ -703,17 +703,19 @@ Les tests existants `canonicalAverageParity`, finance L2, présence D3.5, dates 
 
 ---
 
-## 24. Gouvernance Git (à compléter au freeze PR)
+## 24. Gouvernance Git (freeze)
 
 | Champ | Valeur |
 |---|---|
 | Branche | `cursor/audit-web-mobile-parity-global-ae6a` |
 | Base | `develop` |
-| Base SHA | *(commit de freeze)* |
-| HEAD SHA | *(commit de freeze)* |
-| Merge-base | identique à Base si branche fraîche |
-| Ahead / behind | *(git rev-list)* |
-| Diffstat | documentation + scripts + tests uniquement |
+| Base SHA | `3152a0e76533ab7b39a5a1b7da836199087e0a72` |
+| HEAD SHA (commit d’audit) | `fdc737dca975af177f67b3fa8db1620de160d407` |
+| Merge-base | `3152a0e76533ab7b39a5a1b7da836199087e0a72` |
+| Ahead / behind | 1 / 0 au freeze du rapport (plus le commit de SHA si présent) |
+| Diffstat | 9 files, +3309 / −0 — documentation, inventaire, tests, scripts |
+| Fichiers | `docs/audits/WEB-MOBILE-PARITY-AUDIT.md`, `docs/audits/web-mobile-parity-matrix.json`, `docs/audits/evidence/*`, `scripts/web-mobile-parity-audit.*`, `scripts/verify-web-mobile-parity-audit.js`, `package.json` |
+| Tests | GREEN 8/8 pass ; RED 9/9 fail (écarts ouverts, attendu) ; `verify:web-mobile-parity-audit` exit 0 |
 | Ready | **interdit** |
 | Merge | **interdit** |
 
