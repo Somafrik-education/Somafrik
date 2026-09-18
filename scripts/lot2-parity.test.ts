@@ -95,6 +95,15 @@ test("PARITY-032 C18 REST canonique PostgreSQL, pas de machine Expo", () => {
   assert.match(c18Http, /tokenTeacher/);
 });
 
+test("PARITY-032 migration C18 : dollar-quote PostgreSQL valide", () => {
+  const schema = read("backend/db/enrollmentC18Schema.js");
+  const migration = read("backend/db/migrations/20260918_enrollments_c18_additive.sql");
+  assert.doesNotMatch(schema, /\$c18\$class\$/);
+  assert.doesNotMatch(migration, /\$c18\$class\$/);
+  assert.match(schema, /\$c18_enroll\$/);
+  assert.match(migration, /\$c18_enroll\$/);
+});
+
 test("LOT 2 CI gate exécute test:lot2-parity sans casser LOT 0/1", () => {
   const gates = read(".github/workflows/pr-gates.yml");
   const requiredJob = gates.slice(gates.indexOf("name: Required"));

@@ -2,7 +2,7 @@
 -- Justifié : APPROVED sans classe (class_id nullable) + audit validate/assign/transfer/close.
 -- Idempotent. Aucune suppression physique. Pas de table parallèle.
 
-DO $c18$class$
+DO $c18_enroll$
 BEGIN
   IF EXISTS (
     SELECT 1
@@ -15,7 +15,7 @@ BEGIN
     ALTER TABLE enrollments ALTER COLUMN class_id DROP NOT NULL;
   END IF;
 END
-$c18$class$;
+$c18_enroll$;
 
 ALTER TABLE enrollments ALTER COLUMN status SET DEFAULT 'ENROLLED';
 

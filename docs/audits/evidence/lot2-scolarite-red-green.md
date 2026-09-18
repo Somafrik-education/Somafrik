@@ -65,4 +65,6 @@ Pas de table parallèle. Pas de suppression physique. Alias lecture `active` →
 - `POST /students`, AdminCrud create, `EntityPage` Expo, `POST /backoffice/relations` Mobile
 - LOT 3
 
+CI #707 HEAD `5989f1ff` : fail partagé `syntax error at or near "class$"` (dollar-quote `$c18$class$` invalide). Corrigé en `$c18_enroll$`.
+
 STOP : Draft. Pas Ready. Pas merge. Pas LOT 3.
