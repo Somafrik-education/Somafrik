@@ -66,9 +66,10 @@ test("PARITY-029 auto-open seulement NOT_STARTED, pas IN_PROGRESS", () => {
 test("PARITY-029 LoginScreen Mobile consomme GET /v2/school-setup/status", () => {
   const login = read("Mobile/src/screens/LoginScreen.tsx");
   assert.match(login, /schoolSetupStatusApi/);
-  assert.match(login, /shouldAutoOpenSchoolSetupWizard/);
+  assert.match(login, /resolveMobilePostLoginNavigation/);
   assert.match(login, /SchoolSetup/);
   assert.doesNotMatch(login, /useFocusEffect[\s\S]*shouldAutoOpenSchoolSetupWizard/);
+  assert.doesNotMatch(login, /useFocusEffect[\s\S]*resolveMobilePostLoginNavigation/);
 });
 
 test("PARITY-029 Accueil Mobile expose un CTA setup fail-soft", () => {
@@ -76,6 +77,8 @@ test("PARITY-029 Accueil Mobile expose un CTA setup fail-soft", () => {
   assert.match(home, /SchoolSetupDashboardWidget|school-setup-widget/);
   assert.match(home, /schoolSetupStatusApi/);
   assert.match(home, /SCHOOL_SETUP_ROUTE|SchoolSetup/);
+  assert.doesNotMatch(home, /shouldAutoOpenSchoolSetupWizard/);
+  assert.doesNotMatch(home, /resolveMobilePostLoginNavigation/);
 });
 
 test("PARITY-037 clients consomment GET /education-reference/catalog", () => {
@@ -103,7 +106,10 @@ test("PARITY-037 alias backoffice déprécié, store unique", () => {
 
 test("LOT 1 CI gate exécute test:lot1-parity", () => {
   const gates = read(".github/workflows/pr-gates.yml");
+  const requiredJob = gates.slice(gates.indexOf("name: Required"));
   assert.match(gates, /name: LOT 1 parity/);
   assert.match(gates, /npm run test:lot1-parity/);
-  assert.match(gates, /needs: \[scope, quality, secrets, core, targeted, lot0, lot1\]/);
+  assert.match(requiredJob, /needs:\s*\[[^\]]*lot1[^\]]*\]/);
+  assert.match(requiredJob, /LOT1: \$\{\{ needs\.lot1\.result \}\}/);
+  assert.match(requiredJob, /"\$LOT1"/);
 });

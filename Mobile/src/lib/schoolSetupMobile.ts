@@ -114,6 +114,40 @@ export function shouldAutoOpenSchoolSetupWizard(input: SchoolSetupWizardGateInpu
   return input.payload?.status === "NOT_STARTED";
 }
 
+export type MobilePostLoginDestination = "Home" | "SchoolSetup";
+
+export interface MobilePostLoginNavigation {
+  fetchStatus: boolean;
+  destinations: MobilePostLoginDestination[];
+}
+
+export async function resolveMobilePostLoginNavigation(input: {
+  role?: string;
+  mustChangePassword?: boolean;
+  getStatus?: () => Promise<SchoolSetupPayload>;
+}): Promise<MobilePostLoginNavigation> {
+  if (input.mustChangePassword) {
+    return { fetchStatus: false, destinations: [] };
+  }
+  if (!isSchoolAdminRole(input.role)) {
+    return { fetchStatus: false, destinations: ["Home"] };
+  }
+  if (typeof input.getStatus !== "function") {
+    return { fetchStatus: false, destinations: ["Home"] };
+  }
+  try {
+    const payload = await input.getStatus();
+    const open = shouldAutoOpenSchoolSetupWizard({
+      payload,
+      role: input.role,
+      mustChangePassword: false,
+    });
+    return { fetchStatus: true, destinations: open ? ["Home", "SchoolSetup"] : ["Home"] };
+  } catch {
+    return { fetchStatus: true, destinations: ["Home"] };
+  }
+}
+
 export function shouldShowDashboardSetupWidget(input: SchoolSetupWizardGateInput = {}) {
   if (!isSchoolAdminRole(input.role)) return false;
   const status = input.payload?.status;

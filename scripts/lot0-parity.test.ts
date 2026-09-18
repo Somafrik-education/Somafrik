@@ -65,11 +65,12 @@ test("PARITY-022 Accueil enseignant utilise le KPI jour fail-closed", () => {
 
 test("LOT 0 CI gate exécute test:lot0-parity et les verify Mobile", () => {
   const gates = read(".github/workflows/pr-gates.yml");
+  const requiredJob = gates.slice(gates.indexOf("name: Required"));
   assert.match(gates, /name: LOT 0 parity/);
   assert.match(gates, /npm run test:lot0-parity/);
   assert.match(gates, /npm run verify:mobile-attendance-hydration/);
   assert.match(gates, /npm run verify:mobile-home-data-truth/);
-  assert.match(gates, /needs: \[scope, quality, secrets, core, targeted, lot0\]/);
-  assert.match(gates, /LOT0: \$\{\{ needs\.lot0\.result \}\}/);
-  assert.match(gates, /"\$TARGETED" "\$LOT0"/);
+  assert.match(requiredJob, /needs:\s*\[[^\]]*lot0[^\]]*\]/);
+  assert.match(requiredJob, /LOT0: \$\{\{ needs\.lot0\.result \}\}/);
+  assert.match(requiredJob, /"\$LOT0"/);
 });

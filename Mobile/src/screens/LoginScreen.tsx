@@ -39,11 +39,10 @@ import {
 import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
 import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
-import { isSchoolAdminRole } from "../lib/format";
 import { schoolLogoDisplayUri } from "../lib/schoolLogo";
 import {
   resetSchoolSetupWizardSessionDismiss,
-  shouldAutoOpenSchoolSetupWizard,
+  resolveMobilePostLoginNavigation,
 } from "../lib/schoolSetupMobile";
 import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
 import { validateAccountSecret } from "../lib/userAccountRules";
@@ -173,24 +172,17 @@ export default function LoginScreen({ navigation, route }: Props) {
     });
     setSession(safe);
     const role = safe.role ?? safe.user?.role;
-    let openSchoolSetup = false;
-    if (isSchoolAdminRole(role)) {
-      try {
-        const payload = await schoolSetupStatusApi.get();
-        openSchoolSetup = shouldAutoOpenSchoolSetupWizard({
-          payload,
-          role,
-          mustChangePassword: false,
-        });
-      } catch {
-        openSchoolSetup = false;
-      }
-    }
-    navigation.navigate("Home", {
-      role: safe.role,
+    const plan = await resolveMobilePostLoginNavigation({
+      role,
+      mustChangePassword: false,
+      getStatus: () => schoolSetupStatusApi.get(),
     });
-    if (openSchoolSetup) {
-      navigation.navigate("SchoolSetup");
+    for (const destination of plan.destinations) {
+      if (destination === "Home") {
+        navigation.navigate("Home", { role: safe.role });
+      } else {
+        navigation.navigate("SchoolSetup");
+      }
     }
   };
 

@@ -377,7 +377,7 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       );
       assertHas(
         read(mobileLoginPath),
-        "shouldAutoOpenSchoolSetupWizard",
+        /shouldAutoOpenSchoolSetupWizard|resolveMobilePostLoginNavigation/,
         "Mobile login doit appliquer le gate auto-open",
       );
       assertHas(
