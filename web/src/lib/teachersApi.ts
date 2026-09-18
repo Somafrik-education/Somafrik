@@ -34,18 +34,6 @@ export interface SchoolTeacher {
   courses?: string[];
 }
 
-export interface CreateTeacherPayload {
-  firstName: string;
-  lastName: string;
-  gender?: string;
-  birthDate: string;
-  entryDate?: string;
-  phone?: string;
-  email?: string;
-  speciality?: string;
-  temporaryPassword: string;
-}
-
 export interface UpdateTeacherPayload {
   firstName?: string;
   lastName?: string;
@@ -62,8 +50,6 @@ export const teachersApi = {
 
   get: (teacherCode: string) =>
     api.get<SchoolTeacher>(`/teachers/${encodeURIComponent(teacherCode)}`),
-
-  create: (payload: CreateTeacherPayload) => api.post<SchoolTeacher>("/teachers", payload),
 
   update: (teacherCode: string, payload: UpdateTeacherPayload) =>
     api.patch<SchoolTeacher>(`/teachers/${encodeURIComponent(teacherCode)}`, payload),

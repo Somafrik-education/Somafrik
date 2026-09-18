@@ -19,7 +19,6 @@ const assignmentPermissions = vi.hoisted(() => ({
 
 const teachersApiMock = vi.hoisted(() => ({
   list: vi.fn(),
-  create: vi.fn(),
   get: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
@@ -149,7 +148,6 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     permissionContext.permissionsBootstrap = "ready";
     permissionContext.permissionsBootstrapError = null;
     teachersApiMock.list.mockReset();
-    teachersApiMock.create.mockReset();
     teachersApiMock.update.mockReset();
     teachersApiMock.remove.mockReset();
     teacherAssignmentsApiMock.create.mockReset();
@@ -218,7 +216,6 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     expect(await screen.findByText("Ndiaye")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ajouter un enseignant" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Créer l'enseignant/i })).not.toBeInTheDocument();
-    expect(teachersApiMock.create).not.toHaveBeenCalled();
   });
 
   it("affiche une erreur de chargement liste (serveur)", async () => {

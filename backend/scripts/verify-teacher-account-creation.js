@@ -79,7 +79,7 @@ async function loginWithoutPasswordGate(identifier, schoolCode, password = "1234
 }
 
 async function createTeacherViaUsers(token, payload) {
-  const user = await request("/backoffice/users", {
+  const orchestrated = await request("/backoffice/users/create-teacher", {
     method: "POST",
     token,
     body: {
@@ -92,23 +92,18 @@ async function createTeacherViaUsers(token, payload) {
       temporaryPassword: payload.temporaryPassword,
     },
   });
-  assert.equal(user.status, 201, `create user ${JSON.stringify(user.data)}`);
-  const granted = await request(`/backoffice/users/${encodeURIComponent(user.data.id)}/roles/grant`, {
-    method: "POST",
-    token,
-    body: { role: "Enseignant" },
-  });
-  assert.equal(granted.status, 200, `grant teacher ${JSON.stringify(granted.data)}`);
+  assert.equal(orchestrated.status, 201, `create-teacher ${JSON.stringify(orchestrated.data)}`);
+  assert.ok(orchestrated.data?.credentials?.login, "login one-shot attendu");
   const listed = await request("/teachers", { token });
   assert.equal(listed.status, 200, JSON.stringify(listed.data));
-  const teacher = (listed.data ?? []).find((row) => String(row.userId) === String(user.data.id));
-  assert.ok(teacher, "profil enseignant attendu après GRANT Enseignant");
+  const teacher = (listed.data ?? []).find((row) => String(row.userId) === String(orchestrated.data.user.id));
+  assert.ok(teacher, "profil enseignant attendu après POST /backoffice/users/create-teacher");
   return {
     status: 201,
     data: {
       ...teacher,
       mustChangePassword: true,
-      userId: user.data.id,
+      userId: orchestrated.data.user.id,
     },
   };
 }
