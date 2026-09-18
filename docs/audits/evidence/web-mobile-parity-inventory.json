@@ -1,0 +1,1914 @@
+{
+  "generatedAt": "2026-09-18T14:17:01.678Z",
+  "audit": "web-mobile-parity-global",
+  "counts": {
+    "webLiveRouteTokens": 80,
+    "webRedirectRouteTokens": 27,
+    "mobileLiveScreens": 34,
+    "mobileScreenFiles": 35,
+    "mobileDeadOrOrphanFiles": 5,
+    "backendRoutes": 322,
+    "legacyCandidates": 9,
+    "webOnlyRouteExamples": 21,
+    "mobileOnlyScreenExamples": 6
+  },
+  "web": {
+    "live": [
+      "/",
+      "/abonnements",
+      "/administration",
+      "/annonces",
+      "/bulletins",
+      "/bulletins/historique",
+      "/bulletins/modele",
+      "/confidentialite",
+      "/configuration/enseignants",
+      "/configuration/utilisateurs",
+      "/connexion",
+      "/demande-essai",
+      "/etablissement",
+      "/etablissements",
+      "/examens",
+      "/finances",
+      "/marketplace",
+      "/messages",
+      "/notes",
+      "/notifications",
+      "/notifications-plateforme",
+      "/parametres",
+      "/pays",
+      "/planning",
+      "/presences",
+      "/referentiels-pedagogiques",
+      "/suppression-compte",
+      "/tableau-de-bord",
+      "/verify/rc/:capability",
+      "abonnements",
+      "affectations",
+      "annee-scolaire",
+      "apparence",
+      "bulletins-configuration",
+      "calendrier",
+      "changer-offre",
+      "classes",
+      "classes/:classCode/eleves",
+      "comptes-utilisateurs",
+      "configuration-etablissement",
+      "conflits",
+      "conformite",
+      "contacts",
+      "demandes-essai",
+      "documents",
+      "donnees",
+      "eleves",
+      "eleves/:studentId",
+      "eleves/:studentId/:section",
+      "emploi-du-temps",
+      "enseignants",
+      "etablissements",
+      "factures",
+      "frais",
+      "graphiques",
+      "impayes",
+      "integrations",
+      "mon-abonnement",
+      "notifications",
+      "offres",
+      "paiements",
+      "par-classe",
+      "par-enseignant",
+      "par-salle",
+      "permissions",
+      "profil",
+      "rapports",
+      "relations",
+      "relations-parent-enfant",
+      "remises",
+      "remplacements",
+      "resiliation",
+      "retards",
+      "roles-droits",
+      "salles",
+      "securite",
+      "structure",
+      "tarifs-pays",
+      "utilisateurs",
+      "vue-ensemble"
+    ],
+    "redirects": [
+      "*",
+      "/administration/contacts",
+      "/affectations",
+      "/classes",
+      "/communication",
+      "/communication/annonces",
+      "/communication/messages",
+      "/conception-bulletins",
+      "/configuration",
+      "/configuration/eleves",
+      "/contacts",
+      "/documents",
+      "/eleves",
+      "/enseignants",
+      "/matieres",
+      "/paiements",
+      "/parametres-graphiques",
+      "/permissions",
+      "/rapports",
+      "/utilisateurs",
+      "affectations",
+      "contacts",
+      "etablissement",
+      "finances",
+      "matieres",
+      "pilotage",
+      "utilisateurs"
+    ]
+  },
+  "mobile": {
+    "registeredLive": [
+      "Announcements",
+      "Classes",
+      "Configuration",
+      "EstablishmentProfile",
+      "Home",
+      "InternalNotifications",
+      "Login",
+      "Messages",
+      "MobilePayment",
+      "OfflineMode",
+      "Payments",
+      "ReportCards",
+      "RoleSelection",
+      "SchoolAssignableRoles",
+      "SchoolManagement",
+      "SchoolPedagogicalStructure",
+      "SchoolSetup",
+      "SchoolYearSettings",
+      "Schooling",
+      "StudentDetail",
+      "StudentNotes",
+      "StudentPayments",
+      "StudentPresences",
+      "Students",
+      "Support",
+      "Synchronization",
+      "TeacherAttendance",
+      "TeacherGrades",
+      "TeacherStudents",
+      "Teachers",
+      "Timetable",
+      "Unpaid",
+      "Users",
+      "Welcome"
+    ],
+    "screenFiles": [
+      "AdminCrudScreen.tsx",
+      "AnnouncementsScreen.tsx",
+      "ClassesScreen.tsx",
+      "ConfigurationScreen.tsx",
+      "EstablishmentProfileScreen.tsx",
+      "HomeScreen.tsx",
+      "InternalNotificationsScreen.tsx",
+      "LoginScreen.tsx",
+      "MenuScreen.tsx",
+      "MessagesScreen.tsx",
+      "MvpUtilityScreens.tsx",
+      "PaymentsScreen.tsx",
+      "PermissionsScreen.tsx",
+      "PlatformNotificationsScreen.tsx",
+      "ReportCardsScreen.tsx",
+      "RoleSelectionScreen.tsx",
+      "SafeAdminCrudScreen.tsx",
+      "SchoolAssignableRolesScreen.tsx",
+      "SchoolManagementScreen.tsx",
+      "SchoolPedagogicalStructureScreen.tsx",
+      "SchoolSetupSettingsScreen.tsx",
+      "SchoolYearSettingsScreen.tsx",
+      "SchoolingHubScreen.tsx",
+      "StudentDetailScreen.tsx",
+      "StudentNotesScreen.tsx",
+      "StudentPaymentsScreen.tsx",
+      "StudentPresencesScreen.tsx",
+      "StudentsScreen.tsx",
+      "TeacherAttendanceScreen.tsx",
+      "TeacherGradesScreen.tsx",
+      "TeachersScreen.tsx",
+      "TimetableScreen.tsx",
+      "UnpaidScreen.tsx",
+      "UsersScreen.tsx",
+      "WelcomeScreen.tsx"
+    ],
+    "deadOrOrphanFiles": [
+      "MenuScreen",
+      "AdminCrudScreen",
+      "SafeAdminCrudScreen",
+      "PermissionsScreen",
+      "PlatformNotificationsScreen"
+    ]
+  },
+  "backendRoutes": [
+    {
+      "method": "DELETE",
+      "path": "/api/assignments/:assignmentId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/backoffice/establishments/:code",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/backoffice/establishments/:code/logo",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/classes/:classCode/head-teacher",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/course-schedule-replacements/:replacementId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/course-schedules/:scheduleId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/courses/:courseId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/mobile/push-devices/current",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/school-rooms/:roomId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/students/:id",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/teachers/:teacherCode",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v2/subjects/:code",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/academic-config",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/assignments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/audit",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/effective-permissions",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/announcements",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/announcements/:announcementId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/announcements/audience-options",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/announcements/unread-count",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/communications/attachments/:attachmentId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/communications/deliveries/health",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/contacts",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/conversations",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/conversations/:conversationId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/conversations/:conversationId/messages",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/countries",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/dashboard-chart-config",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/education-class-groups",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/education-levels",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/education-streams",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishment-documents",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishment-roles",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishments/:code",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishments/:code/subscription",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishments/:schoolCode/academic-config",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishments/:schoolCode/education-reference/catalog",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishments/:schoolCode/evaluation-types",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishments/:schoolCode/notification-settings",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/establishments/:schoolCode/school-settings",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/finance/unpaid",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/finance/unpaid/:studentId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/finance/unpaid/:studentId/reminders",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/internal-notifications",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/internal-notifications/:notificationId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/internal-notifications/attachments/:attachmentId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/internal-notifications/unread-count",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/messages",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/messages/:messageId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/messages/recipients",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/messages/unread-count",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/notifications",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/planning-exams",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/platform-announcements",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/platform-announcements/:announcementId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/platform-announcements/attachments/:attachmentId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/platform-announcements/unread-count",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/rbac/catalog",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/rbac/permissions",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/rbac/permissions/effective",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/relations",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/report-cards",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/role-permissions",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/state",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/subscription-access",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/subscriptions",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/trial-requests",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/users",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/users/assignable-roles",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/classes",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/classes/:classCode/head-teacher/candidates",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/classes/:classCode/students",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/course-schedule-replacements",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/course-schedule-replacements/options",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/course-schedules",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/courses",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/data-export",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/debug/notes-authz-trace",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/education-reference/catalog",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/establishment-roles/assignable",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/evaluation-types",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/evaluations",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/exams",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/exams/:examId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/catalog",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/fee-grids",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/fee-grids/:gridId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/payment-methods",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/payment-statuses",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/payment-student-options",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/student-fees",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/finance/student-fees/:obligationId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/communication-preferences",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mobile-sync/l1/assignments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mobile-sync/l1/classes",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mobile-sync/l1/course-schedules",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mobile-sync/l1/school-courses",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mobile-sync/l1/students",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mvp/dashboard",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mvp/readiness",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mvp/snapshot",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/parents/identity",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/payments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/payments/:paymentId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/presences",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/privacy/erasure-requests",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card-templates",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/admin/bindings/:modelKey",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/admin/catalog",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/admin/queue",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/admin/requests/:requestId",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/admin/requests/:requestId/bundle",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/admin/requests/:requestId/source-artifact",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/admin/requests/:requestId/source-artifact/content",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/bindings/:modelKey",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/publications",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/publications/:reportCardId/history",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/publications/:reportCardId/pdf",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/publications/:reportCardId/snapshot",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/publications/:reportCardId/versions/:version",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/requests",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/requests/:requestId",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/requests/:requestId/audit",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/requests/:requestId/bundle",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/requests/:requestId/source-artifact",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/requests/:requestId/source-artifact/content",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-cards",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/school-documents",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/school-rooms",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/school-settings",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/schools/:code",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/schools/:code/logo",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/:id",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/:id/notes",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/:id/payments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/:id/presences",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/:id/report",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/:id/report.pdf",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/teachers",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/teachers/:teacherCode",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v2/academic-years",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v2/documents",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v2/exams",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v2/reports/advanced",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v2/school-setup/status",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v2/subjects",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "GET",
+      "path": "/web/",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/assignments/:assignmentId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/announcements/:announcementId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/announcements/:announcementId/read",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/contacts/:contactId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/countries/:code",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/education-class-groups/:groupId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/education-levels/:levelId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/education-reference/labels",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/education-streams/:streamId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/establishment-roles/:roleId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/establishments/:code",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/establishments/:code/activate",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/establishments/:code/suspend",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/establishments/:schoolCode/evaluation-types/:typeId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/establishments/:schoolCode/notification-settings",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/establishments/:schoolCode/school-settings",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/internal-notifications/:notificationId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/internal-notifications/:notificationId/read",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/messages/:messageId/read",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/notifications/:notificationId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/platform-announcements/:announcementId/read",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/rbac/permissions",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/rbac/roles/:roleId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/subscription-discounts/:discountId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/subscription-offers/:offerId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/subscription-payments/:paymentId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/subscriptions/:subscriptionId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/backoffice/users/:userId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/classes/:classCode",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/course-schedule-replacements/:replacementId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/course-schedules/:scheduleId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/courses/:courseId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/evaluation-types/:typeId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/evaluations/:evaluationId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/exams/:examId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/finance/fee-grids/:gridId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/finance/payment-statuses/:statusId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/parents/relations/:relationId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/school-documents/:documentId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/school-rooms/:roomId",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/school-settings",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/students/:id",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/teachers/:teacherCode",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v2/academic-years/:id",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/assignments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/change-password",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/refresh",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/revoke-all",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/announcements",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/announcements/:announcementId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/announcements/attachments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/bulletin-design/preview",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/communications/attachments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/contacts",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/contacts/:contactId/provision-account",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/conversations",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/conversations/:conversationId/messages",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/countries",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/e2e/clear-login-lockout",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/education-class-groups",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/education-class-groups/:groupId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/education-levels",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/education-levels/:levelId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/education-streams",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/education-streams/:streamId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/establishment-roles",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/establishment-roles/:roleId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/establishments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/establishments/:schoolCode/evaluation-types",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/establishments/:schoolCode/evaluation-types/:typeId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/establishments/import",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/finance/unpaid/:studentId/reminders",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/import/students/validate",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/internal-notifications",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/internal-notifications/attachments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/login",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/messages",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/notifications",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/platform-announcements",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/platform-announcements/:announcementId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/platform-announcements/attachments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/rbac/roles",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/rbac/roles/:roleId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/relations",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/subscription-discounts",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/subscription-offers",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/subscription-payments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/subscriptions",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/users",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/users/:userId/reassign-school",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/users/:userId/roles/grant",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/users/:userId/roles/revoke",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/users/create-teacher",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/backoffice/users/provision",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/classes",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/classes/:classCode/students",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/course-schedule-replacements",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/course-schedules",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/courses",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/evaluation-types",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/evaluation-types/:typeId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/evaluations",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/exams",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/exams/:examId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/exams/:examId/cancel",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/exams/:examId/validate",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/fee-grids",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/fee-grids/:gridId/activate",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/fee-grids/:gridId/apply",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/fee-grids/:gridId/deactivate",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/payment-statuses",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/reconcile-payment-allocations",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/finance/student-fees/:obligationId/adjust",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/identify",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/login",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/mobile/push-devices",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/mobile/push-devices/test",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/notes",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/parents/link",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/payments",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/payments/:paymentId/cancel",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/presences",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/privacy/erasure-requests",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/privacy/erasure-requests/:requestId/execute",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/privacy/erasure-requests/self/execute",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/public/report-cards/verify",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/public/trial-requests",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card-templates/:templateId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/admin/requests/:requestId/activate",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/admin/requests/:requestId/bind-bundle",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/admin/requests/:requestId/configure",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/admin/requests/:requestId/ready-for-review",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/admin/requests/:requestId/reject",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/admin/requests/:requestId/review",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/admin/requests/:requestId/save-template",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/publications/:reportCardId/corrections",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/publications/:reportCardId/versions/:version/revoke",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/requests",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/requests/:requestId/approve",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/requests/:requestId/request-changes",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/requests/:requestId/source-artifact",
+      "file": "backend/lib/reportCard/reportCardHttp.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-cards/:cardId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-cards/:cardId/publish",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-cards/generate",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/school-documents",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/school-documents/:documentId/archive",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/school-rooms",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/teachers",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/users/:id/reset-password",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v2/academic-years",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v2/subjects",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/academic-config",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/academic-periods",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/dashboard-chart-config",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/establishment-documents",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/establishments/:code/logo",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/establishments/:schoolCode/academic-config",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/establishments/:schoolCode/academic-periods",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/establishments/:schoolCode/education-reference/school-activation",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/establishments/:schoolCode/notification-settings",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/planning-exams",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/report-cards",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/role-permissions",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/state",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/classes/:classCode/head-teacher",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/education-reference/school-activation",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/finance/payment-methods",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/me/communication-preferences",
+      "file": "backend/server.js"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/report-card-templates",
+      "file": "backend/server.js"
+    }
+  ],
+  "legacyCandidates": [
+    {
+      "method": "GET",
+      "path": "/api/backoffice/role-permissions",
+      "file": "backend/server.js",
+      "reason": "Matrice RBAC JSONB — PUT forbidden, GET lecture compat"
+    },
+    {
+      "method": "GET",
+      "path": "/api/backoffice/state",
+      "file": "backend/server.js",
+      "reason": "BackOffice state 410 Gone"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mvp/dashboard",
+      "file": "backend/server.js",
+      "reason": "MVP dashboard legacy"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mvp/readiness",
+      "file": "backend/server.js",
+      "reason": "MVP dashboard legacy"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mvp/snapshot",
+      "file": "backend/server.js",
+      "reason": "MVP dashboard legacy"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/:id/report",
+      "file": "backend/server.js",
+      "reason": "Bulletin élève legacy"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/:id/report.pdf",
+      "file": "backend/server.js",
+      "reason": "Bulletin élève legacy"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/role-permissions",
+      "file": "backend/server.js",
+      "reason": "Matrice RBAC JSONB — PUT forbidden, GET lecture compat"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backoffice/state",
+      "file": "backend/server.js",
+      "reason": "BackOffice state 410 Gone"
+    }
+  ],
+  "webOnlyRouteExamples": [
+    "/etablissement/relations-parent-enfant",
+    "/finances/frais",
+    "/examens",
+    "/planning/salles",
+    "/planning/remplacements",
+    "/planning/conflits",
+    "/administration/permissions",
+    "/administration/documents",
+    "/administration/conformite",
+    "/pays",
+    "/etablissements",
+    "/referentiels-pedagogiques",
+    "/abonnements",
+    "/notifications-plateforme",
+    "/parametres/documents",
+    "/parametres/graphiques",
+    "/parametres/securite",
+    "/parametres/donnees",
+    "/parametres/mon-abonnement",
+    "/bulletins/modele",
+    "/bulletins/historique"
+  ],
+  "mobileOnlyScreenExamples": [
+    "MobilePayment",
+    "OfflineMode",
+    "Synchronization",
+    "Support",
+    "Welcome",
+    "RoleSelection"
+  ],
+  "notes": [
+    "Les path tokens extraits de App.tsx sont relatifs (certains sont des enfants de layouts).",
+    "Les écrans Mobile morts (AdminCrud, Menu, Permissions, PlatformNotifications) existent en fichiers mais ne sont pas tous dans le graphe live.",
+    "Mobile = Expo/React Native uniquement. Le Web responsive n'est pas Mobile."
+  ]
+}

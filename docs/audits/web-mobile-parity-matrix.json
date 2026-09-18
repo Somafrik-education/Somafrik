@@ -1,0 +1,55 @@
+{
+  "audit": "web-mobile-parity-global",
+  "date": "2026-09-18",
+  "mobileDefinition": "Expo/React Native native app only — Web responsive is not Mobile",
+  "productionCodeChanged": false,
+  "backendTouched": false,
+  "stop": true,
+  "readyForbidden": true,
+  "mergeForbidden": true,
+  "ctoGoRequiredBeforeLots": true,
+  "coverage": {
+    "featuresInspected": 96,
+    "aligned": 38,
+    "p0": 1,
+    "p1": 28,
+    "p2": 22,
+    "p3": 7,
+    "webRoutesWithoutMobileEquivalent": 34,
+    "mobileScreensWithoutWebEquivalent": 6,
+    "legacyEndpointsDetected": 9,
+    "deadOrOrphanMobileScreens": 5
+  },
+  "redTests": [
+    "PARITY-001",
+    "PARITY-001b",
+    "PARITY-011",
+    "PARITY-012",
+    "PARITY-021",
+    "PARITY-022",
+    "PARITY-027",
+    "PARITY-080",
+    "PARITY-081"
+  ],
+  "greenTests": [
+    "GREEN-FIN-01",
+    "GREEN-FIN-02",
+    "GREEN-FIN-03",
+    "GREEN-DATE-01",
+    "GREEN-ATT-01",
+    "GREEN-ATT-02",
+    "GREEN-PED-01",
+    "GREEN-RBAC-01"
+  ],
+  "lots": [
+    { "id": "LOT-0", "title": "Sécurité / intégrité", "ids": ["PARITY-001", "PARITY-011", "PARITY-012", "PARITY-022"] },
+    { "id": "LOT-1", "title": "Référentiels / établissement / paramètres", "ids": ["PARITY-018", "PARITY-019", "PARITY-029", "PARITY-037"] },
+    { "id": "LOT-2", "title": "Scolarité", "ids": ["PARITY-013", "PARITY-014", "PARITY-031", "PARITY-032"] },
+    { "id": "LOT-3", "title": "Enseignants", "ids": ["PARITY-028"] },
+    { "id": "LOT-4", "title": "Finance", "ids": ["PARITY-015", "PARITY-016", "PARITY-080"] },
+    { "id": "LOT-5", "title": "Pédagogie", "ids": ["PARITY-023", "PARITY-024", "PARITY-033", "PARITY-060"] },
+    { "id": "LOT-6", "title": "Communication", "ids": ["PARITY-034", "PARITY-026", "PARITY-055"] },
+    { "id": "LOT-7", "title": "UX Mobile", "ids": ["PARITY-021", "PARITY-052", "PARITY-057", "PARITY-081", "PARITY-083"] },
+    { "id": "LOT-8", "title": "Nettoyage legacy", "ids": ["PARITY-035", "PARITY-056", "PARITY-061", "PARITY-027"] }
+  ]
+}
