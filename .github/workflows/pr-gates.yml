@@ -457,10 +457,36 @@ jobs:
           npm run verify:sync-end-to-end
           node scripts/verify-remove-legacy-sync-core.js
 
+  lot0:
+    name: LOT 0 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 0 tests and Mobile verifies
+        run: |
+          set -euo pipefail
+          npm run test:lot0-parity
+          npm run verify:mobile-attendance-hydration
+          npm run verify:mobile-home-data-truth
+
   required:
     name: Required
     if: always()
-    needs: [scope, quality, secrets, core, targeted]
+    needs: [scope, quality, secrets, core, targeted, lot0]
     runs-on: ubuntu-latest
     steps:
       - name: Enforce required PR gates
@@ -470,9 +496,10 @@ jobs:
           SECRETS: ${{ needs.secrets.result }}
           CORE: ${{ needs.core.result }}
           TARGETED: ${{ needs.targeted.result }}
+          LOT0: ${{ needs.lot0.result }}
         run: |
           set -euo pipefail
-          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED"; do
+          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED" "$LOT0"; do
             case "$result" in
               success|skipped) ;;
               *) echo "Required gate failed: $result" >&2; exit 1 ;;
