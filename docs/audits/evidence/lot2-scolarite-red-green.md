@@ -65,6 +65,10 @@ Pas de table parallèle. Pas de suppression physique. Alias lecture `active` →
 - `POST /students`, AdminCrud create, `EntityPage` Expo, `POST /backoffice/relations` Mobile
 - LOT 3
 
-CI #707 HEAD `5989f1ff` : fail partagé `syntax error at or near "class$"` (dollar-quote `$c18$class$` invalide). Corrigé en `$c18_enroll$`.
+CI #707 HEAD `4e0bc1d2` : 5 checks restants.
+
+1. HTTP C18 fixture : user rôle Élève avant ligne `students` → `STUDENT_CANONICAL_IDENTIFIER_REQUIRED`. Élèves d'abord, `user_code = STU-A-001`.
+2. ENR-07 : `POST /classes/:classCode/students` écrit `ENROLLED` ; finance lisait `e.status = 'active'` → 404. Lecture roster `active|enrolled`.
+3. Risk-targeted : fiche Mobile charge `GET /students/:id` ; le contrat identité n'exige plus `findStudentByIdentity` sur `StudentDetailScreen`.
 
 STOP : Draft. Pas Ready. Pas merge. Pas LOT 3.

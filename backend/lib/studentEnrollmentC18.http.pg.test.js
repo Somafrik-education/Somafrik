@@ -170,22 +170,22 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
       [schoolAId, yearA.rows[0].id, CLASS_A, schoolBId, yearB.rows[0].id, CLASS_B],
     );
     await pool.query(
-      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
-       VALUES
-         ($1, $6, 'ADM-A', 'Aline', 'A', 'a@lot2.test', 'Admin School', 'active', FALSE),
-         ($2, $7, 'ADM-B', 'Binta', 'B', 'b@lot2.test', 'Admin School', 'active', FALSE),
-         ($3, $6, 'ENS-A', 'Marc', 'Prof', 't@lot2.test', 'Enseignant', 'active', FALSE),
-         ($4, $6, 'PAR-A', 'Parent', 'A', 'p@lot2.test', 'Parent', 'active', FALSE),
-         ($5, $6, 'ELV-A', 'Eleve', 'User', 's@lot2.test', 'Élève / Étudiant', 'active', FALSE)`,
-      [USER_A, USER_B, USER_TEACHER, USER_PARENT, USER_STUDENT, schoolAId, schoolBId],
-    );
-    await pool.query(
       `INSERT INTO students (id, school_id, student_code, first_name, last_name, status)
        VALUES
          ($1, $4, 'STU-A-001', 'Eleve', 'A', 'active'),
          ($2, $5, 'STU-B-001', 'Eleve', 'B', 'active'),
          ($3, $4, 'STU-A-C18', 'Cedric', 'C18', 'active')`,
       [STUDENT_A, STUDENT_B, STUDENT_C18, schoolAId, schoolBId],
+    );
+    await pool.query(
+      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES
+         ($1, $6, 'ADM-A', 'Aline', 'A', 'a@lot2.test', 'Admin School', 'active', FALSE),
+         ($2, $7, 'ADM-B', 'Binta', 'B', 'b@lot2.test', 'Admin School', 'active', FALSE),
+         ($3, $6, 'ENS-A', 'Marc', 'Prof', 't@lot2.test', 'Enseignant', 'active', FALSE),
+         ($4, $6, 'PAR-A', 'Parent', 'A', 'p@lot2.test', 'Parent', 'active', FALSE),
+         ($5, $6, 'STU-A-001', 'Eleve', 'User', 's@lot2.test', 'Élève / Étudiant', 'active', FALSE)`,
+      [USER_A, USER_B, USER_TEACHER, USER_PARENT, USER_STUDENT, schoolAId, schoolBId],
     );
     const classA = await pool.query(`SELECT id FROM classes WHERE class_code = $1`, [CLASS_A]);
     const classB = await pool.query(`SELECT id FROM classes WHERE class_code = $1`, [CLASS_B]);

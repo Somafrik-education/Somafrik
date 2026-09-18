@@ -1972,7 +1972,7 @@ class PostgresRepository {
            st.user_id = u.id
            OR (st.user_id IS NULL AND u.user_code = st.student_code)
          )
-        LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+        LEFT JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
         LEFT JOIN classes cl ON cl.id = e.class_id
         ORDER BY st.created_at, st.student_code
       `),
@@ -3710,7 +3710,7 @@ class PostgresRepository {
         SELECT st.*, s.school_code, e.class_id, cl.name AS class_name, cl.class_code
         FROM students st
         JOIN schools s ON s.id = st.school_id
-        LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+        LEFT JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
         LEFT JOIN classes cl ON cl.id = e.class_id
         WHERE (st.student_code = $1 OR st.id::text = $1)`;
       if (schoolId) {

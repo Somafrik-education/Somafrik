@@ -93,6 +93,9 @@ test("PARITY-032 C18 REST canonique PostgreSQL, pas de machine Expo", () => {
   assert.match(c18Http, /tokenParent/);
   assert.match(c18Http, /tokenStudent/);
   assert.match(c18Http, /tokenTeacher/);
+  const financePg = read("backend/db/financePgStore.js");
+  assert.match(financePg, /ROSTER_ENROLLMENT_SQL/);
+  assert.doesNotMatch(financePg, /e\.status = 'active'/);
 });
 
 test("PARITY-032 migration C18 : dollar-quote PostgreSQL valide", () => {

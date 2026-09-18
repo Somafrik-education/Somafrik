@@ -13,7 +13,7 @@ const {
   isStudentCanonicalCode,
 } = require("../lib/studentCanonicalIdentifier");
 
-const { normalizeEnrollmentStatus } = require("../lib/studentEnrollmentC18");
+const { normalizeEnrollmentStatus, ROSTER_ENROLLMENT_SQL } = require("../lib/studentEnrollmentC18");
 
 const STUDENT_SELECT_COLUMNS = `
   st.id AS student_uuid,
@@ -33,8 +33,7 @@ const STUDENT_SELECT_COLUMNS = `
   s.school_code
 `;
 
-/** Roster (classe) : inscrit canonique + alias historique. */
-const ROSTER_ENROLLMENT_SQL = `lower(btrim(e.status)) IN ('active', 'enrolled')`;
+/** Roster (classe) : inscrit canonique + alias historique — `ROSTER_ENROLLMENT_SQL`. */
 /** Annuaire / fiche : roster + validé sans classe. */
 const CURRENT_ENROLLMENT_SQL = `lower(btrim(e.status)) IN ('active', 'enrolled', 'approved')`;
 
