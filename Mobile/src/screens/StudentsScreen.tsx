@@ -136,7 +136,10 @@ export default function StudentsScreen({ route, navigation }: any) {
       }));
   }, [filteredStudents]);
 
-  const renderStudentCreate = () => (
+  const isAllClassesView = className === "Toutes les classes";
+
+  const renderStudentCreate = () =>
+    isAllClassesView ? null : (
     <StudentMutationControls
       className={className}
       classes={classesData}
@@ -144,7 +147,7 @@ export default function StudentsScreen({ route, navigation }: any) {
       networkRequired={mutationsBlocked}
       onChanged={() => loadStudents()}
     />
-  );
+    );
 
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
 

@@ -11,6 +11,7 @@ const parentsApiMock = vi.hoisted(() => ({
   lookupIdentity: vi.fn(),
   linkParent: vi.fn(),
   archiveRelation: vi.fn(),
+  listRelations: vi.fn(),
 }));
 
 vi.mock("../../context/AuthContext", () => ({

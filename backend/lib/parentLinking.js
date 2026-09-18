@@ -486,6 +486,47 @@ async function linkParent(store, rawPayload, principal, auditMeta) {
   });
 }
 
+async function listParentRelations(store, query, principal) {
+  const studentRef = asTrimmed(query?.studentId);
+  if (!studentRef) {
+    throw createClientsError(400, "studentId requis.");
+  }
+  const schoolCode = resolveWritableSchoolCode(principal, {});
+  if (!schoolCode) {
+    throw createClientsError(403, "Établissement hors périmètre.");
+  }
+  assertSchoolScope(principal, schoolCode);
+  await assertSchoolInPrincipalCountry(store, principal, schoolCode);
+
+  const school =
+    typeof store.getSchoolByCode === "function" ? await store.getSchoolByCode(schoolCode) : null;
+  if (!school?.id) {
+    throw createClientsError(404, "Établissement introuvable.");
+  }
+
+  const student =
+    typeof store.getStudentById === "function" ? await store.getStudentById(studentRef) : null;
+  if (!student || String(student.school_id) !== String(school.id)) {
+    throw createClientsError(404, "Élève introuvable.");
+  }
+
+  if (typeof store.listRelationsByStudent !== "function") {
+    throw createClientsError(503, "Lecture des responsables indisponible.");
+  }
+  const rows = await store.listRelationsByStudent(school.id, studentRef);
+  return {
+    items: (rows ?? []).map((row) => ({
+      ...mapRelationRow(row),
+      studentCode: row.student_code ?? student.student_code ?? studentRef,
+      firstName: row.contact_first_name ?? "",
+      lastName: row.contact_last_name ?? "",
+      phone: row.contact_phone ?? "",
+      email: row.contact_email ?? "",
+      name: row.contact_name ?? `${row.contact_first_name ?? ""} ${row.contact_last_name ?? ""}`.trim(),
+    })),
+  };
+}
+
 async function archiveParentRelation(store, relationId, rawPatch, principal, auditMeta) {
   const status = toDbStatus(rawPatch?.status || "archived");
   if (status !== "archived") {
@@ -529,6 +570,7 @@ module.exports = {
   CANONICAL_RELATION_TYPE,
   lookupParentIdentity,
   linkParent,
+  listParentRelations,
   archiveParentRelation,
   ensureCanonicalContact,
   ensureActiveParentRelation,

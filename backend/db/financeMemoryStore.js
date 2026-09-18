@@ -290,7 +290,10 @@ function createFinanceMemoryStore({
           null;
         if (!student) return [];
         const rows = Array.isArray(student.enrollments) ? student.enrollments : [];
-        const active = rows.filter((row) => !row.status || String(row.status).toLowerCase() === "active");
+        const active = rows.filter((row) => {
+          const status = String(row.status ?? "").toLowerCase();
+          return !row.status || status === "active" || status === "enrolled";
+        });
         if (active.length) {
           return active
             .filter((row) => asTrimmed(row.classId))

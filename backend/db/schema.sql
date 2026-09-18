@@ -251,16 +251,25 @@ CREATE TABLE IF NOT EXISTS enrollments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
   student_id UUID NOT NULL REFERENCES students(id),
-  class_id UUID NOT NULL REFERENCES classes(id),
+  class_id UUID REFERENCES classes(id),
   academic_year_id UUID NOT NULL REFERENCES academic_years(id),
   enrollment_date DATE,
-  status TEXT NOT NULL DEFAULT 'active',
+  status TEXT NOT NULL DEFAULT 'ENROLLED',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (student_id, academic_year_id)
 );
 
 ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS class_effective_date DATE;
+ALTER TABLE enrollments ALTER COLUMN class_id DROP NOT NULL;
+ALTER TABLE enrollments ALTER COLUMN status SET DEFAULT 'ENROLLED';
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS validated_at TIMESTAMPTZ;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS close_notes TEXT;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS transferred_at TIMESTAMPTZ;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS transfer_destination TEXT;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS transfer_notes TEXT;
 
 CREATE TABLE IF NOT EXISTS teacher_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

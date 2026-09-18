@@ -20,6 +20,10 @@ import {
 import { collectStudentEnrollmentRecords } from "../lib/studentEnrollment";
 import { collectStudentGuardianRelationRecords } from "../lib/studentGuardian";
 import type { StudentWorkspaceCommandRepository } from "../lib/studentEditingRepository";
+import {
+  shouldUseHttpC18Repository,
+  wrapRepositoryWithHttpC18,
+} from "../lib/studentEnrollmentHttpRepository";
 import type {
   EditableEnrollment,
   EditableGuardianContact,
@@ -255,6 +259,16 @@ export function useStudentEditingContext(
         item.schoolCode.trim().toLowerCase() === schoolCode.toLowerCase(),
     );
 
+    const repository = shouldUseHttpC18Repository()
+      ? wrapRepositoryWithHttpC18(session.repository, {
+          studentId: student.id,
+          schoolCode,
+          onUpdated: (item) => {
+            store.enrollments.set(`${item.studentId}:${item.enrollmentId}`, item);
+          },
+        })
+      : session.repository;
+
     return {
       identity: store.identities.get(student.id) ?? null,
       guardians,
@@ -262,7 +276,7 @@ export function useStudentEditingContext(
       enrollments,
       schoolClasses,
       authContext,
-      repository: session.repository,
+      repository,
       canUpdateIdentity,
       canUpdateGuardians,
       canUpdateAdministrative,

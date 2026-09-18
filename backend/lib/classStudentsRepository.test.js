@@ -40,9 +40,11 @@ function createMemoryDb() {
   let studentSeq = 1;
 
   function joinActiveEnrollment(student) {
-    const enrollment = enrollments.find(
-      (row) => row.student_id === student.id && row.status === "active",
-    );
+    const enrollment = enrollments.find((row) => {
+      if (row.student_id !== student.id) return false;
+      const status = String(row.status ?? "").toLowerCase();
+      return status === "active" || status === "enrolled" || status === "approved";
+    });
     const cls = classes.find((row) => row.id === enrollment?.class_id);
     const year = years.find((item) => item.id === enrollment?.academic_year_id);
     return {
@@ -132,7 +134,7 @@ function createMemoryDb() {
           class_id: params[2],
           academic_year_id: params[3],
           enrollment_date: new Date().toISOString().slice(0, 10),
-          status: "active",
+          status: text.includes("ENROLLED") ? "ENROLLED" : "active",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
@@ -140,9 +142,11 @@ function createMemoryDb() {
         return { id: row.id, enrollment_date: row.enrollment_date };
       }
 
-      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE") && text.includes("LIMIT 1")) {
+      if (text.includes("FROM STUDENTS ST") && text.includes("ST.STUDENT_CODE = $1") && text.includes("LIMIT 1")) {
         const student = students.find(
-          (row) => row.student_code === params[0] && row.school_id === params[1],
+          (row) =>
+            (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+            row.school_id === params[1],
         );
         if (!student) return null;
         return joinActiveEnrollment(student);
@@ -150,7 +154,9 @@ function createMemoryDb() {
 
       if (text.includes("SELECT ST.ID, ST.STUDENT_CODE") && text.includes("FROM STUDENTS ST")) {
         const student = students.find(
-          (row) => row.student_code === params[0] && row.school_id === params[1],
+          (row) =>
+            (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+            row.school_id === params[1],
         );
         return student ?? null;
       }
@@ -188,7 +194,13 @@ function createMemoryDb() {
         const classId = params[0];
         const schoolId = params[1];
         return enrollments
-          .filter((row) => row.class_id === classId && row.status === "active")
+          .filter((row) => {
+            const status = String(row.status ?? "").toLowerCase();
+            return (
+              row.class_id === classId &&
+              (status === "active" || status === "enrolled")
+            );
+          })
           .map((enrollment) => {
             const student = students.find(
               (row) => row.id === enrollment.student_id && row.school_id === schoolId,
@@ -231,6 +243,10 @@ function createMemoryDb() {
               academic_year_status: year?.status,
             };
           });
+      }
+
+      if (text.includes("FROM CONTACT_RELATIONS")) {
+        return [];
       }
 
       if (text.includes("FROM STUDENT_DOCUMENTS")) {
@@ -393,6 +409,8 @@ async function main() {
   schoolList.forEach(assertStudentProjectionHasNoSecret);
 
   const fetched = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+  const fetchedByUuid = await repo.getByStudentCode(storedStudent.id, "CD-2026-0001");
+  assert.equal(fetchedByUuid.studentCode, enrolled.student.studentCode);
   assert.equal(fetched.firstName, "Awa");
   assert.ok(Array.isArray(fetched.enrollments));
   assert.equal(fetched.enrollments.length, 1);

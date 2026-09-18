@@ -410,6 +410,103 @@ export function getStudents() {
   );
 }
 
+export function getSchoolStudent(studentId: string) {
+  return request<Record<string, unknown>>(`/students/${encodeURIComponent(studentId)}`).then((row) =>
+    attachStudentTenantIdentity((row && typeof row === "object" ? row : {}) as Record<string, unknown>),
+  );
+}
+
+export type C18Enrollment = {
+  id: string;
+  studentId?: string;
+  status?: string;
+  classId?: string | null;
+  classCode?: string;
+  className?: string;
+  academicYearName?: string;
+  enrollmentDate?: string;
+};
+
+function c18EnrollmentPath(studentId: string, enrollmentId: string, action: string) {
+  return `/students/${encodeURIComponent(studentId)}/enrollments/${encodeURIComponent(enrollmentId)}/${action}`;
+}
+
+export function listStudentEnrollments(studentId: string) {
+  return request<{ items?: C18Enrollment[] } | C18Enrollment[]>(
+    `/students/${encodeURIComponent(studentId)}/enrollments`,
+  ).then((payload) => (Array.isArray(payload) ? payload : payload?.items ?? []));
+}
+
+export function validateStudentEnrollment(studentId: string, enrollmentId: string, body: { reason?: string } = {}) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "validate"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function assignStudentEnrollmentClass(
+  studentId: string,
+  enrollmentId: string,
+  body: { classCode?: string; classId?: string; effectiveDate?: string },
+) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "assign-class"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function transferStudentEnrollment(
+  studentId: string,
+  enrollmentId: string,
+  body: { destinationSchoolName: string; reason?: string },
+) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "transfer"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function closeStudentEnrollment(studentId: string, enrollmentId: string, body: { reason?: string } = {}) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "close"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getParentRelations(studentId: string) {
+  return request<{ items?: Record<string, unknown>[] } | Record<string, unknown>[]>(
+    `/parents/relations?studentId=${encodeURIComponent(studentId)}`,
+  ).then((payload) => (Array.isArray(payload) ? payload : payload?.items ?? []));
+}
+
+export function lookupParentIdentity(query: { phone?: string; email?: string }) {
+  const params = new URLSearchParams();
+  if (query.phone) params.set("phone", query.phone);
+  if (query.email) params.set("email", query.email);
+  const suffix = params.toString();
+  return request<Record<string, unknown>>(`/parents/identity${suffix ? `?${suffix}` : ""}`);
+}
+
+export function linkParent(payload: {
+  studentId: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  email?: string;
+}) {
+  return request<Record<string, unknown>>("/parents/link", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function archiveParentRelation(relationId: string) {
+  return request<Record<string, unknown>>(`/parents/relations/${encodeURIComponent(relationId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "archived" }),
+  });
+}
+
 export type PaymentStudentOption = {
   studentId: string;
   studentCode: string;

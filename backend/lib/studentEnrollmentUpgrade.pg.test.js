@@ -319,7 +319,7 @@ async function main() {
          u.identity_initials AS user_initials, e.status AS enrollment_status
        FROM students st
        JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
-       JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+       JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
        WHERE st.student_code = $1`,
       [studentCode],
     );
@@ -332,7 +332,10 @@ async function main() {
     assert.equal(row.student_code, row.user_identity);
     assert.equal(row.identity_initials, "OE");
     assert.equal(row.user_initials, "OE");
-    assert.equal(row.enrollment_status, "active");
+    assert.ok(
+      ["ENROLLED", "active"].includes(String(row.enrollment_status)),
+      `enrollment_status=${row.enrollment_status}`,
+    );
 
     const stillLegacy = await pool.query(
       `SELECT COUNT(*)::int AS n FROM students

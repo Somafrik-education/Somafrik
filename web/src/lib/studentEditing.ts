@@ -229,6 +229,7 @@ export type StudentEditMode =
 export const ALLOWED_ENROLLMENT_CLASS_CHANGE_FIELDS = [
   "classId",
   "className",
+  "effectiveDate",
 ] as const;
 
 /** Champs autorisés dans TRANSFER_ENROLLMENT. */
@@ -264,6 +265,7 @@ export const FIELD_LABELS: Record<string, string> = {
   endedAt: "Date de fin",
   classId: "Identifiant de classe",
   className: "Classe",
+  effectiveDate: "Date effective",
   transferDate: "Date de transfert",
   destinationSchoolName: "Établissement de destination",
   closureDate: "Date de clôture",

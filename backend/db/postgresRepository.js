@@ -101,6 +101,7 @@ class PostgresRepository {
     await this.ensureTeacherAssignmentsActiveUniqueness();
     await this.ensureUsersLoginIdentityConstraints();
     await this.ensureFinanceCanonicalSchema();
+    await this.ensureEnrollmentC18CanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
     await this.ensureTeacherCourseCanonicalReconcile();
     await this.ensurePlatformCanonicalSchema();
@@ -502,6 +503,11 @@ class PostgresRepository {
   async ensureFinanceCanonicalSchema() {
     const { FINANCE_SCHEMA_SQL } = require("./financeSchema");
     await this.query(FINANCE_SCHEMA_SQL);
+  }
+
+  async ensureEnrollmentC18CanonicalSchema() {
+    const { ENROLLMENT_C18_SCHEMA_SQL } = require("./enrollmentC18Schema");
+    await this.query(ENROLLMENT_C18_SCHEMA_SQL);
   }
 
   async ensurePedagogyCanonicalSchema() {
@@ -1398,6 +1404,10 @@ class PostgresRepository {
     return this.getClientsStore().lookupParentIdentity(query, principal);
   }
 
+  listParentRelations(query, principal) {
+    return this.getClientsStore().listParentRelations(query, principal);
+  }
+
   archiveParentRelation(relationId, payload, principal, auditMeta) {
     this.cachedDataset = null;
     return this.getClientsStore().archiveParentRelation(relationId, payload, principal, auditMeta);
@@ -1743,6 +1753,10 @@ class PostgresRepository {
     return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
   }
 
+  ensureEnrollmentObligationsInTx(tx, input, principal, auditMeta) {
+    return this.getFinanceStore().ensureEnrollmentObligationsInTx(tx, input, principal, auditMeta);
+  }
+
   async syncEnrollmentFinanceObligations(input = {}, principal) {
     const {
       isUnswallowableFinanceSyncError,
@@ -1962,7 +1976,7 @@ class PostgresRepository {
            st.user_id = u.id
            OR (st.user_id IS NULL AND u.user_code = st.student_code)
          )
-        LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+        LEFT JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
         LEFT JOIN classes cl ON cl.id = e.class_id
         ORDER BY st.created_at, st.student_code
       `),
@@ -3700,7 +3714,7 @@ class PostgresRepository {
         SELECT st.*, s.school_code, e.class_id, cl.name AS class_name, cl.class_code
         FROM students st
         JOIN schools s ON s.id = st.school_id
-        LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+        LEFT JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
         LEFT JOIN classes cl ON cl.id = e.class_id
         WHERE (st.student_code = $1 OR st.id::text = $1)`;
       if (schoolId) {

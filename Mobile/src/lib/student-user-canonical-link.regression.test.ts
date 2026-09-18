@@ -106,7 +106,9 @@ describe("M4 — pédagogie filtrée par student.id", () => {
 
   it("écrans détail/notes/présences/paiements filtrent par studentId (complément source)", () => {
     const detailSrc = source("src/screens/StudentDetailScreen.tsx");
-    assert.match(detailSrc, /findStudentByIdentity/);
+    assert.match(detailSrc, /getSchoolStudent/);
+    assert.match(detailSrc, /sessionStudentAliasKeys/);
+    assert.match(detailSrc, /filterRowsByStudentScope/);
     assert.doesNotMatch(detailSrc, /item\.studentId === student\.studentCode/);
     assert.doesNotMatch(detailSrc, /item\.studentId === session\.user\.id/);
 
@@ -289,7 +291,9 @@ describe("M8 — DTO online student_code vs selectedStudentId UUID", () => {
     assert.doesNotMatch(homeSrc, /payment\.studentId === selectedStudentId/);
 
     const detailSrc = source("src/screens/StudentDetailScreen.tsx");
-    assert.match(detailSrc, /findStudentByIdentity/);
+    assert.match(detailSrc, /getSchoolStudent/);
+    assert.match(detailSrc, /sessionStudentAliasKeys/);
+    assert.match(detailSrc, /filterRowsByStudentScope/);
     assert.doesNotMatch(detailSrc, /item\.studentId === student\.id/);
 
     const notesSrc = source("src/screens/StudentNotesScreen.tsx");
