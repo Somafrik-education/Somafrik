@@ -215,6 +215,18 @@ function isLot4AllowedFile(file: string) {
   return false;
 }
 
+function isLot4ProductFile(file: string) {
+  // Meta files are allowed on a LOT 4 PR, but they do not mean the PR is LOT 4.
+  // L4-09 must not treat an unrelated platform-scoped diff (help, settings
+  // docs, etc.) as a LOT 4 scope violation.
+  if (!isLot4AllowedFile(file)) return false;
+  if (/\.test\./.test(file) || /\.red\.test\.tsx?$/.test(file)) return false;
+  if (file === "package.json" || file === "Mobile/package.json" || file === "web/package.json") return false;
+  if (file === "scripts/verify-school-setup-lot4-red.ts") return false;
+  if (file === ".github/workflows/pr-gates.yml") return false;
+  return true;
+}
+
 function gitNameOnly(args: string[]) {
   return execFileSync("git", ["diff", "--name-only", ...args], {
     cwd: repoRoot,
@@ -425,6 +437,9 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
     title: "périmètre LOT 4 : school setup Web/Mobile prévu, pas backend/READY/RBAC",
     run() {
       const changed = lot4ChangedFiles();
+      if (!changed.some(isLot4ProductFile)) {
+        return;
+      }
       const forbidden = changed.filter((file) => !isLot4AllowedFile(file));
       assert.equal(
         forbidden.length,

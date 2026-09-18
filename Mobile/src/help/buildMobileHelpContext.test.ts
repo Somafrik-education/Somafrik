@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHelpContext, HELP_PLATFORM, HELP_ROLE, HELP_SCREEN, isHelpAvailable } from "../../../packages/help-catalog/src/index.js";
-import { buildMobileHelpContext } from "./buildMobileHelpContext.ts";
+import { buildMobileHelpContext } from "./buildMobileHelpContext";
 
 test("buildMobileHelpContext maps attendance route without secrets", () => {
   const context = buildMobileHelpContext({
@@ -40,7 +40,7 @@ test("rejects secrets in raw catalog context", () => {
         routeName: "Home",
         role: "Parent",
         jwt: "secret",
-      }),
+      } as Parameters<typeof createHelpContext>[0]),
     /jwt/,
   );
 });
