@@ -30,6 +30,8 @@ import AnnouncementsScreen from "../screens/AnnouncementsScreen";
 import MessagesScreen from "../screens/MessagesScreen";
 import TimetableScreen from "../screens/TimetableScreen";
 import ReportCardsScreen from "../screens/ReportCardsScreen";
+import ExamsScreen from "../screens/ExamsScreen";
+import ClassGradesStatsScreen from "../screens/ClassGradesStatsScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import {
@@ -92,6 +94,8 @@ export type RootStackParamList = {
   TeacherStudents: undefined;
   TeacherAttendance: undefined;
   TeacherGrades: undefined;
+  ClassGradesStats: undefined;
+  Exams: undefined;
   Payments: undefined;
   Unpaid: undefined;
   FeeGrids: undefined;
@@ -308,6 +312,10 @@ export default function AppNavigator() {
         {canReadRoute(session, "TeacherStudents") && <Stack.Screen name="TeacherStudents" component={StudentsScreen} options={{ title: "Mes élèves" }} />}
         {canReadRoute(session, "TeacherAttendance") && <Stack.Screen name="TeacherAttendance" component={TeacherAttendanceScreen} options={{ title: "Appel" }} />}
         {canReadRoute(session, "TeacherGrades") && <Stack.Screen name="TeacherGrades" component={TeacherGradesScreen} options={{ title: "Notes" }} />}
+        {canReadRoute(session, "ClassGradesStats") && (
+          <Stack.Screen name="ClassGradesStats" component={ClassGradesStatsScreen} options={{ title: "Statistiques de classe" }} />
+        )}
+        {canReadRoute(session, "Exams") && <Stack.Screen name="Exams" component={ExamsScreen} options={{ title: "Examens" }} />}
 
         {canOpenStudentScreens && (
           <>

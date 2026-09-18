@@ -371,6 +371,92 @@ export function getNotes() {
   return request<unknown>("/notes").then((payload) => unwrapList(payload).map(normalizeGrade));
 }
 
+export type CanonicalExam = {
+  id: string;
+  name: string;
+  className?: string;
+  subject?: string;
+  examType?: string;
+  date?: string;
+  period?: string;
+  status?: string;
+  statusCode?: string;
+};
+
+function normalizeExam(row: Record<string, unknown>): CanonicalExam {
+  return {
+    id: String(row.id ?? ""),
+    name: String(row.name ?? ""),
+    className: row.className != null ? String(row.className) : undefined,
+    subject: row.subject != null ? String(row.subject) : undefined,
+    examType: row.examType != null ? String(row.examType) : undefined,
+    date: row.date != null ? String(row.date) : undefined,
+    period: row.period != null ? String(row.period) : undefined,
+    status: row.status != null ? String(row.status) : undefined,
+    statusCode: row.statusCode != null ? String(row.statusCode) : undefined,
+  };
+}
+
+export function listExams() {
+  return request<{ exams?: unknown[] }>("/exams").then((payload) =>
+    (Array.isArray(payload?.exams) ? payload.exams : unwrapList(payload)).map((row) =>
+      normalizeExam(row as Record<string, unknown>),
+    ),
+  );
+}
+
+export function getExam(examId: string) {
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}`).then((row) =>
+    normalizeExam(row),
+  );
+}
+
+export function createExam(payload: Record<string, unknown>, options?: MutationRequestOptions) {
+  const body = { ...payload };
+  delete body.schoolId;
+  delete body.schoolCode;
+  return request<Record<string, unknown>>("/exams", {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
+export function patchExam(examId: string, payload: Record<string, unknown>, options?: MutationRequestOptions) {
+  const body = { ...payload };
+  delete body.schoolId;
+  delete body.schoolCode;
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
+export function validateExam(examId: string, options?: MutationRequestOptions) {
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}/validate`, {
+    method: "POST",
+    body: JSON.stringify({}),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
+export function cancelExam(examId: string, options?: MutationRequestOptions) {
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({}),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
+export function archiveExam(examId: string, options?: MutationRequestOptions) {
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}/archive`, {
+    method: "POST",
+    body: JSON.stringify({}),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
 export function getEvaluations() {
   return request<unknown>("/evaluations").then((payload) => unwrapList(payload).map(normalizeEvaluation));
 }

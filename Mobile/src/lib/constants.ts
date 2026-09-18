@@ -27,6 +27,8 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   documents: "Documents",
   Timetable: "Planning de cours",
   ReportCards: "Bulletins",
+  Exams: "Examens",
+  ClassGradesStats: "Notes",
   Documents: "Documents",
   Reports: "Rapports",
   Audit: "Utilisateurs",

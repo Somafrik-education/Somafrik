@@ -8,6 +8,7 @@ import {
 import { COUNTRY_SCOPE_MODULES } from "../../lib/roleGovernance";
 import { SCHOOL_ENTITY_VIEWS, VIEW_PERMISSION_FEATURES, ENTITY_VIEW_MAP } from "../../lib/constants";
 import { isSchoolSettingsOperator, isSchoolSettingsView } from "../../lib/schoolSettingsAccess";
+import { canReadExams } from "../../lib/examPermissions";
 
 export type SecurityAction = "READ" | "CREATE" | "UPDATE" | "DELETE" | "SUSPEND";
 
@@ -105,7 +106,9 @@ export const routeFeatureMap: Record<string, string> = {
   TeacherStudents: "Élèves",
   TeacherAttendance: "Présences",
   TeacherGrades: "Notes",
+  ClassGradesStats: "Notes",
   Notes: "Notes",
+  Exams: "Examens",
   Presences: "Présences",
   FraisEleve: "Paiements",
   StudentPayments: "Paiements",
@@ -351,6 +354,9 @@ export function canReadView(session: any, viewName: string): boolean {
   if (viewName === "FeeGrids") {
     return canReadFeeGrids(session);
   }
+  if (viewName === "Exams") {
+    return canReadExams(session);
+  }
   if (viewName === "overview") return true;
   if (viewName === "Schooling") {
     if (session?.role === "country_admin") return false;
@@ -440,6 +446,9 @@ export function canReadRoute(session: any, routeName?: string) {
   }
   if (routeName === "FeeGrids") {
     return canReadFeeGrids(session);
+  }
+  if (routeName === "Exams") {
+    return canReadExams(session);
   }
   if (isSchoolSettingsView(routeName)) {
     return canReadView(session, routeName);

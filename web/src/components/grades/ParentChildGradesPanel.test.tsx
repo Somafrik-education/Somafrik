@@ -175,4 +175,46 @@ describe("ParentChildGradesPanel", () => {
     expect(screen.getByText("15,7 / 20")).toBeInTheDocument();
     expect(screen.queryByText("16,4 / 20")).not.toBeInTheDocument();
   });
+
+  it("filtre cours Maths = 17,5 canonique, pas 16,4 plat", () => {
+    const mathLow: StudentGrade = {
+      ...mathGrade,
+      id: "g-low",
+      evaluationId: "EVAL-1",
+      value: 10,
+      evaluationCoefficient: 1,
+      coefficient: 2,
+    };
+    const mathHigh: StudentGrade = {
+      ...mathGrade,
+      id: "g-high",
+      evaluationId: "EVAL-3",
+      value: 20,
+      evaluationCoefficient: 3,
+      coefficient: 2,
+    };
+    const french: StudentGrade = {
+      ...frenchGrade,
+      id: "g-fr",
+      value: 12,
+      evaluationCoefficient: 1,
+      coefficient: 1,
+    };
+
+    render(
+      <ParentChildGradesPanel
+        student={student}
+        grades={[mathLow, mathHigh]}
+        evaluations={evaluations}
+        period="Trimestre 1"
+        courseFilter="Mathématiques"
+      />,
+    );
+
+    expect(screen.getByText("Moyenne Mathématiques")).toBeInTheDocument();
+    expect(screen.getByText("17,5 / 20")).toBeInTheDocument();
+    expect(screen.queryByText("16,4 / 20")).not.toBeInTheDocument();
+    expect(screen.queryByText("15,7 / 20")).not.toBeInTheDocument();
+    void french;
+  });
 });
