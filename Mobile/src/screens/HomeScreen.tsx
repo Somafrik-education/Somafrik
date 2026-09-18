@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -26,7 +26,10 @@ import {
   formatHomePaymentRateKpi,
   formatHomePaymentsKpi,
 } from "../lib/homeDashboardKpis";
-import { countActiveUserAccounts } from "../lib/format";
+import { countActiveUserAccounts, isSchoolAdminRole } from "../lib/format";
+import { SchoolSetupDashboardWidget } from "../components/schoolSetup/SchoolSetupDashboardWidget";
+import { schoolSetupStatusApi, type SchoolSetupPayload } from "../lib/schoolSetupStatusApi";
+import { SCHOOL_SETUP_ROUTE, shouldShowDashboardSetupWidget } from "../lib/schoolSetupMobile";
 import { filterCanonicalClasses } from "../lib/schoolingTruth";
 import { TODAY_PRESENCE_KPI_LABEL, getTodayEstablishmentPresenceKpi } from "../lib/todayPresenceKpi";
 import { notesForStudent } from "../lib/evaluationsV2";
@@ -66,6 +69,8 @@ import { unpaidLedgerMetricValue } from "../lib/unpaidLedger";
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
+  const [setupPayload, setSetupPayload] = useState<SchoolSetupPayload | null>(null);
+  const [setupStatusFailed, setSetupStatusFailed] = useState(false);
   const {
     studentsData,
     studentsSnapshot,
@@ -246,6 +251,33 @@ export default function HomeScreen({ navigation }: any) {
       loadSchools,
       loadNotes,
     ]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      const role = session?.role ?? session?.user?.role;
+      if (!isSchoolAdminRole(role)) {
+        setSetupPayload(null);
+        setSetupStatusFailed(false);
+        return;
+      }
+      let cancelled = false;
+      void schoolSetupStatusApi
+        .get()
+        .then((row) => {
+          if (cancelled) return;
+          setSetupPayload(row);
+          setSetupStatusFailed(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSetupPayload(null);
+          setSetupStatusFailed(true);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [session]),
   );
 
   const shell = getRoleHomeShell(session);
@@ -450,6 +482,9 @@ export default function HomeScreen({ navigation }: any) {
 
   const latestAnnouncement = announcementsSnapshot.data[0];
   const showParentAnnouncement = isParentLike && Boolean(latestAnnouncement || canReadRoute(session, "Announcements"));
+  const setupRole = session?.role ?? session?.user?.role;
+  const showSetupWidget = shouldShowDashboardSetupWidget({ payload: setupPayload, role: setupRole });
+  const showSetupFailSoft = setupStatusFailed && isSchoolAdminRole(setupRole);
 
   return (
     <RoleDashboardLayout
@@ -502,7 +537,30 @@ export default function HomeScreen({ navigation }: any) {
       actions={actions}
       showSecurityMatrix={false}
       footerSlot={
-        showParentAnnouncement ? (
+        showSetupWidget && setupPayload ? (
+          <View style={footerStyles.wrap}>
+            <SchoolSetupDashboardWidget
+              payload={setupPayload}
+              heading="Configuration rapide"
+              actionLabel="Continuer"
+              onContinue={() => navigation.navigate(SCHOOL_SETUP_ROUTE)}
+            />
+          </View>
+        ) : showSetupFailSoft ? (
+          <View style={footerStyles.wrap} testID="school-setup-widget">
+            <TouchableOpacity
+              style={footerStyles.card}
+              onPress={() => navigation.navigate(SCHOOL_SETUP_ROUTE)}
+              accessibilityRole="button"
+              accessibilityLabel="Configurer l'établissement"
+            >
+              <Text style={footerStyles.cardTitle}>Configuration de l'établissement</Text>
+              <Text style={footerStyles.cardBody}>
+                Impossible de charger le statut. Ouvrez la configuration pour continuer.
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : showParentAnnouncement ? (
           <View style={footerStyles.wrap}>
             <Text style={footerStyles.title}>Dernière annonce</Text>
             <TouchableOpacity style={footerStyles.card} onPress={() => navigation.navigate("Announcements")}>

@@ -40,7 +40,11 @@ import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
 import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import { schoolLogoDisplayUri } from "../lib/schoolLogo";
-import { resetSchoolSetupWizardSessionDismiss } from "../lib/schoolSetupMobile";
+import {
+  resetSchoolSetupWizardSessionDismiss,
+  resolveMobilePostLoginNavigation,
+} from "../lib/schoolSetupMobile";
+import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
 import { validateAccountSecret } from "../lib/userAccountRules";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
@@ -167,9 +171,19 @@ export default function LoginScreen({ navigation, route }: Props) {
       },
     });
     setSession(safe);
-    navigation.navigate("Home", {
-      role: safe.role,
+    const role = safe.role ?? safe.user?.role;
+    const plan = await resolveMobilePostLoginNavigation({
+      role,
+      mustChangePassword: false,
+      getStatus: () => schoolSetupStatusApi.get(),
     });
+    for (const destination of plan.destinations) {
+      if (destination === "Home") {
+        navigation.navigate("Home", { role: safe.role });
+      } else {
+        navigation.navigate("SchoolSetup");
+      }
+    }
   };
 
   const clearPasswordFieldError = (key: string) => {

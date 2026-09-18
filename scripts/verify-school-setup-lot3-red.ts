@@ -273,6 +273,15 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         false,
         "Mobile: school_admin + READY → widget absent",
       );
+      assert.equal(
+        mobile.shouldAutoOpenSchoolSetupWizard({
+          payload: ready(),
+          role: "school_admin",
+          mustChangePassword: false,
+        }),
+        false,
+        "Mobile: READY ne déclenche pas l'assistant auto",
+      );
       assertHas(
         read(webSettingsHubPath),
         "Configuration de l'établissement",
@@ -362,6 +371,16 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "Web: nouvelle authentification doit recharger GET school-setup/status",
       );
       assertHas(
+        read(mobileLoginPath),
+        /schoolSetupStatusApi|school-setup\/status/,
+        "Mobile: nouvelle authentification doit recharger GET school-setup/status",
+      );
+      assertHas(
+        read(mobileLoginPath),
+        /shouldAutoOpenSchoolSetupWizard|resolveMobilePostLoginNavigation/,
+        "Mobile login doit appliquer le gate auto-open",
+      );
+      assertHas(
         read(mobileHubPath),
         /schoolSetupStatusApi|school-setup\/status/,
         "Mobile: hub doit recharger GET school-setup/status après auth/focus",
@@ -390,6 +409,15 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         false,
         "Admin A a dismiss — wizard masqué pour A",
       );
+      assert.equal(
+        mobile.shouldAutoOpenSchoolSetupWizard({
+          payload: notStarted(),
+          role: "school_admin",
+          mustChangePassword: false,
+        }),
+        false,
+        "Admin A a dismiss — wizard Mobile masqué pour A",
+      );
 
       web.resetSchoolSetupWizardSessionDismiss();
       mobile.resetSchoolSetupWizardSessionDismiss();
@@ -401,6 +429,15 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         }),
         true,
         "Admin B après nouvelle auth: dismiss A ne masque pas l'assistant",
+      );
+      assert.equal(
+        mobile.shouldAutoOpenSchoolSetupWizard({
+          payload: notStarted(),
+          role: "school_admin",
+          mustChangePassword: false,
+        }),
+        true,
+        "Admin B après nouvelle auth Mobile: dismiss A ne masque pas l'assistant",
       );
       assert.equal(
         web.shouldShowDashboardSetupWidget({ payload: inProgressYearOnly(), role: "Admin School" }),

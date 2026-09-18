@@ -226,20 +226,25 @@ function isLot4GateMetaFile(file: string) {
 }
 
 function isLot4ChantierFile(file: string) {
-  // Presence of a LOT 4 / school-setup change — independent of the allowlist.
-  // The allowlist only decides whether a detected chantier stays in scope.
+  // PR-wide L4-09 s'applique seulement au chantier « complétude optionnelle ».
+  // Un helper school-setup partagé (auto-open, widget) utilisé par un autre lot
+  // ne déclenche pas le contrôle de périmètre backend/RBAC.
   if (isLot4GateMetaFile(file)) return false;
   if (file === "backend/lib/schoolSetupStatus.js") return true;
   if (file === "web/src/pages/parametres/SchoolSetupSettingsPage.tsx") return true;
   if (file === "Mobile/src/screens/SchoolSetupSettingsScreen.tsx") return true;
-  if (file.startsWith("web/src/components/schoolSetup/")) return true;
-  if (file.startsWith("Mobile/src/components/schoolSetup/")) return true;
-  if (/^web\/src\/lib\/schoolSetup/.test(file)) return true;
-  if (/^Mobile\/src\/lib\/schoolSetup/.test(file)) return true;
+  if (/OptionalCompleteness/i.test(file)) return true;
+  if (/schoolSetupOptional/i.test(file)) return true;
+  if (/\.lot4\./i.test(file)) return true;
+  if (
+    (/(^|\/)migrations?\//.test(file) || /\.sql$/.test(file)) &&
+    /schoolSetup|school-setup|school_setup/i.test(file)
+  ) {
+    return true;
+  }
   if (file.startsWith("packages/help-catalog/") || file.startsWith("docs/") || file.startsWith("scripts/verify-help")) {
     return false;
   }
-  if (/schoolSetup/i.test(file) || /school-setup/i.test(file) || /school_setup/i.test(file)) return true;
   return false;
 }
 
@@ -506,6 +511,25 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "backend/lib/schoolSetupStatus.js",
       ]);
       assert.equal(mixed.kind, "fail", mixed.message);
+
+      const otherLotSharedHelper = evaluateLot4Scope([
+        "Mobile/src/lib/schoolSetupMobile.ts",
+        "web/src/lib/schoolSetupWeb.ts",
+        "backend/lib/educationSchoolCatalogScope.js",
+        "backend/server.js",
+        "docs/audits/parite-web-mobile-lot1-referentiels-etablissement.md",
+      ]);
+      assert.equal(
+        otherLotSharedHelper.kind,
+        "na",
+        "un autre lot peut toucher le helper school-setup partagé + son backend hors LOT 4",
+      );
+
+      const lot4PlusForeignBackend = evaluateLot4Scope([
+        "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+        "backend/server.js",
+      ]);
+      assert.equal(lot4PlusForeignBackend.kind, "fail", lot4PlusForeignBackend.message);
 
       const live = evaluateLot4Scope(lot4ChangedFiles());
       console.log(live.message);

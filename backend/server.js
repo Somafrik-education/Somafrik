@@ -1865,33 +1865,43 @@ app.patch("/api/backoffice/education-reference/labels", requireAuth, requirePerm
 }));
 
 app.get("/api/education-reference/catalog", requireAuth, requirePermission("GET /api/education-reference/catalog"), asyncHandler(async (req, res) => {
-  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
-  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  const { resolveEducationCatalogSchoolCode } = require("./lib/educationSchoolCatalogScope");
+  const schoolCode = resolveEducationCatalogSchoolCode(req.principal, req.query.schoolCode);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const catalog = await repository.getEducationSchoolCatalog(schoolCode);
   res.json(catalog);
 }));
 
 app.put("/api/education-reference/school-activation", requireAuth, requirePermission("PUT /api/education-reference/school-activation"), asyncHandler(async (req, res) => {
-  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { resolveEducationCatalogSchoolCode } = require("./lib/educationSchoolCatalogScope");
   const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
-  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  const schoolCode = resolveEducationCatalogSchoolCode(req.principal, req.query.schoolCode);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const saved = await repository.saveSchoolEducationActivation(schoolCode, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
   res.json(saved);
 }));
 
 app.get("/api/backoffice/establishments/:schoolCode/education-reference/catalog", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/education-reference/catalog"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  const {
+    applyEducationCatalogDeprecationHeaders,
+    resolveEducationCatalogSchoolCode,
+  } = require("./lib/educationSchoolCatalogScope");
+  applyEducationCatalogDeprecationHeaders(res);
+  const schoolCode = resolveEducationCatalogSchoolCode(req.principal, req.params.schoolCode);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const catalog = await repository.getEducationSchoolCatalog(schoolCode);
   res.json(catalog);
 }));
 
 app.put("/api/backoffice/establishments/:schoolCode/education-reference/school-activation", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/education-reference/school-activation"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  const {
+    applyEducationCatalogDeprecationHeaders,
+    resolveEducationCatalogSchoolCode,
+  } = require("./lib/educationSchoolCatalogScope");
   const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
   const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  applyEducationCatalogDeprecationHeaders(res, "/api/education-reference/school-activation");
+  const schoolCode = resolveEducationCatalogSchoolCode(req.principal, req.params.schoolCode);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const payload = stripClientSchoolCode(req.body ?? {});
   const saved = await repository.saveSchoolEducationActivation(schoolCode, payload, req.principal, educationReferenceAuditMetaFromRequest(req));
