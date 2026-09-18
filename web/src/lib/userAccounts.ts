@@ -621,6 +621,23 @@ export function schoolsMatchingCountryScope<T extends { country?: string; countr
   return schools.filter((school) => schoolMatchesCountryScope(school, countryScope));
 }
 
+/** Création enseignant canonique : POST /backoffice/users/create-teacher (pas createUser+grant). */
+export function toCreateTeacherIdentityPayload(user: UserAccount): Record<string, unknown> {
+  const schoolCode = String(user.schoolCode ?? "").trim();
+  const gender = String(user.gender ?? "").trim();
+  const birthDate = String(user.birthDate ?? "").trim();
+  return {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    phone: user.phone,
+    temporaryPassword: user.temporaryPassword,
+    schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : "",
+    ...(gender && gender !== "Non renseigné" ? { gender } : {}),
+    ...(birthDate ? { birthDate } : {}),
+  };
+}
+
 export function toCreateUserApiPayload(user: UserAccount): Record<string, unknown> {
   const schoolCode = String(user.schoolCode ?? "").trim();
   const countryCode = getCountryCodeFromScope(user.countryScope);

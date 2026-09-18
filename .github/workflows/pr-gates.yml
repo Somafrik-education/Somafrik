@@ -551,10 +551,54 @@ jobs:
           set -euo pipefail
           npm run test:lot2-parity
 
+  lot3:
+    name: LOT 3 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true' || needs.scope.outputs.teachers == 'true' || needs.scope.outputs.users == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik
+          POSTGRES_USER: somafrik
+          POSTGRES_PASSWORD: somafrik123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U somafrik -d somafrik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 3 tests
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+          JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+          SOMAFRIK_DB_REQUIRED: "true"
+          SOMAFRIK_SKIP_DEMO_SEED: "true"
+        run: |
+          set -euo pipefail
+          npm run test:lot3-parity
+
   required:
     name: Required
     if: always()
-    needs: [scope, quality, secrets, core, targeted, lot0, lot1, lot2]
+    needs: [scope, quality, secrets, core, targeted, lot0, lot1, lot2, lot3]
     runs-on: ubuntu-latest
     steps:
       - name: Enforce required PR gates
@@ -567,9 +611,10 @@ jobs:
           LOT0: ${{ needs.lot0.result }}
           LOT1: ${{ needs.lot1.result }}
           LOT2: ${{ needs.lot2.result }}
+          LOT3: ${{ needs.lot3.result }}
         run: |
           set -euo pipefail
-          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED" "$LOT0" "$LOT1" "$LOT2"; do
+          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED" "$LOT0" "$LOT1" "$LOT2" "$LOT3"; do
             case "$result" in
               success|skipped) ;;
               *) echo "Required gate failed: $result" >&2; exit 1 ;;

@@ -34,6 +34,7 @@ import {
   STUDENT_ROLE_LOCKED_MESSAGE,
   STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE,
   schoolsMatchingCountryScope,
+  toCreateTeacherIdentityPayload,
   toCreateUserApiPayload,
   toProvisionUserApiPayload,
   toUpdateUserIdentityPayload,
@@ -208,16 +209,35 @@ export function UsersPage() {
         } else {
           try {
             const shouldProvision = shouldProvisionPlatformUser(session?.user?.role, syncedUser.role);
-            const created = (
-              shouldProvision
-                ? await clientsApi.provisionUser(toProvisionUserApiPayload(syncedUser))
-                : await clientsApi.createUser(toCreateUserApiPayload(syncedUser))
-            ) as UserAccount;
-            if (created.temporaryPassword) {
-              showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
-            }
-            if (!shouldProvision && syncedUser.role && created?.id) {
-              await clientsApi.grantUserRole(String(created.id), syncedUser.role);
+            if (!shouldProvision && isTeacherRoleLabel(syncedUser.role)) {
+              const created = (await clientsApi.createTeacherIdentity(
+                toCreateTeacherIdentityPayload(syncedUser),
+              )) as {
+                user?: UserAccount;
+                credentials?: { login?: string; temporarySecret?: string };
+              };
+              const login = String(created.credentials?.login ?? "").trim();
+              const secret = String(created.credentials?.temporarySecret ?? "").trim();
+              if (login && secret) {
+                showToast(
+                  `Identifiants enseignant — login : ${login} · mot de passe temporaire : ${secret}`,
+                  "success",
+                );
+              } else if (secret) {
+                showToast(`Mot de passe temporaire : ${secret}`, "success");
+              }
+            } else {
+              const created = (
+                shouldProvision
+                  ? await clientsApi.provisionUser(toProvisionUserApiPayload(syncedUser))
+                  : await clientsApi.createUser(toCreateUserApiPayload(syncedUser))
+              ) as UserAccount;
+              if (created.temporaryPassword) {
+                showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
+              }
+              if (!shouldProvision && syncedUser.role && created?.id) {
+                await clientsApi.grantUserRole(String(created.id), syncedUser.role);
+              }
             }
           } catch (error) {
             showToast(formatCaughtApiError(error, "Échec de la création"), "error");
@@ -322,7 +342,7 @@ export function UsersPage() {
 
     try {
       await persistUsers(state.users, exists ? "Utilisateur modifié" : "Utilisateur créé", payload);
-      if (!exists && payload.temporaryPassword) {
+      if (!exists && payload.temporaryPassword && !isTeacherRoleLabel(payload.role)) {
         showToast(`Mot de passe temporaire : ${payload.temporaryPassword}`, "success");
       }
       setEditing(null);
@@ -801,7 +821,9 @@ export function UsersPage() {
                   ? "Administrateur pays et Administrateur établissement sont créés directement avec leur rôle."
                   : isCountryAdminView
                     ? "Administrateur établissement est créé avec son rôle. L'identité vide n'est pas proposée."
-                    : "L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création. Utilisez ensuite Attribuer."}
+                    : isTeacherRoleLabel(editing.role)
+                      ? "Le compte enseignant est créé atomiquement (utilisateur + rôle + profil) via Comptes utilisateurs."
+                      : "L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création. Utilisez ensuite Attribuer."}
               </p>
             )}
             <Field label="Prénom" required>
@@ -854,7 +876,9 @@ export function UsersPage() {
                 hint={
                   isSuperadminView || isCountryAdminView
                     ? "Le rôle est créé immédiatement à l'enregistrement"
-                    : "L'identité est créée d'abord, puis le rôle est attribué"
+                    : isTeacherRoleLabel(editing.role)
+                      ? "Création atomique : identité + rôle Enseignant + profil"
+                      : "L'identité est créée d'abord, puis le rôle est attribué"
                 }
                 required={isSuperadminView || isCountryAdminView}
               >
