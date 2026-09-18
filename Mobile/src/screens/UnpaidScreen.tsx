@@ -20,7 +20,7 @@ import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
   classOptionsFromUnpaid,
   filterUnpaidRows,
-  periodOptionsFromUnpaid,
+  periodOptionsFromFees,
   unpaidTotalsByCurrency,
 } from "../lib/unpaidFilters";
 import { unpaidLedgerStateMessage } from "../lib/unpaidLedger";
@@ -59,13 +59,15 @@ export default function UnpaidScreen() {
   const canForce = canForceUnpaidReminder(session);
   const canPay = canRecordSchoolPayment(session);
   const requestedSchoolCode = activeSchoolCode || session?.school?.code || session?.user?.schoolCode;
-  const { state, refresh } = useUnpaidLedger(canReadUnpaid, requestedSchoolCode);
-  const stateMessage = unpaidLedgerStateMessage(state);
-  const loading = state.status === "idle" || state.status === "loading";
-
   const [searchQuery, setSearchQuery] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [periodFilter, setPeriodFilter] = useState("");
+  const { state, refresh } = useUnpaidLedger(canReadUnpaid, requestedSchoolCode, {
+    period: periodFilter || undefined,
+  });
+  const stateMessage = unpaidLedgerStateMessage(state);
+  const loading = state.status === "idle" || state.status === "loading";
+
   const [paymentStudents, setPaymentStudents] = useState<ReturnType<typeof paymentStudentsFromOptions>>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const [catalogCurrency, setCatalogCurrency] = useState("");
@@ -108,17 +110,16 @@ export default function UnpaidScreen() {
       filterUnpaidRows(state.status === "success" ? state.rows : [], {
         search: searchQuery || undefined,
         className: classFilter || undefined,
-        period: periodFilter || undefined,
       }),
-    [state, searchQuery, classFilter, periodFilter],
+    [state, searchQuery, classFilter],
   );
   const filteredTotals = useMemo(() => unpaidTotalsByCurrency(filteredRows), [filteredRows]);
   const classOptions = useMemo(
-    () => classOptionsFromUnpaid(state.status === "success" ? state.rows : []),
+    () => classOptionsFromUnpaid(state.status === "success" ? state.catalogRows : []),
     [state],
   );
   const periodOptions = useMemo(
-    () => periodOptionsFromUnpaid(state.status === "success" ? state.rows : []),
+    () => periodOptionsFromFees(state.status === "success" ? state.fees : []),
     [state],
   );
   const filtersActive = Boolean(searchQuery || classFilter || periodFilter);
@@ -320,6 +321,11 @@ export default function UnpaidScreen() {
                   </View>
                 </View>
                 <Text style={styles.sectionTitle}>Élèves concernés</Text>
+                {filteredRows.length === 0 ? (
+                  <View style={styles.stateCard}>
+                    <Text style={styles.stateText}>Aucun impayé pour ces filtres.</Text>
+                  </View>
+                ) : null}
               </>
             ) : null}
           </>

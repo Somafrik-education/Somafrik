@@ -42,6 +42,15 @@ npm run test:lot4-parity
 
 CI GitHub `0425489f` : **37/37 SUCCESS**, dont `PR Gates / LOT 4 parity` et `PR Gates / Required`.
 
+## HOLD `#5736885148` — filtre période multi-périodes
+
+Correction-only depuis `e011be87` :
+
+- `GET /backoffice/finance/unpaid?period=` avant agrégation serveur ;
+- options T1/T2 depuis `fees` du ledger non filtré ;
+- `matricule` additif sur le DTO `unpaidService.list` ;
+- dataset T1 30 000 + T2 20 000 (sans filtre 50 000 / Plusieurs périodes).
+
 ## Reliquats hors LOT 4
 
 - PARITY-036 paiement parent

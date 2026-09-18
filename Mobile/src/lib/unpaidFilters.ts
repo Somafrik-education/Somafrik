@@ -69,7 +69,19 @@ export function classOptionsFromUnpaid(rows: Array<{ className?: string }>): str
 }
 
 export function periodOptionsFromUnpaid(rows: Array<{ periodLabel?: string }>): string[] {
-  return [...new Set(rows.map((row) => String(row.periodLabel ?? "").trim()).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b, "fr"),
-  );
+  return periodOptionsFromFees(rows);
+}
+
+/** Options T1/T2 depuis les fees DTO, jamais depuis « Plusieurs périodes ». */
+export function periodOptionsFromFees(
+  fees: Array<{ periodLabel?: string; academicYear?: string }>,
+): string[] {
+  return [
+    ...new Set(
+      fees.flatMap((fee) => [fee.periodLabel, fee.academicYear].filter(Boolean) as string[]),
+    ),
+  ]
+    .map((value) => value.trim())
+    .filter((value) => value && value !== "Plusieurs périodes" && value !== "—")
+    .sort((a, b) => a.localeCompare(b, "fr"));
 }

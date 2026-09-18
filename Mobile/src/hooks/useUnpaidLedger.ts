@@ -7,8 +7,13 @@ import {
 } from "../lib/unpaidLedger";
 import { getUnpaidLedger } from "../services/api";
 
-export function useUnpaidLedger(enabled: boolean, requestedSchoolCode?: string | null) {
+export function useUnpaidLedger(
+  enabled: boolean,
+  requestedSchoolCode?: string | null,
+  filters?: { period?: string | null },
+) {
   const requestIdRef = useRef(0);
+  const period = String(filters?.period ?? "").trim();
   const [state, setState] = useState<UnpaidLedgerState>({
     ...EMPTY_UNPAID_LEDGER,
     status: enabled ? "idle" : "hidden",
@@ -23,11 +28,14 @@ export function useUnpaidLedger(enabled: boolean, requestedSchoolCode?: string |
 
     setState((current) => ({ ...current, status: "loading", errorMessage: undefined }));
     try {
-      const ledger = await getUnpaidLedger(requestedSchoolCode);
+      const catalog = await getUnpaidLedger(requestedSchoolCode);
+      const ledger = period ? await getUnpaidLedger(requestedSchoolCode, { period }) : catalog;
       if (requestIdRef.current !== requestId) return;
       setState({
         ...ledger,
-        status: ledger.studentCount > 0 ? "success" : "empty",
+        fees: catalog.fees,
+        catalogRows: catalog.rows,
+        status: catalog.studentCount > 0 || ledger.studentCount > 0 ? "success" : "empty",
       });
     } catch (error) {
       if (requestIdRef.current !== requestId) return;
@@ -36,7 +44,7 @@ export function useUnpaidLedger(enabled: boolean, requestedSchoolCode?: string |
         ...classifyUnpaidLedgerFailure(error),
       });
     }
-  }, [enabled, requestedSchoolCode]);
+  }, [enabled, requestedSchoolCode, period]);
 
   useFocusEffect(
     useCallback(() => {

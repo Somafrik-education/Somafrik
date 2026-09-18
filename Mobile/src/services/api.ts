@@ -853,8 +853,13 @@ export function getPayments() {
 }
 
 /** Ledger canonique des créances, agrégé et scopé côté serveur par établissement. */
-export function getUnpaidLedger(requestedSchoolCode?: string | null): Promise<UnpaidLedger> {
-  return request<unknown>("/backoffice/finance/unpaid").then((payload) =>
+export function getUnpaidLedger(
+  requestedSchoolCode?: string | null,
+  filters?: { period?: string | null },
+): Promise<UnpaidLedger> {
+  const period = String(filters?.period ?? "").trim();
+  const query = period ? `?period=${encodeURIComponent(period)}` : "";
+  return request<unknown>(`/backoffice/finance/unpaid${query}`).then((payload) =>
     normalizeUnpaidLedger(payload, publicRequestSchoolScope(requestedSchoolCode)),
   );
 }

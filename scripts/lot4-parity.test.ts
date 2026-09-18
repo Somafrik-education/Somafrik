@@ -46,6 +46,10 @@ test("PARITY-016 — Impayés Mobile : recherche, classe, période, relance, enc
   assert.match(unpaid, /unpaid-search|searchQuery|setSearch/);
   assert.match(unpaid, /className|classFilter/);
   assert.match(unpaid, /period|periodFilter/);
+  assert.match(unpaid, /period:\s*periodFilter/);
+  assert.match(unpaid, /periodOptionsFromFees/);
+  assert.doesNotMatch(unpaid, /filterUnpaidRows\([\s\S]*period:\s*periodFilter/);
+  assert.match(api, /period=\$\{encodeURIComponent\(period\)\}/);
   assert.match(unpaid, /createUnpaidReminder|Relancer/);
   assert.match(unpaid, /PaymentMutationControls/);
   assert.match(unpaid, /initialStudentId/);
