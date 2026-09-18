@@ -152,7 +152,7 @@ assert.equal(drawerLabels(readOnlySchool).includes("Paramètres"), false);
 assert.equal(drawerLabels(readOnlySchool).includes("Utilisateurs"), false);
 
 const paymentsOnly = sessionOf("accountant", ["Paiements:READ"]);
-assert.deepEqual(drawerLabels(paymentsOnly), ["Paiements"]);
+assert.deepEqual(drawerLabels(paymentsOnly), ["Paiements", "Grilles de frais"]);
 assert.deepEqual(tabLabels(paymentsOnly), ["Frais"]);
 
 const noStudentsPrefet = sessionOf("prefet", ["Présences:READ", "Notes:READ", "Classes:READ"]);

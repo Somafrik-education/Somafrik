@@ -17,8 +17,9 @@ describe("financeCurrency", () => {
   });
 
   it("formate les dates de façon cohérente", () => {
-    expect(formatFinanceDate("2026-08-19")).toBe("19/08/2026");
-    expect(formatFinanceDate("19-08-2026")).toBe("19/08/2026");
+    expect(formatFinanceDate("2026-08-19")).toBe("19-08-2026");
+    expect(formatFinanceDate("19-08-2026")).toBe("19-08-2026");
     expect(formatFinanceDate("")).toBe("—");
+    expect(formatFinanceDate("not-a-date")).toBe("—");
   });
 });

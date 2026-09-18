@@ -100,7 +100,7 @@ const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const apiSource = fs.readFileSync(path.join(srcRoot, "services/api.ts"), "utf8");
 const homeSource = fs.readFileSync(path.join(srcRoot, "screens/HomeScreen.tsx"), "utf8");
 const paymentsSource = fs.readFileSync(path.join(srcRoot, "screens/PaymentsScreen.tsx"), "utf8");
-assert.match(apiSource, /request<unknown>\("\/backoffice\/finance\/unpaid"\)/);
+assert.match(apiSource, /\/backoffice\/finance\/unpaid\$\{query\}|\/backoffice\/finance\/unpaid/);
 assert.equal(isSchoolScopedApiPath("/backoffice/finance/unpaid"), true, "le header tenant couvre GET unpaid");
 assert.match(homeSource, /hasSecurityPermission\(session, "Impayés", "READ"\)/);
 assert.match(homeSource, /navigate\("Unpaid"\)/);

@@ -8,7 +8,7 @@ import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { getPaymentStats } from "../domain/metrics/schoolMetrics";
-import { hasSecurityPermission } from "../domain/security/permissions";
+import { canReadRoute, hasSecurityPermission } from "../domain/security/permissions";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import { getPaymentCashKpi, formatPaymentCashAmounts } from "../lib/paymentCashKpi";
 import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
@@ -167,6 +167,17 @@ export default function PaymentsScreen({ navigation }: any) {
                 </Text>
               ) : null}
 
+              {canReadRoute(session, "FeeGrids") ? (
+                <TouchableOpacity
+                  style={styles.feeGridsLink}
+                  onPress={() => navigation.navigate("FeeGrids")}
+                  accessibilityRole="button"
+                  accessibilityLabel="Consulter les grilles de frais"
+                >
+                  <Text style={styles.feeGridsLinkText}>Grilles de frais</Text>
+                </TouchableOpacity>
+              ) : null}
+
               <Text style={styles.sectionTitle}>Paiements récents</Text>
             </View>
           )}
@@ -232,6 +243,17 @@ const styles = StyleSheet.create({
   smallNumber: { fontSize: 24, fontWeight: "800", color: "#0F172A" },
   smallLabel: { color: "#64748B", fontWeight: "700", marginTop: 6 },
   unpaidError: { color: "#991B1B", fontSize: 13, fontWeight: "700", marginTop: -8, marginBottom: 18 },
+  feeGridsLink: {
+    minHeight: 44,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D9E1EC",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  feeGridsLinkText: { color: "#0F172A", fontWeight: "800" },
   sectionTitle: { fontSize: 18, fontWeight: "800", color: "#0F172A", marginBottom: 12 },
   button: {
     marginTop: 8,

@@ -25,6 +25,7 @@ import TeachersScreen from "../screens/TeachersScreen";
 import UsersScreen from "../screens/UsersScreen";
 import PaymentsScreen from "../screens/PaymentsScreen";
 import UnpaidScreen from "../screens/UnpaidScreen";
+import FeeGridsScreen from "../screens/FeeGridsScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
 import MessagesScreen from "../screens/MessagesScreen";
 import TimetableScreen from "../screens/TimetableScreen";
@@ -93,6 +94,7 @@ export type RootStackParamList = {
   TeacherGrades: undefined;
   Payments: undefined;
   Unpaid: undefined;
+  FeeGrids: undefined;
   Announcements: { announcementId?: string } | undefined;
   Messages: { conversationId?: string } | undefined;
   Timetable: undefined;
@@ -237,7 +239,8 @@ export default function AppNavigator() {
     canReadRoute(session, "Teachers") ||
     canReadView(session, "users") ||
     canReadRoute(session, "Payments") ||
-    canReadRoute(session, "Unpaid");
+    canReadRoute(session, "Unpaid") ||
+    canReadRoute(session, "FeeGrids");
   const canOpenStudentScreens =
     canReadRoute(session, "StudentDetail") ||
     canReadRoute(session, "StudentNotes") ||
@@ -292,6 +295,9 @@ export default function AppNavigator() {
             )}
             {canReadRoute(session, "Unpaid") && (
               <Stack.Screen name="Unpaid" component={UnpaidScreen} options={{ title: "Impayés" }} />
+            )}
+            {canReadRoute(session, "FeeGrids") && (
+              <Stack.Screen name="FeeGrids" component={FeeGridsScreen} options={{ title: "Grilles de frais" }} />
             )}
           </>
         )}

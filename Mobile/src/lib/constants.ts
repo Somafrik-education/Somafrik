@@ -17,6 +17,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   assignments: "Affectations",
   payments: "Paiements",
   Unpaid: "Impayés",
+  FeeGrids: "Frais & tarifs",
   announcements: "Announcements",
   messages: "Messages",
   presences: "Présences",
@@ -73,5 +74,5 @@ export const ENTITY_VIEW_MAP: Record<string, string> = {
 export const SCHOOL_ENTITY_VIEWS = new Set([
   "classes", "courses", "assignments", "payments", "messages", "presences", "notes",
   "exams", "bulletins", "documents", "announcements", "students", "teachers",
-  "Timetable", "ReportCards", "Unpaid",
+  "Timetable", "ReportCards", "Unpaid", "FeeGrids",
 ]);

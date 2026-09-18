@@ -1,6 +1,7 @@
 export type UnpaidStudentRow = {
   studentId: string;
   studentName: string;
+  matricule?: string;
   className?: string;
   schoolCode: string;
   periodLabel?: string;
@@ -12,10 +13,23 @@ export type UnpaidStudentRow = {
   daysLate: number;
   severity?: string;
   status?: string;
+  lastReminderAt?: string;
+  reminderCount?: number;
+};
+
+export type UnpaidFeeLine = {
+  studentId: string;
+  schoolCode: string;
+  periodLabel?: string;
+  academicYear?: string;
+  amountDue: number;
+  currency?: string;
 };
 
 export type UnpaidLedger = {
   rows: UnpaidStudentRow[];
+  fees: UnpaidFeeLine[];
+  catalogRows: UnpaidStudentRow[];
   studentCount: number;
   totalAmountDue: number;
   currency: string;
@@ -40,6 +54,8 @@ export type UnpaidLedgerState = UnpaidLedger & {
 
 export const EMPTY_UNPAID_LEDGER: UnpaidLedger = {
   rows: [],
+  fees: [],
+  catalogRows: [],
   studentCount: 0,
   totalAmountDue: 0,
   currency: "",
@@ -59,6 +75,21 @@ function schoolCode(value: unknown): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
+function normalizeUnpaidFeeLine(value: unknown): UnpaidFeeLine | null {
+  const row = asRecord(value);
+  const studentId = String(row.studentId ?? row.student_id ?? "").trim();
+  const rowSchoolCode = schoolCode(row.schoolCode ?? row.school_code);
+  if (!studentId || !rowSchoolCode) return null;
+  return {
+    studentId,
+    schoolCode: rowSchoolCode,
+    periodLabel: String(row.periodLabel ?? row.period_label ?? "").trim() || undefined,
+    academicYear: String(row.academicYear ?? row.academic_year ?? "").trim() || undefined,
+    amountDue: Math.max(0, finiteNumber(row.balance ?? row.amountDue ?? row.amount_due)),
+    currency: String(row.currency ?? "").trim().toUpperCase() || undefined,
+  };
+}
+
 function normalizeUnpaidStudentRow(value: unknown): UnpaidStudentRow | null {
   const row = asRecord(value);
   const studentId = String(row.studentId ?? row.student_id ?? "").trim();
@@ -68,6 +99,7 @@ function normalizeUnpaidStudentRow(value: unknown): UnpaidStudentRow | null {
   return {
     studentId,
     studentName: String(row.studentName ?? row.student_name ?? studentId).trim() || studentId,
+    matricule: String(row.matricule ?? "").trim() || undefined,
     className: String(row.className ?? row.class_name ?? "").trim() || undefined,
     schoolCode: rowSchoolCode,
     periodLabel: String(row.periodLabel ?? row.period_label ?? "").trim() || undefined,
@@ -79,6 +111,8 @@ function normalizeUnpaidStudentRow(value: unknown): UnpaidStudentRow | null {
     daysLate: Math.max(0, finiteNumber(row.daysLate ?? row.days_late)),
     severity: String(row.severity ?? "").trim() || undefined,
     status: String(row.status ?? "").trim() || undefined,
+    lastReminderAt: String(row.lastReminderAt ?? row.last_reminder_at ?? "").trim() || undefined,
+    reminderCount: finiteNumber(row.reminderCount ?? row.reminder_count) || undefined,
   };
 }
 
@@ -94,6 +128,10 @@ export function normalizeUnpaidLedger(payload: unknown, requestedSchoolCode?: st
     .filter((row): row is UnpaidStudentRow => Boolean(row))
     .filter((row) => !requested || row.schoolCode === requested)
     .filter((row) => row.amountDue > 0);
+  const fees = (Array.isArray(body.fees) ? body.fees : [])
+    .map(normalizeUnpaidFeeLine)
+    .filter((row): row is UnpaidFeeLine => Boolean(row))
+    .filter((row) => !requested || row.schoolCode === requested);
 
   const groupedTotals = new Map<string, number>();
   for (const row of rows) {
@@ -106,6 +144,8 @@ export function normalizeUnpaidLedger(payload: unknown, requestedSchoolCode?: st
 
   return {
     rows,
+    fees,
+    catalogRows: rows,
     studentCount: new Set(rows.map((row) => row.studentId)).size,
     totalAmountDue: singleCurrencyTotal?.amount ?? 0,
     currency: singleCurrencyTotal?.currency ?? "",

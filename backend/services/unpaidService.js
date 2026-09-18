@@ -71,6 +71,23 @@ function scopeFees(state, principal) {
   return fees.filter((fee) => String(fee.schoolCode ?? "").trim().toUpperCase() === schoolCode);
 }
 
+function resolveStudentRecord(state, studentId) {
+  const key = String(studentId ?? "").trim();
+  if (!key) return undefined;
+  return (state.students ?? []).find((row) =>
+    [row.id, row.publicId, row.matricule, row.studentCode]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .includes(key),
+  );
+}
+
+function resolveStudentMatricule(state, studentId) {
+  const student = resolveStudentRecord(state, studentId);
+  const matricule = String(student?.matricule ?? student?.studentCode ?? student?.publicId ?? "").trim();
+  return matricule || undefined;
+}
+
 function listUnpaidFees(state, principal, filters = {}, now = new Date()) {
   let fees = scopeFees(state, principal).filter((fee) => {
     if (!UNPAID_FEE_STATUSES.has(fee.status) || fee.balance <= 0) return false;
@@ -90,7 +107,14 @@ function listUnpaidFees(state, principal, filters = {}, now = new Date()) {
   if (filters.search) {
     const q = normalize(filters.search);
     fees = fees.filter((fee) => {
-      const haystack = [fee.studentName, fee.studentId, fee.className, fee.label, fee.periodLabel]
+      const haystack = [
+        fee.studentName,
+        fee.studentId,
+        resolveStudentMatricule(state, fee.studentId),
+        fee.className,
+        fee.label,
+        fee.periodLabel,
+      ]
         .map((value) => normalize(value))
         .join(" ");
       return haystack.includes(q);
@@ -122,6 +146,7 @@ function aggregateByStudent(fees, reminders, state, now = new Date()) {
     return {
       studentId,
       studentName: primary.studentName ?? studentId,
+      matricule: resolveStudentMatricule(state, studentId),
       className: primary.className,
       schoolCode: primary.schoolCode,
       periodLabel: periods.length === 1 ? String(periods[0]) : periods.length > 1 ? "Plusieurs périodes" : "—",
