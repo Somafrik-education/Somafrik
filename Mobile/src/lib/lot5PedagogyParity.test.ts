@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { classGradesStats } from "./classGradesStats";
+import { classGradesStats, resolveClassGradesScope } from "./classGradesStats";
+import { examFormToPatchPayload, examPatchChanged, examToForm } from "./examEdit";
 import { canArchiveExams, canCreateExams, canReadExams, canUpdateExams, canValidateExams } from "./examPermissions";
 import { normalizeGrade } from "./evaluationsV2";
 import { canonicalCourseAverage, canonicalStudentGeneralAverage, courseOptionsFromNotes } from "./pedagogyAverage";
@@ -163,6 +164,130 @@ test("PARITY-060 — stats classe, égalité de rang, at-risk, scope enseignant"
 
   const none = classGradesStats({ students, notes: [], className: "6ème A", period: "T2" });
   assert.equal(none.empty, true);
+
+  const notesWithBOnT2 = [
+    ...notes,
+    normalizeGrade({
+      id: "d1",
+      evaluationId: "MATH-T2",
+      studentId: "s4",
+      value: 14,
+      scale: 20,
+      subject: "Mathématiques",
+      evaluationCoefficient: 1,
+      coefficient: 2,
+      gradeStatus: "graded",
+      period: "T2",
+    }),
+  ];
+  const emptyAOnT2 = classGradesStats({
+    students,
+    notes: notesWithBOnT2,
+    className: "6ème A",
+    period: "T2",
+  });
+  assert.equal(emptyAOnT2.empty, true);
+  assert.equal(emptyAOnT2.ranking.length, 0);
+
+  const teacher = { role: "teacher", user: { id: "t1", role: "teacher" } };
+  const admin = { role: "school_admin", user: { id: "a1", role: "school_admin" } };
+  const teacherAssignments = [
+    {
+      id: "asg-a",
+      teacherId: "t1",
+      teacherUserId: "t1",
+      className: "6ème A",
+      course: "Mathématiques",
+      status: "active",
+    },
+  ];
+  const teacherScope = resolveClassGradesScope(teacher, students, {
+    assignments: teacherAssignments,
+    assignmentsSource: "network",
+  });
+  assert.deepEqual(teacherScope.classOptions, ["6ème A"]);
+  assert.deepEqual(teacherScope.allowedClassNames, ["6ème A"]);
+  assert.equal(
+    classGradesStats({
+      students,
+      notes,
+      className: "6ème A",
+      allowedClassNames: teacherScope.allowedClassNames,
+    }).empty,
+    false,
+  );
+  assert.equal(
+    classGradesStats({
+      students,
+      notes: notesWithBOnT2,
+      className: "6ème B",
+      period: "T2",
+      allowedClassNames: teacherScope.allowedClassNames,
+    }).empty,
+    true,
+  );
+
+  const noAssign = resolveClassGradesScope(teacher, students, {
+    assignments: [],
+    assignmentsSource: "network",
+  });
+  assert.deepEqual(noAssign.classOptions, []);
+  assert.deepEqual(noAssign.allowedClassNames, []);
+  assert.equal(
+    classGradesStats({
+      students,
+      notes,
+      className: "6ème A",
+      allowedClassNames: noAssign.allowedClassNames,
+    }).empty,
+    true,
+  );
+
+  const adminScope = resolveClassGradesScope(admin, students, {
+    assignments: teacherAssignments,
+    assignmentsSource: "network",
+  });
+  assert.deepEqual(adminScope.classOptions, ["6ème A", "6ème B"]);
+  assert.equal(adminScope.allowedClassNames, null);
+});
+
+test("PARITY-024 — PATCH examen édité ≠ DTO initial", () => {
+  const initial = {
+    name: "Contrôle T1",
+    className: "6ème A",
+    subject: "Mathématiques",
+    date: "2026-03-15",
+    period: "T1",
+    examType: "Contrôle",
+  };
+  const form = examToForm(initial);
+  assert.equal(form.date, "15-03-2026");
+  const initialPayload = examFormToPatchPayload(form);
+  assert.deepEqual(initialPayload, {
+    name: "Contrôle T1",
+    className: "6ème A",
+    subject: "Mathématiques",
+    date: "2026-03-15",
+    period: "T1",
+    examType: "Contrôle",
+  });
+  assert.equal(examPatchChanged(initial, form), false);
+
+  const edited = { ...form, name: "Contrôle T2", date: "20-03-2026", period: "T2" };
+  const payload = examFormToPatchPayload(edited);
+  assert.notDeepEqual(payload, initialPayload);
+  assert.notDeepEqual(payload, {
+    name: initial.name,
+    className: initial.className,
+    subject: initial.subject,
+    examType: initial.examType,
+    date: initial.date,
+    period: initial.period,
+  });
+  assert.equal(payload.name, "Contrôle T2");
+  assert.equal(payload.date, "2026-03-20");
+  assert.equal(payload.period, "T2");
+  assert.equal(examPatchChanged(initial, edited), true);
 });
 
 test("PARITY-024 — RBAC Examens aligné matrice backend", () => {

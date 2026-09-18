@@ -19,7 +19,8 @@ import {
   canUpdateExams,
   canValidateExams,
 } from "../lib/examPermissions";
-import { formatDateForDisplay, toApiDate } from "../lib/dates";
+import { formatDateForDisplay } from "../lib/dates";
+import { examFormToPatchPayload, examToForm, type ExamFormFields } from "../lib/examEdit";
 import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
@@ -45,6 +46,9 @@ function classifyFailure(error: unknown): { status: LoadStatus; message: string 
   }
   if (statusCode === 403) {
     return { status: "forbidden", message: "Accès refusé. Le droit Examens est requis." };
+  }
+  if (statusCode === 409) {
+    return { status: "error", message: "Conflit. Rafraîchissez puis réessayez." };
   }
   const message = error instanceof Error ? error.message : String(error ?? "");
   const normalized = message.toLowerCase();
@@ -83,6 +87,8 @@ export default function ExamsScreen() {
   const [periodFilter, setPeriodFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
+  const [editForm, setEditForm] = useState<ExamFormFields>(EMPTY_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -149,6 +155,11 @@ export default function ExamsScreen() {
     }
   };
 
+  const discardEdit = () => {
+    setEditingId(null);
+    setEditForm(EMPTY_FORM);
+  };
+
   const runMutation = async (action: () => Promise<unknown>, confirm: string) => {
     if (status === "offline") {
       Alert.alert("Hors ligne", "Les examens sont online-only. Reconnectez-vous.");
@@ -164,6 +175,7 @@ export default function ExamsScreen() {
             try {
               await action();
               setDetails({});
+              discardEdit();
               await refresh();
             } catch (error) {
               const failure = classifyFailure(error);
@@ -183,21 +195,44 @@ export default function ExamsScreen() {
 
   const submitCreate = () => {
     if (!canCreate) return;
-    const apiDate = toApiDate(form.date.trim()) || form.date.trim();
     void runMutation(
       () =>
-        createExam(
-          {
-            name: form.name.trim(),
-            className: form.className.trim(),
-            subject: form.subject.trim(),
-            date: apiDate,
-            period: form.period.trim(),
-            examType: form.examType.trim(),
-          },
-          { idempotencyKey: newIdempotencyKey() },
-        ).then(() => setForm(EMPTY_FORM)),
+        createExam(examFormToPatchPayload(form), { idempotencyKey: newIdempotencyKey() }).then(() =>
+          setForm(EMPTY_FORM),
+        ),
       "Créer cet examen ?",
+    );
+  };
+
+  const startEdit = (examId: string) => {
+    if (status === "offline") {
+      Alert.alert("Hors ligne", "Les examens sont online-only. Reconnectez-vous.");
+      return;
+    }
+    void (async () => {
+      setBusy(true);
+      try {
+        const latest = await getExam(examId);
+        setDetails((current) => ({ ...current, [latest.id]: latest }));
+        setEditingId(latest.id);
+        setEditForm(examToForm(latest));
+      } catch (error) {
+        const failure = classifyFailure(error);
+        Alert.alert("Examen", failure.message);
+        if (failure.status === "offline") {
+          setStatus("offline");
+          setErrorMessage(failure.message);
+        }
+      } finally {
+        setBusy(false);
+      }
+    })();
+  };
+
+  const submitEdit = (examId: string) => {
+    void runMutation(
+      () => patchExam(examId, examFormToPatchPayload(editForm), { idempotencyKey: newIdempotencyKey() }),
+      "Enregistrer les informations de cet examen ?",
     );
   };
 
@@ -313,45 +348,65 @@ export default function ExamsScreen() {
                 <Text style={styles.actionText}>Valider</Text>
               </TouchableOpacity>
             ) : null}
-            {canUpdate ? (
-              <>
+            {canUpdate && editingId === item.id ? (
+              <View style={styles.form}>
+                <Text style={styles.sectionTitle}>Modifier l'examen</Text>
+                {(
+                  [
+                    ["name", "Intitulé"],
+                    ["className", "Classe"],
+                    ["subject", "Matière"],
+                    ["date", "Date JJ-MM-AAAA"],
+                    ["period", "Période"],
+                    ["examType", "Type"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <TextInput
+                    key={key}
+                    value={editForm[key]}
+                    onChangeText={(value) => setEditForm((current) => ({ ...current, [key]: value }))}
+                    placeholder={label}
+                    style={styles.search}
+                  />
+                ))}
+                <TouchableOpacity
+                  style={[styles.action, mutationsBlocked && styles.actionDisabled]}
+                  disabled={mutationsBlocked}
+                  onPress={() => submitEdit(item.id)}
+                >
+                  <Text style={styles.actionText}>Enregistrer</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.actionSecondary, mutationsBlocked && styles.actionDisabled]}
                   disabled={mutationsBlocked}
-                  onPress={() =>
-                    void runMutation(
-                      () =>
-                        patchExam(
-                          item.id,
-                          {
-                            name: detail.name,
-                            className: detail.className,
-                            subject: detail.subject,
-                            examType: detail.examType,
-                            date: detail.date,
-                            period: detail.period,
-                          },
-                          { idempotencyKey: newIdempotencyKey() },
-                        ),
-                      "Enregistrer les informations de cet examen ?",
-                    )
-                  }
+                  onPress={discardEdit}
                 >
-                  <Text style={styles.actionSecondaryText}>Modifier</Text>
+                  <Text style={styles.actionSecondaryText}>Annuler les modifications</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionDanger, mutationsBlocked && styles.actionDisabled]}
-                  disabled={mutationsBlocked}
-                  onPress={() =>
-                    void runMutation(
-                      () => cancelExam(item.id, { idempotencyKey: newIdempotencyKey() }),
-                      "Annuler cet examen ?",
-                    )
-                  }
-                >
-                  <Text style={styles.actionDangerText}>Annuler</Text>
-                </TouchableOpacity>
-              </>
+              </View>
+            ) : null}
+            {canUpdate && editingId !== item.id ? (
+              <TouchableOpacity
+                style={[styles.actionSecondary, mutationsBlocked && styles.actionDisabled]}
+                disabled={mutationsBlocked}
+                onPress={() => startEdit(item.id)}
+              >
+                <Text style={styles.actionSecondaryText}>Modifier</Text>
+              </TouchableOpacity>
+            ) : null}
+            {canUpdate ? (
+              <TouchableOpacity
+                style={[styles.actionDanger, mutationsBlocked && styles.actionDisabled]}
+                disabled={mutationsBlocked}
+                onPress={() =>
+                  void runMutation(
+                    () => cancelExam(item.id, { idempotencyKey: newIdempotencyKey() }),
+                    "Annuler cet examen ?",
+                  )
+                }
+              >
+                <Text style={styles.actionDangerText}>Annuler</Text>
+              </TouchableOpacity>
             ) : null}
             {canArchive ? (
               <TouchableOpacity

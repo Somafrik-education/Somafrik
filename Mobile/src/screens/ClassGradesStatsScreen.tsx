@@ -5,8 +5,7 @@ import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import QueryStateView from "../components/QueryStateView";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { classGradesStats } from "../lib/classGradesStats";
-import { resolveTeacherAssignmentsForSession } from "../lib/establishment";
+import { classGradesStats, resolveClassGradesScope } from "../lib/classGradesStats";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { hasSecurityPermission } from "../domain/security/permissions";
 
@@ -32,28 +31,15 @@ export default function ClassGradesStatsScreen() {
   const [period, setPeriod] = useState("");
 
   const canRead = hasSecurityPermission(session, "Notes", "READ");
-  const isTeacher = String(session?.role ?? "").toLowerCase().includes("enseign");
-
-  const scopedAssignments = useMemo(
+  const { classOptions, allowedClassNames } = useMemo(
     () =>
-      resolveTeacherAssignmentsForSession(session, {
+      resolveClassGradesScope(session, studentsData, {
         assignments: assignmentsData,
         teachers: teachersData,
         assignmentsSource: assignmentsSnapshot.source,
       }),
-    [assignmentsData, assignmentsSnapshot.source, session, teachersData],
+    [assignmentsData, assignmentsSnapshot.source, session, studentsData, teachersData],
   );
-
-  const allowedClassNames = useMemo(() => {
-    if (!isTeacher) return null;
-    return [...new Set(scopedAssignments.map((row) => String(row.className ?? "").trim()).filter(Boolean))];
-  }, [isTeacher, scopedAssignments]);
-
-  const classOptions = useMemo(() => {
-    const fromStudents = [...new Set(studentsData.map((row) => String(row.className ?? "").trim()).filter(Boolean))];
-    const options = allowedClassNames ? fromStudents.filter((name) => allowedClassNames.includes(name)) : fromStudents;
-    return options.sort((a, b) => a.localeCompare(b, "fr"));
-  }, [allowedClassNames, studentsData]);
 
   const periodOptions = useMemo(
     () =>

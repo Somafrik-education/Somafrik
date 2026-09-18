@@ -1,4 +1,9 @@
 import { notesForStudent, type CanonicalGrade } from "./evaluationsV2";
+import {
+  isTeacherSession,
+  teacherScopedClassLabels,
+  type TeacherScopeState,
+} from "./establishment";
 import { canonicalStudentGeneralAverage } from "./pedagogyAverage";
 
 export type ClassGradesStudent = {
@@ -72,11 +77,14 @@ export function classGradesStats(input: {
 
   const classStudents = input.students.filter((student) => normalize(student.className) === className);
   const periodNotes = notesForPeriod(input.notes, input.period);
+  const classStudentIds = new Set(classStudents.map((student) => student.id));
+  const classPeriodNotes = periodNotes.filter((note) => classStudentIds.has(String(note.studentId ?? "")));
+  if (!classPeriodNotes.length) return empty;
   const threshold = Number(input.threshold ?? 10);
 
   const rankedSource = classStudents
     .map((student) => {
-      const studentNotes = notesForStudent(periodNotes, student.id);
+      const studentNotes = notesForStudent(classPeriodNotes, student.id);
       const computed = canonicalStudentGeneralAverage(studentNotes);
       const average = computed.available && computed.average != null ? computed.average : 0;
       return { student, average };
@@ -108,6 +116,18 @@ export function classGradesStats(input: {
     successRate: averages.length ? Math.round((successCount / averages.length) * 100) : 0,
     ranking,
     atRisk: ranking.filter((row) => row.average > 0 && row.average < threshold),
-    empty: periodNotes.length === 0,
+    empty: false,
+  };
+}
+
+export function resolveClassGradesScope(
+  session: { role?: string; user?: { id?: string; role?: string } } | null,
+  students: ClassGradesStudent[],
+  state: TeacherScopeState = {},
+): { classOptions: string[]; allowedClassNames: string[] | null } {
+  const classOptions = teacherScopedClassLabels(session, students as never, state);
+  return {
+    classOptions,
+    allowedClassNames: isTeacherSession(session) ? classOptions : null,
   };
 }

@@ -40,4 +40,12 @@ npm --prefix Mobile run typecheck
 - **PARITY-060** — `classGradesStats` + `ClassGradesStatsScreen` : moyenne, meilleur, plus faible, réussite, classement, égalités, at-risk < 10, scope enseignant.
 - Job CI `LOT 5 parity` dans Required, `needs` extensible (`lot5` n'est pas figé comme dernier).
 
+## HOLD `#5737425965` — édition examen, empty class-scoped, scope enseignant
+
+Correction-only depuis `0c8aba02` :
+
+- Formulaire natif Modifier : prérempli via `getExam`, champs du contrat live, date `JJ-MM-AAAA` → `toApiDate`, PATCH des valeurs éditées, discard explicite. Payload d'un vrai changement ≠ DTO initial.
+- `classGradesStats({ className: "6ème A", period: "T2" })` reste `empty === true` même si 6ème B a des notes T2 (`classPeriodNotes`).
+- Scope via `isTeacherSession` / `teacherScopedClassLabels` : `role: "teacher"` 6ème A seulement, 6ème B refusé, zéro affectation fail-closed, admin Notes:READ = classes de l'établissement.
+
 STOP : Draft. Pas Ready. Pas merge. Pas LOT 6.

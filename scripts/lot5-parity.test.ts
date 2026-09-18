@@ -70,6 +70,20 @@ test("PARITY-024 — Examens Mobile natifs /exams, lifecycle RBAC, pas planning-
   assert.doesNotMatch(screen, /\/backoffice\/planning-exams/);
   assert.match(screen, /listExams|getExam|createExam|validateExam|cancelExam|archiveExam/);
   assert.match(screen, /formatDateForDisplay/);
+  assert.ok(exists("Mobile/src/lib/examEdit.ts"), "examEdit manquant");
+  const examEdit = read("Mobile/src/lib/examEdit.ts");
+  assert.match(examEdit, /export function examToForm/);
+  assert.match(examEdit, /export function examFormToPatchPayload/);
+  assert.match(examEdit, /export function examPatchChanged/);
+  assert.match(examEdit, /formatDateForDisplay/);
+  assert.match(examEdit, /toApiDate/);
+  assert.match(screen, /editForm/);
+  assert.match(screen, /startEdit/);
+  assert.match(screen, /discardEdit/);
+  assert.match(screen, /submitEdit/);
+  assert.match(screen, /examToForm|examFormToPatchPayload/);
+  assert.match(screen, /Annuler les modifications/);
+  assert.doesNotMatch(screen, /name:\s*detail\.name/);
   assert.match(nav, /Exams/);
   assert.match(perms, /canReadExams|Examens:READ/);
   assert.match(perms, /Organiser examens/);
@@ -102,10 +116,16 @@ test("PARITY-060 — statistiques classe Mobile = contrat Web", () => {
   assert.match(helper, /canonicalStudentGeneralAverage/);
   assert.match(helper, /classAverage|bestAverage|lowestAverage|successRate/);
   assert.match(helper, /atRisk|ranking/);
+  assert.match(helper, /classPeriodNotes/);
+  assert.match(helper, /export function resolveClassGradesScope/);
+  assert.match(helper, /isTeacherSession/);
+  assert.match(helper, /teacherScopedClassLabels/);
   const screen = exists("Mobile/src/screens/ClassGradesStatsScreen.tsx")
     ? read("Mobile/src/screens/ClassGradesStatsScreen.tsx")
     : read("Mobile/src/screens/TeacherGradesScreen.tsx");
   assert.match(screen, /classGradesStats|Classement|élèves en difficulté|reussite|réussite/i);
+  assert.match(screen, /resolveClassGradesScope/);
+  assert.doesNotMatch(screen, /includes\(["'`]enseign/);
 });
 
 test("PARITY-023/024/033/060 — gate CI lot5 extensible avec LOT 0–4", () => {
