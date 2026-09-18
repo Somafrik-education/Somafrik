@@ -87,7 +87,9 @@ test("PARITY-032 C18 REST canonique PostgreSQL, pas de machine Expo", () => {
   const classStudents = read("backend/db/classStudentsRepository.js");
   assert.match(classStudents, /enrollments: enrollments\.map\(mapEnrollmentRow\)/);
   assert.match(classStudents, /VALUES \(\$1, \$2, \$3, \$4, CURRENT_DATE, 'ENROLLED'\)/);
+  assert.match(classStudents, /st\.student_code = \$1 OR st\.id::text = \$1/);
   const c18Http = read("backend/lib/studentEnrollmentC18.http.pg.test.js");
+  assert.match(c18Http, /student_code FROM students WHERE id/);
   assert.match(c18Http, /autre tenant|tokenB/);
   assert.match(c18Http, /X-Somafrik-School-Code/);
   assert.match(c18Http, /tokenParent/);

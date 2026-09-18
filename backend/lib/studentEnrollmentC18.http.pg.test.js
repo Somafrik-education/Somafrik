@@ -177,6 +177,16 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
          ($3, $4, 'STU-A-C18', 'Cedric', 'C18', 'active')`,
       [STUDENT_A, STUDENT_B, STUDENT_C18, schoolAId, schoolBId],
     );
+    // Le trigger d'identité réécrit tout student_code client en matricule canonique.
+    const insertedStudents = await pool.query(
+      `SELECT id::text AS id, student_code FROM students WHERE id = ANY($1::uuid[])`,
+      [[STUDENT_A, STUDENT_B, STUDENT_C18]],
+    );
+    const codeById = Object.fromEntries(insertedStudents.rows.map((row) => [row.id, row.student_code]));
+    const codeA = codeById[STUDENT_A];
+    const codeB = codeById[STUDENT_B];
+    const codeC18 = codeById[STUDENT_C18];
+    assert.ok(codeA && codeB && codeC18, `codes=${JSON.stringify(codeById)}`);
     await pool.query(
       `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
        VALUES
@@ -269,7 +279,7 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
       roleKeys: ["PARENT"],
       schoolCode: LEFTOVER_A,
       permissions: ["Voir enfant", "Élèves:READ"],
-      studentIds: [STUDENT_A, "STU-A-001"],
+      studentIds: [STUDENT_A, codeA],
     });
     const tokenStudent = mint({
       sub: USER_STUDENT,
@@ -277,27 +287,29 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
       roleKeys: ["STUDENT"],
       schoolCode: LEFTOVER_A,
       permissions: ["Élèves:READ"],
-      studentIds: [STUDENT_A, "STU-A-001"],
+      studentIds: [STUDENT_A, codeA],
     });
 
-    const listed = await request("/students/STU-A-C18/enrollments", { token: tokenA });
+    const listed = await request(`/students/${encodeURIComponent(codeC18)}/enrollments`, { token: tokenA });
     assert.equal(listed.status, 200, JSON.stringify(listed.data));
     const enrollmentId = listed.data.items[0].id;
     assert.equal(listed.data.items[0].status, "PENDING_REVIEW");
-    const listedOwn = await request("/students/STU-A-001/enrollments", { token: tokenA });
+    const listedByUuid = await request(`/students/${STUDENT_C18}/enrollments`, { token: tokenA });
+    assert.equal(listedByUuid.status, 200, JSON.stringify(listedByUuid.data));
+    const listedOwn = await request(`/students/${encodeURIComponent(codeA)}/enrollments`, { token: tokenA });
     assert.equal(listedOwn.status, 200, JSON.stringify(listedOwn.data));
     const ownEnrollmentId = listedOwn.data.items[0].id;
 
-    const otherTenant = await request("/students/STU-A-C18/enrollments", { token: tokenB });
+    const otherTenant = await request(`/students/${encodeURIComponent(codeC18)}/enrollments`, { token: tokenB });
     assert.ok(otherTenant.status === 403 || otherTenant.status === 404, `tenant B status=${otherTenant.status}`);
 
-    const headerWiden = await request("/students/STU-B-001/enrollments", {
+    const headerWiden = await request(`/students/${encodeURIComponent(codeB)}/enrollments`, {
       token: tokenA,
       headers: { "X-Somafrik-School-Code": LOGIN_B },
     });
     assert.ok(headerWiden.status === 403 || headerWiden.status === 404, `header widen status=${headerWiden.status}`);
 
-    const validated = await request(`/students/STU-A-C18/enrollments/${enrollmentId}/validate`, {
+    const validated = await request(`/students/${encodeURIComponent(codeC18)}/enrollments/${enrollmentId}/validate`, {
       method: "POST",
       token: tokenA,
       body: {},
@@ -305,7 +317,7 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
     assert.equal(validated.status, 200, JSON.stringify(validated.data));
     assert.equal(validated.data.status, "APPROVED");
 
-    const assigned = await request(`/students/STU-A-C18/enrollments/${enrollmentId}/assign-class`, {
+    const assigned = await request(`/students/${encodeURIComponent(codeC18)}/enrollments/${enrollmentId}/assign-class`, {
       method: "POST",
       token: tokenA,
       body: { classCode: CLASS_A },
@@ -313,7 +325,7 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
     assert.equal(assigned.status, 200, JSON.stringify(assigned.data));
     assert.equal(assigned.data.status, "ENROLLED");
 
-    const transferred = await request(`/students/STU-A-C18/enrollments/${enrollmentId}/transfer`, {
+    const transferred = await request(`/students/${encodeURIComponent(codeC18)}/enrollments/${enrollmentId}/transfer`, {
       method: "POST",
       token: tokenA,
       body: { destinationSchoolName: "Lycée Horizon" },
@@ -321,38 +333,38 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
     assert.equal(transferred.status, 200, JSON.stringify(transferred.data));
     assert.equal(transferred.data.status, "TRANSFERRED");
 
-    const reverse = await request(`/students/STU-A-C18/enrollments/${enrollmentId}/validate`, {
+    const reverse = await request(`/students/${encodeURIComponent(codeC18)}/enrollments/${enrollmentId}/validate`, {
       method: "POST",
       token: tokenA,
       body: {},
     });
     assert.equal(reverse.status, 409, "terminal: pas de retour arrière");
 
-    const teacherOwn = await request("/students/STU-A-001", { token: tokenTeacher });
+    const teacherOwn = await request(`/students/${encodeURIComponent(codeA)}`, { token: tokenTeacher });
     assert.equal(teacherOwn.status, 200, JSON.stringify(teacherOwn.data));
-    const teacherOther = await request("/students/STU-B-001", { token: tokenTeacher });
+    const teacherOther = await request(`/students/${encodeURIComponent(codeB)}`, { token: tokenTeacher });
     assert.ok(teacherOther.status === 403 || teacherOther.status === 404);
-    const teacherMut = await request(`/students/STU-A-001/enrollments/${ownEnrollmentId}/close`, {
+    const teacherMut = await request(`/students/${encodeURIComponent(codeA)}/enrollments/${ownEnrollmentId}/close`, {
       method: "POST",
       token: tokenTeacher,
       body: {},
     });
     assert.equal(teacherMut.status, 403);
 
-    const parentOwn = await request("/students/STU-A-001", { token: tokenParent });
+    const parentOwn = await request(`/students/${encodeURIComponent(codeA)}`, { token: tokenParent });
     assert.equal(parentOwn.status, 200, JSON.stringify(parentOwn.data));
-    const parentOther = await request("/students/STU-A-C18", { token: tokenParent });
+    const parentOther = await request(`/students/${encodeURIComponent(codeC18)}`, { token: tokenParent });
     assert.ok(parentOther.status === 403 || parentOther.status === 404);
-    const parentMut = await request(`/students/STU-A-001/enrollments/${ownEnrollmentId}/close`, {
+    const parentMut = await request(`/students/${encodeURIComponent(codeA)}/enrollments/${ownEnrollmentId}/close`, {
       method: "POST",
       token: tokenParent,
       body: {},
     });
     assert.equal(parentMut.status, 403);
 
-    const studentOwn = await request("/students/STU-A-001", { token: tokenStudent });
+    const studentOwn = await request(`/students/${encodeURIComponent(codeA)}`, { token: tokenStudent });
     assert.equal(studentOwn.status, 200, JSON.stringify(studentOwn.data));
-    const studentMut = await request(`/students/STU-A-001/enrollments/${ownEnrollmentId}/close`, {
+    const studentMut = await request(`/students/${encodeURIComponent(codeA)}/enrollments/${ownEnrollmentId}/close`, {
       method: "POST",
       token: tokenStudent,
       body: {},
@@ -361,9 +373,9 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
 
     const relationsMissing = await request("/parents/relations", { token: tokenA });
     assert.equal(relationsMissing.status, 400);
-    const relationsA = await request("/parents/relations?studentId=STU-A-001", { token: tokenA });
+    const relationsA = await request(`/parents/relations?studentId=${encodeURIComponent(codeA)}`, { token: tokenA });
     assert.equal(relationsA.status, 200, JSON.stringify(relationsA.data));
-    const relationsB = await request("/parents/relations?studentId=STU-A-001", { token: tokenB });
+    const relationsB = await request(`/parents/relations?studentId=${encodeURIComponent(codeA)}`, { token: tokenB });
     assert.ok(relationsB.status === 403 || relationsB.status === 404);
   } finally {
     await stopChild(child);

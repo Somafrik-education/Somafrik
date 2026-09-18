@@ -142,9 +142,11 @@ function createMemoryDb() {
         return { id: row.id, enrollment_date: row.enrollment_date };
       }
 
-      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE") && text.includes("LIMIT 1")) {
+      if (text.includes("FROM STUDENTS ST") && text.includes("ST.STUDENT_CODE = $1") && text.includes("LIMIT 1")) {
         const student = students.find(
-          (row) => row.student_code === params[0] && row.school_id === params[1],
+          (row) =>
+            (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+            row.school_id === params[1],
         );
         if (!student) return null;
         return joinActiveEnrollment(student);
@@ -152,7 +154,9 @@ function createMemoryDb() {
 
       if (text.includes("SELECT ST.ID, ST.STUDENT_CODE") && text.includes("FROM STUDENTS ST")) {
         const student = students.find(
-          (row) => row.student_code === params[0] && row.school_id === params[1],
+          (row) =>
+            (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+            row.school_id === params[1],
         );
         return student ?? null;
       }
@@ -405,6 +409,8 @@ async function main() {
   schoolList.forEach(assertStudentProjectionHasNoSecret);
 
   const fetched = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+  const fetchedByUuid = await repo.getByStudentCode(storedStudent.id, "CD-2026-0001");
+  assert.equal(fetchedByUuid.studentCode, enrolled.student.studentCode);
   assert.equal(fetched.firstName, "Awa");
   assert.ok(Array.isArray(fetched.enrollments));
   assert.equal(fetched.enrollments.length, 1);

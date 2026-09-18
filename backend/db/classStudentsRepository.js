@@ -809,7 +809,7 @@ function createClassStudentsRepository(db) {
          LEFT JOIN enrollments e ON e.student_id = st.id AND ${CURRENT_ENROLLMENT_SQL}
          LEFT JOIN classes cl ON cl.id = e.class_id
          LEFT JOIN academic_years ay ON ay.id = e.academic_year_id
-         WHERE st.student_code = $1 AND st.school_id = $2
+         WHERE (st.student_code = $1 OR st.id::text = $1) AND st.school_id = $2
          LIMIT 1`,
         [studentCode, school.id],
       );

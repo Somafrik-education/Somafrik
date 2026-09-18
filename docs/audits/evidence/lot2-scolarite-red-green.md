@@ -65,10 +65,11 @@ Pas de table parallèle. Pas de suppression physique. Alias lecture `active` →
 - `POST /students`, AdminCrud create, `EntityPage` Expo, `POST /backoffice/relations` Mobile
 - LOT 3
 
-CI #707 HEAD `04fbaf73` : LOT 2 HTTP + Risk-targeted.
+CI #707 : job LOT 2 parity exécute `test:lot2-parity` + HTTP PG RBAC/tenant.
 
 1. HTTP C18 : ne pas insérer `users.role = Élève` avec un `user_code` hors matricule canonique (trigger identité). JWT porte le rôle ; `users.role` reste NULL.
 2. Upgrade PG : JOIN roster `active|enrolled` (classe-first écrit `ENROLLED`).
 3. Finance / dataset : lecture `active|enrolled`.
+4. HTTP C18 : relire `students.student_code` après INSERT — le trigger d’identité réécrit tout code client (`STU-A-*`). `GET /api/students/:id` accepte matricule **ou** UUID.
 
 STOP : Draft. Pas Ready. Pas merge. Pas LOT 3.
