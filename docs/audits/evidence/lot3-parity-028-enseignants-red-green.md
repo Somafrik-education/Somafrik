@@ -41,6 +41,20 @@ Vitest Web (GREEN attendu, RED sur base) :
 
 ## GREEN (cette branche)
 
+Commandes locales (`b82e7a1f`) :
+
+```
+npm run test:lot3-parity
+# 7 contrats source GREEN
+# 7 unit createTeacherIdentityFromUsers GREEN (rollback, secret, une TX)
+# PG SKIP local (DATABASE_URL absent) — job CI LOT 3 parity + postgres:16
+# Vitest Web 8 GREEN (UsersPage Enseignant, clientsApi, payload)
+# Mobile mobileCrudParity GREEN
+# verify-teacher-account-creation.js OK (tombstone 403, create-teacher, mustChangePassword, tenant)
+```
+
+Régressions Web : TeachersListPage + UsersPage superadmin/schoolAdmin = 52 tests GREEN.
+
 - `teachersApi.create` / `CreateTeacherPayload` supprimés. Liste / fiche / PATCH / DELETE inchangés.
 - `clientsApi.createTeacherIdentity` → `POST /backoffice/users/create-teacher` (+ `buildCreateUserPayload` tenant).
 - `UsersPage` : rôle Enseignant à la création → `createTeacherIdentity` ; toast login + `temporarySecret`. Autres rôles : `createUser`/`provision` inchangés. GRANT sur compte existant (Attribuer) inchangé.
