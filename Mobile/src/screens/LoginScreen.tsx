@@ -39,8 +39,13 @@ import {
 import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
 import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
+import { isSchoolAdminRole } from "../lib/format";
 import { schoolLogoDisplayUri } from "../lib/schoolLogo";
-import { resetSchoolSetupWizardSessionDismiss } from "../lib/schoolSetupMobile";
+import {
+  resetSchoolSetupWizardSessionDismiss,
+  shouldAutoOpenSchoolSetupWizard,
+} from "../lib/schoolSetupMobile";
+import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
 import { validateAccountSecret } from "../lib/userAccountRules";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
@@ -167,9 +172,26 @@ export default function LoginScreen({ navigation, route }: Props) {
       },
     });
     setSession(safe);
+    const role = safe.role ?? safe.user?.role;
+    let openSchoolSetup = false;
+    if (isSchoolAdminRole(role)) {
+      try {
+        const payload = await schoolSetupStatusApi.get();
+        openSchoolSetup = shouldAutoOpenSchoolSetupWizard({
+          payload,
+          role,
+          mustChangePassword: false,
+        });
+      } catch {
+        openSchoolSetup = false;
+      }
+    }
     navigation.navigate("Home", {
       role: safe.role,
     });
+    if (openSchoolSetup) {
+      navigation.navigate("SchoolSetup");
+    }
   };
 
   const clearPasswordFieldError = (key: string) => {

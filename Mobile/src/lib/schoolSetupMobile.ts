@@ -107,6 +107,13 @@ export function schoolSetupWizardSteps(payload: SchoolSetupPayload): SchoolSetup
   ];
 }
 
+export function shouldAutoOpenSchoolSetupWizard(input: SchoolSetupWizardGateInput = {}) {
+  if (input.mustChangePassword) return false;
+  if (isSchoolSetupWizardDismissedThisSession()) return false;
+  if (!isSchoolAdminRole(input.role)) return false;
+  return input.payload?.status === "NOT_STARTED";
+}
+
 export function shouldShowDashboardSetupWidget(input: SchoolSetupWizardGateInput = {}) {
   if (!isSchoolAdminRole(input.role)) return false;
   const status = input.payload?.status;

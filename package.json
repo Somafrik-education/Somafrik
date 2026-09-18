@@ -35,6 +35,7 @@
     "test:parite-l3-pedagogie": "npx --yes tsx web/src/lib/pariteL3Pedagogy.red.ts && npx --yes tsx Mobile/src/lib/pariteL3Pedagogy.red.test.ts",
     "test:parite-scolarite-l0": "npm --prefix web run test -- src/lib/pariteL0Scolarite.red.test.ts && npx --yes tsx Mobile/src/lib/pariteL0Scolarite.red.test.ts && npx --yes tsx Mobile/src/lib/pariteScolariteExpandableUx.test.ts",
     "test:lot0-parity": "npx --yes tsx --test scripts/lot0-parity.test.ts && npx --yes tsx Mobile/src/lib/attendanceTruth.test.ts && npx --yes tsx Mobile/src/lib/userAccountRules.test.ts && npm --prefix web run test -- src/components/ProtectedRoute.lot0.test.tsx src/lib/userAccountRules.test.ts src/pages/LoginPage.lot0.test.tsx",
+    "test:lot1-parity": "npx --yes tsx --test scripts/lot1-parity.test.ts && npx --yes tsx Mobile/src/lib/pariteLot1PlatformSettingsBoundary.test.ts && node --test backend/lib/educationSchoolCatalogScope.test.js",
     "test:progressive-disclosure-ux": "npm --prefix Mobile run test:progressive-disclosure-ux",
     "test:progressive-disclosure-red": "npm --prefix Mobile run test:progressive-disclosure-red",
     "verify:progressive-disclosure-red": "npm --prefix Mobile run verify:progressive-disclosure-red",
