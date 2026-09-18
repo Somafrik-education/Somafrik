@@ -40,12 +40,16 @@ test("canSendReminder — cooldown 3 jours, même dataset que Web", () => {
   assert.equal(expired.allowed, true);
 });
 
+function session(permissions: string[]) {
+  return { role: "accountant", permissions, user: { id: "acc-1", permissions } };
+}
+
 test("canSendUnpaidReminder — Impayés:CREATE | Paiements:UPDATE", () => {
-  assert.equal(canSendUnpaidReminder({ permissions: ["Impayés:READ"] }), false);
-  assert.equal(canSendUnpaidReminder({ permissions: ["Impayés:CREATE"] }), true);
-  assert.equal(canSendUnpaidReminder({ permissions: ["Paiements:UPDATE"] }), true);
-  assert.equal(canForceUnpaidReminder({ permissions: ["Paiements:UPDATE"] }), false);
-  assert.equal(canForceUnpaidReminder({ permissions: ["Impayés:CREATE"] }), true);
+  assert.equal(canSendUnpaidReminder(session(["Impayés:READ"])), false);
+  assert.equal(canSendUnpaidReminder(session(["Impayés:CREATE"])), true);
+  assert.equal(canSendUnpaidReminder(session(["Paiements:UPDATE"])), true);
+  assert.equal(canForceUnpaidReminder(session(["Paiements:UPDATE"])), false);
+  assert.equal(canForceUnpaidReminder(session(["Impayés:CREATE"])), true);
 });
 
 test("buildReminderMessage — DTO amountDue, pas de recalcul", () => {

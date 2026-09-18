@@ -27,10 +27,18 @@ Preuve brute : `/tmp/lot4-red.txt`
 
 ## GREEN (cette branche)
 
+```
+npm run test:lot4-parity
+# scripts/lot4-parity.test.ts 7/7
+# Vitest Web financeCurrency 4/4
+# Mobile financeCurrency + unpaidFilters + unpaidReminders + unpaidLedger + L1 UX + L308
+# backend financeLiveRbac 3/3
+```
+
 - `FeeGridsScreen` : cartes compactes, GET liste + détail, états loading / empty / 401 / 403 / error, hint Web-config, aucune mutation de grille.
 - `UnpaidScreen` : recherche, classe, période, totaux filtrés par `amountDue` DTO / devise, Relancer, Encaisser (`openSignal` + `hideTrigger` + `initialStudentId`).
 - `formatFinanceDate` → `formatDateForDisplay` des deux côtés.
-- `npm run test:lot4-parity` + job CI `LOT 4 parity` dans Required, `needs` extensible (`lot4` n'est pas figé comme dernier).
+- Job CI `LOT 4 parity` dans Required, `needs` extensible (`lot4` n'est pas figé comme dernier).
 
 ## Reliquats hors LOT 4
 
