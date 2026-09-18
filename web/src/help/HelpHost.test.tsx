@@ -232,6 +232,79 @@ describe("HelpHost — HELP-V1B Web", () => {
     expect(screen.queryByText("Saisir les notes")).not.toBeInTheDocument();
   });
 
+  it("shows the help trigger on Examens without reusing the Notes article", async () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "u1",
+        role: "Administrateur d’établissement",
+        permissions: ["Examens:READ", "Notes:READ", "Bulletins:READ", "Classes:READ"],
+      },
+    };
+    const user = userEvent.setup();
+    renderHelp("/examens");
+    expect(screen.getByRole("button", { name: "Ouvrir l’aide" })).toBeInTheDocument();
+    expect(screen.getByText("Besoin d’aide ?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    expect(screen.getByText("Consulter les examens")).toBeInTheDocument();
+    const suggestionSection = screen.getByRole("heading", { name: "Suggestions pour cet écran" }).closest("section");
+    expect(within(suggestionSection as HTMLElement).queryByText("Notes et évaluations")).not.toBeInTheDocument();
+  });
+
+  it("keeps the help trigger on Bulletins and bulletin sub-routes", () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "u1",
+        role: "Administrateur d’établissement",
+        permissions: ["Bulletins:READ", "Bulletins:CREATE", "Notes:READ"],
+      },
+    };
+    for (const path of ["/bulletins", "/bulletins/historique", "/bulletins/modele"]) {
+      const view = renderHelp(path);
+      expect(screen.getByRole("button", { name: "Ouvrir l’aide" })).toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it("hides Examens procedures without Examens:READ", async () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "u1",
+        role: "Administrateur d’établissement",
+        permissions: ["Notes:READ", "Bulletins:READ", "Classes:READ"],
+      },
+    };
+    const user = userEvent.setup();
+    renderHelp("/examens");
+    expect(screen.getByRole("button", { name: "Ouvrir l’aide" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    await user.type(screen.getByPlaceholderText("Rechercher dans l’aide"), "examen");
+    expect(screen.queryByText("Consulter les examens")).not.toBeInTheDocument();
+  });
+
+  it("shows the trigger on platform console routes for an operator", () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "sa",
+        role: "Super Administrateur Somafrik",
+        permissions: ["ALL_PRIVILEGES"],
+      },
+    };
+    renderHelp("/pays");
+    expect(screen.getByRole("button", { name: "Ouvrir l’aide" })).toBeInTheDocument();
+  });
+
+  it("keeps help hidden on remaining public legal and trial routes", () => {
+    for (const path of ["/demande-essai", "/confidentialite", "/suppression-compte", "/verify/rc/public"]) {
+      const view = renderHelp(path);
+      expect(screen.queryByRole("button", { name: "Ouvrir l’aide" })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
   it("navigates only when navigationIsAllowed and never exposes ACTION labels", async () => {
     const user = userEvent.setup();
     renderHelp();

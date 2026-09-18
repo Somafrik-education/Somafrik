@@ -67,6 +67,7 @@ function resolveWebScreen(pathname) {
   if (WEB_NULL_PATHS.includes(path)) return null;
   if (path.startsWith("/connexion")) return null;
 
+  if (path.startsWith("/etablissements")) return HELP_SCREEN.PLATFORM;
   if (/^\/etablissement\/classes\/[^/]+\/eleves/.test(path)) return HELP_SCREEN.STUDENTS;
   if (path.startsWith("/etablissement/classes")) return HELP_SCREEN.CLASSES;
   if (path.startsWith("/etablissement/eleves")) return HELP_SCREEN.STUDENTS;
@@ -77,7 +78,16 @@ function resolveWebScreen(pathname) {
   if (path.startsWith("/tableau-de-bord")) return HELP_SCREEN.DASHBOARD;
   if (path.startsWith("/presences")) return HELP_SCREEN.ATTENDANCE;
   if (path.startsWith("/notes")) return HELP_SCREEN.GRADES;
+  if (path.startsWith("/examens")) return HELP_SCREEN.EXAMS;
   if (path.startsWith("/bulletins")) return HELP_SCREEN.REPORT_CARDS;
+  if (
+    path.startsWith("/pays") ||
+    path.startsWith("/referentiels-pedagogiques") ||
+    path.startsWith("/abonnements") ||
+    path.startsWith("/marketplace")
+  ) {
+    return HELP_SCREEN.PLATFORM;
+  }
   if (path.startsWith("/finances")) return HELP_SCREEN.PAYMENTS;
   if (path.startsWith("/planning")) return HELP_SCREEN.PLANNING;
   if (path.startsWith("/notifications")) return HELP_SCREEN.NOTIFICATIONS;

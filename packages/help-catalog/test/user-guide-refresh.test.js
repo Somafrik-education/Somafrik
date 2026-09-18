@@ -27,6 +27,8 @@ const REQUIRED_IDS = Object.freeze([
   "help/students/mobile-record",
   "help/attendance/roll-call",
   "help/report-cards/consult",
+  "help/exams/sessions",
+  "help/platform/console",
   "help/payments/unpaid",
   "help/settings/notifications",
   "help/account/password",
@@ -59,6 +61,7 @@ function schoolAdmin(overrides = {}) {
       "Présences:READ",
       "Présences:UPDATE",
       "Notes:READ",
+      "Examens:READ",
       "Bulletins:READ",
       "Paiements:READ",
       "Paiements:CREATE",
@@ -181,6 +184,7 @@ test("search terms reach relevant role-filtered articles", () => {
     ["professeur", "help/teachers/list"],
     ["mot de passe", "help/account/password"],
     ["bulletin", "help/report-cards/consult"],
+    ["examen", "help/exams/sessions"],
     ["message", "help/communication/messages"],
     ["classe", "help/classes/list"],
   ];
@@ -246,6 +250,19 @@ test("maps new web paths and mobile routes to canonical screens", () => {
     resolveHelpScreen({ platform: "web", pathname: "/bulletins" }),
     HELP_SCREEN.REPORT_CARDS,
   );
+  assert.equal(
+    resolveHelpScreen({ platform: "web", pathname: "/bulletins/historique" }),
+    HELP_SCREEN.REPORT_CARDS,
+  );
+  assert.equal(
+    resolveHelpScreen({ platform: "web", pathname: "/bulletins/modele" }),
+    HELP_SCREEN.REPORT_CARDS,
+  );
+  assert.equal(resolveHelpScreen({ platform: "web", pathname: "/examens" }), HELP_SCREEN.EXAMS);
+  assert.notEqual(resolveHelpScreen({ platform: "web", pathname: "/examens" }), HELP_SCREEN.GRADES);
+  assert.equal(resolveHelpScreen({ platform: "web", pathname: "/pays" }), HELP_SCREEN.PLATFORM);
+  assert.equal(resolveHelpScreen({ platform: "web", pathname: "/etablissements" }), HELP_SCREEN.PLATFORM);
+  assert.equal(resolveHelpScreen({ platform: "web", pathname: "/etablissement" }), HELP_SCREEN.DASHBOARD);
   assert.equal(
     resolveHelpScreen({ platform: "web", pathname: "/parametres/notifications" }),
     HELP_SCREEN.SETTINGS_NOTIFICATIONS,
