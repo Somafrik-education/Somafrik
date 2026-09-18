@@ -50,12 +50,21 @@ function main() {
   assert.doesNotMatch(readRepo("Mobile/src/help/HelpHost.tsx"), /permissionsBootstrap === ["']ready["']/);
 
   assert.equal(fs.existsSync(path.join(ROOT, "docs/audits/help-user-guide-current-state.md")), true);
+  assert.equal(fs.existsSync(path.join(ROOT, "docs/audits/help-web-route-coverage.md")), true);
+  assert.match(readRepo("packages/help-catalog/src/screens.js"), /path\.startsWith\("\/examens"\)/);
+  assert.match(readRepo("packages/help-catalog/src/screens.js"), /HELP_SCREEN\.EXAMS/);
+  assert.match(readRepo("packages/help-catalog/src/articles-refresh.js"), /help\/exams\/sessions/);
+  assert.match(readRepo("packages/help-catalog/src/articles-refresh.js"), /help\/platform\/console/);
+  assert.match(readRepo("packages/help-catalog/test/web-route-coverage.test.js"), /anti-omission/);
+  assert.match(readRepo(".github/workflows/help-user-guide.yml"), /web\/src\/App\.tsx/);
   assert.match(readRepo("packages/help-catalog/src/articles-refresh.js"), /help\/start\/school-setup/);
   assert.match(readRepo("packages/help-catalog/src/articles-refresh.js"), /help\/assistance\/contact/);
   assert.match(readRepo("packages/help-catalog/src/articles-refresh.js"), /Je n’ai pas trouvé la réponse/);
   assert.doesNotMatch(readRepo("packages/help-catalog/src/articles-refresh.js"), /Ajouter un élève/);
   assert.doesNotMatch(readRepo("packages/help-catalog/src/articles.js"), /help\/grades\/create-evaluation/);
 
+  assert.match(readRepo("web/src/help/HelpHost.tsx"), /data-testid="help-unavailable-probe"/);
+  assert.doesNotMatch(readRepo("web/src/help/HelpHost.tsx"), /data-help-(token|jwt|password|student)/i);
   assert.match(readRepo("web/src/help/HelpPanel.tsx"), /Catégories/);
   assert.match(readRepo("web/src/help/HelpPanel.tsx"), /groupHelpArticlesByCategory/);
 

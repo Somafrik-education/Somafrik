@@ -11,6 +11,7 @@ export const HELP_SCREEN = Object.freeze({
   USERS: "users",
   ATTENDANCE: "attendance",
   GRADES: "grades",
+  EXAMS: "exams",
   PAYMENTS: "payments",
   PLANNING: "planning",
   MESSAGES: "messages",
@@ -29,6 +30,7 @@ export const HELP_SCREEN = Object.freeze({
   SETTINGS_SETUP: "settings-setup",
   SETTINGS_NOTIFICATIONS: "settings-notifications",
   REPORT_CARDS: "report-cards",
+  PLATFORM: "platform",
   PARENT_HOME: "parent-home",
   STUDENT_HOME: "student-home",
   SYNC: "sync",
@@ -43,6 +45,7 @@ export const HELP_MODULE = Object.freeze({
   PARAMETRES: "parametres",
   ACCUEIL: "accueil",
   SYNC: "sync",
+  PLATFORM: "platform",
 });
 
 export const HELP_CATEGORY = Object.freeze({
@@ -96,6 +99,7 @@ export const MODULE_BY_SCREEN = Object.freeze(
     [HELP_SCREEN.USERS]: HELP_MODULE.ETABLISSEMENT,
     [HELP_SCREEN.ATTENDANCE]: HELP_MODULE.PEDAGOGIE,
     [HELP_SCREEN.GRADES]: HELP_MODULE.PEDAGOGIE,
+    [HELP_SCREEN.EXAMS]: HELP_MODULE.PEDAGOGIE,
     [HELP_SCREEN.PAYMENTS]: HELP_MODULE.FINANCES,
     [HELP_SCREEN.PLANNING]: HELP_MODULE.PEDAGOGIE,
     [HELP_SCREEN.MESSAGES]: HELP_MODULE.COMMUNICATION,
@@ -114,6 +118,7 @@ export const MODULE_BY_SCREEN = Object.freeze(
     [HELP_SCREEN.SETTINGS_SETUP]: HELP_MODULE.PARAMETRES,
     [HELP_SCREEN.SETTINGS_NOTIFICATIONS]: HELP_MODULE.PARAMETRES,
     [HELP_SCREEN.REPORT_CARDS]: HELP_MODULE.PEDAGOGIE,
+    [HELP_SCREEN.PLATFORM]: HELP_MODULE.PLATFORM,
     [HELP_SCREEN.PARENT_HOME]: HELP_MODULE.ACCUEIL,
     [HELP_SCREEN.STUDENT_HOME]: HELP_MODULE.ACCUEIL,
     [HELP_SCREEN.SYNC]: HELP_MODULE.SYNC,

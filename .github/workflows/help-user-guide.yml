@@ -13,6 +13,8 @@ on:
       - "Mobile/package.json"
       - "Mobile/package-lock.json"
       - "docs/audits/help-user-guide-current-state.md"
+      - "docs/audits/help-web-route-coverage.md"
+      - "web/src/App.tsx"
       - "scripts/verify-help-user-guide.js"
       - "scripts/verify-help-v1a-catalogue.js"
       - "scripts/verify-help-v1b-web.js"
