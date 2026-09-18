@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { isHelpAvailable } from "../../../packages/help-catalog/src/index.js";
 import { useAuth } from "../context/AuthContext";
-import { buildMobileHelpContext } from "./buildMobileHelpContext";
+import { buildMobileHelpContext, isMobileHelpSessionReady } from "./buildMobileHelpContext";
 import { HelpSheet } from "./HelpSheet";
 import { HelpTrigger } from "./HelpTrigger";
 
@@ -33,9 +33,11 @@ export function HelpHost() {
   );
 
   const available =
-    permissionsBootstrap === "ready" &&
-    !session?.user?.mustChangePassword &&
-    isHelpAvailable(context);
+    isMobileHelpSessionReady({
+      session,
+      permissionsBootstrap,
+      mustChangePassword: session?.user?.mustChangePassword,
+    }) && isHelpAvailable(context);
 
   const close = useCallback(() => setOpen(false), []);
 

@@ -22,7 +22,24 @@ function run(command, args, options = {}) {
   assert.equal(result.status, 0, `${command} ${args.join(" ")} a échoué`);
 }
 
+function runMobileTypecheck() {
+  const mobileDir = path.join(ROOT, "Mobile");
+  const tscLocal = path.join(mobileDir, "node_modules", "typescript", "bin", "tsc");
+  assert.equal(
+    fs.existsSync(tscLocal),
+    true,
+    "Mobile/node_modules/typescript manquant — npm ci --prefix Mobile est requis pour le gate HELP",
+  );
+  run(process.execPath, [tscLocal, "--noEmit", "--project", "tsconfig.json"], { cwd: mobileDir });
+}
+
 function main() {
+  const workflow = readRepo(".github/workflows/help-user-guide.yml");
+  assert.match(workflow, /npm ci --prefix Mobile/);
+  assert.match(workflow, /Mobile\/package-lock\.json/);
+  assert.match(readRepo("Mobile/src/help/HelpHost.tsx"), /isMobileHelpSessionReady/);
+  assert.doesNotMatch(readRepo("Mobile/src/help/HelpHost.tsx"), /permissionsBootstrap === ["']ready["']/);
+
   assert.equal(fs.existsSync(path.join(ROOT, "docs/audits/help-user-guide-current-state.md")), true);
   assert.match(readRepo("packages/help-catalog/src/articles-refresh.js"), /help\/start\/school-setup/);
   assert.match(readRepo("packages/help-catalog/src/articles-refresh.js"), /help\/assistance\/contact/);
@@ -46,6 +63,7 @@ function main() {
   run("npm", ["--prefix", "web", "run", "test", "--", "src/help/HelpHost.test.tsx", "src/help/buildWebHelpContext.test.ts"], {
     env: { ...process.env, VITE_API_URL: "https://api.somafrik.app" },
   });
+  runMobileTypecheck();
 
   console.log("verify-help-user-guide: GO");
 }

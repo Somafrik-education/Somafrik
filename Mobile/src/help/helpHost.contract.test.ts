@@ -13,9 +13,18 @@ const navigator = read("navigation/AppNavigator.tsx");
 const support = read("screens/MvpUtilityScreens.tsx");
 
 assert.match(navigator, /<HelpHost \/>/);
+assert.match(navigator, /isMetierRenderable/);
 assert.match(host, /buildMobileHelpContext/);
 assert.match(host, /isHelpAvailable/);
-assert.doesNotMatch(host, /accessToken|jwt|studentId|password/);
+assert.match(host, /isMobileHelpSessionReady/);
+assert.match(read("help/buildMobileHelpContext.ts"), /isMetierRenderable/);
+assert.doesNotMatch(
+  host,
+  /permissionsBootstrap === ["']ready["']/,
+  "HelpHost must keep help on ready_offline, not only live ready",
+);
+assert.doesNotMatch(host, /accessToken|\bjwt\b|studentId/);
+assert.doesNotMatch(host.replaceAll("mustChangePassword", ""), /password/i);
 assert.match(trigger, /Besoin d’aide \?/);
 assert.match(trigger, /Ouvrir l’aide/);
 assert.match(sheet, /groupHelpArticlesByCategory/);

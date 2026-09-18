@@ -216,9 +216,12 @@ function isLot4AllowedFile(file: string) {
 }
 
 function isLot4ProductFile(file: string) {
-  // Meta files are allowed on a LOT 4 PR, but they do not mean the PR is LOT 4.
-  // L4-09 must not treat an unrelated platform-scoped diff (help, settings
-  // docs, etc.) as a LOT 4 scope violation.
+  // L4-09 constrains LOT 4 product diffs only. Meta/test files are allowed on a
+  // LOT 4 PR, but they do not classify an unrelated PR as LOT 4.
+  // Trigger diagnosis: PR Gates Scope sets platform=true on any path matching
+  // /(platform|school|country|notification|subscription|setting|...)/, then
+  // always runs this script. Help PRs that touch *settings* tests therefore
+  // used to fail L4-09 despite changing no school-setup product file.
   if (!isLot4AllowedFile(file)) return false;
   if (/\.test\./.test(file) || /\.red\.test\.tsx?$/.test(file)) return false;
   if (file === "package.json" || file === "Mobile/package.json" || file === "web/package.json") return false;
@@ -437,9 +440,14 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
     title: "périmètre LOT 4 : school setup Web/Mobile prévu, pas backend/READY/RBAC",
     run() {
       const changed = lot4ChangedFiles();
-      if (!changed.some(isLot4ProductFile)) {
+      const product = changed.filter(isLot4ProductFile);
+      if (product.length === 0) {
+        console.log(
+          "L4-09 N/A: aucun fichier school-setup LOT 4 dans le diff; le contrôle de périmètre ne s'applique pas à ce PR.",
+        );
         return;
       }
+      console.log(`L4-09: chantier LOT 4 détecté (${product.join(", ")})`);
       const forbidden = changed.filter((file) => !isLot4AllowedFile(file));
       assert.equal(
         forbidden.length,
