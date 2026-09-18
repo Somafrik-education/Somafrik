@@ -10,10 +10,12 @@
 
 ## STOP obligatoire
 
-- **STOP.** Cette PR reste **Draft**.
-- Ne pas passer Ready. Ne pas merger. Ne pas lancer les lots sans **GO CTO**.
+- **STOP.** Cette PR reste **Draft / HOLD**.
+- Ne pas passer Ready. Ne pas merger. **Aucun LOT 0 n’est autorisé.**
 - Un GREEN CI n’autorise pas le merge.
 - Avant tout futur merge : le CTO effectue un **diff GitHub indépendant** du diff présenté ici.
+
+**Correctif documentaire CTO** (commentaire GitHub `#5731393194` sur PR #704) : SHA Git, LOT 0 (`PARITY-001b`), comptage P0. Aucun code métier.
 
 ---
 
@@ -24,7 +26,7 @@
 **Réponse courte :** non, pas encore.  
 Les **données persistées** (notes, paiements, impayés, présences enregistrées, classes, élèves, professeur principal, messages) reposent largement sur les **mêmes APIs PostgreSQL**. Les **écarts ouverts** sont surtout :
 
-1. un **P0 présences** (défaut d’appel et KPI de saisie) ;
+1. un **défaut racine P0 présences** (Présent implicite Web vs `null` Mobile), **2 assertions P0** (`PARITY-001`, `PARITY-001b`) ;
 2. des **fonctions établissement / plateforme / finance / pédagogie / fiche élève** présentes sur Web et absentes ou partielles sur Mobile ;
 3. des **gardes client** (mot de passe, `must_change_password`, catalogues RBAC) non alignées ;
 4. du **legacy** encore lisible (GET role-permissions, `EntityPage`, écrans Mobile morts).
@@ -66,7 +68,8 @@ Audits antérieurs **réutilisés comme hypothèses, revalidés** sur le code ac
 |---|---:|
 | Fonctionnalités inspectées | 96 |
 | Parfaitement alignées | 38 |
-| Divergences **P0** | 1 |
+| Défaut racine **P0** | **1** (workflow d’appel : Présent implicite vs `null`) |
+| Assertions **P0** | **2** (`PARITY-001`, `PARITY-001b`) |
 | Divergences **P1** | 28 |
 | Divergences **P2** | 22 |
 | Divergences **P3** | 7 |
@@ -76,6 +79,8 @@ Audits antérieurs **réutilisés comme hypothèses, revalidés** sur le code ac
 | Écrans Mobile morts / orphelins | 5 |
 
 Les 38 alignements sont des **capacités métier réellement opérables des deux côtés** (même API + même règle persistée), pas une parité pixel.
+
+**Comptage P0 :** ne pas écrire `P0 = 1` seul. `PARITY-001` et `PARITY-001b` sont **tous les deux P0**. Ils décrivent **un seul défaut racine** (hydratation / enregistrement d’appel) et **deux assertions** (défaut de statut ; KPI brouillon). LOT 0 doit porter les deux IDs.
 
 ---
 
@@ -631,7 +636,7 @@ La parité n’exige pas la même UI. Cartes Mobile vs tables Web = **volontaire
 
 Violations métier/UX :
 
-- P0 workflow appel (PARITY-001)
+- P0 workflow appel (`PARITY-001` + `PARITY-001b`, 1 défaut racine / 2 assertions)
 - P1 fiche élève, parents, finance actions, planning write, plateforme
 - P2 CTA inscription, badges classe, stats notes classe
 - Progressive disclosure Mobile : conforme PD-01…07 sur écrans live
@@ -672,7 +677,7 @@ Aucun lot n’est commencé.
 
 | Lot | Titre | IDs | Intention |
 |---|---|---|---|
-| **LOT 0** | Sécurité / intégrité | PARITY-001, 001b, 011, 012, 022 | Défaut appel, session mdp, KPI présence enseignant |
+| **LOT 0** | Sécurité / intégrité | PARITY-001, **001b**, 011, 012, 022 | 2 assertions P0 appel + session mdp + KPI enseignant |
 | **LOT 1** | Référentiels / établissement | 018, 019, 029, 037 | Décider ce qui reste Web-only vs port Mobile |
 | **LOT 2** | Scolarité | 013, 014, 031, 032 | Fiche, parents, classe-first, C18 (API d’abord) |
 | **LOT 3** | Enseignants | 028 | Un seul chemin Users |
@@ -705,23 +710,26 @@ Les tests existants `canonicalAverageParity`, finance L2, présence D3.5, dates 
 
 ## 24. Gouvernance Git (freeze)
 
+**Règle (correctif CTO `#5731393194`) :** ne plus figer comme HEAD le SHA d’un commit parent. La source de vérité du tip est GitHub PR #704 (`git rev-parse origin/cursor/audit-web-mobile-parity-global-ae6a`). Le corps de PR est mis à jour **après push** avec HEAD / ahead-behind / diffstat réels.
+
 | Champ | Valeur |
 |---|---|
 | Branche | `cursor/audit-web-mobile-parity-global-ae6a` |
 | Base | `develop` |
 | Base SHA | `3152a0e76533ab7b39a5a1b7da836199087e0a72` |
-| HEAD SHA (commit d’audit) | `fdc737dca975af177f67b3fa8db1620de160d407` |
 | Merge-base | `3152a0e76533ab7b39a5a1b7da836199087e0a72` |
-| Ahead / behind | 1 / 0 au freeze du rapport (plus le commit de SHA si présent) |
-| Diffstat | 9 files, +3309 / −0 — documentation, inventaire, tests, scripts |
-| Fichiers | `docs/audits/WEB-MOBILE-PARITY-AUDIT.md`, `docs/audits/web-mobile-parity-matrix.json`, `docs/audits/evidence/*`, `scripts/web-mobile-parity-audit.*`, `scripts/verify-web-mobile-parity-audit.js`, `package.json` |
+| HEAD au contrôle CTO (avant ce correctif) | `b181e6cc6a1afaea1734d1f14304bb72bf5f6df2` (2/0, 9 files, +3311/−0) |
+| Commit d’audit initial | `fdc737dca975af177f67b3fa8db1620de160d407` — **n’est plus le HEAD** |
+| HEAD après correctif documentaire | voir corps de PR #704 après push |
+| Fichiers (périmètre audit, inchangé métier) | `docs/audits/WEB-MOBILE-PARITY-AUDIT.md`, `docs/audits/web-mobile-parity-matrix.json`, `docs/audits/evidence/*`, `scripts/web-mobile-parity-audit.*`, `scripts/verify-web-mobile-parity-audit.js`, `package.json` |
 | Tests | GREEN 8/8 pass ; RED 9/9 fail (écarts ouverts, attendu) ; `verify:web-mobile-parity-audit` exit 0 |
 | Ready | **interdit** |
 | Merge | **interdit** |
+| LOT 0 | **non autorisé** jusqu’au prochain diff GitHub CTO |
 
 ---
 
 ## 25. STOP
 
-Audit clos.  
-**Pas de Ready. Pas de merge. Pas de lots sans GO CTO.**
+Audit clos. Draft / HOLD.  
+**Pas de Ready. Pas de merge. Aucun LOT 0 sans nouveau diff GitHub CTO.**

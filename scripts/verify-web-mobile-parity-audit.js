@@ -16,6 +16,8 @@ const { spawnSync } = require("node:child_process");
 
 const ROOT = path.resolve(__dirname, "..");
 const RESULTS_PATH = path.join(ROOT, "docs/audits/evidence/web-mobile-parity-audit-test-results.json");
+const MATRIX_PATH = path.join(ROOT, "docs/audits/web-mobile-parity-matrix.json");
+const REPORT_PATH = path.join(ROOT, "docs/audits/WEB-MOBILE-PARITY-AUDIT.md");
 
 const EXPECTED_RED_IDS = [
   "PARITY-001",
@@ -93,7 +95,30 @@ function extractPassedGreen(output) {
   return passed;
 }
 
+function assertDocumentaryConsistency() {
+  const matrix = JSON.parse(fs.readFileSync(MATRIX_PATH, "utf8"));
+  const lot0 = matrix.lots.find((lot) => lot.id === "LOT-0");
+  assert.ok(lot0, "matrice : LOT-0 manquant");
+  assert.ok(lot0.ids.includes("PARITY-001"), "LOT-0 doit inclure PARITY-001");
+  assert.ok(lot0.ids.includes("PARITY-001b"), "LOT-0 doit inclure PARITY-001b (CTO #5731393194)");
+  assert.equal(matrix.coverage.p0RootDefects, 1, "1 défaut racine P0");
+  assert.equal(matrix.coverage.p0Assertions, 2, "2 assertions P0");
+  assert.equal(matrix.coverage.p0, 2, "coverage.p0 = 2 assertions, jamais 1 seul");
+  assert.deepEqual(matrix.coverage.p0Ids, ["PARITY-001", "PARITY-001b"]);
+
+  const report = fs.readFileSync(REPORT_PATH, "utf8");
+  assert.equal(
+    /HEAD SHA \(commit d’audit\)\s*\|\s*`fdc737dc/.test(report),
+    false,
+    "le rapport ne doit plus présenter fdc737dc comme HEAD",
+  );
+  assert.match(report, /2 assertions P0/);
+  assert.match(report, /PARITY-001b/);
+}
+
 function main() {
+  assertDocumentaryConsistency();
+
   const inventory = run(process.execPath, ["scripts/web-mobile-parity-audit.inventory.js"]);
   assert.equal(inventory.status, 0, "inventaire statique a échoué");
 

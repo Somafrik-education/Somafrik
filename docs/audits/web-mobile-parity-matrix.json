@@ -11,7 +11,11 @@
   "coverage": {
     "featuresInspected": 96,
     "aligned": 38,
-    "p0": 1,
+    "p0RootDefects": 1,
+    "p0Assertions": 2,
+    "p0": 2,
+    "p0Ids": ["PARITY-001", "PARITY-001b"],
+    "p0Note": "1 root defect (implicit Present vs null roll-call) / 2 P0 assertions. Do not publish p0=1 alone.",
     "p1": 28,
     "p2": 22,
     "p3": 7,
@@ -42,7 +46,7 @@
     "GREEN-RBAC-01"
   ],
   "lots": [
-    { "id": "LOT-0", "title": "Sécurité / intégrité", "ids": ["PARITY-001", "PARITY-011", "PARITY-012", "PARITY-022"] },
+    { "id": "LOT-0", "title": "Sécurité / intégrité", "ids": ["PARITY-001", "PARITY-001b", "PARITY-011", "PARITY-012", "PARITY-022"] },
     { "id": "LOT-1", "title": "Référentiels / établissement / paramètres", "ids": ["PARITY-018", "PARITY-019", "PARITY-029", "PARITY-037"] },
     { "id": "LOT-2", "title": "Scolarité", "ids": ["PARITY-013", "PARITY-014", "PARITY-031", "PARITY-032"] },
     { "id": "LOT-3", "title": "Enseignants", "ids": ["PARITY-028"] },
