@@ -363,6 +363,20 @@ async function main() {
     assert.equal(fetched.status, 200, JSON.stringify(fetched.data));
     assert.equal(fetched.data.classCode, activeClass.classCode);
     assertNoSecretLeak(fetched.data, "GET /students/:id");
+    const studentUuid = String(fetched.data.studentUuid ?? "").trim();
+    assert.ok(studentUuid, "UUID métier requis pour GET /students/:id");
+    const fetchedByUuid = await request(`/students/${encodeURIComponent(studentUuid)}`, {
+      token: tokenCd,
+    });
+    assert.equal(fetchedByUuid.status, 200, JSON.stringify(fetchedByUuid.data));
+    assert.equal(fetchedByUuid.data.studentCode, studentCode);
+    const otherSchool = await request(`/students/${encodeURIComponent(studentCode)}`, {
+      token: tokenBi,
+    });
+    assert.ok(
+      otherSchool.status === 403 || otherSchool.status === 404,
+      `autre établissement status=${otherSchool.status}`,
+    );
 
     const exported = await request("/data-export", { token: tokenCd });
     if (exported.status === 200) {

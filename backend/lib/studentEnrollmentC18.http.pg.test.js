@@ -41,6 +41,7 @@ const USER_STUDENT = "cccccccc-cccc-4ccc-8ccc-cccccccccc05";
 const STUDENT_A = "cccccccc-cccc-4ccc-8ccc-cccccccccc11";
 const STUDENT_B = "cccccccc-cccc-4ccc-8ccc-cccccccccc12";
 const STUDENT_C18 = "cccccccc-cccc-4ccc-8ccc-cccccccccc13";
+const STUDENT_RACE = "cccccccc-cccc-4ccc-8ccc-cccccccccc14";
 
 function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
@@ -181,19 +182,21 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
        VALUES
          ($1, $4, 'STU-A-001', 'Eleve', 'A', 'active'),
          ($2, $5, 'STU-B-001', 'Eleve', 'B', 'active'),
-         ($3, $4, 'STU-A-C18', 'Cedric', 'C18', 'active')`,
-      [STUDENT_A, STUDENT_B, STUDENT_C18, schoolAId, schoolBId],
+         ($3, $4, 'STU-A-C18', 'Cedric', 'C18', 'active'),
+         ($6, $4, 'STU-A-RACE', 'Race', 'C18', 'active')`,
+      [STUDENT_A, STUDENT_B, STUDENT_C18, schoolAId, schoolBId, STUDENT_RACE],
     );
     // Le trigger d'identité réécrit tout student_code client en matricule canonique.
     const insertedStudents = await pool.query(
       `SELECT id::text AS id, student_code FROM students WHERE id = ANY($1::uuid[])`,
-      [[STUDENT_A, STUDENT_B, STUDENT_C18]],
+      [[STUDENT_A, STUDENT_B, STUDENT_C18, STUDENT_RACE]],
     );
     const codeById = Object.fromEntries(insertedStudents.rows.map((row) => [row.id, row.student_code]));
     const codeA = codeById[STUDENT_A];
     const codeB = codeById[STUDENT_B];
     const codeC18 = codeById[STUDENT_C18];
-    assert.ok(codeA && codeB && codeC18, `codes=${JSON.stringify(codeById)}`);
+    const codeRace = codeById[STUDENT_RACE];
+    assert.ok(codeA && codeB && codeC18 && codeRace, `codes=${JSON.stringify(codeById)}`);
     await pool.query(
       `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
        VALUES
@@ -209,7 +212,7 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
     await pool.query(
       `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
        VALUES ($1, $2, $3, $4, 'ENROLLED'), ($5, $6, $7, $8, 'ENROLLED'),
-              ($1, $9, NULL, $4, 'PENDING_REVIEW')`,
+              ($1, $9, NULL, $4, 'PENDING_REVIEW'), ($1, $10, $3, $4, 'ENROLLED')`,
       [
         schoolAId,
         STUDENT_A,
@@ -220,6 +223,7 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
         classB.rows[0].id,
         yearB.rows[0].id,
         STUDENT_C18,
+        STUDENT_RACE,
       ],
     );
     await pool.query(
@@ -444,6 +448,35 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
     assert.equal(auditClose.parsed.action, "close");
     assert.equal(auditClose.parsed.fromStatus, "ENROLLED");
     assert.equal(auditClose.parsed.toStatus, "CLOSED");
+
+    const raceListed = await request(`/students/${encodeURIComponent(codeRace)}/enrollments`, { token: tokenA });
+    assert.equal(raceListed.status, 200, JSON.stringify(raceListed.data));
+    const raceEnrollmentId = raceListed.data.items[0].id;
+    const [xferRace, closeRace] = await Promise.all([
+      request(`/students/${encodeURIComponent(codeRace)}/enrollments/${raceEnrollmentId}/transfer`, {
+        method: "POST",
+        token: tokenA,
+        body: { destinationSchoolName: "Lycée Horizon" },
+      }),
+      request(`/students/${encodeURIComponent(codeRace)}/enrollments/${raceEnrollmentId}/close`, {
+        method: "POST",
+        token: tokenA,
+        body: { reason: "clôture concurrente" },
+      }),
+    ]);
+    const raceStatuses = [xferRace.status, closeRace.status].sort((left, right) => left - right);
+    assert.deepEqual(raceStatuses, [200, 409], JSON.stringify({ xferRace, closeRace }));
+    const raceWinner = xferRace.status === 200 ? xferRace.data : closeRace.data;
+    assert.ok(raceWinner.status === "TRANSFERRED" || raceWinner.status === "CLOSED");
+    const raceAfter = await request(`/students/${encodeURIComponent(codeRace)}/enrollments`, { token: tokenA });
+    assert.equal(raceAfter.status, 200, JSON.stringify(raceAfter.data));
+    assert.equal(raceAfter.data.items[0].status, raceWinner.status);
+    const raceAudits = await pool.query(
+      `SELECT action FROM audit_logs
+        WHERE entity_id = $1 AND action IN ('c18_transfer', 'c18_close')`,
+      [raceEnrollmentId],
+    );
+    assert.equal(raceAudits.rowCount, 1, JSON.stringify(raceAudits.rows));
 
     const relationsMissing = await request("/parents/relations", { token: tokenA });
     assert.equal(relationsMissing.status, 400);

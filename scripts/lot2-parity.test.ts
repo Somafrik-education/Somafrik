@@ -143,6 +143,15 @@ test("PARITY-032 C18 REST canonique PostgreSQL, pas de machine Expo", () => {
     fallback,
     /includes\("WHERE ST\.STUDENT_CODE"\)/,
   );
+  assert.match(c18, /FOR UPDATE OF e/);
+  assert.match(c18, /runLockedC18Mutation/);
+  assert.match(c18, /status IS NOT DISTINCT FROM/);
+  assert.match(c18Unit, /C18 concurrence TRANSFER vs CLOSE/);
+  assert.match(c18Http, /Promise\.all/);
+  assert.match(c18Http, /STUDENT_RACE/);
+  const enrollmentSmoke = read("backend/scripts/verify-class-student-enrollment.js");
+  assert.match(enrollmentSmoke, /fetchedByUuid/);
+  assert.match(enrollmentSmoke, /autre établissement/);
 });
 
 test("PARITY-032 migration C18 : dollar-quote PostgreSQL valide", () => {
