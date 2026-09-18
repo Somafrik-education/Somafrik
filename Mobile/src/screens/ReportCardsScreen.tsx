@@ -5,6 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
+import { ReportCardWorkflowCards } from "../components/ReportCardWorkflowCards";
 import QueryStateView from "../components/QueryStateView";
 import { ReportCardSnapshotView } from "../components/bulletin/ReportCardSnapshotView";
 import { downloadReportCardPdf } from "../services/api";
@@ -246,24 +247,11 @@ export default function ReportCardsScreen() {
           {workflowStatus === "forbidden" || workflowStatus === "error" ? (
             <Text style={styles.historyRow}>{workflowMessage}</Text>
           ) : null}
-          {workflowRows.map((request) => (
-            <ExpandableEntityCard
-              key={request.id}
-              title={request.model_key || "Modèle bulletin"}
-              subtitle={request.status || "Statut non renseigné"}
-              badge={request.active ? "Actif" : request.ready ? "Prêt" : "Revue"}
-              expanded={expandedWorkflowId === request.id}
-              onExpandedChange={() =>
-                setExpandedWorkflowId((current) => nextExclusiveExpandedKey(current, request.id))
-              }
-            >
-              <Text style={styles.historyRow}>Modèle : {request.model_key || "—"}</Text>
-              <Text style={styles.historyRow}>Statut : {request.status || "—"}</Text>
-              <Text style={styles.historyRow}>
-                Année / période : {[request.academic_year, request.period].filter(Boolean).join(" · ") || "—"}
-              </Text>
-            </ExpandableEntityCard>
-          ))}
+          <ReportCardWorkflowCards
+            rows={workflowRows}
+            expandedId={expandedWorkflowId}
+            onExpandedIdChange={setExpandedWorkflowId}
+          />
         </View>
       ) : null}
 

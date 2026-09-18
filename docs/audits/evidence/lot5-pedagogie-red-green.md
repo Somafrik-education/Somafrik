@@ -48,4 +48,10 @@ Correction-only depuis `0c8aba02` :
 - `classGradesStats({ className: "6ème A", period: "T2" })` reste `empty === true` même si 6ème B a des notes T2 (`classPeriodNotes`).
 - Scope via `isTeacherSession` / `teacherScopedClassLabels` : `role: "teacher"` 6ème A seulement, 6ème B refusé, zéro affectation fail-closed, admin Notes:READ = classes de l'établissement.
 
+## CI `f9c85dd0` — LOT 5 vert, Risk-targeted PD-06
+
+`f9c85dd0` : **LOT 5 parity SUCCESS**. C4 **GREEN**. Required rouge uniquement parce que `TARGETED=failure`.
+
+Risk-targeted / Mobile safety : `progressiveDisclosureUx.test.ts` PD-06 prenait la première `ExpandableEntityCard` du fichier, devenue la carte workflow. Correction : cartes workflow extraites dans `ReportCardWorkflowCards` ; la première carte de `ReportCardsScreen` redevient le bulletin publié (`card.studentName`).
+
 STOP : Draft. Pas Ready. Pas merge. Pas LOT 6.

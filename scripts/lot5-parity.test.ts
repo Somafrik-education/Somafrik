@@ -47,6 +47,10 @@ test("PARITY-023 — Bulletins Mobile lecture + workflow read-only, zéro mutati
   assert.doesNotMatch(history, /corrections|revoke/);
   assert.doesNotMatch(screen, /\/report-card\/requests\/\$\{[^}]+\}\/approve/);
   assert.doesNotMatch(screen, /parent_student[\s\S]{0,80}listReportCardRequests|listReportCardRequests[\s\S]{0,120}parent_student/);
+  assert.match(screen, /card\.studentName/);
+  const firstCard = screen.indexOf("<ExpandableEntityCard");
+  const studentNameAt = screen.indexOf("card.studentName");
+  assert.ok(firstCard >= 0 && studentNameAt > firstCard, "PD-06 : première carte = bulletin publié");
 });
 
 test("PARITY-024 — Examens Mobile natifs /exams, lifecycle RBAC, pas planning-exams", () => {

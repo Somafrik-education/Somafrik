@@ -308,6 +308,7 @@ test("PARITY-023 — zéro mutation Report Card dans les modules LOT 5", () => {
     "Mobile/src/lib/reportCardPublicationApi.ts",
     "Mobile/src/lib/reportCardHistoryApi.ts",
     "Mobile/src/lib/reportCardWorkflowApi.ts",
+    "Mobile/src/components/ReportCardWorkflowCards.tsx",
     "Mobile/src/screens/ReportCardsScreen.tsx",
   ];
   for (const rel of files) {
