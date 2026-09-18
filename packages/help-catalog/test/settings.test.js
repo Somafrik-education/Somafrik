@@ -25,6 +25,7 @@ const SETTINGS_READ_ARTICLE_IDS = Object.freeze([
   "help/settings/subscription",
   "help/settings/security",
   "help/settings/coming-soon",
+  "help/settings/notifications",
 ]);
 
 const SETTINGS_WRITE_ARTICLE_IDS = Object.freeze([
@@ -38,6 +39,7 @@ const SETTINGS_WRITE_ARTICLE_IDS = Object.freeze([
   "help/settings/school-courses-edit",
   "help/settings/finance-fee-grid-create",
   "help/settings/finance-fee-grid-update",
+  "help/settings/notifications-edit",
 ]);
 
 const SETTINGS_ARTICLE_IDS = Object.freeze([
@@ -106,6 +108,7 @@ test("Admin School with Paramètres READ sees authorized settings articles", () 
   assert.equal(ids.includes("help/settings/academic-year"), true);
   assert.equal(ids.includes("help/settings/roles-permissions"), true);
   assert.equal(ids.includes("help/settings/coming-soon"), true);
+  assert.equal(ids.includes("help/settings/notifications"), true);
   assert.equal(ids.includes("help/settings/profile-edit"), true);
 });
 
@@ -228,6 +231,7 @@ test("WRITE settings articles carry the extracted action procedures", () => {
     "help/settings/school-courses-edit": /modification est visible/,
     "help/settings/finance-fee-grid-create": /Enregistrer le type de frais/,
     "help/settings/finance-fee-grid-update": /moyens? de paiement/,
+    "help/settings/notifications-edit": /interrupteurs sont actifs/,
   };
   for (const [id, pattern] of Object.entries(expected)) {
     const article = HELP_CATALOG.find((item) => item.id === id);
@@ -282,7 +286,7 @@ test("maps Web Paramètres paths and Mobile settings routes to distinct screens"
   );
   assert.equal(
     resolveHelpScreen({ platform: "web", pathname: "/parametres/notifications" }),
-    HELP_SCREEN.SETTINGS_COMING_SOON,
+    HELP_SCREEN.SETTINGS_NOTIFICATIONS,
   );
   assert.equal(
     resolveHelpScreen({ platform: "mobile", routeName: "EstablishmentProfile" }),
@@ -373,9 +377,9 @@ test("coming-soon cards are described as not yet available", () => {
   const article = HELP_CATALOG.find((item) => item.id === "help/settings/coming-soon");
   const blob = articleBlob(article);
   assert.match(blob, /Cette fonctionnalité n’est pas encore disponible/);
-  assert.match(blob, /Notifications/);
   assert.match(blob, /Apparence/);
   assert.match(blob, /Intégrations/);
+  assert.match(blob, /Notifications est Disponible/);
   assert.doesNotMatch(blob, /configurez les canaux/i);
 });
 

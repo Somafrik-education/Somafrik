@@ -16,9 +16,11 @@ const authState = vi.hoisted(() => ({
         "Élèves:READ",
         "Utilisateurs:READ",
         "Utilisateurs:CREATE",
-        "Notes:READ",
-        "Paiements:READ",
-      ],
+          "Notes:READ",
+          "Paiements:READ",
+          "Paramètres Établissement:READ",
+          "Bulletins:READ",
+        ],
     },
   } as {
     accessToken?: string;
@@ -81,6 +83,8 @@ describe("HelpHost — HELP-V1B Web", () => {
           "Utilisateurs:CREATE",
           "Notes:READ",
           "Paiements:READ",
+          "Paramètres Établissement:READ",
+          "Bulletins:READ",
         ],
       },
     };
@@ -252,5 +256,50 @@ describe("HelpHost — HELP-V1B Web", () => {
     await user.click(within(suggestions as HTMLElement).getByRole("button", { name: /Tableau de bord/ }));
     expect(screen.getByRole("heading", { name: "Tableau de bord" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ouvrir cet écran" })).not.toBeInTheDocument();
+  });
+
+  it("lists role-filtered categories and the assistance entry", async () => {
+    const user = userEvent.setup();
+    renderHelp();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    expect(screen.getByRole("heading", { name: "Catégories" })).toBeInTheDocument();
+    expect(screen.getByText("Scolarité")).toBeInTheDocument();
+    expect(screen.getByText("Démarrage")).toBeInTheDocument();
+    expect(screen.getByText("Je n’ai pas trouvé la réponse")).toBeInTheDocument();
+  });
+
+  it("opens a category then a task article", async () => {
+    const user = userEvent.setup();
+    renderHelp();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    await user.click(screen.getByRole("button", { name: /Scolarité/ }));
+    expect(screen.getByRole("heading", { name: "Scolarité" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Consulter les classes/ }));
+    expect(screen.getByRole("heading", { name: "Consulter les classes" })).toBeInTheDocument();
+  });
+
+  it("hides school setup from a teacher", async () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "t1",
+        role: "Enseignant",
+        permissions: ["Classes:READ", "Élèves:READ", "Présences:READ", "Présences:UPDATE"],
+      },
+    };
+    const user = userEvent.setup();
+    renderHelp("/presences");
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    expect(screen.queryByText("Configuration initiale de l’établissement")).not.toBeInTheDocument();
+    expect(screen.queryByText("Finance")).not.toBeInTheDocument();
+    expect(screen.getByText("Présences")).toBeInTheDocument();
+  });
+
+  it("searches mot de passe and bulletin for an admin", async () => {
+    const user = userEvent.setup();
+    renderHelp();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    await user.type(screen.getByPlaceholderText("Rechercher dans l’aide"), "mot de passe");
+    expect(await screen.findByText("Mot de passe et identifiants")).toBeInTheDocument();
   });
 });

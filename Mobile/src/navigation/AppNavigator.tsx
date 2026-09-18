@@ -46,6 +46,7 @@ import SchoolSetupSettingsScreen from "../screens/SchoolSetupSettingsScreen";
 import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen";
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
+import { HelpHost } from "../help/HelpHost";
 import type { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canPersistFullSession } from "../lib/dataTruth";
@@ -351,6 +352,7 @@ export default function AppNavigator() {
         )}
         {canReadRoute(session, "InternalNotifications") && <Stack.Screen name="InternalNotifications" component={InternalNotificationsScreen} options={{ title: "Notifications" }} />}
       </Stack.Navigator>
+      <HelpHost />
     </NavigationContainer>
   );
 }

@@ -1,0 +1,45 @@
+name: HELP user guide
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "packages/help-catalog/**"
+      - "web/src/help/**"
+      - "Mobile/src/help/**"
+      - "Mobile/src/navigation/AppNavigator.tsx"
+      - "Mobile/metro.config.js"
+      - "Mobile/tsconfig.json"
+      - "Mobile/package.json"
+      - "Mobile/package-lock.json"
+      - "docs/audits/help-user-guide-current-state.md"
+      - "scripts/verify-help-user-guide.js"
+      - "scripts/verify-help-v1a-catalogue.js"
+      - "scripts/verify-help-v1b-web.js"
+      - "package.json"
+      - ".github/workflows/help-user-guide.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  help-user-guide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install web and Mobile dependencies
+        run: |
+          npm ci --prefix web
+          npm ci --prefix Mobile
+      - name: Verify help user guide
+        run: npm run verify:help-user-guide

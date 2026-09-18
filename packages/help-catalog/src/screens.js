@@ -54,6 +54,9 @@ const MOBILE_ROUTE_SCREENS = Object.freeze(
     SchoolYearSettings: HELP_SCREEN.SETTINGS_ACADEMIC_YEAR,
     SchoolPedagogicalStructure: HELP_SCREEN.SETTINGS_STRUCTURE,
     SchoolAssignableRoles: HELP_SCREEN.SETTINGS_ROLES,
+    SchoolSetup: HELP_SCREEN.SETTINGS_SETUP,
+    Unpaid: HELP_SCREEN.PAYMENTS,
+    ReportCards: HELP_SCREEN.REPORT_CARDS,
     Synchronization: HELP_SCREEN.SYNC,
     OfflineMode: HELP_SCREEN.SYNC,
   }),
@@ -74,6 +77,7 @@ function resolveWebScreen(pathname) {
   if (path.startsWith("/tableau-de-bord")) return HELP_SCREEN.DASHBOARD;
   if (path.startsWith("/presences")) return HELP_SCREEN.ATTENDANCE;
   if (path.startsWith("/notes")) return HELP_SCREEN.GRADES;
+  if (path.startsWith("/bulletins")) return HELP_SCREEN.REPORT_CARDS;
   if (path.startsWith("/finances")) return HELP_SCREEN.PAYMENTS;
   if (path.startsWith("/planning")) return HELP_SCREEN.PLANNING;
   if (path.startsWith("/notifications")) return HELP_SCREEN.NOTIFICATIONS;
@@ -85,11 +89,9 @@ function resolveWebScreen(pathname) {
   if (path.startsWith("/parametres/donnees")) return HELP_SCREEN.SETTINGS_DATA;
   if (path.startsWith("/parametres/securite")) return HELP_SCREEN.SETTINGS_SECURITY;
   if (path.startsWith("/parametres/mon-abonnement")) return HELP_SCREEN.SETTINGS_SUBSCRIPTION;
-  if (
-    path.startsWith("/parametres/notifications") ||
-    path.startsWith("/parametres/apparence") ||
-    path.startsWith("/parametres/integrations")
-  ) {
+  if (path.startsWith("/parametres/configuration-etablissement")) return HELP_SCREEN.SETTINGS_SETUP;
+  if (path.startsWith("/parametres/notifications")) return HELP_SCREEN.SETTINGS_NOTIFICATIONS;
+  if (path.startsWith("/parametres/apparence") || path.startsWith("/parametres/integrations")) {
     return HELP_SCREEN.SETTINGS_COMING_SOON;
   }
   if (path === "/parametres" || path === "/parametres/" || path.startsWith("/parametres")) {

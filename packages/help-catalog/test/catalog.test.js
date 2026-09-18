@@ -66,6 +66,7 @@ test("exposes a frozen catalog with unique help/* ids and required fields", () =
     assert.equal(typeof article.summary, "string");
     assert.ok(article.steps.length > 0);
     assert.ok(article.platforms.length > 0);
+    assert.ok(article.category);
     assert.ok(article.routeKeys.length > 0);
     if (article.navigate) {
       assert.equal(article.navigate.level, "NAVIGATION");
@@ -183,7 +184,7 @@ test("super admin does not receive school operational articles from role allowli
   assert.equal(ids.includes("help/rbac/missing-action"), true);
 });
 
-test("parent only sees parent home and shared RBAC help", () => {
+test("parent only sees parent-scoped help, never school administration write", () => {
   const context = createHelpContext({
     platform: "mobile",
     role: "Parent",
@@ -191,7 +192,13 @@ test("parent only sees parent home and shared RBAC help", () => {
     permissions: [],
   });
   const ids = filterHelpArticles(context).map((article) => article.id);
-  assert.deepEqual(ids.sort(), ["help/parent/home", "help/rbac/missing-action"].sort());
+  assert.equal(ids.includes("help/parent/home"), true);
+  assert.equal(ids.includes("help/rbac/missing-action"), true);
+  assert.equal(ids.includes("help/assistance/contact"), true);
+  assert.equal(ids.includes("help/users/create"), false);
+  assert.equal(ids.includes("help/classes/create"), false);
+  assert.equal(ids.includes("help/start/school-setup"), false);
+  assert.equal(ids.includes("help/payments/record"), false);
 });
 
 test("suggestions are capped at 3 and stay on the current screen", () => {

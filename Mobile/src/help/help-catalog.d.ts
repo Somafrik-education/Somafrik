@@ -1,4 +1,4 @@
-declare module "@somafrik/help-catalog" {
+declare module "../../../packages/help-catalog/src/index.js" {
   export type HelpPlatform = "web" | "mobile";
 
   export interface HelpNavigate {
@@ -53,6 +53,8 @@ declare module "@somafrik/help-catalog" {
   }
 
   export const HELP_PLATFORM: { readonly WEB: "web"; readonly MOBILE: "mobile" };
+  export const HELP_ROLE: Readonly<Record<string, string>>;
+  export const HELP_SCREEN: Readonly<Record<string, string>>;
   export const HELP_CATALOG: readonly HelpArticle[];
   export const HELP_CATEGORY_LABELS: Readonly<Record<string, string>>;
   export const HELP_CATEGORY_ORDER: readonly string[];

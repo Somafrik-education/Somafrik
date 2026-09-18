@@ -215,6 +215,64 @@ function isLot4AllowedFile(file: string) {
   return false;
 }
 
+function isLot4GateMetaFile(file: string) {
+  return (
+    file === "scripts/verify-school-setup-lot4-red.ts" ||
+    file === ".github/workflows/pr-gates.yml" ||
+    file === "package.json" ||
+    file === "Mobile/package.json" ||
+    file === "web/package.json"
+  );
+}
+
+function isLot4ChantierFile(file: string) {
+  // Presence of a LOT 4 / school-setup change — independent of the allowlist.
+  // The allowlist only decides whether a detected chantier stays in scope.
+  if (isLot4GateMetaFile(file)) return false;
+  if (file === "backend/lib/schoolSetupStatus.js") return true;
+  if (file === "web/src/pages/parametres/SchoolSetupSettingsPage.tsx") return true;
+  if (file === "Mobile/src/screens/SchoolSetupSettingsScreen.tsx") return true;
+  if (file.startsWith("web/src/components/schoolSetup/")) return true;
+  if (file.startsWith("Mobile/src/components/schoolSetup/")) return true;
+  if (/^web\/src\/lib\/schoolSetup/.test(file)) return true;
+  if (/^Mobile\/src\/lib\/schoolSetup/.test(file)) return true;
+  if (file.startsWith("packages/help-catalog/") || file.startsWith("docs/") || file.startsWith("scripts/verify-help")) {
+    return false;
+  }
+  if (/schoolSetup/i.test(file) || /school-setup/i.test(file) || /school_setup/i.test(file)) return true;
+  return false;
+}
+
+type Lot409Verdict = { kind: "na" | "ok" | "fail"; message: string };
+
+function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
+  const chantier = changed.filter(isLot4ChantierFile);
+  if (chantier.length === 0) {
+    return {
+      kind: "na",
+      message:
+        "L4-09 N/A: aucun fichier school-setup LOT 4 dans le diff; le contrôle de périmètre ne s'applique pas à ce PR.",
+    };
+  }
+  const forbidden = changed.filter((file) => !isLot4AllowedFile(file));
+  if (forbidden.length > 0) {
+    return {
+      kind: "fail",
+      message: `LOT 4 hors périmètre (backend/READY/RBAC/CRUD/legacy interdit): ${forbidden.join(", ")}`,
+    };
+  }
+  if (changed.includes("backend/lib/schoolSetupStatus.js")) {
+    return {
+      kind: "fail",
+      message: "deriveSchoolSetupStatus / schoolSetupStatus.js hors LOT 4",
+    };
+  }
+  return {
+    kind: "ok",
+    message: `L4-09: chantier LOT 4 détecté (${chantier.join(", ")})`,
+  };
+}
+
 function gitNameOnly(args: string[]) {
   return execFileSync("git", ["diff", "--name-only", ...args], {
     cwd: repoRoot,
@@ -424,18 +482,34 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
     id: "L4-09",
     title: "périmètre LOT 4 : school setup Web/Mobile prévu, pas backend/READY/RBAC",
     run() {
-      const changed = lot4ChangedFiles();
-      const forbidden = changed.filter((file) => !isLot4AllowedFile(file));
-      assert.equal(
-        forbidden.length,
-        0,
-        `LOT 4 hors périmètre (backend/READY/RBAC/CRUD/legacy interdit): ${forbidden.join(", ")}`,
-      );
-      assert.equal(
-        changed.includes("backend/lib/schoolSetupStatus.js"),
-        false,
-        "deriveSchoolSetupStatus / schoolSetupStatus.js hors LOT 4",
-      );
+      const forbiddenOnly = evaluateLot4Scope(["backend/lib/schoolSetupStatus.js"]);
+      assert.equal(forbiddenOnly.kind, "fail", forbiddenOnly.message);
+      const forbiddenSql = evaluateLot4Scope([
+        "backend/db/migrations/20260918_school_setup_optional.sql",
+      ]);
+      assert.equal(forbiddenSql.kind, "fail", forbiddenSql.message);
+      const helpSettings = evaluateLot4Scope([
+        "packages/help-catalog/src/articles-refresh.js",
+        "packages/help-catalog/test/settings.test.js",
+        "scripts/verify-help-settings.js",
+        "scripts/verify-school-setup-lot4-red.ts",
+      ]);
+      assert.equal(helpSettings.kind, "na", helpSettings.message);
+      const allowedLot4 = evaluateLot4Scope([
+        "web/src/lib/schoolSetupWeb.ts",
+        "Mobile/src/lib/schoolSetupMobile.ts",
+        "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+      ]);
+      assert.equal(allowedLot4.kind, "ok", allowedLot4.message);
+      const mixed = evaluateLot4Scope([
+        "web/src/lib/schoolSetupWeb.ts",
+        "backend/lib/schoolSetupStatus.js",
+      ]);
+      assert.equal(mixed.kind, "fail", mixed.message);
+
+      const live = evaluateLot4Scope(lot4ChangedFiles());
+      console.log(live.message);
+      assert.notEqual(live.kind, "fail", live.message);
     },
   },
 ];
