@@ -67,4 +67,10 @@ Régressions Web : TeachersListPage + UsersPage superadmin/schoolAdmin = 52 test
 - Finance / Pédagogie / Communication / catalogue RBAC / cleanup legacy général.
 - LOT 4.
 
+## HOLD `#5736443203` (CI / RBAC / Required)
+
+1. Spawn mémoire : `SOMAFRIK_SKIP_DEMO_SEED: "false"` explicite (le job PG garde `true`).
+2. HTTP RBAC/tenant sur `POST /backoffice/users/create-teacher` (teacher/parent/student 403 ; schoolCode forgé 403 ; aucun user/teacher dans le tenant falsifié). Tombstone `/teachers` conservé à part.
+3. Assertion Required extensible (`needs: […lot3…]`, pas de liste figée).
+
 STOP : Draft. Pas Ready. Pas merge. Pas LOT 4.

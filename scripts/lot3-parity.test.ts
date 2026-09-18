@@ -118,6 +118,12 @@ test("PARITY-028 — backend canonique atomique + RBAC create-teacher", () => {
   assert.match(verify, /\/backoffice\/users\/create-teacher/);
   assert.match(verify, /mustChangePassword/);
   assert.match(verify, /create-teacher/);
+  assert.match(verify, /SOMAFRIK_SKIP_DEMO_SEED:\s*["']false["']/);
+  assert.match(verify, /teacherCreateCanonical[\s\S]*\/backoffice\/users\/create-teacher/);
+  assert.match(verify, /parentCreateCanonical[\s\S]*\/backoffice\/users\/create-teacher/);
+  assert.match(verify, /studentCreateCanonical[\s\S]*\/backoffice\/users\/create-teacher/);
+  assert.match(verify, /forgedByCd[\s\S]*schoolCode:\s*["']BI-2026-0002["']/);
+  assert.match(verify, /forgedByBi[\s\S]*schoolCode:\s*["']CD-2026-0001["']/);
   assert.doesNotMatch(
     verify,
     /async function createTeacherViaUsers[\s\S]{0,500}?\/backoffice\/users["'`],\s*\{[\s\S]{0,200}?method:\s*["'`]POST["'`]/,
@@ -127,13 +133,17 @@ test("PARITY-028 — backend canonique atomique + RBAC create-teacher", () => {
 test("PARITY-028 — gate CI lot3 composable avec LOT 0/1/2", () => {
   const pkg = read("package.json");
   const gates = read(".github/workflows/pr-gates.yml");
+  const requiredJob = gates.slice(gates.indexOf("name: Required"));
   assert.match(pkg, /"test:lot3-parity"/);
   assert.match(pkg, /"test:lot0-parity"/);
   assert.match(pkg, /"test:lot1-parity"/);
   assert.match(pkg, /"test:lot2-parity"/);
-  assert.match(gates, /lot3:/);
+  assert.match(gates, /name: LOT 3 parity/);
   assert.match(gates, /npm run test:lot3-parity/);
-  assert.match(gates, /needs: \[scope, quality, secrets, core, targeted, lot0, lot1, lot2, lot3\]/);
-  assert.match(gates, /needs\.lot3\.result/);
-  assert.match(gates, /"\$LOT0" "\$LOT1" "\$LOT2" "\$LOT3"/);
+  assert.match(requiredJob, /needs:\s*\[[^\]]*lot0[^\]]*\]/);
+  assert.match(requiredJob, /needs:\s*\[[^\]]*lot1[^\]]*\]/);
+  assert.match(requiredJob, /needs:\s*\[[^\]]*lot2[^\]]*\]/);
+  assert.match(requiredJob, /needs:\s*\[[^\]]*lot3[^\]]*\]/);
+  assert.match(requiredJob, /LOT3: \$\{\{ needs\.lot3\.result \}\}/);
+  assert.match(requiredJob, /"\$LOT3"/);
 });
