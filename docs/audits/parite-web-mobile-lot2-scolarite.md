@@ -72,7 +72,7 @@ Machine :
 
 Aucun retour arrière implicite. Aucune suppression physique. Pas de table parallèle. Migration éventuelle additive, idempotente, justifiée (`class_id` nullable pour APPROVED sans classe + colonnes d’audit C18). Alias lecture `active` → `ENROLLED`.
 
-Web consomme le REST C18 (plus d’autorité locale mock en production). Mobile n’implémente pas la machine : lecture du statut d’inscription uniquement. Les transitions admin ne sont pas mises en file offline.
+Web consomme le REST C18 (plus d’autorité locale mock en production). Mobile appelle les mêmes endpoints (`validate` / `assign-class` / `transfer` / `close`) sans machine d’état locale ni file offline. Les boutons suivent permissions + statut renvoyé par le backend ; le PostgreSQL reste seule autorité de transition.
 
 ## Sécurité
 

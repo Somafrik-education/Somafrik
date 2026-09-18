@@ -7,4 +7,11 @@ export const STUDENT_FICHE_LOT2_TEST_IDS = {
   paymentsCard: "student-fiche-payments-card",
   linkParentButton: "student-fiche-link-parent",
   archiveRelationPrefix: "student-fiche-archive-relation-",
+  guardiansUnavailable: "student-fiche-guardians-unavailable",
+  guardiansRetry: "student-fiche-guardians-retry",
+  guardiansEmpty: "student-fiche-guardians-empty",
+  c18ValidateButton: "student-fiche-c18-validate",
+  c18AssignButton: "student-fiche-c18-assign-class",
+  c18TransferButton: "student-fiche-c18-transfer",
+  c18CloseButton: "student-fiche-c18-close",
 } as const;

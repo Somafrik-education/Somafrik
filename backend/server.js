@@ -6777,11 +6777,9 @@ function sendList(res, rows, query, searchableFields) {
 }
 
 function findStudent(students, studentId) {
+  const { findStudentByIdentity } = require("./lib/studentIdentityMatch");
   const key = String(studentId ?? "").trim();
-  const direct = students.find((item) =>
-    [item.id, item.publicId, item.matricule].some((value) => String(value ?? "").trim() === key),
-  );
-
+  const direct = findStudentByIdentity(students, key);
   if (direct) {
     return direct;
   }
@@ -6813,9 +6811,9 @@ function resolveAuthorizedStudentForPrincipal(students, principal, studentRef) {
   if (!rawStudent) {
     return undefined;
   }
-  for (const value of [rawStudent.id, rawStudent.publicId, rawStudent.matricule]) {
-    const key = String(value ?? "").trim();
-    if (key && linkedIds.has(key)) {
+  const { collectStudentIdentityKeys } = require("./lib/studentIdentityMatch");
+  for (const value of collectStudentIdentityKeys(rawStudent)) {
+    if (value && linkedIds.has(value)) {
       return rawStudent;
     }
   }
@@ -6905,11 +6903,11 @@ async function savePresencesViaBackOfficeState(state, items = []) {
 }
 
 function buildScopedStudentIdSet(students = []) {
+  const { collectStudentIdentityKeys } = require("./lib/studentIdentityMatch");
   const ids = new Set();
   for (const student of students) {
-    for (const value of [student.id, student.publicId, student.matricule]) {
-      const key = String(value ?? "").trim();
-      if (key) ids.add(key);
+    for (const key of collectStudentIdentityKeys(student)) {
+      ids.add(key);
     }
   }
   return ids;

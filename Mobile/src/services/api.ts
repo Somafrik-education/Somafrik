@@ -416,6 +416,63 @@ export function getSchoolStudent(studentId: string) {
   );
 }
 
+export type C18Enrollment = {
+  id: string;
+  studentId?: string;
+  status?: string;
+  classId?: string | null;
+  classCode?: string;
+  className?: string;
+  academicYearName?: string;
+  enrollmentDate?: string;
+};
+
+function c18EnrollmentPath(studentId: string, enrollmentId: string, action: string) {
+  return `/students/${encodeURIComponent(studentId)}/enrollments/${encodeURIComponent(enrollmentId)}/${action}`;
+}
+
+export function listStudentEnrollments(studentId: string) {
+  return request<{ items?: C18Enrollment[] } | C18Enrollment[]>(
+    `/students/${encodeURIComponent(studentId)}/enrollments`,
+  ).then((payload) => (Array.isArray(payload) ? payload : payload?.items ?? []));
+}
+
+export function validateStudentEnrollment(studentId: string, enrollmentId: string, body: { reason?: string } = {}) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "validate"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function assignStudentEnrollmentClass(
+  studentId: string,
+  enrollmentId: string,
+  body: { classCode?: string; classId?: string },
+) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "assign-class"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function transferStudentEnrollment(
+  studentId: string,
+  enrollmentId: string,
+  body: { destinationSchoolName: string; reason?: string },
+) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "transfer"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function closeStudentEnrollment(studentId: string, enrollmentId: string, body: { reason?: string } = {}) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "close"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export function getParentRelations(studentId: string) {
   return request<{ items?: Record<string, unknown>[] } | Record<string, unknown>[]>(
     `/parents/relations?studentId=${encodeURIComponent(studentId)}`,

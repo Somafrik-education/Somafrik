@@ -71,5 +71,6 @@ CI #707 : job LOT 2 parity exécute `test:lot2-parity` + HTTP PG RBAC/tenant.
 2. Upgrade PG : JOIN roster `active|enrolled` (classe-first écrit `ENROLLED`).
 3. Finance / dataset : lecture `active|enrolled`.
 4. HTTP C18 : relire `students.student_code` après INSERT — le trigger d’identité réécrit tout code client (`STU-A-*`). `GET /api/students/:id` accepte matricule **ou** UUID.
+5. HOLD `#5735767299` : `findStudent` matche `studentCode` / UUID / matricule ; client C18 Mobile sans `nextStatus` ; responsables `error/offline` ≠ liste vide.
 
 STOP : Draft. Pas Ready. Pas merge. Pas LOT 3.

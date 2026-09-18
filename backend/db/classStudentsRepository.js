@@ -149,6 +149,7 @@ function createClassStudentsRepository(db) {
       id: studentCode,
       publicId: studentCode,
       studentCode,
+      studentUuid: row.student_uuid ? String(row.student_uuid) : "",
       matricule: studentCode,
       loginCode: studentCode,
       identityCode: studentCode,

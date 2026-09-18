@@ -32,14 +32,29 @@ import {
 } from "../lib/canonicalStudentIdentity";
 import {
   archiveParentRelation,
+  assignStudentEnrollmentClass,
+  closeStudentEnrollment,
   getParentRelations,
   getSchoolStudent,
   linkParent,
+  listStudentEnrollments,
+  transferStudentEnrollment,
+  validateStudentEnrollment,
+  type C18Enrollment,
 } from "../services/api";
 import {
   canArchiveParentRelationMobile,
   canLinkParentMobile,
 } from "../lib/parentLinkingAccess";
+import {
+  canMutateC18Mobile,
+  isC18ActionAvailable,
+} from "../lib/studentEnrollmentC18Access";
+import {
+  classifyGuardiansLoad,
+  guardiansCardSubtitle,
+  type GuardiansLoadState,
+} from "../lib/studentFicheGuardians";
 import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import { OFFLINE_COPY } from "../lib/offlineModeSpec";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
@@ -100,36 +115,54 @@ export default function StudentDetailScreen({
   const [fiche, setFiche] = useState<Record<string, unknown> | null>(null);
   const [ficheStatus, setFicheStatus] = useState<"loading" | "error" | "success">("loading");
   const [guardians, setGuardians] = useState<GuardianRow[]>([]);
+  const [guardiansState, setGuardiansState] = useState<GuardiansLoadState>("loading");
+  const [c18Enrollments, setC18Enrollments] = useState<C18Enrollment[]>([]);
+  const [c18Error, setC18Error] = useState("");
+  const [classCodeInput, setClassCodeInput] = useState("");
+  const [transferDest, setTransferDest] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [linkError, setLinkError] = useState("");
+  const canMutateC18 = canMutateC18Mobile(session);
 
   const loadFiche = useCallback(async () => {
     if (!studentId) {
       setFiche(null);
       setFicheStatus("error");
+      setGuardiansState("error");
       return;
     }
     setFicheStatus("loading");
+    setGuardiansState("loading");
     try {
       const row = await getSchoolStudent(String(studentId));
       setFiche(row);
       setFicheStatus("success");
+      const canonicalId = String(row.studentCode ?? row.id ?? studentId);
       try {
-        const relations = await getParentRelations(String(row.studentCode ?? row.id ?? studentId));
-        setGuardians(
-          (relations as GuardianRow[]).filter(
-            (item) => String(item.status ?? "active").toLowerCase() !== "archived",
-          ),
-        );
+        const enrollments = await listStudentEnrollments(canonicalId);
+        setC18Enrollments(enrollments);
       } catch {
+        setC18Enrollments([]);
+      }
+      try {
+        const relations = await getParentRelations(canonicalId);
+        const active = (relations as GuardianRow[]).filter(
+          (item) => String(item.status ?? "active").toLowerCase() !== "archived",
+        );
+        setGuardians(active);
+        setGuardiansState(classifyGuardiansLoad({ loading: false, error: null, items: active }));
+      } catch (error) {
         setGuardians([]);
+        setGuardiansState(classifyGuardiansLoad({ loading: false, error, items: [] }));
       }
     } catch {
       setFiche(null);
       setGuardians([]);
+      setC18Enrollments([]);
       setFicheStatus("error");
+      setGuardiansState("error");
     }
   }, [studentId]);
 
@@ -164,7 +197,7 @@ export default function StudentDetailScreen({
     firstName?: string;
     lastName?: string;
     name?: string;
-    enrollments?: Array<{ status?: string; className?: string; academicYearName?: string; enrollmentDate?: string }>;
+    enrollments?: Array<{ id?: string; status?: string; className?: string; academicYearName?: string; enrollmentDate?: string }>;
   };
   const studentNotes = filterRowsByStudentScope(notesData, studentScope);
   const studentPresences = filterRowsByStudentScope(presencesData, studentScope);
@@ -177,10 +210,35 @@ export default function StudentDetailScreen({
   const presencesValue = metricLabelFromSnapshot(presencesSnapshot, () => String(presentCount));
   const paymentsDetail = metricLabelFromSnapshot(paymentsSnapshot, () => `${studentPayments.length} opération(s)`);
   const displayName = studentDisplayName(student);
-  const currentEnrollment = student.enrollments?.[0];
+  const currentEnrollment = c18Enrollments[0] ?? student.enrollments?.[0];
+  const enrollmentId = String(currentEnrollment?.id ?? "");
+  const canonicalStudentId = String(student.studentCode ?? student.id ?? studentId);
+  const enrollmentStatus = String(currentEnrollment?.status ?? "");
+  const showValidate = canMutateC18 && isC18ActionAvailable("validate", enrollmentStatus);
+  const showAssign = canMutateC18 && isC18ActionAvailable("assign-class", enrollmentStatus);
+  const showTransfer = canMutateC18 && isC18ActionAvailable("transfer", enrollmentStatus);
+  const showClose = canMutateC18 && isC18ActionAvailable("close", enrollmentStatus);
 
   const openSubScreen = (screen: "StudentNotes" | "StudentPresences" | "StudentPayments") => {
     navigation?.navigate(screen, { studentId: String(student.id ?? student.studentCode ?? studentId) });
+  };
+
+  const runC18 = async (action: () => Promise<unknown>) => {
+    if (mutationsBlocked) {
+      Alert.alert("Hors ligne", OFFLINE_COPY.mutationRequiresConnection);
+      return;
+    }
+    if (!enrollmentId) {
+      setC18Error("Inscription introuvable.");
+      return;
+    }
+    setC18Error("");
+    try {
+      await action();
+      await loadFiche();
+    } catch (error) {
+      setC18Error(error instanceof Error ? error.message : "Transition C18 refusée.");
+    }
   };
 
   const submitLink = async () => {
@@ -263,15 +321,111 @@ export default function StudentDetailScreen({
         <Text style={styles.info}>Année : {String(currentEnrollment?.academicYearName || "—")}</Text>
         <Text style={styles.info}>Date : {String(currentEnrollment?.enrollmentDate || "—")}</Text>
         <Text style={styles.info}>Établissement : {String(student.schoolCode ?? "")}</Text>
+        {c18Error ? <Text style={styles.error}>{c18Error}</Text> : null}
+        {showValidate ? (
+          <TouchableOpacity
+            style={styles.create}
+            onPress={() => void runC18(() => validateStudentEnrollment(canonicalStudentId, enrollmentId))}
+            testID={STUDENT_FICHE_LOT2_TEST_IDS.c18ValidateButton}
+            accessibilityRole="button"
+            accessibilityLabel="Valider l'inscription"
+          >
+            <Text style={styles.createText}>Valider</Text>
+          </TouchableOpacity>
+        ) : null}
+        {showAssign ? (
+          <View>
+            <TextInput
+              style={styles.input}
+              placeholder="Code classe"
+              value={classCodeInput}
+              onChangeText={setClassCodeInput}
+            />
+            <TouchableOpacity
+              style={styles.create}
+              onPress={() =>
+                void runC18(() =>
+                  assignStudentEnrollmentClass(canonicalStudentId, enrollmentId, {
+                    classCode: classCodeInput.trim(),
+                  }),
+                )
+              }
+              testID={STUDENT_FICHE_LOT2_TEST_IDS.c18AssignButton}
+              accessibilityRole="button"
+              accessibilityLabel="Affecter une classe"
+            >
+              <Text style={styles.createText}>Affecter la classe</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {showTransfer ? (
+          <View>
+            <TextInput
+              style={styles.input}
+              placeholder="Établissement de destination"
+              value={transferDest}
+              onChangeText={setTransferDest}
+            />
+            <TouchableOpacity
+              style={styles.create}
+              onPress={() =>
+                void runC18(() =>
+                  transferStudentEnrollment(canonicalStudentId, enrollmentId, {
+                    destinationSchoolName: transferDest.trim(),
+                  }),
+                )
+              }
+              testID={STUDENT_FICHE_LOT2_TEST_IDS.c18TransferButton}
+              accessibilityRole="button"
+              accessibilityLabel="Transférer l'élève"
+            >
+              <Text style={styles.createText}>Transférer</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {showClose ? (
+          <TouchableOpacity
+            style={styles.create}
+            onPress={() => void runC18(() => closeStudentEnrollment(canonicalStudentId, enrollmentId))}
+            testID={STUDENT_FICHE_LOT2_TEST_IDS.c18CloseButton}
+            accessibilityRole="button"
+            accessibilityLabel="Clôturer l'inscription"
+          >
+            <Text style={styles.createText}>Clôturer</Text>
+          </TouchableOpacity>
+        ) : null}
       </ExpandableEntityCard>
 
       <ExpandableEntityCard
         title="Responsables"
-        subtitle={guardians.length ? `${guardians.length} responsable(s)` : "Aucun responsable lié"}
-        badge={String(guardians.length)}
+        subtitle={guardiansCardSubtitle(guardiansState, guardians.length)}
+        badge={guardiansState === "success" ? String(guardians.length) : ""}
         testID={STUDENT_FICHE_LOT2_TEST_IDS.guardiansCard}
       >
-        {guardians.map((guardian) => (
+        {guardiansState === "loading" ? <Text style={styles.info}>Chargement…</Text> : null}
+        {guardiansState === "error" || guardiansState === "offline" ? (
+          <View>
+            <Text style={styles.error} testID={STUDENT_FICHE_LOT2_TEST_IDS.guardiansUnavailable}>
+              Indisponible
+            </Text>
+            <TouchableOpacity
+              style={styles.create}
+              onPress={() => void loadFiche()}
+              testID={STUDENT_FICHE_LOT2_TEST_IDS.guardiansRetry}
+              accessibilityRole="button"
+              accessibilityLabel="Réessayer le chargement des responsables"
+            >
+              <Text style={styles.createText}>Réessayer</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {guardiansState === "empty" ? (
+          <Text style={styles.info} testID={STUDENT_FICHE_LOT2_TEST_IDS.guardiansEmpty}>
+            Aucun responsable lié
+          </Text>
+        ) : null}
+        {guardiansState === "success"
+          ? guardians.map((guardian) => (
           <View key={guardian.id} style={styles.guardianRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.menuText}>
@@ -290,7 +444,8 @@ export default function StudentDetailScreen({
               </TouchableOpacity>
             ) : null}
           </View>
-        ))}
+            ))
+          : null}
         {canLink ? (
           <View>
             <TextInput style={styles.input} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />

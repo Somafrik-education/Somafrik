@@ -13,29 +13,18 @@ const {
 
 function resolveAuthorizedStudentForPrincipal(students, principal, studentRef) {
   const { TenantScopeService } = require("../services/tenantScopeService");
+  const { findStudentByIdentity, studentLinkedToPrincipal } = require("./studentIdentityMatch");
   const tenantScopeService = new TenantScopeService();
   const scopedStudents = tenantScopeService.filterRows(students, principal);
   const key = String(studentRef ?? "").trim();
-  const scopedMatch = scopedStudents.find((item) =>
-    [item.id, item.publicId, item.matricule, item.studentCode].some(
-      (value) => String(value ?? "").trim() === key,
-    ),
-  );
+  const scopedMatch = findStudentByIdentity(scopedStudents, key);
   if (scopedMatch) return scopedMatch;
   if (principal.role !== "Parent" && principal.role !== "Élève / Étudiant") {
     return undefined;
   }
-  const linkedIds = new Set((principal.studentIds ?? []).map((value) => String(value ?? "").trim()));
-  const raw = students.find((item) =>
-    [item.id, item.publicId, item.matricule, item.studentCode].some(
-      (value) => String(value ?? "").trim() === key,
-    ),
-  );
+  const raw = findStudentByIdentity(students, key);
   if (!raw) return undefined;
-  for (const value of [raw.id, raw.publicId, raw.matricule, raw.studentCode]) {
-    const candidate = String(value ?? "").trim();
-    if (candidate && linkedIds.has(candidate)) return raw;
-  }
+  if (studentLinkedToPrincipal(raw, principal.studentIds)) return raw;
   return undefined;
 }
 
@@ -388,6 +377,66 @@ function testSchoolDirectoryScopesTeacherAndParent() {
   assert.equal(parentScoped[0].studentCode, "ELE-2");
 }
 
+function testStudentCodeUuidMatriculeConvergeWithoutTenantWiden() {
+  const student = {
+    id: "cccccccc-cccc-4ccc-8ccc-cccccccccc11",
+    publicId: "cccccccc-cccc-4ccc-8ccc-cccccccccc11",
+    studentCode: "STU-A-001",
+    matricule: "CD-LAC-AE-26-00001",
+    classCode: "CLS-LAC-6A",
+    className: "6ème A",
+    schoolCode: "CD-LAC-26-001",
+  };
+  const admin = {
+    role: "Admin School",
+    schoolCode: "CD-LAC-26-001",
+  };
+  const otherTenant = {
+    role: "Admin School",
+    schoolCode: "BI-BUJ-26-001",
+  };
+  const parent = {
+    role: "Parent",
+    schoolCode: "CD-LAC-26-001",
+    studentIds: ["STU-A-001"],
+  };
+
+  assert.equal(
+    authorizeStudentReadForPrincipal(student, admin, "STU-A-001", resolveAuthorizedStudentForPrincipal)?.studentCode,
+    "STU-A-001",
+  );
+  assert.equal(
+    authorizeStudentReadForPrincipal(
+      student,
+      admin,
+      "cccccccc-cccc-4ccc-8ccc-cccccccccc11",
+      resolveAuthorizedStudentForPrincipal,
+    )?.studentCode,
+    "STU-A-001",
+  );
+  assert.equal(
+    authorizeStudentReadForPrincipal(
+      student,
+      admin,
+      "CD-LAC-AE-26-00001",
+      resolveAuthorizedStudentForPrincipal,
+    )?.studentCode,
+    "STU-A-001",
+  );
+  assert.equal(
+    authorizeStudentReadForPrincipal(student, otherTenant, "STU-A-001", resolveAuthorizedStudentForPrincipal),
+    undefined,
+  );
+  assert.equal(
+    authorizeStudentReadForPrincipal(student, parent, "STU-A-001", resolveAuthorizedStudentForPrincipal)?.studentCode,
+    "STU-A-001",
+  );
+  assert.equal(
+    authorizeStudentReadForPrincipal(student, { ...parent, studentIds: ["STU-A-C18"] }, "STU-A-001", resolveAuthorizedStudentForPrincipal),
+    undefined,
+  );
+}
+
 function main() {
   testActiveStatusHelper();
   testTeacherClassGateRequiresStableId();
@@ -399,6 +448,7 @@ function main() {
   testAdminSchoolSeesAll();
   testSchoolDirectoryScopesTeacherAndParent();
   testSchoolClassesScopeByClassIdNotName();
+  testStudentCodeUuidMatriculeConvergeWithoutTenantWiden();
   console.log("classStudentsAuthz.test.js: OK");
 }
 
