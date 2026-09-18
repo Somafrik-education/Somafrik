@@ -63,6 +63,8 @@ function main() {
   assert.doesNotMatch(readRepo("packages/help-catalog/src/articles-refresh.js"), /Ajouter un élève/);
   assert.doesNotMatch(readRepo("packages/help-catalog/src/articles.js"), /help\/grades\/create-evaluation/);
 
+  assert.match(readRepo("web/src/help/HelpHost.tsx"), /data-testid="help-unavailable-probe"/);
+  assert.doesNotMatch(readRepo("web/src/help/HelpHost.tsx"), /data-help-(token|jwt|password|student)/i);
   assert.match(readRepo("web/src/help/HelpPanel.tsx"), /Catégories/);
   assert.match(readRepo("web/src/help/HelpPanel.tsx"), /groupHelpArticlesByCategory/);
 
