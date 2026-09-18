@@ -2,12 +2,18 @@ const path = require("path");
 const { getDefaultConfig } = require("expo/metro-config");
 const { withNativeWind } = require("nativewind/metro");
 
-const config = withNativeWind(getDefaultConfig(__dirname), { input: "./global.css" });
+const projectRoot = __dirname;
+const mobileNodeModules = path.resolve(projectRoot, "node_modules");
+const helpCatalog = path.resolve(projectRoot, "../packages/help-catalog");
 
-config.watchFolders = [
-  ...(config.watchFolders || []),
-  path.resolve(__dirname, "../packages/help-catalog"),
-];
+const config = withNativeWind(getDefaultConfig(projectRoot), { input: "./global.css" });
+
+config.watchFolders = [...(config.watchFolders || []), helpCatalog];
+config.resolver.nodeModulesPaths = [mobileNodeModules, ...(config.resolver.nodeModulesPaths || [])];
+config.resolver.extraNodeModules = {
+  ...(config.resolver.extraNodeModules || {}),
+  "@babel/runtime": path.resolve(mobileNodeModules, "@babel/runtime"),
+};
 
 // Recette Communication : entrée distincte, jamais un flag EXPO_PUBLIC_* dans le runtime livré.
 if (process.env.SOMAFRIK_COMMUNICATION_UX_SMOKE_ENTRY === "1") {

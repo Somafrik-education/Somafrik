@@ -37,6 +37,8 @@ function main() {
   const workflow = readRepo(".github/workflows/help-user-guide.yml");
   assert.match(workflow, /npm ci --prefix Mobile/);
   assert.match(workflow, /Mobile\/package-lock\.json/);
+  assert.match(readRepo("Mobile/metro.config.js"), /nodeModulesPaths/);
+  assert.match(readRepo("Mobile/metro.config.js"), /@babel\/runtime/);
   assert.match(readRepo("Mobile/src/help/HelpHost.tsx"), /isMobileHelpSessionReady/);
   assert.doesNotMatch(readRepo("Mobile/src/help/HelpHost.tsx"), /permissionsBootstrap === ["']ready["']/);
 

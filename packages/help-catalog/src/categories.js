@@ -58,7 +58,9 @@ export function resolveHelpCategory(article) {
   }
   const id = article && typeof article.id === "string" ? article.id : "";
   if (Object.hasOwn(CATEGORY_BY_ID, id)) return Reflect.get(CATEGORY_BY_ID, id);
-  for (const [prefix, category] of PREFIX_CATEGORY) {
+  for (const entry of PREFIX_CATEGORY) {
+    const prefix = entry[0];
+    const category = entry[1];
     if (id.startsWith(prefix)) return category;
   }
   return HELP_CATEGORY.ASSISTANCE;
