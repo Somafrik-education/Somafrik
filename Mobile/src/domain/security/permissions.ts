@@ -113,6 +113,7 @@ export const routeFeatureMap: Record<string, string> = {
   Payments: "Paiements",
   Paiements: "Paiements",
   Unpaid: "Impayés",
+  FeeGrids: "Frais & tarifs",
   Messages: "Messages",
   Announcements: "Announcements",
   Timetable: "Planning de cours",
@@ -347,6 +348,9 @@ export function canReadView(session: any, viewName: string): boolean {
   if (viewName === "PlatformNotifications") {
     return hasPlatformBackofficePrivilege(session);
   }
+  if (viewName === "FeeGrids") {
+    return canReadFeeGrids(session);
+  }
   if (viewName === "overview") return true;
   if (viewName === "Schooling") {
     if (session?.role === "country_admin") return false;
@@ -417,12 +421,25 @@ export function canMutateEntity(session: any, entity: string, action: Exclude<Se
   return Boolean(feature) && hasSecurityPermission(session, feature, action);
 }
 
+/** GET /finance/fee-grids — Frais & tarifs:READ | Paiements:READ | Impayés:READ. */
+export function canReadFeeGrids(session: any): boolean {
+  if (isSuperAdminSessionRole(session?.role)) return false;
+  return (
+    hasSecurityPermission(session, "Frais & tarifs", "READ") ||
+    hasSecurityPermission(session, "Paiements", "READ") ||
+    hasSecurityPermission(session, "Impayés", "READ")
+  );
+}
+
 export function canReadRoute(session: any, routeName?: string) {
   if (isSuperAdminSessionRole(session?.role)) {
     return Boolean(routeName) && SUPER_ADMIN_ALLOWED_VIEWS.has(routeName as string);
   }
   if (routeName === "PlatformNotifications") {
     return hasPlatformBackofficePrivilege(session);
+  }
+  if (routeName === "FeeGrids") {
+    return canReadFeeGrids(session);
   }
   if (isSchoolSettingsView(routeName)) {
     return canReadView(session, routeName);

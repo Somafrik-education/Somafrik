@@ -1,6 +1,7 @@
 export type UnpaidStudentRow = {
   studentId: string;
   studentName: string;
+  matricule?: string;
   className?: string;
   schoolCode: string;
   periodLabel?: string;
@@ -12,6 +13,8 @@ export type UnpaidStudentRow = {
   daysLate: number;
   severity?: string;
   status?: string;
+  lastReminderAt?: string;
+  reminderCount?: number;
 };
 
 export type UnpaidLedger = {
@@ -68,6 +71,7 @@ function normalizeUnpaidStudentRow(value: unknown): UnpaidStudentRow | null {
   return {
     studentId,
     studentName: String(row.studentName ?? row.student_name ?? studentId).trim() || studentId,
+    matricule: String(row.matricule ?? "").trim() || undefined,
     className: String(row.className ?? row.class_name ?? "").trim() || undefined,
     schoolCode: rowSchoolCode,
     periodLabel: String(row.periodLabel ?? row.period_label ?? "").trim() || undefined,
@@ -79,6 +83,8 @@ function normalizeUnpaidStudentRow(value: unknown): UnpaidStudentRow | null {
     daysLate: Math.max(0, finiteNumber(row.daysLate ?? row.days_late)),
     severity: String(row.severity ?? "").trim() || undefined,
     status: String(row.status ?? "").trim() || undefined,
+    lastReminderAt: String(row.lastReminderAt ?? row.last_reminder_at ?? "").trim() || undefined,
+    reminderCount: finiteNumber(row.reminderCount ?? row.reminder_count) || undefined,
   };
 }
 

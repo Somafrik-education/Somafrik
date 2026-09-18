@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
@@ -44,6 +44,8 @@ export default function PaymentMutationControls({
   studentFees = [],
   onChanged,
   initialStudentId = "",
+  openSignal = 0,
+  hideTrigger = false,
   paymentMethods,
   currency = "",
 }: {
@@ -51,6 +53,8 @@ export default function PaymentMutationControls({
   studentFees?: PaymentFeeRow[];
   onChanged: () => Promise<void> | void;
   initialStudentId?: string;
+  openSignal?: number;
+  hideTrigger?: boolean;
   paymentMethods?: string[];
   currency?: string;
 }) {
@@ -152,6 +156,15 @@ export default function PaymentMutationControls({
     setOpen(true);
   };
 
+  const lastOpenSignal = useRef(0);
+  useEffect(() => {
+    if (!canRecordPayment) return;
+    if (openSignal > 0 && openSignal !== lastOpenSignal.current) {
+      lastOpenSignal.current = openSignal;
+      openDraft();
+    }
+  }, [openSignal, canRecordPayment, initialStudentId]);
+
   const updateLine = (id: string, patch: Partial<DraftLine>) => {
     setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
   };
@@ -214,6 +227,7 @@ export default function PaymentMutationControls({
   if (!canRecordPayment) return null;
   return (
     <>
+      {hideTrigger ? null : (
       <TouchableOpacity
         style={styles.create}
         onPress={openDraft}
@@ -223,6 +237,7 @@ export default function PaymentMutationControls({
       >
         <Text style={styles.createText}>Enregistrer un encaissement</Text>
       </TouchableOpacity>
+      )}
       {confirmation ? (
         <Text style={styles.success} accessibilityRole="alert">
           {confirmation}

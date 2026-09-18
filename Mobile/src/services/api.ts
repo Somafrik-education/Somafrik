@@ -859,6 +859,93 @@ export function getUnpaidLedger(requestedSchoolCode?: string | null): Promise<Un
   );
 }
 
+export function createUnpaidReminder(
+  studentId: string,
+  payload: Record<string, unknown>,
+  options?: MutationRequestOptions,
+) {
+  return request(`/backoffice/finance/unpaid/${encodeURIComponent(studentId)}/reminders`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+    idempotencyKey: options?.idempotencyKey,
+  });
+}
+
+export type FinanceFeeGrid = {
+  id: string;
+  schoolCode?: string;
+  className?: string;
+  academicYear?: string;
+  periodName?: string;
+  currency?: string;
+  status?: string;
+};
+
+export type FinanceFeeGridItem = {
+  id: string;
+  feeType?: string;
+  label?: string;
+  amount: number;
+  currency?: string;
+  mandatory: boolean;
+  dueDate?: string;
+  status?: string;
+};
+
+function normalizeFeeGrid(value: unknown): FinanceFeeGrid | null {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const id = String(row.id ?? row.grid_code ?? "").trim();
+  if (!id) return null;
+  return {
+    id,
+    schoolCode: String(row.schoolCode ?? row.school_code ?? "").trim() || undefined,
+    className: String(row.className ?? row.class_name ?? "").trim() || undefined,
+    academicYear: String(row.academicYear ?? row.academic_year ?? "").trim() || undefined,
+    periodName: String(row.periodName ?? row.period_name ?? "").trim() || undefined,
+    currency: String(row.currency ?? "").trim() || undefined,
+    status: String(row.status ?? "").trim() || undefined,
+  };
+}
+
+function normalizeFeeGridItem(value: unknown, currency?: string): FinanceFeeGridItem | null {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const id = String(row.id ?? row.item_code ?? "").trim();
+  if (!id) return null;
+  const amount = Number(row.amount ?? 0);
+  return {
+    id,
+    feeType: String(row.feeType ?? row.fee_type ?? "").trim() || undefined,
+    label: String(row.label ?? "").trim() || undefined,
+    amount: Number.isFinite(amount) ? amount : 0,
+    currency: String(row.currency ?? currency ?? "").trim() || undefined,
+    mandatory: row.mandatory !== false,
+    dueDate: String(row.dueDate ?? row.due_date ?? "").trim() || undefined,
+    status: String(row.status ?? "").trim() || undefined,
+  };
+}
+
+export function listFeeGrids(): Promise<FinanceFeeGrid[]> {
+  return request<unknown>("/finance/fee-grids").then((payload) =>
+    unwrapList(payload)
+      .map(normalizeFeeGrid)
+      .filter((row): row is FinanceFeeGrid => Boolean(row)),
+  );
+}
+
+export function getFeeGrid(gridId: string): Promise<{ grid: FinanceFeeGrid | null; items: FinanceFeeGridItem[] }> {
+  return request<unknown>(`/finance/fee-grids/${encodeURIComponent(gridId)}`).then((payload) => {
+    const body = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+    const grid = normalizeFeeGrid(body.grid ?? payload);
+    const items = unwrapList(Array.isArray(body.items) ? body.items : body).map((item) =>
+      normalizeFeeGridItem(item, grid?.currency),
+    );
+    return {
+      grid,
+      items: items.filter((row): row is FinanceFeeGridItem => Boolean(row)),
+    };
+  });
+}
+
 export type CanonicalStudentFee = {
   id: string;
   studentId: string;

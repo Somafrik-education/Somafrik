@@ -2,7 +2,9 @@
  * F7 — formatage Finance Mobile.
  * Devise = contexte canonique établissement / pays / catalogue / ligne.
  * Jamais USD, EUR, CDF, FC en repli arbitraire.
+ * Dates = JJ-MM-AAAA via formatDateForDisplay.
  */
+import { formatDateForDisplay } from "./dates";
 
 const PRESENTATION_ALIASES: Record<string, string> = {
   FC: "CDF",
@@ -33,15 +35,5 @@ export function formatFinanceAmount(
 export function formatFinanceDate(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "—";
-  const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
-  if (dmy) return `${dmy[1]}/${dmy[2]}/${dmy[3]}`;
-  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
-  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
-  const parsed = Date.parse(raw);
-  if (!Number.isFinite(parsed)) return raw;
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(parsed));
+  return formatDateForDisplay(raw) || "—";
 }
