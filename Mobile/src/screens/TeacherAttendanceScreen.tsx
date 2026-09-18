@@ -30,6 +30,7 @@ import {
 import { overlayPresenceOutboxOnAttendance, applyOutboxReadToRollCall, outboxMatchesAttendanceClass } from "../lib/attendanceOffline";
 import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
 import { SCOLARITE_COPY } from "../lib/schoolingTruth";
+import { METRIC_PENDING_LABEL } from "../lib/dataTruth";
 import { savePresences } from "../services/api";
 import { clearConfirmedAttendanceDirty } from "../lib/attendanceDraft";
 import {
@@ -663,7 +664,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
             <StatPill
               testID={USABILITY_TEST_IDS.attendanceRate}
               label="Taux"
-              value={`${dailyStats.rate}%`}
+              value={dailyStats.rate == null ? METRIC_PENDING_LABEL : `${dailyStats.rate}%`}
               color="#2563EB"
             />
           </View>

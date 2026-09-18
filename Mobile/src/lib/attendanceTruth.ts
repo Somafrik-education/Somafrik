@@ -1,10 +1,14 @@
 /**
- * Vérité d'appel Mobile : absence de saisie ≠ présence confirmée.
+ * Vérité d'appel Mobile.
+ * Défaut produit : Présent + changement de statut simple.
  * Justifié = absence justifiée (contrat D3.5b), non présent.
+ * Source `unset` = défaut UI, pas une confirmation PostgreSQL.
  */
 
 import { getPresenceStats, normalizePresenceStatus, type PresenceStats } from "../domain/metrics/schoolMetrics";
 import type { PresenceItem } from "../data/catalog";
+
+export type RollCallDraftStats = Omit<PresenceStats, "rate"> & { rate: number | null };
 
 export type AttendanceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
 export type RollCallSource = "unset" | "postgres" | "draft" | "queued" | "failed";
@@ -76,21 +80,25 @@ export function findTodayPresenceForStudent(
     );
 }
 
-/** Aucune ligne du jour → null. Jamais « Présent » inventé. */
+/**
+ * Aucune ligne du jour → Présent (workflow cible : défaut Présent + changement de statut simple).
+ * Une ligne persistée conserve le statut PostgreSQL. Source `unset` ≠ confirmation serveur.
+ */
 export function hydrateRollCallStatus(
   presence?: Pick<PresenceItem, "present" | "status"> | null,
 ): AttendanceStatus | null {
-  if (!presence) return null;
+  if (!presence) return "Présent";
   return normalizePresenceStatus(presence);
 }
 
 export function emptyRollCallEntry(): RollCallEntry {
-  return { status: null, source: "unset" };
+  return { status: "Présent", source: "unset" };
 }
 
 export function rollCallEntryFromPresence(
   presence?: Pick<PresenceItem, "present" | "status"> | null,
 ): RollCallEntry {
+  if (!presence) return emptyRollCallEntry();
   const status = hydrateRollCallStatus(presence);
   if (!status) return emptyRollCallEntry();
   return { status, source: "postgres" };
@@ -146,7 +154,7 @@ export function markRosterPresent(
 export function getRollCallDraftStats(
   studentIds: string[],
   attendance: Record<string, RollCallEntry>,
-): PresenceStats {
+): RollCallDraftStats {
   const rows = studentIds.map((studentId, index) => {
     const status = attendance[studentId]?.status;
     return {
@@ -161,11 +169,13 @@ export function getRollCallDraftStats(
   const selected = rows.filter((row) => row.status);
   const stats = getPresenceStats(selected);
   const attended = studentIds.filter((id) => isAttendedStatus(attendance[id]?.status)).length;
+  const recorded = studentIds.filter((id) => Boolean(attendance[id]?.status)).length;
+  const complete = studentIds.length > 0 && recorded === studentIds.length;
   return {
     ...stats,
     total: studentIds.length,
     attended,
-    rate: studentIds.length ? Math.round((attended / studentIds.length) * 100) : 0,
+    rate: complete ? Math.round((attended / studentIds.length) * 100) : studentIds.length ? null : 0,
   };
 }
 

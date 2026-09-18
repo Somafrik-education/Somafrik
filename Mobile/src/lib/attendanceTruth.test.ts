@@ -25,15 +25,15 @@ import {
 import { rollCallInitialStatus } from "../domain/metrics/schoolMetrics";
 
 function run() {
-  assert.equal(hydrateRollCallStatus(undefined), null);
-  assert.equal(hydrateRollCallStatus(null), null);
+  assert.equal(hydrateRollCallStatus(undefined), "Présent");
+  assert.equal(hydrateRollCallStatus(null), "Présent");
   assert.equal(hydrateRollCallStatus({ present: true, status: "Présent" }), "Présent");
   assert.equal(hydrateRollCallStatus({ present: false, status: "Absent" }), "Absent");
   assert.equal(hydrateRollCallStatus({ present: true, status: "Retard" }), "Retard");
   assert.equal(hydrateRollCallStatus({ present: false, status: "Justifié" }), "Justifié");
   assert.equal(hydrateRollCallStatus({ present: false, status: "excused" }), "Justifié");
 
-  // P0 : l'ancien helper ne doit plus être la source d'un faux Présent métier.
+  // Helper legacy : ne doit plus être appelé par les écrans (verify-mobile-attendance-hydration).
   assert.equal(rollCallInitialStatus(undefined), null);
 
   const today = findTodayPresenceForStudent(
@@ -55,9 +55,10 @@ function run() {
   );
 
   const unset = rollCallEntryFromPresence(undefined);
-  assert.equal(unset.status, null);
+  assert.equal(unset.status, "Présent");
   assert.equal(unset.source, "unset");
   assert.equal(shouldPreserveLocalAttendanceDraft(unset), false);
+  assert.equal(emptyRollCallEntry().status, "Présent");
 
   const confirmed = rollCallEntryFromPresence({ status: "Absent", present: false });
   assert.equal(confirmed.source, "postgres");
@@ -79,12 +80,15 @@ function run() {
   assert.equal(lastDraftStatus(cycle.map((status) => ({ status }))), "Présent");
 
   const roster = ["a", "b", "c", "d"];
+  const hydratedDefault = Object.fromEntries(roster.map((id) => [id, emptyRollCallEntry()]));
+  assert.equal(assertRollCallReadyToSave(roster, hydratedDefault).ok, true);
+  assert.equal(getRollCallDraftStats(roster, hydratedDefault).rate, 100);
   const emptyStats = getRollCallDraftStats(roster, {});
   assert.equal(emptyStats.present, 0);
   assert.equal(emptyStats.absent, 0);
   assert.equal(emptyStats.late, 0);
   assert.equal(emptyStats.justified, 0);
-  assert.equal(emptyStats.rate, 0);
+  assert.equal(emptyStats.rate, null);
   assert.equal(emptyStats.total, 4);
 
   const mixed = {
@@ -109,6 +113,7 @@ function run() {
   const incomplete = assertRollCallReadyToSave(roster, { a: mixed.a });
   assert.equal(incomplete.ok, false);
   if (!incomplete.ok) assert.deepEqual(incomplete.missingIds, ["b", "c", "d"]);
+  assert.equal(getRollCallDraftStats(roster, { a: mixed.a }).rate, null);
 
   const marked = markRosterPresent(roster, {}, "QA", new Date("2026-08-23T08:00:00"));
   assert.equal(assertRollCallReadyToSave(roster, marked).ok, true);

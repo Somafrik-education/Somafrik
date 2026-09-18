@@ -29,6 +29,7 @@ import { marketingTrial } from "../data/marketingContent";
 import { showDemoAccounts } from "../lib/featureFlags";
 import { cn } from "../lib/utils";
 import { DEMO_ACCOUNT_GROUPS, DEMO_SCHOOL_CODE, type DemoAccount } from "../lib/demoAccounts";
+import { validateAccountSecret } from "../lib/userAccountRules";
 import type { LoginProfile } from "../types";
 
 const PROFILES: { id: LoginProfile; label: string }[] = [
@@ -58,12 +59,25 @@ type LoginValues = z.infer<typeof loginSchema>;
 
 const passwordChangeSchema = z
   .object({
-    newPassword: z.string().min(6, "Le mot de passe doit contenir au moins 6 caractères."),
+    newPassword: z.string().min(1, "Nouveau mot de passe requis."),
     confirmPassword: z.string().min(1, "Confirmation requise."),
   })
-  .refine((values) => values.newPassword === values.confirmPassword, {
-    path: ["confirmPassword"],
-    message: "Les mots de passe ne correspondent pas.",
+  .superRefine((values, ctx) => {
+    const policyError = validateAccountSecret(values.newPassword);
+    if (policyError) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["newPassword"],
+        message: policyError,
+      });
+    }
+    if (values.newPassword !== values.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmPassword"],
+        message: "Les mots de passe ne correspondent pas.",
+      });
+    }
   });
 
 type PasswordChangeValues = z.infer<typeof passwordChangeSchema>;
@@ -96,6 +110,10 @@ export function LoginPage() {
   const submitting = form.formState.isSubmitting;
 
   useEffect(() => {
+    if (session?.accessToken && session.user?.mustChangePassword) {
+      setPasswordChangeOpen(true);
+      return;
+    }
     if (session?.accessToken && !session.user?.mustChangePassword) {
       let cancelled = false;
       const role = session.user?.role ?? "";
