@@ -40,6 +40,8 @@ npm run test:lot4-parity
 - `formatFinanceDate` → `formatDateForDisplay` des deux côtés.
 - Job CI `LOT 4 parity` dans Required, `needs` extensible (`lot4` n'est pas figé comme dernier).
 
+CI GitHub `0425489f` : **37/37 SUCCESS**, dont `PR Gates / LOT 4 parity` et `PR Gates / Required`.
+
 ## Reliquats hors LOT 4
 
 - PARITY-036 paiement parent
