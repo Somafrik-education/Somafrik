@@ -1,6 +1,5 @@
-import type { Course, NoteItem, PaymentItem, PresenceItem, Student } from "../../data/catalog";
+import type { PaymentItem, PresenceItem } from "../../data/catalog";
 import { isCancelledStatus, isPaidStatus, isUnallocatedStatus, paymentTotal } from "../../lib/dataTruth";
-import { GradeBookService } from "../academics/GradeBookService";
 
 export type PresenceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
 
@@ -124,14 +123,4 @@ export function getPaymentStats(payments: PaymentItem[], studentIds?: string[]):
     unallocatedAmount: unallocatedRows.reduce((sum, payment) => sum + paymentTotal(payment), 0),
     rate: countableRows.length ? Math.round((paidRows.length / countableRows.length) * 100) : 0,
   };
-}
-
-export function getStudentAcademicSummary(
-  studentId: string,
-  students: Student[],
-  notes: NoteItem[],
-  courses: Course[]
-) {
-  const gradeBook = new GradeBookService(students, notes, courses);
-  return gradeBook.getStudentAverage(studentId);
 }
