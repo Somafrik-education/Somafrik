@@ -1,7 +1,7 @@
 # Décisions d’architecture (ADR simplifié) — Somafrik
 
 **Statut :** registre officiel des décisions durables  
-**Dernière mise à jour :** 2026-09-12
+**Dernière mise à jour :** 2026-09-19
 
 Format obligatoire pour chaque entrée :
 
@@ -197,6 +197,19 @@ Les conversations (Chat, agents) **ne remplacent pas** ce registre.
 | **Alternatives** | Template par pays ; hash PG seul ; QR JSON PII actuel ; token hash-only (reprint impossible) ; HMAC/KDF (B) ou opaque unique (C) comme défaut. |
 | **Impact** | ADR `docs/project/ADR-REPORT-CARD-FRAMEWORK-LOT0.md` ; contrats `backend/contracts/reportCard/` ; gate `verify:report-card-lot0`. Pas de SQL / route / UI dans LOT 0. |
 | **Statut** | Acceptée |
+
+---
+
+## ADR-015 — ChatGPT CTO / Cursor développeur / GitHub pont unique
+
+| | |
+|--|--|
+| **Date** | 2026-09-19 |
+| **Décision** | Sur le chantier GO Production (#720), ChatGPT est le CTO (mandats, diff GitHub indépendant, HOLD / GO / merge), Cursor est le développeur / QA exécutant (Draft PR, preuves, STOP, aucun merge), GitHub est le **pont de communication unique** (issues, PR, commentaires, Actions, SHAs). Aucune décision de Ready, merge ou GO ne repose uniquement sur un compte-rendu de chat. |
+| **Contexte** | Agents Cloud et revue humaine doivent partager un registre unique. Les fils de chat perdent les SHA, les HOLD et l’anti-dérive. |
+| **Alternatives** | Pilotage uniquement dans le chat Cursor ; e-mail / Notion comme registre ; Cursor autonome jusqu’au merge. |
+| **Impact** | Contrat [GO-PRODUCTION.md](./GO-PRODUCTION.md) ; snapshot G0 [../audits/go-production-g0-baseline-2026-09-19.md](../audits/go-production-g0-baseline-2026-09-19.md) ; section pont dans [CONTRIBUTING.md](./CONTRIBUTING.md). Freeze fonctionnel de `develop` jusqu’à mandat de lot. |
+| **Statut** | Proposée |
 
 ---
 
