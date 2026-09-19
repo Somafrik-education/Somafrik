@@ -21,7 +21,6 @@ import {
   isSuperAdminAllowedView,
 } from "./superAdminAccess";
 import {
-  isEstablishmentCommunicationUser,
   isPlatformCommunicationFeature,
   isPlatformCommunicationUser,
 } from "./establishmentCommunication";
@@ -467,8 +466,8 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     return hasBackOfficePermission(ctx, "Relations", "READ");
   }
   if (viewName === "messages") {
-    // Contrairement aux notifications, Messages n'a aucun accès implicite par rôle.
-    // La vue et son GET doivent suivre la permission effective Messages:READ.
+    // Messages et notifications établissement : aucun accès implicite par rôle.
+    // La vue et son GET suivent la permission effective :READ.
     return hasBackOfficePermission(ctx, "Messages", "READ");
   }
   if (
@@ -499,10 +498,7 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     return hasBackOfficePermission(ctx, "Announcements", "READ");
   }
   if (viewName === "notifications") {
-    if (hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ")) {
-      return true;
-    }
-    return isEstablishmentCommunicationUser(ctx);
+    return hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ");
   }
   return hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ");
 }
