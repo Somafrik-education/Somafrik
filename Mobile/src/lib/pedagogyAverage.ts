@@ -48,3 +48,16 @@ export function canonicalStudentGeneralAverage(
     displayScale: 20,
   };
 }
+
+export function courseOptionsFromNotes(notes: CanonicalGrade[]): string[] {
+  return [...new Set(notes.map((note) => String(note.subject ?? "").trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "fr"),
+  );
+}
+
+/** Moyenne canonique d'un seul cours : pondération evaluationCoefficient uniquement. */
+export function canonicalCourseAverage(notes: CanonicalGrade[], subject: string) {
+  const wanted = normalizeKey(subject);
+  const subjectNotes = notes.filter((note) => normalizeKey(note.subject) === wanted);
+  return canonicalWeightedAverage(subjectNotes, { displayScale: 20 });
+}

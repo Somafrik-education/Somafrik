@@ -11,6 +11,11 @@ export const MOBILE_MUTATION_INVENTORY = [
   { name: "savePresences", method: "POST", path: "/presences", class: "B", outbox: true, domain: "presences" },
   { name: "saveNote", method: "POST", path: "/notes", class: "B", outbox: true, domain: "notes" },
   { name: "createEvaluation", method: "POST", path: "/evaluations", class: "B", outbox: false, domain: "evaluations" },
+  { name: "createExam", method: "POST", path: "/exams", class: "B", outbox: false, domain: "exams" },
+  { name: "patchExam", method: "PATCH", path: "/exams/:examId", class: "A", outbox: false, domain: "exams" },
+  { name: "validateExam", method: "POST", path: "/exams/:examId/validate", class: "B", outbox: false, domain: "exams" },
+  { name: "cancelExam", method: "POST", path: "/exams/:examId/cancel", class: "B", outbox: false, domain: "exams" },
+  { name: "archiveExam", method: "POST", path: "/exams/:examId/archive", class: "B", outbox: false, domain: "exams" },
   { name: "updateEvaluation", method: "PATCH", path: "/evaluations/:id", class: "A", outbox: false, domain: "evaluations" },
   { name: "createSchoolPayment", method: "POST", path: "/payments", class: "B", outbox: false, domain: "payments" },
   {

@@ -60,7 +60,7 @@ export function ParentChildGradesPanel({
           coursesFromGradeCoefficients(grades),
         ).getStudentAverageValue(gradeBookStudent.id, period)
       : null;
-  const displayedAverage = courseFilter ? kpis.average : canonicalGeneralAverage;
+  const displayedAverage = canonicalGeneralAverage;
 
   const columns: Column<StudentGrade>[] = [
     { key: "subject", header: "Cours", render: (row) => row.subject },

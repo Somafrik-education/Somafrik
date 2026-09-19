@@ -157,7 +157,7 @@ assert.deepEqual(tabLabels(paymentsOnly), ["Frais"]);
 
 const noStudentsPrefet = sessionOf("prefet", ["Présences:READ", "Notes:READ", "Classes:READ"]);
 assert.equal(drawerLabels(noStudentsPrefet).includes("Élèves"), false);
-assert.deepEqual(drawerLabels(noStudentsPrefet), ["Scolarité", "Classes", "Présences", "Notes"]);
+assert.deepEqual(drawerLabels(noStudentsPrefet), ["Scolarité", "Classes", "Présences", "Notes", "Stats de classe"]);
 
 assert.equal(getAllowedRoleDrawerItems(sessionOf("school_admin", [])).length, 0, "permissions [] live = fail-closed, pas de defaults");
 

@@ -5,6 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
+import { ReportCardWorkflowCards } from "../components/ReportCardWorkflowCards";
 import QueryStateView from "../components/QueryStateView";
 import { ReportCardSnapshotView } from "../components/bulletin/ReportCardSnapshotView";
 import { downloadReportCardPdf } from "../services/api";
@@ -22,6 +23,7 @@ import {
   type ReportCardPublicationRow,
 } from "../lib/reportCardPublicationApi";
 import { listPublishedVersionHistory, type PublishedVersionRow } from "../lib/reportCardHistoryApi";
+import { listReportCardRequests, type ReportCardWorkflowRequest } from "../lib/reportCardWorkflowApi";
 import {
   SNAPSHOT_SLOT_PERCENTAGE,
   SNAPSHOT_SLOT_RANK,
@@ -114,6 +116,12 @@ export default function ReportCardsScreen() {
     status: "idle",
     data: [],
   });
+  const [workflowRows, setWorkflowRows] = useState<ReportCardWorkflowRequest[]>([]);
+  const [workflowStatus, setWorkflowStatus] = useState<"idle" | "loading" | "success" | "empty" | "forbidden" | "error">(
+    "idle",
+  );
+  const [workflowMessage, setWorkflowMessage] = useState("");
+  const [expandedWorkflowId, setExpandedWorkflowId] = useState<string | null>(null);
 
   const loadReportCards = useCallback(async () => {
     setReportCardsSnapshot((current) => ({ ...current, status: "loading" }));
@@ -138,10 +146,42 @@ export default function ReportCardsScreen() {
     }
   }, []);
 
+  const isBulletinStaff = useMemo(() => {
+    const role = String(session?.role ?? "").toLowerCase();
+    return role !== "parent_student" && role !== "student" && role !== "parent" && role !== "eleve";
+  }, [session?.role]);
+
+  const loadWorkflow = useCallback(async () => {
+    if (!isBulletinStaff) {
+      setWorkflowRows([]);
+      setWorkflowStatus("idle");
+      return;
+    }
+    setWorkflowStatus("loading");
+    try {
+      const requests = await listReportCardRequests();
+      setWorkflowRows(requests);
+      setWorkflowStatus(requests.length ? "success" : "empty");
+      setWorkflowMessage("");
+    } catch (error) {
+      const statusCode = error instanceof ApiClientError ? error.status : undefined;
+      if (statusCode === 401 || statusCode === 403) {
+        setWorkflowRows([]);
+        setWorkflowStatus("forbidden");
+        setWorkflowMessage("Workflow non accessible avec les droits actuels.");
+        return;
+      }
+      setWorkflowRows([]);
+      setWorkflowStatus("error");
+      setWorkflowMessage(error instanceof Error ? error.message : "Impossible de charger le workflow bulletin.");
+    }
+  }, [isBulletinStaff]);
+
   useFocusEffect(
     useCallback(() => {
       void loadReportCards();
-    }, [loadReportCards]),
+      void loadWorkflow();
+    }, [loadReportCards, loadWorkflow]),
   );
 
   const studentScope = useMemo(
@@ -196,6 +236,24 @@ export default function ReportCardsScreen() {
           ? `${rows.length} bulletin(s) disponible(s)`
           : "Documents publiés par l'établissement"}
       </Text>
+      {isBulletinStaff ? (
+        <View style={styles.workflowBlock}>
+          <Text style={styles.workflowTitle}>État du workflow bulletin</Text>
+          <Text style={styles.hint}>
+            La configuration, l'approbation et la publication des bulletins se font depuis Somafrik Web.
+          </Text>
+          {workflowStatus === "loading" ? <Text style={styles.historyRow}>Chargement du workflow…</Text> : null}
+          {workflowStatus === "empty" ? <Text style={styles.historyRow}>Aucun modèle en cours.</Text> : null}
+          {workflowStatus === "forbidden" || workflowStatus === "error" ? (
+            <Text style={styles.historyRow}>{workflowMessage}</Text>
+          ) : null}
+          <ReportCardWorkflowCards
+            rows={workflowRows}
+            expandedId={expandedWorkflowId}
+            onExpandedIdChange={setExpandedWorkflowId}
+          />
+        </View>
+      ) : null}
 
       {showQueryState ? (
         <QueryStateView
@@ -307,4 +365,7 @@ const styles = StyleSheet.create({
   historyBlock: { marginBottom: 12, gap: 4 },
   historyTitle: { color: "#334155", fontSize: 12, fontWeight: "900" },
   historyRow: { color: "#475569", fontSize: 12, fontWeight: "700" },
+  workflowBlock: { marginBottom: 18, gap: 8 },
+  workflowTitle: { color: "#0F172A", fontSize: 18, fontWeight: "900" },
+  hint: { color: "#64748B", fontSize: 13, fontWeight: "700", marginBottom: 8 },
 });
