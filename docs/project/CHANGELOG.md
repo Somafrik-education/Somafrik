@@ -13,10 +13,11 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Fixed
 
-- **#717 P0 HelpHost startup** : l’hôte d’aide Mobile lit/navigue via `navigationRef` racine (plus de `useNavigation` / `useNavigationState` hors `Stack.Navigator`). TypeScript valide (plus de `\\n` littéral). HOLD READY+MERGE.
+- **#717 P0 HelpHost startup** : l’hôte d’aide Mobile lit/navigue via `navigationRef` racine (plus de `useNavigation` / `useNavigationState` hors `Stack.Navigator`). TypeScript valide (plus de `\\n` littéral). **MERGED** `develop@e457934f`.
 
 ### Added
 
+- **GO Production G0 — pont ChatGPT CTO / Cursor / GitHub (#720)** : contrat opérationnel `docs/project/GO-PRODUCTION.md` (rôles, templates de communication, phases G0–G7, **aucune G8 / arrêt strict à G7**) ; ADR-015 ; snapshot baseline `docs/audits/go-production-g0-baseline-2026-09-19.md` (`develop@afa01321`, freeze, G1 #722 livrée HOLD). Production unmodified. HOLD READY+MERGE.
 - **S1 E2E Playwright Bulletins (#659)** : campagne `verify:report-card-s1-e2e` (Playwright existant, PG isolé, backend réel) reproduisant l'absence du CTA « Demander un modèle de bulletin » sur `/bulletins` pour un Admin établissement. Production unmodified (RED). HOLD READY+MERGE. Tickets #659 / #656.
 - **S1 GREEN — CTA demande modèle + parcours E2E persistant** : CTA « Demander un modèle de bulletin » sur `/bulletins` (Admin School CREATE) ; soumission métier ; preview artefact authentifiée ; mapping Superadmin `artifact_id`/`artifact_version` ; réconciliation live `SCHOOL_ADMIN` Bulletins CREATE+UPDATE. Secrétaire READ-only fail-closed. Gate `verify:report-card-s1-e2e`. HOLD READY+MERGE. Tickets #659 / #656.
 - **S1 P1-A — route `/bulletins/modele` fail-closed CREATE** : `PermissionRoute` exige `Bulletins:CREATE` (équivalent métier) ; navigation directe READ-only → redirect `/bulletins` ; liste et historique restent READ. E2E `e2e-report-card-request-rbac-fail-closed` attend le refus/redirect + POST 403. HOLD READY+MERGE. Tickets #660 / #659.

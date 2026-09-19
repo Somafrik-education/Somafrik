@@ -1,7 +1,7 @@
 # Architecture — Somafrik
 
 **Statut :** référence technique officielle  
-**Dernière mise à jour :** 2026-08-13
+**Dernière mise à jour :** 2026-09-19
 **Compléments :** [../preproduction.md](../preproduction.md) · [../ci-cd-security.md](../ci-cd-security.md) · [../ux/design-system/README.md](../ux/design-system/README.md)
 
 ---
@@ -246,6 +246,7 @@ Secrets · Security · TypeScript · Lint · Tests · Audit · Lint et build
 | [ROADMAP.md](./ROADMAP.md) | Phases produit |
 | [DECISIONS.md](./DECISIONS.md) | ADR |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | Workflow Git / qualité |
+| [GO-PRODUCTION.md](./GO-PRODUCTION.md) | Chantier GO Production — CTO / Cursor / pont GitHub |
 | [TESTING.md](./TESTING.md) | Stratégie de tests & gates |
 | [SECURITY.md](./SECURITY.md) | RBAC, JWT, audit, secrets |
 | [OPERATIONS.md](./OPERATIONS.md) | Runbook déploiement / incidents |

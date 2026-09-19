@@ -1,7 +1,7 @@
 # Stratégie de tests — Somafrik
 
 **Statut :** référence qualité & gates  
-**Dernière mise à jour :** 2026-08-14
+**Dernière mise à jour :** 2026-09-19
 **Liens :** [RELEASES.md](./RELEASES.md) · [CONTRIBUTING.md](./CONTRIBUTING.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -221,7 +221,8 @@ Détail Go/No Go par version : [RELEASES.md](./RELEASES.md).
 |--------|------|
 | Auteur PR | Tests locaux du périmètre + doc |
 | CI | Filet automatique |
-| CTO | Gate préprod / Go release |
+| CTO (ChatGPT sur #720) | Gate préprod / Go release — diff GitHub indépendant |
+| Cursor | Exécution tests + preuves sur Draft PR, puis STOP |
 
 ---
 
