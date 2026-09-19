@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import CommunicationPreferencesSheet from "./CommunicationPreferencesSheet";
 import { useAuth } from "../context/AuthContext";
 import { isSuperAdminSessionRole } from "../domain/security/permissions";
 import { resolveCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
@@ -57,11 +59,16 @@ export default function RoleNavigationDrawer({
   navigation: any;
 }) {
   const { session, logout } = useAuth();
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const sections = getAllowedRoleDrawerSections(session);
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
   const userName = session?.user?.name ?? "Utilisateur";
   const identity = resolveCanonicalRoleIdentity(session);
   const roleLabel = identity.roleLabel || ROLE_LABELS[session?.role ?? ""] || "Compte Somafrik";
+  const canOpenPersonalPreferences = Boolean(
+    (session?.user?.schoolCode && session.user.schoolCode !== "*") ||
+      (session?.school?.code && session.school.code !== "*"),
+  );
 
   const rootNavigation = navigation.getParent?.() ?? navigation;
 
@@ -119,6 +126,7 @@ export default function RoleNavigationDrawer({
   };
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay} testID="mobile-role-drawer">
         <SafeAreaView style={styles.panel} edges={["top", "bottom"]}>
@@ -179,6 +187,21 @@ export default function RoleNavigationDrawer({
                 onPress={() => openLegalLink(ACCOUNT_DELETION_URL)}
               />
             </View>
+            {canOpenPersonalPreferences ? (
+              <TouchableOpacity
+                style={styles.preferencesButton}
+                onPress={() => {
+                  onClose();
+                  setPreferencesOpen(true);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Préférences de communication"
+                testID="mobile-role-drawer-communication-preferences"
+              >
+                <Ionicons name="settings-outline" size={21} color="#1D4ED8" />
+                <Text style={styles.preferencesText}>Préférences de communication</Text>
+              </TouchableOpacity>
+            ) : null}
             {canShowPushSelfTestButton(session) ? (
               <TouchableOpacity
                 style={styles.pushTestButton}
@@ -206,6 +229,8 @@ export default function RoleNavigationDrawer({
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Fermer le menu" />
       </View>
     </Modal>
+    <CommunicationPreferencesSheet visible={preferencesOpen} onClose={() => setPreferencesOpen(false)} />
+    </>
   );
 }
 
@@ -336,6 +361,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#EFF6FF",
   },
   legalLinkText: { flex: 1, color: "#1D4ED8", fontSize: 13, fontWeight: "800" },
+  preferencesButton: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 12,
+    backgroundColor: "#EFF6FF",
+  },
+  preferencesText: { color: "#1D4ED8", fontSize: 15, fontWeight: "900" },
   pushTestButton: {
     minHeight: 52,
     flexDirection: "row",

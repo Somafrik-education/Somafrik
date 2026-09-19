@@ -98,9 +98,12 @@ describe("Lot J P1 — RBAC graphiques operations mixtes", () => {
     expect(names).toContain("Utilisateurs actifs");
   });
 
-  it("canReadView(notifications) reste true sans Notifications:READ — le poll C4 doit utiliser hasBackOfficePermission", () => {
+  it("canReadView(notifications) exige Notifications:READ — aligné C4 / Mobile", () => {
     const teacher = ctx(["Présences:READ"]);
-    expect(canReadView(teacher, "notifications")).toBe(true);
+    expect(canReadView(teacher, "notifications")).toBe(false);
     expect(hasBackOfficePermission(teacher, "Notifications", "READ")).toBe(false);
+    const withRead = ctx(["Notifications:READ"]);
+    expect(canReadView(withRead, "notifications")).toBe(true);
+    expect(hasBackOfficePermission(withRead, "Notifications", "READ")).toBe(true);
   });
 });
