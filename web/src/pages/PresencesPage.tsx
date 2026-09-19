@@ -30,11 +30,13 @@ import {
   formatAttendanceDate,
   formatAttendanceHour,
   getPresenceStats,
+  normalizePresenceStatus,
   presenceIsAttended,
   resolveStudentApiId,
   rollCallInitialStatus,
   sameAttendanceDay,
 } from "../lib/presenceMetrics";
+import { formatClassTodayPresenceBadge } from "../lib/classTodayPresenceBadge";
 
 const STATUS_OPTIONS: AttendanceStatus[] = ["Présent", "Absent", "Retard", "Justifié"];
 
@@ -324,10 +326,15 @@ export function PresencesPage() {
         />
         <div className="grid gap-3 md:grid-cols-2">
           {classCards.map((card) => {
-            const savedToday = presences.filter(
+            const todayRows = presences.filter(
               (presence) =>
                 sameAttendanceDay(String(presence.date ?? ""), todayLabel) && asClassMatch(presence, card),
-            ).length;
+            );
+            const badge = formatClassTodayPresenceBadge({
+              expected: card.studentCount,
+              recorded: todayRows.length,
+              attended: todayRows.filter((row) => presenceIsAttended(normalizePresenceStatus(row))).length,
+            });
 
             return (
               <button
@@ -338,7 +345,7 @@ export function PresencesPage() {
               >
                 <p className="text-lg font-black text-ink">{card.className}</p>
                 <p className="mt-1 text-sm font-semibold text-muted">{card.studentCount} élève(s)</p>
-                <p className="mt-1 text-xs text-muted">{savedToday} enregistrement(s) aujourd&apos;hui</p>
+                <p className="mt-1 text-xs text-muted">{badge.badgeText}</p>
               </button>
             );
           })}
@@ -372,7 +379,7 @@ export function PresencesPage() {
       {canUpdate ? (
         <div className="flex flex-wrap gap-3">
           <Button variant="secondary" onClick={markAllPresent} disabled={rosterLoading || !classStudents.length}>
-            Tous présents
+            Tout présent
           </Button>
           <Button
             disabled={

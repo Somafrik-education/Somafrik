@@ -667,10 +667,34 @@ jobs:
           set -euo pipefail
           npm run test:lot6-parity
 
+  lot7:
+    name: LOT 7 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 7 tests
+        run: |
+          set -euo pipefail
+          npm run test:lot7-parity
+
   required:
     name: Required
     if: always()
-    needs: [scope, quality, secrets, core, targeted, lot0, lot1, lot2, lot3, lot4, lot5, lot6]
+    needs: [scope, quality, secrets, core, targeted, lot0, lot1, lot2, lot3, lot4, lot5, lot6, lot7]
     runs-on: ubuntu-latest
     steps:
       - name: Enforce required PR gates
@@ -687,9 +711,10 @@ jobs:
           LOT4: ${{ needs.lot4.result }}
           LOT5: ${{ needs.lot5.result }}
           LOT6: ${{ needs.lot6.result }}
+          LOT7: ${{ needs.lot7.result }}
         run: |
           set -euo pipefail
-          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED" "$LOT0" "$LOT1" "$LOT2" "$LOT3" "$LOT4" "$LOT5" "$LOT6"; do
+          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED" "$LOT0" "$LOT1" "$LOT2" "$LOT3" "$LOT4" "$LOT5" "$LOT6" "$LOT7"; do
             case "$result" in
               success|skipped) ;;
               *) echo "Required gate failed: $result" >&2; exit 1 ;;
