@@ -199,9 +199,7 @@ function main() {
   assert.match(teacherAttendance, /loadAssignments/, "Appel doit recharger GET /assignments");
   assert.match(teacherGrades, /loadAssignments/, "Notes doit recharger GET /assignments");
   assert.match(teacherGrades, /resolveTeacherAssignmentsForSession/, "Notes doit filtrer les affectations de l'enseignant");
-  const adminCrud = read(path.join("screens", "AdminCrudScreen.tsx"));
-  assert.match(adminCrud, /import \{ isActiveUserAccount \} from "\.\.\/lib\/format"/);
-  assert.doesNotMatch(adminCrud, /function isActiveUserAccount/);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "AdminCrudScreen.tsx")), false);
   const studentDetail = read(path.join("screens", "StudentDetailScreen.tsx"));
   const studentPresences = read(path.join("screens", "StudentPresencesScreen.tsx"));
   for (const [label, source] of [

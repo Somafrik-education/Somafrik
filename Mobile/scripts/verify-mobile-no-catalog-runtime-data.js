@@ -17,7 +17,6 @@ const FORBIDDEN = [
 
 const ALLOWED_VALUE_IMPORTS = new Set([
   "MessagesScreen.tsx",
-  "AdminCrudScreen.tsx",
 ]);
 
 function main() {

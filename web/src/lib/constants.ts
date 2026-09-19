@@ -9,36 +9,6 @@ export const CRUD_ACTIONS = [
   { key: "SUSPEND", label: "Suspendre" },
 ] as const;
 
-export const CRUD_PERMISSION_MODULES = [
-  "Pays",
-  "Établissements",
-  "Abonnements",
-  "Contacts",
-  "Relations",
-  "Utilisateurs",
-  "Référentiels pédagogiques",
-  "Classes",
-  "Élèves",
-  "Enseignants",
-  "Affectations",
-  "Présences",
-  "Notes",
-  "Bulletins",
-  "Paiements",
-  "Frais & tarifs",
-  "Impayés",
-  "Notifications",
-  "Announcements",
-  "Messages",
-  "Documents",
-  "Rapports",
-  "Paramètres Établissement",
-  "Années Académiques",
-  "Matières",
-  "Examens",
-  "Planning de cours",
-] as const;
-
 /**
  * Réexposition contrôlée du menu / de la route Web `/planning`.
  * Le garde `canReadView("planning")` reste branché : false masque encore le module.

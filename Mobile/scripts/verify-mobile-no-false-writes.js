@@ -30,8 +30,6 @@ function main() {
   runUnit("mobileCrudParity.test.ts");
 
   const navigator = read(path.join("navigation", "AppNavigator.tsx"));
-  const gate = read(path.join("screens", "SafeAdminCrudScreen.tsx"));
-  const rawAdminCrud = read(path.join("screens", "AdminCrudScreen.tsx"));
   const users = read(path.join("screens", "UsersScreen.tsx"));
   const classes = read(path.join("screens", "ClassesScreen.tsx"));
   const teachers = read(path.join("screens", "TeachersScreen.tsx"));
@@ -50,20 +48,17 @@ function main() {
     /component=\{AdminCrudScreen\}/,
     "AppNavigator ne doit jamais exposer AdminCrudScreen sans gate fail-closed",
   );
-  assert.match(gate, /canRunGenericAdminCrud/);
-  assert.match(gate, /Aucune modification locale n&apos;est appliquée/);
-  assert.match(gate, /SAFE_ADMIN_CRUD_ENTITIES|canRunGenericAdminCrud/);
+  assert.doesNotMatch(navigator, /\bAdminCrud\b/, "type AdminCrud retiré du graphe");
 
   assert.equal(
     fs.existsSync(path.join(SRC, "screens", "PermissionsScreen.tsx")),
     false,
     "PermissionsScreen orphelin supprimé — pas de surface RBAC Mobile morte",
   );
-
-  assert.match(rawAdminCrud, /if \(entity === "assignments"\)[\s\S]*?await createTeacherAssignment/);
-  assert.match(rawAdminCrud, /if \(entity === "courses"\)[\s\S]*?await createCourse/);
-  assert.match(rawAdminCrud, /if \(entity === "assignments"\)[\s\S]*?deleteTeacherAssignment/);
-  assert.match(rawAdminCrud, /if \(entity === "courses"\)[\s\S]*?deleteCourse/);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "AdminCrudScreen.tsx")), false);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "SafeAdminCrudScreen.tsx")), false);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "MenuScreen.tsx")), false);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "PlatformNotificationsScreen.tsx")), false);
 
   const safety = read(path.join("lib", "mobileMutationSafety.ts"));
   assert.match(safety, /MOBILE_GENERIC_ADMIN_CRUD_IN_RC1 = false/);

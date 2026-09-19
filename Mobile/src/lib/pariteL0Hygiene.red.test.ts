@@ -172,13 +172,12 @@ const cases: RedCase[] = [
   },
   {
     id: "L0-10",
-    title: "MenuScreen mort ne doit plus contenir de CTA AdminCrud opérationnels",
+    title: "MenuScreen mort absent — aucun CTA AdminCrud possible",
     run() {
-      const src = read("screens/MenuScreen.tsx");
-      assert.doesNotMatch(
-        src,
-        /navigate\("AdminCrud"/,
-        "#577 L0 : MenuScreen (hors graphe live) n'est pas isolé — CTA AdminCrud encore présents",
+      assert.equal(
+        fs.existsSync(path.join(srcRoot, "screens/MenuScreen.tsx")),
+        false,
+        "#577 L0 : MenuScreen mort encore sur disque",
       );
     },
   },

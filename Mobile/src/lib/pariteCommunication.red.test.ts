@@ -114,13 +114,18 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
   {
     id: "COM-16",
-    title: "Menu Mobile expose Messages si le droit existe",
+    title: "Messages Mobile live via drawer (MenuScreen mort absent)",
     run() {
-      const menu = read("screens/MenuScreen.tsx");
+      assert.equal(
+        fs.existsSync(path.join(mobileRoot, "screens/MenuScreen.tsx")),
+        false,
+        "MenuScreen mort encore sur disque",
+      );
+      const drawer = read("navigation/roleDrawerPreferences.ts");
       assert.match(
-        menu,
+        drawer,
         /route:\s*"Messages"/,
-        "MenuScreen n'a pas d'entrée Messages (Annonces/Notifications seulement)",
+        "drawer live n'a pas d'entrée Messages",
       );
     },
   },

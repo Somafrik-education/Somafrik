@@ -42,6 +42,7 @@
     "test:lot5-parity": "npx --yes tsx --test scripts/lot5-parity.test.ts && npx --yes tsx --test Mobile/src/lib/lot5PedagogyParity.test.ts && npm --prefix web run test -- src/components/grades/ParentChildGradesPanel.test.tsx src/lib/gradeBook.test.ts && npx --yes tsx Mobile/src/lib/evaluationsV2.test.ts && npx --yes tsx --test Mobile/src/lib/reportCardLot8.test.ts && node --test backend/lib/canonicalAverageParity.test.js && node --test backend/lib/documentsExams.test.js",
     "test:lot6-parity": "npx --yes tsx --test scripts/lot6-parity.test.ts && npm --prefix web run test -- src/lib/dashboardPermissions.test.ts",
     "test:lot7-parity": "npx --yes tsx --test scripts/lot7-parity.test.ts && npm --prefix web run test -- src/lib/classTodayPresenceBadge.test.ts",
+    "test:lot8-parity": "npx --yes tsx --test scripts/lot8-parity.test.ts",
     "test:progressive-disclosure-ux": "npm --prefix Mobile run test:progressive-disclosure-ux",
     "test:progressive-disclosure-red": "npm --prefix Mobile run test:progressive-disclosure-red",
     "verify:progressive-disclosure-red": "npm --prefix Mobile run verify:progressive-disclosure-red",

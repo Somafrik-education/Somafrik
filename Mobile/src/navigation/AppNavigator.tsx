@@ -50,7 +50,6 @@ import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen"
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
 import { HelpHost } from "../help/HelpHost";
-import type { AdminEntity } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
 import { canPersistFullSession } from "../lib/dataTruth";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
@@ -114,12 +113,6 @@ export type RootStackParamList = {
   SchoolPedagogicalStructure: undefined;
   SchoolAssignableRoles: undefined;
   InternalNotifications: undefined;
-  /** Type conservé pour compiler l'écran historique, jamais enregistré dans le graphe live. */
-  AdminCrud: {
-    entity: AdminEntity;
-    filter?: "paid" | "pending";
-    className?: string;
-  };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

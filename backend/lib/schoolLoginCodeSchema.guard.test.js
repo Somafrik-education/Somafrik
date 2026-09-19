@@ -22,10 +22,6 @@ const webSchoolModule = fs.readFileSync(
   path.join(__dirname, "../../web/src/lib/schoolModule.ts"),
   "utf8",
 );
-const mobileAdmin = fs.readFileSync(
-  path.join(__dirname, "../../Mobile/src/screens/AdminCrudScreen.tsx"),
-  "utf8",
-);
 
 const STOP_WORDS = /token IN \('DE', 'DU', 'DES', 'LA', 'LE', 'LES', 'D', 'ET'\)/;
 assert.match(rolesCanonical, STOP_WORDS);
@@ -52,9 +48,10 @@ assert.match(boot, /20260825_school_login_code_country_year\.sql/);
 assert.doesNotMatch(boot, /readFileSync\([^)]*20260825_school_login_code_seq_backfill/);
 
 assert.match(webSchoolModule, /return "";/);
-assert.doesNotMatch(mobileAdmin, /\$\{countryCode\}-\$\{year\}-\$\{String\(next\)\.padStart\(4, "0"\)\}/);
-assert.match(mobileAdmin, /Le client ne génère plus de code établissement/);
-assert.doesNotMatch(mobileAdmin, /login_code_counters/);
+assert.equal(
+  fs.existsSync(path.join(__dirname, "../../Mobile/src/screens/AdminCrudScreen.tsx")),
+  false,
+);
 const backendSchoolModule = fs.readFileSync(
   path.join(__dirname, "schoolModule.js"),
   "utf8",

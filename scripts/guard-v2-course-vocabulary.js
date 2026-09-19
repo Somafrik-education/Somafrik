@@ -56,7 +56,6 @@ const FILES = [
   "backend/lib/schoolSettingsManagement.js",
   "backend/lib/dataIntegrityRules.js",
   "backend/services/pedagogyGovernanceService.js",
-  "Mobile/src/screens/AdminCrudScreen.tsx",
   "Mobile/src/screens/ConfigurationScreen.tsx",
   "Mobile/src/lib/pedagogyGovernance.ts",
   "Mobile/src/domain/mvp/MvpBusinessRules.ts",

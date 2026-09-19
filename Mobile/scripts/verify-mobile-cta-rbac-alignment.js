@@ -126,10 +126,11 @@ function main() {
     "PlatformNotifications ne doit plus hériter de Notifications:READ via communicationViews",
   );
 
-  const platformScreen = stripComments(readSrc(path.join("screens", "PlatformNotificationsScreen.tsx")));
-  assert.match(platformScreen, /hasPlatformBackofficePrivilege\(session\)/);
-  assert.match(platformScreen, /platform-notifications-denied/);
-  assert.doesNotMatch(platformScreen, /hasSecurityPermission\(session,\s*["']Notifications["'],\s*["']CREATE["']\)/);
+  assert.equal(
+    fs.existsSync(path.join(SRC, "screens", "PlatformNotificationsScreen.tsx")),
+    false,
+    "PlatformNotificationsScreen mort — pas de surface plateforme Mobile",
+  );
 
   const adminCtx = stripComments(readSrc(path.join("context", "AdminDataContext.tsx")));
   assert.match(adminCtx, /if \(!hasPlatformBackofficePrivilege\(session\)\) return;/);
