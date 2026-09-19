@@ -13,6 +13,15 @@ const navigator = read("navigation/AppNavigator.tsx");
 const support = read("screens/MvpUtilityScreens.tsx");
 
 assert.match(navigator, /<HelpHost \/>/);
+assert.doesNotMatch(
+  host,
+  /useNavigation(State)?\s*\(/,
+  "HelpHost global must not use navigator-only hooks outside Stack.Navigator",
+);
+assert.match(host, /navigationRef\.getCurrentRoute\(\)/);
+assert.match(host, /navigationRef\.addListener\(["']state["']/);
+assert.match(host, /navigationRef\.navigate\(/);
+assert.doesNotMatch(host, /\\n/, "HelpHost must not contain a literal \\\\n sequence");
 assert.match(navigator, /isMetierRenderable/);
 assert.match(host, /buildMobileHelpContext/);
 assert.match(host, /isHelpAvailable/);
