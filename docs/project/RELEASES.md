@@ -1,10 +1,12 @@
 # Plan des releases — Somafrik
 
 **Statut :** plan officiel Go/No Go  
-**Dernière mise à jour :** 2026-07-26  
-**Alignement :** [ROADMAP.md](./ROADMAP.md) · [CHANGELOG.md](./CHANGELOG.md)
+**Dernière mise à jour :** 2026-09-19  
+**Alignement :** [ROADMAP.md](./ROADMAP.md) · [CHANGELOG.md](./CHANGELOG.md) · [GO-PRODUCTION.md](./GO-PRODUCTION.md)
 
 Chaque release doit être validée CTO avant promotion `develop` → `main` / production.
+
+**Chantier courant (2026-09-19) :** [#720](https://github.com/Somafrik-education/Somafrik/issues/720) — **HOLD**. Baseline `develop@afa01321a42df3cfe825a789fc1a948ea0bf1e4c`. Phase suivante : G1 RC1 [#719](https://github.com/Somafrik-education/Somafrik/issues/719). Aucun `GO PRODUCTION` tant que G1–G6 ne sont pas PASS et commentés CTO.
 
 ---
 
