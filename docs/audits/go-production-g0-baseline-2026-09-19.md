@@ -9,11 +9,11 @@
 |---|---|
 | Baseline gelée (#720 / #719) | `develop@afa01321a42df3cfe825a789fc1a948ea0bf1e4c` |
 | Tip `origin/develop` observé | `e457934f772ac2d509225ebd6cf12ad95b51215a` — *Merge pull request #717* |
-| Tree `develop` | `ef3b4c2850e02784769fd479a30b0545bd9cea75` |
+| Tree `develop` | `347986ffc8813a79893f3303a0598eb17d4b8deb` |
 | Tip `origin/main` observé | `9f4badc61e2ecee2b7564da1dec3acc8d6c5c518` — *Merge pull request #674 — PROD-DEMO /demo* |
 | Tree `main` | `495e26ca1ec10f307e85c17a923a23157b032339` |
 | Merge-base | `5832882d908207da4ad3270370e2e312ff619102` |
-| Ahead / behind (`main`…`develop`) | **15 main-only / 740 develop-only** |
+| Ahead / behind (`main`…`develop`) | **15 main-only / 742 develop-only** |
 | PR `develop → main` ouverte | **aucune** |
 | Décision G0 | **HOLD** — freeze posé ; G1 **livrée #722 mais HOLD** ; GO Production interdit ; **aucune G8** |
 
