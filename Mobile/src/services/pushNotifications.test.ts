@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
+  isNativePushCompatible,
   registerAuthenticatedPushDevice,
   revokeCurrentPushDevice,
   resetPushRegistrationStateForTests,
@@ -171,6 +172,21 @@ async function main() {
     extra: { eas: { projectId: "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5" } },
     slug: "somafrik",
   };
+
+  assert.equal(
+    isNativePushCompatible("standalone", embeddedManifestExpoGoConfig),
+    true,
+    "EAS preview standalone : expoGoConfig EmbeddedManifest ≠ Expo Go",
+  );
+  assert.equal(isNativePushCompatible("bare", { extra: {} }), true);
+  assert.equal(isNativePushCompatible("storeClient", { hostUri: "exp.host/--/somafrik" }), false);
+  assert.equal(isNativePushCompatible("storeClient", { debuggerHost: "127.0.0.1:8081" }), false);
+  assert.equal(
+    isNativePushCompatible("standalone", { hostUri: "exp.host/--/somafrik" }),
+    false,
+    "packager Expo Go : pas de faux positif standalone",
+  );
+  assert.equal(isNativePushCompatible("", embeddedManifestExpoGoConfig), false);
 
   resetPushRegistrationStateForTests();
   posts.length = 0;
