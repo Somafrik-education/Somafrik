@@ -7,7 +7,7 @@
 
 **Pilotage :** produit ([ROADMAP](./ROADMAP.md)) · technique ([ARCHITECTURE](./ARCHITECTURE.md)) · décisions ([DECISIONS](./DECISIONS.md)) · tests ([TESTING](./TESTING.md)) · sécurité ([SECURITY](./SECURITY.md)) · ops ([OPERATIONS](./OPERATIONS.md)) · data ([DATABASE](./DATABASE.md)) · release ([GO-PRODUCTION.md](./GO-PRODUCTION.md), HOLD #720)
 
-**Freeze G0 (2026-09-19) :** aucune nouvelle fonctionnalité sur `develop` hors mandat CTO du chantier GO Production. La parité Web ↔ Mobile LOT 0–8 est **CLOSED GLOBAL**.
+**Freeze G0 (2026-09-19) :** aucune nouvelle fonctionnalité sur `develop` hors mandat CTO du chantier GO Production. G1 RC1 #722 **livrée / HOLD**. G2 interdite. **Aucune G8 — arrêt strict à G7.** La parité Web ↔ Mobile LOT 0–8 est **CLOSED GLOBAL**.
 
 Toute PR fonctionnelle doit référencer une **phase** (A–J) et, si applicable, une **release** ([RELEASES.md](./RELEASES.md)). Voir aussi la règle doc dans [CONTRIBUTING.md](./CONTRIBUTING.md).
 

@@ -15,7 +15,7 @@
 | Merge-base | `5832882d908207da4ad3270370e2e312ff619102` |
 | Ahead / behind (`main`…`develop`) | **15 main-only / 740 develop-only** |
 | PR `develop → main` ouverte | **aucune** |
-| Décision G0 | **HOLD** — freeze posé ; GO Production interdit tant que G1 (#719) n’est pas PASS et validé CTO |
+| Décision G0 | **HOLD** — freeze posé ; G1 **livrée #722 mais HOLD** ; GO Production interdit ; **aucune G8** |
 
 `origin/develop` **est égal** à la baseline citée par #720. Pas de drift métier entre l’ouverture du chantier et cette observation.
 
@@ -25,7 +25,8 @@
 
 **HOLD.** G0 = contrat + photographie. Ce lot ne qualifie pas une RC, ne déploie rien et ne lève aucun blocker runtime.
 
-Prochain lot d’exécution : **G1 / #719** (`cursor/release-rc1-readiness`), uniquement après diff indépendant de **cette** PR et mandat CTO.
+G1 / #719 a été livrée : PR **#722** Draft HEAD `9e59c92c988ee1c43f63bf27ea67df482bbf2f65` — **HOLD confirmé CTO**.  
+Prochain lot d’exécution autorisé : **P0 #717 HelpHost**, puis re-diff CTO, puis requalification RC1. **G2 interdite.** **Aucune G8.**
 
 ---
 

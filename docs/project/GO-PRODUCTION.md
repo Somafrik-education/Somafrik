@@ -4,7 +4,7 @@
 **Chantier maître :** [#720](https://github.com/Somafrik-education/Somafrik/issues/720)  
 **Qualification RC1 :** [#719](https://github.com/Somafrik-education/Somafrik/issues/719) (phase G1)  
 **Baseline gelée :** `develop@afa01321a42df3cfe825a789fc1a948ea0bf1e4c`  
-**Dernière mise à jour :** 2026-09-19  
+**Dernière mise à jour :** 2026-09-19 (sync CTO `#5744979652` / `#5744980024`)  
 **Décision associée :** [ADR-015](./DECISIONS.md#adr-015--chatgpt-cto--cursor-développeur--github-pont-unique)
 
 Les conversations (chat Cursor, e-mail, réunions) **ne remplacent pas** ce contrat.  
@@ -95,16 +95,18 @@ Un lot suivant n’est ouvert **qu’après** contrôle du lot précédent.
 
 ## 3. Phases
 
-| Phase | Issue | Objectif | État au G0 |
-|-------|-------|----------|------------|
-| **G0** Freeze & baseline | #720 | Geler `develop`, figer ce contrat, inventorier les PR hors release | **cette PR** |
-| **G1** RC1 qualification | #719 | E2E métier + fonctionnel + performance + sécurité | HOLD — pas commencé ici |
-| **G2** Release Candidate | à ouvrir | Version/tag RC, builds Web / backend / Android / iOS, smoke artefacts | HOLD |
+| Phase | Issue | Objectif | État |
+|-------|-------|----------|------|
+| **G0** Freeze & baseline | #720 | Geler `develop`, figer ce contrat, inventorier les PR hors release | **cette PR** — HOLD doc-sync |
+| **G1** RC1 qualification | #719 | E2E métier + fonctionnel + performance + sécurité | **Livrée #722** HEAD `9e59c92c` — **HOLD confirmé CTO** |
+| **G2** Release Candidate | à ouvrir | Version/tag RC, builds Web / backend / Android / iOS, smoke artefacts | **INTERDITE** tant que P0/P1 RC1 ≠ 0 |
 | **G3** Préproduction intégrale | à ouvrir | Recette rôles + workflows sur préprod, même PostgreSQL Web ↔ Mobile | HOLD |
 | **G4** Stores & conformité | à ouvrir | Play Closed Testing + Apple / privacy / account deletion | HOLD |
 | **G5** Backend / DB / sécurité prod | à ouvrir | Backup, restore, migrations, secrets, CORS, rollback — **aucun write prod** | HOLD |
 | **G6** GO / NO-GO | à ouvrir | Rapport + SHAs + build IDs + risques résiduels | HOLD |
 | **G7** Production | à ouvrir | Uniquement après commentaire CTO **GO PRODUCTION** | HOLD |
+
+**Aucune G8 n’existe.** Le chantier **s’arrête strictement à G7** (preuve post-déploiement). Ouvrir une G8 est hors contrat.
 
 Les issues historiques **#427** (control plane GP-00x) et **#481** (G6 Render d’un cycle antérieur) **ne sont pas** les phases G0–G7 de ce chantier. Ne pas les réouvrir implicitement.
 
@@ -141,7 +143,10 @@ Gates :
 - CI du HEAD = GREEN
 - rapport versionné `docs/release/RC1-READINESS-REPORT.md`
 
-Cette PR G0 **n’exécute pas** G1.
+G1 a été **exécutée** dans [#722](https://github.com/Somafrik-education/Somafrik/pull/722) (`docs/release/RC1-READINESS-REPORT.md`, HEAD `9e59c92c988ee1c43f63bf27ea67df482bbf2f65`).  
+**CTO : HOLD confirmé** (`#5744980024`). P0 #717 / #645 et P1 #646 / #503 empêchent G2.
+
+Cette PR G0 **ne rejoue pas** G1 ; elle enregistre seulement l’état.
 
 ---
 
@@ -159,6 +164,8 @@ Uniquement après commentaire CTO explicite `GO PRODUCTION`, dans cet ordre :
 
 L’agent Cursor **n’exécute jamais** G7 sans ce commentaire.
 
+Après G7 + preuve post-déploiement : **fin du chantier**. **Pas de G8.**
+
 ---
 
 ## 7. Règles absolues
@@ -174,7 +181,8 @@ L’agent Cursor **n’exécute jamais** G7 sans ce commentaire.
 9. Pas de test de charge sur la production.
 10. #704 reste historique et fermé.
 11. Les asymétries Web / Mobile clôturées ne sont pas rouvertes sans nouveau mandat produit.
-12. Le chantier ne se termine qu’après preuve post-déploiement.
+12. Le chantier ne se termine qu’après preuve post-déploiement **de G7**.
+13. **Aucune G8.** Arrêt strict à G7.
 
 ---
 
