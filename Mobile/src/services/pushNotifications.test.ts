@@ -149,9 +149,8 @@ async function main() {
       },
     },
   });
-  assert.equal(nativeStoreClient, "registered");
-  assert.equal(posts.length, 1);
-  assert.equal(posts[0]?.path, "/mobile/push-devices");
+  assert.equal(nativeStoreClient, "unsupported");
+  assert.equal(posts.length, 0);
 
   function previewNotifications(token: string) {
     return {

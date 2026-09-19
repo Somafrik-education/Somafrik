@@ -140,10 +140,11 @@ function readExpoGoConfig(): unknown | null {
 /**
  * SDK 54: `Constants.expoGoConfig` is not a boolean Expo-Go flag.
  * On an EAS APK the getter returns the EmbeddedManifest object (never null).
- * Expo Go is identified only by a packager host (`hostUri` / `debuggerHost`).
+ * Packager `hostUri` / `debuggerHost` remain a fail-closed second guard.
  *
- * EAS Android preview/release: executionEnvironment is `standalone`
- * (CNG/prebuild native: `bare`). Expo Go: `storeClient`.
+ * Native EAS Android preview/release: `standalone` (CNG/prebuild: `bare`).
+ * Expo Go is `storeClient` (Android ConstantsBinding / iOS EXReactAppManager)
+ * and is always unsupported, even without a packager host.
  */
 function expoGoConfigIndicatesExpoGo(expoGoConfig: unknown): boolean {
   if (expoGoConfig == null || typeof expoGoConfig !== "object") {
@@ -161,8 +162,9 @@ export function isNativePushCompatible(
 ) {
   const env = String(executionEnvironment ?? readExecutionEnvironment());
   const resolvedExpoGoConfig = expoGoConfig === undefined ? readExpoGoConfig() : expoGoConfig;
+  if (env === "storeClient") return false;
   if (expoGoConfigIndicatesExpoGo(resolvedExpoGoConfig)) return false;
-  return env === "bare" || env === "standalone" || env === "storeClient";
+  return env === "bare" || env === "standalone";
 }
 
 export function getLastRegisteredPushTokenForTests() {
