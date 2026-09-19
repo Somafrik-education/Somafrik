@@ -98,7 +98,7 @@ Un lot suivant n’est ouvert **qu’après** contrôle du lot précédent.
 | Phase | Issue | Objectif | État |
 |-------|-------|----------|------|
 | **G0** Freeze & baseline | #720 | Geler `develop`, figer ce contrat, inventorier les PR hors release | **cette PR** — HOLD doc-sync |
-| **G1** RC1 qualification | #719 | E2E métier + fonctionnel + performance + sécurité | **Livrée #722** HEAD `9e59c92c` — **HOLD confirmé CTO** |
+| **G1** RC1 qualification | #719 | E2E métier + fonctionnel + performance + sécurité | **Livrée #722 — HOLD** ; #717 **CLOSED** ; P0 restant #645 |
 | **G2** Release Candidate | à ouvrir | Version/tag RC, builds Web / backend / Android / iOS, smoke artefacts | **INTERDITE** tant que P0/P1 RC1 ≠ 0 |
 | **G3** Préproduction intégrale | à ouvrir | Recette rôles + workflows sur préprod, même PostgreSQL Web ↔ Mobile | HOLD |
 | **G4** Stores & conformité | à ouvrir | Play Closed Testing + Apple / privacy / account deletion | HOLD |
@@ -144,7 +144,7 @@ Gates :
 - rapport versionné `docs/release/RC1-READINESS-REPORT.md`
 
 G1 a été **exécutée** dans [#722](https://github.com/Somafrik-education/Somafrik/pull/722) (`docs/release/RC1-READINESS-REPORT.md`, HEAD `9e59c92c988ee1c43f63bf27ea67df482bbf2f65`).  
-**CTO : HOLD confirmé** (`#5744980024`). P0 #717 / #645 et P1 #646 / #503 empêchent G2.
+**CTO : HOLD confirmé.** #717 **CLOSED**. P0 restant **#645** ; P1 **#646** / **#503** empêchent G2.
 
 Cette PR G0 **ne rejoue pas** G1 ; elle enregistre seulement l’état.
 

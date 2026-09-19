@@ -6,7 +6,7 @@
 
 Chaque release doit être validée CTO avant promotion `develop` → `main` / production.
 
-**Chantier courant (2026-09-19) :** [#720](https://github.com/Somafrik-education/Somafrik/issues/720) — **HOLD**. Baseline `develop@afa01321a42df3cfe825a789fc1a948ea0bf1e4c`. G1 RC1 [#722](https://github.com/Somafrik-education/Somafrik/pull/722) **livrée / HOLD**. Prochain correctif : P0 [#717](https://github.com/Somafrik-education/Somafrik/pull/717). G2 interdite. **Aucune G8 — arrêt strict à G7.** Aucun `GO PRODUCTION` tant que G1–G6 ne sont pas PASS et commentés CTO.
+**Chantier courant (2026-09-19) :** [#720](https://github.com/Somafrik-education/Somafrik/issues/720) — **HOLD**. `develop@e457934f` (merge #717). G1 RC1 [#722](https://github.com/Somafrik-education/Somafrik/pull/722) **livrée / HOLD**. #717 **CLOSED**. P0 restant : [#645](https://github.com/Somafrik-education/Somafrik/issues/645). G2 interdite. **Aucune G8 — arrêt strict à G7.**
 
 ---
 

@@ -13,7 +13,7 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ### Fixed
 
-- **#717 P0 HelpHost startup** : l’hôte d’aide Mobile lit/navigue via `navigationRef` racine (plus de `useNavigation` / `useNavigationState` hors `Stack.Navigator`). TypeScript valide (plus de `\\n` littéral). HOLD READY+MERGE.
+- **#717 P0 HelpHost startup** : l’hôte d’aide Mobile lit/navigue via `navigationRef` racine (plus de `useNavigation` / `useNavigationState` hors `Stack.Navigator`). TypeScript valide (plus de `\\n` littéral). **MERGED** `develop@e457934f`.
 
 ### Added
 

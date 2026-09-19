@@ -8,7 +8,7 @@
 | | |
 |---|---|
 | Baseline gelée (#720 / #719) | `develop@afa01321a42df3cfe825a789fc1a948ea0bf1e4c` |
-| Tip `origin/develop` observé | `afa01321a42df3cfe825a789fc1a948ea0bf1e4c` — *Merge pull request #716* |
+| Tip `origin/develop` observé | `e457934f772ac2d509225ebd6cf12ad95b51215a` — *Merge pull request #717* |
 | Tree `develop` | `ef3b4c2850e02784769fd479a30b0545bd9cea75` |
 | Tip `origin/main` observé | `9f4badc61e2ecee2b7564da1dec3acc8d6c5c518` — *Merge pull request #674 — PROD-DEMO /demo* |
 | Tree `main` | `495e26ca1ec10f307e85c17a923a23157b032339` |
@@ -17,7 +17,7 @@
 | PR `develop → main` ouverte | **aucune** |
 | Décision G0 | **HOLD** — freeze posé ; G1 **livrée #722 mais HOLD** ; GO Production interdit ; **aucune G8** |
 
-`origin/develop` **est égal** à la baseline citée par #720. Pas de drift métier entre l’ouverture du chantier et cette observation.
+La baseline d’ouverture #720 reste `afa01321…`. `origin/develop` a ensuite avancé par le merge P0 **#717** (`e457934f…`). Drift **autorisé** (correctif RC1), pas une feature.
 
 ---
 
@@ -25,8 +25,9 @@
 
 **HOLD.** G0 = contrat + photographie. Ce lot ne qualifie pas une RC, ne déploie rien et ne lève aucun blocker runtime.
 
-G1 / #719 a été livrée : PR **#722** Draft HEAD `9e59c92c988ee1c43f63bf27ea67df482bbf2f65` — **HOLD confirmé CTO**.  
-Prochain lot d’exécution autorisé : **P0 #717 HelpHost**, puis re-diff CTO, puis requalification RC1. **G2 interdite.** **Aucune G8.**
+G1 / #719 a été livrée : PR **#722** — **HOLD confirmé CTO**.  
+P0 **#717 HelpHost** : **MERGED / CLOSED** sur `develop@e457934f`.  
+P0 restant : **#645**. P1 restants : **#646**, **#503**. **G2 interdite.** **Aucune G8.**
 
 ---
 
@@ -160,16 +161,17 @@ Repris comme **dette à revalider en G1–G7**, pas comme preuve actuelle :
 
 ## 10. Décision
 
-**HOLD — G0 posé.**
+**HOLD — G0 posé. G1 livrée mais HOLD. G2 interdite.**
 
 Causes :
 
-1. Le contrat #720 n’était pas encore versionné dans `docs/project/`.
-2. G1 (#719) n’a pas encore de rapport RC1.
-3. P0 / P1 release de **cette** vague = non mesurés (donc pas 0 prouvés).
-4. `main` a divergé ; aucune promotion n’est autorisée.
+1. Le contrat #720 est versionné dans `docs/project/GO-PRODUCTION.md` (cette PR).
+2. G1 **#722 est livrée** (`docs/release/RC1-*.md`) et **HOLD confirmé CTO** — ce n’est plus « pas de rapport ».
+3. P0 / P1 de cette vague sont **requalifiés et non nuls** : #645 **P0** ; #646 / #503 **P1** ; #499 P2 ; #510 P3. #717 HelpHost = **CLOSED ON DEVELOP** (`e457934f`).
+4. `main` a divergé ; aucune promotion n’est autorisée. **Aucune G8.**
 
 `RELEASE_ENGINEERING_READY` = **non**.  
-`GO PRODUCTION` = **non**.
+`GO PRODUCTION` = **non**.  
+`GO RC1` = **non**.
 
 **STOP — pas Ready, pas merge par l’agent.**
