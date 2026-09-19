@@ -182,6 +182,11 @@ async function main() {
   assert.equal(isNativePushCompatible("storeClient", { hostUri: "exp.host/--/somafrik" }), false);
   assert.equal(isNativePushCompatible("storeClient", { debuggerHost: "127.0.0.1:8081" }), false);
   assert.equal(
+    isNativePushCompatible("storeClient", embeddedManifestExpoGoConfig),
+    false,
+    "storeClient + EmbeddedManifest : Expo Go, jamais natif",
+  );
+  assert.equal(
     isNativePushCompatible("standalone", { hostUri: "exp.host/--/somafrik" }),
     false,
     "packager Expo Go : pas de faux positif standalone",
@@ -245,6 +250,24 @@ async function main() {
   });
   assert.equal(expoGoDebugger, "unsupported");
   assert.equal(posts.length, 0);
+
+  resetPushRegistrationStateForTests();
+  posts.length = 0;
+  const storeClientEmbedded = await registerAuthenticatedPushDevice({
+    platform: "android",
+    executionEnvironment: "storeClient",
+    expoGoConfig: embeddedManifestExpoGoConfig,
+    getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
+    getReleaseProfileImpl: () => "preview",
+    httpRequestImpl: httpRequestImpl as never,
+    notifications: previewNotifications("ExponentPushToken[must-not-register]"),
+  });
+  assert.equal(storeClientEmbedded, "unsupported");
+  assert.equal(posts.length, 0);
+  assert.doesNotMatch(
+    posts.map((item) => item.path).join("\n"),
+    /\/mobile\/push-devices/,
+  );
 
   resetPushRegistrationStateForTests();
   posts.length = 0;
