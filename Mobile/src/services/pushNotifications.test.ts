@@ -152,6 +152,62 @@ async function main() {
   assert.equal(posts.length, 1);
   assert.equal(posts[0]?.path, "/mobile/push-devices");
 
+  function previewNotifications(token: string) {
+    return {
+      async getPermissionsAsync() {
+        return granted();
+      },
+      async requestPermissionsAsync() {
+        return granted();
+      },
+      async getExpoPushTokenAsync() {
+        return { data: token };
+      },
+    };
+  }
+
+  /** SDK 54 : getter expoGoConfig = EmbeddedManifest entier (non nul) sur APK EAS. */
+  const embeddedManifestExpoGoConfig = {
+    extra: { eas: { projectId: "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5" } },
+    slug: "somafrik",
+  };
+
+  resetPushRegistrationStateForTests();
+  posts.length = 0;
+  const easPreviewStandalone = await registerAuthenticatedPushDevice({
+    platform: "android",
+    executionEnvironment: "standalone",
+    expoGoConfig: embeddedManifestExpoGoConfig,
+    getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
+    getReleaseProfileImpl: () => "preview",
+    httpRequestImpl: httpRequestImpl as never,
+    notifications: previewNotifications("ExponentPushToken[test-eas-embedded]"),
+  });
+  assert.equal(
+    easPreviewStandalone,
+    "registered",
+    "EAS Android preview natif : expoGoConfig EmbeddedManifest ≠ Expo Go",
+  );
+  assert.equal(posts[0]?.path, "/mobile/push-devices");
+  assert.match(String(posts[0]?.init?.body), /"appProfile":"preview"/);
+  assert.match(String(posts[0]?.init?.body), /"platform":"android"/);
+  assert.doesNotMatch(String(posts[0]?.init?.body), /releaseProfile/);
+
+  resetPushRegistrationStateForTests();
+  posts.length = 0;
+  const easPreviewBare = await registerAuthenticatedPushDevice({
+    platform: "android",
+    executionEnvironment: "bare",
+    expoGoConfig: { extra: {} },
+    getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
+    getReleaseProfileImpl: () => "preview",
+    httpRequestImpl: httpRequestImpl as never,
+    notifications: previewNotifications("ExponentPushToken[test-eas-bare]"),
+  });
+  assert.equal(easPreviewBare, "registered");
+  assert.equal(posts[0]?.path, "/mobile/push-devices");
+  assert.match(String(posts[0]?.init?.body), /"appProfile":"preview"/);
+
   const expoGo = await registerAuthenticatedPushDevice({
     platform: "android",
     executionEnvironment: "storeClient",
@@ -160,6 +216,63 @@ async function main() {
     httpRequestImpl: httpRequestImpl as never,
   });
   assert.equal(expoGo, "unsupported");
+
+  resetPushRegistrationStateForTests();
+  posts.length = 0;
+  const expoGoDebugger = await registerAuthenticatedPushDevice({
+    platform: "android",
+    executionEnvironment: "storeClient",
+    expoGoConfig: { debuggerHost: "127.0.0.1:8081" },
+    getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
+    httpRequestImpl: httpRequestImpl as never,
+    notifications: previewNotifications("ExponentPushToken[must-not-register]"),
+  });
+  assert.equal(expoGoDebugger, "unsupported");
+  assert.equal(posts.length, 0);
+
+  resetPushRegistrationStateForTests();
+  posts.length = 0;
+  const packagerFalsePositive = await registerAuthenticatedPushDevice({
+    platform: "android",
+    executionEnvironment: "standalone",
+    expoGoConfig: { hostUri: "exp.host/--/somafrik" },
+    getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
+    getReleaseProfileImpl: () => "preview",
+    httpRequestImpl: httpRequestImpl as never,
+    notifications: previewNotifications("ExponentPushToken[must-not-register]"),
+  });
+  assert.equal(
+    packagerFalsePositive,
+    "unsupported",
+    "packager Expo Go présent : refusé même si executionEnvironment=standalone",
+  );
+  assert.equal(posts.length, 0);
+
+  resetPushRegistrationStateForTests();
+  posts.length = 0;
+  const ios = await registerAuthenticatedPushDevice({
+    platform: "ios",
+    executionEnvironment: "standalone",
+    expoGoConfig: null,
+    getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
+    httpRequestImpl: httpRequestImpl as never,
+    notifications: previewNotifications("ExponentPushToken[must-not-register]"),
+  });
+  assert.equal(ios, "unsupported");
+  assert.equal(posts.length, 0);
+
+  resetPushRegistrationStateForTests();
+  posts.length = 0;
+  const emptyEnv = await registerAuthenticatedPushDevice({
+    platform: "android",
+    executionEnvironment: "",
+    expoGoConfig: embeddedManifestExpoGoConfig,
+    getProjectId: () => "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5",
+    httpRequestImpl: httpRequestImpl as never,
+    notifications: previewNotifications("ExponentPushToken[must-not-register]"),
+  });
+  assert.equal(emptyEnv, "unsupported", "executionEnvironment vide : fail-closed");
+  assert.equal(posts.length, 0);
 
   await sendControlledPushTest({
     httpRequestImpl: httpRequestImpl as never,
