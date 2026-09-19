@@ -23,6 +23,7 @@ import {
 import { normalizeOptionalParentPhone } from "../../lib/parentPhone";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
+import { DISPLAY_DATE_HINT } from "../../lib/dates";
 
 type EnrollFormState = {
   firstName: string;
@@ -293,7 +294,7 @@ export function ClassStudentsPage() {
               ]}
             />
           </Field>
-          <Field label="Date de naissance" htmlFor="enroll-birth-date" hint="Format AAAA-MM-JJ">
+          <Field label="Date de naissance" htmlFor="enroll-birth-date" hint={`Format ${DISPLAY_DATE_HINT}`}>
             <DateInput
               id="enroll-birth-date"
               value={form.birthDate}

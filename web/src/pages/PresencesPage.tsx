@@ -34,7 +34,12 @@ import {
   resolveStudentApiId,
   rollCallInitialStatus,
   sameAttendanceDay,
+  type ExpectedStudent,
 } from "../lib/presenceMetrics";
+import {
+  resolveClassTodayPresenceBadge,
+  resolveExpectedStudentsForClassCard,
+} from "../lib/classTodayPresenceBadge";
 
 const STATUS_OPTIONS: AttendanceStatus[] = ["Présent", "Absent", "Retard", "Justifié"];
 
@@ -85,6 +90,7 @@ export function PresencesPage() {
   const canUpdate = canManagePresences(permissionCtx);
 
   const presences = (state.presences ?? []) as PresenceRow[];
+  const students = (state.students ?? []) as ExpectedStudent[];
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
 
@@ -324,10 +330,20 @@ export function PresencesPage() {
         />
         <div className="grid gap-3 md:grid-cols-2">
           {classCards.map((card) => {
-            const savedToday = presences.filter(
+            const todayRows = presences.filter(
               (presence) =>
                 sameAttendanceDay(String(presence.date ?? ""), todayLabel) && asClassMatch(presence, card),
-            ).length;
+            );
+            const badge = resolveClassTodayPresenceBadge({
+              expectedStudents: resolveExpectedStudentsForClassCard({
+                studentCount: card.studentCount,
+                students,
+                classId: card.classId,
+                classCode: card.classCode,
+              }),
+              todayRows,
+              todayLabel,
+            });
 
             return (
               <button
@@ -338,7 +354,7 @@ export function PresencesPage() {
               >
                 <p className="text-lg font-black text-ink">{card.className}</p>
                 <p className="mt-1 text-sm font-semibold text-muted">{card.studentCount} élève(s)</p>
-                <p className="mt-1 text-xs text-muted">{savedToday} enregistrement(s) aujourd&apos;hui</p>
+                <p className="mt-1 text-xs text-muted">{badge.badgeText}</p>
               </button>
             );
           })}
@@ -372,7 +388,7 @@ export function PresencesPage() {
       {canUpdate ? (
         <div className="flex flex-wrap gap-3">
           <Button variant="secondary" onClick={markAllPresent} disabled={rosterLoading || !classStudents.length}>
-            Tous présents
+            Tout présent
           </Button>
           <Button
             disabled={

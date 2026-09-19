@@ -45,7 +45,6 @@ function main() {
   const permissions = stripComments(readSrc(path.join("domain", "security", "permissions.ts")));
   const outbox = stripComments(readSrc(path.join("components", "OutboxRuntime.tsx")));
   const identity = readSrc(path.join("lib", "canonicalRoleIdentity.ts"));
-  const permissionsScreen = readSrc(path.join("screens", "PermissionsScreen.tsx"));
   const identityLib = stripComments(identity);
   const tests = readSrc(path.join("lib", "mobileLivePermissionsRefresh.test.ts"));
 
@@ -101,7 +100,11 @@ function main() {
     /permissionsBootstrap !== "ready"/,
     "outbox replay autorisé en ready_offline, pas seulement ready live",
   );
-  assert.match(permissionsScreen, /L’attribution et le retrait des droits ne sont plus simulés localement/);
+  assert.equal(
+    fs.existsSync(path.join(SRC, "screens", "PermissionsScreen.tsx")),
+    false,
+    "PermissionsScreen orphelin supprimé — pas de surface RBAC Mobile morte",
+  );
 
   assert.match(identity, /hasAuthoritativeRoleKeys/);
   assert.match(identity, /UNAFFECTED_ROLE_LABEL = "Sans affectation"/);
