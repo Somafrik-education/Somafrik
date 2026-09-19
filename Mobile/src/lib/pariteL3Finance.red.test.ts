@@ -122,6 +122,21 @@ const cases: { id: string; title: string; run: () => void }[] = [
       }
     },
   },
+  {
+    id: "FIN-L3-06-B1-MOBILE",
+    title: "normalizePaymentRow ne remplace plus amount par SUM(items)",
+    run() {
+      const normalize = read("lib/dataTruth.ts");
+      const fnStart = normalize.indexOf("export function normalizePaymentRow");
+      const fn = normalize.slice(fnStart, fnStart + 1800);
+      assert.doesNotMatch(
+        fn,
+        /const total = items\.length/,
+        "normalizePaymentRow écrase encore amount/totalAmount par SUM(items)",
+      );
+      assert.match(fn, /row\.amount/, "normalizePaymentRow doit lire le montant canonique GET /payments");
+    },
+  },
 ];
 
 let failed = 0;
