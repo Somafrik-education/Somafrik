@@ -30,13 +30,16 @@ import {
   formatAttendanceDate,
   formatAttendanceHour,
   getPresenceStats,
-  normalizePresenceStatus,
   presenceIsAttended,
   resolveStudentApiId,
   rollCallInitialStatus,
   sameAttendanceDay,
+  type ExpectedStudent,
 } from "../lib/presenceMetrics";
-import { formatClassTodayPresenceBadge } from "../lib/classTodayPresenceBadge";
+import {
+  resolveClassTodayPresenceBadge,
+  resolveExpectedStudentsForClassCard,
+} from "../lib/classTodayPresenceBadge";
 
 const STATUS_OPTIONS: AttendanceStatus[] = ["Présent", "Absent", "Retard", "Justifié"];
 
@@ -87,6 +90,7 @@ export function PresencesPage() {
   const canUpdate = canManagePresences(permissionCtx);
 
   const presences = (state.presences ?? []) as PresenceRow[];
+  const students = (state.students ?? []) as ExpectedStudent[];
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
 
@@ -330,10 +334,15 @@ export function PresencesPage() {
               (presence) =>
                 sameAttendanceDay(String(presence.date ?? ""), todayLabel) && asClassMatch(presence, card),
             );
-            const badge = formatClassTodayPresenceBadge({
-              expected: card.studentCount,
-              recorded: todayRows.length,
-              attended: todayRows.filter((row) => presenceIsAttended(normalizePresenceStatus(row))).length,
+            const badge = resolveClassTodayPresenceBadge({
+              expectedStudents: resolveExpectedStudentsForClassCard({
+                studentCount: card.studentCount,
+                students,
+                classId: card.classId,
+                classCode: card.classCode,
+              }),
+              todayRows,
+              todayLabel,
             });
 
             return (

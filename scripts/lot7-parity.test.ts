@@ -21,22 +21,21 @@ function exists(rel: string) {
   return fs.existsSync(path.join(ROOT, rel));
 }
 
-test("PARITY-021 — PermissionsScreen reste mort ; pas de PUT role-permissions Mobile", () => {
+test("PARITY-021 — screen orphelin PermissionsScreen absent ; fail-closed RBAC conservé", () => {
   const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
   const permissions = read("Mobile/src/domain/security/permissions.ts");
   const safety = read("Mobile/src/lib/mobileMutationSafety.ts");
-  const screen = read("Mobile/src/screens/PermissionsScreen.tsx");
   const lot1 = read("docs/audits/parite-web-mobile-lot1-referentiels-etablissement.md");
   const evidence = read("docs/audits/evidence/lot7-planning-red-green.md");
+  assert.equal(exists("Mobile/src/screens/PermissionsScreen.tsx"), false);
   assert.doesNotMatch(navigator, /PermissionsScreen/);
   assert.doesNotMatch(navigator, /name=["']Permissions["']/);
   assert.match(permissions, /if \(viewName === "Permissions"\) \{\s*return false;/);
   assert.match(safety, /MOBILE_ROLE_PERMISSION_MUTATION_ENABLED = false/);
-  assert.match(screen, /MOBILE_ROLE_PERMISSION_MUTATION_ENABLED/);
-  assert.doesNotMatch(screen, /role-permissions|updateRolePermissions|putRolePermissions/i);
   assert.match(lot1, /Ne pas remonter[\s\S]*PermissionsScreen/);
   assert.match(evidence, /PARITY-021/);
-  assert.match(evidence, /KEEP DEAD/);
+  assert.match(evidence, /supprim/);
+  assert.doesNotMatch(evidence, /KEEP DEAD/);
 });
 
 test("PARITY-052 — élèves d'une classe déjà fermé par LOT 2 ; pas de nouveau produit", () => {
@@ -52,16 +51,22 @@ test("PARITY-052 — élèves d'une classe déjà fermé par LOT 2 ; pas de nouv
   assert.match(evidence, /Aucun code produit/);
 });
 
-test("PARITY-057 — badge présence classe Web = contrat fail-closed Mobile", () => {
+test("PARITY-057 — badge Web = roster attendu + recorded !== expected", () => {
   const webPage = read("web/src/pages/PresencesPage.tsx");
   const helper = read("web/src/lib/classTodayPresenceBadge.ts");
   const mobile = read("Mobile/src/lib/classTodayPresenceBadge.ts");
-  assert.match(webPage, /formatClassTodayPresenceBadge/);
+  const helperTest = read("web/src/lib/classTodayPresenceBadge.test.ts");
+  assert.match(webPage, /resolveClassTodayPresenceBadge/);
+  assert.match(webPage, /resolveExpectedStudentsForClassCard/);
   assert.doesNotMatch(webPage, /enregistrement\(s\) aujourd/);
-  assert.match(helper, /CLASS_UNSET_PRESENCE_LABEL/);
-  assert.match(helper, /Non saisi/);
-  assert.match(helper, /Présence —/);
-  assert.match(helper, /recorded === 0 \|\| recorded < expected/);
+  assert.match(helper, /recorded !== expected/);
+  assert.match(helper, /findTodayPresenceForStudent/);
+  assert.doesNotMatch(helper, /recorded === 0 \|\| recorded < expected/);
+  assert.match(helperTest, /expected 3 \/ recorded 4/);
+  assert.match(helperTest, /lignes A\/B\/D/);
+  assert.match(helperTest, /lignes A\/B\/C/);
+  assert.match(helperTest, /Présence 0 %/);
+  assert.match(helperTest, /aucun élève attendu/);
   assert.match(mobile, /CLASS_UNSET_PRESENCE_LABEL = "Non saisi"/);
   assert.match(mobile, /recorded !== expectedStudents\.length/);
 });

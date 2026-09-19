@@ -31,7 +31,6 @@ function main() {
 
   const navigator = read(path.join("navigation", "AppNavigator.tsx"));
   const gate = read(path.join("screens", "SafeAdminCrudScreen.tsx"));
-  const permissions = read(path.join("screens", "PermissionsScreen.tsx"));
   const rawAdminCrud = read(path.join("screens", "AdminCrudScreen.tsx"));
   const users = read(path.join("screens", "UsersScreen.tsx"));
   const classes = read(path.join("screens", "ClassesScreen.tsx"));
@@ -55,14 +54,11 @@ function main() {
   assert.match(gate, /Aucune modification locale n&apos;est appliquée/);
   assert.match(gate, /SAFE_ADMIN_CRUD_ENTITIES|canRunGenericAdminCrud/);
 
-  assert.doesNotMatch(
-    permissions,
-    /updateRoleFeatureAccess/,
-    "PermissionsScreen ne doit plus simuler une attribution ou un retrait de droit local",
+  assert.equal(
+    fs.existsSync(path.join(SRC, "screens", "PermissionsScreen.tsx")),
+    false,
+    "PermissionsScreen orphelin supprimé — pas de surface RBAC Mobile morte",
   );
-  assert.doesNotMatch(permissions, /synchronis[ée]s automatiquement/i);
-  assert.match(permissions, /Modification Mobile désactivée/);
-  assert.match(permissions, /L’attribution et le retrait des droits ne sont plus simulés localement/);
 
   assert.match(rawAdminCrud, /if \(entity === "assignments"\)[\s\S]*?await createTeacherAssignment/);
   assert.match(rawAdminCrud, /if \(entity === "courses"\)[\s\S]*?await createCourse/);

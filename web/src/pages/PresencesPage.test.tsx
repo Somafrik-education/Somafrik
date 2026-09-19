@@ -44,7 +44,8 @@ const dataState = vi.hoisted(() => ({
   ],
   assignments: [] as Record<string, unknown>[],
   teachers: [] as Record<string, unknown>[],
-  presences: [],
+  students: [] as Record<string, unknown>[],
+  presences: [] as Record<string, unknown>[],
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -104,8 +105,14 @@ describe("PresencesPage — roster canonique", () => {
     apiPost.mockReset();
     classStudentsList.mockReset();
     authSession.user = { id: "admin-1", role: "Admin School", schoolCode: "SCH-001", name: "Admin" };
+    dataState.classes = [
+      { id: "uuid-a", classId: "uuid-a", classCode: "CLS-A", name: "2ème A", students: 1 },
+      { id: "uuid-b", classId: "uuid-b", classCode: "CLS-B", name: "2ème A", students: 0 },
+    ];
     dataState.assignments = [];
     dataState.teachers = [];
+    dataState.students = [];
+    dataState.presences = [];
     classStudentsList.mockResolvedValue([
       {
         id: "ELE-1",
@@ -131,6 +138,26 @@ describe("PresencesPage — roster canonique", () => {
     expect(secondA[0].textContent).toMatch(/Non saisi/);
     expect(secondA[1].textContent).toMatch(/0 élève/);
     expect(secondA[1].textContent).toMatch(/Présence —/);
+  });
+
+  it("PARITY-057 — lignes A/B/D ne complètent pas le roster A/B/C", async () => {
+    const now = new Date();
+    const isoToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    dataState.classes = [{ id: "uuid-a", classId: "uuid-a", classCode: "CLS-A", name: "6ème A", students: 3 }];
+    dataState.students = [
+      { id: "A", matricule: "A", classId: "uuid-a", classCode: "CLS-A" },
+      { id: "B", matricule: "B", classId: "uuid-a", classCode: "CLS-A" },
+      { id: "C", matricule: "C", classId: "uuid-a", classCode: "CLS-A" },
+    ];
+    dataState.presences = [
+      { studentId: "A", classId: "uuid-a", classCode: "CLS-A", date: isoToday, status: "Présent", present: true },
+      { studentId: "B", classId: "uuid-a", classCode: "CLS-A", date: isoToday, status: "Présent", present: true },
+      { studentId: "D", classId: "uuid-a", classCode: "CLS-A", date: isoToday, status: "Présent", present: true },
+    ];
+    render(<RoutedPresencesPage />);
+    const card = (await screen.findAllByRole("button")).find((node) => node.textContent?.includes("6ème A"));
+    expect(card?.textContent).toMatch(/Non saisi/);
+    expect(card?.textContent).not.toMatch(/Présence \d/);
   });
 
   it("charge le roster via GET /classes/:classCode/students (cas A className vide)", async () => {
@@ -184,8 +211,14 @@ describe("PresencesPage — enseignant pédagogique ≠ acteur JWT", () => {
     apiPost.mockReset();
     classStudentsList.mockReset();
     authSession.user = { id: "admin-1", role: "Admin School", schoolCode: "SCH-001", name: "Admin" };
+    dataState.classes = [
+      { id: "uuid-a", classId: "uuid-a", classCode: "CLS-A", name: "2ème A", students: 1 },
+      { id: "uuid-b", classId: "uuid-b", classCode: "CLS-B", name: "2ème A", students: 0 },
+    ];
     dataState.assignments = [];
     dataState.teachers = [];
+    dataState.students = [];
+    dataState.presences = [];
     classStudentsList.mockResolvedValue([
       {
         id: "ELE-1",
