@@ -11,6 +11,10 @@ et ce projet adhère au [Versioning sémantique](https://semver.org/lang/fr/) po
 
 ## [Unreleased]
 
+### Fixed
+
+- **#717 P0 HelpHost startup** : l’hôte d’aide Mobile lit/navigue via `navigationRef` racine (plus de `useNavigation` / `useNavigationState` hors `Stack.Navigator`). TypeScript valide (plus de `\\n` littéral). HOLD READY+MERGE.
+
 ### Added
 
 - **S1 E2E Playwright Bulletins (#659)** : campagne `verify:report-card-s1-e2e` (Playwright existant, PG isolé, backend réel) reproduisant l'absence du CTA « Demander un modèle de bulletin » sur `/bulletins` pour un Admin établissement. Production unmodified (RED). HOLD READY+MERGE. Tickets #659 / #656.
