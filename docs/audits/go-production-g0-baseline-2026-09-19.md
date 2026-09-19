@@ -101,7 +101,6 @@ Observées le 2026-09-19. Aucune n’est la PR G0 / G1.
 
 | PR | Titre | Draft |
 |----|--------|-------|
-| #717 | HelpHost startup navigation crash | oui |
 | #715 | Clôture audit parité LOT 0–8 (docs) | oui |
 | #685 | GREEN-B Affectations / Présences | oui |
 | #670 / #668 / #663 | DEMO-DATA / DEMO-0 | oui |
@@ -141,7 +140,7 @@ Cette PR G0 utilise `cursor/go-production-gouvernance-090d`. G1 doit rester sur 
 Repris comme **dette à revalider en G1–G7**, pas comme preuve actuelle :
 
 1. Rulesets `main` / `develop` disabled.
-2. Graphe `develop` vs `main` non fast-forward (15 + 740, 20 conflits `merge-tree`).
+2. Graphe `develop` vs `main` non fast-forward (15 + 742, 20 conflits `merge-tree`).
 3. Runtime / DNS / device / Store : à re-prouver sur les SHA **de ce** chantier (les SHA du Lot G 01/09 sont périmés).
 4. Confidentialité + suppression de compte : présentes sur le cycle prod historique ; G4 doit les **revalider**, pas les présumer.
 5. RC3 #354 / #355 : toujours hors release sauf mandat CTO nouveau.
