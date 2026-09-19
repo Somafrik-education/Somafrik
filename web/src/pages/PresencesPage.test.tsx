@@ -128,7 +128,9 @@ describe("PresencesPage — roster canonique", () => {
     const secondA = cards.filter((node) => node.textContent?.includes("2ème A"));
     expect(secondA).toHaveLength(2);
     expect(secondA[0].textContent).toMatch(/1 élève/);
+    expect(secondA[0].textContent).toMatch(/Non saisi/);
     expect(secondA[1].textContent).toMatch(/0 élève/);
+    expect(secondA[1].textContent).toMatch(/Présence —/);
   });
 
   it("charge le roster via GET /classes/:classCode/students (cas A className vide)", async () => {
@@ -141,6 +143,7 @@ describe("PresencesPage — roster canonique", () => {
       expect(classStudentsList).toHaveBeenCalledWith("CLS-A");
     });
     expect(await screen.findByText("Awa Diop")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tout présent" })).toBeInTheDocument();
   });
 
   it("n'expose plus assignStudentToClass ni update({ students })", () => {
