@@ -17,7 +17,7 @@ export function HelpHost() {
         setRouteName(null);
         return;
       }
-      setRouteName(navigationRef.getCurrentRoute()?.name ?? null);
+      const currentRoute = navigationRef.getCurrentRoute() as { name: string } | undefined;\n      setRouteName(currentRoute?.name ?? null);
     };
 
     syncRouteName();
