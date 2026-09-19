@@ -126,6 +126,15 @@ CI PR (`security.yml` + `ci.yml`) : Secrets · Security · TypeScript · Lint ·
 
 ## 5. Tests E2E
 
+RC1 / GO Production (#719) — catalogue isolé (sans Docker) :
+
+```bash
+npm run verify:rc1-gates         # contrats fonctionnels + sécurité
+npm run verify:rc1-performance   # harness Node isolé (interdit sur api.somafrik.app)
+```
+
+Preuves : `docs/release/RC1-READINESS-REPORT.md`.
+
 ```bash
 npm run verify:e2e-preflight   # bootstrap / santé
 npm run verify:e2e-api         # suite API
@@ -223,6 +232,7 @@ Détail Go/No Go par version : [RELEASES.md](./RELEASES.md).
 | CI | Filet automatique |
 | CTO (ChatGPT sur #720) | Gate préprod / Go release — diff GitHub indépendant |
 | Cursor | Exécution tests + preuves sur Draft PR, puis STOP |
+| RC1 (#719) | `verify:rc1-gates` + `verify:rc1-performance` puis STOP |
 
 ---
 
