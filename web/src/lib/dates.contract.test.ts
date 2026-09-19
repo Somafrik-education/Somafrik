@@ -61,7 +61,7 @@ describe("contrat date Somafrik JJ-MM-AAAA", () => {
       studentId: "STU-1",
       schoolCode: "CD-IN-26-001",
       recipient: "Parent",
-      channel: "IN_APP",
+      channel: "notification",
       message: "x",
       sentAt: "2026-09-17T09:00:00.000Z",
       sendStatus: "Envoyée",
