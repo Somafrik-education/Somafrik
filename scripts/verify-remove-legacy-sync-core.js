@@ -48,18 +48,10 @@ if (!serverSource.includes("sendBackOfficeStateWriteRemoved")) {
   throw new Error("BACKOFFICE_STATE_WRITE_MUST_FAIL_CLOSED");
 }
 
-const notificationsScreenSource = fs.readFileSync(
-  path.join(root, "Mobile", "src", "screens", "PlatformNotificationsScreen.tsx"),
-  "utf8",
-);
-if (notificationsScreenSource.includes("markNotificationsRead")) {
-  throw new Error("MOBILE_NOTIFICATION_OPTIMISTIC_READ_FORBIDDEN");
-}
-if (!notificationsScreenSource.includes("updatePlatformNotification")) {
-  throw new Error("MOBILE_NOTIFICATION_SERVER_PATCH_REQUIRED");
-}
-if (!notificationsScreenSource.includes("await refreshBackOfficeState()")) {
-  throw new Error("MOBILE_NOTIFICATION_CANONICAL_REFRESH_REQUIRED");
+if (
+  fs.existsSync(path.join(root, "Mobile", "src", "screens", "PlatformNotificationsScreen.tsx"))
+) {
+  throw new Error("MOBILE_PLATFORM_NOTIFICATIONS_SCREEN_MUST_BE_ABSENT");
 }
 
 const postgresRepositorySource = fs.readFileSync(

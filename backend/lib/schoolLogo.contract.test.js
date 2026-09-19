@@ -36,10 +36,8 @@ test("Mobile profil établissement : pas de champ URL du logo", () => {
   assert.match(src, /Ajouter un logo|launchImageLibraryAsync/);
 });
 
-test("Mobile AdminCrud écoles : pas de placeholder URL de logo", () => {
-  const src = read("Mobile/src/screens/AdminCrudScreen.tsx");
-  assert.doesNotMatch(src, /URL JPG, PNG ou WebP/);
-  assert.doesNotMatch(src, /placeholder: "URL JPG/);
+test("Mobile AdminCrud écoles : écran mort absent", () => {
+  assert.equal(fs.existsSync(path.join(ROOT, "Mobile/src/screens/AdminCrudScreen.tsx")), false);
 });
 
 test("login / rôle : école sans logo ≠ fallback Somafrik", () => {

@@ -22,7 +22,6 @@ const students = read("screens/StudentsScreen.tsx");
 const classes = read("screens/ClassesScreen.tsx");
 const attendance = read("screens/TeacherAttendanceScreen.tsx");
 const messages = read("screens/MessagesScreen.tsx");
-const menu = read("screens/MenuScreen.tsx");
 const mvp = read("screens/MvpUtilityScreens.tsx");
 const l1Projection = read("offline/l1/uiProjection.ts");
 
@@ -44,7 +43,6 @@ for (const [name, src] of [
   ["ClassesScreen", classes],
   ["TeacherAttendanceScreen", attendance],
   ["MessagesScreen", messages],
-  ["MenuScreen", menu],
 ] as const) {
   assert.match(src, /StudentsScopeAlert/, `${name} doit exposer studentsScopeError via StudentsScopeAlert`);
   assert.doesNotMatch(src, /projectScopedStudentsForSession/, `${name} ne recalcule pas la projection`);
@@ -58,7 +56,6 @@ assert.doesNotMatch(home, /metricLabelFromSnapshot\(studentsSnapshot, \(rows\) =
 assert.match(students, /establishmentStudents/);
 assert.match(classes, /establishmentStudents/);
 assert.match(attendance, /establishmentStudents/);
-assert.match(menu, /establishmentStudents/);
 
 assert.match(l1Projection, /schoolId: partition.schoolId/);
 

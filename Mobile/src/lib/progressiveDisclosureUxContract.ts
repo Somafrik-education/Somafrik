@@ -19,6 +19,7 @@ export const PD_MESSAGES_USE_THREAD_MODAL = true;
 /** Écrans historiques : ne pas réenregistrer dans le graphe live. */
 export const PD_DEAD_SCREENS = [
   "AdminCrudScreen",
+  "SafeAdminCrudScreen",
   "MenuScreen",
   "PlatformNotificationsScreen",
 ] as const;

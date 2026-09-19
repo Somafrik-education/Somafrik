@@ -11,7 +11,6 @@ const ROOT = path.join(__dirname, "..", "..", "..");
 const fieldLabel = fs.readFileSync(path.join(ROOT, "Mobile/src/components/FieldLabel.tsx"), "utf8");
 const formField = fs.readFileSync(path.join(ROOT, "Mobile/src/components/FormField.tsx"), "utf8");
 const chips = fs.readFileSync(path.join(ROOT, "Mobile/src/components/ChoiceChips.tsx"), "utf8");
-const adminCrud = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/AdminCrudScreen.tsx"), "utf8");
 const assignments = fs.readFileSync(path.join(ROOT, "Mobile/src/components/AssignmentMutationControls.tsx"), "utf8");
 const classes = fs.readFileSync(path.join(ROOT, "Mobile/src/components/ClassMutationControls.tsx"), "utf8");
 const profile = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/EstablishmentProfileScreen.tsx"), "utf8");
@@ -33,8 +32,7 @@ assert.match(formField, /formatFieldLabel\(label, \{ required, optional \}\)/);
 assert.doesNotMatch(formField, /<Text style=\{styles\.label\}>\{visibleLabel\}<\/Text>/);
 
 assert.match(chips, /<FieldLabel label=\{label\} required=\{required\} optional=\{optional\} \/>/);
-assert.match(adminCrud, /<FieldLabel/);
-assert.doesNotMatch(adminCrud, /formatFieldLabel/);
+assert.equal(fs.existsSync(path.join(ROOT, "Mobile/src/screens/AdminCrudScreen.tsx")), false);
 
 assert.match(assignments, /label="Enseignant" required/);
 assert.match(assignments, /label="Classe" required/);
@@ -49,4 +47,4 @@ assert.doesNotMatch(yearSettings, /label="Barème par défaut"[^>]*required/);
 assert.match(formField, /required\?: boolean/);
 assert.match(formField, /accessibilityLabel=\{accessibilityLabel \?\? accessibleLabel\}/);
 
-console.log("OK fieldLabel: * rouge isolé, facultatif sans astérisque, FormField/ChoiceChips/AdminCrud branchés");
+console.log("OK fieldLabel: * rouge isolé, facultatif sans astérisque, FormField/ChoiceChips branchés");

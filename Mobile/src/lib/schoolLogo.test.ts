@@ -73,7 +73,6 @@ const ROOT = path.join(__dirname, "..", "..", "..");
 const login = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/LoginScreen.tsx"), "utf8");
 const roles = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/RoleSelectionScreen.tsx"), "utf8");
 const profile = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/EstablishmentProfileScreen.tsx"), "utf8");
-const crud = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/AdminCrudScreen.tsx"), "utf8");
 
 assert.match(login, /schoolLogoDisplayUri/);
 assert.doesNotMatch(login, /school\?\.logoUrl \?[\s\S]{0,220}somafrikLogo/);
@@ -83,6 +82,6 @@ assert.doesNotMatch(profile, /Logo \(URL\)/);
 assert.doesNotMatch(profile, /type="url"/);
 assert.match(profile, /launchImageLibraryAsync/);
 assert.match(profile, /Ajouter un logo/);
-assert.doesNotMatch(crud, /URL JPG, PNG ou WebP/);
+assert.equal(fs.existsSync(path.join(ROOT, "Mobile/src/screens/AdminCrudScreen.tsx")), false);
 
 console.log("OK schoolLogo: pas d'URL saisie, pas de fallback Somafrik sur les surfaces établissement");

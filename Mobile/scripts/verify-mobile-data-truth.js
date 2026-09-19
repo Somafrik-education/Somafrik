@@ -224,8 +224,7 @@ async function main() {
   assert.doesNotMatch(paymentsScreen, /AdminCrud/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
   assert.doesNotMatch(paymentsScreen, /des paiements réglés/);
-  const adminCrud = read(path.join(SRC, "screens", "AdminCrudScreen.tsx"));
-  assert.doesNotMatch(adminCrud, /createSchoolPayment/);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "AdminCrudScreen.tsx")), false);
   console.log("OK: finance GET canonique + reçu, POST /payments via écran canonique");
 
   const persist = api;

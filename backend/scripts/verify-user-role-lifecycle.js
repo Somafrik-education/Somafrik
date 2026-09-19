@@ -76,8 +76,11 @@ function assertStaticGuards() {
   const mobileHint = fs.readFileSync(path.join(ROOT, "Mobile/src/lib/contactProvisioning.ts"), "utf8");
   assert.match(mobileHint, /entityCreateViaContactsOnly/);
   assert.match(mobileHint, /teachers/);
-  const mobileCrud = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/AdminCrudScreen.tsx"), "utf8");
-  assert.match(mobileCrud, /entityCreateViaContactsOnly\(entity\)/);
+  assert.equal(
+    fs.existsSync(path.join(ROOT, "Mobile/src/screens/AdminCrudScreen.tsx")),
+    false,
+    "AdminCrudScreen mort — création enseignants uniquement via contacts/users",
+  );
   const server = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
   assert.match(server, /TEACHER_IDENTITY_MUST_COME_FROM_USERS/);
   assert.match(server, /backoffice\/users\/create-teacher/);

@@ -59,27 +59,37 @@ test("PARITY-056 — paiements Web EntityPage live + Mobile canonique ; pas Admi
   assert.match(evidence, /Aucun code produit/);
 });
 
-test("PARITY-061 — inventaire morts : Permissions déjà absent ; PD_DEAD hors graphe", () => {
+test("PARITY-061 — écrans morts absents ; PD_DEAD noms-only ; type AdminCrud retiré", () => {
   const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
   const pd = read("Mobile/src/lib/progressiveDisclosureUxContract.ts");
   const evidence = read("docs/audits/evidence/lot8-legacy-red-green.md");
   assert.equal(exists("Mobile/src/screens/PermissionsScreen.tsx"), false);
+  assert.equal(exists("Mobile/src/screens/AdminCrudScreen.tsx"), false);
+  assert.equal(exists("Mobile/src/screens/SafeAdminCrudScreen.tsx"), false);
+  assert.equal(exists("Mobile/src/screens/MenuScreen.tsx"), false);
+  assert.equal(exists("Mobile/src/screens/PlatformNotificationsScreen.tsx"), false);
   assert.match(pd, /AdminCrudScreen/);
+  assert.match(pd, /SafeAdminCrudScreen/);
   assert.match(pd, /MenuScreen/);
   assert.match(pd, /PlatformNotificationsScreen/);
+  assert.doesNotMatch(navigator, /\bAdminCrud\b/);
   assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/AdminCrudScreen["']/);
   assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/MenuScreen["']/);
   assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/PlatformNotificationsScreen["']/);
   assert.doesNotMatch(navigator, /SafeAdminCrudScreen/);
   assert.doesNotMatch(navigator, /name=["']Permissions["']/);
   assert.match(evidence, /PARITY-061/);
-  assert.match(evidence, /Aucun fichier supplémentaire supprimé/);
+  assert.match(evidence, /[Ss]uppression réelle/);
 });
 
-test("PARITY-027 — catalogue PG autorité : appliesMobile aligné aux surfaces live", () => {
+test("PARITY-027 — catalogue PG autorité ; CRUD_PERMISSION_MODULES statiques absents", () => {
   const catalog = read("backend/lib/functionalModulesCatalog.js");
   const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
   const crud = read("Mobile/src/lib/mobileCrudParity.ts");
+  const webConstants = read("web/src/lib/constants.ts");
+  const mobileConstants = read("Mobile/src/lib/constants.ts");
+  const webGov = read("web/src/lib/roleGovernance.ts");
+  const mobileGov = read("Mobile/src/lib/roleGovernance.ts");
   const evidence = read("docs/audits/evidence/lot8-legacy-red-green.md");
   assert.match(
     catalog,
@@ -92,8 +102,14 @@ test("PARITY-027 — catalogue PG autorité : appliesMobile aligné aux surfaces
   assert.doesNotMatch(navigator, /PermissionsScreen/);
   assert.match(crud, /CANONICAL_CRUD_ENTITIES/);
   assert.doesNotMatch(crud, /role_permissions/);
+  assert.doesNotMatch(webConstants, /CRUD_PERMISSION_MODULES/);
+  assert.doesNotMatch(mobileConstants, /CRUD_PERMISSION_MODULES/);
+  assert.doesNotMatch(webGov, /getSuperadminMatrixModules/);
+  assert.doesNotMatch(mobileGov, /getSuperadminMatrixModules/);
+  assert.match(webGov, /COUNTRY_SCOPE_MODULES/);
+  assert.match(mobileGov, /COUNTRY_SCOPE_MODULES/);
   assert.match(evidence, /PARITY-027/);
-  assert.match(evidence, /Aligner le catalogue/);
+  assert.match(evidence, /catalogues statiques/);
 });
 
 test("PARITY-071 — GradeBookService Mobile orphelin supprimé", () => {

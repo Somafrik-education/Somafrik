@@ -1,4 +1,3 @@
-import { CRUD_PERMISSION_MODULES } from "./constants";
 import {
   COUNTRY_ADMIN_ROLE,
   isPlatformBackOfficeRole,
@@ -26,33 +25,6 @@ export const COUNTRY_SCOPE_MODULES = new Set(["Pays", "Établissements", "Abonne
 
 export function resolveSuperadminPermissionRole(module: string): typeof COUNTRY_ADMIN_ROLE | typeof SCHOOL_ADMIN_ROLE {
   return COUNTRY_SCOPE_MODULES.has(module) ? COUNTRY_ADMIN_ROLE : SCHOOL_ADMIN_ROLE;
-}
-
-/** Modules CRUD affichés dans la matrice Superadmin selon le rôle cible. */
-export function getSuperadminMatrixModules(role: string): string[] {
-  return CRUD_PERMISSION_MODULES.filter((module) => {
-    if (role === COUNTRY_ADMIN_ROLE) {
-      return COUNTRY_SCOPE_MODULES.has(module);
-    }
-    if (role === SCHOOL_ADMIN_ROLE) {
-      return !COUNTRY_SCOPE_MODULES.has(module);
-    }
-    return true;
-  });
-}
-
-/** Modules disponibles pour un rôle cible dans le parcours Superadmin. */
-export function getSuperadminPathModulesForRole(role: string): string[] {
-  return getSuperadminMatrixModules(role);
-}
-
-/** Liste des modules fonctionnels accessibles après sélection pays + établissement. */
-export function getSuperadminPathModules(): string[] {
-  const modules = new Set([
-    ...getSuperadminMatrixModules(COUNTRY_ADMIN_ROLE),
-    ...getSuperadminMatrixModules(SCHOOL_ADMIN_ROLE),
-  ]);
-  return CRUD_PERMISSION_MODULES.filter((module) => modules.has(module));
 }
 
 /** Normalise les droits éditables par le Superadmin (format Module:ACTION). */

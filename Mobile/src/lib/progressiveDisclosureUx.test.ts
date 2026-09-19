@@ -29,6 +29,7 @@ assert.deepEqual([...PD_EVALUATION_COLLAPSED_OMITS], ["coefficient", "teacherNam
 assert.deepEqual([...PD_EVALUATION_SECONDARY_ACTIONS], ["Modifier", "Valider", "Publier"]);
 assert.deepEqual([...PD_DEAD_SCREENS], [
   "AdminCrudScreen",
+  "SafeAdminCrudScreen",
   "MenuScreen",
   "PlatformNotificationsScreen",
 ]);
@@ -315,12 +316,16 @@ assert.match(timetableScreen, /createInFlightLock/);
 assert.match(timetableScreen, /l1ReadOnly/);
 
 const navigator = read("navigation/AppNavigator.tsx");
+assert.equal(fs.existsSync(path.join(srcRoot, "screens/AdminCrudScreen.tsx")), false);
+assert.equal(fs.existsSync(path.join(srcRoot, "screens/SafeAdminCrudScreen.tsx")), false);
+assert.equal(fs.existsSync(path.join(srcRoot, "screens/MenuScreen.tsx")), false);
+assert.equal(fs.existsSync(path.join(srcRoot, "screens/PlatformNotificationsScreen.tsx")), false);
 assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/AdminCrudScreen["']/);
 assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/MenuScreen["']/);
 assert.doesNotMatch(navigator, /from ["']\.\.\/screens\/PlatformNotificationsScreen["']/);
 assert.doesNotMatch(navigator, /component=\{AdminCrudScreen\}/);
 assert.doesNotMatch(navigator, /component=\{MenuScreen\}/);
 assert.doesNotMatch(navigator, /component=\{PlatformNotificationsScreen\}/);
-assert.match(navigator, /jamais enregistré dans le graphe live/);
+assert.doesNotMatch(navigator, /\bAdminCrud\b/);
 
 console.log("OK Lot 0 UX progressive disclosure : contrat + îlots verts + exceptions CTO");
