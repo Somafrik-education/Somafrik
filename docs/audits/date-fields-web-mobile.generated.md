@@ -2,7 +2,7 @@
 
 > Généré par `scripts/audit-date-ui-contract.js`. Ne pas éditer manuellement.
 
-- Fichiers candidats : **189** (Web 126, Mobile 63)
+- Fichiers candidats : **191** (Web 127, Mobile 64)
 - Inputs calendrier natifs Web : **0**
 - Violations du contrat UI détectées : **0**
 - D1 : **0** · D7 locale : **0** · D7 Intl : **0**
@@ -24,7 +24,7 @@
 | Web | `web/src/components/planning/PlanningMonthGrid.tsx` | 5 | 0 |
 | Web | `web/src/components/planning/PlanningTimeGrid.tsx` | 13 | 0 |
 | Web | `web/src/components/students/StudentCurrentEnrollmentCard.tsx` | 3 | 0 |
-| Web | `web/src/components/students/StudentEnrollmentActions.tsx` | 5 | 0 |
+| Web | `web/src/components/students/StudentEnrollmentActions.tsx` | 8 | 0 |
 | Web | `web/src/components/students/StudentEnrollmentHistory.tsx` | 1 | 0 |
 | Web | `web/src/components/students/StudentIdentityTab.tsx` | 1 | 0 |
 | Web | `web/src/components/students/StudentOverviewTab.tsx` | 2 | 0 |
@@ -51,7 +51,6 @@
 | Web | `web/src/lib/examsApi.ts` | 1 | 0 |
 | Web | `web/src/lib/fees.ts` | 18 | 0 |
 | Web | `web/src/lib/financeApi.ts` | 5 | 0 |
-| Web | `web/src/lib/financeCurrency.ts` | 2 | 0 |
 | Web | `web/src/lib/financeIdempotency.ts` | 1 | 0 |
 | Web | `web/src/lib/financePaymentWrite.ts` | 11 | 0 |
 | Web | `web/src/lib/format.ts` | 4 | 0 |
@@ -73,7 +72,7 @@
 | Web | `web/src/lib/studentDocuments.ts` | 12 | 0 |
 | Web | `web/src/lib/studentDomain.ts` | 35 | 0 |
 | Web | `web/src/lib/studentDossierFromApi.ts` | 19 | 0 |
-| Web | `web/src/lib/studentEditing.ts` | 18 | 0 |
+| Web | `web/src/lib/studentEditing.ts` | 19 | 0 |
 | Web | `web/src/lib/studentEditingAdapters.ts` | 40 | 0 |
 | Web | `web/src/lib/studentEditingChangeSet.ts` | 8 | 0 |
 | Web | `web/src/lib/studentEditingCommands.ts` | 3 | 0 |
@@ -81,6 +80,8 @@
 | Web | `web/src/lib/studentEditingService.ts` | 19 | 0 |
 | Web | `web/src/lib/studentEditingValidation.ts` | 29 | 0 |
 | Web | `web/src/lib/studentEnrollment.ts` | 31 | 0 |
+| Web | `web/src/lib/studentEnrollmentC18Api.ts` | 3 | 0 |
+| Web | `web/src/lib/studentEnrollmentHttpRepository.ts` | 19 | 0 |
 | Web | `web/src/lib/studentEnrollmentOverlay.ts` | 2 | 0 |
 | Web | `web/src/lib/studentEnrollmentSelection.ts` | 4 | 0 |
 | Web | `web/src/lib/studentEnrollmentViewModel.ts` | 1 | 0 |
@@ -98,10 +99,10 @@
 | Web | `web/src/lib/subscriptionModule.ts` | 42 | 0 |
 | Web | `web/src/lib/syncOutbox.ts` | 16 | 0 |
 | Web | `web/src/lib/teacherRules.ts` | 22 | 0 |
-| Web | `web/src/lib/teachersApi.ts` | 3 | 0 |
-| Web | `web/src/lib/unpaidModule.ts` | 32 | 0 |
+| Web | `web/src/lib/teachersApi.ts` | 2 | 0 |
+| Web | `web/src/lib/unpaidModule.ts` | 29 | 0 |
 | Web | `web/src/lib/userAccountRules.ts` | 1 | 0 |
-| Web | `web/src/lib/userAccounts.ts` | 1 | 0 |
+| Web | `web/src/lib/userAccounts.ts` | 5 | 0 |
 | Web | `web/src/lib/userTeacherSync.ts` | 7 | 0 |
 | Web | `web/src/pages/AnnouncementsPage.tsx` | 8 | 0 |
 | Web | `web/src/pages/ConfigurationPage.tsx` | 32 | 0 |
@@ -145,7 +146,6 @@
 | Mobile | `Mobile/src/components/TeacherMutationControls.tsx` | 15 | 0 |
 | Mobile | `Mobile/src/context/AdminDataContext.tsx` | 4 | 0 |
 | Mobile | `Mobile/src/data/catalog.ts` | 89 | 0 |
-| Mobile | `Mobile/src/domain/academics/GradeBookService.ts` | 15 | 0 |
 | Mobile | `Mobile/src/domain/communication/MessageService.ts` | 19 | 0 |
 | Mobile | `Mobile/src/lib/academicPeriods.ts` | 39 | 0 |
 | Mobile | `Mobile/src/lib/attendanceDraft.ts` | 3 | 0 |
@@ -157,7 +157,7 @@
 | Mobile | `Mobile/src/lib/coursePlanning.ts` | 15 | 0 |
 | Mobile | `Mobile/src/lib/dataTruth.ts` | 10 | 0 |
 | Mobile | `Mobile/src/lib/evaluationsV2.ts` | 15 | 0 |
-| Mobile | `Mobile/src/lib/financeCurrency.ts` | 2 | 0 |
+| Mobile | `Mobile/src/lib/examEdit.ts` | 9 | 0 |
 | Mobile | `Mobile/src/lib/formFieldTokens.ts` | 1 | 0 |
 | Mobile | `Mobile/src/lib/formFieldValidation.ts` | 13 | 0 |
 | Mobile | `Mobile/src/lib/format.ts` | 9 | 0 |
@@ -170,8 +170,10 @@
 | Mobile | `Mobile/src/lib/schoolAcademicPeriods.ts` | 84 | 0 |
 | Mobile | `Mobile/src/lib/schoolLogo.ts` | 1 | 0 |
 | Mobile | `Mobile/src/lib/scope.ts` | 1 | 0 |
+| Mobile | `Mobile/src/lib/studentFicheLot2.ts` | 1 | 0 |
 | Mobile | `Mobile/src/lib/todayPresenceKpi.ts` | 8 | 0 |
 | Mobile | `Mobile/src/lib/unpaidLedger.ts` | 3 | 0 |
+| Mobile | `Mobile/src/lib/unpaidReminders.ts` | 12 | 0 |
 | Mobile | `Mobile/src/lib/userTeacherSync.ts` | 1 | 0 |
 | Mobile | `Mobile/src/models/Note.ts` | 1 | 0 |
 | Mobile | `Mobile/src/models/Paiement.ts` | 1 | 0 |
@@ -181,22 +183,22 @@
 | Mobile | `Mobile/src/offline/l1/repository.ts` | 2 | 0 |
 | Mobile | `Mobile/src/offline/l1/schema.ts` | 1 | 0 |
 | Mobile | `Mobile/src/offline/l1/uiProjection.ts` | 1 | 0 |
-| Mobile | `Mobile/src/screens/AdminCrudScreen.tsx` | 121 | 0 |
 | Mobile | `Mobile/src/screens/AnnouncementsScreen.tsx` | 10 | 0 |
-| Mobile | `Mobile/src/screens/HomeScreen.tsx` | 5 | 0 |
+| Mobile | `Mobile/src/screens/ExamsScreen.tsx` | 8 | 0 |
+| Mobile | `Mobile/src/screens/FeeGridsScreen.tsx` | 1 | 0 |
 | Mobile | `Mobile/src/screens/InternalNotificationsScreen.tsx` | 3 | 0 |
 | Mobile | `Mobile/src/screens/MessagesScreen.tsx` | 4 | 0 |
-| Mobile | `Mobile/src/screens/PlatformNotificationsScreen.tsx` | 4 | 0 |
 | Mobile | `Mobile/src/screens/ReportCardsScreen.tsx` | 3 | 0 |
 | Mobile | `Mobile/src/screens/SchoolYearSettingsScreen.tsx` | 33 | 0 |
+| Mobile | `Mobile/src/screens/StudentDetailScreen.tsx` | 6 | 0 |
 | Mobile | `Mobile/src/screens/StudentPaymentsScreen.tsx` | 4 | 0 |
 | Mobile | `Mobile/src/screens/StudentPresencesScreen.tsx` | 1 | 0 |
 | Mobile | `Mobile/src/screens/StudentsScreen.tsx` | 2 | 0 |
 | Mobile | `Mobile/src/screens/TeacherAttendanceScreen.tsx` | 15 | 0 |
 | Mobile | `Mobile/src/screens/TeacherGradesScreen.tsx` | 15 | 0 |
 | Mobile | `Mobile/src/screens/TimetableScreen.tsx` | 7 | 0 |
-| Mobile | `Mobile/src/screens/UnpaidScreen.tsx` | 1 | 0 |
-| Mobile | `Mobile/src/services/api.ts` | 9 | 0 |
+| Mobile | `Mobile/src/screens/UnpaidScreen.tsx` | 2 | 0 |
+| Mobile | `Mobile/src/services/api.ts` | 17 | 0 |
 | Mobile | `Mobile/src/services/domainHydrationApi.ts` | 3 | 0 |
 | Mobile | `Mobile/src/services/internalNotificationsApi.ts` | 2 | 0 |
 | Mobile | `Mobile/src/services/schoolSettingsApi.ts` | 6 | 0 |

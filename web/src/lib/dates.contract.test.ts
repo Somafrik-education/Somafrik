@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   DISPLAY_DATE_HINT,
@@ -8,6 +11,13 @@ import {
   parsePeriodDate,
   toApiDate,
 } from "./dates";
+import { canSendReminder } from "./unpaidModule";
+import type { PaymentReminder } from "../types";
+
+const unpaidModuleSrc = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "unpaidModule.ts"),
+  "utf8",
+);
 
 describe("contrat date Somafrik JJ-MM-AAAA", () => {
   it("formate les dates ISO sans décalage de jour", () => {
@@ -42,6 +52,30 @@ describe("contrat date Somafrik JJ-MM-AAAA", () => {
     expect(formatDateForDisplay(null)).toBe("");
     expect(formatDateForDisplay(undefined)).toBe("");
     expect(formatDateForDisplay("not-a-date")).toBe("");
+  });
+
+  it("PARITY-082 — message cooldown relance = JJ-MM-AAAA, pas locale courte", () => {
+    const now = new Date("2026-09-19T12:00:00.000Z");
+    const reminder = {
+      id: "rem-1",
+      studentId: "STU-1",
+      schoolCode: "CD-IN-26-001",
+      recipient: "Parent",
+      channel: "IN_APP",
+      message: "x",
+      sentAt: "2026-09-17T09:00:00.000Z",
+      sendStatus: "Envoyée",
+    } as PaymentReminder;
+    const gate = canSendReminder([reminder], "STU-1", 3, now);
+    expect(gate.allowed).toBe(false);
+    expect(gate.message).toContain("17-09-2026");
+    expect(gate.message).not.toMatch(/sept\.|septembre/i);
+  });
+
+  it("PARITY-082 — unpaidModule délègue à formatDateForDisplay", () => {
+    expect(unpaidModuleSrc).toMatch(/formatDateForDisplay/);
+    expect(unpaidModuleSrc).not.toMatch(/toLocaleDateString/);
+    expect(unpaidModuleSrc).not.toMatch(/function formatFrDate/);
   });
 
   it("convertit les timestamps dans le fuseau local du navigateur", () => {
