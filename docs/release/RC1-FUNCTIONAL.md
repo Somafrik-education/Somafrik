@@ -30,7 +30,7 @@ Elles restent **à rejouer** sur un environnement isolé avec PostgreSQL.
 
 ## Résultat runner (cette VM)
 
-**20 PASS / 4 FAIL / 24** — `node v22.14.0`, pas de Docker, pas de `DATABASE_URL`.
+**20 PASS / 4 FAIL / 24** — rejoué sur `develop@e457934f` (`node v22.14.0`, pas de Docker, pas de `DATABASE_URL`). Les 4 FAIL restent classés P2/P3/SKIP (pas des P0).
 
 | ID | Exit | Classification RC1 |
 |----|------|--------------------|

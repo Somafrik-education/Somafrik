@@ -48,7 +48,7 @@
 | Contrôle | Résultat |
 |----------|----------|
 | SecureStore / HTTPS | `verify:mobile-security` |
-| HelpHost hors navigator | **FAIL produit P0** — RQ-717 |
+| HelpHost hors navigator | **PASS** — RQ-717 **CLOSED** (`navigationRef`) |
 | Storage legacy AAB | source **PASS** — AAB store **SKIP** |
 | Push token révocable live | **SKIP** |
 
@@ -56,7 +56,7 @@
 
 | ID | Sévérité | Statut |
 |----|----------|--------|
-| RQ-717 HelpHost crash | P0 | OPEN |
+| RQ-717 HelpHost crash | P0 | **CLOSED / PASS** (`e457934f`) |
 | RQ-645 Push mobile non prouvé | P0 | OPEN (runtime) |
 | RQ-646 Web Push absent | P1 | OPEN |
 | RQ-503 preuves live / umbrella | P1 | OPEN |

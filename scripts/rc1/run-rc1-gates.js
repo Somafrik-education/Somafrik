@@ -80,7 +80,7 @@ function main() {
   const summary = {
     startedAt,
     finishedAt: new Date().toISOString(),
-    baseline: "develop@afa01321a42df3cfe825a789fc1a948ea0bf1e4c",
+    baseline: process.env.RC1_BASELINE || require("node:child_process").execSync("git rev-parse HEAD", { encoding: "utf8" }).trim(),
     environment: {
       docker: false,
       databaseUrl: Boolean(String(process.env.DATABASE_URL ?? "").trim()),
