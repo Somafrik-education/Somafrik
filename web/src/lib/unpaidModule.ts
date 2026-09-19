@@ -9,7 +9,7 @@ import type {
   UnpaidSeverity,
 } from "../types";
 import { scopedStudents } from "./establishment";
-import { daysLateFromPeriodDate, isPeriodDateBefore } from "./dates";
+import { daysLateFromPeriodDate, formatDateForDisplay, isPeriodDateBefore } from "./dates";
 import { normalize } from "./format";
 import { isPaymentCounted } from "./quickPayment";
 import { scopedStudentFees } from "./fees";
@@ -353,16 +353,10 @@ export function canSendReminder(
     return {
       allowed: false,
       lastReminderAt: recent.sentAt,
-      message: `Une relance a déjà été envoyée le ${formatFrDate(recent.sentAt)}. Attendez ${cooldownDays - daysSince} jour(s) ou confirmez l'envoi.`,
+      message: `Une relance a déjà été envoyée le ${formatDateForDisplay(recent.sentAt) || recent.sentAt}. Attendez ${cooldownDays - daysSince} jour(s) ou confirmez l'envoi.`,
     };
   }
   return { allowed: true, lastReminderAt: recent.sentAt };
-}
-
-function formatFrDate(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 /** IMP-009 */

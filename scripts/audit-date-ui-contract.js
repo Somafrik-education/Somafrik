@@ -8,6 +8,8 @@ const TARGETS = [
   { platform: "Web", root: path.join(ROOT, "web", "src"), uiSegments: ["pages", "components", "design-system"] },
   { platform: "Mobile", root: path.join(ROOT, "Mobile", "src"), uiSegments: ["screens", "components"] },
 ];
+/** Lib métier avec date visible utilisateur — ne plus échapper au scan D7. */
+const FORCE_UI_FILES = new Set(["web/src/lib/unpaidModule.ts"]);
 const EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"]);
 const IGNORE = /(?:\.test\.|\.spec\.|__tests__|\/lib\/dates\.(?:ts|js)$)/;
 const DATE_NAME = /\b(?:date|Date|startDate|endDate|birthDate|dueDate|paidAt|createdAt|updatedAt|scheduledAt|publishedAt|sentAt|enrollmentDate|paymentDate|attendanceDate)\b/g;
@@ -41,7 +43,8 @@ for (const target of TARGETS) {
     if (IGNORE.test(`/${relative}`)) continue;
     const source = fs.readFileSync(file, "utf8");
     const scanSource = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-    const isUi = target.uiSegments.some((segment) => relative.includes(`/${segment}/`));
+    const isUi =
+      target.uiSegments.some((segment) => relative.includes(`/${segment}/`)) || FORCE_UI_FILES.has(relative);
     const dateTerms = [...source.matchAll(DATE_NAME)].length;
     const dateInputs = target.platform === "Web" ? [...scanSource.matchAll(/type\s*=\s*["']date["']/g)].length : 0;
     if (dateTerms || dateInputs) inventory.push({ platform: target.platform, file: relative, dateTerms, dateInputs });

@@ -90,8 +90,8 @@ Les tests Web et Mobile couvrent notamment :
 1. le contrôle / refactor déterministe du contrat de date ;
 2. la validation stricte des dates civiles ;
 3. la régénération de l'inventaire ;
-4. le scanner statique Web / Mobile ;
-5. les tests contractuels Web ;
+4. le scanner statique Web / Mobile (pages/composants **et** `web/src/lib/unpaidModule.ts`) ;
+5. les tests contractuels Web (`dates.contract.test.ts`, dont PARITY-082 `unpaidModule`) ;
 6. les tests contractuels Mobile ;
 7. le build Web ;
 8. le typecheck Mobile.
