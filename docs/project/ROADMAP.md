@@ -1,7 +1,7 @@
 # Roadmap produit — Somafrik
 
 **Statut :** source de vérité officielle des développements  
-**Dernière mise à jour :** 2026-08-13
+**Dernière mise à jour :** 2026-09-14
 **Branche de référence :** `develop`  
 **Suivi Design System granulaire :** [../ux/design-system/SUIVI-MIGRATIONS.md](../ux/design-system/SUIVI-MIGRATIONS.md)
 
@@ -93,6 +93,21 @@ La plateforme unifie :
 ## 7. Modules planifiés
 
 Voir phases F → J ci-dessous.
+
+### 7.1 Environnement Démo commercial (vitrine → Demo)
+
+Audit CTO 2026-09-14 (`develop@5409019c`) : **GO**, pas de bouton vers une copie de préproduction.
+
+| Lot | Périmètre | Statut |
+|-----|-----------|--------|
+| DEMO-0 | Contrat, menaces, qualification, tests RED d’absence | 🚧 cette PR |
+| DEMO-1 | Vitrine `/demo`, CTA, feature flag | 📋 |
+| DEMO-2 | `APP_ENV=demo`, API, PostgreSQL, session, `demo:reset` | 📋 |
+| DEMO-3 | Web Demo (watermark, sandbox, noindex) | 📋 |
+| DEMO-4 | Mobile Demo (`FLAG_SECURE`, iOS honnête) | 📋 |
+| DEMO-5 | E2E + conversion `/demande-essai` + analytics | 📋 |
+
+Contrat : [ADR-DEMO-SHOWCASE-LOT0.md](./ADR-DEMO-SHOWCASE-LOT0.md) · gate `verify:demo-lot0`. `/demande-essai` reste distinct.
 
 ## 8. Dette technique
 
