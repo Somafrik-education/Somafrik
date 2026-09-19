@@ -160,6 +160,13 @@ function sourceGuards() {
   assert.match(auth, /dismissPendingPushNavigation/);
   assert.match(api, /revokeCurrentPushDevice/);
   assert.match(gitignore, /firebase-adminsdk/);
+  assert.doesNotMatch(mobile, /if \(resolvedExpoGoConfig != null\) return false/);
+  assert.match(mobile, /hostUri/);
+  assert.match(mobile, /debuggerHost/);
+  assert.match(mobile, /export function isNativePushCompatible/);
+  assert.match(mobile, /if \(env === "storeClient"\) return false/);
+  assert.match(mobile, /return env === "bare" \|\| env === "standalone";/);
+  assert.doesNotMatch(mobile, /env === "bare" \|\| env === "standalone" \|\| env === "storeClient"/);
   assert.doesNotMatch(mobile, /console\.log\([^)]*expoPushToken/);
   const example = read("Mobile/google-services.json.example");
   assert.doesNotMatch(example, /private_key/);
