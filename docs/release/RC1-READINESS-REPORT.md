@@ -4,10 +4,10 @@
 |--|--|
 | Chantier | [#720](https://github.com/Somafrik-education/Somafrik/issues/720) |
 | Mandat | [#719](https://github.com/Somafrik-education/Somafrik/issues/719) |
-| État CTO | commentaire `#5744875678` — HOLD ; G0 en contrôle ; G1 à exécuter |
-| Baseline | `develop@afa01321a42df3cfe825a789fc1a948ea0bf1e4c` |
+| État CTO | `#5745035236` — RC1 HOLD après merge #717 |
+| Baseline | `develop@e457934f772ac2d509225ebd6cf12ad95b51215a` |
 | Branche | `cursor/release-rc1-readiness-090d` |
-| G0 | PR #721 Draft HEAD `75753dc` — **non modifié** par ce lot |
+| G0 | PR #721 Draft — rebase séparé |
 
 ## Verdict
 
@@ -15,7 +15,7 @@
 
 Causes exactes :
 
-1. **P0 ≠ 0** — #717 HelpHost crash toujours dans le tree baseline.
+1. **P0 #717 CLOSED / PASS** — merge `e457934f` (ne bloque plus RC1).
 2. **P0 non levé** — #645 Mobile Push : pas de preuve device / préprod.
 3. **P1 ≠ 0** — #646 Web Push absent ; #503 umbrella sans re-preuve live.
 4. **E2E métier UI→PG** — non exécuté (agent sans Docker / PostgreSQL / comptes préprod).
@@ -29,7 +29,7 @@ G2–G7 restent interdites.
 
 | Famille | Livrable | Statut |
 |---------|----------|--------|
-| E2E métier | [RC1-E2E-MATRIX.md](./RC1-E2E-MATRIX.md) | BLOCKED / FAIL produit (#717, #646) |
+| E2E métier | [RC1-E2E-MATRIX.md](./RC1-E2E-MATRIX.md) | BLOCKED / FAIL produit (#646) ; #717 PASS |
 | Fonctionnel | [RC1-FUNCTIONAL.md](./RC1-FUNCTIONAL.md) + [evidence/rc1-functional-results.json](./evidence/rc1-functional-results.json) | **20/24 PASS** isolé ; 4 FAIL classés P2/P3/SKIP |
 | Performance | [RC1-PERFORMANCE.md](./RC1-PERFORMANCE.md) + [evidence/rc1-performance-results.json](./evidence/rc1-performance-results.json) | harness PASS mémoire ; PG non mesuré |
 | Sécurité | [RC1-SECURITY.md](./RC1-SECURITY.md) | défensif + requalification |
@@ -39,7 +39,7 @@ G2–G7 restent interdites.
 
 | Sévérité | Ouverts | IDs |
 |----------|---------|-----|
-| P0 | 2 | RQ-717, RQ-645 |
+| P0 | 1 | RQ-645 |
 | P1 | 2 | RQ-646, RQ-503 |
 | P2 | 2 | RQ-499 (AAB), JWT HS256 vs checklist RS256 |
 | P3 | 1 | RQ-510 |
@@ -58,8 +58,8 @@ G2–G7 restent interdites.
 
 Rester **HOLD**.  
 Ne pas Ready / merger cette PR comme « RC1 PASS ».  
-Correctifs P0 (#717 au minimum, sur mandat CTO dédié) **avant** toute prétention de qualification.  
-Rejouer `verify:e2e-api` + harness perf contre un stack isolé PG, puis seulement reconsidérer G2.
+#717 est **CLOSED**. Prochain P0 : **#645** (preuve device / préprod).  
+Rejouer `verify:e2e-api` + harness perf contre un stack isolé PG. **G2 interdite.**
 
 ## STOP
 

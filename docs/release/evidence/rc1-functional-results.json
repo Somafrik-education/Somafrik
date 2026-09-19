@@ -1,7 +1,7 @@
 {
-  "startedAt": "2026-09-19T20:04:43.056Z",
-  "finishedAt": "2026-09-19T20:05:33.310Z",
-  "baseline": "develop@afa01321a42df3cfe825a789fc1a948ea0bf1e4c",
+  "startedAt": "2026-09-19T20:31:00.534Z",
+  "finishedAt": "2026-09-19T20:31:40.438Z",
+  "baseline": "develop@e457934f772ac2d509225ebd6cf12ad95b51215a",
   "environment": {
     "docker": false,
     "databaseUrl": false,
@@ -19,7 +19,7 @@
       "command": "npm run verify:security-disclosure",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 557,
+      "durationMs": 445,
       "evidence": "> verify:security-disclosure\n> node scripts/verify-security-disclosure.js\n\nverify:security-disclosure OK (T-F-01…T-F-05)"
     },
     {
@@ -28,7 +28,7 @@
       "command": "npm run verify:jwt-header",
       "status": "FAIL",
       "exitCode": 1,
-      "durationMs": 10745,
+      "durationMs": 8313,
       "evidence": "OK http: Bearer + ?token= → 401 (fail-closed)\nOK http: JWT absent → 401\nOK http: JWT invalide → 401\nOK http: report.pdf ?access_token= → 401\n\nverify-jwt-header: FAIL\nAssertionError [ERR_ASSERTION]: report.pdf Bearer doit être 200 (reçu 500)\n\n500 !== 200\n\n    at assertPositivePdf (/workspace/backend/scripts/verify-jwt-header.js:433:10)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runHttpTests (/workspace/backend/scripts/verify-jwt-header.js:513:3)\n    at async main (/workspace/backend/scripts/verify-jwt-header.js:558:5) {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 500,\n  expected: 200,\n  operator: 'strictEqual'\n}"
     },
     {
@@ -37,7 +37,7 @@
       "command": "npm run verify:db-config",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 405,
+      "durationMs": 323,
       "evidence": "\n\n> somafrik-backend@1.0.0 verify:db-config\n> node scripts/verify-db-config.js\n\nOK unit: configuration discrète valide\nOK unit: DATABASE_URL valide\nOK unit: variable obligatoire absente → FAIL\nOK unit: ports invalides → FAIL\nOK unit: DB_POOL_MAX défaut conservateur + valeurs invalides → FAIL\nOK unit: production + config incomplète → FAIL\nOK unit: production + localhost → FAIL\nOK unit: aucun fallback mémoire en production\nOK unit: aucun seed automatique en production\nOK unit: validation SSL (y compris valeurs invalides)\nOK unit: messages d'erreur sans secrets\nOK static: aucun secret BD codé en dur (backend applicatif)\nOK runtime: initializeRepository production incomplète → FAIL\nOK runtime: development + SOMAFRIK_DB_REQUIRED=false sans DB → memory\nverify-db-config: SUCCESS"
     },
     {
@@ -46,7 +46,7 @@
       "command": "npm run verify:mobile-security",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 341,
+      "durationMs": 262,
       "evidence": "\n> somafrik-mobile@1.2.1 verify:mobile-security\n> node scripts/verify-mobile-security.js\n\nOK: SecureStore pour les tokens\nOK: aucun AsyncStorage/MMKV pour tokens\nOK: logs sans tokens\nOK: Authorization Header centralisé + timeout global unique\nOK: validation URL / HTTPS production\nOK: téléchargement sécurisé (adaptateur documenté)\nOK: aucun secret embarqué\nOK: permissions minimales (CAMERA uniquement, pas de READ_MEDIA_IMAGES)\nOK: variables d'environnement\nOK: architecture certificate pinning préparée\nOK: nettoyage déconnexion\nOK: dépendances sécurité\nOK: logs verbeux désactivés en production\nOK: upload validation comportementale (maxBytes / MIME / taille)\nOK: routes publiques restreintes (pas de préfixe /schools/ large)\nverify-mobile-security: SUCCESS"
     },
     {
@@ -55,7 +55,7 @@
       "command": "npm run verify:android-release-readiness",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 721,
+      "durationMs": 527,
       "evidence": "PASS AR-CONFIG package=com.somafrik.app scheme=somafrik\nPASS AR-VERSION app.json=1.2.1 versionCode=13 eas.remote\nPASS AR-API-binding production≠preprod HTTPS fail-closed\nPASS AR-EAS preview=apk/internal store=aab remote versionCode pas de submit\nPASS AR-NATIVE expo54 / RN 0.81.5 / worklets (contrat package.json, pas expo-doctor ici)\nPASS AR-PERMS CAMERA only ; READ_MEDIA_IMAGES + READ/WRITE_EXTERNAL_STORAGE tools:node=remove ; RECORD_AUDIO bloqué ; backup off\nPASS AR-ASSETS icon iOS + Android adaptive foreground + splash PNG ≥1024\nOK: scaffold Maestro 10 YAML + contrat anti-faux-E2E (pas d'exécution APK)\nPASS AR-AUTH-contract Maestro scaffold + login/nav specs (pas d'exécution appareil)\nPASS AR-FIREBASE-CLIENT package=com.somafrik.app project=somafrik-12424\nPASS AR-SECRETS aucun keystore/apk/aab/service-account suivi ; config Firebase cliente validée\nPASS AR-GATE-scripts nightly + LOT7 retargeté AAB isolé ; PR gates ≠ release-readiness lourd\nPASS AR-RC3-out-of-release (audit parked, pas de cherry-pick)\nHOLD AR-API-preprod-live status=200 error=- (config PASS ; live ≠ SHA)\nHOLD AR-API-prod-live status=200 error=-\nMANUAL_BLOCKER AR-PHYSICAL adb=false devices=0 adb absent de ce runtime\nMANUAL_BLOCKER AR-INSTALL — pas d'APK/AAB GitHub ; eas build non lancé\nMANUAL_BLOCKER AR-LOGIN-DEVICE — login/nav physique non exécutable ici\nMANUAL_BLOCKER AR-OFFLINE-DEVICE — kill-relaunch physique hors de cette VM ; RC2 contrat code only ; RC3 HORS_RELEASE\nOK verify-android-release-readiness — config automatisable PASS ; physique = MANUAL BLOCKER"
     },
     {
@@ -64,7 +64,7 @@
       "command": "npm run verify:rbac-s1-4",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 240,
+      "durationMs": 189,
       "evidence": "> verify:rbac-s1-4\n> npm --prefix backend run verify:rbac-s1-4\n\n\n> somafrik-backend@1.0.0 verify:rbac-s1-4\n> node scripts/verify-rbac-s1-4.js\n\nOK unit: matrice RBAC + scope MVP + fail-closed\nSKIP http: API non joignable\nverify-rbac-s1-4: SUCCESS"
     },
     {
@@ -73,7 +73,7 @@
       "command": "npm run verify:rbac-admin-01",
       "status": "FAIL",
       "exitCode": 1,
-      "durationMs": 229,
+      "durationMs": 177,
       "evidence": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes(\"teachers\"))\n\n    at runUnitTests (/workspace/backend/scripts/verify-rbac-admin-01.js:29:10)\n    at main (/workspace/backend/scripts/verify-rbac-admin-01.js:245:3)\n    at Object.<anonymous> (/workspace/backend/scripts/verify-rbac-admin-01.js:249:1)\n    at Module._compile (node:internal/modules/cjs/loader:1554:14)\n    at Object..js (node:internal/modules/cjs/loader:1706:10)\n    at Module.load (node:internal/modules/cjs/loader:1289:32)\n    at Function._load (node:internal/modules/cjs/loader:1108:12)\n    at TracingChannel.traceSync (node:diagnostics_channel:322:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:220:24)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:170:5) {\n  generatedMessage: true,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: '=='\n}"
     },
     {
@@ -82,8 +82,8 @@
       "command": "npm run verify:notes-sync",
       "status": "FAIL",
       "exitCode": 1,
-      "durationMs": 252,
-      "evidence": "      ...\n    1..4\nnot ok 1 - J2A — plus d'import backoffice_state au boot\n  ---\n  duration_ms: 4.173531\n  type: 'suite'\n  location: '/workspace/backend/lib/legacyBootMigrations.guard.test.js:17:1'\n  failureType: 'subtestsFailed'\n  error: '1 subtest failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..1\n# tests 4\n# suites 1\n# pass 3\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 129.55904"
+      "durationMs": 185,
+      "evidence": "      ...\n    1..4\nnot ok 1 - J2A — plus d'import backoffice_state au boot\n  ---\n  duration_ms: 3.132208\n  type: 'suite'\n  location: '/workspace/backend/lib/legacyBootMigrations.guard.test.js:17:1'\n  failureType: 'subtestsFailed'\n  error: '1 subtest failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..1\n# tests 4\n# suites 1\n# pass 3\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 90.554123"
     },
     {
       "id": "LOT0-PARITY",
@@ -91,8 +91,8 @@
       "command": "npm run test:lot0-parity",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 3912,
-      "evidence": "# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 193.928366\nattendanceTruth.test.ts OK\nuserAccountRules.test.ts OK\n\n> somafrik-web@1.0.0 test\n> vitest run src/components/ProtectedRoute.lot0.test.tsx src/lib/userAccountRules.test.ts src/pages/LoginPage.lot0.test.tsx\n\n\n RUN  v4.1.10 /workspace/web\n\n\n Test Files  3 passed (3)\n      Tests  7 passed (7)\n   Start at  20:04:58\n   Duration  1.55s (transform 359ms, setup 430ms, import 473ms, tests 260ms, environment 2.13s)"
+      "durationMs": 2690,
+      "evidence": "# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 143.12986\nattendanceTruth.test.ts OK\nuserAccountRules.test.ts OK\n\n> somafrik-web@1.0.0 test\n> vitest run src/components/ProtectedRoute.lot0.test.tsx src/lib/userAccountRules.test.ts src/pages/LoginPage.lot0.test.tsx\n\n\n RUN  v4.1.10 /workspace/web\n\n\n Test Files  3 passed (3)\n      Tests  7 passed (7)\n   Start at  20:31:12\n   Duration  1.09s (transform 287ms, setup 294ms, import 408ms, tests 154ms, environment 1.52s)"
     },
     {
       "id": "LOT1-PARITY",
@@ -100,8 +100,8 @@
       "command": "npm run test:lot1-parity",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 2566,
-      "evidence": "  ...\n# Subtest: PARITY-037 alias backoffice pose Deprecation + successor-version\nok 4 - PARITY-037 alias backoffice pose Deprecation + successor-version\n  ---\n  duration_ms: 0.196243\n  ...\n# Subtest: PARITY-037 alias PUT pointe vers school-activation canonique\nok 5 - PARITY-037 alias PUT pointe vers school-activation canonique\n  ---\n  duration_ms: 0.118764\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 763.473462"
+      "durationMs": 2128,
+      "evidence": "  ...\n# Subtest: PARITY-037 alias backoffice pose Deprecation + successor-version\nok 4 - PARITY-037 alias backoffice pose Deprecation + successor-version\n  ---\n  duration_ms: 0.154513\n  ...\n# Subtest: PARITY-037 alias PUT pointe vers school-activation canonique\nok 5 - PARITY-037 alias PUT pointe vers school-activation canonique\n  ---\n  duration_ms: 0.089559\n  ...\n1..5\n# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 714.020635"
     },
     {
       "id": "LOT2-PARITY",
@@ -109,8 +109,8 @@
       "command": "npm run test:lot2-parity",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 1541,
-      "evidence": "  ...\n# Subtest: PARITY-014 : 403/500 ne deviennent pas « aucun responsable »\nok 5 - PARITY-014 : 403/500 ne deviennent pas « aucun responsable »\n  ---\n  duration_ms: 0.303186\n  ...\n# Subtest: PARITY-014 : offline → état offline + Indisponible\nok 6 - PARITY-014 : offline → état offline + Indisponible\n  ---\n  duration_ms: 0.102564\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 206.766946"
+      "durationMs": 1130,
+      "evidence": "  ...\n# Subtest: PARITY-014 : 403/500 ne deviennent pas « aucun responsable »\nok 5 - PARITY-014 : 403/500 ne deviennent pas « aucun responsable »\n  ---\n  duration_ms: 0.242794\n  ...\n# Subtest: PARITY-014 : offline → état offline + Indisponible\nok 6 - PARITY-014 : offline → état offline + Indisponible\n  ---\n  duration_ms: 0.076108\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 152.311022"
     },
     {
       "id": "LOT3-PARITY",
@@ -118,8 +118,8 @@
       "command": "npm run test:lot3-parity",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 6509,
-      "evidence": "   Start at  20:05:05\n   Duration  1.77s (transform 829ms, setup 385ms, import 963ms, tests 355ms, environment 1.91s)\n\nTAP version 13\n# mobileCrudParity.test.ts OK\n# Subtest: Mobile/src/lib/mobileCrudParity.test.ts\nok 1 - Mobile/src/lib/mobileCrudParity.test.ts\n  ---\n  duration_ms: 204.968051\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 213.154398\nverify-teacher-account-creation.js: OK"
+      "durationMs": 5119,
+      "evidence": "   Start at  20:31:18\n   Duration  1.36s (transform 576ms, setup 302ms, import 725ms, tests 235ms, environment 1.56s)\n\nTAP version 13\n# mobileCrudParity.test.ts OK\n# Subtest: Mobile/src/lib/mobileCrudParity.test.ts\nok 1 - Mobile/src/lib/mobileCrudParity.test.ts\n  ---\n  duration_ms: 134.742778\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 140.611378\nverify-teacher-account-creation.js: OK"
     },
     {
       "id": "LOT4-PARITY",
@@ -127,8 +127,8 @@
       "command": "npm run test:lot4-parity",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 4990,
-      "evidence": "  ...\n# Subtest: list ignore un sentAt invalide sans provoquer de réponse 500\nok 5 - list ignore un sentAt invalide sans provoquer de réponse 500\n  ---\n  duration_ms: 0.291699\n  ...\n# Subtest: list filtre la période avant agrégation — même élève T1+T2\nok 6 - list filtre la période avant agrégation — même élève T1+T2\n  ---\n  duration_ms: 0.664553\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 67.904757"
+      "durationMs": 3751,
+      "evidence": "  ...\n# Subtest: list ignore un sentAt invalide sans provoquer de réponse 500\nok 5 - list ignore un sentAt invalide sans provoquer de réponse 500\n  ---\n  duration_ms: 0.226561\n  ...\n# Subtest: list filtre la période avant agrégation — même élève T1+T2\nok 6 - list filtre la période avant agrégation — même élève T1+T2\n  ---\n  duration_ms: 0.792624\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 52.451184"
     },
     {
       "id": "LOT5-PARITY",
@@ -136,8 +136,8 @@
       "command": "npm run test:lot5-parity",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 4088,
-      "evidence": "  ...\n# Subtest: classifyExamStatuses autorise published et refuse un statut inconnu\nok 8 - classifyExamStatuses autorise published et refuse un statut inconnu\n  ---\n  duration_ms: 0.652687\n  ...\n# Subtest: resolveBulletinDesignForStudent n'utilise plus academicConfigs JSON\nok 9 - resolveBulletinDesignForStudent n'utilise plus academicConfigs JSON\n  ---\n  duration_ms: 0.686449\n  ...\n1..9\n# tests 9\n# suites 0\n# pass 9\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 51.081596"
+      "durationMs": 3312,
+      "evidence": "  ...\n# Subtest: classifyExamStatuses autorise published et refuse un statut inconnu\nok 8 - classifyExamStatuses autorise published et refuse un statut inconnu\n  ---\n  duration_ms: 0.547237\n  ...\n# Subtest: resolveBulletinDesignForStudent n'utilise plus academicConfigs JSON\nok 9 - resolveBulletinDesignForStudent n'utilise plus academicConfigs JSON\n  ---\n  duration_ms: 0.555494\n  ...\n1..9\n# tests 9\n# suites 0\n# pass 9\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 41.819196"
     },
     {
       "id": "LOT6-PARITY",
@@ -145,8 +145,8 @@
       "command": "npm run test:lot6-parity",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 2082,
-      "evidence": "# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 173.335632\n\n> somafrik-web@1.0.0 test\n> vitest run src/lib/dashboardPermissions.test.ts\n\n\n RUN  v4.1.10 /workspace/web\n\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  20:05:21\n   Duration  1.05s (transform 252ms, setup 109ms, import 265ms, tests 20ms, environment 531ms)"
+      "durationMs": 1676,
+      "evidence": "# tests 5\n# suites 0\n# pass 5\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 139.139209\n\n> somafrik-web@1.0.0 test\n> vitest run src/lib/dashboardPermissions.test.ts\n\n\n RUN  v4.1.10 /workspace/web\n\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  20:31:29\n   Duration  838ms (transform 203ms, setup 89ms, import 215ms, tests 17ms, environment 417ms)"
     },
     {
       "id": "LOT7-PARITY",
@@ -154,8 +154,8 @@
       "command": "npm run test:lot7-parity",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 1964,
-      "evidence": "# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 206.206813\n\n> somafrik-web@1.0.0 test\n> vitest run src/lib/classTodayPresenceBadge.test.ts\n\n\n RUN  v4.1.10 /workspace/web\n\n\n Test Files  1 passed (1)\n      Tests  10 passed (10)\n   Start at  20:05:23\n   Duration  822ms (transform 63ms, setup 118ms, import 39ms, tests 6ms, environment 512ms)"
+      "durationMs": 1508,
+      "evidence": "# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 139.713219\n\n> somafrik-web@1.0.0 test\n> vitest run src/lib/classTodayPresenceBadge.test.ts\n\n\n RUN  v4.1.10 /workspace/web\n\n\n Test Files  1 passed (1)\n      Tests  10 passed (10)\n   Start at  20:31:31\n   Duration  629ms (transform 54ms, setup 92ms, import 34ms, tests 5ms, environment 408ms)"
     },
     {
       "id": "LOT8-PARITY",
@@ -163,8 +163,8 @@
       "command": "npm run test:lot8-parity",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 641,
-      "evidence": "  ...\n# Subtest: PARITY-071 — GradeBookService Mobile orphelin supprimé\nok 5 - PARITY-071 — GradeBookService Mobile orphelin supprimé\n  ---\n  duration_ms: 0.258069\n  ...\n# Subtest: PARITY-035/056/061/027/071 — gate CI lot8 extensible avec LOT 0–7\nok 6 - PARITY-035/056/061/027/071 — gate CI lot8 extensible avec LOT 0–7\n  ---\n  duration_ms: 0.348477\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 190.40706"
+      "durationMs": 552,
+      "evidence": "  ...\n# Subtest: PARITY-071 — GradeBookService Mobile orphelin supprimé\nok 5 - PARITY-071 — GradeBookService Mobile orphelin supprimé\n  ---\n  duration_ms: 0.213625\n  ...\n# Subtest: PARITY-035/056/061/027/071 — gate CI lot8 extensible avec LOT 0–7\nok 6 - PARITY-035/056/061/027/071 — gate CI lot8 extensible avec LOT 0–7\n  ---\n  duration_ms: 0.289625\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 142.225117"
     },
     {
       "id": "HELP-V1A",
@@ -172,8 +172,8 @@
       "command": "npm run verify:help-v1a-catalogue",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 316,
-      "evidence": "# Subtest: platform console routes keep help for operators without exposing school write procedures\nok 64 - platform console routes keep help for operators without exposing school write procedures\n  ---\n  duration_ms: 0.300383\n  ...\n# Subtest: redirect aliases are explicit exclusions or prefix-mapped, never an accidental gap\nok 65 - redirect aliases are explicit exclusions or prefix-mapped, never an accidental gap\n  ---\n  duration_ms: 0.902581\n  ...\n1..65\n# tests 65\n# suites 0\n# pass 65\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 150.440782\nverify-help-v1a-catalogue: GO"
+      "durationMs": 248,
+      "evidence": "# Subtest: platform console routes keep help for operators without exposing school write procedures\nok 64 - platform console routes keep help for operators without exposing school write procedures\n  ---\n  duration_ms: 0.217635\n  ...\n# Subtest: redirect aliases are explicit exclusions or prefix-mapped, never an accidental gap\nok 65 - redirect aliases are explicit exclusions or prefix-mapped, never an accidental gap\n  ---\n  duration_ms: 1.045403\n  ...\n1..65\n# tests 65\n# suites 0\n# pass 65\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 110.465924\nverify-help-v1a-catalogue: GO"
     },
     {
       "id": "BRANDING",
@@ -181,8 +181,8 @@
       "command": "npm run verify:branding-master",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 207,
-      "evidence": "# Subtest: les SHA BRANDING-V2 lockup/mark sont dans la liste interdite\nok 3 - les SHA BRANDING-V2 lockup/mark sont dans la liste interdite\n  ---\n  duration_ms: 0.093502\n  ...\n# Subtest: assertMasterAsset refuse un PNG qui n'est pas le master\nok 4 - assertMasterAsset refuse un PNG qui n'est pas le master\n  ---\n  duration_ms: 2.701511\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 53.697125\nOK verify:branding-master — assets PLATFORM = master CTO SHA-256 7de03f1c…"
+      "durationMs": 158,
+      "evidence": "# Subtest: les SHA BRANDING-V2 lockup/mark sont dans la liste interdite\nok 3 - les SHA BRANDING-V2 lockup/mark sont dans la liste interdite\n  ---\n  duration_ms: 0.073271\n  ...\n# Subtest: assertMasterAsset refuse un PNG qui n'est pas le master\nok 4 - assertMasterAsset refuse un PNG qui n'est pas le master\n  ---\n  duration_ms: 2.125411\n  ...\n1..4\n# tests 4\n# suites 0\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 39.776804\nOK verify:branding-master — assets PLATFORM = master CTO SHA-256 7de03f1c…"
     },
     {
       "id": "PERSONAL-DATA-DENY",
@@ -190,8 +190,8 @@
       "command": "npm run verify:platform-personal-data-deny",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 1199,
-      "evidence": "# Subtest: P0-2 : fonctions plateforme restent ouvertes\nok 8 - P0-2 : fonctions plateforme restent ouvertes\n  ---\n  duration_ms: 0.106371\n  ...\n# Subtest: P0-2 : seed Superadmin / Admin Pays sans jetons perso\nok 9 - P0-2 : seed Superadmin / Admin Pays sans jetons perso\n  ---\n  duration_ms: 0.648592\n  ...\n1..9\n# tests 9\n# suites 0\n# pass 9\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 83.18336\nverify-platform-personal-data-deny: SUCCESS"
+      "durationMs": 1087,
+      "evidence": "# Subtest: P0-2 : fonctions plateforme restent ouvertes\nok 8 - P0-2 : fonctions plateforme restent ouvertes\n  ---\n  duration_ms: 0.081589\n  ...\n# Subtest: P0-2 : seed Superadmin / Admin Pays sans jetons perso\nok 9 - P0-2 : seed Superadmin / Admin Pays sans jetons perso\n  ---\n  duration_ms: 0.478561\n  ...\n1..9\n# tests 9\n# suites 0\n# pass 9\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 67.487024\nverify-platform-personal-data-deny: SUCCESS"
     },
     {
       "id": "AUTH-SESSIONS",
@@ -199,8 +199,8 @@
       "command": "npm run verify:auth-sessions",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 1570,
-      "evidence": "# Subtest: verify refuse alg none\nok 27 - verify refuse alg none\n  ---\n  duration_ms: 0.306502\n  ...\n# Subtest: jeton nominal HS256 / JWT est accepté\nok 28 - jeton nominal HS256 / JWT est accepté\n  ---\n  duration_ms: 0.36109\n  ...\n1..28\n# tests 28\n# suites 0\n# pass 28\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 157.557403\nverify-auth-sessions: OK"
+      "durationMs": 1467,
+      "evidence": "# Subtest: verify refuse alg none\nok 27 - verify refuse alg none\n  ---\n  duration_ms: 0.283833\n  ...\n# Subtest: jeton nominal HS256 / JWT est accepté\nok 28 - jeton nominal HS256 / JWT est accepté\n  ---\n  duration_ms: 0.308418\n  ...\n1..28\n# tests 28\n# suites 0\n# pass 28\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 140.24272\nverify-auth-sessions: OK"
     },
     {
       "id": "SECRETS",
@@ -208,7 +208,7 @@
       "command": "npm run verify:secrets",
       "status": "FAIL",
       "exitCode": 1,
-      "durationMs": 107,
+      "durationMs": 96,
       "evidence": "> verify:secrets\n> node scripts/verify-secrets.js\n\n\ngitleaks introuvable sur le PATH.\nInstallez la version pinée 8.24.3 :\n  https://github.com/gitleaks/gitleaks/releases\nPuis relancez : npm run verify:secrets"
     },
     {
@@ -217,7 +217,7 @@
       "command": "npm run verify:sanitize-user-responses",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 400,
+      "durationMs": 338,
       "evidence": "> verify:sanitize-user-responses\n> npm --prefix backend run verify:sanitize-user-responses\n\n\n> somafrik-backend@1.0.0 verify:sanitize-user-responses\n> node scripts/verify-sanitize-user-responses.js\n\nOK unit: sanitizeUserForResponse\nOK service: login payloads sanitizés\nSKIP http: API non joignable (lancez le backend pour la vérif HTTP)\nverify-sanitize-user-responses: SUCCESS"
     },
     {
@@ -226,7 +226,7 @@
       "command": "npm run audit:ci",
       "status": "PASS",
       "exitCode": 0,
-      "durationMs": 4666,
+      "durationMs": 4217,
       "evidence": "=== npm audit --omit=dev (root) ===\n[root] 0 vulnérabilités (omit=dev)\n[root] OK : aucune vulnérabilité critical\n\n=== npm audit --omit=dev (backend) ===\n[backend] critical=0 high=1 moderate=4 low=0 info=0\n[backend] avis (non bloquant hors critical) : vulnérabilités signalées ci-dessus\n[backend] OK : aucune vulnérabilité critical\n\n=== npm audit --omit=dev (web) ===\n[web] critical=0 high=2 moderate=2 low=0 info=0\n[web] avis (non bloquant hors critical) : vulnérabilités signalées ci-dessus\n[web] OK : aucune vulnérabilité critical\n\n=== npm audit --omit=dev (Mobile) ===\n[Mobile] critical=0 high=16 moderate=4 low=0 info=0\n[Mobile] avis (non bloquant hors critical) : vulnérabilités signalées ci-dessus\n[Mobile] OK : aucune vulnérabilité critical\n\naudit:ci SUCCESS"
     }
   ]

@@ -24,7 +24,7 @@ Légende : `PASS` · `FAIL` · `SKIP` (prérequis absent) · `BLOCKED` (infra) �
 | E2E-DATES | dates JJ-MM-AAAA | web/mobile | **STATIC** | Contrat date + CI historique #718. Non rejoué ici. |
 | E2E-WEBPUSH | Web Push préprod | school_admin | **FAIL** (produit) | Feature absente — voir RQ-646. |
 | E2E-MOBPUSH | Mobile Push natif | teacher | **SKIP** | RQ-645 — device / credentials hors de cet agent. |
-| E2E-MOBNAV | navigation Expo/RN | teacher | **FAIL** (produit) | RQ-717 HelpHost crash sur baseline. |
+| E2E-MOBNAV | navigation Expo/RN | teacher | **PASS** (contrat) / **SKIP** device | RQ-717 **CLOSED** — `navigationRef` ; smoke appareil non rejoué. |
 
 ## Outils déjà versionnés (non exécutés faute d’API PG)
 
