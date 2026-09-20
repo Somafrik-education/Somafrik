@@ -284,6 +284,22 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
     },
   },
   {
+    id: "M17",
+    title: "App.tsx production hors harnais recette Expo du wizard guidé",
+    run() {
+      const app = read(path.join(mobileRoot, "App.tsx"));
+      const metro = read(path.join(mobileRoot, "metro.config.js"));
+      assertLacks(
+        app,
+        /GuidedSetupUxSmoke|guidedSetupUxSmoke|SOMAFRIK_GUIDED_SETUP_UX_SMOKE_ENTRY/,
+        "M17 App.tsx ne doit pas embarquer le harnais recette",
+      );
+      assertHas(metro, /SOMAFRIK_GUIDED_SETUP_UX_SMOKE_ENTRY === "1"/, "M17 Metro doit brancher l'entrée recette");
+      assertHas(metro, /App\.guidedSetupUxSmoke\.tsx/, "M17 entrée recette Metro manquante");
+      assertLacks(metro, /EXPO_PUBLIC_GUIDED/, "M17 flag EXPO_PUBLIC interdit");
+    },
+  },
+  {
     id: "M13",
     title: "retour Android/iOS ne détruit pas l'avancement sauvegardé",
     run() {
