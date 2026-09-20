@@ -13,14 +13,14 @@ Aucun autre fournisseur d'hébergement Web ne fait partie de la topologie active
 | Composant | Type Render | Service | Branche | URL publique |
 |-----------|-------------|---------|---------|--------------|
 | Web | Static Site | `somafrik-web-preprod` | `develop` | https://preprod.somafrik.app |
-| API | Web Service Node | `somafrik-api-preprod` | `develop` | https://somafrik-api-preprod.onrender.com |
+| API | Web Service Node | `somafrik-api-preprod` | `develop` | https://api-preprod.somafrik.app |
 
 ### Web préproduction
 
 Variables de build :
 
 ```env
-VITE_API_URL=https://somafrik-api-preprod.onrender.com
+VITE_API_URL=https://api-preprod.somafrik.app
 VITE_SHOW_DEMO_ACCOUNTS=false
 VITE_ENABLE_MARKETPLACE=false
 ```
@@ -46,7 +46,7 @@ TRUST_PROXY_HOPS=1
 Health check :
 
 ```text
-https://somafrik-api-preprod.onrender.com/api/health
+https://api-preprod.somafrik.app/api/health
 ```
 
 ## Production
