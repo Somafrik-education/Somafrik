@@ -963,10 +963,10 @@ function createFinancePgStore(repo) {
       );
       return rows.map(mapGridRow);
     },
-    listFinanceStudentFees: async (principal, options = {}) => {
+    listFinanceStudentFees: async (principal) => {
       const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
       if (scope.mode === "none") return [];
-      const studentKey = asTrimmed(options.studentId || options.studentKey);
+      const studentKey = asTrimmed(principal?.financeStudentKey || principal?.financeListOptions?.studentId || principal?.financeListOptions?.studentKey);
       let studentDbId = null;
       if (studentKey) {
         const student = await bind(repo).findStudent(studentKey, principal);
@@ -1182,6 +1182,13 @@ function createFinancePgStore(repo) {
           feeTypes,
         });
       },
+  };
+
+  const listFinanceStudentFeesBound = api.listFinanceStudentFees;
+  api.listFinanceStudentFees = async (principal, options) => {
+    const studentKey = asTrimmed(options?.studentId || options?.studentKey);
+    if (!studentKey) return listFinanceStudentFeesBound(principal);
+    return listFinanceStudentFeesBound({ ...principal, financeStudentKey: studentKey });
   };
 
   return api;
