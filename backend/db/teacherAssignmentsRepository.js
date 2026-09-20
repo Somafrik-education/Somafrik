@@ -174,6 +174,109 @@ function createTeacherAssignmentsRepository(db) {
     }
   }
 
+  async function lockActiveSchoolCourse(reader, schoolId, classId, subjectId) {
+    const rows = await reader.all(
+      `SELECT id, teacher_id
+       FROM school_courses
+       WHERE school_id = $1
+         AND class_id = $2
+         AND subject_id = $3
+         AND status = 'active'
+       ORDER BY id
+       FOR UPDATE`,
+      [schoolId, classId, subjectId],
+    );
+    if (rows.length > 1) {
+      throw assignmentError(
+        409,
+        "Plusieurs cours actifs existent pour cette classe et cette matière.",
+        "CANONICAL_SCHOOL_COURSE_AMBIGUOUS",
+      );
+    }
+    return rows[0] ?? null;
+  }
+
+  async function bindExistingSchoolCourseTeacher(
+    reader,
+    { schoolId, classId, subjectId, teacherId, replaceableTeacherId = null },
+  ) {
+    const course = await lockActiveSchoolCourse(reader, schoolId, classId, subjectId);
+    if (!course) return { schoolCourseId: null, changed: false };
+
+    const currentTeacherId = String(course.teacher_id ?? "").trim();
+    const targetTeacherId = String(teacherId ?? "").trim();
+    const replaceable = String(replaceableTeacherId ?? "").trim();
+    if (
+      currentTeacherId &&
+      currentTeacherId !== targetTeacherId &&
+      (!replaceable || currentTeacherId !== replaceable)
+    ) {
+      throw assignmentError(
+        409,
+        "Le cours canonique est déjà lié à un autre enseignant.",
+        "ASSIGNMENT_SCHOOL_COURSE_CONFLICT",
+      );
+    }
+
+    if (currentTeacherId === targetTeacherId) {
+      return { schoolCourseId: course.id, changed: false };
+    }
+
+    const updated = await reader.one(
+      `UPDATE school_courses
+       SET teacher_id = $2,
+           updated_at = NOW()
+       WHERE id = $1
+         AND status = 'active'
+         AND (
+           teacher_id IS NULL
+           OR teacher_id = $2
+           OR ($3::uuid IS NOT NULL AND teacher_id = $3::uuid)
+         )
+       RETURNING id`,
+      [course.id, targetTeacherId, replaceable || null],
+    );
+    if (!updated) {
+      throw assignmentError(
+        409,
+        "Le cours canonique a changé pendant l'affectation.",
+        "ASSIGNMENT_SCHOOL_COURSE_CONFLICT",
+      );
+    }
+    return { schoolCourseId: updated.id, changed: true };
+  }
+
+  async function detachSchoolCourseTeacherIfOrphan(
+    reader,
+    { schoolId, classId, subjectId, teacherId },
+  ) {
+    const remaining = await reader.one(
+      `SELECT id
+       FROM teacher_assignments
+       WHERE school_id = $1
+         AND class_id = $2
+         AND subject_id = $3
+         AND status = 'active'
+       LIMIT 1`,
+      [schoolId, classId, subjectId],
+    );
+    if (remaining) return { schoolCourseId: null, changed: false };
+
+    const updated = await reader.one(
+      `UPDATE school_courses
+       SET teacher_id = NULL,
+           updated_at = NOW()
+       WHERE school_id = $1
+         AND class_id = $2
+         AND subject_id = $3
+         AND status = 'active'
+         AND teacher_id = $4
+       RETURNING id`,
+      [schoolId, classId, subjectId, teacherId],
+    );
+    return { schoolCourseId: updated?.id ?? null, changed: Boolean(updated) };
+  }
+
   return {
     async listBySchoolCode(schoolCode, options = {}) {
       const school = await requireSchool(schoolCode);
@@ -422,6 +525,12 @@ function createTeacherAssignmentsRepository(db) {
         ]);
         const refs = await resolveReferences(scope, school, input);
         await assertCourseAvailable(scope, school.id, refs);
+        await bindExistingSchoolCourseTeacher(scope, {
+          schoolId: school.id,
+          classId: refs.schoolClass.id,
+          subjectId: refs.subject.id,
+          teacherId: refs.teacher.id,
+        });
         let row;
         try {
           row = await scope.one(
@@ -482,6 +591,16 @@ function createTeacherAssignmentsRepository(db) {
         const current = await requireCurrent(assignmentId, school.id, scope);
         const refs = await resolveReferences(scope, school, input, current);
         await assertCourseAvailable(scope, school.id, refs, String(assignmentId));
+        const sameCourseTuple =
+          String(current.class_id) === String(refs.schoolClass.id) &&
+          String(current.subject_id) === String(refs.subject.id);
+        await bindExistingSchoolCourseTeacher(scope, {
+          schoolId: school.id,
+          classId: refs.schoolClass.id,
+          subjectId: refs.subject.id,
+          teacherId: refs.teacher.id,
+          replaceableTeacherId: sameCourseTuple ? current.teacher_id : null,
+        });
         try {
           await scope.one(
             `UPDATE teacher_assignments SET teacher_id = $1, class_id = $2, subject_id = $3,
@@ -506,6 +625,14 @@ function createTeacherAssignmentsRepository(db) {
             );
           }
           throw error;
+        }
+        if (!sameCourseTuple) {
+          await detachSchoolCourseTeacherIfOrphan(scope, {
+            schoolId: school.id,
+            classId: current.class_id,
+            subjectId: current.subject_id,
+            teacherId: current.teacher_id,
+          });
         }
         const updated = mapAssignment(await requireCurrent(assignmentId, school.id, scope));
         if (wantsAudit) {
@@ -534,13 +661,22 @@ function createTeacherAssignmentsRepository(db) {
       const wantsAudit = Boolean(principal || auditMeta);
       const run = async (tx) => {
         const scope = wantsAudit ? assignmentAuditScope(db, tx) : tx;
-        await requireCurrent(assignmentId, school.id, scope);
+        await scope.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+          `teacher-assignment:${school.id}`,
+        ]);
+        const current = await requireCurrent(assignmentId, school.id, scope);
         const row = await scope.one(
           `UPDATE teacher_assignments SET status = 'deleted', updated_at = NOW()
            WHERE id::text = $1 AND school_id = $2 AND status = 'active' RETURNING id`,
           [String(assignmentId), school.id],
         );
         if (!row) throw assignmentError(404, "Affectation introuvable.", "ASSIGNMENT_NOT_FOUND");
+        await detachSchoolCourseTeacherIfOrphan(scope, {
+          schoolId: school.id,
+          classId: current.class_id,
+          subjectId: current.subject_id,
+          teacherId: current.teacher_id,
+        });
         const result = { id: row.id, deleted: true };
         if (wantsAudit) {
           await writeTransactionalAudit(scope, tx, {
