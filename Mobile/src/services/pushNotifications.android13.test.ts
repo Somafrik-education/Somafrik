@@ -61,8 +61,9 @@ async function main() {
   assert.match(serviceSrc, /POST_NOTIFICATIONS/);
   assert.doesNotMatch(serviceSrc, /console\.log\([^)]*expoPushToken/);
   assert.doesNotMatch(serviceSrc, /safeLogger\.(info|warn|error|debug)\([^)]*expoPushToken/);
-  const channelCall = serviceSrc.indexOf("setNotificationChannelAsync");
-  const android13Call = serviceSrc.indexOf("ensureAndroid13PostNotifications");
+  const unchecked = serviceSrc.slice(serviceSrc.indexOf("async function registerAuthenticatedPushDeviceUnchecked"));
+  const channelCall = unchecked.indexOf("setNotificationChannelAsync");
+  const android13Call = unchecked.indexOf("ensureAndroid13PostNotifications");
   assert.ok(channelCall > 0 && android13Call > channelCall, "canal v2 avant POST_NOTIFICATIONS");
 
   resetPushRegistrationStateForTests();

@@ -276,13 +276,6 @@ async function registerAuthenticatedPushDeviceUnchecked(deps: PushRegisterDeps):
     return "unsupported";
   }
 
-  const android13Permission = await ensureAndroid13PostNotifications(deps);
-  if (android13Permission && android13Permission.status !== "granted") {
-    await rememberPushToken(null);
-    rememberOutcome({ status: "permission_denied" });
-    return "permission_denied";
-  }
-
   const notifications = deps.notifications ?? nativeNotifications();
   const importance = notifications.AndroidImportance?.HIGH ?? 4;
   if (typeof notifications.setNotificationChannelAsync === "function") {
@@ -295,6 +288,13 @@ async function registerAuthenticatedPushDeviceUnchecked(deps: PushRegisterDeps):
       lightColor: "#1d4ed8",
       showBadge: true,
     });
+  }
+
+  const android13Permission = await ensureAndroid13PostNotifications(deps);
+  if (android13Permission && android13Permission.status !== "granted") {
+    await rememberPushToken(null);
+    rememberOutcome({ status: "permission_denied" });
+    return "permission_denied";
   }
 
   let permission = await notifications.getPermissionsAsync();

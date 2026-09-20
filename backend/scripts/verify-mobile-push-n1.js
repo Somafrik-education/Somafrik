@@ -172,6 +172,10 @@ function sourceGuards() {
   assert.match(mobile, /export function observePushRegistrationFailure/);
   assert.doesNotMatch(runtime, /registerAuthenticatedPushDevice\(\)\.catch\(\(\) => undefined\)/);
   assert.match(runtime, /observePushRegistrationFailure/);
+  const unchecked = mobile.slice(mobile.indexOf("async function registerAuthenticatedPushDeviceUnchecked"));
+  const channelCall = unchecked.indexOf("setNotificationChannelAsync");
+  const android13Call = unchecked.indexOf("ensureAndroid13PostNotifications");
+  assert.ok(channelCall > 0 && android13Call > channelCall, "canal v2 avant POST_NOTIFICATIONS");
   assert.doesNotMatch(mobile, /console\.log\([^)]*expoPushToken/);
   const example = read("Mobile/google-services.json.example");
   assert.doesNotMatch(example, /private_key/);
