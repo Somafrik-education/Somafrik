@@ -15,6 +15,9 @@ const context = read("help/HelpUiContext.tsx");
 const preference = read("help/helpTriggerPreference.ts");
 const navigator = read("navigation/AppNavigator.tsx");
 const drawer = read("components/RoleNavigationDrawer.tsx");
+const recette = read("../recette/HelpUxSmokeApp.tsx");
+const app = fs.readFileSync(path.join(srcRoot, "..", "App.tsx"), "utf8");
+const metro = fs.readFileSync(path.join(srcRoot, "..", "metro.config.js"), "utf8");
 
 test("compact ? trigger is the only principal entry and stays accessible", () => {
   assert.match(trigger, /accessibilityRole="button"/);
@@ -62,6 +65,16 @@ test("help engine and sheet content stay the same workflow", () => {
   assert.match(host, /isMobileHelpSessionReady/);
   assert.match(host, /buildMobileHelpContext/);
   assert.doesNotMatch(host, /permissionsBootstrap === ["']ready["']/);
+});
+
+test("production app stays free of the help UX recette harness", () => {
+  assert.doesNotMatch(app, /HelpUxSmoke|helpUxSmoke|SOMAFRIK_HELP_UX_SMOKE_ENTRY|EXPO_PUBLIC_HELP/);
+  assert.match(metro, /SOMAFRIK_HELP_UX_SMOKE_ENTRY === "1"/);
+  assert.match(metro, /App\.helpUxSmoke\.tsx/);
+  assert.match(recette, /<HelpHost \/>/);
+  assert.match(recette, /<HelpUiProvider>/);
+  assert.match(recette, /RoleNavigationDrawer/);
+  assert.match(recette, /testID="mobile-header-menu"/);
 });
 
 test("360 px and 390 px keep the compact trigger on-screen above the tab bar", () => {

@@ -15,10 +15,15 @@ config.resolver.extraNodeModules = {
   "@babel/runtime": path.resolve(mobileNodeModules, "@babel/runtime"),
 };
 
-// Recette Communication : entrée distincte, jamais un flag EXPO_PUBLIC_* dans le runtime livré.
-if (process.env.SOMAFRIK_COMMUNICATION_UX_SMOKE_ENTRY === "1") {
+// Recettes hors production : entrée distincte, jamais un flag EXPO_PUBLIC_* dans le runtime livré.
+const smokeApp =
+  process.env.SOMAFRIK_HELP_UX_SMOKE_ENTRY === "1"
+    ? path.resolve(__dirname, "App.helpUxSmoke.tsx")
+    : process.env.SOMAFRIK_COMMUNICATION_UX_SMOKE_ENTRY === "1"
+      ? path.resolve(__dirname, "App.communicationUxSmoke.tsx")
+      : null;
+if (smokeApp) {
   const productionAppDir = path.resolve(__dirname);
-  const smokeApp = path.resolve(__dirname, "App.communicationUxSmoke.tsx");
   const previousResolve = config.resolver.resolveRequest;
   config.resolver.resolveRequest = (context, moduleName, platform) => {
     const resolved = previousResolve
