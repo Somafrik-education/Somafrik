@@ -43,7 +43,14 @@ const GATES = [
   { id: "SECRETS", domain: "security", cmd: ["npm", "run", "verify:secrets"] },
   { id: "SANITIZE", domain: "security", cmd: ["npm", "run", "verify:sanitize-user-responses"] },
   { id: "AUDIT-CI", domain: "security", cmd: ["npm", "run", "audit:ci"] },
-];
+  { id: "INV-732", domain: "functional", cmd: ["node", "--test", "backend/lib/teacherAssignmentsRepository.test.js"] },
+  { id: "E2E-ASSIGN-MEM", domain: "functional", cmd: ["npm", "run", "verify:e2e-0006"] },
+  { id: "LEGACY-STAFF-WRITE", domain: "functional", cmd: ["node", "--test", "backend/lib/legacyPedagogyStaffStateWrite.test.js"] },
+  { id: "LEGACY-STUDENTS-WRITE", domain: "functional", cmd: ["node", "--test", "backend/lib/legacyStudentsStateWrite.test.js"] },
+  { id: "SETUP-GUIDED-BE", domain: "functional", cmd: ["node", "--test", "--test-reporter", "spec", "backend/lib/schoolSetupGuided.red.test.js", "backend/lib/schoolSetupGuided.regression.test.js"] },
+  { id: "COM-C1-CLIENTS", domain: "functional", cmd: ["node", "backend/lib/clientsSecurity.test.js"] },
+  { id: "HEAD-TEACHER", domain: "functional", cmd: ["node", "--test", "backend/lib/classHeadTeachers.rbac.test.js", "backend/lib/classHeadTeachersManagement.test.js"] },
+]
 
 function runGate(gate) {
   const started = Date.now();
