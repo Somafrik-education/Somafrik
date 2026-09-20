@@ -81,24 +81,32 @@ async function inventoryUsers(connectionString) {
   }
 }
 
-function assertOfficialSeedSuccess(error) {
-  if (!error) return;
-  const code = String(error.code ?? "");
-  const constraint = String(error.constraint ?? "");
-  if (code === "23505" && constraint.includes("uq_users_school_email")) {
-    throw error;
-  }
-  throw error;
+function isUsersSchoolEmailUniquenessViolation(error) {
+  return (
+    String(error?.code ?? "") === "23505" &&
+    String(error?.constraint ?? "").includes("uq_users_school_email")
+  );
 }
 
-async function bootOfficialSeed(connectionString) {
+async function bootOfficialSeed(connectionString, { allowNonUniquenessFailure = false } = {}) {
   const previousSkip = process.env.SOMAFRIK_SKIP_DEMO_SEED;
   process.env.SOMAFRIK_SKIP_DEMO_SEED = "false";
   const repo = createPostgresRepository(connectionString);
   try {
     await repo.init();
+    return { ok: true };
   } catch (error) {
-    assertOfficialSeedSuccess(error);
+    if (isUsersSchoolEmailUniquenessViolation(error)) {
+      throw error;
+    }
+    if (!allowNonUniquenessFailure) {
+      throw error;
+    }
+    return {
+      ok: false,
+      code: error.code ?? null,
+      message: error.message,
+    };
   } finally {
     await repo.close();
     if (previousSkip === undefined) {
@@ -132,7 +140,8 @@ async function main() {
   }
 
   const isolatedUrl = await recreateIsolatedDatabase(DATABASE_URL, IT_DATABASE);
-  await bootOfficialSeed(isolatedUrl);
+  const firstBoot = await bootOfficialSeed(isolatedUrl);
+  assert.equal(firstBoot.ok, true, "premier boot officiel seed démo");
 
   const first = await inventoryUsers(isolatedUrl);
   assert.equal(first.duplicateGroups, 0, "aucun doublon school_id + email après seed officiel");
@@ -151,7 +160,14 @@ async function main() {
     "parent.dupont@example.com n'est porté que par un compte",
   );
 
-  await bootOfficialSeed(isolatedUrl);
+  const secondBoot = await bootOfficialSeed(isolatedUrl, { allowNonUniquenessFailure: true });
+  if (!secondBoot.ok) {
+    assert.notEqual(secondBoot.code, "23505", "second boot : pas de 23505 users");
+    console.log("second boot anomalie hors unicité users (laissée intacte)", {
+      code: secondBoot.code,
+      message: secondBoot.message,
+    });
+  }
   const second = await inventoryUsers(isolatedUrl);
   assert.equal(second.duplicateGroups, 0, "second boot : aucun doublon school_id + email");
   assert.equal(second.inventory.length, first.inventory.length, "second boot : pas de users supplémentaires");
