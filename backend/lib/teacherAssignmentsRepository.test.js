@@ -370,7 +370,7 @@ test("PG: create/update/delete convergent avec school_courses sans écraser un t
 
   try {
     await client.query("BEGIN");
-    await client.query(String.raw\`
+    await client.query(String.raw`
       CREATE TEMP TABLE schools (
         id uuid PRIMARY KEY,
         school_code text NOT NULL
@@ -431,7 +431,7 @@ test("PG: create/update/delete convergent avec school_courses sans écraser un t
         status text NOT NULL,
         updated_at timestamptz NOT NULL DEFAULT now()
       );
-    \`);
+    `);
 
     await client.query(
       "INSERT INTO schools (id, school_code) VALUES ($1, 'CD-2026-0001')",
