@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  Switch,
   TextInput,
   View,
 } from "react-native";
@@ -24,10 +25,14 @@ export function HelpSheet({
   context,
   onClose,
   onNavigate,
+  shortcutVisible = true,
+  onShortcutVisibleChange,
 }: {
   context: HelpContext;
   onClose: () => void;
   onNavigate: (routeName: string) => void;
+  shortcutVisible?: boolean;
+  onShortcutVisibleChange?: (visible: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -59,6 +64,20 @@ export function HelpSheet({
             <Text style={styles.closeLabel}>Fermer</Text>
           </Pressable>
         </View>
+        {onShortcutVisibleChange ? (
+          <View style={styles.shortcutRow}>
+            <Text style={styles.shortcutLabel}>Afficher le raccourci ?</Text>
+            <Switch
+              value={shortcutVisible}
+              onValueChange={onShortcutVisibleChange}
+              accessibilityLabel="Afficher le raccourci ?"
+              accessibilityRole="switch"
+              testID="mobile-help-shortcut-switch"
+              trackColor={{ false: "#CBD5E1", true: "#93C5FD" }}
+              thumbColor={shortcutVisible ? "#1d4ed8" : "#F8FAFC"}
+            />
+          </View>
+        ) : null}
 
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           {activeArticle ? (
@@ -256,6 +275,18 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "800", color: "#0F172A" },
   close: { minHeight: MIN_TOUCH_TARGET_DP, minWidth: MIN_TOUCH_TARGET_DP, justifyContent: "center" },
   closeLabel: { color: "#1d4ed8", fontWeight: "800" },
+  shortcutRow: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+  },
+  shortcutLabel: { color: "#475569", fontSize: 13, fontWeight: "700" },
   body: { padding: 16, paddingBottom: 48 },
   stack: { gap: 12 },
   search: {

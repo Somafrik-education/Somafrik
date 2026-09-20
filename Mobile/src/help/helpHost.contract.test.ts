@@ -34,8 +34,15 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(host, /accessToken|\bjwt\b|studentId/);
 assert.doesNotMatch(host.replaceAll("mustChangePassword", ""), /password/i);
-assert.match(trigger, /Besoin d’aide \?/);
-assert.match(trigger, /Ouvrir l’aide/);
+assert.doesNotMatch(trigger, /Besoin d['’]aide \?/, "le libellé permanent ne doit plus occuper l'UI principale");
+assert.match(trigger, /accessibilityLabel="Besoin d['']aide"/);
+assert.match(trigger, /accessibilityRole="button"/);
+assert.match(trigger, /testID="mobile-help-button"/);
+assert.match(trigger, />\s*\?\s*</);
+assert.match(host, /HelpUiProvider|useHelpUi/);
+assert.match(host, /triggerVisible/);
+assert.match(host, /keyboardDidShow/);
+assert.match(host, /useSafeAreaInsets/);
 assert.match(sheet, /groupHelpArticlesByCategory/);
 assert.match(sheet, /Je n’ai pas trouvé la réponse|assistance\/contact/);
 assert.doesNotMatch(sheet, /Intercom|Crisp|Zendesk|\/api\/help/);

@@ -1,20 +1,37 @@
 import { Pressable, StyleSheet, Text } from "react-native";
-import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import {
+  HELP_TRIGGER_HIT_SLOP,
+  HELP_TRIGGER_SIDE_INSET_DP,
+  HELP_TRIGGER_VISUAL_DP,
+  helpTriggerBottomOffset,
+} from "./helpTriggerLayout";
 
-export function HelpTrigger({ expanded, onPress }: { expanded: boolean; onPress: () => void }) {
+export function HelpTrigger({
+  expanded,
+  onPress,
+  onHide,
+  bottom,
+}: {
+  expanded: boolean;
+  onPress: () => void;
+  onHide?: () => void;
+  bottom?: number;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Ouvrir l’aide"
+      accessibilityLabel="Besoin d'aide"
       accessibilityState={{ expanded }}
       onPress={onPress}
-      style={styles.trigger}
-      testID="help-trigger"
+      onLongPress={onHide}
+      delayLongPress={420}
+      hitSlop={HELP_TRIGGER_HIT_SLOP}
+      style={[styles.trigger, { bottom: bottom ?? helpTriggerBottomOffset() }]}
+      testID="mobile-help-button"
     >
       <Text style={styles.mark} accessibilityElementsHidden>
         ?
       </Text>
-      <Text style={styles.label}>Besoin d’aide ?</Text>
     </Pressable>
   );
 }
@@ -22,16 +39,13 @@ export function HelpTrigger({ expanded, onPress }: { expanded: boolean; onPress:
 const styles = StyleSheet.create({
   trigger: {
     position: "absolute",
-    right: 16,
-    bottom: 96,
-    minHeight: MIN_TOUCH_TARGET_DP,
-    minWidth: MIN_TOUCH_TARGET_DP,
-    paddingHorizontal: 14,
-    borderRadius: 999,
+    right: HELP_TRIGGER_SIDE_INSET_DP,
+    width: HELP_TRIGGER_VISUAL_DP,
+    height: HELP_TRIGGER_VISUAL_DP,
+    borderRadius: HELP_TRIGGER_VISUAL_DP / 2,
     backgroundColor: "#1d4ed8",
-    flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "center",
     elevation: 8,
     shadowColor: "#0F172A",
     shadowOpacity: 0.18,
@@ -39,6 +53,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     zIndex: 30,
   },
-  mark: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
-  label: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
+  mark: { color: "#FFFFFF", fontSize: 18, fontWeight: "800", lineHeight: 20 },
 });

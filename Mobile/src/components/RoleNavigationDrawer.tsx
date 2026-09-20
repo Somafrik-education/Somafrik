@@ -20,6 +20,7 @@ import {
   sendControlledPushTest,
 } from "../services/pushNotifications";
 import { sanitizeUserFacingError } from "../services/safeLogger";
+import { useHelpUi } from "../help/HelpUiContext";
 
 const ROLE_LABELS: Record<string, string> = {
   super_admin: "Superadmin",
@@ -59,6 +60,7 @@ export default function RoleNavigationDrawer({
   navigation: any;
 }) {
   const { session, logout } = useAuth();
+  const helpUi = useHelpUi();
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const sections = getAllowedRoleDrawerSections(session);
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
@@ -187,6 +189,21 @@ export default function RoleNavigationDrawer({
                 onPress={() => openLegalLink(ACCOUNT_DELETION_URL)}
               />
             </View>
+            {helpUi.available ? (
+              <TouchableOpacity
+                style={styles.preferencesButton}
+                onPress={() => {
+                  onClose();
+                  helpUi.openHelp();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Aide"
+                testID="mobile-role-drawer-help"
+              >
+                <Ionicons name="help-circle-outline" size={21} color="#1D4ED8" />
+                <Text style={styles.preferencesText}>Aide</Text>
+              </TouchableOpacity>
+            ) : null}
             {canOpenPersonalPreferences ? (
               <TouchableOpacity
                 style={styles.preferencesButton}
