@@ -85,6 +85,7 @@
     "verify:progressive-disclosure-red": "node scripts/verify-progressive-disclosure-red.js",
     "test:schooling-truth": "npx --yes tsx src/lib/schoolingTruth.test.ts",
     "test:school-setup-mobile-lot2-red": "npx --yes tsx src/lib/schoolSetupMobile.red.test.ts",
+    "test:school-setup-guided-red": "npx --yes tsx src/lib/schoolSetupGuidedMobile.red.test.ts",
     "verify:parite-l0-l1-red": "node scripts/verify-parite-l0-l1-red.js",
     "test:l1-offline-reads": "npx --yes tsx src/offline/l1/l1OfflineReads.test.ts",
     "verify:mobile-l1-sqlite-cache": "node scripts/verify-mobile-l1-sqlite-cache.js",
