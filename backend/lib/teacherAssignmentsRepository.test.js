@@ -351,6 +351,178 @@ test("refuse d'écraser un school_course déjà lié à un tiers", async () => {
   assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 0);
 });
 
+
+test("PG: create/update/delete convergent avec school_courses sans écraser un tiers", { skip: !process.env.DATABASE_URL }, async () => {
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const client = await pool.connect();
+  const ids = {
+    school: "10000000-0000-0000-0000-000000000001",
+    year: "10000000-0000-0000-0000-000000000002",
+    klass: "10000000-0000-0000-0000-000000000003",
+    subject: "10000000-0000-0000-0000-000000000004",
+    user1: "10000000-0000-0000-0000-000000000005",
+    user2: "10000000-0000-0000-0000-000000000006",
+    teacher1: "10000000-0000-0000-0000-000000000007",
+    teacher2: "10000000-0000-0000-0000-000000000008",
+    course: "10000000-0000-0000-0000-000000000009",
+  };
+
+  try {
+    await client.query("BEGIN");
+    await client.query(String.raw\`
+      CREATE TEMP TABLE schools (
+        id uuid PRIMARY KEY,
+        school_code text NOT NULL
+      );
+      CREATE TEMP TABLE users (
+        id uuid PRIMARY KEY,
+        school_id uuid,
+        first_name text,
+        last_name text,
+        status text
+      );
+      CREATE TEMP TABLE academic_years (
+        id uuid PRIMARY KEY,
+        school_id uuid NOT NULL,
+        name text,
+        status text
+      );
+      CREATE TEMP TABLE classes (
+        id uuid PRIMARY KEY,
+        school_id uuid NOT NULL,
+        academic_year_id uuid NOT NULL,
+        class_code text,
+        name text,
+        status text
+      );
+      CREATE TEMP TABLE subjects (
+        id uuid PRIMARY KEY,
+        school_id uuid NOT NULL,
+        subject_code text,
+        name text,
+        status text
+      );
+      CREATE TEMP TABLE teachers (
+        id uuid PRIMARY KEY,
+        school_id uuid NOT NULL,
+        user_id uuid,
+        teacher_code text,
+        status text
+      );
+      CREATE TEMP TABLE teacher_assignments (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        school_id uuid NOT NULL,
+        teacher_id uuid NOT NULL,
+        class_id uuid NOT NULL,
+        subject_id uuid NOT NULL,
+        academic_year_id uuid NOT NULL,
+        assignment_role text,
+        status text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE TEMP TABLE school_courses (
+        id uuid PRIMARY KEY,
+        school_id uuid NOT NULL,
+        class_id uuid NOT NULL,
+        subject_id uuid NOT NULL,
+        teacher_id uuid,
+        status text NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+    \`);
+
+    await client.query(
+      "INSERT INTO schools (id, school_code) VALUES ($1, 'CD-2026-0001')",
+      [ids.school],
+    );
+    await client.query(
+      "INSERT INTO academic_years (id, school_id, name, status) VALUES ($1,$2,'2026-2027','open')",
+      [ids.year, ids.school],
+    );
+    await client.query(
+      "INSERT INTO classes (id, school_id, academic_year_id, class_code, name, status) VALUES ($1,$2,$3,'CLS-6A','6ème A','active')",
+      [ids.klass, ids.school, ids.year],
+    );
+    await client.query(
+      "INSERT INTO subjects (id, school_id, subject_code, name, status) VALUES ($1,$2,'SUB-MATH','Mathématiques','active')",
+      [ids.subject, ids.school],
+    );
+    await client.query(
+      "INSERT INTO users (id, school_id, first_name, last_name, status) VALUES ($1,$3,'Awa','Diop','active'),($2,$3,'Moussa','Ba','active')",
+      [ids.user1, ids.user2, ids.school],
+    );
+    await client.query(
+      "INSERT INTO teachers (id, school_id, user_id, teacher_code, status) VALUES ($1,$3,$4,'CD-2026-0001-ENS-0001','active'),($2,$3,$5,'CD-2026-0001-ENS-0002','active')",
+      [ids.teacher1, ids.teacher2, ids.school, ids.user1, ids.user2],
+    );
+    await client.query(
+      "INSERT INTO school_courses (id, school_id, class_id, subject_id, teacher_id, status) VALUES ($1,$2,$3,$4,NULL,'active')",
+      [ids.course, ids.school, ids.klass, ids.subject],
+    );
+
+    const adapter = {
+      query: (sql, params) => client.query(sql, params),
+      one: async (sql, params) => (await client.query(sql, params)).rows[0] ?? null,
+      all: async (sql, params) => (await client.query(sql, params)).rows,
+      async getSchoolByCode(code) {
+        return (await client.query(
+          "SELECT id, school_code FROM schools WHERE school_code = $1 LIMIT 1",
+          [String(code).toUpperCase()],
+        )).rows[0] ?? null;
+      },
+      async withTransaction(fn) {
+        return fn(adapter);
+      },
+    };
+    const repository = createTeacherAssignmentsRepository(adapter);
+
+    const created = await repository.create(
+      { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+      "CD-2026-0001",
+    );
+    let course = (await client.query("SELECT teacher_id FROM school_courses WHERE id = $1", [ids.course])).rows[0];
+    assert.equal(String(course.teacher_id), ids.teacher1);
+
+    await repository.update(
+      created.id,
+      { teacherCode: "CD-2026-0001-ENS-0002" },
+      "CD-2026-0001",
+    );
+    course = (await client.query("SELECT teacher_id FROM school_courses WHERE id = $1", [ids.course])).rows[0];
+    assert.equal(String(course.teacher_id), ids.teacher2);
+
+    await repository.remove(created.id, "CD-2026-0001");
+    course = (await client.query("SELECT teacher_id FROM school_courses WHERE id = $1", [ids.course])).rows[0];
+    assert.equal(course.teacher_id, null);
+
+    await client.query("UPDATE school_courses SET teacher_id = $1 WHERE id = $2", [ids.teacher2, ids.course]);
+    await assert.rejects(
+      () =>
+        repository.create(
+          { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+          "CD-2026-0001",
+        ),
+      (error) =>
+        error.statusCode === 409 &&
+        error.code === "ASSIGNMENT_SCHOOL_COURSE_CONFLICT",
+    );
+    const activeAssignments = await client.query(
+      "SELECT count(*)::int AS count FROM teacher_assignments WHERE status = 'active'",
+    );
+    assert.equal(activeAssignments.rows[0].count, 0);
+    course = (await client.query("SELECT teacher_id FROM school_courses WHERE id = $1", [ids.course])).rows[0];
+    assert.equal(String(course.teacher_id), ids.teacher2);
+  } finally {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    client.release();
+    await pool.end();
+  }
+});
+
 test("SELECT_ASSIGNMENT exige school_id sur tous les JOIN métier", () => {
   assert.match(SELECT_ASSIGNMENT, /JOIN teachers t ON t\.id = ta\.teacher_id\s+AND t\.school_id = ta\.school_id/);
   assert.match(SELECT_ASSIGNMENT, /LEFT JOIN users u ON u\.id = t\.user_id\s+AND u\.school_id = ta\.school_id/);
