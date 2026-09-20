@@ -17,6 +17,7 @@ const {
 const { persistableFeeType, resolveFeeType } = require("./financeFeeTypes");
 const { PRESENTATION_CURRENCY_ALIASES } = require("./financeDomainInvariants");
 const { expandFeeItemPeriods, isPeriodAfterEffectiveMonth } = require("./financeObligationPeriod");
+const { normalizeEnrollmentStatus } = require("./studentEnrollmentC18");
 
 const OBLIGATION_LIFECYCLE_REASON = Object.freeze({
   ENROLLMENT_ACTIVE: "enrollment_active",
@@ -141,7 +142,7 @@ function gridMatchesEnrollment(grid, enrollment, school) {
 async function loadEnrollmentForStudent(tx, { student, school, classId, academicYear }) {
   const fromStudent = Array.isArray(student?.enrollments)
     ? student.enrollments
-        .filter((row) => !row.status || String(row.status).toLowerCase() === "active")
+        .filter((row) => !row.status || normalizeEnrollmentStatus(row.status) === "ENROLLED")
         .filter((row) => asTrimmed(row.classId))
         .map((row) => ({
           enrollmentId: row.id || row.enrollmentId,

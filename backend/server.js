@@ -2907,8 +2907,12 @@ app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission(
 
 app.get("/api/finance/student-fees", requireAuth, requirePermission("GET /api/finance/student-fees"), asyncHandler(async (req, res) => {
   const principal = await financeHttpPrincipal(req);
-  const rows = await repository.listFinanceStudentFees(principal);
-  sendList(res, tenantScopeService.filterRows(rows, principal, { countryField: "countryIso" }), req.query, ["studentName", "label", "status"]);
+  const studentId = String(req.query.studentId || req.query.studentKey || "").trim();
+  const rows = await repository.listFinanceStudentFees(principal, studentId ? { studentId } : undefined);
+  const query = { ...req.query };
+  delete query.studentId;
+  delete query.studentKey;
+  sendList(res, tenantScopeService.filterRows(rows, principal, { countryField: "countryIso" }), query, ["studentName", "label", "status"]);
 }));
 
 app.post("/api/finance/reconcile-payment-allocations", requireAuth, requirePermission("POST /api/finance/reconcile-payment-allocations"), asyncHandler(async (req, res) => {

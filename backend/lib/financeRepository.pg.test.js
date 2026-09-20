@@ -757,6 +757,147 @@ async function main() {
     assert.equal(optionsB[0].lastName, "Other");
     assert.equal(optionsB[0].classCode, "CLS-B1");
 
+    // P1 — Esther OKITO : ENROLLED + obligations ouvertes, partiel, soldé, sans dette, isolation.
+    const esther = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'CG-ITC-OE-26-00001', 'Esther', 'OKITO', 'active') RETURNING id`,
+      [schoolA.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'ENROLLED')`,
+      [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, year.rows[0].id],
+    );
+    const noFeeStudent = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'CG-ITC-OE-26-00002', 'Lina', 'SansDette', 'active') RETURNING id`,
+      [schoolA.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'ENROLLED')`,
+      [schoolA.rows[0].id, noFeeStudent.rows[0].id, klass.rows[0].id, year.rows[0].id],
+    );
+    const estherProfile = JSON.stringify({
+      studentId: "CG-ITC-OE-26-00001",
+      schoolCode: "CD-2026-0001",
+      className: "1ère Primaire A",
+    });
+    const estherOpenIns = await pool.query(
+      `INSERT INTO student_fee_obligations (
+         school_id, student_id, class_id, fee_type, label, currency, academic_year,
+         initial_amount, amount_due, amount_paid, balance, status, profile_payload
+       ) VALUES ($1,$2,$3,'Scolarité','Scolarité T1','CDF','2025-2026',140000,140000,0,140000,'À payer',$4::jsonb)
+       RETURNING id`,
+      [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, estherProfile],
+    );
+    await pool.query(
+      `INSERT INTO student_fee_obligations (
+         school_id, student_id, class_id, fee_type, label, currency, academic_year,
+         initial_amount, amount_due, amount_paid, balance, status, profile_payload
+       ) VALUES ($1,$2,$3,'Inscription','Inscription','CDF','2025-2026',50000,50000,20000,30000,'Partiellement payé',$4::jsonb)`,
+      [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, estherProfile],
+    );
+    await pool.query(
+      `INSERT INTO student_fee_obligations (
+         school_id, student_id, class_id, fee_type, label, currency, academic_year,
+         initial_amount, amount_due, amount_paid, balance, status, profile_payload
+       ) VALUES ($1,$2,$3,'Uniforme','Uniforme','CDF','2025-2026',15000,15000,15000,0,'Payé',$4::jsonb)`,
+      [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, estherProfile],
+    );
+
+    const rosterAfterEsther = await store.listPaymentStudentOptions(admin);
+    const estherOption = rosterAfterEsther.find((row) => row.studentCode === "CG-ITC-OE-26-00001");
+    assert.ok(estherOption, "#745: Esther ENROLLED reste dans le roster");
+    assert.equal(String(estherOption.studentId), String(esther.rows[0].id));
+    assert.equal(
+      rosterAfterEsther.some((row) => row.studentCode === "CD-2026-0001-STU-CLOSED"),
+      false,
+      "#745: CLOSED toujours exclu",
+    );
+
+    const estherByUuid = await store.listFinanceStudentFees(admin, { studentId: esther.rows[0].id });
+    const estherByCode = await store.listFinanceStudentFees(admin, { studentId: "CG-ITC-OE-26-00001" });
+    assert.equal(estherByUuid.length, 3);
+    assert.equal(estherByCode.length, 3);
+    assert.ok(estherByUuid.every((row) => String(row.studentDbId) === String(esther.rows[0].id)));
+    assert.ok(estherByUuid.every((row) => row.studentId === "CG-ITC-OE-26-00001" || String(row.studentDbId) === String(esther.rows[0].id)));
+    const openSco = estherByUuid.find((row) => row.label === "Scolarité T1");
+    const partialInsc = estherByUuid.find((row) => row.feeType === "Inscription");
+    const settledUni = estherByUuid.find((row) => row.feeType === "Uniforme");
+    assert.ok(openSco);
+    assert.equal(Number(openSco.balance), 140_000);
+    assert.equal(Number(partialInsc.balance), 30_000);
+    assert.equal(Number(settledUni.balance), 0);
+    assert.equal(settledUni.status, "Payé");
+
+    const noneFees = await store.listFinanceStudentFees(admin, { studentId: noFeeStudent.rows[0].id });
+    assert.equal(noneFees.length, 0, "élève sans obligation → aucune dette (Non imputé légitime)");
+
+    const estherAsB = await store.listFinanceStudentFees(adminB, { studentId: esther.rows[0].id });
+    assert.equal(estherAsB.length, 0, "aucune fuite inter-établissement sur studentId");
+    assert.equal(
+      estherByUuid.some((row) => String(row.schoolCode) !== "CD-2026-0001"),
+      false,
+    );
+
+    const { collectOpenObligationsFromProjection } = require("./financeWebMobileWriteContract");
+    const estherOpen = collectOpenObligationsFromProjection(
+      {
+        id: estherOption.studentId,
+        studentId: estherOption.studentId,
+        studentDbId: estherOption.studentId,
+        studentCode: estherOption.studentCode,
+        matricule: estherOption.studentCode,
+      },
+      estherByUuid,
+    );
+    assert.equal(estherOpen.length, 2);
+    assert.ok(estherOpen.every((row) => row.balance > 0));
+    assert.equal(estherOpen.some((row) => row.obligationId === settledUni.id), false);
+
+    const estherPay = await store.createSchoolPayment(
+      {
+        studentId: "CG-ITC-OE-26-00001",
+        classId: klass.rows[0].id,
+        items: [{ obligationId: openSco.id, feeType: "Scolarité", amount: 40_000 }],
+        method: "Espèces",
+        date: "2026-09-20",
+      },
+      admin,
+    );
+    assert.ok(estherPay.id);
+    const afterPartial = (await store.listFinanceStudentFees(admin, { studentId: esther.rows[0].id })).find(
+      (row) => String(row.dbId || row.id) === String(estherOpenIns.rows[0].id) || row.label === "Scolarité T1",
+    );
+    assert.equal(Number(afterPartial.balance), 100_000, "paiement partiel diminue exactement le reste dû");
+
+    const settle = await store.createSchoolPayment(
+      {
+        studentId: "CG-ITC-OE-26-00001",
+        classId: klass.rows[0].id,
+        items: [{ obligationId: afterPartial.id, feeType: "Scolarité", amount: 100_000 }],
+        method: "Espèces",
+        date: "2026-09-20",
+      },
+      admin,
+    );
+    assert.ok(settle.id);
+    const afterSettle = (await store.listFinanceStudentFees(admin, { studentId: "CG-ITC-OE-26-00001" })).find(
+      (row) => row.label === "Scolarité T1",
+    );
+    assert.equal(Number(afterSettle.balance), 0);
+    assert.equal(afterSettle.status, "Payé");
+    const openAfterSettle = collectOpenObligationsFromProjection(estherOption.studentId, [
+      afterSettle,
+      ...(await store.listFinanceStudentFees(admin, { studentId: esther.rows[0].id })),
+    ]);
+    assert.equal(
+      openAfterSettle.some((row) => row.label === "Scolarité T1"),
+      false,
+      "obligation soldée absente des dettes ouvertes",
+    );
+
     const gridsA = await store.listFinanceFeeGrids(admin);
     assert.equal(gridsA.every((row) => row.schoolCode === "CD-2026-0001"), true);
     assert.equal(

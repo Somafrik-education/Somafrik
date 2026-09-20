@@ -276,4 +276,78 @@ assert.deepEqual(collectActivePaymentClasses(awa.id, fromOptions), [
 ]);
 assert.deepEqual(paymentStudentsFromOptions([]), []);
 
+const ESTHER_UUID = "eeeeeeee-1111-4111-8111-eeeeeeeeeeee";
+const ESTHER_CODE = "CG-ITC-OE-26-00001";
+const estherFromRoster = paymentStudentsFromOptions([
+  {
+    studentId: ESTHER_UUID,
+    studentCode: ESTHER_CODE,
+    firstName: "Esther",
+    lastName: "OKITO",
+    classId: "class-1pa",
+    classCode: "1PA",
+    className: "1ère Primaire A",
+    classes: [{ classId: "class-1pa", classCode: "1PA", className: "1ère Primaire A" }],
+  },
+])[0];
+assert.equal(estherFromRoster.id, ESTHER_UUID);
+assert.equal(estherFromRoster.studentCode, ESTHER_CODE);
+
+const estherFees = [
+  {
+    id: "obl-esther-sco",
+    studentId: ESTHER_CODE,
+    studentDbId: ESTHER_UUID,
+    label: "Scolarité T1",
+    feeType: "Scolarité",
+    balance: 140_000,
+    amountDue: 140_000,
+    amountPaid: 0,
+    status: "À payer",
+  },
+  {
+    id: "obl-esther-partial",
+    studentId: ESTHER_CODE,
+    studentDbId: ESTHER_UUID,
+    label: "Inscription",
+    balance: 30_000,
+    amountDue: 50_000,
+    amountPaid: 20_000,
+    status: "Partiellement payé",
+  },
+  {
+    id: "obl-esther-paid",
+    studentId: ESTHER_CODE,
+    studentDbId: ESTHER_UUID,
+    label: "Uniforme",
+    balance: 0,
+    amountDue: 15_000,
+    amountPaid: 15_000,
+    status: "Payé",
+  },
+  {
+    id: "obl-foreign",
+    studentId: "CD-XX-OTH-26-99999",
+    studentDbId: "cccccccc-3333-4333-8333-cccccccccccc",
+    label: "Scolarité tenant B",
+    balance: 99_000,
+    status: "À payer",
+  },
+];
+const estherOpen = collectOpenPaymentFees(
+  {
+    id: estherFromRoster.id,
+    studentId: estherFromRoster.id,
+    studentDbId: estherFromRoster.id,
+    studentCode: estherFromRoster.studentCode,
+  },
+  estherFees,
+);
+assert.equal(estherOpen.length, 2, "P1 Esther : UUID roster doit retrouver les dettes (matricule + studentDbId)");
+assert.deepEqual(estherOpen.map((row) => row.obligationId).sort(), ["obl-esther-partial", "obl-esther-sco"]);
+assert.equal(estherOpen.find((row) => row.obligationId === "obl-esther-sco")?.balance, 140_000);
+assert.equal(estherOpen.find((row) => row.obligationId === "obl-esther-partial")?.balance, 30_000);
+assert.equal(collectOpenPaymentFees(estherFromRoster.id, estherFees).length, 2);
+assert.equal(collectOpenPaymentFees(ESTHER_UUID, []).length, 0, "élève sans obligation → Non imputé légitime");
+
 console.log("OK paymentEnrollment: élève → classes actives, reset, payload classId, erreurs API visibles");

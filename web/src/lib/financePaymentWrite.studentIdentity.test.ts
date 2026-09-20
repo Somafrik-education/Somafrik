@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { collectOpenObligationsFromProjection } from "./financePaymentWrite";
 import {
   CLASS_NAME,
+  ESTHER_CLASS_NAME,
+  ESTHER_CODE,
+  ESTHER_UUID,
   FOREIGN_TENANT_CODE,
   FOREIGN_TENANT_UUID,
   OBLIGATION_INSC_ID,
@@ -77,6 +80,68 @@ describe("IMP-FAST — identité UUID PostgreSQL ↔ code élève public", () =>
     );
     expect(open.some((row) => row.label.includes("autre élève"))).toBe(false);
     expect(open.some((row) => row.label.includes("tenant B"))).toBe(false);
+  });
+
+  it("P1-ESTHER — UUID roster + matricule CG-ITC-OE-26-00001 + reste / solde / tenant", () => {
+    const estherIdentity = {
+      id: ESTHER_UUID,
+      studentId: ESTHER_UUID,
+      studentDbId: ESTHER_UUID,
+      studentCode: ESTHER_CODE,
+      matricule: ESTHER_CODE,
+    };
+    const openFee = postgresObligationRow({
+      studentId: ESTHER_CODE,
+      studentDbId: ESTHER_UUID,
+      className: ESTHER_CLASS_NAME,
+      balance: OPEN_BALANCE_CDF,
+      amountDue: OPEN_BALANCE_CDF,
+    });
+    const partial = postgresObligationRow({
+      id: "obl-esther-partial",
+      obligationId: "obl-esther-partial",
+      studentId: ESTHER_CODE,
+      studentDbId: ESTHER_UUID,
+      label: "Inscription",
+      status: "Partiellement payé",
+      amountDue: 50_000,
+      amountPaid: 20_000,
+      balance: 30_000,
+    });
+    const settled = postgresObligationRow({
+      id: "obl-esther-paid",
+      obligationId: "obl-esther-paid",
+      studentId: ESTHER_CODE,
+      studentDbId: ESTHER_UUID,
+      label: "Uniforme",
+      status: "Payé",
+      amountDue: 15_000,
+      amountPaid: 15_000,
+      balance: 0,
+    });
+    const foreign = postgresObligationRow({
+      id: "obl-foreign",
+      obligationId: "obl-foreign",
+      studentId: FOREIGN_TENANT_CODE,
+      studentDbId: FOREIGN_TENANT_UUID,
+      label: "Scolarité tenant B",
+      balance: 99_000,
+    });
+
+    const open = collectOpenObligationsFromProjection(estherIdentity, [
+      openFee,
+      partial,
+      settled,
+      foreign,
+    ]);
+    expect(open.map((row) => row.obligationId).sort()).toEqual(
+      [OBLIGATION_SCO_ID, "obl-esther-partial"].sort(),
+    );
+    expect(open.find((row) => row.obligationId === OBLIGATION_SCO_ID)?.balance).toBe(OPEN_BALANCE_CDF);
+    expect(open.find((row) => row.obligationId === "obl-esther-partial")?.balance).toBe(30_000);
+    expect(open.some((row) => row.obligationId === "obl-esther-paid")).toBe(false);
+    expect(open.some((row) => row.label.includes("tenant B"))).toBe(false);
+    expect(collectOpenObligationsFromProjection(estherIdentity, [])).toEqual([]);
   });
 
   it("IMP-FAST-GREEN-09 — le rapprochement ignore nom / prénom / classe", () => {

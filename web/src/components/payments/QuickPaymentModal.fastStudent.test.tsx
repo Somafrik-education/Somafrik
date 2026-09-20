@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import type { BackOfficeState, SessionUser } from "../../types";
 import { QuickPaymentModal } from "./QuickPaymentModal";
 import {
   CLASS_NAME,
+  ESTHER_CLASS_NAME,
+  ESTHER_CODE,
+  ESTHER_NAME,
+  ESTHER_UUID,
   OBLIGATION_SCO_ID,
   OPEN_BALANCE_CDF,
   SCHOOL_CODE,
@@ -148,6 +152,59 @@ describe("IMP-FAST — QuickPaymentModal contrat UUID ↔ code public", () => {
     expect(selected).toHaveTextContent(STUDENT_NAME);
     expect(selected).toHaveTextContent(STUDENT_CODE);
     expect(selected).toHaveTextContent(CLASS_NAME);
+  });
+
+  it("P1-ESTHER — Esther OKITO sélectionnée ⇒ obligations ouvertes, pas Non imputé", async () => {
+    listPaymentStudentOptions.mockResolvedValue([
+      paymentStudentOptionRow({
+        studentId: ESTHER_UUID,
+        studentCode: ESTHER_CODE,
+        firstName: "Esther",
+        lastName: "OKITO",
+        className: ESTHER_CLASS_NAME,
+        classes: [{ classId: "class-1pa", classCode: "1PA", className: ESTHER_CLASS_NAME }],
+      }),
+    ]);
+    listStudentFees.mockResolvedValue([
+      postgresObligationRow({
+        studentId: ESTHER_CODE,
+        studentDbId: ESTHER_UUID,
+        className: ESTHER_CLASS_NAME,
+      }),
+      postgresObligationRow({
+        id: "obl-esther-paid",
+        obligationId: "obl-esther-paid",
+        studentId: ESTHER_CODE,
+        studentDbId: ESTHER_UUID,
+        label: "Uniforme",
+        feeType: "Uniforme",
+        status: "Payé",
+        amountDue: 15_000,
+        amountPaid: 15_000,
+        balance: 0,
+      }),
+    ]);
+
+    render(<QuickPaymentModal open onClose={() => undefined} initialStudentId={ESTHER_UUID} />);
+    const modal = await screen.findByTestId("quick-payment-modal");
+    await waitFor(() => expect(screen.getByTestId("quick-payment-selected-student")).toHaveTextContent(ESTHER_NAME));
+    expect(screen.getByTestId("quick-payment-selected-student")).toHaveTextContent(ESTHER_CODE);
+    expect(modal).toHaveTextContent("Scolarité T1");
+    expect(screen.queryByText(/Aucune obligation ouverte/i)).not.toBeInTheDocument();
+    const feeSelect = screen.getByLabelText(/Frais concerné/i) as HTMLSelectElement;
+    expect(feeSelect.value).toBe(OBLIGATION_SCO_ID);
+    expect(feeSelect.value).not.toBe("__unallocated__");
+    expect(within(feeSelect).queryByRole("option", { name: /Uniforme/i })).not.toBeInTheDocument();
+  });
+
+  it("P1-ESTHER — élève sans obligation ⇒ Non imputé uniquement", async () => {
+    listStudentFees.mockResolvedValue([]);
+    render(<QuickPaymentModal open onClose={() => undefined} initialStudentId={STUDENT_UUID} />);
+    const modal = await screen.findByTestId("quick-payment-modal");
+    await waitFor(() => expect(screen.getByTestId("quick-payment-selected-student")).toBeInTheDocument());
+    expect(modal).toHaveTextContent(/Aucune obligation ouverte/i);
+    const feeSelect = screen.getByLabelText(/Frais concerné/i) as HTMLSelectElement;
+    expect(feeSelect.value).toBe("__unallocated__");
   });
 
   it("IMP-FAST-GREEN-11 — QuickPaymentModal standard (Paiements) conserve la recherche élève", async () => {

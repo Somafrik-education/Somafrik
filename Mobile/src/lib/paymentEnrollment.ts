@@ -104,7 +104,12 @@ export function resolvePaymentStudentSearchScope(session: PaymentSearchScopeSess
 
 function isActiveEnrollment(status?: string): boolean {
   const normalized = trim(status).toLowerCase();
-  return !normalized || normalized === "active" || normalized === "actif";
+  return (
+    !normalized ||
+    normalized === "active" ||
+    normalized === "actif" ||
+    normalized === "enrolled"
+  );
 }
 
 function pushClass(acc: PaymentClassOption[], input: { classId?: string | null; classCode?: string; className?: string }) {
@@ -171,6 +176,11 @@ export type PaymentFeeRow = {
   id?: string;
   obligationId?: string;
   studentId?: string;
+  /** UUID interne PostgreSQL (mapObligationRow.studentDbId). */
+  studentDbId?: string;
+  studentCode?: string;
+  matricule?: string;
+  publicId?: string;
   status?: string;
   archivedAt?: string | null;
   archived_at?: string | null;
@@ -223,12 +233,66 @@ function isOpenObligation(fee: PaymentFeeRow): boolean {
   return Number.isFinite(balance) && balance > 0;
 }
 
-/** Dettes ouvertes de l'élève : l'identité métier est obligationId, jamais le libellé seul. */
-export function collectOpenPaymentFees(studentId: string, fees: PaymentFeeRow[]): PaymentFeeOption[] {
-  const wanted = trim(studentId).toUpperCase();
-  if (!wanted) return [];
+function identityKey(value: unknown): string {
+  return trim(value).toUpperCase();
+}
+
+export type PaymentStudentIdentity = {
+  id?: string;
+  studentId?: string;
+  studentDbId?: string;
+  studentCode?: string;
+  matricule?: string;
+  publicId?: string;
+};
+
+function collectPaymentStudentIdentityKeys(
+  identity: string | PaymentStudentIdentity | null | undefined,
+): string[] {
+  if (identity == null) return [];
+  if (typeof identity === "string") {
+    const key = identityKey(identity);
+    return key ? [key] : [];
+  }
+  const seen = new Set<string>();
+  for (const value of [
+    identity.id,
+    identity.studentId,
+    identity.studentDbId,
+    identity.studentCode,
+    identity.matricule,
+    identity.publicId,
+  ]) {
+    const key = identityKey(value);
+    if (key) seen.add(key);
+  }
+  return [...seen];
+}
+
+function obligationBelongsToPaymentStudent(
+  fee: PaymentFeeRow,
+  identity: string | PaymentStudentIdentity,
+): boolean {
+  const wanted = new Set(collectPaymentStudentIdentityKeys(identity));
+  if (!wanted.size) return false;
+  return collectPaymentStudentIdentityKeys({
+    studentId: fee.studentId,
+    studentDbId: fee.studentDbId,
+    studentCode: fee.studentCode,
+    matricule: fee.matricule,
+    publicId: fee.publicId,
+  }).some((key) => wanted.has(key));
+}
+
+/** Dettes ouvertes de l'élève : UUID roster #745 + matricule / studentDbId. */
+export function collectOpenPaymentFees(
+  studentId: string | PaymentStudentIdentity,
+  fees: PaymentFeeRow[],
+): PaymentFeeOption[] {
+  const wanted = collectPaymentStudentIdentityKeys(studentId);
+  if (!wanted.length) return [];
   return fees.flatMap((fee) => {
-    if (trim(fee.studentId).toUpperCase() !== wanted) return [];
+    if (!obligationBelongsToPaymentStudent(fee, studentId)) return [];
     if (!isOpenObligation(fee)) return [];
     const obligationId = trim(fee.id || fee.obligationId);
     if (!obligationId) return [];
@@ -253,7 +317,10 @@ export function collectOpenPaymentFees(studentId: string, fees: PaymentFeeRow[])
   });
 }
 
-export function preselectPaymentObligationId(studentId: string, fees: PaymentFeeRow[]): string {
+export function preselectPaymentObligationId(
+  studentId: string | PaymentStudentIdentity,
+  fees: PaymentFeeRow[],
+): string {
   const options = collectOpenPaymentFees(studentId, fees);
   if (options.length === 1) return options[0].obligationId;
   return UNALLOCATED_TARGET;

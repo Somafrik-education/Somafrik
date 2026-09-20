@@ -963,11 +963,23 @@ function createFinancePgStore(repo) {
       );
       return rows.map(mapGridRow);
     },
-    listFinanceStudentFees: async (principal) => {
+    listFinanceStudentFees: async (principal, options = {}) => {
       const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
       if (scope.mode === "none") return [];
+      const studentKey = asTrimmed(options.studentId || options.studentKey);
+      let studentDbId = null;
+      if (studentKey) {
+        const student = await bind(repo).findStudent(studentKey, principal);
+        if (!student?.dbId) return [];
+        studentDbId = student.dbId;
+      }
       const feeParams = [];
       const feePred = sqlSchoolPredicate("s", scope, feeParams);
+      let studentPred = "";
+      if (studentDbId) {
+        feeParams.push(studentDbId);
+        studentPred = `AND o.student_id = $${feeParams.length}`;
+      }
       const allocParams = [];
       const allocPred = sqlSchoolPredicate("s", scope, allocParams);
       const [rows, allocations] = await Promise.all([
@@ -985,7 +997,7 @@ function createFinancePgStore(repo) {
                AND obligation_id = o.id
                AND school_id = o.school_id
            ) pa ON TRUE
-           WHERE ${feePred}`,
+           WHERE ${feePred} ${studentPred}`,
           feeParams,
         ),
         repo.all(

@@ -1040,6 +1040,7 @@ export function getFeeGrid(gridId: string): Promise<{ grid: FinanceFeeGrid | nul
 export type CanonicalStudentFee = {
   id: string;
   studentId: string;
+  studentDbId?: string;
   studentName?: string;
   schoolCode?: string;
   amountDue: number;
@@ -1059,9 +1060,11 @@ function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
   const amountDue = Number(row.amountDue ?? row.amount_due ?? 0);
   const amountPaid = Number(row.amountPaid ?? row.amount_paid ?? 0);
   const exemption = Number(row.exemption ?? 0);
+  const studentDbId = String(row.studentDbId ?? row.student_db_id ?? "").trim();
   return {
     id: String(row.id ?? row.publicId ?? ""),
     studentId: String(row.studentId ?? row.student_id ?? ""),
+    ...(studentDbId ? { studentDbId } : {}),
     studentName: row.studentName ? String(row.studentName) : undefined,
     schoolCode: row.schoolCode ? String(row.schoolCode) : undefined,
     amountDue,

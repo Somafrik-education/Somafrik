@@ -25,6 +25,15 @@ export const OBLIGATION_SCO_ID = "obl-sco-140k";
 export const OBLIGATION_INSC_ID = "obl-insc-50k";
 export const OPEN_BALANCE_CDF = 140_000;
 
+/** Cas de référence P1 — Esther OKITO (preprod ITC, inscription C18 ENROLLED). */
+export const ESTHER_UUID = "eeeeeeee-1111-4111-8111-eeeeeeeeeeee";
+export const ESTHER_CODE = "CG-ITC-OE-26-00001";
+export const ESTHER_FIRST_NAME = "Esther";
+export const ESTHER_LAST_NAME = "OKITO";
+export const ESTHER_NAME = "Esther OKITO";
+export const ESTHER_CLASS_ID = "class-1pa";
+export const ESTHER_CLASS_NAME = "1ère Primaire A";
+
 export const BLOCKING_OBLIGATION_MISMATCH_MESSAGE =
   "Impossible de retrouver les frais ouverts de cet élève. Actualisez les données ou contactez l'administrateur.";
 
