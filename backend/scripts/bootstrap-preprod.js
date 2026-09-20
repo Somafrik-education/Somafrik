@@ -112,7 +112,7 @@ function main() {
   console.log("");
   console.log("Préproduction initialisée.");
   console.log("Prochaines étapes :");
-  console.log("  1. Déployer le frontend sur Vercel (branche develop → preprod.somafrik.app)");
+  console.log("  1. Déployer le frontend sur Render (branche develop → preprod.somafrik.app)");
   console.log("  2. Connexion : https://preprod.somafrik.app/connexion");
   console.log(`  3. Identifiant : ${preprodEnv.BOOTSTRAP_SUPERADMIN_ID || "superadmin"}`);
   console.log("  4. Créer pays, établissements et comptes via le backoffice.");
