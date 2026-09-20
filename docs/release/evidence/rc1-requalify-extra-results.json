@@ -1,0 +1,37 @@
+{
+  "startedAt": "2026-09-20T19:31:08.863Z",
+  "finishedAt": "2026-09-20T19:33:50.897Z",
+  "baseline": "109fa474664485e298f82db9c727cb8d2325e29a",
+  "note": "Preuves hors catalogue verify:rc1-gates, rejouées sur le develop courant après #733.",
+  "environment": {
+    "docker": false,
+    "localPostgres": "16.15",
+    "databaseUrl": "postgresql://somafrik@127.0.0.1:5432/somafrik",
+    "node": "v22.14.0"
+  },
+  "results": [
+    { "id": "INV-732-ASSIGN-MEM-PG", "status": "PASS", "detail": "teacherAssignmentsRepository.test.js 6/6 dont PG create/update/delete + 409 tiers" },
+    { "id": "INV-732-INVENTORY-MEM", "status": "PASS", "detail": "schoolCourseAmbiguityInventory.test.js 11/11" },
+    { "id": "INV-732-INVENTORY-PG", "status": "PASS", "detail": "schoolCourseAmbiguityInventory.pg.test.js OK" },
+    { "id": "INV-732-SUBJECTS-PG", "status": "PASS", "detail": "subjectsAssignments.pg.test.js OK" },
+    { "id": "INV-732-TEACHERS-PG", "status": "PASS", "detail": "teachersRepository.pg.test.js OK" },
+    { "id": "SEC-503-PERSONAL-DATA-DENY", "status": "PASS", "detail": "verify:platform-personal-data-deny 9/9 + script SUCCESS" },
+    { "id": "SEC-503-DATA-API-STATIC", "status": "PASS", "detail": "supabaseDataApiLockdown.test.js 3/3" },
+    { "id": "SEC-503-DATA-API-PG", "status": "SKIP", "detail": "CREATE ROLE BYPASSRLS refusé sur le rôle de test local — pas une fuite Data API reproduite" },
+    { "id": "SEC-503-PRIVACY-ERASURE", "status": "PASS", "detail": "verify:privacy-erasure 12/12 + script OK" },
+    { "id": "SEC-AUTH-SESSIONS", "status": "PASS", "detail": "verify:auth-sessions 28/28 + script OK" },
+    { "id": "RBAC-FUNCTIONAL-MEM", "status": "PASS", "detail": "functionalRbac + platformPersonalDataGuard + privacyErasure 41/41" },
+    { "id": "RBAC-FUNCTIONAL-PG", "status": "PASS", "detail": "functionalRbac.pg.test.js OK" },
+    { "id": "TENANT-ACADEMIC-YEAR", "status": "PASS", "detail": "verify:academic-year-tenant 21/21 + HTTP PG" },
+    { "id": "TENANT-USERS", "status": "PASS", "detail": "verify:users-tenant 33/33 + HTTP PG" },
+    { "id": "TENANT-ENROLLMENT", "status": "PASS", "detail": "verify:enrollment-tenant 25/25 + HTTP PG" },
+    { "id": "TENANT-PLANNING", "status": "PASS", "detail": "verify:planning-tenant 25/25 + HTTP PG" },
+    { "id": "TENANT-PRESENCE", "status": "PASS", "detail": "verify:presence-tenant 18/18 + HTTP PG" },
+    { "id": "SETUP-GUIDED-GREEN", "status": "PASS", "detail": "verify:school-setup-guided-green backend 56 + web 56 + mobile 18 + postLogin 5" },
+    { "id": "TEACHER-ACCOUNT", "status": "PASS", "detail": "verify:teacher-account-creation OK (mémoire + PG)" },
+    { "id": "FINANCE-MANAGEMENT", "status": "PASS", "detail": "verify:finance-management OK dont FIN-CALC PG + HTTP RBAC" },
+    { "id": "E2E-UI-PG", "status": "SKIP", "detail": "verify:e2e-api / Playwright / comptes préprod absents" },
+    { "id": "PERF-MEMORY", "status": "PASS", "detail": "verify:rc1-performance mémoire : 0 finding, p95 health 3ms / login 15ms" },
+    { "id": "PERF-PG-PREPROD", "status": "SKIP", "detail": "Aucune charge PostgreSQL préprod ; production interdite" }
+  ]
+}

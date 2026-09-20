@@ -1,7 +1,7 @@
 # Stratégie de tests — Somafrik
 
 **Statut :** référence qualité & gates  
-**Dernière mise à jour :** 2026-09-19
+**Dernière mise à jour :** 2026-09-20
 **Liens :** [RELEASES.md](./RELEASES.md) · [CONTRIBUTING.md](./CONTRIBUTING.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
