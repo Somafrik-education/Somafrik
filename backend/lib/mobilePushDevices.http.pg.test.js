@@ -414,6 +414,11 @@ async function main() {
     assert.equal(mock.state.sends[0][0].title, "Test Somafrik");
     assert.equal(mock.state.sends[0][0].body, "Les notifications push Somafrik fonctionnent correctement.");
     assert.equal(mock.state.sends[0][0].data.somafrikDestination, "Home");
+    assert.equal(
+      mock.state.sends[0][0].channelId,
+      "somafrik-default-v2",
+      "self-test HTTP : canal Mobile canonique",
+    );
     assert.ok(!JSON.stringify(mock.state.sends[0]).includes("montant"));
     assert.ok(!JSON.stringify(mock.state.sends[0]).includes("note"));
     assert.ok(!JSON.stringify(mock.state.sends[0]).includes("jwt"));
