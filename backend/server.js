@@ -3933,7 +3933,12 @@ app.post("/api/v2/subjects", requireAuth, requirePermission("POST /api/v2/subjec
 }));
 
 app.delete("/api/v2/subjects/:code", requireAuth, requirePermission("DELETE /api/v2/subjects/:code"), asyncHandler(async (req, res) => {
-  const deleted = await repository.deleteSubject(req.params.code);
+  const schoolCode = req.principal.schoolCode;
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const deleted = await repository.deleteSubject(req.params.code, schoolCode);
   cacheService.invalidate("v2:");
   await auditService.record(req, "delete_subject", "subject", req.params.code);
   res.json(deleted);
