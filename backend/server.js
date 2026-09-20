@@ -3962,8 +3962,6 @@ app.get("/api/v2/school-setup/status", requireAuth, requirePermission("GET /api/
 
 app.get("/api/v2/school-setup/guided", requireAuth, requirePermission("GET /api/v2/school-setup/guided"), asyncHandler(async (req, res) => {
   const { getSchoolSetupGuided } = require("./lib/schoolSetupGuided");
-  const { ensureSchoolSetupGuidedSchema } = require("./db/schoolSetupGuidedSchema");
-  await ensureSchoolSetupGuidedSchema(repository);
   const payload = await getSchoolSetupGuided({
     principal: req.principal,
     query: req.query,
@@ -3978,8 +3976,6 @@ app.get("/api/v2/school-setup/guided", requireAuth, requirePermission("GET /api/
 
 app.post("/api/v2/school-setup/guided/steps/:stepKey/complete", requireAuth, requirePermission("POST /api/v2/school-setup/guided/steps/:stepKey/complete"), asyncHandler(async (req, res) => {
   const { completeGuidedStep } = require("./lib/schoolSetupGuided");
-  const { ensureSchoolSetupGuidedSchema } = require("./db/schoolSetupGuidedSchema");
-  await ensureSchoolSetupGuidedSchema(repository);
   const payload = await completeGuidedStep({
     principal: req.principal,
     stepKey: req.params.stepKey,

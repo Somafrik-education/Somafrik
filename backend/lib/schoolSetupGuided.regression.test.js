@@ -70,6 +70,14 @@ test("HOLD — un seul assistant visible et Terminer quitte vers le tableau de b
   assert.match(mobileSettings, /navigate\(\s*["']Home["']/);
 });
 
+test("HOLD — schéma guidé assuré au boot repository, pas dans GET/POST request-time", () => {
+  const server = read("backend/server.js");
+  const repo = read("backend/db/postgresRepository.js");
+  assert.doesNotMatch(server, /ensureSchoolSetupGuidedSchema/);
+  assert.doesNotMatch(server, /schoolSetupGuidedSchema/);
+  assert.match(repo, /async init\([\s\S]*ensureSchoolSetupGuidedSchema\s*\(/);
+});
+
 test("RBAC guidé réutilise Paramètres Établissement (pas de nouveau moteur RBAC)", () => {
   const rbac = read("backend/services/rbacService.js");
   const getLine = rbac.split("\n").find((line) => line.includes('"GET /api/v2/school-setup/guided"'));
