@@ -189,7 +189,7 @@ function createTeacherAssignmentsRepository(db) {
     if (rows.length > 1) {
       throw assignmentError(
         409,
-        "Plusieurs cours actifs existent pour cette classe et cette matière.",
+        "Plusieurs cours actifs existent pour cette classe et ce cours.",
         "CANONICAL_SCHOOL_COURSE_AMBIGUOUS",
       );
     }
