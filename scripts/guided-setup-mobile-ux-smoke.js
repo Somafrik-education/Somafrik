@@ -22,7 +22,12 @@ const CHROME =
   );
 
 function freePort(port) {
-  spawnSync("bash", ["-lc", `fuser -k ${port}/tcp >/dev/null 2>&1 || true`], { stdio: "ignore" });
+  const listed = spawnSync("bash", ["-lc", `lsof -ti tcp:${port} || true`], { encoding: "utf8" });
+  const pids = String(listed.stdout || "")
+    .split(/\s+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (pids.length) spawnSync("kill", ["-9", ...pids], { stdio: "ignore" });
 }
 
 function waitForHttp(url, timeoutMs) {
@@ -77,7 +82,7 @@ async function main() {
   fs.mkdirSync(path.join(ARTIFACTS, "screenshots"), { recursive: true });
   const { chromium } = require(ensurePlaywright());
 
-  const expo = spawn("npx", ["expo", "start", "--web", "--port", String(PORT), "--non-interactive", "--clear"], {
+  const expo = spawn("npx", ["expo", "start", "--web", "--port", String(PORT), "--clear"], {
     cwd: MOBILE,
     env: {
       ...process.env,
@@ -89,10 +94,12 @@ async function main() {
     stdio: "pipe",
   });
   let bundled = false;
+  let skipped = false;
   const markBundled = (chunk) => {
     const text = chunk.toString();
     process.stdout.write(chunk);
     if (/Web Bundled|Finished|Bundled \d/i.test(text)) bundled = true;
+    if (/Skipping dev server/i.test(text)) skipped = true;
   };
   expo.stdout.on("data", markBundled);
   expo.stderr.on("data", (chunk) => {
@@ -110,6 +117,7 @@ async function main() {
   process.on("exit", stopExpo);
 
   await waitForHttp(BASE, 180000);
+  if (skipped) throw new Error(`Expo a ignoré le port ${PORT} — recette abandonnée`);
   const waitStart = Date.now();
   while (!bundled && Date.now() - waitStart < 20000) {
     await new Promise((resolve) => setTimeout(resolve, 500));
