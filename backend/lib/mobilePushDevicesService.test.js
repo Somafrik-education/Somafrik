@@ -166,6 +166,11 @@ async function main() {
       assert.equal(message.title, "Test Somafrik");
       assert.match(message.body, /fonctionnent correctement/);
       assert.equal(message.data.somafrikDestination, "Home");
+      assert.equal(
+        message.channelId,
+        "somafrik-default-v2",
+        "self-test doit cibler le canal Mobile canonique",
+      );
       return { sent: 1, ticketCount: 1, revoked: [] };
     },
   };

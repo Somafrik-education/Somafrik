@@ -121,6 +121,7 @@ function sourceGuards() {
   assert.match(httpTest, /self-test préprod protégé par permission/);
   assert.match(httpTest, /JWT Push:TEST ignoré ; RBAC live enseignant sans Push:TEST/);
   assert.match(httpTest, /même user \+ même école → token ciblé/);
+  assert.match(httpTest, /self-test HTTP : canal Mobile canonique/);
   assert.match(httpTest, /préprod sans flag interdit le self-test/);
   assert.match(httpTest, /SOMAFRIK_PUSH_SELFTEST_ENABLED: "false"/);
   assert.match(httpTest, /delete env\.SOMAFRIK_PUSH_SELFTEST_ENABLED/);
@@ -130,7 +131,11 @@ function sourceGuards() {
   assert.match(httpTest, /même user \+ autre école → token exclu/);
 
   assert.match(appConfig, /expo-notifications/);
-  assert.match(appConfig, /somafrik-default/);
+  assert.match(appConfig, /defaultChannel: "somafrik-default-v2"/);
+  assert.match(destinations, /export const SOMAFRIK_PUSH_CHANNEL_ID = "somafrik-default-v2"/);
+  const sendSelfTestSrc = service.slice(service.indexOf("async function sendSelfTest"));
+  assert.match(sendSelfTestSrc, /channelId: "somafrik-default-v2"/);
+  assert.doesNotMatch(sendSelfTestSrc, /channelId:\s*"somafrik-default"/);
   assert.doesNotMatch(appConfig, /android\.permission\.POST_NOTIFICATIONS/);
   assert.doesNotMatch(appConfig, /android\.permission\.VIBRATE/);
   assert.match(appConfig, /googleServicesFile/);
