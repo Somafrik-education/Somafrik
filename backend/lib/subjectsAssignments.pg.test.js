@@ -136,6 +136,18 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       subject_id UUID NOT NULL REFERENCES subjects(id)
     );
+    CREATE TABLE IF NOT EXISTS school_courses (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      class_id UUID NOT NULL REFERENCES classes(id),
+      subject_id UUID NOT NULL REFERENCES subjects(id),
+      teacher_id UUID REFERENCES teachers(id),
+      course_code VARCHAR(64) NOT NULL UNIQUE,
+      coefficient NUMERIC NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
   await pool.query(`
     ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
@@ -164,6 +176,7 @@ async function setupFixture(pool) {
   await ensureTeacherAssignmentsActiveUniqueness(poolAdapter, { info() {}, error() {} });
 
   for (const table of [
+    "school_courses",
     "grades",
     "subject_class_assignments",
     "teacher_assignments",
