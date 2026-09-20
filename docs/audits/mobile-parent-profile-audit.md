@@ -727,7 +727,16 @@ Classification :
 Preuve :
 `loginScreenSpec.ts` 166–168 + `LoginScreen.tsx` 336–352 + `validateAccountSecret("Pass1234") === null` + `verifyUserSecret` passwordHash. Test RED **MP-014**.
 Cible métier :
-lot séparé **Parent Auth Password** — mot de passe standard, même politique que les autres comptes, plus de PIN UI, plus de number-pad, plus de fallback PIN silencieux. UI PIN ≠ secret stocké PIN ≠ secret déjà password. Ne pas convertir automatiquement un PIN. Décision de migration : le clavier mot de passe standard accepte aussi les chiffres, donc les Parents historiques PIN-only restent capables de se connecter ; le remplacement progressif par un mot de passe conforme vient ensuite.
+
+Lot séparé « Parent Auth Password ».
+
+Le rôle `parent_student` utilisera exclusivement le mot de passe standard Somafrik, avec la même politique canonique que les autres comptes.
+
+Supprimer le PIN UI, le clavier `number-pad`, le wording `PIN`, le placeholder `1234` et toute logique spécifique PIN du parcours Parent.
+
+Aucun fallback PIN et aucune migration PIN Parent ne sont requis : aucun Parent n'a encore utilisé l'authentification PIN.
+
+Les traces legacy PIN découvertes dans le code (`pin`, `pinHash`, `models/Parent.ts`, scripts) restent des dettes techniques à supprimer ou neutraliser dans le lot de correction. Elles ne justifient aucune compatibilité fonctionnelle.
 
 ## UX
 
@@ -859,12 +868,12 @@ Ordre suggéré :
    2. champ alphanumérique standard ;
    3. suppression du clavier `number-pad` ;
    4. suppression du wording PIN ;
-   5. réutilisation de `validateAccountSecret` / politique canonique (pas de politique Parent) ;
+   5. réutilisation de la politique canonique de mot de passe Somafrik (pas de politique Parent, pas de PIN) ;
    6. login standardisé (même UX Teacher/Admin) ;
    7. récupération / changement de mot de passe in-app ;
-   8. migration **sans conversion automatique** des anciens PIN (`pin` / `pinHash`) : le champ mot de passe standard accepte lettres **et** chiffres, donc un Parent historique peut provisoirement retaper ses 6 chiffres ; ensuite forcer progressivement le remplacement par un vrai mot de passe conforme ;
+   8. aucune compatibilité PIN historique, aucune migration progressive PIN → mot de passe (aucun Parent n'a encore utilisé le PIN) ;
    9. tests de non-régression session/logout ;
-   10. aucun fallback PIN silencieux.
+   10. aucun fallback PIN ; neutraliser/supprimer la dette `pin` / `pinHash` / `models/Parent.ts` / scripts.
 1. **P0 isolation** — fail-closed `sessionStudentAliasKeys` : id hors `children` → `[]`. Recouper push/route params.
 2. **P0 RBAC** — routes staff hors `routeFeatureMap` Parent, ou allowlist de routes par `roleKey`. `canReadFeeGrids` sans `Paiements:READ` pour PARENT. `canOpenAdminScreens` false.
 3. **P0 surfaces** — ne plus monter `Payments` / `Students` / `Teacher*` pour PARENT ; ou y appliquer `filterRowsByStudentScope` fail-closed.
@@ -926,6 +935,6 @@ Ordre suggéré :
 | MP-038 | Paiements | `getPaymentStudentOptions` non recoupé | P1 | `StudentPaymentsScreen.tsx` 54–63 | `Mobile/src/screens/StudentPaymentsScreen.tsx` | Intersect `user.children` |
 | MP-039 | Session | `selectedStudentId` non persisté | P2 | `AuthContext.tsx` 84, 113 | `Mobile/src/context/AuthContext.tsx` | Persister id **parmi** children |
 | MP-040 | Nav | `Synchronization` monté via Documents:READ | P2 | `AppNavigator.tsx` 342 | `Mobile/src/navigation/AppNavigator.tsx` | Hors PARENT |
-| MP-041 | Auth | Authentification Parent : PIN numérique incompatible avec la politique de mot de passe | P0 | `resolveSecretKeyboardType("parent_student") === "number-pad"` ; `validateAccountSecret("Pass1234") === null` ; `verifyUserSecret` accepte `passwordHash` ; test RED MP-014 | `Mobile/src/lib/loginScreenSpec.ts` ; `Mobile/src/screens/LoginScreen.tsx` | Lot **Parent Auth Password** : clavier default, wording mot de passe, même politique que les autres comptes |
+| MP-041 | Auth | Authentification Parent : PIN numérique incompatible avec la politique de mot de passe | P0 | `resolveSecretKeyboardType("parent_student") === "number-pad"` ; `validateAccountSecret("Pass1234") === null` ; `verifyUserSecret` accepte `passwordHash` ; test RED MP-014 | `Mobile/src/lib/loginScreenSpec.ts` ; `Mobile/src/screens/LoginScreen.tsx` | Lot **Parent Auth Password** : mot de passe standard dès maintenant, zéro transition PIN |
 
 Les IDs MP-001… du tableau de synthèse sont les anomalies métier. Les IDs du fichier de test (MP-001…) sont des contrats d'audit (mapping dans la section Tests).
