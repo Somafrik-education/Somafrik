@@ -15,9 +15,7 @@
 const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
-const {
-  COUNT_SCHOOL_EMAIL_DUPLICATE_GROUPS_SQL,
-} = require("./usersLoginIdentity");
+const { inventoryUsersLoginIdentityDuplicates } = require("./usersLoginIdentity");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_DEMO_SEED_IT_DATABASE ?? "somafrik_demo_seed_uniqueness_it")
@@ -58,7 +56,10 @@ async function recreateIsolatedDatabase(databaseUrl, databaseName) {
 async function inventoryUsers(connectionString) {
   const pool = new Pool({ connectionString });
   try {
-    const duplicates = await pool.query(COUNT_SCHOOL_EMAIL_DUPLICATE_GROUPS_SQL);
+    const inventoryState = await inventoryUsersLoginIdentityDuplicates({
+      one: async (sql, params) => (await pool.query(sql, params)).rows[0] ?? null,
+      all: async (sql, params) => (await pool.query(sql, params)).rows,
+    });
     const rows = await pool.query(
       `SELECT s.school_code,
               u.role,
@@ -72,7 +73,7 @@ async function inventoryUsers(connectionString) {
        ORDER BY s.school_code NULLS FIRST, u.role, email_normalized`,
     );
     return {
-      duplicateGroups: Number(duplicates.rows[0]?.duplicate_groups ?? 0),
+      duplicateGroups: Number(inventoryState.duplicateGroups ?? 0),
       inventory: rows.rows,
     };
   } finally {
@@ -139,6 +140,10 @@ async function main() {
   assert.ok(
     first.inventory.some((row) => row.role === "PARENT" && row.email_normalized === "parent.dupont@example.com"),
     "le parent démo conserve parent.dupont@example.com",
+  );
+  assert.ok(
+    first.inventory.some((row) => row.role === "STUDENT" && row.email_normalized === "jean.dupont@example.com"),
+    "l'élève démo conserve jean.dupont@example.com",
   );
   assert.equal(
     first.inventory.filter((row) => row.email_normalized === "parent.dupont@example.com").length,
