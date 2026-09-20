@@ -75,7 +75,7 @@ function main() {
   assert.doesNotMatch(readRepo("backend/server.js"), /\/api\/help/);
 
   run(process.execPath, ["--test"], { cwd: path.join(ROOT, "packages/help-catalog") });
-  run("npx", ["--yes", "tsx", "--test", "src/help/buildMobileHelpContext.test.ts", "src/help/helpHost.contract.test.ts"], {
+  run("npx", ["--yes", "tsx", "--test", "src/help/buildMobileHelpContext.test.ts", "src/help/helpHost.contract.test.ts", "src/help/helpTriggerPreference.test.ts", "src/help/helpTriggerUx.contract.test.ts"], {
     cwd: path.join(ROOT, "Mobile"),
   });
   run("npm", ["--prefix", "web", "run", "test", "--", "src/help/HelpHost.test.tsx", "src/help/buildWebHelpContext.test.ts"], {

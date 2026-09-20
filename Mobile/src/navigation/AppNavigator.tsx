@@ -50,6 +50,7 @@ import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen"
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
 import { HelpHost } from "../help/HelpHost";
+import { HelpUiProvider } from "../help/HelpUiContext";
 import { useAuth } from "../context/AuthContext";
 import { canPersistFullSession } from "../lib/dataTruth";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
@@ -244,10 +245,11 @@ export default function AppNavigator() {
     canReadRoute(session, "StudentPresences");
 
   return (
-    <NavigationContainer
-      ref={navigationRef}
-      key={session ? "authenticated" : "public"}
-      onReady={() => {
+    <HelpUiProvider>
+      <NavigationContainer
+        ref={navigationRef}
+        key={session ? "authenticated" : "public"}
+        onReady={() => {
         flushPendingPushNavigation(
           (destination, params) => {
             navigateRegisteredPushDestination(
@@ -359,7 +361,8 @@ export default function AppNavigator() {
         )}
         {canReadRoute(session, "InternalNotifications") && <Stack.Screen name="InternalNotifications" component={InternalNotificationsScreen} options={{ title: "Notifications" }} />}
       </Stack.Navigator>
-      <HelpHost />
-    </NavigationContainer>
+        <HelpHost />
+      </NavigationContainer>
+    </HelpUiProvider>
   );
 }
