@@ -172,14 +172,14 @@ async function main() {
     await page.getByTestId("guided-setup-status").getByText(/percent=0/).waitFor();
     const oldWizard = await page.getByText("Ces actions ouvrent les écrans existants").count();
     if (oldWizard !== 0) throw new Error("ancien SchoolSetupWizard visible — empilement interdit");
-    await shot(page, "mobile_guided_runtime_0_percent");
+    await shot(page, "mobile_guided_expo_web_0_percent");
 
     await page.getByText("Ouvrir l'écran existant").scrollIntoViewIfNeeded();
     await page.getByLabel("Enregistrer et continuer").scrollIntoViewIfNeeded();
     await page.getByLabel("Enregistrer et continuer").click();
     await page.getByText("Étape 2 sur 10").waitFor({ state: "visible", timeout: 15000 });
     await page.getByText("Configuration 10 % terminée").waitFor();
-    await shot(page, "mobile_guided_runtime_10_percent");
+    await shot(page, "mobile_guided_expo_web_10_percent");
 
     await page.getByLabel("Précédent").click();
     await page.getByText("Étape 1 sur 10").waitFor({ state: "visible", timeout: 15000 });
@@ -189,40 +189,40 @@ async function main() {
     await page.getByText("Étape 5 sur 10").waitFor({ state: "visible" });
     await page.getByText("Enseignants").first().waitFor();
     await page.getByTestId("guided-setup-status").getByText(/configuration_required/).waitFor();
-    await shot(page, "mobile_guided_runtime_40_percent");
+    await shot(page, "mobile_guided_expo_web_40_percent");
 
     await page.getByTestId("guided-setup-resume-50").click();
     await page.getByText("Étape 6 sur 10").waitFor({ state: "visible" });
     await page.getByText("Élèves").first().waitFor();
-    await shot(page, "mobile_guided_runtime_50_percent");
+    await shot(page, "mobile_guided_expo_web_50_percent");
 
     await page.getByTestId("guided-setup-resume-60").click();
     await page.getByText("Étape 7 sur 10").waitFor({ state: "visible" });
     await page.getByTestId("guided-setup-status").getByText(/statut=operational/).waitFor();
-    await shot(page, "mobile_guided_runtime_60_percent_operational");
+    await shot(page, "mobile_guided_expo_web_60_percent_operational");
 
     await page.getByTestId("guided-setup-resume-100").click();
     await page.getByText("Étape 10 sur 10").waitFor({ state: "visible" });
     await page.getByLabel("Vérifier la configuration").scrollIntoViewIfNeeded();
     await page.getByLabel("Vérifier la configuration").waitFor({ state: "visible" });
     await page.getByLabel("Terminer la configuration").waitFor({ state: "visible" });
-    await shot(page, "mobile_guided_runtime_100_percent");
+    await shot(page, "mobile_guided_expo_web_100_percent");
 
     await page.getByLabel("Vérifier la configuration").click();
     await page.getByText("Étape 1 sur 10").waitFor({ state: "visible" });
     await page.getByLabel("Terminer la configuration").waitFor({ state: "visible" });
-    await shot(page, "mobile_guided_runtime_verify_then_finish");
+    await shot(page, "mobile_guided_expo_web_verify_then_finish");
 
     await page.getByLabel("Terminer la configuration").click();
     await page.getByTestId("guided-setup-home").waitFor({ state: "visible", timeout: 15000 });
-    await page.getByTestId("guided-setup-home").getByText("Accueil").waitFor();
-    await shot(page, "mobile_guided_runtime_home_after_terminer");
+    await page.getByTestId("guided-setup-home").getByText("Accueil", { exact: true }).waitFor();
+    await shot(page, "mobile_guided_expo_web_home_after_terminer");
 
     await context.close();
     if (video) {
       const videoPath = await video.path();
       if (videoPath && fs.existsSync(videoPath)) {
-        const dest = path.join(ARTIFACTS, "mobile_guided_wizard_expo_web_runtime.webm");
+        const dest = path.join(ARTIFACTS, "mobile_guided_expo_web_runtime.webm");
         fs.copyFileSync(videoPath, dest);
         shots.push("mobile_guided_wizard_expo_web_runtime.webm");
       }

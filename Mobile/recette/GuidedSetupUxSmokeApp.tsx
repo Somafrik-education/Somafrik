@@ -54,7 +54,7 @@ function HomeScreen() {
   return (
     <View style={styles.home} testID="guided-setup-home">
       <Text style={styles.homeTitle}>Accueil</Text>
-      <Text style={styles.homeMeta}>Sortie à 100 % — Terminer vers Accueil</Text>
+      <Text style={styles.homeMeta}>Configuration terminée — retour au tableau de bord</Text>
     </View>
   );
 }
