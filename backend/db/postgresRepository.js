@@ -3124,7 +3124,7 @@ class PostgresRepository {
     return this.one(
       `INSERT INTO subjects (school_id, subject_code, name, coefficient, level, description, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'active')
-       ON CONFLICT (subject_code) DO UPDATE SET
+       ON CONFLICT (school_id, subject_code) DO UPDATE SET
          name = EXCLUDED.name,
          coefficient = EXCLUDED.coefficient,
          updated_at = NOW()
@@ -5357,7 +5357,7 @@ class PostgresRepository {
         client,
         `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
          VALUES ($1, $2, $3, $4, 'active')
-         ON CONFLICT (subject_code) DO UPDATE SET name = EXCLUDED.name
+         ON CONFLICT (school_id, subject_code) DO UPDATE SET name = EXCLUDED.name
          RETURNING id`,
         [schoolId, subjectCode, course.name, course.coefficient ?? 1]
       );
@@ -5825,7 +5825,7 @@ class PostgresRepository {
     `;
     if (schoolCode && schoolCode !== "*") {
       params.push(schoolCode);
-      sql += ` WHERE upper(s.school_code) = $1`;
+      sql += ` WHERE (upper(s.school_code) = $1 OR upper(coalesce(s.login_code, '')) = $1)`;
     }
     sql += `
       GROUP BY sub.id, s.school_code, c.iso_code
@@ -5864,7 +5864,7 @@ class PostgresRepository {
     const row = await this.one(
       `INSERT INTO subjects (school_id, subject_code, name, coefficient, level, description, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (subject_code) DO UPDATE SET
+       ON CONFLICT (school_id, subject_code) DO UPDATE SET
          name = EXCLUDED.name,
          coefficient = EXCLUDED.coefficient,
          level = EXCLUDED.level,
@@ -5893,9 +5893,15 @@ class PostgresRepository {
     return { id: row.id, message: "Cours enregistré" };
   }
 
-  async deleteSubject(subjectCode) {
+  async deleteSubject(subjectCode, schoolCode) {
     await this.init();
-    const subject = await this.one("SELECT id, subject_code FROM subjects WHERE subject_code = $1", [String(subjectCode).trim().toUpperCase()]);
+    const school = await this.getSchoolByCode(schoolCode);
+    if (!school) throw new Error("Établissement introuvable");
+    const normalizedCode = String(subjectCode).trim().toUpperCase();
+    const subject = await this.one(
+      "SELECT id, subject_code FROM subjects WHERE school_id = $1 AND subject_code = $2",
+      [school.id, normalizedCode],
+    );
     if (!subject) throw new Error("Cours introuvable");
     const usage = await this.one("SELECT COUNT(*)::int AS count FROM grades WHERE subject_id = $1", [subject.id]);
     if (usage.count > 0) {
@@ -5906,6 +5912,7 @@ class PostgresRepository {
     await this.query("DELETE FROM subjects WHERE id = $1", [subject.id]);
     this.cachedDataset = null;
     await this.recordAudit({
+      schoolCode,
       action: "subject_delete",
       entityType: "subject",
       entityId: subject.subject_code,

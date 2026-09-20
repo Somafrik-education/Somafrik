@@ -12,6 +12,7 @@ const { createTeacherAssignmentsRepository } = require("../db/teacherAssignments
 const { createTxAdapter } = require("../db/txAdapter");
 const { ensureTeacherAssignmentsActiveUniqueness } = require("./teacherAssignmentsUniqueness");
 const { ensureTeachersLegacyCodeSchema } = require("../db/teachersLegacyCodeSchema");
+const { PostgresRepository } = require("../db/postgresRepository");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_SUBJECTS_ASSIGNMENTS_IT_DATABASE ?? "somafrik_subjects_assignments_it")
@@ -52,6 +53,7 @@ async function setupFixture(pool) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       country_id UUID NOT NULL REFERENCES countries(id),
       school_code VARCHAR(64) NOT NULL UNIQUE,
+      login_code TEXT,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -100,11 +102,15 @@ async function setupFixture(pool) {
     CREATE TABLE IF NOT EXISTS subjects (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       school_id UUID NOT NULL REFERENCES schools(id),
-      subject_code VARCHAR(64) NOT NULL UNIQUE,
+      subject_code VARCHAR(64) NOT NULL,
       name TEXT NOT NULL,
+      coefficient NUMERIC(8, 2) NOT NULL DEFAULT 1,
+      level TEXT,
+      description TEXT,
       status TEXT NOT NULL DEFAULT 'active',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (school_id, subject_code)
     );
     CREATE TABLE IF NOT EXISTS teacher_assignments (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -118,6 +124,27 @@ async function setupFixture(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS subject_class_assignments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      subject_id UUID NOT NULL REFERENCES subjects(id),
+      class_id UUID REFERENCES classes(id),
+      level TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+    CREATE TABLE IF NOT EXISTS grades (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      subject_id UUID NOT NULL REFERENCES subjects(id)
+    );
+  `);
+  await pool.query(`
+    ALTER TABLE schools ADD COLUMN IF NOT EXISTS login_code TEXT;
+    ALTER TABLE subjects ADD COLUMN IF NOT EXISTS coefficient NUMERIC(8, 2) NOT NULL DEFAULT 1;
+    ALTER TABLE subjects ADD COLUMN IF NOT EXISTS level TEXT;
+    ALTER TABLE subjects ADD COLUMN IF NOT EXISTS description TEXT;
+    ALTER TABLE subjects DROP CONSTRAINT IF EXISTS subjects_subject_code_key;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_subjects_school_subject_code
+      ON subjects (school_id, subject_code);
   `);
   await ensureTeachersLegacyCodeSchema(pool);
 
@@ -137,6 +164,8 @@ async function setupFixture(pool) {
   await ensureTeacherAssignmentsActiveUniqueness(poolAdapter, { info() {}, error() {} });
 
   for (const table of [
+    "grades",
+    "subject_class_assignments",
     "teacher_assignments",
     "teachers",
     "users",
@@ -151,9 +180,11 @@ async function setupFixture(pool) {
 
   const country = await pool.query(`INSERT INTO countries (name, iso_code) VALUES ('RDC', 'CD') RETURNING id`);
   const schools = await pool.query(
-    `INSERT INTO schools (country_id, school_code, name)
-     VALUES ($1, 'CD-2026-0001', 'Lycée A'), ($1, 'CD-2026-0002', 'Lycée B')
-     RETURNING id, school_code`,
+    `INSERT INTO schools (country_id, school_code, login_code, name)
+     VALUES
+       ($1, 'CD-2026-0001', 'CD-LYA-26-001', 'Lycée A'),
+       ($1, 'CD-2026-0002', 'CD-LYB-26-001', 'Lycée B')
+     RETURNING id, school_code, login_code`,
     [country.rows[0].id],
   );
   const schoolA = schools.rows.find((row) => row.school_code === "CD-2026-0001");
@@ -356,6 +387,63 @@ async function main() {
         ),
       (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
     );
+
+    // Régression création Web/Mobile : le même code matière est autorisé dans deux
+    // établissements et le login_code public doit résoudre le même tenant que school_code.
+    const subjectsRepo = new PostgresRepository({ connectionString: isolatedUrl });
+    subjectsRepo.ready = true;
+    subjectsRepo.recordAudit = async () => {};
+    try {
+      const createdA = await subjectsRepo.createSubject({
+        schoolCode: "CD-LYA-26-001",
+        name: "Cours commun A",
+        code: "COMMON",
+      });
+      const createdB = await subjectsRepo.createSubject({
+        schoolCode: "CD-LYB-26-001",
+        name: "Cours commun B",
+        code: "COMMON",
+      });
+      assert.ok(createdA.id);
+      assert.ok(createdB.id);
+      assert.notEqual(createdA.id, createdB.id, "un code identique ne doit jamais upsert l'autre tenant");
+
+      const duplicated = await pool.query(
+        `SELECT s.school_code, sub.name
+         FROM subjects sub
+         JOIN schools s ON s.id = sub.school_id
+         WHERE sub.subject_code = 'COMMON'
+         ORDER BY s.school_code`,
+      );
+      assert.deepEqual(
+        duplicated.rows.map((row) => [row.school_code, row.name]),
+        [
+          ["CD-2026-0001", "Cours commun A"],
+          ["CD-2026-0002", "Cours commun B"],
+        ],
+      );
+
+      const viaLoginCode = await subjectsRepo.getSubjectsV2({ schoolCode: "CD-LYA-26-001" });
+      assert.ok(viaLoginCode.some((row) => row.code === "COMMON" && row.name === "Cours commun A"));
+      assert.equal(
+        viaLoginCode.some((row) => row.code === "COMMON" && row.name === "Cours commun B"),
+        false,
+        "GET /v2/subjects doit rester isolé même via login_code",
+      );
+
+      await subjectsRepo.deleteSubject("COMMON", "CD-LYA-26-001");
+      const remaining = await pool.query(
+        `SELECT s.school_code, sub.name
+         FROM subjects sub
+         JOIN schools s ON s.id = sub.school_id
+         WHERE sub.subject_code = 'COMMON'`,
+      );
+      assert.equal(remaining.rowCount, 1);
+      assert.equal(remaining.rows[0].school_code, "CD-2026-0002");
+      assert.equal(remaining.rows[0].name, "Cours commun B");
+    } finally {
+      await subjectsRepo.close();
+    }
 
     console.log("subjectsAssignments.pg.test.js: OK");
   } finally {
