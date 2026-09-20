@@ -378,6 +378,7 @@ test("PG: create/update/delete convergent avec school_courses sans écraser un t
       CREATE TEMP TABLE users (
         id uuid PRIMARY KEY,
         school_id uuid,
+        user_code text,
         first_name text,
         last_name text,
         status text
@@ -408,6 +409,7 @@ test("PG: create/update/delete convergent avec school_courses sans écraser un t
         school_id uuid NOT NULL,
         user_id uuid,
         teacher_code text,
+        legacy_teacher_code text,
         status text
       );
       CREATE TEMP TABLE teacher_assignments (
@@ -450,7 +452,7 @@ test("PG: create/update/delete convergent avec school_courses sans écraser un t
       [ids.subject, ids.school],
     );
     await client.query(
-      "INSERT INTO users (id, school_id, first_name, last_name, status) VALUES ($1,$3,'Awa','Diop','active'),($2,$3,'Moussa','Ba','active')",
+      "INSERT INTO users (id, school_id, user_code, first_name, last_name, status) VALUES ($1,$3,'CD-2026-0001-ENS-0001','Awa','Diop','active'),($2,$3,'CD-2026-0001-ENS-0002','Moussa','Ba','active')",
       [ids.user1, ids.user2, ids.school],
     );
     await client.query(
