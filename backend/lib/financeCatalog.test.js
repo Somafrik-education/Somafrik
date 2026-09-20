@@ -9,6 +9,85 @@ const {
   CANONICAL_PAYMENT_METHODS,
 } = require("./financeCatalog");
 
+test("foldPaymentStudentOptions accepte le roster canonique active + enrolled", () => {
+  const rows = foldPaymentStudentOptions([
+    {
+      student_id: "esther",
+      student_code: "CD-2026-0001-STU-ESTHER",
+      first_name: "Esther",
+      last_name: "OKITO",
+      student_status: "active",
+      enrollment_status: "enrolled",
+      class_id: "c-1pa",
+      class_code: "1PA",
+      class_name: "1ère Primaire A",
+    },
+    {
+      student_id: "esther",
+      student_code: "CD-2026-0001-STU-ESTHER",
+      first_name: "Esther",
+      last_name: "OKITO",
+      student_status: "active",
+      enrollment_status: "transferred",
+      class_id: "c-old",
+      class_code: "OLD",
+      class_name: "Ancienne",
+    },
+    {
+      student_id: "awa",
+      student_code: "STU-AWA",
+      first_name: "Awa",
+      last_name: "Diop",
+      student_status: "active",
+      enrollment_status: "active",
+      class_id: "c-6a",
+      class_code: "6A",
+      class_name: "6ème A",
+    },
+    {
+      student_id: "upper",
+      student_code: "STU-UP",
+      first_name: "Noah",
+      last_name: "Upper",
+      student_status: "active",
+      enrollment_status: "ENROLLED",
+      class_id: "c-up",
+      class_code: "UP",
+      class_name: "Upper",
+    },
+    {
+      student_id: "dead-enr",
+      student_code: "STU-ARCH",
+      first_name: "Marc",
+      last_name: "Archived",
+      student_status: "active",
+      enrollment_status: "archived",
+      class_id: "c-arch",
+      class_code: "AR",
+      class_name: "Archivée",
+    },
+    {
+      student_id: "inact-enr",
+      student_code: "STU-IN",
+      first_name: "Lina",
+      last_name: "Inactive",
+      student_status: "active",
+      enrollment_status: "inactive",
+      class_id: "c-in",
+      class_code: "IN",
+      class_name: "Inactive",
+    },
+  ]);
+  assert.equal(rows.some((row) => row.studentCode === "CD-2026-0001-STU-ESTHER"), true);
+  const esther = rows.find((row) => row.studentCode === "CD-2026-0001-STU-ESTHER");
+  assert.equal(esther.classes.length, 1);
+  assert.equal(esther.classCode, "1PA");
+  assert.equal(rows.some((row) => row.studentCode === "STU-AWA"), true);
+  assert.equal(rows.some((row) => row.studentCode === "STU-UP"), true);
+  assert.equal(rows.some((row) => row.studentCode === "STU-ARCH"), false);
+  assert.equal(rows.some((row) => row.studentCode === "STU-IN"), false);
+});
+
 test("foldPaymentStudentOptions déduplique, ignore sans inscription, trie", () => {
   const rows = foldPaymentStudentOptions([
     {

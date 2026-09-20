@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const {
   normalizeEnrollmentStatus,
+  isRosterEnrollmentStatus,
   canValidateEnrollmentStatus,
   canAssignClassEnrollmentStatus,
   canTransferEnrollmentStatus,
@@ -19,6 +20,18 @@ const {
 test("C18 alias active → ENROLLED", () => {
   assert.equal(normalizeEnrollmentStatus("active"), "ENROLLED");
   assert.equal(normalizeEnrollmentStatus("ENROLLED"), "ENROLLED");
+});
+
+test("roster canonique : active + enrolled uniquement", () => {
+  assert.equal(isRosterEnrollmentStatus("active"), true);
+  assert.equal(isRosterEnrollmentStatus("actif"), true);
+  assert.equal(isRosterEnrollmentStatus("enrolled"), true);
+  assert.equal(isRosterEnrollmentStatus("ENROLLED"), true);
+  assert.equal(isRosterEnrollmentStatus("approved"), false);
+  assert.equal(isRosterEnrollmentStatus("inactive"), false);
+  assert.equal(isRosterEnrollmentStatus("archived"), false);
+  assert.equal(isRosterEnrollmentStatus("deleted"), false);
+  assert.equal(isRosterEnrollmentStatus("transferred"), false);
 });
 
 test("C18 validate PRE_REGISTERED|PENDING_REVIEW|INCOMPLETE → APPROVED", () => {

@@ -9,6 +9,16 @@ const { BusinessError } = require("../services/authService");
 const { createHttpError } = require("./classesManagement");
 
 const ROSTER_ENROLLMENT_SQL = `lower(btrim(e.status)) IN ('active', 'enrolled')`;
+const ROSTER_ENROLLMENT_STATUSES = Object.freeze(["active", "enrolled", "actif"]);
+
+function isRosterEnrollmentStatus(status) {
+  const key = String(status ?? "")
+    .trim()
+    .toLowerCase();
+  if (ROSTER_ENROLLMENT_STATUSES.includes(key)) return true;
+  return normalizeEnrollmentStatus(status, "") === "ENROLLED";
+}
+
 const VALIDATE_SOURCE = Object.freeze(["PRE_REGISTERED", "PENDING_REVIEW", "INCOMPLETE"]);
 const ASSIGN_SOURCE = Object.freeze(["APPROVED", "ENROLLED"]);
 const TRANSFER_SOURCE = Object.freeze(["ENROLLED"]);
@@ -564,6 +574,8 @@ module.exports = {
   CLOSE_SOURCE,
   TERMINAL,
   ROSTER_ENROLLMENT_SQL,
+  ROSTER_ENROLLMENT_STATUSES,
+  isRosterEnrollmentStatus,
   normalizeEnrollmentStatus,
   isTerminalEnrollmentStatus,
   canValidateEnrollmentStatus,
