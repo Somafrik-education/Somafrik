@@ -850,7 +850,7 @@ Les tests existants (`student-user-canonical-link.regression.test.ts`, `roleNavi
 7. Logout tokens async / silencieux.
 8. Fiche : GET sans preuve d'enfant ; erreur sans retry.
 9. ReportCards sans switcher.
-10. Pas de changement de PIN in-app.
+10. Pas de changement de mot de passe in-app.
 11. 0 enfant : placeholder « Élève ».
 
 ## P2
@@ -913,7 +913,7 @@ Ordre suggéré :
 | MP-016 | Session | `logout()` n'attend pas `clearSecureSession` | P1 | `AuthContext.tsx` 327–333 ; test RED MP-011 | `Mobile/src/context/AuthContext.tsx` | Clear synchrone + erreur visible |
 | MP-017 | Isolation | `getSchoolStudent(studentId)` sans check `children` | P1 | `StudentDetailScreen.tsx` 94–141 ; test RED MP-012 | `Mobile/src/screens/StudentDetailScreen.tsx` | Refuser id hors enfants avant GET |
 | MP-018 | Bulletins | Pas de `StudentSwitcher` | P1 | `ReportCardsScreen.tsx` | `Mobile/src/screens/ReportCardsScreen.tsx` | Ajouter switcher |
-| MP-019 | Paramètres | Pas de changement PIN / email / téléphone après login | P1 | aucun Settings Parent | — | Écran sécurité compte |
+| MP-019 | Paramètres | Pas de changement de mot de passe / email / téléphone après login | P1 | aucun Settings Parent | — | Écran sécurité compte |
 | MP-020 | UX | 0 enfant → identité « Élève », pas d'état dédié | P1 | `HomeScreen.tsx` 299 | `Mobile/src/screens/HomeScreen.tsx` | Empty state « aucun enfant lié » |
 | MP-021 | Profil | Fiche erreur sans retry | P1 | `StudentDetailScreen.tsx` 180–187 | `Mobile/src/screens/StudentDetailScreen.tsx` | Retry + mapping 401/403/404 |
 | MP-022 | UX | `schoolCode` affiché comme établissement | P2 | `StudentDetailScreen.tsx` 325 | `Mobile/src/screens/StudentDetailScreen.tsx` | Nom d'école |
