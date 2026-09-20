@@ -8,6 +8,7 @@ import {
   registerAuthenticatedPushDevice,
   resetPushRegistrationStateForTests,
 } from "./pushNotifications";
+import { SOMAFRIK_PUSH_CHANNEL_ID } from "../lib/pushNotificationDestinations";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ID = "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5";
@@ -60,15 +61,40 @@ async function main() {
   assert.match(serviceSrc, /POST_NOTIFICATIONS/);
   assert.doesNotMatch(serviceSrc, /console\.log\([^)]*expoPushToken/);
   assert.doesNotMatch(serviceSrc, /safeLogger\.(info|warn|error|debug)\([^)]*expoPushToken/);
+  const channelCall = serviceSrc.indexOf("setNotificationChannelAsync");
+  const android13Call = serviceSrc.indexOf("ensureAndroid13PostNotifications");
+  assert.ok(channelCall > 0 && android13Call > channelCall, "canal v2 avant POST_NOTIFICATIONS");
 
   resetPushRegistrationStateForTests();
   const posts: Array<{ path: string; init?: RequestInit }> = [];
+  const sequence: string[] = [];
   const httpOk = async (path: string, init?: RequestInit) => {
+    sequence.push(`post:${path}`);
     posts.push({ path, init });
     return { ok: true };
   };
 
   let asked = false;
+  let tokenRequested = false;
+  const orderedNotifications = {
+    AndroidImportance: { HIGH: 4 },
+    async setNotificationChannelAsync(id: string) {
+      sequence.push(`channel:${id}`);
+      return undefined;
+    },
+    async getPermissionsAsync() {
+      return granted();
+    },
+    async requestPermissionsAsync() {
+      sequence.push("expo_request_permissions");
+      return granted();
+    },
+    async getExpoPushTokenAsync() {
+      tokenRequested = true;
+      sequence.push("token");
+      return { data: "ExponentPushToken[android13-preview]" };
+    },
+  };
   const android13Prompt = await registerAuthenticatedPushDevice({
     platform: "android",
     executionEnvironment: "standalone",
@@ -78,12 +104,13 @@ async function main() {
     postNotificationsCanAskAgain: true,
     requestPostNotificationsImpl: async () => {
       asked = true;
+      sequence.push("post_notifications");
       return granted();
     },
     getProjectId: () => PROJECT_ID,
     getReleaseProfileImpl: () => "preview",
     httpRequestImpl: httpOk as never,
-    notifications: previewNotifications(),
+    notifications: orderedNotifications,
   });
   assert.equal(
     asked,
@@ -94,10 +121,18 @@ async function main() {
   assert.equal(getLastPushRegistrationOutcome()?.status, "registered");
   assert.equal(posts[0]?.path, "/mobile/push-devices");
   assert.match(String(posts[0]?.init?.body), /"appProfile":"preview"/);
+  assert.deepEqual(sequence, [
+    `channel:${SOMAFRIK_PUSH_CHANNEL_ID}`,
+    "post_notifications",
+    "token",
+    "post:/mobile/push-devices",
+  ]);
 
   resetPushRegistrationStateForTests();
   posts.length = 0;
+  sequence.length = 0;
   asked = false;
+  tokenRequested = false;
   const refused = await registerAuthenticatedPushDevice({
     platform: "android",
     executionEnvironment: "standalone",
@@ -107,17 +142,20 @@ async function main() {
     postNotificationsCanAskAgain: true,
     requestPostNotificationsImpl: async () => {
       asked = true;
+      sequence.push("post_notifications");
       return denied(true);
     },
     getProjectId: () => PROJECT_ID,
     getReleaseProfileImpl: () => "preview",
     httpRequestImpl: httpOk as never,
-    notifications: previewNotifications(),
+    notifications: orderedNotifications,
   });
   assert.equal(asked, true);
   assert.equal(refused, "permission_denied");
   assert.equal(getLastPushRegistrationOutcome()?.status, "permission_denied");
+  assert.equal(tokenRequested, false, "refus : aucun token demandé");
   assert.equal(posts.length, 0);
+  assert.deepEqual(sequence, [`channel:${SOMAFRIK_PUSH_CHANNEL_ID}`, "post_notifications"]);
 
   resetPushRegistrationStateForTests();
   posts.length = 0;
