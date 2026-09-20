@@ -24,3 +24,22 @@ test("isStudentDemoAccount ne classe pas les comptes établissement comme élèv
 test("shouldSeedDemoData reste coupé quand SOMAFRIK_SKIP_DEMO_SEED=true", () => {
   assert.equal(shouldSeedDemoData({ SOMAFRIK_SKIP_DEMO_SEED: "true", NODE_ENV: "test" }), false);
 });
+
+test("le seed démo réutilise l'email parent sur l'élève Jean Dupont du même établissement", () => {
+  const parent = seedData.userAccounts.find((user) => user.id === "USER-PARENT1");
+  const student = seedData.students.find((item) => item.matricule === "CD-IN-EL-26-001");
+  assert.ok(parent, "USER-PARENT1 doit exister");
+  assert.ok(student, "CD-IN-EL-26-001 doit exister");
+  assert.equal(parent.schoolCode, student.schoolCode);
+  assert.equal(parent.schoolCode, "CD-2026-0001");
+  assert.equal(String(parent.email).trim().toLowerCase(), "parent.dupont@example.com");
+  assert.equal(String(student.parentEmail).trim().toLowerCase(), "parent.dupont@example.com");
+  assert.notEqual(parent.publicId, student.matricule);
+});
+
+test("Marie Martin partage le téléphone du parent démo (collision téléphone si recopié sur users)", () => {
+  const parent = seedData.userAccounts.find((user) => user.id === "USER-PARENT1");
+  const student = seedData.students.find((item) => item.matricule === "CD-IN-EL-26-002");
+  assert.equal(parent.phone, student.parentPhone);
+  assert.notEqual(String(parent.email).trim().toLowerCase(), String(student.parentEmail).trim().toLowerCase());
+});
