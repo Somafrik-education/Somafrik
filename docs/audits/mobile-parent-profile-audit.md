@@ -5,12 +5,22 @@ Phase constat uniquement. Aucune correction métier. Aucun changement Web. Aucun
 ## Base auditée
 
 ```text
+Base initiale de l'audit :
+84a6f9803146527b01602db9319c5b3b6a412327
+
+Base rebasée / état final vérifié :
+109fa474664485e298f82db9c727cb8d2325e29a
+```
+
+L'audit a d'abord été créé depuis `origin/develop@84a6f980…` (Merge PR #739). La branche `cursor/audit-mobile-parent-profile-5cab` a ensuite été rebasée sur `origin/develop@109fa474…` (Merge PR #733). Le typecheck Mobile et les contrats d'audit (`test:mobile-parent-profile-audit`) ont été rejoués après rebase, puis le delta Auth Parent (MP-014 / MP-041) a été ajouté sur cette base rebasée.
+
+Historique conservé — snapshot au branchement initial :
+
+```text
 origin/develop = 84a6f9803146527b01602db9319c5b3b6a412327
 branche        = cursor/audit-mobile-parent-profile-5cab
 commande       = git fetch origin develop && git switch -c cursor/audit-mobile-parent-profile-5cab
-```
 
-```text
 git rev-parse origin/develop
 84a6f9803146527b01602db9319c5b3b6a412327
 
@@ -37,7 +47,7 @@ Le nom de branche demandé (`audit/mobile-parent-profile`) n'a pas été utilis�
 
 ## HEAD
 
-Le HEAD de la PR d'audit est le commit qui ajoute ce rapport et les tests RED. Voir la PR Draft.
+Le HEAD de la PR d'audit est le tip de `cursor/audit-mobile-parent-profile-5cab` (voir la PR Draft). Après rebase, les vérifications locales ont été rejouées sur `109fa474…`.
 
 ## Périmètre
 
@@ -717,7 +727,7 @@ Classification :
 Preuve :
 `loginScreenSpec.ts` 166–168 + `LoginScreen.tsx` 336–352 + `validateAccountSecret("Pass1234") === null` + `verifyUserSecret` passwordHash. Test RED **MP-014**.
 Cible métier :
-lot séparé **Parent Auth Password** — mot de passe standard, même politique que les autres comptes, plus de PIN UI, plus de number-pad, plus de fallback PIN silencieux. Migration des anciens PIN à décider explicitement (UI PIN ≠ secret stocké PIN ≠ secret déjà password). Ne pas « convertir » automatiquement un PIN en mot de passe.
+lot séparé **Parent Auth Password** — mot de passe standard, même politique que les autres comptes, plus de PIN UI, plus de number-pad, plus de fallback PIN silencieux. UI PIN ≠ secret stocké PIN ≠ secret déjà password. Ne pas convertir automatiquement un PIN. Décision de migration : le clavier mot de passe standard accepte aussi les chiffres, donc les Parents historiques PIN-only restent capables de se connecter ; le remplacement progressif par un mot de passe conforme vient ensuite.
 
 ## UX
 
@@ -852,7 +862,7 @@ Ordre suggéré :
    5. réutilisation de `validateAccountSecret` / politique canonique (pas de politique Parent) ;
    6. login standardisé (même UX Teacher/Admin) ;
    7. récupération / changement de mot de passe in-app ;
-   8. migration ou compatibilité **explicitement** décidée pour les anciens PIN stockés (`pin` / `pinHash`) — ne pas conclure qu'un PIN devient un mot de passe ;
+   8. migration **sans conversion automatique** des anciens PIN (`pin` / `pinHash`) : le champ mot de passe standard accepte lettres **et** chiffres, donc un Parent historique peut provisoirement retaper ses 6 chiffres ; ensuite forcer progressivement le remplacement par un vrai mot de passe conforme ;
    9. tests de non-régression session/logout ;
    10. aucun fallback PIN silencieux.
 1. **P0 isolation** — fail-closed `sessionStudentAliasKeys` : id hors `children` → `[]`. Recouper push/route params.
