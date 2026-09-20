@@ -2,10 +2,12 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { SchoolSettingsDenied, useSchoolSettingsAccess } from "../components/SchoolSettingsGate";
+import { GuidedSchoolSetupWizard } from "../components/schoolSetup/GuidedSchoolSetupWizard";
 import { SchoolSetupOptionalCompleteness } from "../components/schoolSetup/SchoolSetupOptionalCompleteness";
 import { SchoolSetupWizard } from "../components/schoolSetup/SchoolSetupWizard";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { dashboardSetupProgressLabel } from "../lib/schoolSetupMobile";
+import { schoolSetupGuidedApi, type GuidedSetupPayload } from "../lib/schoolSetupGuidedApi";
 import { schoolSetupStatusApi, type SchoolSetupPayload } from "../lib/schoolSetupStatusApi";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import { ApiClientError } from "../services/httpClient";
@@ -22,6 +24,7 @@ export default function SchoolSetupSettingsScreen() {
   const { horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const bottomPadding = useStackScreenBottomPadding();
   const [payload, setPayload] = useState<SchoolSetupPayload | null>(null);
+  const [guided, setGuided] = useState<GuidedSetupPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useFocusEffect(
@@ -40,6 +43,14 @@ export default function SchoolSetupSettingsScreen() {
           setError(
             err instanceof ApiClientError ? err.message : "Impossible de charger le statut de configuration.",
           );
+        });
+      void schoolSetupGuidedApi
+        .get()
+        .then((row) => {
+          if (!cancelled) setGuided(row);
+        })
+        .catch(() => {
+          if (!cancelled) setGuided(null);
         });
       return () => {
         cancelled = true;
@@ -72,6 +83,13 @@ export default function SchoolSetupSettingsScreen() {
         </View>
       ) : null}
       {!payload && !error ? <ActivityIndicator color="#2563EB" /> : null}
+      {guided ? (
+        <GuidedSchoolSetupWizard
+          payload={guided}
+          onLeave={() => navigation.goBack()}
+          onCompleted={setGuided}
+        />
+      ) : null}
       {payload ? (
         <>
           <Text style={styles.meta}>
