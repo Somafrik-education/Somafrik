@@ -163,8 +163,8 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
         user: {
           id: PARENT_A,
           children: [
-            { id: CHILD_A1, name: "Enfant A1" },
-            { id: CHILD_A2, name: "Enfant A2" },
+            { id: CHILD_A1 },
+            { id: CHILD_A2 },
           ],
         },
       });
@@ -203,8 +203,7 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
         selectedStudentId: CHILD_B1,
         user: {
           id: PARENT_A,
-          schoolCode: SCHOOL_A,
-          children: [{ id: CHILD_A1, schoolCode: SCHOOL_A }],
+          children: [{ id: CHILD_A1 }],
         },
       });
       assert.equal(keys.includes(CHILD_B1), false);
