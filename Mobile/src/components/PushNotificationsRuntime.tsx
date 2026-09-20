@@ -16,6 +16,7 @@ import {
 } from "../lib/pushNotificationNavigate";
 import {
   observePushRegistrationFailure,
+  observePushRuntimeEvent,
   registerAuthenticatedPushDevice,
 } from "../services/pushNotifications";
 import { navigationRef } from "../navigation/rootNavigation";
@@ -61,6 +62,7 @@ export default function PushNotificationsRuntime() {
   const { session, bootstrapping } = useAuth();
   const canonical = !bootstrapping && Boolean(session) && canPersistFullSession(session);
   const canonicalRef = useRef(canonical);
+  const previousCanonicalRef = useRef(false);
   canonicalRef.current = canonical;
 
   const gate: PushTapGate = {
@@ -69,6 +71,13 @@ export default function PushNotificationsRuntime() {
   };
 
   useEffect(() => {
+    observePushRuntimeEvent("mounted");
+  }, []);
+
+  useEffect(() => {
+    const from = previousCanonicalRef.current;
+    observePushRuntimeEvent("canonical", { from, to: canonical });
+    previousCanonicalRef.current = canonical;
     if (!canonical) return;
     void registerAuthenticatedPushDevice().catch(observePushRegistrationFailure);
   }, [canonical]);

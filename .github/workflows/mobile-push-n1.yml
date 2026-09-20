@@ -30,6 +30,8 @@ on:
       - "Mobile/src/services/pushNotifications.ts"
       - "Mobile/src/services/pushNotifications.test.ts"
       - "Mobile/src/services/pushNotifications.android13.test.ts"
+      - "Mobile/src/services/pushNotifications.cng-release.test.ts"
+      - "Mobile/src/services/pushNotifications.expo-constants-interop.test.ts"
       - "Mobile/src/lib/pushNotificationDestinations.ts"
       - "Mobile/src/lib/pushNotificationNavigate.ts"
       - "Mobile/src/lib/pushNotificationTap.ts"
