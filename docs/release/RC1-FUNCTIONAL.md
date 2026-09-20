@@ -46,6 +46,6 @@ Aucune écriture legacy staff/élèves : contrats **PASS**.
 | Suites unitaires / LOT 0–8 | PASS catalogue |
 | Intégration backend PG (sous-ensemble) | **PASS** local |
 | Contrats API live seedés | **BLOCKED** |
-| Typecheck / lint / build | CI PR (voir statut HEAD) |
+| Typecheck / lint / build | **CI HEAD `ad14b86b` GREEN** (26 PASS / 9 SKIP LOT hors scope / 0 FAIL) |
 | Empty / loading / offline / error UI | **SKIP** UI |
 | Permissions live après changement de rôle | **SKIP** runtime seedé |

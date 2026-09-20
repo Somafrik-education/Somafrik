@@ -31,6 +31,7 @@ G2–G7 restent interdites.
 | Cible | `develop@109fa474664485e298f82db9c727cb8d2325e29a` (merge #733) |
 | Conflits | `docs/project/CHANGELOG.md`, `docs/project/TESTING.md` — résolus (conserver G0 + RC1) |
 | Fichiers runtime produit | aucun dans le diff vs develop |
+| CI HEAD `ad14b86b` | **GREEN** — 26 PASS / 9 SKIP (LOT 0–8 hors scope docs) / 0 FAIL. Required, Quality, Core, Risk-targeted, Secrets GREEN. |
 
 ## Familles
 
