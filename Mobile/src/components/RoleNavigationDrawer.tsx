@@ -204,36 +204,6 @@ export default function RoleNavigationDrawer({
                 <Text style={styles.preferencesText}>Aide</Text>
               </TouchableOpacity>
             ) : null}
-            {helpUi.available && helpUi.triggerVisible ? (
-              <TouchableOpacity
-                style={styles.preferencesButton}
-                onPress={() => {
-                  onClose();
-                  helpUi.hideTrigger();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Masquer le bouton d'aide"
-                testID="mobile-role-drawer-help-hide"
-              >
-                <Ionicons name="eye-off-outline" size={21} color="#1D4ED8" />
-                <Text style={styles.preferencesText}>Masquer le bouton d'aide</Text>
-              </TouchableOpacity>
-            ) : null}
-            {helpUi.available && !helpUi.triggerVisible ? (
-              <TouchableOpacity
-                style={styles.preferencesButton}
-                onPress={() => {
-                  onClose();
-                  helpUi.showTrigger();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel="Afficher le bouton d'aide"
-                testID="mobile-role-drawer-help-show"
-              >
-                <Ionicons name="help-outline" size={21} color="#1D4ED8" />
-                <Text style={styles.preferencesText}>Afficher le bouton d'aide</Text>
-              </TouchableOpacity>
-            ) : null}
             {canOpenPersonalPreferences ? (
               <TouchableOpacity
                 style={styles.preferencesButton}

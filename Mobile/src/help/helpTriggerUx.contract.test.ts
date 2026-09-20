@@ -28,7 +28,7 @@ test("compact ? trigger is the only principal entry and stays accessible", () =>
   assert.doesNotMatch(trigger, /Besoin d['’]aide \?/);
   assert.match(trigger, /onPress=\{onPress\}/);
   assert.match(host, /onPress=\{openHelp\}/);
-  assert.match(host, /<HelpSheet /);
+  assert.match(host, /<HelpSheet/);
 });
 
 test("hiding the trigger is persisted locally without a new dependency", () => {
@@ -38,6 +38,7 @@ test("hiding the trigger is persisted locally without a new dependency", () => {
   assert.match(context, /writeHelpTriggerVisible\(false\)/);
   assert.match(context, /writeHelpTriggerVisible\(true\)/);
   assert.match(host, /triggerVisible && !keyboardVisible/);
+  assert.match(host, /floatingVisible/);
   assert.match(host, /onHide=\{hideTrigger\}/);
 });
 
@@ -45,15 +46,16 @@ test("menu can reopen help and restore the compact trigger", () => {
   assert.match(navigator, /<HelpUiProvider>/);
   assert.match(drawer, /testID="mobile-role-drawer-help"/);
   assert.match(drawer, /accessibilityLabel="Aide"/);
-  assert.match(drawer, /Masquer le bouton d['']aide/);
-  assert.match(drawer, /Afficher le bouton d['']aide/);
-  assert.match(drawer, /testID="mobile-role-drawer-help-hide"/);
-  assert.match(drawer, /testID="mobile-role-drawer-help-show"/);
   assert.match(drawer, /helpUi\.openHelp/);
-  assert.match(drawer, /helpUi\.hideTrigger/);
-  assert.match(drawer, /helpUi\.showTrigger/);
+  assert.doesNotMatch(drawer, /Masquer le bouton d['']aide/);
+  assert.doesNotMatch(drawer, /Afficher le bouton d['']aide/);
+  assert.doesNotMatch(drawer, /mobile-role-drawer-help-hide|mobile-role-drawer-help-show/);
   assert.doesNotMatch(drawer, /HelpTrigger|HelpPanel|HelpSheet/);
   assert.doesNotMatch(drawer, /@somafrik\/help-catalog/);
+  assert.match(sheet, /Afficher le raccourci \?/);
+  assert.match(sheet, /testID="mobile-help-shortcut-switch"/);
+  assert.match(sheet, /accessibilityRole="switch"/);
+  assert.match(host, /onShortcutVisibleChange/);
 });
 
 test("help engine and sheet content stay the same workflow", () => {

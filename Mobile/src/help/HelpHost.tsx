@@ -12,7 +12,7 @@ import { useHelpUi } from "./HelpUiContext";
 
 export function HelpHost() {
   const { session, permissionsBootstrap } = useAuth();
-  const { setAvailable, closeHelp, openHelp, hideTrigger, triggerVisible, open } = useHelpUi();
+  const { setAvailable, closeHelp, openHelp, hideTrigger, showTrigger, triggerVisible, open } = useHelpUi();
   const insets = useSafeAreaInsets();
   const [routeName, setRouteName] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -74,11 +74,11 @@ export function HelpHost() {
 
   if (!available) return null;
 
-  const showTrigger = triggerVisible && !keyboardVisible;
+  const floatingVisible = triggerVisible && !keyboardVisible;
 
   return (
     <>
-      {showTrigger ? (
+      {floatingVisible ? (
         <HelpTrigger
           expanded={open}
           onPress={openHelp}
@@ -86,7 +86,15 @@ export function HelpHost() {
           bottom={helpTriggerBottomOffset(insets.bottom)}
         />
       ) : null}
-      {open ? <HelpSheet context={context} onClose={closeHelp} onNavigate={goTo} /> : null}
+      {open ? (
+        <HelpSheet
+          context={context}
+          onClose={closeHelp}
+          onNavigate={goTo}
+          shortcutVisible={triggerVisible}
+          onShortcutVisibleChange={(visible) => (visible ? showTrigger() : hideTrigger())}
+        />
+      ) : null}
     </>
   );
 }
