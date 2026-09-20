@@ -81,7 +81,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      SOMAFRIK_API_DOMAIN: ${SOMAFRIK_API_DOMAIN:-somafrik-api-preprod.onrender.com}
+      SOMAFRIK_API_DOMAIN: ${SOMAFRIK_API_DOMAIN:-api-preprod.somafrik.app}
     volumes:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
