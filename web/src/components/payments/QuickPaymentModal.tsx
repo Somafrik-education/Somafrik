@@ -61,6 +61,7 @@ function studentIdentityFromSearch(student: StudentSearchResult): FinanceStudent
   return {
     id: student.id,
     studentId: student.id,
+    studentDbId: student.id,
     studentCode: student.matricule,
     matricule: student.matricule,
     publicId: student.matricule,
@@ -247,7 +248,7 @@ export function QuickPaymentModal({
         if (wanted) {
           const match = findFinanceStudentOption(flattened, wanted);
           if (match) {
-            applySelectedStudent(
+            void applySelectedStudent(
               studentSearchResultFromOption(match, state.schools),
               flattened,
               Array.isArray(fees) ? fees : [],
@@ -266,7 +267,7 @@ export function QuickPaymentModal({
     })();
   }, [open, schoolCode, initialStudentId]);
 
-  function applySelectedStudent(
+  async function applySelectedStudent(
     student: StudentSearchResult,
     roster: PaymentRecord[],
     fees: FinanceObligationProjection[],
@@ -275,20 +276,31 @@ export function QuickPaymentModal({
     setSearch(student.name);
     const options = collectStudentPaymentClasses(student.id, roster);
     setClassId(options.length === 1 ? options[0].classId : "");
-    const openRows = collectOpenObligationsFromProjection(studentIdentityFromSearch(student), fees);
-    if (openRows.length === 1) {
-      setLines([createPaymentLine(openRows[0].obligationId)]);
-      return;
+    const applyOpenLines = (openRows: ReturnType<typeof collectOpenObligationsFromProjection>) => {
+      if (openRows.length === 1) {
+        setLines([createPaymentLine(openRows[0].obligationId)]);
+        return;
+      }
+      if (mode === "quick-student") {
+        setLines([createPaymentLine("")]);
+        return;
+      }
+      setLines([createPaymentLine(UNALLOCATED_TARGET)]);
+    };
+    applyOpenLines(collectOpenObligationsFromProjection(studentIdentityFromSearch(student), fees));
+    try {
+      const scoped = await financeApi.listStudentFees(student.id);
+      if (Array.isArray(scoped)) {
+        setStudentFees(scoped);
+        applyOpenLines(collectOpenObligationsFromProjection(studentIdentityFromSearch(student), scoped));
+      }
+    } catch {
+      /* projection établissement déjà chargée */
     }
-    if (mode === "quick-student") {
-      setLines([createPaymentLine("")]);
-      return;
-    }
-    setLines([createPaymentLine(UNALLOCATED_TARGET)]);
   }
 
   function selectStudent(student: StudentSearchResult) {
-    applySelectedStudent(student, students, studentFees);
+    void applySelectedStudent(student, students, studentFees);
   }
 
   function updateLine(id: string, patch: Partial<QuickPaymentLine>) {

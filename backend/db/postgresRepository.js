@@ -1793,8 +1793,8 @@ class PostgresRepository {
     }
   }
 
-  listFinanceStudentFees(principal) {
-    return this.getFinanceStore().listFinanceStudentFees(principal);
+  listFinanceStudentFees(principal, options) {
+    return this.getFinanceStore().listFinanceStudentFees(principal, options);
   }
 
   reconcileFinancePaymentAllocations(principal, options, auditMeta) {

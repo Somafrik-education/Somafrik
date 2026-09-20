@@ -192,7 +192,12 @@ export const financeApi = {
       },
     ),
 
-  listStudentFees: () => api.get<FinanceObligationProjection[]>("/finance/student-fees"),
+  listStudentFees: (studentId?: string) => {
+    const suffix = String(studentId ?? "").trim()
+      ? `?studentId=${encodeURIComponent(String(studentId).trim())}`
+      : "";
+    return api.get<FinanceObligationProjection[]>(`/finance/student-fees${suffix}`);
+  },
   getStudentFee: (obligationId: string) =>
     api.get(`/finance/student-fees/${encodeURIComponent(obligationId)}`),
   adjustStudentFee: (obligationId: string, payload: Record<string, unknown>) =>

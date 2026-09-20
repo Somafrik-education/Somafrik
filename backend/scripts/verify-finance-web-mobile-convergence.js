@@ -38,6 +38,9 @@ function sourceGuards() {
   assert.match(contract, /UNALLOCATED_TARGET = "__unallocated__"/);
   assert.match(contract, /buildFinancePaymentWritePayload/);
   assert.match(contract, /isOpenObligationFromProjection/);
+  assert.match(contract, /studentDbId/);
+  assert.match(contract, /collectFinanceStudentIdentityKeys/);
+  assert.match(contract, /obligationBelongsToStudent/);
   assert.match(contract, /trim\(value\) === UNALLOCATED_TARGET/);
   assert.match(contract, /FINANCE_OBLIGATION_ID_REQUIRED/);
   assert.doesNotMatch(contract, /amountDue - amountPaid/);
@@ -47,6 +50,8 @@ function sourceGuards() {
 
   assert.match(webWrite, /UNALLOCATED_FEE_TYPE = "Non imputé"/);
   assert.match(webWrite, /buildFinancePaymentWritePayload/);
+  assert.match(webWrite, /studentDbId/);
+  assert.match(webWrite, /collectFinanceStudentIdentityKeys/);
   assert.match(webWrite, /Number\(fee\.balance\)/);
   assert.match(webWrite, /trim\(value\) === UNALLOCATED_TARGET/);
   assert.match(webWrite, /FINANCE_OBLIGATION_ID_REQUIRED/);
@@ -79,6 +84,8 @@ function sourceGuards() {
 
   assert.match(mobileEnroll, /UNALLOCATED_FEE_TYPE = "Non imputé"/);
   assert.match(mobileEnroll, /buildFinancePaymentWritePayload/);
+  assert.match(mobileEnroll, /studentDbId/);
+  assert.match(mobileEnroll, /collectPaymentStudentIdentityKeys/);
   assert.match(mobileEnroll, /Number\.isFinite\(balance\) && balance > 0/);
   assert.match(mobileEnroll, /trim\(value\) === UNALLOCATED_TARGET/);
   assert.match(mobileEnroll, /FINANCE_OBLIGATION_ID_REQUIRED/);
@@ -149,11 +156,23 @@ function runNpm(args, label, cwd = ROOT) {
 function main() {
   sourceGuards();
   runNode(
-    ["--test", path.join(ROOT, "backend/lib/financeWebMobileConvergence.test.js")],
+    [
+      "--test",
+      path.join(ROOT, "backend/lib/financeWebMobileConvergence.test.js"),
+      path.join(ROOT, "backend/lib/financeOpenObligations.esther.test.js"),
+    ],
     "tests F5 mémoire ont échoué",
   );
   runNpm(
-    ["run", "test", "--", "src/lib/financePaymentWrite.test.ts", "src/lib/quickPayment.multiItem.test.ts"],
+    [
+      "run",
+      "test",
+      "--",
+      "src/lib/financePaymentWrite.test.ts",
+      "src/lib/financePaymentWrite.studentIdentity.test.ts",
+      "src/lib/quickPayment.multiItem.test.ts",
+      "src/components/payments/QuickPaymentModal.fastStudent.test.tsx",
+    ],
     "contrat Web a échoué",
     path.join(ROOT, "web"),
   );

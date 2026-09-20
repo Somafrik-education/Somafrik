@@ -101,7 +101,17 @@ export default function PaymentMutationControls({
   );
 
   const classOptions = useMemo(() => collectActivePaymentClasses(studentId, students), [studentId, students]);
-  const feeOptions = useMemo(() => collectOpenPaymentFees(studentId, studentFees), [studentId, studentFees]);
+  const feeIdentity = useMemo(
+    () => ({
+      id: studentId,
+      studentId,
+      studentDbId: studentId,
+      studentCode: selectedStudent?.studentCode,
+      matricule: selectedStudent?.studentCode,
+    }),
+    [studentId, selectedStudent?.studentCode],
+  );
+  const feeOptions = useMemo(() => collectOpenPaymentFees(feeIdentity, studentFees), [feeIdentity, studentFees]);
   const obligationChips = useMemo(
     () => [
       { id: UNALLOCATED_TARGET, label: "Non imputé" },
@@ -121,7 +131,16 @@ export default function PaymentMutationControls({
     setLines([
       {
         id: newLineId(),
-        obligationId: preselectPaymentObligationId(nextStudentId, studentFees),
+        obligationId: preselectPaymentObligationId(
+          {
+            id: nextStudentId,
+            studentId: nextStudentId,
+            studentDbId: nextStudentId,
+            studentCode: next?.studentCode,
+            matricule: next?.studentCode,
+          },
+          studentFees,
+        ),
         amount: "",
       },
     ]);
@@ -147,7 +166,16 @@ export default function PaymentMutationControls({
     setLines([
       {
         id: newLineId(),
-        obligationId: preselectPaymentObligationId(nextStudentId, studentFees),
+        obligationId: preselectPaymentObligationId(
+          {
+            id: nextStudentId,
+            studentId: nextStudentId,
+            studentDbId: nextStudentId,
+            studentCode: next?.studentCode,
+            matricule: next?.studentCode,
+          },
+          studentFees,
+        ),
         amount: "",
       },
     ]);
