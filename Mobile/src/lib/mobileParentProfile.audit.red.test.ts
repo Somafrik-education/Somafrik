@@ -25,6 +25,12 @@ import {
 } from "./canonicalStudentIdentity";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
 import { canMutateC18Mobile } from "./studentEnrollmentC18Access";
+import {
+  LOGIN_SCREEN_COPY,
+  mapKeyboardToInputMode,
+  resolveSecretKeyboardType,
+} from "./loginScreenSpec";
+import { validateAccountSecret } from "./userAccountRules";
 import { getRoleDrawerCatalog, getAllowedRoleDrawerItems } from "../navigation/roleDrawerPreferences";
 import { getRoleTabCatalog, partitionRoleTabCatalog } from "../navigation/roleTabCatalog";
 
@@ -393,6 +399,40 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
       const legacy = read("models/Parent.ts");
       assert.equal(/private pin: string/.test(legacy), false, "Mobile/src/models/Parent.ts stocke encore un PIN en clair");
       assert.equal(fs.existsSync(path.join(srcRoot, "test.ts")), false, "Mobile/src/test.ts legacy encore présent");
+    },
+  },
+  {
+    id: "MP-014",
+    severity: "P0",
+    title: "Authentification Parent : mot de passe standard, pas un PIN number-pad",
+    run() {
+      assert.equal(
+        validateAccountSecret("Pass1234"),
+        null,
+        "précondition : Pass1234 est un secret canonique valide (8 + lettre + chiffre)",
+      );
+      assert.notEqual(
+        resolveSecretKeyboardType("parent_student"),
+        "number-pad",
+        "Parent impose number-pad — un secret valide avec lettres n'est pas saisissable",
+      );
+      assert.equal(
+        resolveSecretKeyboardType("parent_student"),
+        resolveSecretKeyboardType("school_admin"),
+        "Parent et staff doivent partager le même clavier mot de passe",
+      );
+      assert.equal(mapKeyboardToInputMode(resolveSecretKeyboardType("parent_student")), "text");
+      assert.notEqual(
+        LOGIN_SCREEN_COPY.pinLabel,
+        "PIN",
+        "le contrat UI Parent expose encore le wording PIN",
+      );
+      const login = read("screens/LoginScreen.tsx");
+      assert.doesNotMatch(
+        login,
+        /identity\.role === "parent_student"[\s\S]{0,120}LOGIN_SCREEN_COPY\.pinLabel/,
+        "LoginScreen branche encore pinLabel pour parent_student",
+      );
     },
   },
 ];

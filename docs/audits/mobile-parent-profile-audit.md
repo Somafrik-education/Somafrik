@@ -685,6 +685,40 @@ Trous :
 - Profil session (PII enfants, téléphone) dans SecureStore jusqu'à clear.
 - Changement de session : L1 generation bump prévu ; non démontré runtime ici.
 
+## Authentification Parent
+
+Écran :
+`Login` après `RoleSelection` + `POST /identify` (badge rôle Parent)
+Composant :
+`FormField` `type="password"` (`secureTextEntry`, pas de bouton afficher/masquer)
+Route :
+`Login`
+Endpoint :
+`POST /api/login` via `login()` / `buildMobileLoginPayload` — champ unique `pin` pour **tous** les rôles
+Payload :
+`{ role: "parent_student", identifier, pin, schoolCode }`
+Type de champ :
+password masqué ; libellé **PIN** / placeholder **Ex. 1234** si `identity.role === "parent_student"`
+Clavier :
+`resolveSecretKeyboardType("parent_student")` → `"number-pad"` ; `mapKeyboardToInputMode` → `"numeric"` (helper spec, non branché sur le TextInput)
+Validation Mobile :
+login : non-vide seulement (`canSubmitLogin`) — **aucun** filtre digits-only / `maxLength` à la soumission
+Validation API observée (lecture seule) :
+`authService.login` exige `pin` ; `verifyUserSecret` accepte `passwordHash` **ou** `pinHash` **ou** `temporaryPassword` **ou** plaintext `password`/`pin`
+Politique de secret observée :
+hybride `validateAccountSecret` (miroir Mobile `userAccountRules.ts` = backend `lib/userAccountRules.js`) : PIN 6 chiffres **ou** mot de passe ≥8 + 1 lettre + 1 chiffre. `POST /auth/change-password` applique cette politique **sans** distinction de rôle — un Parent peut donc stocker `Pass1234`.
+Legacy détecté :
+- runtime : payload encore nommé `pin` ; UI Parent/élève number-pad
+- `Mobile/src/models/Parent.ts` : PIN clair + `verifierConnexion` (hors chemin login)
+- backend : colonnes/champs `pin` / `pinHash` **et** `password` / `passwordHash` en parallèle
+- scripts de vérif historiques : `pin: "1234"`
+Classification :
+**P0 (MP-041)** — un secret **valide serveur** contenant des lettres (ex. après `mustChangePassword` / mot de passe temporaire) n'est pas saisissable sur le clavier `number-pad` iOS/Android.
+Preuve :
+`loginScreenSpec.ts` 166–168 + `LoginScreen.tsx` 336–352 + `validateAccountSecret("Pass1234") === null` + `verifyUserSecret` passwordHash. Test RED **MP-014**.
+Cible métier :
+lot séparé **Parent Auth Password** — mot de passe standard, même politique que les autres comptes, plus de PIN UI, plus de number-pad, plus de fallback PIN silencieux. Migration des anciens PIN à décider explicitement (UI PIN ≠ secret stocké PIN ≠ secret déjà password). Ne pas « convertir » automatiquement un PIN en mot de passe.
+
 ## UX
 
 | Incohérence | Gravité |
@@ -754,20 +788,25 @@ Contrats :
 | MP-011 | P1 | logout clear SecureStore |
 | MP-012 | P1 | pré-check enfants avant GET fiche |
 | MP-013 | P2 | plus de PIN legacy |
+| MP-014 | P0 | Parent : clavier/wording mot de passe, pas PIN number-pad |
 
 Exécution réelle (audit, volontairement RED) :
 
 ```text
+npm --prefix Mobile run typecheck
+# EXIT 0
+
 npm --prefix Mobile run test:mobile-parent-profile-audit
 # EXIT 1
-# mobile parent profile audit — 4 vert / 13 rouge / 17 cas
+# mobile parent profile audit — 4 vert / 14 rouge / 18 cas
 # PASS MP-INV-01 MP-INV-02 MP-INV-03 MP-INV-04
-# FAIL P0 MP-001 MP-002 MP-003 MP-004 MP-005
+# FAIL P0 MP-001 MP-002 MP-003 MP-004 MP-005 MP-014
 # FAIL P1 MP-006 MP-007 MP-008 MP-009 MP-010 MP-011 MP-012
 # FAIL P2 MP-013
 #
 # MP-003 routes encore ouvertes :
 # TeacherGrades, TeacherAttendance, ClassGradesStats, Payments, FeeGrids, Students, Schooling
+# MP-014 : Parent impose number-pad — Pass1234 (secret canonique) non saisissable
 ```
 
 Les tests existants (`student-user-canonical-link.regression.test.ts`, `roleNavigationPreferences.test.ts`) documentent le fail-closed **sans enfant** et le catalogue menu. Ils **ne couvrent pas** l'id étranger ni les routes staff partagées.
@@ -779,6 +818,7 @@ Les tests existants (`student-user-canonical-link.regression.test.ts`, `roleNavi
 3. **`canOpenAdminScreens` vrai** — `Payments` + `FeeGrids`.
 4. **`PaymentsScreen` / `StudentsScreen` non scopés** — dataset hydraté intégral.
 5. **Push / route `studentId`** — pas de allowlist `user.children`.
+6. **Auth Parent PIN vs mot de passe** — `number-pad` + wording PIN alors que le secret canonique peut contenir des lettres (MP-041).
 
 ## P1
 
@@ -804,6 +844,17 @@ Lot de correction **séparé**, après revue CTO + diff GitHub. Ne pas corriger 
 
 Ordre suggéré :
 
+0. **P0 Parent Auth Password** (lot séparé, avec isolation + RBAC) :
+   1. mot de passe à la place du PIN ;
+   2. champ alphanumérique standard ;
+   3. suppression du clavier `number-pad` ;
+   4. suppression du wording PIN ;
+   5. réutilisation de `validateAccountSecret` / politique canonique (pas de politique Parent) ;
+   6. login standardisé (même UX Teacher/Admin) ;
+   7. récupération / changement de mot de passe in-app ;
+   8. migration ou compatibilité **explicitement** décidée pour les anciens PIN stockés (`pin` / `pinHash`) — ne pas conclure qu'un PIN devient un mot de passe ;
+   9. tests de non-régression session/logout ;
+   10. aucun fallback PIN silencieux.
 1. **P0 isolation** — fail-closed `sessionStudentAliasKeys` : id hors `children` → `[]`. Recouper push/route params.
 2. **P0 RBAC** — routes staff hors `routeFeatureMap` Parent, ou allowlist de routes par `roleKey`. `canReadFeeGrids` sans `Paiements:READ` pour PARENT. `canOpenAdminScreens` false.
 3. **P0 surfaces** — ne plus monter `Payments` / `Students` / `Teacher*` pour PARENT ; ou y appliquer `filterRowsByStudentScope` fail-closed.
@@ -865,5 +916,6 @@ Ordre suggéré :
 | MP-038 | Paiements | `getPaymentStudentOptions` non recoupé | P1 | `StudentPaymentsScreen.tsx` 54–63 | `Mobile/src/screens/StudentPaymentsScreen.tsx` | Intersect `user.children` |
 | MP-039 | Session | `selectedStudentId` non persisté | P2 | `AuthContext.tsx` 84, 113 | `Mobile/src/context/AuthContext.tsx` | Persister id **parmi** children |
 | MP-040 | Nav | `Synchronization` monté via Documents:READ | P2 | `AppNavigator.tsx` 342 | `Mobile/src/navigation/AppNavigator.tsx` | Hors PARENT |
+| MP-041 | Auth | Authentification Parent : PIN numérique incompatible avec la politique de mot de passe | P0 | `resolveSecretKeyboardType("parent_student") === "number-pad"` ; `validateAccountSecret("Pass1234") === null` ; `verifyUserSecret` accepte `passwordHash` ; test RED MP-014 | `Mobile/src/lib/loginScreenSpec.ts` ; `Mobile/src/screens/LoginScreen.tsx` | Lot **Parent Auth Password** : clavier default, wording mot de passe, même politique que les autres comptes |
 
 Les IDs MP-001… du tableau de synthèse sont les anomalies métier. Les IDs du fichier de test (MP-001…) sont des contrats d'audit (mapping dans la section Tests).
