@@ -41,6 +41,27 @@ test("aucun endpoint Student legacy ni création globale élève dans le guidé"
   assert.doesNotMatch(joined, /backoffice_state|BackOffice\/app\.js/);
 });
 
+test("HOLD — étape 5 exige une affectation active ; étape 6 ignore studentCount orphelin", () => {
+  const guided = read("backend/lib/schoolSetupGuided.js");
+  assert.match(guided, /case\s+"teachers":[\s\S]*teacherAssignmentCount/);
+  assert.match(guided, /teacher_assignments[\s\S]*status\s*=\s*'active'/);
+  assert.doesNotMatch(guided, /enrolledStudentCount\s*\|\|/);
+  assert.doesNotMatch(guided, /enrolledStudentCount\s*:\s*enrolledStudentCount\s*\|\|\s*asCount\(\s*base\.studentCount\s*\)/);
+});
+
+test("HOLD — un seul assistant visible et Terminer quitte vers le tableau de bord", () => {
+  const webSettings = read("web/src/pages/parametres/SchoolSetupSettingsPage.tsx");
+  const mobileSettings = read("Mobile/src/screens/SchoolSetupSettingsScreen.tsx");
+  const webWizard = read("web/src/components/schoolSetup/GuidedSchoolSetupWizard.tsx");
+  const mobileWizard = read("Mobile/src/components/schoolSetup/GuidedSchoolSetupWizard.tsx");
+  assert.match(webSettings, /guided\s*\?\s*\([\s\S]*<GuidedSchoolSetupWizard[\s\S]*\)\s*:\s*payload\s*\?\s*[\s\S]*<SchoolSetupWizard/);
+  assert.match(mobileSettings, /guided\s*\?\s*\([\s\S]*<GuidedSchoolSetupWizard[\s\S]*\)\s*:\s*payload\s*\?\s*[\s\S]*<SchoolSetupWizard/);
+  assert.match(webWizard, /onFinish/);
+  assert.match(mobileWizard, /onFinish/);
+  assert.match(webSettings, /\/tableau-de-bord/);
+  assert.match(mobileSettings, /navigate\(\s*["']Home["']/);
+});
+
 test("RBAC guidé réutilise Paramètres Établissement (pas de nouveau moteur RBAC)", () => {
   const rbac = read("backend/services/rbacService.js");
   const getLine = rbac.split("\n").find((line) => line.includes('"GET /api/v2/school-setup/guided"'));

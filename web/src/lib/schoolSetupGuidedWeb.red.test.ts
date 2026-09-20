@@ -238,6 +238,8 @@ describe("RED Web — W1 à W10", () => {
   it("W8 — la reprise ouvre la bonne étape", async () => {
     const { guidedResumeStep } = await loadContract();
     assert.equal(guidedResumeStep(guidedPayload(40)), 5);
+    assert.equal(guidedResumeStep(guidedPayload(50)), 6);
+    assert.equal(guidedResumeStep(guidedPayload(60)), 7);
     assert.equal(guidedResumeStep(guidedPayload(0)), 1);
     assert.equal(guidedResumeStep(guidedPayload(100)), 10);
   });
@@ -305,7 +307,7 @@ describe("RED Web — anti-régression périmètre", () => {
     const mobileHits: string[] = [];
     const mobileRoot = path.join(repoRoot, "Mobile");
     if (fs.existsSync(mobileRoot)) {
-      for (const name of ["schoolSetupGuidedWeb.ts", "GuidedSchoolSetupWizard.tsx"]) {
+      for (const name of ["schoolSetupGuidedWeb.ts"]) {
         const walk = (dir: string) => {
           for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
             if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;

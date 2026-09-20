@@ -20,10 +20,12 @@ export function GuidedSchoolSetupWizard({
   payload,
   onLeave,
   onCompleted,
+  onFinish,
 }: {
   payload: GuidedSetupPayload;
   onLeave?: () => void;
   onCompleted?: (next: GuidedSetupPayload) => void;
+  onFinish?: () => void;
 }) {
   const [current, setCurrent] = useState(payload);
   const [viewingStep, setViewingStep] = useState(payload.currentStep);
@@ -55,14 +57,27 @@ export function GuidedSchoolSetupWizard({
       setViewingStep(next.percent >= 100 ? 10 : next.currentStep);
       setSaved(true);
       onCompleted?.(next);
+      return next;
     } catch (err: unknown) {
       setError(
         err instanceof ApiError
           ? err.message
           : "Enregistrement impossible. Vérifiez les données requises puis réessayez.",
       );
+      return null;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function finishSetup() {
+    if (current.percent >= 100) {
+      onFinish?.();
+      return;
+    }
+    const next = await saveAndContinue();
+    if (next?.percent >= 100) {
+      onFinish?.();
     }
   }
 
@@ -155,7 +170,7 @@ export function GuidedSchoolSetupWizard({
                 <Button type="button" variant="secondary" onClick={() => setViewingStep(1)}>
                   Vérifier la configuration
                 </Button>
-                <Button type="button" onClick={() => void saveAndContinue()} disabled={saving}>
+                <Button type="button" onClick={() => void finishSetup()} disabled={saving}>
                   {saving ? "Enregistrement…" : "Terminer la configuration"}
                 </Button>
               </>

@@ -20,10 +20,12 @@ export function GuidedSchoolSetupWizard({
   payload,
   onLeave,
   onCompleted,
+  onFinish,
 }: {
   payload: GuidedSetupPayload;
   onLeave?: () => void;
   onCompleted?: (next: GuidedSetupPayload) => void;
+  onFinish?: () => void;
 }) {
   const navigation = useNavigation<any>();
   const [current, setCurrent] = useState(payload);
@@ -55,10 +57,23 @@ export function GuidedSchoolSetupWizard({
       setViewingStep(next.percent >= 100 ? 10 : next.currentStep);
       setSaved(true);
       onCompleted?.(next);
+      return next;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Enregistrement impossible. Réessayez.");
+      return null;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function finishSetup() {
+    if (current.percent >= 100) {
+      onFinish?.();
+      return;
+    }
+    const next = await saveAndContinue();
+    if (next?.percent >= 100) {
+      onFinish?.();
     }
   }
 
@@ -123,7 +138,7 @@ export function GuidedSchoolSetupWizard({
             <TouchableOpacity
               style={[styles.btn, styles.primary]}
               disabled={saving}
-              onPress={() => void saveAndContinue()}
+              onPress={() => void finishSetup()}
               accessibilityRole="button"
               accessibilityLabel="Terminer la configuration"
             >

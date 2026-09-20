@@ -196,6 +196,8 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
     async run() {
       const { guidedResumeStep } = await loadContract();
       assert.equal(guidedResumeStep(guidedPayload(40)), 5);
+      assert.equal(guidedResumeStep(guidedPayload(50)), 6);
+      assert.equal(guidedResumeStep(guidedPayload(60)), 7);
       assertHas(read(SETTINGS_PATH), /GuidedSchoolSetupWizard|schoolSetupGuidedApi/, "M8 settings n'ouvre pas le guidé");
     },
   },

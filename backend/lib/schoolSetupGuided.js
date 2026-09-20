@@ -67,7 +67,7 @@ function stepSatisfied(stepKey, snapshot = {}) {
     case "subjects":
       return asCount(snapshot.subjectCount) >= 1;
     case "teachers":
-      return asCount(snapshot.teacherCount) >= 1;
+      return asCount(snapshot.teacherCount) >= 1 && asCount(snapshot.teacherAssignmentCount) >= 1;
     case "students":
       return asCount(snapshot.enrolledStudentCount) >= 1;
     case "finance":
@@ -262,7 +262,10 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
       `SELECT COUNT(*)::int AS c
        FROM teacher_assignments ta
        INNER JOIN teachers t ON t.id = ta.teacher_id
-       WHERE t.school_id::text = $1`,
+       WHERE t.school_id::text = $1
+         AND ta.status = 'active'
+         AND ta.class_id IS NOT NULL
+         AND ta.subject_id IS NOT NULL`,
       params,
     ),
     countExact(
@@ -296,7 +299,7 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
     hasPhone: filled(school?.phone),
     hasCurrency: filled(currency),
     hasAcademicYearDates: datedYearCount >= 1,
-    enrolledStudentCount: enrolledStudentCount || asCount(base.studentCount),
+    enrolledStudentCount,
     teacherAssignmentCount,
     paymentMethodCount,
     evaluationTypeCount,

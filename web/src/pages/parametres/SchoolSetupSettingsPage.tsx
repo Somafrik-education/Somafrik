@@ -65,14 +65,16 @@ export function SchoolSetupSettingsPage() {
             payload={guided}
             onLeave={() => navigate("/etablissement", { replace: true })}
             onCompleted={setGuided}
+            onFinish={() => navigate("/tableau-de-bord", { replace: true })}
           />
+        ) : payload ? (
+          <SchoolSetupWizard payload={payload} onLater={() => navigate("/etablissement", { replace: true })} />
         ) : null}
         {payload ? (
           <div className="space-y-4">
             <p className="text-sm text-muted">
               Progression : {dashboardSetupProgressLabel(payload)} · {schoolSetupStatusLabel(payload.status)}
             </p>
-            <SchoolSetupWizard payload={payload} onLater={() => navigate("/etablissement", { replace: true })} />
             <SchoolSetupOptionalCompleteness payload={payload} />
           </div>
         ) : null}

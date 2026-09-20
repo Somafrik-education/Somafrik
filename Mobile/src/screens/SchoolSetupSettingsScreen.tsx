@@ -88,6 +88,13 @@ export default function SchoolSetupSettingsScreen() {
           payload={guided}
           onLeave={() => navigation.goBack()}
           onCompleted={setGuided}
+          onFinish={() => navigation.navigate("Home")}
+        />
+      ) : payload ? (
+        <SchoolSetupWizard
+          payload={payload}
+          onOpenStep={(step) => navigation.navigate(step.to)}
+          onLater={() => navigation.goBack()}
         />
       ) : null}
       {payload ? (
@@ -95,11 +102,6 @@ export default function SchoolSetupSettingsScreen() {
           <Text style={styles.meta}>
             Progression : {dashboardSetupProgressLabel(payload)} · {schoolSetupStatusLabel(payload.status)}
           </Text>
-          <SchoolSetupWizard
-            payload={payload}
-            onOpenStep={(step) => navigation.navigate(step.to)}
-            onLater={() => navigation.goBack()}
-          />
           <SchoolSetupOptionalCompleteness payload={payload} />
         </>
       ) : null}

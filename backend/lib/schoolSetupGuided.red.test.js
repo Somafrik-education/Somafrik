@@ -678,6 +678,60 @@ test("B12 — 0 inscription Classe→Élève + studentCount orphelin ne valide p
   assert.ok(!payload.completedSteps.includes("students"));
 });
 
+test("B13 — parcours 0 → 10 % → reprise 40/50/60 % operational → 100 %", async () => {
+  const mod = requireGuided();
+  const store = memoryProgressStore();
+  const start = await getGuided(mod, {
+    principal: schoolAdminA(),
+    one: MEMBERSHIP_LOOKUP,
+    progressStore: store,
+    loadSnapshot: async () => emptySnapshot(),
+  });
+  assert.equal(start.percent, 0);
+  assert.equal(start.status, "configuration_required");
+  assert.equal(start.currentStep, 1);
+
+  const checkpoints = [
+    { key: "establishment", percent: 10, status: "configuration_required" },
+    { key: "academicYear", percent: 20, status: "configuration_required" },
+    { key: "structure", percent: 30, status: "configuration_required" },
+    { key: "subjects", percent: 40, status: "configuration_required" },
+    { key: "teachers", percent: 50, status: "configuration_required" },
+    { key: "students", percent: 60, status: "operational" },
+    { key: "finance", percent: 70, status: "operational" },
+    { key: "pedagogy", percent: 80, status: "operational" },
+    { key: "communication", percent: 90, status: "operational" },
+    { key: "users", percent: 100, status: "operational" },
+  ];
+
+  for (const point of checkpoints) {
+    const after = await completeStep(mod, {
+      principal: schoolAdminA(),
+      stepKey: point.key,
+      one: MEMBERSHIP_LOOKUP,
+      progressStore: store,
+      loadSnapshot: async () => through(point.key),
+    });
+    assert.equal(after.percent, point.percent, `${point.key} percent`);
+    assert.equal(after.status, point.status, `${point.key} status`);
+
+    const resumed = await getGuided(mod, {
+      principal: schoolAdminA(),
+      one: MEMBERSHIP_LOOKUP,
+      progressStore: store,
+      loadSnapshot: async () => through(point.key),
+    });
+    assert.equal(resumed.percent, point.percent, `reprise ${point.percent} %`);
+    assert.equal(resumed.status, point.status, `reprise ${point.key} status`);
+    if (point.percent === 40) assert.equal(resumed.nextStepKey, "teachers");
+    if (point.percent === 50) assert.equal(resumed.nextStepKey, "students");
+    if (point.percent === 60) {
+      assert.equal(resumed.status, "operational");
+      assert.equal(resumed.nextStepKey, "finance");
+    }
+  }
+});
+
 test("B4b — une étape persistée redevient invalide si les données requises disparaissent", async () => {
   const mod = requireGuided();
   const store = memoryProgressStore();
