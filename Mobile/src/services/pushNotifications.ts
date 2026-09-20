@@ -45,9 +45,26 @@ export type PushRegisterDeps = {
   requestPostNotificationsImpl?: () => Promise<PermissionResponse>;
 };
 
+export type PushRegistrationExitPoint =
+  | "unsupported_platform"
+  | "unsupported_store_client"
+  | "unsupported_packager"
+  | "unsupported_env"
+  | "permission_denied"
+  | "registered"
+  | "failed";
+
 export type PushRegistrationOutcome = {
   status: "registered" | "permission_denied" | "unsupported" | "failed";
   reason?: string;
+  exitPoint?: PushRegistrationExitPoint;
+  platform?: string;
+  androidSdk?: number;
+  executionEnvironment?: string;
+  expoGoIndicatesExpoGo?: boolean;
+  appProfile?: string;
+  channelCreated?: boolean;
+  postNotificationsRequested?: boolean;
 };
 
 const REMEMBERED_TOKEN_KEY = "somafrik.push.currentExpoToken";
@@ -99,6 +116,14 @@ function defaultReleaseProfile() {
   return getReleaseProfile();
 }
 
+function safeReleaseProfile(deps: PushRegisterDeps): string {
+  try {
+    return (deps.getReleaseProfileImpl ?? defaultReleaseProfile)();
+  } catch {
+    return "";
+  }
+}
+
 function logInfo(message: string) {
   try {
     const { safeLogger } = require("./safeLogger") as { safeLogger: { info: (...args: unknown[]) => void } };
@@ -119,17 +144,34 @@ function logWarn(message: string) {
 
 function rememberOutcome(outcome: PushRegistrationOutcome) {
   lastRegistrationOutcome = outcome;
+  logWarn("push register exit", {
+    status: outcome.status,
+    exitPoint: outcome.exitPoint,
+    platform: outcome.platform,
+    androidSdk: outcome.androidSdk,
+    executionEnvironment: outcome.executionEnvironment,
+    expoGoIndicatesExpoGo: outcome.expoGoIndicatesExpoGo,
+    appProfile: outcome.appProfile,
+    channelCreated: outcome.channelCreated,
+    postNotificationsRequested: outcome.postNotificationsRequested,
+  });
 }
 
 export function getLastPushRegistrationOutcome() {
   return lastRegistrationOutcome;
 }
 
+export function observePushRuntimeEvent(
+  event: "mounted" | "canonical",
+  extra: { from?: boolean; to?: boolean } = {},
+) {
+  logWarn(`push runtime ${event}`, extra);
+}
+
 export function observePushRegistrationFailure(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error ?? "unknown");
   const reason = raw.replace(/Expo(nent)?PushToken\[[^\]]+\]/gi, "[REDACTED_PUSH_TOKEN]").slice(0, 180);
-  rememberOutcome({ status: "failed", reason });
-  logWarn("push device registration failed");
+  rememberOutcome({ status: "failed", reason, exitPoint: "failed" });
 }
 
 function nativeNotifications(): NotificationsLike {
@@ -194,11 +236,26 @@ export function isNativePushCompatible(
   executionEnvironment?: string | null,
   expoGoConfig?: unknown | null,
 ) {
+  return classifyNativePushCompatibility(executionEnvironment, expoGoConfig).compatible;
+}
+
+export function classifyNativePushCompatibility(
+  executionEnvironment?: string | null,
+  expoGoConfig?: unknown | null,
+): { compatible: boolean; env: string; expoGoIndicatesExpoGo: boolean; exitPoint?: PushRegistrationExitPoint } {
   const env = String(executionEnvironment ?? readExecutionEnvironment());
   const resolvedExpoGoConfig = expoGoConfig === undefined ? readExpoGoConfig() : expoGoConfig;
-  if (env === "storeClient") return false;
-  if (expoGoConfigIndicatesExpoGo(resolvedExpoGoConfig)) return false;
-  return env === "bare" || env === "standalone";
+  const expoGoIndicatesExpoGo = expoGoConfigIndicatesExpoGo(resolvedExpoGoConfig);
+  if (env === "storeClient") {
+    return { compatible: false, env, expoGoIndicatesExpoGo, exitPoint: "unsupported_store_client" };
+  }
+  if (expoGoIndicatesExpoGo) {
+    return { compatible: false, env, expoGoIndicatesExpoGo, exitPoint: "unsupported_packager" };
+  }
+  if (env === "bare" || env === "standalone") {
+    return { compatible: true, env, expoGoIndicatesExpoGo };
+  }
+  return { compatible: false, env, expoGoIndicatesExpoGo, exitPoint: "unsupported_env" };
 }
 
 function readAndroidSdk(): number {
@@ -267,17 +324,35 @@ async function registerAuthenticatedPushDeviceUnchecked(deps: PushRegisterDeps):
   "registered" | "permission_denied" | "unsupported"
 > {
   const platform = deps.platform ?? defaultPlatform();
+  const androidSdk = deps.androidSdk ?? readAndroidSdk();
+  const classification = classifyNativePushCompatibility(deps.executionEnvironment, deps.expoGoConfig);
+  const appProfile = safeReleaseProfile(deps);
+  const trace = {
+    platform,
+    androidSdk,
+    executionEnvironment: classification.env,
+    expoGoIndicatesExpoGo: classification.expoGoIndicatesExpoGo,
+    appProfile,
+  };
+
   if (platform !== "android") {
-    rememberOutcome({ status: "unsupported" });
+    rememberOutcome({ status: "unsupported", exitPoint: "unsupported_platform", ...trace });
     return "unsupported";
   }
-  if (!isNativePushCompatible(deps.executionEnvironment, deps.expoGoConfig)) {
-    rememberOutcome({ status: "unsupported" });
+  if (!classification.compatible) {
+    rememberOutcome({
+      status: "unsupported",
+      exitPoint: classification.exitPoint,
+      ...trace,
+      channelCreated: false,
+      postNotificationsRequested: false,
+    });
     return "unsupported";
   }
 
   const notifications = deps.notifications ?? nativeNotifications();
   const importance = notifications.AndroidImportance?.HIGH ?? 4;
+  let channelCreated = false;
   if (typeof notifications.setNotificationChannelAsync === "function") {
     await notifications.setNotificationChannelAsync(SOMAFRIK_PUSH_CHANNEL_ID, {
       name: "Somafrik",
@@ -288,12 +363,27 @@ async function registerAuthenticatedPushDeviceUnchecked(deps: PushRegisterDeps):
       lightColor: "#1d4ed8",
       showBadge: true,
     });
+    channelCreated = true;
   }
 
-  const android13Permission = await ensureAndroid13PostNotifications(deps);
+  let postNotificationsRequested = false;
+  const android13Permission = await ensureAndroid13PostNotifications({
+    ...deps,
+    requestPostNotificationsImpl: async () => {
+      postNotificationsRequested = true;
+      const request = deps.requestPostNotificationsImpl ?? defaultRequestPostNotifications;
+      return request();
+    },
+  });
   if (android13Permission && android13Permission.status !== "granted") {
     await rememberPushToken(null);
-    rememberOutcome({ status: "permission_denied" });
+    rememberOutcome({
+      status: "permission_denied",
+      exitPoint: "permission_denied",
+      ...trace,
+      channelCreated,
+      postNotificationsRequested,
+    });
     return "permission_denied";
   }
 
@@ -303,7 +393,13 @@ async function registerAuthenticatedPushDeviceUnchecked(deps: PushRegisterDeps):
   }
   if (permission.status !== "granted") {
     await rememberPushToken(null);
-    rememberOutcome({ status: "permission_denied" });
+    rememberOutcome({
+      status: "permission_denied",
+      exitPoint: "permission_denied",
+      ...trace,
+      channelCreated,
+      postNotificationsRequested,
+    });
     return "permission_denied";
   }
 
@@ -324,11 +420,17 @@ async function registerAuthenticatedPushDeviceUnchecked(deps: PushRegisterDeps):
     body: JSON.stringify({
       expoPushToken,
       platform: "android",
-      appProfile: (deps.getReleaseProfileImpl ?? defaultReleaseProfile)(),
+      appProfile: safeReleaseProfile(deps),
     }),
   });
   await rememberPushToken(expoPushToken);
-  rememberOutcome({ status: "registered" });
+  rememberOutcome({
+    status: "registered",
+    exitPoint: "registered",
+    ...trace,
+    channelCreated,
+    postNotificationsRequested,
+  });
   logInfo("push device registered");
   return "registered";
 }

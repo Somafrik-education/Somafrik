@@ -31,7 +31,7 @@
     "test:l308-red": "npx --yes tsx src/lib/paymentStudentSelector.l308.test.ts && npx --yes tsx src/components/PaymentMutationControls.l308.test.ts",
     "test:payments-kpi-density": "npx --yes tsx src/lib/studentPaymentsKpiDensity.test.ts",
     "test:school-class-courses": "npx --yes tsx src/lib/schoolClassCourses.test.ts",
-    "test:push-notifications": "npx --yes tsx src/services/pushNotifications.test.ts && npx --yes tsx src/services/pushNotifications.android13.test.ts",
+    "test:push-notifications": "npx --yes tsx src/services/pushNotifications.test.ts && npx --yes tsx src/services/pushNotifications.android13.test.ts && npx --yes tsx src/services/pushNotifications.cng-release.test.ts",
     "verify:mobile-form-fields": "node scripts/verify-mobile-form-fields.js",
     "test:scope": "npx --yes tsx src/lib/scope.test.ts",
     "test:teacher-class-scope": "npx --yes tsx src/lib/establishment.teacherScope.test.ts",

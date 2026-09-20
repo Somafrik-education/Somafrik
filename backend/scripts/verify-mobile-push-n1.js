@@ -172,6 +172,9 @@ function sourceGuards() {
   assert.match(mobile, /export function observePushRegistrationFailure/);
   assert.doesNotMatch(runtime, /registerAuthenticatedPushDevice\(\)\.catch\(\(\) => undefined\)/);
   assert.match(runtime, /observePushRegistrationFailure/);
+  assert.match(runtime, /observePushRuntimeEvent/);
+  assert.match(mobile, /unsupported_packager/);
+  assert.match(mobile, /export function classifyNativePushCompatibility/);
   const unchecked = mobile.slice(mobile.indexOf("async function registerAuthenticatedPushDeviceUnchecked"));
   const channelCall = unchecked.indexOf("setNotificationChannelAsync");
   const android13Call = unchecked.indexOf("ensureAndroid13PostNotifications");
@@ -199,6 +202,7 @@ function main() {
   run(process.execPath, ["backend/lib/rateLimit.push-selftest.test.js"], "rate limit self-test");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.test.ts"], "mobile push unit");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.android13.test.ts"], "mobile push android13");
+  run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.cng-release.test.ts"], "mobile push cng release");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationTap.test.ts"], "mobile cold-start tap");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile finance notification navigation");
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");
