@@ -117,3 +117,18 @@ Rempli au fil de l’exécution (voir `results/`).
 | 2026-09-20T22:26Z | Expo web hôte `:8083` pour Playwright mobile |
 
 **Production mutation confirmée : NONE** (GET health/HTML uniquement via `verify:web-smoke`).
+
+## CI sur la PR d’audit (#748)
+
+Contrôle CTO : la PR n’était pas considérée terminale tant que la CI n’était pas close.
+
+| Champ | Valeur |
+| ----- | ------ |
+| Commit CI | `97bea1af5400f4f20bcc52865803f05f9339a328` |
+| Conclusion | **SUCCESS** (terminale) |
+| Checks | 15 total : 5 successful, 0 failed, 0 pending, 10 skipped |
+| Required | 0 failed, 0 pending |
+| Successful | Scope, Secrets, Risk-targeted, LOT 3 parity, Required |
+| Skipped | Quality, Core tests, LOT 0–2 et 4–8 — skip de scope documentaire (attendu) |
+
+**Décision inchangée :** DRAFT / HOLD. Aucun Ready. Aucun Merge. Aucune correction produit.

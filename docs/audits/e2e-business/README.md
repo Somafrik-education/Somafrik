@@ -26,7 +26,7 @@ P3: 2
 **Statut PR :** DRAFT / HOLD — aucun Ready, aucun Merge.  
 **Zéro correction produit.** Un test rouge est resté rouge.
 
-Contrôle CTO #748 : matrice de couverture alignée sur l’exécution ; totaux FAIL disjoints (Dockerfile = FAIL-INFRA seulement).
+Contrôle CTO #748 : matrice alignée ; totaux FAIL disjoints ; **CI terminale SUCCESS** sur `97bea1af` (5 verts dont Risk-targeted et LOT 3 ; 10 skipped de scope). La photographie E2E est close côté audit. La PR **n’est pas** passée Ready.
 
 ## Lecture obligatoire
 
