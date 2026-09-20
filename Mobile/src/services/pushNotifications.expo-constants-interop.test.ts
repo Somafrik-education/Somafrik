@@ -37,6 +37,8 @@ function granted() {
 async function main() {
   const serviceSrc = readFileSync(path.join(here, "pushNotifications.ts"), "utf8");
   assert.match(serviceSrc, /setExpoConstantsModuleForTests/);
+  assert.match(serviceSrc, /export function resolveExpoConstantsInterop/);
+  assert.match(serviceSrc, /record\.default/);
   assert.doesNotMatch(serviceSrc, /console\.log\([^)]*expoPushToken/);
 
   assert.equal(

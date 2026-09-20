@@ -76,12 +76,22 @@ export function setExpoConstantsModuleForTests(mod: unknown | undefined) {
   expoConstantsModuleForTests = mod;
 }
 
+/** SDK 54 Hermes/Metro: `require("expo-constants")` is `{ default: constants }`. */
+export function resolveExpoConstantsInterop(mod: unknown): Record<string, unknown> {
+  if (mod == null || typeof mod !== "object") return {};
+  const record = mod as Record<string, unknown>;
+  const nested = record.default;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
+  }
+  return record;
+}
+
 function loadExpoConstantsModule(): Record<string, unknown> {
   try {
     const mod =
       expoConstantsModuleForTests !== undefined ? expoConstantsModuleForTests : require("expo-constants");
-    if (mod == null || typeof mod !== "object") return {};
-    return mod as Record<string, unknown>;
+    return resolveExpoConstantsInterop(mod);
   } catch {
     return {};
   }
