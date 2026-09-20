@@ -29,6 +29,7 @@ on:
       - "Mobile/plugins/withSomafrikAndroidSecurity.js"
       - "Mobile/src/services/pushNotifications.ts"
       - "Mobile/src/services/pushNotifications.test.ts"
+      - "Mobile/src/services/pushNotifications.android13.test.ts"
       - "Mobile/src/lib/pushNotificationDestinations.ts"
       - "Mobile/src/lib/pushNotificationNavigate.ts"
       - "Mobile/src/lib/pushNotificationTap.ts"

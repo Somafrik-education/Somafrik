@@ -167,6 +167,15 @@ function sourceGuards() {
   assert.match(mobile, /if \(env === "storeClient"\) return false/);
   assert.match(mobile, /return env === "bare" \|\| env === "standalone";/);
   assert.doesNotMatch(mobile, /env === "bare" \|\| env === "standalone" \|\| env === "storeClient"/);
+  assert.match(mobile, /POST_NOTIFICATIONS/);
+  assert.match(mobile, /export function getLastPushRegistrationOutcome/);
+  assert.match(mobile, /export function observePushRegistrationFailure/);
+  assert.doesNotMatch(runtime, /registerAuthenticatedPushDevice\(\)\.catch\(\(\) => undefined\)/);
+  assert.match(runtime, /observePushRegistrationFailure/);
+  const unchecked = mobile.slice(mobile.indexOf("async function registerAuthenticatedPushDeviceUnchecked"));
+  const channelCall = unchecked.indexOf("setNotificationChannelAsync");
+  const android13Call = unchecked.indexOf("ensureAndroid13PostNotifications");
+  assert.ok(channelCall > 0 && android13Call > channelCall, "canal v2 avant POST_NOTIFICATIONS");
   assert.doesNotMatch(mobile, /console\.log\([^)]*expoPushToken/);
   const example = read("Mobile/google-services.json.example");
   assert.doesNotMatch(example, /private_key/);
@@ -189,6 +198,7 @@ function main() {
   run(process.execPath, ["backend/lib/expoPushReceiptsWorker.test.js"], "expo receipts différés");
   run(process.execPath, ["backend/lib/rateLimit.push-selftest.test.js"], "rate limit self-test");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.test.ts"], "mobile push unit");
+  run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.android13.test.ts"], "mobile push android13");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationTap.test.ts"], "mobile cold-start tap");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile finance notification navigation");
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");
