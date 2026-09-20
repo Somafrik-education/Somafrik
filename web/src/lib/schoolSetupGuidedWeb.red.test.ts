@@ -151,6 +151,7 @@ describe("RED Web — sources assistant guidé", () => {
     const overview = read(OVERVIEW_PATH);
     const settings = exists(SETTINGS_PATH) ? read(SETTINGS_PATH) : "";
     assertHas(app, "bienvenue-etablissement", `route ${WELCOME_ROUTE} absente`);
+    assertHas(app, "configuration-etablissement", `route ${WIZARD_ROUTE} absente`);
     assertHas(app, /SchoolSetupWelcomePage|GuidedSchoolSetupWizard/, "App n'importe pas le parcours guidé");
     assertHas(login, /shouldShowSchoolSetupWelcome|bienvenue-etablissement|Configurer mon établissement/, "Login ne relie pas la bienvenue guidée");
     assertHas(

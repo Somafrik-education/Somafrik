@@ -70,6 +70,11 @@ const REDIRECT_ALIAS_PATHS = Object.freeze([
 const CATCH_ALL_PATHS = Object.freeze(["*"]);
 
 /**
+ * Bootstrap première configuration : pas d’aide in-app (écran d’accueil guidé).
+ */
+const BOOTSTRAP_NULL_PATHS = Object.freeze(["/bienvenue-etablissement"]);
+
+/**
  * Écrans protégés où « Besoin d’aide ? » est attendu.
  * Toute nouvelle `path="/…"` dans App.tsx doit être classée ici, en public,
  * en alias Navigate, ou en catch-all — jamais oubliée.
@@ -154,6 +159,7 @@ function classifiedAbsolutePaths() {
     ...PUBLIC_NULL_PATHS,
     ...REDIRECT_ALIAS_PATHS,
     ...CATCH_ALL_PATHS,
+    ...BOOTSTRAP_NULL_PATHS,
     ...Object.keys(PROTECTED_HELP_PATHS),
   ]);
 }
@@ -200,6 +206,7 @@ test("public and auth routes keep help unavailable", () => {
     "/confidentialite",
     "/suppression-compte",
     "/verify/rc/foo",
+    "/bienvenue-etablissement",
   ];
   for (const pathname of samples) {
     assert.equal(resolveHelpScreen({ platform: "web", pathname }), null, pathname);

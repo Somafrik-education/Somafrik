@@ -362,8 +362,13 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         .join("\n");
       assertLacks(
         setupSources,
-        /currentStep|savedStep|wizardCursor|lastWizardStep/,
-        "aucune progression locale currentStep persistée",
+        /savedStep|wizardCursor|lastWizardStep/,
+        "aucune progression locale persistée (savedStep / wizardCursor)",
+      );
+      assertLacks(
+        setupSources,
+        /localStorage[\s\S]{0,120}currentStep|sessionStorage[\s\S]{0,120}currentStep|AsyncStorage[\s\S]{0,120}currentStep|currentStep[\s\S]{0,80}(localStorage|sessionStorage|AsyncStorage)/,
+        "currentStep serveur autorisé ; persistance client interdite",
       );
       assertHas(
         read(webLoginPath),

@@ -2,7 +2,7 @@
 
 /**
  * Persistance du curseur wizard guidé (pas un statut métier dérivé).
- * Interdit : colonne / champ `setup_status` (contrat LOT 0).
+ * Interdit : toute colonne de statut persisté — l'état métier reste dérivé (LOT 0).
  */
 
 const SCHOOL_SETUP_PROGRESS_TABLE_SQL = `

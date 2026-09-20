@@ -41,6 +41,13 @@ test("aucun endpoint Student legacy ni création globale élève dans le guidé"
   assert.doesNotMatch(joined, /backoffice_state|BackOffice\/app\.js/);
 });
 
+test("HOLD — bootstrap dérivé si curseur absent ; pas de token statut persisté dans le schéma guidé", () => {
+  const guided = read("backend/lib/schoolSetupGuided.js");
+  const schema = read("backend/db/schoolSetupGuidedSchema.js");
+  assert.match(guided, /bootstrapFromCanonical/);
+  assert.doesNotMatch(schema, /setup_status/);
+});
+
 test("HOLD — étape 5 exige une affectation active ; étape 6 ignore studentCount orphelin", () => {
   const guided = read("backend/lib/schoolSetupGuided.js");
   assert.match(guided, /case\s+"teachers":[\s\S]*teacherAssignmentCount/);

@@ -96,9 +96,12 @@ function normalizeCompleted(list) {
 }
 
 function consecutiveValidCompleted(persistedSteps, snapshot) {
+  const persisted = persistedSteps ?? [];
+  const bootstrapFromCanonical = persisted.length === 0;
   const completed = [];
   for (const key of GUIDED_STEP_KEYS) {
-    if ((persistedSteps ?? []).includes(key) && stepSatisfied(key, snapshot)) {
+    if (!stepSatisfied(key, snapshot)) break;
+    if (bootstrapFromCanonical || persisted.includes(key)) {
       completed.push(key);
     } else {
       break;

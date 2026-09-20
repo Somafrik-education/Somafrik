@@ -43,6 +43,7 @@ export function GuidedSchoolSetupWizard({
   const copy = GUIDED_STEP_COPY[stepKey];
   const href = GUIDED_WEB_LINKS[stepKey];
   const isLast = viewingStep === 10;
+  const canFinish = current.percent >= 100 || isLast;
   const heading = guidedStepHeading(viewingStep);
 
   const bar = useMemo(() => progressBar(current.percent), [current.percent]);
@@ -53,8 +54,9 @@ export function GuidedSchoolSetupWizard({
     setSaved(false);
     try {
       const next = await schoolSetupGuidedApi.completeStep(stepKey);
+      const nextPercent = Number(next?.percent ?? 0);
       setCurrent(next);
-      setViewingStep(next.percent >= 100 ? 10 : next.currentStep);
+      setViewingStep(nextPercent >= 100 ? 10 : Number(next?.currentStep ?? viewingStep));
       setSaved(true);
       onCompleted?.(next);
       return next;
@@ -76,7 +78,7 @@ export function GuidedSchoolSetupWizard({
       return;
     }
     const next = await saveAndContinue();
-    if (next?.percent >= 100) {
+    if (Number(next?.percent ?? 0) >= 100) {
       onFinish?.();
     }
   }
@@ -165,7 +167,7 @@ export function GuidedSchoolSetupWizard({
             <Button type="button" variant="tertiary" onClick={() => onLeave?.()}>
               Quitter et reprendre plus tard
             </Button>
-            {isLast ? (
+            {canFinish ? (
               <>
                 <Button type="button" variant="secondary" onClick={() => setViewingStep(1)}>
                   Vérifier la configuration

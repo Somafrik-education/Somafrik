@@ -10,7 +10,7 @@ function pathnameWithoutQuery(pathname) {
   return raw || "/";
 }
 
-const WEB_NULL_PATHS = Object.freeze(["/", "/connexion"]);
+const WEB_NULL_PATHS = Object.freeze(["/", "/connexion", "/bienvenue-etablissement"]);
 
 const MOBILE_NULL_ROUTES = Object.freeze([
   "Welcome",

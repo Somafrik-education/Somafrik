@@ -514,13 +514,16 @@ test("B9 — un utilisateur sans permission UPDATE ne peut pas modifier la confi
       }),
     (error) => error.statusCode === 403,
   );
+  const persisted = await store.load(SCHOOL_A_ID);
+  assert.deepEqual(persisted.completedSteps, [], "lecteur sans UPDATE : aucune écriture du curseur");
   const after = await getGuided(mod, {
     principal: reader,
     one: MEMBERSHIP_LOOKUP,
     progressStore: store,
     loadSnapshot: async () => establishmentReady(),
   });
-  assert.equal(after.percent, 0);
+  assert.equal(after.percent, 10, "lecture seule : bootstrap dérivé, pas d'écriture");
+  assert.deepEqual((await store.load(SCHOOL_A_ID)).completedSteps, []);
 });
 
 test("B10 — revalider une étape déjà terminée est idempotent, percent ≤ 100", async () => {
