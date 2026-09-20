@@ -9,7 +9,7 @@ Ce document décrit la topologie de préproduction réellement utilisée par Som
 | Composant | Service Render | Branche | URL |
 |-----------|----------------|---------|-----|
 | Frontend Web préprod | Static Site `somafrik-web-preprod` | `develop` | https://preprod.somafrik.app |
-| API préprod | Web Service Node `somafrik-api-preprod` | `develop` | https://somafrik-api-preprod.onrender.com |
+| API préprod | Web Service Node `somafrik-api-preprod` | `develop` | https://api-preprod.somafrik.app |
 
 La production utilise également Render comme fournisseur cible. Le frontend production est servi sur `https://somafrik.app` et l'API sur `https://api.somafrik.app` après GO production explicite.
 
@@ -36,7 +36,7 @@ Les secrets ne doivent jamais être copiés dans Git, les issues, les PR ou les 
 Vérification :
 
 ```text
-GET https://somafrik-api-preprod.onrender.com/api/health
+GET https://api-preprod.somafrik.app/api/health
 ```
 
 Attendu : HTTP 200, `status=ok`, `database=postgresql`.
@@ -48,7 +48,7 @@ Le frontend est le Static Site Render `somafrik-web-preprod`, construit depuis `
 Variables de build attendues :
 
 ```env
-VITE_API_URL=https://somafrik-api-preprod.onrender.com
+VITE_API_URL=https://api-preprod.somafrik.app
 VITE_SHOW_DEMO_ACCOUNTS=false
 VITE_ENABLE_MARKETPLACE=false
 ```
@@ -113,7 +113,7 @@ Il ne doit pas être exécuté lors d'un déploiement normal d'une préproductio
 Le profil preview/préproduction EAS consomme :
 
 ```text
-https://somafrik-api-preprod.onrender.com
+https://api-preprod.somafrik.app
 ```
 
 La production mobile consomme :
@@ -130,7 +130,7 @@ Contrôler au minimum :
 2. `somafrik-api-preprod` = `Deployed` sur le même SHA candidat ;
 3. `GET /api/health` = HTTP 200, PostgreSQL prêt ;
 4. `https://preprod.somafrik.app/connexion` s'ouvre ;
-5. les appels Web partent vers `https://somafrik-api-preprod.onrender.com` ;
+5. les appels Web partent vers `https://api-preprod.somafrik.app` ;
 6. aucune erreur CORS ou 5xx ;
 7. les données de recette préexistantes sont conservées.
 
