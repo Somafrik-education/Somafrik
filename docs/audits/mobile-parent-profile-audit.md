@@ -755,6 +755,21 @@ Contrats :
 | MP-012 | P1 | pré-check enfants avant GET fiche |
 | MP-013 | P2 | plus de PIN legacy |
 
+Exécution réelle (audit, volontairement RED) :
+
+```text
+npm --prefix Mobile run test:mobile-parent-profile-audit
+# EXIT 1
+# mobile parent profile audit — 4 vert / 13 rouge / 17 cas
+# PASS MP-INV-01 MP-INV-02 MP-INV-03 MP-INV-04
+# FAIL P0 MP-001 MP-002 MP-003 MP-004 MP-005
+# FAIL P1 MP-006 MP-007 MP-008 MP-009 MP-010 MP-011 MP-012
+# FAIL P2 MP-013
+#
+# MP-003 routes encore ouvertes :
+# TeacherGrades, TeacherAttendance, ClassGradesStats, Payments, FeeGrids, Students, Schooling
+```
+
 Les tests existants (`student-user-canonical-link.regression.test.ts`, `roleNavigationPreferences.test.ts`) documentent le fail-closed **sans enfant** et le catalogue menu. Ils **ne couvrent pas** l'id étranger ni les routes staff partagées.
 
 ## P0

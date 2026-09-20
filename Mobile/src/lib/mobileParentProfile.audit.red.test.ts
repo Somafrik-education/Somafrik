@@ -327,11 +327,19 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
     title: "Drawer Parent « Paiements » doit ouvrir StudentPayments, pas MobilePayment MVP",
     run() {
       const drawer = read("navigation/roleDrawerPreferences.ts");
-      const parentBlock = drawer.slice(drawer.indexOf("const parentItems"));
+      const start = drawer.indexOf("const parentItems");
+      const end = drawer.indexOf("const studentItems");
+      assert.ok(start >= 0 && end > start, "blocs parentItems / studentItems introuvables");
+      const parentBlock = drawer.slice(start, end);
+      assert.equal(
+        /quotidien\(I\.mobilePayment\)/.test(parentBlock),
+        false,
+        "drawer Parent pointe encore I.mobilePayment (écran MVP)",
+      );
       assert.match(
         parentBlock,
         /quotidien\(I\.studentPayments\)/,
-        "drawer Parent pointe encore I.mobilePayment (écran MVP) au lieu de StudentPayments",
+        "drawer Parent n'ouvre pas StudentPayments",
       );
     },
   },
