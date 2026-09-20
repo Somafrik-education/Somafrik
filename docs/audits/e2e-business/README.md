@@ -17,7 +17,7 @@ FAIL: 28
 BLOCKED: 11
 NOT COVERED: 22+
 
-P0: 1
+P0: 1 (boot officiel avec seed démo bloqué — pas « PG incapable de démarrer »)
 P1: 1
 P2: 2
 P3: 2
@@ -25,6 +25,8 @@ P3: 2
 
 **Statut PR :** DRAFT / HOLD — aucun Ready, aucun Merge.  
 **Zéro correction produit.** Un test rouge est resté rouge.
+
+Contrôle CTO #748 : matrice de couverture alignée sur l’exécution ; totaux FAIL disjoints (Dockerfile = FAIL-INFRA seulement).
 
 ## Lecture obligatoire
 
@@ -40,7 +42,9 @@ Les PASS isolés **ne rendent pas** les parcours 0001–0015 « globalement OK �
 
 ## P0 immédiat
 
-Init PostgreSQL + seed officiel : contrainte `uq_users_school_email` (23505), reproductible sur base neuve. Le backend ne démarre pas. **Aucune correction effectuée.**
+**Boot officiel avec seed démo bloqué** : `uq_users_school_email` (23505), deux bases neuves.  
+Avec `SOMAFRIK_SKIP_DEMO_SEED=true`, le backend démarre (`database: postgresql`, `users=0`).  
+Ce n’est pas une incapacité générale de PostgreSQL. **Aucune correction effectuée.**
 
 ## Documents
 

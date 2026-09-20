@@ -17,13 +17,15 @@ FAIL: 28
 BLOCKED: 11 (Maestro runtime + 10 flows EXECUTABLE_FLOWS)
 NOT COVERED: 22+ parcours (coverage-matrix.md)
 
-P0: 1 (init/seed PostgreSQL officiel — uq_users_school_email)
+P0: 1 (boot officiel avec seed démo bloqué — uq_users_school_email ; PG démarre si seed off)
 P1: 1 (chaînes HTTP verify:e2e-* / mobile 0017–0027 inutilisables faute de superadmin)
-P2: 2 (web-smoke local 500 notifications + 501 salles ; Dockerfile docker:up:core)
+P2: 2 (web-smoke local 500 notifications + 501 salles ; docker:up:core FAIL-INFRA)
 P3: 2 (libellé 0023 ; hosted smoke SHA HOLD)
 ```
 
-**Aucune interprétation favorable.** Les chaînes HTTP `verify:e2e-0001`… ne sont **pas** fonctionnelles ici : elles sont **FAIL-DATA** (login 401). Les parcours **NON TESTÉS** ou **ABSENTS** ne sont pas OK.
+**Aucune interprétation favorable.** Les chaînes HTTP `verify:e2e-0001`… ne sont **pas** fonctionnelles ici : elles sont **FAIL-DATA** (login 401). Les parcours **NOT-COVERED** ne sont pas OK.
+
+Contrôle CTO #748 : `coverage-matrix.md` est aligné sur cette matrice (plus de `NON TESTÉ` sur une ligne exécutée). Les totaux ci-dessous sont **disjoints** : un événement a exactement une classe primaire.
 
 ## 1. Inventaire
 
@@ -37,7 +39,7 @@ Logs : `results/*.txt` (JWT redactés).
 
 | # | Commande | Environnement | Log | Code | Classification |
 | - | -------- | ------------- | --- | ---- | -------------- |
-| 1 | `npm run docker:up:core` | ENV-LOCAL Docker | `results/docker-up-core.txt` | 1 | FAIL-INFRA (+ cause produit Dockerfile) |
+| 1 | `npm run docker:up:core` | ENV-LOCAL Docker | `results/docker-up-core.txt` | 1 | **FAIL-INFRA** (classe unique ; hypothèse Dockerfile incomplet — non compté une seconde fois en FAIL-PRODUCT) |
 | 2 | `docker compose up -d postgres` | ENV-LOCAL | — | 0 | PASS (service officiel, sans bind-mount applicatif) |
 | 3 | `npm --prefix backend run verify:establishment` | process in-memory | `results/verify-establishment.txt` | 0 | PASS |
 | 4 | `npm run verify:mobile-ui-e2e-scaffold` | fichiers | `results/verify-mobile-ui-e2e-scaffold.txt` | 0 | PASS (pas un parcours live) |
@@ -151,7 +153,7 @@ Aucune divergence comportementale n’a été **mesurée** sur un même parcours
 
 ## 9. Anomalies produit
 
-1. **P0** — init PG + seed démo : `uq_users_school_email` / 23505, deux bases neuves. Le stockage « obligatoire » refuse de démarrer.
+1. **P0** — **boot officiel avec seed démo bloqué** : `uq_users_school_email` / 23505, deux bases neuves. Avec `SOMAFRIK_SKIP_DEMO_SEED=true`, PostgreSQL démarre (`/api/health` 200, `users=0`). Ce n’est **pas** « PostgreSQL obligatoire incapable de démarrer ».
 2. **P2** — `docker:up:core` : build Vite image backend sans `packages/help-catalog`.
 3. **P2** — pendant web-smoke local (suite PASS) : HTTP 500 `internal-notifications/unread-count`, HTTP 501 `school-rooms`.
 4. **P3** — `verify-e2e-0023` encore intitulé « E2E 0022 » dans le bandeau.
@@ -191,10 +193,17 @@ Tests découverts : 58
 Tests exécutables : 46
 Tests exécutés : 46
 PASS : 16
-FAIL-PRODUCT : 1 (seed/init) + 1 (Dockerfile web stage, classé aussi INFRA)
-FAIL-TEST : 1 (bootstrap backoffice_state)
-FAIL-INFRA : 2 (docker:up:core bind/build ; Maestro runtime prérequis)
-FAIL-DATA : 25 (14 API HTTP + 11 mobile)
-BLOCKED : 11 (runtime + 10 YAML exécutables)
-SKIPPED : 4 (MAE-09, MAE-11, MAE-12, COM-C1 E2E6)
+FAIL (unique, somme des 4 classes) : 28
+  FAIL-DATA : 25          (14 API HTTP + 11 mobile 0017–0027)
+  FAIL-PRODUCT : 1        (seed/init officiel seulement)
+  FAIL-TEST : 1           (bootstrap backoffice_state)
+  FAIL-INFRA : 1          (docker:up:core seulement)
+BLOCKED : 11              (Maestro runtime + 10 YAML EXECUTABLE_FLOWS) — pas un FAIL
+SKIPPED : 4               (MAE-09, MAE-11, MAE-12, COM-C1 E2E6)
 ```
+
+Règle de non-double-comptage (contrôle CTO #748) :
+
+- `docker:up:core` = **FAIL-INFRA** uniquement. L’hypothèse « Dockerfile sans `packages/help-catalog` » est documentée dans `failures.md` F-DOCKER-UP-CORE, **sans** second ticket FAIL-PRODUCT.
+- Maestro runtime = **BLOCKED**, pas FAIL-INFRA.
+- Seed officiel = **FAIL-PRODUCT** uniquement (P0 borné au seed démo).

@@ -17,5 +17,7 @@ users table after skip-seed: 0 rows.
 Official bootstrap script (host):
   backoffice_state introuvable ou sans utilisateurs. EXIT=1
 
-Classification: FAIL-PRODUCT (init/seed) + FAIL-TEST (bootstrap still requires legacy backoffice_state).
+Classification: FAIL-PRODUCT (boot officiel avec seed démo bloqué).
+PostgreSQL démarre si SOMAFRIK_SKIP_DEMO_SEED=true (users=0).
+Bootstrap officiel = FAIL-TEST séparé (backoffice_state).
 Hypothèse uniquement — aucune correction effectuée.

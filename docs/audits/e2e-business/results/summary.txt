@@ -7,7 +7,13 @@ FAIL=28
 BLOCKED=11
 NOT_COVERED=22+
 
-P0=official_pg_seed_uq_users_school_email
+FAIL_UNIQUE=28
+  FAIL-DATA=25
+  FAIL-PRODUCT=1
+  FAIL-TEST=1
+  FAIL-INFRA=1
+BLOCKED=11
+P0=boot_officiel_seed_demo_bloque (uq_users_school_email; PG starts if seed off)
 P1=shared_e2e_http_and_mobile_login_401
-P2=docker_up_core_help_catalog; web_smoke_500_notifications_501_rooms
+P2=docker_up_core_FAIL-INFRA_only; web_smoke_500_501_observation
 P3=e2e_0023_banner_mislabeled; hosted_smoke_sha_hold

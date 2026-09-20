@@ -27,9 +27,9 @@
 | Capture / trace | `results/official-pg-seed-init.txt` |
 | Logs | idem |
 | Classification | **FAIL-PRODUCT** |
-| Sévérité métier | **P0** — impossibilité de démarrer le stockage obligatoire sur le chemin de seed officiel |
+| Sévérité métier | **P0** — boot officiel avec seed démo bloqué (pas « PostgreSQL obligatoire incapable de démarrer ») |
 
-> Hypothèse uniquement — aucune correction effectuée. Le seed/bootstrap écrit deux fois le même e-mail (ou e-mail NULL collision) avant la fin d’init.
+> Hypothèse uniquement — aucune correction effectuée. Le seed écrit deux fois le même e-mail (ou collision NULL) avant la fin d’init. Contrôle CTO : avec `SOMAFRIK_SKIP_DEMO_SEED=true` le stockage démarre ; `users=0`.
 
 ---
 
@@ -151,10 +151,10 @@
 | Environnement | ENV-LOCAL |
 | SHA | `e8a7cf0f404d711e9d0b3d752cfc9fc5b771b0a8` |
 | Logs | `results/docker-up-core.txt` |
-| Classification | **FAIL-INFRA** (build) / cause probable produit (contexte Docker incomplet) |
+| Classification | **FAIL-INFRA** (classe unique — non additionné en FAIL-PRODUCT) |
 | Sévérité métier | **P2** (workflow local Docker) |
 
-> Hypothèse uniquement — aucune correction effectuée. Le stage web de l’image copie `web/` sans `packages/`.
+> Hypothèse uniquement — aucune correction effectuée. Le stage web de l’image copie `web/` sans `packages/`. Contrôle CTO : cette hypothèse produit n’ouvre pas un second FAIL.
 
 Second constat (non corrigé) : même image reconstruite avec l’ARG **déjà prévu** `SKIP_WEB_BUILD=true`, `docker compose up backend` crash en boucle `ENOENT /app/package.json` — le volume `./backend:/app` n’est pas le filesystem de cette VM pour le daemon Docker.
 
@@ -198,6 +198,6 @@ Suite `verify:web-smoke` EXIT 0, mais le navigateur a journalisé :
 - HTTP **500** `GET /api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001`
 - HTTP **501** `GET /api/school-rooms?status=active`
 
-Classification annexe : **FAIL-PRODUCT** latent / **P2**. Aucune correction.
+Observation annexe (suite officielle **PASS**, **hors** total FAIL=28) : P2 latent. Aucune correction.
 
 Hosted GET préprod/prod : joignables, **SHA non vérifiable** → HOLD du script, **pas** un PASS métier hébergé.

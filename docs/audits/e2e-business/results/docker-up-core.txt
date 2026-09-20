@@ -13,5 +13,5 @@ Backend image build (official Dockerfile, no product edit):
 EXIT=1
 ENDED 2026-09-20T22:12:10Z
 
-Classification: FAIL-INFRA / FAIL-PRODUCT (Dockerfile web stage copies `web/` only, not `packages/`).
+Classification: FAIL-INFRA (unique). Hypothèse Dockerfile sans packages/ — non comptée en FAIL-PRODUCT.
 Aucune correction effectuée.
