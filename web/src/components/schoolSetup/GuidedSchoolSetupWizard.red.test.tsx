@@ -120,7 +120,7 @@ describe("RED — GuidedSchoolSetupWizard UX", () => {
         <GuidedSchoolSetupWizard payload={payload40} />
       </MemoryRouter>,
     );
-    expect(screen.getByText("Enseignants")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Enseignants" })).toBeInTheDocument();
     expect(screen.getByText("Étape 5 sur 10")).toBeInTheDocument();
   });
 });

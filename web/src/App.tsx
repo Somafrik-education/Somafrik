@@ -53,6 +53,7 @@ import {
   ReportsPage,
   SchoolsPage,
   SchoolSetupSettingsPage,
+  SchoolSetupWelcomePage,
   SettingsAppearancePage,
   SettingsDataPage,
   SettingsHubPage,
@@ -110,6 +111,14 @@ export default function App() {
           element={
             <PermissionRoute view="overview">
               <DashboardEntryPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/bienvenue-etablissement"
+          element={
+            <PermissionRoute view="configuration">
+              <SchoolSetupWelcomePage />
             </PermissionRoute>
           }
         />

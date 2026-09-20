@@ -179,6 +179,10 @@ export const SchoolSetupSettingsPage = lazyPage(
   () => import("./pages/parametres/SchoolSetupSettingsPage"),
   "SchoolSetupSettingsPage",
 );
+export const SchoolSetupWelcomePage = lazyPage(
+  () => import("./pages/schoolSetup/SchoolSetupWelcomePage"),
+  "SchoolSetupWelcomePage",
+);
 export const SubscriptionPolicySettingsPage = lazyPage(
   () => import("./pages/parametres/SubscriptionPolicySettingsPage"),
   "SubscriptionPolicySettingsPage",

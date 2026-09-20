@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LoadingState, ErrorState } from "@/design-system";
+import { GuidedSchoolSetupDashboardCard } from "../components/schoolSetup/GuidedSchoolSetupDashboardCard";
+import { schoolSetupGuidedApi, type GuidedSetupPayload } from "../lib/schoolSetupGuidedApi";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -37,6 +39,23 @@ export function OverviewPage() {
   const [demoCriticalStatus, setDemoCriticalStatus] = useState<DemoCriticalStatus>(
     demoRuntimeEnabled ? "idle" : "ready",
   );
+  const [guidedPayload, setGuidedPayload] = useState<GuidedSetupPayload | null>(null);
+
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    let cancelled = false;
+    void schoolSetupGuidedApi
+      .get()
+      .then((row) => {
+        if (!cancelled) setGuidedPayload(row);
+      })
+      .catch(() => {
+        if (!cancelled) setGuidedPayload(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.accessToken]);
 
   useEffect(() => {
     if (!demoRuntimeEnabled || !session?.accessToken) {
@@ -141,6 +160,9 @@ export function OverviewPage() {
 
   return (
     <div className="space-y-6">
+      {guidedPayload ? (
+        <GuidedSchoolSetupDashboardCard payload={guidedPayload} role={user?.role} />
+      ) : null}
       <DashboardChartGrid
         charts={charts}
         periodContext={periodContext}
