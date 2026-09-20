@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS classes (
 CREATE TABLE IF NOT EXISTS subjects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
-  subject_code VARCHAR(64) NOT NULL UNIQUE,
+  subject_code VARCHAR(64) NOT NULL,
   name TEXT NOT NULL,
   coefficient NUMERIC(8, 2) NOT NULL DEFAULT 1,
   level TEXT,
@@ -182,6 +182,13 @@ CREATE TABLE IF NOT EXISTS subjects (
 
 ALTER TABLE subjects ADD COLUMN IF NOT EXISTS level TEXT;
 ALTER TABLE subjects ADD COLUMN IF NOT EXISTS description TEXT;
+
+-- Le code matière est propre à un établissement. L'ancienne unicité globale
+-- empêchait deux écoles d'utiliser le même code (ex. MATH) et pouvait provoquer
+-- un upsert inter-tenant. Le boot est idempotent et corrige aussi les bases existantes.
+ALTER TABLE subjects DROP CONSTRAINT IF EXISTS subjects_subject_code_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subjects_school_subject_code
+  ON subjects (school_id, subject_code);
 
 CREATE TABLE IF NOT EXISTS subject_class_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
