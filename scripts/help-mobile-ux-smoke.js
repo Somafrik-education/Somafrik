@@ -119,18 +119,20 @@ async function main() {
 
     await shot360.page.getByTestId("mobile-help-button").click();
     await shot360.page.getByTestId("help-search").waitFor({ state: "visible", timeout: 15000 });
+    await shot360.page.waitForTimeout(400);
     await shot360.page.screenshot({
       path: path.join(ARTIFACTS, "help_runtime_sheet_open.png"),
       fullPage: false,
     });
     shots.push("help_runtime_sheet_open.png");
-    await shot360.page.getByLabel("Fermer l’aide").click();
+    await shot360.page.getByLabel(/Fermer l['’]aide/).click();
     await shot360.page.getByTestId("mobile-help-button").waitFor({ state: "visible", timeout: 10000 });
 
     await shot360.page.getByTestId("mobile-header-menu").click();
     await shot360.page.getByTestId("mobile-role-drawer-help-hide").waitFor({ state: "visible", timeout: 10000 });
     await shot360.page.getByTestId("mobile-role-drawer-help-hide").click();
     await shot360.page.getByTestId("mobile-help-button").waitFor({ state: "hidden", timeout: 10000 });
+    await shot360.page.getByTestId("mobile-role-drawer").waitFor({ state: "hidden", timeout: 10000 });
     await shot360.page.screenshot({
       path: path.join(ARTIFACTS, "help_runtime_button_hidden.png"),
       fullPage: false,
@@ -140,6 +142,7 @@ async function main() {
     await shot360.page.getByTestId("mobile-header-menu").click();
     await shot360.page.getByTestId("mobile-role-drawer-help-show").waitFor({ state: "visible", timeout: 10000 });
     await shot360.page.getByTestId("mobile-role-drawer-help").waitFor({ state: "visible", timeout: 5000 });
+    await shot360.page.waitForTimeout(200);
     await shot360.page.screenshot({
       path: path.join(ARTIFACTS, "help_runtime_menu_show_trigger.png"),
       fullPage: false,
@@ -148,6 +151,7 @@ async function main() {
 
     await shot360.page.getByTestId("mobile-role-drawer-help-show").click();
     await shot360.page.getByTestId("mobile-help-button").waitFor({ state: "visible", timeout: 10000 });
+    await shot360.page.getByTestId("mobile-role-drawer").waitFor({ state: "hidden", timeout: 10000 });
     await shot360.page.screenshot({
       path: path.join(ARTIFACTS, "help_runtime_button_restored.png"),
       fullPage: false,
