@@ -785,24 +785,24 @@ async function main() {
     });
     const estherOpenIns = await pool.query(
       `INSERT INTO student_fee_obligations (
-         school_id, student_id, class_id, fee_type, label, currency, academic_year,
+         school_id, student_id, class_id, fee_type, label, currency, academic_year, period_label,
          initial_amount, amount_due, amount_paid, balance, status, profile_payload
-       ) VALUES ($1,$2,$3,'Scolarité','Scolarité T1','CDF','2025-2026',140000,140000,0,140000,'À payer',$4::jsonb)
+       ) VALUES ($1,$2,$3,'Scolarité','Scolarité T1','CDF','2025-2026','T1',140000,140000,0,140000,'À payer',$4::jsonb)
        RETURNING id`,
       [schoolA.rows[0].id, estherItc.rows[0].id, klass.rows[0].id, estherProfile],
     );
     await pool.query(
       `INSERT INTO student_fee_obligations (
-         school_id, student_id, class_id, fee_type, label, currency, academic_year,
+         school_id, student_id, class_id, fee_type, label, currency, academic_year, period_label,
          initial_amount, amount_due, amount_paid, balance, status, profile_payload
-       ) VALUES ($1,$2,$3,'Inscription','Inscription','CDF','2025-2026',50000,50000,20000,30000,'Partiellement payé',$4::jsonb)`,
+       ) VALUES ($1,$2,$3,'Inscription','Inscription','CDF','2025-2026','Inscription',50000,50000,20000,30000,'Partiellement payé',$4::jsonb)`,
       [schoolA.rows[0].id, estherItc.rows[0].id, klass.rows[0].id, estherProfile],
     );
     await pool.query(
       `INSERT INTO student_fee_obligations (
-         school_id, student_id, class_id, fee_type, label, currency, academic_year,
+         school_id, student_id, class_id, fee_type, label, currency, academic_year, period_label,
          initial_amount, amount_due, amount_paid, balance, status, profile_payload
-       ) VALUES ($1,$2,$3,'Uniforme','Uniforme','CDF','2025-2026',15000,15000,15000,0,'Payé',$4::jsonb)`,
+       ) VALUES ($1,$2,$3,'Uniforme','Uniforme','CDF','2025-2026','Uniforme',15000,15000,15000,0,'Payé',$4::jsonb)`,
       [schoolA.rows[0].id, estherItc.rows[0].id, klass.rows[0].id, estherProfile],
     );
 
