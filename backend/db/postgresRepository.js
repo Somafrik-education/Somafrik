@@ -135,6 +135,7 @@ class PostgresRepository {
     await this.ensureReportCardConfigurationCanonicalSchema();
     await this.ensureReportCardSourceArtifactCanonicalSchema();
     await this.runSchoolSettingsCanonicalBoot();
+    await this.ensureSchoolSetupGuidedSchema();
     await this.runDocumentsExamsCanonicalBoot();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
@@ -925,6 +926,11 @@ class PostgresRepository {
   async runSchoolSettingsCanonicalBoot() {
     const { runSchoolSettingsCanonicalBoot } = require("../lib/schoolSettingsService");
     return runSchoolSettingsCanonicalBoot(this, console);
+  }
+
+  async ensureSchoolSetupGuidedSchema() {
+    const { ensureSchoolSetupGuidedSchema } = require("./schoolSetupGuidedSchema");
+    return ensureSchoolSetupGuidedSchema(this);
   }
 
   async ensureSchoolSettingsPreflight() {

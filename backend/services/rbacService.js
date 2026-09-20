@@ -151,6 +151,8 @@ const routePermissions = {
   "DELETE /api/v2/subjects/:code": ["Matières:DELETE", "Gérer cours", "ALL_PRIVILEGES"],
   "GET /api/v2/academic-years": ["Années Académiques:READ", "ALL_PRIVILEGES"],
   "GET /api/v2/school-setup/status": ["Paramètres Établissement:READ"],
+  "GET /api/v2/school-setup/guided": ["Paramètres Établissement:READ"],
+  "POST /api/v2/school-setup/guided/steps/:stepKey/complete": ["Paramètres Établissement:UPDATE"],
   "POST /api/v2/academic-years": ["Années Académiques:CREATE", "ALL_PRIVILEGES"],
   "PATCH /api/v2/academic-years/:id": ["Années Académiques:UPDATE", "ALL_PRIVILEGES"],
   "GET /api/v2/exams": ["Examens:READ", "Valider examens", "Organiser examens", "Gérer cours", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
