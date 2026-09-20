@@ -46,6 +46,7 @@ import SchoolYearSettingsScreen from "../screens/SchoolYearSettingsScreen";
 import SchoolPedagogicalStructureScreen from "../screens/SchoolPedagogicalStructureScreen";
 import SchoolingHubScreen from "../screens/SchoolingHubScreen";
 import SchoolSetupSettingsScreen from "../screens/SchoolSetupSettingsScreen";
+import SchoolSetupWelcomeScreen from "../screens/SchoolSetupWelcomeScreen";
 import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen";
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
@@ -109,6 +110,7 @@ export type RootStackParamList = {
   Synchronization: undefined;
   Configuration: undefined;
   SchoolSetup: undefined;
+  SchoolSetupWelcome: undefined;
   EstablishmentProfile: undefined;
   SchoolYearSettings: undefined;
   SchoolPedagogicalStructure: undefined;
@@ -342,6 +344,9 @@ export default function AppNavigator() {
         {canReadView(session, "Configuration") && <Stack.Screen name="Configuration" component={ConfigurationScreen} options={{ title: "Paramètres" }} />}
         {canReadView(session, "Configuration") && (
           <Stack.Screen name="SchoolSetup" component={SchoolSetupSettingsScreen} options={{ title: "Configuration de l'établissement" }} />
+        )}
+        {canReadView(session, "Configuration") && (
+          <Stack.Screen name="SchoolSetupWelcome" component={SchoolSetupWelcomeScreen} options={{ title: "Bienvenue sur Somafrik" }} />
         )}
         {canReadView(session, "EstablishmentProfile") && (
           <Stack.Screen name="EstablishmentProfile" component={EstablishmentProfileScreen} options={{ title: "Profil établissement" }} />

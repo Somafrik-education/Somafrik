@@ -20,6 +20,11 @@ import {
 } from "../components/ui/shadcn/form";
 import { getDefaultAppPath } from "../lib/superAdminAccess";
 import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
+import { schoolSetupGuidedApi } from "../lib/schoolSetupGuidedApi";
+import {
+  SCHOOL_SETUP_WELCOME_PATH,
+  shouldShowSchoolSetupWelcome,
+} from "../lib/schoolSetupGuidedWeb";
 import {
   resetSchoolSetupWizardSessionDismiss,
   SCHOOL_SETUP_SETTINGS_PATH,
@@ -120,8 +125,13 @@ export function LoginPage() {
       void (async () => {
         let next = getDefaultAppPath(role);
         try {
-          const payload = await schoolSetupStatusApi.get();
-          if (
+          const [payload, guided] = await Promise.all([
+            schoolSetupStatusApi.get(),
+            schoolSetupGuidedApi.get().catch(() => null),
+          ]);
+          if (shouldShowSchoolSetupWelcome({ payload: guided, role, mustChangePassword: false })) {
+            next = SCHOOL_SETUP_WELCOME_PATH;
+          } else if (
             shouldAutoOpenSchoolSetupWizard({
               payload,
               role,
@@ -181,8 +191,13 @@ export function LoginPage() {
       const role = result.user?.role ?? "";
       let next = getDefaultAppPath(role);
       try {
-        const payload = await schoolSetupStatusApi.get();
-        if (shouldAutoOpenSchoolSetupWizard({ payload, role, mustChangePassword: false })) {
+        const [payload, guided] = await Promise.all([
+          schoolSetupStatusApi.get(),
+          schoolSetupGuidedApi.get().catch(() => null),
+        ]);
+        if (shouldShowSchoolSetupWelcome({ payload: guided, role, mustChangePassword: false })) {
+          next = SCHOOL_SETUP_WELCOME_PATH;
+        } else if (shouldAutoOpenSchoolSetupWizard({ payload, role, mustChangePassword: false })) {
           next = SCHOOL_SETUP_SETTINGS_PATH;
         }
       } catch {
@@ -203,8 +218,13 @@ export function LoginPage() {
       const role = session?.user?.role ?? "";
       let next = getDefaultAppPath(role);
       try {
-        const payload = await schoolSetupStatusApi.get();
-        if (shouldAutoOpenSchoolSetupWizard({ payload, role, mustChangePassword: false })) {
+        const [payload, guided] = await Promise.all([
+          schoolSetupStatusApi.get(),
+          schoolSetupGuidedApi.get().catch(() => null),
+        ]);
+        if (shouldShowSchoolSetupWelcome({ payload: guided, role, mustChangePassword: false })) {
+          next = SCHOOL_SETUP_WELCOME_PATH;
+        } else if (shouldAutoOpenSchoolSetupWizard({ payload, role, mustChangePassword: false })) {
           next = SCHOOL_SETUP_SETTINGS_PATH;
         }
       } catch {

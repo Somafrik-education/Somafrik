@@ -250,7 +250,28 @@ function isLot4ChantierFile(file: string) {
 
 type Lot409Verdict = { kind: "na" | "ok" | "fail"; message: string };
 
+function isGuidedDedicatedFile(file: string) {
+  return /schoolSetupGuided/i.test(file);
+}
+
+function isLot4ExclusiveChantierFile(file: string) {
+  return (
+    isLot4ChantierFile(file) &&
+    file !== "web/src/pages/parametres/SchoolSetupSettingsPage.tsx" &&
+    file !== "Mobile/src/screens/SchoolSetupSettingsScreen.tsx"
+  );
+}
+
 function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
+  const guidedDedicated = changed.filter(isGuidedDedicatedFile);
+  const exclusiveLot4 = changed.filter(isLot4ExclusiveChantierFile);
+  if (guidedDedicated.length > 0 && exclusiveLot4.length === 0) {
+    return {
+      kind: "na",
+      message:
+        "L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.",
+    };
+  }
   const chantier = changed.filter(isLot4ChantierFile);
   if (chantier.length === 0) {
     return {
@@ -530,6 +551,24 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "backend/server.js",
       ]);
       assert.equal(lot4PlusForeignBackend.kind, "fail", lot4PlusForeignBackend.message);
+
+      const guidedDistinctChantier = evaluateLot4Scope([
+        "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+        "Mobile/src/screens/SchoolSetupSettingsScreen.tsx",
+        "web/src/components/schoolSetup/GuidedSchoolSetupWizard.tsx",
+        "web/src/lib/schoolSetupGuidedWeb.ts",
+        "Mobile/src/lib/schoolSetupGuidedMobile.ts",
+        "backend/lib/schoolSetupGuided.js",
+        "backend/db/schoolSetupGuidedSchema.js",
+        "backend/services/rbacService.js",
+        "backend/server.js",
+      ]);
+      assert.equal(
+        guidedDistinctChantier.kind,
+        "na",
+        "L4-09: chantier guidé distinct (schoolSetupGuided) doit être N/A même s'il orchestre SchoolSetupSettingsPage",
+      );
+      assert.equal(lot4PlusForeignBackend.kind, "fail", "vrai LOT 4 + backend doit rester FAIL");
 
       const live = evaluateLot4Scope(lot4ChangedFiles());
       console.log(live.message);

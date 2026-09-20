@@ -313,6 +313,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/v2/subjects",
       "/api/v2/academic-years",
       "/api/v2/school-setup/status",
+      "/api/v2/school-setup/guided",
       "/api/v2/exams",
       "/api/v2/documents",
       "/api/v2/reports/advanced",
@@ -3955,6 +3956,35 @@ app.get("/api/v2/school-setup/status", requireAuth, requirePermission("GET /api/
     headers: req.headers,
     params: req.params,
     one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
+  });
+  res.json(payload);
+}));
+
+app.get("/api/v2/school-setup/guided", requireAuth, requirePermission("GET /api/v2/school-setup/guided"), asyncHandler(async (req, res) => {
+  const { getSchoolSetupGuided } = require("./lib/schoolSetupGuided");
+  const payload = await getSchoolSetupGuided({
+    principal: req.principal,
+    query: req.query,
+    body: req.body,
+    headers: req.headers,
+    params: req.params,
+    one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
+    dbQuery: typeof repository.query === "function" ? repository.query.bind(repository) : null,
+  });
+  res.json(payload);
+}));
+
+app.post("/api/v2/school-setup/guided/steps/:stepKey/complete", requireAuth, requirePermission("POST /api/v2/school-setup/guided/steps/:stepKey/complete"), asyncHandler(async (req, res) => {
+  const { completeGuidedStep } = require("./lib/schoolSetupGuided");
+  const payload = await completeGuidedStep({
+    principal: req.principal,
+    stepKey: req.params.stepKey,
+    query: req.query,
+    body: req.body,
+    headers: req.headers,
+    params: req.params,
+    one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
+    dbQuery: typeof repository.query === "function" ? repository.query.bind(repository) : null,
   });
   res.json(payload);
 }));

@@ -21,7 +21,9 @@ const smokeApp =
     ? path.resolve(__dirname, "App.helpUxSmoke.tsx")
     : process.env.SOMAFRIK_COMMUNICATION_UX_SMOKE_ENTRY === "1"
       ? path.resolve(__dirname, "App.communicationUxSmoke.tsx")
-      : null;
+      : process.env.SOMAFRIK_GUIDED_SETUP_UX_SMOKE_ENTRY === "1"
+        ? path.resolve(__dirname, "App.guidedSetupUxSmoke.tsx")
+        : null;
 if (smokeApp) {
   const productionAppDir = path.resolve(__dirname);
   const previousResolve = config.resolver.resolveRequest;

@@ -27,7 +27,9 @@ import {
   formatHomePaymentsKpi,
 } from "../lib/homeDashboardKpis";
 import { countActiveUserAccounts, isSchoolAdminRole } from "../lib/format";
+import { GuidedSchoolSetupDashboardCard } from "../components/schoolSetup/GuidedSchoolSetupDashboardCard";
 import { SchoolSetupDashboardWidget } from "../components/schoolSetup/SchoolSetupDashboardWidget";
+import { schoolSetupGuidedApi, type GuidedSetupPayload } from "../lib/schoolSetupGuidedApi";
 import { schoolSetupStatusApi, type SchoolSetupPayload } from "../lib/schoolSetupStatusApi";
 import { SCHOOL_SETUP_ROUTE, shouldShowDashboardSetupWidget } from "../lib/schoolSetupMobile";
 import { filterCanonicalClasses } from "../lib/schoolingTruth";
@@ -70,6 +72,7 @@ export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
   const [setupPayload, setSetupPayload] = useState<SchoolSetupPayload | null>(null);
+  const [guidedPayload, setGuidedPayload] = useState<GuidedSetupPayload | null>(null);
   const [setupStatusFailed, setSetupStatusFailed] = useState(false);
   const {
     studentsData,
@@ -273,6 +276,14 @@ export default function HomeScreen({ navigation }: any) {
           if (cancelled) return;
           setSetupPayload(null);
           setSetupStatusFailed(true);
+        });
+      void schoolSetupGuidedApi
+        .get()
+        .then((row) => {
+          if (!cancelled) setGuidedPayload(row);
+        })
+        .catch(() => {
+          if (!cancelled) setGuidedPayload(null);
         });
       return () => {
         cancelled = true;
@@ -537,14 +548,23 @@ export default function HomeScreen({ navigation }: any) {
       actions={actions}
       showSecurityMatrix={false}
       footerSlot={
-        showSetupWidget && setupPayload ? (
+        guidedPayload || (showSetupWidget && setupPayload) ? (
           <View style={footerStyles.wrap}>
-            <SchoolSetupDashboardWidget
-              payload={setupPayload}
-              heading="Configuration rapide"
-              actionLabel="Continuer"
-              onContinue={() => navigation.navigate(SCHOOL_SETUP_ROUTE)}
-            />
+            {guidedPayload ? (
+              <GuidedSchoolSetupDashboardCard
+                payload={guidedPayload}
+                role={setupRole}
+                onResume={() => navigation.navigate(SCHOOL_SETUP_ROUTE)}
+              />
+            ) : null}
+            {showSetupWidget && setupPayload ? (
+              <SchoolSetupDashboardWidget
+                payload={setupPayload}
+                heading="Configuration rapide"
+                actionLabel="Continuer"
+                onContinue={() => navigation.navigate(SCHOOL_SETUP_ROUTE)}
+              />
+            ) : null}
           </View>
         ) : showSetupFailSoft ? (
           <View style={footerStyles.wrap} testID="school-setup-widget">

@@ -44,6 +44,8 @@ import {
   resetSchoolSetupWizardSessionDismiss,
   resolveMobilePostLoginNavigation,
 } from "../lib/schoolSetupMobile";
+import { schoolSetupGuidedApi } from "../lib/schoolSetupGuidedApi";
+import { shouldShowSchoolSetupWelcome } from "../lib/schoolSetupGuidedMobile";
 import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
 import { validateAccountSecret } from "../lib/userAccountRules";
 
@@ -177,12 +179,26 @@ export default function LoginScreen({ navigation, route }: Props) {
       mustChangePassword: false,
       getStatus: () => schoolSetupStatusApi.get(),
     });
+    let openWelcome = false;
+    try {
+      const guided = await schoolSetupGuidedApi.get();
+      openWelcome = shouldShowSchoolSetupWelcome({
+        payload: guided,
+        role,
+        mustChangePassword: false,
+      });
+    } catch {
+      openWelcome = false;
+    }
     for (const destination of plan.destinations) {
       if (destination === "Home") {
         navigation.navigate("Home", { role: safe.role });
-      } else {
+      } else if (!openWelcome) {
         navigation.navigate("SchoolSetup");
       }
+    }
+    if (openWelcome) {
+      navigation.navigate("SchoolSetupWelcome");
     }
   };
 
