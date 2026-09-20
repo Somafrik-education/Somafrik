@@ -531,6 +531,24 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       ]);
       assert.equal(lot4PlusForeignBackend.kind, "fail", lot4PlusForeignBackend.message);
 
+      const guidedDistinctChantier = evaluateLot4Scope([
+        "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+        "Mobile/src/screens/SchoolSetupSettingsScreen.tsx",
+        "web/src/components/schoolSetup/GuidedSchoolSetupWizard.tsx",
+        "web/src/lib/schoolSetupGuidedWeb.ts",
+        "Mobile/src/lib/schoolSetupGuidedMobile.ts",
+        "backend/lib/schoolSetupGuided.js",
+        "backend/db/schoolSetupGuidedSchema.js",
+        "backend/services/rbacService.js",
+        "backend/server.js",
+      ]);
+      assert.equal(
+        guidedDistinctChantier.kind,
+        "na",
+        "L4-09: chantier guidé distinct (schoolSetupGuided) doit être N/A même s'il orchestre SchoolSetupSettingsPage",
+      );
+      assert.equal(lot4PlusForeignBackend.kind, "fail", "vrai LOT 4 + backend doit rester FAIL");
+
       const live = evaluateLot4Scope(lot4ChangedFiles());
       console.log(live.message);
       assert.notEqual(live.kind, "fail", live.message);

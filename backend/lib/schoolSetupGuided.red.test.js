@@ -705,6 +705,60 @@ test("B14 — row school_setup_progress absente + données canoniques existantes
   assert.deepEqual(stillEmpty.completedSteps, [], "bootstrap dérivé : pas d'écriture destructive");
 });
 
+test("B15 — bootstrap 1→6 + POST finance ⇒ 70 %, jamais régression à 0 %", async () => {
+  const mod = requireGuided();
+  const store = memoryProgressStore();
+  const before = await getGuided(mod, {
+    principal: schoolAdminA(),
+    one: MEMBERSHIP_LOOKUP,
+    progressStore: store,
+    loadSnapshot: async () => through("students"),
+  });
+  assert.equal(before.percent, 60);
+  assert.equal(before.status, "operational");
+  assert.deepEqual((await store.load(SCHOOL_A_ID)).completedSteps, []);
+
+  await assert.rejects(
+    () =>
+      completeStep(mod, {
+        principal: schoolAdminA(),
+        stepKey: "users",
+        one: MEMBERSHIP_LOOKUP,
+        progressStore: store,
+        loadSnapshot: async () => through("students"),
+      }),
+    (error) => error.statusCode === 409 && /STEP_DEPENDENCY|dépendance/i.test(String(error.message) + String(error.code ?? "")),
+  );
+  assert.deepEqual((await store.load(SCHOOL_A_ID)).completedSteps, [], "saut d'étape interdit, pas d'écriture");
+
+  const after = await completeStep(mod, {
+    principal: schoolAdminA(),
+    stepKey: "finance",
+    one: MEMBERSHIP_LOOKUP,
+    progressStore: store,
+    loadSnapshot: async () => through("finance"),
+  });
+  assertPayloadShape(after);
+  assert.equal(after.percent, 70, "POST finance après bootstrap 1→6 doit donner 70 %");
+  assert.ok(after.percent > 0 && after.percent !== 0, "jamais 60 % → 0 %");
+  assert.deepEqual(after.completedSteps, [...REQUIRED_STEP_KEYS, "finance"]);
+  assert.equal(after.status, "operational");
+  assert.equal(after.nextStepKey, "pedagogy");
+
+  const persisted = await store.load(SCHOOL_A_ID);
+  assert.deepEqual(persisted.completedSteps, [...REQUIRED_STEP_KEYS, "finance"]);
+  assert.equal(persisted.lastValidStep, 7);
+
+  const resumed = await getGuided(mod, {
+    principal: schoolAdminA(),
+    one: MEMBERSHIP_LOOKUP,
+    progressStore: store,
+    loadSnapshot: async () => through("finance"),
+  });
+  assert.equal(resumed.percent, 70);
+  assert.deepEqual(resumed.completedSteps, [...REQUIRED_STEP_KEYS, "finance"]);
+});
+
 test("B13 — parcours 0 → 10 % → reprise 40/50/60 % operational → 100 %", async () => {
   const mod = requireGuided();
   const store = memoryProgressStore();
