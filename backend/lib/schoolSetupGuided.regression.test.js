@@ -45,6 +45,7 @@ test("HOLD — bootstrap dérivé si curseur absent ; pas de token statut persis
   const guided = read("backend/lib/schoolSetupGuided.js");
   const schema = read("backend/db/schoolSetupGuidedSchema.js");
   assert.match(guided, /bootstrapFromCanonical/);
+  assert.match(guided, /persistedList\.length === 0 \? consecutiveValidCompleted\(\[\]/);
   assert.doesNotMatch(schema, /setup_status/);
 });
 

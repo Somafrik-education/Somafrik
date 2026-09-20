@@ -353,7 +353,9 @@ async function completeGuidedStep(input = {}) {
     throw error;
   }
 
-  const completedSteps = normalizeCompleted([...(persisted.completedSteps ?? []), stepKey]);
+  const persistedList = normalizeCompleted(persisted.completedSteps);
+  const seeded = persistedList.length === 0 ? consecutiveValidCompleted([], snapshot) : persistedList;
+  const completedSteps = normalizeCompleted([...seeded, stepKey]);
   const prefix = consecutiveValidCompleted(completedSteps, snapshot);
   const nextPersisted = {
     lastValidStep: prefix.length,

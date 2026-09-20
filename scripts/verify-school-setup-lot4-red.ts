@@ -250,7 +250,28 @@ function isLot4ChantierFile(file: string) {
 
 type Lot409Verdict = { kind: "na" | "ok" | "fail"; message: string };
 
+function isGuidedDedicatedFile(file: string) {
+  return /schoolSetupGuided/i.test(file);
+}
+
+function isLot4ExclusiveChantierFile(file: string) {
+  return (
+    isLot4ChantierFile(file) &&
+    file !== "web/src/pages/parametres/SchoolSetupSettingsPage.tsx" &&
+    file !== "Mobile/src/screens/SchoolSetupSettingsScreen.tsx"
+  );
+}
+
 function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
+  const guidedDedicated = changed.filter(isGuidedDedicatedFile);
+  const exclusiveLot4 = changed.filter(isLot4ExclusiveChantierFile);
+  if (guidedDedicated.length > 0 && exclusiveLot4.length === 0) {
+    return {
+      kind: "na",
+      message:
+        "L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.",
+    };
+  }
   const chantier = changed.filter(isLot4ChantierFile);
   if (chantier.length === 0) {
     return {
