@@ -216,7 +216,9 @@ function readExpoGoConfig(): unknown | null {
 /**
  * SDK 54: `Constants.expoGoConfig` is not a boolean Expo-Go flag.
  * On an EAS APK the getter returns the EmbeddedManifest object (never null).
- * Packager `hostUri` / `debuggerHost` remain a fail-closed second guard.
+ * Packager `hostUri` / `debuggerHost` remain a fail-closed second guard
+ * except on CNG `bare` APKs, whose EmbeddedManifest can leak leftover
+ * debuggerHost without being Expo Go.
  *
  * Native EAS Android preview/release: `standalone` (CNG/prebuild: `bare`).
  * Expo Go is `storeClient` (Android ConstantsBinding / iOS EXReactAppManager)
@@ -249,7 +251,7 @@ export function classifyNativePushCompatibility(
   if (env === "storeClient") {
     return { compatible: false, env, expoGoIndicatesExpoGo, exitPoint: "unsupported_store_client" };
   }
-  if (expoGoIndicatesExpoGo) {
+  if (expoGoIndicatesExpoGo && env !== "bare") {
     return { compatible: false, env, expoGoIndicatesExpoGo, exitPoint: "unsupported_packager" };
   }
   if (env === "bare" || env === "standalone") {

@@ -175,6 +175,7 @@ function sourceGuards() {
   assert.match(runtime, /observePushRuntimeEvent/);
   assert.match(mobile, /unsupported_packager/);
   assert.match(mobile, /export function classifyNativePushCompatibility/);
+  assert.match(mobile, /expoGoIndicatesExpoGo && env !== "bare"/);
   const unchecked = mobile.slice(mobile.indexOf("async function registerAuthenticatedPushDeviceUnchecked"));
   const channelCall = unchecked.indexOf("setNotificationChannelAsync");
   const android13Call = unchecked.indexOf("ensureAndroid13PostNotifications");
