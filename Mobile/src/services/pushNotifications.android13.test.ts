@@ -3,6 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
+  getLastPushRegistrationOutcome,
+  observePushRegistrationFailure,
   registerAuthenticatedPushDevice,
   resetPushRegistrationStateForTests,
 } from "./pushNotifications";
@@ -82,13 +84,14 @@ async function main() {
     getReleaseProfileImpl: () => "preview",
     httpRequestImpl: httpOk as never,
     notifications: previewNotifications(),
-  } as never);
+  });
   assert.equal(
     asked,
     true,
     "Android 13 / SDK 33 : POST_NOTIFICATIONS non accordée + canAskAgain => prompt",
   );
   assert.equal(android13Prompt, "registered");
+  assert.equal(getLastPushRegistrationOutcome()?.status, "registered");
   assert.equal(posts[0]?.path, "/mobile/push-devices");
   assert.match(String(posts[0]?.init?.body), /"appProfile":"preview"/);
 
@@ -110,9 +113,10 @@ async function main() {
     getReleaseProfileImpl: () => "preview",
     httpRequestImpl: httpOk as never,
     notifications: previewNotifications(),
-  } as never);
+  });
   assert.equal(asked, true);
   assert.equal(refused, "permission_denied");
+  assert.equal(getLastPushRegistrationOutcome()?.status, "permission_denied");
   assert.equal(posts.length, 0);
 
   resetPushRegistrationStateForTests();
@@ -132,7 +136,7 @@ async function main() {
     getProjectId: () => PROJECT_ID,
     httpRequestImpl: httpOk as never,
     notifications: previewNotifications(),
-  } as never);
+  });
   assert.equal(asked, false, "canAskAgain === false : ne pas relancer le prompt");
   assert.equal(noReprompt, "permission_denied");
   assert.equal(posts.length, 0);
@@ -150,9 +154,15 @@ async function main() {
     getProjectId: () => PROJECT_ID,
     httpRequestImpl: httpOk as never,
     notifications: previewNotifications(),
-  } as never);
+  });
   assert.equal(storeClient, "unsupported");
+  assert.equal(getLastPushRegistrationOutcome()?.status, "unsupported");
   assert.equal(posts.length, 0);
+
+  observePushRegistrationFailure(new Error("Jeton ExpoPushToken[secret-device] indisponible"));
+  const failed = getLastPushRegistrationOutcome();
+  assert.equal(failed?.status, "failed");
+  assert.doesNotMatch(JSON.stringify(failed), /ExpoPushToken|secret-device/);
 
   console.log("OK Mobile pushNotifications.android13.test.ts");
 }

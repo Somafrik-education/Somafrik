@@ -39,10 +39,20 @@ export type PushRegisterDeps = {
   httpRequestImpl?: (path: string, init?: RequestInit) => Promise<unknown>;
   getProjectId?: () => string | null;
   getReleaseProfileImpl?: () => string;
+  androidSdk?: number;
+  postNotificationsGranted?: boolean | null;
+  postNotificationsCanAskAgain?: boolean;
+  requestPostNotificationsImpl?: () => Promise<PermissionResponse>;
+};
+
+export type PushRegistrationOutcome = {
+  status: "registered" | "permission_denied" | "unsupported" | "failed";
+  reason?: string;
 };
 
 const REMEMBERED_TOKEN_KEY = "somafrik.push.currentExpoToken";
 let lastRegisteredToken: string | null = null;
+let lastRegistrationOutcome: PushRegistrationOutcome | null = null;
 
 async function rememberPushToken(token: string | null) {
   lastRegisteredToken = token;
@@ -96,6 +106,30 @@ function logInfo(message: string) {
   } catch {
     /* tests node : pas de logs natifs */
   }
+}
+
+function logWarn(message: string) {
+  try {
+    const { safeLogger } = require("./safeLogger") as { safeLogger: { warn: (...args: unknown[]) => void } };
+    safeLogger.warn(message);
+  } catch {
+    /* tests node : pas de logs natifs */
+  }
+}
+
+function rememberOutcome(outcome: PushRegistrationOutcome) {
+  lastRegistrationOutcome = outcome;
+}
+
+export function getLastPushRegistrationOutcome() {
+  return lastRegistrationOutcome;
+}
+
+export function observePushRegistrationFailure(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error ?? "unknown");
+  const reason = raw.replace(/Expo(nent)?PushToken\[[^\]]+\]/gi, "[REDACTED_PUSH_TOKEN]").slice(0, 180);
+  rememberOutcome({ status: "failed", reason });
+  logWarn("push device registration failed");
 }
 
 function nativeNotifications(): NotificationsLike {
@@ -167,20 +201,87 @@ export function isNativePushCompatible(
   return env === "bare" || env === "standalone";
 }
 
+function readAndroidSdk(): number {
+  try {
+    const { Platform } = require("react-native") as { Platform: { Version?: string | number } };
+    return Number(Platform.Version ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+async function defaultRequestPostNotifications(): Promise<PermissionResponse> {
+  const { PermissionsAndroid } = require("react-native") as {
+    PermissionsAndroid: {
+      PERMISSIONS: { POST_NOTIFICATIONS?: string };
+      RESULTS: { GRANTED: string; NEVER_ASK_AGAIN: string };
+      request: (permission: string) => Promise<string>;
+    };
+  };
+  const permission =
+    PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS ?? "android.permission.POST_NOTIFICATIONS";
+  const result = await PermissionsAndroid.request(permission);
+  return {
+    status: result === PermissionsAndroid.RESULTS.GRANTED ? "granted" : "denied",
+    granted: result === PermissionsAndroid.RESULTS.GRANTED,
+    canAskAgain: result !== PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN,
+  };
+}
+
+async function ensureAndroid13PostNotifications(
+  deps: PushRegisterDeps,
+): Promise<PermissionResponse | null> {
+  const sdk = deps.androidSdk ?? readAndroidSdk();
+  if (sdk < 33) return null;
+  if (deps.postNotificationsGranted === true) {
+    return { status: "granted", granted: true, canAskAgain: true };
+  }
+  if (deps.postNotificationsGranted === false && deps.postNotificationsCanAskAgain === false) {
+    return { status: "denied", granted: false, canAskAgain: false };
+  }
+  const request = deps.requestPostNotificationsImpl ?? defaultRequestPostNotifications;
+  return request();
+}
+
 export function getLastRegisteredPushTokenForTests() {
   return lastRegisteredToken;
 }
 
 export function resetPushRegistrationStateForTests() {
   lastRegisteredToken = null;
+  lastRegistrationOutcome = null;
 }
 
 export async function registerAuthenticatedPushDevice(deps: PushRegisterDeps = {}): Promise<
   "registered" | "permission_denied" | "unsupported"
 > {
+  try {
+    return await registerAuthenticatedPushDeviceUnchecked(deps);
+  } catch (error) {
+    observePushRegistrationFailure(error);
+    throw error;
+  }
+}
+
+async function registerAuthenticatedPushDeviceUnchecked(deps: PushRegisterDeps): Promise<
+  "registered" | "permission_denied" | "unsupported"
+> {
   const platform = deps.platform ?? defaultPlatform();
-  if (platform !== "android") return "unsupported";
-  if (!isNativePushCompatible(deps.executionEnvironment, deps.expoGoConfig)) return "unsupported";
+  if (platform !== "android") {
+    rememberOutcome({ status: "unsupported" });
+    return "unsupported";
+  }
+  if (!isNativePushCompatible(deps.executionEnvironment, deps.expoGoConfig)) {
+    rememberOutcome({ status: "unsupported" });
+    return "unsupported";
+  }
+
+  const android13Permission = await ensureAndroid13PostNotifications(deps);
+  if (android13Permission && android13Permission.status !== "granted") {
+    await rememberPushToken(null);
+    rememberOutcome({ status: "permission_denied" });
+    return "permission_denied";
+  }
 
   const notifications = deps.notifications ?? nativeNotifications();
   const importance = notifications.AndroidImportance?.HIGH ?? 4;
@@ -202,6 +303,7 @@ export async function registerAuthenticatedPushDevice(deps: PushRegisterDeps = {
   }
   if (permission.status !== "granted") {
     await rememberPushToken(null);
+    rememberOutcome({ status: "permission_denied" });
     return "permission_denied";
   }
 
@@ -226,6 +328,7 @@ export async function registerAuthenticatedPushDevice(deps: PushRegisterDeps = {
     }),
   });
   await rememberPushToken(expoPushToken);
+  rememberOutcome({ status: "registered" });
   logInfo("push device registered");
   return "registered";
 }

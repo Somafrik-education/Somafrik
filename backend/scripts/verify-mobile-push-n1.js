@@ -167,6 +167,11 @@ function sourceGuards() {
   assert.match(mobile, /if \(env === "storeClient"\) return false/);
   assert.match(mobile, /return env === "bare" \|\| env === "standalone";/);
   assert.doesNotMatch(mobile, /env === "bare" \|\| env === "standalone" \|\| env === "storeClient"/);
+  assert.match(mobile, /POST_NOTIFICATIONS/);
+  assert.match(mobile, /export function getLastPushRegistrationOutcome/);
+  assert.match(mobile, /export function observePushRegistrationFailure/);
+  assert.doesNotMatch(runtime, /registerAuthenticatedPushDevice\(\)\.catch\(\(\) => undefined\)/);
+  assert.match(runtime, /observePushRegistrationFailure/);
   assert.doesNotMatch(mobile, /console\.log\([^)]*expoPushToken/);
   const example = read("Mobile/google-services.json.example");
   assert.doesNotMatch(example, /private_key/);
