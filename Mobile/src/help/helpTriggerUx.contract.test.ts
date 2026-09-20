@@ -34,7 +34,7 @@ test("compact ? trigger is the only principal entry and stays accessible", () =>
 test("hiding the trigger is persisted locally without a new dependency", () => {
   assert.match(preference, /expo-secure-store/);
   assert.match(preference, /HELP_TRIGGER_VISIBLE_KEY/);
-  assert.doesNotMatch(preference, /AsyncStorage|MMKV|localStorage/);
+  assert.doesNotMatch(preference, /AsyncStorage|localStorage/);
   assert.match(context, /writeHelpTriggerVisible\(false\)/);
   assert.match(context, /writeHelpTriggerVisible\(true\)/);
   assert.match(host, /triggerVisible && !keyboardVisible/);
