@@ -124,19 +124,21 @@ function safeReleaseProfile(deps: PushRegisterDeps): string {
   }
 }
 
-function logInfo(message: string) {
+function logInfo(message: string, extra?: unknown) {
   try {
     const { safeLogger } = require("./safeLogger") as { safeLogger: { info: (...args: unknown[]) => void } };
-    safeLogger.info(message);
+    if (extra === undefined) safeLogger.info(message);
+    else safeLogger.info(message, extra);
   } catch {
     /* tests node : pas de logs natifs */
   }
 }
 
-function logWarn(message: string) {
+function logWarn(message: string, extra?: unknown) {
   try {
     const { safeLogger } = require("./safeLogger") as { safeLogger: { warn: (...args: unknown[]) => void } };
-    safeLogger.warn(message);
+    if (extra === undefined) safeLogger.warn(message);
+    else safeLogger.warn(message, extra);
   } catch {
     /* tests node : pas de logs natifs */
   }

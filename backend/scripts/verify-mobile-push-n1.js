@@ -164,8 +164,9 @@ function sourceGuards() {
   assert.match(mobile, /hostUri/);
   assert.match(mobile, /debuggerHost/);
   assert.match(mobile, /export function isNativePushCompatible/);
-  assert.match(mobile, /if \(env === "storeClient"\) return false/);
-  assert.match(mobile, /return env === "bare" \|\| env === "standalone";/);
+  assert.match(mobile, /if \(env === "storeClient"\)/);
+  assert.match(mobile, /unsupported_store_client/);
+  assert.match(mobile, /if \(env === "bare" \|\| env === "standalone"\)/);
   assert.doesNotMatch(mobile, /env === "bare" \|\| env === "standalone" \|\| env === "storeClient"/);
   assert.match(mobile, /POST_NOTIFICATIONS/);
   assert.match(mobile, /export function getLastPushRegistrationOutcome/);
