@@ -1,39 +1,39 @@
-# RC1 — Matrice E2E métier — 2026-09-19
+# RC1 — Matrice E2E métier — 2026-09-20
 
-**Environnement d’exécution :** agent Cloud **sans Docker**, **sans PostgreSQL**, **sans préprod authentifiée**.  
-**Charge production :** interdite (non tentée).
+**Environnement :** agent Cloud, PostgreSQL 16 local isolé, **sans Docker Compose**, **sans write préprod**.  
+**Charge production :** interdite (non tentée).  
+**Evidence :** [evidence/rc1-e2e-results.json](./evidence/rc1-e2e-results.json)
 
-Légende : `PASS` · `FAIL` · `SKIP` (prérequis absent) · `BLOCKED` (infra) · `STATIC` (preuve code seulement).
+Légende : `PASS` · `FAIL` · `SKIP` · `BLOCKED` (stack HTTP Docker/PG) · `STATIC`.
 
 | ID | Parcours | Rôles | Résultat | Preuve |
 |----|----------|-------|----------|--------|
-| E2E-AUTH | login / refresh / logout / lockout | tous | **SKIP** | Suites `verify:auth-sessions` / `verify:jwt-header` = contrat local si deps OK ; parcours UI préprod non joué. |
-| E2E-SCHOOL | création / config établissement | super_admin, country_admin, school_admin | **BLOCKED** | `verify:e2e-0014` / `0004` exigent backend Docker + PG. |
-| E2E-YEAR | année scolaire / périodes / pédagogie | school_admin | **BLOCKED** | Gates tenant Academic Year existent (`verify:academic-year-tenant`) mais PG requis. |
-| E2E-CLASS | classes | school_admin | **BLOCKED** | `verify:e2e-0004`. |
-| E2E-ENROLL | inscription élève via classe uniquement | school_admin | **BLOCKED** | `verify:e2e-0005`. |
-| E2E-USERS | utilisateurs / enseignant / affectations / PP | school_admin | **BLOCKED** | `verify:e2e-0003` / `0006`. |
-| E2E-PRESENCE | Présent / Absent / Retard / Justifié | teacher | **BLOCKED** | Pas d’UI isolée. |
-| E2E-GRADES | notes / évaluations / examens | teacher | **BLOCKED** | `verify:e2e-0008` / `0028`. |
-| E2E-BULLETIN | bulletins | school_admin | **BLOCKED** | `verify:report-card-s1-e2e` exige `DATABASE_URL`. |
-| E2E-FINANCE | grilles / paiements / impayés / relances | school_admin | **BLOCKED** | `verify:e2e-0001` / `0009` / `0011`. |
-| E2E-COM | annonces / messages / préférences | school_admin | **BLOCKED** | `verify:communications-e2e` PG. |
-| E2E-RBAC | restrictions cross-tenant | A/B | **STATIC** | Contrats tenant dans le tree (lots GP-002+). Exécution HTTP dual-identity **non rejouée** ici. |
-| E2E-PARENT | workflow parent / élève | parent_student / student | **BLOCKED** | `verify:e2e-0012`. |
-| E2E-SETUP | première connexion | school_admin | **BLOCKED** | Setup lot tests RED existent ; pas de recette UI. |
-| E2E-DATES | dates JJ-MM-AAAA | web/mobile | **STATIC** | Contrat date + CI historique #718. Non rejoué ici. |
-| E2E-WEBPUSH | Web Push préprod | school_admin | **FAIL** (produit) | Feature absente — voir RQ-646. |
-| E2E-MOBPUSH | Mobile Push natif | teacher | **SKIP** | RQ-645 — device / credentials hors de cet agent. |
-| E2E-MOBNAV | navigation Expo/RN | teacher | **PASS** (contrat) / **SKIP** device | RQ-717 **CLOSED** — `navigationRef` ; smoke appareil non rejoué. |
+| E2E-AUTH | login / refresh / logout | tous | **PASS** | `verify:auth-sessions` — 28 tests JWT/refresh/révocation |
+| E2E-SCHOOL | création / config établissement | super_admin, country_admin, school_admin | **BLOCKED** | `verify:e2e-0014` exige backend Docker + seed |
+| E2E-YEAR | année scolaire / périodes | school_admin | **BLOCKED** | gate tenant Academic Year = CI (#742 `academic-year-tenant` PASS) |
+| E2E-CLASS | classes | school_admin | **BLOCKED** HTTP ; **PASS** contrat PG | `classesRepository.pg.test.js` OK ; `verify:e2e-0004` non joué |
+| E2E-ENROLL | inscription élève via classe uniquement | school_admin | **BLOCKED** HTTP ; **PASS** contrat PG | `classStudentsRepository.pg.test.js` OK ; `verify:e2e-0005` non joué |
+| E2E-USERS | enseignant + affectation | school_admin, teacher | **PASS** | `verify:e2e-0006` — 14/14 mémoire |
+| E2E-ASSIGN-732 | `teacher_assignments ↔ school_courses.teacher_id` | school_admin | **PASS** | 6/6 dont PG create/update/delete + refus tiers |
+| E2E-HEAD-TEACHER | professeur principal | school_admin | **PASS** | `classHeadTeachers.rbac` + management — 9/9 |
+| E2E-PRESENCE | Présent / Absent / Retard / Justifié | teacher | **BLOCKED** | `verify:e2e-0013` HTTP ; CI `presence-tenant` PASS |
+| E2E-GRADES | notes / évaluations | teacher | **BLOCKED** | `verify:e2e-0008` / `0028` HTTP |
+| E2E-BULLETIN | bulletins | school_admin | **BLOCKED** | `verify:report-card-s1-e2e` exige stack PG applicatif |
+| E2E-FINANCE | frais / paiement / impayé | school_admin | **BLOCKED** HTTP ; **PASS** contrat PG | `financeRepository.pg.test.js` OK |
+| E2E-COM | communication in-app | school_admin | **PASS** contrat | `verify:communications-e2e` + `clientsSecurity.test.js` |
+| E2E-RBAC | plateforme interdite + isolation | A/B | **PASS** contrat | `verify:platform-personal-data-deny` ; dual-identity HTTP **BLOCKED** |
+| E2E-PARENT | workflow parent / élève | parent_student | **BLOCKED** | `verify:e2e-0012` |
+| E2E-SETUP | première connexion guidée | school_admin | **PASS** | setup guidé backend 26/26 |
+| E2E-DATES | dates JJ-MM-AAAA | web/mobile | **PASS** | audit 0 violation ; Web + Mobile contract |
+| E2E-WEBPUSH | Web Push | — | **hors gate** | #646 P2 accepté — pas rouvert |
+| E2E-MOBPUSH | tap Push | — | **hors gate** | #737 P2 accepté — pas rouvert |
+| E2E-MOBNAV | navigation Expo/RN | teacher | **STATIC** | #717 CLOSED ; smoke appareil non rejoué |
 
-## Outils déjà versionnés (non exécutés faute d’API PG)
+## Critères #719
 
-`npm run verify:e2e-api` → `verify:e2e-preflight` + chaînes `0001`–`0015` / `0028`.  
-Prérequis documenté : `npm run docker:up:core`.
-
-## Critères #719 non prouvés
-
-- zéro donnée fantôme
-- zéro écriture legacy en conditions réelles
-- cohérence Web/Mobile sur la **même** ligne PostgreSQL
-- screenshots / traces d’échec UI
+| Critère | Résultat |
+|---------|----------|
+| zéro donnée fantôme (HTTP live) | **non prouvé** (stack Docker absente) |
+| zéro écriture legacy | **PASS** contrats `legacyPedagogyStaffStateWrite` + `legacyStudentsStateWrite` |
+| zéro contournement RBAC (contrat) | **PASS** S1.4 + deny plateforme |
+| cohérence Web/Mobile même ligne PG | **non prouvé** (pas de recette UI partagée) |

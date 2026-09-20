@@ -1,42 +1,55 @@
-# RC1 — Rapport fonctionnel — 2026-09-19
+# RC1 — Rapport fonctionnel — 2026-09-20
 
 **Commande :** `npm run verify:rc1-gates`  
-**Evidence :** [evidence/rc1-functional-results.json](./evidence/rc1-functional-results.json)
+**Evidence :** [evidence/rc1-functional-results.json](./evidence/rc1-functional-results.json) · [evidence/rc1-pg-extra-results.json](./evidence/rc1-pg-extra-results.json)  
+**Baseline exécutée :** `172b2b3a` puis HEAD de ce rapport  
+**Environnement :** Node v22.14.0 · PostgreSQL 16 local · `DATABASE_URL` isolée · gitleaks 8.24.3
 
-## Catalogue exécuté (sans Docker / sans `DATABASE_URL`)
+## Catalogue
 
-Gates listées dans `scripts/rc1/run-rc1-gates.js` :
+37 gates (lots 0–8, sécurité, #732, setup, erasure, architecture, dates, COM-C1).
 
-- sécurité statique / contrat : disclosure, JWT header, db-config, mobile-security, android-release, secrets, sanitize, auth-sessions, personal-data-deny, audit:ci
-- métier contrat : RBAC S1.4 / ADMIN-01, notes-sync, parité LOT 0–8, help-v1a, branding
+**35 PASS / 2 FAIL.**
 
-## Hors catalogue (volontaire)
+### PASS notables
 
-Toute gate `*.pg.test.js` / E2E API / Playwright / web-smoke hébergé.  
-Elles restent **à rejouer** sur un environnement isolé avec PostgreSQL.
+- LOT 0–8
+- INV-732 (`teacherAssignmentsRepository` mémoire + PG)
+- E2E-0006 mémoire
+- HEAD-TEACHER
+- SETUP-GUIDED-BE
+- DATE-CONTRACT (0 violation JJ-MM-AAAA)
+- ARCHITECTURE (legacy aliases + orphan scanner)
+- PERSONAL-DATA-DENY, AUTH-SESSIONS, SANITIZE, SECRETS, AUDIT-CI
+- PRIVACY-ERASURE, PREPROD-503-LOCAL, DATA-API-LOCKDOWN
+- JWT-HEADER (PASS — Puppeteer/PDF désormais disponible)
+- COM-C1 + clients security
+- Legacy staff / students write guards
 
-## Vérifications fonctionnelles #719
+### FAIL classés (pas P0/P1)
 
-| Item | Résultat |
-|------|----------|
-| Suites unitaires existantes (sous-ensemble) | via catalogue |
-| Intégration backend PG | **SKIP** |
-| Contrats API live | **SKIP** sauf JWT header mémoire si le gate démarre un backend éphémère |
-| Composants Web / Mobile (parité LOT 0–8) | via catalogue |
-| Typecheck / lint / build | **SKIP** dans ce runner (durée) ; CI PR Gates à lire sur la PR G1 |
-| Empty / loading / offline / error states | **SKIP** UI |
-| Permissions live après changement de rôle | **SKIP** runtime |
-| Écran mort / route legacy | **STATIC** — LOT 8 fermé sur `develop` ; pas de recette UI |
+| ID | Exit | Classification |
+|----|------|----------------|
+| RBAC-ADMIN-01 | FAIL | **P2 stale** — le script exige encore `teachers` dans `ADMIN_SCHOOL_WRITABLE_ENTITIES`. LOT 3 a retiré cette clé state (écritures enseignants = API dédiée). Pas une régression PUT métier. |
+| NOTES-SYNC | FAIL | **P3 stale** — 3/4 tombstones legacy OK. `initializeRepository()` lève `STUDENT_CANONICAL_POSTGRES_ALLOCATOR_NOT_READY` : fail-closed actuel, pas une écriture notes cassée. |
 
-## Résultat runner (cette VM)
+## PostgreSQL isolé (extra)
 
-**20 PASS / 4 FAIL / 24** — rejoué sur `develop@e457934f` (`node v22.14.0`, pas de Docker, pas de `DATABASE_URL`). Les 4 FAIL restent classés P2/P3/SKIP (pas des P0).
+Tous **PASS** :
 
-| ID | Exit | Classification RC1 |
-|----|------|--------------------|
-| JWT-HEADER | FAIL | **P2** — HTTP JWT query fail-closed OK ; `report.pdf` Bearer → 500 sur backend mémoire (Puppeteer/PDF). Pas un contournement auth. |
-| RBAC-ADMIN-01 | FAIL | **P2** — gate historique encore attend `teachers` writable sur PUT ; LOT 3 a retiré cette clé (PG). Script **stale**, pas une régression métier PUT. |
-| NOTES-SYNC | FAIL | **P3 / SKIP env** — 3/4 gardes boot OK ; 4e sous-test appelle `initializeRepository` → `STUDENT_CANONICAL_POSTGRES_ALLOCATOR_NOT_READY` sans PG. |
-| SECRETS | FAIL | **P3 / SKIP env** — `gitleaks` absent du PATH. |
+- `teacherAssignmentsRepository` PG convergence #732
+- `subjectsAssignments.pg.test.js`
+- `classStudentsRepository.pg.test.js`
+- `financeRepository.pg.test.js`
+- `teachersRepository.pg.test.js`
+- `classesRepository.pg.test.js`
+- `supabaseDataApiLockdown.pg.test.js` (`residualGrants=0`)
 
-LOT 0–8, RBAC S1.4, mobile-security, android-release (config), personal-data-deny, auth-sessions, sanitize, branding, help-v1a, db-config, disclosure, audit:ci = **PASS**.
+## CI candidate (#733 mergé + #742)
+
+- #733 : Core / Quality / Risk-targeted / LOT 3 / Secrets / architecture **SUCCESS**
+- #742 : workflows tenant (academic-year, enrollment, users, presence, planning, sync-l1, d-revalidation) **PASS** au moment de la rédaction ; Core/Quality encore en cours sur le HEAD preuves — relire le rollup terminal.
+
+## Hors catalogue volontaire
+
+`verify:e2e-api` HTTP Docker. Typecheck/lint/build complets = CI PR Gates, pas ce runner.

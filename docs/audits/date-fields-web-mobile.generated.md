@@ -2,7 +2,7 @@
 
 > Généré par `scripts/audit-date-ui-contract.js`. Ne pas éditer manuellement.
 
-- Fichiers candidats : **191** (Web 127, Mobile 64)
+- Fichiers candidats : **193** (Web 128, Mobile 65)
 - Inputs calendrier natifs Web : **0**
 - Violations du contrat UI détectées : **0**
 - D1 : **0** · D7 locale : **0** · D7 Intl : **0**
@@ -68,6 +68,7 @@
 | Web | `web/src/lib/reportCardConfigurationApi.ts` | 1 | 0 |
 | Web | `web/src/lib/schoolLogo.ts` | 1 | 0 |
 | Web | `web/src/lib/schoolModule.ts` | 1 | 0 |
+| Web | `web/src/lib/schoolSetupGuidedApi.ts` | 1 | 0 |
 | Web | `web/src/lib/scope.ts` | 1 | 0 |
 | Web | `web/src/lib/studentDocuments.ts` | 12 | 0 |
 | Web | `web/src/lib/studentDomain.ts` | 35 | 0 |
@@ -169,6 +170,7 @@
 | Mobile | `Mobile/src/lib/progressiveDisclosureUxContract.ts` | 2 | 0 |
 | Mobile | `Mobile/src/lib/schoolAcademicPeriods.ts` | 84 | 0 |
 | Mobile | `Mobile/src/lib/schoolLogo.ts` | 1 | 0 |
+| Mobile | `Mobile/src/lib/schoolSetupGuidedApi.ts` | 1 | 0 |
 | Mobile | `Mobile/src/lib/scope.ts` | 1 | 0 |
 | Mobile | `Mobile/src/lib/studentFicheLot2.ts` | 1 | 0 |
 | Mobile | `Mobile/src/lib/todayPresenceKpi.ts` | 8 | 0 |

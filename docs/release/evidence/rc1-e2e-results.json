@@ -1,0 +1,190 @@
+{
+  "startedAt": "2026-09-20T19:34:56.600Z",
+  "finishedAt": "2026-09-20T19:35:15.542Z",
+  "baseline": "172b2b3a77c080e0bb5d1b666489a2a90e73b6ea",
+  "environment": {
+    "docker": false,
+    "databaseUrl": true,
+    "node": "v22.14.0"
+  },
+  "counts": {
+    "executed": 10,
+    "pass": 10,
+    "fail": 0,
+    "blocked": 10
+  },
+  "results": [
+    {
+      "id": "E2E-AUTH",
+      "parcours": "login / refresh / logout",
+      "mode": "http-memory",
+      "command": "npm run verify:auth-sessions",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 1442,
+      "evidence": "ok 26 - verify refuse un en-tête typ autre que JWT même si HMAC est valide\n  ---\n  duration_ms: 1.079525\n  ...\n# Subtest: verify refuse alg none\nok 27 - verify refuse alg none\n  ---\n  duration_ms: 0.24795\n  ...\n# Subtest: jeton nominal HS256 / JWT est accepté\nok 28 - jeton nominal HS256 / JWT est accepté\n  ---\n  duration_ms: 0.26913\n  ...\n1..28\n# tests 28\n# suites 0\n# pass 28\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 131.480227\nverify-auth-sessions: OK"
+    },
+    {
+      "id": "E2E-USERS",
+      "parcours": "création enseignant + affectation (mémoire)",
+      "mode": "memory",
+      "command": "npm run verify:e2e-0006",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 125,
+      "evidence": "=== E2E 0006 : Création et affectation d'un enseignant ===\n\n  ✓ 1-2. Contact enseignant créé + compte utilisateur provisionné\n  ✓ 3. Création directe d'un enseignant hors Contacts est bloquée\n  ✓ 3b. Le contact enseignant est éligible à la création d'une fiche\n  ✓ 4. Fiche enseignant créée et liée au contact\n  ✓ 4b. Un contact déjà lié n'est plus proposé (pas de double fiche)\n  ✓ 5. Affectation enseignant → classe + matière (Mathématiques) enregistrée\n  ✓ 5b. Seconde affectation (Physique) enregistrée — historique conservé\n  ✓ MÉTIER. Affectation en doublon (même classe + matière) refusée (conflit)\n  ✓ MÉTIER. Chaque affectation est historisée dans le journal d'audit\n  ✓ 6. L'enseignant se connecte avec son code établissement\n  ✓ 7. La session ne contient que la classe affectée (6ème A)\n  ✓ 7b. Les matières de l'enseignant sont Mathématiques et Physique\n  ✓ MÉTIER. La classe non affectée (5ème B) est invisible\n  ✓ MÉTIER. L'enseignant ne voit que les élèves de ses classes\n\nNote planning : les affectations sont au niveau trimestre (pas de\ncréneau horaire fin au MVP). Le contrôle de conflit porte donc sur\nle doublon (classe + matière), pas sur un chevauchement d'horaire.\n\nRésultat : 14 vérification(s) OK, 0 échec(s).\n\nE2E 0006 : OK"
+    },
+    {
+      "id": "E2E-INV-732",
+      "parcours": "teacher_assignments ↔ school_courses.teacher_id",
+      "mode": "memory",
+      "command": "node --test backend/lib/teacherAssignmentsRepository.test.js",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 116,
+      "evidence": "# Subtest: SELECT_ASSIGNMENT exige school_id sur tous les JOIN métier\nok 4 - SELECT_ASSIGNMENT exige school_id sur tous les JOIN métier\n  ---\n  duration_ms: 0.333824\n  ...\n# Subtest: DELETE n'alias pas ta.status (UPDATE sans FROM ta)\nok 5 - DELETE n'alias pas ta.status (UPDATE sans FROM ta)\n  ---\n  duration_ms: 0.321689\n  ...\n# Subtest: L1 teacherUserId = t.user_id ; tombstone ⇔ status != 'active'\nok 6 - L1 teacherUserId = t.user_id ; tombstone ⇔ status != 'active'\n  ---\n  duration_ms: 0.32947\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 95.738499"
+    },
+    {
+      "id": "E2E-HEAD-TEACHER",
+      "parcours": "professeur principal / RBAC affectation PP",
+      "mode": "memory",
+      "command": "node --test backend/lib/classHeadTeachers.rbac.test.js backend/lib/classHeadTeachersManagement.test.js",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 111,
+      "evidence": "# Subtest: enseignant hors établissement ou inactif refusé\nok 7 - enseignant hors établissement ou inactif refusé\n  ---\n  duration_ms: 0.193722\n  ...\n# Subtest: unicité active concurrente → 409 HEAD_TEACHER_CONCURRENT\nok 8 - unicité active concurrente → 409 HEAD_TEACHER_CONCURRENT\n  ---\n  duration_ms: 0.235699\n  ...\n# Subtest: mapClassRow expose Prénom NOM sans inventer un PP\nok 9 - mapClassRow expose Prénom NOM sans inventer un PP\n  ---\n  duration_ms: 2.547376\n  ...\n1..9\n# tests 9\n# suites 0\n# pass 9\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 89.338278"
+    },
+    {
+      "id": "E2E-SETUP",
+      "parcours": "setup première connexion (guidé backend)",
+      "mode": "contract",
+      "command": "node --test --test-reporter spec backend/lib/schoolSetupGuided.red.test.js backend/lib/schoolSetupGuided.regression.test.js",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 81,
+      "evidence": "✔ B8 — un admin établissement ne lit ni ne modifie la progression d'un autre établissement (0.402131ms)\n✔ B9 — un utilisateur sans permission UPDATE ne peut pas modifier la configuration (0.301525ms)\n✔ B10 — revalider une étape déjà terminée est idempotent, percent ≤ 100 (0.539471ms)\n✔ B11 — un enseignant sans affectation classe/matière ne valide pas l'étape 5 (0.876096ms)\n✔ B12 — 0 inscription Classe→Élève + studentCount orphelin ne valide pas l'étape 6 (0.854289ms)\n✔ B14 — row school_setup_progress absente + données canoniques existantes → bootstrap, pas 0 % (0.17407ms)\n✔ B15 — bootstrap 1→6 + POST finance ⇒ 70 %, jamais régression à 0 % (0.53215ms)\n✔ B13 — parcours 0 → 10 % → reprise 40/50/60 % operational → 100 % (0.825139ms)\n✔ B4b — une étape persistée redevient invalide si les données requises disparaissent (0.168457ms)\n✔ LOT 0 intact : GET /api/v2/school-setup/status et pas de setup_status (1.629257ms)\n✔ aucun endpoint Student legacy ni création globale élève dans le guidé (1.273504ms)\n✔ HOLD — bootstrap dérivé si curseur absent ; pas de token statut persisté dans le schéma guidé (0.236969ms)\n✔ HOLD — étape 5 exige une affectation active ; étape 6 ignore studentCount orphelin (0.226902ms)\n✔ HOLD — un seul assistant visible et Terminer quitte vers le tableau de bord (0.291979ms)\n✔ HOLD — schéma guidé assuré au boot repository, pas dans GET/POST request-time (3.617765ms)\n✔ RBAC guidé réutilise Paramètres Établissement (pas de nouveau moteur RBAC) (0.31396ms)\nℹ tests 26\nℹ suites 0\nℹ pass 26\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 61.284001"
+    },
+    {
+      "id": "E2E-RBAC-COM",
+      "parcours": "communication in-app / isolation tenant clients",
+      "mode": "memory",
+      "command": "node backend/lib/clientsSecurity.test.js",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 176,
+      "evidence": "clientsSecurity.test.js OK"
+    },
+    {
+      "id": "E2E-LEGACY",
+      "parcours": "aucune écriture legacy staff/élèves",
+      "mode": "contract",
+      "command": "node --test backend/lib/legacyPedagogyStaffStateWrite.test.js backend/lib/legacyStudentsStateWrite.test.js",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 59,
+      "evidence": "# Subtest: rejette toute présence de students, quelle que soit la valeur\nok 12 - rejette toute présence de students, quelle que soit la valeur\n  ---\n  duration_ms: 0.275796\n  ...\n# Subtest: rejette un PUT mixte ou snapshot sans altérer les autres clés\nok 13 - rejette un PUT mixte ou snapshot sans altérer les autres clés\n  ---\n  duration_ms: 0.1173\n  ...\n# Subtest: laisse passer un corps sans students\nok 14 - laisse passer un corps sans students\n  ---\n  duration_ms: 0.077728\n  ...\n1..14\n# tests 14\n# suites 0\n# pass 14\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 38.666886"
+    },
+    {
+      "id": "E2E-PLATFORM-DENY",
+      "parcours": "RBAC plateforme interdite aux données établissement",
+      "mode": "http-memory",
+      "command": "npm run verify:platform-personal-data-deny",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 1058,
+      "evidence": "ok 7 - P0-2 : rôles établissement autorisés restent positifs\n  ---\n  duration_ms: 0.141606\n  ...\n# Subtest: P0-2 : fonctions plateforme restent ouvertes\nok 8 - P0-2 : fonctions plateforme restent ouvertes\n  ---\n  duration_ms: 0.083715\n  ...\n# Subtest: P0-2 : seed Superadmin / Admin Pays sans jetons perso\nok 9 - P0-2 : seed Superadmin / Admin Pays sans jetons perso\n  ---\n  duration_ms: 0.470129\n  ...\n1..9\n# tests 9\n# suites 0\n# pass 9\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 63.510877\nverify-platform-personal-data-deny: SUCCESS"
+    },
+    {
+      "id": "E2E-DATES",
+      "parcours": "dates visibles JJ-MM-AAAA",
+      "mode": "contract",
+      "command": "node scripts/rc1/run-date-contract.js",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 1747,
+      "evidence": "DATE_AUDIT inventory_files=193 web=128 mobile=65 native_date_inputs=0 violations=0\n\n> somafrik-web@1.0.0 test\n> vitest run src/lib/dates.contract.test.ts\n\n\n RUN  v4.1.10 /workspace/web\n\n\n Test Files  1 passed (1)\n      Tests  8 passed (8)\n   Start at  19:35:00\n   Duration  798ms (transform 202ms, setup 85ms, import 214ms, tests 4ms, environment 400ms)\n\ndates.test.ts: OK"
+    },
+    {
+      "id": "E2E-COM-C1",
+      "parcours": "communication in-app essentielle (gate C1)",
+      "mode": "contract",
+      "command": "npm run verify:communications-e2e",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 14025,
+      "evidence": "\nverify-communications-e2e: source guards COM-C1 OK\nclientsSecurity.test.js OK\n[teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon\n[teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)\n[teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon\n[teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)\n[users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon\n[parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon\n[parent-linking] inventaire relations actives : 0 groupe(s) en doublon\n[education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)\n[establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)\n[evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)\n[school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)\n[documents-exams] inventaire residual : 0 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)\n[documents-exams] inventaire statuts exams : unknown=0\nOK communicationsReadiness.http.pg.test.js — parcours COM-C1 PostgreSQL réel\nCOM-C1 notes:\n- COM-C1: réponse réutilise la conversation\n- COM-C1-E2E-6 NOT_IMPLEMENTED: pas de trigger événement → notification (badge +1 / lecture / 0)\n- COM-C1-P1-012: pas d'upload/stockage/téléchargement authentifié (attachmentUrl texte seulement)\n- COM-C1-P1-010: pas de projection historique transversale message|annonce|notification\n- COM-C1-E2E9-NOTIF: pièces jointes notification reportées à COM-C4\nverify-communications-e2e: GO — PostgreSQL réel inclus"
+    }
+  ],
+  "blocked": [
+    {
+      "id": "E2E-SCHOOL",
+      "parcours": "création / config établissement HTTP→PG",
+      "reason": "verify:e2e-0014 / onboarding exigent backend + PostgreSQL",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    },
+    {
+      "id": "E2E-CLASS",
+      "parcours": "classes HTTP→PG",
+      "reason": "verify:e2e-0004 exige POST /api/classes sur stack PG",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    },
+    {
+      "id": "E2E-ENROLL",
+      "parcours": "inscription élève via classe uniquement",
+      "reason": "verify:e2e-0005 exige API PG",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    },
+    {
+      "id": "E2E-PRESENCE",
+      "parcours": "présences Présent/Absent/Retard/Justifié",
+      "reason": "verify:presences-roster.pg + UI non joués",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    },
+    {
+      "id": "E2E-GRADES",
+      "parcours": "notes / évaluations HTTP→PG",
+      "reason": "verify:e2e-0008 / 0028 exigent API",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    },
+    {
+      "id": "E2E-BULLETIN",
+      "parcours": "bulletins",
+      "reason": "verify:report-card-s1-e2e exige DATABASE_URL",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    },
+    {
+      "id": "E2E-FINANCE",
+      "parcours": "frais / paiement / impayé",
+      "reason": "verify:e2e-0001 / 0009 / 0011 exigent API PG",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    },
+    {
+      "id": "E2E-COM-PG",
+      "parcours": "communications HTTP PostgreSQL",
+      "reason": "HTTP dual-identity PG non rejoué",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    },
+    {
+      "id": "E2E-PARENT",
+      "parcours": "workflow parent / élève",
+      "reason": "verify:e2e-0012 exige API",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    },
+    {
+      "id": "E2E-RBAC-LIVE",
+      "parcours": "RBAC cross-school / cross-country live dual-identity",
+      "reason": "HTTP dual-identity PG non rejoué",
+      "status": "BLOCKED",
+      "mode": "postgres"
+    }
+  ]
+}

@@ -119,21 +119,22 @@ function startMemoryBackend() {
         PORT: process.env.PORT || "5000",
         SOMAFRIK_DB_REQUIRED: "false",
         NODE_ENV: "development",
+        // Isolated memory profile: a leftover DATABASE_URL would boot PG and stall.
+        DATABASE_URL: "",
+        SOMAFRIK_DATABASE_URL: "",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let ready = false;
+    let logs = "";
     const timer = setTimeout(() => {
       if (!ready) {
         child.kill("SIGTERM");
-        reject(new Error("backend mémoire: timeout 20s"));
+        reject(new Error(`backend mémoire: timeout 30s ${logs.slice(-400)}`));
       }
-    }, 20000);
+    }, 30000);
     function onData(buf) {
-      const text = String(buf);
-      if (/listening|5000|started|ready/i.test(text) || text.length > 0) {
-        // Probe in a moment; memory server may log late.
-      }
+      logs += String(buf);
     }
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
@@ -144,17 +145,20 @@ function startMemoryBackend() {
     child.on("exit", (code) => {
       if (!ready) {
         clearTimeout(timer);
-        reject(new Error(`backend mémoire exit ${code}`));
+        reject(new Error(`backend mémoire exit ${code}: ${logs.slice(-400)}`));
       }
     });
-    setTimeout(async () => {
-      const up = await probe(DEFAULT_BASE);
-      if (up) {
-        ready = true;
-        clearTimeout(timer);
-        resolve(child);
+    (async () => {
+      for (let attempt = 0; attempt < 25; attempt += 1) {
+        await new Promise((r) => setTimeout(r, 400));
+        if (await probe(DEFAULT_BASE)) {
+          ready = true;
+          clearTimeout(timer);
+          resolve(child);
+          return;
+        }
       }
-    }, 1500);
+    })().catch(reject);
   });
 }
 

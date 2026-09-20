@@ -1,0 +1,14 @@
+{
+  "generatedAt": "2026-09-20T19:34:40.013Z",
+  "api": {
+    "ACTIVE": 183,
+    "ACTIVE_NO_RBAC_KEY": 21,
+    "ORPHAN_CANDIDATE": 5,
+    "SERVER_RBAC_NO_CLIENT": 65,
+    "LEGACY_REVIEW_CANDIDATE": 3
+  },
+  "featurePg": {
+    "CANONICAL_CANDIDATE": 28
+  },
+  "legacyAliases": "PASS (scripts/verify-api-legacy-aliases.js)"
+}

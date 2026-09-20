@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-09-19T20:04:19.748Z",
-  "finishedAt": "2026-09-19T20:04:20.021Z",
+  "startedAt": "2026-09-20T19:36:14.432Z",
+  "finishedAt": "2026-09-20T19:36:14.642Z",
   "status": "PASS",
   "baseUrl": "http://127.0.0.1:5000/api",
   "backend": "memory-ephemeral",
@@ -20,7 +20,7 @@
       "p50": 2,
       "p95": 3,
       "p99": 3,
-      "throughputRps": 500,
+      "throughputRps": 571.43,
       "avgBytes": 277
     },
     {
@@ -30,9 +30,9 @@
       "errors": 0,
       "errorRate": 0,
       "p50": 2,
-      "p95": 5,
-      "p99": 6,
-      "throughputRps": 1684.21,
+      "p95": 3,
+      "p99": 4,
+      "throughputRps": 2424.24,
       "avgBytes": 277
     },
     {
@@ -41,10 +41,10 @@
       "requests": 48,
       "errors": 0,
       "errorRate": 0,
-      "p50": 5,
-      "p95": 9,
-      "p99": 9,
-      "throughputRps": 2206.9,
+      "p50": 3,
+      "p95": 6,
+      "p99": 7,
+      "throughputRps": 3200,
       "avgBytes": 277
     },
     {
@@ -54,9 +54,9 @@
       "errors": 0,
       "errorRate": 0,
       "p50": 1,
-      "p95": 2,
-      "p99": 2,
-      "throughputRps": 2142.86,
+      "p95": 1,
+      "p99": 3,
+      "throughputRps": 3157.89,
       "avgBytes": 277
     },
     {
@@ -65,10 +65,10 @@
       "requests": 8,
       "errors": 0,
       "errorRate": 0,
-      "p50": 5,
-      "p95": 22,
-      "p99": 22,
-      "throughputRps": 126.98,
+      "p50": 4,
+      "p95": 16,
+      "p99": 16,
+      "throughputRps": 160,
       "avgBytes": 30
     },
     {
@@ -78,9 +78,9 @@
       "errors": 0,
       "errorRate": 0,
       "p50": 2,
-      "p95": 19,
-      "p99": 22,
-      "throughputRps": 842.11,
+      "p95": 15,
+      "p99": 17,
+      "throughputRps": 1025.64,
       "avgBytes": 71
     },
     {
@@ -89,10 +89,10 @@
       "requests": 48,
       "errors": 0,
       "errorRate": 0,
-      "p50": 7,
-      "p95": 9,
-      "p99": 11,
-      "throughputRps": 1840.26,
+      "p50": 5,
+      "p95": 11,
+      "p99": 12,
+      "throughputRps": 2190.11,
       "avgBytes": 80
     },
     {
@@ -103,8 +103,8 @@
       "errorRate": 0,
       "p50": 1,
       "p95": 2,
-      "p99": 6,
-      "throughputRps": 1518.99,
+      "p99": 3,
+      "throughputRps": 2000,
       "avgBytes": 80
     }
   ],

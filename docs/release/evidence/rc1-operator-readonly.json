@@ -1,0 +1,20 @@
+{
+  "startedAt": "2026-09-20T19:32:22.000Z",
+  "productionWrite": false,
+  "renderWrite": false,
+  "probes": [
+    {
+      "id": "API-PREPROD-HEALTH",
+      "url": "https://api-preprod.somafrik.app/api/health",
+      "method": "GET",
+      "status": "PASS",
+      "body": {
+        "status": "ok",
+        "database": "postgresql",
+        "attachments": "ready",
+        "reportCardSource": "ready"
+      },
+      "note": "Lecture seule. Aucun login, aucun write."
+    }
+  ]
+}

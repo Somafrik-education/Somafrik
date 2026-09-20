@@ -1,0 +1,15 @@
+{
+  "startedAt": "2026-09-20T19:36:15.000Z",
+  "baseline": "172b2b3a77c080e0bb5d1b666489a2a90e73b6ea",
+  "database": "postgresql://localhost/somafrik (isolated local, CI credentials, empty app schema)",
+  "productionLoad": false,
+  "results": [
+    { "id": "PG-ASSIGN-732", "command": "node --test backend/lib/teacherAssignmentsRepository.test.js", "status": "PASS", "note": "6/6 including PG create/update/delete school_courses.teacher_id" },
+    { "id": "PG-SUBJECTS-ASSIGN", "command": "node backend/lib/subjectsAssignments.pg.test.js", "status": "PASS" },
+    { "id": "PG-CLASS-STUDENTS", "command": "node backend/lib/classStudentsRepository.pg.test.js", "status": "PASS" },
+    { "id": "PG-FINANCE", "command": "node backend/lib/financeRepository.pg.test.js", "status": "PASS" },
+    { "id": "PG-TEACHERS", "command": "node backend/lib/teachersRepository.pg.test.js", "status": "PASS" },
+    { "id": "PG-CLASSES", "command": "node backend/lib/classesRepository.pg.test.js", "status": "PASS" },
+    { "id": "PG-DATA-API-LOCKDOWN", "command": "node backend/lib/supabaseDataApiLockdown.pg.test.js", "status": "PASS", "note": "residualGrants=0 on contacts/users/teachers/students/mobile_push_devices/payments/audit_logs/sessions" }
+  ]
+}

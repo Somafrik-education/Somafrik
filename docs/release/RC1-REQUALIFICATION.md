@@ -1,21 +1,28 @@
-# RC1 — Requalification tickets ouverts — 2026-09-19
+# RC1 — Requalification tickets — 2026-09-20
 
-**Mandat :** [#719](https://github.com/Somafrik-education/Somafrik/issues/719) · commentaire CTO [#720 `#5744875678`](https://github.com/Somafrik-education/Somafrik/issues/720#issuecomment-5744875678)  
-**Baseline :** `develop@e457934f772ac2d509225ebd6cf12ad95b51215a` (post-merge #717)  
-**Règle :** un ticket ouvert n’est pas une preuve de reproductibilité. RC1 vérifie le **code actuel**.
+**Mandat :** [#719](https://github.com/Somafrik-education/Somafrik/issues/719) commentaire CTO après #733  
+**Base :** `develop@109fa474664485e298f82db9c727cb8d2325e29a`  
+**Règle :** ne conserver en HOLD que les P0/P1 **reproduits** sur ce develop. #646 / #737 hors gate bloquant.
 
-| ID | Ticket | Verdict baseline | Sévérité RC1 | Preuve |
-|----|--------|------------------|--------------|--------|
-| RQ-717 | PR #717 HelpHost startup crash | **CLOSED / PASS** | — | Merged `e457934f`. HEAD audité `8a2aa1a9`. `HelpHost` via `navigationRef` ; plus de `useNavigation(State)`. Contrat + typecheck GREEN. |
-| RQ-645 | #645 Mobile Push préprod | **NEEDS_RUNTIME** | **P0** | Pipeline code présent (`pushNotifications.ts`, `POST /mobile/push-devices`, preview accepté en préprod). Enregistrement mobile avale les erreurs (`.catch(() => undefined)`). Aucune preuve device / FCM / EAS sur cette baseline. PR #647 Draft non mergée. |
-| RQ-646 | #646 Web Push navigateur | **STILL_OPEN** | **P1** | `scripts/lot6-parity.test.ts` affirme l’absence `PushManager` / `VAPID` / `web-push`. Routes push = mobile only. PR #648 Draft non mergée. |
-| RQ-499 | #499 storage Android AAB | **FIXED_ON_BASELINE** (source) / **NEEDS_RUNTIME** (AAB) | **P2** | `blockedPermissions` + plugin `tools:node="remove"` + gates readiness. #500 mergée. Issue GitHub encore ouverte. Manifeste AAB EAS non réinspecté ici. |
-| RQ-503 | #503 RGPD / AAB conforme | **STILL_OPEN** (umbrella) / code P0 **FIXED_ON_BASELINE** | **P1** | Lockdown Data API + deny plateforme + routes `/confidentialite` `/suppression-compte` dans le tree. Preuve HTTP préprod live et AAB store **non rejouées**. |
-| RQ-510 | #510 dette Expo / RN | **STILL_OPEN** | **P3** | `npm audit` Mobile : 20 vulns (16 high / 4 moderate) sur la chaîne Expo. Pas d’exploit runtime prouvé dans ce lot. |
+| ID | Ticket | Verdict code actuel | Sévérité RC1 | Preuve |
+|----|--------|---------------------|--------------|--------|
+| RQ-733 | #732 / PR #733 assignment ↔ school_course | **CLOSED / PASS** | — | Merge `109fa474`. Tests mémoire + PG create/update/delete + refus tiers. |
+| RQ-717 | HelpHost | **CLOSED** | — | déjà sur develop (e457934f) |
+| RQ-645 | Mobile Push préprod | **CLOSED** 2026-09-20 | — | hors rejeu device |
+| RQ-730 | DNS API préprod | code **FIXED** (#731) | **P2 opérateur** | `GET /api/health` préprod OK (`database=postgresql`). Issue ouverte pour smoke **login** après redeploy. Pas un défaut code reproduit. |
+| RQ-646 | Web Push | **STILL_OPEN** | **P2 accepté** | hors gate bloquant |
+| RQ-737 | Mobile tap Push flash | **STILL_OPEN** | **P2 accepté** | hors gate bloquant |
+| RQ-503 | RGPD / AAB umbrella | **STILL_OPEN** process | **P3 umbrella** | lockdown + deny + erasure + 503-local **PASS** sur le code actuel. Pas de P0/P1 sécurité critique reproduit. |
+| RQ-499 | storage AAB | source **FIXED** | **P2** | gates readiness PASS ; AAB store non réinspecté |
+| RQ-510 | Expo / RN audit | **STILL_OPEN** | **P3** | 20 vulns npm Mobile |
 
 ## Conséquence gate RC1
 
-- P0 ouverts **≠ 0** (#717 **CLOSED** ; **#645** non levé sans runtime).
-- P1 ouverts **≠ 0** (#646 certain ; #503 preuve live manquante).
+- P0 reproduits = **0**
+- P1 reproduits = **0**
+- E2E HTTP UI→PG critique = **non exécuté** (preuve manquante, pas un FAIL métier)
+- Sécurité critique isolée = **PASS**
+- Performance préprod PG = **non mesurée** (harness mémoire PASS)
 
-**RC1 ne peut pas être PASS** sur cette observation.
+**RC1 ne peut pas être déclaré PASS gate #719 complète** tant que l’opérateur n’a pas rejoué `verify:e2e-api` + charge PG.  
+**RC1 n’est plus HOLD pour un P0/P1 produit ouvert reproduit.**

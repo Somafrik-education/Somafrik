@@ -1,48 +1,34 @@
-# RC1 — Rapport performance — 2026-09-19
+# RC1 — Rapport performance — 2026-09-20
 
-**Outil inventorié :** aucun k6 / artillery / autocannon canonique dans le dépôt.  
-**Ajout G1 :** harness Node `scripts/rc1/run-rc1-performance.js` (`npm run verify:rc1-performance`).
+**Outil :** harness Node `scripts/rc1/run-rc1-performance.js` (`npm run verify:rc1-performance`).  
+Aucun k6 / artillery canonique dans le dépôt.  
+**Evidence :** [evidence/rc1-performance-results.json](./evidence/rc1-performance-results.json)
 
 ## Garde-fous
 
 - Refuse `somafrik.app` et `api.somafrik.app`.
-- Cible défaut : `http://127.0.0.1:5000/api` (isolé).
-- Peut tenter un backend **mémoire** éphémère si aucune URL n’est fournie.
-- Evidence : [evidence/rc1-performance-results.json](./evidence/rc1-performance-results.json)
+- Backend **mémoire éphémère** (`http://127.0.0.1:5000/api`) ; `DATABASE_URL` vidé pour éviter un boot PG vide.
+- `productionLoad=false`. Aucune charge préprod.
 
-## Profils
-
-| Profil | Concurrence | Requêtes |
-|--------|-------------|----------|
-| smoke | 1 | 8 |
-| nominale | 4 | 40 |
-| pic court | 12 | 48 |
-| endurance courte | 2 | 60 |
-
-Endpoints smoke du harness : `GET /health`, `POST /login` (identifiants invalides — mesure 401, pas un login métier).
-
-Les lectures métier (#719 : dashboard, classes, students, teachers, présences, payments, messages, planning) **exigent PostgreSQL** et ne sont **pas** dans ce premier harness.
-
-## Seuils #719
-
-- erreurs techniques < 1 % sous charge nominale
-- p95 lecture ≤ 1 s
-- p95 écriture ≤ 1,5 s
-- pas de timeout systémique
-
-Un backend mémoire, s’il démarre, **n’est pas** représentatif du runtime production PostgreSQL. Un PASS mémoire ne lève pas le HOLD perf préprod.
-
-## Mesure de cette VM
-
-Backend **mémoire éphémère** (`http://127.0.0.1:5000/api`). `productionLoad=false`.
+## Mesure (cette VM)
 
 | Endpoint | Profil | p50 | p95 | p99 | errorRate |
 |----------|--------|-----|-----|-----|-----------|
-| health | nominale | 2 ms | 5 ms | 6 ms | 0 |
-| login (401 attendu) | nominale | 2 ms | 19 ms | 22 ms | 0 |
+| health | nominale | 2 ms | 3 ms | 4 ms | 0 |
+| login (401 attendu) | nominale | 2 ms | 15 ms | 17 ms | 0 |
+| health | pic court | 3 ms | 6 ms | 7 ms | 0 |
+| login | pic court | 5 ms | 11 ms | 12 ms | 0 |
 
-Seuils #719 respectés **sur ce backend mémoire**. **Ne pas** en déduire un PASS préprod PostgreSQL.
+Seuils #719 (erreurs < 1 %, p95 lecture ≤ 1 s, p95 écriture ≤ 1,5 s) **respectés sur backend mémoire**.  
+**Ne pas** en déduire un PASS préprod PostgreSQL.
+
+Lectures métier (dashboard, classes, students, teachers, présences, payments, messages, planning) **non mesurées** : elles exigent un API PG seedé.
 
 ## CPU / mémoire / pool DB
 
-**Non observés** (pas de métriques hôte ni de pool PG dans cet agent).
+Non observés sur hôte de charge.  
+Sonde lecture seule préprod : `GET https://api-preprod.somafrik.app/api/health` → `database=postgresql` (aucune charge). Voir [evidence/rc1-operator-readonly.json](./evidence/rc1-operator-readonly.json).
+
+## Preuve opérateur restante
+
+Rejouer le harness (ou k6) contre un API **isolé/préprod autorisé** avec `DATABASE_URL` réelle, sans production.
