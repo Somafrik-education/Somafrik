@@ -795,14 +795,14 @@ async function main() {
       `INSERT INTO student_fee_obligations (
          school_id, student_id, class_id, fee_type, label, currency, academic_year, period_label,
          initial_amount, amount_due, amount_paid, balance, status, profile_payload
-       ) VALUES ($1,$2,$3,'Inscription','Inscription','CDF','2025-2026','Inscription',50000,50000,20000,30000,'Partiellement payé',$4::jsonb)`,
+       ) VALUES ($1,$2,$3,'Inscription','Inscription','CDF','2025-2026','Inscription',50000,50000,0,50000,'À payer',$4::jsonb)`,
       [schoolA.rows[0].id, estherItc.rows[0].id, klass.rows[0].id, estherProfile],
     );
     await pool.query(
       `INSERT INTO student_fee_obligations (
          school_id, student_id, class_id, fee_type, label, currency, academic_year, period_label,
          initial_amount, amount_due, amount_paid, balance, status, profile_payload
-       ) VALUES ($1,$2,$3,'Uniforme','Uniforme','CDF','2025-2026','Uniforme',15000,15000,15000,0,'Payé',$4::jsonb)`,
+       ) VALUES ($1,$2,$3,'Uniforme','Uniforme','CDF','2025-2026','Uniforme',15000,15000,0,15000,'À payer',$4::jsonb)`,
       [schoolA.rows[0].id, estherItc.rows[0].id, klass.rows[0].id, estherProfile],
     );
 
@@ -814,6 +814,31 @@ async function main() {
       rosterAfterEsther.some((row) => row.studentCode === "CD-2026-0001-STU-CLOSED"),
       false,
       "#745: CLOSED toujours exclu",
+    );
+
+    const estherSeedFees = await store.listFinanceStudentFees(admin, { studentId: estherItc.rows[0].id });
+    const seedInsc = estherSeedFees.find((row) => row.feeType === "Inscription");
+    const seedUni = estherSeedFees.find((row) => row.feeType === "Uniforme");
+    assert.ok(seedInsc && seedUni);
+    await store.createSchoolPayment(
+      {
+        studentId: "CG-ITC-OE-26-00001",
+        classId: klass.rows[0].id,
+        items: [{ obligationId: seedInsc.id, feeType: "Inscription", amount: 20_000 }],
+        method: "Espèces",
+        date: "2026-09-18",
+      },
+      admin,
+    );
+    await store.createSchoolPayment(
+      {
+        studentId: "CG-ITC-OE-26-00001",
+        classId: klass.rows[0].id,
+        items: [{ obligationId: seedUni.id, feeType: "Uniforme", amount: 15_000 }],
+        method: "Espèces",
+        date: "2026-09-19",
+      },
+      admin,
     );
 
     const estherByUuid = await store.listFinanceStudentFees(admin, { studentId: estherItc.rows[0].id });
