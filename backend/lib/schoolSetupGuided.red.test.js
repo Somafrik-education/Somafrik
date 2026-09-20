@@ -21,6 +21,7 @@ const ROOT = path.resolve(__dirname, "../..");
 const SERVER_PATH = path.join(ROOT, "backend/server.js");
 const SCHEMA_PATH = path.join(ROOT, "backend/db/schema.sql");
 const RBAC_PATH = path.join(ROOT, "backend/services/rbacService.js");
+const REPO_PATH = path.join(ROOT, "backend/db/postgresRepository.js");
 const MODULE_PATH = path.join(__dirname, "schoolSetupGuided.js");
 const LOT0_MODULE_PATH = path.join(__dirname, "schoolSetupStatus.js");
 
@@ -227,6 +228,15 @@ async function completeStep(mod, input) {
   return mod.completeGuidedStep(input);
 }
 
+function extractExpressHandler(server, method, routePath) {
+  const needle = `app.${method}("${routePath}"`;
+  const start = server.indexOf(needle);
+  assert.ok(start >= 0, `${method.toUpperCase()} ${routePath} absent de server.js`);
+  const rest = server.slice(start);
+  const next = rest.slice(needle.length).search(/\napp\.(get|post|put|patch|delete)\(/);
+  return next >= 0 ? rest.slice(0, needle.length + next) : rest;
+}
+
 test("contrat — module schoolSetupGuided exporte derive / get / complete + 10 étapes", () => {
   const mod = requireGuided();
   assert.deepEqual([...mod.GUIDED_STEP_KEYS], [...ALL_STEP_KEYS]);
@@ -256,6 +266,41 @@ test("contrat — GET/POST guided déclarés (auth + permission, sans :schoolCod
   assert.match(postLine, /Paramètres Établissement:UPDATE/);
 
   assert.ok(fs.existsSync(LOT0_MODULE_PATH), "LOT 0 schoolSetupStatus.js ne doit pas disparaître");
+});
+
+test("B16 — GET/POST guidés sans DDL/ensure schema par requête ; ensure réservé au boot repository", () => {
+  const server = fs.readFileSync(SERVER_PATH, "utf8");
+  const repo = fs.readFileSync(REPO_PATH, "utf8");
+  const getHandler = extractExpressHandler(server, "get", GUIDED_GET_PATH);
+  const postHandler = extractExpressHandler(server, "post", GUIDED_COMPLETE_PATH);
+
+  for (const [name, handler] of [
+    ["GET", getHandler],
+    ["POST", postHandler],
+  ]) {
+    assert.doesNotMatch(
+      handler,
+      /ensureSchoolSetupGuidedSchema/,
+      `B16 ${name}: ensureSchoolSetupGuidedSchema interdit dans le handler request-time`,
+    );
+    assert.doesNotMatch(handler, /CREATE TABLE/i, `B16 ${name}: CREATE TABLE interdit dans le handler`);
+    assert.doesNotMatch(
+      handler,
+      /schoolSetupGuidedSchema/,
+      `B16 ${name}: require schema guidé interdit dans le handler`,
+    );
+  }
+
+  assert.doesNotMatch(
+    server,
+    /ensureSchoolSetupGuidedSchema/,
+    "B16: aucun ensure schema guidé dans server.js (chemin runtime unique interdit)",
+  );
+  assert.match(
+    repo,
+    /async init\([\s\S]*ensureSchoolSetupGuidedSchema\s*\(/,
+    "B16: PostgresRepository.init() doit continuer à assurer le schéma au boot",
+  );
 });
 
 test("B1 — nouvel établissement → configuration_required, 0 %, étape 1", async () => {
