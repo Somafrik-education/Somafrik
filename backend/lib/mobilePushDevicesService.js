@@ -198,7 +198,7 @@ async function sendSelfTest(store, principal, body, pushClient, env = process.en
       title: TEST_TITLE,
       body: TEST_BODY,
       data: { somafrikDestination: TEST_DESTINATION },
-      channelId: "somafrik-default",
+      channelId: "somafrik-default-v2",
     },
   );
   return {
