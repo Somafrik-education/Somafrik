@@ -45,10 +45,11 @@ Tous **PASS** :
 - `classesRepository.pg.test.js`
 - `supabaseDataApiLockdown.pg.test.js` (`residualGrants=0`)
 
-## CI candidate (#733 mergé + #742)
+## CI terminale
 
-- #733 : Core / Quality / Risk-targeted / LOT 3 / Secrets / architecture **SUCCESS**
-- #742 : workflows tenant (academic-year, enrollment, users, presence, planning, sync-l1, d-revalidation) **PASS** au moment de la rédaction ; Core/Quality encore en cours sur le HEAD preuves — relire le rollup terminal.
+- #733 mergé : Core / Quality / Risk-targeted / LOT 3 / Secrets / architecture **SUCCESS**
+- #742 HEAD `579ca2cc` : **26 SUCCESS / 9 SKIP / 0 FAIL**. Required, Core, Quality, Risk-targeted, Secrets, web-smoke, tenants (academic-year, enrollment, users, presence, planning, sync-l1, d-revalidation) **SUCCESS**.
+- LOT 0–8 **SKIP** CI (filtre de chemins docs/harness) — **PASS** en local dans `verify:rc1-gates`.
 
 ## Hors catalogue volontaire
 

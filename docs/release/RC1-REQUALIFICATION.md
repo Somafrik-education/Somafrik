@@ -20,6 +20,7 @@
 
 - P0 reproduits = **0**
 - P1 reproduits = **0**
+- CI #742 HEAD `579ca2cc` = **GREEN** (26 SUCCESS / 9 SKIP LOT path-filter / 0 FAIL)
 - E2E HTTP UI→PG critique = **non exécuté** (preuve manquante, pas un FAIL métier)
 - Sécurité critique isolée = **PASS**
 - Performance préprod PG = **non mesurée** (harness mémoire PASS)

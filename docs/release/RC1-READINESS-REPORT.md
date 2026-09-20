@@ -7,7 +7,8 @@
 | PR preuves | [#742](https://github.com/Somafrik-education/Somafrik/pull/742) Draft (`cursor/release-rc1-readiness-2e7b`) |
 | PR G1 historique | [#722](https://github.com/Somafrik-education/Somafrik/pull/722) déjà rebasée sur la même base par un lot parallèle |
 | Base obligatoire | `develop@109fa474664485e298f82db9c727cb8d2325e29a` |
-| HEAD preuves | `7bc06032660c50647ea0404875454914e2d7053e` |
+| HEAD preuves (CI) | `579ca2ccf956144753052d6fa6de167bd33bfa20` |
+| CI terminale | **GREEN** — 26 SUCCESS / 9 SKIP (LOT 0–8 path-filter) / 0 FAIL — [evidence/rc1-ci-terminal.json](./evidence/rc1-ci-terminal.json) |
 | Conflits de rebase | `docs/project/CHANGELOG.md`, `docs/project/TESTING.md` — résolus (G0 + RC1 conservés) |
 
 ## Verdict

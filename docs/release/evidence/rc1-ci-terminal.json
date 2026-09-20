@@ -1,0 +1,15 @@
+{
+  "pr": 742,
+  "head": "579ca2ccf956144753052d6fa6de167bd33bfa20",
+  "conclusion": "SUCCESS",
+  "checkedAt": "2026-09-20T19:44:00.000Z",
+  "counts": {
+    "success": 26,
+    "skipped": 9,
+    "failure": 0
+  },
+  "required": "SUCCESS",
+  "prGates": ["Scope", "Secrets", "Quality", "Core tests", "Risk-targeted", "Required"],
+  "skippedLots": ["LOT 0", "LOT 1", "LOT 2", "LOT 3", "LOT 4", "LOT 5", "LOT 6", "LOT 7", "LOT 8"],
+  "note": "LOT 0–8 skipped by path filter on this docs/harness PR; replayed locally PASS. Tenant workflows (academic-year, enrollment, users, presence, planning, sync-l1, d-revalidation) SUCCESS."
+}
