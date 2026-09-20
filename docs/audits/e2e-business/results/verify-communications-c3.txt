@@ -1,0 +1,45 @@
+===== verify:communications-c3 =====
+STARTED 2026-09-20T22:18:20Z
+CMD: npm run verify:communications-c3
+
+> verify:communications-c3
+> node backend/scripts/verify-communications-c3.js
+
+verify-communications-c3: source guards OK
+OK communicationsAnnouncements.unit.test.js
+communicationsAttachments.test.js OK
+communicationSchoolScope.test.ts OK
+mobileCtaRbacAlignment.test.ts OK
+OK Mobile announcementsC3.test.ts
+OK Mobile communicationPagination.lotc.test.ts
+OK Mobile announcementsOpenById.test.ts
+
+> somafrik-web@1.0.0 test
+> vitest run src/lib/announcementsC3.test.ts src/lib/announcementsRead.lotc.test.tsx src/pages/AnnouncementsPage.lotc.test.tsx src/lib/communicationHttpError.test.ts
+
+
+ RUN  v4.1.10 /workspace/web
+
+
+ Test Files  4 passed (4)
+      Tests  10 passed (10)
+   Start at  22:18:23
+   Duration  1.50s (transform 564ms, setup 341ms, import 719ms, tests 272ms, environment 1.98s)
+
+[teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+[teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+[teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+[teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+[users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+[parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+[parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+[education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+[establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+[evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+[school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+[documents-exams] inventaire residual : 0 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+[documents-exams] inventaire statuts exams : unknown=0
+OK communicationsC3.http.pg.test.js — parcours COM-C3 PostgreSQL réel
+verify-communications-c3: GO — PostgreSQL réel inclus
+EXIT=0
+ENDED 2026-09-20T22:18:36Z

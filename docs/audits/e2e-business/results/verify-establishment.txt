@@ -1,0 +1,30 @@
+===== verify:establishment (in-memory) =====
+STARTED 2026-09-20T22:12:34Z
+
+> somafrik-backend@1.0.0 verify:establishment
+> node scripts/verify-establishment-e2e.js
+
+
+=== E2E — Création d'un établissement ===
+
+  ✓ 1. Le superadmin crée un établissement avec les infos obligatoires
+  ✓ 2. Le système génère un code établissement unique et bien formé
+  ✓ 2b. Le contact principal est conservé ; une URL de logo n'est pas acceptée
+  ✓ 3. L'établissement apparaît dans la liste du superadmin
+  ✓ MÉTIER. Un code établissement en doublon est rejeté (400)
+  ✓ MÉTIER. Un doublon potentiel (même email/téléphone) est signalé (409)
+  ✓ MÉTIER. Un contact générique cross-country n'est pas un doublon fort
+  ✓ MÉTIER. Même nom et ville dans le même pays est un doublon fort (409)
+  ✓ MÉTIER. Invisible pour un admin pays d'un autre pays (BI)
+  ✓ MÉTIER. Invisible pour l'admin d'un autre établissement
+  ✓ MÉTIER. Un admin établissement ne peut pas créer d'établissement (403)
+  ✓ MÉTIER. Établissement en attente : la connexion de l'admin est refusée (403)
+  ✓ 4. Le superadmin active l'établissement
+  ✓ 5. Après activation, l'admin établissement peut se connecter
+  ✓ 5b. Un code établissement inconnu est rejeté à la connexion (401)
+  ✓ MÉTIER. Établissement suspendu : la connexion est de nouveau refusée (403)
+
+Résultat : 16 vérification(s) OK, 0 échec(s).
+
+EXIT=0
+ENDED 2026-09-20T22:12:34Z

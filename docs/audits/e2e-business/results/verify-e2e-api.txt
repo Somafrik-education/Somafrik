@@ -1,0 +1,361 @@
+===== verify:e2e-api =====
+STARTED 2026-09-20T22:25:28Z
+CMD: npm run verify:e2e-api
+ENV: ENV-LOCAL host backend + Docker Postgres (seed officiel KO; SKIP_DEMO_SEED=true; users table vide)
+
+> verify:e2e-api
+> node scripts/run-e2e-api-suite.js
+
+
+> verify:e2e-preflight
+> node scripts/e2e-preflight.js
+
+Backend OK (http://127.0.0.1:5000/api)
+Verrous de connexion E2E réinitialisés (si endpoint actif).
+Bootstrap mot de passe E2E superadmin…
+env file /workspace/Mobile/.env.local not found: stat /workspace/Mobile/.env.local: no such file or directory
+Bootstrap E2E non exécuté (Docker indisponible ?). Utilisez le mot de passe SOMAFRIK_E2E_SUPERADMIN_PASSWORD.
+
+=== verify:e2e-onboarding ===
+
+
+> verify:e2e-onboarding
+> node scripts/verify-e2e-onboarding-chain.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-onboarding-chain.js:75:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0001 ===
+
+
+> verify:e2e-0001
+> node scripts/verify-e2e-0001-school-finance-chain.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0001-school-finance-chain.js:157:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0002 ===
+
+
+> verify:e2e-0002
+> node scripts/verify-e2e-0002-contacts-chain.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0002-contacts-chain.js:71:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0003 ===
+
+
+> verify:e2e-0003
+> node scripts/verify-e2e-0003-user-from-contact.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0003-user-from-contact.js:41:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0004 ===
+
+
+> verify:e2e-0004
+> node scripts/verify-e2e-0004-classes-config.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0004-classes-config.js:44:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0005 ===
+
+
+> verify:e2e-0005
+> node scripts/verify-e2e-0005-student-enrollment-chain.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0005-student-enrollment-chain.js:84:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0006 ===
+
+
+> verify:e2e-0006
+> node scripts/verify-e2e-0006-teacher-assignment.js
+
+
+=== E2E 0006 : Création et affectation d'un enseignant ===
+
+  ✓ 1-2. Contact enseignant créé + compte utilisateur provisionné
+  ✓ 3. Création directe d'un enseignant hors Contacts est bloquée
+  ✓ 3b. Le contact enseignant est éligible à la création d'une fiche
+  ✓ 4. Fiche enseignant créée et liée au contact
+  ✓ 4b. Un contact déjà lié n'est plus proposé (pas de double fiche)
+  ✓ 5. Affectation enseignant → classe + matière (Mathématiques) enregistrée
+  ✓ 5b. Seconde affectation (Physique) enregistrée — historique conservé
+  ✓ MÉTIER. Affectation en doublon (même classe + matière) refusée (conflit)
+  ✓ MÉTIER. Chaque affectation est historisée dans le journal d'audit
+  ✓ 6. L'enseignant se connecte avec son code établissement
+  ✓ 7. La session ne contient que la classe affectée (6ème A)
+  ✓ 7b. Les matières de l'enseignant sont Mathématiques et Physique
+  ✓ MÉTIER. La classe non affectée (5ème B) est invisible
+  ✓ MÉTIER. L'enseignant ne voit que les élèves de ses classes
+
+Note planning : les affectations sont au niveau trimestre (pas de
+créneau horaire fin au MVP). Le contrôle de conflit porte donc sur
+le doublon (classe + matière), pas sur un chevauchement d'horaire.
+
+Résultat : 14 vérification(s) OK, 0 échec(s).
+
+E2E 0006 : OK
+
+=== verify:e2e-0008 ===
+
+
+> verify:e2e-0008
+> node scripts/verify-e2e-0008-grades-chain.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0008-grades-chain.js:67:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0009 ===
+
+
+> verify:e2e-0009
+> node scripts/verify-e2e-0009-fees-tariffs-chain.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0009-fees-tariffs-chain.js:107:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0011 ===
+
+
+> verify:e2e-0011
+> node scripts/verify-e2e-0011-unpaid-reminders-chain.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0011-unpaid-reminders-chain.js:61:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0012 ===
+
+
+> verify:e2e-0012
+> node scripts/verify-e2e-0012-parent-student-journey.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0012-parent-student-journey.js:123:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0013 ===
+
+
+> verify:e2e-0013
+> node scripts/verify-e2e-0013-teacher-journey.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0013-teacher-journey.js:100:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0028 ===
+
+
+> verify:e2e-0028
+> node scripts/verify-e2e-0028-teacher-planning-grades.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0028-teacher-planning-grades.js:114:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0014 ===
+
+
+> verify:e2e-0014
+> node scripts/verify-e2e-0014-school-admin-journey.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0014-school-admin-journey.js:135:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== verify:e2e-0015 ===
+
+
+> verify:e2e-0015
+> node scripts/verify-e2e-0015-subscription-chain.js
+
+AssertionError [ERR_ASSERTION]: login superadmin: {"message":"Identifiant ou mot de passe incorrect."} — exécutez « npm run bootstrap:e2e-superadmin » puis « npm run verify:e2e-preflight ».
+
+401 !== 200
+
+    at loginFull (/workspace/scripts/e2e-api-helpers.js:90:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async login (/workspace/scripts/e2e-api-helpers.js:29:16)
+    at async main (/workspace/scripts/verify-e2e-0015-subscription-chain.js:106:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 401,
+  expected: 200,
+  operator: 'strictEqual'
+}
+
+=== Résumé E2E API ===
+KO : verify:e2e-onboarding (code 1)
+KO : verify:e2e-0001 (code 1)
+KO : verify:e2e-0002 (code 1)
+KO : verify:e2e-0003 (code 1)
+KO : verify:e2e-0004 (code 1)
+KO : verify:e2e-0005 (code 1)
+KO : verify:e2e-0008 (code 1)
+KO : verify:e2e-0009 (code 1)
+KO : verify:e2e-0011 (code 1)
+KO : verify:e2e-0012 (code 1)
+KO : verify:e2e-0013 (code 1)
+KO : verify:e2e-0028 (code 1)
+KO : verify:e2e-0014 (code 1)
+KO : verify:e2e-0015 (code 1)
+EXIT=1
+ENDED 2026-09-20T22:25:30Z

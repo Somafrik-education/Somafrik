@@ -1,0 +1,21 @@
+===== verify:sync-end-to-end =====
+STARTED 2026-09-20T22:17:49Z
+CMD: npm run verify:sync-end-to-end
+
+> verify:sync-end-to-end
+> node backend/scripts/verify-sync-end-to-end.js
+
+[sync-e2e] identifier attendu: super-sync-e2e@test.cd (pas superadmin)
+[sync-e2e] password attendu: secret de fixture généré pour cette exécution (hash scrypt, pas 1234)
+[sync-e2e] préparation base isolée { database: 'somafrik_sync_e2e_it' }
+[sync-e2e] bootstrap Superadmin fixture {
+  identifier: 'super-sync-e2e@test.cd',
+  userCode: 'SUPER-SYNC-E2E',
+  role: 'SUPER_ADMIN'
+}
+[sync-e2e] login HTTP réel { identifier: 'admin-sync-e2e@test.cd', schoolCode: 'CD-2026-0001' }
+[sync-e2e] login HTTP réel { identifier: 'prefet-sync-e2e@test.cd', schoolCode: 'CD-2026-0001' }
+[sync-e2e] login HTTP réel { identifier: 'super-sync-e2e@test.cd' }
+OK verify:sync-end-to-end — Users, Teachers, Students, Classes, Notes, Presences, Finance, Notifications
+EXIT=0
+ENDED 2026-09-20T22:17:53Z

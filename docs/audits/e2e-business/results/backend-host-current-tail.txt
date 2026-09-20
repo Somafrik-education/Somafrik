@@ -1,0 +1,15 @@
+[parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+[education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+[establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+[evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s),
+0 ambigu(s)
+[school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambi
+gu(s)
+[documents-exams] inventaire residual : 0 établissement(s), exams=0 bulletins=0
+documents=0 ambigu(s)
+[documents-exams] inventaire statuts exams : unknown=0
+Serveur lancé sur http://0.0.0.0:5000
+Base active: postgresql
+Web SPA: http://localhost:5000/web/ (connexion: /web/connexion)
+Attention: build web introuvable dans /workspace/web/dist
+

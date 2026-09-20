@@ -1,0 +1,6 @@
+===== verify-admin-user-creation (rerun sans SOMAFRIK_E2E) =====
+STARTED 2026-09-20T22:21:58Z
+CMD: env -u SOMAFRIK_E2E node backend/scripts/verify-admin-user-creation.js
+OK verify-admin-user-creation — Admin Pays, Admin School et utilisateur standard créés et persistés
+EXIT=0
+ENDED 2026-09-20T22:22:04Z

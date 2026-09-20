@@ -1,0 +1,24 @@
+===== verify:planning-v2-web =====
+STARTED 2026-09-20T22:22:32Z
+CMD: npm run verify:planning-v2-web
+
+> verify:planning-v2-web
+> node backend/scripts/verify-planning-v2-web.js && npm --prefix web run test -- src/lib/permissions.planningUi.test.ts src/lib/planningWeeklyWrite.test.ts src/lib/coursePlanning.weekly.test.ts src/lib/planningCalendarUtils.test.ts src/pages/planning/PlanningPlaceholders.test.tsx && node backend/scripts/verify-planning-v2-web-e2e.js
+
+OK verify-planning-v2-web: flag, payload weekly, projection serveur, refresh ciblé, UI contrôlée
+
+> somafrik-web@1.0.0 test
+> vitest run src/lib/permissions.planningUi.test.ts src/lib/planningWeeklyWrite.test.ts src/lib/coursePlanning.weekly.test.ts src/lib/planningCalendarUtils.test.ts src/pages/planning/PlanningPlaceholders.test.tsx
+
+
+ RUN  v4.1.10 /workspace/web
+
+
+ Test Files  5 passed (5)
+      Tests  34 passed (34)
+   Start at  22:22:32
+   Duration  1.88s (transform 700ms, setup 446ms, import 1.18s, tests 122ms, environment 2.35s)
+
+OK e2e-browser: /planning Admin CRUD + 409, enseignant read-only, Parent/Secrétaire interdits
+EXIT=0
+ENDED 2026-09-20T22:22:55Z

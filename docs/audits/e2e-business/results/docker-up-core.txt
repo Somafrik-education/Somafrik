@@ -1,0 +1,17 @@
+===== npm run docker:up:core =====
+STARTED 2026-09-20T22:11:50Z
+ENV: ENV-LOCAL Cloud Agent ; DOCKER_HOST=tcp://127.0.0.1:2375
+CMD: npm run docker:up:core
+
+Postgres image: pulled OK.
+
+Backend image build (official Dockerfile, no product edit):
+  vite build failed:
+  [vite:load-fallback] Could not load /packages/help-catalog/src/index.js
+  (imported by src/help/HelpHost.tsx): ENOENT
+
+EXIT=1
+ENDED 2026-09-20T22:12:10Z
+
+Classification: FAIL-INFRA / FAIL-PRODUCT (Dockerfile web stage copies `web/` only, not `packages/`).
+Aucune correction effectuée.

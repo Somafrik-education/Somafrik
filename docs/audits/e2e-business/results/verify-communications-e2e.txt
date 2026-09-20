@@ -1,0 +1,32 @@
+===== verify:communications-e2e =====
+STARTED 2026-09-20T22:17:53Z
+CMD: npm run verify:communications-e2e
+
+> verify:communications-e2e
+> node backend/scripts/verify-communications-e2e.js
+
+verify-communications-e2e: source guards COM-C1 OK
+clientsSecurity.test.js OK
+[teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+[teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+[teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+[teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+[users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+[parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+[parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+[education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+[establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+[evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+[school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+[documents-exams] inventaire residual : 0 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+[documents-exams] inventaire statuts exams : unknown=0
+OK communicationsReadiness.http.pg.test.js — parcours COM-C1 PostgreSQL réel
+COM-C1 notes:
+- COM-C1: réponse réutilise la conversation
+- COM-C1-E2E-6 NOT_IMPLEMENTED: pas de trigger événement → notification (badge +1 / lecture / 0)
+- COM-C1-P1-012: pas d'upload/stockage/téléchargement authentifié (attachmentUrl texte seulement)
+- COM-C1-P1-010: pas de projection historique transversale message|annonce|notification
+- COM-C1-E2E9-NOTIF: pièces jointes notification reportées à COM-C4
+verify-communications-e2e: GO — PostgreSQL réel inclus
+EXIT=0
+ENDED 2026-09-20T22:18:05Z

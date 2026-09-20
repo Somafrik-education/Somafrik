@@ -1,0 +1,13 @@
+===== verify:mobile-ui-e2e-runtime (expected BLOCKED) =====
+STARTED 2026-09-20T22:12:34Z
+
+> verify:mobile-ui-e2e-runtime
+> npm --prefix Mobile run verify:mobile-ui-e2e-runtime
+
+
+> somafrik-mobile@1.2.1 verify:mobile-ui-e2e-runtime
+> node scripts/verify-mobile-ui-e2e-runtime.js
+
+verify:mobile-ui-e2e-runtime FAIL/BLOCKED: BLOCKED_MAESTRO_MISSING, BLOCKED_ADB_MISSING, BLOCKED_NO_DEVICE, BLOCKED_APK_PATH_MISSING, BLOCKED_PACKAGE_NOT_INSTALLED, BLOCKED_APP_LAUNCH_FAILED, BLOCKED_CREDENTIALS_MISSING
+EXIT=1
+ENDED 2026-09-20T22:12:34Z

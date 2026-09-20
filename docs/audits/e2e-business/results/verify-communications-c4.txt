@@ -1,0 +1,2527 @@
+===== verify:communications-c4 =====
+STARTED 2026-09-20T22:18:36Z
+CMD: npm run verify:communications-c4
+
+> verify:communications-c4
+> node backend/scripts/verify-communications-c4.js
+
+verify-communications-c4: source guards OK
+TAP version 13
+# Subtest: RED-COM-01 P1 — adaptateur PUSH/EMAIL après persist C4
+ok 1 - RED-COM-01 P1 — adaptateur PUSH/EMAIL après persist C4
+  ---
+  duration_ms: 0.711161
+  ...
+# Subtest: RED-COM-01c — processing périmé n'est pas redispatched
+ok 2 - RED-COM-01c — processing périmé n'est pas redispatched
+  ---
+  duration_ms: 0.287315
+  ...
+# Subtest: RED-COM-01b — C4 persist reste sans fournisseur
+ok 3 - RED-COM-01b — C4 persist reste sans fournisseur
+  ---
+  duration_ms: 0.474174
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 35.155678
+TAP version 13
+# Subtest: RED-COM-04A — dispatcher commun capable de router IN_APP | PUSH | EMAIL
+ok 1 - RED-COM-04A — dispatcher commun capable de router IN_APP | PUSH | EMAIL
+  ---
+  duration_ms: 0.695486
+  ...
+# Subtest: RED-COM-04F — canal inconnu fail-closed, jamais traité comme PUSH
+ok 2 - RED-COM-04F — canal inconnu fail-closed, jamais traité comme PUSH
+  ---
+  duration_ms: 0.886016
+  ...
+# Subtest: RED-COM-04J — le dispatcher ne contient aucun SDK / provider spécifique
+ok 3 - RED-COM-04J — le dispatcher ne contient aucun SDK / provider spécifique
+  ---
+  duration_ms: 0.309054
+  ...
+# Subtest: AUDIT-COM-05 — unique caller runtime de fanOutNotificationChannels = dispatcher
+ok 4 - AUDIT-COM-05 — unique caller runtime de fanOutNotificationChannels = dispatcher
+  ---
+  duration_ms: 3.271027
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 58.690682
+TAP version 13
+# Subtest: normalizeChannels déduplique et refuse SMS / null / malformé
+ok 1 - normalizeChannels déduplique et refuse SMS / null / malformé
+  ---
+  duration_ms: 1.190862
+  ...
+# Subtest: dispatchCommunication SMS ne crée aucune delivery et n'appelle pas PUSH
+ok 2 - dispatchCommunication SMS ne crée aucune delivery et n'appelle pas PUSH
+  ---
+  duration_ms: 0.378791
+  ...
+# Subtest: IN_APP seul ne crée pas de delivery PUSH/EMAIL
+ok 3 - IN_APP seul ne crée pas de delivery PUSH/EMAIL
+  ---
+  duration_ms: 0.159589
+  ...
+# Subtest: PUSH seul n'enqueue pas EMAIL
+ok 4 - PUSH seul n'enqueue pas EMAIL
+  ---
+  duration_ms: 1.6213
+  ...
+# Subtest: double dispatchCommunication n'ajoute pas de seconde delivery
+ok 5 - double dispatchCommunication n'ajoute pas de seconde delivery
+  ---
+  duration_ms: 0.675114
+  ...
+# Subtest: politique C4 conservatrice reste PUSH+EMAIL pour les 5 eventTypes
+ok 6 - politique C4 conservatrice reste PUSH+EMAIL pour les 5 eventTypes
+  ---
+  duration_ms: 0.157177
+  ...
+# Subtest: EMAIL optionnel opt-out n'enqueue pas EMAIL
+ok 7 - EMAIL optionnel opt-out n'enqueue pas EMAIL
+  ---
+  duration_ms: 0.424286
+  ...
+# Subtest: PUSH=false n'enqueue pas PUSH et ne révoque aucun device
+ok 8 - PUSH=false n'enqueue pas PUSH et ne révoque aucun device
+  ---
+  duration_ms: 0.366225
+  ...
+# Subtest: absence de préférence conserve IN_APP+PUSH+EMAIL
+ok 9 - absence de préférence conserve IN_APP+PUSH+EMAIL
+  ---
+  duration_ms: 0.323905
+  ...
+# Subtest: mandatoryChannelsForEvent reset = EMAIL même si opt-out
+ok 10 - mandatoryChannelsForEvent reset = EMAIL même si opt-out
+  ---
+  duration_ms: 0.392779
+  ...
+# Subtest: dispatchProcessedEvents drain même sans event C4 (reset EMAIL)
+ok 11 - dispatchProcessedEvents drain même sans event C4 (reset EMAIL)
+  ---
+  duration_ms: 0.370222
+  ...
+# Subtest: IN_APP=false n'empêche pas le fan-out PUSH+EMAIL
+ok 12 - IN_APP=false n'empêche pas le fan-out PUSH+EMAIL
+  ---
+  duration_ms: 0.3863
+  ...
+# Subtest: processOneEvent insère toujours notification_recipients (IN_APP n'est pas un continue)
+ok 13 - processOneEvent insère toujours notification_recipients (IN_APP n'est pas un continue)
+  ---
+  duration_ms: 0.37127
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 86.520813
+TAP version 13
+# Subtest: défaut sans ligne = IN_APP + PUSH + EMAIL
+ok 1 - défaut sans ligne = IN_APP + PUSH + EMAIL
+  ---
+  duration_ms: 1.20853
+  ...
+# Subtest: EMAIL=false n'ôte ni PUSH ni IN_APP
+ok 2 - EMAIL=false n'ôte ni PUSH ni IN_APP
+  ---
+  duration_ms: 0.15735
+  ...
+# Subtest: PUSH=false n'ôte ni EMAIL ni IN_APP
+ok 3 - PUSH=false n'ôte ni EMAIL ni IN_APP
+  ---
+  duration_ms: 0.155539
+  ...
+# Subtest: préférence school A n'est pas lue pour school B
+ok 4 - préférence school A n'est pas lue pour school B
+  ---
+  duration_ms: 0.15992
+  ...
+# Subtest: upsert refuse tout champ provider
+ok 5 - upsert refuse tout champ provider
+  ---
+  duration_ms: 0.582761
+  ...
+# Subtest: module prefs n'importe aucun SDK et ne révoque pas les devices
+ok 6 - module prefs n'importe aucun SDK et ne révoque pas les devices
+  ---
+  duration_ms: 0.274076
+  ...
+# Subtest: schéma UNIQUE(user_id, school_id, channel) sans colonne provider
+ok 7 - schéma UNIQUE(user_id, school_id, channel) sans colonne provider
+  ---
+  duration_ms: 0.29763
+  ...
+# Subtest: permission denied n'est pas traité comme table absente
+ok 8 - permission denied n'est pas traité comme table absente
+  ---
+  duration_ms: 0.188496
+  ...
+# Subtest: parseEnabledFlag("false") reste false
+ok 9 - parseEnabledFlag("false") reste false
+  ---
+  duration_ms: 0.258054
+  ...
+# Subtest: PUT mémoire persiste EMAIL=false même si string
+ok 10 - PUT mémoire persiste EMAIL=false même si string
+  ---
+  duration_ms: 0.947762
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 45.469234
+TAP version 13
+# Subtest: AUDIT-COM-01 — fan-out PUSH/EMAIL après persist C4, jamais dans processOneEvent
+ok 1 - AUDIT-COM-01 — fan-out PUSH/EMAIL après persist C4, jamais dans processOneEvent
+  ---
+  duration_ms: 1.007073
+  ...
+# Subtest: AUDIT-COM-02 — ciblage Expo reste scoped user + school + environnement
+ok 2 - AUDIT-COM-02 — ciblage Expo reste scoped user + school + environnement
+  ---
+  duration_ms: 0.31619
+  ...
+# Subtest: AUDIT-COM-03 — claimDue ne SELECT jamais processing ; reclaim seulement sans dispatch_started_at
+ok 3 - AUDIT-COM-03 — claimDue ne SELECT jamais processing ; reclaim seulement sans dispatch_started_at
+  ---
+  duration_ms: 0.323509
+  ...
+# Subtest: AUDIT-COM-04 — delivery_key reste unique pour l'idempotence de fan-out
+ok 4 - AUDIT-COM-04 — delivery_key reste unique pour l'idempotence de fan-out
+  ---
+  duration_ms: 0.351886
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 35.722062
+TAP version 13
+# Subtest: in-app reste persistée si Expo échoue
+ok 1 - in-app reste persistée si Expo échoue
+  ---
+  duration_ms: 2.114566
+  ...
+# Subtest: in-app reste persistée si SMTP échoue
+ok 2 - in-app reste persistée si SMTP échoue
+  ---
+  duration_ms: 0.404443
+  ...
+# Subtest: retry PUSH n'envoie pas deux fois un succès
+ok 3 - retry PUSH n'envoie pas deux fois un succès
+  ---
+  duration_ms: 0.763748
+  ...
+# Subtest: crash après succès Expo avant markSent n'envoie pas une seconde fois
+ok 4 - crash après succès Expo avant markSent n'envoie pas une seconde fois
+  ---
+  duration_ms: 0.411428
+  ...
+# Subtest: crash après succès SMTP avant markSent n'envoie pas une seconde fois
+ok 5 - crash après succès SMTP avant markSent n'envoie pas une seconde fois
+  ---
+  duration_ms: 0.329578
+  ...
+# Subtest: P2 — crash entre markDispatchStarted et Expo skip sans second send (envoi éventuellement perdu)
+ok 6 - P2 — crash entre markDispatchStarted et Expo skip sans second send (envoi éventuellement perdu)
+  ---
+  duration_ms: 0.219565
+  ...
+# Subtest: échec Expo reste retryable et n'envoie qu'une fois au succès
+ok 7 - échec Expo reste retryable et n'envoie qu'une fois au succès
+  ---
+  duration_ms: 0.406693
+  ...
+# Subtest: retry EMAIL n'envoie pas deux fois un succès
+ok 8 - retry EMAIL n'envoie pas deux fois un succès
+  ---
+  duration_ms: 0.808707
+  ...
+# Subtest: école A ne cible jamais un token de l'école B
+ok 9 - école A ne cible jamais un token de l'école B
+  ---
+  duration_ms: 0.461575
+  ...
+# Subtest: preprod ne cible pas production
+ok 10 - preprod ne cible pas production
+  ---
+  duration_ms: 0.470133
+  ...
+# Subtest: événement sans canal externe reste traité (skipped)
+ok 11 - événement sans canal externe reste traité (skipped)
+  ---
+  duration_ms: 0.282465
+  ...
+# Subtest: erreur fournisseur n'échoue pas le fan-out global
+ok 12 - erreur fournisseur n'échoue pas le fan-out global
+  ---
+  duration_ms: 0.328544
+  ...
+# Subtest: enqueue est idempotent par event_key + recipient + channel
+ok 13 - enqueue est idempotent par event_key + recipient + channel
+  ---
+  duration_ms: 0.1176
+  ...
+# Subtest: échec de lecture prefs d'un destinataire n'abort pas l'enqueue des suivants
+ok 14 - échec de lecture prefs d'un destinataire n'abort pas l'enqueue des suivants
+  ---
+  duration_ms: 0.239944
+  ...
+# Subtest: payload.to n'override pas l'email tenant scoped user+school
+ok 15 - payload.to n'override pas l'email tenant scoped user+school
+  ---
+  duration_ms: 0.221699
+  ...
+# Subtest: EMAIL opérationnel trial.access.request utilise payload.to sans user/school
+ok 16 - EMAIL opérationnel trial.access.request utilise payload.to sans user/school
+  ---
+  duration_ms: 0.208751
+  ...
+# Subtest: payload.to sans kind trial.access.request ne bypasse pas l'isolation tenant
+ok 17 - payload.to sans kind trial.access.request ne bypasse pas l'isolation tenant
+  ---
+  duration_ms: 0.126128
+  ...
+# Subtest: smtp_not_configured laisse la delivery EMAIL retryable
+ok 18 - smtp_not_configured laisse la delivery EMAIL retryable
+  ---
+  duration_ms: 0.235162
+  ...
+# Subtest: createSqlDeliveryAdapter suit le contrat createClientsPgStore (bind, pas all sur la façade)
+ok 19 - createSqlDeliveryAdapter suit le contrat createClientsPgStore (bind, pas all sur la façade)
+  ---
+  duration_ms: 4.975731
+  ...
+1..19
+# tests 19
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 71.538852
+TAP version 13
+# Subtest: GREEN-COM-03B — aucun SMTP dans la transaction de reset (échec mailer ≠ rollback)
+ok 1 - GREEN-COM-03B — aucun SMTP dans la transaction de reset (échec mailer ≠ rollback)
+  ---
+  duration_ms: 1.516898
+  ...
+# Subtest: GREEN-COM-03C — la transaction de reset révoque les sessions
+ok 2 - GREEN-COM-03C — la transaction de reset révoque les sessions
+  ---
+  duration_ms: 1.998606
+  ...
+# Subtest: GREEN-COM-03E — reset est scoped usersHttpPrincipal + assertUsersTargetAccess
+ok 3 - GREEN-COM-03E — reset est scoped usersHttpPrincipal + assertUsersTargetAccess
+  ---
+  duration_ms: 1.890688
+  ...
+# Subtest: GREEN-COM-03F — l'audit reset n'embarque pas le mot de passe provisoire
+ok 4 - GREEN-COM-03F — l'audit reset n'embarque pas le mot de passe provisoire
+  ---
+  duration_ms: 1.740645
+  ...
+# Subtest: GREEN-COM-03-c4 — reset n'appelle pas processOneEvent / outbox C4 IN_APP
+ok 5 - GREEN-COM-03-c4 — reset n'appelle pas processOneEvent / outbox C4 IN_APP
+  ---
+  duration_ms: 1.41257
+  ...
+# Subtest: RED-COM-03A — après persist reset, une notification EMAIL est programmée
+ok 6 - RED-COM-03A — après persist reset, une notification EMAIL est programmée
+  ---
+  duration_ms: 1.401112
+  ...
+# Subtest: RED-COM-03D — l'intention d'email est écrite dans la même transaction que le reset
+ok 7 - RED-COM-03D — l'intention d'email est écrite dans la même transaction que le reset
+  ---
+  duration_ms: 1.716772
+  ...
+# Subtest: RED-COM-03G — delivery_key unique pour un reset logique (pas de double email au retry)
+ok 8 - RED-COM-03G — delivery_key unique pour un reset logique (pas de double email au retry)
+  ---
+  duration_ms: 1.218621
+  ...
+# Subtest: RED-COM-03H — un mot de passe provisoire vide est rejeté
+ok 9 - RED-COM-03H — un mot de passe provisoire vide est rejeté
+  ---
+  duration_ms: 1.464916
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 50.360939
+TAP version 13
+# Subtest: payload de reset n'embarque jamais le mot de passe provisoire
+ok 1 - payload de reset n'embarque jamais le mot de passe provisoire
+  ---
+  duration_ms: 0.723237
+  ...
+# Subtest: enqueue + drain EMAIL une seule fois, sans secret dans SMTP
+ok 2 - enqueue + drain EMAIL une seule fois, sans secret dans SMTP
+  ---
+  duration_ms: 1.180949
+  ...
+# Subtest: retry ensureDelivery est idempotent pour le même delivery_key
+ok 3 - retry ensureDelivery est idempotent pour le même delivery_key
+  ---
+  duration_ms: 0.220996
+  ...
+# Subtest: sans school_id UUID, le reset n'échoue pas (pas d'INSERT)
+ok 4 - sans school_id UUID, le reset n'échoue pas (pas d'INSERT)
+  ---
+  duration_ms: 0.109592
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 55.581297
+communicationsAttachments.test.js OK
+
+> somafrik-web@1.0.0 test
+> vitest run src/lib/internalNotificationsC4.test.ts
+
+
+ RUN  v4.1.10 /workspace/web
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  22:18:37
+   Duration  637ms (transform 69ms, setup 88ms, import 55ms, tests 4ms, environment 394ms)
+
+
+> somafrik-web@1.0.0 test
+> vitest run src/lib/communicationHttpError.test.ts src/components/communications/InternalNotificationsCenter.p3.test.tsx src/pages/PlatformNotificationsPage.p3.test.tsx
+
+
+ RUN  v4.1.10 /workspace/web
+
+
+ Test Files  3 passed (3)
+      Tests  6 passed (6)
+   Start at  22:18:38
+   Duration  1.17s (transform 605ms, setup 306ms, import 741ms, tests 156ms, environment 1.49s)
+
+
+> somafrik-web@1.0.0 test
+> vitest run src/lib/dashboardKpiTruth.test.ts
+
+
+ RUN  v4.1.10 /workspace/web
+
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  22:18:40
+   Duration  789ms (transform 188ms, setup 88ms, import 196ms, tests 4ms, environment 401ms)
+
+
+> somafrik-web@1.0.0 test
+> vitest run src/lib/dashboardPermissions.test.ts
+
+
+ RUN  v4.1.10 /workspace/web
+
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  22:18:41
+   Duration  844ms (transform 207ms, setup 90ms, import 214ms, tests 52ms, environment 399ms)
+
+OK Mobile internalNotificationsC4.test.ts
+OK Mobile communicationHeaderIcons.p3.test.ts
+OK Mobile notificationInboxRoute.test.ts
+OK Mobile financeNotificationNavigation.test.ts
+OK Mobile communicationPagination.lotc.test.ts
+TAP version 13
+# Subtest: finance_obligation produit une destination Mobile StudentPayments allowlistée
+ok 1 - finance_obligation produit une destination Mobile StudentPayments allowlistée
+  ---
+  duration_ms: 1.080612
+  ...
+# Subtest: target inconnu reste fail-safe Home
+ok 2 - target inconnu reste fail-safe Home
+  ---
+  duration_ms: 0.106727
+  ...
+# Subtest: conversation produit une destination Mobile Messages allowlistée
+ok 3 - conversation produit une destination Mobile Messages allowlistée
+  ---
+  duration_ms: 0.147805
+  ...
+# Subtest: conversation sans conversationId reste fail-safe Home
+ok 4 - conversation sans conversationId reste fail-safe Home
+  ---
+  duration_ms: 0.085091
+  ...
+# Subtest: announcement produit une destination Mobile Announcements allowlistée
+ok 5 - announcement produit une destination Mobile Announcements allowlistée
+  ---
+  duration_ms: 0.094693
+  ...
+# Subtest: identifiant conversation injecté est rejeté
+ok 6 - identifiant conversation injecté est rejeté
+  ---
+  duration_ms: 0.087855
+  ...
+# Subtest: fan-out PUSH PAYMENT_DUE transmet StudentPayments + studentId à Expo
+ok 7 - fan-out PUSH PAYMENT_DUE transmet StudentPayments + studentId à Expo
+  ---
+  duration_ms: 1.316094
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 58.322419
+communicationsC4.bootstrap.pg.test.js OK
+[teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+[teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+[teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+[teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+[users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+[parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+[parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+[education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+[establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+[evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+[school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+[documents-exams] inventaire residual : 0 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+[documents-exams] inventaire statuts exams : unknown=0
+COM-C4 GO — notifications internes, outbox, read/unread, tenant, RBAC et PJ validés.
+TAP version 13
+# Subtest: RED-COM-05A — aucune persistance canonique user + school + channel
+ok 1 - RED-COM-05A — aucune persistance canonique user + school + channel
+  ---
+  duration_ms: 4.855468
+  ...
+# Subtest: RED-COM-05B — aucune résolution eventPolicy ∩ userPreferences
+ok 2 - RED-COM-05B — aucune résolution eventPolicy ∩ userPreferences
+  ---
+  duration_ms: 42.390385
+  ...
+# Subtest: RED-COM-05F/G — canal mandatory EMAIL pour auth.password.reset
+ok 3 - RED-COM-05F/G — canal mandatory EMAIL pour auth.password.reset
+  ---
+  duration_ms: 0.142069
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 3
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 82.480031
+TAP version 13
+# Subtest: AUDIT-COM-06-MAP-A — deux tables notifications encore vivantes
+ok 1 - AUDIT-COM-06-MAP-A — deux tables notifications encore vivantes
+  ---
+  duration_ms: 0.86895
+  ...
+# Subtest: AUDIT-COM-06-MAP-B — C3 établissement et annonces plateforme restent deux familles
+ok 2 - AUDIT-COM-06-MAP-B — C3 établissement et annonces plateforme restent deux familles
+  ---
+  duration_ms: 1.057972
+  ...
+# Subtest: AUDIT-COM-06-MAP-C — événements déjà drainés par C4
+ok 3 - AUDIT-COM-06-MAP-C — événements déjà drainés par C4
+  ---
+  duration_ms: 0.336128
+  ...
+# Subtest: AUDIT-COM-06-MAP-D — APIs parallèles encore montées (pas de drop famille B)
+ok 4 - AUDIT-COM-06-MAP-D — APIs parallèles encore montées (pas de drop famille B)
+  ---
+  duration_ms: 1.372211
+  ...
+# Subtest: AUDIT-COM-06-MAP-E — C4 n'écrit pas la table notifications
+ok 5 - AUDIT-COM-06-MAP-E — C4 n'écrit pas la table notifications
+  ---
+  duration_ms: 0.260628
+  ...
+# Subtest: AUDIT-COM-06-MAP-F — lecteurs Web scindés : /notifications = C4, catalogue B ailleurs
+ok 6 - AUDIT-COM-06-MAP-F — lecteurs Web scindés : /notifications = C4, catalogue B ailleurs
+  ---
+  duration_ms: 0.299804
+  ...
+# Subtest: AUDIT-COM-06-MAP-G — announcement.published reste un pointeur inbox, pas une fusion C3/D
+ok 7 - AUDIT-COM-06-MAP-G — announcement.published reste un pointeur inbox, pas une fusion C3/D
+  ---
+  duration_ms: 1.141351
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 40.067237
+TAP version 13
+# Subtest: J-01 / RED-COM-06A — finance.payment.recorded n'a plus de double write catalogue B
+ok 1 - J-01 / RED-COM-06A — finance.payment.recorded n'a plus de double write catalogue B
+  ---
+  duration_ms: 1.041968
+  ...
+# Subtest: J-01 runtime — applyAtomicPayment ne touche pas le catalogue plateforme
+ok 2 - J-01 runtime — applyAtomicPayment ne touche pas le catalogue plateforme
+  ---
+  duration_ms: 8.668887
+  ...
+# Subtest: J-02 / RED-COM-06B — Web établissement ne lit plus le catalogue legacy pour l'inbox C4
+ok 3 - J-02 / RED-COM-06B — Web établissement ne lit plus le catalogue legacy pour l'inbox C4
+  ---
+  duration_ms: 0.389276
+  ...
+# Subtest: J-03 / \#577 L0 — Mobile limite Notifications à l'inbox établissement C4
+ok 4 - J-03 / \#577 L0 — Mobile limite Notifications à l'inbox établissement C4
+  ---
+  duration_ms: 0.326035
+  ...
+# Subtest: J-04 / RED-COM-06E — KPI Alertes à traiter = unread C4
+ok 5 - J-04 / RED-COM-06E — KPI Alertes à traiter = unread C4
+  ---
+  duration_ms: 0.203703
+  ...
+# Subtest: J-04b — Notifications:READ n'ouvre pas le graphique operations multi-module
+ok 6 - J-04b — Notifications:READ n'ouvre pas le graphique operations multi-module
+  ---
+  duration_ms: 0.151845
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 45.955129
+TAP version 13
+# Subtest: RED-COM-07A — le handler trial ne doit plus déclencher notifyTrialAccessRequest / SMTP direct après persist
+ok 1 - RED-COM-07A — le handler trial ne doit plus déclencher notifyTrialAccessRequest / SMTP direct après persist
+  ---
+  duration_ms: 1.939611
+  ...
+# Subtest: RED-COM-07B — une communication_channel_delivery EMAIL durable est créée avec le lead
+ok 2 - RED-COM-07B — une communication_channel_delivery EMAIL durable est créée avec le lead
+  ---
+  duration_ms: 0.741673
+  ...
+# Subtest: RED-COM-07C — delivery_key idempotente stable pour une demande d'essai
+ok 3 - RED-COM-07C — delivery_key idempotente stable pour une demande d'essai
+  ---
+  duration_ms: 0.162425
+  ...
+# Subtest: RED-COM-07D — retry d'une même demande ne doit pas produire plusieurs EMAIL
+ok 4 - RED-COM-07D — retry d'une même demande ne doit pas produire plusieurs EMAIL
+  ---
+  duration_ms: 0.528568
+  ...
+# Subtest: GREEN-COM-07E — un échec SMTP ne rollback pas le lead et n'influence pas le 201 HTTP
+ok 5 - GREEN-COM-07E — un échec SMTP ne rollback pas le lead et n'influence pas le 201 HTTP
+  ---
+  duration_ms: 1.543843
+  ...
+# Subtest: GREEN-COM-07F — honeypot et consentement invalide : aucun lead, aucune delivery
+ok 6 - GREEN-COM-07F — honeypot et consentement invalide : aucun lead, aucune delivery
+  ---
+  duration_ms: 0.201528
+  ...
+# Subtest: GREEN-COM-07-c4 — la demande d'essai ne passe pas par processOneEvent / fan-out parallèle
+ok 7 - GREEN-COM-07-c4 — la demande d'essai ne passe pas par processOneEvent / fan-out parallèle
+  ---
+  duration_ms: 1.437183
+  ...
+# Subtest: GREEN-COM-07-dest — destinataire canonique contact@somafrik.app, pas de secret SMTP dans le lead
+ok 8 - GREEN-COM-07-dest — destinataire canonique contact@somafrik.app, pas de secret SMTP dans le lead
+  ---
+  duration_ms: 2.146317
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 63.418148
+TAP version 13
+# Subtest: RED-COM-08A — tentatives épuisées passent en dead_letter et ne sont plus claimed
+ok 1 - RED-COM-08A — tentatives épuisées passent en dead_letter et ne sont plus claimed
+  ---
+  duration_ms: 2.495708
+  ...
+# Subtest: RED-COM-08B — processing périmé sans appel fournisseur est récupérable (un seul envoi)
+ok 2 - RED-COM-08B — processing périmé sans appel fournisseur est récupérable (un seul envoi)
+  ---
+  duration_ms: 0.780553
+  ...
+# Subtest: RED-COM-08C — snapshot diagnostic sans PII (compteurs, tentatives, last_error)
+ok 3 - RED-COM-08C — snapshot diagnostic sans PII (compteurs, tentatives, last_error)
+  ---
+  duration_ms: 0.863355
+  ...
+# Subtest: RED-COM-08D — recoverStaleProcessing distingue reclaim vs no_redelivery
+ok 4 - RED-COM-08D — recoverStaleProcessing distingue reclaim vs no_redelivery
+  ---
+  duration_ms: 0.323309
+  ...
+# Subtest: RED-COM-08E — route diagnostic Superadmin/Admin sans données sensibles
+ok 5 - RED-COM-08E — route diagnostic Superadmin/Admin sans données sensibles
+  ---
+  duration_ms: 1.047038
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 58.849114
+TAP version 13
+# Subtest: Superadmin et Admin School peuvent diagnostiquer ; Parent non
+ok 1 - Superadmin et Admin School peuvent diagnostiquer ; Parent non
+  ---
+  duration_ms: 1.09126
+  ...
+# Subtest: Admin Pays countryCode=CD et countryScope=BI est 403 fail-closed
+ok 2 - Admin Pays countryCode=CD et countryScope=BI est 403 fail-closed
+  ---
+  duration_ms: 0.584744
+  ...
+# Subtest: Admin Pays countryCode=CD et platformContext BI est 403 fail-closed
+ok 3 - Admin Pays countryCode=CD et platformContext BI est 403 fail-closed
+  ---
+  duration_ms: 0.124884
+  ...
+# Subtest: Admin Pays sans countryCode/countryScope est fail-closed 403
+ok 4 - Admin Pays sans countryCode/countryScope est fail-closed 403
+  ---
+  duration_ms: 0.219952
+  ...
+# Subtest: Admin School sans school_id est fail-closed 403
+ok 5 - Admin School sans school_id est fail-closed 403
+  ---
+  duration_ms: 0.187979
+  ...
+# Subtest: COUNTRY_ADMIN CD ne voit aucune delivery d'un établissement d'un autre pays
+ok 6 - COUNTRY_ADMIN CD ne voit aucune delivery d'un établissement d'un autre pays
+  ---
+  duration_ms: 1.229131
+  ...
+# Subtest: Admin Pays scope RDC (countryScope) se résout en CD
+ok 7 - Admin Pays scope RDC (countryScope) se résout en CD
+  ---
+  duration_ms: 0.16328
+  ...
+# Subtest: readDeliveryHealth refuse un Parent même si le store est disponible
+ok 8 - readDeliveryHealth refuse un Parent même si le store est disponible
+  ---
+  duration_ms: 0.136967
+  ...
+# Subtest: snapshot omet payload, email et delivery_key
+ok 9 - snapshot omet payload, email et delivery_key
+  ---
+  duration_ms: 0.312594
+  ...
+# Subtest: SQL listDeliveryHealth country joint countries.iso_code — jamais un SELECT global
+ok 10 - SQL listDeliveryHealth country joint countries.iso_code — jamais un SELECT global
+  ---
+  duration_ms: 0.442011
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 60.045215
+TAP version 13
+# Subtest: AUDIT-COM-FINAL-01 — architecture : quatre familles séparées
+ok 1 - AUDIT-COM-FINAL-01 — architecture : quatre familles séparées
+  ---
+  duration_ms: 2.173762
+  ...
+# Subtest: AUDIT-COM-FINAL-01b — matrice événements : 9/9 Lot I câblés
+ok 2 - AUDIT-COM-FINAL-01b — matrice événements : 9/9 Lot I câblés
+  ---
+  duration_ms: 0.884383
+  ...
+# Subtest: AUDIT-COM-FINAL-02 — isolation tenant : Expo ne cible pas un token école B pour user A école A
+ok 3 - AUDIT-COM-FINAL-02 — isolation tenant : Expo ne cible pas un token école B pour user A école A
+  ---
+  duration_ms: 1.357571
+  ...
+# Subtest: AUDIT-COM-FINAL-03 — isolation pays : Admin Pays CD ne voit pas BI
+ok 4 - AUDIT-COM-FINAL-03 — isolation pays : Admin Pays CD ne voit pas BI
+  ---
+  duration_ms: 0.497145
+  ...
+# Subtest: AUDIT-COM-FINAL-04 — RBAC diagnostic deliveries
+ok 5 - AUDIT-COM-FINAL-04 — RBAC diagnostic deliveries
+  ---
+  duration_ms: 0.446635
+  ...
+# Subtest: AUDIT-COM-FINAL-05 — school policy AND user preference
+ok 6 - AUDIT-COM-FINAL-05 — school policy AND user preference
+  ---
+  duration_ms: 0.235765
+  ...
+# OK Mobile notificationInboxRoute.test.ts
+# Subtest: AUDIT-COM-FINAL-06 — idempotence delivery_key (mémoire + concurrence)
+ok 7 - AUDIT-COM-FINAL-06 — idempotence delivery_key (mémoire + concurrence)
+  ---
+  duration_ms: 870.502038
+  ...
+# Subtest: AUDIT-COM-FINAL-07 — retry, backoff et dead_letter
+ok 8 - AUDIT-COM-FINAL-07 — retry, backoff et dead_letter
+  ---
+  duration_ms: 1.687134
+  ...
+# Subtest: AUDIT-COM-FINAL-08 — stale worker cas A (sans dispatch_started_at) et cas B (avec)
+ok 9 - AUDIT-COM-FINAL-08 — stale worker cas A (sans dispatch_started_at) et cas B (avec)
+  ---
+  duration_ms: 0.706174
+  ...
+# Subtest: AUDIT-COM-FINAL-09 — sanitization PII diagnostic deliveries
+ok 10 - AUDIT-COM-FINAL-09 — sanitization PII diagnostic deliveries
+  ---
+  duration_ms: 0.817003
+  ...
+# Subtest: AUDIT-COM-FINAL-10 — legacy double-write : paiement n'alimente pas catalogue B
+ok 11 - AUDIT-COM-FINAL-10 — legacy double-write : paiement n'alimente pas catalogue B
+  ---
+  duration_ms: 1.792143
+  ...
+# Subtest: AUDIT-COM-FINAL-11 — PostgreSQL migrations Communications alignées bootstrap
+ok 12 - AUDIT-COM-FINAL-11 — PostgreSQL migrations Communications alignées bootstrap
+  ---
+  duration_ms: 0.294342
+  ...
+# Subtest: AUDIT-COM-FINAL-12 — Web/Mobile routing séparé C4 vs catalogue plateforme
+ok 13 - AUDIT-COM-FINAL-12 — Web/Mobile routing séparé C4 vs catalogue plateforme
+  ---
+  duration_ms: 400.306234
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1371.748215
+TAP version 13
+# Subtest: RED-LATE-05 — mapping dispatcher → STUDENT_LATE
+ok 1 - RED-LATE-05 — mapping dispatcher → STUDENT_LATE
+  ---
+  duration_ms: 0.814533
+  ...
+# Subtest: RED-LATE-01 — late produit attendance.student.late
+ok 2 - RED-LATE-01 — late produit attendance.student.late
+  ---
+  duration_ms: 608.961154
+  ...
+# Subtest: RED-LATE-02 — event_key idempotent (late→late, replay ON CONFLICT)
+ok 3 - RED-LATE-02 — event_key idempotent (late→late, replay ON CONFLICT)
+  ---
+  duration_ms: 496.963447
+  ...
+# Subtest: RED-LATE-10 — present → late produit un événement
+ok 4 - RED-LATE-10 — present → late produit un événement
+  ---
+  duration_ms: 569.892227
+  ...
+# Subtest: RED-LATE-09 — PRESENT ne produit aucun événement
+ok 5 - RED-LATE-09 — PRESENT ne produit aucun événement
+  ---
+  duration_ms: 617.417232
+  ...
+# Subtest: RED-LATE-10b — absent → late produit attendance.student.late
+ok 6 - RED-LATE-10b — absent → late produit attendance.student.late
+  ---
+  duration_ms: 578.601198
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-LATE-03 — recipient parent lié à l'élève
+ok 7 - RED-LATE-03 — recipient parent lié à l'élève
+  ---
+  duration_ms: 2400.645244
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-LATE-04 — isolation tenant SCHOOL_A / SCHOOL_B
+ok 8 - RED-LATE-04 — isolation tenant SCHOOL_A / SCHOOL_B
+  ---
+  duration_ms: 2273.604096
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-LATE-02b — concurrence drainOutbox → une seule notification
+ok 9 - RED-LATE-02b — concurrence drainOutbox → une seule notification
+  ---
+  duration_ms: 2304.249283
+  ...
+# Subtest: RED-LATE-06 — politique établissement STUDENT_LATE appliquée
+ok 10 - RED-LATE-06 — politique établissement STUDENT_LATE appliquée
+  ---
+  duration_ms: 2.361935
+  ...
+# Subtest: RED-LATE-07 — préférences utilisateur AND policy
+ok 11 - RED-LATE-07 — préférences utilisateur AND policy
+  ---
+  duration_ms: 0.565973
+  ...
+# Subtest: RED-LATE-08 — pas de legacy double-write
+ok 12 - RED-LATE-08 — pas de legacy double-write
+  ---
+  duration_ms: 1.877529
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-LATE-03b — parent autre élève / autre établissement exclus
+ok 13 - RED-LATE-03b — parent autre élève / autre établissement exclus
+  ---
+  duration_ms: 2203.837384
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-LATE-03c — parent historique dont le compte appartient à une autre école n'est jamais recipient
+ok 14 - RED-LATE-03c — parent historique dont le compte appartient à une autre école n'est jamais recipient
+  ---
+  duration_ms: 2018.06732
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 14175.938966
+TAP version 13
+# Subtest: RED-RC-06 — mapping dispatcher → REPORT_CARD_PUBLISHED
+ok 1 - RED-RC-06 — mapping dispatcher → REPORT_CARD_PUBLISHED
+  ---
+  duration_ms: 0.861081
+  ...
+# Subtest: RED-RC-01 — publication réelle produit un event outbox
+ok 2 - RED-RC-01 — publication réelle produit un event outbox
+  ---
+  duration_ms: 595.027683
+  ...
+# Subtest: RED-RC-02 — draft / generated ne produit rien
+ok 3 - RED-RC-02 — draft / generated ne produit rien
+  ---
+  duration_ms: 569.852979
+  ...
+# Subtest: RED-RC-03 — draft → published produit exactement 1 event
+ok 4 - RED-RC-03 — draft → published produit exactement 1 event
+  ---
+  duration_ms: 609.331671
+  ...
+# Subtest: RED-RC-04 — published → published ne duplique pas
+ok 5 - RED-RC-04 — published → published ne duplique pas
+  ---
+  duration_ms: 588.512011
+  ...
+# Subtest: RED-RC-04b — recalcul bulletin publié (class_id) ne réémet pas
+ok 6 - RED-RC-04b — recalcul bulletin publié (class_id) ne réémet pas
+  ---
+  duration_ms: 582.363128
+  ...
+# Subtest: RED-RC-05 — event_key déterministe + payload période
+ok 7 - RED-RC-05 — event_key déterministe + payload période
+  ---
+  duration_ms: 628.918225
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-RC-07 — destinataires parent lié + élève concerné
+ok 8 - RED-RC-07 — destinataires parent lié + élève concerné
+  ---
+  duration_ms: 2283.944093
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-RC-07b — parent autre élève / autre établissement exclus
+ok 9 - RED-RC-07b — parent autre élève / autre établissement exclus
+  ---
+  duration_ms: 2218.458908
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-RC-08 — isolation tenant SCHOOL_A / SCHOOL_B
+ok 10 - RED-RC-08 — isolation tenant SCHOOL_A / SCHOOL_B
+  ---
+  duration_ms: 2252.551092
+  ...
+# Subtest: RED-RC-09 — politique établissement REPORT_CARD_PUBLISHED appliquée
+ok 11 - RED-RC-09 — politique établissement REPORT_CARD_PUBLISHED appliquée
+  ---
+  duration_ms: 2.04759
+  ...
+# Subtest: RED-RC-10 — préférences utilisateur AND policy
+ok 12 - RED-RC-10 — préférences utilisateur AND policy
+  ---
+  duration_ms: 0.498731
+  ...
+# Subtest: RED-RC-11 — aucun legacy double-write
+ok 13 - RED-RC-11 — aucun legacy double-write
+  ---
+  duration_ms: 1.867754
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-RC-12 — concurrence drainOutbox → une seule notification
+ok 14 - RED-RC-12 — concurrence drainOutbox → une seule notification
+  ---
+  duration_ms: 2227.465582
+  ...
+# Subtest: RED-RC-13 — non-régression STUDENT_LATE après migration L2
+ok 15 - RED-RC-13 — non-régression STUDENT_LATE après migration L2
+  ---
+  duration_ms: 543.210254
+  ...
+1..15
+# tests 15
+# suites 0
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 13203.65917
+TAP version 13
+# Subtest: RED-PD-03 — mapping dispatcher → PAYMENT_DUE
+ok 1 - RED-PD-03 — mapping dispatcher → PAYMENT_DUE
+  ---
+  duration_ms: 1.138203
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-01 — obligation future → aucun event immédiat
+ok 2 - RED-PD-01 — obligation future → aucun event immédiat
+  ---
+  duration_ms: 2446.376082
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-02 — obligation devient due → 1 event
+ok 3 - RED-PD-02 — obligation devient due → 1 event
+  ---
+  duration_ms: 2245.420344
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-04 — event key déterministe
+ok 4 - RED-PD-04 — event key déterministe
+  ---
+  duration_ms: 2191.084406
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-05 — rerun scheduler → pas de doublon
+ok 5 - RED-PD-05 — rerun scheduler → pas de doublon
+  ---
+  duration_ms: 2257.158306
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-06 — deux workers concurrents → 1 event
+ok 6 - RED-PD-06 — deux workers concurrents → 1 event
+  ---
+  duration_ms: 2155.413613
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-07 — obligation déjà payée → aucun PAYMENT_DUE
+ok 7 - RED-PD-07 — obligation déjà payée → aucun PAYMENT_DUE
+  ---
+  duration_ms: 2055.704238
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-08 — paiement partiel → PAYMENT_DUE si solde > 0
+ok 8 - RED-PD-08 — paiement partiel → PAYMENT_DUE si solde > 0
+  ---
+  duration_ms: 2211.214808
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-09 — obligation annulée/exonérée → aucun event
+ok 9 - RED-PD-09 — obligation annulée/exonérée → aucun event
+  ---
+  duration_ms: 2218.096704
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-10 — recipients parent + school admin
+ok 10 - RED-PD-10 — recipients parent + school admin
+  ---
+  duration_ms: 2271.783624
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-10b — parent autre élève / autre établissement exclus
+ok 11 - RED-PD-10b — parent autre élève / autre établissement exclus
+  ---
+  duration_ms: 2184.927197
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-11 — isolation tenant SCHOOL_A / SCHOOL_B
+ok 12 - RED-PD-11 — isolation tenant SCHOOL_A / SCHOOL_B
+  ---
+  duration_ms: 1978.430318
+  ...
+# Subtest: RED-PD-12 — politique établissement PAYMENT_DUE appliquée
+ok 13 - RED-PD-12 — politique établissement PAYMENT_DUE appliquée
+  ---
+  duration_ms: 2.126011
+  ...
+# Subtest: RED-PD-13 — préférences utilisateur AND policy
+ok 14 - RED-PD-13 — préférences utilisateur AND policy
+  ---
+  duration_ms: 0.526184
+  ...
+# Subtest: RED-PD-14 — aucun legacy double-write
+ok 15 - RED-PD-14 — aucun legacy double-write
+  ---
+  duration_ms: 2.012594
+  ...
+# Subtest: RED-PD-15 — non-régression PAYMENT_RECEIVED
+ok 16 - RED-PD-15 — non-régression PAYMENT_RECEIVED
+  ---
+  duration_ms: 482.727434
+  ...
+# Subtest: RED-PD-16 — matrice Lot I 9/9 inclut PAYMENT_DUE et TEACHER_REPLACEMENT
+ok 17 - RED-PD-16 — matrice Lot I 9/9 inclut PAYMENT_DUE et TEACHER_REPLACEMENT
+  ---
+  duration_ms: 0.925539
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-17 — sweep puis paiement complet → drainOutbox sans notification
+ok 18 - RED-PD-17 — sweep puis paiement complet → drainOutbox sans notification
+  ---
+  duration_ms: 2081.133252
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-PD-18 — concurrence réelle : paiement non commité vs drain FOR UPDATE
+ok 19 - RED-PD-18 — concurrence réelle : paiement non commité vs drain FOR UPDATE
+  ---
+  duration_ms: 2394.849183
+  ...
+1..19
+# tests 19
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 29280.891455
+TAP version 13
+# Subtest: RED-TT-03 — mapping dispatcher → TIMETABLE_CHANGED
+ok 1 - RED-TT-03 — mapping dispatcher → TIMETABLE_CHANGED
+  ---
+  duration_ms: 0.873969
+  ...
+# Subtest: RED-TT-01 — changement planning actif produit un event outbox
+ok 2 - RED-TT-01 — changement planning actif produit un event outbox
+  ---
+  duration_ms: 731.956197
+  ...
+# Subtest: RED-TT-02 — UPDATE sans changement métier → 0 event
+ok 3 - RED-TT-02 — UPDATE sans changement métier → 0 event
+  ---
+  duration_ms: 618.969433
+  ...
+# Subtest: RED-TT-04 — event key déterministe (change_revision monotone)
+ok 4 - RED-TT-04 — event key déterministe (change_revision monotone)
+  ---
+  duration_ms: 634.433251
+  ...
+# Subtest: RED-TT-05 — retry même modification → pas de doublon
+ok 5 - RED-TT-05 — retry même modification → pas de doublon
+  ---
+  duration_ms: 617.565743
+  ...
+# Subtest: RED-TT-06 — deux modifications métier successives → deux événements
+ok 6 - RED-TT-06 — deux modifications métier successives → deux événements
+  ---
+  duration_ms: 632.630402
+  ...
+# Subtest: RED-TT-07 — créneau non actif modifié → 0 event
+ok 7 - RED-TT-07 — créneau non actif modifié → 0 event
+  ---
+  duration_ms: 559.859259
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TT-08/09 — enseignant classe concernée uniquement, autre classe exclue
+ok 8 - RED-TT-08/09 — enseignant classe concernée uniquement, autre classe exclue
+  ---
+  duration_ms: 2264.810768
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TT-10 — autre tenant exclu
+ok 9 - RED-TT-10 — autre tenant exclu
+  ---
+  duration_ms: 1997.912379
+  ...
+# Subtest: RED-TT-11 — politique établissement TIMETABLE_CHANGED appliquée
+ok 10 - RED-TT-11 — politique établissement TIMETABLE_CHANGED appliquée
+  ---
+  duration_ms: 2.367161
+  ...
+# Subtest: RED-TT-12 — préférences utilisateur AND policy
+ok 11 - RED-TT-12 — préférences utilisateur AND policy
+  ---
+  duration_ms: 0.16534
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TT-13 — aucun legacy double-write
+ok 12 - RED-TT-13 — aucun legacy double-write
+  ---
+  duration_ms: 2043.736171
+  ...
+# Subtest: RED-TT-14 — plusieurs champs modifiés → 1 seul event
+ok 13 - RED-TT-14 — plusieurs champs modifiés → 1 seul event
+  ---
+  duration_ms: 632.919819
+  ...
+# Subtest: RED-TT-15 — changement weekly slot ne produit pas TEACHER_REPLACEMENT
+ok 14 - RED-TT-15 — changement weekly slot ne produit pas TEACHER_REPLACEMENT
+  ---
+  duration_ms: 665.393752
+  ...
+# Subtest: RED-TT-17 — cycle A→B→A→B produit 3 événements distincts
+ok 15 - RED-TT-17 — cycle A→B→A→B produit 3 événements distincts
+  ---
+  duration_ms: 532.770057
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TT-18 — drain utilise snapshot payload, pas état courant du slot
+ok 16 - RED-TT-18 — drain utilise snapshot payload, pas état courant du slot
+  ---
+  duration_ms: 1951.913539
+  ...
+# Subtest: RED-TT-19 — boot canonique sans migrations L4 manuelles
+ok 17 - RED-TT-19 — boot canonique sans migrations L4 manuelles
+  ---
+  duration_ms: 654.78973
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TT-20 — enseignant dont le compte appartient à une autre école n'est jamais recipient
+ok 18 - RED-TT-20 — enseignant dont le compte appartient à une autre école n'est jamais recipient
+  ---
+  duration_ms: 2117.893443
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TT-21 — SCHOOL_ADMIN dont le rôle actif est dans une autre école n'est jamais recipient
+ok 19 - RED-TT-21 — SCHOOL_ADMIN dont le rôle actif est dans une autre école n'est jamais recipient
+  ---
+  duration_ms: 1905.834087
+  ...
+# Subtest: RED-TT-16 — AUDIT-COM-FINAL matrice 9/9
+ok 20 - RED-TT-16 — AUDIT-COM-FINAL matrice 9/9
+  ---
+  duration_ms: 0.965552
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 18667.476045
+TAP version 13
+# Subtest: RED-TR-02 — mapping dispatcher → TEACHER_REPLACEMENT
+ok 1 - RED-TR-02 — mapping dispatcher → TEACHER_REPLACEMENT
+  ---
+  duration_ms: 2.278362
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-01 — create planned produit un event outbox
+ok 2 - RED-TR-01 — create planned produit un event outbox
+  ---
+  duration_ms: 2154.712592
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-03 — event key durable avec change_revision
+ok 3 - RED-TR-03 — event key durable avec change_revision
+  ---
+  duration_ms: 1929.391266
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-04 — création planned → revision 1
+ok 4 - RED-TR-04 — création planned → revision 1
+  ---
+  duration_ms: 1970.16596
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-05 — reason/note seuls → 0 nouvel event
+ok 5 - RED-TR-05 — reason/note seuls → 0 nouvel event
+  ---
+  duration_ms: 2169.561023
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-06 — planned → completed → 0 nouvel event
+ok 6 - RED-TR-06 — planned → completed → 0 nouvel event
+  ---
+  duration_ms: 2054.374808
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-07 — réaffectation B→C produit action reassigned
+ok 7 - RED-TR-07 — réaffectation B→C produit action reassigned
+  ---
+  duration_ms: 2225.548385
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-08 — cycle B→C→B→C préserve toutes les mutations
+ok 8 - RED-TR-08 — cycle B→C→B→C préserve toutes les mutations
+  ---
+  duration_ms: 2260.079595
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-09 — cancel produit action cancelled
+ok 9 - RED-TR-09 — cancel produit action cancelled
+  ---
+  duration_ms: 2190.071877
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-10 — cancel ne produit pas TIMETABLE_CHANGED
+ok 10 - RED-TR-10 — cancel ne produit pas TIMETABLE_CHANGED
+  ---
+  duration_ms: 2168.113058
+  ...
+# Subtest: RED-TR-11 — weekly-slot teacher update ne produit pas TEACHER_REPLACEMENT
+ok 11 - RED-TR-11 — weekly-slot teacher update ne produit pas TEACHER_REPLACEMENT
+  ---
+  duration_ms: 537.431845
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-12 — assigned notifie titulaire + remplaçant
+ok 12 - RED-TR-12 — assigned notifie titulaire + remplaçant
+  ---
+  duration_ms: 3163.417711
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-13 — reassigned notifie titulaire + ancien + nouveau remplaçant
+ok 13 - RED-TR-13 — reassigned notifie titulaire + ancien + nouveau remplaçant
+  ---
+  duration_ms: 3147.369735
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-14 — cancelled notifie titulaire + remplaçant affecté
+ok 14 - RED-TR-14 — cancelled notifie titulaire + remplaçant affecté
+  ---
+  duration_ms: 3231.036006
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-15 — parents de la classe concernée
+ok 15 - RED-TR-15 — parents de la classe concernée
+  ---
+  duration_ms: 3473.90468
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-16 — parent autre classe exclu
+ok 16 - RED-TR-16 — parent autre classe exclu
+  ---
+  duration_ms: 3426.286532
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-17 — parent multi-enfants dédupliqué
+ok 17 - RED-TR-17 — parent multi-enfants dédupliqué
+  ---
+  duration_ms: 3332.876736
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-18 — SCHOOL_ADMIN notifié
+ok 18 - RED-TR-18 — SCHOOL_ADMIN notifié
+  ---
+  duration_ms: 3322.592245
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-19 — isolation tenant
+ok 19 - RED-TR-19 — isolation tenant
+  ---
+  duration_ms: 3471.035521
+  ...
+# Subtest: RED-TR-20 — politique établissement TEACHER_REPLACEMENT
+ok 20 - RED-TR-20 — politique établissement TEACHER_REPLACEMENT
+  ---
+  duration_ms: 0.638052
+  ...
+# Subtest: RED-TR-21 — préférences utilisateur AND policy
+ok 21 - RED-TR-21 — préférences utilisateur AND policy
+  ---
+  duration_ms: 0.092485
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-22 — aucun legacy double-write
+ok 22 - RED-TR-22 — aucun legacy double-write
+  ---
+  duration_ms: 3488.854431
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-23 — rollback mutation invalide → 0 outbox parasite
+ok 23 - RED-TR-23 — rollback mutation invalide → 0 outbox parasite
+  ---
+  duration_ms: 2284.769663
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-24 — snapshot immuable après réaffectations successives
+ok 24 - RED-TR-24 — snapshot immuable après réaffectations successives
+  ---
+  duration_ms: 3476.012704
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-BOOT — bootstrap canonique sans migration L5 manuelle
+ok 25 - RED-TR-BOOT — bootstrap canonique sans migration L5 manuelle
+  ---
+  duration_ms: 2303.373428
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-26 — non-régression TIMETABLE_CHANGED : remplacement n'incrémente pas weekly slot revision
+ok 26 - RED-TR-26 — non-régression TIMETABLE_CHANGED : remplacement n'incrémente pas weekly slot revision
+  ---
+  duration_ms: 2205.935124
+  ...
+# Subtest: RED-TR-27 — AUDIT-COM-FINAL matrice 9/9
+ok 27 - RED-TR-27 — AUDIT-COM-FINAL matrice 9/9
+  ---
+  duration_ms: 1.107242
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR — création remplacement → TEACHER_REPLACEMENT=1 TIMETABLE_CHANGED=0
+ok 28 - RED-TR — création remplacement → TEACHER_REPLACEMENT=1 TIMETABLE_CHANGED=0
+  ---
+  duration_ms: 2210.539868
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR — cancel+changement remplaçant atomique → cancelled, pas assigned à C
+ok 29 - RED-TR — cancel+changement remplaçant atomique → cancelled, pas assigned à C
+  ---
+  duration_ms: 3423.329502
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-30 — concurrence réelle : deux transactions simultanées sérialisées par PostgreSQL
+ok 30 - RED-TR-30 — concurrence réelle : deux transactions simultanées sérialisées par PostgreSQL
+  ---
+  duration_ms: 2917.807446
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-28 — parent dont le compte appartient à une autre école n'est jamais recipient
+ok 31 - RED-TR-28 — parent dont le compte appartient à une autre école n'est jamais recipient
+  ---
+  duration_ms: 3359.227921
+  ...
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# [teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+# [teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+# [teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+# [teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+# [users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+# [parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+# [parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+# [education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+# [establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+# [evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+# [school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+# [documents-exams] inventaire residual : 2 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+# [documents-exams] inventaire statuts exams : unknown=0
+# Subtest: RED-TR-29 — enseignant dont le compte appartient à une autre école n'est jamais recipient
+ok 32 - RED-TR-29 — enseignant dont le compte appartient à une autre école n'est jamais recipient
+  ---
+  duration_ms: 3325.915709
+  ...
+# Subtest: RED-TR-20b — dispatcher policy TEACHER EMAIL OFF établissement
+ok 33 - RED-TR-20b — dispatcher policy TEACHER EMAIL OFF établissement
+  ---
+  duration_ms: 1.823764
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 75332.747204
+TAP version 13
+# Subtest: createTrialAccessRequest enqueue une delivery EMAIL vers contact@somafrik.app après persistance
+ok 1 - createTrialAccessRequest enqueue une delivery EMAIL vers contact@somafrik.app après persistance
+  ---
+  duration_ms: 1.14404
+  ...
+# Subtest: l’e-mail de notification contient les champs prospect et la référence publique
+ok 2 - l’e-mail de notification contient les champs prospect et la référence publique
+  ---
+  duration_ms: 0.173381
+  ...
+# Subtest: une panne SMTP au drain ne rollback pas la demande déjà persistée
+ok 3 - une panne SMTP au drain ne rollback pas la demande déjà persistée
+  ---
+  duration_ms: 0.942361
+  ...
+# Subtest: honeypot / spam : aucune notification e-mail
+ok 4 - honeypot / spam : aucune notification e-mail
+  ---
+  duration_ms: 0.111429
+  ...
+# Subtest: source: POST public persiste une intention EMAIL durable, sans SMTP HTTP
+ok 5 - source: POST public persiste une intention EMAIL durable, sans SMTP HTTP
+  ---
+  duration_ms: 1.137371
+  ...
+# Subtest: le module de notification ne crée ni school, ni user, ni subscription
+ok 6 - le module de notification ne crée ni school, ni user, ni subscription
+  ---
+  duration_ms: 0.288266
+  ...
+# Subtest: le payload de delivery n'embarque aucun secret SMTP
+ok 7 - le payload de delivery n'embarque aucun secret SMTP
+  ---
+  duration_ms: 0.274686
+  ...
+# Subtest: enqueue + drain EMAIL une seule fois vers contact@somafrik.app
+ok 8 - enqueue + drain EMAIL une seule fois vers contact@somafrik.app
+  ---
+  duration_ms: 0.385205
+  ...
+# Subtest: Compose transmet SMTP_HOST et MAIL_FROM au backend
+ok 9 - Compose transmet SMTP_HOST et MAIL_FROM au backend
+  ---
+  duration_ms: 0.346177
+  ...
+# Subtest: la clé de rate limit des demandes d'essai est l'IP, pas l'e-mail
+ok 10 - la clé de rate limit des demandes d'essai est l'IP, pas l'e-mail
+  ---
+  duration_ms: 0.504001
+  ...
+# Subtest: Mobile inchangé pour la notification e-mail
+ok 11 - Mobile inchangé pour la notification e-mail
+  ---
+  duration_ms: 57.58785
+  ...
+# Subtest: FallbackRepository mémoire enqueue une delivery EMAIL drainable
+ok 12 - FallbackRepository mémoire enqueue une delivery EMAIL drainable
+  ---
+  duration_ms: 35.163874
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 157.435183
+TAP version 13
+# Subtest: I-T01 — isolation tenant : admin A ne lit/écrit pas l'établissement B
+ok 1 - I-T01 — isolation tenant : admin A ne lit/écrit pas l'établissement B
+  ---
+  duration_ms: 3.034629
+  ...
+# Subtest: I-T02 — établissement sans lignes = catalogue canonique déterministe
+ok 2 - I-T02 — établissement sans lignes = catalogue canonique déterministe
+  ---
+  duration_ms: 1.095419
+  ...
+# Subtest: I-T03 — GET ne retourne que les événements, destinataires et canaux supportés
+ok 3 - I-T03 — GET ne retourne que les événements, destinataires et canaux supportés
+  ---
+  duration_ms: 0.320432
+  ...
+# Subtest: I-T04 — PATCH partiel STUDENT_ABSENT / PARENT / PUSH ne détruit pas le reste
+ok 4 - I-T04 — PATCH partiel STUDENT_ABSENT / PARENT / PUSH ne détruit pas le reste
+  ---
+  duration_ms: 0.478874
+  ...
+# Subtest: I-T05 — événement inconnu rejeté, aucune persistance silencieuse
+ok 5 - I-T05 — événement inconnu rejeté, aucune persistance silencieuse
+  ---
+  duration_ms: 0.33131
+  ...
+# Subtest: I-T06 — canal SMS / WHATSAPP rejeté
+ok 6 - I-T06 — canal SMS / WHATSAPP rejeté
+  ---
+  duration_ms: 0.443047
+  ...
+# Subtest: I-T07 — destinataire interdit pour l'événement rejeté
+ok 7 - I-T07 — destinataire interdit pour l'événement rejeté
+  ---
+  duration_ms: 0.266011
+  ...
+# Subtest: I-T08 — préférence utilisateur PUSH=false bloque le push même si l'établissement l'autorise
+ok 8 - I-T08 — préférence utilisateur PUSH=false bloque le push même si l'établissement l'autorise
+  ---
+  duration_ms: 1.837738
+  ...
+# Subtest: I-T09 — politique établissement EMAIL=false bloque l'e-mail métier même si l'utilisateur l'autorise
+ok 9 - I-T09 — politique établissement EMAIL=false bloque l'e-mail métier même si l'utilisateur l'autorise
+  ---
+  duration_ms: 0.743226
+  ...
+# Subtest: I-T10 — delivery externe seulement si établissement ET préférence utilisateur
+ok 10 - I-T10 — delivery externe seulement si établissement ET préférence utilisateur
+  ---
+  duration_ms: 0.37208
+  ...
+# Subtest: I-T11 — IN_APP suit la même double autorisation dans le centre personnel
+ok 11 - I-T11 — IN_APP suit la même double autorisation dans le centre personnel
+  ---
+  duration_ms: 0.454348
+  ...
+# Subtest: I-T12 — désactiver EMAIL métier ne bloque jamais le reset mot de passe
+ok 12 - I-T12 — désactiver EMAIL métier ne bloque jamais le reset mot de passe
+  ---
+  duration_ms: 0.48942
+  ...
+# Subtest: I-T13 — même clé d'idempotence ne duplique pas les deliveries
+ok 13 - I-T13 — même clé d'idempotence ne duplique pas les deliveries
+  ---
+  duration_ms: 0.65284
+  ...
+# Subtest: I-T17 — RBAC : écriture limitée aux rôles paramètres établissement, sans élargir le catalogue
+ok 14 - I-T17 — RBAC : écriture limitée aux rôles paramètres établissement, sans élargir le catalogue
+  ---
+  duration_ms: 1.15068
+  ...
+# Subtest: I-T18 — régression Lot H : contrat /api/me/communication-preferences inchangé
+ok 15 - I-T18 — régression Lot H : contrat /api/me/communication-preferences inchangé
+  ---
+  duration_ms: 2.048135
+  ...
+# Subtest: I-T19 — régression C4 : fan-out unique caller + persist IN_APP inchangé
+ok 16 - I-T19 — régression C4 : fan-out unique caller + persist IN_APP inchangé
+  ---
+  duration_ms: 0.347454
+  ...
+# Subtest: I-T20 — régression Push N1 : Android + Expo, jamais SMS
+ok 17 - I-T20 — régression Push N1 : Android + Expo, jamais SMS
+  ---
+  duration_ms: 0.183011
+  ...
+# Subtest: persistance PostgreSQL canonique : table school_notification_settings
+ok 18 - persistance PostgreSQL canonique : table school_notification_settings
+  ---
+  duration_ms: 3.086262
+  ...
+# Subtest: catalogue Lot I : mapping C4 sans inventer d'événements
+ok 19 - catalogue Lot I : mapping C4 sans inventer d'événements
+  ---
+  duration_ms: 0.136246
+  ...
+# Subtest: P1 — recipient_kind school applique la catégorie réelle, pas l'union des règles
+ok 20 - P1 — recipient_kind school applique la catégorie réelle, pas l'union des règles
+  ---
+  duration_ms: 0.774533
+  ...
+# Subtest: P1 — lecture politique 42501 n'enqueue pas les canaux établissement
+ok 21 - P1 — lecture politique 42501 n'enqueue pas les canaux établissement
+  ---
+  duration_ms: 0.480074
+  ...
+# Subtest: P1 — list() continue de paginer après filtrage IN_APP masqué
+ok 22 - P1 — list() continue de paginer après filtrage IN_APP masqué
+  ---
+  duration_ms: 1.320593
+  ...
+# Subtest: P2 — FallbackRepository mémoire persiste PATCH notification-settings
+ok 23 - P2 — FallbackRepository mémoire persiste PATCH notification-settings
+  ---
+  duration_ms: 12.867956
+  ...
+# Subtest: P2 — destinataire multi-rôles : toutes les catégories snapshottées, ordre indifférent
+ok 24 - P2 — destinataire multi-rôles : toutes les catégories snapshottées, ordre indifférent
+  ---
+  duration_ms: 1.147189
+  ...
+# Subtest: Lot I n'importe aucun SDK provider et n'utilise pas backoffice_state
+ok 25 - Lot I n'importe aucun SDK provider et n'utilise pas backoffice_state
+  ---
+  duration_ms: 0.231238
+  ...
+1..25
+# tests 25
+# suites 0
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 124.061344
+
+> somafrik-web@1.0.0 test
+> vitest run src/pages/parametres/SettingsNotificationsPage.test.tsx
+
+
+ RUN  v4.1.10 /workspace/web
+
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  22:21:22
+   Duration  1.61s (transform 442ms, setup 90ms, import 580ms, tests 442ms, environment 400ms)
+
+verify-communications-c4: GO
+EXIT=0
+ENDED 2026-09-20T22:21:24Z

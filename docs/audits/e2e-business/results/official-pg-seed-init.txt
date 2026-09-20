@@ -1,0 +1,21 @@
+===== Official backend boot with default seed (SOMAFRIK_SKIP_DEMO_SEED unset/false) =====
+ENV: ENV-LOCAL
+DATABASE: Docker Postgres 16 on :5433
+Tried twice:
+  1) database `somafrik` (compose default)
+  2) fresh database `somafrik_e2e_shared` (CREATE DATABASE only — no fixture injection)
+
+Both runs:
+  Échec initialisation PostgreSQL: duplicate key value violates unique constraint "uq_users_school_email"
+  Code domaine: 23505
+  Impossible d'initialiser le stockage Somafrik
+  Connexion PostgreSQL obligatoire impossible.
+
+Backend with SOMAFRIK_SKIP_DEMO_SEED=true: starts, /api/health 200, database=postgresql.
+users table after skip-seed: 0 rows.
+
+Official bootstrap script (host):
+  backoffice_state introuvable ou sans utilisateurs. EXIT=1
+
+Classification: FAIL-PRODUCT (init/seed) + FAIL-TEST (bootstrap still requires legacy backoffice_state).
+Hypothèse uniquement — aucune correction effectuée.

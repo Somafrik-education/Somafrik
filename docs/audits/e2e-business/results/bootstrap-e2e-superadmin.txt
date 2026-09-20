@@ -1,0 +1,6 @@
+===== bootstrap-e2e-superadmin host =====
+STARTED 2026-09-20T22:22:32Z
+CMD: SOMAFRIK_E2E_BOOTSTRAP=true node backend/scripts/bootstrap-e2e-superadmin.js --confirm
+backoffice_state introuvable ou sans utilisateurs.
+EXIT=1
+ENDED 2026-09-20T22:22:32Z

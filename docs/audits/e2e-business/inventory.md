@@ -150,3 +150,8 @@ Ces scripts sont documentés dans `docs/project/TESTING.md` comme gate préprod 
 | `SOMAFRIK_E2E_SKIP_BOOTSTRAP=true` | preflight sans bootstrap |
 
 **Cet audit n’ajoute aucun skip / only / todo / xfail.**
+
+## 9. État après exécution (2026-09-20)
+
+Voir `execution-report.md` pour le statut final de chaque ID.  
+Synthèse : suites isolées PG / Playwright spawnés = PASS ; suite HTTP partagée et mobile authentifié = FAIL-DATA ; Maestro = BLOCKED ; seed officiel = FAIL-PRODUCT.

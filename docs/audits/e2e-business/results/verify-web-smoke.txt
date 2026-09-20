@@ -1,0 +1,260 @@
+===== verify:web-smoke =====
+STARTED 2026-09-20T22:25:28Z
+CMD: npm run verify:web-smoke
+NOTE: hosted probes are GET-only (preprod/prod).
+
+> verify:web-smoke
+> node scripts/verify-web-smoke.js
+
+PASS WS-UI-negative-unit chrome+permissions et silent-connexion
+Web smoke SHA local=bca33f617c91bfa1af9d838ccddd5382a2c490cc baseline=58ef7b67d6c815aa85d1066b17394e68c15fd174
+HOLD WS-HOSTED-preprod-web status=200 asset=index-BhsH_Tb7.js sha=false joignable, SHA non vérifiable
+HOLD WS-HOSTED-preprod-login status=200 asset=index-BhsH_Tb7.js sha=false joignable, SHA non vérifiable
+HOLD WS-HOSTED-render-web status=200 asset=index-BhsH_Tb7.js sha=false joignable, SHA non vérifiable
+HOLD WS-HOSTED-prod-web status=200 asset=index-BkReU2cV.js sha=false joignable, SHA non vérifiable
+HOLD WS-HOSTED-api-preprod-alias status=200 asset=- sha=false joignable, SHA non vérifiable
+HOLD WS-HOSTED-api-preprod-render status=200 asset=- sha=false joignable, SHA non vérifiable
+HOLD WS-HOSTED-api-prod status=200 asset=- sha=false joignable, SHA non vérifiable
+PASS WS-API-login status=200 schoolCode=CD-2026-0001
+PASS WS-API-classes status=200 count=0
+PASS WS-API-students status=200 count=0
+PASS WS-API-presences status=200 count=0
+PASS WS-API-evaluations status=200 count=0
+PASS WS-API-schedules status=200 count=0
+PASS WS-API-payments status=200 count=0
+PASS WS-API-permissions status=200 count=n/a
+
+> somafrik-web@1.0.0 build
+> tsc --noEmit && vite build
+
+vite v6.4.3 building for production...
+transforming...
+✓ 3755 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                               2.27 kB │ gzip:   0.76 kB
+dist/assets/vendor-grapesjs-UW_WCGPW.css                     56.98 kB │ gzip:  12.04 kB
+dist/assets/index-TQxyAJv_.css                               59.82 kB │ gzip:  10.96 kB
+dist/assets/schoolSetupStatusApi-CBVoOhzy.js                  0.11 kB │ gzip:   0.12 kB
+dist/assets/academicYearsApi-zR0-vPZg.js                      0.22 kB │ gzip:   0.18 kB
+dist/assets/classStudentsApi-DB0yLEqS.js                      0.25 kB │ gzip:   0.17 kB
+dist/assets/apiErrors-CnyL6ncS.js                             0.26 kB │ gzip:   0.21 kB
+dist/assets/notificationDeepLink-D-6ANK1P.js                  0.32 kB │ gzip:   0.23 kB
+dist/assets/teacherAssignmentsApi-BumYh0EE.js                 0.35 kB │ gzip:   0.23 kB
+dist/assets/superadminCrudPath-DMOwBvJ7.js                    0.40 kB │ gzip:   0.27 kB
+dist/assets/audit-DXvaPlWN.js                                 0.44 kB │ gzip:   0.30 kB
+dist/assets/reportCardsApi-0o8td6W2.js                        0.46 kB │ gzip:   0.22 kB
+dist/assets/schoolLogo-Dqz8kyMx.js                            0.51 kB │ gzip:   0.34 kB
+dist/assets/academicYearsScope-DtoCu4uk.js                    0.55 kB │ gzip:   0.33 kB
+dist/assets/EntityListSearch-qGMrUAZE.js                      0.61 kB │ gzip:   0.34 kB
+dist/assets/financeCurrency-CddFt0x6.js                       0.62 kB │ gzip:   0.40 kB
+dist/assets/subjectsApi-B844zEVb.js                           0.65 kB │ gzip:   0.38 kB
+dist/assets/Badge-BU5BH1MG.js                                 0.73 kB │ gzip:   0.45 kB
+dist/assets/PlanningPlaceholders-D1heDgiG.js                  0.74 kB │ gzip:   0.45 kB
+dist/assets/evaluationTypesApi-DfZIKTpK.js                    0.85 kB │ gzip:   0.35 kB
+dist/assets/planningRoomsReplacementsApi-BM91pfga.js          0.99 kB │ gzip:   0.44 kB
+dist/assets/ErrorState-CNHtCotC.js                            0.99 kB │ gzip:   0.44 kB
+dist/assets/TimetableLayout-BvaoCpNp.js                       1.04 kB │ gzip:   0.47 kB
+dist/assets/Badge-C6uVPdqm.js                                 1.07 kB │ gzip:   0.61 kB
+dist/assets/ForbiddenState-C_JtcPLH.js                        1.08 kB │ gzip:   0.50 kB
+dist/assets/Card-ClGLsOL8.js                                  1.20 kB │ gzip:   0.45 kB
+dist/assets/EmptyState-DCICJP9J.js                            1.21 kB │ gzip:   0.48 kB
+dist/assets/ParentChildRelationsPage-ClT-48D1.js              1.23 kB │ gzip:   0.65 kB
+dist/assets/FormField-w6qJYZn0.js                             1.31 kB │ gzip:   0.48 kB
+dist/assets/ComingSoonState-KG2OWIP4.js                       1.33 kB │ gzip:   0.55 kB
+dist/assets/button-BRd8nLqE.js                                1.35 kB │ gzip:   0.68 kB
+dist/assets/Card-egWkioea.js                                  1.39 kB │ gzip:   0.51 kB
+dist/assets/MarketplacePage-DuVtHK4S.js                       1.39 kB │ gzip:   0.64 kB
+dist/assets/PrintButton-DuPWp6jx.js                           1.47 kB │ gzip:   0.65 kB
+dist/assets/educationReferenceApi-s6sbCwQf.js                 1.47 kB │ gzip:   0.43 kB
+dist/assets/MonEtablissementLayout-CyIagQPQ.js                1.57 kB │ gzip:   0.65 kB
+dist/assets/schoolSetupWeb-C-9bI7Mt.js                        1.58 kB │ gzip:   0.73 kB
+dist/assets/LoadingState-_hAxy9To.js                          1.61 kB │ gzip:   0.59 kB
+dist/assets/schoolingTruth-BAro-plj.js                        1.67 kB │ gzip:   0.75 kB
+dist/assets/MonAbonnementPaymentsPage-CT2N_yG0.js             1.77 kB │ gzip:   0.76 kB
+dist/assets/PlanningLayout-6jwc1RxZ.js                        1.82 kB │ gzip:   0.65 kB
+dist/assets/TabNav-bzMg2Nc7.js                                1.83 kB │ gzip:   0.64 kB
+dist/assets/AdministrationLayout-1h2ml5wI.js                  1.94 kB │ gzip:   0.62 kB
+dist/assets/dates-CGN9mZgP.js                                 1.94 kB │ gzip:   0.75 kB
+dist/assets/csv-DVp48i-s.js                                   1.95 kB │ gzip:   0.93 kB
+dist/assets/EntityListForbidden-DmI7U0p6.js                   1.99 kB │ gzip:   0.73 kB
+dist/assets/MonAbonnementLayout-CzQWJQ5h.js                   2.04 kB │ gzip:   0.69 kB
+dist/assets/ParametresLayout-DrG082va.js                      2.14 kB │ gzip:   0.70 kB
+dist/assets/SubscriptionsLayout-D00S3jeA.js                   2.26 kB │ gzip:   0.76 kB
+dist/assets/SchoolSetupWelcomePage-Z91-d2-J.js                2.29 kB │ gzip:   0.76 kB
+dist/assets/FinancesLayout-BbJivn7h.js                        2.35 kB │ gzip:   0.85 kB
+dist/assets/ChangeOfferPage-CPRkjVUB.js                       2.56 kB │ gzip:   1.18 kB
+dist/assets/schoolSetupGuidedWeb-BIXxgneR.js                  2.81 kB │ gzip:   1.21 kB
+dist/assets/SubscriptionInvoicesPage-CU34yk2K.js              2.89 kB │ gzip:   1.14 kB
+dist/assets/presenceMetrics-DqqT7KnI.js                       3.03 kB │ gzip:   1.33 kB
+dist/assets/chartTypes-CzLl2vBA.js                            3.03 kB │ gzip:   0.99 kB
+dist/assets/vendor-radix-CVXhmM8-.js                          3.05 kB │ gzip:   1.45 kB
+dist/assets/TimetableByClassPage-DTMs4i7i.js                  3.19 kB │ gzip:   1.28 kB
+dist/assets/paymentAmountBreakdown-BzSDkKtB.js                3.24 kB │ gzip:   1.18 kB
+dist/assets/TimetableByTeacherPage-DYGmol5V.js                3.35 kB │ gzip:   1.32 kB
+dist/assets/subscriptionPolicy-DyNDchNp.js                    3.38 kB │ gzip:   1.18 kB
+dist/assets/DataTable-3JLhiesX.js                             3.43 kB │ gzip:   1.11 kB
+dist/assets/VerifyReportCardPage-BaDFBGmn.js                  3.65 kB │ gzip:   1.18 kB
+dist/assets/MonAbonnementInvoicesPage-BQ4ESnv0.js             3.81 kB │ gzip:   1.18 kB
+dist/assets/fees-DdW05Nf3.js                                  3.88 kB │ gzip:   1.65 kB
+dist/assets/SubscriptionReportsPage-CTayDWtA.js               3.88 kB │ gzip:   1.18 kB
+dist/assets/ReportsPage-DoG1CTUg.js                           3.98 kB │ gzip:   1.04 kB
+dist/assets/PlanningConflictsPage-D4AP0pqP.js                 4.28 kB │ gzip:   1.58 kB
+dist/assets/CancellationRequestPage-Cne9B2Q1.js               4.59 kB │ gzip:   1.36 kB
+dist/assets/ReportCardSourcePreview-wC0_RZgb.js               4.67 kB │ gzip:   1.40 kB
+dist/assets/StudentsListPage-CG37sg6I.js                      5.05 kB │ gzip:   1.85 kB
+dist/assets/ReportCardHistoryPage-b1SkGfRv.js                 5.43 kB │ gzip:   1.30 kB
+dist/assets/ChartSettingsPage-x7txV0q3.js                     5.48 kB │ gzip:   1.71 kB
+dist/assets/SubscriptionDiscountsPage-DRDePZv5.js             5.53 kB │ gzip:   1.65 kB
+dist/assets/SubscriptionDelinquencyPage-PMpMo4PC.js           6.01 kB │ gzip:   1.69 kB
+dist/assets/SettingsHubPage-DsBJNh9F.js                       6.05 kB │ gzip:   1.96 kB
+dist/assets/CommunicationHttpErrorState-BxzuGLjH.js           6.44 kB │ gzip:   2.01 kB
+dist/assets/SubscriptionPolicySettingsPage-COMYO9R0.js        6.90 kB │ gzip:   1.88 kB
+dist/assets/Table-8YInGsGl.js                                 7.20 kB │ gzip:   1.94 kB
+dist/assets/SubscriptionPaymentsPage-DpG-08KV.js              7.27 kB │ gzip:   1.86 kB
+dist/assets/TrialRequestsPage-D9xfu2wB.js                     7.45 kB │ gzip:   1.87 kB
+dist/assets/SchoolLogoUploadField-C911qUfA.js                 7.59 kB │ gzip:   2.96 kB
+dist/assets/SubscriptionSchoolsPage-__OgLLSf.js               8.10 kB │ gzip:   2.36 kB
+dist/assets/coursePlanning-CdXV8Ihv.js                        8.57 kB │ gzip:   3.21 kB
+dist/assets/ReportCardSchoolWorkflowPage-BD1T9XB-.js          8.96 kB │ gzip:   2.34 kB
+dist/assets/ReportCardSnapshotView-pmGvtVUr.js                9.07 kB │ gzip:   1.48 kB
+dist/assets/subscriptionModule-Bp9HPtt8.js                    9.25 kB │ gzip:   3.50 kB
+dist/assets/MonAbonnementPage-CXa9bWT2.js                     9.38 kB │ gzip:   1.73 kB
+dist/assets/DateInput-Cm2fClPP.js                             9.52 kB │ gzip:   2.87 kB
+dist/assets/TrialRequestPage-rVohKbR4.js                     10.42 kB │ gzip:   2.76 kB
+dist/assets/PlatformNotificationsPage-PzLQVlfR.js            10.50 kB │ gzip:   2.54 kB
+dist/assets/PlanningRoomsPage-t5qAgjR9.js                    11.42 kB │ gzip:   2.78 kB
+dist/assets/ReportCardSuperadminWorkflowPage-lfS_FKOs.js     11.99 kB │ gzip:   2.74 kB
+dist/assets/ClassStudentsPage-bHRR-SwG.js                    12.54 kB │ gzip:   3.37 kB
+dist/assets/EtablissementOverviewPage-PTDZFNZp.js            12.87 kB │ gzip:   3.10 kB
+dist/assets/PlanningSubstitutionsPage-Bk9DZ3Z0.js            13.24 kB │ gzip:   3.27 kB
+dist/assets/NotificationsPage-BHe1QVty.js                    13.36 kB │ gzip:   3.82 kB
+dist/assets/MessagesConversationsPage-DoTdWq7_.js            13.41 kB │ gzip:   3.92 kB
+dist/assets/CountriesPage-CgvyqvpX.js                        13.69 kB │ gzip:   3.79 kB
+dist/assets/SubscriptionOffersPage-RvBt6ARP.js               14.14 kB │ gzip:   3.34 kB
+dist/assets/SchoolSetupSettingsPage-D_5lLMui.js              14.83 kB │ gzip:   3.37 kB
+dist/assets/HelpHost-ChFdYa1O.js                             15.83 kB │ gzip:   3.59 kB
+dist/assets/evaluations-ClD_-wCr.js                          15.97 kB │ gzip:   5.37 kB
+dist/assets/EducationReferencePage-C2G7yq7n.js               16.76 kB │ gzip:   3.12 kB
+dist/assets/LegalPages-DoYelwQw.js                           20.05 kB │ gzip:   4.63 kB
+dist/assets/BulletinDesignPage-SUc0FGgw.js                   20.08 kB │ gzip:   5.70 kB
+dist/assets/LoginPage-Bg7_citc.js                            20.65 kB │ gzip:   4.91 kB
+dist/assets/TeachersListPage-DbP9MpNx.js                     20.70 kB │ gzip:   4.82 kB
+dist/assets/PresencesPage-BctBbTPF.js                        21.65 kB │ gzip:   5.83 kB
+dist/assets/PermissionsPage-CpGBi9gh.js                      21.69 kB │ gzip:   5.30 kB
+dist/assets/AnnouncementsPage-0ieyax8R.js                    22.34 kB │ gzip:   5.17 kB
+dist/assets/ClassesListPage-nBs6kHku.js                      24.05 kB │ gzip:   5.86 kB
+dist/assets/vendor-date-fns-BvXNAvty.js                      27.05 kB │ gzip:   7.51 kB
+dist/assets/LandingPage-DSiRK9ZJ.js                          27.42 kB │ gzip:   3.69 kB
+dist/assets/vendor-icons-DihT7ROK.js                         27.53 kB │ gzip:   5.97 kB
+dist/assets/FinanceUnpaidPage-Gv0j_0Z_.js                    28.22 kB │ gzip:   7.06 kB
+dist/assets/SchoolsPage-HjSy3WnQ.js                          31.21 kB │ gzip:   7.09 kB
+dist/assets/router-DCH9rzLo.js                               32.15 kB │ gzip:  11.74 kB
+dist/assets/UsersPage-DTzkW8dj.js                            38.89 kB │ gzip:   8.85 kB
+dist/assets/CoursePlanningPage-DsLu836F.js                   41.82 kB │ gzip:  11.25 kB
+dist/assets/DashboardEntryPage-3hCzxbUt.js                   43.95 kB │ gzip:  10.94 kB
+dist/assets/ConfigurationPage-CmSQDLGt.js                    44.43 kB │ gzip:   9.36 kB
+dist/assets/FinanceFeesPage-DW_03oAM.js                      44.53 kB │ gzip:   9.56 kB
+dist/assets/SettingsPlaceholders-CyeDkj7I.js                 45.74 kB │ gzip:   8.72 kB
+dist/assets/financeActionPermissions-OetyPyj6.js             47.22 kB │ gzip:   9.74 kB
+dist/assets/vendor-table-D7Q4tqBM.js                         51.30 kB │ gzip:  13.83 kB
+dist/assets/GradesEvaluationsPage-BSpY7Cew.js                59.75 kB │ gzip:  13.67 kB
+dist/assets/EntityPage-CU9WSxgm.js                           66.20 kB │ gzip:  17.81 kB
+dist/assets/help-catalog-bLdDz5r8.js                         87.13 kB │ gzip:  19.77 kB
+dist/assets/vendor-forms-CyIPAdKd.js                         96.41 kB │ gzip:  28.89 kB
+dist/assets/StudentWorkspacePage-CVU3HBxm.js                255.61 kB │ gzip:  49.35 kB
+dist/assets/index-B-00UN3D.js                               315.55 kB │ gzip:  77.09 kB
+dist/assets/react-O6yHQnXj.js                               341.09 kB │ gzip: 104.38 kB
+dist/assets/vendor-recharts-L0zsCpOv.js                     456.43 kB │ gzip: 129.42 kB
+dist/assets/vendor-grapesjs-BBD5xAAr.js                   1,116.58 kB │ gzip: 301.63 kB
+✓ built in 8.32s
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+local web asset=index-B-00UN3D.js hosted asset=index-J4_5WK6-.js
+HOLD WS-HOSTED-asset-mismatch — le bundle hébergé n'est pas ce HEAD (pas de deploy déclenché)
+browser response 403 http://127.0.0.1:5091/api/v2/school-setup/status
+browser console Failed to load resource: the server responded with a status of 403 (Forbidden)
+browser response 403 http://127.0.0.1:5091/api/v2/school-setup/guided
+browser console Failed to load resource: the server responded with a status of 403 (Forbidden)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 403 http://127.0.0.1:5091/api/v2/school-setup/status
+browser console Failed to load resource: the server responded with a status of 403 (Forbidden)
+browser response 403 http://127.0.0.1:5091/api/v2/school-setup/guided
+browser console Failed to load resource: the server responded with a status of 403 (Forbidden)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 403 http://127.0.0.1:5091/api/v2/school-setup/status
+browser console Failed to load resource: the server responded with a status of 403 (Forbidden)
+browser response 403 http://127.0.0.1:5091/api/v2/school-setup/status
+browser console Failed to load resource: the server responded with a status of 403 (Forbidden)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 403 http://127.0.0.1:5091/api/v2/school-setup/guided
+browser console Failed to load resource: the server responded with a status of 403 (Forbidden)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 403 http://127.0.0.1:5091/api/v2/school-setup/guided
+browser console Failed to load resource: the server responded with a status of 403 (Forbidden)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 501 http://127.0.0.1:5091/api/school-rooms?status=active
+browser console Failed to load resource: the server responded with a status of 501 (Not Implemented)
+browser response 501 http://127.0.0.1:5091/api/school-rooms?status=active
+browser console Failed to load resource: the server responded with a status of 501 (Not Implemented)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+browser response 500 http://127.0.0.1:5091/api/backoffice/internal-notifications/unread-count?effectiveSchoolCode=CD-2026-0001
+browser console Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+PASS WS-UI-login status=200 /etablissement/vue-ensemble outlet
+PASS WS-UI-dashboard status=200 /tableau-de-bord outlet
+PASS WS-UI-classes status=200 /etablissement/classes outlet
+PASS WS-UI-students status=200 /etablissement/eleves outlet
+PASS WS-UI-presences status=200 /presences outlet
+PASS WS-UI-notes status=200 /notes outlet
+PASS WS-UI-planning status=200 /planning/emploi-du-temps/calendrier outlet
+PASS WS-UI-finance status=200 /finances/paiements outlet
+PASS WS-UI-users status=200 /etablissement/comptes-utilisateurs outlet
+PASS WS-UI-settings status=200 /parametres outlet
+PASS WS-UI-negative-permissions-chrome status=200 permissions-or-forbidden
+PASS WS-UI-logout status=200 /connexion
+OK verify-web-smoke — local SHA-linked PASS ; hosted = MANUAL BLOCKER (pas de SHA, pas de deploy)
+EXIT=0
+ENDED 2026-09-20T22:26:08Z

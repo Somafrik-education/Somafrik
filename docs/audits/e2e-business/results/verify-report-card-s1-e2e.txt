@@ -1,0 +1,19 @@
+===== verify:report-card-s1-e2e =====
+STARTED 2026-09-20T22:21:58Z
+CMD: npm run verify:report-card-s1-e2e
+
+> verify:report-card-s1-e2e
+> node backend/scripts/verify-report-card-s1-e2e.js
+
+http 409 GET http://127.0.0.1:19891/api/report-card/requests/d5edc5dc-4963-4cb3-b54c-27e465f07d74/source-artifact
+http 409 GET http://127.0.0.1:19891/api/report-card/requests/d5edc5dc-4963-4cb3-b54c-27e465f07d74/source-artifact
+http 409 GET http://127.0.0.1:19891/api/report-card/requests/d5edc5dc-4963-4cb3-b54c-27e465f07d74/source-artifact
+OK e2e-report-card-school-request-visible-and-persisted
+OK e2e-report-card-source-upload-preview-persisted
+OK e2e-report-card-superadmin-explicit-mapping
+OK e2e-report-card-ready-review-school-approval-active
+OK e2e-report-card-request-rbac-fail-closed
+OK e2e-report-card-cross-tenant-forbidden
+OK report-card-s1-e2e (25316ms)
+EXIT=0
+ENDED 2026-09-20T22:22:24Z

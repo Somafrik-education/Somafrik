@@ -1,0 +1,13 @@
+===== verify:mobile-ui-e2e-scaffold =====
+STARTED 2026-09-20T22:12:34Z
+
+> verify:mobile-ui-e2e-scaffold
+> npm --prefix Mobile run verify:mobile-ui-e2e-scaffold
+
+
+> somafrik-mobile@1.2.1 verify:mobile-ui-e2e-scaffold
+> node scripts/verify-mobile-ui-e2e-scaffold.js
+
+OK: scaffold Maestro 10 YAML + contrat anti-faux-E2E (pas d'exécution APK)
+EXIT=0
+ENDED 2026-09-20T22:12:34Z

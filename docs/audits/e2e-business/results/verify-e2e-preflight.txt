@@ -1,0 +1,14 @@
+===== verify:e2e-preflight =====
+STARTED 2026-09-20T22:22:32Z
+CMD: npm run verify:e2e-preflight
+
+> verify:e2e-preflight
+> node scripts/e2e-preflight.js
+
+Backend OK (http://127.0.0.1:5000/api)
+Verrous de connexion E2E réinitialisés (si endpoint actif).
+Bootstrap mot de passe E2E superadmin…
+env file /workspace/Mobile/.env.local not found: stat /workspace/Mobile/.env.local: no such file or directory
+Bootstrap E2E non exécuté (Docker indisponible ?). Utilisez le mot de passe SOMAFRIK_E2E_SUPERADMIN_PASSWORD.
+PREFLIGHT_EXIT=0
+ENDED 2026-09-20T22:22:32Z

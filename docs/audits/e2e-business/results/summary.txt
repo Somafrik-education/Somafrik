@@ -1,0 +1,13 @@
+E2E BUSINESS AUDIT SUMMARY
+HEAD=e8a7cf0f404d711e9d0b3d752cfc9fc5b771b0a8
+PRODUCTION_MUTATION=NONE
+
+PASS=16
+FAIL=28
+BLOCKED=11
+NOT_COVERED=22+
+
+P0=official_pg_seed_uq_users_school_email
+P1=shared_e2e_http_and_mobile_login_401
+P2=docker_up_core_help_catalog; web_smoke_500_notifications_501_rooms
+P3=e2e_0023_banner_mislabeled; hosted_smoke_sha_hold

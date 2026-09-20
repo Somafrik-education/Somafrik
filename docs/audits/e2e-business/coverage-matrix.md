@@ -1,8 +1,9 @@
 # Matrice de couverture métier vs E2E
 
 **SHA :** `e8a7cf0f404d711e9d0b3d752cfc9fc5b771b0a8`  
-**Règle :** l’absence d’un test n’est jamais une réussite.  
-**Statuts d’exécution :** à renseigner après run (PASS / FAIL-* / BLOCKED / SKIPPED-EXISTING / NOT-COVERED).
+**Règle :** l’absence d’un test n’est jamais une réussite.
+
+**Après exécution :** les colonnes « Statut exécution » ci-dessous qui restaient « NON TESTÉ » pour les chaînes HTTP `verify:e2e-*` et le mobile 0017+ sont désormais **FAIL-DATA** (401 / seed). Les isolées PG listées dans `execution-report.md` sont **PASS vérifié**. Aide / wizard / logout / push restent **NOT-COVERED**. Ne pas lire un FAIL-DATA comme un PASS du métier sous-jacent.
 
 ## 1. Authentification / sécurité
 

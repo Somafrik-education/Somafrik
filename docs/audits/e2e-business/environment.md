@@ -108,3 +108,12 @@ Rempli au fil de l’exécution (voir `results/`).
 | 2026-09-20T22:07Z | `git fetch origin develop` — SHA identique à `origin/develop` |
 | 2026-09-20T22:08Z | Inventaire statique du monorepo |
 | 2026-09-20T22:10Z | Constat : Docker Engine OK, CLI absente, aucun service applicatif, pas de `DATABASE_URL` |
+| 2026-09-20T22:12Z | CLI Docker installée hors dépôt ; `npm run docker:up:core` FAIL (Vite help-catalog) |
+| 2026-09-20T22:12Z | `docker compose up -d postgres` OK (`:5433`) |
+| 2026-09-20T22:14Z | Conteneur backend Compose crash : bind-mount `/app/package.json` ENOENT |
+| 2026-09-20T22:16Z | Backend hôte `run dev` seed officiel : crash `uq_users_school_email` |
+| 2026-09-20T22:17Z | Backend hôte `SOMAFRIK_SKIP_DEMO_SEED=true` : `/api/health` 200 postgresql |
+| 2026-09-20T22:17–22:26Z | Suites isolées + `verify:e2e-api` + `verify:e2e-mobile` + `verify:web-smoke` |
+| 2026-09-20T22:26Z | Expo web hôte `:8083` pour Playwright mobile |
+
+**Production mutation confirmée : NONE** (GET health/HTML uniquement via `verify:web-smoke`).
