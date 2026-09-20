@@ -89,10 +89,11 @@ Les volumes/disques persistants nécessaires aux pièces jointes et autres donn�
 Les domaines publics doivent pointer vers les services Render correspondant à l'environnement :
 
 - `preprod.somafrik.app` → Static Site préproduction ;
+- `api-preprod.somafrik.app` → API préproduction ;
 - `somafrik.app` → Static Site production lorsque celui-ci est activé ;
 - `api.somafrik.app` → API production lorsque celle-ci est activée.
 
-L'URL native `somafrik-api-preprod.onrender.com` reste l'endpoint API préproduction utilisé par le Web et le profil Mobile preview.
+Le DNS canonique `api-preprod.somafrik.app` est l'endpoint client de préproduction pour le Web et le Mobile. L'URL native Render `somafrik-api-preprod.onrender.com` reste un détail d'hébergement et ne doit pas être injectée dans les clients.
 
 ## Vérification opérateur
 
