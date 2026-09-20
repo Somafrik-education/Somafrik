@@ -1,65 +1,62 @@
-# RC1 — Rapport sécurité (défensif) — 2026-09-19
+# RC1 — Rapport sécurité (défensif) — 2026-09-20
 
-**Périmètre :** préprod / isolé / statique. Aucune attaque destructive. Aucun scan de production.
+**Périmètre :** isolé / statique / PG local. Aucune attaque destructive. Aucun scan de production.  
+**#503 requalifié contre le code actuel**, pas contre l’état de septembre.
 
 ## Auth / session
 
 | Contrôle | Résultat | Preuve |
 |----------|----------|--------|
-| Algorithme | **HS256** (HMAC), pas RS256 | `backend/services/tokenService.js` |
-| TTL access | **900 s max production** | `backend/lib/authTokenPolicy.js` `MAX_PRODUCTION_ACCESS_TTL_SECONDS` |
-| Refresh / reuse grace | politique versionnée | `REFRESH_REUSE_GRACE_MS = 15s` + `verify:auth-sessions` |
-| JWT en query | interdit (contrat) | `verify:jwt-header` |
-| Secrets dans réponses | contrat sanitizer | `verify:sanitize-user-responses` |
+| Algorithme | **HS256** (HMAC), pas RS256 | `backend/services/tokenService.js` + `verify:auth-sessions` |
+| TTL access | **900 s max production** | `verify:auth-sessions` |
+| Refresh / rotation / grâce | **PASS** | `verify:auth-sessions` + `verify:preprod-503-local` |
+| Refresh reuse destructif | **SKIP** (non-destructive default) | opérateur `--apply-reuse` |
+| JWT en query | interdit | `verify:jwt-header` **PASS** |
+| Secrets dans réponses | contrat sanitizer | `verify:sanitize-user-responses` **PASS** |
 
-Écart vs checklist #719 « JWT RS256 » : l’architecture actuelle est **HS256 + TTL 15 min**. Ce n’est pas une régression nouvelle. Classé **P2 documentation / cible crypto**, pas un P0 d’auth contournable prouvé.
+Écart vs checklist #719 « JWT RS256 » : architecture actuelle **HS256 + TTL 15 min**. **P2** documentation / cible crypto, pas un P0 d’auth contournable.
 
-## Autorisation
-
-| Contrôle | Résultat |
-|----------|----------|
-| RBAC S1.4 / ADMIN-01 | gates catalogue |
-| Deny Superadmin / Admin Pays données perso | `verify:platform-personal-data-deny` |
-| IDOR / cross-school live | **SKIP** (besoin dual-identity PG) |
-| Élévation de privilège live | **SKIP** |
-
-## API
+## Autorisation / #503
 
 | Contrôle | Résultat |
 |----------|----------|
-| Injection SQL destructive | **non exécutée** (mandat : non destructive ; pas d’API PG) |
-| XSS stocké live | **SKIP** |
-| CORS / headers live préprod | **SKIP** |
-| Rate limiting live | **SKIP** |
-| ZAP baseline | **non ajouté** (pas d’API isolée stable) |
+| Deny Superadmin / Admin Pays données perso | **PASS** `verify:platform-personal-data-deny` |
+| Data API lockdown | **PASS** PG local — 0 grant résiduel (`contacts`, `users`, `teachers`, `students`, `mobile_push_devices`, `payments`, `audit_logs`, `sessions`) |
+| Routes `/confidentialite` `/suppression-compte` | **STATIC** présentes (`web/src/App.tsx`) |
+| Erasure execute | **SKIP** non-destructif (`verify:preprod-503-local`) |
+| Cross-tenant live dual-identity | **SKIP** (pas de comptes A/B seedés HTTP) |
+| CORS / rate-limit préprod | **SKIP** |
+
+Pas de risque sécurité **critique reproduit** sur cette baseline. Les manques live/AAB sont **P2 opérateur**, pas un P1 métier.
 
 ## Dépendances / secrets
 
 | Contrôle | Résultat |
 |----------|----------|
-| Gitleaks binaire | **absent** de l’environnement agent |
-| `verify:secrets` | catalogue |
-| `audit:ci` (critical omit=dev) | catalogue |
-| Mobile `npm audit` complet | 20 vulns (16 high / 4 moderate) — RQ-510 **P3** |
+| Gitleaks 8.24.3 | **PASS** — 0 leak |
+| `audit:ci` | **PASS** |
+| Mobile `npm audit` | 20 vulns (16 high / 4 moderate) — RQ-510 **P3** |
 | `google-services.json` | absent du tree (exemple only) |
 
 ## Mobile
 
 | Contrôle | Résultat |
 |----------|----------|
-| SecureStore / HTTPS | `verify:mobile-security` |
-| HelpHost hors navigator | **PASS** — RQ-717 **CLOSED** (`navigationRef`) |
-| Storage legacy AAB | source **PASS** — AAB store **SKIP** |
-| Push token révocable live | **SKIP** |
+| SecureStore / HTTPS | **PASS** |
+| Storage legacy AAB (config) | **PASS** source — AAB store **SKIP** |
+| HelpHost | **CLOSED** #717 |
+| Push / tap | #645 **CLOSED** ; #737 **P2 hors gate** |
 
 ## Findings
 
 | ID | Sévérité | Statut |
 |----|----------|--------|
-| RQ-717 HelpHost crash | P0 | **CLOSED / PASS** (`e457934f`) |
-| RQ-645 Push mobile non prouvé | P0 | OPEN (runtime) |
-| RQ-646 Web Push absent | P1 | OPEN |
-| RQ-503 preuves live / umbrella | P1 | OPEN |
-| RQ-499 AAB re-proof | P2 | OPEN process |
-| JWT HS256 vs RS256 checklist | P2 | accepté architecture actuelle |
-| RQ-510 Expo audit | P3 | OPEN dette |
+| RQ-733 / #732 sync school_course | — | **CLOSED / PASS** |
+| RQ-717 HelpHost | — | **CLOSED / PASS** |
+| RQ-645 Mobile Push | — | **CLOSED** |
+| RQ-646 Web Push | P2 | hors gate |
+| RQ-737 tap Push | P2 | hors gate |
+| RQ-503 live / AAB | P2 | opérateur |
+| RQ-499 AAB re-proof | P2 | opérateur |
+| JWT HS256 vs RS256 | P2 | accepté architecture actuelle |
+| RQ-510 Expo audit | P3 | dette |

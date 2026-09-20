@@ -1,21 +1,25 @@
-# RC1 — Requalification tickets ouverts — 2026-09-19
+# RC1 — Requalification tickets — 2026-09-20
 
-**Mandat :** [#719](https://github.com/Somafrik-education/Somafrik/issues/719) · commentaire CTO [#720 `#5744875678`](https://github.com/Somafrik-education/Somafrik/issues/720#issuecomment-5744875678)  
-**Baseline :** `develop@e457934f772ac2d509225ebd6cf12ad95b51215a` (post-merge #717)  
-**Règle :** un ticket ouvert n’est pas une preuve de reproductibilité. RC1 vérifie le **code actuel**.
+**Mandat :** [#719](https://github.com/Somafrik-education/Somafrik/issues/719) · requalification après merge #733  
+**Baseline :** `develop@109fa474664485e298f82db9c727cb8d2325e29a`  
+**Règle :** un ticket ouvert n’est pas une preuve de reproductibilité. RC1 vérifie le **code actuel**.  
+**Hors gate bloquant :** #646 / #737 (dettes techniques acceptées).
 
 | ID | Ticket | Verdict baseline | Sévérité RC1 | Preuve |
 |----|--------|------------------|--------------|--------|
-| RQ-717 | PR #717 HelpHost startup crash | **CLOSED / PASS** | — | Merged `e457934f`. HEAD audité `8a2aa1a9`. `HelpHost` via `navigationRef` ; plus de `useNavigation(State)`. Contrat + typecheck GREEN. |
-| RQ-645 | #645 Mobile Push préprod | **NEEDS_RUNTIME** | **P0** | Pipeline code présent (`pushNotifications.ts`, `POST /mobile/push-devices`, preview accepté en préprod). Enregistrement mobile avale les erreurs (`.catch(() => undefined)`). Aucune preuve device / FCM / EAS sur cette baseline. PR #647 Draft non mergée. |
-| RQ-646 | #646 Web Push navigateur | **STILL_OPEN** | **P1** | `scripts/lot6-parity.test.ts` affirme l’absence `PushManager` / `VAPID` / `web-push`. Routes push = mobile only. PR #648 Draft non mergée. |
-| RQ-499 | #499 storage Android AAB | **FIXED_ON_BASELINE** (source) / **NEEDS_RUNTIME** (AAB) | **P2** | `blockedPermissions` + plugin `tools:node="remove"` + gates readiness. #500 mergée. Issue GitHub encore ouverte. Manifeste AAB EAS non réinspecté ici. |
-| RQ-503 | #503 RGPD / AAB conforme | **STILL_OPEN** (umbrella) / code P0 **FIXED_ON_BASELINE** | **P1** | Lockdown Data API + deny plateforme + routes `/confidentialite` `/suppression-compte` dans le tree. Preuve HTTP préprod live et AAB store **non rejouées**. |
-| RQ-510 | #510 dette Expo / RN | **STILL_OPEN** | **P3** | `npm audit` Mobile : 20 vulns (16 high / 4 moderate) sur la chaîne Expo. Pas d’exploit runtime prouvé dans ce lot. |
+| RQ-733 | PR #733 / #732 assignment ↔ school_course | **CLOSED / PASS** | — | Merge `109fa474`. `teacherAssignmentsRepository.test.js` **6/6** (mémoire + PG local) : NULL→teacher, replace, detach, refus tiers. `subjectsAssignments.pg.test.js` OK. |
+| RQ-717 | PR #717 HelpHost startup | **CLOSED / PASS** | — | Déjà sur develop (`e457934f`). Non rouvert. |
+| RQ-645 | #645 Mobile Push préprod | **CLOSED** (GitHub) | — | Hors reouverture. Pas de régression métier Push constatée dans cette vague. |
+| RQ-646 | #646 Web Push navigateur | **STILL_OPEN** | **P2** accepté / hors gate | Feature absente (contrat LOT 6). Pas une régression métier rejouée. |
+| RQ-737 | #737 tap notification flash | **STILL_OPEN** | **P2** accepté / hors gate | Dette visuelle Mobile Push. Pas de crash / pas de workflow métier bloqué ici. |
+| RQ-499 | #499 storage Android AAB | **FIXED_ON_BASELINE** (source) / **NEEDS_RUNTIME** (AAB) | **P2** | `verify:android-release-readiness` PASS (config). Manifeste AAB EAS non réinspecté. |
+| RQ-503 | #503 RGPD / AAB | **FIXED_ON_BASELINE** (code) / **NEEDS_OPERATOR** (live/AAB) | **P2** process | `verify:platform-personal-data-deny` PASS ; `verify:supabase-data-api-lockdown` PASS (PG local, 0 grant résiduel) ; `verify:preprod-503-local` PASS (auth/refresh ; erasure/reuse non destructif SKIP). Live préprod + AAB store **non rejoués**. |
+| RQ-510 | #510 dette Expo / RN | **STILL_OPEN** | **P3** | Mobile `npm audit` : 20 vulns (16 high / 4 moderate). Pas d’exploit runtime prouvé. |
 
 ## Conséquence gate RC1
 
-- P0 ouverts **≠ 0** (#717 **CLOSED** ; **#645** non levé sans runtime).
-- P1 ouverts **≠ 0** (#646 certain ; #503 preuve live manquante).
+- P0 reproduits **= 0**.
+- P1 reproduits **= 0**.
+- HOLD = preuves HTTP UI→PG + perf PG + live/AAB **manquantes**, pas un ticket métier rouvert.
 
-**RC1 ne peut pas être PASS** sur cette observation.
+**RC1 ne peut pas être PASS** tant que les parcours HTTP seedés et la perf PG ne sont pas joués (opérateur / CI isolée).

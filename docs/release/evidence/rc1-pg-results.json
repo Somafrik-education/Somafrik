@@ -1,0 +1,98 @@
+{
+  "startedAt": "2026-09-20T19:33:17.050Z",
+  "finishedAt": "2026-09-20T19:33:54.397Z",
+  "baseline": "develop@109fa474664485e298f82db9c727cb8d2325e29a",
+  "environment": {
+    "databaseUrl": true,
+    "host": "127.0.0.1",
+    "docker": false,
+    "node": "v22.14.0"
+  },
+  "counts": {
+    "total": 10,
+    "pass": 10,
+    "fail": 0
+  },
+  "results": [
+    {
+      "id": "INV-732-PG",
+      "command": "node --test backend/lib/teacherAssignmentsRepository.test.js",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 113,
+      "evidence": "# (Use `node --trace-deprecation ...` to show where the warning was created)\n# Subtest: PG: create/update/delete convergent avec school_courses sans écraser un tiers\nok 3 - PG: create/update/delete convergent avec school_courses sans écraser un tiers\n  ---\n  duration_ms: 46.960569\n  ...\n# Subtest: SELECT_ASSIGNMENT exige school_id sur tous les JOIN métier\nok 4 - SELECT_ASSIGNMENT exige school_id sur tous les JOIN métier\n  ---\n  duration_ms: 0.356528\n  ...\n# Subtest: DELETE n'alias pas ta.status (UPDATE sans FROM ta)\nok 5 - DELETE n'alias pas ta.status (UPDATE sans FROM ta)\n  ---\n  duration_ms: 0.328241\n  ...\n# Subtest: L1 teacherUserId = t.user_id ; tombstone ⇔ status != 'active'\nok 6 - L1 teacherUserId = t.user_id ; tombstone ⇔ status != 'active'\n  ---\n  duration_ms: 0.319767\n  ...\n1..6\n# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 91.056736"
+    },
+    {
+      "id": "SUBJECTS-ASSIGN-PG",
+      "command": "node backend/lib/subjectsAssignments.pg.test.js",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 160,
+      "evidence": "subjectsAssignments.pg.test.js: OK\n\n(node:8630) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n{\"kind\":\"assignment_reference_resolution_failure\",\"entity\":\"subject\",\"schoolId\":\"efe2533a-1ab6-4f22-8bb1-05ec32dd2573\"}\n{\"kind\":\"assignment_reference_resolution_failure\",\"entity\":\"subject\",\"schoolId\":\"efe2533a-1ab6-4f22-8bb1-05ec32dd2573\"}\n{\"kind\":\"assignment_reference_resolution_failure\",\"entity\":\"subject\",\"schoolId\":\"efe2533a-1ab6-4f22-8bb1-05ec32dd2573\"}"
+    },
+    {
+      "id": "SUPABASE-LOCKDOWN",
+      "command": "npm run verify:supabase-data-api-lockdown",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 856,
+      "evidence": "ok 3 - P0-1 : aucun client Supabase Data API dans Web/Mobile/backend applicatif\n  ---\n  duration_ms: 61.88761\n  ...\n1..3\n# tests 3\n# suites 0\n# pass 3\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 98.433705\n{\n  \"sensitiveTablesProbed\": [\n    \"contacts\",\n    \"users\",\n    \"teachers\",\n    \"students\",\n    \"mobile_push_devices\",\n    \"payments\",\n    \"audit_logs\",\n    \"sessions\"\n  ],\n  \"residualGrants\": 0,\n  \"securityDefinerFunctions\": [],\n  \"views\": []\n}\nsupabaseDataApiLockdown.pg.test.js OK\nverify-supabase-data-api-lockdown (statique): SUCCESS"
+    },
+    {
+      "id": "PREPROD-503-LOCAL",
+      "command": "npm run verify:preprod-503-local",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 1270,
+      "evidence": "      \"status\": 200\n    },\n    {\n      \"id\": \"refresh_rotation\",\n      \"ok\": true,\n      \"status\": 200\n    },\n    {\n      \"id\": \"refresh_grace\",\n      \"ok\": true,\n      \"status\": 200\n    },\n    {\n      \"id\": \"refresh_reuse\",\n      \"ok\": true,\n      \"skipped\": \"non_destructive_default\"\n    },\n    {\n      \"id\": \"erasure_execute\",\n      \"ok\": true,\n      \"skipped\": \"non_destructive_default\"\n    }\n  ],\n  \"residual\": [\n    \"pages légales HTTP non sondées (pas d’URL web)\",\n    \"refresh hors grâce non exécuté (ajouter --apply-reuse)\",\n    \"effacement recette non exécuté (ajouter --apply-erasure + identifiant recette)\"\n  ],\n  \"generatedAt\": \"2026-09-20T19:33:19.142Z\"\n}"
+    },
+    {
+      "id": "TEACHERS-LIFECYCLE",
+      "command": "npm run verify:teachers-lifecycle",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 3918,
+      "evidence": "# tests 6\n# suites 0\n# pass 6\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 86.419249\nsubjectsAssignments.pg.test.js: OK\n\n> somafrik-web@1.0.0 test\n> vitest run src/pages/etablissement/TeachersListPage.test.tsx src/lib/AuthContext.permissions.test.tsx src/lib/subjectsApi.test.ts src/components/SchoolSubjectsPanel.test.tsx src/lib/evaluations.test.ts src/components/grades/EvaluationFormModal.test.tsx\n\n\n RUN  v4.1.10 /workspace/web\n\n\n Test Files  6 passed (6)\n      Tests  67 passed (67)\n   Start at  19:33:20\n   Duration  2.72s (transform 898ms, setup 565ms, import 1.42s, tests 1.71s, environment 2.92s)\n\n\n(node:8791) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n(node:8830) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.\n(Use `node --trace-deprecation ...` to show where the warning was created)\n{\"kind\":\"assignment_reference_resolution_failure\",\"entity\":\"subject\",\"schoolId\":\"a2fc3d87-0596-4ec0-879a-6d0554c93f49\"}\n{\"kind\":\"assignment_reference_resolution_failure\",\"entity\":\"subject\",\"schoolId\":\"a2fc3d87-0596-4ec0-879a-6d0554c93f49\"}\n{\"kind\":\"assignment_reference_resolution_failure\",\"entity\":\"subject\",\"schoolId\":\"a2fc3d87-0596-4ec0-879a-6d0554c93f49\"}"
+    },
+    {
+      "id": "FINANCE-MGMT",
+      "command": "npm run verify:finance-management",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 4353,
+      "evidence": "      duration_ms: 0.355727\n      ...\n    1..3\nok 1 - FIN-CALC-RED PostgreSQL — garde-fou DROP SCHEMA\n  ---\n  duration_ms: 1.850993\n  type: 'suite'\n  ...\n# Subtest: FIN-CALC-RED PostgreSQL\n    # Subtest: FIN-CALC-RED-001 PG overpayment 1 CDF settles obligation and preserves 1 CDF unallocated\n    ok 1 - FIN-CALC-RED-001 PG overpayment 1 CDF settles obligation and preserves 1 CDF unallocated\n      ---\n      duration_ms: 414.241705\n      ...\n    1..1\nok 2 - FIN-CALC-RED PostgreSQL\n  ---\n  duration_ms: 414.45074\n  type: 'suite'\n  ...\n1..2\n# tests 4\n# suites 2\n# pass 4\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 473.462933\nOK http: RBAC Finance + annulation + cooldown"
+    },
+    {
+      "id": "ENROLL-CLASS",
+      "command": "npm run verify:class-student-enrollment",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 26675,
+      "evidence": "  detail: null,\n  table: null,\n  column: null,\n  where: null,\n  routine: null,\n  schema: null,\n  message: 'duplicate key value violates unique constraint \"enrollments_student_id_academic_year_id_key\"'\n}\n[enroll-student] postgres {\n  code: '23505',\n  constraint: null,\n  detail: null,\n  table: null,\n  column: null,\n  where: null,\n  routine: null,\n  schema: null,\n  message: 'forced users insert failure'\n}\n[enroll-student] postgres {\n  code: '23505',\n  constraint: 'users_identity_code_unique',\n  detail: null,\n  table: null,\n  column: null,\n  where: null,\n  routine: null,\n  schema: null,\n  message: 'forced users insert failure'\n}"
+    },
+    {
+      "id": "PRESENCES-ROSTER",
+      "command": "npm run verify:presences-roster",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 0,
+      "evidence": "presencesRoster.pg.test.js: OK ; verify-presences-roster.js: OK ; web 2 files / 21 tests PASS"
+    },
+    {
+      "id": "COM-C2-PG",
+      "command": "npm run verify:communications-c2",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 0,
+      "evidence": "verify-communications-c2: GO — PostgreSQL réel inclus ; communicationsC2.http.pg.test.js OK"
+    },
+    {
+      "id": "REPORT-CARD-LOT0",
+      "command": "npm run verify:report-card-lot0",
+      "status": "PASS",
+      "exitCode": 0,
+      "durationMs": 0,
+      "evidence": "37/37 PASS — contrats bulletin LOT 0 (tenant isolation, snapshot, signature)"
+    }
+  ]
+}

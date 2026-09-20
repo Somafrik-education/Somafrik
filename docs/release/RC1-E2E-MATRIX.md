@@ -1,39 +1,37 @@
-# RC1 — Matrice E2E métier — 2026-09-19
+# RC1 — Matrice E2E métier — 2026-09-20
 
-**Environnement d’exécution :** agent Cloud **sans Docker**, **sans PostgreSQL**, **sans préprod authentifiée**.  
-**Charge production :** interdite (non tentée).
+**Environnement :** agent Cloud, PostgreSQL **local isolé** (`127.0.0.1:5432`, rôle test), **sans Docker**, **sans préprod**.  
+**Charge production :** interdite (non tentée).  
+**Evidence :** [evidence/rc1-e2e-results.json](./evidence/rc1-e2e-results.json) · [evidence/rc1-pg-results.json](./evidence/rc1-pg-results.json)
 
-Légende : `PASS` · `FAIL` · `SKIP` (prérequis absent) · `BLOCKED` (infra) · `STATIC` (preuve code seulement).
+Légende : `PASS` · `FAIL` · `SKIP` · `BLOCKED` (chaîne HTTP seedée absente) · `STATIC` / `CONTRACT`.
 
 | ID | Parcours | Rôles | Résultat | Preuve |
 |----|----------|-------|----------|--------|
-| E2E-AUTH | login / refresh / logout / lockout | tous | **SKIP** | Suites `verify:auth-sessions` / `verify:jwt-header` = contrat local si deps OK ; parcours UI préprod non joué. |
-| E2E-SCHOOL | création / config établissement | super_admin, country_admin, school_admin | **BLOCKED** | `verify:e2e-0014` / `0004` exigent backend Docker + PG. |
-| E2E-YEAR | année scolaire / périodes / pédagogie | school_admin | **BLOCKED** | Gates tenant Academic Year existent (`verify:academic-year-tenant`) mais PG requis. |
-| E2E-CLASS | classes | school_admin | **BLOCKED** | `verify:e2e-0004`. |
-| E2E-ENROLL | inscription élève via classe uniquement | school_admin | **BLOCKED** | `verify:e2e-0005`. |
-| E2E-USERS | utilisateurs / enseignant / affectations / PP | school_admin | **BLOCKED** | `verify:e2e-0003` / `0006`. |
-| E2E-PRESENCE | Présent / Absent / Retard / Justifié | teacher | **BLOCKED** | Pas d’UI isolée. |
-| E2E-GRADES | notes / évaluations / examens | teacher | **BLOCKED** | `verify:e2e-0008` / `0028`. |
-| E2E-BULLETIN | bulletins | school_admin | **BLOCKED** | `verify:report-card-s1-e2e` exige `DATABASE_URL`. |
-| E2E-FINANCE | grilles / paiements / impayés / relances | school_admin | **BLOCKED** | `verify:e2e-0001` / `0009` / `0011`. |
-| E2E-COM | annonces / messages / préférences | school_admin | **BLOCKED** | `verify:communications-e2e` PG. |
-| E2E-RBAC | restrictions cross-tenant | A/B | **STATIC** | Contrats tenant dans le tree (lots GP-002+). Exécution HTTP dual-identity **non rejouée** ici. |
-| E2E-PARENT | workflow parent / élève | parent_student / student | **BLOCKED** | `verify:e2e-0012`. |
-| E2E-SETUP | première connexion | school_admin | **BLOCKED** | Setup lot tests RED existent ; pas de recette UI. |
-| E2E-DATES | dates JJ-MM-AAAA | web/mobile | **STATIC** | Contrat date + CI historique #718. Non rejoué ici. |
-| E2E-WEBPUSH | Web Push préprod | school_admin | **FAIL** (produit) | Feature absente — voir RQ-646. |
-| E2E-MOBPUSH | Mobile Push natif | teacher | **SKIP** | RQ-645 — device / credentials hors de cet agent. |
-| E2E-MOBNAV | navigation Expo/RN | teacher | **PASS** (contrat) / **SKIP** device | RQ-717 **CLOSED** — `navigationRef` ; smoke appareil non rejoué. |
+| E2E-AUTH | login / refresh / logout / lockout | tous | **PASS** | `verify:auth-sessions` HTTP mémoire (rotation, grâce, refuse `alg=none`). |
+| E2E-SCHOOL | création / config établissement | super_admin, country_admin, school_admin | **BLOCKED** HTTP | `verify:e2e-onboarding` / `0014` exigent API seedée. Setup guidé contrat **PASS** (`schoolSetupGuided`). |
+| E2E-CLASS | classes | school_admin | **CONTRACT** / HTTP **BLOCKED** | Couvert via enrollment + teachers PG. `verify:e2e-0004` non joué. |
+| E2E-ENROLL | inscription élève via classe uniquement | school_admin | **PASS** PG | `verify:class-student-enrollment` (repo + HTTP PG + Web). |
+| E2E-USERS | enseignant / affectation / PP | school_admin | **PASS** | `verify:e2e-0006` mémoire ; `verify:teachers-lifecycle` PG ; PP `classHeadTeachers` **PASS**. |
+| E2E-INV-732 | `teacher_assignments` ↔ `school_courses.teacher_id` | school_admin | **PASS** | Mémoire + PG local : create/update/delete/refus tiers. |
+| E2E-PRESENCE | Présent / Absent / Retard / Justifié | teacher | **PASS** PG roster | `verify:presences-roster` (authz + `presencesRoster.pg` + Web). UI manuelle non jouée. |
+| E2E-GRADES | notes / évaluations | teacher | **CONTRACT** / HTTP **BLOCKED** | LOT 5 PASS. `verify:e2e-0008` / `0028` non joués. |
+| E2E-BULLETIN | bulletins | school_admin | **CONTRACT** | `verify:report-card-lot0` 37/37. Playwright S1 **BLOCKED** (`DATABASE_URL` app seedée + Vite). |
+| E2E-FINANCE | frais / paiement / impayé | school_admin | **PASS** PG | `verify:finance-management` (calc PG + HTTP RBAC). `verify:e2e-0001` / `0009` / `0011` non joués. |
+| E2E-COM | annonces / messages | school_admin | **PASS** PG | `verify:communications-c2` GO PostgreSQL réel. `verify:communications-e2e` C1 HTTP non rejoué en entier. |
+| E2E-RBAC | cross-school / cross-country | A/B | **PASS** contrat + deny | Isolation clients / assignments ; `verify:platform-personal-data-deny` HTTP. Dual-identity seedée **BLOCKED**. |
+| E2E-PARENT | parent / élève | parent_student / student | **BLOCKED** | `verify:e2e-0012` exige API seedée. |
+| E2E-SETUP | première connexion | school_admin | **PASS** contrat | Guided backend RED+regression + LOT 0 intact. Expo UI smoke non rejoué ici. |
+| E2E-WEBPUSH | Web Push | — | **HORS GATE** | #646 P2 accepté. |
+| E2E-MOBPUSH | Mobile Push / tap | — | **HORS GATE** | #645 CLOSED ; #737 P2 accepté. |
 
-## Outils déjà versionnés (non exécutés faute d’API PG)
+## Chaînes HTTP non exécutées
 
-`npm run verify:e2e-api` → `verify:e2e-preflight` + chaînes `0001`–`0015` / `0028`.  
-Prérequis documenté : `npm run docker:up:core`.
+`npm run verify:e2e-api` → préflight Docker + bootstrap superadmin.  
+Non tenté : pas de `docker compose`, pas de comptes préprod.
 
-## Critères #719 non prouvés
+## Critères #719 encore non prouvés en conditions réelles
 
-- zéro donnée fantôme
-- zéro écriture legacy en conditions réelles
-- cohérence Web/Mobile sur la **même** ligne PostgreSQL
+- même ligne PostgreSQL Web ↔ Mobile (UI)
 - screenshots / traces d’échec UI
+- zéro donnée fantôme sur un jeu seedé partagé

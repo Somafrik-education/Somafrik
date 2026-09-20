@@ -130,6 +130,7 @@ RC1 / GO Production (#719) — catalogue isolé (sans Docker) :
 
 ```bash
 npm run verify:rc1-gates         # contrats fonctionnels + sécurité
+npm run verify:rc1-e2e           # parcours métier isolés + matrice BLOCKED PG seedée
 npm run verify:rc1-performance   # harness Node isolé (interdit sur api.somafrik.app)
 ```
 
