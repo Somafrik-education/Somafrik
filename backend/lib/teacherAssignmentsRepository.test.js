@@ -25,6 +25,16 @@ function createMemoryAdapter() {
     { id: "subject-b", school_id: "school-2", subject_code: "SUB-BIO", name: "Biologie", status: "active" },
   ];
   const assignments = [];
+  const schoolCourses = [
+    {
+      id: "course-1",
+      school_id: "school-1",
+      class_id: "class-1",
+      subject_id: "subject-1",
+      teacher_id: null,
+      status: "active",
+    },
+  ];
 
   function mapped(row) {
     if (!row) return null;
@@ -137,10 +147,58 @@ function createMemoryAdapter() {
         row.status = "deleted";
         return { id: row.id };
       }
+      if (text.startsWith("SELECT ID FROM TEACHER_ASSIGNMENTS")) {
+        return assignments.find(
+          (row) =>
+            row.school_id === params[0] &&
+            row.class_id === params[1] &&
+            row.subject_id === params[2] &&
+            row.status === "active",
+        ) ?? null;
+      }
+      if (text.startsWith("UPDATE SCHOOL_COURSES SET TEACHER_ID = NULL")) {
+        const row = schoolCourses.find(
+          (item) =>
+            item.school_id === params[0] &&
+            item.class_id === params[1] &&
+            item.subject_id === params[2] &&
+            item.status === "active" &&
+            item.teacher_id === params[3],
+        );
+        if (!row) return null;
+        row.teacher_id = null;
+        return { id: row.id };
+      }
+      if (text.startsWith("UPDATE SCHOOL_COURSES SET TEACHER_ID =")) {
+        const row = schoolCourses.find((item) => item.id === params[0] && item.status === "active");
+        if (!row) return null;
+        const target = params[1];
+        const replaceable = params[2];
+        if (
+          row.teacher_id != null &&
+          row.teacher_id !== target &&
+          (!replaceable || row.teacher_id !== replaceable)
+        ) {
+          return null;
+        }
+        row.teacher_id = target;
+        return { id: row.id };
+      }
       return null;
     },
     async all(sql, params = []) {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+      if (text.startsWith("SELECT ID, TEACHER_ID FROM SCHOOL_COURSES")) {
+        return schoolCourses
+          .filter(
+            (row) =>
+              row.school_id === params[0] &&
+              row.class_id === params[1] &&
+              row.subject_id === params[2] &&
+              row.status === "active",
+          )
+          .map((row) => ({ id: row.id, teacher_id: row.teacher_id }));
+      }
       if (text.startsWith("SELECT TA.ID")) {
         return assignments
           .filter((row) => row.school_id === params[0] && row.status === "active")
@@ -152,26 +210,32 @@ function createMemoryAdapter() {
       return { rows: [] };
     },
     async withTransaction(fn) {
-      const snapshot = assignments.map((row) => ({ ...row }));
+      const assignmentSnapshot = assignments.map((row) => ({ ...row }));
+      const schoolCourseSnapshot = schoolCourses.map((row) => ({ ...row }));
       try {
         return await fn(adapter);
       } catch (error) {
         assignments.length = 0;
-        assignments.push(...snapshot);
+        assignments.push(...assignmentSnapshot);
+        schoolCourses.length = 0;
+        schoolCourses.push(...schoolCourseSnapshot);
         throw error;
       }
     },
+    __schoolCourses: schoolCourses,
   };
   return adapter;
 }
 
 test("CRUD affectation, conflit et isolation établissement", async () => {
-  const repo = createTeacherAssignmentsRepository(createMemoryAdapter());
+  const adapter = createMemoryAdapter();
+  const repo = createTeacherAssignmentsRepository(adapter);
   const created = await repo.create(
     { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
     "CD-2026-0001",
   );
   assert.equal(created.teacherName, "Awa Diop");
+  assert.equal(adapter.__schoolCourses[0].teacher_id, "teacher-1");
   assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 1);
 
   await assert.rejects(
@@ -188,6 +252,7 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
     "CD-2026-0001",
   );
   assert.equal(updated.teacherName, "Moussa Ba");
+  assert.equal(adapter.__schoolCourses[0].teacher_id, "teacher-2");
   await assert.rejects(
     () => repo.update(created.id, { teacherCode: "CD-2026-0002-ENS-0001" }, "CD-2026-0001"),
     (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_TEACHER_NOT_FOUND",
@@ -200,12 +265,14 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
     id: created.id,
     deleted: true,
   });
+  assert.equal(adapter.__schoolCourses[0].teacher_id, null);
   assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 0);
   const recreated = await repo.create(
     { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
     "CD-2026-0001",
   );
   assert.notEqual(recreated.id, created.id);
+  assert.equal(adapter.__schoolCourses[0].teacher_id, "teacher-1");
   assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 1);
   await assert.rejects(
     () =>
@@ -263,6 +330,25 @@ test("CRUD affectation, conflit et isolation établissement", async () => {
       ),
     (error) => error.statusCode === 404 && error.code === "ASSIGNMENT_CLASS_NOT_FOUND",
   );
+});
+
+test("refuse d'écraser un school_course déjà lié à un tiers", async () => {
+  const adapter = createMemoryAdapter();
+  adapter.__schoolCourses[0].teacher_id = "teacher-2";
+  const repo = createTeacherAssignmentsRepository(adapter);
+
+  await assert.rejects(
+    () =>
+      repo.create(
+        { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+        "CD-2026-0001",
+      ),
+    (error) =>
+      error.statusCode === 409 &&
+      error.code === "ASSIGNMENT_SCHOOL_COURSE_CONFLICT",
+  );
+  assert.equal(adapter.__schoolCourses[0].teacher_id, "teacher-2");
+  assert.equal((await repo.listBySchoolCode("CD-2026-0001")).length, 0);
 });
 
 test("SELECT_ASSIGNMENT exige school_id sur tous les JOIN métier", () => {
