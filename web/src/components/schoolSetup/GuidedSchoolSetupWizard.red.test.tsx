@@ -113,31 +113,32 @@ describe("RED — GuidedSchoolSetupWizard UX", () => {
     expect(completeStep).not.toHaveBeenCalled();
   });
 
+  const payload100 = {
+    ...payload40,
+    status: "operational" as const,
+    percent: 100,
+    currentStep: 10,
+    lastValidStep: 10,
+    nextStepKey: null,
+    nextStepLabel: null,
+    completedSteps: [
+      "establishment",
+      "academicYear",
+      "structure",
+      "subjects",
+      "teachers",
+      "students",
+      "finance",
+      "pedagogy",
+      "communication",
+      "users",
+    ],
+    steps: payload40.steps.map((step) => ({ ...step, done: true, unlocked: true })),
+  };
+
   it("HOLD — à 100 % Terminer la configuration appelle onFinish sans re-POST", async () => {
     const user = userEvent.setup();
     const onFinish = vi.fn();
-    const payload100 = {
-      ...payload40,
-      status: "operational" as const,
-      percent: 100,
-      currentStep: 10,
-      lastValidStep: 10,
-      nextStepKey: null,
-      nextStepLabel: null,
-      completedSteps: [
-        "establishment",
-        "academicYear",
-        "structure",
-        "subjects",
-        "teachers",
-        "students",
-        "finance",
-        "pedagogy",
-        "communication",
-        "users",
-      ],
-      steps: payload40.steps.map((step) => ({ ...step, done: true, unlocked: true })),
-    };
     getGuided.mockResolvedValue(payload100);
     const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
     render(
@@ -147,6 +148,24 @@ describe("RED — GuidedSchoolSetupWizard UX", () => {
     );
     expect(screen.getByText("Étape 10 sur 10")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Vérifier la configuration" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Terminer la configuration" }));
+    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(completeStep).not.toHaveBeenCalled();
+  });
+
+  it("HOLD — Vérifier la configuration puis Terminer reste possible à 100 %", async () => {
+    const user = userEvent.setup();
+    const onFinish = vi.fn();
+    getGuided.mockResolvedValue(payload100);
+    const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
+    render(
+      <MemoryRouter>
+        <GuidedSchoolSetupWizard payload={payload100} onFinish={onFinish} />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: "Vérifier la configuration" }));
+    expect(screen.getByText("Étape 1 sur 10")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Terminer la configuration" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Terminer la configuration" }));
     expect(onFinish).toHaveBeenCalledTimes(1);
     expect(completeStep).not.toHaveBeenCalled();

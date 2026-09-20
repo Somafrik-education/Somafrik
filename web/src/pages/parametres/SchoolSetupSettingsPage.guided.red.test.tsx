@@ -130,4 +130,23 @@ describe("HOLD — SchoolSetupSettingsPage wizard exclusif", () => {
     expect(await screen.findByRole("heading", { name: "Tableau de bord" })).toBeInTheDocument();
     expect(completeStep).not.toHaveBeenCalled();
   });
+
+  it("à 100 % Vérifier puis Terminer renvoie encore au Tableau de bord", async () => {
+    const user = userEvent.setup();
+    getGuided.mockResolvedValue(guided100);
+    render(
+      <MemoryRouter initialEntries={["/parametres/configuration-etablissement"]}>
+        <Routes>
+          <Route path="/parametres/configuration-etablissement" element={<SchoolSetupSettingsPage />} />
+          <Route path="/tableau-de-bord" element={<h1>Tableau de bord</h1>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Étape 10 sur 10")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Vérifier la configuration" }));
+    expect(screen.getByText("Étape 1 sur 10")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Terminer la configuration" }));
+    expect(await screen.findByRole("heading", { name: "Tableau de bord" })).toBeInTheDocument();
+    expect(completeStep).not.toHaveBeenCalled();
+  });
 });

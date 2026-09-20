@@ -678,6 +678,30 @@ test("B12 — 0 inscription Classe→Élève + studentCount orphelin ne valide p
   assert.ok(!payload.completedSteps.includes("students"));
 });
 
+test("B14 — row school_setup_progress absente + données canoniques existantes → bootstrap, pas 0 %", async () => {
+  const mod = requireGuided();
+  const store = memoryProgressStore();
+  const emptyRow = await store.load(SCHOOL_A_ID);
+  assert.deepEqual(emptyRow.completedSteps, []);
+  assert.equal(emptyRow.lastValidStep, 0);
+
+  const payload = await getGuided(mod, {
+    principal: schoolAdminA(),
+    one: MEMBERSHIP_LOOKUP,
+    progressStore: store,
+    loadSnapshot: async () => through("students"),
+  });
+  assertPayloadShape(payload);
+  assert.equal(payload.percent, 60, "données 1–6 existantes doivent bootstrap à 60 %");
+  assert.equal(payload.status, "operational");
+  assert.deepEqual(payload.completedSteps, [...REQUIRED_STEP_KEYS]);
+  assert.equal(payload.nextStepKey, "finance");
+  assert.ok(payload.percent > 0, "un établissement déjà configuré ne doit pas retomber à 0 %");
+
+  const stillEmpty = await store.load(SCHOOL_A_ID);
+  assert.deepEqual(stillEmpty.completedSteps, [], "bootstrap dérivé : pas d'écriture destructive");
+});
+
 test("B13 — parcours 0 → 10 % → reprise 40/50/60 % operational → 100 %", async () => {
   const mod = requireGuided();
   const store = memoryProgressStore();

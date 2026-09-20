@@ -270,6 +270,20 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
     },
   },
   {
+    id: "M16",
+    title: "à 100 % Terminer reste visible après Vérifier la configuration",
+    run() {
+      const wizard = read(WIZARD_PATH);
+      assertHas(wizard, "Vérifier la configuration", "M16 Vérifier manquant");
+      assertHas(wizard, "Terminer la configuration", "M16 Terminer manquant");
+      assertHas(
+        wizard,
+        /canFinish/,
+        "M16 Terminer doit rester visible après Vérifier (canFinish, pas seulement isLast)",
+      );
+    },
+  },
+  {
     id: "M13",
     title: "retour Android/iOS ne détruit pas l'avancement sauvegardé",
     run() {
