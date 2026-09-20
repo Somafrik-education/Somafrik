@@ -709,8 +709,40 @@ async function main() {
       [schoolB.rows[0].id],
     );
 
+    // #744 — C18 canonique : ENROLLED doit être visible dans le roster Finance,
+    // tandis que les inscriptions terminées restent exclues.
+    const enrolledStudent = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'CD-2026-0001-STU-ENROLLED', 'Esther', 'Enrolled', 'active') RETURNING id`,
+      [schoolA.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'ENROLLED')`,
+      [schoolA.rows[0].id, enrolledStudent.rows[0].id, klass.rows[0].id, year.rows[0].id],
+    );
+    const closedStudent = await pool.query(
+      `INSERT INTO students (school_id, student_code, first_name, last_name, status)
+       VALUES ($1, 'CD-2026-0001-STU-CLOSED', 'Clara', 'Closed', 'active') RETURNING id`,
+      [schoolA.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'CLOSED')`,
+      [schoolA.rows[0].id, closedStudent.rows[0].id, klass.rows[0].id, year.rows[0].id],
+    );
+
     const optionsA = await store.listPaymentStudentOptions(admin);
     assert.ok(optionsA.some((row) => row.studentCode === "CD-2026-0001-STU-0001"));
+    assert.ok(
+      optionsA.some((row) => row.studentCode === "CD-2026-0001-STU-ENROLLED"),
+      "#744: une inscription C18 ENROLLED doit rester encaissable",
+    );
+    assert.equal(
+      optionsA.some((row) => row.studentCode === "CD-2026-0001-STU-CLOSED"),
+      false,
+      "#744: une inscription C18 CLOSED ne doit pas être encaissable",
+    );
     const awaOption = optionsA.find((row) => row.studentCode === "CD-2026-0001-STU-0001");
     assert.equal(awaOption.firstName, "Awa");
     assert.ok(["CLS-6A", "CLS-5B"].includes(awaOption.classCode));

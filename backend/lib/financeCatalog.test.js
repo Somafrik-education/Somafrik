@@ -71,6 +71,36 @@ test("foldPaymentStudentOptions déduplique, ignore sans inscription, trie", () 
   assert.equal(rows.some((row) => row.studentCode === "STU-X"), false);
 });
 
+test("#744 — foldPaymentStudentOptions conserve ENROLLED et exclut CLOSED", () => {
+  const rows = foldPaymentStudentOptions([
+    {
+      student_id: "enrolled",
+      student_code: "STU-ENROLLED",
+      first_name: "Esther",
+      last_name: "Okito",
+      student_status: "active",
+      enrollment_status: "ENROLLED",
+      class_id: "c1",
+      class_code: "C1",
+      class_name: "1ère A",
+    },
+    {
+      student_id: "closed",
+      student_code: "STU-CLOSED",
+      first_name: "Clara",
+      last_name: "Closed",
+      student_status: "active",
+      enrollment_status: "CLOSED",
+      class_id: "c1",
+      class_code: "C1",
+      class_name: "1ère A",
+    },
+  ]);
+
+  assert.equal(rows.some((row) => row.studentCode === "STU-ENROLLED"), true);
+  assert.equal(rows.some((row) => row.studentCode === "STU-CLOSED"), false);
+});
+
 test("catalogue méthodes : défauts canoniques si aucune ligne persistée", () => {
   const empty = resolveCatalogPaymentMethods([]);
   assert.equal(empty.length, CANONICAL_PAYMENT_METHODS.length);

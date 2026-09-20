@@ -130,6 +130,17 @@ describe("FIN-L3-08 RED-WEB — sélecteur Élève Enregistrer un encaissement",
     createPayment.mockResolvedValue({ id: "pay-l308", amount: L308_AMOUNT, studentId: L308_HOMONYM_A.studentId });
   });
 
+  it("FIN-744-W-ROSTER — un élève retourné par l'API est trouvable par matricule", async () => {
+    const user = userEvent.setup();
+    await openEncaissementModal();
+
+    const search = screen.getByTestId("payment-student-search");
+    await user.type(search, String(L308_HOMONYM_A.studentCode));
+
+    expect(screen.getByText("Jean Mbala")).toBeInTheDocument();
+    expect(screen.queryByText(/Aucun élève trouvé/i)).not.toBeInTheDocument();
+  });
+
   it("FIN-L3-08-W-TENANT — un élève d'un autre établissement n'apparaît pas et n'est pas soumissible", async () => {
     const user = userEvent.setup();
     await openEncaissementModal();

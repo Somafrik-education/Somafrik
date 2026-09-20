@@ -1074,7 +1074,7 @@ function createFinancePgStore(repo) {
            JOIN schools s ON s.id = st.school_id
            JOIN enrollments e ON e.student_id = st.id
              AND e.school_id = st.school_id
-             AND lower(btrim(e.status)) = 'active'
+             AND ${ROSTER_ENROLLMENT_SQL}
            JOIN classes cl ON cl.id = e.class_id
              AND cl.school_id = st.school_id
            WHERE ${pred}
