@@ -240,6 +240,34 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
     },
   },
   {
+    id: "M14",
+    title: "un seul assistant visible : guidé XOR ancien, jamais les deux",
+    run() {
+      const settings = read(SETTINGS_PATH);
+      assertHas(settings, "GuidedSchoolSetupWizard", "M14 guidé requis");
+      assertHas(settings, "SchoolSetupWizard", "M14 ancien contrat conservé en fallback");
+      const exclusive =
+        /guided\s*\?\s*\([\s\S]*<GuidedSchoolSetupWizard[\s\S]*\)\s*:\s*payload\s*\?\s*[\s\S]*<SchoolSetupWizard/.test(
+          settings,
+        ) || /!guided[\s\S]{0,240}<SchoolSetupWizard/.test(settings);
+      assert.ok(
+        exclusive,
+        "HOLD P1 UX: Guided et ancien SchoolSetupWizard ne doivent pas être rendus simultanément",
+      );
+    },
+  },
+  {
+    id: "M15",
+    title: "à 100 % Terminer la configuration renvoie à l'Accueil",
+    run() {
+      const wizard = read(WIZARD_PATH);
+      const settings = read(SETTINGS_PATH);
+      assertHas(wizard, "onFinish", "M15 onFinish manquant sur le wizard");
+      assertHas(settings, "onFinish", "M15 settings ne branche pas onFinish");
+      assertHas(settings, /navigate\(\s*["']Home["']/, "M15 Terminer → Home");
+    },
+  },
+  {
     id: "M13",
     title: "retour Android/iOS ne détruit pas l'avancement sauvegardé",
     run() {

@@ -253,6 +253,33 @@ describe("RED Web — W1 à W10", () => {
     assertLacks(joined, /\/api\/backoffice\/students/, "W9: endpoint student legacy interdit");
   });
 
+  it("HOLD UX — settings n'empile pas Guided et l'ancien SchoolSetupWizard", () => {
+    const settings = read(SETTINGS_PATH);
+    assertHas(settings, "GuidedSchoolSetupWizard", "HOLD: wizard guidé requis");
+    assertHas(settings, "SchoolSetupWizard", "HOLD: ancien contrat conservé en fallback");
+    const exclusive =
+      /guided\s*\?\s*\([\s\S]*<GuidedSchoolSetupWizard[\s\S]*\)\s*:\s*payload\s*\?\s*[\s\S]*<SchoolSetupWizard/.test(
+        settings,
+      ) || /!guided[\s\S]{0,240}<SchoolSetupWizard/.test(settings);
+    assert.ok(
+      exclusive,
+      "HOLD P1 UX: Guided et ancien SchoolSetupWizard ne doivent pas être rendus simultanément",
+    );
+    assertLacks(
+      settings,
+      /Ces actions ouvrent les écrans existants[\s\S]*GuidedSchoolSetupWizard|GuidedSchoolSetupWizard[\s\S]*Ces actions ouvrent les écrans existants/,
+      "HOLD: le texte de l'ancien assistant ne doit pas cohabiter avec le guidé",
+    );
+  });
+
+  it("HOLD — à 100 % Terminer la configuration renvoie au Tableau de bord", () => {
+    const wizard = read(WIZARD_PATH);
+    const settings = read(SETTINGS_PATH);
+    assertHas(wizard, "onFinish", "HOLD: GuidedSchoolSetupWizard doit exposer onFinish");
+    assertHas(settings, "onFinish", "HOLD: settings doit brancher onFinish");
+    assertHas(settings, "/tableau-de-bord", "HOLD: Terminer → /tableau-de-bord");
+  });
+
   it("W10 — une configuration complète supprime l'état configuration requise", async () => {
     const { shouldShowGuidedSetupDashboardCard, shouldShowSchoolSetupWelcome } = await loadContract();
     const complete = guidedPayload(100);

@@ -561,6 +561,123 @@ test("B10 — revalider une étape déjà terminée est idempotent, percent ≤ 
   assert.equal(persisted.completedSteps.filter((key) => key === "establishment").length, 1);
 });
 
+test("B11 — un enseignant sans affectation classe/matière ne valide pas l'étape 5", async () => {
+  const src = fs.readFileSync(MODULE_PATH, "utf8");
+  assert.match(
+    src,
+    /case\s+"teachers":[\s\S]*teacherAssignmentCount/,
+    "étape 5 doit exiger teacherAssignmentCount, pas seulement teacherCount",
+  );
+  assert.match(
+    src,
+    /teacher_assignments[\s\S]*status\s*=\s*'active'/,
+    "teacherAssignmentCount ne compte que les affectations actives",
+  );
+
+  const mod = requireGuided();
+  assert.equal(
+    mod.stepSatisfied("teachers", { teacherCount: 1, teacherAssignmentCount: 0 }),
+    false,
+    "teacherCount=1 sans affectation ne satisfait pas l'étape 5",
+  );
+  assert.equal(mod.stepSatisfied("teachers", { teacherCount: 1, teacherAssignmentCount: 1 }), true);
+
+  const store = memoryProgressStore();
+  for (const key of REQUIRED_STEP_KEYS.slice(0, 4)) {
+    await completeStep(mod, {
+      principal: schoolAdminA(),
+      stepKey: key,
+      one: MEMBERSHIP_LOOKUP,
+      progressStore: store,
+      loadSnapshot: async () => through(key),
+    });
+  }
+
+  await assert.rejects(
+    () =>
+      completeStep(mod, {
+        principal: schoolAdminA(),
+        stepKey: "teachers",
+        one: MEMBERSHIP_LOOKUP,
+        progressStore: store,
+        loadSnapshot: async () => through("teachers", { teacherCount: 1, teacherAssignmentCount: 0 }),
+      }),
+    (error) =>
+      error.statusCode === 409
+      && /STEP_NOT_SATISFIED|données/i.test(String(error.message) + String(error.code ?? "")),
+  );
+
+  const payload = await getGuided(mod, {
+    principal: schoolAdminA(),
+    one: MEMBERSHIP_LOOKUP,
+    progressStore: store,
+    loadSnapshot: async () => through("teachers", { teacherCount: 1, teacherAssignmentCount: 0 }),
+  });
+  assertPayloadShape(payload);
+  assert.equal(payload.status, "configuration_required");
+  assert.equal(payload.percent, 40);
+  assert.equal(payload.nextStepKey, "teachers");
+  assert.ok(!payload.completedSteps.includes("teachers"));
+  assert.ok(payload.status !== "operational");
+});
+
+test("B12 — 0 inscription Classe→Élève + studentCount orphelin ne valide pas l'étape 6", async () => {
+  const src = fs.readFileSync(MODULE_PATH, "utf8");
+  assert.doesNotMatch(
+    src,
+    /enrolledStudentCount\s*\|\|/,
+    "fallback enrolledStudentCount || interdit — seule l'inscription en classe compte",
+  );
+  assert.doesNotMatch(
+    src,
+    /enrolledStudentCount\s*:\s*enrolledStudentCount\s*\|\|\s*asCount\(\s*base\.studentCount\s*\)/,
+    "studentCount ne doit plus alimenter enrolledStudentCount",
+  );
+
+  const mod = requireGuided();
+  const one = async (sql) => {
+    const text = String(sql);
+    if (/from\s+schools\b/i.test(text)) {
+      return {
+        name: "École A",
+        country_id: "c1",
+        address: "1 rue",
+        phone: "000",
+        logo_url: null,
+        profile_payload: { currency: "USD" },
+        country_currency: "USD",
+      };
+    }
+    if (/from\s+enrollments\b/i.test(text)) return { c: 0 };
+    if (/from\s+students\b/i.test(text)) return { c: 3 };
+    return { c: 0 };
+  };
+
+  const snapshot = await mod.loadSchoolSetupGuidedSnapshot(one, SCHOOL_A_ID);
+  assert.equal(snapshot.enrolledStudentCount, 0, "0 inscription → enrolledStudentCount=0");
+  assert.equal(snapshot.studentCount, 3, "élèves hors classe restent dans studentCount");
+  assert.equal(mod.stepSatisfied("students", snapshot), false);
+  assert.equal(mod.stepSatisfied("students", { enrolledStudentCount: 0, studentCount: 3 }), false);
+
+  const store = memoryProgressStore({
+    [SCHOOL_A_ID]: {
+      lastValidStep: 6,
+      completedSteps: [...REQUIRED_STEP_KEYS],
+      updatedAt: "2026-09-20T00:00:00.000Z",
+    },
+  });
+  const payload = await getGuided(mod, {
+    principal: schoolAdminA(),
+    one: MEMBERSHIP_LOOKUP,
+    progressStore: store,
+    loadSnapshot: async () => snapshot,
+  });
+  assertPayloadShape(payload);
+  assert.equal(payload.status, "configuration_required");
+  assert.ok(payload.percent < 60, `0 inscription ne peut pas rendre operational (percent=${payload.percent})`);
+  assert.ok(!payload.completedSteps.includes("students"));
+});
+
 test("B4b — une étape persistée redevient invalide si les données requises disparaissent", async () => {
   const mod = requireGuided();
   const store = memoryProgressStore();

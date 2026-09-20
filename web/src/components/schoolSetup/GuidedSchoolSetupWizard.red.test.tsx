@@ -113,6 +113,45 @@ describe("RED — GuidedSchoolSetupWizard UX", () => {
     expect(completeStep).not.toHaveBeenCalled();
   });
 
+  it("HOLD — à 100 % Terminer la configuration appelle onFinish sans re-POST", async () => {
+    const user = userEvent.setup();
+    const onFinish = vi.fn();
+    const payload100 = {
+      ...payload40,
+      status: "operational" as const,
+      percent: 100,
+      currentStep: 10,
+      lastValidStep: 10,
+      nextStepKey: null,
+      nextStepLabel: null,
+      completedSteps: [
+        "establishment",
+        "academicYear",
+        "structure",
+        "subjects",
+        "teachers",
+        "students",
+        "finance",
+        "pedagogy",
+        "communication",
+        "users",
+      ],
+      steps: payload40.steps.map((step) => ({ ...step, done: true, unlocked: true })),
+    };
+    getGuided.mockResolvedValue(payload100);
+    const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
+    render(
+      <MemoryRouter>
+        <GuidedSchoolSetupWizard payload={payload100} onFinish={onFinish} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Étape 10 sur 10")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Vérifier la configuration" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Terminer la configuration" }));
+    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(completeStep).not.toHaveBeenCalled();
+  });
+
   it("W8 — reprend à l'étape courante fournie par le serveur", async () => {
     const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
     render(
