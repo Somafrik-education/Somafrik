@@ -205,6 +205,7 @@ function main() {
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.test.ts"], "mobile push unit");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.android13.test.ts"], "mobile push android13");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.cng-release.test.ts"], "mobile push cng release");
+  run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.expo-constants-interop.test.ts"], "mobile push expo-constants interop");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationTap.test.ts"], "mobile cold-start tap");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile finance notification navigation");
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");

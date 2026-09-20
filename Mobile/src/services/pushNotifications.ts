@@ -70,6 +70,22 @@ export type PushRegistrationOutcome = {
 const REMEMBERED_TOKEN_KEY = "somafrik.push.currentExpoToken";
 let lastRegisteredToken: string | null = null;
 let lastRegistrationOutcome: PushRegistrationOutcome | null = null;
+let expoConstantsModuleForTests: unknown | undefined;
+
+export function setExpoConstantsModuleForTests(mod: unknown | undefined) {
+  expoConstantsModuleForTests = mod;
+}
+
+function loadExpoConstantsModule(): Record<string, unknown> {
+  try {
+    const mod =
+      expoConstantsModuleForTests !== undefined ? expoConstantsModuleForTests : require("expo-constants");
+    if (mod == null || typeof mod !== "object") return {};
+    return mod as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
 
 async function rememberPushToken(token: string | null) {
   lastRegisteredToken = token;
@@ -182,15 +198,14 @@ function nativeNotifications(): NotificationsLike {
 
 function readProjectId(): string | null {
   try {
-    const Constants = require("expo-constants") as {
-      expoConfig?: { extra?: { eas?: { projectId?: string } } };
-      easConfig?: { projectId?: string };
-      executionEnvironment?: string;
-    };
-    const extra = (Constants.expoConfig?.extra ?? {}) as { eas?: { projectId?: string } };
+    const Constants = loadExpoConstantsModule();
+    const extra = ((Constants.expoConfig as { extra?: { eas?: { projectId?: string } } } | undefined)?.extra ??
+      {}) as { eas?: { projectId?: string } };
     const fromExtra = String(extra.eas?.projectId ?? "").trim();
     if (fromExtra) return fromExtra;
-    const fromEas = String(Constants.easConfig?.projectId ?? "").trim();
+    const fromEas = String(
+      (Constants.easConfig as { projectId?: string } | undefined)?.projectId ?? "",
+    ).trim();
     return fromEas || null;
   } catch {
     return null;
@@ -199,7 +214,7 @@ function readProjectId(): string | null {
 
 function readExecutionEnvironment(): string {
   try {
-    const Constants = require("expo-constants") as { executionEnvironment?: string };
+    const Constants = loadExpoConstantsModule();
     return String(Constants.executionEnvironment ?? "");
   } catch {
     return "";
@@ -208,7 +223,7 @@ function readExecutionEnvironment(): string {
 
 function readExpoGoConfig(): unknown | null {
   try {
-    const Constants = require("expo-constants") as { expoGoConfig?: unknown };
+    const Constants = loadExpoConstantsModule();
     return Constants.expoGoConfig ?? null;
   } catch {
     return null;
@@ -311,6 +326,7 @@ export function getLastRegisteredPushTokenForTests() {
 export function resetPushRegistrationStateForTests() {
   lastRegisteredToken = null;
   lastRegistrationOutcome = null;
+  expoConstantsModuleForTests = undefined;
 }
 
 export async function registerAuthenticatedPushDevice(deps: PushRegisterDeps = {}): Promise<
