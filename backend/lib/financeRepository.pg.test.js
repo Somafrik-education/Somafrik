@@ -757,8 +757,8 @@ async function main() {
     assert.equal(optionsB[0].lastName, "Other");
     assert.equal(optionsB[0].classCode, "CLS-B1");
 
-    // P1 — Esther OKITO : ENROLLED + obligations ouvertes, partiel, soldé, sans dette, isolation.
-    const esther = await pool.query(
+    // P1 — Esther OKITO ITC : ENROLLED + obligations ouvertes, partiel, soldé, sans dette, isolation.
+    const estherItc = await pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name, status)
        VALUES ($1, 'CG-ITC-OE-26-00001', 'Esther', 'OKITO', 'active') RETURNING id`,
       [schoolA.rows[0].id],
@@ -766,7 +766,7 @@ async function main() {
     await pool.query(
       `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
        VALUES ($1, $2, $3, $4, 'ENROLLED')`,
-      [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, year.rows[0].id],
+      [schoolA.rows[0].id, estherItc.rows[0].id, klass.rows[0].id, year.rows[0].id],
     );
     const noFeeStudent = await pool.query(
       `INSERT INTO students (school_id, student_code, first_name, last_name, status)
@@ -789,39 +789,39 @@ async function main() {
          initial_amount, amount_due, amount_paid, balance, status, profile_payload
        ) VALUES ($1,$2,$3,'Scolarité','Scolarité T1','CDF','2025-2026',140000,140000,0,140000,'À payer',$4::jsonb)
        RETURNING id`,
-      [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, estherProfile],
+      [schoolA.rows[0].id, estherItc.rows[0].id, klass.rows[0].id, estherProfile],
     );
     await pool.query(
       `INSERT INTO student_fee_obligations (
          school_id, student_id, class_id, fee_type, label, currency, academic_year,
          initial_amount, amount_due, amount_paid, balance, status, profile_payload
        ) VALUES ($1,$2,$3,'Inscription','Inscription','CDF','2025-2026',50000,50000,20000,30000,'Partiellement payé',$4::jsonb)`,
-      [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, estherProfile],
+      [schoolA.rows[0].id, estherItc.rows[0].id, klass.rows[0].id, estherProfile],
     );
     await pool.query(
       `INSERT INTO student_fee_obligations (
          school_id, student_id, class_id, fee_type, label, currency, academic_year,
          initial_amount, amount_due, amount_paid, balance, status, profile_payload
        ) VALUES ($1,$2,$3,'Uniforme','Uniforme','CDF','2025-2026',15000,15000,15000,0,'Payé',$4::jsonb)`,
-      [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, estherProfile],
+      [schoolA.rows[0].id, estherItc.rows[0].id, klass.rows[0].id, estherProfile],
     );
 
     const rosterAfterEsther = await store.listPaymentStudentOptions(admin);
     const estherOption = rosterAfterEsther.find((row) => row.studentCode === "CG-ITC-OE-26-00001");
     assert.ok(estherOption, "#745: Esther ENROLLED reste dans le roster");
-    assert.equal(String(estherOption.studentId), String(esther.rows[0].id));
+    assert.equal(String(estherOption.studentId), String(estherItc.rows[0].id));
     assert.equal(
       rosterAfterEsther.some((row) => row.studentCode === "CD-2026-0001-STU-CLOSED"),
       false,
       "#745: CLOSED toujours exclu",
     );
 
-    const estherByUuid = await store.listFinanceStudentFees(admin, { studentId: esther.rows[0].id });
+    const estherByUuid = await store.listFinanceStudentFees(admin, { studentId: estherItc.rows[0].id });
     const estherByCode = await store.listFinanceStudentFees(admin, { studentId: "CG-ITC-OE-26-00001" });
     assert.equal(estherByUuid.length, 3);
     assert.equal(estherByCode.length, 3);
-    assert.ok(estherByUuid.every((row) => String(row.studentDbId) === String(esther.rows[0].id)));
-    assert.ok(estherByUuid.every((row) => row.studentId === "CG-ITC-OE-26-00001" || String(row.studentDbId) === String(esther.rows[0].id)));
+    assert.ok(estherByUuid.every((row) => String(row.studentDbId) === String(estherItc.rows[0].id)));
+    assert.ok(estherByUuid.every((row) => row.studentId === "CG-ITC-OE-26-00001" || String(row.studentDbId) === String(estherItc.rows[0].id)));
     const openSco = estherByUuid.find((row) => row.label === "Scolarité T1");
     const partialInsc = estherByUuid.find((row) => row.feeType === "Inscription");
     const settledUni = estherByUuid.find((row) => row.feeType === "Uniforme");
@@ -834,7 +834,7 @@ async function main() {
     const noneFees = await store.listFinanceStudentFees(admin, { studentId: noFeeStudent.rows[0].id });
     assert.equal(noneFees.length, 0, "élève sans obligation → aucune dette (Non imputé légitime)");
 
-    const estherAsB = await store.listFinanceStudentFees(adminB, { studentId: esther.rows[0].id });
+    const estherAsB = await store.listFinanceStudentFees(adminB, { studentId: estherItc.rows[0].id });
     assert.equal(estherAsB.length, 0, "aucune fuite inter-établissement sur studentId");
     assert.equal(
       estherByUuid.some((row) => String(row.schoolCode) !== "CD-2026-0001"),
@@ -867,7 +867,7 @@ async function main() {
       admin,
     );
     assert.ok(estherPay.id);
-    const afterPartial = (await store.listFinanceStudentFees(admin, { studentId: esther.rows[0].id })).find(
+    const afterPartial = (await store.listFinanceStudentFees(admin, { studentId: estherItc.rows[0].id })).find(
       (row) => String(row.dbId || row.id) === String(estherOpenIns.rows[0].id) || row.label === "Scolarité T1",
     );
     assert.equal(Number(afterPartial.balance), 100_000, "paiement partiel diminue exactement le reste dû");
@@ -890,7 +890,7 @@ async function main() {
     assert.equal(afterSettle.status, "Payé");
     const openAfterSettle = collectOpenObligationsFromProjection(estherOption.studentId, [
       afterSettle,
-      ...(await store.listFinanceStudentFees(admin, { studentId: esther.rows[0].id })),
+      ...(await store.listFinanceStudentFees(admin, { studentId: estherItc.rows[0].id })),
     ]);
     assert.equal(
       openAfterSettle.some((row) => row.label === "Scolarité T1"),
