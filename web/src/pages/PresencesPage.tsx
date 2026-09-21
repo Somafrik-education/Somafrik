@@ -623,8 +623,6 @@ function ParentPresencesView({
             id: key,
             matricule: key,
             publicId: key,
-            studentCode: key,
-            studentUuid: key,
           }),
         ),
       )
