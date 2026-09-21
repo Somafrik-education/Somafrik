@@ -42,6 +42,7 @@ import {
 import {
   resolveClassTodayPresenceBadge,
   resolveExpectedStudentsForClassCard,
+  resolvePresenceClassHeadcount,
 } from "../lib/classTodayPresenceBadge";
 
 const STATUS_OPTIONS: AttendanceStatus[] = ["Présent", "Absent", "Retard", "Justifié"];
@@ -347,15 +348,20 @@ export function PresencesPage() {
               (presence) =>
                 sameAttendanceDay(String(presence.date ?? ""), todayLabel) && asClassMatch(presence, card),
             );
+            const expectedStudents = resolveExpectedStudentsForClassCard({
+              studentCount: card.studentCount,
+              students,
+              classId: card.classId,
+              classCode: card.classCode,
+            });
             const badge = resolveClassTodayPresenceBadge({
-              expectedStudents: resolveExpectedStudentsForClassCard({
-                studentCount: card.studentCount,
-                students,
-                classId: card.classId,
-                classCode: card.classCode,
-              }),
+              expectedStudents,
               todayRows,
               todayLabel,
+            });
+            const headcount = resolvePresenceClassHeadcount({
+              studentCount: card.studentCount,
+              expectedStudents,
             });
 
             return (
@@ -366,7 +372,7 @@ export function PresencesPage() {
                 className="rounded-2xl border border-line bg-white p-5 text-left transition hover:border-brand/40 hover:shadow-sm"
               >
                 <p className="text-lg font-black text-ink">{card.className}</p>
-                <p className="mt-1 text-sm font-semibold text-muted">{card.studentCount} élève(s)</p>
+                <p className="mt-1 text-sm font-semibold text-muted">{headcount} élève(s)</p>
                 <p className="mt-1 text-xs text-muted">{badge.badgeText}</p>
               </button>
             );
