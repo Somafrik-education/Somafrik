@@ -39,6 +39,7 @@ const BACKEND = path.join(__dirname, "..");
 } = require("../db/connectionConfig");
 const { createFallbackRepository, initializeRepository } = require("../db/repositoryFactory");
 const { shouldSeedDemoData, assertProductionSecurityConfiguration } = require("../lib/demoSeedPolicy");
+const { forceMemoryEnvironment } = require("./dev-memory");
 
 function validDiscreteEnv(overrides = {}) {
   return {
@@ -385,11 +386,47 @@ async function testDevelopmentMemoryModeWithoutDbConfig() {
   console.log("OK runtime: development + SOMAFRIK_DB_REQUIRED=false sans DB → memory");
 }
 
+async function testExplicitDevMemoryIgnoresInheritedDbConfig() {
+  const env = validUrlEnv({
+    NODE_ENV: "test",
+    DB_HOST: "db-shadow.internal",
+    DB_PORT: "5432",
+    DB_USER: "shadow",
+    DB_PASSWORD: "shadow-password",
+    DB_NAME: "shadow",
+    POSTGRES_HOST: "pg-shadow.internal",
+    POSTGRES_USER: "shadow",
+    POSTGRES_PASSWORD: "shadow-password",
+    POSTGRES_DB: "shadow",
+    DB_SSL: "true",
+    DB_POOL_MAX: "4",
+  });
+
+  forceMemoryEnvironment(env);
+
+  assert.strictEqual(env.SOMAFRIK_DB_REQUIRED, "false");
+  assert.strictEqual(env.DATABASE_URL, undefined);
+  assert.strictEqual(env.DB_HOST, undefined);
+  assert.strictEqual(env.POSTGRES_HOST, undefined);
+  assert.strictEqual(env.DB_SSL, undefined);
+  assert.strictEqual(env.DB_POOL_MAX, undefined);
+
+  const result = await initializeRepository({
+    env,
+    logger: { warn() {} },
+  });
+
+  assert.strictEqual(result.engine, "memory");
+  assert.strictEqual(result.usedFallback, true);
+  console.log("OK runtime: dev:memory ignore toute configuration PostgreSQL héritée");
+}
+
 async function main() {
   runUnitValidationTests();
   runHardcodedSecretAudit();
   await runProductionInitializeGuard();
   await testDevelopmentMemoryModeWithoutDbConfig();
+  await testExplicitDevMemoryIgnoresInheritedDbConfig();
   console.log("verify-db-config: SUCCESS");
 }
 
