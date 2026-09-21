@@ -38,3 +38,32 @@ export function navigateRegisteredPushDestination(
   const resolved = resolveRegisteredPushDestination(destination, registeredRouteNames);
   navigate(resolved, resolved === destination ? params : undefined);
 }
+
+type PushNavigationRef = {
+  isReady?: () => boolean;
+  navigate: (...args: never[]) => unknown;
+  getRootState?: () => unknown;
+};
+
+/** Real tap adapter used by PushNotificationsRuntime and AppNavigator.onReady. */
+export function callPushNavigationRef(
+  navigate: (...args: never[]) => unknown,
+  name: string,
+  params?: AllowedPushNavigationParams,
+) {
+  (navigate as (screen: string, nextParams?: AllowedPushNavigationParams) => unknown)(name, params);
+}
+
+export function dispatchRegisteredPushNavigation(
+  navigation: PushNavigationRef,
+  destination: AllowedPushDestination,
+  params?: AllowedPushNavigationParams,
+) {
+  if (typeof navigation.isReady === "function" && !navigation.isReady()) return;
+  navigateRegisteredPushDestination(
+    (name, nextParams) => callPushNavigationRef(navigation.navigate, name, nextParams),
+    destination,
+    params,
+    collectRegisteredRouteNames(navigation.getRootState?.() as NavigationStateLike | undefined),
+  );
+}

@@ -36,6 +36,7 @@ on:
       - "Mobile/src/lib/pushNotificationNavigate.ts"
       - "Mobile/src/lib/pushNotificationTap.ts"
       - "Mobile/src/lib/pushNotificationTap.test.ts"
+      - "Mobile/src/lib/pushNotificationRuntime.tap.test.ts"
       - "Mobile/src/lib/financeNotificationNavigation.test.ts"
       - "Mobile/src/components/PushNotificationsRuntime.tsx"
       - "package.json"
