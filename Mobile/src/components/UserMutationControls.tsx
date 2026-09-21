@@ -1,9 +1,16 @@
 import { useRef, useState } from "react";
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
 import FormField from "./FormField";
 import SecretHandoffModal, { type OneShotCredentials } from "./SecretHandoffModal";
+import {
+  canAssignRoleToUserAccount,
+  isStudentLinkedAccount,
+  STUDENT_ROLE_LOCKED_MESSAGE,
+  STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE,
+  isTeacherRoleLabel,
+} from "../lib/businessProfile";
 import {
   firstErrorKey,
   hasFieldErrors,
@@ -11,9 +18,17 @@ import {
   validateUserIdentityDraft,
 } from "../lib/formFieldValidation";
 import { canGrantUserRole, resolveEntityCrudAccess } from "../lib/mobileCrudParity";
-import { isStudentLinkedAccount, STUDENT_ROLE_LOCKED_MESSAGE } from "../lib/businessProfile";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import {
+  alignRolesToCatalogue,
+  createSingleFlight,
+  currentAccessRoleLabels,
+  saveUserRoleChanges,
+  visibleAssignableRoles,
+  type AssignableRoleChoice,
+} from "../lib/userRoleAssignment";
 import { createClientsUser, grantClientsUserRole, revokeClientsUserRole, updateClientsUser } from "../services/api";
+import { listAssignableEstablishmentRoles } from "../services/schoolSettingsApi";
 
 type UserRow = {
   id: string;
@@ -24,6 +39,7 @@ type UserRow = {
   gender?: string;
   status?: string;
   role?: string;
+  roles?: string[];
   identifier?: string;
   publicId?: string;
   activeRoles?: string[];
@@ -31,19 +47,8 @@ type UserRow = {
   secondaryRoles?: string[];
   accountKind?: string;
   linkedStudent?: { studentId?: string; studentCode?: string } | null;
+  linkedTeacher?: { teacherId?: string; teacherCode?: string } | null;
 };
-
-function hasTeacherRole(row: UserRow): boolean {
-  const tokens = [
-    row.role,
-    ...(row.activeRoles ?? []),
-    ...(row.secondaryRoles ?? []),
-    ...(row.roleKeys ?? []),
-  ]
-    .map((value) => String(value ?? "").trim().toLowerCase())
-    .filter(Boolean);
-  return tokens.some((value) => value === "enseignant" || value === "teacher");
-}
 
 export default function UserMutationControls({
   row,
@@ -57,8 +62,14 @@ export default function UserMutationControls({
   const canGrant = canGrantUserRole(session);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [granting, setGranting] = useState(false);
-  const [revoking, setRevoking] = useState(false);
+  const [rolesOpen, setRolesOpen] = useState(false);
+  const [rolesLoading, setRolesLoading] = useState(false);
+  const [rolesSaving, setRolesSaving] = useState(false);
+  const [rolesError, setRolesError] = useState("");
+  const [catalogReady, setCatalogReady] = useState(false);
+  const [roleChoices, setRoleChoices] = useState<AssignableRoleChoice[]>([]);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [baselineRoles, setBaselineRoles] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [firstName, setFirstName] = useState("");
@@ -72,6 +83,8 @@ export default function UserMutationControls({
   const emailRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
+  const rolesFlight = useRef(createSingleFlight());
+  const rolesSavingRef = useRef(false);
   const editing = Boolean(row);
 
   const clearFieldError = (key: string) => {
@@ -161,59 +174,82 @@ export default function UserMutationControls({
     }
   };
 
-  const grantTeacher = () => {
-    if (!row || !canGrant || hasTeacherRole(row) || granting) return;
-    if (isStudentLinkedAccount(row)) {
-      Alert.alert("Attribution impossible", STUDENT_ROLE_LOCKED_MESSAGE);
-      return;
-    }
-    Alert.alert("Attribuer le rôle Enseignant", "Le profil enseignant sera créé côté serveur à partir de ce compte.", [
-      { text: "Annuler", style: "cancel" },
-      {
-        text: "Attribuer",
-        onPress: async () => {
-          setGranting(true);
-          try {
-            await grantClientsUserRole(row.id, "Enseignant");
-            await onChanged();
-          } catch (err) {
-            Alert.alert("Attribution impossible", err instanceof Error ? err.message : "Échec serveur.");
-          } finally {
-            setGranting(false);
-          }
-        },
-      },
-    ]);
+  const closeRoles = () => {
+    if (rolesSavingRef.current || rolesSaving) return;
+    setRolesOpen(false);
   };
 
-  const revokeTeacher = () => {
-    if (!row || !canGrant || !hasTeacherRole(row) || revoking) return;
-    if (isStudentLinkedAccount(row)) {
-      Alert.alert("Retrait impossible", STUDENT_ROLE_LOCKED_MESSAGE);
-      return;
+  const openRoles = async () => {
+    if (!row || !canGrant || rolesSaving) return;
+    if (isStudentLinkedAccount(row)) return;
+    setRolesError("");
+    setCatalogReady(false);
+    setRoleChoices([]);
+    setSelectedRoles([]);
+    setBaselineRoles([]);
+    setRolesOpen(true);
+    setRolesLoading(true);
+    try {
+      const payload = await listAssignableEstablishmentRoles();
+      const choices = visibleAssignableRoles(payload.roles ?? []);
+      const aligned = alignRolesToCatalogue(currentAccessRoleLabels(row), choices);
+      setRoleChoices(choices);
+      setSelectedRoles(aligned);
+      setBaselineRoles(aligned);
+      setCatalogReady(true);
+    } catch (err) {
+      setRolesError(err instanceof Error ? err.message : "Impossible de charger les rôles.");
+      setCatalogReady(false);
+    } finally {
+      setRolesLoading(false);
     }
-    Alert.alert(
-      "Retirer le rôle Enseignant",
-      "Le rôle sera retiré côté serveur. Aucun succès local si l'API refuse (403/409).",
-      [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Retirer",
-          style: "destructive",
-          onPress: async () => {
-            setRevoking(true);
-            try {
-              await revokeClientsUserRole(row.id, "Enseignant");
-              await onChanged();
-            } catch (err) {
-              Alert.alert("Retrait impossible", err instanceof Error ? err.message : "Échec serveur.");
-            } finally {
-              setRevoking(false);
-            }
-          },
-        },
-      ],
+  };
+
+  const toggleRole = (roleName: string) => {
+    if (rolesSaving || !row) return;
+    if (!canAssignRoleToUserAccount(row, roleName)) return;
+    setSelectedRoles((current) =>
+      current.includes(roleName) ? current.filter((item) => item !== roleName) : [...current, roleName],
     );
+  };
+
+  const submitRoles = () => {
+    if (!row) return;
+    void rolesFlight.current.run(async () => {
+      if (isStudentLinkedAccount(row)) {
+        setRolesError(STUDENT_ROLE_LOCKED_MESSAGE);
+        return;
+      }
+      rolesSavingRef.current = true;
+      setRolesSaving(true);
+      setRolesError("");
+      try {
+        const result = await saveUserRoleChanges({
+          user: row,
+          userId: row.id,
+          currentRoles: baselineRoles,
+          selectedRoles,
+          grant: grantClientsUserRole,
+          revoke: revokeClientsUserRole,
+          reload: () => onChanged(),
+          reloadAfterFailure: () => onChanged(),
+          onGranted: (role) => {
+            setBaselineRoles((current) => (current.includes(role) ? current : [...current, role]));
+          },
+          onRevoked: (role) => {
+            setBaselineRoles((current) => current.filter((item) => item !== role));
+          },
+        });
+        if (!result.ok) {
+          setRolesError(result.message);
+          return;
+        }
+        setRolesOpen(false);
+      } finally {
+        rolesSavingRef.current = false;
+        setRolesSaving(false);
+      }
+    });
   };
 
   const fields = (
@@ -303,6 +339,55 @@ export default function UserMutationControls({
     </CanonicalMutationModal>
   );
 
+  const rolesModal = (
+    <CanonicalMutationModal
+      visible={rolesOpen}
+      title="Gérer les rôles"
+      error={rolesError}
+      saving={rolesSaving}
+      submitDisabled={rolesSaving || rolesLoading || !catalogReady}
+      onClose={closeRoles}
+      onSubmit={submitRoles}
+    >
+      <Text style={styles.subtitle}>Sélectionnez les rôles d'accès de cet utilisateur.</Text>
+      {rolesLoading ? <Text style={styles.hint}>Chargement des rôles…</Text> : null}
+      {rolesSaving ? (
+        <Text style={styles.hint} testID="users-roles-saving">
+          Enregistrement…
+        </Text>
+      ) : null}
+      {!rolesLoading && catalogReady && roleChoices.length === 0 ? (
+        <Text style={styles.hint}>Aucun rôle attribuable pour votre périmètre.</Text>
+      ) : null}
+      {roleChoices.map((role) => {
+        const checked = selectedRoles.includes(role.roleName);
+        const incompatible = row ? !canAssignRoleToUserAccount(row, role.roleName) : false;
+        return (
+          <TouchableOpacity
+            key={role.roleKey}
+            style={styles.roleRow}
+            onPress={() => toggleRole(role.roleName)}
+            disabled={rolesSaving || rolesLoading || incompatible}
+            accessibilityRole="checkbox"
+            accessibilityLabel={role.roleName}
+            accessibilityState={{ checked, disabled: rolesSaving || rolesLoading || incompatible }}
+            testID={`users-role-option-${role.roleKey}`}
+          >
+            <View style={[styles.checkbox, checked ? styles.checkboxOn : null]}>
+              {checked ? <Text style={styles.checkboxMark}>✓</Text> : null}
+            </View>
+            <View style={styles.roleCopy}>
+              <Text style={styles.roleName}>{role.roleName}</Text>
+              {incompatible && isTeacherRoleLabel(role.roleName) ? (
+                <Text style={styles.hint}>{STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE}</Text>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </CanonicalMutationModal>
+  );
+
   const issuedModal = (
     <SecretHandoffModal
       visible={Boolean(handoff)}
@@ -321,34 +406,23 @@ export default function UserMutationControls({
             <Text style={styles.smallText}>Modifier</Text>
           </TouchableOpacity>
         ) : null}
-        {canGrant && !hasTeacherRole(row) && !isStudentLinkedAccount(row) ? (
+        {canGrant && !isStudentLinkedAccount(row) ? (
           <TouchableOpacity
             style={styles.small}
-            onPress={grantTeacher}
-            disabled={granting}
+            onPress={() => void openRoles()}
+            disabled={rolesSaving}
             accessibilityRole="button"
-            accessibilityLabel="Attribuer le rôle Enseignant"
-            testID="users-grant-teacher"
+            accessibilityLabel="Gérer les rôles"
+            testID="users-manage-roles"
           >
-            <Text style={styles.smallText}>{granting ? "Attribution…" : "Attribuer Enseignant"}</Text>
+            <Text style={styles.smallText}>Gérer les rôles</Text>
           </TouchableOpacity>
         ) : null}
         {canGrant && isStudentLinkedAccount(row) ? (
           <Text style={styles.hint}>{STUDENT_ROLE_LOCKED_MESSAGE}</Text>
         ) : null}
-        {canGrant && hasTeacherRole(row) && !isStudentLinkedAccount(row) ? (
-          <TouchableOpacity
-            style={styles.smallDanger}
-            onPress={revokeTeacher}
-            disabled={revoking}
-            accessibilityRole="button"
-            accessibilityLabel="Retirer le rôle Enseignant"
-            testID="users-revoke-teacher"
-          >
-            <Text style={styles.smallDangerText}>{revoking ? "Retrait…" : "Retirer Enseignant"}</Text>
-          </TouchableOpacity>
-        ) : null}
         {fields}
+        {rolesModal}
         {issuedModal}
       </View>
     );
@@ -371,7 +445,31 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 8, marginTop: 8, flexWrap: "wrap" },
   small: { minHeight: MIN_TOUCH_TARGET_DP, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "#E2E8F0", justifyContent: "center", alignSelf: "flex-start" },
   smallText: { color: "#0F172A", fontWeight: "800" },
-  smallDanger: { minHeight: MIN_TOUCH_TARGET_DP, paddingHorizontal: 12, borderRadius: 12, backgroundColor: "#FEE2E2", justifyContent: "center", alignSelf: "flex-start" },
-  smallDangerText: { color: "#B91C1C", fontWeight: "800" },
   hint: { color: "#64748B", fontWeight: "700" },
+  subtitle: { color: "#64748B", fontWeight: "700", marginBottom: 12, lineHeight: 20 },
+  roleRow: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 8,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#94A3B8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxOn: { backgroundColor: "#2563EB", borderColor: "#2563EB" },
+  checkboxMark: { color: "#FFFFFF", fontWeight: "900", fontSize: 14 },
+  roleCopy: { flex: 1 },
+  roleName: { color: "#0F172A", fontWeight: "800" },
 });

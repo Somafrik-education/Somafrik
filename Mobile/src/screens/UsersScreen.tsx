@@ -87,7 +87,7 @@ export default function UsersScreen() {
       }}
       ListFooterComponent={
         <Text style={styles.hint}>
-          L'attribution du rôle Enseignant est refusée pour un compte lié à un élève actif. La modification de la matrice des droits reste disponible uniquement sur le Web.
+          Les rôles d'accès peuvent être affectés selon le catalogue de l'établissement. Les rôles d'un compte lié à un élève restent verrouillés selon les règles métier. La matrice des permissions est administrée séparément.
         </Text>
       }
     />
