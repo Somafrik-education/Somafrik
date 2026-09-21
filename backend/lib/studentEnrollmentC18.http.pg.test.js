@@ -237,6 +237,22 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
       [USER_A, USER_B, USER_TEACHER, USER_PARENT, USER_STUDENT, schoolAId, schoolBId],
     );
 
+    // Autorité canonique Parent : le JWT studentIds seul ne doit jamais ouvrir
+    // l'accès. Ce fixture C18 matérialise le rattachement live attendu.
+    const parentContact = await pool.query(
+      `INSERT INTO contacts (
+         school_id, country_id, first_name, last_name, contact_type, email, status, user_id
+       ) VALUES ($1, $2, 'Parent', 'A', 'Parent', 'p@lot2.test', 'active', $3)
+       RETURNING id`,
+      [schoolAId, cd.rows[0].id, USER_PARENT],
+    );
+    await pool.query(
+      `INSERT INTO contact_relations (
+         school_id, country_id, relation_type, contact_id, student_id, status, profile_payload, created_at, updated_at
+       ) VALUES ($1, $2, 'parent_student', $3, $4, 'active', '{}'::jsonb, NOW(), NOW())`,
+      [schoolAId, cd.rows[0].id, parentContact.rows[0].id, STUDENT_A],
+    );
+
     child = spawn(process.execPath, ["backend/server.js"], {
       cwd: ROOT,
       env: {
