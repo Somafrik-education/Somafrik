@@ -7,6 +7,7 @@ import { z } from "zod";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ui/Toast";
 import { Modal } from "../components/ui/Modal";
+import { PasswordVisibilityButton } from "../components/ui/PasswordVisibilityButton";
 import { BrandLogo } from "../components/BrandLogo";
 import { Button } from "../components/ui/shadcn/button";
 import { Input } from "../components/ui/shadcn/input";
@@ -95,6 +96,9 @@ export function LoginPage() {
   const [serverError, setServerError] = useState("");
   const [passwordChangeOpen, setPasswordChangeOpen] = useState(false);
   const [passwordChangeError, setPasswordChangeError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -242,6 +246,8 @@ export function LoginPage() {
     setPasswordChangeOpen(false);
     setSession(null);
     setPasswordChangeError("");
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
   }
 
   return (
@@ -334,16 +340,24 @@ export function LoginPage() {
                 render={({ field }) => (
                   <FormItem className="space-y-1">
                     <FormLabel required>Mot de passe</FormLabel>
-                    <FormControl>
-                      <Input
-                        className="h-[38px] bg-white"
-                        type="password"
-                        placeholder="Entrez votre mot de passe"
-                        autoComplete="current-password"
-                        data-testid="login-password"
-                        {...field}
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          className="h-[38px] bg-white pr-11"
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Entrez votre mot de passe"
+                          autoComplete="current-password"
+                          data-testid="login-password"
+                          {...field}
+                        />
+                      </FormControl>
+                      <PasswordVisibilityButton
+                        visible={showPassword}
+                        onToggle={() => setShowPassword((visible) => !visible)}
+                        showLabel="Afficher le mot de passe de connexion"
+                        hideLabel="Masquer le mot de passe de connexion"
                       />
-                    </FormControl>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -452,9 +466,24 @@ export function LoginPage() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel required>Nouveau mot de passe</FormLabel>
-                  <FormControl>
-                    <Input type="password" autoFocus {...field} />
-                  </FormControl>
+                  <div className="relative">
+                    <FormControl>
+                      <Input
+                        type={showNewPassword ? "text" : "password"}
+                        className="pr-11"
+                        autoComplete="new-password"
+                        autoFocus
+                        data-testid="login-new-password"
+                        {...field}
+                      />
+                    </FormControl>
+                    <PasswordVisibilityButton
+                      visible={showNewPassword}
+                      onToggle={() => setShowNewPassword((visible) => !visible)}
+                      showLabel="Afficher le nouveau mot de passe"
+                      hideLabel="Masquer le nouveau mot de passe"
+                    />
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
@@ -465,9 +494,23 @@ export function LoginPage() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel required>Confirmation</FormLabel>
-                  <FormControl>
-                    <Input type="password" {...field} />
-                  </FormControl>
+                  <div className="relative">
+                    <FormControl>
+                      <Input
+                        type={showConfirmPassword ? "text" : "password"}
+                        className="pr-11"
+                        autoComplete="new-password"
+                        data-testid="login-confirm-password"
+                        {...field}
+                      />
+                    </FormControl>
+                    <PasswordVisibilityButton
+                      visible={showConfirmPassword}
+                      onToggle={() => setShowConfirmPassword((visible) => !visible)}
+                      showLabel="Afficher la confirmation du mot de passe"
+                      hideLabel="Masquer la confirmation du mot de passe"
+                    />
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
