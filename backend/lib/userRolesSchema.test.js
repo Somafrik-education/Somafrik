@@ -7,6 +7,8 @@ const {
   NORMALIZE_ROLE_CODE_FUNCTION_SQL,
   backfillFromUsersRoleSql,
   inventoryUnknownUsersRoleSql,
+  seedDeterministicUserRolesSql,
+  missingMappedUserRolesSql,
 } = require("../db/userRolesSchema");
 
 test("normalizeRoleCode: CONSEILLER_PÉDAGOGIQUE → conseiller_pedagogique", () => {
@@ -93,4 +95,30 @@ test("ensureUserRolesCanonicalSchema repose le trigger après les backfills", ()
   const triggerQueryAt = body.lastIndexOf("await this.query(STUDENT_ROLE_LOCK_TRIGGER_SQL)");
   assert.ok(prelockQueryAt >= 0 && backfillQueryAt > prelockQueryAt && triggerQueryAt > backfillQueryAt);
   assert.doesNotMatch(body, /await this\.query\(USER_ROLES_SCHEMA_SQL\)/);
+});
+
+test("seed user_roles déterministe : school_id du compte, pas de role_key NULL", () => {
+  const sql = seedDeterministicUserRolesSql(true);
+  assert.match(sql, /u\.school_id/);
+  assert.match(sql, /IS NOT NULL/);
+  assert.match(sql, /ON CONFLICT DO NOTHING/);
+  assert.match(sql, /to_jsonb\(st\)->>'user_id'/);
+  const missing = missingMappedUserRolesSql(true);
+  assert.match(missing, /IS NOT DISTINCT FROM u\.school_id/);
+});
+
+test("le seed démo PostgreSQL écrit user_roles après les INSERT users", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "../db/postgresRepository.js"), "utf8");
+  const seedStart = src.indexOf("if (shouldSeedDemoData())");
+  const seedEnd = src.indexOf("await this.ensurePlatformPersonalDataDeny()", seedStart);
+  const block = src.slice(seedStart, seedEnd);
+  const usersInsert = block.indexOf("await this.seedIfEmpty()");
+  const rolesInsert = block.lastIndexOf("await this.ensureSeededUserRoles()");
+  assert.ok(usersInsert >= 0 && rolesInsert > usersInsert);
+  assert.ok(block.indexOf("await this.ensureV2Data()") < rolesInsert);
+  const authority = fs.readFileSync(path.join(__dirname, "liveRbacPrincipalAuthority.js"), "utf8");
+  assert.match(authority, /failClosedLegacyResolution/);
+  assert.doesNotMatch(authority, /principal\.permissions/);
 });
