@@ -116,15 +116,36 @@ describe("resolveClassTodayPresenceBadge — roster attendu", () => {
 });
 
 describe("resolveExpectedStudentsForClassCard", () => {
-  it("studentCount 0 → roster vide fiable", () => {
+  it("studentCount 0 et aucun élève de la classe → roster vide", () => {
     expect(
       resolveExpectedStudentsForClassCard({
         studentCount: 0,
-        students: [{ id: "A", classId: "uuid-a", classCode: "CLS-A" }],
+        students: [{ id: "A", classId: "uuid-b", classCode: "CLS-B" }],
         classId: "uuid-a",
         classCode: "CLS-A",
       }),
     ).toEqual([]);
+  });
+
+  it("#759 — studentCount 0 mais 6 élèves canoniques de la classe → ces 6 élèves", () => {
+    const students = Array.from({ length: 6 }, (_, index) => ({
+      id: `ELE-${index + 1}`,
+      matricule: `ELE-${index + 1}`,
+      classId: "uuid-p1",
+      classCode: "CLS-P1A",
+      status: "active",
+    }));
+    const roster = resolveExpectedStudentsForClassCard({
+      studentCount: 0,
+      students: [
+        ...students,
+        { id: "OTHER", matricule: "OTHER", classId: "uuid-b", classCode: "CLS-B", status: "active" },
+      ],
+      classId: "uuid-p1",
+      classCode: "CLS-P1A",
+    });
+    expect(roster).toHaveLength(6);
+    expect(roster?.map((student) => student.id)).toEqual(students.map((student) => student.id));
   });
 
   it("hydratation partielle vs studentCount → null fail-closed", () => {

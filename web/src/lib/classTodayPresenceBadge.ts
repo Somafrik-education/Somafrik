@@ -3,6 +3,7 @@
  *
  * Contrat fail-closed aligné sur Mobile/src/lib/classTodayPresenceBadge.ts :
  * - 0 élève attendu → « Présence — », jamais un pourcentage
+ * - un compteur classe à 0 ne remplace pas un roster canonique déjà chargé
  * - roster attendu indisponible / incomplet / recorded !== expected → « Non saisi »
  * - chaque élève attendu a une ligne du jour → « Présence N % » (Présent + Retard)
  * - lignes hors roster (élève historique, doublon) ignorées ; elles ne rendent jamais l'appel complet
@@ -96,7 +97,8 @@ export function studentBelongsToPresenceCard(
 
 /**
  * Roster attendu pour une carte classe.
- * `null` = identités non fiables (hydratation partielle vs studentCount) → fail-closed.
+ * `null` = identités non fiables (compteur positif, hydratation partielle) → fail-closed.
+ * Un compteur classe à 0 ne masque pas les élèves canoniques déjà chargés.
  */
 export function resolveExpectedStudentsForClassCard<T extends ExpectedStudent>(input: {
   studentCount: number;
@@ -104,12 +106,24 @@ export function resolveExpectedStudentsForClassCard<T extends ExpectedStudent>(i
   classId?: string;
   classCode?: string;
 }): T[] | null {
-  if (input.studentCount <= 0) return [];
+  const studentCount = Math.max(0, Number(input.studentCount) || 0);
   const roster = input.students.filter(
     (student) => studentBelongsToPresenceCard(student, input) && isExpectedStudentForToday(student),
   );
-  if (roster.length !== input.studentCount) return null;
+  if (studentCount <= 0) return roster;
+  if (roster.length !== studentCount) return null;
   return roster;
+}
+
+/** Effectif affiché : roster canonique résolu, sinon le compteur classe. */
+export function resolvePresenceClassHeadcount(input: {
+  studentCount: number;
+  expectedStudents: readonly unknown[] | null;
+}): number {
+  if (input.expectedStudents == null) {
+    return Math.max(0, Number(input.studentCount) || 0);
+  }
+  return input.expectedStudents.length;
 }
 
 export function resolveClassTodayPresenceBadge(input: {

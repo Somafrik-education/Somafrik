@@ -140,6 +140,39 @@ describe("PresencesPage — roster canonique", () => {
     expect(secondA[1].textContent).toMatch(/Présence —/);
   });
 
+  it("#759 — 1ère Primaire A affiche 6 et le badge du jour quand /classes annonce 0", async () => {
+    const now = new Date();
+    const isoToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const students = Array.from({ length: 6 }, (_, index) => ({
+      id: `ELE-${index + 1}`,
+      matricule: `ELE-${index + 1}`,
+      classId: "uuid-p1",
+      classCode: "CLS-P1A",
+      status: "active",
+    }));
+    dataState.classes = [
+      { id: "uuid-p1", classId: "uuid-p1", classCode: "CLS-P1A", name: "1ère Primaire A", students: 0 },
+    ];
+    dataState.students = students;
+    dataState.presences = students.map((student, index) => ({
+      studentId: student.id,
+      classId: "uuid-p1",
+      classCode: "CLS-P1A",
+      date: isoToday,
+      status: index === 0 ? "Absent" : "Présent",
+      present: index !== 0,
+    }));
+
+    render(<RoutedPresencesPage />);
+    const card = (await screen.findAllByRole("button")).find((node) =>
+      node.textContent?.includes("1ère Primaire A"),
+    );
+    expect(card?.textContent).toMatch(/6 élève/);
+    expect(card?.textContent).not.toMatch(/0 élève/);
+    expect(card?.textContent).toMatch(/Présence 83 %/);
+    expect(card?.textContent).not.toMatch(/Présence —/);
+  });
+
   it("PARITY-057 — lignes A/B/D ne complètent pas le roster A/B/C", async () => {
     const now = new Date();
     const isoToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;

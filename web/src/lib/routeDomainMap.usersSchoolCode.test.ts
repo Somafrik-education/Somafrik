@@ -88,6 +88,41 @@ describe("domainsForPath — tableau de bord hydrate l'assiette de paiement", ()
   });
 });
 
+describe("domainsForPath — /presences hydrate les élèves", () => {
+  it("charge students avec le roster de présence pour un admin Élèves:READ", () => {
+    const ctx: PermissionContext = {
+      user: {
+        role: "Admin School",
+        schoolCode: "CD-IN-26-001",
+        permissions: [
+          "Présences:READ",
+          "Élèves:READ",
+          "Classes:READ",
+          "Enseignants:READ",
+          "Affectations:READ",
+        ],
+      },
+      rolePermissions: {},
+    };
+    const domains = domainsForPath("/presences", ctx);
+    expect(domains).toContain("presences");
+    expect(domains).toContain("classes");
+    expect(domains).toContain("students");
+  });
+
+  it("n'ajoute pas students sans Élèves:READ", () => {
+    const ctx: PermissionContext = {
+      user: {
+        role: "Enseignant",
+        schoolCode: "CD-IN-26-001",
+        permissions: ["Présences:READ", "Classes:READ", "Enseignants:READ", "Affectations:READ"],
+      },
+      rolePermissions: {},
+    };
+    expect(domainsForPath("/presences", ctx)).not.toContain("students");
+  });
+});
+
 describe("domainsForPath — comptes utilisateurs", () => {
   it("charge schools avec users sur la route Superadmin pour le formulaire, pas pour le code public", () => {
     const domains = domainsForPath("/administration/utilisateurs", superAdminContext);
