@@ -58,6 +58,12 @@ function main() {
   assert.match(formField, /accessibilityLabel=\{accessibilityLabel \?\? accessibleLabel\}/);
   assert.match(formField, /formatFieldLabel/);
   assert.match(formField, /FieldLabel/);
+  assert.match(formField, /const \[passwordVisible, setPasswordVisible\] = useState\(false\)/);
+  assert.match(formField, /secureTextEntry=\{isPassword \? !passwordVisible : inputProps\.secureTextEntry\}/);
+  assert.match(formField, /eye-off-outline/);
+  assert.match(formField, /eye-outline/);
+  assert.match(formField, /Afficher le mot de passe/);
+  assert.match(formField, /Masquer le mot de passe/);
   assert.doesNotMatch(formField, /<Text style=\{styles\.label\}>\{visibleLabel\}<\/Text>/);
 
   const tokens = fs.readFileSync(path.join(SRC, "lib", "formFieldTokens.ts"), "utf8");

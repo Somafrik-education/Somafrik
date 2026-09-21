@@ -1,14 +1,16 @@
-import { forwardRef, type ReactNode } from "react";
+import { forwardRef, useState, type ReactNode } from "react";
 import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
   type StyleProp,
   type TextInputProps,
   type TextStyle,
   type ViewStyle,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import {
   FORM_BORDER_COLOR,
   FORM_BORDER_ERROR_COLOR,
@@ -85,6 +87,8 @@ const FormField = forwardRef<TextInput, FormFieldProps>(function FormField(
   const accessibleLabel = formatFieldLabel(label, { required, optional });
   const defaults = TYPE_DEFAULTS[type];
   const invalid = Boolean(error && String(error).trim());
+  const isPassword = type === "password";
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   return (
     <View style={[styles.block, variant === "compact" && styles.compactBlock, containerStyle]}>
@@ -103,6 +107,7 @@ const FormField = forwardRef<TextInput, FormFieldProps>(function FormField(
           {...defaults}
           {...inputProps}
           editable={editable}
+          secureTextEntry={isPassword ? !passwordVisible : inputProps.secureTextEntry}
           placeholderTextColor={FORM_PLACEHOLDER_COLOR}
           accessibilityLabel={accessibilityLabel ?? accessibleLabel}
           style={[
@@ -112,6 +117,24 @@ const FormField = forwardRef<TextInput, FormFieldProps>(function FormField(
             inputStyle,
           ]}
         />
+        {isPassword ? (
+          <TouchableOpacity
+            style={styles.passwordToggle}
+            onPress={() => setPasswordVisible((visible) => !visible)}
+            disabled={!editable}
+            hitSlop={6}
+            testID={inputProps.testID ? `${inputProps.testID}-visibility-toggle` : undefined}
+            accessibilityRole="button"
+            accessibilityLabel={passwordVisible ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+            accessibilityState={{ disabled: !editable, selected: passwordVisible }}
+          >
+            <Ionicons
+              name={passwordVisible ? "eye-off-outline" : "eye-outline"}
+              size={20}
+              color={FORM_HELPER_COLOR}
+            />
+          </TouchableOpacity>
+        ) : null}
       </View>
       {invalid ? (
         <Text style={styles.error} accessibilityRole="alert">
@@ -142,6 +165,13 @@ const styles = StyleSheet.create({
   shellInvalid: { borderColor: FORM_BORDER_ERROR_COLOR },
   shellDisabled: { opacity: 0.65 },
   leading: { marginRight: 8 },
+  passwordToggle: {
+    width: 44,
+    height: 44,
+    marginRight: -8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   input: {
     flex: 1,
     minHeight: 44,
