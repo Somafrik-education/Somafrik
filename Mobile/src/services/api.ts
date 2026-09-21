@@ -1080,8 +1080,11 @@ function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
   };
 }
 
-export function getStudentFees() {
-  return request<unknown>("/finance/student-fees").then((payload) =>
+export function getStudentFees(studentId?: string) {
+  const suffix = String(studentId ?? "").trim()
+    ? `?studentId=${encodeURIComponent(String(studentId).trim())}`
+    : "";
+  return request<unknown>(`/finance/student-fees${suffix}`).then((payload) =>
     unwrapList(payload).map(normalizeStudentFeeRow),
   );
 }

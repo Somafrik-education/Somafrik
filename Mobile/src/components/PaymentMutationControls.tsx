@@ -11,10 +11,13 @@ import { isOfflineContext } from "../lib/connectivity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
   UNALLOCATED_TARGET,
+  applyScopedPaymentFeeDraft,
   buildFinancePaymentWritePayload,
   collectActivePaymentClasses,
   collectOpenPaymentFees,
   formatPaymentStudentLabel,
+  isFreshPaymentFeeResponse,
+  paymentFeeIdentityFromStudent,
   paymentSubmitErrorMessage,
   preselectPaymentClassId,
   preselectPaymentObligationId,
@@ -25,7 +28,7 @@ import {
 } from "../lib/paymentEnrollment";
 import { formatFinanceAmount } from "../lib/financeCurrency";
 import { financeObligationStatusLabel } from "../lib/financeObligationStatus";
-import { createSchoolPayment } from "../services/api";
+import { createSchoolPayment, getStudentFees } from "../services/api";
 
 const PAYMENT_DRAFT_INTENTION = "payments-create-draft";
 
@@ -61,7 +64,10 @@ export default function PaymentMutationControls({
   const { session } = useAuth();
   const canRecordPayment = canRecordSchoolPayment(session);
   const intentionsRef = useRef(createIntentionStore());
+  const sessionGenRef = useRef(0);
+  const selectionGenRef = useRef(0);
   const [open, setOpen] = useState(false);
+  const [scopedFees, setScopedFees] = useState<PaymentFeeRow[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -101,17 +107,12 @@ export default function PaymentMutationControls({
   );
 
   const classOptions = useMemo(() => collectActivePaymentClasses(studentId, students), [studentId, students]);
+  const activeFees = scopedFees ?? studentFees;
   const feeIdentity = useMemo(
-    () => ({
-      id: studentId,
-      studentId,
-      studentDbId: studentId,
-      studentCode: selectedStudent?.studentCode,
-      matricule: selectedStudent?.studentCode,
-    }),
-    [studentId, selectedStudent?.studentCode],
+    () => paymentFeeIdentityFromStudent(studentId, selectedStudent),
+    [studentId, selectedStudent],
   );
-  const feeOptions = useMemo(() => collectOpenPaymentFees(feeIdentity, studentFees), [feeIdentity, studentFees]);
+  const feeOptions = useMemo(() => collectOpenPaymentFees(feeIdentity, activeFees), [feeIdentity, activeFees]);
   const obligationChips = useMemo(
     () => [
       { id: UNALLOCATED_TARGET, label: "Non imputé" },
@@ -123,27 +124,62 @@ export default function PaymentMutationControls({
     [feeOptions, currency],
   );
 
+  const applyDraftLines = (
+    identity: ReturnType<typeof paymentFeeIdentityFromStudent>,
+    fees: PaymentFeeRow[],
+  ) => {
+    setLines([
+      {
+        id: newLineId(),
+        obligationId: preselectPaymentObligationId(identity, fees),
+        amount: "",
+      },
+    ]);
+  };
+
+  const loadScopedStudentFees = async (
+    nextStudentId: string,
+    identity: ReturnType<typeof paymentFeeIdentityFromStudent>,
+    responseSession: number,
+    responseSelection: number,
+  ) => {
+    try {
+      const scoped = await getStudentFees(nextStudentId);
+      const accepted = applyScopedPaymentFeeDraft({
+        session: sessionGenRef.current,
+        selection: selectionGenRef.current,
+        responseSession,
+        responseSelection,
+        identity,
+        scopedFees: scoped,
+      });
+      if (!accepted) return;
+      setScopedFees(accepted.fees);
+      applyDraftLines(identity, accepted.fees);
+    } catch {
+      if (
+        !isFreshPaymentFeeResponse({
+          session: sessionGenRef.current,
+          selection: selectionGenRef.current,
+          responseSession,
+          responseSelection,
+        })
+      ) {
+        return;
+      }
+    }
+  };
+
   const applyStudent = (nextStudentId: string) => {
+    const responseSelection = ++selectionGenRef.current;
+    const responseSession = sessionGenRef.current;
     setStudentId(nextStudentId);
     const next = studentOptions.find((item) => item.id === nextStudentId);
     setStudentQuery(next ? trimField(next.name) : "");
     setClassId(preselectPaymentClassId(nextStudentId, students));
-    setLines([
-      {
-        id: newLineId(),
-        obligationId: preselectPaymentObligationId(
-          {
-            id: nextStudentId,
-            studentId: nextStudentId,
-            studentDbId: nextStudentId,
-            studentCode: next?.studentCode,
-            matricule: next?.studentCode,
-          },
-          studentFees,
-        ),
-        amount: "",
-      },
-    ]);
+    setScopedFees(null);
+    const identity = paymentFeeIdentityFromStudent(nextStudentId, next);
+    applyDraftLines(identity, studentFees);
     setFieldErrors((current) => {
       const nextErrors = { ...current };
       delete nextErrors.studentId;
@@ -151,10 +187,15 @@ export default function PaymentMutationControls({
       delete nextErrors.obligationId;
       return nextErrors;
     });
+    if (!nextStudentId) return;
+    void loadScopedStudentFees(nextStudentId, identity, responseSession, responseSelection);
   };
 
   const openDraft = () => {
     intentionsRef.current.rotate(PAYMENT_DRAFT_INTENTION);
+    sessionGenRef.current += 1;
+    selectionGenRef.current = 0;
+    setScopedFees(null);
     setError("");
     setConfirmation("");
     setFieldErrors({});
@@ -163,25 +204,14 @@ export default function PaymentMutationControls({
     const next = students.find((item) => item.id === nextStudentId);
     setStudentQuery(next ? trimField(next.name) : "");
     setClassId(preselectPaymentClassId(nextStudentId, students));
-    setLines([
-      {
-        id: newLineId(),
-        obligationId: preselectPaymentObligationId(
-          {
-            id: nextStudentId,
-            studentId: nextStudentId,
-            studentDbId: nextStudentId,
-            studentCode: next?.studentCode,
-            matricule: next?.studentCode,
-          },
-          studentFees,
-        ),
-        amount: "",
-      },
-    ]);
+    const identity = paymentFeeIdentityFromStudent(nextStudentId, next);
+    applyDraftLines(identity, studentFees);
     setMethod(paymentMethods?.[0] ?? "");
     setDraftDate(todayIsoDate());
     setOpen(true);
+    if (!nextStudentId) return;
+    const responseSelection = ++selectionGenRef.current;
+    void loadScopedStudentFees(nextStudentId, identity, sessionGenRef.current, responseSelection);
   };
 
   const lastOpenSignal = useRef(0);
@@ -277,7 +307,12 @@ export default function PaymentMutationControls({
         error={error}
         saving={saving}
         submitLabel={saving ? "Enregistrement…" : "Enregistrer"}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          sessionGenRef.current += 1;
+          selectionGenRef.current = 0;
+          setScopedFees(null);
+          setOpen(false);
+        }}
         onSubmit={() => void submit()}
         submitDisabled={!paymentMethods?.length || !resolvedMethod || !studentId}
       >
