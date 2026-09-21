@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { BackOfficeState, SessionUser } from "../../types";
 import { QuickPaymentModal } from "./QuickPaymentModal";
 import {
   CLASS_NAME,
+  ESTHER_CLASS_ID,
   ESTHER_CLASS_NAME,
   ESTHER_CODE,
   ESTHER_NAME,
@@ -17,6 +19,53 @@ import {
   paymentStudentOptionRow,
   postgresObligationRow,
 } from "../../lib/financeStudentIdentity.fixtures";
+
+const ESTHER_OCTOBRE_ID = "obl-esther-octobre";
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function estherRosterRow() {
+  return paymentStudentOptionRow({
+    studentId: ESTHER_UUID,
+    studentCode: ESTHER_CODE,
+    firstName: "Esther",
+    lastName: "OKITO",
+    classId: ESTHER_CLASS_ID,
+    classCode: "1PA",
+    className: ESTHER_CLASS_NAME,
+    classes: [{ classId: ESTHER_CLASS_ID, classCode: "1PA", className: ESTHER_CLASS_NAME }],
+  });
+}
+
+function estherPartialObligation() {
+  return postgresObligationRow({
+    id: ESTHER_OCTOBRE_ID,
+    obligationId: ESTHER_OCTOBRE_ID,
+    studentId: ESTHER_CODE,
+    studentDbId: ESTHER_UUID,
+    label: "Octobre",
+    feeType: "Scolarité",
+    status: "Partiellement payé",
+    amountDue: 80_000,
+    amountPaid: 50_000,
+    balance: 30_000,
+    periodLabel: "Octobre",
+    className: ESTHER_CLASS_NAME,
+    classId: ESTHER_CLASS_ID,
+  });
+}
+
+function studentAObligation() {
+  return postgresObligationRow();
+}
 
 const showToast = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => vi.fn(async () => undefined));
@@ -217,5 +266,166 @@ describe("IMP-FAST — QuickPaymentModal contrat UUID ↔ code public", () => {
     expect(screen.queryByTestId("quick-payment-selected-student")).not.toBeInTheDocument();
     expect(modal).toHaveTextContent("Affectation de l'encaissement");
     expect(screen.getByTestId("payment-add-line")).toBeInTheDocument();
+  });
+});
+
+describe("P1-ESTHER — garde de génération / fraîcheur QuickPaymentModal", () => {
+  beforeEach(() => {
+    showToast.mockReset();
+    refresh.mockReset();
+    createPayment.mockReset();
+    listPaymentStudentOptions.mockReset();
+    getFinanceCatalog.mockReset();
+    listStudentFees.mockReset();
+    getFinanceCatalog.mockResolvedValue({
+      currency: "CDF",
+      paymentMethods: [{ label: "Espèces", active: true }],
+    });
+    listPaymentStudentOptions.mockResolvedValue([paymentStudentOptionRow(), estherRosterRow()]);
+    createPayment.mockResolvedValue({ id: "pay-1", amount: 40_000 });
+  });
+
+  async function waitCatalogReady() {
+    await waitFor(() => expect(screen.queryByText(/Chargement du catalogue financier/i)).not.toBeInTheDocument());
+  }
+
+  async function searchAndSelect(user: ReturnType<typeof userEvent.setup>, query: string, name: RegExp) {
+    const search = screen.getByTestId("payment-student-search");
+    await user.clear(search);
+    await user.type(search, query);
+    await user.click(await screen.findByRole("button", { name }));
+  }
+
+  it("P1-ESTHER-RACE-A — sélection A puis Esther : la réponse UUID de A en retard n'efface pas Octobre", async () => {
+    const delayedA = deferred<ReturnType<typeof postgresObligationRow>[]>();
+    listStudentFees.mockImplementation((studentId?: string) => {
+      if (!studentId) return Promise.resolve([studentAObligation(), estherPartialObligation()]);
+      if (studentId === STUDENT_UUID) return delayedA.promise;
+      if (studentId === ESTHER_UUID) return Promise.resolve([estherPartialObligation()]);
+      return Promise.resolve([]);
+    });
+
+    const user = userEvent.setup();
+    render(<QuickPaymentModal open onClose={() => undefined} />);
+    await waitCatalogReady();
+
+    await searchAndSelect(user, "Te", /Test Numérique/i);
+    await searchAndSelect(user, "Es", /Esther OKITO/i);
+
+    const modal = screen.getByTestId("quick-payment-modal");
+    await waitFor(() => expect(modal).toHaveTextContent("Octobre"));
+    expect(screen.queryByText(/Aucune obligation ouverte/i)).not.toBeInTheDocument();
+
+    delayedA.resolve([studentAObligation()]);
+    await waitFor(() => expect(screen.getByTestId("quick-payment-selected-student")).toHaveTextContent(ESTHER_NAME));
+    expect(modal).toHaveTextContent("Octobre");
+    expect(modal).toHaveTextContent(/30[\s\u202f\u00a0]?000 CDF/);
+    expect(screen.queryByText(/Aucune obligation ouverte/i)).not.toBeInTheDocument();
+    const feeSelect = screen.getByLabelText(/Frais concerné/i) as HTMLSelectElement;
+    expect(feeSelect.value).toBe(ESTHER_OCTOBRE_ID);
+    expect(feeSelect.value).not.toBe("__unallocated__");
+  });
+
+  it("P1-ESTHER-RACE-UNSCOPED — unscoped tardif [] n'écrase pas le scoped UUID d'Esther", async () => {
+    const delayedUnscoped = deferred<ReturnType<typeof postgresObligationRow>[]>();
+    let unscopedLoads = 0;
+    listStudentFees.mockImplementation((studentId?: string) => {
+      if (!studentId) {
+        unscopedLoads += 1;
+        if (unscopedLoads === 1) return Promise.resolve([studentAObligation(), estherPartialObligation()]);
+        return delayedUnscoped.promise;
+      }
+      if (studentId === ESTHER_UUID) return Promise.resolve([estherPartialObligation()]);
+      return Promise.resolve([]);
+    });
+
+    const user = userEvent.setup();
+    const { rerender } = render(<QuickPaymentModal open onClose={() => undefined} />);
+    await waitCatalogReady();
+
+    rerender(<QuickPaymentModal open={false} onClose={() => undefined} />);
+    rerender(<QuickPaymentModal open onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByTestId("payment-student-search")).toBeInTheDocument());
+
+    await searchAndSelect(user, "Es", /Esther OKITO/i);
+    const modal = screen.getByTestId("quick-payment-modal");
+    await waitFor(() => expect(modal).toHaveTextContent("Octobre"));
+
+    delayedUnscoped.resolve([]);
+    await waitFor(() => expect(screen.getByTestId("quick-payment-selected-student")).toHaveTextContent(ESTHER_NAME));
+    expect(modal).toHaveTextContent("Octobre");
+    expect(screen.queryByText(/Aucune obligation ouverte/i)).not.toBeInTheDocument();
+    const feeSelect = screen.getByLabelText(/Frais concerné/i) as HTMLSelectElement;
+    expect(feeSelect.value).toBe(ESTHER_OCTOBRE_ID);
+  });
+
+  it("P1-ESTHER-RACE-ERROR — l'erreur catalogue périmée n'efface pas les frais UUID déjà appliqués", async () => {
+    const delayedUnscoped = deferred<ReturnType<typeof postgresObligationRow>[]>();
+    let unscopedLoads = 0;
+    listStudentFees.mockImplementation((studentId?: string) => {
+      if (!studentId) {
+        unscopedLoads += 1;
+        if (unscopedLoads === 1) return Promise.resolve([estherPartialObligation()]);
+        return delayedUnscoped.promise;
+      }
+      if (studentId === ESTHER_UUID) return Promise.resolve([estherPartialObligation()]);
+      return Promise.resolve([]);
+    });
+
+    const user = userEvent.setup();
+    const { rerender } = render(<QuickPaymentModal open onClose={() => undefined} />);
+    await waitCatalogReady();
+
+    rerender(<QuickPaymentModal open={false} onClose={() => undefined} />);
+    rerender(<QuickPaymentModal open onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByTestId("payment-student-search")).toBeInTheDocument());
+
+    await searchAndSelect(user, "Es", /Esther OKITO/i);
+    const modal = screen.getByTestId("quick-payment-modal");
+    await waitFor(() => expect(modal).toHaveTextContent("Octobre"));
+
+    delayedUnscoped.reject(new Error("catalogue périmé"));
+    await waitFor(() => expect(screen.getByTestId("quick-payment-selected-student")).toHaveTextContent(ESTHER_NAME));
+    expect(modal).toHaveTextContent("Octobre");
+    expect(screen.queryByText(/Aucune obligation ouverte/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Catalogue financier indisponible/i)).not.toBeInTheDocument();
+  });
+
+  it("P1-ESTHER-RACE-REOPEN — close/reopen : le scoped Esther de la session précédente n'écrase pas A", async () => {
+    const delayedEsther = deferred<ReturnType<typeof postgresObligationRow>[]>();
+    let estherScoped = 0;
+    listStudentFees.mockImplementation((studentId?: string) => {
+      if (!studentId) return Promise.resolve([studentAObligation(), estherPartialObligation()]);
+      if (studentId === ESTHER_UUID) {
+        estherScoped += 1;
+        if (estherScoped === 1) return delayedEsther.promise;
+        return Promise.resolve([estherPartialObligation()]);
+      }
+      if (studentId === STUDENT_UUID) return Promise.resolve([studentAObligation()]);
+      return Promise.resolve([]);
+    });
+
+    const user = userEvent.setup();
+    const { rerender } = render(<QuickPaymentModal open onClose={() => undefined} />);
+    await waitCatalogReady();
+    await searchAndSelect(user, "Es", /Esther OKITO/i);
+    await waitFor(() => expect(screen.getByTestId("quick-payment-selected-student")).toHaveTextContent(ESTHER_NAME));
+
+    rerender(<QuickPaymentModal open={false} onClose={() => undefined} />);
+    rerender(<QuickPaymentModal open onClose={() => undefined} />);
+    await waitCatalogReady();
+    await searchAndSelect(user, "Te", /Test Numérique/i);
+
+    const modal = screen.getByTestId("quick-payment-modal");
+    await waitFor(() => expect(screen.getByTestId("quick-payment-selected-student")).toHaveTextContent(STUDENT_NAME));
+    expect(modal).toHaveTextContent("Scolarité T1");
+
+    delayedEsther.resolve([estherPartialObligation()]);
+    await waitFor(() => expect(screen.getByTestId("quick-payment-selected-student")).toHaveTextContent(STUDENT_NAME));
+    expect(modal).toHaveTextContent("Scolarité T1");
+    expect(modal).not.toHaveTextContent("Octobre");
+    expect(screen.queryByText(/Aucune obligation ouverte/i)).not.toBeInTheDocument();
+    const feeSelect = screen.getByLabelText(/Frais concerné/i) as HTMLSelectElement;
+    expect(feeSelect.value).toBe(OBLIGATION_SCO_ID);
   });
 });
