@@ -36,6 +36,7 @@ function sourceGuards() {
   const runtime = read("Mobile/src/components/PushNotificationsRuntime.tsx");
   const tap = read("Mobile/src/lib/pushNotificationTap.ts");
   const destinations = read("Mobile/src/lib/pushNotificationDestinations.ts");
+  const navigateLib = read("Mobile/src/lib/pushNotificationNavigate.ts");
   const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
   const auth = read("Mobile/src/context/AuthContext.tsx");
   const api = read("Mobile/src/services/api.ts");
@@ -160,8 +161,13 @@ function sourceGuards() {
   assert.match(destinations, /somafrikConversationId/);
   assert.match(destinations, /return \{ destination: "Home" \}/);
   assert.match(navigator, /session == null|Boolean\(session\) && canPersistFullSession/);
-  assert.match(navigator, /navigateRegisteredPushDestination/);
-  assert.match(navigator, /collectRegisteredRouteNames/);
+  assert.match(navigator, /dispatchRegisteredPushNavigation/);
+  assert.match(runtime, /dispatchRegisteredPushNavigation/);
+  assert.doesNotMatch(runtime, /navigate\(\{\s*name/);
+  assert.doesNotMatch(navigator, /navigate\(\{\s*name/);
+  assert.match(navigateLib, /export function callPushNavigationRef/);
+  assert.match(navigateLib, /\(name, params\)/);
+  assert.doesNotMatch(navigateLib, /navigate\(\{ name, params \}\)/);
   assert.match(auth, /dismissPendingPushNavigation/);
   assert.match(api, /revokeCurrentPushDevice/);
   assert.match(gitignore, /firebase-adminsdk/);
@@ -215,6 +221,7 @@ function main() {
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.cng-release.test.ts"], "mobile push cng release");
   run("npx", ["--yes", "tsx", "Mobile/src/services/pushNotifications.expo-constants-interop.test.ts"], "mobile push expo-constants interop");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationTap.test.ts"], "mobile cold-start tap");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationRuntime.tap.test.ts"], "mobile push tap runtime");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile finance notification navigation");
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour PUSH-N1");

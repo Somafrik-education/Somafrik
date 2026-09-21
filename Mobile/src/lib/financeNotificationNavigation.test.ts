@@ -213,7 +213,6 @@ assert.match(announcementsSrc, /announcementId/);
 assert.match(announcementsSrc, /getCanonicalAnnouncementById/);
 assert.match(announcementsSrc, /nextCursor/);
 const navigatorSrc = readFileSync(join(srcRoot, "navigation/AppNavigator.tsx"), "utf8");
-assert.match(navigatorSrc, /navigateRegisteredPushDestination/);
-assert.match(navigatorSrc, /collectRegisteredRouteNames/);
+assert.match(navigatorSrc, /dispatchRegisteredPushNavigation/);
 
 console.log("OK Mobile financeNotificationNavigation.test.ts");

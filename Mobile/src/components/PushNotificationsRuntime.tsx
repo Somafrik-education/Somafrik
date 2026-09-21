@@ -10,10 +10,7 @@ import {
   type PushTapResponse,
 } from "../lib/pushNotificationTap";
 import type { AllowedPushNavigationParams } from "../lib/pushNotificationDestinations";
-import {
-  collectRegisteredRouteNames,
-  navigateRegisteredPushDestination,
-} from "../lib/pushNotificationNavigate";
+import { dispatchRegisteredPushNavigation } from "../lib/pushNotificationNavigate";
 import {
   observePushRegistrationFailure,
   observePushRuntimeEvent,
@@ -32,13 +29,7 @@ Notifications.setNotificationHandler({
 });
 
 function navigateTo(destination: string, params?: AllowedPushNavigationParams) {
-  if (!navigationRef.isReady()) return;
-  navigateRegisteredPushDestination(
-    (name, nextParams) => navigationRef.navigate({ name, params: nextParams } as never),
-    destination as never,
-    params,
-    collectRegisteredRouteNames(navigationRef.getRootState()),
-  );
+  dispatchRegisteredPushNavigation(navigationRef, destination as never, params);
 }
 
 function isNavigationReady() {
