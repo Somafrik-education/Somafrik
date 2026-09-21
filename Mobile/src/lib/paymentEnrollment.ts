@@ -326,6 +326,49 @@ export function preselectPaymentObligationId(
   return UNALLOCATED_TARGET;
 }
 
+export function paymentFeeIdentityFromStudent(
+  studentId: string,
+  student?: Pick<PaymentStudent, "studentCode"> | null,
+): PaymentStudentIdentity {
+  return {
+    id: studentId,
+    studentId,
+    studentDbId: studentId,
+    studentCode: student?.studentCode,
+    matricule: student?.studentCode,
+  };
+}
+
+/** Garde de fraîcheur : une sélection / session plus récente invalide la réponse. */
+export function isFreshPaymentFeeResponse(input: {
+  session: number;
+  selection: number;
+  responseSession: number;
+  responseSelection: number;
+}): boolean {
+  return input.session === input.responseSession && input.selection === input.responseSelection;
+}
+
+/**
+ * Applique un GET scoped seulement s'il correspond à l'élève courant.
+ * Recalcule la préselection (1 obligation ouverte → son id, sinon Non imputé).
+ */
+export function applyScopedPaymentFeeDraft(input: {
+  session: number;
+  selection: number;
+  responseSession: number;
+  responseSelection: number;
+  identity: PaymentStudentIdentity;
+  scopedFees: PaymentFeeRow[] | null | undefined;
+}): { fees: PaymentFeeRow[]; obligationId: string } | null {
+  if (!isFreshPaymentFeeResponse(input)) return null;
+  const fees = Array.isArray(input.scopedFees) ? input.scopedFees : [];
+  return {
+    fees,
+    obligationId: preselectPaymentObligationId(input.identity, fees),
+  };
+}
+
 export function buildFinancePaymentItems(lines: FinancePaymentWriteLine[]): Array<Record<string, unknown>> {
   return lines.map((line) => {
     const amount = typeof line.amount === "number" ? line.amount : Number(line.amount);

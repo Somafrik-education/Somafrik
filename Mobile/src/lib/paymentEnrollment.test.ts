@@ -14,22 +14,34 @@
  * si l'élève n'a pas de classe active, ou 201 si une inscription unique est dérivable.
  */
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   UNALLOCATED_TARGET,
+  applyScopedPaymentFeeDraft,
   buildFinancePaymentItems,
   buildFinancePaymentWritePayload,
   buildSchoolPaymentPayload,
   collectActivePaymentClasses,
   collectOpenPaymentFees,
+  isFreshPaymentFeeResponse,
   isUnallocatedTarget,
   paymentClassBelongsToStudent,
+  paymentFeeIdentityFromStudent,
   paymentSubmitErrorMessage,
   paymentStudentsFromOptions,
   preselectPaymentClassId,
   preselectPaymentObligationId,
+  type PaymentFeeRow,
   type PaymentStudent,
 } from "./paymentEnrollment";
 import { hasFieldErrors, validatePaymentDraft } from "./formFieldValidation";
+
+const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+function readSrc(relative: string) {
+  return fs.readFileSync(path.join(srcRoot, relative), "utf8");
+}
 
 const awa: PaymentStudent = {
   id: "CD-2026-0001-STU-0001",
@@ -276,8 +288,11 @@ assert.deepEqual(collectActivePaymentClasses(awa.id, fromOptions), [
 ]);
 assert.deepEqual(paymentStudentsFromOptions([]), []);
 
-const ESTHER_UUID = "eeeeeeee-1111-4111-8111-eeeeeeeeeeee";
+const ESTHER_UUID = "f81035b2-545d-4a73-ab5d-775b120787f3";
 const ESTHER_CODE = "CG-ITC-OE-26-00001";
+const ESTHER_OCTOBRE_ID = "obl-esther-octobre";
+const STUDENT_A_UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const STUDENT_A_CODE = "CD-IN-26-STU-A";
 const estherFromRoster = paymentStudentsFromOptions([
   {
     studentId: ESTHER_UUID,
@@ -293,28 +308,19 @@ const estherFromRoster = paymentStudentsFromOptions([
 assert.equal(estherFromRoster.id, ESTHER_UUID);
 assert.equal(estherFromRoster.studentCode, ESTHER_CODE);
 
+const estherOctobre: PaymentFeeRow = {
+  id: ESTHER_OCTOBRE_ID,
+  studentId: ESTHER_CODE,
+  studentDbId: ESTHER_UUID,
+  label: "Octobre",
+  feeType: "Scolarité",
+  status: "Partiellement payé",
+  amountDue: 80_000,
+  amountPaid: 50_000,
+  balance: 30_000,
+};
 const estherFees = [
-  {
-    id: "obl-esther-sco",
-    studentId: ESTHER_CODE,
-    studentDbId: ESTHER_UUID,
-    label: "Scolarité T1",
-    feeType: "Scolarité",
-    balance: 140_000,
-    amountDue: 140_000,
-    amountPaid: 0,
-    status: "À payer",
-  },
-  {
-    id: "obl-esther-partial",
-    studentId: ESTHER_CODE,
-    studentDbId: ESTHER_UUID,
-    label: "Inscription",
-    balance: 30_000,
-    amountDue: 50_000,
-    amountPaid: 20_000,
-    status: "Partiellement payé",
-  },
+  estherOctobre,
   {
     id: "obl-esther-paid",
     studentId: ESTHER_CODE,
@@ -334,20 +340,186 @@ const estherFees = [
     status: "À payer",
   },
 ];
-const estherOpen = collectOpenPaymentFees(
-  {
-    id: estherFromRoster.id,
-    studentId: estherFromRoster.id,
-    studentDbId: estherFromRoster.id,
-    studentCode: estherFromRoster.studentCode,
-  },
-  estherFees,
-);
-assert.equal(estherOpen.length, 2, "P1 Esther : UUID roster doit retrouver les dettes (matricule + studentDbId)");
-assert.deepEqual(estherOpen.map((row) => row.obligationId).sort(), ["obl-esther-partial", "obl-esther-sco"]);
-assert.equal(estherOpen.find((row) => row.obligationId === "obl-esther-sco")?.balance, 140_000);
-assert.equal(estherOpen.find((row) => row.obligationId === "obl-esther-partial")?.balance, 30_000);
-assert.equal(collectOpenPaymentFees(estherFromRoster.id, estherFees).length, 2);
+const estherIdentity = paymentFeeIdentityFromStudent(estherFromRoster.id, estherFromRoster);
+const estherOpen = collectOpenPaymentFees(estherIdentity, estherFees);
+assert.equal(estherOpen.length, 1, "P1 Esther : Octobre partiel est la seule obligation ouverte");
+assert.equal(estherOpen[0].obligationId, ESTHER_OCTOBRE_ID);
+assert.equal(estherOpen[0].amountDue, 80_000);
+assert.equal(estherOpen[0].amountPaid, 50_000);
+assert.equal(estherOpen[0].balance, 30_000);
+assert.equal(preselectPaymentObligationId(estherIdentity, estherFees), ESTHER_OCTOBRE_ID);
+assert.notEqual(preselectPaymentObligationId(estherIdentity, estherFees), UNALLOCATED_TARGET);
+assert.equal(collectOpenPaymentFees(estherFromRoster.id, estherFees).length, 1);
 assert.equal(collectOpenPaymentFees(ESTHER_UUID, []).length, 0, "élève sans obligation → Non imputé légitime");
+assert.equal(preselectPaymentObligationId(estherIdentity, []), UNALLOCATED_TARGET);
 
-console.log("OK paymentEnrollment: élève → classes actives, reset, payload classId, erreurs API visibles");
+const emptySnapshotDraft = applyScopedPaymentFeeDraft({
+  session: 1,
+  selection: 1,
+  responseSession: 1,
+  responseSelection: 1,
+  identity: estherIdentity,
+  scopedFees: [],
+});
+assert.equal(emptySnapshotDraft?.obligationId, UNALLOCATED_TARGET, "snapshot vide → Non imputé temporaire");
+const scopedEstherDraft = applyScopedPaymentFeeDraft({
+  session: 1,
+  selection: 1,
+  responseSession: 1,
+  responseSelection: 1,
+  identity: estherIdentity,
+  scopedFees: estherFees,
+});
+assert.equal(scopedEstherDraft?.obligationId, ESTHER_OCTOBRE_ID, "scoped UUID recalcule lines hors __unallocated__");
+assert.notEqual(scopedEstherDraft?.obligationId, UNALLOCATED_TARGET);
+
+const noneStudent = paymentFeeIdentityFromStudent("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", {
+  studentCode: "CG-ITC-NONE-26-00099",
+});
+const noneDraft = applyScopedPaymentFeeDraft({
+  session: 2,
+  selection: 1,
+  responseSession: 2,
+  responseSelection: 1,
+  identity: noneStudent,
+  scopedFees: [],
+});
+assert.equal(noneDraft?.obligationId, UNALLOCATED_TARGET, "véritable élève sans obligation → Non imputé");
+assert.equal(collectOpenPaymentFees(noneStudent, []).length, 0);
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+const studentAFees: PaymentFeeRow[] = [
+  {
+    id: "obl-a-sco",
+    studentId: STUDENT_A_CODE,
+    studentDbId: STUDENT_A_UUID,
+    label: "Scolarité T1",
+    feeType: "Scolarité",
+    balance: 140_000,
+    amountDue: 140_000,
+    amountPaid: 0,
+    status: "À payer",
+  },
+];
+const studentAIdentity = paymentFeeIdentityFromStudent(STUDENT_A_UUID, { studentCode: STUDENT_A_CODE });
+
+void (async () => {
+  const delayedA = deferred<PaymentFeeRow[]>();
+  let session = 1;
+  let selection = 0;
+  let obligationId = UNALLOCATED_TARGET;
+  let openLabel = "";
+
+  const fetchFees = (studentId: string) => {
+    if (studentId === STUDENT_A_UUID) return delayedA.promise;
+    if (studentId === ESTHER_UUID) return Promise.resolve(estherFees);
+    return Promise.resolve([]);
+  };
+
+  const apply = async (studentId: string, identity: ReturnType<typeof paymentFeeIdentityFromStudent>) => {
+    const responseSelection = ++selection;
+    const responseSession = session;
+    obligationId = preselectPaymentObligationId(identity, []);
+    openLabel = "";
+    const scoped = await fetchFees(studentId);
+    const accepted = applyScopedPaymentFeeDraft({
+      session,
+      selection,
+      responseSession,
+      responseSelection,
+      identity,
+      scopedFees: scoped,
+    });
+    if (!accepted) return;
+    obligationId = accepted.obligationId;
+    openLabel = collectOpenPaymentFees(identity, accepted.fees)[0]?.label ?? "";
+  };
+
+  const applyA = apply(STUDENT_A_UUID, studentAIdentity);
+  const applyEsther = apply(ESTHER_UUID, estherIdentity);
+  await applyEsther;
+  assert.equal(obligationId, ESTHER_OCTOBRE_ID, "A→Esther : scoped Esther appliqué avant la réponse A");
+  assert.equal(openLabel, "Octobre");
+  assert.notEqual(obligationId, UNALLOCATED_TARGET, "pas de __unallocated__ résiduel après scoped Esther");
+  delayedA.resolve(studentAFees);
+  await applyA;
+  assert.equal(obligationId, ESTHER_OCTOBRE_ID, "réponse A tardive ignorée");
+  assert.equal(openLabel, "Octobre");
+  assert.equal(isFreshPaymentFeeResponse({ session: 1, selection: 2, responseSession: 1, responseSelection: 1 }), false);
+
+  const delayedEsther = deferred<PaymentFeeRow[]>();
+  session += 1;
+  selection = 0;
+  obligationId = UNALLOCATED_TARGET;
+  openLabel = "";
+  const fetchFeesReopen = (studentId: string) => {
+    if (studentId === ESTHER_UUID) return delayedEsther.promise;
+    if (studentId === STUDENT_A_UUID) return Promise.resolve(studentAFees);
+    return Promise.resolve([]);
+  };
+  const applyReopen = async (studentId: string, identity: ReturnType<typeof paymentFeeIdentityFromStudent>) => {
+    const responseSelection = ++selection;
+    const responseSession = session;
+    obligationId = preselectPaymentObligationId(identity, []);
+    const scoped = await fetchFeesReopen(studentId);
+    const accepted = applyScopedPaymentFeeDraft({
+      session,
+      selection,
+      responseSession,
+      responseSelection,
+      identity,
+      scopedFees: scoped,
+    });
+    if (!accepted) return;
+    obligationId = accepted.obligationId;
+    openLabel = collectOpenPaymentFees(identity, accepted.fees)[0]?.label ?? "";
+  };
+  const staleEsther = applyReopen(ESTHER_UUID, estherIdentity);
+  session += 1;
+  selection = 0;
+  const applyAAfterReopen = applyReopen(STUDENT_A_UUID, studentAIdentity);
+  await applyAAfterReopen;
+  assert.equal(obligationId, "obl-a-sco", "nouvelle session : A préselectionné");
+  delayedEsther.resolve(estherFees);
+  await staleEsther;
+  assert.equal(obligationId, "obl-a-sco", "scoped Esther de la session précédente ignoré");
+  assert.notEqual(openLabel, "Octobre");
+
+  const apiSrc = readSrc("services/api.ts");
+  const getStudentFeesFn = apiSrc.slice(
+    apiSrc.indexOf("export function getStudentFees"),
+    apiSrc.indexOf("export function reconcilePaymentAllocations"),
+  );
+  assert.match(
+    getStudentFeesFn,
+    /export function getStudentFees\(studentId\?: string\)/,
+    "Mobile doit exposer getStudentFees(UUID)",
+  );
+  assert.match(
+    getStudentFeesFn,
+    /\?studentId=\$\{encodeURIComponent/,
+    "GET student-fees scoped doit passer ?studentId=",
+  );
+
+  const controlsSrc = readSrc("components/PaymentMutationControls.tsx");
+  assert.match(controlsSrc, /getStudentFees\(/, "applyStudent doit charger le scoped UUID");
+  assert.match(controlsSrc, /getStudentFees\(nextStudentId\)/, "le scoped utilise l'UUID roster sélectionné");
+  assert.match(controlsSrc, /selectionGenRef/, "invalidation des réponses périmées : sélection");
+  assert.match(controlsSrc, /sessionGenRef/, "invalidation des réponses périmées : session modal");
+  assert.match(controlsSrc, /applyScopedPaymentFeeDraft/, "arrivée du scoped recalcule feeOptions et lines");
+  assert.match(controlsSrc, /setScopedFees/, "le scoped ne doit pas être écrasé par le snapshot global");
+
+  console.log("OK paymentEnrollment: élève → classes actives, reset, payload classId, erreurs API visibles");
+})().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode = 1;
+});
