@@ -20,6 +20,7 @@ const {
   formatHeadTeacherDisplayName,
   UNASSIGNED_HEAD_TEACHER_LABEL,
 } = require("../lib/classHeadTeachersManagement");
+const { ROSTER_ENROLLMENT_SQL } = require("../lib/studentEnrollmentC18");
 
 const CLASS_HEAD_TEACHER_LATERAL = `LEFT JOIN LATERAL (
            SELECT t.id AS teacher_id,
@@ -52,7 +53,7 @@ const CLASS_SELECT = `SELECT cl.id,
                 ay.name AS academic_year_name,
                 el.name AS level_name,
                 es.name AS stream_name,
-                COUNT(e.id) FILTER (WHERE e.status = 'active')::int AS enrollment_count,
+                COUNT(e.id) FILTER (WHERE ${ROSTER_ENROLLMENT_SQL})::int AS enrollment_count,
                 ht.teacher_id AS head_teacher_uuid,
                 ht.teacher_code AS head_teacher_code,
                 ht.teacher_status AS head_teacher_status,
@@ -656,8 +657,8 @@ function createClassesRepository(db) {
 
         const enrollment = await executor.one(
           `SELECT COUNT(*)::int AS enrollment_count
-           FROM enrollments
-           WHERE class_id = $1 AND status = 'active'`,
+           FROM enrollments e
+           WHERE e.class_id = $1 AND ${ROSTER_ENROLLMENT_SQL}`,
           [updated.id],
         );
 

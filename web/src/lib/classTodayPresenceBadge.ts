@@ -81,6 +81,10 @@ function asRef(value: unknown) {
   return String(value ?? "").trim();
 }
 
+/**
+ * Identité classe : classId d'abord. classCode seulement si l'un des deux
+ * identifiants UUID est absent. Jamais className.
+ */
 export function studentBelongsToPresenceCard(
   student: { classId?: unknown; class_id?: unknown; classCode?: unknown; class_code?: unknown },
   card: { classId?: string; classCode?: string },
@@ -89,27 +93,35 @@ export function studentBelongsToPresenceCard(
   const studentClassCode = asRef(student.classCode ?? student.class_code);
   const classId = asRef(card.classId);
   const classCode = asRef(card.classCode);
-  if (studentClassId && classId && studentClassId === classId) return true;
-  if (studentClassCode && classCode && studentClassCode === classCode) return true;
+  if (studentClassId && classId) return studentClassId === classId;
+  if (studentClassCode && classCode) return studentClassCode === classCode;
   return false;
 }
 
 /**
  * Roster attendu pour une carte classe.
- * `null` = identités non fiables (hydratation partielle vs studentCount) → fail-closed.
+ * Les élèves canoniques (classId, sinon classCode) font foi, y compris quand
+ * le compteur classe est resté à 0. `null` = hydratation incomplète face à un
+ * compteur positif. Tableau vide = aucun élève canonique et compteur réellement 0.
+ * Les lignes de présence ne fabriquent jamais ce roster.
  */
 export function resolveExpectedStudentsForClassCard<T extends ExpectedStudent>(input: {
   studentCount: number;
   students: readonly T[];
   classId?: string;
   classCode?: string;
+  schoolCode?: string | null;
 }): T[] | null {
-  if (input.studentCount <= 0) return [];
   const roster = input.students.filter(
-    (student) => studentBelongsToPresenceCard(student, input) && isExpectedStudentForToday(student),
+    (student) =>
+      studentBelongsToPresenceCard(student, input) && isExpectedStudentForToday(student, input.schoolCode),
   );
-  if (roster.length !== input.studentCount) return null;
-  return roster;
+  if (roster.length > 0) {
+    if (input.studentCount > roster.length) return null;
+    return roster;
+  }
+  if (input.studentCount <= 0) return [];
+  return null;
 }
 
 export function resolveClassTodayPresenceBadge(input: {

@@ -6,6 +6,19 @@
  */
 const assert = require("node:assert/strict");
 const { createClassesRepository } = require("../db/classesRepository");
+const { ROSTER_ENROLLMENT_SQL } = require("./studentEnrollmentC18");
+
+function countCanonicalEnrollments(sql, enrollments, classId) {
+  if (!String(sql).includes(ROSTER_ENROLLMENT_SQL)) {
+    throw new Error("Le compteur élèves doit réutiliser ROSTER_ENROLLMENT_SQL, sans prédicat divergent.");
+  }
+  const allowed = new Set(
+    [...String(ROSTER_ENROLLMENT_SQL).matchAll(/'([^']+)'/g)].map((match) => match[1].toLowerCase()),
+  );
+  return enrollments.filter(
+    (item) => item.class_id === classId && allowed.has(String(item.status ?? "").trim().toLowerCase()),
+  ).length;
+}
 
 function createMemoryDb() {
   const schools = [
@@ -161,9 +174,7 @@ function createMemoryDb() {
       }
       if (text.startsWith("SELECT COUNT(*)::INT AS ENROLLMENT_COUNT")) {
         return {
-          enrollment_count: enrollments.filter(
-            (item) => item.class_id === params[0] && item.status === "active",
-          ).length,
+          enrollment_count: countCanonicalEnrollments(sql, enrollments, params[0]),
         };
       }
       throw new Error(`Unhandled one(): ${text}`);
@@ -184,9 +195,7 @@ function createMemoryDb() {
               academic_year_name: year?.name,
               level_name: level?.name,
               stream_name: stream?.name ?? null,
-              enrollment_count: enrollments.filter(
-                (item) => item.class_id === row.id && item.status === "active",
-              ).length,
+              enrollment_count: countCanonicalEnrollments(sql, enrollments, row.id),
             };
           });
       }
@@ -195,6 +204,7 @@ function createMemoryDb() {
     async query() {
       return { rows: [] };
     },
+    enrollments,
   };
 }
 
@@ -294,6 +304,56 @@ async function main() {
       ),
     (error) => error.statusCode === 400,
   );
+
+  const closedStatuses = ["inactive", "archived", "deleted", "closed", "CLOSED", "TRANSFERRED"];
+  for (let index = 0; index < 6; index += 1) {
+    db.enrollments.push({ class_id: created.id, status: "ENROLLED", school_id: "school-a" });
+  }
+  let withEnrollments = await repo.listBySchoolCode("SCH-A");
+  assert.equal(
+    withEnrollments.find((row) => row.classId === created.id)?.students,
+    6,
+    "6 inscriptions canoniques ENROLLED → students: 6",
+  );
+  const recounted = await repo.update(created.classCode, "SCH-A", { status: "active" });
+  assert.equal(recounted.students, 6, "le second compteur (update) compte aussi ENROLLED");
+
+  db.enrollments.push({ class_id: created.id, status: "active", school_id: "school-a" });
+  for (const status of closedStatuses) {
+    db.enrollments.push({ class_id: created.id, status, school_id: "school-a" });
+  }
+  const otherSchoolClass = await repo.create(
+    {
+      academicYearId: "ay-b",
+      levelId: "level-b",
+      groupId: "group-b",
+      status: "active",
+    },
+    "SCH-B",
+  );
+  for (let index = 0; index < 4; index += 1) {
+    db.enrollments.push({ class_id: otherSchoolClass.id, status: "ENROLLED", school_id: "school-b" });
+  }
+
+  withEnrollments = await repo.listBySchoolCode("SCH-A");
+  assert.equal(
+    withEnrollments.find((row) => row.classId === created.id)?.students,
+    7,
+    "ACTIVE + ENROLLED comptés, statuts fermés exclus",
+  );
+  assert.equal(
+    withEnrollments.some((row) => row.classId === otherSchoolClass.id),
+    false,
+    "un autre établissement est exclu de la liste",
+  );
+  const listedOtherSchool = await repo.listBySchoolCode("SCH-B");
+  assert.equal(listedOtherSchool.find((row) => row.classId === otherSchoolClass.id)?.students, 4);
+  assert.equal(
+    listedOtherSchool.some((row) => row.classId === created.id),
+    false,
+  );
+  const recountedMixed = await repo.update(created.classCode, "SCH-A", { status: "inactive" });
+  assert.equal(recountedMixed.students, 7);
 
   console.log("classesRepository.test.js: OK");
 }

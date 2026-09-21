@@ -446,6 +446,39 @@ async function main() {
       (error) => String(error.code) === "23514",
     );
 
+    for (let index = 0; index < 6; index += 1) {
+      await pool.query(`INSERT INTO enrollments (class_id, status) VALUES ($1, 'ENROLLED')`, [created.id]);
+    }
+    const enrolledOnly = await repo.listBySchoolCode("SCH-A");
+    assert.equal(
+      enrolledOnly.find((row) => row.classId === created.id)?.students,
+      6,
+      "6 inscriptions canoniques ENROLLED → students: 6",
+    );
+    const recountedEnrolled = await repo.update(created.classCode, "SCH-A", { status: "active" });
+    assert.equal(recountedEnrolled.students, 6);
+
+    await pool.query(`INSERT INTO enrollments (class_id, status) VALUES ($1, 'active')`, [created.id]);
+    for (const status of ["inactive", "archived", "deleted", "closed", "CLOSED", "TRANSFERRED"]) {
+      await pool.query(`INSERT INTO enrollments (class_id, status) VALUES ($1, $2)`, [created.id, status]);
+    }
+    for (let index = 0; index < 4; index += 1) {
+      await pool.query(`INSERT INTO enrollments (class_id, status) VALUES ($1, 'ENROLLED')`, [inOtherSchool.id]);
+    }
+
+    const mixed = await repo.listBySchoolCode("SCH-A");
+    assert.equal(
+      mixed.find((row) => row.classId === created.id)?.students,
+      7,
+      "ACTIVE + ENROLLED comptés, statuts fermés exclus",
+    );
+    assert.equal(mixed.some((row) => row.classId === inOtherSchool.id), false);
+    const otherSchoolRows = await repo.listBySchoolCode("SCH-B");
+    assert.equal(otherSchoolRows.find((row) => row.classId === inOtherSchool.id)?.students, 4);
+    assert.equal(otherSchoolRows.some((row) => row.classId === created.id), false);
+    const recountedMixed = await repo.update(created.classCode, "SCH-A", { status: "inactive" });
+    assert.equal(recountedMixed.students, 7);
+
     console.log("classesRepository.pg.test.js: OK");
   } finally {
     await pool.end();

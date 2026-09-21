@@ -94,6 +94,8 @@ export function PresencesPage() {
 
   const presences = (state.presences ?? []) as PresenceRow[];
   const students = (state.students ?? []) as ExpectedStudent[];
+  const rawSchoolCode = String((scopeUser as { schoolCode?: unknown } | null)?.schoolCode ?? "").trim();
+  const presenceSchoolCode = rawSchoolCode && rawSchoolCode !== "*" ? rawSchoolCode : undefined;
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
 
@@ -347,16 +349,19 @@ export function PresencesPage() {
               (presence) =>
                 sameAttendanceDay(String(presence.date ?? ""), todayLabel) && asClassMatch(presence, card),
             );
+            const expectedStudents = resolveExpectedStudentsForClassCard({
+              studentCount: card.studentCount,
+              students,
+              classId: card.classId,
+              classCode: card.classCode,
+              schoolCode: presenceSchoolCode,
+            });
             const badge = resolveClassTodayPresenceBadge({
-              expectedStudents: resolveExpectedStudentsForClassCard({
-                studentCount: card.studentCount,
-                students,
-                classId: card.classId,
-                classCode: card.classCode,
-              }),
+              expectedStudents,
               todayRows,
               todayLabel,
             });
+            const headcount = expectedStudents == null ? card.studentCount : expectedStudents.length;
 
             return (
               <button
@@ -366,7 +371,7 @@ export function PresencesPage() {
                 className="rounded-2xl border border-line bg-white p-5 text-left transition hover:border-brand/40 hover:shadow-sm"
               >
                 <p className="text-lg font-black text-ink">{card.className}</p>
-                <p className="mt-1 text-sm font-semibold text-muted">{card.studentCount} élève(s)</p>
+                <p className="mt-1 text-sm font-semibold text-muted">{headcount} élève(s)</p>
                 <p className="mt-1 text-xs text-muted">{badge.badgeText}</p>
               </button>
             );

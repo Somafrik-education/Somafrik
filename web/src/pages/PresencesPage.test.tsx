@@ -182,6 +182,94 @@ describe("PresencesPage — roster canonique", () => {
     expect(source).not.toMatch(/UNASSIGNED_CLASS/);
   });
 
+  it("ouverture directe : compteur 0, 6 élèves canoniques et appel complet → 6 et Présence N %", async () => {
+    const now = new Date();
+    const isoToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const students = Array.from({ length: 6 }, (_, index) => ({
+      id: `STU-${index + 1}`,
+      matricule: `STU-${index + 1}`,
+      classId: "uuid-1pa",
+      classCode: "CLS-1PA",
+      className: "1ère Primaire A",
+      schoolCode: "SCH-001",
+      status: "ENROLLED",
+    }));
+    dataState.classes = [
+      { id: "uuid-1pa", classId: "uuid-1pa", classCode: "CLS-1PA", name: "1ère Primaire A", students: 0 },
+      { id: "uuid-1pb", classId: "uuid-1pb", classCode: "CLS-1PB", name: "1ère Primaire A", students: 0 },
+    ];
+    dataState.students = [
+      ...students,
+      {
+        id: "STU-FOREIGN",
+        matricule: "STU-FOREIGN",
+        classId: "uuid-foreign",
+        classCode: "CLS-FOREIGN",
+        className: "1ère Primaire A",
+        schoolCode: "SCH-OTHER",
+        status: "ENROLLED",
+      },
+    ];
+    dataState.presences = students.map((student, index) => ({
+      studentId: student.id,
+      classId: "uuid-1pa",
+      classCode: "CLS-1PA",
+      date: isoToday,
+      status: index === 0 ? "Absent" : "Présent",
+      present: index !== 0,
+    }));
+    dataState.presences.push({
+      studentId: "GHOST",
+      classId: "uuid-1pb",
+      classCode: "CLS-1PB",
+      date: isoToday,
+      status: "Présent",
+      present: true,
+    });
+
+    render(<RoutedPresencesPage />);
+    const cards = await screen.findAllByRole("button");
+    const primaire = cards.filter((node) => node.textContent?.includes("1ère Primaire A"));
+    expect(primaire).toHaveLength(2);
+    const filled = primaire.find((node) => node.textContent?.includes("6 élève"));
+    const empty = primaire.find((node) => node.textContent?.includes("0 élève"));
+    expect(filled?.textContent).toMatch(/Présence 83 %/);
+    expect(filled?.textContent).not.toMatch(/Présence —/);
+    expect(empty?.textContent).toMatch(/Présence —/);
+    expect(empty?.textContent).not.toMatch(/6 élève/);
+  });
+
+  it("ouverture directe : appel complet tous absents → Présence 0 %", async () => {
+    const now = new Date();
+    const isoToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const students = Array.from({ length: 6 }, (_, index) => ({
+      id: `ABS-${index + 1}`,
+      matricule: `ABS-${index + 1}`,
+      classId: "uuid-1pa",
+      classCode: "CLS-1PA",
+      schoolCode: "SCH-001",
+      status: "ENROLLED",
+    }));
+    dataState.classes = [
+      { id: "uuid-1pa", classId: "uuid-1pa", classCode: "CLS-1PA", name: "1ère Primaire A", students: 0 },
+    ];
+    dataState.students = students;
+    dataState.presences = students.map((student) => ({
+      studentId: student.id,
+      classId: "uuid-1pa",
+      classCode: "CLS-1PA",
+      date: isoToday,
+      status: "Absent",
+      present: false,
+    }));
+
+    render(<RoutedPresencesPage />);
+    const card = (await screen.findAllByRole("button")).find((node) => node.textContent?.includes("1ère Primaire A"));
+    expect(card?.textContent).toMatch(/6 élève/);
+    expect(card?.textContent).toMatch(/Présence 0 %/);
+    expect(card?.textContent).not.toMatch(/Présence —/);
+  });
+
   it("H — enseignant Seke-like : JWT 2 assignments, state.assignments vide → 2 cartes", async () => {
     authSession.user = {
       id: "user-seke",
