@@ -3,7 +3,11 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 const { hashSecret } = require("../services/credentialService");
-const { shouldSeedDemoData, isStudentDemoAccount } = require("../lib/demoSeedPolicy");
+const {
+  shouldSeedDemoData,
+  isStudentDemoAccount,
+  resolveStudentDemoLoginIdentity,
+} = require("../lib/demoSeedPolicy");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
 const { mapAssignment } = require("./teacherAssignmentsRepository");
@@ -5415,6 +5419,7 @@ class PostgresRepository {
       studentIds.set(student.matricule, row.id);
       studentIds.set(row.student_code, row.id);
 
+      const studentLogin = resolveStudentDemoLoginIdentity(student, seedData.userAccounts);
       await client.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
          VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'STUDENT', $8)
@@ -5424,8 +5429,8 @@ class PostgresRepository {
           row.student_code,
           student.firstName ?? firstName,
           lastNameParts.join(" ") || student.name,
-          student.parentEmail,
-          student.parentPhone,
+          studentLogin.email,
+          studentLogin.phone,
           hashSecret(student.pin ?? "1234"),
           student.archived ? "archived" : "active",
         ]
@@ -5590,7 +5595,7 @@ class PostgresRepository {
     }
     await this.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
-       SELECT st.school_id, st.student_code, st.first_name, st.last_name, st.parent_email, st.parent_phone,
+       SELECT st.school_id, st.student_code, st.first_name, st.last_name, '', '',
               NULL, $1, 'STUDENT', st.status
        FROM students st
        LEFT JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
