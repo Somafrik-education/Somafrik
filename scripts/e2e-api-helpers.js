@@ -168,9 +168,13 @@ async function mobileLogin(role, identifier, pin, schoolCode) {
 }
 
 async function mobileLoginFull(role, identifier, pin, schoolCode) {
+  const body =
+    role === "parent_student"
+      ? { role, identifier, password: pin, schoolCode }
+      : { role, identifier, pin, schoolCode };
   const res = await request("/login", {
     method: "POST",
-    body: { role, identifier, pin, schoolCode },
+    body,
   });
   assert.strictEqual(res.status, 200, `mobile login ${identifier}: ${JSON.stringify(res.data)}`);
   const data = res.data;

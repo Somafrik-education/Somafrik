@@ -351,11 +351,21 @@ class AuthService {
     return managedMobileRole;
   }
 
-  async login({ role, schoolCode, identifier, pin }) {
-    this.assertRequiredFields({ role, identifier, pin }, "Champs manquants");
+  resolveLoginSecret({ role, password, pin } = {}) {
+    const passwordValue = String(password ?? "");
+    const pinValue = String(pin ?? "");
+    if (role === "parent_student") {
+      return passwordValue;
+    }
+    return pinValue || passwordValue;
+  }
+
+  async login({ role, schoolCode, identifier, pin, password }) {
+    const secret = this.resolveLoginSecret({ role, password, pin });
+    this.assertRequiredFields({ role, identifier, secret }, "Champs manquants");
     const requestedSchool = String(schoolCode ?? "").trim();
     if (!requestedSchool) {
-      return this.loginPlatformAccount({ role, identifier, pin });
+      return this.loginPlatformAccount({ role, identifier, pin: secret, password: secret });
     }
 
     const schoolContext = this.assertSchoolCanConnect(requestedSchool);
@@ -389,7 +399,7 @@ class AuthService {
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
-    if (!this.verifyUserSecret(managedUser, pin)) {
+    if (!this.verifyUserSecret(managedUser, secret, { role })) {
       await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
@@ -402,7 +412,7 @@ class AuthService {
     };
   }
 
-  async loginPlatformAccount({ role, identifier, pin }) {
+  async loginPlatformAccount({ role, identifier, pin, password }) {
     if (!this.isPlatformMobileRole(role)) {
       throw new BusinessError(400, "Champs manquants");
     }
@@ -434,7 +444,8 @@ class AuthService {
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
 
-    if (!this.verifyUserSecret(managedUser, pin)) {
+    const secret = this.resolveLoginSecret({ role, password, pin });
+    if (!this.verifyUserSecret(managedUser, secret, { role })) {
       await recordFailedLoginAttempt(loginKey);
       throw new BusinessError(401, GENERIC_AUTH_ERROR);
     }
@@ -794,18 +805,19 @@ class AuthService {
     return codes[normalized] ?? (/^[A-Z]{2}$/.test(normalized) ? normalized : "");
   }
 
-  verifyUserSecret(user, secret) {
+  verifyUserSecret(user, secret, options = {}) {
     if (!user) {
       return false;
     }
 
     const normalizedSecret = String(secret ?? "");
+    const parentOnly = options.role === "parent_student";
 
     if (user.passwordHash && verifySecret(normalizedSecret, user.passwordHash)) {
       return true;
     }
 
-    if (user.pinHash && verifySecret(normalizedSecret, user.pinHash)) {
+    if (!parentOnly && user.pinHash && verifySecret(normalizedSecret, user.pinHash)) {
       return true;
     }
 
@@ -814,7 +826,13 @@ class AuthService {
       return true;
     }
 
-    return String(user.password ?? "") === normalizedSecret || String(user.pin ?? "") === normalizedSecret;
+    if (String(user.password ?? "") === normalizedSecret) {
+      return true;
+    }
+    if (!parentOnly && String(user.pin ?? "") === normalizedSecret) {
+      return true;
+    }
+    return false;
   }
 
   resolveSchoolAccountCode(school) {

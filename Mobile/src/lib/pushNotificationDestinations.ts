@@ -1,3 +1,5 @@
+import { isLinkedParentStudent } from "./canonicalStudentIdentity";
+
 export const SOMAFRIK_PUSH_CHANNEL_ID = "somafrik-default-v2";
 export const ALLOWED_PUSH_DESTINATIONS = [
   "Home",
@@ -26,6 +28,19 @@ export function resolvePushDestination(value: unknown): AllowedPushDestination {
     return destination as AllowedPushDestination;
   }
   return "Home";
+}
+
+export function constrainParentPushNavigation(
+  target: { destination: AllowedPushDestination; params?: AllowedPushNavigationParams },
+  session: { role?: string | null; user?: { children?: unknown } | null } | null | undefined,
+): { destination: AllowedPushDestination; params?: AllowedPushNavigationParams } {
+  const studentId = String(target.params?.studentId ?? "").trim();
+  if (!studentId) return target;
+  if (session?.role !== "parent_student") return target;
+  if (isLinkedParentStudent({ user: session.user as never, selectedStudentId: studentId })) {
+    return target;
+  }
+  return { destination: "Home" };
 }
 
 export function resolvePushNavigationData(data: unknown): {

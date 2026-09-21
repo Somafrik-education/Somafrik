@@ -45,7 +45,7 @@ const accounts = {
   },
   parent: {
     loginPath: "/login",
-    payload: { role: "parent_student", schoolCode: "CD-2026-0001", identifier: "+243 820 000 001", pin: "1234" },
+    payload: { role: "parent_student", schoolCode: "CD-2026-0001", identifier: "+243 820 000 001", password: "1234" },
   },
   student: {
     loginPath: "/login",

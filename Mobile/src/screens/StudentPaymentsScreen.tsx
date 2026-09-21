@@ -25,7 +25,7 @@ import {
   STUDENT_SUB_SCREENS_TEST_IDS,
 } from "../lib/studentSubScreensSpec";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
-import { findStudentByIdentity, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentPayments">;
 
@@ -44,7 +44,12 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const [catalogCurrency, setCatalogCurrency] = useState("");
-  const studentId = route?.params?.studentId ?? selectedStudentId;
+  const studentId = resolveParentSafeStudentId({
+    role: session?.role,
+    routeStudentId: route?.params?.studentId,
+    selectedStudentId,
+    user: session?.user,
+  });
   const studentAliasKeys = sessionStudentAliasKeys({
     role: session?.role,
     selectedStudentId: studentId,

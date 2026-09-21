@@ -99,9 +99,8 @@ export function sessionStudentAliasKeys(input: {
     const selected = trim(input.selectedStudentId);
     if (selected) {
       const child = children.find((item) => childAliasKeys(item).includes(selected));
-      return uniqueNonEmpty([...(child ? childAliasKeys(child) : []), selected]).filter(
-        (key) => key !== authId,
-      );
+      if (!child) return [];
+      return uniqueNonEmpty(childAliasKeys(child)).filter((key) => key !== authId);
     }
     return uniqueNonEmpty(children.flatMap(childAliasKeys)).filter((key) => key !== authId);
   }
@@ -171,6 +170,37 @@ export function resolveMobileStudentScope(input: {
     return { role, studentIds, identityCount, unscoped: false };
   }
   return { role, studentIds: [], identityCount: 0, unscoped: true };
+}
+
+export function isLinkedParentStudent(input: {
+  selectedStudentId?: string | null;
+  studentId?: string | null;
+  children?: SessionChildRef[] | null;
+  user?: SessionUserRef;
+}): boolean {
+  const selected = trim(input.selectedStudentId ?? input.studentId);
+  if (!selected) return false;
+  const children = input.children ?? input.user?.children ?? [];
+  return children.some((child) => childAliasKeys(child).includes(selected));
+}
+
+export function resolveParentSafeStudentId(input: {
+  role?: string | null;
+  routeStudentId?: string | null;
+  selectedStudentId?: string | null;
+  children?: SessionChildRef[] | null;
+  user?: SessionUserRef;
+}): string | null {
+  const requested = trim(input.routeStudentId) || trim(input.selectedStudentId);
+  if (!requested) return null;
+  if (input.role === "parent_student" && !isLinkedParentStudent({
+    selectedStudentId: requested,
+    children: input.children,
+    user: input.user,
+  })) {
+    return null;
+  }
+  return requested;
 }
 
 export function filterRowsByStudentScope<T extends StudentIdentityRow>(

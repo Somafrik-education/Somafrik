@@ -22,6 +22,60 @@ export function isSuperAdminSessionRole(role?: string) {
 const schoolAdminForbiddenFeatures = new Set(["Établissements", "Abonnements"]);
 
 /**
+ * Surfaces Parent explicitement autorisées. Un token READ partagé
+ * (Élèves / Notes / Présences / Paiements) n'ouvre jamais une route staff.
+ */
+const PARENT_ALLOWED_ROUTES = new Set([
+  "Home",
+  "Profil",
+  "StudentDetail",
+  "StudentNotes",
+  "Notes",
+  "StudentPresences",
+  "Presences",
+  "FraisEleve",
+  "StudentPayments",
+  "MobilePayment",
+  "Messages",
+  "Announcements",
+  "InternalNotifications",
+  "ReportCards",
+  "Timetable",
+  "OfflineMode",
+  "Support",
+  "Documents",
+]);
+
+const PARENT_BLOCKED_VIEWS = new Set([
+  "Schooling",
+  "FeeGrids",
+  "Students",
+  "students",
+  "Users",
+  "users",
+  "Teachers",
+  "teachers",
+  "SchoolManagement",
+  "Payments",
+  "Unpaid",
+  "Configuration",
+  "EstablishmentProfile",
+  "Synchronization",
+  "TeacherGrades",
+  "TeacherAttendance",
+  "TeacherStudents",
+  "ClassGradesStats",
+  "Classes",
+  "classes",
+]);
+
+export function isParentMobileSession(session: any): boolean {
+  if (!session) return false;
+  const identity = resolveCanonicalRoleIdentity(session);
+  return identity.sessionRole === "parent_student" || identity.roleKey === "PARENT";
+}
+
+/**
  * Parité Web `superAdminAccess.ts` : ALL_PRIVILEGES n'ouvre pas les modules
  * opérationnels d'un établissement dans les interfaces clientes.
  */
@@ -345,6 +399,9 @@ export function hasPlatformBackofficePrivilege(session: any): boolean {
 }
 
 export function canReadView(session: any, viewName: string): boolean {
+  if (isParentMobileSession(session) && PARENT_BLOCKED_VIEWS.has(viewName)) {
+    return false;
+  }
   if (isSuperAdminSessionRole(session?.role)) {
     return SUPER_ADMIN_ALLOWED_VIEWS.has(viewName);
   }
@@ -430,6 +487,7 @@ export function canMutateEntity(session: any, entity: string, action: Exclude<Se
 /** GET /finance/fee-grids — Frais & tarifs:READ | Paiements:READ | Impayés:READ. */
 export function canReadFeeGrids(session: any): boolean {
   if (isSuperAdminSessionRole(session?.role)) return false;
+  if (isParentMobileSession(session)) return false;
   return (
     hasSecurityPermission(session, "Frais & tarifs", "READ") ||
     hasSecurityPermission(session, "Paiements", "READ") ||
@@ -438,6 +496,9 @@ export function canReadFeeGrids(session: any): boolean {
 }
 
 export function canReadRoute(session: any, routeName?: string) {
+  if (isParentMobileSession(session)) {
+    if (!routeName || !PARENT_ALLOWED_ROUTES.has(routeName)) return false;
+  }
   if (isSuperAdminSessionRole(session?.role)) {
     return Boolean(routeName) && SUPER_ADMIN_ALLOWED_VIEWS.has(routeName as string);
   }

@@ -26,7 +26,7 @@ import {
   canonicalStudentGeneralAverage,
   courseOptionsFromNotes,
 } from "../lib/pedagogyAverage";
-import { findStudentByIdentity, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentNotes">;
 
@@ -35,7 +35,12 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
   const { studentsData, notesSnapshot, loadNotes } = useAdminData();
-  const studentId = route?.params?.studentId ?? selectedStudentId;
+  const studentId = resolveParentSafeStudentId({
+    role: session?.role,
+    routeStudentId: route?.params?.studentId,
+    selectedStudentId,
+    user: session?.user,
+  });
   const studentAliasKeys = sessionStudentAliasKeys({
     role: session?.role,
     selectedStudentId: studentId,

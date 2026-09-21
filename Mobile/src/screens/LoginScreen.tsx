@@ -28,6 +28,8 @@ import {
   canSubmitLogin,
   mapLoginApiError,
   resolveIdentifierKeyboardType,
+  resolveLoginEmptyFieldsError,
+  resolveSecretFieldCopy,
   resolveSecretKeyboardType,
 } from "../lib/loginScreenSpec";
 import {
@@ -121,7 +123,7 @@ export default function LoginScreen({ navigation, route }: Props) {
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password.trim()) {
-      setErrorMessage(ERROR_MESSAGES.emptyFields);
+      setErrorMessage(resolveLoginEmptyFieldsError(identity?.role));
       return;
     }
 
@@ -138,7 +140,9 @@ export default function LoginScreen({ navigation, route }: Props) {
         buildMobileLoginPayload({
           role: identity.role,
           identifier: identifier.trim(),
-          pin: password.trim(),
+          ...(identity.role === "parent_student"
+            ? { password: password.trim() }
+            : { pin: password.trim() }),
           schoolCode: school?.code,
           platformContext,
         }),
@@ -259,6 +263,7 @@ export default function LoginScreen({ navigation, route }: Props) {
   const loginReady = canSubmitLogin(identity, identifier, password, isLoading);
   const identifierKeyboard = resolveIdentifierKeyboardType(identifier);
   const secretKeyboard = resolveSecretKeyboardType(identity?.role);
+  const secretCopy = resolveSecretFieldCopy(identity?.role);
   const schoolLogoUri = schoolLogoDisplayUri(school, getApiBaseUrl());
 
   return (
@@ -332,18 +337,10 @@ export default function LoginScreen({ navigation, route }: Props) {
 
       {identity && (
         <FormField
-          label={
-            identity.role === "parent_student" || identity.role === "student"
-              ? LOGIN_SCREEN_COPY.pinLabel
-              : LOGIN_SCREEN_COPY.passwordLabel
-          }
+          label={secretCopy.label}
           required
           type="password"
-          placeholder={
-            identity.role === "parent_student" || identity.role === "student"
-              ? LOGIN_SCREEN_COPY.pinPlaceholder
-              : LOGIN_SCREEN_COPY.passwordPlaceholder
-          }
+          placeholder={secretCopy.placeholder}
           value={password}
           onChangeText={(value) => {
             setPassword(value);
@@ -357,11 +354,7 @@ export default function LoginScreen({ navigation, route }: Props) {
             if (loginReady) void handleLogin();
           }}
           testID={LOGIN_TEST_IDS.passwordInput}
-          accessibilityLabel={
-            identity.role === "parent_student" || identity.role === "student"
-              ? LOGIN_SCREEN_COPY.pinLabel
-              : LOGIN_SCREEN_COPY.passwordLabel
-          }
+          accessibilityLabel={secretCopy.label}
           containerStyle={styles.field}
         />
       )}

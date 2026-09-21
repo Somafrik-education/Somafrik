@@ -250,7 +250,7 @@ async function main() {
           role: "parent_student",
           schoolCode: "CD-2026-0001",
           identifier: parentEmail,
-          pin: parentPin,
+          password: parentPin,
         },
       });
       assert.equal(parentLogin.status, 200, JSON.stringify(parentLogin.data));
@@ -285,7 +285,7 @@ async function main() {
           role: "parent_student",
           schoolCode: "CD-2026-0001",
           identifier: teacher.email || teacher.phone || teacher.identifier,
-          pin: teacherPin,
+          password: teacherPin,
         },
       });
       assert.equal(dualRoleLogin.status, 200, JSON.stringify(dualRoleLogin.data));

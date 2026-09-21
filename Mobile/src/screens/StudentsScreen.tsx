@@ -16,6 +16,7 @@ import { canReadRoute } from "../domain/security/permissions";
 import {
   filterStudentsByClassName,
 } from "../lib/establishment";
+import { filterRowsByStudentScope, resolveMobileStudentScope } from "../lib/canonicalStudentIdentity";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
@@ -48,7 +49,7 @@ type StudentSection = {
 export default function StudentsScreen({ route, navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const scrollContentStyle = [styles.scrollContent, { paddingBottom: scrollContentPaddingBottom }];
-  const { session, permissionsBootstrap } = useAuth();
+  const { session, selectedStudentId, permissionsBootstrap } = useAuth();
   const { presencesData, classesData, loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, studentsSnapshot, presencesSnapshot, studentFeesSnapshot, resourceScopeKey, establishmentStudents, studentsProjection } = useAdminData();
   const className = route?.params?.className ?? "Toutes les classes";
   const [query, setQuery] = useState("");
@@ -70,7 +71,16 @@ export default function StudentsScreen({ route, navigation }: any) {
     }, [loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, resourceScopeKey]),
   );
 
-  const availableStudents = establishmentStudents;
+  const studentScope = resolveMobileStudentScope({
+    role: session?.role,
+    selectedStudentId,
+    children: session?.user?.children,
+    user: session?.user,
+  });
+  const availableStudents = useMemo(
+    () => filterRowsByStudentScope(establishmentStudents, studentScope),
+    [establishmentStudents, studentScope],
+  );
 
   const classStudents = useMemo(
     () =>
