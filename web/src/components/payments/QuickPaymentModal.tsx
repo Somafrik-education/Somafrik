@@ -115,6 +115,8 @@ export function QuickPaymentModal({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const paymentIntentionRef = useRef(createFinanceIdempotencyKey());
+  const sessionGenRef = useRef(0);
+  const selectionGenRef = useRef(0);
   const [savedPayment, setSavedPayment] = useState<PaymentRecord | null>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [optionStudents, setOptionStudents] = useState<PaymentRecord[]>([]);
@@ -184,6 +186,8 @@ export function QuickPaymentModal({
   const currency = resolveFinanceCurrency(catalogCurrency, school?.currency);
 
   useEffect(() => {
+    const session = ++sessionGenRef.current;
+    selectionGenRef.current = 0;
     if (!open) return;
     setSearch("");
     setSelectedStudent(null);
@@ -203,6 +207,7 @@ export function QuickPaymentModal({
           financeApi.getFinanceCatalog(),
           financeApi.listStudentFees(),
         ]);
+        if (session !== sessionGenRef.current) return;
         const rows = Array.isArray(options) ? options : [];
         const flattened: PaymentRecord[] = [];
         for (const option of rows) {
@@ -231,13 +236,17 @@ export function QuickPaymentModal({
           }
         }
         setOptionStudents(flattened);
-        setStudentFees(Array.isArray(fees) ? fees : []);
+        if (selectionGenRef.current === 0) {
+          setStudentFees(Array.isArray(fees) ? fees : []);
+        }
         const activeMethods = (catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label);
         if (!activeMethods.length) {
-          setCatalogMethods([]);
-          setMethod("");
-          setCatalogError("Aucun moyen de paiement actif pour cet établissement.");
-          if (catalog.currency) setCatalogCurrency(catalog.currency);
+          if (selectionGenRef.current === 0) {
+            setCatalogMethods([]);
+            setMethod("");
+            setCatalogError("Aucun moyen de paiement actif pour cet établissement.");
+            if (catalog.currency) setCatalogCurrency(catalog.currency);
+          }
           return;
         }
         setCatalogMethods(activeMethods);
@@ -256,13 +265,15 @@ export function QuickPaymentModal({
           }
         }
       } catch (cause) {
+        if (session !== sessionGenRef.current) return;
+        if (selectionGenRef.current !== 0) return;
         setCatalogError(cause instanceof Error ? cause.message : "Catalogue financier indisponible.");
         setOptionStudents([]);
         setCatalogMethods([]);
         setCatalogCurrency("");
         setStudentFees([]);
       } finally {
-        setCatalogLoading(false);
+        if (session === sessionGenRef.current) setCatalogLoading(false);
       }
     })();
   }, [open, schoolCode, initialStudentId]);
@@ -272,11 +283,14 @@ export function QuickPaymentModal({
     roster: PaymentRecord[],
     fees: FinanceObligationProjection[],
   ) {
+    const session = sessionGenRef.current;
+    const selection = ++selectionGenRef.current;
     setSelectedStudent(student);
     setSearch(student.name);
     const options = collectStudentPaymentClasses(student.id, roster);
     setClassId(options.length === 1 ? options[0].classId : "");
     const applyOpenLines = (openRows: ReturnType<typeof collectOpenObligationsFromProjection>) => {
+      if (session !== sessionGenRef.current || selection !== selectionGenRef.current) return;
       if (openRows.length === 1) {
         setLines([createPaymentLine(openRows[0].obligationId)]);
         return;
@@ -290,12 +304,13 @@ export function QuickPaymentModal({
     applyOpenLines(collectOpenObligationsFromProjection(studentIdentityFromSearch(student), fees));
     try {
       const scoped = await financeApi.listStudentFees(student.id);
+      if (session !== sessionGenRef.current || selection !== selectionGenRef.current) return;
       if (Array.isArray(scoped)) {
         setStudentFees(scoped);
         applyOpenLines(collectOpenObligationsFromProjection(studentIdentityFromSearch(student), scoped));
       }
     } catch {
-      /* projection établissement déjà chargée */
+      if (session !== sessionGenRef.current || selection !== selectionGenRef.current) return;
     }
   }
 
