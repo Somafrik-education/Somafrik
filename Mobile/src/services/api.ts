@@ -115,7 +115,8 @@ type LoginPayload = {
   role: UserRole;
   schoolCode?: string;
   identifier: string;
-  pin: string;
+  pin?: string;
+  password?: string;
 };
 
 export type SchoolInfo = {

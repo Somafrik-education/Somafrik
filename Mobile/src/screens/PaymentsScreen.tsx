@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FlatList, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
@@ -20,9 +20,10 @@ import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentE
 import { useUnpaidLedger } from "../hooks/useUnpaidLedger";
 import { unpaidLedgerMetricValue, unpaidLedgerStateMessage } from "../lib/unpaidLedger";
 import { financeSummaryColumns } from "../lib/financeListUx";
+import { filterRowsByStudentScope, resolveMobileStudentScope } from "../lib/canonicalStudentIdentity";
 
 export default function PaymentsScreen({ navigation }: any) {
-  const { session } = useAuth();
+  const { session, selectedStudentId } = useAuth();
   const { width: viewportWidth } = useWindowDimensions();
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const contentStyle = [styles.content, { paddingBottom: scrollContentPaddingBottom }];
@@ -38,11 +39,25 @@ export default function PaymentsScreen({ navigation }: any) {
   const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const [catalogCurrency, setCatalogCurrency] = useState("");
-  const paymentStats = getPaymentStats(paymentsData);
-  const paymentRateKpi = getPaymentRateKpi(studentFeesData);
-  const paymentAmountOverview = formatPaymentOverviewAmounts(studentFeesData);
-  const cashKpi = getPaymentCashKpi(paymentsData);
-  const cashOverview = formatPaymentCashAmounts(paymentsData);
+  const studentScope = resolveMobileStudentScope({
+    role: session?.role,
+    selectedStudentId,
+    children: session?.user?.children,
+    user: session?.user,
+  });
+  const scopedPayments = useMemo(
+    () => filterRowsByStudentScope(paymentsData, studentScope),
+    [paymentsData, studentScope],
+  );
+  const scopedFees = useMemo(
+    () => filterRowsByStudentScope(studentFeesData, studentScope),
+    [studentFeesData, studentScope],
+  );
+  const paymentStats = getPaymentStats(scopedPayments);
+  const paymentRateKpi = getPaymentRateKpi(scopedFees);
+  const paymentAmountOverview = formatPaymentOverviewAmounts(scopedFees);
+  const cashKpi = getPaymentCashKpi(scopedPayments);
+  const cashOverview = formatPaymentCashAmounts(scopedPayments);
   const canReadUnpaid = hasSecurityPermission(session, "Impayés", "READ");
   const requestedSchoolCode = activeSchoolCode || session?.school?.code || session?.user?.schoolCode;
   const { state: unpaidLedger } = useUnpaidLedger(canReadUnpaid, requestedSchoolCode);
@@ -89,7 +104,7 @@ export default function PaymentsScreen({ navigation }: any) {
     <FlatList
       style={styles.container}
       contentContainerStyle={contentStyle}
-      data={showQueryState ? [] : paymentsData}
+      data={showQueryState ? [] : scopedPayments}
       keyExtractor={(payment) => String(payment.id)}
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={

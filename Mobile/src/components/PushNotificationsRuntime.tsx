@@ -9,7 +9,7 @@ import {
   type PushTapGate,
   type PushTapResponse,
 } from "../lib/pushNotificationTap";
-import type { AllowedPushNavigationParams } from "../lib/pushNotificationDestinations";
+import { constrainParentPushNavigation, type AllowedPushNavigationParams } from "../lib/pushNotificationDestinations";
 import { dispatchRegisteredPushNavigation } from "../lib/pushNotificationNavigate";
 import {
   observePushRegistrationFailure,
@@ -28,8 +28,13 @@ Notifications.setNotificationHandler({
   }),
 });
 
-function navigateTo(destination: string, params?: AllowedPushNavigationParams) {
-  dispatchRegisteredPushNavigation(navigationRef, destination as never, params);
+function navigateTo(
+  destination: string,
+  params?: AllowedPushNavigationParams,
+  session?: { role?: string | null; user?: { children?: unknown } | null } | null,
+) {
+  const scoped = constrainParentPushNavigation({ destination: destination as never, params }, session);
+  dispatchRegisteredPushNavigation(navigationRef, scoped.destination, scoped.params);
 }
 
 function isNavigationReady() {
@@ -53,12 +58,17 @@ export default function PushNotificationsRuntime() {
   const { session, bootstrapping } = useAuth();
   const canonical = !bootstrapping && Boolean(session) && canPersistFullSession(session);
   const canonicalRef = useRef(canonical);
+  const sessionRef = useRef(session);
   const previousCanonicalRef = useRef(false);
   canonicalRef.current = canonical;
+  sessionRef.current = session;
 
   const gate: PushTapGate = {
     isReady: isNavigationReady,
     isAuthenticated: () => canonicalRef.current,
+  };
+  const navigateScoped = (destination: string, params?: AllowedPushNavigationParams) => {
+    navigateTo(destination, params, sessionRef.current);
   };
 
   useEffect(() => {
@@ -74,9 +84,9 @@ export default function PushNotificationsRuntime() {
   }, [canonical]);
 
   useEffect(() => {
-    void consumeInitialPushResponse(readLastNotificationResponse, navigateTo, gate).catch(() => undefined);
+    void consumeInitialPushResponse(readLastNotificationResponse, navigateScoped, gate).catch(() => undefined);
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      consumePushTapResponse(response as PushTapResponse, navigateTo, gate);
+      consumePushTapResponse(response as PushTapResponse, navigateScoped, gate);
     });
     return () => sub.remove();
     // Intentionally once: the gate reads canonicalRef for later session changes.
@@ -85,7 +95,7 @@ export default function PushNotificationsRuntime() {
 
   useEffect(() => {
     if (!canonical) return;
-    flushPendingPushNavigation(navigateTo, gate);
+    flushPendingPushNavigation(navigateScoped, gate);
   }, [canonical]);
 
   return null;

@@ -1,5 +1,6 @@
 /**
- * Contrat UI/UX — parcours connexion mobile (code établissement → identifiant → PIN).
+ * Contrat UI/UX — parcours connexion mobile (code établissement → identifiant → secret).
+ * Parent (`parent_student`) : mot de passe standard. Élève : PIN numérique.
  */
 
 export const ROLE_SELECTION_COPY = {
@@ -22,7 +23,8 @@ export const LOGIN_SCREEN_COPY = {
   roleLabel: "Rôle détecté",
   rolePending: "En attente",
   loginButton: "Se connecter",
-  pinLabel: "PIN",
+  pinLabel: "Mot de passe",
+  studentPinLabel: "PIN",
   pinPlaceholder: "Ex. 1234",
   passwordLabel: "Mot de passe",
   passwordPlaceholder: "Ex. ••••••",
@@ -38,7 +40,7 @@ export const ERROR_MESSAGES = {
   invalidSchoolCode: "Code établissement incorrect.",
   invalidIdentifier: "Identifiant invalide.",
   invalidPin: "PIN incorrect.",
-  invalidCredentials: "Identifiant ou PIN incorrect.",
+  invalidCredentials: "Identifiant ou mot de passe incorrect.",
   emptySchoolCode: "Veuillez saisir le code établissement.",
   emptyFields: "Veuillez saisir votre identifiant et votre code PIN.",
   networkError: "Connexion impossible. Vérifiez votre réseau et réessayez.",
@@ -65,31 +67,46 @@ export function mapSchoolCodeError(rawMessage = ""): string {
   return ERROR_MESSAGES.invalidSchoolCode;
 }
 
+export function usesNumericPinSecret(role?: string): boolean {
+  return role === "student";
+}
+
+export function resolveSecretFieldCopy(role?: string): { label: string; placeholder: string } {
+  if (usesNumericPinSecret(role)) {
+    return {
+      label: LOGIN_SCREEN_COPY.studentPinLabel,
+      placeholder: LOGIN_SCREEN_COPY.pinPlaceholder,
+    };
+  }
+  return {
+    label: LOGIN_SCREEN_COPY.passwordLabel,
+    placeholder: LOGIN_SCREEN_COPY.passwordPlaceholder,
+  };
+}
+
+export function resolveLoginEmptyFieldsError(role?: string): string {
+  if (usesNumericPinSecret(role)) return ERROR_MESSAGES.emptyFields;
+  return "Veuillez saisir votre identifiant et votre mot de passe.";
+}
+
 export function mapLoginApiError(rawMessage = "", role?: string): string {
   const message = String(rawMessage).trim();
   const normalized = message.toLowerCase();
+  const pinRole = usesNumericPinSecret(role);
   if (!message) {
-    return role === "parent_student" || role === "student"
-      ? ERROR_MESSAGES.invalidPin
-      : ERROR_MESSAGES.invalidCredentials;
+    return pinRole ? ERROR_MESSAGES.invalidPin : ERROR_MESSAGES.invalidCredentials;
   }
   if (normalized.includes("identifiant") && normalized.includes("incorrect")) {
-    return role === "parent_student" || role === "student"
-      ? ERROR_MESSAGES.invalidPin
-      : ERROR_MESSAGES.invalidCredentials;
+    return pinRole ? ERROR_MESSAGES.invalidPin : ERROR_MESSAGES.invalidCredentials;
   }
   if (normalized.includes("mot de passe incorrect") || normalized.includes("pin incorrect")) {
-    return role === "parent_student" || role === "student"
-      ? ERROR_MESSAGES.invalidPin
-      : ERROR_MESSAGES.invalidCredentials;
+    return pinRole ? ERROR_MESSAGES.invalidPin : ERROR_MESSAGES.invalidCredentials;
   }
   if (normalized.includes("identifiant invalide") || normalized.includes("compte introuvable")) {
     return ERROR_MESSAGES.invalidIdentifier;
   }
   if (TECHNICAL_PATTERN.test(message) || message.length > 100 || message.includes("\n")) {
-    return role === "parent_student" || role === "student"
-      ? ERROR_MESSAGES.invalidPin
-      : ERROR_MESSAGES.invalidCredentials;
+    return pinRole ? ERROR_MESSAGES.invalidPin : ERROR_MESSAGES.invalidCredentials;
   }
   return message;
 }
@@ -164,7 +181,7 @@ export function resolveIdentifierKeyboardType(identifier: string): IdentifierKey
 }
 
 export function resolveSecretKeyboardType(role?: string): "number-pad" | "default" {
-  if (role === "parent_student" || role === "student") return "number-pad";
+  if (usesNumericPinSecret(role)) return "number-pad";
   return "default";
 }
 

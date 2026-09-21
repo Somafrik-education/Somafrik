@@ -213,7 +213,7 @@ async function main() {
     role: "parent_student",
     schoolCode: "CD-2026-0001",
     identifier: "paul.teacher@test.local",
-    pin: "TeacherPin1!",
+    password: "TeacherPin1!",
   });
   assert.equal(parentLogin.role, "parent_student");
   assert.equal(parentLogin.user.role, "Parent");

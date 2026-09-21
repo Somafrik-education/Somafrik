@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { navigationRef } from "./rootNavigation";
 import { flushPendingPushNavigation } from "../lib/pushNotificationTap";
 import { dispatchRegisteredPushNavigation } from "../lib/pushNotificationNavigate";
+import { constrainParentPushNavigation } from "../lib/pushNotificationDestinations";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -251,7 +252,8 @@ export default function AppNavigator() {
         onReady={() => {
         flushPendingPushNavigation(
           (destination, params) => {
-            dispatchRegisteredPushNavigation(navigationRef, destination, params);
+            const scoped = constrainParentPushNavigation({ destination, params }, session);
+            dispatchRegisteredPushNavigation(navigationRef, scoped.destination, scoped.params);
           },
           {
             isReady: () => navigationRef.isReady(),

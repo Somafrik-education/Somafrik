@@ -9,7 +9,7 @@ import {
 } from "../services/api";
 import { enrichSessionPermissions } from "../domain/security/permissions";
 import { attachCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
-import { resolveSessionStudentId } from "../lib/canonicalStudentIdentity";
+import { isLinkedParentStudent, resolveSessionStudentId } from "../lib/canonicalStudentIdentity";
 import { canRestorePersistedSession } from "../lib/dataTruth";
 import { dismissPendingPushNavigation } from "../lib/pushNotificationTap";
 import { blockOutboxOnLogout } from "../lib/outbox";
@@ -324,6 +324,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [clearAuthenticatedState, refreshEffectivePermissions, saveSession],
   );
 
+  const selectStudentId = useCallback((studentId: string) => {
+    const current = sessionRef.current;
+    if (current?.role === "parent_student" && !isLinkedParentStudent({
+      user: current.user,
+      selectedStudentId: studentId,
+    })) {
+      return;
+    }
+    setSelectedStudentId(studentId);
+  }, []);
+
   const logout = useCallback(() => {
     clearRequestSchoolScope();
     clearStoredSchoolCode();
@@ -341,7 +352,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       permissionsBootstrap,
       permissionsBootstrapError,
       setSession,
-      setSelectedStudentId,
+      setSelectedStudentId: selectStudentId,
       refreshEffectivePermissions,
       logout,
     }),
@@ -352,6 +363,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       permissionsBootstrap,
       permissionsBootstrapError,
       setSession,
+      selectStudentId,
       refreshEffectivePermissions,
       logout,
     ],

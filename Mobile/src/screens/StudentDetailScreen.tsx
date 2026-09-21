@@ -8,7 +8,7 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -28,6 +28,8 @@ import { studentDisplayName } from "../lib/studentDisplayName";
 import { normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 import {
   filterRowsByStudentScope,
+  isLinkedParentStudent,
+  resolveParentSafeStudentId,
   sessionStudentAliasKeys,
 } from "../lib/canonicalStudentIdentity";
 import {
@@ -91,7 +93,19 @@ export default function StudentDetailScreen({
     paymentsSnapshot,
     resourceScopeKey,
   } = useAdminData();
-  const studentId = route?.params?.studentId ?? selectedStudentId;
+  const studentId = resolveParentSafeStudentId({
+    role: session?.role,
+    routeStudentId: route?.params?.studentId,
+    selectedStudentId,
+    user: session?.user,
+  });
+
+  useEffect(() => {
+    const requested = route?.params?.studentId;
+    if (session?.role !== "parent_student" || !requested) return;
+    if (isLinkedParentStudent({ user: session.user, selectedStudentId: requested })) return;
+    navigation?.navigate("Home", { role: session.role });
+  }, [navigation, route?.params?.studentId, session]);
   const studentAliasKeys = sessionStudentAliasKeys({
     role: session?.role,
     selectedStudentId: studentId,
