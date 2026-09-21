@@ -1,3 +1,5 @@
+import { normalize } from "./format";
+
 export type BusinessProfileKind = "student_login" | "teacher" | "staff" | "unassigned" | "conflict";
 
 export type BusinessProfileUser = {
@@ -119,3 +121,31 @@ export function accountKindLabel(row: BusinessProfileUser): string | null {
 
 export const STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE =
   "Ce compte est lié à un élève actif. Le rôle Enseignant ne peut pas lui être attribué.";
+
+/** Parité Web `userAccounts.STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE`. */
+export const STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE =
+  "Ce compte est lié à un élève actif. Le rôle Enseignant n'est pas compatible. Un compte utilisateur n'est pas un profil métier.";
+
+export function isTeacherRoleLabel(role: string | undefined | null): boolean {
+  const value = normalize(String(role ?? ""));
+  return value === "enseignant" || value === "teacher";
+}
+
+/**
+ * Parité Web `canAssignRoleToUserAccount`.
+ * Un compte lié à un élève actif est verrouillé pour tout rôle, y compris Enseignant.
+ * Un profil enseignant ne peut pas recevoir le rôle Élève / Étudiant.
+ */
+export function canAssignRoleToUserAccount(
+  user: Pick<BusinessProfileUser, "accountKind" | "linkedStudent" | "linkedTeacher" | "role" | "roles" | "roleKeys">,
+  roleName: string,
+): boolean {
+  if (areStudentRolesLocked(user)) return false;
+  if (
+    (user.linkedTeacher || user.accountKind === "teacher" || user.accountKind === "conflict") &&
+    normalize(roleName) === "eleve / etudiant"
+  ) {
+    return false;
+  }
+  return true;
+}

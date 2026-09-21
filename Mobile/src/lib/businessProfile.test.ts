@@ -3,15 +3,18 @@ import {
   ACCESS_ROLES_NONE_LABEL,
   BUSINESS_PROFILE_KIND_LABELS,
   accountKindLabel,
+  canAssignRoleToUserAccount,
   formatAccessRolesDisplay,
   formatBusinessProfileKind,
   isStudentLinkedAccount,
   isTeacherLinkedAccount,
+  isTeacherRoleLabel,
   areStudentRolesLocked,
   STUDENT_ACCESS_ROLE_LABEL,
   STUDENT_ROLES_LOCKED_LABEL,
   STUDENT_ROLE_LOCKED_MESSAGE,
   STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE,
+  STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE,
 } from "./businessProfile";
 
 const sample = {
@@ -27,6 +30,17 @@ assert.equal(accountKindLabel(sample), "Compte lié à un élève");
 assert.equal(isStudentLinkedAccount({ accountKind: "unassigned" }), false);
 assert.equal(isTeacherLinkedAccount({ role: "Enseignant" }), true);
 assert.match(STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE, /élève actif/i);
+assert.match(STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE, /rôle Enseignant n'est pas compatible/);
+assert.equal(isTeacherRoleLabel("Enseignant"), true);
+assert.equal(isTeacherRoleLabel("TEACHER"), true);
+assert.equal(isTeacherRoleLabel("Comptable"), false);
+assert.equal(canAssignRoleToUserAccount(sample, "Enseignant"), false);
+assert.equal(canAssignRoleToUserAccount(sample, "Comptable"), false);
+assert.equal(canAssignRoleToUserAccount({ accountKind: "staff", role: "Secrétaire" }, "Enseignant"), true);
+assert.equal(
+  canAssignRoleToUserAccount({ accountKind: "teacher", linkedTeacher: { teacherCode: "ENS-1" } }, "Élève / Étudiant"),
+  false,
+);
 
 const studentNoAccess = {
   accountKind: "student_login" as const,

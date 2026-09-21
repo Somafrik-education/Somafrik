@@ -78,8 +78,10 @@ function main() {
   assert.match(userControls, /grantClientsUserRole/);
   assert.match(userControls, /revokeClientsUserRole/);
   assert.match(userControls, /testID="users-create"/);
-  assert.match(userControls, /testID="users-grant-teacher"/);
-  assert.match(userControls, /testID="users-revoke-teacher"/);
+  assert.match(userControls, /testID="users-manage-roles"/);
+  assert.match(userControls, /listAssignableEstablishmentRoles/);
+  assert.doesNotMatch(userControls, /users-grant-teacher/);
+  assert.doesNotMatch(userControls, /users-revoke-teacher/);
   assert.match(userControls, /SecretHandoffModal/);
 
   assert.match(teachers, /TeacherMutationControls/);

@@ -377,9 +377,14 @@ describe("M6 — L1 conserve students.id", () => {
 describe("P0 — mutation rôles élève verrouillée", () => {
   it("UserMutationControls refuse grant/revoke sur linkedStudent", () => {
     const src = source("src/components/UserMutationControls.tsx");
+    const assignment = source("src/lib/userRoleAssignment.ts");
     assert.match(src, /STUDENT_ROLE_LOCKED_MESSAGE/);
     assert.match(src, /isStudentLinkedAccount\(row\)/);
-    assert.match(src, /Retrait impossible/);
+    assert.match(src, /canAssignRoleToUserAccount/);
+    assert.match(assignment, /isStudentLinkedAccount\(input\.user\)/);
+    assert.match(assignment, /areStudentRolesLocked\(input\.user\)/);
+    assert.doesNotMatch(src, /users-grant-teacher/);
+    assert.doesNotMatch(src, /users-revoke-teacher/);
   });
 });
 
