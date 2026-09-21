@@ -41,6 +41,34 @@ const roleFromDb = Object.fromEntries(
 roleFromDb.SUPER_ADMIN = "Super Administrateur Somafrik";
 roleFromDb.SUPERVISOR = "Surveillant";
 
+const CANONICAL_ROLE_KEYS = new Set([
+  "SUPER_ADMIN",
+  "COUNTRY_ADMIN",
+  "SCHOOL_ADMIN",
+  "PROVISEUR",
+  "PRINCIPAL",
+  "PREFET_ETUDES",
+  "TEACHER",
+  "SECRETARY",
+  "ACCOUNTANT",
+  "PARENT",
+  "STUDENT",
+  "SUPERVISOR",
+]);
+
+/**
+ * Seul un rôle canonique est persisté dans users.role.
+ * Un libellé démo sans correspondance reste NULL : pas de role_key inventé,
+ * et le boot suivant ne tombe pas sur USER_ROLES_MIGRATION_AMBIGUOUS.
+ */
+function canonicalPersistedRole(role) {
+  const raw = String(role ?? "").trim();
+  if (!raw) return null;
+  if (roleToDb[raw]) return roleToDb[raw];
+  const key = raw.toUpperCase().replace(/\s+/g, "_");
+  return CANONICAL_ROLE_KEYS.has(key) ? key : null;
+}
+
 function normalizeUserLookup(value) {
   return String(value ?? "").trim();
 }
@@ -147,6 +175,10 @@ class PostgresRepository {
       await this.ensureStudentUsers();
       await this.ensureDemoWebAccounts();
       await this.ensureV2Data();
+      // Après les INSERT users du seed : le passage canonique du début de init()
+      // a tourné sur une table encore vide. Sans cette écriture, Finance live
+      // fail-closed en 403. Pas de fallback JWT, pas d'écriture à la requête.
+      await this.ensureSeededUserRoles();
     }
     await this.ensurePlatformPersonalDataDeny();
     await this.ensureP1RgpdSchema();
@@ -640,6 +672,45 @@ class PostgresRepository {
       await this.query(backfillFromSecondaryRolesSql(catalogAvailable));
     }
     await this.query(STUDENT_ROLE_LOCK_TRIGGER_SQL);
+  }
+
+  /**
+   * Complète user_roles après le seed démo PostgreSQL.
+   * Écrit le rôle canonique de chaque compte dont users.role est déterministe,
+   * sur users.school_id. Idempotent. Aucun repli JWT.
+   * Un libellé non résolu ne reçoit pas de ligne : s'il empêche un rôle
+   * déterministe d'être écrit, le boot échoue explicitement.
+   */
+  async ensureSeededUserRoles() {
+    const {
+      seedDeterministicUserRolesSql,
+      missingMappedUserRolesSql,
+      inventoryUnknownUsersRoleSql,
+      inventoryUnknownSecondaryRolesSql,
+    } = require("./userRolesSchema");
+    const catalogRel = await this.all(`SELECT to_regclass('public.establishment_roles') AS ref`);
+    const catalogAvailable = Boolean(catalogRel[0]?.ref);
+    await this.query(seedDeterministicUserRolesSql(catalogAvailable));
+    const missing = await this.all(missingMappedUserRolesSql(catalogAvailable));
+    const unknownRoles = await this.all(inventoryUnknownUsersRoleSql(catalogAvailable));
+    const profilePayloadColumns = await this.all(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'users'
+         AND column_name = 'profile_payload'`,
+    );
+    const unknownSecondary = profilePayloadColumns.length
+      ? await this.all(inventoryUnknownSecondaryRolesSql(catalogAvailable))
+      : [];
+    if (missing.length || unknownRoles.length || unknownSecondary.length) {
+      const error = new Error(
+        "SEED_USER_ROLES_INCONSISTENT: le seed PostgreSQL n'a pas produit les user_roles canoniques.",
+      );
+      error.code = "SEED_USER_ROLES_INCONSISTENT";
+      error.details = { missing, unknownRoles, unknownSecondary };
+      throw error;
+    }
   }
 
   async ensureResidualCanonicalSchema() {
@@ -5306,7 +5377,7 @@ class PostgresRepository {
           user.phone ?? "",
           hashSecret(user.password),
           hashSecret(user.temporaryPassword || "1234"),
-          roleToDb[user.role] ?? user.role,
+          canonicalPersistedRole(user.role),
           this.toDbStatus(user.status),
           this.parseDate(user.lastLoginAt),
         ]
@@ -5581,7 +5652,7 @@ class PostgresRepository {
           user.phone ?? "",
           hashSecret(user.password),
           hashSecret(user.temporaryPassword || "1234"),
-          roleToDb[user.role] ?? user.role,
+          canonicalPersistedRole(user.role),
           this.toDbStatus(user.status),
           this.parseDate(user.lastLoginAt),
         ]
@@ -5645,7 +5716,7 @@ class PostgresRepository {
             user.phone ?? "",
             hashSecret(user.password),
             hashSecret(user.temporaryPassword || user.password || "1234"),
-            roleToDb[user.role] ?? user.role,
+            canonicalPersistedRole(user.role),
             this.toDbStatus(user.status),
             this.parseDate(user.lastLoginAt),
           ]

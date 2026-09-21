@@ -194,6 +194,15 @@ function linkedActiveStudentExistsSql(userIdExpr) {
   )`;
 }
 
+function deterministicUserRolePredicateSql(mappedRole) {
+  return `
+  (${mappedRole}) IS NOT NULL
+  AND (
+    (${mappedRole}) = 'STUDENT'
+    OR NOT ${linkedActiveStudentExistsSql("u.id")}
+  )`;
+}
+
 function backfillFromUsersRoleSql(catalogAvailable) {
   const mappedRole = mapLegacyRoleKeySql("u.role", catalogAvailable);
   return `
@@ -211,6 +220,49 @@ WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
     OR NOT ${linkedActiveStudentExistsSql("u.id")}
   )
 ON CONFLICT DO NOTHING
+`;
+}
+
+/**
+ * Seed / bootstrap : écrit uniquement les rôles déterministes.
+ * Un libellé non canonique (ex. rôle démo sans correspondance catalogue) est ignoré,
+ * jamais deviné. school_id = users.school_id (NULL pour un rôle plateforme).
+ */
+function seedDeterministicUserRolesSql(catalogAvailable) {
+  const mappedRole = mapLegacyRoleKeySql("u.role", catalogAvailable);
+  return `
+INSERT INTO user_roles (user_id, school_id, role_key, granted_at, status)
+SELECT
+  u.id,
+  u.school_id,
+  ${mappedRole},
+  COALESCE(u.created_at, NOW()),
+  'active'
+FROM users u
+WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
+  AND ${deterministicUserRolePredicateSql(mappedRole)}
+ON CONFLICT DO NOTHING
+`;
+}
+
+function missingMappedUserRolesSql(catalogAvailable) {
+  const mappedRole = mapLegacyRoleKeySql("u.role", catalogAvailable);
+  return `
+SELECT u.id::text AS user_id, u.user_code, u.role, (${mappedRole}) AS role_key
+FROM users u
+WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
+  AND ${deterministicUserRolePredicateSql(mappedRole)}
+  AND NOT EXISTS (
+    SELECT 1
+    FROM user_roles ur
+    WHERE ur.user_id = u.id
+      AND ur.role_key = (${mappedRole})
+      AND ur.status = 'active'
+      AND ur.revoked_at IS NULL
+      AND ur.school_id IS NOT DISTINCT FROM u.school_id
+  )
+ORDER BY u.user_code
+LIMIT 50
 `;
 }
 
@@ -266,4 +318,6 @@ module.exports = {
   linkedActiveStudentExistsSql,
   backfillFromUsersRoleSql,
   backfillFromSecondaryRolesSql,
+  seedDeterministicUserRolesSql,
+  missingMappedUserRolesSql,
 };
