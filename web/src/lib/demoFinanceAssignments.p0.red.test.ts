@@ -6,9 +6,9 @@
  *   schoolCode    SCH-BULK-CD-0001  (schools.school_code / JWT / footer)
  *   loginCode     CD-IN-26-001      (schools.login_code / publicId / entrée publique)
  *
- * GREEN-A : obligations + paiements visibles par schoolId. DEMO-PRES-RED-01
- * reste skippé — GREEN-B Affectations. Aucun fallback
- * `schoolId || schoolCode || publicId`.
+ * GREEN-A : obligations + paiements visibles par schoolId.
+ * GREEN-B : DEMO-PRES-RED-01 — affectation canonique 1ère A.
+ * Aucun fallback `schoolId || schoolCode || publicId`.
  */
 import { describe, expect, it } from "vitest";
 import type { BackOfficeState, SessionUser, StudentFee } from "../types";
@@ -106,6 +106,24 @@ function demoSeedAssignment() {
     className: "1ère A",
     subject: "Mathématiques",
     course: "Mathématiques",
+  };
+}
+
+/** Projection GET /api/assignments (mapAssignment) : classId/classCode/status/schoolId. */
+function canonicalAssignment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "ta-uuid-1",
+    schoolId: DEMO_SCHOOL_ID,
+    schoolCode: DEMO_SCHOOL_CODE,
+    teacherId: `TCH-${DEMO_SCHOOL_CODE}-001`,
+    teacherName: "Seke Mwamba",
+    classId: CLASS_1ERE_A_ID,
+    classCode: CLASS_1ERE_A_CODE,
+    className: "1ère A",
+    subject: "Mathématiques",
+    course: "Mathématiques",
+    status: "active",
+    ...overrides,
   };
 }
 
@@ -216,7 +234,7 @@ describe("DEMO-FINANCE-ASSIGNMENTS-P0 GREEN-A Finance", () => {
     expect(overview.cashLabel).not.toMatch(/—/);
   });
 
-  it.skip("DEMO-PRES-RED-01 — GREEN-B Affectations : classe 1ère A avec teacher_assignment canonique", () => {
+  it("DEMO-PRES-RED-01 — classe 1ère A + affectation canonique ⇒ enseignant résolu", () => {
     const classRow = {
       id: CLASS_1ERE_A_ID,
       classId: CLASS_1ERE_A_ID,
@@ -230,30 +248,74 @@ describe("DEMO-FINANCE-ASSIGNMENTS-P0 GREEN-A Finance", () => {
     const identity = toPresenceClassCard(classRow);
     expect(identity?.className).toBe("1ère A");
     expect(identity?.classId).toBe(CLASS_1ERE_A_ID);
+    expect(identity?.classCode).toBe(CLASS_1ERE_A_CODE);
+    expect(identity?.studentCount).toBe(20);
+
+    const assignment = canonicalAssignment();
+    const teachers = [
+      {
+        id: assignment.teacherId,
+        name: assignment.teacherName,
+        schoolCode: DEMO_SCHOOL_CODE,
+        schoolId: DEMO_SCHOOL_ID,
+      },
+    ];
+    const decision = resolvePedagogicalAttendanceTeacher({
+      role: SCHOOL_ADMIN_ROLE,
+      assignments: [assignment],
+      identity,
+      teachers,
+    });
+    expect(decision.status).toBe("auto");
+    if (decision.status === "auto") {
+      expect(decision.teacherId).toBe(assignment.teacherId);
+    }
 
     const seedAssignment = demoSeedAssignment();
-    expect(seedAssignment.className).toBe("1ère A");
     expect("classId" in seedAssignment).toBe(false);
     expect("status" in seedAssignment).toBe(false);
-
-    const decision = resolvePedagogicalAttendanceTeacher({
+    const seedDecision = resolvePedagogicalAttendanceTeacher({
       role: SCHOOL_ADMIN_ROLE,
       assignments: [seedAssignment],
       identity,
-      teachers: [
-        {
-          id: seedAssignment.teacherId,
-          name: seedAssignment.teacherName,
-          schoolCode: DEMO_SCHOOL_CODE,
-        },
-      ],
+      teachers,
     });
-
-    expect(decision.status).not.toBe("blocked");
-    expect(decision).not.toEqual({
+    expect(seedDecision).toEqual({
       status: "blocked",
       message: ATTENDANCE_PEDAGOGICAL_TEACHER_COPY.none,
     });
+  });
+
+  it("GREEN-B fail-closed — même classCode, UUID étranger ⇒ 0 fuite Présences", () => {
+    const hydrated = emptyBackOfficeState({
+      assignments: [
+        canonicalAssignment(),
+        canonicalAssignment({
+          id: "ta-foreign",
+          schoolId: FOREIGN_SCHOOL_ID,
+          schoolCode: DEMO_SCHOOL_CODE,
+          classId: CLASS_1ERE_A_ID,
+          classCode: CLASS_1ERE_A_CODE,
+        }),
+      ],
+    });
+    const presented = presentActiveSchoolState(hydrated, DEMO_SCHOOL_CODE, DEMO_SCHOOL_ID);
+    const assignments = presented.assignments as Array<{ id?: string }>;
+    expect(assignments.map((row) => row.id)).toEqual(["ta-uuid-1"]);
+
+    const identity = toPresenceClassCard({
+      id: CLASS_1ERE_A_ID,
+      classId: CLASS_1ERE_A_ID,
+      classCode: CLASS_1ERE_A_CODE,
+      className: "1ère A",
+      students: 20,
+    });
+    const decision = resolvePedagogicalAttendanceTeacher({
+      role: SCHOOL_ADMIN_ROLE,
+      assignments,
+      identity,
+    });
+    expect(decision.status).toBe("auto");
   });
 
   it("DEMO-TENANT-RED-01 — schoolId, schoolCode et loginCode ne sont jamais des identifiants équivalents", () => {

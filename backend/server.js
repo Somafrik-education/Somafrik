@@ -1287,7 +1287,9 @@ app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments
   if (typeof repository.getSchoolByCode === "function") {
     school = await repository.getSchoolByCode(schoolCode);
   }
-  const schoolId = String(req.principal.effectiveSchoolId ?? school?.id ?? "").trim();
+  const schoolId = String(
+    req.principal.effectiveSchoolId || req.principal.schoolId || school?.id || "",
+  ).trim();
   let snapshot;
   try {
     snapshot = await resolveLiveAssignmentsSyncSnapshot(repository, req.principal, {

@@ -375,6 +375,8 @@ const FINANCE_PRESENTATION_KEYS = new Set([
   "studentFees",
 ]);
 
+const ASSIGNMENT_PRESENTATION_KEYS = new Set(["assignments"]);
+
 function rowMatchesActiveSchool(
   row: Row,
   scope: string,
@@ -385,6 +387,11 @@ function rowMatchesActiveSchool(
     const rowSchoolId = String(row.schoolId ?? "").trim();
     if (rowSchoolId) return sameSchoolId(rowSchoolId, activeSchoolId);
     // Ligne Finance sans UUID : le code d'affichage n'est pas une autorité tenant.
+    return false;
+  }
+  if (ASSIGNMENT_PRESENTATION_KEYS.has(domainKey) && activeSchoolId) {
+    const rowSchoolId = String(row.schoolId ?? "").trim();
+    if (rowSchoolId) return sameSchoolId(rowSchoolId, activeSchoolId);
     return false;
   }
   return normalizeSchoolCode(row.schoolCode) === scope;

@@ -70,7 +70,7 @@ export function pedagogicalAttendanceTeacherOptions(
   const seen = new Set<string>();
   const options: AttendanceTeacherOption[] = [];
   for (const assignment of assignments) {
-    if (!isActiveAssignment(assignment.status ?? assignment.assignmentStatus)) continue;
+    if (!isActiveAssignment(assignment.status ?? assignment.assignmentStatus ?? assignment.assignment_status)) continue;
     if (!assignmentMatchesClass(assignment, identity)) continue;
     const id = teacherKey(assignment);
     if (!id || seen.has(id)) continue;
