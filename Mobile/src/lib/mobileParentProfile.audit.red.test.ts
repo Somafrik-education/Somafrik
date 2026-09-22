@@ -377,6 +377,23 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
     },
   },
   {
+    id: "MP-010B",
+    severity: "P1",
+    title: "Bulletins Mobile Parent doit exposer le StudentSwitcher sans contourner le scope enfant",
+    run() {
+      const src = read("screens/ReportCardsScreen.tsx");
+      assert.match(src, /import StudentSwitcher from "\.\.\/components\/StudentSwitcher"/);
+      assert.match(src, /isParentView\s*\?\s*<StudentSwitcher\s*\/>\s*:\s*null/);
+      assert.match(src, /resolveMobileStudentScope\(\{[\s\S]*selectedStudentId/);
+      assert.match(src, /filterRowsByStudentScope\(reportCardsSnapshot\.data, studentScope\)/);
+      assert.match(
+        src,
+        /role !== "parent_student"[\s\S]*role !== "parent"/,
+        "workflow staff ne doit pas redevenir visible au Parent",
+      );
+    },
+  },
+  {
     id: "MP-011",
     severity: "P1",
     title: "Logout doit vider selectedStudentId et attendre clearSecureSession",
