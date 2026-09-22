@@ -1,4 +1,9 @@
 const { BusinessError } = require("./authService");
+const {
+  principalIsParentOrStudent,
+  collectLinkedStudentKeys,
+  studentMatchesLinkedKeys,
+} = require("../lib/parentScope");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 const UNPAID_FEE_STATUSES = new Set(["À payer", "Partiellement payé", "En retard"]);
@@ -65,10 +70,22 @@ function isOverdueStudentFee(fee, now = new Date()) {
 }
 
 function scopeFees(state, principal) {
-  const fees = refreshStudentFeeStatuses(state.studentFees ?? []);
+  let fees = refreshStudentFeeStatuses(state.studentFees ?? []);
   const schoolCode = String(principal?.financeLoginCode || principal?.schoolCode || "").trim().toUpperCase();
-  if (!schoolCode || schoolCode === "*") return fees;
-  return fees.filter((fee) => String(fee.schoolCode ?? "").trim().toUpperCase() === schoolCode);
+  if (schoolCode && schoolCode !== "*") {
+    fees = fees.filter((fee) => String(fee.schoolCode ?? "").trim().toUpperCase() === schoolCode);
+  }
+
+  if (!principalIsParentOrStudent(principal)) return fees;
+
+  const linked = new Set(collectLinkedStudentKeys(principal));
+  if (!linked.size) return [];
+
+  return fees.filter((fee) => {
+    if (linked.has(String(fee.studentId ?? "").trim())) return true;
+    const student = resolveStudentRecord(state, fee.studentId);
+    return Boolean(student && studentMatchesLinkedKeys(student, linked));
+  });
 }
 
 function resolveStudentRecord(state, studentId) {
