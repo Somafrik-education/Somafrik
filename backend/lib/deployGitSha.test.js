@@ -14,8 +14,8 @@ test("gitSha est null hors Render ou si la valeur n'est pas un SHA complet", () 
   assert.equal(readDeployGitSha({ RENDER_GIT_COMMIT: "" }), null);
   assert.equal(readDeployGitSha({ RENDER_GIT_COMMIT: "   " }), null);
   assert.equal(readDeployGitSha({ RENDER_GIT_COMMIT: SHA.slice(0, 7) }), null);
-  assert.equal(readDeployGitSha({ RENDER_GIT_COMMIT: "postgres://user:secret@db/app" }), null);
-  assert.equal(readDeployGitSha({ DATABASE_URL: "postgres://user:secret@db/app" }), null);
+  assert.equal(readDeployGitSha({ RENDER_GIT_COMMIT: "not-a-full-git-sha" }), null);
+  assert.equal(readDeployGitSha({ DATABASE_URL: "db-marker-not-a-commit" }), null);
   assert.equal(readDeployGitSha({ RENDER_GIT_COMMIT: SHA.toUpperCase() }), SHA);
 });
 
@@ -28,14 +28,14 @@ test("withDeployGitSha ajoute uniquement gitSha", () => {
       attachments: { ready: true, writable: true },
       reportCardSource: { ready: false, writable: false },
     },
-    { RENDER_GIT_COMMIT: SHA, DATABASE_URL: "postgres://user:secret@db/app", HOSTNAME: "hidden" },
+    { RENDER_GIT_COMMIT: SHA, DATABASE_URL: "db-marker-not-exposed", HOSTNAME: "host-marker-not-exposed" },
   );
   assert.equal(payload.gitSha, SHA);
   assert.equal(payload.status, "ok");
   assert.equal(payload.attachments.ready, true);
   assert.equal(payload.reportCardSource.writable, false);
   assert.equal(Object.hasOwn(payload, "hostname"), false);
-  assert.doesNotMatch(JSON.stringify(payload), /secret|hidden|DATABASE_URL/);
+  assert.doesNotMatch(JSON.stringify(payload), /db-marker-not-exposed|host-marker-not-exposed|DATABASE_URL|HOSTNAME/);
 });
 
 test("HTTP /api/health expose gitSha null sans RENDER_GIT_COMMIT", async () => {
@@ -63,15 +63,15 @@ test("HTTP /api/health expose le SHA Render et rien d'autre", async () => {
     reportCardSource: { ready: true, writable: true },
   }, {
     RENDER_GIT_COMMIT: SHA,
-    DATABASE_URL: "postgres://user:secret@db.internal/somafrik",
-    HOSTNAME: "somafrik-api-preprod",
+    DATABASE_URL: "db-marker-not-exposed",
+    HOSTNAME: "host-marker-not-exposed",
   }));
   assert.equal(body.gitSha, SHA);
   assert.equal(body.status, "ok");
   assert.deepEqual(body.attachments, { ready: true, writable: true });
   assert.deepEqual(body.reportCardSource, { ready: true, writable: true });
   const serialized = JSON.stringify(body);
-  assert.doesNotMatch(serialized, /secret|db\.internal|somafrik-api-preprod|DATABASE_URL|HOSTNAME/);
+  assert.doesNotMatch(serialized, /db-marker-not-exposed|host-marker-not-exposed|DATABASE_URL|HOSTNAME/);
 });
 
 test("GET /api/health réel délègue gitSha sans élargir le contrat", () => {
