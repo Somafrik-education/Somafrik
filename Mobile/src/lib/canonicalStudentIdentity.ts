@@ -191,7 +191,9 @@ export function resolveParentSafeStudentId(input: {
   children?: SessionChildRef[] | null;
   user?: SessionUserRef;
 }): string | null {
-  const requested = trim(input.routeStudentId) || trim(input.selectedStudentId);
+  const selected = trim(input.selectedStudentId);
+  const routed = trim(input.routeStudentId);
+  const requested = input.role === "parent_student" ? selected || routed : routed || selected;
   if (!requested) return null;
   if (input.role === "parent_student" && !isLinkedParentStudent({
     selectedStudentId: requested,
