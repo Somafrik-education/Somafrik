@@ -1,8 +1,10 @@
 /**
  * Audit Mobile — Profil Parent / parcours parent_student.
  *
- * Contrats P0/P1 : le comportement *souhaité* est asserté.
- * Les cas qui échouent documentent l'état réel (RED autorisé, phase audit).
+ * Gate de régression Parent Mobile.
+ *
+ * Historique : ce fichier est né pendant l'audit #740 avec des RED attendus.
+ * Depuis les correctifs P0/P1, tous les contrats ci-dessous doivent rester GREEN.
  *
  *   npx --yes tsx Mobile/src/lib/mobileParentProfile.audit.red.test.ts
  *   npm --prefix Mobile run test:mobile-parent-profile-audit
@@ -124,15 +126,20 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
   {
     id: "MP-INV-03",
     severity: "INV",
-    title: "Inventaire : onglet Profil = StudentDetailScreen (fiche enfant, pas compte parent)",
+    title: "Inventaire : le Parent dispose d'un profil compte dédié",
     run() {
       const tabs = read("navigation/roleTabPreferences.ts");
-      assert.match(tabs, /Profil:\s*StudentDetailScreen/);
+      assert.match(tabs, /ParentProfile:\s*ParentProfileScreen/);
       const screens = fs.readdirSync(path.join(srcRoot, "screens"));
       assert.equal(
-        screens.some((name) => /ParentProfile|ParentSettings|ProfilParent/i.test(name)),
-        false,
-        "aucun écran dédié Profil Parent n'existe encore — constat d'inventaire",
+        screens.some((name) => /ParentProfile|ProfilParent/i.test(name)),
+        true,
+        "ParentProfileScreen doit rester présent",
+      );
+      assert.doesNotMatch(
+        tabs,
+        /ParentProfile:\s*StudentDetailScreen/,
+        "le profil Parent ne doit jamais revenir vers la fiche enfant",
       );
     },
   },
@@ -429,11 +436,18 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
   {
     id: "MP-013",
     severity: "P2",
-    title: "Modèle legacy Parent.ts / test.ts ne doivent plus porter un PIN en clair",
+    title: "Les artefacts legacy Parent PIN doivent rester supprimés",
     run() {
-      const legacy = read("models/Parent.ts");
-      assert.equal(/private pin: string/.test(legacy), false, "Mobile/src/models/Parent.ts stocke encore un PIN en clair");
-      assert.equal(fs.existsSync(path.join(srcRoot, "test.ts")), false, "Mobile/src/test.ts legacy encore présent");
+      assert.equal(
+        fs.existsSync(path.join(srcRoot, "models/Parent.ts")),
+        false,
+        "Mobile/src/models/Parent.ts legacy ne doit pas réapparaître",
+      );
+      assert.equal(
+        fs.existsSync(path.join(srcRoot, "test.ts")),
+        false,
+        "Mobile/src/test.ts legacy ne doit pas réapparaître",
+      );
     },
   },
   {
