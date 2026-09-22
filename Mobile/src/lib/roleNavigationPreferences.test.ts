@@ -5,6 +5,7 @@ import {
   getRoleDrawerCatalog,
 } from "../navigation/roleDrawerPreferences";
 import { getRoleTabCatalog, partitionRoleTabCatalog } from "../navigation/roleTabCatalog";
+import { canReadRoute } from "../domain/security/permissions";
 
 function sessionOf(role: string, permissions?: string[]) {
   return permissions
@@ -111,6 +112,11 @@ assert.equal(drawerLabels(teacher).includes("Appel"), false);
 assert.deepEqual(tabLabels(teacher), ["Classes", "Élèves", "Appel", "Notes"]);
 
 assert.deepEqual(drawerLabels(parent).slice(0, 4), ["Notes", "Présences", "Bulletins", "Paiements"]);
+const parentPaymentItem = getRoleDrawerCatalog("parent_student").find((item) => item.label === "Paiements");
+assert.equal(parentPaymentItem?.route, "StudentPayments", "Parent : Paiements doit ouvrir StudentPayments");
+assert.equal(parentPaymentItem?.view, "StudentPayments");
+assert.equal(canReadRoute(parent, "MobilePayment"), false, "Parent : route MobilePayment legacy interdite");
+assert.equal(canReadRoute(parent, "StudentPayments"), true, "Parent : route StudentPayments canonique autorisée");
 assert.equal(drawerLabels(parent).includes("Paiement mobile"), false);
 assert.deepEqual(tabLabels(parent), ["Profil", "Notes", "Présence", "Frais"]);
 
