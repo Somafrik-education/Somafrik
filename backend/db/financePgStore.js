@@ -40,7 +40,43 @@ const {
   CANONICAL_PAYMENT_METHODS,
 } = require("../lib/financeCatalog");
 const financeService = require("../lib/financeService");
+const {
+  principalIsParentOrStudent,
+  collectLinkedStudentKeys,
+} = require("../lib/parentScope");
 const { ROSTER_ENROLLMENT_SQL } = require("../lib/studentEnrollmentC18");
+
+function financeLinkedStudentKeys(principal) {
+  if (!principalIsParentOrStudent(principal)) return null;
+  return new Set(
+    collectLinkedStudentKeys(principal)
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean),
+  );
+}
+
+function financeRowMatchesLinkedStudent(row, principal) {
+  const allowed = financeLinkedStudentKeys(principal);
+  if (allowed === null) return true;
+  if (!allowed.size) return false;
+  return [
+    row?.studentId,
+    row?.studentDbId,
+    row?.student_id,
+    row?.studentCode,
+    row?.student_code,
+    row?.publicId,
+    row?.matricule,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .some((value) => allowed.has(value));
+}
+
+function filterFinanceRowsForLinkedStudent(rows, principal) {
+  if (!principalIsParentOrStudent(principal)) return rows ?? [];
+  return (rows ?? []).filter((row) => financeRowMatchesLinkedStudent(row, principal));
+}
 
 function createFinancePgStore(repo) {
   async function withFinancePrincipal(principal) {
@@ -141,7 +177,7 @@ function createFinancePgStore(repo) {
         const row = await one(sql, params);
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
-        return {
+        const student = {
           id: profile.publicId || profile.id || row.student_code,
           dbId: row.id,
           publicId: profile.publicId || row.student_code,
@@ -153,6 +189,7 @@ function createFinancePgStore(repo) {
           countryIso: String(row.country_iso || "").trim().toUpperCase(),
           className: row.class_name || profile.className || "",
         };
+        return financeRowMatchesLinkedStudent(student, principal) ? student : null;
       },
       async listActiveEnrollmentsForStudent(studentDbId, schoolId) {
         const rows = await all(
@@ -438,9 +475,17 @@ function createFinancePgStore(repo) {
         if (lock) sql += " FOR UPDATE OF p";
         const row = await one(sql, params);
         if (!row) return null;
+        const mapped = mapPaymentRow(row);
+        if (!financeRowMatchesLinkedStudent({
+          ...mapped,
+          studentDbId: row.student_id,
+          studentCode: row.student_code,
+        }, principal)) {
+          return null;
+        }
         const items = await this.listPaymentItems(row.id);
         const allocations = await this.listAllocations(row.id);
-        return projectPaymentCash(decoratePaymentWithItems(mapPaymentRow(row), items), allocations);
+        return projectPaymentCash(decoratePaymentWithItems(mapped, items), allocations);
       },
       async resolveActorUserId(principal) {
         const normalized = asTrimmed(principal?.sub || principal?.id);
@@ -540,7 +585,9 @@ function createFinancePgStore(repo) {
            LIMIT 1`,
           params,
         );
-        return row ? mapObligationRow(row) : null;
+        if (!row) return null;
+        const mapped = mapObligationRow(row);
+        return financeRowMatchesLinkedStudent(mapped, principal) ? mapped : null;
       },
       async updateObligation(fee) {
         const row = await one(
@@ -950,7 +997,9 @@ function createFinancePgStore(repo) {
       );
     },
     listFinanceFeeGrids: async (principal) => {
-      const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
+      const scopedPrincipal = await withFinancePrincipal(principal);
+      if (principalIsParentOrStudent(scopedPrincipal)) return [];
+      const scope = resolveFinanceSchoolScope(scopedPrincipal);
       if (scope.mode === "none") return [];
       const params = [];
       const pred = sqlSchoolPredicate("s", scope, params);
@@ -964,12 +1013,17 @@ function createFinancePgStore(repo) {
       return rows.map(mapGridRow);
     },
     listFinanceStudentFees: async (principal) => {
-      const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
+      const scopedPrincipal = await withFinancePrincipal(principal);
+      const scope = resolveFinanceSchoolScope(scopedPrincipal);
       if (scope.mode === "none") return [];
-      const studentKey = asTrimmed(principal?.financeStudentKey || principal?.financeListOptions?.studentId || principal?.financeListOptions?.studentKey);
+      const studentKey = asTrimmed(
+        scopedPrincipal?.financeStudentKey ||
+        scopedPrincipal?.financeListOptions?.studentId ||
+        scopedPrincipal?.financeListOptions?.studentKey,
+      );
       let studentDbId = null;
       if (studentKey) {
-        const student = await bind(repo).findStudent(studentKey, principal);
+        const student = await bind(repo).findStudent(studentKey, scopedPrincipal);
         if (!student?.dbId) return [];
         studentDbId = student.dbId;
       }
@@ -1014,7 +1068,7 @@ function createFinancePgStore(repo) {
           amount_paid: Math.max(Number(row.amount_paid || 0), Number(row.allocated_paid || 0)),
         }),
       );
-      return projectObligationPaidAmounts({
+      const projected = projectObligationPaidAmounts({
         fees,
         allocations: allocations.map((row) => ({
           obligationId: row.obligation_id,
@@ -1023,6 +1077,7 @@ function createFinancePgStore(repo) {
           reversedAt: row.reversed_at,
         })),
       });
+      return filterFinanceRowsForLinkedStudent(projected, scopedPrincipal);
     },
     getFinanceStudentFee: (id, principal) => bind(repo).getObligationByPublicId(id, principal),
     adjustFinanceStudentFee: async (id, patch, principal) =>
@@ -1066,7 +1121,8 @@ function createFinancePgStore(repo) {
         return mapStatusRow({ ...row, school_code: school?.code, login_code: school?.loginCode || school?.code });
       },
       async listPaymentStudentOptions(principal) {
-        const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
+        const scopedPrincipal = await withFinancePrincipal(principal);
+        const scope = resolveFinanceSchoolScope(scopedPrincipal);
         if (scope.mode === "none") return [];
         const params = [];
         const pred = sqlSchoolPredicate("s", scope, params);
@@ -1093,7 +1149,16 @@ function createFinancePgStore(repo) {
            ORDER BY st.last_name, st.first_name, st.student_code, st.id, cl.class_code, cl.id`,
           params,
         );
-        return foldPaymentStudentOptions(rows);
+        const scopedRows = filterFinanceRowsForLinkedStudent(
+          rows.map((row) => ({
+            ...row,
+            studentId: row.student_code,
+            studentDbId: row.student_id,
+            studentCode: row.student_code,
+          })),
+          scopedPrincipal,
+        );
+        return foldPaymentStudentOptions(scopedRows);
       },
       async listSchoolPaymentMethods(principal) {
         const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
