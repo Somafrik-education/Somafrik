@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Maquette Communication Somafrik</title>
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --brand: #0f766e;
+      --bg: #f8fafc;
+      --danger: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: #e2e8f0; color: var(--ink); }
+    h1.page { margin: 24px 24px 8px; font-size: 20px; }
+    p.lead { margin: 0 24px 24px; color: var(--muted); max-width: 720px; }
+    .frames { display: flex; flex-wrap: wrap; gap: 24px; padding: 0 24px 48px; align-items: flex-start; }
+    .frame { background: #fff; border-radius: 16px; box-shadow: 0 10px 30px rgb(15 23 42 / 12%); overflow: hidden; }
+    .frame h2 { margin: 0; padding: 10px 14px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; background: #0f172a; color: #fff; }
+    .desktop { width: 1440px; max-width: 100%; }
+    .desktop-inner { width: 1440px; transform-origin: top left; }
+    .web {
+      display: grid;
+      grid-template-columns: 56px minmax(280px, 340px) 1fr;
+      min-height: 820px;
+      background: var(--bg);
+    }
+    .rail { background: #0f172a; color: #fff; padding: 16px 8px; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+    .rail span { width: 32px; height: 32px; border-radius: 8px; background: #1e293b; display: grid; place-items: center; font-size: 14px; }
+    .list-pane, .detail { background: #fff; border-right: 1px solid var(--line); padding: 16px 18px; }
+    .detail { border-right: 0; }
+    .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    h3 { margin: 0; font-size: 18px; }
+    .count { font-size: 12px; color: var(--muted); }
+    .cta { background: var(--brand); color: #fff; border: 0; border-radius: 10px; padding: 8px 12px; font-weight: 700; min-height: 36px; }
+    .subnav { display: flex; gap: 6px; margin: 12px 0; }
+    .subnav a { font-size: 13px; padding: 6px 10px; border-radius: 999px; text-decoration: none; color: var(--muted); border: 1px solid var(--line); }
+    .subnav a.on { background: #ecfdf5; color: var(--brand); border-color: #99f6e4; font-weight: 700; }
+    .tools { display: flex; gap: 8px; margin-bottom: 12px; }
+    .tools input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+    .chip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 10px; font-size: 12px; }
+    .chip.on { background: #0f172a; color: #fff; }
+    .row { width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 0 0 6px; background: #fff; }
+    .row.on { border-color: #99f6e4; background: #f0fdfa; }
+    .row .t { display: flex; justify-content: space-between; gap: 8px; font-weight: 650; font-size: 14px; }
+    .row .x, .meta { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .badge { min-width: 18px; height: 18px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 800; display: inline-grid; place-items: center; padding: 0 5px; }
+    .detail h4 { margin: 0 0 4px; font-size: 20px; }
+    .body { font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+    .actions { margin-top: 16px; display: flex; gap: 8px; }
+    .ghost { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+    .phone { width: 390px; }
+    .phone.sm { width: 360px; }
+    .phone-body { width: 390px; min-height: 760px; background: var(--bg); display: flex; flex-direction: column; }
+    .phone.sm .phone-body { width: 360px; }
+    .status { height: 12px; }
+    .m-header { background: #fff; border-bottom: 1px solid var(--line); padding: 10px 14px 8px; }
+    .m-list { flex: 1; padding: 10px 12px 80px; }
+    .tabbar { position: sticky; bottom: 0; background: #fff; border-top: 1px solid var(--line); display: flex; justify-content: space-around; padding: 8px 8px 16px; }
+    .tabbar span { font-size: 11px; color: var(--muted); text-align: center; }
+    .empty { text-align: center; color: var(--muted); padding: 48px 12px; font-size: 14px; }
+    .err { border: 1px solid #fecaca; background: #fef2f2; color: var(--danger); border-radius: 12px; padding: 16px; text-align: center; }
+    @media (max-width: 1100px) {
+      .desktop-inner { transform: scale(0.7); }
+      .desktop { height: 590px; }
+    }
+  </style>
+</head>
+<body>
+  <h1 class="page">Maquette Communication — Somafrik</h1>
+  <p class="lead">Même donnée métier (conversations, annonces, notifications internes). Chrome commun, liste dense, recherche et filtre Non lus. Web 1440 / 1024 · Mobile 390 / 360. Pas une copie pixel.</p>
+  <div class="frames">
+    <div class="frame desktop">
+      <h2>Web 1440 — Messages</h2>
+      <div class="desktop-inner">
+        <div class="web">
+          <aside class="rail"><span>S</span><span>⌂</span><span>✉</span></aside>
+          <section class="list-pane">
+            <div class="top">
+              <div>
+                <h3>Communication</h3>
+                <div class="count">2 non lus · établissement</div>
+              </div>
+              <button class="cta">Nouvelle conversation</button>
+            </div>
+            <nav class="subnav">
+              <a class="on" href="#m">Messages</a>
+              <a href="#a">Annonces</a>
+              <a href="#n">Notifications</a>
+            </nav>
+            <div class="tools">
+              <input type="search" placeholder="Rechercher" value="" />
+              <button class="chip">Tous</button>
+              <button class="chip on">Non lus</button>
+            </div>
+            <button class="row on">
+              <div class="t">Marie Kabila <span class="badge">1</span></div>
+              <div class="x">Absence de Grace demain matin</div>
+              <div class="meta">Parent · 10/09/2026 08:12</div>
+            </button>
+            <button class="row">
+              <div class="t">Jean Mwamba <span class="badge">1</span></div>
+              <div class="x">Merci pour le bulletin</div>
+              <div class="meta">Enseignant · 09/09/2026 18:40</div>
+            </button>
+          </section>
+          <section class="detail">
+            <p class="meta">Auteur · 10/09/2026 08:12</p>
+            <h4>Absence de Grace demain matin</h4>
+            <p class="body">Bonjour, Grace ne pourra pas venir demain. Merci de noter l’absence.</p>
+            <div class="actions">
+              <button class="cta">Répondre</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame desktop" style="width:1024px">
+      <h2>Web 1024 — Annonces</h2>
+      <div class="web" style="grid-template-columns: 56px minmax(240px, 300px) 1fr; min-height: 640px; width: 1024px;">
+        <aside class="rail"><span>S</span></aside>
+        <section class="list-pane">
+          <div class="top">
+            <div>
+              <h3>Communication</h3>
+              <div class="count">Annonces · 1 non lue</div>
+            </div>
+            <button class="cta">Publier</button>
+          </div>
+          <nav class="subnav">
+            <a href="#m">Messages</a>
+            <a class="on" href="#a">Annonces</a>
+            <a href="#n">Notifications</a>
+          </nav>
+          <div class="tools">
+            <input type="search" placeholder="Rechercher" />
+            <button class="chip on">Tous</button>
+            <button class="chip">Non lus</button>
+          </div>
+          <button class="row on">
+            <div class="t">Réunion parents <span class="badge">1</span></div>
+            <div class="x">Réunion de rentrée en salle 2…</div>
+            <div class="meta">Direction · Parents 6e · 08/09/2026 · Publiée</div>
+          </button>
+          <button class="row">
+            <div class="t">Fermeture exceptionnelle</div>
+            <div class="x">L’établissement sera fermé…</div>
+            <div class="meta">Direction · Établissement · 01/09/2026 · Lu</div>
+          </button>
+        </section>
+        <section class="detail">
+          <h4>Réunion parents</h4>
+          <p class="meta">Direction · 08/09/2026 14:00 · Parents 6e · Publiée</p>
+          <p class="body">Réunion de rentrée en salle 2. Merci de confirmer votre présence.</p>
+          <div class="actions"><button class="ghost">Archiver</button></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="frame phone">
+      <h2>Mobile 390 — Messages</h2>
+      <div class="phone-body">
+        <div class="status"></div>
+        <div class="m-header">
+          <h3>Communication</h3>
+          <div class="count">Messages · 2 non lus</div>
+          <nav class="subnav">
+            <a class="on" href="#m">Messages</a>
+            <a href="#a">Annonces</a>
+            <a href="#n">Notifications</a>
+          </nav>
+          <div class="tools">
+            <input type="search" placeholder="Rechercher" />
+          </div>
+          <div class="tools">
+            <button class="chip">Tous</button>
+            <button class="chip on">Non lus</button>
+            <button class="cta" style="margin-left:auto">Nouveau</button>
+          </div>
+        </div>
+        <div class="m-list">
+          <button class="row">
+            <div class="t">Marie Kabila <span class="badge">1</span></div>
+            <div class="x">Absence de Grace demain matin</div>
+            <div class="meta">10/09/2026 08:12</div>
+          </button>
+          <button class="row">
+            <div class="t">Jean Mwamba <span class="badge">1</span></div>
+            <div class="x">Merci pour le bulletin</div>
+            <div class="meta">09/09/2026 18:40</div>
+          </button>
+        </div>
+        <div class="tabbar">
+          <span>Accueil</span><span>Élèves</span><span>Présences</span><span>Menu</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame phone sm">
+      <h2>Mobile 360 — vide / erreur</h2>
+      <div class="phone-body">
+        <div class="m-header">
+          <h3>Communication</h3>
+          <div class="count">Annonces</div>
+          <nav class="subnav">
+            <a href="#m">Messages</a>
+            <a class="on" href="#a">Annonces</a>
+            <a href="#n">Notifications</a>
+          </nav>
+        </div>
+        <div class="m-list">
+          <div class="empty">Aucune annonce.</div>
+          <div class="err">Impossible de charger les annonces.<br /><button class="ghost" style="margin-top:8px">Réessayer</button></div>
+        </div>
+        <div class="tabbar">
+          <span>Accueil</span><span>Élèves</span><span>Présences</span><span>Menu</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

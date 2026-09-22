@@ -8,6 +8,7 @@ import {
 import { COUNTRY_SCOPE_MODULES } from "../../lib/roleGovernance";
 import { SCHOOL_ENTITY_VIEWS, VIEW_PERMISSION_FEATURES, ENTITY_VIEW_MAP } from "../../lib/constants";
 import { isSchoolSettingsOperator, isSchoolSettingsView } from "../../lib/schoolSettingsAccess";
+import { canReadExams } from "../../lib/examPermissions";
 
 export type SecurityAction = "READ" | "CREATE" | "UPDATE" | "DELETE" | "SUSPEND";
 
@@ -19,6 +20,59 @@ export function isSuperAdminSessionRole(role?: string) {
 }
 
 const schoolAdminForbiddenFeatures = new Set(["Établissements", "Abonnements"]);
+
+/**
+ * Surfaces Parent explicitement autorisées. Un token READ partagé
+ * (Élèves / Notes / Présences / Paiements) n'ouvre jamais une route staff.
+ */
+const PARENT_ALLOWED_ROUTES = new Set([
+  "Home",
+  "Profil",
+  "StudentDetail",
+  "StudentNotes",
+  "Notes",
+  "StudentPresences",
+  "Presences",
+  "FraisEleve",
+  "StudentPayments",
+  "Messages",
+  "Announcements",
+  "InternalNotifications",
+  "ReportCards",
+  "Timetable",
+  "OfflineMode",
+  "Support",
+  "Documents",
+]);
+
+const PARENT_BLOCKED_VIEWS = new Set([
+  "Schooling",
+  "FeeGrids",
+  "Students",
+  "students",
+  "Users",
+  "users",
+  "Teachers",
+  "teachers",
+  "SchoolManagement",
+  "Payments",
+  "Unpaid",
+  "Configuration",
+  "EstablishmentProfile",
+  "Synchronization",
+  "TeacherGrades",
+  "TeacherAttendance",
+  "TeacherStudents",
+  "ClassGradesStats",
+  "Classes",
+  "classes",
+]);
+
+export function isParentMobileSession(session: any): boolean {
+  if (!session) return false;
+  const identity = resolveCanonicalRoleIdentity(session);
+  return identity.sessionRole === "parent_student" || identity.roleKey === "PARENT";
+}
 
 /**
  * Parité Web `superAdminAccess.ts` : ALL_PRIVILEGES n'ouvre pas les modules
@@ -105,13 +159,17 @@ export const routeFeatureMap: Record<string, string> = {
   TeacherStudents: "Élèves",
   TeacherAttendance: "Présences",
   TeacherGrades: "Notes",
+  ClassGradesStats: "Notes",
   Notes: "Notes",
+  Exams: "Examens",
   Presences: "Présences",
   FraisEleve: "Paiements",
   StudentPayments: "Paiements",
   SchoolManagement: "Établissements",
   Payments: "Paiements",
   Paiements: "Paiements",
+  Unpaid: "Impayés",
+  FeeGrids: "Frais & tarifs",
   Messages: "Messages",
   Announcements: "Announcements",
   Timetable: "Planning de cours",
@@ -340,13 +398,26 @@ export function hasPlatformBackofficePrivilege(session: any): boolean {
 }
 
 export function canReadView(session: any, viewName: string): boolean {
+  if (isParentMobileSession(session) && PARENT_BLOCKED_VIEWS.has(viewName)) {
+    return false;
+  }
   if (isSuperAdminSessionRole(session?.role)) {
     return SUPER_ADMIN_ALLOWED_VIEWS.has(viewName);
   }
   if (viewName === "PlatformNotifications") {
     return hasPlatformBackofficePrivilege(session);
   }
+  if (viewName === "FeeGrids") {
+    return canReadFeeGrids(session);
+  }
+  if (viewName === "Exams") {
+    return canReadExams(session);
+  }
   if (viewName === "overview") return true;
+  if (viewName === "Schooling") {
+    if (session?.role === "country_admin") return false;
+    return canReadView(session, "classes") || canReadView(session, "students");
+  }
 
   if (viewName === "Permissions") {
     return false;
@@ -412,12 +483,33 @@ export function canMutateEntity(session: any, entity: string, action: Exclude<Se
   return Boolean(feature) && hasSecurityPermission(session, feature, action);
 }
 
+/** GET /finance/fee-grids — Frais & tarifs:READ | Paiements:READ | Impayés:READ. */
+export function canReadFeeGrids(session: any): boolean {
+  if (isSuperAdminSessionRole(session?.role)) return false;
+  if (isParentMobileSession(session)) return false;
+  return (
+    hasSecurityPermission(session, "Frais & tarifs", "READ") ||
+    hasSecurityPermission(session, "Paiements", "READ") ||
+    hasSecurityPermission(session, "Impayés", "READ")
+  );
+}
+
 export function canReadRoute(session: any, routeName?: string) {
+  if (routeName === "ParentProfile") return isParentMobileSession(session);
+  if (isParentMobileSession(session)) {
+    if (!routeName || !PARENT_ALLOWED_ROUTES.has(routeName)) return false;
+  }
   if (isSuperAdminSessionRole(session?.role)) {
     return Boolean(routeName) && SUPER_ADMIN_ALLOWED_VIEWS.has(routeName as string);
   }
   if (routeName === "PlatformNotifications") {
     return hasPlatformBackofficePrivilege(session);
+  }
+  if (routeName === "FeeGrids") {
+    return canReadFeeGrids(session);
+  }
+  if (routeName === "Exams") {
+    return canReadExams(session);
   }
   if (isSchoolSettingsView(routeName)) {
     return canReadView(session, routeName);

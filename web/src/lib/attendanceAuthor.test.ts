@@ -30,6 +30,15 @@ describe("resolvePedagogicalAttendanceTeacher", () => {
     expect(decision).toEqual({ status: "auto", teacherId: "ENS-0001" });
   });
 
+  it("admin : statut projeté assignment_status=active est reconnu", () => {
+    const decision = resolvePedagogicalAttendanceTeacher({
+      role: "Admin School",
+      assignments: [{ teacherId: "ENS-0001", class_id: "uuid-a", class_code: "CLS-A", assignment_status: "active" }],
+      identity,
+    });
+    expect(decision).toEqual({ status: "auto", teacherId: "ENS-0001" });
+  });
+
   it("admin : aucune affectation → bloqué, pas d'invention", () => {
     const decision = resolvePedagogicalAttendanceTeacher({
       role: "Admin School",

@@ -8,6 +8,7 @@ const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
+const { CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL } = require("./classHeadTeachersManagement");
 const { TokenService } = require("../services/tokenService");
 const { TenantScopeService } = require("../services/tenantScopeService");
 const { handleMobileSyncL1Students } = require("./mobileSyncStudents");
@@ -154,6 +155,7 @@ async function setupFixture(pool) {
       first_name TEXT NOT NULL,
       last_name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
+      user_id UUID REFERENCES users(id),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -201,6 +203,10 @@ async function setupFixture(pool) {
     CREATE INDEX IF NOT EXISTS idx_contact_relations_school_contact_status_student
       ON contact_relations (school_id, contact_id, status, student_id);
   `);
+  await pool.query(`
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+  `);
+  await pool.query(CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL);
   await pool.query(`
     TRUNCATE contact_relations, contacts, enrollments, students, teacher_assignments,
              teachers, user_roles, users, subjects, classes, academic_years, schools, countries CASCADE
@@ -494,10 +500,11 @@ async function main() {
        VALUES
          ($1, $3, 'TEACH-STU-1', 'Tana', 'Kabila', 'Enseignant', 'active'),
          ($2, $3, 'PARENT-STU-1', 'Paula', 'Ngo', 'Parent', 'active'),
-         ($4, $3, 'STU-A', 'Ada', 'Test', 'Élève / Étudiant', 'active'),
+         ($4, $3, 'LOGIN-STU-A', 'Ada', 'Test', 'Élève / Étudiant', 'active'),
          ($5, $3, 'DUAL-STU-1', 'Dina', 'Mwamba', 'Enseignant', 'active')`,
       [TEACHER_USER_ID, PARENT_USER_ID, ids.schoolA, STUDENT_USER_ID, DUAL_USER_ID],
     );
+    await pool.query(`UPDATE students SET user_id = $1 WHERE id = $2`, [STUDENT_USER_ID, STU_A]);
     await pool.query(
       `INSERT INTO user_roles (user_id, school_id, role_key, status)
        VALUES

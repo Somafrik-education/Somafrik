@@ -218,28 +218,29 @@ Si **Créer un utilisateur** est visible :
 4. enregistrez ;
 5. remettez les identifiants depuis **Remettre les identifiants utilisateur**.
 
-### Attribuer le rôle Enseignant
+### Gérer les rôles
 
-Pour un compte qui ne possède pas déjà ce rôle, l'action **Attribuer Enseignant** peut être proposée si votre session est autorisée :
+Si **Gérer les rôles** est visible, votre session peut affecter les rôles d'accès du catalogue de l'établissement :
 
-1. appuyez sur **Attribuer Enseignant** ;
-2. vérifiez le compte concerné ;
-3. confirmez **Attribuer** ;
-4. rechargez la liste et vérifiez **Rôles actifs**.
+1. ouvrez la carte de l'utilisateur ;
+2. appuyez sur **Gérer les rôles** ;
+3. cochez ou décochez les rôles proposés (plusieurs rôles peuvent être actifs) ;
+4. enregistrez ;
+5. la liste se recharge depuis le serveur : les rôles affichés sont ceux renvoyés par l'API.
 
-La gestion complète des rôles et de la matrice de permissions reste disponible sur le Web.
+Les libellés viennent du catalogue. Un compte lié à un élève reste verrouillé. La matrice des permissions n'est pas modifiable ici.
 
 ![Liste des utilisateurs](./assets/mobile/09-utilisateurs.png)
 
-*Cartes **Utilisateurs** avec rôles actifs. L'action **Attribuer Enseignant** apparaît lorsqu'elle est autorisée.*
+*Cartes **Utilisateurs** avec rôles actifs. L'action **Gérer les rôles** apparaît lorsqu'elle est autorisée.*
 
 ![Création utilisateur](./assets/mobile/10-utilisateur-creation.png)
 
 *Modal **Créer un utilisateur**. Remettez ensuite les identifiants depuis la fenêtre one-shot.*
 
-![Attribuer le rôle Enseignant](./assets/mobile/11-utilisateur-role-enseignant.png)
+![Gérer les rôles](./assets/mobile/11-utilisateur-role-enseignant.png)
 
-*Bouton **Attribuer Enseignant** sur une carte sans ce rôle. La confirmation runtime est une alerte native, pas un modal screenshotable — voir `KNOWN-ISSUES.md`.*
+*Ancienne capture du bouton **Attribuer Enseignant**. Le parcours courant est la modale **Gérer les rôles** — voir `KNOWN-ISSUES.md`.*
 
 ## 8. Paiements
 

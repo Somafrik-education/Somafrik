@@ -1,7 +1,7 @@
 # Contribuer — Somafrik
 
 **Statut :** règles obligatoires de développement  
-**Dernière mise à jour :** 2026-09-01
+**Dernière mise à jour :** 2026-09-19
 
 Ce document définit comment livrer du code sur Somafrik.  
 La documentation sous `docs/project/` est la **source de vérité** : toute évolution fonctionnelle doit la mettre à jour.
@@ -228,3 +228,25 @@ La review vérifie notamment :
 - documentation à jour ;
 - preuves de tests ;
 - risques préprod explicités.
+
+Pendant un chantier GO Production, la revue CTO suit le contrat [GO-PRODUCTION.md](./GO-PRODUCTION.md) : **diff GitHub indépendant** sur le HEAD exact, jamais le seul récit agent.
+
+---
+
+## 11. Pont GitHub — ChatGPT CTO / Cursor développeur
+
+**Source :** ADR-015 · [#720](https://github.com/Somafrik-education/Somafrik/issues/720)
+
+| Acteur | Canal | Fait | Ne fait pas |
+|--------|-------|------|-------------|
+| ChatGPT (CTO) | issue + revue PR | mandat, HOLD / GO, merge du HEAD audité | coder hors mandat |
+| Cursor (dev / QA) | Draft PR + preuves | exécuter, tester, STOP | Ready / merge / prod / infra |
+| GitHub | issues, PR, Actions, SHAs | registre unique | — |
+
+Règles :
+
+1. Un lot = une issue de mandat + **une** PR Draft vers `develop`.
+2. Le corps de PR porte base, HEAD, ahead/behind, diffstat, tests, CI, P0–P3, non-testé, **STOP**.
+3. Le lot suivant n’ouvre qu’après contrôle CTO du lot précédent.
+4. Freeze GO Production : pas de feature opportuniste ; hors périmètre = nouvelle issue, pas un commit de plus sur la PR active.
+

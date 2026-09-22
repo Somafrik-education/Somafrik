@@ -20,6 +20,10 @@ export const L1_RESOURCE_COLUMNS: Record<L1Resource, readonly string[]> = {
     "group_id",
     "status",
     "updated_at",
+    "head_teacher_code",
+    "head_teacher_first_name",
+    "head_teacher_last_name",
+    "head_teacher_display_name",
   ],
   students: [
     "id",
@@ -93,6 +97,10 @@ export const L1_DTO_TO_COLUMN: Record<string, string> = {
   groupId: "group_id",
   status: "status",
   updatedAt: "updated_at",
+  headTeacherCode: "head_teacher_code",
+  headTeacherFirstName: "head_teacher_first_name",
+  headTeacherLastName: "head_teacher_last_name",
+  headTeacherDisplayName: "head_teacher_display_name",
   studentCode: "student_code",
   firstName: "first_name",
   lastName: "last_name",
@@ -161,6 +169,10 @@ CREATE TABLE IF NOT EXISTS l1_classes (
   group_id TEXT,
   status TEXT,
   updated_at TEXT,
+  head_teacher_code TEXT,
+  head_teacher_first_name TEXT,
+  head_teacher_last_name TEXT,
+  head_teacher_display_name TEXT,
   PRIMARY KEY (user_id, school_id, id)
 );
 
@@ -257,3 +269,15 @@ CREATE INDEX IF NOT EXISTS idx_l1_course_schedules_class ON l1_course_schedules 
 CREATE INDEX IF NOT EXISTS idx_l1_course_schedules_teacher ON l1_course_schedules (user_id, school_id, teacher_id);
 CREATE INDEX IF NOT EXISTS idx_l1_sync_meta_user_school ON l1_sync_meta (user_id, school_id);
 `;
+
+export const L1_CLASSES_HEAD_TEACHER_COLUMNS = [
+  "head_teacher_code",
+  "head_teacher_first_name",
+  "head_teacher_last_name",
+  "head_teacher_display_name",
+] as const;
+
+export const SCHEMA_MIGRATION_V2 = L1_CLASSES_HEAD_TEACHER_COLUMNS.map(
+  (column) => `ALTER TABLE l1_classes ADD COLUMN ${column} TEXT;`,
+).join("\n");
+

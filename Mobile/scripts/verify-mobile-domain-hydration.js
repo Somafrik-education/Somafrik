@@ -49,8 +49,12 @@ function main() {
   const normalize = source(path.join("lib", "canonicalResourceNormalize.ts"));
   assert.match(api, /httpRequest<unknown>\("\/teachers"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/users"\)/);
-  assert.match(api, /httpRequest<unknown>\("\/backoffice\/announcements"\)/);
-  assert.match(api, /httpRequest<unknown>\("\/backoffice\/messages"\)/);
+  assert.match(api, /withListCursor\("\/backoffice\/announcements"/);
+  assert.match(api, /withCommunicationSchoolScope\(schoolPath, scope\)/);
+  assert.match(api, /withListCursor\("\/backoffice\/conversations"/);
+  assert.match(api, /scopedMessagesPath\(path, schoolCode\)/);
+  assert.match(api, /scopedMessagesPath\("\/backoffice\/messages"/);
+  assert.match(api, /scopedMessagesPath\("\/backoffice\/messages\/unread-count"/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/establishments"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/countries"\)/);
   assert.match(api, /httpRequest<unknown>\("\/backoffice\/subscriptions"\)/);
@@ -93,7 +97,7 @@ function main() {
   assert.match(context, /getCanonicalUsers/);
   assert.match(users, /loadUsers/);
   assert.match(users, /usersSnapshot/);
-  assert.match(users, /activeRoles/);
+  assert.match(users, /accessRoles|user-access-roles/);
   assert.match(users, /useFocusEffect/);
   assert.match(users, /QueryStateView/);
   assert.doesNotMatch(users, /AdminCrudScreen/);
@@ -114,6 +118,7 @@ function main() {
 
   const messages = source(path.join("screens", "MessagesScreen.tsx"));
   assert.match(context, /getCanonicalMessages/);
+  assert.match(messages, /getCanonicalConversations/);
   assert.match(messages, /loadMessages/);
   assert.match(messages, /markCanonicalMessageRead/);
   assert.match(messages, /submitProtectedMutation/);

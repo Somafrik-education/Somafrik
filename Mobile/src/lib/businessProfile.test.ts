@@ -1,0 +1,105 @@
+import assert from "node:assert/strict";
+import {
+  ACCESS_ROLES_NONE_LABEL,
+  BUSINESS_PROFILE_KIND_LABELS,
+  accountKindLabel,
+  canAssignRoleToUserAccount,
+  formatAccessRolesDisplay,
+  formatBusinessProfileKind,
+  isStudentLinkedAccount,
+  isTeacherLinkedAccount,
+  isTeacherRoleLabel,
+  areStudentRolesLocked,
+  STUDENT_ACCESS_ROLE_LABEL,
+  STUDENT_ROLES_LOCKED_LABEL,
+  STUDENT_ROLE_LOCKED_MESSAGE,
+  STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE,
+  STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE,
+} from "./businessProfile";
+
+const sample = {
+  publicId: "CD-ITS-MR-26-00003",
+  accountKind: "student_login" as const,
+  linkedStudent: { studentCode: "CD-ITS-MR-26-00003" },
+};
+
+assert.match(String(sample.publicId), /^[A-Z]{2}-[A-Z0-9]{2,5}-[A-Z0-9]{1,5}-\d{2}-\d{5}$/);
+assert.equal(isStudentLinkedAccount(sample), true);
+assert.equal(isTeacherLinkedAccount(sample), false);
+assert.equal(accountKindLabel(sample), "Compte lié à un élève");
+assert.equal(isStudentLinkedAccount({ accountKind: "unassigned" }), false);
+assert.equal(isTeacherLinkedAccount({ role: "Enseignant" }), true);
+assert.match(STUDENT_TEACHER_GRANT_BLOCKED_MESSAGE, /élève actif/i);
+assert.match(STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE, /rôle Enseignant n'est pas compatible/);
+assert.equal(isTeacherRoleLabel("Enseignant"), true);
+assert.equal(isTeacherRoleLabel("TEACHER"), true);
+assert.equal(isTeacherRoleLabel("Comptable"), false);
+assert.equal(canAssignRoleToUserAccount(sample, "Enseignant"), false);
+assert.equal(canAssignRoleToUserAccount(sample, "Comptable"), false);
+assert.equal(canAssignRoleToUserAccount({ accountKind: "staff", role: "Secrétaire" }, "Enseignant"), true);
+assert.equal(
+  canAssignRoleToUserAccount({ accountKind: "teacher", linkedTeacher: { teacherCode: "ENS-1" } }, "Élève / Étudiant"),
+  false,
+);
+
+const studentNoAccess = {
+  accountKind: "student_login" as const,
+  linkedStudent: { studentId: "stu-1", studentCode: "CD-ITS-MR-26-00003" },
+  role: "Sans affectation",
+  assignmentStatus: "Sans affectation",
+  roles: [] as string[],
+  roleKeys: [] as string[],
+  activeRoles: [] as string[],
+};
+assert.equal(formatBusinessProfileKind(studentNoAccess), BUSINESS_PROFILE_KIND_LABELS.student_login);
+assert.equal(formatAccessRolesDisplay(studentNoAccess), "Élève / Étudiant");
+assert.equal(areStudentRolesLocked(studentNoAccess), true);
+assert.equal(formatAccessRolesDisplay(studentNoAccess), STUDENT_ACCESS_ROLE_LABEL);
+assert.equal(STUDENT_ROLES_LOCKED_LABEL, "Verrouillés — profil élève");
+assert.match(STUDENT_ROLE_LOCKED_MESSAGE, /ne peuvent pas être modifiés/);
+assert.notEqual(formatBusinessProfileKind(studentNoAccess), "Sans affectation");
+assert.equal(accountKindLabel(studentNoAccess), "Compte lié à un élève");
+assert.equal(
+  formatBusinessProfileKind({ ...studentNoAccess, businessProfileLabel: "Sans affectation" }),
+  "Compte lié à un élève",
+);
+
+const staffUnassigned = {
+  accountKind: "unassigned" as const,
+  role: "Sans affectation",
+  assignmentStatus: "Sans affectation",
+  roleKeys: [] as string[],
+};
+assert.equal(formatBusinessProfileKind(staffUnassigned), "Sans affectation");
+assert.equal(formatAccessRolesDisplay(staffUnassigned), ACCESS_ROLES_NONE_LABEL);
+assert.equal(accountKindLabel(staffUnassigned), null);
+
+const teacher = {
+  accountKind: "teacher" as const,
+  linkedTeacher: { teacherCode: "ENS-1" },
+  role: "Enseignant",
+  roleKeys: ["TEACHER"],
+  activeRoles: ["Enseignant"],
+};
+assert.equal(formatBusinessProfileKind(teacher), "Profil enseignant");
+assert.equal(formatAccessRolesDisplay(teacher), "Enseignant");
+
+const conflict = {
+  accountKind: "conflict" as const,
+  linkedStudent: { studentCode: "CD-ITS-MR-26-00003" },
+  linkedTeacher: { teacherCode: "ENS-X" },
+  businessProfileConflict: true,
+};
+assert.equal(formatBusinessProfileKind(conflict), "Conflit élève + enseignant");
+
+const inactiveNoLink = {
+  accountKind: "unassigned" as const,
+  roleKeys: [] as string[],
+};
+assert.equal(formatBusinessProfileKind(inactiveNoLink), "Sans affectation");
+
+const studentRoleOnly = { roleKeys: ["STUDENT"] };
+assert.notEqual(formatBusinessProfileKind(studentRoleOnly), BUSINESS_PROFILE_KIND_LABELS.student_login);
+assert.equal(isStudentLinkedAccount(studentRoleOnly), false);
+
+console.log("businessProfile.test.ts OK");

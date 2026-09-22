@@ -16,6 +16,12 @@ const {
 } = require("./lib/userAccountRules");
 const { GradeBookService } = require("./services/gradeBookService");
 const { toPublicSchool } = require("./lib/publicSchool");
+const {
+  presentSchoolLogoFields,
+  commitSchoolLogoUpload,
+  commitSchoolLogoDelete,
+  readSchoolLogoFile,
+} = require("./lib/schoolLogo");
 const { MvpBusinessService } = require("./services/mvpBusinessService");
 const { ReportPdfService } = require("./services/reportPdfService");
 const { createPostgresRepository, initializeRepository } = require("./db/repositoryFactory");
@@ -53,6 +59,7 @@ const { EstablishmentService } = require("./services/establishmentService");
 const { UnpaidService } = require("./services/unpaidService");
 const { IdempotencyService, withIdempotency } = require("./services/idempotencyService");
 const internalNotificationsService = require("./lib/communicationsNotificationsService");
+const { readDeliveryHealth } = require("./lib/communicationsDeliveryHealth");
 const {
   startCommunicationsNotificationsWorker,
   stopCommunicationsNotificationsWorker,
@@ -62,6 +69,7 @@ const {
   assertProductionSecrets,
   warnIfUnsafeDevelopmentSecrets,
 } = require("./lib/productionSecrets");
+const { withDeployGitSha } = require("./lib/deployGitSha");
 const { assertProductionCors, buildCorsOptions } = require("./lib/corsConfig");
 const {
   sanitizeUserForResponse,
@@ -79,7 +87,7 @@ const {
   scopeMvpDatasetForPrincipal,
 } = require("./lib/mvpAccess");
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
-const { createRateLimiter, loginRateLimitKey } = require("./lib/rateLimit");
+const { createRateLimiter, loginRateLimitKey, trialRequestRateLimitKey } = require("./lib/rateLimit");
 const {
   assertPushSelfTestAllowed,
   skipPushSelfTestPermissionCheck,
@@ -91,6 +99,10 @@ const {
   prepareTeacherNotesWritePayload,
   teacherHasNotesWritePermission,
 } = require("./lib/teacherNotesWriteAccess");
+const {
+  getPrincipalStudentIds,
+  getPrincipalGuardianStudentIds,
+} = require("./lib/principalStudentIds");
 
 const establishmentService = new EstablishmentService();
 const unpaidService = new UnpaidService();
@@ -113,6 +125,12 @@ const pushSelfTestRateLimiter = createRateLimiter({
   max: Number(process.env.SOMAFRIK_PUSH_SELFTEST_RATE_MAX ?? 5),
   keyFn: (req) => `push-selftest:${String(req.principal?.sub || req.ip || "unknown")}`,
   message: "Trop de tests push. Réessayez dans une minute.",
+});
+const trialRequestRateLimiter = createRateLimiter({
+  windowMs: Number(process.env.TRIAL_REQUEST_RATE_LIMIT_WINDOW_MS ?? 60_000),
+  max: Number(process.env.TRIAL_REQUEST_RATE_LIMIT_MAX ?? 5),
+  keyFn: trialRequestRateLimitKey,
+  message: "Trop de demandes d'essai. Réessayez dans quelques minutes.",
 });
 function requirePushSelfTestEnvironment(_req, _res, next) {
   try {
@@ -295,6 +313,8 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/mvp/dashboard",
       "/api/v2/subjects",
       "/api/v2/academic-years",
+      "/api/v2/school-setup/status",
+      "/api/v2/school-setup/guided",
       "/api/v2/exams",
       "/api/v2/documents",
       "/api/v2/reports/advanced",
@@ -306,15 +326,19 @@ app.get("/", asyncHandler(async (req, res) => {
 app.get("/api/health", asyncHandler(async (_req, res) => {
   await repository.init();
   const { probeCommunicationStorageWritable } = require("./lib/communicationsAttachments");
+  const { probeReportCardSourceStorageWritable } = require("./lib/reportCard/reportCardSourceStorage");
   const attachments = await probeCommunicationStorageWritable();
-  const payload = {
-    status: attachments.ready ? "ok" : "not_ready",
+  const reportCardSource = await probeReportCardSourceStorageWritable();
+  const ready = Boolean(attachments.ready && reportCardSource.ready);
+  const payload = withDeployGitSha({
+    status: ready ? "ok" : "not_ready",
     database: repository.engine ?? "postgresql",
     version: process.env.npm_package_version ?? "1.0.0",
     timestamp: new Date().toISOString(),
     attachments,
-  };
-  if (!attachments.ready) {
+    reportCardSource,
+  });
+  if (!ready) {
     return res.status(503).json(payload);
   }
   res.json(payload);
@@ -367,6 +391,20 @@ app.get("/api/schools/:code", asyncHandler(async (req, res) => {
   }
 
   res.json(toPublicSchool(foundSchool));
+}));
+
+app.get("/api/schools/:code/logo", asyncHandler(async (req, res) => {
+  const { platformSchools } = await getRuntime();
+  const { matchesSchoolLookup } = require("./lib/schoolCodeV2");
+  const requestedCode = req.params.code.toUpperCase();
+  const foundSchool = platformSchools.find((item) => matchesSchoolLookup(item, requestedCode));
+  const file = foundSchool ? await readSchoolLogoFile(foundSchool) : null;
+  if (!file) {
+    return res.status(404).json({ message: "Logo introuvable" });
+  }
+  res.setHeader("Content-Type", file.mimeType);
+  res.setHeader("Cache-Control", "private, no-store");
+  res.send(file.bytes);
 }));
 
 app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res) => {
@@ -488,6 +526,42 @@ app.post("/api/privacy/erasure-requests", loginRateLimiter, asyncHandler(async (
   res.status(201).json(created);
 }));
 
+app.post("/api/public/trial-requests", trialRequestRateLimiter, asyncHandler(async (req, res) => {
+  const { createTrialAccessRequest } = require("./lib/trialAccessRequests");
+  const created = await createTrialAccessRequest(repository, req.body ?? {});
+  res.status(201).json(created);
+}));
+// Public POST /api/public/trial-requests: dedicated trialRequestRateLimiter (IP).
+// No session. No school / user / subscription provisioning. Superadmin inbox only.
+// Padding so nearby authenticated privacy routes are outside the RED snippet window.
+
+{
+  const { registerReportCardHttp } = require("./lib/reportCard/reportCardHttp");
+  const { createReportCardHttpBindings } = require("./lib/reportCardHttpRuntime");
+  const { createReportCardPdf } = require("./lib/reportCard/reportCardPdf");
+  const { resolveReportCardActor, resolveReportCardTenantSchoolId } = require("./lib/reportCardHttpActor");
+  registerReportCardHttp(
+    app,
+    createReportCardHttpBindings({
+      repository,
+      createPdf: (publication) => createReportCardPdf({ publication }),
+      resolveActor: (req) => resolveReportCardActor(req.principal, lookupSchoolForEffectiveScope),
+      resolveSchoolId: (raw) => resolveReportCardTenantSchoolId(raw, lookupSchoolForEffectiveScope),
+      internalAuth: (req, res, next) => requireAuth(req, res, next),
+    })
+  );
+}
+
+app.get(/^\/verify\/rc(\/.*)?$/, (req, res, next) => {
+  const { VERIFY_HEADERS } = require("./contracts/reportCard/contract");
+  res.setHeader("Cache-Control", VERIFY_HEADERS.cache_control);
+  res.setHeader("Referrer-Policy", VERIFY_HEADERS.referrer_policy);
+  if (apiOnly) {
+    return res.status(404).json({ ok: false, reason: "not_found" });
+  }
+  return sendWebAppShell(res, next);
+});
+
 app.get("/api/privacy/erasure-requests", requireAuth, requirePermission("GET /api/privacy/erasure-requests"), asyncHandler(async (req, res) => {
   const { sanitizePrivacyRequest } = require("./lib/privacyErasure");
   const schoolCode = String(req.principal.schoolCode ?? "").trim().toUpperCase();
@@ -507,6 +581,20 @@ app.post("/api/privacy/erasure-requests/self/execute", requireAuth, asyncHandler
 app.post("/api/privacy/erasure-requests/:requestId/execute", requireAuth, requirePermission("POST /api/privacy/erasure-requests/:requestId/execute"), asyncHandler(async (req, res) => {
   const { executeErasureRequest } = require("./lib/privacyErasure");
   const result = await executeErasureRequest(repository, req.params.requestId, req.principal);
+  res.json(result);
+}));
+
+app.get("/api/me/communication-preferences", requireAuth, asyncHandler(async (req, res) => {
+  const { getOwnCommunicationPreferences } = require("./lib/communicationsPreferences");
+  res.json(await getOwnCommunicationPreferences(repository, req.principal));
+}));
+
+app.put("/api/me/communication-preferences", requireAuth, asyncHandler(async (req, res) => {
+  const { putOwnCommunicationPreferences } = require("./lib/communicationsPreferences");
+  const result = await putOwnCommunicationPreferences(repository, req.principal, req.body || {});
+  await auditService.record(req, "communication_preferences_update", "user", req.principal?.sub, {
+    channels: result.channels,
+  });
   res.json(result);
 }));
 
@@ -625,6 +713,22 @@ app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyn
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const rows = await repository.listSchoolClasses(schoolCode);
   const { scopeSchoolClassesForPrincipal } = require("./lib/classStudentsAuthz");
+  const {
+    principalIsParentOrStudent,
+    linkedStudentsFromRows,
+    scopeSchoolClassesForLinkedStudents,
+  } = require("./lib/parentScope");
+
+  if (
+    principalIsParentOrStudent(req.principal) &&
+    typeof repository.listSchoolStudents === "function"
+  ) {
+    const students = await repository.listSchoolStudents(schoolCode);
+    const linked = linkedStudentsFromRows(students, req.principal);
+    res.json(scopeSchoolClassesForLinkedStudents(rows, linked));
+    return;
+  }
+
   res.json(scopeSchoolClassesForPrincipal(req.principal, rows));
 }));
 
@@ -750,6 +854,80 @@ app.patch("/api/classes/:classCode", requireAuth, requirePermission("PATCH /api/
   );
   res.json(updated);
 }));
+
+app.get(
+  "/api/classes/:classCode/head-teacher/candidates",
+  requireAuth,
+  requirePermission("GET /api/classes/:classCode/head-teacher/candidates"),
+  asyncHandler(async (req, res) => {
+    const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+    if (!schoolCode || schoolCode === "*") {
+      throw new BusinessError(400, "schoolCode établissement requis.");
+    }
+    tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+    if (typeof repository.listClassHeadTeacherCandidates !== "function") {
+      const { headTeacherPostgresRequired } = require("./lib/classHeadTeachersManagement");
+      throw headTeacherPostgresRequired();
+    }
+    const rows = await repository.listClassHeadTeacherCandidates(
+      req.params.classCode,
+      schoolCode,
+      { q: req.query?.q },
+    );
+    res.json(rows);
+  }),
+);
+
+app.put(
+  "/api/classes/:classCode/head-teacher",
+  requireAuth,
+  requirePermission("PUT /api/classes/:classCode/head-teacher"),
+  asyncHandler(async (req, res) => {
+    const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+    if (!schoolCode || schoolCode === "*") {
+      throw new BusinessError(400, "schoolCode établissement requis.");
+    }
+    tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+    if (typeof repository.assignClassHeadTeacher !== "function") {
+      const { headTeacherPostgresRequired } = require("./lib/classHeadTeachersManagement");
+      throw headTeacherPostgresRequired();
+    }
+    const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+    const updated = await repository.assignClassHeadTeacher(
+      req.params.classCode,
+      schoolCode,
+      req.body ?? {},
+      req.principal,
+      auditMetaFromRequest(req),
+    );
+    res.json(updated);
+  }),
+);
+
+app.delete(
+  "/api/classes/:classCode/head-teacher",
+  requireAuth,
+  requirePermission("DELETE /api/classes/:classCode/head-teacher"),
+  asyncHandler(async (req, res) => {
+    const schoolCode = String(req.principal?.schoolCode ?? "").trim();
+    if (!schoolCode || schoolCode === "*") {
+      throw new BusinessError(400, "schoolCode établissement requis.");
+    }
+    tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+    if (typeof repository.removeClassHeadTeacher !== "function") {
+      const { headTeacherPostgresRequired } = require("./lib/classHeadTeachersManagement");
+      throw headTeacherPostgresRequired();
+    }
+    const { auditMetaFromRequest } = require("./lib/teacherTransactionalAudit");
+    const updated = await repository.removeClassHeadTeacher(
+      req.params.classCode,
+      schoolCode,
+      req.principal,
+      auditMetaFromRequest(req),
+    );
+    res.json(updated);
+  }),
+);
 
 async function enrollmentHttpPrincipal(req) {
   const {
@@ -1110,7 +1288,9 @@ app.get("/api/assignments", requireAuth, requirePermission("GET /api/assignments
   if (typeof repository.getSchoolByCode === "function") {
     school = await repository.getSchoolByCode(schoolCode);
   }
-  const schoolId = String(req.principal.effectiveSchoolId ?? school?.id ?? "").trim();
+  const schoolId = String(
+    req.principal.effectiveSchoolId || req.principal.schoolId || school?.id || "",
+  ).trim();
   let snapshot;
   try {
     snapshot = await resolveLiveAssignmentsSyncSnapshot(repository, req.principal, {
@@ -1349,6 +1529,32 @@ app.patch("/api/backoffice/establishments/:schoolCode/school-settings", requireA
     schoolSettingsAuditMetaFromRequest(req),
     schoolCode,
   );
+  res.json(saved);
+}));
+
+app.get("/api/backoffice/establishments/:schoolCode/notification-settings", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/notification-settings"), asyncHandler(async (req, res) => {
+  const { assertSchoolSettingsRead } = require("./lib/schoolSettingsManagement");
+  const { getSchoolNotificationSettings } = require("./lib/schoolNotificationPolicy");
+  assertSchoolSettingsRead(req.principal);
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const settings = await getSchoolNotificationSettings(repository, req.principal, schoolCode);
+  res.json(settings);
+}));
+
+app.patch("/api/backoffice/establishments/:schoolCode/notification-settings", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:schoolCode/notification-settings"), asyncHandler(async (req, res) => {
+  const { patchSchoolNotificationSettings } = require("./lib/schoolNotificationPolicy");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await patchSchoolNotificationSettings(repository, req.principal, schoolCode, req.body ?? {});
+  res.json(saved);
+}));
+
+app.put("/api/backoffice/establishments/:schoolCode/notification-settings", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/notification-settings"), asyncHandler(async (req, res) => {
+  const { putSchoolNotificationSettings } = require("./lib/schoolNotificationPolicy");
+  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const saved = await putSchoolNotificationSettings(repository, req.principal, schoolCode, req.body ?? {});
   res.json(saved);
 }));
 
@@ -1679,33 +1885,43 @@ app.patch("/api/backoffice/education-reference/labels", requireAuth, requirePerm
 }));
 
 app.get("/api/education-reference/catalog", requireAuth, requirePermission("GET /api/education-reference/catalog"), asyncHandler(async (req, res) => {
-  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
-  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  const { resolveEducationCatalogSchoolCode } = require("./lib/educationSchoolCatalogScope");
+  const schoolCode = resolveEducationCatalogSchoolCode(req.principal, req.query.schoolCode);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const catalog = await repository.getEducationSchoolCatalog(schoolCode);
   res.json(catalog);
 }));
 
 app.put("/api/education-reference/school-activation", requireAuth, requirePermission("PUT /api/education-reference/school-activation"), asyncHandler(async (req, res) => {
-  const { resolvePrincipalSchoolCode } = require("./lib/principalSchoolScope");
+  const { resolveEducationCatalogSchoolCode } = require("./lib/educationSchoolCatalogScope");
   const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
-  const schoolCode = resolvePrincipalSchoolCode(req.principal);
+  const schoolCode = resolveEducationCatalogSchoolCode(req.principal, req.query.schoolCode);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const saved = await repository.saveSchoolEducationActivation(schoolCode, req.body ?? {}, req.principal, educationReferenceAuditMetaFromRequest(req));
   res.json(saved);
 }));
 
 app.get("/api/backoffice/establishments/:schoolCode/education-reference/catalog", requireAuth, requirePermission("GET /api/backoffice/establishments/:schoolCode/education-reference/catalog"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  const {
+    applyEducationCatalogDeprecationHeaders,
+    resolveEducationCatalogSchoolCode,
+  } = require("./lib/educationSchoolCatalogScope");
+  applyEducationCatalogDeprecationHeaders(res);
+  const schoolCode = resolveEducationCatalogSchoolCode(req.principal, req.params.schoolCode);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const catalog = await repository.getEducationSchoolCatalog(schoolCode);
   res.json(catalog);
 }));
 
 app.put("/api/backoffice/establishments/:schoolCode/education-reference/school-activation", requireAuth, requirePermission("PUT /api/backoffice/establishments/:schoolCode/education-reference/school-activation"), asyncHandler(async (req, res) => {
-  const schoolCode = String(req.params.schoolCode ?? "").trim().toUpperCase();
+  const {
+    applyEducationCatalogDeprecationHeaders,
+    resolveEducationCatalogSchoolCode,
+  } = require("./lib/educationSchoolCatalogScope");
   const { stripClientSchoolCode } = require("./lib/principalSchoolScope");
   const { educationReferenceAuditMetaFromRequest } = require("./lib/educationReferenceManagement");
+  applyEducationCatalogDeprecationHeaders(res, "/api/education-reference/school-activation");
+  const schoolCode = resolveEducationCatalogSchoolCode(req.principal, req.params.schoolCode);
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const payload = stripClientSchoolCode(req.body ?? {});
   const saved = await repository.saveSchoolEducationActivation(schoolCode, payload, req.principal, educationReferenceAuditMetaFromRequest(req));
@@ -1825,6 +2041,117 @@ app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:
   return res.json(enrollmentApiStudent(authorizedPg, schoolCode));
 }));
 
+async function authorizeEnrollmentStudentOr404(req, res, studentId) {
+  const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
+  if (typeof repository.getSchoolStudentByCode !== "function") {
+    throw new BusinessError(503, "Fiche élève PostgreSQL indisponible.");
+  }
+  const pgStudent = enrollmentApiStudent(
+    await repository.getSchoolStudentByCode(studentId, schoolCode),
+    schoolCode,
+  );
+  assertEnrollmentStudentAccess(principal, pgStudent);
+  const {
+    authorizeStudentReadForPrincipal,
+  } = require("./lib/classStudentsAuthz");
+  const authorizedPg = authorizeStudentReadForPrincipal(
+    pgStudent,
+    enrollmentAuthzPrincipal(req.principal, schoolCode),
+    studentId,
+    resolveAuthorizedStudentForPrincipal,
+  );
+  if (!authorizedPg) {
+    res.status(404).json({ message: "Eleve introuvable" });
+    return null;
+  }
+  return { principal, schoolCode, student: authorizedPg };
+}
+
+app.get("/api/students/:studentId/enrollments", requireAuth, requirePermission("GET /api/students/:studentId/enrollments"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  const { listEnrollments } = require("./lib/studentEnrollmentC18");
+  const items = await listEnrollments(repository, {
+    studentCode: req.params.studentId,
+    schoolCode: scoped.schoolCode,
+  });
+  res.json({ items });
+}));
+
+function refuseC18MutationForParentStudent(principal) {
+  const { isParentOrStudentRole } = require("./lib/studentEnrollmentC18");
+  if (isParentOrStudentRole(principal?.role)) {
+    throw new BusinessError(403, "Transitions C18 réservées à l'administration.");
+  }
+}
+
+app.post("/api/students/:studentId/enrollments/:enrollmentId/validate", requireAuth, requirePermission("POST /api/students/:studentId/enrollments/:enrollmentId/validate"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  refuseC18MutationForParentStudent(req.principal);
+  const { applyValidate } = require("./lib/studentEnrollmentC18");
+  const enrollment = await applyValidate(repository, {
+    studentCode: req.params.studentId,
+    enrollmentId: req.params.enrollmentId,
+    schoolCode: scoped.schoolCode,
+    reason: req.body?.reason,
+    principal: scoped.principal,
+  });
+  res.json(enrollment);
+}));
+
+app.post("/api/students/:studentId/enrollments/:enrollmentId/assign-class", requireAuth, requirePermission("POST /api/students/:studentId/enrollments/:enrollmentId/assign-class"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  refuseC18MutationForParentStudent(req.principal);
+  const { applyAssignClass } = require("./lib/studentEnrollmentC18");
+  const enrollment = await applyAssignClass(repository, {
+    studentCode: req.params.studentId,
+    enrollmentId: req.params.enrollmentId,
+    schoolCode: scoped.schoolCode,
+    classId: req.body?.classId,
+    classCode: req.body?.classCode,
+    effectiveDate: req.body?.effectiveDate,
+    principal: scoped.principal,
+  });
+  res.json(enrollment);
+}));
+
+app.post("/api/students/:studentId/enrollments/:enrollmentId/transfer", requireAuth, requirePermission("POST /api/students/:studentId/enrollments/:enrollmentId/transfer"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  refuseC18MutationForParentStudent(req.principal);
+  const { applyTransfer } = require("./lib/studentEnrollmentC18");
+  const enrollment = await applyTransfer(repository, {
+    studentCode: req.params.studentId,
+    enrollmentId: req.params.enrollmentId,
+    schoolCode: scoped.schoolCode,
+    destinationSchoolName: req.body?.destinationSchoolName,
+    reason: req.body?.reason,
+    transferNotes: req.body?.transferNotes,
+    principal: scoped.principal,
+  });
+  res.json(enrollment);
+}));
+
+app.post("/api/students/:studentId/enrollments/:enrollmentId/close", requireAuth, requirePermission("POST /api/students/:studentId/enrollments/:enrollmentId/close"), asyncHandler(async (req, res) => {
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scoped) return;
+  refuseC18MutationForParentStudent(req.principal);
+  const { applyClose } = require("./lib/studentEnrollmentC18");
+  const enrollment = await applyClose(repository, {
+    studentCode: req.params.studentId,
+    enrollmentId: req.params.enrollmentId,
+    schoolCode: scoped.schoolCode,
+    reason: req.body?.reason,
+    closeNotes: req.body?.closeNotes,
+    principal: scoped.principal,
+  });
+  res.json(enrollment);
+}));
+
 app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/students/:id"), asyncHandler(async (req, res) => {
   const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
   const principal = await enrollmentHttpPrincipal(req);
@@ -1897,7 +2224,9 @@ app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/stud
 
 /** Lecture notes : Notes:READ live (Parent/Élève : seed « Voir notes » + matrice Notes:R). */
 app.get("/api/students/:id/notes", requireAuth, requirePermission("GET /api/students/:id/notes"), asyncHandler(async (req, res) => {
+  const { assertParentNotesStudentAccess } = require("./lib/parentNotesScope");
   const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
+  assertParentNotesStudentAccess(req.principal, req.params.id, students);
   const student = resolveAuthorizedStudentForPrincipal(students, req.principal, req.params.id);
   if (!student) {
     return res.json([]);
@@ -1908,14 +2237,37 @@ app.get("/api/students/:id/notes", requireAuth, requirePermission("GET /api/stud
 }));
 
 app.get("/api/notes", requireAuth, requirePermission("GET /api/notes"), asyncHandler(async (req, res) => {
+  const {
+    assertParentNotesStudentAccess,
+    filterNotesForGuardianStudents,
+    filterStudentsForGuardianNotes,
+    isGuardianNotesPrincipal,
+  } = require("./lib/parentNotesScope");
   const { notes, students, evaluations } = await loadCanonicalPedagogyForPrincipal(req.principal);
+  const requestedStudentId = String(req.query.studentId ?? "").trim();
+  if (requestedStudentId) {
+    assertParentNotesStudentAccess(req.principal, requestedStudentId, students);
+  }
   let scopedStudents = tenantScopeService.filterRows(students, req.principal);
-  if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
+  if (isGuardianNotesPrincipal(req.principal)) {
+    scopedStudents = filterStudentsForGuardianNotes(
+      scopedStudents.length ? scopedStudents : students,
+      req.principal,
+    );
+  } else if (!scopedStudents.length && isParentOrStudentPrincipalRole(req.principal.role)) {
     const linkedIds = principalLinkedStudentIds(req.principal);
     scopedStudents = students.filter((student) => linkedIds.has(String(student.id ?? "").trim()));
   }
+  if (requestedStudentId) {
+    scopedStudents = scopedStudents.filter((student) => {
+      const keys = [student.id, student.publicId, student.matricule, student.studentCode];
+      return keys.some((value) => String(value ?? "").trim() === requestedStudentId);
+    });
+  }
   const studentIds = buildScopedStudentIdSet(scopedStudents);
-  const scopedNotes = notes.filter((note) => studentIds.has(String(note.studentId ?? "")));
+  const scopedNotes = isGuardianNotesPrincipal(req.principal)
+    ? filterNotesForGuardianStudents(notes, scopedStudents)
+    : notes.filter((note) => studentIds.has(String(note.studentId ?? "")));
   res.json(filterNotesForPrincipal(scopedNotes, evaluations, req.principal));
 }));
 
@@ -1935,10 +2287,11 @@ app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), 
     .filter((student) => !className || student.className === className);
   scopedStudents = filterPresenceRows(scopedStudents, scope)
     .filter((student) => !className || student.className === className);
-  if (!scopedStudents.length && isParentOrStudentPrincipalRole(principal.role)) {
+  if (!scopedStudents.length && isParentOrStudentPrincipalRole(principal)) {
+    const { studentMatchesLinkedKeys } = require("./lib/parentScope");
     const linkedIds = principalLinkedStudentIds(principal);
     scopedStudents = filterPresenceRows(students, scope)
-      .filter((student) => linkedIds.has(String(student.id ?? "").trim()))
+      .filter((student) => studentMatchesLinkedKeys(student, linkedIds))
       .filter((student) => !className || student.className === className);
   }
   const studentIds = buildScopedStudentIdSet(scopedStudents);
@@ -1960,7 +2313,7 @@ app.get("/api/presences", requireAuth, requirePermission("GET /api/presences"), 
   ));
 }));
 
-app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
+app.post("/api/notes", requireAuth, requireParentNotesReadOnly, requireSchoolSubscriptionFeature("write_notes"), requirePermission("POST /api/notes"), asyncHandler(async (req, res) => {
   await withIdempotency({
     req,
     res,
@@ -1970,6 +2323,8 @@ app.post("/api/notes", requireAuth, requireSchoolSubscriptionFeature("write_note
       const state = await loadCanonicalPedagogyForPrincipal(req.principal);
       const { pedagogyAuditMetaFromRequest, ignoreClientScope } = require("./lib/pedagogyManagement");
       const { assertNoteWrite } = require("./services/dataIntegrityService");
+      const { assertParentNotesReadOnly } = require("./lib/parentNotesScope");
+      assertParentNotesReadOnly(req.principal);
       const body = ignoreClientScope(req.body ?? {});
       const principalSchool = String(req.principal?.schoolCode ?? "").trim().toUpperCase();
       const scopedState =
@@ -2295,6 +2650,9 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
   }
 
   const temporaryPassword = String(req.body?.temporaryPassword ?? "").trim();
+  if (!temporaryPassword) {
+    throw new BusinessError(400, "Le mot de passe temporaire est obligatoire.");
+  }
   const passwordError = validateAccountSecret(temporaryPassword);
   if (passwordError) {
     throw new BusinessError(400, passwordError);
@@ -2353,6 +2711,16 @@ app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, 
         [lockoutAliases, schoolScopes],
       );
     }
+
+    const { randomUUID } = require("node:crypto");
+    const { enqueuePasswordResetNotification } = require("./lib/passwordResetNotification");
+    const resetId = randomUUID();
+    const deliveryKey = `auth.password.reset:${updated.id}:${resetId}`;
+    await enqueuePasswordResetNotification(txRepo, {
+      user: updated,
+      deliveryKey,
+      schoolName: target.schoolName || target.schoolCode,
+    });
     return updated;
   });
 
@@ -2559,8 +2927,12 @@ app.post("/api/finance/fee-grids/:gridId/apply", requireAuth, requirePermission(
 
 app.get("/api/finance/student-fees", requireAuth, requirePermission("GET /api/finance/student-fees"), asyncHandler(async (req, res) => {
   const principal = await financeHttpPrincipal(req);
-  const rows = await repository.listFinanceStudentFees(principal);
-  sendList(res, tenantScopeService.filterRows(rows, principal, { countryField: "countryIso" }), req.query, ["studentName", "label", "status"]);
+  const studentId = String(req.query.studentId || req.query.studentKey || "").trim();
+  const rows = await repository.listFinanceStudentFees(principal, studentId ? { studentId } : undefined);
+  const query = { ...req.query };
+  delete query.studentId;
+  delete query.studentKey;
+  sendList(res, tenantScopeService.filterRows(rows, principal, { countryField: "countryIso" }), query, ["studentName", "label", "status"]);
 }));
 
 app.post("/api/finance/reconcile-payment-allocations", requireAuth, requirePermission("POST /api/finance/reconcile-payment-allocations"), asyncHandler(async (req, res) => {
@@ -2594,6 +2966,11 @@ app.get("/api/backoffice/countries", requireAuth, requirePermission("GET /api/ba
 app.get("/api/backoffice/subscriptions", requireAuth, requirePermission("GET /api/backoffice/subscriptions"), asyncHandler(async (req, res) => {
   const platform = await repository.listPlatformProjection();
   sendList(res, tenantScopeService.filterRows(platform.subscriptions ?? [], req.principal), req.query, ["schoolCode", "country", "plan", "status"]);
+}));
+
+app.get("/api/backoffice/trial-requests", requireAuth, requirePermission("GET /api/backoffice/trial-requests"), asyncHandler(async (req, res) => {
+  const { listTrialAccessRequests } = require("./lib/trialAccessRequests");
+  res.json(await listTrialAccessRequests(repository, req.principal));
 }));
 
 app.get("/api/backoffice/notifications", requireAuth, requirePermission("GET /api/backoffice/notifications"), asyncHandler(async (req, res) => {
@@ -2866,6 +3243,20 @@ app.get("/api/parents/identity", requireAuth, requirePermission("GET /api/parent
     ...result,
     user: result.user ? sanitizeUserForResponse(result.user) : null,
   });
+}));
+
+app.get("/api/parents/relations", requireAuth, requirePermission("GET /api/parents/relations"), asyncHandler(async (req, res) => {
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolCode = requireEnrollmentLoginCode(principal);
+  const scopedPrincipal = { ...principal, schoolCode };
+  const studentId = String(req.query?.studentId ?? "").trim();
+  if (!studentId) {
+    return res.status(400).json({ message: "studentId requis." });
+  }
+  const scoped = await authorizeEnrollmentStudentOr404(req, res, studentId);
+  if (!scoped) return;
+  const result = await repository.listParentRelations(req.query ?? {}, scopedPrincipal);
+  res.json(result);
 }));
 
 app.post("/api/parents/link", requireAuth, requirePermission("POST /api/parents/link"), asyncHandler(async (req, res) => {
@@ -3164,6 +3555,18 @@ app.get("/api/backoffice/internal-notifications/unread-count", requireAuth, requ
   res.json(result);
 }));
 
+app.get("/api/backoffice/communications/deliveries/health", requireAuth, requirePermission("GET /api/backoffice/communications/deliveries/health"), asyncHandler(async (req, res) => {
+  try {
+    const snapshot = await readDeliveryHealth(repository.getClientsStore(), req.principal);
+    res.json(snapshot);
+  } catch (error) {
+    if (Number(error.statusCode) === 403) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    throw error;
+  }
+}));
+
 app.get("/api/backoffice/internal-notifications", requireAuth, requirePermission("GET /api/backoffice/internal-notifications"), asyncHandler(async (req, res) => {
   const result = await internalNotificationsService.list(repository.getClientsStore(), req.principal, req.query);
   res.json(result);
@@ -3254,7 +3657,7 @@ app.get("/api/backoffice/subscription-access", requireAuth, requirePermission("G
 
 app.get("/api/backoffice/establishments", requireAuth, requirePermission("GET /api/backoffice/establishments"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
-  const rows = establishmentService.list(state, req.principal);
+  const rows = establishmentService.list(state, req.principal).map(presentSchoolLogoFields);
   sendList(res, rows, req.query, ["name", "code", "country", "city", "type", "status", "principalName"]);
 }));
 
@@ -3265,7 +3668,7 @@ app.get("/api/backoffice/establishments/:code/subscription", requireAuth, requir
 
 app.get("/api/backoffice/establishments/:code", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const state = await getAuthoritativeBackOfficeState();
-  res.json(establishmentService.get(req.params.code, state, req.principal));
+  res.json(presentSchoolLogoFields(establishmentService.get(req.params.code, state, req.principal)));
 }));
 
 app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST /api/backoffice/establishments"), asyncHandler(async (req, res) => {
@@ -3278,7 +3681,7 @@ app.post("/api/backoffice/establishments", requireAuth, requirePermission("POST 
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "create_establishment", "school", savedSchool.code, { name: savedSchool.name });
   const nextState = await getAuthoritativeBackOfficeState();
-  res.status(201).json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
+  res.status(201).json({ school: presentSchoolLogoFields(savedSchool), state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.post("/api/backoffice/establishments/import", requireAuth, requirePermission("POST /api/backoffice/establishments/import"), asyncHandler(async (req, res) => {
@@ -3299,7 +3702,7 @@ app.post("/api/backoffice/establishments/import", requireAuth, requirePermission
     created: savedCreated.length,
     errors: errors.length,
   });
-  res.status(201).json({ created: savedCreated, errors, count: savedCreated.length });
+  res.status(201).json({ created: savedCreated.map(presentSchoolLogoFields), errors, count: savedCreated.length });
 }));
 
 app.post("/api/backoffice/import/students/validate", requireAuth, requirePermission("POST /api/backoffice/import/students/validate"), asyncHandler(async (req, res) => {
@@ -3318,8 +3721,55 @@ app.patch("/api/backoffice/establishments/:code", requireAuth, requirePermission
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "update_establishment", "school", savedSchool.code);
   const nextState = await getAuthoritativeBackOfficeState();
-  res.json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
+  res.json({ school: presentSchoolLogoFields(savedSchool), state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
+
+app.put(
+  "/api/backoffice/establishments/:code/logo",
+  requireAuth,
+  requirePermission("PUT /api/backoffice/establishments/:code/logo"),
+  express.raw({ type: () => true, limit: "6mb" }),
+  asyncHandler(async (req, res) => {
+    const persisted = await repository.listEstablishments();
+    const state = await getAuthoritativeBackOfficeState();
+    const schools = persisted.length ? persisted : state.schools;
+    const scopedState = { ...state, schools };
+    const school = establishmentService.get(req.params.code, scopedState, req.principal);
+    establishmentService.assertCanMutateLogo(req.principal, school);
+    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+    const fileName = req.get("x-filename") || req.get("x-file-name") || "logo.png";
+    const mimeType = req.get("x-mime-type") || req.get("content-type") || "";
+    const { school: savedSchool } = await commitSchoolLogoUpload({
+      school,
+      buffer,
+      fileName,
+      mimeType,
+      persistEstablishment: (record) => repository.persistEstablishment(record),
+    });
+    await auditService.record(req, "update_establishment_logo", "school", savedSchool.code);
+    res.json({ school: presentSchoolLogoFields(savedSchool) });
+  }),
+);
+
+app.delete(
+  "/api/backoffice/establishments/:code/logo",
+  requireAuth,
+  requirePermission("DELETE /api/backoffice/establishments/:code/logo"),
+  asyncHandler(async (req, res) => {
+    const persisted = await repository.listEstablishments();
+    const state = await getAuthoritativeBackOfficeState();
+    const schools = persisted.length ? persisted : state.schools;
+    const scopedState = { ...state, schools };
+    const school = establishmentService.get(req.params.code, scopedState, req.principal);
+    establishmentService.assertCanMutateLogo(req.principal, school);
+    const savedSchool = await commitSchoolLogoDelete({
+      school,
+      persistEstablishment: (record) => repository.persistEstablishment(record),
+    });
+    await auditService.record(req, "delete_establishment_logo", "school", savedSchool.code);
+    res.json({ school: presentSchoolLogoFields(savedSchool) });
+  }),
+);
 
 app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
   const persisted = await repository.listEstablishments();
@@ -3328,7 +3778,7 @@ app.patch("/api/backoffice/establishments/:code/activate", requireAuth, requireP
   const { school } = establishmentService.activate(req.params.code, { ...state, schools }, req.principal);
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "activate_establishment", "school", savedSchool.code);
-  res.json({ school: savedSchool });
+  res.json({ school: presentSchoolLogoFields(savedSchool) });
 }));
 
 app.patch("/api/backoffice/establishments/:code/suspend", requireAuth, requirePermission("PATCH /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
@@ -3338,7 +3788,7 @@ app.patch("/api/backoffice/establishments/:code/suspend", requireAuth, requirePe
   const { school } = establishmentService.suspend(req.params.code, { ...state, schools }, req.principal);
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "suspend_establishment", "school", savedSchool.code);
-  res.json({ school: savedSchool });
+  res.json({ school: presentSchoolLogoFields(savedSchool) });
 }));
 
 app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermission("DELETE /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
@@ -3349,7 +3799,7 @@ app.delete("/api/backoffice/establishments/:code", requireAuth, requirePermissio
   const savedSchool = await repository.persistEstablishment(school);
   await auditService.record(req, "delete_establishment", "school", savedSchool.code);
   const nextState = await getAuthoritativeBackOfficeState();
-  res.json({ school: savedSchool, state: scopedBackOfficeStateForResponse(nextState, req.principal) });
+  res.json({ school: presentSchoolLogoFields(savedSchool), state: scopedBackOfficeStateForResponse(nextState, req.principal) });
 }));
 
 app.get("/api/backoffice/finance/unpaid", requireAuth, requirePermission("GET /api/backoffice/finance/unpaid"), asyncHandler(async (req, res) => {
@@ -3507,7 +3957,12 @@ app.post("/api/v2/subjects", requireAuth, requirePermission("POST /api/v2/subjec
 }));
 
 app.delete("/api/v2/subjects/:code", requireAuth, requirePermission("DELETE /api/v2/subjects/:code"), asyncHandler(async (req, res) => {
-  const deleted = await repository.deleteSubject(req.params.code);
+  const schoolCode = req.principal.schoolCode;
+  if (!schoolCode || schoolCode === "*") {
+    throw new BusinessError(400, "schoolCode établissement requis.");
+  }
+  tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
+  const deleted = await repository.deleteSubject(req.params.code, schoolCode);
   cacheService.invalidate("v2:");
   await auditService.record(req, "delete_subject", "subject", req.params.code);
   res.json(deleted);
@@ -3520,6 +3975,48 @@ async function academicYearHttpPrincipal(req) {
   }
   return attachAcademicYearFixtureScope(req.principal);
 }
+
+app.get("/api/v2/school-setup/status", requireAuth, requirePermission("GET /api/v2/school-setup/status"), asyncHandler(async (req, res) => {
+  const { getSchoolSetupStatus } = require("./lib/schoolSetupStatus");
+  const payload = await getSchoolSetupStatus({
+    principal: req.principal,
+    query: req.query,
+    body: req.body,
+    headers: req.headers,
+    params: req.params,
+    one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
+  });
+  res.json(payload);
+}));
+
+app.get("/api/v2/school-setup/guided", requireAuth, requirePermission("GET /api/v2/school-setup/guided"), asyncHandler(async (req, res) => {
+  const { getSchoolSetupGuided } = require("./lib/schoolSetupGuided");
+  const payload = await getSchoolSetupGuided({
+    principal: req.principal,
+    query: req.query,
+    body: req.body,
+    headers: req.headers,
+    params: req.params,
+    one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
+    dbQuery: typeof repository.query === "function" ? repository.query.bind(repository) : null,
+  });
+  res.json(payload);
+}));
+
+app.post("/api/v2/school-setup/guided/steps/:stepKey/complete", requireAuth, requirePermission("POST /api/v2/school-setup/guided/steps/:stepKey/complete"), asyncHandler(async (req, res) => {
+  const { completeGuidedStep } = require("./lib/schoolSetupGuided");
+  const payload = await completeGuidedStep({
+    principal: req.principal,
+    stepKey: req.params.stepKey,
+    query: req.query,
+    body: req.body,
+    headers: req.headers,
+    params: req.params,
+    one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
+    dbQuery: typeof repository.query === "function" ? repository.query.bind(repository) : null,
+  });
+  res.json(payload);
+}));
 
 app.get("/api/v2/academic-years", requireAuth, requirePermission("GET /api/v2/academic-years"), asyncHandler(async (req, res) => {
   const {
@@ -4018,6 +4515,10 @@ function denyPermission(message = "Permission insuffisante pour cette fonctionna
   const error = new BusinessError(403, message);
   error.code = PERMISSION_DENIED;
   return error;
+}
+
+function requireParentNotesReadOnly(req, res, next) {
+  return require("./lib/parentNotesScope").requireParentNotesReadOnly(req, res, next);
 }
 
 async function saveEstablishmentState() {
@@ -5957,6 +6458,10 @@ function buildPrincipal(response, rolePermissionsMap = null) {
         ? "Super Administrateur Somafrik"
         : display.role;
   const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
+  const schoolId =
+    !schoolCode || schoolCode === "*"
+      ? ""
+      : String(user.schoolId ?? school.id ?? school.schoolId ?? "").trim();
   const countryCode = user.countryCode || countryCodeFromScope(user.countryScope) || school.countryCode || countryCodeFromSchoolOrCountry(schoolCode, school.country);
   const permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
 
@@ -5977,6 +6482,7 @@ function buildPrincipal(response, rolePermissionsMap = null) {
     role,
     roles: display.roles,
     roleKeys: display.roleKeys,
+    schoolId,
     schoolCode,
     countryCode,
     countryScope: user.countryScope ?? "",
@@ -6064,37 +6570,6 @@ async function getRolePermissionsMap() {
   return repository.getRolePermissionsMap();
 }
 
-function getPrincipalGuardianStudentIds(response) {
-  const user = response.user ?? {};
-  const fromChildren = (user.children ?? [])
-    .flatMap((student) => [student.id, student.publicId, student.matricule])
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean);
-  const fromRelations = Array.isArray(user.guardianStudentIds) ? user.guardianStudentIds.map(String) : [];
-  return [...new Set([...fromChildren, ...fromRelations])];
-}
-
-function getPrincipalStudentIds(response) {
-  const user = response.user ?? {};
-  const sessionLabel = roleLabelFromMobileRole(response.role);
-  const role = sessionLabel === "Parent" || sessionLabel === "Élève / Étudiant"
-    ? sessionLabel
-    : user.role ?? sessionLabel;
-
-  if (role === "Parent") {
-    return (user.children ?? [])
-      .flatMap((student) => [student.id, student.publicId, student.matricule])
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean);
-  }
-
-  if (role === "Élève / Étudiant") {
-    return [user.id].filter(Boolean);
-  }
-
-  return [];
-}
-
 function roleLabelFromMobileRole(role) {
   if (role === "super_admin") return "Super Administrateur Somafrik";
   if (role === "country_admin") return "Admin Pays";
@@ -6132,53 +6607,78 @@ function countryCodeFromScope(countryScope) {
 }
 
 async function hydrateParentPrincipal(principal) {
-  if (!principal || principal.role !== "Parent") {
+  const {
+    principalIsParent,
+    linkedStudentsFromRows,
+    lookupCanonicalParentLinkedStudents,
+    resolveParentLinkedHydration,
+    CANONICAL_LOOKUP_UNAVAILABLE,
+  } = require("./lib/parentScope");
+
+  if (!principal || !principalIsParent(principal)) {
     return principal;
   }
-  const state = await getAuthoritativeBackOfficeState();
-  const principalKeys = new Set(
-    [principal.sub, principal.identifier, principal.publicId, principal.contactId]
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean),
-  );
-  const parentUser = (state.users ?? []).find((user) =>
-    [user.id, user.publicId, user.identifier, user.contactId].some((value) =>
-      principalKeys.has(String(value ?? "").trim()),
-    ),
-  );
-  const schoolCode = String(
-    principal.schoolCode ?? parentUser?.schoolCode ?? "",
-  ).trim();
-  let children = resolveParentChildren(
-    parentUser ?? {
-      contactId: principal.contactId,
-      identifier: principal.identifier,
-      phone: principal.phone ?? principal.identifier,
-      schoolCode,
-    },
-    state,
-    schoolCode,
-  );
-  if (!children.length && (principal.studentIds ?? []).length) {
-    const linkedIds = new Set(
-      principal.studentIds.map((value) => String(value ?? "").trim()).filter(Boolean),
-    );
-    children = (state.students ?? []).filter((row) =>
-      linkedIds.has(String(row.id ?? "").trim()),
-    );
+
+  const students = await listCanonicalStudentsForPrincipal(principal);
+  const lookup = await lookupCanonicalParentLinkedStudents({
+    repository,
+    principal,
+    schoolStudents: students,
+  });
+
+  let fallbackChildren = [];
+  let fallbackContactId = principal.contactId;
+  let fallbackSchoolCode = String(principal.schoolCode ?? "").trim();
+
+  if (lookup.status === CANONICAL_LOOKUP_UNAVAILABLE) {
+    try {
+      const state = await getAuthoritativeBackOfficeState();
+      const principalKeys = new Set(
+        [principal.sub, principal.identifier, principal.publicId, principal.contactId]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+      const parentUser = (state.users ?? []).find((user) =>
+        [user.id, user.publicId, user.identifier, user.contactId].some((value) =>
+          principalKeys.has(String(value ?? "").trim()),
+        ),
+      );
+      fallbackSchoolCode = String(
+        principal.schoolCode ?? parentUser?.schoolCode ?? "",
+      ).trim();
+      fallbackContactId = principal.contactId ?? parentUser?.contactId;
+      fallbackChildren = resolveParentChildren(
+        parentUser ?? {
+          contactId: principal.contactId,
+          identifier: principal.identifier,
+          phone: principal.phone ?? principal.identifier,
+          schoolCode: fallbackSchoolCode,
+        },
+        state,
+        fallbackSchoolCode,
+      );
+      if (!fallbackChildren.length) {
+        fallbackChildren = linkedStudentsFromRows(state.students ?? students, principal);
+      }
+    } catch {
+      fallbackChildren = linkedStudentsFromRows(students, principal);
+    }
   }
-  if (!children.length) {
-    return principal;
-  }
-  const studentIds = children
-    .flatMap((child) => [child.id, child.publicId, child.matricule])
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean);
+
+  const hydrated = resolveParentLinkedHydration(lookup, {
+    jwtStudentIds: principal.studentIds,
+    schoolStudents: students,
+    fallbackChildren,
+  });
+
   return {
     ...principal,
-    schoolCode: schoolCode || principal.schoolCode,
-    contactId: principal.contactId ?? parentUser?.contactId,
-    studentIds,
+    role: principal.role || "Parent",
+    schoolCode: fallbackSchoolCode || principal.schoolCode,
+    contactId: fallbackContactId,
+    studentIds: hydrated.studentIds,
+    classCodes: [...new Set([...(principal.classCodes ?? []), ...hydrated.classCodes])],
+    classIds: [...new Set([...(principal.classIds ?? []), ...hydrated.classIds])],
   };
 }
 
@@ -6361,11 +6861,9 @@ function sendList(res, rows, query, searchableFields) {
 }
 
 function findStudent(students, studentId) {
+  const { findStudentByIdentity } = require("./lib/studentIdentityMatch");
   const key = String(studentId ?? "").trim();
-  const direct = students.find((item) =>
-    [item.id, item.publicId, item.matricule].some((value) => String(value ?? "").trim() === key),
-  );
-
+  const direct = findStudentByIdentity(students, key);
   if (direct) {
     return direct;
   }
@@ -6378,32 +6876,28 @@ function findStudent(students, studentId) {
 }
 
 function principalLinkedStudentIds(principal = {}) {
-  return new Set(
-    (principal.studentIds ?? []).map((value) => String(value ?? "").trim()).filter(Boolean),
-  );
+  const { collectLinkedStudentKeys } = require("./lib/parentScope");
+  return new Set(collectLinkedStudentKeys(principal));
 }
 
 function resolveAuthorizedStudentForPrincipal(students, principal, studentRef) {
-  const scopedStudents = tenantScopeService.filterRows(students, principal);
-  const scopedMatch = findStudent(scopedStudents, studentRef);
-  if (scopedMatch) {
-    return scopedMatch;
-  }
-  if (!isParentOrStudentPrincipalRole(principal.role)) {
-    return undefined;
-  }
-  const linkedIds = principalLinkedStudentIds(principal);
-  const rawStudent = findStudent(students, studentRef);
-  if (!rawStudent) {
-    return undefined;
-  }
-  for (const value of [rawStudent.id, rawStudent.publicId, rawStudent.matricule]) {
-    const key = String(value ?? "").trim();
-    if (key && linkedIds.has(key)) {
-      return rawStudent;
+  const {
+    principalIsParentOrStudent,
+    studentMatchesLinkedKeys,
+  } = require("./lib/parentScope");
+
+  if (principalIsParentOrStudent(principal)) {
+    const rawStudent = findStudent(students, studentRef);
+    if (!rawStudent) {
+      return undefined;
     }
+    return studentMatchesLinkedKeys(rawStudent, principalLinkedStudentIds(principal))
+      ? rawStudent
+      : undefined;
   }
-  return undefined;
+
+  const scopedStudents = tenantScopeService.filterRows(students, principal);
+  return findStudent(scopedStudents, studentRef);
 }
 
 function samePresenceDay(left, right) {
@@ -6489,18 +6983,22 @@ async function savePresencesViaBackOfficeState(state, items = []) {
 }
 
 function buildScopedStudentIdSet(students = []) {
+  const { collectStudentIdentityKeys } = require("./lib/studentIdentityMatch");
   const ids = new Set();
   for (const student of students) {
-    for (const value of [student.id, student.publicId, student.matricule]) {
-      const key = String(value ?? "").trim();
-      if (key) ids.add(key);
+    for (const key of collectStudentIdentityKeys(student)) {
+      ids.add(key);
     }
   }
   return ids;
 }
 
-function isParentOrStudentPrincipalRole(role = "") {
-  const key = String(role ?? "")
+function isParentOrStudentPrincipalRole(roleOrPrincipal = "") {
+  if (roleOrPrincipal && typeof roleOrPrincipal === "object") {
+    const { principalIsParentOrStudent } = require("./lib/parentScope");
+    return principalIsParentOrStudent(roleOrPrincipal);
+  }
+  const key = String(roleOrPrincipal ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
@@ -6510,7 +7008,7 @@ function isParentOrStudentPrincipalRole(role = "") {
 
 /** Parent / élève : uniquement les notes liées à une évaluation publiée. */
 function filterNotesForPrincipal(notes = [], evaluations = [], principal = {}) {
-  if (!isParentOrStudentPrincipalRole(principal.role)) {
+  if (!isParentOrStudentPrincipalRole(principal)) {
     return notes;
   }
   const { isPublishedEvaluationStatus } = require("./lib/gradesCanonical");

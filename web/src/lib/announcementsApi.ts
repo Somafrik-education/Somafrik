@@ -75,9 +75,13 @@ function unwrapItems<T>(data: T[] | { items?: T[] } | null | undefined): T[] {
 }
 
 export const announcementsApi = {
-  list: async (schoolCode?: string) => {
+  list: async (schoolCode?: string, options?: { cursor?: string | null }) => {
+    const cursor = String(options?.cursor ?? "").trim();
+    const path = cursor
+      ? `/backoffice/announcements?cursor=${encodeURIComponent(cursor)}`
+      : "/backoffice/announcements";
     const data = await api.get<{ items: AnnouncementRecord[]; nextCursor: string | null } | AnnouncementRecord[]>(
-      scoped("/backoffice/announcements", schoolCode),
+      scoped(path, schoolCode),
     );
     return { items: unwrapItems(data), nextCursor: !Array.isArray(data) ? data.nextCursor ?? null : null };
   },

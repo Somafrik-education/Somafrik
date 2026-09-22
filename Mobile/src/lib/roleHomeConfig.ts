@@ -127,7 +127,7 @@ const UNKNOWN: RoleHomeShell = {
   accent: "#475569",
   identityIcon: "person-outline",
   bannerIcon: "shield-outline",
-  kpiKeys: ["messages", "students", "payments", "documents"],
+  kpiKeys: ["messages", "students", "payments", "announcements"],
   actionKeys: ["messages", "students", "payments"],
   showSecurityMatrix: false,
 };
@@ -139,8 +139,8 @@ const SECRETARY: RoleHomeShell = {
   accent: "#0F766E",
   identityIcon: "briefcase-outline",
   bannerIcon: "people-outline",
-  kpiKeys: ["students", "classes", "documents", "messages"],
-  actionKeys: ["students", "attendance", "payments", "documents", "messages", "announcements"],
+  kpiKeys: ["students", "classes", "payments", "messages"],
+  actionKeys: ["students", "attendance", "payments", "messages", "announcements"],
   showSecurityMatrix: true,
 };
 
@@ -199,8 +199,8 @@ const PLATFORM: RoleHomeShell = {
   accent: "#1D4ED8",
   identityIcon: "globe-outline",
   bannerIcon: "grid-outline",
-  kpiKeys: ["countries", "schools", "users", "payments"],
-  actionKeys: ["users", "platformNotifications"],
+  kpiKeys: ["users", "payments"],
+  actionKeys: ["users"],
   showSecurityMatrix: true,
 };
 

@@ -155,11 +155,7 @@ Sévérité proposée : P2 — le parcours de premier paiement est masqué.
 
 Rôle : Admin établissement. Écran : Utilisateurs.
 
-Comportement attendu : une confirmation métier screenshotable (**Attribuer**).
-
-Comportement observé : `Alert.alert("Attribuer le rôle Enseignant", …)` → dialogue navigateur, hors canvas.
-
-Impact guide : M11 est `À REVALIDER` (bouton réel, pas la boîte de confirmation).
+Statut : le parcours **Attribuer Enseignant** / **Retirer Enseignant** (`Alert.alert` natif) a été remplacé par la modale **Gérer les rôles**, qui affecte les rôles du catalogue établissement. La capture M11 montre encore l'ancien bouton et reste à revalider sur le runtime.
 
 Sévérité proposée : P3 — documentation, pas un blocage métier.
 

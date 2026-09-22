@@ -1,0 +1,86 @@
+{
+  "audit": "parite-web-mobile-l0-green",
+  "date": "2026-09-10",
+  "issue": 577,
+  "baseSha": "a24b5ae3157b27a8f52bbc93fb725b08654d98cc",
+  "branch": "feat/577-l0-mobile-hygiene",
+  "scope": "L0-only",
+  "redBefore": {
+    "passed": 0,
+    "failed": 12,
+    "failedIds": [
+      "L0-01",
+      "L0-02",
+      "L0-03",
+      "L0-04",
+      "L0-05",
+      "L0-06",
+      "L0-07",
+      "L0-08",
+      "L0-09",
+      "L0-10",
+      "L0-11",
+      "L0-12"
+    ]
+  },
+  "greenAfter": {
+    "passed": 12,
+    "failed": 0,
+    "passedIds": [
+      "L0-01",
+      "L0-02",
+      "L0-03",
+      "L0-04",
+      "L0-05",
+      "L0-06",
+      "L0-07",
+      "L0-08",
+      "L0-09",
+      "L0-10",
+      "L0-11",
+      "L0-12"
+    ]
+  },
+  "l1Residual": {
+    "implemented": false,
+    "passed": 1,
+    "failed": 9,
+    "passedIds": ["L1-10"],
+    "note": "L1-10 est couvert par l'ajout L0 du viewport partagé 430 dp."
+  },
+  "nonRegression": {
+    "passed": [
+      "typecheck:mobile",
+      "verify:mobile-security",
+      "verify:mobile-rbac-live",
+      "verify:mobile-no-false-writes",
+      "verify:mobile-ux-v1",
+      "verify:mobile-home-data-truth",
+      "verify:mobile-canonical-route-map",
+      "verify:mobile-canonical-role-identity",
+      "verify:mobile-live-permissions-refresh",
+      "verify:mobile-cta-rbac-alignment",
+      "verify:mobile-data-truth",
+      "verify:mobile-network-resilience",
+      "verify:mobile-l1-sqlite-cache",
+      "verify:mobile-l1-offline-reads",
+      "verify:mobile-rc2-offline-read-smoke",
+      "verify:mobile-attendance-hydration",
+      "verify:mobile-class-attendance-rate",
+      "verify:mobile-ui-e2e-scaffold",
+      "test:mobile-ui-e2e-runtime",
+      "internalNotificationsC4.test.ts"
+    ],
+    "preExistingFailures": [
+      "verify:mobile-usability",
+      "verify:mobile-domain-hydration",
+      "verify:mobile-form-fields"
+    ]
+  },
+  "backendTouched": false,
+  "apiTouched": false,
+  "postgresTouched": false,
+  "rbacPolicyTouched": false,
+  "readyForbidden": true,
+  "mergeForbidden": true
+}

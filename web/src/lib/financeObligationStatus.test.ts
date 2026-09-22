@@ -20,5 +20,8 @@ describe("financeObligationStatus", () => {
     expect(financePaymentStatusLabel("paid")).toBe("Payé");
     expect(financePaymentStatusLabel("cancelled")).toBe("Annulé");
     expect(financePaymentStatusLabel("pending")).toBe("En attente");
+    expect(financePaymentStatusLabel("Partiel")).toBe("Partiellement imputé");
+    expect(financePaymentStatusLabel("Trop-perçu")).toBe("Trop-perçu");
+    expect(financePaymentStatusLabel("Partiel")).not.toBe("Partiellement payé");
   });
 });

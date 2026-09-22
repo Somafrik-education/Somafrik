@@ -17,6 +17,8 @@ import { scopedStudents } from "../../lib/establishment";
 import { projectScopedStudents } from "../../lib/studentsScope";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
+import { displayStatusName } from "../../lib/format";
+import { SCOLARITE_COPY } from "../../lib/schoolingTruth";
 
 function mapApiError(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
@@ -123,6 +125,16 @@ export function StudentsListPage() {
         render: (row: SchoolStudent) => row.className || "—",
       },
       {
+        key: "status",
+        header: "Statut",
+        render: (row: SchoolStudent) => displayStatusName(row.status),
+      },
+      {
+        key: "academicYearName",
+        header: "Année",
+        render: (row: SchoolStudent) => row.academicYearName || "—",
+      },
+      {
         key: "actions",
         header: "Actions",
         sortable: false,
@@ -197,7 +209,7 @@ export function StudentsListPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           title="Liste vide"
-          description="Aucun élève actif à afficher. Inscrivez un élève depuis une classe."
+          description={SCOLARITE_COPY.emptyStudents}
         />
       ) : (
         <EntityListTable

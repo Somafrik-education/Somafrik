@@ -25,6 +25,10 @@ export const parentsApi = {
     const suffix = params.toString();
     return api.get<ParentIdentityLookup>(`/parents/identity${suffix ? `?${suffix}` : ""}`);
   },
+  listRelations: (studentId: string) => {
+    const suffix = new URLSearchParams({ studentId }).toString();
+    return api.get<{ items?: Record<string, unknown>[] }>(`/parents/relations?${suffix}`);
+  },
   linkParent: (payload: LinkParentPayload) => api.post("/parents/link", payload),
   archiveRelation: (relationId: string) =>
     api.patch(`/parents/relations/${encodeURIComponent(relationId)}`, { status: "archived" }),

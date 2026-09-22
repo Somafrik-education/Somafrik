@@ -3,7 +3,7 @@ import { canManageUserAccount } from "./userAccounts";
 import { isPendingValidationStatus } from "./orgHierarchy";
 import { PLANNING_WEB_UI_ENABLED, VIEW_PERMISSION_FEATURES } from "./constants";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
-import { isInternalSchoolRole, normalize, isSchoolAdminRole } from "./format";
+import { isInternalSchoolRole, isParentRole, normalize, isSchoolAdminRole } from "./format";
 import { canSchoolAdminMutateTeachers } from "./pedagogyGovernance";
 import {
   isSuperAdminRole,
@@ -21,7 +21,6 @@ import {
   isSuperAdminAllowedView,
 } from "./superAdminAccess";
 import {
-  isEstablishmentCommunicationUser,
   isPlatformCommunicationFeature,
   isPlatformCommunicationUser,
 } from "./establishmentCommunication";
@@ -150,6 +149,17 @@ export function resolveEffectivePermissions(
 
 export function getCurrentRolePermissions(ctx: PermissionContext): string[] {
   return resolveEffectivePermissions(ctx.user?.role, ctx.user?.permissions, ctx.rolePermissions);
+}
+
+/** Superadmin, ou jeton effectif classes / affectations (révocations explicites honorées). */
+export function canAssignClassHeadTeacher(ctx: PermissionContext): boolean {
+  if (!ctx.user) return false;
+  if (isSuperAdminRole(ctx.user.role)) return true;
+  return (
+    hasBackOfficePermission(ctx, "Classes", "UPDATE") ||
+    hasBackOfficePermission(ctx, "Affectations", "CREATE") ||
+    hasBackOfficePermission(ctx, "Affectations", "UPDATE")
+  );
 }
 
 const COUNTRY_PRIVILEGE_FEATURES = new Set(["pays", "etablissements", "abonnements", "utilisateurs", "rapports", "referentiels pedagogiques"]);
@@ -420,6 +430,7 @@ export function hasBackOfficePermission(
 }
 
 export function canReadView(ctx: PermissionContext, viewName: string): boolean {
+  if (viewName === "parentProfile") return isParentRole(ctx.user?.role);
   if (viewName === "planning" && !PLANNING_WEB_UI_ENABLED) {
     return false;
   }
@@ -446,7 +457,7 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     if (isSuperAdminRole(ctx.user?.role)) return false;
     return isSchoolAdminRole(ctx.user?.role);
   }
-  if (viewName === "bulletinDesign") {
+  if (viewName === "bulletinDesign" || viewName === "reportCardConfiguration") {
     return canDesignBulletins(ctx);
   }
   if (viewName === "contacts") {
@@ -455,8 +466,13 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   if (viewName === "relations") {
     return hasBackOfficePermission(ctx, "Relations", "READ");
   }
+  if (viewName === "messages") {
+    // Messages et notifications établissement : aucun accès implicite par rôle.
+    // La vue et son GET suivent la permission effective :READ.
+    return hasBackOfficePermission(ctx, "Messages", "READ");
+  }
   if (
-    (viewName === "messages" || viewName === "notifications" || viewName === "announcements") &&
+    (viewName === "notifications" || viewName === "announcements") &&
     isPlatformCommunicationUser(ctx)
   ) {
     return true;
@@ -482,13 +498,28 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   if (viewName === "announcements") {
     return hasBackOfficePermission(ctx, "Announcements", "READ");
   }
-  if (viewName === "messages" || viewName === "notifications") {
-    if (hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ")) {
-      return true;
-    }
-    return isEstablishmentCommunicationUser(ctx);
+  if (viewName === "notifications") {
+    return hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ");
   }
   return hasBackOfficePermission(ctx, VIEW_PERMISSION_FEATURES[viewName] ?? null, "READ");
+}
+
+export type ViewAccessAction = "READ" | "CREATE" | "UPDATE" | "DELETE";
+
+/**
+ * Accès route : READ = canReadView ; CREATE/UPDATE/DELETE exigent aussi le jeton
+ * métier de la vue (ex. Bulletins:CREATE pour /bulletins/modele).
+ */
+export function canAccessView(
+  ctx: PermissionContext,
+  viewName: string,
+  action: ViewAccessAction = "READ",
+): boolean {
+  if (!canReadView(ctx, viewName)) return false;
+  if (action === "READ") return true;
+  const feature = VIEW_PERMISSION_FEATURES[viewName];
+  if (!feature) return false;
+  return hasBackOfficePermission(ctx, feature, action);
 }
 
 export function hasSchoolPilotageAccess(ctx: PermissionContext): boolean {

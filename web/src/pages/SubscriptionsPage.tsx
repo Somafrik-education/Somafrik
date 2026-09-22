@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from "../lib/dates";
 import { useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -41,7 +42,7 @@ export function SubscriptionsPage() {
     setBusy(true);
     const nextYear = new Date();
     nextYear.setFullYear(nextYear.getFullYear() + 1);
-    const endDate = nextYear.toLocaleDateString("fr-FR").replace(/\//g, "-");
+    const endDate = formatDateForDisplay(nextYear);
     const mergedRow = rows.find(
       (row) => normalize(String(row.schoolCode)) === normalize(String(subscription.schoolCode)),
     );

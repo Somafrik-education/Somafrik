@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -9,11 +9,13 @@ import { PrintButton } from "../components/ui/PrintButton";
 import { useToast } from "../components/ui/Toast";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import { canManagePresences } from "../lib/permissions";
+import { useDeepLinkId } from "../lib/notificationDeepLink";
 import { resolveTeacherRecordForUser } from "../lib/establishment";
 import { classStudentsApi, type ClassStudent } from "../lib/classStudentsApi";
 import {
   buildPresenceClassCards,
   findPresenceClassCard,
+  isParentPresenceRole,
   type PresenceClassCard,
 } from "../lib/presenceRoster";
 import {
@@ -29,11 +31,19 @@ import {
   formatAttendanceDate,
   formatAttendanceHour,
   getPresenceStats,
+  normalizePresenceStatus,
   presenceIsAttended,
+  presenceMatchesStudent,
   resolveStudentApiId,
   rollCallInitialStatus,
   sameAttendanceDay,
+  type ExpectedStudent,
 } from "../lib/presenceMetrics";
+import {
+  resolveClassTodayPresenceBadge,
+  resolveExpectedStudentsForClassCard,
+  resolvePresenceClassHeadcount,
+} from "../lib/classTodayPresenceBadge";
 
 const STATUS_OPTIONS: AttendanceStatus[] = ["Présent", "Absent", "Retard", "Justifié"];
 
@@ -84,6 +94,7 @@ export function PresencesPage() {
   const canUpdate = canManagePresences(permissionCtx);
 
   const presences = (state.presences ?? []) as PresenceRow[];
+  const students = (state.students ?? []) as ExpectedStudent[];
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
 
@@ -107,6 +118,9 @@ export function PresencesPage() {
   const [attendanceDirty, setAttendanceDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [selectedTeacherId, setSelectedTeacherId] = useState("");
+  const [focusedStudentId, setFocusedStudentId] = useState("");
+  const deepLinkAttendanceId = useDeepLinkId("attendanceId");
+  const appliedAttendanceRef = useRef("");
 
   const selectedCard = useMemo(
     () => findPresenceClassCard(classCards, { classId: selectedClassId, classCode: selectedClassCode }),
@@ -186,6 +200,23 @@ export function PresencesPage() {
     setSelectedClassCode(card.classCode);
     setSelectedTeacherId("");
   }
+
+  // Deep-link notification : positionner l'appel sur la classe de la présence
+  // visée et mettre en évidence l'élève concerné.
+  useEffect(() => {
+    if (!deepLinkAttendanceId || !canRead) return;
+    if (appliedAttendanceRef.current === deepLinkAttendanceId) return;
+    const presence = presences.find((row) => String(row.id ?? "") === deepLinkAttendanceId);
+    if (!presence) return;
+    const card = findPresenceClassCard(classCards, {
+      classId: String((presence as Record<string, unknown>).classId ?? "") || null,
+      classCode: String((presence as Record<string, unknown>).classCode ?? "") || null,
+    });
+    if (!card) return;
+    appliedAttendanceRef.current = deepLinkAttendanceId;
+    selectClass(card);
+    setFocusedStudentId(String((presence as Record<string, unknown>).studentId ?? ""));
+  }, [deepLinkAttendanceId, canRead, presences, classCards]);
 
   function clearSelectedClass() {
     setSelectedClassId(null);
@@ -294,6 +325,16 @@ export function PresencesPage() {
     );
   }
 
+  if (isParentPresenceRole(scopeUser?.role, (scopeUser as { roleKeys?: string[] } | null)?.roleKeys)) {
+    return (
+      <ParentPresencesView
+        user={scopeUser as Record<string, unknown> | null}
+        presences={presences}
+        attendanceId={deepLinkAttendanceId}
+      />
+    );
+  }
+
   if (!selectedCard) {
     return (
       <div className="space-y-6">
@@ -303,10 +344,25 @@ export function PresencesPage() {
         />
         <div className="grid gap-3 md:grid-cols-2">
           {classCards.map((card) => {
-            const savedToday = presences.filter(
+            const todayRows = presences.filter(
               (presence) =>
                 sameAttendanceDay(String(presence.date ?? ""), todayLabel) && asClassMatch(presence, card),
-            ).length;
+            );
+            const expectedStudents = resolveExpectedStudentsForClassCard({
+              studentCount: card.studentCount,
+              students,
+              classId: card.classId,
+              classCode: card.classCode,
+            });
+            const badge = resolveClassTodayPresenceBadge({
+              expectedStudents,
+              todayRows,
+              todayLabel,
+            });
+            const headcount = resolvePresenceClassHeadcount({
+              studentCount: card.studentCount,
+              expectedStudents,
+            });
 
             return (
               <button
@@ -316,8 +372,8 @@ export function PresencesPage() {
                 className="rounded-2xl border border-line bg-white p-5 text-left transition hover:border-brand/40 hover:shadow-sm"
               >
                 <p className="text-lg font-black text-ink">{card.className}</p>
-                <p className="mt-1 text-sm font-semibold text-muted">{card.studentCount} élève(s)</p>
-                <p className="mt-1 text-xs text-muted">{savedToday} enregistrement(s) aujourd&apos;hui</p>
+                <p className="mt-1 text-sm font-semibold text-muted">{headcount} élève(s)</p>
+                <p className="mt-1 text-xs text-muted">{badge.badgeText}</p>
               </button>
             );
           })}
@@ -351,7 +407,7 @@ export function PresencesPage() {
       {canUpdate ? (
         <div className="flex flex-wrap gap-3">
           <Button variant="secondary" onClick={markAllPresent} disabled={rosterLoading || !classStudents.length}>
-            Tous présents
+            Tout présent
           </Button>
           <Button
             disabled={
@@ -443,8 +499,19 @@ export function PresencesPage() {
             const currentStatus = attendance[studentId] ?? "Présent";
             const name = String(student.name ?? `${student.firstName ?? ""} ${student.lastName ?? ""}`.trim());
 
+            const focused = Boolean(focusedStudentId) && studentId === focusedStudentId;
+
             return (
-              <li key={studentId} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <li
+                key={studentId}
+                data-testid="presence-student-row"
+                data-student-id={studentId}
+                data-selected={focused ? "true" : undefined}
+                aria-selected={focused || undefined}
+                className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between ${
+                  focused ? "bg-brand-50 ring-2 ring-inset ring-brand" : ""
+                }`}
+              >
                 <div>
                   <p className="font-black text-ink">{name || "Élève"}</p>
                   <p className="text-sm font-semibold text-muted">{String(student.matricule ?? student.publicId ?? "—")}</p>
@@ -485,6 +552,126 @@ export function PresencesPage() {
           })}
         </ul>
       </Card>
+    </div>
+  );
+}
+
+type ParentChild = {
+  id: string;
+  name: string;
+  keys: string[];
+};
+
+function parentChildKeys(child: Record<string, unknown>) {
+  return [child.id, child.publicId, child.matricule, child.studentCode, child.studentId, child.studentUuid]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+}
+
+function resolveParentChildren(user: Record<string, unknown> | null): ParentChild[] {
+  const raw = Array.isArray(user?.children) ? (user.children as Record<string, unknown>[]) : [];
+  const fromChildren = raw
+    .map((child) => {
+      const keys = parentChildKeys(child);
+      if (!keys.length) return null;
+      const name = String(
+        child.name ?? `${child.firstName ?? ""} ${child.lastName ?? ""}`.trim(),
+      );
+      return { id: keys[0], name: name || keys[0], keys };
+    })
+    .filter((row): row is ParentChild => Boolean(row));
+
+  if (fromChildren.length) return fromChildren;
+
+  const ids = Array.isArray(user?.studentIds) ? (user.studentIds as unknown[]) : [];
+  return ids
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .map((id) => ({ id, name: id, keys: [id] }));
+}
+
+function ParentPresencesView({
+  user,
+  presences,
+  attendanceId,
+}: {
+  user: Record<string, unknown> | null;
+  presences: PresenceRow[];
+  attendanceId: string;
+}) {
+  const children = useMemo(() => resolveParentChildren(user), [user]);
+  const [selectedChildId, setSelectedChildId] = useState(children[0]?.id ?? "");
+
+  useEffect(() => {
+    if (!children.length) {
+      setSelectedChildId("");
+      return;
+    }
+    if (!children.some((child) => child.id === selectedChildId)) {
+      setSelectedChildId(children[0].id);
+    }
+  }, [children, selectedChildId]);
+
+  useEffect(() => {
+    if (!attendanceId) return;
+    const presence = presences.find((row) => String(row.id ?? "") === attendanceId);
+    if (!presence) return;
+    const presenceStudent = String(presence.studentId ?? "").trim();
+    const match = children.find((child) => child.keys.includes(presenceStudent));
+    if (match) setSelectedChildId(match.id);
+  }, [attendanceId, children, presences]);
+
+  const selected = children.find((child) => child.id === selectedChildId) ?? children[0] ?? null;
+  const childPresences = selected
+    ? presences.filter((row) =>
+        selected.keys.some((key) =>
+          presenceMatchesStudent(row, {
+            id: key,
+            matricule: key,
+            publicId: key,
+          }),
+        ),
+      )
+    : [];
+  const latest = childPresences[0];
+  const status = latest ? normalizePresenceStatus(latest) : null;
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader
+        title="Mes enfants"
+        description="Présences — seuls vos enfants liés sont visibles."
+      />
+      {!children.length ? (
+        <Card className="p-6">
+          <p className="text-sm text-muted">Aucun enfant lié à votre compte.</p>
+        </Card>
+      ) : (
+        <>
+          {children.length > 1 ? (
+            <Field label="Enfant" htmlFor="parent-child">
+              <Select
+                id="parent-child"
+                value={selected?.id ?? ""}
+                onChange={(event) => setSelectedChildId(event.target.value)}
+                options={children.map((child) => ({ value: child.id, label: child.name }))}
+              />
+            </Field>
+          ) : null}
+          {selected ? (
+            <Card className="p-5" data-testid="presence-student-row" data-student-id={selected.id}>
+              <p className="font-black text-ink">{selected.name}</p>
+              {status ? (
+                <p className="mt-2 text-sm font-semibold text-muted">
+                  Présence : <span className="text-ink">{status}</span>
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-muted">Aucune présence enregistrée pour cet enfant.</p>
+              )}
+            </Card>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

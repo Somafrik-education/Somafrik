@@ -45,15 +45,26 @@ export function platformLoginSubtitle(context?: PlatformLoginContext | null): st
 export function buildMobileLoginPayload(input: {
   role: MobileLoginRole;
   identifier: string;
-  pin: string;
+  pin?: string;
+  password?: string;
   schoolCode?: string | null;
   platformContext?: PlatformLoginContext | null;
-}): { role: MobileLoginRole; identifier: string; pin: string; schoolCode?: string } {
-  const payload: { role: MobileLoginRole; identifier: string; pin: string; schoolCode?: string } = {
+}): { role: MobileLoginRole; identifier: string; pin?: string; password?: string; schoolCode?: string } {
+  const payload: {
+    role: MobileLoginRole;
+    identifier: string;
+    pin?: string;
+    password?: string;
+    schoolCode?: string;
+  } = {
     role: input.role,
     identifier: input.identifier,
-    pin: input.pin,
   };
+  if (input.role === "parent_student") {
+    payload.password = String(input.password ?? "");
+  } else {
+    payload.pin = String(input.password ?? input.pin ?? "");
+  }
   if (input.platformContext || isPlatformMobileRole(input.role)) {
     return payload;
   }

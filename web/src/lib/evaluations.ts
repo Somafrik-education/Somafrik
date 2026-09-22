@@ -322,6 +322,33 @@ export function gradesForEvaluation(grades: StudentGrade[], evaluationId: string
   return grades.filter((grade) => grade.evaluationId === evaluationId);
 }
 
+/** Catalogue classes PostgreSQL : nom d'affichage → UUID canonique. */
+export function resolveCanonicalClassId(
+  classes: Array<Record<string, unknown>> | undefined,
+  className: string,
+  existingClassId?: string,
+): string | undefined {
+  const existing = String(existingClassId ?? "").trim();
+  if (existing) return existing;
+  const match = (classes ?? []).find((row) => classNamesMatch(row.name ?? row.className, className));
+  const id = String(match?.id ?? "").trim();
+  return id || undefined;
+}
+
+export function studentMatchesEvaluationClass(
+  student: Record<string, unknown>,
+  evaluation: Pick<Evaluation, "classId" | "className">,
+): boolean {
+  const evalClassId = String(evaluation.classId ?? "").trim();
+  const studentClassId = String(student.classId ?? student.class_id ?? "").trim();
+  if (evalClassId && studentClassId) return evalClassId === studentClassId;
+  return classNamesMatch(student.className, evaluation.className);
+}
+
+export function evaluationEntryProgressLabel(entered: number, total: number): string {
+  return total > 0 ? `${entered}/${total}` : String(entered);
+}
+
 export function evaluationHasBulletinUsage(evaluation: Evaluation, state: BackOfficeState): boolean {
   const bulletins = (state.bulletins ?? []) as Record<string, unknown>[];
   return bulletins.some(

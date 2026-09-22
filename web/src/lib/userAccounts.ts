@@ -44,8 +44,11 @@ export function isPlatformUserRole(role?: string): boolean {
 }
 
 export function isUnassignedUserAccount(
-  user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">,
+  user: Pick<UserAccount, "role" | "roles" | "assignmentStatus" | "accountKind" | "linkedStudent" | "linkedTeacher" | "businessProfileLabel" | "businessProfileConflict" | "roleKeys">,
 ): boolean {
+  if (formatBusinessProfileKind(user) !== BUSINESS_PROFILE_KIND_LABELS.unassigned) {
+    return false;
+  }
   const role = normalize(String(user.role ?? ""));
   const roles = Array.isArray(user.roles) ? user.roles.filter((item) => normalize(item)) : [];
   const assignmentStatus = normalize(String(user.assignmentStatus ?? ""));
@@ -56,11 +59,10 @@ export function isUnassignedUserAccount(
   );
 }
 
-/** Comptes plateforme gérables par le Superadmin (dont les identités encore sans rôle). */
+/** Comptes plateforme gérables par le Superadmin (Admin Pays / Admin School). */
 export function isSuperadminManagedUser(
   user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">,
 ): boolean {
-  if (isUnassignedUserAccount(user)) return true;
   const key = normalizedPlatformRoleKey(user.role);
   return (
     normalizedPlatformRoleKey(COUNTRY_ADMIN_ROLE) === key ||
@@ -95,8 +97,7 @@ export function canManageUserAccount(
   }
   if (actor.role === COUNTRY_ADMIN_ROLE) {
     return (
-      (normalizedPlatformRoleKey(target.role) === normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) ||
-        isUnassignedUserAccount(target)) &&
+      normalizedPlatformRoleKey(target.role) === normalizedPlatformRoleKey(SCHOOL_ADMIN_ROLE) &&
       (action === "READ" || action === "CREATE" || action === "UPDATE" || action === "SUSPEND")
     );
   }
@@ -144,6 +145,13 @@ export function isSuperadminDirectUserRole(role?: string): boolean {
     role === COUNTRY_ADMIN_ROLE ||
     role === SCHOOL_ADMIN_ROLE
   );
+}
+
+/** Superadmin / Admin Pays : création atomique, jamais identité vide puis GRANT. */
+export function shouldProvisionPlatformUser(creatorRole?: string, targetRole?: string): boolean {
+  if (isSuperAdminRole(creatorRole) && isSuperadminDirectUserRole(targetRole)) return true;
+  if (creatorRole === COUNTRY_ADMIN_ROLE && targetRole === SCHOOL_ADMIN_ROLE) return true;
+  return false;
 }
 
 export interface UserFormFieldPolicy {
@@ -246,12 +254,138 @@ export function canReassignUserTenant(
 
 const PARENT_STUDENT_ROLE_LABELS = new Set(["Parent", "Élève / Étudiant"]);
 
-export function formatUserRolesDisplay(user: Pick<UserAccount, "role" | "roles" | "assignmentStatus">): string {
-  if (user.assignmentStatus) return user.assignmentStatus;
-  if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(", ");
-  if (user.role && user.role !== "Sans affectation") return user.role;
-  return "Sans affectation";
+export const ACCESS_ROLES_NONE_LABEL = "Aucun rôle d'accès";
+export const STUDENT_ACCESS_ROLE_LABEL = "Élève / Étudiant";
+export const STUDENT_ROLES_LOCKED_LABEL = "Verrouillés — profil élève";
+export const STUDENT_ROLE_LOCKED_MESSAGE =
+  "Les rôles d'un compte lié à un élève ne peuvent pas être modifiés.";
+export const BUSINESS_PROFILE_KIND_LABELS = {
+  student_login: "Compte lié à un élève",
+  teacher: "Profil enseignant",
+  staff: "Compte staff",
+  unassigned: "Sans affectation",
+  conflict: "Conflit élève + enseignant",
+} as const;
+
+function accessRoleKeysOf(
+  user: Pick<UserAccount, "roleKeys">,
+): string[] {
+  return (user.roleKeys ?? []).map((key) => String(key ?? "").trim().toUpperCase()).filter(Boolean);
 }
+
+function isEmptyAccessLabel(value?: string | null): boolean {
+  const status = String(value ?? "").trim();
+  return !status || status.toLowerCase() === "sans affectation";
+}
+
+function isStudentLinkedByProfile(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent">,
+): boolean {
+  if (user.accountKind === "student_login" || user.accountKind === "conflict") return true;
+  return Boolean(user.linkedStudent?.studentId || user.linkedStudent?.studentCode);
+}
+
+/** Type métier. Un élève lié n'est jamais « Sans affectation ». Le rôle STUDENT n'est pas une fiche. */
+export function formatBusinessProfileKind(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "linkedTeacher" | "businessProfileLabel" | "businessProfileConflict" | "roleKeys">,
+): string {
+  const keys = accessRoleKeysOf(user);
+  const studentLinked = isStudentLinkedByProfile(user);
+  if (user.businessProfileLabel) {
+    if (studentLinked && isEmptyAccessLabel(user.businessProfileLabel)) {
+      return BUSINESS_PROFILE_KIND_LABELS.student_login;
+    }
+    return user.businessProfileLabel;
+  }
+  if (user.accountKind === "conflict" || user.businessProfileConflict) {
+    return BUSINESS_PROFILE_KIND_LABELS.conflict;
+  }
+  if (studentLinked) {
+    return BUSINESS_PROFILE_KIND_LABELS.student_login;
+  }
+  if (
+    user.accountKind === "teacher" ||
+    user.linkedTeacher?.teacherId ||
+    user.linkedTeacher?.teacherCode ||
+    keys.includes("TEACHER")
+  ) {
+    return BUSINESS_PROFILE_KIND_LABELS.teacher;
+  }
+  if (user.accountKind === "staff" || keys.length) {
+    return BUSINESS_PROFILE_KIND_LABELS.staff;
+  }
+  return BUSINESS_PROFILE_KIND_LABELS.unassigned;
+}
+
+/** Rôles d'accès uniquement. Distinct du type métier. */
+export function formatAccessRolesDisplay(
+  user: Pick<UserAccount, "role" | "roles" | "roleKeys" | "assignmentStatus" | "accountKind" | "linkedStudent">,
+): string {
+  if (isStudentLinkedAccount(user)) return STUDENT_ACCESS_ROLE_LABEL;
+  const keys = accessRoleKeysOf(user);
+  if (keys.length) {
+    if (!isEmptyAccessLabel(user.assignmentStatus)) return String(user.assignmentStatus).trim();
+    if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(", ");
+    if (!isEmptyAccessLabel(user.role)) return String(user.role).trim();
+    return keys.join(", ");
+  }
+  if (!isEmptyAccessLabel(user.assignmentStatus)) return String(user.assignmentStatus).trim();
+  if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(", ");
+  if (!isEmptyAccessLabel(user.role)) return String(user.role).trim();
+  return ACCESS_ROLES_NONE_LABEL;
+}
+
+export function formatUserRolesDisplay(user: Pick<UserAccount, "role" | "roles" | "assignmentStatus" | "accountKind" | "linkedStudent" | "linkedTeacher" | "businessProfileLabel" | "businessProfileConflict" | "roleKeys">): string {
+  return formatAccessRolesDisplay(user);
+}
+
+export function isStudentLinkedAccount(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "role" | "roles" | "roleKeys">,
+): boolean {
+  if (user.accountKind === "student_login" || user.accountKind === "conflict") return true;
+  return Boolean(user.linkedStudent?.studentId || user.linkedStudent?.studentCode);
+}
+
+export function areStudentRolesLocked(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "role" | "roles" | "roleKeys">,
+): boolean {
+  return isStudentLinkedAccount(user);
+}
+
+export function isTeacherRoleLabel(role: string | undefined | null): boolean {
+  const value = normalize(String(role ?? ""));
+  return value === "enseignant" || value === "teacher";
+}
+
+export function formatLockedRolesDisplay(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "role" | "roles" | "roleKeys">,
+): string | null {
+  if (!areStudentRolesLocked(user)) return null;
+  return STUDENT_ROLES_LOCKED_LABEL;
+}
+
+export function canAssignRoleToUserAccount(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "linkedTeacher" | "role" | "roles" | "roleKeys">,
+  roleName: string,
+): boolean {
+  if (areStudentRolesLocked(user)) return false;
+  if ((user.linkedTeacher || user.accountKind === "teacher" || user.accountKind === "conflict") && normalize(roleName) === "eleve / etudiant") {
+    return false;
+  }
+  return true;
+}
+
+export function accountKindLabel(
+  user: Pick<UserAccount, "accountKind" | "linkedStudent" | "businessProfileConflict" | "businessProfileLabel">,
+): string | null {
+  const kind = formatBusinessProfileKind(user);
+  if (kind === BUSINESS_PROFILE_KIND_LABELS.unassigned) return null;
+  if (kind === BUSINESS_PROFILE_KIND_LABELS.staff) return null;
+  return kind;
+}
+
+export const STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE =
+  "Ce compte est lié à un élève actif. Le rôle Enseignant n'est pas compatible. Un compte utilisateur n'est pas un profil métier.";
 
 /** Rôles disponibles pour créer un compte (liste établissement + rôles déjà utilisés). */
 export function getCreatableUserRoles(
@@ -487,6 +621,23 @@ export function schoolsMatchingCountryScope<T extends { country?: string; countr
   return schools.filter((school) => schoolMatchesCountryScope(school, countryScope));
 }
 
+/** Création enseignant canonique : POST /backoffice/users/create-teacher (pas createUser+grant). */
+export function toCreateTeacherIdentityPayload(user: UserAccount): Record<string, unknown> {
+  const schoolCode = String(user.schoolCode ?? "").trim();
+  const gender = String(user.gender ?? "").trim();
+  const birthDate = String(user.birthDate ?? "").trim();
+  return {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    phone: user.phone,
+    temporaryPassword: user.temporaryPassword,
+    schoolCode: schoolCode && schoolCode !== "*" ? schoolCode : "",
+    ...(gender && gender !== "Non renseigné" ? { gender } : {}),
+    ...(birthDate ? { birthDate } : {}),
+  };
+}
+
 export function toCreateUserApiPayload(user: UserAccount): Record<string, unknown> {
   const schoolCode = String(user.schoolCode ?? "").trim();
   const countryCode = getCountryCodeFromScope(user.countryScope);
@@ -504,7 +655,7 @@ export function toCreateUserApiPayload(user: UserAccount): Record<string, unknow
   };
 }
 
-/** Superadmin : création atomique identité + rôle (COUNTRY_ADMIN / SCHOOL_ADMIN). */
+/** Superadmin / Admin Pays : création atomique identité + rôle (COUNTRY_ADMIN / SCHOOL_ADMIN). */
 export function toProvisionUserApiPayload(user: UserAccount): Record<string, unknown> {
   const countryCode = getCountryCodeFromScope(user.countryScope);
   const roleKey =
@@ -547,6 +698,14 @@ export function validateUserAccount(
     return "Prénom et nom sont obligatoires.";
   }
   const requestedRole = String(user.role ?? "").trim();
+  const platformCreator = isSuperAdminRole(creator?.role) || creator?.role === COUNTRY_ADMIN_ROLE;
+  if (platformCreator && !user.id) {
+    if (!requestedRole || requestedRole === "Sans affectation") {
+      return creator?.role === COUNTRY_ADMIN_ROLE
+        ? "Sélectionnez le rôle Admin School."
+        : "Sélectionnez un rôle plateforme (Admin Pays ou Admin School).";
+    }
+  }
   if (
     !user.id &&
     requestedRole &&

@@ -5,6 +5,14 @@
  * Domaine volontairement distinct de la table plateforme `notifications`.
  */
 
+const fs = require("node:fs");
+const path = require("node:path");
+
+const TEACHER_REPLACEMENT_OUTBOX_SQL = fs.readFileSync(
+  path.join(__dirname, "teacherReplacementOutbox.sql"),
+  "utf8",
+);
+
 const COMMUNICATIONS_C4_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS communication_event_outbox (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -105,15 +113,22 @@ BEGIN
       AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.status, ''))) <> 'published');
 
   ELSIF TG_TABLE_NAME = 'attendance' THEN
-    v_event_type := 'attendance.student.absent';
     v_source_type := 'attendance';
     v_source_id := NEW.id;
     v_school_id := NEW.school_id;
     v_actor := NEW.created_by;
-    v_event_key := v_event_type || ':' || NEW.id::text;
     v_payload := jsonb_build_object('studentId', NEW.student_id, 'attendanceDate', NEW.attendance_date);
-    should_emit := lower(trim(COALESCE(NEW.status, ''))) IN ('absent', 'absence')
-      AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.status, ''))) NOT IN ('absent', 'absence'));
+    IF lower(trim(COALESCE(NEW.status, ''))) IN ('absent', 'absence') THEN
+      v_event_type := 'attendance.student.absent';
+      v_event_key := v_event_type || ':' || NEW.id::text;
+      should_emit := TG_OP = 'INSERT'
+        OR lower(trim(COALESCE(OLD.status, ''))) NOT IN ('absent', 'absence');
+    ELSIF lower(trim(COALESCE(NEW.status, ''))) IN ('late', 'retard') THEN
+      v_event_type := 'attendance.student.late';
+      v_event_key := v_event_type || ':' || NEW.id::text;
+      should_emit := TG_OP = 'INSERT'
+        OR lower(trim(COALESCE(OLD.status, ''))) NOT IN ('late', 'retard');
+    END IF;
 
   ELSIF TG_TABLE_NAME = 'grades' THEN
     v_event_type := 'pedagogy.grade.published';
@@ -128,6 +143,21 @@ BEGIN
     -- (trigger limité à publication_status + garde OLD <> published).
     should_emit := lower(trim(COALESCE(NEW.publication_status, ''))) = 'published'
       AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.publication_status, ''))) <> 'published');
+
+  ELSIF TG_TABLE_NAME = 'report_cards' THEN
+    v_event_type := 'pedagogy.report_card.published';
+    v_source_type := 'report_card';
+    v_source_id := NEW.id;
+    v_school_id := NEW.school_id;
+    v_actor := NULL;
+    v_event_key := v_event_type || ':' || NEW.id::text;
+    v_payload := jsonb_build_object(
+      'studentId', NEW.student_id,
+      'academicYearId', NEW.academic_year_id,
+      'termId', NEW.term_id
+    );
+    should_emit := lower(trim(COALESCE(NEW.status, ''))) = 'published'
+      AND (TG_OP = 'INSERT' OR lower(trim(COALESCE(OLD.status, ''))) <> 'published');
 
   ELSIF TG_TABLE_NAME = 'payments' THEN
     v_event_type := 'finance.payment.recorded';
@@ -146,6 +176,48 @@ BEGIN
         OR lower(trim(COALESCE(OLD.payment_status, ''))) <> 'paid'
         OR (to_jsonb(OLD)->>'cancelled_at') IS NOT NULL
       );
+
+  ELSIF TG_TABLE_NAME = 'course_schedule_weekly_slots' THEN
+    v_event_type := 'planning.timetable.changed';
+    v_source_type := 'weekly_schedule_slot';
+    v_source_id := NEW.id;
+    v_school_id := NEW.school_id;
+    v_actor := NULL;
+    v_payload := jsonb_build_object(
+      'weeklySlotId', NEW.id,
+      'changeRevision', NEW.change_revision,
+      'classId', NEW.class_id,
+      'teacherId', NEW.teacher_id,
+      'previousTeacherId', CASE
+        WHEN OLD.teacher_id IS DISTINCT FROM NEW.teacher_id THEN OLD.teacher_id
+        ELSE NULL
+      END,
+      'academicYearId', NEW.academic_year_id,
+      'dayOfWeek', NEW.day_of_week,
+      'startTime', NEW.start_time::text,
+      'endTime', NEW.end_time::text,
+      'status', NEW.status,
+      'room', NEW.room,
+      'roomId', NEW.room_id,
+      'schoolCourseId', NEW.school_course_id
+    );
+    -- INSERT nouvelle séance → 0 event. Seules les modifications d'un créneau actif visible.
+    IF TG_OP = 'UPDATE' AND lower(trim(COALESCE(OLD.status, ''))) = 'active' THEN
+      should_emit := (
+        OLD.day_of_week IS DISTINCT FROM NEW.day_of_week
+        OR OLD.start_time IS DISTINCT FROM NEW.start_time
+        OR OLD.end_time IS DISTINCT FROM NEW.end_time
+        OR OLD.room IS DISTINCT FROM NEW.room
+        OR OLD.room_id IS DISTINCT FROM NEW.room_id
+        OR OLD.school_course_id IS DISTINCT FROM NEW.school_course_id
+        OR OLD.teacher_id IS DISTINCT FROM NEW.teacher_id
+        OR OLD.class_id IS DISTINCT FROM NEW.class_id
+        OR NEW.status IS DISTINCT FROM OLD.status
+      );
+      IF should_emit THEN
+        v_event_key := v_event_type || ':' || NEW.id::text || ':' || NEW.change_revision::text;
+      END IF;
+    END IF;
   END IF;
 
   IF should_emit THEN
@@ -206,6 +278,128 @@ BEGIN
   END IF;
 END
 $c4_payment_trigger$;
+
+DO $c4_report_card_trigger$
+BEGIN
+  IF to_regclass('public.report_cards') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_c4_report_card_event ON report_cards';
+    EXECUTE 'CREATE TRIGGER trg_c4_report_card_event
+      AFTER INSERT OR UPDATE OF status ON report_cards
+      FOR EACH ROW EXECUTE FUNCTION somafrik_enqueue_communication_event()';
+  END IF;
+END
+$c4_report_card_trigger$;
+
+DO $c4_timetable_changed_trigger$
+BEGIN
+  IF to_regclass('public.course_schedule_weekly_slots') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_c4_timetable_changed_event ON course_schedule_weekly_slots';
+    EXECUTE 'CREATE TRIGGER trg_c4_timetable_changed_event
+      AFTER UPDATE OF day_of_week, start_time, end_time, room, room_id, school_course_id, teacher_id, class_id, status
+      ON course_schedule_weekly_slots
+      FOR EACH ROW EXECUTE FUNCTION somafrik_enqueue_communication_event()';
+  END IF;
+END
+$c4_timetable_changed_trigger$;
+
+${TEACHER_REPLACEMENT_OUTBOX_SQL}
+
+CREATE TABLE IF NOT EXISTS communication_channel_deliveries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  delivery_key TEXT NOT NULL UNIQUE,
+  event_key TEXT NOT NULL,
+  notification_id UUID REFERENCES communication_notifications(id),
+  school_id UUID REFERENCES schools(id),
+  user_id UUID REFERENCES users(id),
+  channel TEXT NOT NULL CHECK (channel IN ('PUSH', 'EMAIL')),
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  claimed_at TIMESTAMPTZ,
+  sent_at TIMESTAMPTZ,
+  last_error TEXT,
+  provider_ref TEXT,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_communication_channel_deliveries_pending
+  ON communication_channel_deliveries (status, available_at, channel)
+  WHERE status IN ('pending', 'failed');
+
+ALTER TABLE communication_channel_deliveries
+  ADD COLUMN IF NOT EXISTS dispatch_started_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_communication_channel_deliveries_processing
+  ON communication_channel_deliveries (status, claimed_at)
+  WHERE status = 'processing';
+
+-- EMAIL opérationnel (demande d'essai) : school_id/user_id nuls + payload.to.
+-- PUSH et EMAIL tenant conservent school_id + user_id (isolation).
+ALTER TABLE communication_channel_deliveries
+  ALTER COLUMN school_id DROP NOT NULL,
+  ALTER COLUMN user_id DROP NOT NULL;
+
+DO $deliveries_recipient$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'communication_channel_deliveries_recipient_chk'
+  ) THEN
+    ALTER TABLE communication_channel_deliveries
+      ADD CONSTRAINT communication_channel_deliveries_recipient_chk
+      CHECK (
+        (school_id IS NOT NULL AND user_id IS NOT NULL)
+        OR (
+          channel = 'EMAIL'
+          AND notification_id IS NULL
+          AND school_id IS NULL
+          AND user_id IS NULL
+          AND COALESCE(btrim(payload->>'to'), '') <> ''
+        )
+      );
+  END IF;
+END
+$deliveries_recipient$;
+
+CREATE TABLE IF NOT EXISTS user_communication_preferences (
+  user_id UUID NOT NULL REFERENCES users(id),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  channel TEXT NOT NULL CHECK (channel IN ('IN_APP', 'PUSH', 'EMAIL')),
+  enabled BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, school_id, channel)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_communication_preferences_school_user
+  ON user_communication_preferences (school_id, user_id);
+
+CREATE TABLE IF NOT EXISTS school_notification_settings (
+  school_id UUID NOT NULL REFERENCES schools(id),
+  event_key TEXT NOT NULL CHECK (event_key IN ('STUDENT_ABSENT', 'STUDENT_LATE', 'GRADE_PUBLISHED', 'REPORT_CARD_PUBLISHED', 'PAYMENT_RECEIVED', 'PAYMENT_DUE', 'ANNOUNCEMENT_PUBLISHED', 'TIMETABLE_CHANGED', 'TEACHER_REPLACEMENT')),
+  recipient_category TEXT NOT NULL CHECK (recipient_category IN ('PARENT', 'STUDENT', 'TEACHER', 'SCHOOL_ADMIN')),
+  channel TEXT NOT NULL CHECK (channel IN ('IN_APP', 'PUSH', 'EMAIL')),
+  enabled BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (school_id, event_key, recipient_category, channel),
+  CONSTRAINT school_notification_settings_event_recipient_chk CHECK (
+    (event_key = 'STUDENT_ABSENT' AND recipient_category = 'PARENT')
+    OR (event_key = 'STUDENT_LATE' AND recipient_category = 'PARENT')
+    OR (event_key = 'GRADE_PUBLISHED' AND recipient_category IN ('PARENT', 'STUDENT'))
+    OR (event_key = 'REPORT_CARD_PUBLISHED' AND recipient_category IN ('PARENT', 'STUDENT'))
+    OR (event_key = 'PAYMENT_RECEIVED' AND recipient_category = 'PARENT')
+    OR (event_key = 'PAYMENT_DUE' AND recipient_category IN ('PARENT', 'SCHOOL_ADMIN'))
+    OR (event_key = 'ANNOUNCEMENT_PUBLISHED' AND recipient_category IN ('PARENT', 'STUDENT', 'TEACHER', 'SCHOOL_ADMIN'))
+    OR (event_key = 'TIMETABLE_CHANGED' AND recipient_category IN ('TEACHER', 'SCHOOL_ADMIN'))
+    OR (event_key = 'TEACHER_REPLACEMENT' AND recipient_category IN ('PARENT', 'TEACHER', 'SCHOOL_ADMIN'))
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_school_notification_settings_school
+  ON school_notification_settings (school_id);
 `;
 
 module.exports = {

@@ -26,6 +26,9 @@ const REPOSITORY_METHODS = Object.freeze([
   "listPrivacyRequests",
   "executePrivacyErasure",
   "purgeRetention",
+  "createTrialAccessRequest",
+  "findOpenTrialRequest",
+  "listTrialAccessRequests",
   // Audit
   "recordAudit",
   "getAuditLogs",
@@ -164,6 +167,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "createClientsRelation",
   "linkParent",
   "lookupParentIdentity",
+  "listParentRelations",
   "archiveParentRelation",
   "sendClientsMessage",
   "markClientsMessageRead",

@@ -1,3 +1,4 @@
+import { DateInput } from "../components/ui/DateInput";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -590,18 +591,16 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                     />
                   </FormField>
                   <FormField label="Début de l'année" htmlFor="academic-year-start" required>
-                    <Input
+                    <DateInput
                       id="academic-year-start"
-                      type="date"
                       value={yearDraft.startDate}
                       onChange={(e) => setYearDraft((current) => ({ ...current, startDate: e.target.value }))}
                       required
                     />
                   </FormField>
                   <FormField label="Fin de l'année" htmlFor="academic-year-end" required>
-                    <Input
+                    <DateInput
                       id="academic-year-end"
-                      type="date"
                       value={yearDraft.endDate}
                       onChange={(e) => setYearDraft((current) => ({ ...current, endDate: e.target.value }))}
                       required

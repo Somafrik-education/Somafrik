@@ -6,6 +6,8 @@
 
 export const UNALLOCATED_FEE_TYPE = "Non imputé";
 export const UNALLOCATED_TARGET = "__unallocated__";
+export const OPEN_OBLIGATION_RESOLVE_ERROR =
+  "Impossible de retrouver les frais ouverts de cet élève. Actualisez les données ou contactez l'administrateur.";
 
 export type FinancePaymentWriteLine = {
   obligationId?: string;
@@ -19,6 +21,8 @@ export type FinanceObligationProjection = {
   id?: string;
   obligationId?: string;
   studentId?: string;
+  /** UUID interne PostgreSQL (mapObligationRow.studentDbId / student_id). */
+  studentDbId?: string;
   status?: string;
   archivedAt?: string | null;
   archived_at?: string | null;
@@ -49,6 +53,75 @@ export type FinanceObligationProjection = {
 
 function trim(value: unknown): string {
   return String(value ?? "").trim();
+}
+
+export type FinanceStudentIdentity = {
+  id?: string;
+  studentId?: string;
+  studentDbId?: string;
+  studentCode?: string;
+  matricule?: string;
+  publicId?: string;
+};
+
+function identityKey(value: unknown): string {
+  return trim(value).toUpperCase();
+}
+
+/** Alias canoniques uniquement : UUID, code public / matricule, publicId. Pas de nom/classe. */
+export function collectFinanceStudentIdentityKeys(
+  identity: string | FinanceStudentIdentity | null | undefined,
+): string[] {
+  if (identity == null) return [];
+  if (typeof identity === "string") {
+    const key = identityKey(identity);
+    return key ? [key] : [];
+  }
+  const seen = new Set<string>();
+  for (const value of [
+    identity.id,
+    identity.studentId,
+    identity.studentDbId,
+    identity.studentCode,
+    identity.matricule,
+    identity.publicId,
+  ]) {
+    const key = identityKey(value);
+    if (key) seen.add(key);
+  }
+  return [...seen];
+}
+
+export function obligationBelongsToStudent(
+  fee: FinanceObligationProjection,
+  identity: string | FinanceStudentIdentity,
+): boolean {
+  const wanted = new Set(collectFinanceStudentIdentityKeys(identity));
+  if (!wanted.size) return false;
+  const feeKeys = collectFinanceStudentIdentityKeys({
+    studentId: fee.studentId,
+    studentDbId: fee.studentDbId,
+  });
+  return feeKeys.some((key) => wanted.has(key));
+}
+
+export function findFinanceStudentOption<T extends object>(
+  roster: T[],
+  wanted: string,
+): T | undefined {
+  const key = identityKey(wanted);
+  if (!key) return undefined;
+  return roster.find((row) => {
+    const rec = row as Record<string, unknown>;
+    return collectFinanceStudentIdentityKeys({
+      id: rec.id as string | undefined,
+      studentId: rec.studentId as string | undefined,
+      studentDbId: rec.studentDbId as string | undefined,
+      studentCode: rec.studentCode as string | undefined,
+      matricule: rec.matricule as string | undefined,
+      publicId: rec.publicId as string | undefined,
+    }).includes(key);
+  });
 }
 
 export function parseFinanceAmount(value: unknown): number {
@@ -91,17 +164,17 @@ export function isOpenObligationFromProjection(fee: FinanceObligationProjection 
 }
 
 export function collectOpenObligationsFromProjection(
-  studentId: string,
+  student: string | FinanceStudentIdentity,
   fees: FinanceObligationProjection[],
 ) {
-  const wanted = trim(studentId).toUpperCase();
-  if (!wanted) return [];
+  const wanted = collectFinanceStudentIdentityKeys(student);
+  if (!wanted.length) return [];
   const open = [];
   for (const fee of fees) {
     const id = trim(fee.id ?? fee.obligationId);
     if (!id) continue;
     if (isUnallocatedTarget(id)) continue;
-    if (trim(fee.studentId).toUpperCase() !== wanted) continue;
+    if (!obligationBelongsToStudent(fee, student)) continue;
     if (!isOpenObligationFromProjection(fee)) continue;
     const balance = Number(fee.balance);
     const label = trim(fee.label) || trim(fee.feeType) || "Frais";

@@ -50,6 +50,32 @@ function testValidInput() {
   assert.equal(input.lastName, "Diop");
 }
 
+function testPersonNameValidation() {
+  for (const bad of [123, "123", "  456  "]) {
+    assert.throws(
+      () => validateEnrollStudentInput({ firstName: bad, lastName: "Diop" }, "SCH-A", "CLS-A"),
+      (error) => error.statusCode === 400,
+      `firstName numérique doit être refusé: ${JSON.stringify(bad)}`,
+    );
+    assert.throws(
+      () => validateEnrollStudentInput({ firstName: "Awa", lastName: bad }, "SCH-A", "CLS-A"),
+      (error) => error.statusCode === 400,
+      `lastName numérique doit être refusé: ${JSON.stringify(bad)}`,
+    );
+  }
+  assert.throws(
+    () => validateUpdateStudentInput({ firstName: "123", expectedUpdatedAt: "2026-01-01T00:00:00.000Z" }),
+    (error) => error.statusCode === 400,
+  );
+  const accents = validateEnrollStudentInput(
+    { firstName: " Élodie ", lastName: "O'Connor-Smith" },
+    "SCH-A",
+    "CLS-A",
+  );
+  assert.equal(accents.firstName, "Élodie");
+  assert.equal(accents.lastName, "O'Connor-Smith");
+}
+
 function testBirthDateValidation() {
   assert.throws(
     () => parseAndValidateBirthDate("2026-02-30"),
@@ -129,6 +155,7 @@ function testParentPhoneValidation() {
 function main() {
   testForbiddenKeysAlwaysRejected();
   testValidInput();
+  testPersonNameValidation();
   testBirthDateValidation();
   testUpdateRejectsScopeAndRequiresConflictToken();
   testParentPhoneValidation();

@@ -1,3 +1,4 @@
+import { DateInput } from "../../ui/DateInput";
 import type { EditableStudentIdentity, StudentGender } from "../../../lib/studentEditing";
 import type { StudentEditValidationError } from "../../../lib/studentEditing";
 import { RequiredMark } from "../../../design-system/forms/RequiredMark";
@@ -100,7 +101,7 @@ export function StudentIdentityEditForm({
       <Field
         id="birthDate"
         label="Date de naissance"
-        type="date"
+        date
         value={merged.birthDate ?? ""}
         error={fieldError(errors, "birthDate")}
         disabled={disabled}
@@ -167,6 +168,7 @@ function Field({
   error,
   disabled,
   type = "text",
+  date = false,
   required,
   autoFocus,
 }: {
@@ -177,6 +179,7 @@ function Field({
   error: string | null;
   disabled?: boolean;
   type?: string;
+  date?: boolean;
   required?: boolean;
   autoFocus?: boolean;
 }) {
@@ -189,18 +192,32 @@ function Field({
         {label}
         {required ? <RequiredMark /> : null}
       </label>
-      <input
-        id={id}
-        type={type}
-        className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm"
-        value={value}
-        disabled={disabled}
-        required={required}
-        autoFocus={autoFocus}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {date ? (
+        <DateInput
+          id={id}
+          className="mt-1"
+          value={value}
+          disabled={disabled}
+          required={required}
+          autoFocus={autoFocus}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id}-error` : undefined}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <input
+          id={id}
+          type={type}
+          className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm"
+          value={value}
+          disabled={disabled}
+          required={required}
+          autoFocus={autoFocus}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id}-error` : undefined}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
       {error ? (
         <p id={`${id}-error`} className="mt-1 text-xs text-danger" role="alert">
           {error}

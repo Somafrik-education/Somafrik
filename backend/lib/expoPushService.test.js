@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { createExpoPushService } = require("./expoPushService");
+const { createExpoPushService, SOMAFRIK_PUSH_CHANNEL_ID } = require("./expoPushService");
 
 async function main() {
   const revoked = [];
@@ -19,6 +19,7 @@ async function main() {
 
   let sendCalls = 0;
   let receiptCalls = 0;
+  let lastSendBody = null;
   const fetchImpl = async (url, init) => {
     const body = JSON.parse(init.body);
     if (String(url).includes("getReceipts")) {
@@ -32,6 +33,7 @@ async function main() {
       };
     }
     sendCalls += 1;
+    lastSendBody = body;
     if (sendCalls === 1) {
       return { ok: false, status: 503, async text() { return "busy"; } };
     }
@@ -66,6 +68,10 @@ async function main() {
   assert.equal(result.revoked.length, 1);
   assert.equal(result.sent, 1);
   assert.deepEqual(result.pendingReceipts, []);
+  assert.equal(SOMAFRIK_PUSH_CHANNEL_ID, "somafrik-default-v2");
+  assert.equal(lastSendBody[0].channelId, SOMAFRIK_PUSH_CHANNEL_ID);
+  assert.equal(lastSendBody[0].sound, "default");
+  assert.equal(lastSendBody[0].priority, "high");
 
   sendCalls = 0;
   const okFetch = async (url, init) => {
@@ -75,6 +81,12 @@ async function main() {
     }
     sendCalls += 1;
     const body = JSON.parse(init.body);
+    assert.equal(
+      body[0].channelId,
+      SOMAFRIK_PUSH_CHANNEL_ID,
+      "un ancien channelId fourni par un appelant ne doit jamais quitter le backend",
+    );
+    assert.equal(body[0].priority, "high");
     return {
       ok: true,
       status: 200,
@@ -94,6 +106,7 @@ async function main() {
   const ok = await okService.sendToTokens(["ExponentPushToken[alive]"], {
     title: "Test Somafrik",
     body: "Les notifications push Somafrik fonctionnent correctement.",
+    channelId: "somafrik-default",
   });
   assert.equal(ok.pendingReceipts[0].receiptId, "ticket-ok-1");
   assert.equal(queued[0].receiptId, "ticket-ok-1");

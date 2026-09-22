@@ -52,11 +52,31 @@ export function HelpHost() {
     [navigate],
   );
 
-  if (!available) return null;
+  if (!available) {
+    return (
+      <span
+        hidden
+        data-testid="help-unavailable-probe"
+        data-help-available="false"
+        data-help-screen={context.screen ?? ""}
+        data-help-role={context.role ?? ""}
+        data-help-bootstrap={permissionsBootstrap}
+        data-help-ready={String(Boolean(permissionsReady))}
+        data-help-must-change-password={session?.user?.mustChangePassword ? "true" : "false"}
+      />
+    );
+  }
 
   return (
     <>
-      <HelpTrigger ref={triggerRef} expanded={open} onClick={openPanel} />
+      <HelpTrigger
+        ref={triggerRef}
+        expanded={open}
+        onClick={openPanel}
+        data-help-available="true"
+        data-help-screen={context.screen ?? ""}
+        data-help-role={context.role ?? ""}
+      />
       {open ? <HelpPanel context={context} onClose={close} onNavigate={goTo} /> : null}
     </>
   );

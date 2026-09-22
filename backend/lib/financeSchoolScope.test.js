@@ -133,16 +133,19 @@ test("F8-P0-004: schoolCode * n'est plus un passe-partout hors Superadmin", () =
 });
 
 test("GP-005: attachFinanceMembershipScope lit users.school_id → login_code", async () => {
+  const schoolId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const one = async (sql, params) => {
     assert.match(String(sql), /users u/i);
+    assert.match(String(sql), /u\.school_id/);
     assert.equal(params[0], "user-uuid-1");
-    return { login_code: "CD-LAC-26-001" };
+    return { login_code: "CD-LAC-26-001", school_id: schoolId };
   };
   const attached = await attachFinanceMembershipScope(
     { role: "Comptable", sub: "user-uuid-1", schoolCode: "CD-2026-0001" },
     one,
   );
   assert.equal(attached.financeLoginCode, "CD-LAC-26-001");
+  assert.equal(attached.schoolId, schoolId);
   assert.equal(attached.schoolCode, "CD-2026-0001");
   const scope = resolveFinanceSchoolScope(attached);
   assert.deepEqual(scope.codes, ["CD-LAC-26-001"]);
@@ -207,7 +210,7 @@ test("GP-005: rôle établissement request-scoped reste membership UUID", async 
   const oldLogin = "CD-LAC-26-001";
   const newLogin = "CD-NEW-26-001";
   const one = async (sql) => {
-    if (/FROM users u/i.test(String(sql))) return { login_code: newLogin };
+    if (/FROM users u/i.test(String(sql))) return { login_code: newLogin, school_id: "school-uuid-1" };
     throw new Error("FIND request-scoped interdit pour un rôle établissement");
   };
   const attached = await attachFinanceMembershipScope(
@@ -276,4 +279,40 @@ test("GP-005: projection n'utilise pas leftover school_code", () => {
   const scope = { mode: "schools", codes: [login] };
   assert.equal(schoolRecordInFinanceScope({ login_code: login, school_code: leftover }, scope), true);
   assert.equal(schoolRecordInFinanceScope({ login_code: "", school_code: leftover, schoolCode: leftover }, scope), false);
+});
+
+test("GREEN-A: token historique sub+schoolCode sans schoolId reçoit users.school_id avant filterRows", async () => {
+  const { TenantScopeService } = require("../services/tenantScopeService");
+  const schoolId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa81";
+  const login = "CD-F8A-26-001";
+  const leftover = "SCH-F8-A";
+  const one = async (sql, params) => {
+    assert.match(String(sql), /SELECT s\.login_code, u\.school_id/);
+    assert.equal(params[0], "user-uuid-stale");
+    return { login_code: login, school_id: schoolId };
+  };
+  const attached = await attachFinanceMembershipScope(
+    { role: "Comptable", sub: "user-uuid-stale", schoolCode: leftover },
+    one,
+  );
+  assert.equal(attached.schoolId, schoolId);
+  assert.equal(attached.financeLoginCode, login);
+  assert.equal(attached.schoolCode, leftover);
+
+  const tenant = new TenantScopeService();
+  const codes = tenant.principalSchoolCodes(attached);
+  assert.equal(codes.has(leftover), true);
+  assert.equal(codes.has(login), false, "financeLoginCode n'est pas un alias tenant");
+
+  const kept = tenant.filterRows(
+    [
+      { id: "fee-a", schoolId, schoolCode: login },
+      { id: "fee-b", schoolId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb82", schoolCode: login },
+    ],
+    attached,
+  );
+  assert.deepEqual(
+    kept.map((row) => row.id),
+    ["fee-a"],
+  );
 });

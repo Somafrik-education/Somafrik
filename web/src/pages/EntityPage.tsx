@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -112,6 +112,7 @@ import {
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
 import { normalize } from "../lib/format";
+import { useDeepLinkIds } from "../lib/notificationDeepLink";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
 import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../lib/dates";
 import { subscriptionFeatureBlocked, type SubscriptionFeature } from "../lib/subscriptionAccessClient";
@@ -119,8 +120,7 @@ import { appendAuditLog } from "../lib/audit";
 import { validateCourseTeacherRule } from "../lib/pedagogyGovernance";
 import { QuickPaymentModal } from "../components/payments/QuickPaymentModal";
 import { FinancePaymentsOverview } from "../components/payments/FinancePaymentsOverview";
-import { getPaymentRateKpi } from "../lib/paymentRateKpi";
-import { resolveFinanceCurrency } from "../lib/financeCurrency";
+import { buildFinancePaymentsOverview } from "../lib/paymentAmountBreakdown";
 import { resolveFinanceUiActions } from "../lib/financeActionPermissions";
 import { PaymentReceipt } from "../components/payments/PaymentReceipt";
 import { type PaymentRecord } from "../lib/quickPayment";
@@ -210,6 +210,7 @@ export function EntityPage(props: EntityPageProps) {
 
 function EntityPageContent({ entity, mode, classScope, disableCreate = false }: EntityPageProps) {
   const module = getEntityModule(entity);
+  const navigate = useNavigate();
   const { session } = useAuth();
   const { state, update, refresh } = useData();
   const { showToast } = useToast();
@@ -230,6 +231,9 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     if (fromContext && fromContext !== "*") return fromContext;
     return String(scopeUser?.schoolCode ?? "").trim();
   }, [isSuperadminSystemComm, schoolCode, scopeUser?.schoolCode]);
+
+  const deepLinkEntity = useDeepLinkIds(["paymentId", "reportCardId"] as const);
+  const appliedDeepLinkRowRef = useRef("");
 
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
@@ -360,6 +364,28 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     );
   }, [module, search, scopeUser, state, isParentChildMode, classScope]);
 
+  // Deep-link notification : ouvrir la fiche exacte (reçu de paiement, bulletin)
+  // désignée par l'URL, une fois la ligne présente dans le périmètre autorisé.
+  useEffect(() => {
+    if (!module || !canRead) return;
+    const targetId =
+      module.key === "payments"
+        ? deepLinkEntity.paymentId
+        : module.key === "bulletins"
+          ? deepLinkEntity.reportCardId
+          : "";
+    if (!targetId || appliedDeepLinkRowRef.current === targetId) return;
+    const row = rows.find((item) =>
+      [item.id, item.publicId, item.reference].some(
+        (value) => value !== undefined && value !== null && String(value) === targetId,
+      ),
+    );
+    if (!row) return;
+    appliedDeepLinkRowRef.current = targetId;
+    if (module.key === "payments") setReceiptPayment(row as unknown as PaymentRecord);
+    else setEditing({ ...row });
+  }, [module, canRead, rows, deepLinkEntity.paymentId, deepLinkEntity.reportCardId]);
+
   const scopedStudentsList = useMemo(
     () => scopedStudents(scopeUser, state),
     [scopeUser, state],
@@ -421,23 +447,12 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   const paymentOverview = useMemo(() => {
     if (module?.key !== "payments") return null;
-    const fees = Array.isArray(state.studentFees) ? state.studentFees : [];
-    const kpi = getPaymentRateKpi(fees);
-    const remaining = Math.max(0, kpi.expectedAmount - kpi.collectedAmount);
-    const currency = resolveFinanceCurrency(
-      school?.currency,
-      fees.find((fee) => fee.currency)?.currency,
-      (rows[0] as { currency?: string } | undefined)?.currency,
-    );
-    return {
-      expectedAmount: kpi.expectedAmount,
-      collectedAmount: kpi.collectedAmount,
-      remainingAmount: remaining,
-      obligationCount: fees.filter((fee) => String(fee.status ?? "") !== "Annulé").length,
+    return buildFinancePaymentsOverview({
+      user: scopeUser,
+      state,
       recentPaymentCount: rows.length,
-      currency,
-    };
-  }, [module?.key, state.studentFees, school?.currency, rows]);
+    });
+  }, [module?.key, scopeUser, state, rows]);
 
   if (!module) {
     return <Navigate to="/etablissement" replace />;
@@ -1575,6 +1590,16 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   const primaryActions = (
     <>
+        {module.key === "bulletins" && canCreate ? (
+        <Button
+          size="sm"
+          type="button"
+          data-testid="report-card-request-model-cta"
+          onClick={() => navigate("/bulletins/modele")}
+        >
+          Demander un modèle de bulletin
+        </Button>
+      ) : null}
         {module.key === "payments" && financeActions.canCreatePayment ? (
         <Button size="sm" onClick={() => setQuickPaymentOpen(true)}>
           Enregistrer un encaissement
@@ -1809,7 +1834,13 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         }
       >
         {editing ? (
-          <form id={`entity-form-${entity}`} onSubmit={handleSubmit} className="grid gap-4">
+          <form
+            id={`entity-form-${entity}`}
+            onSubmit={handleSubmit}
+            className="grid gap-4"
+            data-testid="entity-edit-form"
+            data-record-id={String(editing.id ?? "") || undefined}
+          >
             {isParentChildMode ? (
               <>
                 <Field label="Élève" htmlFor="studentId" required>
@@ -2175,14 +2206,16 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
             }
           >
             {receiptPayment ? (
-              <PaymentReceipt
-                payment={receiptPayment}
-                school={
-                  state.schools.find(
-                    (item) => item.code === String(receiptPayment.schoolCode ?? schoolCode ?? ""),
-                  ) ?? getCurrentSchool(scopeUser, state)
-                }
-              />
+              <div data-testid="payment-receipt" data-payment-id={String(receiptPayment.id ?? "")}>
+                <PaymentReceipt
+                  payment={receiptPayment}
+                  school={
+                    state.schools.find(
+                      (item) => item.code === String(receiptPayment.schoolCode ?? schoolCode ?? ""),
+                    ) ?? getCurrentSchool(scopeUser, state)
+                  }
+                />
+              </div>
             ) : null}
           </Modal>
           <Modal

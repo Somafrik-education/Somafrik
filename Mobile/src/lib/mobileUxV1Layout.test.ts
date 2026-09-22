@@ -5,8 +5,14 @@ import {
   IDENTITY_CARD_MIN_DP,
   MISSION_BANNER_MIN_DP,
   HEADER_ACTIONS_SLOT_DP,
+  HEADER_COMPACT_ACTION_DP,
+  HEADER_COMMUNICATION_ICON_COUNT,
+  HEADER_ROW_PADDING_H,
+  HEADER_TITLE_MIN_DP,
   HEADER_BADGE_BAND_DP,
+  HEADER_MENU_ICON_DP,
   HEADER_MENU_SLOT_DP,
+  HEADER_MENU_TOUCH_DP,
   HOME_SCROLL_TOP_DP,
   KPI_ROW_MIN_DP,
   MAX_BOTTOM_TABS,
@@ -31,9 +37,21 @@ import {
 assert.equal(UX_V1_SPEC_VERSION, "2.0");
 assert.equal(MAX_BOTTOM_TABS, 5);
 assert.equal(MAX_ROLE_TABS, 4);
-assert.equal(COMPACT_HEADER_ROW_DP, 44);
-assert.equal(HEADER_ACTIONS_SLOT_DP, MIN_TOUCH_TARGET_DP * 3);
-assert.equal(HEADER_MENU_SLOT_DP, MIN_TOUCH_TARGET_DP);
+assert.equal(COMPACT_HEADER_ROW_DP, 76);
+assert.ok(COMPACT_HEADER_ROW_DP >= 72 && COMPACT_HEADER_ROW_DP <= 80);
+assert.equal(HEADER_COMPACT_ACTION_DP, 36);
+assert.equal(HEADER_COMMUNICATION_ICON_COUNT, 3);
+assert.equal(
+  HEADER_ACTIONS_SLOT_DP,
+  MIN_TOUCH_TARGET_DP + HEADER_COMPACT_ACTION_DP * HEADER_COMMUNICATION_ICON_COUNT,
+);
+assert.ok(
+  320 - (HEADER_ROW_PADDING_H + HEADER_MENU_SLOT_DP + HEADER_ACTIONS_SLOT_DP) >= HEADER_TITLE_MIN_DP,
+  "320 dp : trio Communication compact laisse le nom d'établissement ≥ 96 dp",
+);
+assert.equal(HEADER_MENU_SLOT_DP, 48);
+assert.equal(HEADER_MENU_ICON_DP, 32);
+assert.equal(HEADER_MENU_TOUCH_DP, 48);
 assert.equal(HEADER_BADGE_BAND_DP, 18);
 assert.equal(shortBottomTabLabel("Utilisateurs"), "Comptes");
 assert.equal(shortBottomTabLabel("Enseignants"), "Profs");
@@ -56,7 +74,7 @@ assert.equal(
   false,
 );
 
-assert.equal(schoolAdminLabelsFitAllViewports(1), true, "labels school_admin tiennent en 320–412 dp");
+assert.equal(schoolAdminLabelsFitAllViewports(1), true, "labels school_admin tiennent en 320–430 dp");
 assert.equal(schoolAdminLabelsFitAllViewports(1.3), true, "labels school_admin tiennent à fontScale 1.3");
 
 for (const width of UX_V1_VIEWPORTS) {
@@ -83,7 +101,7 @@ assert.equal(
   "petit écran : above-the-fold compact",
 );
 
-assert.equal(homeAboveFoldFitsAllViewports(), true, "320/360/390/412 × fontScale 1.0/1.3");
+assert.equal(homeAboveFoldFitsAllViewports(), true, "320/360/390/412/430 × fontScale 1.0/1.3");
 
 for (const width of UX_V1_VIEWPORTS) {
   for (const fontScale of UX_V1_FONT_SCALES) {

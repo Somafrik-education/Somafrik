@@ -27,6 +27,8 @@ import {
   MessagesConversationsPage,
   AnnouncementsPage,
   FinanceFeesPage,
+  FinanceIndexRedirect,
+  FinancePaymentsEntryPage,
   FinanceUnpaidPage,
   FinancesLayout,
   GradesEvaluationsPage,
@@ -42,7 +44,9 @@ import {
   NotificationsPage,
   ParametresLayout,
   ParentChildRelationsPage,
+  ParentProfilePage,
   PermissionsPage,
+  PlatformNotificationsPage,
   PlanningConflictsPage,
   PlanningLayout,
   PlanningRoomsPage,
@@ -50,9 +54,10 @@ import {
   PresencesPage,
   ReportsPage,
   SchoolsPage,
+  SchoolSetupSettingsPage,
+  SchoolSetupWelcomePage,
   SettingsAppearancePage,
   SettingsDataPage,
-  SettingsFinancePage,
   SettingsHubPage,
   SettingsIntegrationsPage,
   SettingsNotificationsPage,
@@ -67,12 +72,20 @@ import {
   SubscriptionReportsPage,
   SubscriptionSchoolsPage,
   SubscriptionsLayout,
+  TrialRequestPage,
+  TrialRequestsPage,
   StudentWorkspacePage,
   TimetableByClassPage,
   TimetableByRoomPage,
   TimetableByTeacherPage,
   TimetableLayout,
   UsersPage,
+  ReportCardSchoolWorkflowPage,
+  ReportCardHistoryPage,
+  ReportCardsEntryPage,
+  ReportCardStaffRoute,
+  ReportCardSuperadminWorkflowPage,
+  VerifyReportCardPage,
 } from "./lazyPages";
 import { ActiveSchoolProvider } from "./context/ActiveSchoolContext";
 
@@ -82,8 +95,10 @@ export default function App() {
       <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/connexion" element={<LoginPage />} />
+      <Route path="/demande-essai" element={<TrialRequestPage />} />
       <Route path="/confidentialite" element={<PrivacyPolicyPage />} />
       <Route path="/suppression-compte" element={<AccountDeletionPage />} />
+      <Route path="/verify/rc/:capability" element={<VerifyReportCardPage />} />
       <Route
         element={
           <ProtectedRoute>
@@ -96,10 +111,26 @@ export default function App() {
         }
       >
         <Route
+          path="/mon-profil"
+          element={
+            <PermissionRoute view="parentProfile">
+              <ParentProfilePage />
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="/tableau-de-bord"
           element={
             <PermissionRoute view="overview">
               <DashboardEntryPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/bienvenue-etablissement"
+          element={
+            <PermissionRoute view="configuration">
+              <SchoolSetupWelcomePage />
             </PermissionRoute>
           }
         />
@@ -242,15 +273,36 @@ export default function App() {
         <Route
           path="/finances"
           element={
-            <PermissionRoute view="payments">
+            <PermissionRoute view={["payments", "fees", "unpaid"]}>
               <FinancesLayout />
             </PermissionRoute>
           }
         >
-          <Route index element={<Navigate to="paiements" replace />} />
-          <Route path="paiements" element={<EntityPage entity="payments" />} />
-          <Route path="frais" element={<FinanceFeesPage />} />
-          <Route path="impayes" element={<FinanceUnpaidPage />} />
+          <Route index element={<FinanceIndexRedirect />} />
+          <Route
+            path="paiements"
+            element={
+              <PermissionRoute view="payments">
+                <FinancePaymentsEntryPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="frais"
+            element={
+              <PermissionRoute view="fees">
+                <FinanceFeesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="impayes"
+            element={
+              <PermissionRoute view="unpaid">
+                <FinanceUnpaidPage />
+              </PermissionRoute>
+            }
+          />
         </Route>
         {/* Communication : pages autonomes accessibles via les icônes du Topbar */}
         <Route
@@ -299,10 +351,30 @@ export default function App() {
           }
         />
         <Route
+          path="/bulletins/historique"
+          element={
+            <PermissionRoute view="bulletins">
+              <ReportCardStaffRoute>
+                <ReportCardHistoryPage />
+              </ReportCardStaffRoute>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/bulletins/modele"
+          element={
+            <PermissionRoute view="bulletins" action="CREATE" fallbackPath="/bulletins">
+              <ReportCardStaffRoute>
+                <ReportCardSchoolWorkflowPage />
+              </ReportCardStaffRoute>
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="/bulletins"
           element={
             <PermissionRoute view="bulletins">
-              <EntityPage entity="bulletins" />
+              <ReportCardsEntryPage />
             </PermissionRoute>
           }
         />
@@ -347,6 +419,7 @@ export default function App() {
           <Route path="remises" element={<SubscriptionDiscountsPage />} />
           <Route path="retards" element={<SubscriptionDelinquencyPage />} />
           <Route path="rapports" element={<SubscriptionReportsPage />} />
+          <Route path="demandes-essai" element={<TrialRequestsPage />} />
           <Route
             path="tarifs-pays"
             element={
@@ -361,6 +434,14 @@ export default function App() {
           element={
             <PermissionRoute view="notifications">
               <NotificationsPage />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/notifications-plateforme"
+          element={
+            <PermissionRoute view="notifications">
+              <PlatformNotificationsPage />
             </PermissionRoute>
           }
         />
@@ -434,6 +515,14 @@ export default function App() {
             }
           />
           <Route
+            path="configuration-etablissement"
+            element={
+              <PermissionRoute view="configuration">
+                <SchoolSetupSettingsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
             path="annee-scolaire"
             element={
               <PermissionRoute view="configuration">
@@ -458,14 +547,7 @@ export default function App() {
             }
           />
           <Route path="utilisateurs" element={<Navigate to="/parametres/roles-droits" replace />} />
-          <Route
-            path="finances"
-            element={
-              <PermissionRoute view="configuration">
-                <SettingsFinancePage />
-              </PermissionRoute>
-            }
-          />
+          <Route path="finances" element={<Navigate to="/finances/frais" replace />} />
           <Route
             path="abonnements"
             element={
@@ -487,6 +569,14 @@ export default function App() {
             element={
               <PermissionRoute view="bulletinDesign">
                 <BulletinDesignPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="bulletins-configuration"
+            element={
+              <PermissionRoute view="reportCardConfiguration">
+                <ReportCardSuperadminWorkflowPage />
               </PermissionRoute>
             }
           />

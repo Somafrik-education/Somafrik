@@ -31,11 +31,14 @@ CREATE TABLE IF NOT EXISTS schools (
   email TEXT,
   school_type TEXT,
   status TEXT NOT NULL DEFAULT 'active',
+  trial_used BOOLEAN NOT NULL DEFAULT FALSE,
   profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_used BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS subscriptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -167,7 +170,7 @@ CREATE TABLE IF NOT EXISTS classes (
 CREATE TABLE IF NOT EXISTS subjects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
-  subject_code VARCHAR(64) NOT NULL UNIQUE,
+  subject_code VARCHAR(64) NOT NULL,
   name TEXT NOT NULL,
   coefficient NUMERIC(8, 2) NOT NULL DEFAULT 1,
   level TEXT,
@@ -179,6 +182,13 @@ CREATE TABLE IF NOT EXISTS subjects (
 
 ALTER TABLE subjects ADD COLUMN IF NOT EXISTS level TEXT;
 ALTER TABLE subjects ADD COLUMN IF NOT EXISTS description TEXT;
+
+-- Le code matière est propre à un établissement. L'ancienne unicité globale
+-- empêchait deux écoles d'utiliser le même code (ex. MATH) et pouvait provoquer
+-- un upsert inter-tenant. Le boot est idempotent et corrige aussi les bases existantes.
+ALTER TABLE subjects DROP CONSTRAINT IF EXISTS subjects_subject_code_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subjects_school_subject_code
+  ON subjects (school_id, subject_code);
 
 CREATE TABLE IF NOT EXISTS subject_class_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -248,16 +258,25 @@ CREATE TABLE IF NOT EXISTS enrollments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
   student_id UUID NOT NULL REFERENCES students(id),
-  class_id UUID NOT NULL REFERENCES classes(id),
+  class_id UUID REFERENCES classes(id),
   academic_year_id UUID NOT NULL REFERENCES academic_years(id),
   enrollment_date DATE,
-  status TEXT NOT NULL DEFAULT 'active',
+  status TEXT NOT NULL DEFAULT 'ENROLLED',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (student_id, academic_year_id)
 );
 
 ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS class_effective_date DATE;
+ALTER TABLE enrollments ALTER COLUMN class_id DROP NOT NULL;
+ALTER TABLE enrollments ALTER COLUMN status SET DEFAULT 'ENROLLED';
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS validated_at TIMESTAMPTZ;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS close_notes TEXT;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS transferred_at TIMESTAMPTZ;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS transfer_destination TEXT;
+ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS transfer_notes TEXT;
 
 CREATE TABLE IF NOT EXISTS teacher_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -271,6 +290,28 @@ CREATE TABLE IF NOT EXISTS teacher_assignments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Professeur principal d'une classe : une seule affectation active.
+-- Fin = status inactive + ended_at (historique conservé).
+CREATE TABLE IF NOT EXISTS class_head_teachers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  class_id UUID NOT NULL REFERENCES classes(id),
+  teacher_id UUID NOT NULL REFERENCES teachers(id),
+  academic_year_id UUID NOT NULL REFERENCES academic_years(id),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ended_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_class_head_teachers_one_active
+  ON class_head_teachers (class_id)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_class_head_teachers_school_teacher
+  ON class_head_teachers (school_id, teacher_id, status);
 
 ALTER TABLE teacher_assignments ADD COLUMN IF NOT EXISTS assignment_role TEXT NOT NULL DEFAULT 'primary';
 
@@ -834,6 +875,34 @@ CREATE TABLE IF NOT EXISTS privacy_requests (
 
 CREATE INDEX IF NOT EXISTS idx_privacy_requests_school_status
   ON privacy_requests (school_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS trial_access_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  public_ref TEXT NOT NULL UNIQUE,
+  requester_name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  school_name TEXT NOT NULL,
+  country_iso VARCHAR(8) NOT NULL,
+  city TEXT,
+  phone TEXT,
+  email TEXT NOT NULL,
+  student_band TEXT,
+  school_id UUID REFERENCES schools(id),
+  status TEXT NOT NULL DEFAULT 'nouvelle',
+  consent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT trial_access_requests_status_check CHECK (
+    status IN ('nouvelle', 'contactee', 'qualifiee', 'essai_active', 'convertie', 'refusee', 'abandonnee')
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_trial_access_requests_status_created
+  ON trial_access_requests (status, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trial_access_requests_open_email_school
+  ON trial_access_requests (lower(email), lower(school_name))
+  WHERE status IN ('nouvelle', 'contactee', 'qualifiee', 'essai_active');
 
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   cache_id TEXT PRIMARY KEY,

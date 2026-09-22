@@ -9,36 +9,6 @@ export const CRUD_ACTIONS = [
   { key: "SUSPEND", label: "Suspendre" },
 ] as const;
 
-export const CRUD_PERMISSION_MODULES = [
-  "Pays",
-  "Établissements",
-  "Abonnements",
-  "Contacts",
-  "Relations",
-  "Utilisateurs",
-  "Référentiels pédagogiques",
-  "Classes",
-  "Élèves",
-  "Enseignants",
-  "Affectations",
-  "Présences",
-  "Notes",
-  "Bulletins",
-  "Paiements",
-  "Frais & tarifs",
-  "Impayés",
-  "Notifications",
-  "Announcements",
-  "Messages",
-  "Documents",
-  "Rapports",
-  "Paramètres Établissement",
-  "Années Académiques",
-  "Matières",
-  "Examens",
-  "Planning de cours",
-] as const;
-
 /**
  * Réexposition contrôlée du menu / de la route Web `/planning`.
  * Le garde `canReadView("planning")` reste branché : false masque encore le module.
@@ -65,6 +35,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   chartSettings: "Paramètres graphiques",
   academicSettings: "Paramètres Établissement",
   bulletinDesign: "Conception bulletins",
+  reportCardConfiguration: "Conception bulletins",
   students: "Élèves",
   teachers: "Enseignants",
   classes: "Classes",
@@ -73,7 +44,7 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   planning: "Planning de cours",
   payments: "Paiements",
   fees: "Frais & tarifs",
-  unpaid: "Frais & tarifs",
+  unpaid: "Impayés",
   announcements: "Announcements",
   messages: "Messages",
   presences: "Présences",
@@ -90,6 +61,7 @@ export type NavGroup =
   | "etablissement"
   | "pedagogie"
   | "finances"
+  | "communication"
   | "administration"
   | "parametres";
 
@@ -108,8 +80,26 @@ export const NAV_GROUP_ORDER: { group: NavGroup; label: string }[] = [
   { group: "etablissement", label: "Établissement" },
   { group: "pedagogie", label: "Pédagogie" },
   { group: "finances", label: "Finances" },
+  { group: "communication", label: "Communication" },
   { group: "administration", label: "Administration" },
   { group: "parametres", label: "Paramètres" },
+];
+
+export const PARENT_NAV_GROUP_ORDER: { group: NavGroup; label: string }[] = [
+  { group: "pedagogie", label: "Suivi scolaire" },
+  { group: "finances", label: "Frais & paiements" },
+  { group: "communication", label: "Communication" },
+];
+
+export const PARENT_NAV_ITEMS: NavItem[] = [
+  { view: "overview", path: "/tableau-de-bord", label: "Accueil", group: "dashboard" },
+  { view: "parentProfile", path: "/mon-profil", label: "Mon profil", group: "dashboard" },
+  { view: "presences", path: "/presences", label: "Présences", group: "pedagogie" },
+  { view: "notes", path: "/notes", label: "Notes", group: "pedagogie" },
+  { view: "bulletins", path: "/bulletins", label: "Bulletins", group: "pedagogie" },
+  { view: "payments", path: "/finances/paiements", label: "Frais & paiements", group: "finances" },
+  { view: "messages", path: "/messages", label: "Messages", group: "communication" },
+  { view: "announcements", path: "/annonces", label: "Annonces", group: "communication" },
 ];
 
 export const NAV_ITEMS: NavItem[] = [

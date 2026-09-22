@@ -5,8 +5,9 @@
  * - logo without text.png -> marque UI (écrans) + source des icônes launcher
  * - logo with text.png    -> splash natif
  *
- * Les icônes launcher sont des variantes dédiées : même marque, logo réduit et
- * centré pour rester entier sous les masques iOS / Android adaptive.
+ * Les icônes launcher sont des variantes dédiées 1024×1024 : pictogramme seul,
+ * cadré (iOS ~78 %, Android adaptive ~58 %) pour rester entier sous les masques
+ * iOS / Android. Android est volontairement plus petit que iOS (viewport 72/108).
  * Toute modification de marque doit rester volontaire : remplacer les assets
  * racine, régénérer les icônes, mettre à jour les SHA ci-dessous.
  */
@@ -20,6 +21,7 @@ const zlib = require("zlib");
 
 const ROOT = path.join(__dirname, "..", "..");
 const MOBILE = path.join(ROOT, "Mobile");
+const { assertMasterAsset } = require("../../scripts/verify-branding-master");
 
 const CANONICAL = {
   mark: {
@@ -35,21 +37,22 @@ const CANONICAL = {
 const LAUNCHER = {
   iosIcon: {
     path: path.join(MOBILE, "assets", "somafrik-app-icon.png"),
-    gitBlobSha: "1b97e3d1b6cce3b8138b46c193e43fadb09898be",
+    gitBlobSha: "01b188e27cef77208170038a02237cc018232421",
     appJsonPath: "./assets/somafrik-app-icon.png",
   },
   androidForeground: {
     path: path.join(MOBILE, "assets", "somafrik-android-adaptive-foreground.png"),
-    gitBlobSha: "94f800bdc8a0f92297bf3514a05b799ac2688803",
+    gitBlobSha: "08f98759a0f8e48a0e4f2a0e35dc289990c2be9f",
     appJsonPath: "./assets/somafrik-android-adaptive-foreground.png",
   },
 };
 
 const ANDROID_SAFE_ZONE_RATIO = 66 / 108;
 const ANDROID_VIEWPORT_RATIO = 72 / 108;
-const ANDROID_TARGET_BOUNDING_CIRCLE = 0.42;
-const IOS_TARGET_WIDTH_RATIO = 0.50;
+const ANDROID_TARGET_WIDTH_RATIO = 0.58;
+const IOS_TARGET_WIDTH_RATIO = 0.78;
 const WHITE_THRESHOLD = 248;
+const LAUNCHER_CANVAS = 1024;
 
 const LEGACY_MOBILE_ASSET_SHAS = new Set([
   "053d653257496a167b7c03981c21093544894af0",
@@ -156,16 +159,24 @@ function decodePng(buffer) {
     rows.push(recon);
     prev = recon;
   }
-  return { width, height, bpp, rows };
+  return { width, height, bpp, colorType, rows };
 }
 
 function contentMetrics(buffer) {
   const decoded = decodePng(buffer);
-  const { width, height, bpp, rows } = decoded;
+  const { width, height, bpp, colorType, rows } = decoded;
   let minX = width;
   let minY = height;
   let maxX = -1;
   let maxY = -1;
+  let hasTransparency = false;
+  let opaqueAlpha = true;
+  const viewportInset = Math.round(width * (1 - ANDROID_VIEWPORT_RATIO) / 2);
+  const viewportSide = width - 2 * viewportInset;
+  const circleCx = viewportInset + viewportSide / 2;
+  const circleCy = viewportInset + viewportSide / 2;
+  const circleR = viewportSide / 2;
+  let insideViewportCircle = true;
   for (let y = 0; y < height; y += 1) {
     const row = rows[y];
     for (let x = 0; x < width; x += 1) {
@@ -174,12 +185,19 @@ function contentMetrics(buffer) {
       const g = row[offset + 1];
       const b = row[offset + 2];
       const a = bpp === 4 ? row[offset + 3] : 255;
+      if (a < 255) {
+        hasTransparency = true;
+        opaqueAlpha = false;
+      }
       if (a < 12) continue;
       if (r > WHITE_THRESHOLD && g > WHITE_THRESHOLD && b > WHITE_THRESHOLD) continue;
       if (x < minX) minX = x;
       if (y < minY) minY = y;
       if (x > maxX) maxX = x;
       if (y > maxY) maxY = y;
+      const dx = x - circleCx;
+      const dy = y - circleCy;
+      if (dx * dx + dy * dy > circleR * circleR) insideViewportCircle = false;
     }
   }
   assert.ok(maxX >= 0, "icône launcher sans contenu visible");
@@ -193,11 +211,14 @@ function contentMetrics(buffer) {
   const padRight = width - 1 - maxX;
   const padBottom = height - 1 - maxY;
   const minPadRatio = Math.min(padLeft, padTop, padRight, padBottom) / width;
-  const viewportInset = Math.round(width * (1 - ANDROID_VIEWPORT_RATIO) / 2);
   const safeInset = Math.round(width * (1 - ANDROID_SAFE_ZONE_RATIO) / 2);
   return {
     width,
     height,
+    bpp,
+    colorType,
+    hasTransparency,
+    opaqueAlpha,
     boxW,
     boxH,
     widthRatio: boxW / width,
@@ -216,6 +237,7 @@ function contentMetrics(buffer) {
       && minY >= safeInset
       && maxX < width - safeInset
       && maxY < height - safeInset,
+    insideViewportCircle,
   };
 }
 
@@ -256,7 +278,9 @@ function assertLauncherAsset(label, filePath, expectedSha) {
     `${label}: doit être une variante dézoomée, pas le mark plein cadre`,
   );
   assert.equal(actualSha, expectedSha, `${label}: SHA launcher inattendu (${actualSha})`);
-  assertPng(label, buffer);
+  const png = assertPng(label, buffer);
+  assert.equal(png.width, LAUNCHER_CANVAS, `${label}: largeur ${png.width} ≠ ${LAUNCHER_CANVAS}`);
+  assert.equal(png.height, LAUNCHER_CANVAS, `${label}: hauteur ${png.height} ≠ ${LAUNCHER_CANVAS}`);
   return { buffer, metrics: contentMetrics(buffer) };
 }
 
@@ -278,29 +302,34 @@ function verifyMobileBranding() {
     LAUNCHER.androidForeground.path,
     LAUNCHER.androidForeground.gitBlobSha,
   );
+  assert.equal(ios.metrics.bpp, 3, "icône iOS / Expo: PNG RGB opaque requis (pas de transparence)");
+  assert.ok(ios.metrics.opaqueAlpha, "icône iOS / Expo: transparence indésirable");
   assert.ok(
     ios.metrics.widthRatio >= IOS_TARGET_WIDTH_RATIO - 0.02
       && ios.metrics.widthRatio <= IOS_TARGET_WIDTH_RATIO + 0.02,
-    `icône iOS: largeur du logo hors cible 50% (${(ios.metrics.widthRatio * 100).toFixed(2)}%)`,
+    `icône iOS: largeur du logo hors cible 78% (${(ios.metrics.widthRatio * 100).toFixed(2)}%)`,
   );
   assert.ok(
-    ios.metrics.insideViewport,
-    `icône iOS/legacy Android: logo hors viewport 72/108 (bounding ${(ios.metrics.boundingCircle * 100).toFixed(2)}%)`,
+    ios.metrics.minPadRatio >= 0.10,
+    `icône iOS: padding insuffisant pour les coins iOS (${(ios.metrics.minPadRatio * 100).toFixed(2)}%)`,
   );
   assert.ok(
     Math.abs(ios.metrics.centerOffsetX) < 0.01 && Math.abs(ios.metrics.centerOffsetY) < 0.01,
     "icône iOS: logo non centré",
   );
+  assert.equal(android.metrics.bpp, 4, "Android adaptive: PNG RGBA transparent requis");
+  assert.ok(android.metrics.hasTransparency, "Android adaptive: fond transparent requis");
   assert.ok(
-    android.metrics.boundingCircle <= ANDROID_TARGET_BOUNDING_CIRCLE + 0.01,
-    `Android adaptive: bounding circle ${(android.metrics.boundingCircle * 100).toFixed(2)}% au-dessus de la cible 42%`,
+    android.metrics.widthRatio >= ANDROID_TARGET_WIDTH_RATIO - 0.02
+      && android.metrics.widthRatio <= ANDROID_TARGET_WIDTH_RATIO + 0.02,
+    `Android adaptive: largeur du logo hors cible 58% (${(android.metrics.widthRatio * 100).toFixed(2)}%)`,
   );
   assert.ok(
-    android.metrics.insideSafeZone && android.metrics.insideViewport,
-    `Android adaptive: logo hors zone de sécurité (${(android.metrics.boundingCircle * 100).toFixed(2)}%)`,
+    android.metrics.insideViewport && android.metrics.insideViewportCircle,
+    `Android adaptive: logo hors masque circulaire 72/108 (${(android.metrics.widthRatio * 100).toFixed(2)}%)`,
   );
   assert.ok(
-    android.metrics.minPadRatio >= 0.28,
+    android.metrics.minPadRatio >= 0.20,
     `Android adaptive: padding insuffisant (${(android.metrics.minPadRatio * 100).toFixed(2)}%)`,
   );
   assert.ok(
@@ -308,22 +337,12 @@ function verifyMobileBranding() {
     "Android adaptive: logo non centré",
   );
   assert.ok(
-    android.metrics.boundingCircle < ios.metrics.boundingCircle,
-    "Android adaptive doit être plus dézoomé que l'icône iOS",
+    android.metrics.widthRatio < ios.metrics.widthRatio - 0.10,
+    "Android adaptive doit être visuellement plus petit que l'icône iOS",
   );
 
-  assertMobileAsset(
-    "logo UI",
-    MOBILE_ASSETS.uiLogo,
-    canonicalMark,
-    CANONICAL.mark.gitBlobSha,
-  );
-  assertMobileAsset(
-    "splash natif",
-    MOBILE_ASSETS.splash,
-    canonicalLockup,
-    CANONICAL.lockup.gitBlobSha,
-  );
+  assertMasterAsset("Mobile/assets/somafrik-logo.png");
+  assertMasterAsset("Mobile/assets/somafrik-splash.png");
 
   const appJson = JSON.parse(readText(path.join(MOBILE, "app.json")).replace(/^\uFEFF/, ""));
   assert.equal(appJson.expo.icon, LAUNCHER.iosIcon.appJsonPath);
@@ -331,6 +350,11 @@ function verifyMobileBranding() {
   assert.equal(
     appJson.expo.android?.adaptiveIcon?.foregroundImage,
     LAUNCHER.androidForeground.appJsonPath,
+  );
+  assert.equal(
+    appJson.expo.android?.adaptiveIcon?.backgroundColor,
+    "#FFFFFF",
+    "Android adaptive: fond #FFFFFF requis (pas de bleu)",
   );
   assert.notEqual(
     appJson.expo.icon,
@@ -360,7 +384,7 @@ function verifyMobileBranding() {
   );
 
   console.log(
-    "OK: BRANDING-V2 — marque UI/splash canoniques ; icônes launcher dézoomées iOS + Android adaptive",
+    "OK: BRANDING master CTO — logo UI/splash SHA-256 7de03f1c… ; icônes launcher 1024 iOS 78% + Android adaptive 58%",
   );
 }
 

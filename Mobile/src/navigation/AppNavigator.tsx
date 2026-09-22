@@ -4,6 +4,8 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { navigationRef } from "./rootNavigation";
 import { flushPendingPushNavigation } from "../lib/pushNotificationTap";
+import { dispatchRegisteredPushNavigation } from "../lib/pushNotificationNavigate";
+import { constrainParentPushNavigation } from "../lib/pushNotificationDestinations";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -17,35 +19,38 @@ import StudentDetailScreen from "../screens/StudentDetailScreen";
 import StudentNotesScreen from "../screens/StudentNotesScreen";
 import StudentPresencesScreen from "../screens/StudentPresencesScreen";
 import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
+import ParentProfileScreen from "../screens/ParentProfileScreen";
 import TeachersScreen from "../screens/TeachersScreen";
 import UsersScreen from "../screens/UsersScreen";
 import PaymentsScreen from "../screens/PaymentsScreen";
+import UnpaidScreen from "../screens/UnpaidScreen";
+import FeeGridsScreen from "../screens/FeeGridsScreen";
 import AnnouncementsScreen from "../screens/AnnouncementsScreen";
-import SafeAdminCrudScreen from "../screens/SafeAdminCrudScreen";
 import MessagesScreen from "../screens/MessagesScreen";
 import TimetableScreen from "../screens/TimetableScreen";
 import ReportCardsScreen from "../screens/ReportCardsScreen";
+import ExamsScreen from "../screens/ExamsScreen";
+import ClassGradesStatsScreen from "../screens/ClassGradesStatsScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import {
-  AuditScreen,
-  DocumentsScreen,
   MobilePaymentScreen,
   OfflineModeScreen,
-  ReportsScreen,
   SupportScreen,
   SynchronizationScreen,
 } from "../screens/MvpUtilityScreens";
-import PermissionsScreen from "../screens/PermissionsScreen";
 import ConfigurationScreen from "../screens/ConfigurationScreen";
 import EstablishmentProfileScreen from "../screens/EstablishmentProfileScreen";
 import SchoolYearSettingsScreen from "../screens/SchoolYearSettingsScreen";
 import SchoolPedagogicalStructureScreen from "../screens/SchoolPedagogicalStructureScreen";
+import SchoolingHubScreen from "../screens/SchoolingHubScreen";
+import SchoolSetupSettingsScreen from "../screens/SchoolSetupSettingsScreen";
+import SchoolSetupWelcomeScreen from "../screens/SchoolSetupWelcomeScreen";
 import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen";
-import PlatformNotificationsScreen from "../screens/PlatformNotificationsScreen";
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
-import { AdminEntity } from "../context/AdminDataContext";
+import { HelpHost } from "../help/HelpHost";
+import { HelpUiProvider } from "../help/HelpUiContext";
 import { useAuth } from "../context/AuthContext";
 import { canPersistFullSession } from "../lib/dataTruth";
 import { canReadRoute, canReadView } from "../domain/security/permissions";
@@ -81,38 +86,36 @@ export type RootStackParamList = {
   StudentNotes: { studentId: string };
   StudentPresences: { studentId: string };
   StudentPayments: { studentId: string };
+  ParentProfile: undefined;
   SchoolManagement: undefined;
   Classes: undefined;
+  Schooling: undefined;
   Teachers: undefined;
   Users: undefined;
   TeacherStudents: undefined;
   TeacherAttendance: undefined;
   TeacherGrades: undefined;
+  ClassGradesStats: undefined;
+  Exams: undefined;
   Payments: undefined;
-  Announcements: undefined;
-  Messages: undefined;
+  Unpaid: undefined;
+  FeeGrids: undefined;
+  Announcements: { announcementId?: string } | undefined;
+  Messages: { conversationId?: string } | undefined;
   Timetable: undefined;
   ReportCards: undefined;
-  Documents: undefined;
-  Reports: undefined;
-  Audit: undefined;
   Support: undefined;
   MobilePayment: undefined;
   OfflineMode: undefined;
   Synchronization: undefined;
   Configuration: undefined;
+  SchoolSetup: undefined;
+  SchoolSetupWelcome: undefined;
   EstablishmentProfile: undefined;
   SchoolYearSettings: undefined;
   SchoolPedagogicalStructure: undefined;
   SchoolAssignableRoles: undefined;
-  PlatformNotifications: undefined;
   InternalNotifications: undefined;
-  Permissions: undefined;
-  AdminCrud: {
-    entity: AdminEntity;
-    filter?: "paid" | "pending";
-    className?: string;
-  };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -231,23 +234,29 @@ export default function AppNavigator() {
 
   // Chaque écran reste filtré par canReadRoute. SchoolManagement n'ouvre plus
   // le bundle par identité établissement : seul Établissements:READ le déclenche.
-  const canOpenAdminCrud =
+  const canOpenAdminScreens =
     canReadRoute(session, "SchoolManagement") ||
     canReadRoute(session, "Teachers") ||
     canReadView(session, "users") ||
-    canReadRoute(session, "Payments");
+    canReadRoute(session, "Payments") ||
+    canReadRoute(session, "Unpaid") ||
+    canReadRoute(session, "FeeGrids");
   const canOpenStudentScreens =
     canReadRoute(session, "StudentDetail") ||
     canReadRoute(session, "StudentNotes") ||
     canReadRoute(session, "StudentPresences");
 
   return (
-    <NavigationContainer
-      ref={navigationRef}
-      key={session ? "authenticated" : "public"}
-      onReady={() => {
+    <HelpUiProvider>
+      <NavigationContainer
+        ref={navigationRef}
+        key={session ? "authenticated" : "public"}
+        onReady={() => {
         flushPendingPushNavigation(
-          (destination) => navigationRef.navigate(destination as never),
+          (destination, params) => {
+            const scoped = constrainParentPushNavigation({ destination, params }, session);
+            dispatchRegisteredPushNavigation(navigationRef, scoped.destination, scoped.params);
+          },
           {
             isReady: () => navigationRef.isReady(),
             isAuthenticated: () => Boolean(session) && canPersistFullSession(session),
@@ -268,8 +277,11 @@ export default function AppNavigator() {
         />
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Home" component={HomeTabs} options={{ headerShown: false }} />
+        {canReadRoute(session, "ParentProfile") && (
+          <Stack.Screen name="ParentProfile" component={ParentProfileScreen} options={{ title: "Mon profil" }} />
+        )}
 
-        {canOpenAdminCrud && (
+        {canOpenAdminScreens && (
           <>
             {session?.role !== "school_admin" && canReadRoute(session, "SchoolManagement") && (
               <Stack.Screen name="SchoolManagement" component={SchoolManagementScreen} options={{ title: "Gestion de l'établissement" }} />
@@ -281,15 +293,25 @@ export default function AppNavigator() {
             {canReadRoute(session, "Payments") && (
               <Stack.Screen name="Payments" component={PaymentsScreen} options={{ title: "Paiements" }} />
             )}
-            <Stack.Screen name="AdminCrud" component={SafeAdminCrudScreen} options={{ title: "Administration" }} />
+            {canReadRoute(session, "Unpaid") && (
+              <Stack.Screen name="Unpaid" component={UnpaidScreen} options={{ title: "Impayés" }} />
+            )}
+            {canReadRoute(session, "FeeGrids") && (
+              <Stack.Screen name="FeeGrids" component={FeeGridsScreen} options={{ title: "Grilles de frais" }} />
+            )}
           </>
         )}
 
+        {canReadRoute(session, "Schooling") && <Stack.Screen name="Schooling" component={SchoolingHubScreen} options={{ title: "Scolarité" }} />}
         {canReadRoute(session, "Classes") && <Stack.Screen name="Classes" component={ClassesScreen} options={{ title: "Classes" }} />}
         {canReadRoute(session, "Students") && <Stack.Screen name="Students" component={StudentsScreen} options={{ title: "Élèves" }} />}
         {canReadRoute(session, "TeacherStudents") && <Stack.Screen name="TeacherStudents" component={StudentsScreen} options={{ title: "Mes élèves" }} />}
         {canReadRoute(session, "TeacherAttendance") && <Stack.Screen name="TeacherAttendance" component={TeacherAttendanceScreen} options={{ title: "Appel" }} />}
         {canReadRoute(session, "TeacherGrades") && <Stack.Screen name="TeacherGrades" component={TeacherGradesScreen} options={{ title: "Notes" }} />}
+        {canReadRoute(session, "ClassGradesStats") && (
+          <Stack.Screen name="ClassGradesStats" component={ClassGradesStatsScreen} options={{ title: "Statistiques de classe" }} />
+        )}
+        {canReadRoute(session, "Exams") && <Stack.Screen name="Exams" component={ExamsScreen} options={{ title: "Examens" }} />}
 
         {canOpenStudentScreens && (
           <>
@@ -314,14 +336,17 @@ export default function AppNavigator() {
           </>
         )}
 
-        {canReadRoute(session, "Documents") && <Stack.Screen name="Documents" component={DocumentsScreen} options={{ title: "Documents" }} />}
-        {canReadRoute(session, "Reports") && <Stack.Screen name="Reports" component={ReportsScreen} options={{ title: "Rapports" }} />}
-        {canReadRoute(session, "Audit") && <Stack.Screen name="Audit" component={AuditScreen} options={{ title: "Audit" }} />}
         {canReadRoute(session, "MobilePayment") && <Stack.Screen name="MobilePayment" component={MobilePaymentScreen} options={{ title: "Paiement mobile" }} />}
         {canReadRoute(session, "OfflineMode") && <Stack.Screen name="OfflineMode" component={OfflineModeScreen} options={{ title: "Mode hors ligne" }} />}
         {canReadRoute(session, "Synchronization") && <Stack.Screen name="Synchronization" component={SynchronizationScreen} options={{ title: "Synchronisation" }} />}
         {canReadRoute(session, "Support") && <Stack.Screen name="Support" component={SupportScreen} options={{ title: "Support" }} />}
         {canReadView(session, "Configuration") && <Stack.Screen name="Configuration" component={ConfigurationScreen} options={{ title: "Paramètres" }} />}
+        {canReadView(session, "Configuration") && (
+          <Stack.Screen name="SchoolSetup" component={SchoolSetupSettingsScreen} options={{ title: "Configuration de l'établissement" }} />
+        )}
+        {canReadView(session, "Configuration") && (
+          <Stack.Screen name="SchoolSetupWelcome" component={SchoolSetupWelcomeScreen} options={{ title: "Bienvenue sur Somafrik" }} />
+        )}
         {canReadView(session, "EstablishmentProfile") && (
           <Stack.Screen name="EstablishmentProfile" component={EstablishmentProfileScreen} options={{ title: "Profil établissement" }} />
         )}
@@ -339,9 +364,9 @@ export default function AppNavigator() {
           <Stack.Screen name="SchoolAssignableRoles" component={SchoolAssignableRolesScreen} options={{ title: "Rôles disponibles" }} />
         )}
         {canReadRoute(session, "InternalNotifications") && <Stack.Screen name="InternalNotifications" component={InternalNotificationsScreen} options={{ title: "Notifications" }} />}
-        {canReadView(session, "PlatformNotifications") && <Stack.Screen name="PlatformNotifications" component={PlatformNotificationsScreen} options={{ title: "Notifications plateforme" }} />}
-        {canReadView(session, "Permissions") && <Stack.Screen name="Permissions" component={PermissionsScreen} options={{ title: "Droits par rôle" }} />}
       </Stack.Navigator>
-    </NavigationContainer>
+        <HelpHost />
+      </NavigationContainer>
+    </HelpUiProvider>
   );
 }

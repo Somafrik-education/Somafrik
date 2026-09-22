@@ -1,0 +1,130 @@
+"use strict";
+
+const { isInternalSchoolAlias, isLegacySchoolCodeFormat, isV2SchoolLoginCode } = require("./schoolCodeV2");
+const { getPrincipalStudentIds, principalSessionLabel } = require("./principalStudentIds");
+
+const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
+const STUDENT_SCOPED_ROLES = new Set(["student", "Élève / Étudiant", "parent_student", "Parent"]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function principalPermissionList(principal) {
+  if (!principal) return [];
+  if (Array.isArray(principal.permissions)) return principal.permissions;
+  if (Array.isArray(principal.effectivePermissions)) return principal.effectivePermissions;
+  return [];
+}
+
+function hasFeatureAction(principal, feature, action) {
+  const list = principalPermissionList(principal);
+  if (list.includes("ALL_PRIVILEGES")) return true;
+  return list.includes(`${feature}:${action}`);
+}
+
+function isSchoolUuid(value) {
+  return UUID_RE.test(String(value || "").trim());
+}
+
+function isPublicSchoolCode(value) {
+  return (
+    isV2SchoolLoginCode(value) || isInternalSchoolAlias(value) || isLegacySchoolCodeFormat(value)
+  );
+}
+
+function schoolRecordId(school) {
+  if (!school || typeof school !== "object") return "";
+  const id = String(school.id || school.schoolId || school.school_id || "").trim();
+  if (!id || id === "*") return "";
+  if (isPublicSchoolCode(id)) return "";
+  return id;
+}
+
+function tenantSchoolIdFromPrincipal(principal) {
+  if (!principal) return "";
+  for (const value of [principal.effectiveSchoolId, principal.schoolId, principal.school_id]) {
+    const text = String(value || "").trim();
+    if (isSchoolUuid(text)) return text;
+  }
+  const explicit = String(principal.schoolId || principal.school_id || "").trim();
+  if (explicit && !isPublicSchoolCode(explicit) && explicit !== "*") {
+    return explicit;
+  }
+  return "";
+}
+
+function isStudentScopedPrincipal(principal) {
+  const role = String(principal?.role || "");
+  const label = principalSessionLabel(principal);
+  return STUDENT_SCOPED_ROLES.has(role) || STUDENT_SCOPED_ROLES.has(label);
+}
+
+function resolveReportCardActorFromPrincipal(principal) {
+  if (!principal) return null;
+  const actorId = principal.sub || principal.id || principal.userId;
+  if (SUPER_ADMIN_ROLES.has(principal.role)) {
+    return {
+      actorId,
+      permissions: ["REPORT_CARD_CONFIGURE"],
+      platform: { privileged: true },
+    };
+  }
+  const permissions = [];
+  if (hasFeatureAction(principal, "Bulletins", "CREATE")) {
+    permissions.push("REPORT_CARD_SUBMIT_MODEL");
+  }
+  if (hasFeatureAction(principal, "Bulletins", "UPDATE")) {
+    permissions.push("REPORT_CARD_SCHOOL_APPROVE_TEMPLATE");
+  }
+  if (hasFeatureAction(principal, "Bulletins", "READ")) {
+    permissions.push("REPORT_CARD_READ");
+    permissions.push("REPORT_CARD_REPRINT");
+  }
+  if (hasFeatureAction(principal, "Bulletins", "SUSPEND")) {
+    permissions.push("REPORT_CARD_CORRECT");
+  }
+  if (hasFeatureAction(principal, "Bulletins", "DELETE")) {
+    permissions.push("REPORT_CARD_REVOKE");
+  }
+  const actor = {
+    actorId,
+    actorSchoolId: tenantSchoolIdFromPrincipal(principal),
+    permissions,
+  };
+  if (isStudentScopedPrincipal(principal)) {
+    actor.studentIds = getPrincipalStudentIds(principal);
+  }
+  return actor;
+}
+
+async function resolveReportCardTenantSchoolId(raw, lookupSchool) {
+  const text = String(raw || "").trim();
+  if (!text || text === "*") return "";
+  if (isSchoolUuid(text)) return text;
+  if (!isPublicSchoolCode(text)) {
+    return text;
+  }
+  if (typeof lookupSchool !== "function") return "";
+  const school = await lookupSchool(text);
+  return schoolRecordId(school);
+}
+
+async function resolveReportCardActor(principal, lookupSchool) {
+  const actor = resolveReportCardActorFromPrincipal(principal);
+  if (!actor || actor.platform?.privileged) return actor;
+  if (isSchoolUuid(actor.actorSchoolId)) return actor;
+  const code = String(
+    principal?.effectiveSchoolCode ||
+      principal?.schoolCode ||
+      principal?.schoolId ||
+      principal?.school_id ||
+      actor.actorSchoolId ||
+      ""
+  ).trim();
+  const resolved = await resolveReportCardTenantSchoolId(code, lookupSchool);
+  return { ...actor, actorSchoolId: resolved };
+}
+
+module.exports = {
+  resolveReportCardActorFromPrincipal,
+  resolveReportCardActor,
+  resolveReportCardTenantSchoolId,
+};

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import FormField from "../components/FormField";
 import ChoiceChips from "../components/ChoiceChips";
+import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import { SchoolSettingsDenied, useSchoolSettingsAccess } from "../components/SchoolSettingsGate";
 import { useAdminData } from "../context/AdminDataContext";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
@@ -28,6 +29,7 @@ import {
   type AcademicYearRecord,
 } from "../services/schoolSettingsApi";
 import type { CanonicalEvaluationType } from "../services/api";
+import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
 
 export default function SchoolYearSettingsScreen() {
   const { canOpen, canEdit } = useSchoolSettingsAccess("SchoolYearSettings");
@@ -42,6 +44,7 @@ export default function SchoolYearSettingsScreen() {
   const [defaultScale, setDefaultScale] = useState("20");
   const [reportCardMode, setReportCardMode] = useState("period");
   const [yearDraft, setYearDraft] = useState({ name: "", startDate: "", endDate: "", isCurrent: true });
+  const [expandedYearId, setExpandedYearId] = useState<string | null>(null);
   const [typeName, setTypeName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState("");
@@ -206,20 +209,28 @@ export default function SchoolYearSettingsScreen() {
         <Text style={styles.cardTitle}>Années</Text>
         {years.length ? (
           years.map((year) => (
-            <View key={year.id} style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowTitle}>{year.name}</Text>
-                <Text style={styles.meta}>
-                  {year.startDate} → {year.endDate}
-                  {year.isCurrent ? " • année courante" : ""}
-                </Text>
-              </View>
+            <ExpandableEntityCard
+              key={year.id}
+              title={year.name}
+              subtitle={year.isCurrent ? "Année courante" : ""}
+              badge=""
+              expanded={expandedYearId === year.id}
+              onExpandedChange={() => setExpandedYearId((current) => nextExclusiveExpandedKey(current, year.id))}
+            >
+              <Text style={styles.meta}>
+                {year.startDate} → {year.endDate}
+              </Text>
               {canEdit && !year.isCurrent ? (
-                <TouchableOpacity onPress={() => void setCurrentYear(year.id)} accessibilityRole="button">
+                <TouchableOpacity
+                  style={styles.openButton}
+                  onPress={() => void setCurrentYear(year.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Définir comme courante"
+                >
                   <Text style={styles.link}>Définir comme courante</Text>
                 </TouchableOpacity>
               ) : null}
-            </View>
+            </ExpandableEntityCard>
           ))
         ) : (
           <Text style={styles.meta}>Aucune année configurée.</Text>
@@ -373,6 +384,7 @@ const styles = StyleSheet.create({
   meta: { color: "#64748B", fontWeight: "600" },
   error: { color: "#991B1B", fontWeight: "800", marginBottom: 12 },
   link: { color: "#2563EB", fontWeight: "800" },
+  openButton: { minHeight: 44, justifyContent: "center", marginTop: 8 },
   periodBox: { borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14, padding: 10, marginBottom: 10 },
   primary: { backgroundColor: "#2563EB", borderRadius: 16, padding: 16, marginTop: 8, minHeight: 48, justifyContent: "center" },
   primaryText: { color: "#FFFFFF", fontWeight: "800", textAlign: "center" },

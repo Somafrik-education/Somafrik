@@ -149,6 +149,19 @@ async function setupFixture(pool) {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS school_courses (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      school_id UUID NOT NULL REFERENCES schools(id),
+      class_id UUID NOT NULL REFERENCES classes(id),
+      subject_id UUID NOT NULL REFERENCES subjects(id),
+      teacher_id UUID REFERENCES teachers(id),
+      course_code VARCHAR(64) NOT NULL UNIQUE,
+      coefficient NUMERIC NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
   await ensureTeachersLegacyCodeSchema(pool);
 
@@ -162,6 +175,7 @@ async function setupFixture(pool) {
     { info() {}, error() {} },
   );
 
+  await pool.query(`DELETE FROM school_courses`);
   await pool.query(`DELETE FROM teacher_assignments`);
   await pool.query(`DELETE FROM teachers`);
   await pool.query(`DELETE FROM users`);

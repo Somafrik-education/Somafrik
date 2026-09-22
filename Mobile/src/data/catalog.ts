@@ -95,6 +95,15 @@ export type SchoolClass = {
   level: string;
   track: string;
   teacherId: string;
+  teacher?: string;
+  headTeacherDisplayName?: string | null;
+  headTeacherCode?: string | null;
+  headTeacher?: {
+    teacherCode?: string;
+    firstName?: string;
+    lastName?: string;
+    displayName?: string;
+  } | null;
   academicYearId?: string;
   levelId?: string | null;
   streamId?: string | null;
@@ -329,6 +338,9 @@ export type SchoolProfile = {
   currency: string;
   slogan: string;
   status: "Actif" | "Suspendu" | string;
+  hasLogo?: boolean;
+  logoSource?: string;
+  logoUploadedAt?: string;
   logoUrl?: string;
   schoolYear: string;
   timezone: string;
@@ -386,6 +398,9 @@ export const school: SchoolProfile = {
   currency: "CDF",
   slogan: "Excellence et Innovation",
   status: "Actif",
+  hasLogo: false,
+  logoSource: "",
+  logoUploadedAt: "",
   logoUrl: "",
   schoolYear: "2025-2026",
   timezone: "Africa/Kinshasa",

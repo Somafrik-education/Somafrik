@@ -50,6 +50,7 @@ vi.mock("../context/DataContext", () => ({
       rolePermissions: {},
     },
     refresh: vi.fn(),
+    ensureDomains: vi.fn(async () => undefined),
     error: null,
     scopeError: dataState.scopeError,
   }),
@@ -116,6 +117,96 @@ describe("UsersPage — SCHOOL_ADMIN périmètre canonique", () => {
     expect(screen.getByText("1 compte(s) accessibles.")).toBeInTheDocument();
     expect(screen.getByText("Amina Mwamba")).toBeInTheDocument();
     expect(screen.queryByText(/Périmètre établissement incomplet/i)).not.toBeInTheDocument();
+  });
+
+  it("distingue un compte technique lié à un élève dans la liste", () => {
+    schoolAdmin.user = {
+      id: "admin-nuru",
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      schoolPublicCode: "CD-IN-26-001",
+      schoolId: "school-nuru",
+      permissions: ["Utilisateurs:READ", "Utilisateurs:UPDATE"],
+    };
+    permissions.canUpdate = true;
+    dataState.scopeError = null;
+    dataState.users = [
+      {
+        id: "usr-student",
+        firstName: "Marc",
+        lastName: "Rumba",
+        publicId: "CD-ITS-MR-26-00003",
+        role: "Sans affectation",
+        assignmentStatus: "Sans affectation",
+        roles: [],
+        roleKeys: [],
+        accountKind: "student_login",
+        linkedStudent: { studentId: "stu-1", studentCode: "CD-ITS-MR-26-00003", status: "active" },
+        schoolCode: "CD-IN-26-001",
+        schoolPublicCode: "CD-IN-26-001",
+        schoolId: "school-nuru",
+        status: "Actif",
+      } as UserAccount,
+    ];
+
+    render(
+      <MemoryRouter>
+        <UsersPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Marc Rumba")).toBeInTheDocument();
+    expect(screen.getAllByText("Compte lié à un élève").length).toBeGreaterThan(0);
+    expect(screen.getByText("Type métier")).toBeInTheDocument();
+    expect(screen.getAllByText("Élève / Étudiant").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Verrouillés — profil élève").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Aucun rôle d'accès")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sans affectation")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Attribuer" })).not.toBeInTheDocument();
+    permissions.canUpdate = false;
+  });
+
+  it("payload GET unassigned (capture préprod) : Type métier Sans affectation, accès Aucun rôle d'accès", () => {
+    schoolAdmin.user = {
+      id: "admin-nuru",
+      role: "Admin School",
+      schoolCode: "CD-2026-0001",
+      schoolPublicCode: "CD-IN-26-001",
+      schoolId: "school-nuru",
+      permissions: ["Utilisateurs:READ"],
+    };
+    dataState.scopeError = null;
+    dataState.users = [
+      {
+        id: "usr-capture",
+        firstName: "Test",
+        lastName: "Nouveau",
+        publicId: "CD-ITS-MR-26-00099",
+        role: "Sans affectation",
+        assignmentStatus: "Sans affectation",
+        roles: [],
+        roleKeys: [],
+        accountKind: "unassigned",
+        businessProfileLabel: "Sans affectation",
+        linkedStudent: null,
+        linkedTeacher: null,
+        schoolCode: "CD-IN-26-001",
+        schoolPublicCode: "CD-IN-26-001",
+        schoolId: "school-nuru",
+        status: "Actif",
+      } as UserAccount,
+    ];
+
+    render(
+      <MemoryRouter>
+        <UsersPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Test Nouveau")).toBeInTheDocument();
+    expect(screen.getAllByText("Sans affectation").length).toBeGreaterThan(0);
+    expect(screen.getByText("Aucun rôle d'accès")).toBeInTheDocument();
+    expect(screen.queryByText("Compte lié à un élève")).not.toBeInTheDocument();
   });
 
   it("B. API vide → 0 réel, sans alerte de mismatch", () => {

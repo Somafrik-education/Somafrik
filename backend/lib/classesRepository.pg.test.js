@@ -10,6 +10,7 @@
 const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
+const { CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL } = require("./classHeadTeachersManagement");
 const {
   CREATE_CLASSES_NAME_UNIQUE_INDEX_SQL,
   CREATE_CLASSES_STRUCTURAL_UNIQUE_INDEX_SQL,
@@ -171,6 +172,7 @@ async function setupFixture(pool) {
       status TEXT NOT NULL DEFAULT 'active'
     );
   `);
+  await pool.query(CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL);
 
   await pool.query(`
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS level_id UUID REFERENCES education_levels(id);
@@ -342,6 +344,8 @@ async function main() {
     const listed = await repo.listBySchoolCode("SCH-A");
     assert.equal(listed.length, 1);
     assert.equal(listed[0].classCode, created.classCode);
+    assert.equal(listed[0].teacher, "Non assigné");
+    assert.equal(listed[0].headTeacher, null);
 
     const updated = await repo.update(created.classCode, "SCH-A", {
       status: "inactive",

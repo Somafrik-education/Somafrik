@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
 import { useData } from "../context/DataContext";
@@ -17,18 +17,30 @@ import {
   canSuperadminManageUser,
   formatAccessChannelLabel,
   getCountryScopeOptions,
-  formatUserRolesDisplay,
+  formatAccessRolesDisplay,
+  formatBusinessProfileKind,
   getCreatableUserRoles,
   getUserEstablishmentLabel,
   getUserFormFieldPolicy,
   isCountryAdminProvisionedUser,
+  isStudentLinkedAccount,
+  areStudentRolesLocked,
+  canAssignRoleToUserAccount,
+  accountKindLabel,
+  isTeacherRoleLabel,
+  formatLockedRolesDisplay,
+  STUDENT_ACCESS_ROLE_LABEL,
+  STUDENT_ROLES_LOCKED_LABEL,
+  STUDENT_ROLE_LOCKED_MESSAGE,
+  STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE,
   schoolsMatchingCountryScope,
+  toCreateTeacherIdentityPayload,
   toCreateUserApiPayload,
   toProvisionUserApiPayload,
   toUpdateUserIdentityPayload,
   validateUserAccount,
   resetUserAccountPassword,
-  isSuperadminDirectUserRole,
+  shouldProvisionPlatformUser,
 } from "../lib/userAccounts";
 import { clientsApi } from "../lib/clientsApi";
 import {
@@ -53,10 +65,10 @@ import { usePrompt } from "../components/ui/PromptDialog";
 import type { UserAccount } from "../types";
 
 function toCsv(users: UserAccount[]): string {
-  const headers = ["Prénom", "Nom", "Identifiant", "Rôle(s)", "Email", "Téléphone", "Établissement", "Pays", "Statut"];
+  const headers = ["Prénom", "Nom", "Identifiant", "Type métier", "Rôle d'accès", "Rôles", "Email", "Téléphone", "Établissement", "Pays", "Statut"];
   const escape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = users.map((u) =>
-    [u.firstName, u.lastName, u.publicId ?? u.identifier, formatUserRolesDisplay(u), u.email, u.phone, getUserEstablishmentLabel(u), u.countryScope, u.status]
+    [u.firstName, u.lastName, u.publicId ?? u.identifier, formatBusinessProfileKind(u), formatAccessRolesDisplay(u), formatLockedRolesDisplay(u) ?? "—", u.email, u.phone, getUserEstablishmentLabel(u), u.countryScope, u.status]
       .map(escape)
       .join(","),
   );
@@ -66,7 +78,7 @@ function toCsv(users: UserAccount[]): string {
 export function UsersPage() {
   const { session } = useAuth();
   const { scopedUser, activeSchoolCode } = useActiveSchool();
-  const { state, refresh, error: dataError, scopeError } = useData();
+  const { state, refresh, ensureDomains, loading, error: dataError, scopeError } = useData();
   const ctx = usePermissionContext();
   const scopeUser = scopedUser ?? session?.user ?? null;
   const { showToast } = useToast();
@@ -85,6 +97,10 @@ export function UsersPage() {
   const school = getCurrentSchool(scopeUser, state);
   const schoolCode = activeSchoolCode || scopeUser?.schoolCode;
   const { canCreate, canUpdate, canSuspend } = useFeaturePermissions("Utilisateurs");
+
+  useEffect(() => {
+    void ensureDomains(["users"], { schoolCode: schoolCode || undefined }).catch(() => undefined);
+  }, [ensureDomains, schoolCode]);
 
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -141,12 +157,13 @@ export function UsersPage() {
     return allUsers.filter((u) => {
       const matchesQuery =
         !q ||
-        [u.firstName, u.lastName, u.identifier, u.publicId, formatUserRolesDisplay(u), u.schoolCode, u.email].some((v) =>
+        [u.firstName, u.lastName, u.identifier, u.publicId, formatBusinessProfileKind(u), formatAccessRolesDisplay(u), u.schoolCode, u.email].some((v) =>
           normalize(v).includes(q),
         );
       const matchesRole =
         !roleFilter ||
-        formatUserRolesDisplay(u) === roleFilter ||
+        formatAccessRolesDisplay(u) === roleFilter ||
+        formatBusinessProfileKind(u) === roleFilter ||
         (u.roles ?? []).includes(roleFilter) ||
         u.role === roleFilter;
       const matchesStatus = !statusFilter || String(u.status ?? "Actif") === statusFilter;
@@ -166,7 +183,7 @@ export function UsersPage() {
         throw error;
       }
       try {
-        await refresh();
+        await refresh(["users"]);
       } catch (error) {
         showToast(formatCaughtApiError(error, "Échec du rechargement après enregistrement"), "error");
         throw error;
@@ -191,18 +208,36 @@ export function UsersPage() {
           }
         } else {
           try {
-            const shouldProvision =
-              isSuperAdminRole(session?.user?.role) && isSuperadminDirectUserRole(syncedUser.role);
-            const created = (
-              shouldProvision
-                ? await clientsApi.provisionUser(toProvisionUserApiPayload(syncedUser))
-                : await clientsApi.createUser(toCreateUserApiPayload(syncedUser))
-            ) as UserAccount;
-            if (created.temporaryPassword) {
-              showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
-            }
-            if (!shouldProvision && syncedUser.role && created?.id) {
-              await clientsApi.grantUserRole(String(created.id), syncedUser.role);
+            const shouldProvision = shouldProvisionPlatformUser(session?.user?.role, syncedUser.role);
+            if (!shouldProvision && isTeacherRoleLabel(syncedUser.role)) {
+              const created = (await clientsApi.createTeacherIdentity(
+                toCreateTeacherIdentityPayload(syncedUser),
+              )) as {
+                user?: UserAccount;
+                credentials?: { login?: string; temporarySecret?: string };
+              };
+              const login = String(created.credentials?.login ?? "").trim();
+              const secret = String(created.credentials?.temporarySecret ?? "").trim();
+              if (login && secret) {
+                showToast(
+                  `Identifiants enseignant — login : ${login} · mot de passe temporaire : ${secret}`,
+                  "success",
+                );
+              } else if (secret) {
+                showToast(`Mot de passe temporaire : ${secret}`, "success");
+              }
+            } else {
+              const created = (
+                shouldProvision
+                  ? await clientsApi.provisionUser(toProvisionUserApiPayload(syncedUser))
+                  : await clientsApi.createUser(toCreateUserApiPayload(syncedUser))
+              ) as UserAccount;
+              if (created.temporaryPassword) {
+                showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
+              }
+              if (!shouldProvision && syncedUser.role && created?.id) {
+                await clientsApi.grantUserRole(String(created.id), syncedUser.role);
+              }
             }
           } catch (error) {
             showToast(formatCaughtApiError(error, "Échec de la création"), "error");
@@ -211,7 +246,7 @@ export function UsersPage() {
         }
       }
       try {
-        await refresh();
+        await refresh(["users"]);
       } catch (error) {
         showToast(formatCaughtApiError(error, "Échec du rechargement après enregistrement"), "error");
         throw error;
@@ -307,7 +342,7 @@ export function UsersPage() {
 
     try {
       await persistUsers(state.users, exists ? "Utilisateur modifié" : "Utilisateur créé", payload);
-      if (!exists && payload.temporaryPassword) {
+      if (!exists && payload.temporaryPassword && !isTeacherRoleLabel(payload.role)) {
         showToast(`Mot de passe temporaire : ${payload.temporaryPassword}`, "success");
       }
       setEditing(null);
@@ -323,6 +358,7 @@ export function UsersPage() {
   }
 
   async function openAssignFlow(user: UserAccount) {
+    if (areStudentRolesLocked(user)) return;
     setAssigning(user);
     setDetail(null);
     setSelectedRoles(user.roles?.length ? [...user.roles] : user.role && user.role !== "Sans affectation" ? [user.role] : []);
@@ -342,12 +378,20 @@ export function UsersPage() {
 
   async function submitAssign() {
     if (!assigning?.id) return;
+    if (areStudentRolesLocked(assigning)) {
+      showToast(STUDENT_ROLE_LOCKED_MESSAGE, "error");
+      return;
+    }
     const current = new Set(assigning.roles?.length ? assigning.roles : assigning.role && assigning.role !== "Sans affectation" ? [assigning.role] : []);
     const next = new Set(selectedRoles);
     setBusy(true);
     try {
       for (const role of next) {
         if (!current.has(role)) {
+          if (!canAssignRoleToUserAccount(assigning, role)) {
+            showToast(STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE, "error");
+            return;
+          }
           await clientsApi.grantUserRole(String(assigning.id), role);
         }
       }
@@ -356,7 +400,7 @@ export function UsersPage() {
           await clientsApi.revokeUserRole(String(assigning.id), role);
         }
       }
-      await refresh();
+      await refresh(["users"]);
       showToast("Rôles mis à jour.", "success");
       setAssigning(null);
     } catch (error) {
@@ -403,7 +447,7 @@ export function UsersPage() {
         throw error;
       }
       try {
-        await refresh();
+        await refresh(["users"]);
       } catch (error) {
         showToast(formatCaughtApiError(error, "Échec du rechargement après réaffectation"), "error");
         throw error;
@@ -443,13 +487,24 @@ export function UsersPage() {
               {u.firstName} {u.lastName}
             </p>
             <p className="text-xs text-muted">{u.publicId ?? u.identifier}</p>
+            {accountKindLabel(u) ? (
+              <p className={`text-xs font-semibold ${u.accountKind === "conflict" ? "text-red-700" : "text-brand"}`}>
+                {accountKindLabel(u)}
+              </p>
+            ) : null}
           </div>
         </div>
       ),
     },
     { key: "publicId", header: "Identifiant", render: (u) => u.publicId ?? u.identifier ?? "—" },
     { key: "status", header: "Statut", render: (u) => <StatusBadge status={u.status} /> },
-    { key: "roles", header: "Rôle(s)", render: (u) => formatUserRolesDisplay(u) },
+    { key: "accountKind", header: "Type métier", render: (u) => formatBusinessProfileKind(u) },
+    { key: "roles", header: "Rôle d'accès", render: (u) => formatAccessRolesDisplay(u) },
+    {
+      key: "roleLock",
+      header: "Rôles",
+      render: (u) => formatLockedRolesDisplay(u) ?? "—",
+    },
     {
       key: "actions",
       header: "Actions",
@@ -470,9 +525,13 @@ export function UsersPage() {
                 >
                   Modifier
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => void openAssignFlow(u)}>
-                  Attribuer
-                </Button>
+                {areStudentRolesLocked(u) ? (
+                  <span className="text-xs text-muted">{STUDENT_ROLES_LOCKED_LABEL}</span>
+                ) : (
+                  <Button variant="secondary" size="sm" onClick={() => void openAssignFlow(u)}>
+                    Attribuer
+                  </Button>
+                )}
               </>
             ) : null}
           </div>
@@ -507,15 +566,20 @@ export function UsersPage() {
     Boolean(editing) &&
     isEditingExisting &&
     canUpdate &&
+    editing != null &&
+    !areStudentRolesLocked(editing) &&
     canReassignUserTenant(scopeUser, editing);
 
+  const usersLoading = Boolean(loading) && allUsers.length === 0 && !visibleScopeError;
   const usersDescription = visibleScopeError
     ? "Les comptes ne peuvent pas être affichés tant que le périmètre établissement n'est pas cohérent."
-    : isSuperadminView
-      ? `${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays.`
-      : isCountryAdminView
-        ? `${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`
-        : `${filtered.length} compte(s) accessibles.`;
+    : usersLoading
+      ? "Chargement des utilisateurs…"
+      : isSuperadminView
+        ? `${filtered.length} compte(s) plateforme. Le Super administrateur valide et gère les Administrateurs établissement créés par les Administrateurs pays.`
+        : isCountryAdminView
+          ? `${filtered.length} administrateur(s) d’établissement dans votre pays. Les comptes métier (secrétaire, enseignant…) se gèrent dans Configuration établissement.`
+          : `${filtered.length} compte(s) accessibles.`;
 
   return (
     <>
@@ -534,7 +598,8 @@ export function UsersPage() {
           <p className="text-xs font-bold uppercase tracking-wide text-brand">Périmètre établissement</p>
           <p className="mt-1 text-lg font-black text-ink">{school.name}</p>
           <p className="text-sm text-muted">
-            {school.code} • {school.city ?? "Ville non renseignée"} • {allUsers.length} compte(s) visible(s)
+            {school.code} • {school.city ?? "Ville non renseignée"} •{" "}
+            {usersLoading ? "chargement des utilisateurs…" : `${allUsers.length} compte(s) visible(s)`}
           </p>
         </Card>
       ) : null}
@@ -598,7 +663,7 @@ export function UsersPage() {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title={detail ? `${detail.firstName ?? ""} ${detail.lastName ?? ""}`.trim() : ""}
-        description={detail ? formatUserRolesDisplay(detail) : undefined}
+        description={detail ? `${formatBusinessProfileKind(detail)} · ${formatAccessRolesDisplay(detail)}` : undefined}
         footer={
           detail ? (
             (() => {
@@ -661,9 +726,11 @@ export function UsersPage() {
                       >
                         Modifier
                       </Button>
-                      <Button variant="secondary" onClick={() => void openAssignFlow(detail)}>
-                        Attribuer
-                      </Button>
+                      {areStudentRolesLocked(detail) ? null : (
+                        <Button variant="secondary" onClick={() => void openAssignFlow(detail)}>
+                          Attribuer
+                        </Button>
+                      )}
                     </>
                   ) : null}
                   {canResetTarget ? (
@@ -702,7 +769,16 @@ export function UsersPage() {
             ) : null}
             <dl className="grid grid-cols-2 gap-4 text-sm">
               <Row label="Identifiant" value={detail.publicId ?? detail.identifier} />
-              <Row label="Rôle(s)" value={formatUserRolesDisplay(detail)} />
+              <Row label="Type métier" value={formatBusinessProfileKind(detail)} />
+              <Row label="Rôle d'accès" value={formatAccessRolesDisplay(detail)} />
+              {areStudentRolesLocked(detail) ? (
+                <Row label="Rôles" value={STUDENT_ROLES_LOCKED_LABEL} />
+              ) : (
+                <Row label="Rôles" value={formatAccessRolesDisplay(detail)} />
+              )}
+              {detail.linkedStudent?.studentCode ? (
+                <Row label="Profil élève" value={detail.linkedStudent.studentCode} />
+              ) : null}
               <Row label="Email" value={detail.email} />
               <Row label="Téléphone" value={detail.phone} />
               <Row label="Périmètre" value={detail.scopeLevel} />
@@ -742,8 +818,12 @@ export function UsersPage() {
             ) : (
               <p className="sm:col-span-2 text-sm text-muted">
                 {isSuperadminView
-                  ? "Administrateur pays et Administrateur établissement sont créés directement avec leur rôle. Sans affectation crée uniquement l'identité."
-                  : "L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création. Utilisez ensuite Attribuer."}
+                  ? "Administrateur pays et Administrateur établissement sont créés directement avec leur rôle."
+                  : isCountryAdminView
+                    ? "Administrateur établissement est créé avec son rôle. L'identité vide n'est pas proposée."
+                    : isTeacherRoleLabel(editing.role)
+                      ? "Le compte enseignant est créé atomiquement (utilisateur + rôle + profil) via Comptes utilisateurs."
+                      : "L'identifiant (UUID et code USR) est généré côté serveur. Aucun rôle n'est attribué à la création. Utilisez ensuite Attribuer."}
               </p>
             )}
             <Field label="Prénom" required>
@@ -777,15 +857,30 @@ export function UsersPage() {
             <Field label="Email">
               <Input type="email" value={editing.email ?? ""} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
             </Field>
+            {isEditingExisting && areStudentRolesLocked(editing) ? (
+              <>
+                <Field label="Type métier">
+                  <Input value={formatBusinessProfileKind(editing)} readOnly />
+                </Field>
+                <Field label="Rôle d'accès">
+                  <Input value={STUDENT_ACCESS_ROLE_LABEL} readOnly />
+                </Field>
+                <Field label="Rôles" hint={STUDENT_ROLE_LOCKED_MESSAGE}>
+                  <Input value={STUDENT_ROLES_LOCKED_LABEL} readOnly />
+                </Field>
+              </>
+            ) : null}
             {!isEditingExisting ? (
               <Field
                 label="Rôle"
                 hint={
-                  isSuperadminView
+                  isSuperadminView || isCountryAdminView
                     ? "Le rôle est créé immédiatement à l'enregistrement"
-                    : "L'identité est créée d'abord, puis le rôle est attribué"
+                    : isTeacherRoleLabel(editing.role)
+                      ? "Création atomique : identité + rôle Enseignant + profil"
+                      : "L'identité est créée d'abord, puis le rôle est attribué"
                 }
-                required={isSuperadminView}
+                required={isSuperadminView || isCountryAdminView}
               >
                 <Select
                   value={editing.role ?? ""}
@@ -794,7 +889,13 @@ export function UsersPage() {
                     setEditing(applyRoleChangeToUser(editing, e.target.value, session, state));
                   }}
                   options={[
-                    { value: "", label: "Sans affectation (plus tard)" },
+                    {
+                      value: "",
+                      label:
+                        isSuperadminView || isCountryAdminView
+                          ? "Choisir un rôle..."
+                          : "Sans affectation (plus tard)",
+                    },
                     ...creatableRoles.map((role) => ({ value: role, label: role })),
                   ]}
                 />
@@ -981,15 +1082,28 @@ export function UsersPage() {
         }
       >
         <div className="grid gap-2">
+          {assigning && areStudentRolesLocked(assigning) ? (
+            <p className="rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-sm text-ink">
+              {STUDENT_ROLE_LOCKED_MESSAGE}
+            </p>
+          ) : assigning && isStudentLinkedAccount(assigning) ? (
+            <p className="rounded-lg border border-amber/30 bg-amber/10 px-3 py-2 text-sm text-ink">
+              {STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE}
+            </p>
+          ) : null}
           {assignableRoles.length === 0 ? (
             <p className="text-sm text-muted">Aucun rôle attribuable pour votre périmètre.</p>
           ) : (
-            assignableRoles.map((role) => (
+            assignableRoles.map((role) => {
+              const incompatible = assigning ? !canAssignRoleToUserAccount(assigning, role.roleName) : false;
+              return (
               <label key={role.roleKey} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm">
                 <input
                   type="checkbox"
                   checked={selectedRoles.includes(role.roleName)}
+                  disabled={incompatible}
                   onChange={(event) => {
+                    if (incompatible) return;
                     setSelectedRoles((current) =>
                       event.target.checked
                         ? [...current, role.roleName]
@@ -998,8 +1112,12 @@ export function UsersPage() {
                   }}
                 />
                 {role.roleName}
+                {incompatible && isTeacherRoleLabel(role.roleName) ? (
+                  <span className="text-xs text-muted">incompatible avec un profil élève</span>
+                ) : null}
               </label>
-            ))
+              );
+            })
           )}
         </div>
       </Modal>

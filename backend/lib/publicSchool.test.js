@@ -23,9 +23,46 @@ assert.deepStrictEqual(result, {
   loginCode: "CD-IN-26-001",
   name: "École Test",
   city: "Kinshasa",
-  logoUrl: "https://example.test/logo.png",
+  hasLogo: false,
 });
-assert.notEqual(result.code, "CD-2026-0001");
+assert.ok(!("logoUrl" in result), "une URL externe ne doit jamais être exposée comme logo");
+
+const withInternalLogo = toPublicSchool({
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  loginCode: "CD-IN-26-001",
+  code: "SCH-ABCDEF",
+  name: "École Test",
+  city: "Kinshasa",
+  logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+});
+assert.equal(withInternalLogo.hasLogo, false);
+assert.ok(!("logoUrl" in withInternalLogo));
+
+const withUploadedLogo = toPublicSchool({
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  loginCode: "CD-IN-26-001",
+  code: "SCH-ABCDEF",
+  name: "École Test",
+  city: "Kinshasa",
+  logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+  logoSource: "school_upload",
+  logoUploadedAt: "2026-09-12T20:00:00.000Z",
+});
+assert.equal(withUploadedLogo.hasLogo, true);
+assert.equal(withUploadedLogo.logoSource, "school_upload");
+assert.equal(withUploadedLogo.logoUploadedAt, "2026-09-12T20:00:00.000Z");
+assert.equal(withUploadedLogo.logoUrl, "/api/schools/CD-IN-26-001/logo");
+const withPartialSource = toPublicSchool({
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  loginCode: "CD-IN-26-001",
+  code: "SCH-ABCDEF",
+  name: "INSTITUT NURUYETU",
+  city: "Kinshasa",
+  logoUrl: "school-logos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/logo.png",
+  logoSource: "school_upload",
+});
+assert.equal(withPartialSource.hasLogo, false);
+assert.ok(!("logoUrl" in withPartialSource));
 
 for (const privateField of [
   "id",

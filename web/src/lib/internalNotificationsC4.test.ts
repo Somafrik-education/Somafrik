@@ -39,7 +39,7 @@ describe("internal notifications C4 web", () => {
     );
   });
 
-  it("API + centre : unread-count serveur, pas de localStorage, ComingSoon paramètres", () => {
+  it("API + centre : unread-count serveur, pas de localStorage, ComingSoon apparence", () => {
     const api = readFileSync(join(ROOT, "internalNotificationsApi.ts"), "utf8");
     const read = readFileSync(join(ROOT, "internalNotificationsRead.ts"), "utf8");
     const center = readFileSync(join(ROOT, "../components/communications/InternalNotificationsCenter.tsx"), "utf8");
@@ -57,9 +57,26 @@ describe("internal notifications C4 web", () => {
     expect(center).not.toMatch(/localStorage/);
     expect(center).toMatch(/notifyInternalNotificationsChanged/);
     expect(topbar).toMatch(/useInternalNotificationsUnreadCount/);
+    expect(topbar).toMatch(/hasBackOfficePermission\(ctx, "Notifications", "READ"\)/);
+    const overview = readFileSync(join(ROOT, "../pages/OverviewPage.tsx"), "utf8");
+    expect(overview).toMatch(/useInternalNotificationsUnreadCount/);
+    expect(overview).toMatch(/schoolUnreadCount/);
+    expect(overview).toMatch(/hasBackOfficePermission\(ctx, "Notifications", "READ"\)/);
+    expect(overview).not.toMatch(/canReadView\(ctx, "notifications"\)/);
     expect(page).toMatch(/InternalNotificationsCenter/);
+    expect(page).not.toMatch(/platformApi/);
+    expect(topbar).toMatch(/notifications-plateforme/);
+    const catalog = readFileSync(join(ROOT, "../pages/PlatformNotificationsPage.tsx"), "utf8");
+    expect(catalog).toMatch(/platformApi\.createNotification/);
     expect(placeholders).toMatch(/ComingSoonState/);
-    expect(hub).toMatch(/status: "soon"/);
     expect(hub).toMatch(/\/parametres\/notifications/);
+    const notificationsCard = hub.slice(
+      hub.indexOf('to: "/parametres/notifications"'),
+      hub.indexOf('to: "/parametres/apparence"'),
+    );
+    expect(notificationsCard).toMatch(/status:\s*"available"/);
+    expect(hub.slice(hub.indexOf('to: "/parametres/apparence"'), hub.indexOf('to: "/parametres/integrations"'))).toMatch(
+      /status:\s*"soon"/,
+    );
   });
 });

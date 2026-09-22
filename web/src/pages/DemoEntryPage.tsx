@@ -5,7 +5,7 @@ import { MarketingHeader } from "../components/marketing/MarketingHeader";
 import { demoDiscoveryRoles, demoPageCopy, demoProfiles } from "../data/demoMarketing";
 import { FRANCOPHONE_AFRICA_COUNTRIES } from "../data/francophoneAfricaCountries";
 import { marketingSkipLink } from "../data/marketingContent";
-import { demoEntryEnabled } from "../lib/featureFlags";
+import { publicDemoEnabled } from "../lib/featureFlags";
 import { navigateToDemo } from "../lib/demoNavigation";
 
 type FormStatus = "idle" | "sending" | "error";
@@ -44,7 +44,7 @@ export function DemoEntryPage() {
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!demoEntryEnabled || status === "sending") return;
+    if (!publicDemoEnabled || status === "sending") return;
 
     const form = event.currentTarget;
     const data = new FormData(form);
@@ -103,14 +103,14 @@ export function DemoEntryPage() {
         <p className="mt-3 text-base leading-relaxed text-slate-600">{demoPageCopy.intro}</p>
         <p className="mt-2 text-sm font-medium text-slate-500">{demoPageCopy.privacy}</p>
 
-        {!demoEntryEnabled ? (
+        {!publicDemoEnabled ? (
           <div className="mt-8 rounded-2xl border border-brand-100 bg-brand-50 p-5">
             <p className="text-sm leading-relaxed text-slate-700">{demoPageCopy.disabled}</p>
             <Link
-              to="/"
+              to="/demande-essai"
               className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-brand-gradient px-5 py-3 text-sm font-bold text-white shadow-brand"
             >
-              Retour à l’accueil
+              Demander 1 mois d&apos;essai gratuit
             </Link>
           </div>
         ) : (
@@ -194,6 +194,14 @@ export function DemoEntryPage() {
             {message}
           </p>
         ) : null}
+
+        <p className="mt-8 text-center text-sm text-slate-500">
+          Votre établissement veut tester Somafrik avec son propre périmètre ?{" "}
+          <Link to="/demande-essai" className="font-bold text-brand underline">
+            Demandez un mois d&apos;essai gratuit
+          </Link>
+          .
+        </p>
       </main>
       <MarketingFooter />
     </div>

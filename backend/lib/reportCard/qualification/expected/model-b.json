@@ -1,0 +1,767 @@
+{
+  "id": "fixture.qualification.burundi-model-b",
+  "engine_id": "somafrik.report_card.v1",
+  "canonical": [
+    {
+      "student_id": "STU1",
+      "cells": [
+        {
+          "subject_id": "FRANCAIS",
+          "period_id": "T1",
+          "score_component_id": "EX",
+          "kind": "NUMERIC",
+          "internal": 12,
+          "exposed": 12
+        },
+        {
+          "subject_id": "FRANCAIS",
+          "period_id": "T1",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 11,
+          "exposed": 11
+        },
+        {
+          "subject_id": "FRANCAIS",
+          "period_id": "T2",
+          "score_component_id": "EX",
+          "kind": "NUMERIC",
+          "internal": 13,
+          "exposed": 13
+        },
+        {
+          "subject_id": "FRANCAIS",
+          "period_id": "T2",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 10,
+          "exposed": 10
+        },
+        {
+          "subject_id": "FRANCAIS",
+          "period_id": "T3",
+          "score_component_id": "EX",
+          "kind": "NUMERIC",
+          "internal": 11,
+          "exposed": 11
+        },
+        {
+          "subject_id": "FRANCAIS",
+          "period_id": "T3",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 12,
+          "exposed": 12
+        },
+        {
+          "subject_id": "MATH",
+          "period_id": "T1",
+          "score_component_id": "EX",
+          "kind": "NUMERIC",
+          "internal": 16,
+          "exposed": 16
+        },
+        {
+          "subject_id": "MATH",
+          "period_id": "T1",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 14,
+          "exposed": 14
+        },
+        {
+          "subject_id": "MATH",
+          "period_id": "T2",
+          "score_component_id": "EX",
+          "kind": "NUMERIC",
+          "internal": 15,
+          "exposed": 15
+        },
+        {
+          "subject_id": "MATH",
+          "period_id": "T2",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 13,
+          "exposed": 13
+        },
+        {
+          "subject_id": "MATH",
+          "period_id": "T3",
+          "score_component_id": "EX",
+          "kind": "NUMERIC",
+          "internal": 14,
+          "exposed": 14
+        },
+        {
+          "subject_id": "MATH",
+          "period_id": "T3",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 12,
+          "exposed": 12
+        },
+        {
+          "subject_id": "RELIGION_MORALE",
+          "period_id": "T1",
+          "score_component_id": "EX",
+          "kind": "NOT_APPLICABLE",
+          "internal": null,
+          "exposed": null
+        },
+        {
+          "subject_id": "RELIGION_MORALE",
+          "period_id": "T1",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 15,
+          "exposed": 15
+        },
+        {
+          "subject_id": "RELIGION_MORALE",
+          "period_id": "T2",
+          "score_component_id": "EX",
+          "kind": "NOT_APPLICABLE",
+          "internal": null,
+          "exposed": null
+        },
+        {
+          "subject_id": "RELIGION_MORALE",
+          "period_id": "T2",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 16,
+          "exposed": 16
+        },
+        {
+          "subject_id": "RELIGION_MORALE",
+          "period_id": "T3",
+          "score_component_id": "EX",
+          "kind": "NOT_APPLICABLE",
+          "internal": null,
+          "exposed": null
+        },
+        {
+          "subject_id": "RELIGION_MORALE",
+          "period_id": "T3",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 14,
+          "exposed": 14
+        },
+        {
+          "subject_id": "SCIENCES",
+          "period_id": "T1",
+          "score_component_id": "EX",
+          "kind": "NUMERIC",
+          "internal": 17,
+          "exposed": 17
+        },
+        {
+          "subject_id": "SCIENCES",
+          "period_id": "T1",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 15,
+          "exposed": 15
+        },
+        {
+          "subject_id": "SCIENCES",
+          "period_id": "T2",
+          "score_component_id": "EX",
+          "kind": "NUMERIC",
+          "internal": 18,
+          "exposed": 18
+        },
+        {
+          "subject_id": "SCIENCES",
+          "period_id": "T2",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 16,
+          "exposed": 16
+        },
+        {
+          "subject_id": "SCIENCES",
+          "period_id": "T3",
+          "score_component_id": "EX",
+          "kind": "NUMERIC",
+          "internal": 16,
+          "exposed": 16
+        },
+        {
+          "subject_id": "SCIENCES",
+          "period_id": "T3",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 14,
+          "exposed": 14
+        },
+        {
+          "subject_id": "TPA",
+          "period_id": "T1",
+          "score_component_id": "EX",
+          "kind": "NOT_APPLICABLE",
+          "internal": null,
+          "exposed": null
+        },
+        {
+          "subject_id": "TPA",
+          "period_id": "T1",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 13,
+          "exposed": 13
+        },
+        {
+          "subject_id": "TPA",
+          "period_id": "T2",
+          "score_component_id": "EX",
+          "kind": "NOT_APPLICABLE",
+          "internal": null,
+          "exposed": null
+        },
+        {
+          "subject_id": "TPA",
+          "period_id": "T2",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 14,
+          "exposed": 14
+        },
+        {
+          "subject_id": "TPA",
+          "period_id": "T3",
+          "score_component_id": "EX",
+          "kind": "NOT_APPLICABLE",
+          "internal": null,
+          "exposed": null
+        },
+        {
+          "subject_id": "TPA",
+          "period_id": "T3",
+          "score_component_id": "TJ",
+          "kind": "NUMERIC",
+          "internal": 12,
+          "exposed": 12
+        }
+      ],
+      "slots": [
+        {
+          "section_id": "SUBJECTS",
+          "column_id": "COL_ANNUAL_TOTAL",
+          "slot": "TOTAL",
+          "period_id": null,
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 333,
+          "exposed": 333,
+          "passed": null
+        },
+        {
+          "section_id": "SUBJECTS",
+          "column_id": "COL_DECISION",
+          "slot": "DECISION",
+          "period_id": null,
+          "score_component_id": null,
+          "kind": "DECISION",
+          "internal": 69.375,
+          "exposed": 69.38,
+          "passed": true
+        },
+        {
+          "section_id": "SUBJECTS",
+          "column_id": "COL_PERCENTAGE",
+          "slot": "PERCENTAGE",
+          "period_id": null,
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 69.375,
+          "exposed": 69.38,
+          "passed": null
+        },
+        {
+          "section_id": "SUBJECTS",
+          "column_id": "COL_T1_TOTAL",
+          "slot": "TOTAL",
+          "period_id": "T1",
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 113,
+          "exposed": 113,
+          "passed": null
+        },
+        {
+          "section_id": "SUBJECTS",
+          "column_id": "COL_T2_TOTAL",
+          "slot": "TOTAL",
+          "period_id": "T2",
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 115,
+          "exposed": 115,
+          "passed": null
+        },
+        {
+          "section_id": "SUBJECTS",
+          "column_id": "COL_T3_TOTAL",
+          "slot": "TOTAL",
+          "period_id": "T3",
+          "score_component_id": null,
+          "kind": "NUMERIC",
+          "internal": 105,
+          "exposed": 105,
+          "passed": null
+        }
+      ]
+    }
+  ],
+  "snapshot": {
+    "published_snapshot_version": 1,
+    "engine_id": "somafrik.report_card.v1",
+    "provenance": {
+      "profile": {
+        "version": 1,
+        "spec_sha256": "27e0da644b1548beb4f296e63c721fda11d12caae591dceceedba498363683b7"
+      },
+      "schema": {
+        "version": 1,
+        "spec_sha256": "110987be606319243d1e14c1820bbec08a7860657d20d9452867900aaba81833"
+      },
+      "template": {
+        "version": 1,
+        "spec_sha256": "744853eaf4bddb79e3570d8394bdf0a7edbf825a8ebd5532c7bb38830eeddb01"
+      }
+    },
+    "students": [
+      {
+        "student_id": "STU1",
+        "cells": [
+          {
+            "student_id": "STU1",
+            "subject_id": "FRANCAIS",
+            "period_id": "T1",
+            "score_component_id": "EX",
+            "kind": "NUMERIC",
+            "internal": 12,
+            "exposed": 12
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "FRANCAIS",
+            "period_id": "T1",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 11,
+            "exposed": 11
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "FRANCAIS",
+            "period_id": "T2",
+            "score_component_id": "EX",
+            "kind": "NUMERIC",
+            "internal": 13,
+            "exposed": 13
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "FRANCAIS",
+            "period_id": "T2",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 10,
+            "exposed": 10
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "FRANCAIS",
+            "period_id": "T3",
+            "score_component_id": "EX",
+            "kind": "NUMERIC",
+            "internal": 11,
+            "exposed": 11
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "FRANCAIS",
+            "period_id": "T3",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 12,
+            "exposed": 12
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "MATH",
+            "period_id": "T1",
+            "score_component_id": "EX",
+            "kind": "NUMERIC",
+            "internal": 16,
+            "exposed": 16
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "MATH",
+            "period_id": "T1",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 14,
+            "exposed": 14
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "MATH",
+            "period_id": "T2",
+            "score_component_id": "EX",
+            "kind": "NUMERIC",
+            "internal": 15,
+            "exposed": 15
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "MATH",
+            "period_id": "T2",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 13,
+            "exposed": 13
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "MATH",
+            "period_id": "T3",
+            "score_component_id": "EX",
+            "kind": "NUMERIC",
+            "internal": 14,
+            "exposed": 14
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "MATH",
+            "period_id": "T3",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 12,
+            "exposed": 12
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "RELIGION_MORALE",
+            "period_id": "T1",
+            "score_component_id": "EX",
+            "kind": "NOT_APPLICABLE",
+            "internal": null,
+            "exposed": null
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "RELIGION_MORALE",
+            "period_id": "T1",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 15,
+            "exposed": 15
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "RELIGION_MORALE",
+            "period_id": "T2",
+            "score_component_id": "EX",
+            "kind": "NOT_APPLICABLE",
+            "internal": null,
+            "exposed": null
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "RELIGION_MORALE",
+            "period_id": "T2",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 16,
+            "exposed": 16
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "RELIGION_MORALE",
+            "period_id": "T3",
+            "score_component_id": "EX",
+            "kind": "NOT_APPLICABLE",
+            "internal": null,
+            "exposed": null
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "RELIGION_MORALE",
+            "period_id": "T3",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 14,
+            "exposed": 14
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "SCIENCES",
+            "period_id": "T1",
+            "score_component_id": "EX",
+            "kind": "NUMERIC",
+            "internal": 17,
+            "exposed": 17
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "SCIENCES",
+            "period_id": "T1",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 15,
+            "exposed": 15
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "SCIENCES",
+            "period_id": "T2",
+            "score_component_id": "EX",
+            "kind": "NUMERIC",
+            "internal": 18,
+            "exposed": 18
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "SCIENCES",
+            "period_id": "T2",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 16,
+            "exposed": 16
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "SCIENCES",
+            "period_id": "T3",
+            "score_component_id": "EX",
+            "kind": "NUMERIC",
+            "internal": 16,
+            "exposed": 16
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "SCIENCES",
+            "period_id": "T3",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 14,
+            "exposed": 14
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "TPA",
+            "period_id": "T1",
+            "score_component_id": "EX",
+            "kind": "NOT_APPLICABLE",
+            "internal": null,
+            "exposed": null
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "TPA",
+            "period_id": "T1",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 13,
+            "exposed": 13
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "TPA",
+            "period_id": "T2",
+            "score_component_id": "EX",
+            "kind": "NOT_APPLICABLE",
+            "internal": null,
+            "exposed": null
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "TPA",
+            "period_id": "T2",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 14,
+            "exposed": 14
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "TPA",
+            "period_id": "T3",
+            "score_component_id": "EX",
+            "kind": "NOT_APPLICABLE",
+            "internal": null,
+            "exposed": null
+          },
+          {
+            "student_id": "STU1",
+            "subject_id": "TPA",
+            "period_id": "T3",
+            "score_component_id": "TJ",
+            "kind": "NUMERIC",
+            "internal": 12,
+            "exposed": 12
+          }
+        ],
+        "slots": [
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_ANNUAL_TOTAL",
+            "slot": "TOTAL",
+            "kind": "NUMERIC",
+            "internal": 333,
+            "exposed": 333
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_DECISION",
+            "slot": "DECISION",
+            "kind": "DECISION",
+            "metric": "PERCENTAGE",
+            "threshold": 50,
+            "internal": 69.375,
+            "exposed": 69.38,
+            "passed": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_PERCENTAGE",
+            "slot": "PERCENTAGE",
+            "kind": "NUMERIC",
+            "internal": 69.375,
+            "exposed": 69.38
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T1_TOTAL",
+            "slot": "TOTAL",
+            "period_id": "T1",
+            "kind": "NUMERIC",
+            "internal": 113,
+            "exposed": 113
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T2_TOTAL",
+            "slot": "TOTAL",
+            "period_id": "T2",
+            "kind": "NUMERIC",
+            "internal": 115,
+            "exposed": 115
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T3_TOTAL",
+            "slot": "TOTAL",
+            "period_id": "T3",
+            "kind": "NUMERIC",
+            "internal": 105,
+            "exposed": 105
+          }
+        ],
+        "presence": [
+          {
+            "field_kind": "identity",
+            "field_id": "STUDENT_NAME",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "row_id": "SUBJECT_LINE",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_ANNUAL_TOTAL",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_DECISION",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_PERCENTAGE",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T1_EX",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T1_TJ",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T1_TOTAL",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T2_EX",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T2_TJ",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T2_TOTAL",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T3_EX",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T3_TJ",
+            "applicable": true
+          },
+          {
+            "section_id": "SUBJECTS",
+            "column_id": "COL_T3_TOTAL",
+            "applicable": true
+          }
+        ],
+        "period_aggregates": [
+          {
+            "period_id": "T1",
+            "points": 113,
+            "max_points": 160
+          },
+          {
+            "period_id": "T2",
+            "points": 115,
+            "max_points": 160
+          },
+          {
+            "period_id": "T3",
+            "points": 105,
+            "max_points": 160
+          }
+        ],
+        "annual": {
+          "points": 333,
+          "max_points": 480
+        }
+      }
+    ]
+  }
+}

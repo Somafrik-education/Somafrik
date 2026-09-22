@@ -25,8 +25,10 @@ function run(cmd, args, label) {
 
 const webModal = read("web/src/components/payments/QuickPaymentModal.tsx");
 const webFees = read("web/src/pages/finances/FinanceFeesPage.tsx");
+const webCatalog = read("web/src/pages/finances/FinanceCatalogConfig.tsx");
 const webUnpaid = read("web/src/pages/finances/FinanceUnpaidPage.tsx");
-const webSettings = read("web/src/pages/parametres/SettingsFinancePage.tsx");
+const webFinanceLayout = read("web/src/pages/finances/FinancesLayout.tsx");
+const webFinanceRoutes = read("web/src/lib/financeRouteAccess.ts");
 const webActions = read("web/src/lib/financeActionPermissions.ts");
 const webUnpaidPerm = read("web/src/lib/unpaidPermissions.ts");
 const webFeePerm = read("web/src/lib/feePermissions.ts");
@@ -40,8 +42,10 @@ const currencyMobile = read("Mobile/src/lib/financeCurrency.ts");
 for (const [label, source] of [
   ["QuickPaymentModal", webModal],
   ["FinanceFeesPage", webFees],
+  ["FinanceCatalogConfig", webCatalog],
   ["FinanceUnpaidPage", webUnpaid],
-  ["SettingsFinancePage", webSettings],
+  ["FinancesLayout", webFinanceLayout],
+  ["financeRouteAccess", webFinanceRoutes],
   ["financeActionPermissions", webActions],
   ["unpaidPermissions", webUnpaidPerm],
   ["feePermissions", webFeePerm],
@@ -61,7 +65,7 @@ assert.match(mobileControls, /Frais encore dus/);
 assert.match(mobileControls, /canRecordSchoolPayment/);
 assert.match(webFees, /canReadFees\(ctx\)/);
 assert.doesNotMatch(webFees, /canViewFeeGrids/);
-assert.match(webSettings, /canReadFees\(ctx\)/);
+assert.match(webCatalog, /replacePaymentMethods/);
 assert.match(webUnpaidPerm, /hasBackOfficePermission\(ctx, UNPAID_FEATURE, "READ"\)/);
 assert.match(webUnpaidPerm, /hasBackOfficePermission\(ctx, "Paiements", "UPDATE"\)/);
 assert.match(webFeePerm, /hasBackOfficePermission\(ctx, FEE_FEATURE, "READ"\)/);
@@ -80,6 +84,21 @@ assert.match(webModal, /Enregistrer l'encaissement/);
 assert.match(webModal, /Chargement du catalogue financier/);
 assert.match(webFees, /EmptyState/);
 assert.match(webUnpaid, /Aucun reste à payer/);
+assert.match(webUnpaid, /QuickPaymentModal/);
+assert.match(webUnpaid, /financeActions\.canConsultPayments && financeActions\.canCreatePayment/);
+assert.match(webUnpaid, /Enregistrer un paiement/);
+assert.doesNotMatch(webUnpaid, />Payer</);
+assert.doesNotMatch(webUnpaid, /financeApi\.createPayment/);
+assert.match(webModal, /initialStudentId/);
+assert.match(webModal, /financeApi\.createPayment/);
+assert.match(webModal, /idempotencyKey: paymentIntentionRef\.current/);
+assert.match(webModal, /quick-student/);
+assert.match(webModal, /OPEN_OBLIGATION_RESOLVE_ERROR/);
+assert.match(webModal, /findFinanceStudentOption/);
+assert.match(webUnpaid, /mode="quick-student"/);
+assert.match(read("web/src/lib/financePaymentWrite.ts"), /studentDbId/);
+assert.match(read("web/src/lib/financePaymentWrite.ts"), /obligationBelongsToStudent/);
+assert.doesNotMatch(read("web/src/pages/EntityPage.tsx"), /mode=["']quick-student["']/);
 
 run("npx", ["--yes", "tsx", "Mobile/src/lib/financeCurrency.test.ts"], "mobile financeCurrency");
 run("npx", ["--yes", "tsx", "Mobile/src/lib/mobileCrudParity.test.ts"], "mobile F6 payment OR");
@@ -91,7 +110,14 @@ run("npm", ["--prefix", "web", "run", "test", "--",
   "src/components/payments/OpenObligationCards.test.tsx",
   "src/components/payments/PaymentReceipt.test.tsx",
   "src/pages/entity-page/entityColumns.test.tsx",
-  "src/pages/parametres/SettingsFinancePage.test.tsx",
+  "src/pages/finances/FinanceCatalogConfig.test.tsx",
+  "src/lib/financeRouteAccess.test.ts",
+  "src/pages/finances/financeRoutes.rbac.test.tsx",
+  "src/pages/finances/FinanceUnpaidPage.registerPayment.test.tsx",
+  "src/lib/financePaymentWrite.studentIdentity.test.ts",
+  "src/pages/finances/FinanceUnpaidPage.fastPayment.test.tsx",
+  "src/components/payments/QuickPaymentModal.fastStudent.test.tsx",
+  "src/lib/financeCalcOverpayment.red.test.ts",
 ], "web F7 UX tests");
 
 console.log("verify-finance-ux OK");

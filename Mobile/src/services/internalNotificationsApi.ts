@@ -46,9 +46,16 @@ function scoped(path: string, explicit?: string | null): string {
   return withCommunicationSchoolScope(path, schoolScope(explicit));
 }
 
-export async function listInternalNotifications(schoolCode?: string) {
+export async function listInternalNotifications(
+  schoolCode?: string,
+  options?: { cursor?: string | null },
+) {
+  const cursor = String(options?.cursor ?? "").trim();
+  const path = cursor
+    ? `/backoffice/internal-notifications?cursor=${encodeURIComponent(cursor)}`
+    : "/backoffice/internal-notifications";
   return httpRequest<{ items?: InternalNotificationRecord[]; nextCursor?: string | null }>(
-    scoped("/backoffice/internal-notifications", schoolCode),
+    scoped(path, schoolCode),
   ).then((data) => ({ items: Array.isArray(data?.items) ? data.items : [], nextCursor: data?.nextCursor ?? null }));
 }
 

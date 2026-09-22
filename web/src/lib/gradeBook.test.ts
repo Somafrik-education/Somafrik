@@ -59,4 +59,38 @@ describe("GradeBookService — NOTES-UI-P0-001 non-récursion", () => {
       3,
     );
   });
+
+  it("moyenne générale à deux niveaux sans catalogue cours = 15,7", () => {
+    const grades = [
+      {
+        ...math14,
+        id: "m1",
+        subject: "Mathématiques",
+        value: 10,
+        evaluationCoefficient: 1,
+        coefficient: 2,
+      },
+      {
+        ...math14,
+        id: "m2",
+        subject: "Mathématiques",
+        value: 20,
+        evaluationCoefficient: 3,
+        coefficient: 2,
+      },
+      {
+        ...math14,
+        id: "f1",
+        subject: "Français",
+        value: 12,
+        evaluationCoefficient: 1,
+        coefficient: 1,
+      },
+    ] as StudentGrade[];
+    const book = new GradeBookService([riziki], grades, []);
+    const average = book.getStudentAverageValue("STU-RIZIKI", "Trimestre 1");
+    expect(average).toBeCloseTo((17.5 * 2 + 12) / 3, 10);
+    expect(Number(average.toFixed(1))).toBe(15.7);
+    expect(Number(average.toFixed(1))).not.toBe(16.4);
+  });
 });

@@ -1,3 +1,4 @@
+import { formatDateTimeForDisplay } from "../lib/dates";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,7 +16,19 @@ import * as DocumentPicker from "expo-document-picker";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
+import { canReadRoute } from "../domain/security/permissions";
+import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
+import { filterCommunicationRows, excerptCommunication } from "../lib/communicationListFilter";
+import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
+import {
+  resolveInternalNotificationNavigationTarget,
+  type AllowedPushDestination,
+  type AllowedPushNavigationParams,
+} from "../lib/pushNotificationDestinations";
+import { navigationRef } from "../navigation/rootNavigation";
+import CommunicationChrome from "../components/CommunicationChrome";
+import ExpandableCommunicationCard from "../components/ExpandableCommunicationCard";
 import {
   archiveInternalNotification,
   createInternalNotification,
@@ -28,12 +41,7 @@ import {
 
 const ALLOWED_MIME = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
-function formatDateTime(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(date);
-}
+const formatDateTime = formatDateTimeForDisplay;
 
 function hasPermission(session: any, permission: string) {
   const permissions = Array.isArray(session?.permissions)
@@ -56,10 +64,31 @@ export default function InternalNotificationsScreen() {
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<Array<{ id: string; fileName: string }>>([]);
   const [sending, setSending] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [query, setQuery] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   const scopeReady = !requiresSchoolSelection || hasCommunicationSchoolScope(activeSchoolCode);
   const canCreate = hasPermission(session, "Notifications:CREATE") && scopeReady;
-  const unread = useMemo(() => rows.filter((row) => !row.readAt).length, [rows]);
+  const canOpenStudentPayments = canReadRoute(session, "StudentPayments");
+  const canOpenMessages = canAccessMessagesRoute(session);
+  const canOpenAnnouncements = canReadRoute(session, "Announcements");
+  const { count: unread, refresh: refreshUnread } = useInternalNotificationsUnreadCount(scopeReady, activeSchoolCode);
+  const visibleRows = useMemo(
+    () =>
+      filterCommunicationRows(
+        rows.map((row) => ({
+          ...row,
+          excerpt: excerptCommunication(row.body),
+          author: row.senderName,
+          unread: !row.readAt,
+        })),
+        query,
+        unreadOnly,
+      ),
+    [rows, query, unreadOnly],
+  );
 
   const load = useCallback(async (refresh = false) => {
     if (!scopeReady) {
@@ -74,22 +103,42 @@ export default function InternalNotificationsScreen() {
     try {
       const result = await listInternalNotifications(activeSchoolCode);
       setRows(result.items);
+      setCursor(result.nextCursor ?? null);
+      await refreshUnread();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Notifications indisponibles.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeSchoolCode, scopeReady]);
+  }, [activeSchoolCode, scopeReady, refreshUnread]);
 
   useFocusEffect(useCallback(() => {
     void load();
   }, [load]));
 
+  async function loadMore() {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await listInternalNotifications(activeSchoolCode, { cursor });
+      setRows((current) => {
+        const known = new Set(current.map((row) => row.id));
+        return [...current, ...result.items.filter((row) => !known.has(row.id))];
+      });
+      setCursor(result.nextCursor ?? null);
+    } catch (err) {
+      Alert.alert("Chargement interrompu", err instanceof Error ? err.message : "Réessayez.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   async function markRead(row: InternalNotificationRecord) {
     try {
       const updated = await markInternalNotificationRead(row.id, activeSchoolCode);
       setRows((current) => current.map((item) => item.id === row.id ? updated : item));
+      await refreshUnread();
     } catch (err) {
       Alert.alert("Lecture impossible", err instanceof Error ? err.message : "Réessayez.");
     }
@@ -99,9 +148,37 @@ export default function InternalNotificationsScreen() {
     try {
       await archiveInternalNotification(row.id, activeSchoolCode);
       setRows((current) => current.filter((item) => item.id !== row.id));
+      await refreshUnread();
     } catch (err) {
       Alert.alert("Archivage impossible", err instanceof Error ? err.message : "Réessayez.");
     }
+  }
+
+  function canOpenResolvedTarget(target: {
+    destination: AllowedPushDestination;
+    params?: AllowedPushNavigationParams;
+  }) {
+    if (target.destination === "StudentPayments") return canOpenStudentPayments;
+    if (target.destination === "Messages") return canOpenMessages;
+    if (target.destination === "Announcements") return canOpenAnnouncements;
+    return false;
+  }
+
+  function openActionLabel(row: InternalNotificationRecord, destination: AllowedPushDestination) {
+    if (destination === "StudentPayments") return "Voir le paiement";
+    return row.readAt ? "Ouvrir" : "Lire";
+  }
+
+  async function openNavigationTarget(row: InternalNotificationRecord) {
+    const target = resolveInternalNotificationNavigationTarget(row.navigationTarget);
+    if (!target || !canOpenResolvedTarget(target) || !navigationRef.isReady()) {
+      Alert.alert("Ouverture impossible", "Cette notification ne renvoie vers aucune ressource consultable.");
+      return;
+    }
+    if (!row.readAt) {
+      await markRead(row);
+    }
+    navigationRef.navigate({ name: target.destination, params: target.params } as never);
   }
 
   async function pickAttachments() {
@@ -161,19 +238,33 @@ export default function InternalNotificationsScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />}
     >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Notifications</Text>
-          <Text style={styles.subtitle}>{unread} non lue(s) · synchronisées avec le Web</Text>
-        </View>
-        {canCreate ? (
-          <TouchableOpacity style={styles.primaryButton} onPress={() => setShowComposer((value) => !value)}>
-            <Text style={styles.primaryButtonText}>{showComposer ? "Fermer" : "Nouvelle"}</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
+      <CommunicationChrome
+        surface="notifications"
+        title="Communication"
+        searchPlaceholder="Rechercher"
+        unreadLabel="Non lus"
+        countLabel={`${unread} non lue(s) · synchronisées avec le Web`}
+        search={query}
+        onSearch={setQuery}
+        unreadOnly={unreadOnly}
+        onUnreadOnly={setUnreadOnly}
+        primaryAction={
+          canCreate ? (
+            <TouchableOpacity style={styles.primaryButton} onPress={() => setShowComposer((value) => !value)}>
+              <Text style={styles.primaryButtonText}>{showComposer ? "Fermer" : "Nouvelle"}</Text>
+            </TouchableOpacity>
+          ) : null
+        }
+      />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <View>
+          <Text style={styles.error}>{error}</Text>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => void load()}>
+            <Text style={styles.secondaryButtonText}>Réessayer</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {showComposer ? (
         <View style={styles.card}>
@@ -196,48 +287,63 @@ export default function InternalNotificationsScreen() {
         </View>
       ) : null}
 
-      {!rows.length && !error ? <Text style={styles.empty}>Aucune notification.</Text> : null}
+      {!visibleRows.length && !error ? <Text style={styles.empty}>Aucune notification.</Text> : null}
 
-      {rows.map((row) => (
-        <View key={row.id} style={[styles.card, !row.readAt && styles.unreadCard]}>
-          <View style={styles.rowTop}>
-            <Text style={styles.cardTitle}>{row.title}</Text>
-            <Text style={[styles.badge, row.readAt ? styles.readBadge : styles.unreadBadge]}>{row.readAt ? "Lu" : "Non lu"}</Text>
-          </View>
-          <Text style={styles.body}>{row.body}</Text>
-          <Text style={styles.meta}>{row.senderName} · {formatDateTime(row.publishedAt || row.createdAt)}</Text>
-          {(row.attachments ?? []).map((attachment) => (
-            <TouchableOpacity
-              key={attachment.id}
-              style={styles.fileButton}
-              onPress={async () => {
-                try {
-                  const uri = await downloadInternalNotificationAttachment(
-                    attachment.id,
-                    attachment.fileName,
-                    activeSchoolCode,
-                  );
-                  await Linking.openURL(uri);
-                } catch (err) {
-                  Alert.alert("Téléchargement impossible", err instanceof Error ? err.message : "Réessayez.");
-                }
-              }}
-            >
-              <Text style={styles.fileButtonText}>{attachment.fileName}</Text>
-            </TouchableOpacity>
-          ))}
-          <View style={styles.actions}>
-            {!row.readAt ? (
-              <TouchableOpacity style={styles.secondaryButton} onPress={() => void markRead(row)}>
-                <Text style={styles.secondaryButtonText}>Marquer comme lu</Text>
+      {visibleRows.map((row) => {
+        const navigationTarget = resolveInternalNotificationNavigationTarget(row.navigationTarget);
+        return (
+          <ExpandableCommunicationCard
+            key={row.id}
+            title={row.title}
+            subtitle={`${row.senderName} · ${formatDateTime(row.publishedAt || row.createdAt)}`}
+            badge={row.readAt ? "Lu" : "Non lu"}
+            badgeTone={row.readAt ? "default" : "info"}
+            testID={`notification-card-${row.id}`}
+          >
+            <Text style={styles.body}>{row.body || row.excerpt}</Text>
+            {(row.attachments ?? []).map((attachment) => (
+              <TouchableOpacity
+                key={attachment.id}
+                style={styles.fileButton}
+                onPress={async () => {
+                  try {
+                    const uri = await downloadInternalNotificationAttachment(
+                      attachment.id,
+                      attachment.fileName,
+                      activeSchoolCode,
+                    );
+                    await Linking.openURL(uri);
+                  } catch (err) {
+                    Alert.alert("Téléchargement impossible", err instanceof Error ? err.message : "Réessayez.");
+                  }
+                }}
+              >
+                <Text style={styles.fileButtonText}>{attachment.fileName}</Text>
               </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity style={styles.secondaryButton} onPress={() => void archive(row)}>
-              <Text style={styles.secondaryButtonText}>Archiver</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ))}
+            ))}
+            <View style={styles.actions}>
+              {navigationTarget && canOpenResolvedTarget(navigationTarget) ? (
+                <TouchableOpacity style={styles.primaryButton} onPress={() => void openNavigationTarget(row)}>
+                  <Text style={styles.primaryButtonText}>{openActionLabel(row, navigationTarget.destination)}</Text>
+                </TouchableOpacity>
+              ) : null}
+              {!row.readAt ? (
+                <TouchableOpacity style={styles.secondaryButton} onPress={() => void markRead(row)}>
+                  <Text style={styles.secondaryButtonText}>Marquer comme lu</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => void archive(row)}>
+                <Text style={styles.secondaryButtonText}>Archiver</Text>
+              </TouchableOpacity>
+            </View>
+          </ExpandableCommunicationCard>
+        );
+      })}
+      {cursor ? (
+        <TouchableOpacity style={styles.secondaryButton} onPress={() => void loadMore()} disabled={loadingMore}>
+          <Text style={styles.secondaryButtonText}>{loadingMore ? "Chargement…" : "Charger les notifications plus anciennes"}</Text>
+        </TouchableOpacity>
+      ) : null}
     </ScrollView>
   );
 }
@@ -249,7 +355,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   title: { fontSize: 24, fontWeight: "800", color: "#0F172A" },
   subtitle: { marginTop: 4, color: "#64748B" },
-  card: { backgroundColor: "#FFFFFF", borderRadius: 16, borderWidth: 1, borderColor: "#E2E8F0", padding: 16, gap: 10 },
+  card: { backgroundColor: "#FFFFFF", borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 10, paddingHorizontal: 12, gap: 6 },
   unreadCard: { borderColor: "#93C5FD", backgroundColor: "#EFF6FF" },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   cardTitle: { flex: 1, fontSize: 16, fontWeight: "800", color: "#0F172A" },

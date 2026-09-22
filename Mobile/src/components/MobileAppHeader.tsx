@@ -1,53 +1,33 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
-import { useAdminData } from "../context/AdminDataContext";
-import { canReadRoute, canReadView } from "../domain/security/permissions";
-import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
-import { useInternalNotificationsUnreadCount } from "../lib/internalNotificationsRead";
+import { canReadRoute } from "../domain/security/permissions";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
-import { COMPACT_HEADER_ROW_DP, HEADER_ACTIONS_SLOT_DP, HEADER_BADGE_BAND_DP, HEADER_MENU_SLOT_DP } from "../lib/mobileUxV1Layout";
+import {
+  COMPACT_HEADER_ROW_DP,
+  HEADER_ACTIONS_SLOT_DP,
+  HEADER_BADGE_BAND_DP,
+  HEADER_MENU_ICON_DP,
+  HEADER_MENU_SLOT_DP,
+  HEADER_MENU_TOUCH_DP,
+} from "../lib/mobileUxV1Layout";
 import { shouldShowEnvironmentBadge } from "../config/env";
+import CommunicationHeaderIcons from "./CommunicationHeaderIcons";
 import RoleNavigationDrawer from "./RoleNavigationDrawer";
 
 export default function MobileAppHeader({ navigation }: { navigation: any }) {
   const { session } = useAuth();
-  const { activeSchoolCode } = useAdminData();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
-  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
-  const canInternalNotifications = canReadRoute(session, "InternalNotifications") && hasInternalNotificationScope;
-  const { count: internalUnread } = useInternalNotificationsUnreadCount(
-    canInternalNotifications,
-    activeSchoolCode,
-  );
 
   const syncRoute = canReadRoute(session, "Synchronization")
     ? "Synchronization"
     : canReadRoute(session, "OfflineMode")
       ? "OfflineMode"
       : null;
-
-  const searchRoute = useMemo(() => {
-    if (canReadRoute(session, "TeacherStudents")) return "TeacherStudents";
-    if (canReadRoute(session, "Students")) return "Students";
-    if (canReadRoute(session, "Users")) return "Users";
-    if (canReadRoute(session, "Classes")) return "Classes";
-    return null;
-  }, [session]);
-
-  const notificationsRoute = canInternalNotifications
-    ? "InternalNotifications"
-    : canReadView(session, "PlatformNotifications")
-      ? "PlatformNotifications"
-      : canReadRoute(session, "Announcements")
-        ? "Announcements"
-        : canAccessMessagesRoute(session)
-          ? "Messages"
-          : null;
 
   const rootNavigation = navigation.getParent?.() ?? navigation;
   const openRootRoute = (route: string) => rootNavigation.navigate(route);
@@ -65,7 +45,7 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
               accessibilityLabel="Ouvrir le menu"
               testID="mobile-header-menu"
             >
-              <Ionicons name="menu" size={22} color="#0F172A" />
+              <Ionicons name="menu" size={HEADER_MENU_ICON_DP} color="#0F172A" />
             </TouchableOpacity>
           </View>
 
@@ -89,23 +69,7 @@ export default function MobileAppHeader({ navigation }: { navigation: any }) {
                 onPress={() => openRootRoute(syncRoute)}
               />
             ) : null}
-            {searchRoute ? (
-              <HeaderAction
-                icon="search-outline"
-                label="Rechercher"
-                testID="mobile-header-search"
-                onPress={() => openRootRoute(searchRoute)}
-              />
-            ) : null}
-            {notificationsRoute ? (
-              <HeaderAction
-                icon="notifications-outline"
-                label="Notifications"
-                testID="mobile-header-notifications"
-                count={canInternalNotifications ? internalUnread : 0}
-                onPress={() => openRootRoute(notificationsRoute)}
-              />
-            ) : null}
+            <CommunicationHeaderIcons navigation={rootNavigation} variant="header" />
           </View>
         </View>
       </SafeAreaView>
@@ -170,13 +134,15 @@ const styles = StyleSheet.create({
   },
   menuSlot: {
     width: HEADER_MENU_SLOT_DP,
-    minHeight: MIN_TOUCH_TARGET_DP,
+    minHeight: COMPACT_HEADER_ROW_DP,
     flexDirection: "row",
     alignItems: "center",
   },
   menuButton: {
-    minWidth: MIN_TOUCH_TARGET_DP,
-    minHeight: MIN_TOUCH_TARGET_DP,
+    width: HEADER_MENU_TOUCH_DP,
+    height: HEADER_MENU_TOUCH_DP,
+    minWidth: HEADER_MENU_TOUCH_DP,
+    minHeight: HEADER_MENU_TOUCH_DP,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -184,19 +150,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingHorizontal: 4,
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "center",
   },
   schoolName: {
     color: "#0F172A",
     fontSize: 15,
     fontWeight: "700",
-    textAlign: "center",
+    textAlign: "left",
     width: "100%",
   },
   actionsSlot: {
     width: HEADER_ACTIONS_SLOT_DP,
-    minHeight: MIN_TOUCH_TARGET_DP,
+    minHeight: COMPACT_HEADER_ROW_DP,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",

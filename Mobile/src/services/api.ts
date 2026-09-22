@@ -53,7 +53,11 @@ import {
   getRestrictedAccessToken,
   getRestrictedRefreshToken,
 } from "../lib/restrictedSession";
-import { clearRequestSchoolScope, getRequestSchoolScope } from "../lib/requestSchoolScope";
+import {
+  clearRequestSchoolScope,
+  getRequestSchoolScope,
+  publicRequestSchoolScope,
+} from "../lib/requestSchoolScope";
 import { clearStoredSchoolCode } from "../lib/activeSchool";
 import { attachStudentTenantIdentity } from "../lib/studentsScope";
 import {
@@ -62,6 +66,7 @@ import {
   withCommunicationSchoolPayload,
   withCommunicationSchoolScope,
 } from "../lib/communicationSchoolScope";
+import { normalizeUnpaidLedger, type UnpaidLedger } from "../lib/unpaidLedger";
 
 export function getApiBaseUrl() {
   return resolveApiBaseUrl();
@@ -110,7 +115,8 @@ type LoginPayload = {
   role: UserRole;
   schoolCode?: string;
   identifier: string;
-  pin: string;
+  pin?: string;
+  password?: string;
 };
 
 export type SchoolInfo = {
@@ -129,6 +135,9 @@ export type SchoolInfo = {
   slogan?: string;
   status?: string;
   logoUrl?: string;
+  hasLogo?: boolean;
+  logoSource?: string;
+  logoUploadedAt?: string;
   schoolYear?: string;
   timezone?: string;
   language?: string;
@@ -182,6 +191,8 @@ export type LoginResponse = {
     assignments?: TeacherAssignment[];
     assignedClasses?: string[];
     courses?: string[];
+    accountKind?: string;
+    linkedStudent?: { studentId?: string; studentCode?: string; status?: string } | null;
   };
   school?: SchoolInfo;
   platformContext?: {
@@ -361,6 +372,92 @@ export function getNotes() {
   return request<unknown>("/notes").then((payload) => unwrapList(payload).map(normalizeGrade));
 }
 
+export type CanonicalExam = {
+  id: string;
+  name: string;
+  className?: string;
+  subject?: string;
+  examType?: string;
+  date?: string;
+  period?: string;
+  status?: string;
+  statusCode?: string;
+};
+
+function normalizeExam(row: Record<string, unknown>): CanonicalExam {
+  return {
+    id: String(row.id ?? ""),
+    name: String(row.name ?? ""),
+    className: row.className != null ? String(row.className) : undefined,
+    subject: row.subject != null ? String(row.subject) : undefined,
+    examType: row.examType != null ? String(row.examType) : undefined,
+    date: row.date != null ? String(row.date) : undefined,
+    period: row.period != null ? String(row.period) : undefined,
+    status: row.status != null ? String(row.status) : undefined,
+    statusCode: row.statusCode != null ? String(row.statusCode) : undefined,
+  };
+}
+
+export function listExams() {
+  return request<{ exams?: unknown[] }>("/exams").then((payload) =>
+    (Array.isArray(payload?.exams) ? payload.exams : unwrapList(payload)).map((row) =>
+      normalizeExam(row as Record<string, unknown>),
+    ),
+  );
+}
+
+export function getExam(examId: string) {
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}`).then((row) =>
+    normalizeExam(row),
+  );
+}
+
+export function createExam(payload: Record<string, unknown>, options?: MutationRequestOptions) {
+  const body = { ...payload };
+  delete body.schoolId;
+  delete body.schoolCode;
+  return request<Record<string, unknown>>("/exams", {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
+export function patchExam(examId: string, payload: Record<string, unknown>, options?: MutationRequestOptions) {
+  const body = { ...payload };
+  delete body.schoolId;
+  delete body.schoolCode;
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
+export function validateExam(examId: string, options?: MutationRequestOptions) {
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}/validate`, {
+    method: "POST",
+    body: JSON.stringify({}),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
+export function cancelExam(examId: string, options?: MutationRequestOptions) {
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({}),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
+export function archiveExam(examId: string, options?: MutationRequestOptions) {
+  return request<Record<string, unknown>>(`/exams/${encodeURIComponent(examId)}/archive`, {
+    method: "POST",
+    body: JSON.stringify({}),
+    idempotencyKey: options?.idempotencyKey,
+  }).then((row) => normalizeExam(row));
+}
+
 export function getEvaluations() {
   return request<unknown>("/evaluations").then((payload) => unwrapList(payload).map(normalizeEvaluation));
 }
@@ -400,6 +497,103 @@ export function getStudents() {
   );
 }
 
+export function getSchoolStudent(studentId: string) {
+  return request<Record<string, unknown>>(`/students/${encodeURIComponent(studentId)}`).then((row) =>
+    attachStudentTenantIdentity((row && typeof row === "object" ? row : {}) as Record<string, unknown>),
+  );
+}
+
+export type C18Enrollment = {
+  id: string;
+  studentId?: string;
+  status?: string;
+  classId?: string | null;
+  classCode?: string;
+  className?: string;
+  academicYearName?: string;
+  enrollmentDate?: string;
+};
+
+function c18EnrollmentPath(studentId: string, enrollmentId: string, action: string) {
+  return `/students/${encodeURIComponent(studentId)}/enrollments/${encodeURIComponent(enrollmentId)}/${action}`;
+}
+
+export function listStudentEnrollments(studentId: string) {
+  return request<{ items?: C18Enrollment[] } | C18Enrollment[]>(
+    `/students/${encodeURIComponent(studentId)}/enrollments`,
+  ).then((payload) => (Array.isArray(payload) ? payload : payload?.items ?? []));
+}
+
+export function validateStudentEnrollment(studentId: string, enrollmentId: string, body: { reason?: string } = {}) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "validate"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function assignStudentEnrollmentClass(
+  studentId: string,
+  enrollmentId: string,
+  body: { classCode?: string; classId?: string; effectiveDate?: string },
+) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "assign-class"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function transferStudentEnrollment(
+  studentId: string,
+  enrollmentId: string,
+  body: { destinationSchoolName: string; reason?: string },
+) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "transfer"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function closeStudentEnrollment(studentId: string, enrollmentId: string, body: { reason?: string } = {}) {
+  return request<C18Enrollment>(c18EnrollmentPath(studentId, enrollmentId, "close"), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getParentRelations(studentId: string) {
+  return request<{ items?: Record<string, unknown>[] } | Record<string, unknown>[]>(
+    `/parents/relations?studentId=${encodeURIComponent(studentId)}`,
+  ).then((payload) => (Array.isArray(payload) ? payload : payload?.items ?? []));
+}
+
+export function lookupParentIdentity(query: { phone?: string; email?: string }) {
+  const params = new URLSearchParams();
+  if (query.phone) params.set("phone", query.phone);
+  if (query.email) params.set("email", query.email);
+  const suffix = params.toString();
+  return request<Record<string, unknown>>(`/parents/identity${suffix ? `?${suffix}` : ""}`);
+}
+
+export function linkParent(payload: {
+  studentId: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  email?: string;
+}) {
+  return request<Record<string, unknown>>("/parents/link", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function archiveParentRelation(relationId: string) {
+  return request<Record<string, unknown>>(`/parents/relations/${encodeURIComponent(relationId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "archived" }),
+  });
+}
+
 export type PaymentStudentOption = {
   studentId: string;
   studentCode: string;
@@ -408,6 +602,7 @@ export type PaymentStudentOption = {
   classId?: string | null;
   classCode?: string;
   className?: string;
+  schoolCode?: string;
   classes?: Array<{ classId: string; classCode?: string; className?: string }>;
 };
 
@@ -502,6 +697,36 @@ export function updateSchoolClass(
   return request<Record<string, unknown>>(`/classes/${encodeURIComponent(classCode)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+export type HeadTeacherCandidate = {
+  teacherCode: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  assignedToCurrentClass?: boolean;
+  otherClassNames?: string[];
+  alreadyHeadTeacherHint?: string;
+};
+
+export function listClassHeadTeacherCandidates(classCode: string, q?: string) {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return request<HeadTeacherCandidate[]>(
+    `/classes/${encodeURIComponent(classCode)}/head-teacher/candidates${query}`,
+  );
+}
+
+export function assignClassHeadTeacher(classCode: string, teacherCode: string) {
+  return request<Record<string, unknown>>(`/classes/${encodeURIComponent(classCode)}/head-teacher`, {
+    method: "PUT",
+    body: JSON.stringify({ teacherCode }),
+  });
+}
+
+export function removeClassHeadTeacher(classCode: string) {
+  return request<Record<string, unknown>>(`/classes/${encodeURIComponent(classCode)}/head-teacher`, {
+    method: "DELETE",
   });
 }
 
@@ -714,9 +939,109 @@ export function getPayments() {
   return request<unknown>("/payments").then((payload) => unwrapList(payload).map(normalizePaymentRow));
 }
 
+/** Ledger canonique des créances, agrégé et scopé côté serveur par établissement. */
+export function getUnpaidLedger(
+  requestedSchoolCode?: string | null,
+  filters?: { period?: string | null },
+): Promise<UnpaidLedger> {
+  const period = String(filters?.period ?? "").trim();
+  const query = period ? `?period=${encodeURIComponent(period)}` : "";
+  return request<unknown>(`/backoffice/finance/unpaid${query}`).then((payload) =>
+    normalizeUnpaidLedger(payload, publicRequestSchoolScope(requestedSchoolCode)),
+  );
+}
+
+export function createUnpaidReminder(
+  studentId: string,
+  payload: Record<string, unknown>,
+  options?: MutationRequestOptions,
+) {
+  return request(`/backoffice/finance/unpaid/${encodeURIComponent(studentId)}/reminders`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+    idempotencyKey: options?.idempotencyKey,
+  });
+}
+
+export type FinanceFeeGrid = {
+  id: string;
+  schoolCode?: string;
+  className?: string;
+  academicYear?: string;
+  periodName?: string;
+  currency?: string;
+  status?: string;
+};
+
+export type FinanceFeeGridItem = {
+  id: string;
+  feeType?: string;
+  label?: string;
+  amount: number;
+  currency?: string;
+  mandatory: boolean;
+  dueDate?: string;
+  status?: string;
+};
+
+function normalizeFeeGrid(value: unknown): FinanceFeeGrid | null {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const id = String(row.id ?? row.grid_code ?? "").trim();
+  if (!id) return null;
+  return {
+    id,
+    schoolCode: String(row.schoolCode ?? row.school_code ?? "").trim() || undefined,
+    className: String(row.className ?? row.class_name ?? "").trim() || undefined,
+    academicYear: String(row.academicYear ?? row.academic_year ?? "").trim() || undefined,
+    periodName: String(row.periodName ?? row.period_name ?? "").trim() || undefined,
+    currency: String(row.currency ?? "").trim() || undefined,
+    status: String(row.status ?? "").trim() || undefined,
+  };
+}
+
+function normalizeFeeGridItem(value: unknown, currency?: string): FinanceFeeGridItem | null {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const id = String(row.id ?? row.item_code ?? "").trim();
+  if (!id) return null;
+  const amount = Number(row.amount ?? 0);
+  return {
+    id,
+    feeType: String(row.feeType ?? row.fee_type ?? "").trim() || undefined,
+    label: String(row.label ?? "").trim() || undefined,
+    amount: Number.isFinite(amount) ? amount : 0,
+    currency: String(row.currency ?? currency ?? "").trim() || undefined,
+    mandatory: row.mandatory !== false,
+    dueDate: String(row.dueDate ?? row.due_date ?? "").trim() || undefined,
+    status: String(row.status ?? "").trim() || undefined,
+  };
+}
+
+export function listFeeGrids(): Promise<FinanceFeeGrid[]> {
+  return request<unknown>("/finance/fee-grids").then((payload) =>
+    unwrapList(payload)
+      .map(normalizeFeeGrid)
+      .filter((row): row is FinanceFeeGrid => Boolean(row)),
+  );
+}
+
+export function getFeeGrid(gridId: string): Promise<{ grid: FinanceFeeGrid | null; items: FinanceFeeGridItem[] }> {
+  return request<unknown>(`/finance/fee-grids/${encodeURIComponent(gridId)}`).then((payload) => {
+    const body = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+    const grid = normalizeFeeGrid(body.grid ?? payload);
+    const items = unwrapList(Array.isArray(body.items) ? body.items : body).map((item) =>
+      normalizeFeeGridItem(item, grid?.currency),
+    );
+    return {
+      grid,
+      items: items.filter((row): row is FinanceFeeGridItem => Boolean(row)),
+    };
+  });
+}
+
 export type CanonicalStudentFee = {
   id: string;
   studentId: string;
+  studentDbId?: string;
   studentName?: string;
   schoolCode?: string;
   amountDue: number;
@@ -728,6 +1053,7 @@ export type CanonicalStudentFee = {
   feeType?: string;
   label?: string;
   schoolFeeItemId?: string;
+  currency?: string;
 };
 
 function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
@@ -735,9 +1061,11 @@ function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
   const amountDue = Number(row.amountDue ?? row.amount_due ?? 0);
   const amountPaid = Number(row.amountPaid ?? row.amount_paid ?? 0);
   const exemption = Number(row.exemption ?? 0);
+  const studentDbId = String(row.studentDbId ?? row.student_db_id ?? "").trim();
   return {
     id: String(row.id ?? row.publicId ?? ""),
     studentId: String(row.studentId ?? row.student_id ?? ""),
+    ...(studentDbId ? { studentDbId } : {}),
     studentName: row.studentName ? String(row.studentName) : undefined,
     schoolCode: row.schoolCode ? String(row.schoolCode) : undefined,
     amountDue,
@@ -749,11 +1077,15 @@ function normalizeStudentFeeRow(raw: unknown): CanonicalStudentFee {
     feeType: row.feeType ? String(row.feeType) : undefined,
     label: String(row.label ?? row.feeType ?? "").trim() || undefined,
     schoolFeeItemId: row.schoolFeeItemId ? String(row.schoolFeeItemId) : row.school_fee_item_id ? String(row.school_fee_item_id) : undefined,
+    currency: String(row.currency ?? "").trim(),
   };
 }
 
-export function getStudentFees() {
-  return request<unknown>("/finance/student-fees").then((payload) =>
+export function getStudentFees(studentId?: string) {
+  const suffix = String(studentId ?? "").trim()
+    ? `?studentId=${encodeURIComponent(String(studentId).trim())}`
+    : "";
+  return request<unknown>(`/finance/student-fees${suffix}`).then((payload) =>
     unwrapList(payload).map(normalizeStudentFeeRow),
   );
 }
@@ -984,6 +1316,28 @@ export function sendClientsMessage(payload: Record<string, unknown>, options?: M
   });
 }
 
+export function replyClientsConversationMessage(
+  conversationId: string,
+  payload: Record<string, unknown>,
+  options?: MutationRequestOptions,
+) {
+  const id = String(conversationId ?? "").trim();
+  if (!id) {
+    return Promise.reject(new ApiClientError("Conversation requise."));
+  }
+  const schoolCode = communicationSchoolScope(
+    typeof payload.effectiveSchoolCode === "string" ? payload.effectiveSchoolCode : undefined,
+  );
+  return request(
+    scopedMessagesPath(`/backoffice/conversations/${encodeURIComponent(id)}/messages`, schoolCode),
+    {
+      method: "POST",
+      body: JSON.stringify(withCommunicationSchoolPayload(payload, schoolCode)),
+      idempotencyKey: options?.idempotencyKey,
+    },
+  );
+}
+
 export type CanonicalMessageRecipient = {
   userId: string;
   displayName: string;
@@ -1210,13 +1564,13 @@ export function resetUserPassword(userId: string, temporaryPassword: string) {
   );
 }
 
-/** URL du bulletin PDF (sans JWT). */
-export function getReportCardPdfUrl(studentId: string, period = "Trimestre 1") {
-  return `${getApiBaseUrl()}/students/${encodeURIComponent(studentId)}/report.pdf?period=${encodeURIComponent(period)}`;
+/** URL du bulletin PDF LOT 5 (sans JWT). */
+export function getReportCardPdfUrl(reportCardId: string, version: number | string = 1) {
+  return `${getApiBaseUrl()}/report-card/publications/${encodeURIComponent(reportCardId)}/pdf?version=${encodeURIComponent(String(version))}`;
 }
 
 /**
- * S2.3 — Téléchargement sécurisé PDF.
+ * S2.3 — Téléchargement sécurisé PDF LOT 5.
  *
  * Adaptateur natif volontaire autour du client HTTP central (`httpClient`) :
  * `FileSystem.downloadAsync` écrit directement vers le cache et n'est pas
@@ -1224,20 +1578,20 @@ export function getReportCardPdfUrl(studentId: string, period = "Trimestre 1") {
  * par `httpRequest` / `httpUpload` — ne pas dupliquer ce pattern ailleurs.
  * Contrôles : Bearer, status 200 strict, MIME PDF/octet-stream, taille > 0.
  */
-export async function downloadReportCardPdf(studentId: string, period = "Trimestre 1"): Promise<string> {
+export async function downloadReportCardPdf(reportCardId: string, version: number | string = 1): Promise<string> {
   const token = await getAccessToken();
   if (!token) {
     throw new ApiClientError("Authentification requise pour télécharger le bulletin PDF.");
   }
 
-  const url = getReportCardPdfUrl(studentId, period);
+  const url = getReportCardPdfUrl(reportCardId, version);
   const cacheDir = FileSystem.cacheDirectory;
   if (!cacheDir) {
     throw new ApiClientError("Stockage local indisponible pour ouvrir le bulletin PDF.");
   }
 
-  const safePeriod = period.replace(/[^\w.-]+/g, "-").toLowerCase();
-  const target = `${cacheDir}bulletin-${studentId}-${safePeriod}.pdf`;
+  const safeVersion = String(version).replace(/[^\w.-]+/g, "-").toLowerCase();
+  const target = `${cacheDir}bulletin-${reportCardId}-${safeVersion}.pdf`;
   // Exception documentée : adaptateur FileSystem (voir JSDoc ci-dessus).
   const result = await FileSystem.downloadAsync(url, target, {
     headers: {

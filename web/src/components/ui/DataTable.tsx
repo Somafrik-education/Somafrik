@@ -15,6 +15,8 @@ interface DataTableProps<TData, TValue> {
   data: TData[];
   emptyLabel?: string;
   initialSorting?: SortingState;
+  /** Marque une ligne comme sélectionnée (deep-link, mise en évidence). */
+  isRowSelected?: (row: TData) => boolean;
 }
 
 /** Tableau générique propulsé par TanStack Table (tri intégré). */
@@ -23,6 +25,7 @@ export function DataTable<TData, TValue>({
   data,
   emptyLabel = "Aucune donnée à afficher.",
   initialSorting = [],
+  isRowSelected,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
 
@@ -72,15 +75,26 @@ export function DataTable<TData, TValue>({
         </thead>
         <tbody className="divide-y divide-line bg-white">
           {table.getRowModel().rows.length ? (
-            table.getRowModel().rows.map((row, index) => (
-              <tr key={row.id} className={cn(index % 2 === 1 && "bg-slate-50/40")}>
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-4 py-3 text-ink">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))
+            table.getRowModel().rows.map((row, index) => {
+              const selected = isRowSelected?.(row.original) ?? false;
+              return (
+                <tr
+                  key={row.id}
+                  aria-selected={selected || undefined}
+                  data-selected={selected ? "true" : undefined}
+                  className={cn(
+                    index % 2 === 1 && "bg-slate-50/40",
+                    selected && "bg-brand-50 ring-2 ring-inset ring-brand",
+                  )}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-4 py-3 text-ink">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })
           ) : (
             <tr>
               <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-muted">

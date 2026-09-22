@@ -47,7 +47,7 @@ Statuts :
 | M08 | `assets/mobile/08-enseignant-creation.png` | Créer un enseignant | Admin habilité | `Mobile/src/components/TeacherMutationControls.tsx` | VALIDÉE |
 | M09 | `assets/mobile/09-utilisateurs.png` | Cartes comptes, rôles actifs | Admin établissement | `Mobile/src/screens/UsersScreen.tsx` | VALIDÉE |
 | M10 | `assets/mobile/10-utilisateur-creation.png` | Créer un utilisateur | Admin habilité | `Mobile/src/components/UserMutationControls.tsx` | VALIDÉE |
-| M11 | `assets/mobile/11-utilisateur-role-enseignant.png` | Confirmation Attribuer Enseignant | Admin habilité | `UserMutationControls.tsx` | À REVALIDER |
+| M11 | `assets/mobile/11-utilisateur-role-enseignant.png` | Ancien bouton Attribuer Enseignant (remplacé par Gérer les rôles) | Admin habilité | `UserMutationControls.tsx` | À REVALIDER |
 | M12 | `assets/mobile/12-paiements.png` | Synthèse + reçus récents | Comptable/Admin | `Mobile/src/screens/PaymentsScreen.tsx` | VALIDÉE |
 | M13 | `assets/mobile/13-paiement-saisie.png` | Élève + Classe + Montant + Type de frais + Moyen | Comptable/Admin | `Mobile/src/components/PaymentMutationControls.tsx` | VALIDÉE |
 | M14 | `assets/mobile/14-paiement-recu.png` | Reçu après confirmation et refresh | Comptable/Admin | `PaymentsScreen.tsx` + `PaymentReceiptCard` | VALIDÉE |
@@ -78,7 +78,7 @@ Le nom d'une classe doit toujours provenir du référentiel réellement chargé 
 Lot Mobile (runtime `50d6dcaac4f5b6d0ab3040a2ab5410ba3240eb34`, Expo web + API + PostgreSQL) :
 
 - le référentiel a fourni **6ème A** / **5ème B**, pas « 6e A » ni « 1ère Scientifique » ;
-- **M11** reste `À REVALIDER` : l'action **Attribuer Enseignant** est réelle, mais la confirmation est un `Alert.alert` natif, non screenshotable ;
+- **M11** reste `À REVALIDER` : le fichier montre encore l'ancien bouton **Attribuer Enseignant**. Le parcours courant est la modale **Gérer les rôles** ;
 - **M19** est `VALIDÉE` : capture runtime de `TeacherGradesScreen` (mode saisie) avec un jeu QA fictif uniquement — évaluation `Contrôle de géographie`, classe `2ème A`, matière `Géographie`, Trimestre 1, /20, élèves `Amina Kabasele`, `Junior Mbala`, `Grâce Ilunga`, `Patrick Nsona`. L’interface n’a pas été retouchée.
 
 ## Contrôles avant validation d'une capture

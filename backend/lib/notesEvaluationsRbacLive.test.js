@@ -93,8 +93,13 @@ const jwtPrefetA = {
 test("contrat source : POST /api/notes overlaye le live via requirePermission", () => {
   const notesBlock = sliceFrom(serverSrc, 'app.post("/api/notes"', 'app.post("/api/presences"');
   assert.match(notesBlock, /requireAuth/);
+  assert.match(notesBlock, /requireParentNotesReadOnly/);
   assert.match(notesBlock, /requireSchoolSubscriptionFeature\("write_notes"\)/);
   assert.match(notesBlock, /requirePermission\("POST \/api\/notes"\)/);
+  const parentIdx = notesBlock.indexOf("requireParentNotesReadOnly");
+  const subIdx = notesBlock.indexOf('requireSchoolSubscriptionFeature("write_notes")');
+  const rbacIdx = notesBlock.indexOf('requirePermission("POST /api/notes")');
+  assert.ok(parentIdx >= 0 && parentIdx < subIdx && subIdx < rbacIdx, "Parent READ ONLY avant write_notes et RBAC");
   assert.equal(notesBlock.includes("assertCanManageNotes"), false);
 });
 
@@ -187,6 +192,16 @@ test("GET Notes:READ — SCHOOL_ADMIN, PREFET, TEACHER, PARENT, STUDENT", () => 
     );
   }
   assert.equal(rbac.canAccess({ role: "Parent", permissions: ["Élèves:READ"] }, "GET /api/notes"), false);
+});
+
+test("Notes:READ n'ouvre pas GET/POST/PATCH/DELETE /api/courses", () => {
+  for (const role of ["Parent", "Élève / Étudiant"]) {
+    const notesOnly = { role, permissions: ["Notes:READ"] };
+    assert.equal(rbac.canAccess(notesOnly, "GET /api/courses"), false, `${role} GET courses`);
+    assert.equal(rbac.canAccess(notesOnly, "POST /api/courses"), false, `${role} POST courses`);
+    assert.equal(rbac.canAccess(notesOnly, "PATCH /api/courses/:courseId"), false, `${role} PATCH courses`);
+    assert.equal(rbac.canAccess(notesOnly, "DELETE /api/courses/:courseId"), false, `${role} DELETE courses`);
+  }
 });
 
 test("seed Parent/Élève : Notes:READ canonique (parcours lecture)", () => {

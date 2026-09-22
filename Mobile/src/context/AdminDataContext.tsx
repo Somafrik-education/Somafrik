@@ -365,6 +365,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const principalScopeKeyRef = useRef(principalScopeKey);
   principalScopeKeyRef.current = principalScopeKey;
   const previousPrincipalKeyRef = useRef<string | null>(null);
+  const previousResourceKeyRef = useRef<string | null>(null);
 
   const resetTenantResourceCaches = useCallback(() => {
     setStudentsData([]);
@@ -400,6 +401,43 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setPresencesSnapshot(emptyResourceSnapshot());
     setAnnouncementsSnapshot(emptyResourceSnapshot());
     setMessagesSnapshot(emptyResourceSnapshot());
+  }, []);
+
+  const markTenantResourcesSwitching = useCallback(() => {
+    const loadingEmpty = { status: "loading" as const, data: [] };
+    setStudentsData([]);
+    setTeachersData([]);
+    setClassesData([]);
+    setCoursesData([]);
+    setAssignmentsData([]);
+    setPaymentsData([]);
+    setStudentFeesData([]);
+    setPaymentStatusesData([]);
+    setPresencesData([]);
+    setNotesData([]);
+    setUsersData([]);
+    setAnnouncementsData([]);
+    setMessagesData([]);
+    setAcademicConfigData(emptyAcademicConfig);
+    setSyncStatus("idle");
+    setPaymentsSnapshot(loadingEmpty);
+    setStudentFeesSnapshot(loadingEmpty);
+    setCourseSchedulesSnapshot(loadingEmpty);
+    setPlanningCourseOptionsSnapshot(loadingEmpty);
+    setRoomsSnapshot(loadingEmpty);
+    setReplacementsSnapshot(loadingEmpty);
+    setReportCardsSnapshot(loadingEmpty);
+    setEvaluationsSnapshot(loadingEmpty);
+    setNotesSnapshot(loadingEmpty);
+    setUsersSnapshot(loadingEmpty);
+    setTeachersSnapshot(loadingEmpty);
+    setStudentsSnapshot(loadingEmpty);
+    setClassesSnapshot(loadingEmpty);
+    setAssignmentsSnapshot(loadingEmpty);
+    setSchoolCoursesSnapshot(loadingEmpty);
+    setPresencesSnapshot(loadingEmpty);
+    setAnnouncementsSnapshot(loadingEmpty);
+    setMessagesSnapshot(loadingEmpty);
   }, []);
 
   const resetPrincipalResourceCaches = useCallback(() => {
@@ -688,6 +726,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         project: async (read) => projectL1Students(read, await classRowsForJoin(session)),
       });
       if (resourceScopeKeyRef.current !== scope) return;
+      if ((snapshot.status === "error" || snapshot.status === "offline") && snapshot.data.length === 0) {
+        setStudentsSnapshot((current) => ({ ...snapshot, data: current.data }));
+        return;
+      }
       setStudentsData(snapshot.data);
       setStudentsSnapshot(snapshot);
     } catch (error) {
@@ -1052,6 +1094,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       nextResourceKey: resourceScopeKey,
     });
     previousPrincipalKeyRef.current = principalScopeKey;
+    const resourceChanged = previousResourceKeyRef.current !== resourceScopeKey;
+    previousResourceKeyRef.current = resourceScopeKey;
     if (plan.resetKind === "principal") {
       resetResourceCaches();
       clearRequestSchoolScope();
@@ -1059,8 +1103,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         setActiveSchoolCodeState("");
         clearStoredSchoolCode();
       }
-    } else {
-      resetTenantResourceCaches();
+    } else if (resourceChanged) {
+      markTenantResourcesSwitching();
     }
     if (!plan.loadPrincipal && !plan.loadTenant) {
       setActiveSchoolCodeState("");
@@ -1095,6 +1139,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     resetResourceCaches,
     resetPrincipalResourceCaches,
     resetTenantResourceCaches,
+    markTenantResourcesSwitching,
   ]);
 
   useEffect(() => {

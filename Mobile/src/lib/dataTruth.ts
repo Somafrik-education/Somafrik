@@ -352,6 +352,14 @@ function asPaymentLine(value: unknown): PaymentLine {
   };
 }
 
+/** GET /payments.unallocatedAmount : préserver l'absent, jamais inféré côté client. */
+function readCanonicalUnallocatedAmount(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  if (typeof value === "string" && !value.trim()) return undefined;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
 /** Reçu canonique : 1 paiement = 1 reçu, total = SUM(items). */
 export function normalizePaymentRow(raw: unknown): CanonicalPayment {
   const row = asRecord(raw);
@@ -378,13 +386,11 @@ export function normalizePaymentRow(raw: unknown): CanonicalPayment {
     itemsDetail: row.itemsDetail ? String(row.itemsDetail) : undefined,
     feeType: row.feeType ? String(row.feeType) : undefined,
     allocatedAmount: Number(row.allocatedAmount ?? 0),
-    unallocatedAmount: Number(
-      row.unallocatedAmount ??
-        Math.max(0, Number(row.amount ?? row.totalAmount ?? 0) - Number(row.allocatedAmount ?? 0)),
-    ),
+    unallocatedAmount: readCanonicalUnallocatedAmount(row.unallocatedAmount),
     overpaymentAmount: Number(row.overpaymentAmount ?? row.unallocatedAmount ?? 0),
     obligationId: row.obligationId ? String(row.obligationId) : undefined,
     schoolFeeItemId: row.schoolFeeItemId ? String(row.schoolFeeItemId) : undefined,
+    currency: String(row.currency ?? "").trim(),
   };
 }
 
@@ -444,8 +450,14 @@ export const DATA_TRUTH_COPY = {
   emptyPayments: "Aucun paiement.",
   errorPayments: "Impossible de charger les paiements.",
   offlinePayments: "Réseau indisponible. Les paiements n'ont pas pu être chargés.",
+  emptyPresences: "Aucune présence enregistrée.",
+  errorPresences: "Impossible de charger les présences.",
+  offlinePresences: "Réseau indisponible. Les présences n'ont pas pu être chargées.",
   emptyBulletins: "Aucun bulletin disponible",
   errorBulletins: "Impossible de charger les bulletins.",
+  forbiddenBulletins: "Accès refusé aux bulletins.",
+  notFoundBulletins: "Bulletin introuvable.",
+  serverErrorBulletins: "Erreur serveur. Impossible de charger les bulletins.",
   offlineBulletins: "Réseau indisponible. Les bulletins n'ont pas pu être chargés.",
   writePaymentsWebOnly:
     "La saisie d'un paiement multi-libellés se fait depuis le web établissement pour le moment.",
@@ -467,6 +479,9 @@ export const DATA_TRUTH_TEST_IDS = {
   paymentsEmpty: "payments-empty",
   paymentsError: "payments-error",
   paymentsList: "payments-list",
+  presencesEmpty: "presences-empty",
+  presencesError: "presences-error",
+  presencesList: "presences-list",
   bulletinsEmpty: "bulletins-empty",
   bulletinsError: "bulletins-error",
   bulletinsList: "bulletins-list",

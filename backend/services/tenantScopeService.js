@@ -1,4 +1,9 @@
 const { BusinessError } = require("./authService");
+const {
+  principalIsParentOrStudent,
+  collectLinkedStudentKeys,
+  studentMatchesLinkedKeys,
+} = require("../lib/parentScope");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
@@ -35,7 +40,10 @@ class TenantScopeService {
     // Périmètre établissement : un compte ne doit jamais voir les données d'un autre
     // établissement (SOM-SAA-002). Ce bloc s'applique aussi aux rôles plateforme
     // lorsqu'un scope request-scoped a été validé par requireAuth.
-    const studentIds = new Set([...(principal.studentIds ?? []), ...(schoolStudentIds ?? [])]);
+    const studentIds = new Set([
+      ...collectLinkedStudentKeys(principal),
+      ...(schoolStudentIds ?? []),
+    ]);
     const classNames = new Set([...(principal.classNames ?? []), ...(schoolClassNames ?? [])]);
     const principalSchools = this.principalSchoolCodes(principal);
 
@@ -43,11 +51,16 @@ class TenantScopeService {
       // Diffusion système (Super Admin) : annonce/message destiné à tous les établissements.
       if (this.isSystemBroadcast(row)) return true;
 
-      if (
-        (principal.role === "Parent" || principal.role === "Élève / Étudiant") &&
-        this.rowMatchesStudentScope(row, studentIds)
-      ) {
+      if (principalIsParentOrStudent(principal) && this.rowMatchesStudentScope(row, studentIds)) {
         return true;
+      }
+
+      const principalId = this.principalSchoolId(principal);
+      const rowId = this.rowSchoolId(row);
+      // Autorité tenant = schoolId UUID. Les codes (school_code / login_code)
+      // ne sont jamais des alias équivalents lorsque les deux UUID sont présents.
+      if (principalId && rowId) {
+        return this.sameSchoolId(principalId, rowId);
       }
 
       const rowSchools = this.rowSchoolCodes(row, schoolField);
@@ -89,13 +102,34 @@ class TenantScopeService {
     );
   }
 
+  principalSchoolId(principal = {}) {
+    return this.normalizeSchoolId(
+      principal.effectiveSchoolId || principal.schoolId || principal.school_id,
+    );
+  }
+
+  rowSchoolId(row = {}) {
+    return this.normalizeSchoolId(row.schoolId || row.school_id);
+  }
+
+  normalizeSchoolId(value) {
+    return String(value ?? "").trim().toLowerCase();
+  }
+
+  sameSchoolId(left, right) {
+    const a = this.normalizeSchoolId(left);
+    const b = this.normalizeSchoolId(right);
+    return Boolean(a && b && a === b);
+  }
+
   principalSchoolCodes(principal = {}) {
+    // principal.financeLoginCode is a login_code display projection, not tenant
+    // authority: never unioned with schools.school_code as an equivalent key.
     return new Set(
       [
         principal.effectiveSchoolCode,
         principal.effectiveSchoolInternalCode,
         principal.schoolCode,
-        principal.financeLoginCode,
       ]
         .map((value) => this.normalizeSchoolCode(value))
         .filter((value) => value && value !== "*"),
@@ -119,33 +153,18 @@ class TenantScopeService {
   }
 
   rowMatchesStudentScope(row = {}, studentIds = new Set()) {
-    for (const value of [row.studentId, row.id, row.publicId, row.matricule]) {
-      const key = String(value ?? "").trim();
-      if (key && studentIds.has(key)) {
-        return true;
-      }
-    }
-    return false;
+    return studentMatchesLinkedKeys(row, studentIds);
   }
 
   filterByRoleOwnership(rows, principal) {
-    const studentIds = new Set(principal.studentIds ?? []);
     const classNames = new Set(principal.classNames ?? []);
 
-    if (principal.role === "Parent" || principal.role === "Élève / Étudiant") {
-      if (!studentIds.size) {
+    if (principalIsParentOrStudent(principal)) {
+      const linkedIds = new Set(collectLinkedStudentKeys(principal));
+      if (!linkedIds.size) {
         return [];
       }
-
-      return rows.filter((row) => {
-        if (this.rowMatchesStudentScope(row, studentIds)) return true;
-        if (row.studentId) return studentIds.has(String(row.studentId).trim());
-        if (row.id && row.matricule) return false;
-        if (row.className && !row.studentId && !row.matricule) return true;
-        return !["student", "payment", "grade", "attendance"].includes(
-          String(row.entityType ?? "").toLowerCase(),
-        );
-      });
+      return rows.filter((row) => this.rowMatchesStudentScope(row, linkedIds));
     }
 
     if (principal.role === "Enseignant") {

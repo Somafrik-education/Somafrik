@@ -16,9 +16,11 @@ const authState = vi.hoisted(() => ({
         "Élèves:READ",
         "Utilisateurs:READ",
         "Utilisateurs:CREATE",
-        "Notes:READ",
-        "Paiements:READ",
-      ],
+          "Notes:READ",
+          "Paiements:READ",
+          "Paramètres Établissement:READ",
+          "Bulletins:READ",
+        ],
     },
   } as {
     accessToken?: string;
@@ -81,6 +83,8 @@ describe("HelpHost — HELP-V1B Web", () => {
           "Utilisateurs:CREATE",
           "Notes:READ",
           "Paiements:READ",
+          "Paramètres Établissement:READ",
+          "Bulletins:READ",
         ],
       },
     };
@@ -97,11 +101,17 @@ describe("HelpHost — HELP-V1B Web", () => {
     authState.permissionsReady = false;
     renderHelp();
     expect(screen.queryByRole("button", { name: "Ouvrir l’aide" })).not.toBeInTheDocument();
+    const probe = screen.getByTestId("help-unavailable-probe");
+    expect(probe).toHaveAttribute("data-help-bootstrap", "loading");
+    expect(probe).toHaveAttribute("data-help-ready", "false");
+    expect(probe).toHaveAttribute("data-help-must-change-password", "false");
+    expect(probe).toHaveAttribute("data-help-role", "SCHOOL_ADMIN");
   });
 
   it("hides the trigger when help is unavailable for the screen", () => {
     renderHelp("/");
     expect(screen.queryByRole("button", { name: "Ouvrir l’aide" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("help-unavailable-probe")).toHaveAttribute("data-help-screen", "");
   });
 
   it("hides the trigger on /connexion even if HelpHost is mounted", () => {
@@ -116,6 +126,7 @@ describe("HelpHost — HELP-V1B Web", () => {
     };
     renderHelp();
     expect(screen.queryByRole("button", { name: "Ouvrir l’aide" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("help-unavailable-probe")).toHaveAttribute("data-help-must-change-password", "true");
   });
 
   it("hides the trigger when permissions bootstrap failed", () => {
@@ -123,6 +134,7 @@ describe("HelpHost — HELP-V1B Web", () => {
     authState.permissionsReady = false;
     renderHelp();
     expect(screen.queryByRole("button", { name: "Ouvrir l’aide" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("help-unavailable-probe")).toHaveAttribute("data-help-bootstrap", "error");
   });
 
   it("opens the panel, lists at most 3 suggestions, and closes with Escape restoring focus", async () => {
@@ -228,6 +240,86 @@ describe("HelpHost — HELP-V1B Web", () => {
     expect(screen.queryByText("Saisir les notes")).not.toBeInTheDocument();
   });
 
+  it("shows the help trigger on Examens without reusing the Notes article", async () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "u1",
+        role: "Administrateur d’établissement",
+        permissions: ["Examens:READ", "Notes:READ", "Bulletins:READ", "Classes:READ"],
+      },
+    };
+    const user = userEvent.setup();
+    renderHelp("/examens");
+    const trigger = screen.getByRole("button", { name: "Ouvrir l’aide" });
+    expect(trigger).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("data-help-screen", "exams");
+    expect(screen.getByText("Besoin d’aide ?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    expect(screen.getByText("Consulter les examens")).toBeInTheDocument();
+    const suggestionSection = screen.getByRole("heading", { name: "Suggestions pour cet écran" }).closest("section");
+    expect(within(suggestionSection as HTMLElement).queryByText("Notes et évaluations")).not.toBeInTheDocument();
+  });
+
+  it("keeps the help trigger on Bulletins and bulletin sub-routes", () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "u1",
+        role: "Administrateur d’établissement",
+        permissions: ["Bulletins:READ", "Bulletins:CREATE", "Notes:READ"],
+      },
+    };
+    for (const path of ["/bulletins", "/bulletins/historique", "/bulletins/modele"]) {
+      const view = renderHelp(path);
+      const trigger = screen.getByRole("button", { name: "Ouvrir l’aide" });
+      expect(trigger).toBeInTheDocument();
+      expect(trigger).toHaveAttribute("data-help-screen", "report-cards");
+      expect(trigger).toHaveAttribute("data-help-available", "true");
+      expect(trigger).toHaveAttribute("data-help-role", "SCHOOL_ADMIN");
+      expect(screen.queryByTestId("help-unavailable-probe")).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it("hides Examens procedures without Examens:READ", async () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "u1",
+        role: "Administrateur d’établissement",
+        permissions: ["Notes:READ", "Bulletins:READ", "Classes:READ"],
+      },
+    };
+    const user = userEvent.setup();
+    renderHelp("/examens");
+    expect(screen.getByRole("button", { name: "Ouvrir l’aide" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    await user.type(screen.getByPlaceholderText("Rechercher dans l’aide"), "examen");
+    expect(screen.queryByText("Consulter les examens")).not.toBeInTheDocument();
+  });
+
+  it("shows the trigger on platform console routes for an operator", () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "sa",
+        role: "Super Administrateur Somafrik",
+        permissions: ["ALL_PRIVILEGES"],
+      },
+    };
+    renderHelp("/pays");
+    expect(screen.getByRole("button", { name: "Ouvrir l’aide" })).toBeInTheDocument();
+  });
+
+  it("keeps help hidden on remaining public legal and trial routes", () => {
+    for (const path of ["/demande-essai", "/confidentialite", "/suppression-compte", "/verify/rc/public"]) {
+      const view = renderHelp(path);
+      expect(screen.queryByRole("button", { name: "Ouvrir l’aide" })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
   it("navigates only when navigationIsAllowed and never exposes ACTION labels", async () => {
     const user = userEvent.setup();
     renderHelp();
@@ -252,5 +344,50 @@ describe("HelpHost — HELP-V1B Web", () => {
     await user.click(within(suggestions as HTMLElement).getByRole("button", { name: /Tableau de bord/ }));
     expect(screen.getByRole("heading", { name: "Tableau de bord" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ouvrir cet écran" })).not.toBeInTheDocument();
+  });
+
+  it("lists role-filtered categories and the assistance entry", async () => {
+    const user = userEvent.setup();
+    renderHelp();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    expect(screen.getByRole("heading", { name: "Catégories" })).toBeInTheDocument();
+    expect(screen.getByText("Scolarité")).toBeInTheDocument();
+    expect(screen.getByText("Démarrage")).toBeInTheDocument();
+    expect(screen.getByText("Je n’ai pas trouvé la réponse")).toBeInTheDocument();
+  });
+
+  it("opens a category then a task article", async () => {
+    const user = userEvent.setup();
+    renderHelp();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    await user.click(screen.getByRole("button", { name: /Scolarité/ }));
+    expect(screen.getByRole("heading", { name: "Scolarité" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Consulter les classes/ }));
+    expect(screen.getByRole("heading", { name: "Consulter les classes" })).toBeInTheDocument();
+  });
+
+  it("hides school setup from a teacher", async () => {
+    authState.session = {
+      accessToken: "token",
+      user: {
+        id: "t1",
+        role: "Enseignant",
+        permissions: ["Classes:READ", "Élèves:READ", "Présences:READ", "Présences:UPDATE"],
+      },
+    };
+    const user = userEvent.setup();
+    renderHelp("/presences");
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    expect(screen.queryByText("Configuration initiale de l’établissement")).not.toBeInTheDocument();
+    expect(screen.queryByText("Finance")).not.toBeInTheDocument();
+    expect(screen.getByText("Présences")).toBeInTheDocument();
+  });
+
+  it("searches mot de passe and bulletin for an admin", async () => {
+    const user = userEvent.setup();
+    renderHelp();
+    await user.click(screen.getByRole("button", { name: "Ouvrir l’aide" }));
+    await user.type(screen.getByPlaceholderText("Rechercher dans l’aide"), "mot de passe");
+    expect(await screen.findByText("Mot de passe et identifiants")).toBeInTheDocument();
   });
 });

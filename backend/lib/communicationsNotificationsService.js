@@ -20,6 +20,16 @@ const {
   readAttachmentBytes,
   mapAttachmentRow,
 } = require("./communicationsAttachments");
+const { enabledChannelsForUser } = require("./communicationsPreferences");
+const { isPaymentDueEligible } = require("./communicationsPaymentDueEligibility");
+const { sanitizeNavigationTargets } = require("./communicationsNavigationTargets");
+const {
+  resolveAllowedChannels,
+  getSchoolPolicyEventsBySchoolId,
+  isSchoolWideRecipientKind,
+  recipientCategoriesFromContext,
+  resolveUserRecipientCategories,
+} = require("./schoolNotificationPolicy");
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -164,7 +174,7 @@ function mapNotification(row, extras = {}) {
 
 async function loadVisible(tx, notificationId, schoolId, userId, management = false) {
   const row = await tx.one(
-    `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at
+    `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind, r.recipient_context
      FROM communication_notifications n
      JOIN schools s ON s.id = n.school_id
      LEFT JOIN notification_recipients r ON r.notification_id = n.id AND r.user_id = $2
@@ -181,22 +191,58 @@ async function loadVisible(tx, notificationId, schoolId, userId, management = fa
   return row;
 }
 
-async function list(store, principal, query = {}) {
-  const userId = actorUserId(principal);
-  if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
-  const { school, schoolCode, tx } = await requireSchool(store, principal, query);
-  const limit = parseLimit(query);
-  const cursor = parseCursor(query.cursor);
-  const params = [school.id, userId];
+async function isInAppVisible(store, { userId, schoolId } = {}) {
+  try {
+    const enabled = await enabledChannelsForUser(store, { userId, schoolId });
+    return enabled.includes("IN_APP");
+  } catch {
+    return false;
+  }
+}
+
+function rowPolicyCategories(row, viewerCategories) {
+  const fromSnapshot = recipientCategoriesFromContext(row.recipient_context);
+  if (fromSnapshot.length) return fromSnapshot;
+  if (isSchoolWideRecipientKind(row.recipient_kind)) return viewerCategories;
+  return undefined;
+}
+
+function rowAllowsInApp(row, schoolPolicy, viewerCategories) {
+  const channels = resolveAllowedChannels({
+    eventType: row.event_type,
+    recipient: row.recipient_kind,
+    recipientCategories: rowPolicyCategories(row, viewerCategories),
+    schoolPolicy,
+    userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+  });
+  return channels.includes("IN_APP");
+}
+
+async function allowsInAppForRow(store, schoolId, row, userVisible, viewerCategories) {
+  if (!userVisible) return false;
+  try {
+    const schoolPolicy = await getSchoolPolicyEventsBySchoolId(store, schoolId);
+    const categories = viewerCategories
+      || (isSchoolWideRecipientKind(row.recipient_kind)
+        ? await resolveUserRecipientCategories(store, { userId: row.user_id, schoolId })
+        : undefined);
+    return rowAllowsInApp(row, schoolPolicy, categories);
+  } catch {
+    return false;
+  }
+}
+
+async function fetchRecipientPage(tx, { schoolId, userId, cursor, limit }) {
+  const params = [schoolId, userId];
   let cursorSql = "";
   if (cursor?.at && cursor?.id) {
     params.push(cursor.at, cursor.id);
     cursorSql = `AND (n.created_at, n.id) < ($3::timestamptz, $4::uuid)`;
   }
   params.push(limit + 1);
-  const rows = await tx.all(
+  return tx.all(
     `SELECT n.*, n.school_id::text AS scoped_school_id, s.school_code,
-            r.read_at, r.archived_at AS recipient_archived_at
+            r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind, r.recipient_context
      FROM notification_recipients r
      JOIN communication_notifications n ON n.id = r.notification_id AND n.school_id = r.school_id
      JOIN schools s ON s.id = n.school_id
@@ -206,11 +252,51 @@ async function list(store, principal, query = {}) {
      LIMIT $${params.length}`,
     params,
   );
-  const page = rows.slice(0, limit);
+}
+
+async function list(store, principal, query = {}) {
+  const userId = actorUserId(principal);
+  if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
+  const { school, schoolCode, tx } = await requireSchool(store, principal, query);
+  if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) {
+    return { items: [], nextCursor: null };
+  }
+  const limit = parseLimit(query);
+  let scanCursor = parseCursor(query.cursor);
+  const schoolPolicy = await getSchoolPolicyEventsBySchoolId(tx, school.id);
+  const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
+  const visible = [];
+  let rawExhausted = false;
+  while (visible.length <= limit && !rawExhausted) {
+    const rows = await fetchRecipientPage(tx, {
+      schoolId: school.id,
+      userId,
+      cursor: scanCursor,
+      limit,
+    });
+    if (rows.length < limit + 1) rawExhausted = true;
+    if (!rows.length) break;
+    const last = rows.at(-1);
+    scanCursor = { at: last.created_at, id: last.id };
+    for (const row of rows) {
+      const allowed = resolveAllowedChannels({
+        eventType: row.event_type,
+        recipient: row.recipient_kind,
+        recipientCategories: rowPolicyCategories(row, viewerCategories),
+        schoolPolicy,
+        userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+      });
+      if (!allowed.includes("IN_APP")) continue;
+      visible.push(row);
+      if (visible.length > limit) break;
+    }
+  }
+  const page = visible.slice(0, limit);
   const attachments = await hydrateAttachments(tx, page.map((row) => row.id));
+  const items = page.map((row) => mapNotification(row, { schoolCode, attachments: attachments.get(String(row.id)) ?? [] }));
   return {
-    items: page.map((row) => mapNotification(row, { schoolCode, attachments: attachments.get(String(row.id)) ?? [] })),
-    nextCursor: rows.length > limit ? makeCursor(page.at(-1)?.created_at, page.at(-1)?.id) : null,
+    items: await sanitizeNavigationTargets(tx, school.id, items),
+    nextCursor: visible.length > limit ? makeCursor(page.at(-1)?.created_at, page.at(-1)?.id) : null,
   };
 }
 
@@ -218,23 +304,41 @@ async function get(store, notificationId, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const { school, schoolCode, tx } = await requireSchool(store, principal, query);
+  if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) throw notFound();
   const row = await loadVisible(tx, notificationId, school.id, userId, canManage(principal));
+  const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
+  if (!(await allowsInAppForRow(tx, school.id, row, true, viewerCategories))) throw notFound();
   const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
-  return mapNotification(row, { schoolCode, attachments });
+  const [item] = await sanitizeNavigationTargets(tx, school.id, [mapNotification(row, { schoolCode, attachments })]);
+  return item;
 }
 
 async function unreadCount(store, principal, query = {}) {
   const userId = actorUserId(principal);
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const { school, tx } = await requireSchool(store, principal, query);
-  const row = await tx.one(
-    `SELECT count(*)::int AS c
+  if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) return { count: 0 };
+  const rows = await tx.all(
+    `SELECT n.event_type, r.recipient_kind, r.recipient_context
      FROM notification_recipients r
      JOIN communication_notifications n ON n.id = r.notification_id AND n.school_id = r.school_id
      WHERE r.school_id = $1::uuid AND r.user_id = $2::uuid AND r.read_at IS NULL AND r.archived_at IS NULL`,
     [school.id, userId],
   );
-  return { count: Number(row?.c || 0) };
+  const schoolPolicy = await getSchoolPolicyEventsBySchoolId(tx, school.id);
+  const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
+  let count = 0;
+  for (const row of rows) {
+    const allowed = resolveAllowedChannels({
+      eventType: row.event_type,
+      recipient: row.recipient_kind,
+      recipientCategories: rowPolicyCategories(row, viewerCategories),
+      schoolPolicy,
+      userPreferences: { IN_APP: true, PUSH: true, EMAIL: true },
+    });
+    if (allowed.includes("IN_APP")) count += 1;
+  }
+  return { count };
 }
 
 async function markRead(store, notificationId, principal, auditMeta, query = {}) {
@@ -263,8 +367,12 @@ async function markRead(store, notificationId, principal, auditMeta, query = {})
       });
     }
     const row = await loadVisible(tx, notificationId, school.id, userId, false);
+    const userVisible = await isInAppVisible(tx, { userId, schoolId: school.id });
+    const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
+    if (!(await allowsInAppForRow(tx, school.id, row, userVisible, viewerCategories))) throw notFound();
     const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
-    return mapNotification(row, { schoolCode, attachments });
+    const [item] = await sanitizeNavigationTargets(tx, school.id, [mapNotification(row, { schoolCode, attachments })]);
+    return item;
   });
 }
 
@@ -430,6 +538,30 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
   return { bytes, fileName: attachment.file_name, mimeType: attachment.mime_type };
 }
 
+/**
+ * Résolution fail-closed du compte d'un enseignant.
+ * `teachers.user_id` est un FK nu vers `users(id)` : aucune contrainte n'impose
+ * que le compte lié appartienne à l'école de la fiche enseignant. La jointure
+ * sur `users.school_id` rend l'invariant tenant obligatoire côté requête.
+ */
+async function resolveTenantTeacherUserId(tx, teacherId, schoolId) {
+  const tid = String(teacherId ?? "").trim();
+  if (!tid) return null;
+  const row = await tx.one(
+    `SELECT u.id AS user_id
+     FROM teachers t
+     JOIN users u
+       ON u.id = t.user_id
+      AND u.school_id = t.school_id
+      AND COALESCE(u.status, 'active') = 'active'
+     WHERE t.id = $1
+       AND t.school_id = $2
+       AND COALESCE(t.status, 'active') = 'active'`,
+    [tid, schoolId],
+  );
+  return row?.user_id ?? null;
+}
+
 async function eventSpec(tx, event) {
   const sourceId = event.source_entity_id;
   const schoolId = event.school_id;
@@ -465,8 +597,25 @@ async function eventSpec(tx, event) {
   } else if (eventType === "communication.announcement.published") {
     const announcement = await tx.one(`SELECT id, title FROM announcements WHERE id = $1 AND school_id = $2`, [sourceId, schoolId]);
     if (!announcement) throw new Error("Annonce source introuvable");
-    const rows = await tx.all(`SELECT user_id, recipient_kind FROM announcement_recipients WHERE announcement_id = $1 AND school_id = $2`, [sourceId, schoolId]);
-    for (const row of rows) addExact(row.user_id, row.recipient_kind, { announcementId: sourceId });
+    const rows = await tx.all(
+      `SELECT user_id, recipient_kind, audience_reason FROM announcement_recipients WHERE announcement_id = $1 AND school_id = $2`,
+      [sourceId, schoolId],
+    );
+    for (const row of rows) {
+      const parsed = typeof row.audience_reason === "string"
+        ? (() => {
+          try {
+            return JSON.parse(row.audience_reason || "{}");
+          } catch {
+            return {};
+          }
+        })()
+        : (row.audience_reason || {});
+      const kinds = Array.isArray(parsed.kinds) && parsed.kinds.length
+        ? parsed.kinds
+        : [row.recipient_kind].filter(Boolean);
+      addExact(row.user_id, row.recipient_kind, { announcementId: sourceId, kinds });
+    }
     title = "Nouvelle annonce";
     body = announcement.title ? `Une nouvelle annonce est disponible : ${announcement.title}` : "Une nouvelle annonce est disponible.";
     navigationTarget = { type: "announcement", announcementId: sourceId };
@@ -480,6 +629,18 @@ async function eventSpec(tx, event) {
     for (const id of parentIds) add(id, "parent", { studentId: attendance.student_id });
     title = "Absence enregistrée";
     body = `${attendance.student_name || "Un élève"} a été signalé(e) absent(e).`;
+    navigationTarget = { type: "attendance", studentId: attendance.student_id, attendanceId: sourceId };
+    metadata = { attendanceDate: attendance.attendance_date };
+  } else if (eventType === "attendance.student.late") {
+    const attendance = await tx.one(
+      `SELECT a.*, trim(concat(st.first_name,' ',st.last_name)) AS student_name
+       FROM attendance a JOIN students st ON st.id = a.student_id
+       WHERE a.id = $1 AND a.school_id = $2`, [sourceId, schoolId]);
+    if (!attendance) throw new Error("Présence source introuvable");
+    const parentIds = await tx.listParentUserIdsForStudent(schoolId, attendance.student_id);
+    for (const id of parentIds) add(id, "parent", { studentId: attendance.student_id });
+    title = "Retard enregistré";
+    body = "Un retard a été enregistré pour votre enfant.";
     navigationTarget = { type: "attendance", studentId: attendance.student_id, attendanceId: sourceId };
     metadata = { attendanceDate: attendance.attendance_date };
   } else if (eventType === "pedagogy.grade.published") {
@@ -498,6 +659,29 @@ async function eventSpec(tx, event) {
     title = "Nouvelle note disponible";
     body = "Une nouvelle note est disponible dans Somafrik.";
     navigationTarget = { type: "grade", studentId: grade.student_id, gradeId: sourceId };
+  } else if (eventType === "pedagogy.report_card.published") {
+    const card = await tx.one(
+      `SELECT rc.*, st.student_code
+       FROM report_cards rc JOIN students st ON st.id = rc.student_id
+       WHERE rc.id = $1 AND rc.school_id = $2`, [sourceId, schoolId]);
+    if (!card) throw new Error("Bulletin source introuvable");
+    const parentIds = await tx.listParentUserIdsForStudent(schoolId, card.student_id);
+    for (const id of parentIds) add(id, "parent", { studentId: card.student_id });
+    const studentUser = await tx.one(
+      `SELECT id FROM users WHERE school_id = $1 AND user_code = $2 AND COALESCE(status,'active')='active' LIMIT 1`,
+      [schoolId, card.student_code],
+    );
+    if (studentUser) add(studentUser.id, "student", { studentId: card.student_id });
+    title = "Bulletin disponible";
+    body = "Un nouveau bulletin scolaire est disponible.";
+    navigationTarget = {
+      type: "report_card",
+      studentId: card.student_id,
+      reportCardId: sourceId,
+      termId: card.term_id,
+      academicYearId: card.academic_year_id,
+    };
+    metadata = { termId: card.term_id, academicYearId: card.academic_year_id };
   } else if (eventType === "finance.payment.recorded") {
     const payment = await tx.one(
       `SELECT p.*, trim(concat(st.first_name,' ',st.last_name)) AS student_name
@@ -510,6 +694,157 @@ async function eventSpec(tx, event) {
     body = `Un paiement a été enregistré pour ${payment.student_name || "l'élève"}.`;
     navigationTarget = { type: "payment", studentId: payment.student_id, paymentId: sourceId };
     metadata = { paymentCode: payment.payment_code, paymentDate: payment.payment_date };
+  } else if (eventType === "finance.payment.due") {
+    const obligation = await tx.one(
+      `SELECT o.*, trim(concat(st.first_name,' ',st.last_name)) AS student_name
+       FROM student_fee_obligations o JOIN students st ON st.id = o.student_id
+       WHERE o.id = $1 AND o.school_id = $2
+       FOR UPDATE OF o`, [sourceId, schoolId]);
+    if (!isPaymentDueEligible(obligation)) {
+      return { title: "", body: "", navigationTarget: {}, metadata: {}, recipients: [] };
+    }
+    const parentIds = await tx.listParentUserIdsForStudent(schoolId, obligation.student_id);
+    for (const id of parentIds) add(id, "parent", { studentId: obligation.student_id });
+    if (typeof tx.listSchoolAdminUserIds === "function") {
+      for (const id of await tx.listSchoolAdminUserIds(schoolId)) {
+        add(id, "school_admin", { studentId: obligation.student_id });
+      }
+    }
+    title = "Paiement arrivé à échéance";
+    body = "Un paiement scolaire est arrivé à échéance.";
+    navigationTarget = {
+      type: "finance_obligation",
+      studentId: obligation.student_id,
+      obligationId: sourceId,
+    };
+    metadata = {
+      dueDate: obligation.due_date,
+      feeType: obligation.fee_type,
+      periodLabel: obligation.period_label,
+    };
+  } else if (eventType === "planning.timetable.changed") {
+    const payload = (() => {
+      const raw = event.payload;
+      if (raw && typeof raw === "object") return raw;
+      if (typeof raw === "string") {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return {};
+        }
+      }
+      return {};
+    })();
+    const classId = String(payload.classId ?? "").trim();
+    const teacherId = String(payload.teacherId ?? "").trim();
+    const previousTeacherId = String(payload.previousTeacherId ?? "").trim();
+    const resolveTeacherUser = (tid) => resolveTenantTeacherUserId(tx, tid, schoolId);
+    const assigneeUserId = await resolveTeacherUser(teacherId);
+    if (assigneeUserId) {
+      add(assigneeUserId, "teacher", { weeklySlotId: sourceId, classId, role: "assignee" });
+    }
+    if (previousTeacherId && previousTeacherId !== teacherId) {
+      const previousUserId = await resolveTeacherUser(previousTeacherId);
+      if (previousUserId) {
+        add(previousUserId, "teacher", { weeklySlotId: sourceId, classId, role: "previous_assignee" });
+      }
+    }
+    if (typeof tx.listSchoolAdminUserIds === "function") {
+      for (const id of await tx.listSchoolAdminUserIds(schoolId)) {
+        add(id, "school_admin", { weeklySlotId: sourceId, classId });
+      }
+    }
+    title = "Emploi du temps modifié";
+    body = "Une modification a été apportée à l'emploi du temps.";
+    navigationTarget = {
+      type: "timetable",
+      weeklySlotId: sourceId,
+      classId: classId || null,
+    };
+    metadata = {
+      weeklySlotId: sourceId,
+      changeRevision: payload.changeRevision ?? null,
+      classId: classId || null,
+      academicYearId: payload.academicYearId ?? null,
+      dayOfWeek: payload.dayOfWeek ?? null,
+      startTime: payload.startTime ?? null,
+      endTime: payload.endTime ?? null,
+      teacherId: teacherId || null,
+      previousTeacherId: previousTeacherId || null,
+    };
+  } else if (eventType === "planning.teacher.replacement") {
+    const payload = (() => {
+      const raw = event.payload;
+      if (raw && typeof raw === "object") return raw;
+      if (typeof raw === "string") {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return {};
+        }
+      }
+      return {};
+    })();
+    const action = String(payload.action ?? "").trim();
+    const classId = String(payload.classId ?? "").trim();
+    const originalTeacherId = String(payload.originalTeacherId ?? "").trim();
+    const substituteTeacherId = String(payload.substituteTeacherId ?? "").trim();
+    const previousSubstituteTeacherId = String(payload.previousSubstituteTeacherId ?? "").trim();
+    const resolveTeacherUser = (tid) => resolveTenantTeacherUserId(tx, tid, schoolId);
+    const teacherIds = new Set();
+    if (originalTeacherId) teacherIds.add(originalTeacherId);
+    if (substituteTeacherId) teacherIds.add(substituteTeacherId);
+    if (action === "reassigned" && previousSubstituteTeacherId) {
+      teacherIds.add(previousSubstituteTeacherId);
+    }
+    for (const tid of teacherIds) {
+      const userId = await resolveTeacherUser(tid);
+      if (userId) {
+        addExact(userId, "teacher", { replacementId: sourceId, classId, teacherId: tid });
+      }
+    }
+    if (classId && typeof tx.listClassParentUserIds === "function") {
+      for (const row of await tx.listClassParentUserIds(schoolId, [classId])) {
+        addExact(row.user_id || row.id, "parent", { replacementId: sourceId, classId });
+      }
+    }
+    if (typeof tx.listSchoolAdminUserIds === "function") {
+      for (const id of await tx.listSchoolAdminUserIds(schoolId)) {
+        addExact(id, "school_admin", { replacementId: sourceId, classId });
+      }
+    }
+    if (action === "reassigned") {
+      title = "Remplacement d'enseignant modifié";
+      body = "Un remplacement d'enseignant a été modifié.";
+    } else if (action === "cancelled") {
+      title = "Remplacement d'enseignant annulé";
+      body = "Un remplacement d'enseignant a été annulé.";
+    } else {
+      title = "Remplacement d'enseignant";
+      body = "Un remplacement d'enseignant a été planifié.";
+    }
+    navigationTarget = {
+      type: "teacher_replacement",
+      replacementId: sourceId,
+      classId: classId || null,
+      weeklySlotId: payload.weeklySlotId ?? null,
+      occurrenceDate: payload.occurrenceDate ?? null,
+    };
+    metadata = {
+      replacementId: sourceId,
+      changeRevision: payload.changeRevision ?? null,
+      action: action || null,
+      weeklySlotId: payload.weeklySlotId ?? null,
+      classId: classId || null,
+      academicYearId: payload.academicYearId ?? null,
+      occurrenceDate: payload.occurrenceDate ?? null,
+      originalTeacherId: originalTeacherId || null,
+      substituteTeacherId: substituteTeacherId || null,
+      previousSubstituteTeacherId: previousSubstituteTeacherId || null,
+      startTime: payload.startTime ?? null,
+      endTime: payload.endTime ?? null,
+      status: payload.status ?? null,
+    };
   } else {
     throw new Error(`Type d'événement C4 non supporté: ${eventType}`);
   }

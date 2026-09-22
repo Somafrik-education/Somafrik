@@ -11,8 +11,9 @@ const {
   attachStudentLifecyclePg,
   ensureStudentLifecyclePgSchema,
 } = require("./studentLifecyclePg");
-const { ensureStudentGeneralIdentityPg } = require("./studentGeneralIdentityPg");
+const { ensureStudentGeneralIdentityPg, assertStudentGeneralIdentityPg } = require("./studentGeneralIdentityPg");
 const { attachLiveRbacAuthority } = require("../lib/liveRbacPrincipalAuthority");
+const { attachDemoReadOptimizations } = require("../lib/demoReadOptimizations");
 const {
   resolveDatabaseConfig,
   isDatabaseRequired,
@@ -78,6 +79,7 @@ function createPostgresRepository(databaseConfig, env = process.env) {
   repository.engine = "postgresql";
   attachStudentLifecyclePg(repository);
   attachLiveRbacAuthority(repository);
+  attachDemoReadOptimizations(repository, env);
   return assertRepositoryContract(repository, "postgresql");
 }
 
@@ -148,6 +150,7 @@ async function initializeRepository({
   disableLegacyBackOfficeRuntimeMigrations(primary);
   if ((primary.engine ?? "postgresql") === "postgresql") {
     attachStudentLifecyclePg(primary);
+    attachDemoReadOptimizations(primary, env);
   }
 
   try {
@@ -155,6 +158,7 @@ async function initializeRepository({
     if ((primary.engine ?? "postgresql") === "postgresql") {
       await ensureStudentLifecyclePgSchema(primary);
       await ensureStudentGeneralIdentityPg(primary);
+      await assertStudentGeneralIdentityPg(primary);
     }
     if (isProductionEnvironment(env) && (primary.engine ?? "") === "memory") {
       throw new DbConfigError("Base mémoire détectée en production.");

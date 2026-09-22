@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { SchoolInfo, getApiBaseUrl, getSchoolByCode } from "../services/api";
+import { schoolLogoDisplayUri } from "../lib/schoolLogo";
 import { buildPlatformLoginParams } from "../lib/platformLogin";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 import {
@@ -258,11 +259,12 @@ export default function RoleSelectionScreen({ navigation }: Props) {
                   ]}
                   testID={ROLE_SELECTION_TEST_IDS.schoolLogo}
                 >
-                  {school.logoUrl ? (
-                    <Image source={{ uri: school.logoUrl }} style={styles.schoolLogoImage} />
-                  ) : (
-                    <Image source={somafrikLogo} style={styles.schoolLogoImage} />
-                  )}
+                  {schoolLogoDisplayUri(school, getApiBaseUrl()) ? (
+                    <Image
+                      source={{ uri: schoolLogoDisplayUri(school, getApiBaseUrl()) as string }}
+                      style={styles.schoolLogoImage}
+                    />
+                  ) : null}
                 </View>
                 <View style={styles.schoolCopy}>
                   <Text style={styles.foundLabel}>{ROLE_SELECTION_COPY.successMessage}</Text>

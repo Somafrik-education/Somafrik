@@ -1,17 +1,20 @@
-import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
-import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { NavLink, useLocation } from "react-router-dom";
+import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw, Settings2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { displayRoleName, getInitials } from "../../lib/format";
 import { scopedNotifications } from "../../lib/scope";
-import { scopedMessages } from "../../lib/establishment";
 import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
 import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";
-import { canReadView } from "../../lib/permissions";
+import { useMessagesUnreadCount } from "../../lib/messagesRead";
+import { canReadView, hasBackOfficePermission } from "../../lib/permissions";
+import { isPlatformCommunicationUser } from "../../lib/establishmentCommunication";
 import { usePermissionContext } from "../../lib/usePermissionContext";
+import { domainsForPath } from "../../lib/routeDomainMap";
 import { Button } from "../ui/Button";
+import { CommunicationPreferencesPanel } from "../account/CommunicationPreferencesPanel";
 import { GlobalSearch } from "./GlobalSearch";
 
 /** Icône d'accès rapide (haut à droite) avec pastille rouge de comptage optionnelle. */
@@ -48,17 +51,19 @@ function TopbarIcon({
 }
 
 export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () => void }) {
+  const location = useLocation();
   const { session, logout } = useAuth();
   const { state, loading, error, refresh } = useData();
-  const { scopedUser, activeSchoolCode } = useActiveSchool();
+  const { activeSchoolCode } = useActiveSchool();
   const ctx = usePermissionContext();
   const user = session?.user;
-  const scopeUser = scopedUser ?? user ?? null;
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
 
   const canReadNotifications = canReadView(ctx, "notifications");
   const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const canPollC4Unread = hasBackOfficePermission(ctx, "Notifications", "READ") && hasInternalNotificationScope;
   const internalUnreadCount = useInternalNotificationsUnreadCount(
-    canReadNotifications && hasInternalNotificationScope,
+    canPollC4Unread,
     activeSchoolCode,
   );
   const unreadCount = hasInternalNotificationScope
@@ -66,14 +71,18 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
     : canReadNotifications
       ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length
       : 0;
+  const notificationsHref = hasInternalNotificationScope
+    ? "/notifications"
+    : isPlatformCommunicationUser(ctx)
+      ? "/notifications-plateforme"
+      : "/notifications";
 
   const canReadMessages = canReadView(ctx, "messages");
-  const unreadMessages = canReadMessages
-    ? scopedMessages(scopeUser, state).filter((m) => String(m.status ?? "") !== "Lu").length
-    : 0;
+  const unreadMessages = useMessagesUnreadCount(canReadMessages, activeSchoolCode);
 
   const canReadAnnouncements = canReadView(ctx, "announcements");
   const unreadAnnouncements = useAnnouncementsUnreadCount(canReadAnnouncements, activeSchoolCode);
+  const canOpenPersonalPreferences = Boolean(user?.schoolCode && user.schoolCode !== "*");
 
   return (
     <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-white/90 px-4 py-3 backdrop-blur sm:gap-4 sm:px-6">
@@ -106,7 +115,10 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => void refresh()}
+          onClick={() => {
+            const domains = domainsForPath(location.pathname, ctx);
+            void refresh(domains.length > 0 ? domains : undefined);
+          }}
           disabled={loading}
           aria-label={loading ? "Synchronisation en cours" : "Rafraîchir les données"}
           className="px-2.5 sm:px-3"
@@ -125,9 +137,19 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
           </TopbarIcon>
         ) : null}
         {canReadNotifications ? (
-          <TopbarIcon to="/notifications" label="Notifications" count={unreadCount}>
+          <TopbarIcon to={notificationsHref} label="Notifications" count={unreadCount}>
             <Bell className="h-5 w-5" strokeWidth={1.8} />
           </TopbarIcon>
+        ) : null}
+        {canOpenPersonalPreferences ? (
+          <button
+            type="button"
+            onClick={() => setPreferencesOpen(true)}
+            aria-label="Préférences de communication"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-50 hover:text-ink"
+          >
+            <Settings2 className="h-5 w-5" strokeWidth={1.8} />
+          </button>
         ) : null}
         <div className="hidden items-center gap-3 sm:flex">
           <div className="text-right">
@@ -152,6 +174,10 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
           <span className="hidden sm:inline">Déconnexion</span>
         </Button>
       </div>
+      <CommunicationPreferencesPanel
+        open={preferencesOpen}
+        onClose={() => setPreferencesOpen(false)}
+      />
     </header>
   );
 }

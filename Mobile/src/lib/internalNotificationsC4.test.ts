@@ -55,11 +55,44 @@ assert.match(screenSrc, /markInternalNotificationRead/);
 assert.match(screenSrc, /archiveInternalNotification/);
 
 const headerSrc = fs.readFileSync(path.join(ROOT, "src/components/MobileAppHeader.tsx"), "utf8");
-assert.match(headerSrc, /InternalNotifications/);
-assert.match(headerSrc, /useInternalNotificationsUnreadCount/);
+assert.match(headerSrc, /CommunicationHeaderIcons/);
+assert.match(headerSrc, /variant="header"/);
+assert.doesNotMatch(headerSrc, /canPlatformNotifications/);
+assert.doesNotMatch(
+  headerSrc,
+  /name="PlatformNotifications"/,
+  "#577 L0 : le header live ne doit pas ouvrir le catalogue plateforme",
+);
+
+const communicationHeaderSrc = fs.readFileSync(
+  path.join(ROOT, "src/components/CommunicationHeaderIcons.tsx"),
+  "utf8",
+);
+assert.match(
+  communicationHeaderSrc,
+  /resolvedNotificationsInboxRoute === "InternalNotifications"/,
+  "#577 L0 : les raccourcis de communication doivent limiter Notifications à la boîte établissement C4",
+);
+assert.doesNotMatch(
+  communicationHeaderSrc,
+  /canPlatformNotifications/,
+  "#577 L0 : aucun raccourci Mobile ne doit conserver une destination Notifications plateforme réservée au Web",
+);
 
 const navSrc = fs.readFileSync(path.join(ROOT, "src/navigation/AppNavigator.tsx"), "utf8");
 assert.match(navSrc, /InternalNotifications/);
+assert.doesNotMatch(
+  navSrc,
+  /name="PlatformNotifications"/,
+  "#577 L0 : PlatformNotifications ne doit pas être enregistré dans le graphe Mobile live",
+);
+
+const homeSrc = fs.readFileSync(path.join(ROOT, "src/screens/HomeScreen.tsx"), "utf8");
+assert.doesNotMatch(
+  homeSrc,
+  /platformNotifications:\s*\(/,
+  "#577 L0 : l'Accueil Mobile ne doit plus exposer la messagerie plateforme réservée au Web",
+);
 
 const placeholders = fs.readFileSync(
   path.join(ROOT, "../web/src/pages/parametres/SettingsPlaceholders.tsx"),

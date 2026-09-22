@@ -1,4 +1,5 @@
 import { api } from "../api/client";
+import type { SchoolFeeItem } from "../types";
 import type { FinanceObligationProjection } from "./financePaymentWrite";
 
 export interface FinancePaymentItem {
@@ -16,6 +17,7 @@ export interface FinancePayment {
   studentId: string;
   amount: number;
   totalAmount?: number;
+  currency?: string;
   feeType: string;
   items?: FinancePaymentItem[];
   itemCount?: number;
@@ -33,6 +35,8 @@ export interface FinancePayment {
 
 export interface FinanceFeeGrid {
   id: string;
+  schoolId?: string;
+  schoolCode?: string;
   classId?: string;
   classCode?: string;
   className: string;
@@ -43,6 +47,49 @@ export interface FinanceFeeGrid {
   items?: unknown[];
 }
 
+function mapCanonicalSchoolFeeItem(item: unknown, grid: FinanceFeeGrid): SchoolFeeItem {
+  const row = (item ?? {}) as Record<string, unknown>;
+  const status = String(row.status ?? "Actif") === "Désactivé" ? "Désactivé" : "Actif";
+  const schoolId = String(row.schoolId ?? grid.schoolId ?? "").trim();
+  return {
+    id: String(row.id ?? ""),
+    feeGridId: String(row.feeGridId ?? grid.id ?? ""),
+    ...(schoolId ? { schoolId } : {}),
+    schoolCode: String(row.schoolCode ?? grid.schoolCode ?? ""),
+    className: String(row.className ?? grid.className ?? ""),
+    feeType: String(row.feeType ?? "Autre"),
+    label: String(row.label ?? ""),
+    amount: Number(row.amount ?? 0),
+    mandatory: row.mandatory !== false,
+    dueDate: row.dueDate ? String(row.dueDate) : undefined,
+    monthlyMonths: Array.isArray(row.monthlyMonths) ? row.monthlyMonths.map(String) : undefined,
+    status,
+  };
+}
+
+async function listSchoolFeeItemsFromCanonicalGrids(): Promise<SchoolFeeItem[]> {
+  const grids = (await api.get<FinanceFeeGrid[]>("/finance/fee-grids")) ?? [];
+  const details = await Promise.all(
+    grids.map(async (grid) => {
+      try {
+        const detail = await api.get<{ grid?: FinanceFeeGrid; items?: unknown[] }>(
+          `/finance/fee-grids/${encodeURIComponent(grid.id)}`,
+        );
+        const payload = detail && !Array.isArray(detail) ? detail : null;
+        return {
+          grid: payload?.grid ?? grid,
+          items: Array.isArray(payload?.items) ? payload.items : [],
+        };
+      } catch {
+        return { grid, items: [] as unknown[] };
+      }
+    }),
+  );
+  return details.flatMap((detail) =>
+    (detail.items ?? []).map((item) => mapCanonicalSchoolFeeItem(item, detail.grid)),
+  );
+}
+
 export interface PaymentStudentOption {
   studentId: string;
   studentCode: string;
@@ -51,6 +98,7 @@ export interface PaymentStudentOption {
   classId: string | null;
   classCode: string;
   className: string;
+  schoolCode?: string;
   studentStatus?: string;
   enrollmentStatus?: string;
   classes?: Array<{ classId: string; classCode: string; className: string }>;
@@ -124,6 +172,7 @@ export const financeApi = {
     api.post<FinanceFeeGrid>("/finance/fee-grids", payload),
   getFeeGrid: (gridId: string) =>
     api.get<{ grid: FinanceFeeGrid; items: unknown[] }>(`/finance/fee-grids/${encodeURIComponent(gridId)}`),
+  listSchoolFeeItems: () => listSchoolFeeItemsFromCanonicalGrids(),
   updateFeeGrid: (gridId: string, payload: Record<string, unknown>) =>
     api.patch<FinanceFeeGrid>(`/finance/fee-grids/${encodeURIComponent(gridId)}`, payload),
   activateFeeGrid: (gridId: string) =>
@@ -143,7 +192,12 @@ export const financeApi = {
       },
     ),
 
-  listStudentFees: () => api.get<FinanceObligationProjection[]>("/finance/student-fees"),
+  listStudentFees: (studentId?: string) => {
+    const suffix = String(studentId ?? "").trim()
+      ? `?studentId=${encodeURIComponent(String(studentId).trim())}`
+      : "";
+    return api.get<FinanceObligationProjection[]>(`/finance/student-fees${suffix}`);
+  },
   getStudentFee: (obligationId: string) =>
     api.get(`/finance/student-fees/${encodeURIComponent(obligationId)}`),
   adjustStudentFee: (obligationId: string, payload: Record<string, unknown>) =>

@@ -43,7 +43,7 @@ const CARD_ARTICLES = {
   donnees: ["help/settings/data-export"],
   securite: ["help/settings/security"],
   "mon-abonnement": ["help/settings/subscription"],
-  notifications: ["help/settings/coming-soon"],
+  notifications: ["help/settings/notifications", "help/settings/notifications-edit"],
   apparence: ["help/settings/coming-soon"],
   integrations: ["help/settings/coming-soon"],
 };
@@ -61,6 +61,8 @@ const REQUIRED_IDS = [
   "help/settings/subscription",
   "help/settings/security",
   "help/settings/coming-soon",
+  "help/settings/notifications",
+  "help/settings/notifications-edit",
   "help/settings/profile-edit",
   "help/settings/academic-year-create",
   "help/settings/academic-year-current",
@@ -150,7 +152,7 @@ async function main() {
         if (card.id === "securite") {
           assert.match(text, /lecture seule/i);
         }
-        if (["notifications", "apparence", "integrations"].includes(card.id)) {
+        if (["apparence", "integrations"].includes(card.id)) {
           assert.equal(articleId, "help/settings/coming-soon");
         }
         assert.doesNotMatch(text, /opération réussie garantie/i);
@@ -183,6 +185,7 @@ async function main() {
     "help/settings/school-courses-edit": "Matières:UPDATE",
     "help/settings/finance-fee-grid-create": "Frais & tarifs:CREATE",
     "help/settings/finance-fee-grid-update": "Frais & tarifs:UPDATE",
+    "help/settings/notifications-edit": "Paramètres Établissement:UPDATE",
   };
   for (const [id, permission] of Object.entries(writePermissions)) {
     const article = byId[id];

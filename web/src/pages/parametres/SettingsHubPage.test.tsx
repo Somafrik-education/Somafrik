@@ -31,6 +31,7 @@ describe("SettingsHubPage (D2.5)", () => {
     );
     expect(screen.getByRole("heading", { name: "Profil établissement" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Année scolaire" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Finances" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Contenu")).toBeInTheDocument();
   });
 });

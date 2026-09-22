@@ -91,6 +91,7 @@ const rolePermissions = {
     "Gérer annonces",
     "Messages parents",
     "Publier communications",
+    "Bulletins:CREATE",
     "Valider bulletins",
     "Valider examens",
     "Valider années académiques",
@@ -350,7 +351,7 @@ const securityMatrix = {
     "Préfet des études": "CRUD",
     Enseignant: "CRUD",
     Secrétaire: "CRUD",
-    Parent: "CRUD",
+    Parent: "R",
     "Élève / Étudiant": "CRUD",
   },
   Documents: {

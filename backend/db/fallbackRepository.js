@@ -52,6 +52,7 @@ class FallbackRepository {
     this.ready = false;
     this.sessions = new Map();
     this.privacyRequests = new Map();
+    this.trialAccessRequests = new Map();
     this.auditLogs = [];
     this.idempotencyRecords = new Map();
     this.backOfficeState = null;
@@ -91,6 +92,64 @@ class FallbackRepository {
 
   async close() {
     this.ready = false;
+  }
+
+  _channelDeliveryAdapter() {
+    if (!this._channelDeliveries) {
+      const { createMemoryDeliveryAdapter } = require("../lib/communicationChannelFanout");
+      this._channelDeliveries = createMemoryDeliveryAdapter({ users: [] });
+    }
+    return this._channelDeliveries;
+  }
+
+  _bindSchoolNotificationSettingsStore(target) {
+    if (!target || typeof target.getSchoolNotificationSettingsStore === "function") return;
+    target.getSchoolNotificationSettingsStore = () => this.getSchoolNotificationSettingsStore();
+  }
+
+  _bindChannelDeliveryAdapter(target) {
+    if (!target || typeof target.ensureDelivery === "function") return;
+    const adapter = this._channelDeliveryAdapter();
+    target.ensureDelivery = (...args) => adapter.ensureDelivery(...args);
+    target.claimDue = (...args) => adapter.claimDue(...args);
+    target.markSent = (...args) => adapter.markSent(...args);
+    target.markSkipped = (...args) => adapter.markSkipped(...args);
+    target.markFailed = (...args) => adapter.markFailed(...args);
+    target.recoverStaleProcessing = (...args) => adapter.recoverStaleProcessing(...args);
+    target.getUserEmail = (...args) => adapter.getUserEmail(...args);
+    target.loadFanoutTargets = (...args) => adapter.loadFanoutTargets(...args);
+  }
+
+  async ensureDelivery(row) {
+    return this._channelDeliveryAdapter().ensureDelivery(row);
+  }
+
+  async claimDue(opts) {
+    return this._channelDeliveryAdapter().claimDue(opts);
+  }
+
+  async markSent(id, opts) {
+    return this._channelDeliveryAdapter().markSent(id, opts);
+  }
+
+  async markSkipped(id, reason) {
+    return this._channelDeliveryAdapter().markSkipped(id, reason);
+  }
+
+  async markFailed(id, error, opts) {
+    return this._channelDeliveryAdapter().markFailed(id, error, opts);
+  }
+
+  async recoverStaleProcessing(opts) {
+    return this._channelDeliveryAdapter().recoverStaleProcessing(opts);
+  }
+
+  async getUserEmail(userId, schoolId) {
+    return this._channelDeliveryAdapter().getUserEmail(userId, schoolId);
+  }
+
+  async loadFanoutTargets(eventKey) {
+    return this._channelDeliveryAdapter().loadFanoutTargets(eventKey);
   }
 
   async getDataset() {
@@ -298,6 +357,50 @@ class FallbackRepository {
       if (status && row.status !== status) return false;
       return true;
     });
+  }
+
+  async createTrialAccessRequest(row) {
+    const { randomUUID } = require("node:crypto");
+    const stored = {
+      id: randomUUID(),
+      publicRef: row.publicRef || `TRIAL-${randomUUID().slice(0, 8).toUpperCase()}`,
+      requesterName: row.requesterName || "",
+      role: row.role || "",
+      schoolName: row.schoolName || "",
+      countryIso: row.countryIso || "",
+      city: row.city || "",
+      phone: row.phone || "",
+      email: row.email || "",
+      studentBand: row.studentBand || "",
+      status: row.status || "nouvelle",
+      consentAt: row.consentAt || new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      schoolId: row.schoolId || null,
+    };
+    this.trialAccessRequests.set(stored.id, stored);
+    return stored;
+  }
+
+  async findOpenTrialRequest(email, schoolName) {
+    const wantedEmail = String(email ?? "").trim().toLowerCase();
+    const wantedSchool = String(schoolName ?? "").trim().toLowerCase();
+    const open = new Set(["nouvelle", "contactee", "qualifiee", "essai_active"]);
+    for (const row of this.trialAccessRequests.values()) {
+      if (
+        String(row.email).toLowerCase() === wantedEmail &&
+        String(row.schoolName).toLowerCase() === wantedSchool &&
+        open.has(String(row.status))
+      ) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  async listTrialAccessRequests() {
+    return [...this.trialAccessRequests.values()].sort((a, b) =>
+      String(b.createdAt).localeCompare(String(a.createdAt)),
+    );
   }
 
   async executePrivacyErasure({ requestId, actorUserId, userId, identifier, schoolCode }) {
@@ -515,6 +618,9 @@ class FallbackRepository {
       code,
       publicId: record?.publicId || existing?.publicId || loginCode || code,
       loginCode,
+      logoUrl: require("../lib/schoolLogo").persistableLogoRef(record?.logoUrl),
+      logoSource: require("../lib/schoolLogo").canonicalLogoSource(record?.logoSource),
+      logoUploadedAt: require("../lib/schoolLogo").canonicalLogoUploadedAt(record?.logoUploadedAt),
     };
     const index = existing
       ? store.findIndex(
@@ -1253,11 +1359,13 @@ class FallbackRepository {
         ...clone(row),
         classId: row.classId ?? row.id,
         className: row.className ?? row.name,
-        students: enrollments.filter(
-          (enrollment) =>
-            enrollment.status === "active" &&
-            (enrollment.class_id === row.id || enrollment.class_id === row.classCode),
-        ).length,
+        students: enrollments.filter((enrollment) => {
+          const status = String(enrollment.status ?? "").toLowerCase();
+          return (
+            (status === "active" || status === "enrolled") &&
+            (enrollment.class_id === row.id || enrollment.class_id === row.classCode)
+          );
+        }).length,
       }));
   }
 
@@ -1482,6 +1590,21 @@ class FallbackRepository {
     return clone(current);
   }
 
+  async listClassHeadTeacherCandidates() {
+    const { headTeacherPostgresRequired } = require("../lib/classHeadTeachersManagement");
+    throw headTeacherPostgresRequired();
+  }
+
+  async assignClassHeadTeacher() {
+    const { headTeacherPostgresRequired } = require("../lib/classHeadTeachersManagement");
+    throw headTeacherPostgresRequired();
+  }
+
+  async removeClassHeadTeacher() {
+    const { headTeacherPostgresRequired } = require("../lib/classHeadTeachersManagement");
+    throw headTeacherPostgresRequired();
+  }
+
   getClassStudentsRepository() {
     if (!this._classStudentsRepo) {
       const { createClassStudentsRepository } = require("./classStudentsRepository");
@@ -1586,7 +1709,7 @@ class FallbackRepository {
               class_id: params[2],
               academic_year_id: params[3],
               enrollment_date: new Date().toISOString().slice(0, 10),
-              status: "active",
+              status: text.includes("ENROLLED") ? "ENROLLED" : "active",
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             };
@@ -1612,18 +1735,24 @@ class FallbackRepository {
       if (text.includes("SELECT ST.ID, ST.STUDENT_CODE") && text.includes("FROM STUDENTS ST")) {
         return (
           (self._managedStudents ?? []).find(
-            (row) => row.student_code === params[0] && row.school_id === params[1],
+            (row) =>
+              (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+              row.school_id === params[1],
           ) ?? null
         );
       }
-      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE")) {
+      if (text.includes("FROM STUDENTS ST") && text.includes("ST.STUDENT_CODE = $1")) {
             const student = (self._managedStudents ?? []).find(
-              (row) => row.student_code === params[0] && row.school_id === params[1],
+              (row) =>
+                (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+                row.school_id === params[1],
             );
             if (!student) return null;
-            const enrollment = (self._managedEnrollments ?? []).find(
-              (row) => row.student_id === student.id && row.status === "active",
-            );
+            const enrollment = (self._managedEnrollments ?? []).find((row) => {
+              if (row.student_id !== student.id) return false;
+              const status = String(row.status ?? "").toLowerCase();
+              return status === "active" || status === "enrolled" || status === "approved";
+            });
             const cls = (self._managedClasses ?? []).find((row) => row.id === enrollment?.class_id || row.classCode === enrollment?.class_id);
             const year = (self._managedAcademicYears ?? []).find((item) => item.id === enrollment?.academic_year_id);
             const schoolCode =
@@ -1662,7 +1791,13 @@ class FallbackRepository {
             const classId = params[0];
             const schoolId = params[1];
             return (self._managedEnrollments ?? [])
-              .filter((row) => row.class_id === classId && row.status === "active")
+              .filter((row) => {
+                const status = String(row.status ?? "").toLowerCase();
+                return (
+                  row.class_id === classId &&
+                  (status === "active" || status === "enrolled")
+                );
+              })
               .map((enrollment) => {
                 const student = (self._managedStudents ?? []).find(
                   (row) => row.id === enrollment.student_id && row.school_id === schoolId,
@@ -1691,9 +1826,11 @@ class FallbackRepository {
             return (self._managedStudents ?? [])
               .filter((row) => row.school_id === schoolId)
               .map((student) => {
-                const enrollment = (self._managedEnrollments ?? []).find(
-                  (row) => row.student_id === student.id && row.status === "active",
-                );
+                const enrollment = (self._managedEnrollments ?? []).find((row) => {
+                  if (row.student_id !== student.id) return false;
+                  const status = String(row.status ?? "").toLowerCase();
+                  return status === "active" || status === "enrolled" || status === "approved";
+                });
                 const cls = (self._managedClasses ?? []).find(
                   (row) => row.id === enrollment?.class_id || row.classCode === enrollment?.class_id,
                 );
@@ -1752,11 +1889,17 @@ class FallbackRepository {
         },
         async query(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
-          if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+          if (
+            text.startsWith("SELECT PG_ADVISORY_XACT_LOCK") ||
+            text.startsWith("SAVEPOINT ") ||
+            text.startsWith("RELEASE SAVEPOINT ") ||
+            text.startsWith("ROLLBACK TO SAVEPOINT ")
+          ) {
             return { rows: [] };
           }
           if (text.startsWith("INSERT INTO USERS")) {
             if (!self._managedStudentUsers) self._managedStudentUsers = [];
+            const { randomUUID } = require("node:crypto");
             const userCode = params[1];
             if (self._managedStudentUsers.some((row) => row.user_code === userCode)) {
               const error = new Error(
@@ -1765,8 +1908,8 @@ class FallbackRepository {
               error.code = "23505";
               throw error;
             }
-            self._managedStudentUsers.push({
-              id: userCode,
+            const row = {
+              id: randomUUID(),
               user_code: userCode,
               school_id: params[0],
               first_name: params[2],
@@ -1777,7 +1920,11 @@ class FallbackRepository {
               pin_hash: params[6],
               must_change_password: true,
               role: "STUDENT",
-            });
+            };
+            self._managedStudentUsers.push(row);
+            return { rows: [row] };
+          }
+          if (text.startsWith("INSERT INTO USER_ROLES")) {
             return { rows: [] };
           }
           return { rows: [] };
@@ -1817,6 +1964,24 @@ class FallbackRepository {
         studentCode: created.student.studentCode,
         status: "active",
       });
+      if (typeof this.getClientsStore().ensureStudentLoginUserRecord === "function") {
+        const managedUser = (this._managedStudentUsers ?? []).find(
+          (row) => row.user_code === created.student.studentCode,
+        );
+        this.getClientsStore().ensureStudentLoginUserRecord({
+          id: created.student.id,
+          school_id: school?.id ?? created.student.schoolId,
+          firstName: created.student.firstName,
+          lastName: created.student.lastName,
+          studentCode: created.student.studentCode,
+          email: created.student.parentEmail,
+          phone: created.student.parentPhone,
+          userId: managedUser?.id,
+          password_hash: managedUser?.password_hash,
+          pin_hash: managedUser?.pin_hash,
+          must_change_password: managedUser?.must_change_password ?? true,
+        });
+      }
     }
     return created;
   }
@@ -2168,7 +2333,12 @@ class FallbackRepository {
         },
         async query(sql, params = []) {
           const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
-          if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+          if (
+            text.startsWith("SELECT PG_ADVISORY_XACT_LOCK") ||
+            text.startsWith("SAVEPOINT ") ||
+            text.startsWith("RELEASE SAVEPOINT ") ||
+            text.startsWith("ROLLBACK TO SAVEPOINT ")
+          ) {
             return { rows: [] };
           }
           if (text.startsWith("UPDATE TEACHER_ASSIGNMENTS") && text.includes("SET STATUS = 'DELETED'")) {
@@ -2975,8 +3145,12 @@ class FallbackRepository {
     return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
   }
 
-  listFinanceStudentFees(principal) {
-    return this.getFinanceStore().listFinanceStudentFees(principal);
+  ensureEnrollmentObligationsInTx(tx, input, principal, auditMeta) {
+    return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
+  }
+
+  listFinanceStudentFees(principal, options) {
+    return this.getFinanceStore().listFinanceStudentFees(principal, options);
   }
 
   reconcileFinancePaymentAllocations(principal, options, auditMeta) {
@@ -3473,6 +3647,8 @@ class FallbackRepository {
         backfillMemoryUserRolesFromSeedAccounts(store._tables, seedData.userAccounts);
       }
       this._clientsStore = store;
+      this._bindChannelDeliveryAdapter(store);
+      this._bindSchoolNotificationSettingsStore(store);
     }
     return this._clientsStore;
   }
@@ -3483,6 +3659,27 @@ class FallbackRepository {
       this._mobilePushStore = createMemoryMobilePushDevicesStore();
     }
     return this._mobilePushStore;
+  }
+
+  getCommunicationPreferencesStore() {
+    if (!this._communicationPrefsQueryable) {
+      const { createMemoryPreferencesQueryable } = require("../lib/communicationsPreferences");
+      if (!this._communicationPrefsRows) this._communicationPrefsRows = [];
+      this._communicationPrefsQueryable = createMemoryPreferencesQueryable(this._communicationPrefsRows);
+    }
+    return this._communicationPrefsQueryable;
+  }
+
+  getSchoolNotificationSettingsStore() {
+    if (!this._schoolNotificationQueryable) {
+      const { createMemorySchoolNotificationStore } = require("../lib/schoolNotificationPolicy");
+      if (!this._schoolNotificationRows) this._schoolNotificationRows = [];
+      this._schoolNotificationQueryable = createMemorySchoolNotificationStore({
+        rows: this._schoolNotificationRows,
+        schoolLookup: (code) => this.getClientsStore().getSchoolByCode(code),
+      });
+    }
+    return this._schoolNotificationQueryable;
   }
 
   upsertMobilePushDevice(principal, payload) {
@@ -3596,6 +3793,10 @@ class FallbackRepository {
 
   lookupParentIdentity(query, principal) {
     return this.getClientsStore().lookupParentIdentity(query, principal);
+  }
+
+  listParentRelations(query, principal) {
+    return this.getClientsStore().listParentRelations(query, principal);
   }
 
   archiveParentRelation(relationId, payload, principal, auditMeta) {

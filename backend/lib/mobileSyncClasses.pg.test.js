@@ -7,6 +7,7 @@
 const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
+const { CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL } = require("./classHeadTeachersManagement");
 const { TokenService } = require("../services/tokenService");
 const { TenantScopeService } = require("../services/tenantScopeService");
 const { handleMobileSyncL1Classes } = require("./mobileSyncClasses");
@@ -146,7 +147,8 @@ async function setupFixture(pool) {
     CREATE INDEX IF NOT EXISTS idx_classes_school_updated_at_id
       ON classes (school_id, updated_at, id);
   `);
-  await pool.query("TRUNCATE teacher_assignments, teachers, user_roles, users, subjects, classes, academic_years, schools, countries CASCADE");
+  await pool.query(CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL);
+  await pool.query("TRUNCATE class_head_teachers, teacher_assignments, teachers, user_roles, users, subjects, classes, academic_years, schools, countries CASCADE");
 
   const country = await pool.query(
     `INSERT INTO countries (name, iso_code) VALUES ('Testland', 'TT') RETURNING id`,
@@ -436,6 +438,8 @@ async function main() {
     for (const item of cold.body.items) {
       assert.equal(item.tombstone, false);
       assert.equal(item.status, "active");
+      assert.equal(item.headTeacherCode, null);
+      assert.equal(item.headTeacherDisplayName, null);
     }
 
     // Index justification : le plan peut utiliser idx_classes_school_updated_at_id
@@ -468,7 +472,12 @@ async function main() {
     );
     assert.equal(new Set([...page1.body.items, ...page2.body.items].map((item) => item.id)).size, 3);
 
-    // CAS 2 — warm delta : update une classe → seulement cette ligne
+    // CAS 2 — warm delta : update une classe + affectation PP → la ligne porte le professeur principal
+    await pool.query(
+      `INSERT INTO class_head_teachers (school_id, class_id, teacher_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $4, 'active')`,
+      [ids.schoolA, ID_A, TEACHER_ID, ids.yearA],
+    );
     await pool.query(`UPDATE classes SET name = '6ème A*', updated_at = $2::timestamptz WHERE id = $1`, [
       ID_A,
       LATER_TS,
@@ -478,6 +487,8 @@ async function main() {
     assert.equal(warm.body.items.length, 1);
     assert.equal(warm.body.items[0].id, ID_A);
     assert.equal(warm.body.items[0].name, "6ème A*");
+    assert.equal(warm.body.items[0].headTeacherCode, "TCH-SYNC-1");
+    assert.equal(warm.body.items[0].headTeacherDisplayName, "Tana KABILA");
 
     // CAS 4 — archive → tombstone inactive dans le delta
     await pool.query(`UPDATE classes SET status = 'inactive', updated_at = NOW() WHERE id = $1`, [ID_B]);

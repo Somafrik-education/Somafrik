@@ -14,9 +14,11 @@ function lazyPage(
 
 export const LandingPage = lazyPage(() => import("./pages/LandingPage"), "LandingPage");
 export const LoginPage = lazyPage(() => import("./pages/LoginPage"), "LoginPage");
+export const TrialRequestPage = lazyPage(() => import("./pages/TrialRequestPage"), "TrialRequestPage");
 export const PrivacyPolicyPage = lazyPage(() => import("./pages/LegalPages"), "PrivacyPolicyPage");
 export const AccountDeletionPage = lazyPage(() => import("./pages/LegalPages"), "AccountDeletionPage");
 export const DashboardEntryPage = lazyPage(() => import("./pages/DashboardEntryPage"), "DashboardEntryPage");
+export const ParentProfilePage = lazyPage(() => import("./pages/ParentProfilePage"), "ParentProfilePage");
 /** Alias explicite (ex. lazy routes type DashboardPage). */
 export const DashboardPage = DashboardEntryPage;
 export const MarketplacePage = lazyPage(() => import("./pages/MarketplacePage"), "MarketplacePage");
@@ -58,6 +60,10 @@ export const SubscriptionReportsPage = lazyPage(
   () => import("./pages/abonnements/SubscriptionReportsPage"),
   "SubscriptionReportsPage",
 );
+export const TrialRequestsPage = lazyPage(
+  () => import("./pages/abonnements/TrialRequestsPage"),
+  "TrialRequestsPage",
+);
 export const MonAbonnementLayout = lazyPage(
   () => import("./pages/abonnements/MonAbonnementLayout"),
   "MonAbonnementLayout",
@@ -80,6 +86,10 @@ export const CancellationRequestPage = lazyPage(
   "CancellationRequestPage",
 );
 export const NotificationsPage = lazyPage(() => import("./pages/NotificationsPage"), "NotificationsPage");
+export const PlatformNotificationsPage = lazyPage(
+  () => import("./pages/PlatformNotificationsPage"),
+  "PlatformNotificationsPage",
+);
 export const UsersPage = lazyPage(() => import("./pages/UsersPage"), "UsersPage");
 export const PermissionsPage = lazyPage(() => import("./pages/PermissionsPage"), "PermissionsPage");
 export const ChartSettingsPage = lazyPage(() => import("./pages/ChartSettingsPage"), "ChartSettingsPage");
@@ -122,6 +132,14 @@ export const PlanningConflictsPage = lazyPage(
   "PlanningConflictsPage",
 );
 export const FinancesLayout = lazyPage(() => import("./pages/finances/FinancesLayout"), "FinancesLayout");
+export const FinanceIndexRedirect = lazyPage(
+  () => import("./pages/finances/FinancesLayout"),
+  "FinanceIndexRedirect",
+);
+export const FinancePaymentsEntryPage = lazyPage(
+  () => import("./pages/finances/FinancePaymentsEntryPage"),
+  "FinancePaymentsEntryPage",
+);
 export const FinanceFeesPage = lazyPage(() => import("./pages/finances/FinanceFeesPage"), "FinanceFeesPage");
 export const FinanceUnpaidPage = lazyPage(() => import("./pages/finances/FinanceUnpaidPage"), "FinanceUnpaidPage");
 export const MonEtablissementLayout = lazyPage(
@@ -162,6 +180,14 @@ export const AdministrationLayout = lazyPage(
 );
 export const ParametresLayout = lazyPage(() => import("./pages/parametres/ParametresLayout"), "ParametresLayout");
 export const SettingsHubPage = lazyPage(() => import("./pages/parametres/SettingsHubPage"), "SettingsHubPage");
+export const SchoolSetupSettingsPage = lazyPage(
+  () => import("./pages/parametres/SchoolSetupSettingsPage"),
+  "SchoolSetupSettingsPage",
+);
+export const SchoolSetupWelcomePage = lazyPage(
+  () => import("./pages/schoolSetup/SchoolSetupWelcomePage"),
+  "SchoolSetupWelcomePage",
+);
 export const SubscriptionPolicySettingsPage = lazyPage(
   () => import("./pages/parametres/SubscriptionPolicySettingsPage"),
   "SubscriptionPolicySettingsPage",
@@ -173,10 +199,6 @@ export const SettingsAppearancePage = lazyPage(
 export const SettingsDataPage = lazyPage(
   () => import("./pages/parametres/SettingsPlaceholders"),
   "SettingsDataPage",
-);
-export const SettingsFinancePage = lazyPage(
-  () => import("./pages/parametres/SettingsFinancePage"),
-  "SettingsFinancePage",
 );
 export const SettingsIntegrationsPage = lazyPage(
   () => import("./pages/parametres/SettingsPlaceholders"),
@@ -195,6 +217,30 @@ export const SettingsSecurityPage = lazyPage(
   "SettingsSecurityPage",
 );
 export const BulletinDesignPage = lazyPage(() => import("./pages/BulletinDesignPage"), "BulletinDesignPage");
+export const ReportCardSchoolWorkflowPage = lazyPage(
+  () => import("./pages/ReportCardSchoolWorkflowPage"),
+  "ReportCardSchoolWorkflowPage",
+);
+export const ReportCardHistoryPage = lazyPage(
+  () => import("./pages/ReportCardHistoryPage"),
+  "ReportCardHistoryPage",
+);
+export const ReportCardsEntryPage = lazyPage(
+  () => import("./pages/ReportCardsEntryPage"),
+  "ReportCardsEntryPage",
+);
+export const ReportCardStaffRoute = lazyPage(
+  () => import("./pages/ReportCardsEntryPage"),
+  "ReportCardStaffRoute",
+);
+export const ReportCardSuperadminWorkflowPage = lazyPage(
+  () => import("./pages/ReportCardSuperadminWorkflowPage"),
+  "ReportCardSuperadminWorkflowPage",
+);
+export const VerifyReportCardPage = lazyPage(
+  () => import("./pages/VerifyReportCardPage"),
+  "VerifyReportCardPage",
+);
 export const PresencesPage = lazyPage(() => import("./pages/PresencesPage"), "PresencesPage");
 export const GradesEvaluationsPage = lazyPage(
   () => import("./pages/GradesEvaluationsPage"),

@@ -18,13 +18,16 @@ import {
   normalizeEvaluation,
   normalizeGrade,
   notesForStudent,
+  parseEvaluationCoefficient,
   rosterStudentsForEvaluation,
   stripEvaluationClientScope,
   teacherCreatePayloadContainsForbiddenFields,
   validateGradeValue,
   gradeSaveActorScope,
+  EVALUATIONS_V2_INVALID_COEFFICIENT,
   EVALUATIONS_V2_MISSING_TEACHER,
 } from "./evaluationsV2";
+import { canonicalStudentGeneralAverage } from "./pedagogyAverage";
 
 function run() {
   assert.equal(fromEvaluationStatus("locked"), "Validée");
@@ -45,8 +48,43 @@ function run() {
     date: "2026-03-12",
     scale: 20,
     title: "Devoir 1",
+    coefficient: 2,
   });
   assert.equal(created.classId, "class-1");
+  assert.equal(created.coefficient, 2);
+  assert.equal(parseEvaluationCoefficient("2,5"), 2.5);
+  assert.equal(parseEvaluationCoefficient(3), 3);
+  for (const invalid of [0, "0", "", "abc", Number.NaN, Number.POSITIVE_INFINITY, -1, undefined]) {
+    assert.throws(
+      () => parseEvaluationCoefficient(invalid),
+      (error: Error) => error.message === EVALUATIONS_V2_INVALID_COEFFICIENT,
+    );
+  }
+  assert.throws(
+    () =>
+      buildCreateEvaluationPayload({
+        classId: "class-1",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        evaluationTypeId: "type-1",
+        date: "2026-03-12",
+        scale: 20,
+        coefficient: 0,
+      }),
+    (error: Error) => error.message === EVALUATIONS_V2_INVALID_COEFFICIENT,
+  );
+  assert.throws(
+    () =>
+      buildCreateEvaluationPayload({
+        classId: "class-1",
+        subject: "Mathématiques",
+        period: "Trimestre 1",
+        evaluationTypeId: "type-1",
+        date: "2026-03-12",
+        scale: 20,
+      }),
+    (error: Error) => error.message === EVALUATIONS_V2_INVALID_COEFFICIENT,
+  );
   assert.equal(created.evaluationTypeId, "type-1");
   assert.equal(created.teacherId, undefined);
   assert.equal(created.status, undefined);
@@ -176,6 +214,75 @@ function run() {
     normalizeGrade({ evaluationId: "e1", studentId: "s1", value: null, scale: 20, gradeStatus: "absent" }),
   ]);
   assert.equal(absentAverage.available, false);
+
+  const canonicalGeneral = canonicalStudentGeneralAverage([
+    normalizeGrade({
+      id: "m1",
+      evaluationId: "MATH-1",
+      studentId: "s1",
+      value: 10,
+      scale: 20,
+      subject: "Mathématiques",
+      evaluationCoefficient: 1,
+      coefficient: 2,
+      gradeStatus: "graded",
+    }),
+    normalizeGrade({
+      id: "m2",
+      evaluationId: "MATH-2",
+      studentId: "s1",
+      value: 20,
+      scale: 20,
+      subject: "Mathématiques",
+      evaluationCoefficient: 3,
+      coefficient: 2,
+      gradeStatus: "graded",
+    }),
+    normalizeGrade({
+      id: "f1",
+      evaluationId: "FR-1",
+      studentId: "s1",
+      value: 12,
+      scale: 20,
+      subject: "Français",
+      evaluationCoefficient: 1,
+      coefficient: 1,
+      gradeStatus: "graded",
+    }),
+  ]);
+  assert.equal(canonicalGeneral.available, true);
+  assert.equal(Number(canonicalGeneral.average?.toFixed(1)), 15.7);
+  assert.equal(canonicalGeneral.totalCourseCoefficients, 3);
+  const flatForbidden = canonicalWeightedAverage([
+    normalizeGrade({
+      id: "m1",
+      evaluationId: "MATH-1",
+      studentId: "s1",
+      value: 10,
+      scale: 20,
+      evaluationCoefficient: 1,
+      gradeStatus: "graded",
+    }),
+    normalizeGrade({
+      id: "m2",
+      evaluationId: "MATH-2",
+      studentId: "s1",
+      value: 20,
+      scale: 20,
+      evaluationCoefficient: 3,
+      gradeStatus: "graded",
+    }),
+    normalizeGrade({
+      id: "f1",
+      evaluationId: "FR-1",
+      studentId: "s1",
+      value: 12,
+      scale: 20,
+      evaluationCoefficient: 1,
+      gradeStatus: "graded",
+    }),
+  ]);
+  assert.equal(Number(flatForbidden.average?.toFixed(1)), 16.4);
 
   const grades = [
     normalizeGrade({ id: "n1", evaluationId: "EVAL-1", studentId: "s1", value: 12, scale: 20 }),

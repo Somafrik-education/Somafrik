@@ -86,7 +86,7 @@ async function migrateSchool(client, school) {
       client,
       `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
        VALUES ($1, $2, $3, $4, 'active')
-       ON CONFLICT (subject_code) DO UPDATE SET name = EXCLUDED.name, coefficient = EXCLUDED.coefficient
+       ON CONFLICT (school_id, subject_code) DO UPDATE SET name = EXCLUDED.name, coefficient = EXCLUDED.coefficient
        RETURNING id`,
       [school.id, scopedCode(school.school_code, subjectCode(course.name)), course.name, course.coefficient ?? 1]
     );

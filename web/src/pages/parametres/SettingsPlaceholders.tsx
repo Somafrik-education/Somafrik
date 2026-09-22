@@ -1,20 +1,10 @@
-import { BellRing, Palette, PlugZap } from "lucide-react";
+import { Palette, PlugZap } from "lucide-react";
 import { ComingSoonState } from "../../design-system";
 
 export { EstablishmentProfilePage as SettingsProfilePage } from "./EstablishmentProfilePage";
 export { SettingsSecurityPage } from "./SecuritySettingsPage";
 export { SettingsDataPage } from "./DataBackupSettingsPage";
-export { SettingsFinancePage } from "./SettingsFinancePage";
-
-export function SettingsNotificationsPage() {
-  return (
-    <ComingSoonState
-      icon={<BellRing className="h-7 w-7" />}
-      title="Paramètres Notifications"
-      description="Canaux de communication (push, e-mail, SMS, WhatsApp), modèles de messages et déclencheurs automatiques (note publiée, absence, impayé)."
-    />
-  );
-}
+export { SettingsNotificationsPage } from "./SettingsNotificationsPage";
 
 export function SettingsAppearancePage() {
   return (

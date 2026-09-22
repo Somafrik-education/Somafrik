@@ -67,6 +67,7 @@ export interface AssignEnrollmentClassCommand {
   changes: {
     classId?: string | null;
     className?: string | null;
+    effectiveDate?: string | null;
   };
   reason?: string | null;
 }

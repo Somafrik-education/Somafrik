@@ -16,6 +16,8 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   courses: "Matières",
   assignments: "Affectations",
   payments: "Paiements",
+  Unpaid: "Impayés",
+  FeeGrids: "Frais & tarifs",
   announcements: "Announcements",
   messages: "Messages",
   presences: "Présences",
@@ -25,6 +27,8 @@ export const VIEW_PERMISSION_FEATURES: Record<string, string | null> = {
   documents: "Documents",
   Timetable: "Planning de cours",
   ReportCards: "Bulletins",
+  Exams: "Examens",
+  ClassGradesStats: "Notes",
   Documents: "Documents",
   Reports: "Rapports",
   Audit: "Utilisateurs",
@@ -46,13 +50,6 @@ export const CRUD_ACTIONS = [
   { key: "SUSPEND", label: "Suspendre" },
 ] as const;
 
-export const CRUD_PERMISSION_MODULES = [
-  "Pays", "Établissements", "Abonnements", "Utilisateurs", "Classes", "Élèves",
-  "Enseignants", "Affectations", "Présences", "Notes", "Bulletins", "Paiements",
-  "Notifications", "Announcements", "Messages", "Documents", "Rapports", "Paramètres Établissement",
-  "Années Académiques", "Matières", "Examens", "Référentiels pédagogiques",
-] as const;
-
 export const ENTITY_VIEW_MAP: Record<string, string> = {
   countries: "countries",
   schools: "schools",
@@ -72,5 +69,5 @@ export const ENTITY_VIEW_MAP: Record<string, string> = {
 export const SCHOOL_ENTITY_VIEWS = new Set([
   "classes", "courses", "assignments", "payments", "messages", "presences", "notes",
   "exams", "bulletins", "documents", "announcements", "students", "teachers",
-  "Timetable", "ReportCards",
+  "Timetable", "ReportCards", "Unpaid", "FeeGrids",
 ]);

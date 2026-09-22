@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import CanonicalMutationModal from "./CanonicalMutationModal";
@@ -11,18 +11,24 @@ import { isOfflineContext } from "../lib/connectivity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
   UNALLOCATED_TARGET,
+  applyScopedPaymentFeeDraft,
   buildFinancePaymentWritePayload,
   collectActivePaymentClasses,
   collectOpenPaymentFees,
+  formatPaymentStudentLabel,
+  isFreshPaymentFeeResponse,
+  paymentFeeIdentityFromStudent,
   paymentSubmitErrorMessage,
   preselectPaymentClassId,
   preselectPaymentObligationId,
+  resolvePaymentStudentSearchScope,
+  searchPaymentStudents,
   type PaymentFeeRow,
   type PaymentStudent,
 } from "../lib/paymentEnrollment";
 import { formatFinanceAmount } from "../lib/financeCurrency";
 import { financeObligationStatusLabel } from "../lib/financeObligationStatus";
-import { createSchoolPayment } from "../services/api";
+import { createSchoolPayment, getStudentFees } from "../services/api";
 
 const PAYMENT_DRAFT_INTENTION = "payments-create-draft";
 
@@ -41,6 +47,8 @@ export default function PaymentMutationControls({
   studentFees = [],
   onChanged,
   initialStudentId = "",
+  openSignal = 0,
+  hideTrigger = false,
   paymentMethods,
   currency = "",
 }: {
@@ -48,18 +56,24 @@ export default function PaymentMutationControls({
   studentFees?: PaymentFeeRow[];
   onChanged: () => Promise<void> | void;
   initialStudentId?: string;
+  openSignal?: number;
+  hideTrigger?: boolean;
   paymentMethods?: string[];
   currency?: string;
 }) {
   const { session } = useAuth();
   const canRecordPayment = canRecordSchoolPayment(session);
   const intentionsRef = useRef(createIntentionStore());
+  const sessionGenRef = useRef(0);
+  const selectionGenRef = useRef(0);
   const [open, setOpen] = useState(false);
+  const [scopedFees, setScopedFees] = useState<PaymentFeeRow[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [studentId, setStudentId] = useState("");
+  const [studentQuery, setStudentQuery] = useState("");
   const [classId, setClassId] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([
     { id: newLineId(), obligationId: UNALLOCATED_TARGET, amount: "" },
@@ -79,12 +93,26 @@ export default function PaymentMutationControls({
     return students.flatMap((item) => {
       if (!item.id || seen.has(item.id)) return [];
       seen.add(item.id);
-      return [{ id: item.id, label: item.name || item.id }];
+      return [item];
     });
   }, [students]);
+  const selectedStudent = useMemo(
+    () => studentOptions.find((item) => item.id === studentId) ?? null,
+    [studentOptions, studentId],
+  );
+  const schoolScope = resolvePaymentStudentSearchScope(session);
+  const searchResults = useMemo(
+    () => (studentId ? [] : searchPaymentStudents(studentQuery, studentOptions, schoolScope)),
+    [studentId, studentQuery, studentOptions, schoolScope],
+  );
 
   const classOptions = useMemo(() => collectActivePaymentClasses(studentId, students), [studentId, students]);
-  const feeOptions = useMemo(() => collectOpenPaymentFees(studentId, studentFees), [studentId, studentFees]);
+  const activeFees = scopedFees ?? studentFees;
+  const feeIdentity = useMemo(
+    () => paymentFeeIdentityFromStudent(studentId, selectedStudent),
+    [studentId, selectedStudent],
+  );
+  const feeOptions = useMemo(() => collectOpenPaymentFees(feeIdentity, activeFees), [feeIdentity, activeFees]);
   const obligationChips = useMemo(
     () => [
       { id: UNALLOCATED_TARGET, label: "Non imputé" },
@@ -96,44 +124,104 @@ export default function PaymentMutationControls({
     [feeOptions, currency],
   );
 
-  const applyStudent = (nextStudentId: string) => {
-    setStudentId(nextStudentId);
-    setClassId(preselectPaymentClassId(nextStudentId, students));
+  const applyDraftLines = (
+    identity: ReturnType<typeof paymentFeeIdentityFromStudent>,
+    fees: PaymentFeeRow[],
+  ) => {
     setLines([
       {
         id: newLineId(),
-        obligationId: preselectPaymentObligationId(nextStudentId, studentFees),
+        obligationId: preselectPaymentObligationId(identity, fees),
         amount: "",
       },
     ]);
+  };
+
+  const loadScopedStudentFees = async (
+    nextStudentId: string,
+    identity: ReturnType<typeof paymentFeeIdentityFromStudent>,
+    responseSession: number,
+    responseSelection: number,
+  ) => {
+    try {
+      const scoped = await getStudentFees(nextStudentId);
+      const accepted = applyScopedPaymentFeeDraft({
+        session: sessionGenRef.current,
+        selection: selectionGenRef.current,
+        responseSession,
+        responseSelection,
+        identity,
+        scopedFees: scoped,
+      });
+      if (!accepted) return;
+      setScopedFees(accepted.fees);
+      applyDraftLines(identity, accepted.fees);
+    } catch {
+      if (
+        !isFreshPaymentFeeResponse({
+          session: sessionGenRef.current,
+          selection: selectionGenRef.current,
+          responseSession,
+          responseSelection,
+        })
+      ) {
+        return;
+      }
+    }
+  };
+
+  const applyStudent = (nextStudentId: string) => {
+    const responseSelection = ++selectionGenRef.current;
+    const responseSession = sessionGenRef.current;
+    setStudentId(nextStudentId);
+    const next = studentOptions.find((item) => item.id === nextStudentId);
+    setStudentQuery(next ? trimField(next.name) : "");
+    setClassId(preselectPaymentClassId(nextStudentId, students));
+    setScopedFees(null);
+    const identity = paymentFeeIdentityFromStudent(nextStudentId, next);
+    applyDraftLines(identity, studentFees);
     setFieldErrors((current) => {
-      const next = { ...current };
-      delete next.studentId;
-      delete next.classId;
-      delete next.obligationId;
-      return next;
+      const nextErrors = { ...current };
+      delete nextErrors.studentId;
+      delete nextErrors.classId;
+      delete nextErrors.obligationId;
+      return nextErrors;
     });
+    if (!nextStudentId) return;
+    void loadScopedStudentFees(nextStudentId, identity, responseSession, responseSelection);
   };
 
   const openDraft = () => {
     intentionsRef.current.rotate(PAYMENT_DRAFT_INTENTION);
+    sessionGenRef.current += 1;
+    selectionGenRef.current = 0;
+    setScopedFees(null);
     setError("");
     setConfirmation("");
     setFieldErrors({});
     const nextStudentId = trimField(initialStudentId);
     setStudentId(nextStudentId);
+    const next = students.find((item) => item.id === nextStudentId);
+    setStudentQuery(next ? trimField(next.name) : "");
     setClassId(preselectPaymentClassId(nextStudentId, students));
-    setLines([
-      {
-        id: newLineId(),
-        obligationId: preselectPaymentObligationId(nextStudentId, studentFees),
-        amount: "",
-      },
-    ]);
+    const identity = paymentFeeIdentityFromStudent(nextStudentId, next);
+    applyDraftLines(identity, studentFees);
     setMethod(paymentMethods?.[0] ?? "");
     setDraftDate(todayIsoDate());
     setOpen(true);
+    if (!nextStudentId) return;
+    const responseSelection = ++selectionGenRef.current;
+    void loadScopedStudentFees(nextStudentId, identity, sessionGenRef.current, responseSelection);
   };
+
+  const lastOpenSignal = useRef(0);
+  useEffect(() => {
+    if (!canRecordPayment) return;
+    if (openSignal > 0 && openSignal !== lastOpenSignal.current) {
+      lastOpenSignal.current = openSignal;
+      openDraft();
+    }
+  }, [openSignal, canRecordPayment, initialStudentId]);
 
   const updateLine = (id: string, patch: Partial<DraftLine>) => {
     setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
@@ -197,6 +285,7 @@ export default function PaymentMutationControls({
   if (!canRecordPayment) return null;
   return (
     <>
+      {hideTrigger ? null : (
       <TouchableOpacity
         style={styles.create}
         onPress={openDraft}
@@ -206,6 +295,7 @@ export default function PaymentMutationControls({
       >
         <Text style={styles.createText}>Enregistrer un encaissement</Text>
       </TouchableOpacity>
+      )}
       {confirmation ? (
         <Text style={styles.success} accessibilityRole="alert">
           {confirmation}
@@ -217,19 +307,69 @@ export default function PaymentMutationControls({
         error={error}
         saving={saving}
         submitLabel={saving ? "Enregistrement…" : "Enregistrer"}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          sessionGenRef.current += 1;
+          selectionGenRef.current = 0;
+          setScopedFees(null);
+          setOpen(false);
+        }}
         onSubmit={() => void submit()}
-        submitDisabled={!paymentMethods?.length || !resolvedMethod}
+        submitDisabled={!paymentMethods?.length || !resolvedMethod || !studentId}
       >
-        <ChoiceChips
+        <FormField
           label="Élève"
           required
-          options={studentOptions}
-          selectedId={studentId}
-          onSelect={applyStudent}
-          disabled={saving}
+          type="search"
+          value={studentQuery}
+          onChangeText={(value) => {
+            setStudentQuery(value);
+            if (!selectedStudent) return;
+            if (value !== trimField(selectedStudent.name)) {
+              applyStudent("");
+              setStudentQuery(value);
+            }
+          }}
+          placeholder="Nom, matricule ou code élève"
+          helperText="Saisissez au moins 2 caractères pour retrouver un élève inscrit."
           error={fieldErrors.studentId}
+          editable={!saving}
+          testID="payment-student-search"
         />
+        {studentQuery.trim().length >= 2 && !studentId ? (
+          <View style={styles.resultsBox}>
+            {searchResults.length ? (
+              searchResults.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.resultRow}
+                  onPress={() => applyStudent(item.id)}
+                  disabled={saving}
+                  testID={`payment-student-option-${item.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={formatPaymentStudentLabel(item)}
+                >
+                  <Text style={styles.resultName}>{item.name || item.id}</Text>
+                  <Text style={styles.resultMeta}>
+                    {[item.className, item.studentCode].filter(Boolean).join(" · ")}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <Text style={styles.openEmpty}>Aucun élève trouvé</Text>
+            )}
+          </View>
+        ) : null}
+        {selectedStudent ? (
+          <View style={styles.selectedBox} testID="payment-selected-student">
+            <Text style={styles.selectedName}>{selectedStudent.name || selectedStudent.id}</Text>
+            {selectedStudent.studentCode ? (
+              <Text style={styles.selectedMeta}>Matricule : {selectedStudent.studentCode}</Text>
+            ) : null}
+            {selectedStudent.className ? (
+              <Text style={styles.selectedMeta}>{selectedStudent.className}</Text>
+            ) : null}
+          </View>
+        ) : null}
         <ChoiceChips
           label="Classe"
           required
@@ -355,6 +495,33 @@ const styles = StyleSheet.create({
   openTitle: { color: "#0F172A", fontWeight: "800", marginBottom: 6 },
   openRow: { color: "#334155", fontWeight: "700", marginBottom: 4 },
   openEmpty: { color: "#64748B", fontWeight: "700" },
+  resultsBox: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: "#F8FAFC",
+    overflow: "hidden",
+  },
+  resultRow: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+  resultName: { color: "#0F172A", fontWeight: "800" },
+  resultMeta: { color: "#64748B", fontWeight: "700", marginTop: 2, fontSize: 12 },
+  selectedBox: {
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: "#EFF6FF",
+  },
+  selectedName: { color: "#0F172A", fontWeight: "800" },
+  selectedMeta: { color: "#475569", fontWeight: "700", marginTop: 4 },
   addLine: {
     minHeight: MIN_TOUCH_TARGET_DP,
     borderRadius: 12,

@@ -1,4 +1,4 @@
-import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -18,18 +18,27 @@ import {
 } from "../services/api";
 import { ApiClientError } from "../services/httpClient";
 import QueryStateView from "../components/QueryStateView";
+import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import { DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import {
   buildCreateEvaluationPayload,
+  buildPublishEvaluationPatch,
   buildSaveNotePayload,
   buildValidateEvaluationPatch,
+  canEditEvaluationFields,
   canonicalPeriodsFromConfig,
   evaluationAllowsGradeEntry,
   EVALUATIONS_V2_COPY,
   EVALUATIONS_V2_TEST_IDS,
+  filterEvaluationsForQueue,
+  ALL_PERIODS_FILTER,
+  ALL_STATUSES_FILTER,
+  PENDING_VALIDATION_FILTER,
+  EVALUATIONS_V2_INVALID_COEFFICIENT,
   gradeSaveActorScope,
   gradesForEvaluation,
   isDraftOrOpenEvaluationStatus,
+  parseEvaluationCoefficient,
   rosterStudentsForEvaluation,
   selectablePeriods,
   studentApiId,
@@ -40,6 +49,8 @@ import {
   type CanonicalPeriod,
   type CanonicalRosterStudent,
 } from "../lib/evaluationsV2";
+import { PEDAGOGY_COPY } from "../lib/pedagogyParityContract";
+import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
@@ -53,7 +64,7 @@ type GradeDraft = {
   status: "graded" | "absent" | "not_submitted";
 };
 
-type ViewMode = "list" | "create" | "grades";
+type ViewMode = "list" | "create" | "edit" | "grades";
 
 export default function TeacherGradesScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -75,11 +86,13 @@ export default function TeacherGradesScreen() {
     academicConfigData,
     evaluationsSnapshot,
     notesSnapshot,
+    studentsData,
     loadEvaluations,
     loadEvaluation,
     loadEvaluationGrades,
     loadAssignments,
     loadTeachers,
+    loadNotes,
     assignmentsSnapshot,
   } = useAdminData();
 
@@ -90,6 +103,7 @@ export default function TeacherGradesScreen() {
   const canValidate = canUpdate && !teacher;
 
   const [mode, setMode] = useState<ViewMode>("list");
+  const [expandedEvaluationId, setExpandedEvaluationId] = useState<string | null>(null);
   const [evaluationTypes, setEvaluationTypes] = useState<CanonicalEvaluationType[]>([]);
   const [typesError, setTypesError] = useState("");
   const [selected, setSelected] = useState<CanonicalEvaluation | null>(null);
@@ -108,7 +122,10 @@ export default function TeacherGradesScreen() {
   const [createDate, setCreateDate] = useState(formatIsoDate(new Date()));
   const [createScale, setCreateScale] = useState("20");
   const [createTitle, setCreateTitle] = useState("");
+  const [createCoefficient, setCreateCoefficient] = useState("1");
   const [creating, setCreating] = useState(false);
+  const [periodFilter, setPeriodFilter] = useState(ALL_PERIODS_FILTER);
+  const [statusFilter, setStatusFilter] = useState(ALL_STATUSES_FILTER);
   const createLockRef = useRef(createInFlightLock());
   const saveLockRef = useRef(createInFlightLock());
   const createIntentionRef = useRef(createIntentionStore());
@@ -117,6 +134,11 @@ export default function TeacherGradesScreen() {
   const periods = useMemo(
     () => selectablePeriods(canonicalPeriodsFromConfig(academicConfigData.periods ?? [])),
     [academicConfigData.periods],
+  );
+
+  const visibleEvaluations = useMemo(
+    () => filterEvaluationsForQueue(evaluationsSnapshot.data ?? [], periodFilter, statusFilter),
+    [evaluationsSnapshot.data, periodFilter, statusFilter],
   );
 
   const scopedAssignments = useMemo(
@@ -140,7 +162,8 @@ export default function TeacherGradesScreen() {
       void loadEvaluations();
       void loadAssignments();
       void loadTeachers();
-    }, [loadEvaluations, loadAssignments, loadTeachers]),
+      void loadNotes();
+    }, [loadEvaluations, loadAssignments, loadTeachers, loadNotes]),
   );
 
   useEffect(() => {
@@ -178,9 +201,14 @@ export default function TeacherGradesScreen() {
   }, [createPeriodId, periods]);
 
   useEffect(() => {
+    if (mode !== "create") return;
     const scale = Number(academicConfigData.defaultScale);
     if (scale > 0) setCreateScale(String(scale));
-  }, [academicConfigData.defaultScale]);
+  }, [academicConfigData.defaultScale, mode]);
+
+  useEffect(() => {
+    setStatusFilter(canValidate ? PENDING_VALIDATION_FILTER : ALL_STATUSES_FILTER);
+  }, [canValidate]);
 
   const openGrades = async (evaluation: CanonicalEvaluation) => {
     setSelected(evaluation);
@@ -225,6 +253,16 @@ export default function TeacherGradesScreen() {
       Alert.alert("Type requis", typesError || "Aucun type d'évaluation actif.");
       return;
     }
+    let coefficient: number;
+    try {
+      coefficient = parseEvaluationCoefficient(createCoefficient);
+    } catch (error) {
+      Alert.alert(
+        "Coefficient invalide",
+        error instanceof Error ? error.message : EVALUATIONS_V2_INVALID_COEFFICIENT,
+      );
+      return;
+    }
     const scale = Number(String(createScale).replace(",", "."));
     try {
       const payload = buildCreateEvaluationPayload({
@@ -237,6 +275,7 @@ export default function TeacherGradesScreen() {
         date: createDate,
         scale,
         title: createTitle || evaluationTypes.find((row) => row.id === createTypeId)?.name,
+        coefficient: coefficient,
       });
       if (teacherCreatePayloadContainsForbiddenFields(payload)) {
         Alert.alert("Requête invalide", "teacherId et statut Validée sont interdits à la création.");
@@ -253,6 +292,7 @@ export default function TeacherGradesScreen() {
         createIntentionRef.current.rotate(intentionId);
         setMode("list");
         await loadEvaluations();
+        await loadNotes();
       } finally {
         setCreating(false);
         createLockRef.current.end();
@@ -275,6 +315,90 @@ export default function TeacherGradesScreen() {
       Alert.alert("Évaluation validée", `Statut serveur : ${saved.status}`);
     } catch (error) {
       Alert.alert("Validation refusée", apiErrorMessage(error, "Impossible de valider l'évaluation."));
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const openEdit = (evaluation: CanonicalEvaluation) => {
+    setSelected(evaluation);
+    setCreateClassId(String(evaluation.classId || ""));
+    setCreateSubjectKey(String(evaluation.subject || evaluation.courseName || ""));
+    setCreatePeriodId(String(evaluation.termId || evaluation.periodName || evaluation.period || ""));
+    setCreateTypeId(String(evaluation.evaluationTypeId || ""));
+    setCreateDate(evaluation.date || formatIsoDate(new Date()));
+    setCreateScale(String(evaluation.scale || 20));
+    setCreateCoefficient(evaluation.coefficient == null ? "1" : String(evaluation.coefficient));
+    setCreateTitle(evaluation.title);
+    setMode("edit");
+  };
+
+  const handleUpdate = async () => {
+    if (!selected || !canUpdate) {
+      Alert.alert("Accès refusé", "Votre rôle ne permet pas de modifier une évaluation.");
+      return;
+    }
+    if (!canEditEvaluationFields(selected)) {
+      Alert.alert("Modification refusée", "Cette évaluation ne peut plus être modifiée.");
+      return;
+    }
+    let coefficient: number;
+    try {
+      coefficient = parseEvaluationCoefficient(createCoefficient);
+    } catch (error) {
+      Alert.alert(
+        "Coefficient invalide",
+        error instanceof Error ? error.message : EVALUATIONS_V2_INVALID_COEFFICIENT,
+      );
+      return;
+    }
+    const scale = Number(String(createScale).replace(",", "."));
+    try {
+      const payload = buildCreateEvaluationPayload({
+        classId: String(selectedAssignment?.classId || selected.classId),
+        subjectCode: selectedAssignment?.subjectCode,
+        subject: String(selectedAssignment?.subject || selectedAssignment?.course || selected.subject || ""),
+        period: String(selectedPeriod?.name || selected.periodName || selected.period || ""),
+        termId: selectedPeriod?.id || selected.termId,
+        evaluationTypeId: createTypeId || selected.evaluationTypeId || "",
+        date: createDate,
+        scale,
+        title: createTitle || selected.title,
+        coefficient: coefficient,
+      });
+      if (teacherCreatePayloadContainsForbiddenFields(payload)) {
+        Alert.alert("Requête invalide", "teacherId et statut Validée sont interdits à la modification.");
+        return;
+      }
+      setCreating(true);
+      try {
+        await executeMutation({
+          request: () => updateEvaluation(selected.evaluationId, payload),
+        });
+        setMode("list");
+        await loadEvaluations();
+        await loadNotes();
+      } finally {
+        setCreating(false);
+      }
+    } catch (error) {
+      Alert.alert("Modification refusée", apiErrorMessage(error, "Impossible de modifier l'évaluation."));
+    }
+  };
+
+  const handlePublish = async (evaluation: CanonicalEvaluation) => {
+    if (!canValidate) {
+      Alert.alert("Accès refusé", "Publication réservée au préfet ou à l'administration.");
+      return;
+    }
+    setValidating(true);
+    try {
+      const saved = await updateEvaluation(evaluation.evaluationId, buildPublishEvaluationPatch());
+      setSelected(saved);
+      await loadEvaluations();
+      Alert.alert("Évaluation publiée", `Statut serveur : ${saved.status}`);
+    } catch (error) {
+      Alert.alert("Publication refusée", apiErrorMessage(error, "Impossible de publier l'évaluation."));
     } finally {
       setValidating(false);
     }
@@ -386,11 +510,12 @@ export default function TeacherGradesScreen() {
     }
   };
 
-  if (mode === "create") {
+  if (mode === "create" || mode === "edit") {
+    const editing = mode === "edit";
     return (
       <KeyboardAwareScreen style={styles.container} contentContainerStyle={contentStyle} testID={EVALUATIONS_V2_TEST_IDS.createForm}>
         <BackButton onPress={() => setMode("list")} />
-        <Text style={styles.title}>Nouvelle évaluation</Text>
+        <Text style={styles.title}>{editing ? "Modifier l'évaluation" : PEDAGOGY_COPY.newEvaluation}</Text>
         <Text style={styles.subtitle}>
           Classe, cours, période et type viennent des référentiels canoniques. Le statut initial est décidé par le serveur.
         </Text>
@@ -462,6 +587,15 @@ export default function TeacherGradesScreen() {
           accessibilityLabel="Barème"
         />
         <FormField
+          label="Coefficient"
+          required
+          type="amount"
+          value={createCoefficient}
+          onChangeText={setCreateCoefficient}
+          placeholder="Ex. 1"
+          accessibilityLabel={PEDAGOGY_COPY.coefficient}
+        />
+        <FormField
           label="Titre"
           optional
           value={createTitle}
@@ -472,7 +606,7 @@ export default function TeacherGradesScreen() {
 
         <TouchableOpacity
           style={[styles.primaryButton, creating && styles.disabledButton]}
-          onPress={() => void handleCreate()}
+          onPress={() => void (editing ? handleUpdate() : handleCreate())}
           disabled={creating}
         >
           {creating ? (
@@ -620,67 +754,191 @@ export default function TeacherGradesScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
-      <Text style={styles.title}>Évaluations</Text>
-      <Text style={styles.subtitle}>
-        {teacher
-          ? "Vos évaluations autorisées. La saisie des notes n'est possible qu'après validation."
-          : `Workflow réel : ${platformRole}. Validation serveur, jamais locale.`}
-      </Text>
+    <FlatList
+      style={styles.container}
+      contentContainerStyle={contentStyle}
+      testID={DATA_TRUTH_TEST_IDS.evaluationsList}
+      data={evaluationsSnapshot.status === "success" ? visibleEvaluations : []}
+      extraData={expandedEvaluationId}
+      keyExtractor={(evaluation) => evaluation.evaluationId}
+      ListHeaderComponent={
+        <>
+          <Text style={styles.title}>{PEDAGOGY_COPY.evaluationsTitle}</Text>
+          <Text style={styles.subtitle}>
+            {teacher
+              ? "Vos évaluations autorisées. Saisie possible en brouillon, ouverte ou validée."
+              : `Workflow réel : ${platformRole}. Validation serveur, jamais locale.`}
+          </Text>
 
-      {canCreate ? (
-        <TouchableOpacity style={styles.primaryButton} onPress={() => setMode("create")}>
-          <Text style={styles.primaryText}>Créer une évaluation</Text>
-        </TouchableOpacity>
-      ) : null}
+          {canCreate ? (
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => {
+                setSelected(null);
+                setMode("create");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={PEDAGOGY_COPY.newEvaluation}
+            >
+              <Text style={styles.primaryText}>{PEDAGOGY_COPY.newEvaluation}</Text>
+            </TouchableOpacity>
+          ) : null}
 
-      {evaluationsSnapshot.status !== "success" ? (
-        <QueryStateView
-          snapshot={evaluationsSnapshot}
-          emptyMessage={EVALUATIONS_V2_COPY.emptyEvaluations}
-          errorMessage={EVALUATIONS_V2_COPY.errorEvaluations}
-          offlineMessage={EVALUATIONS_V2_COPY.offlineEvaluations}
-          emptyTestId={DATA_TRUTH_TEST_IDS.evaluationsEmpty}
-          errorTestId={DATA_TRUTH_TEST_IDS.evaluationsError}
-          onRetry={() => void loadEvaluations()}
-        />
-      ) : (
-        <View testID={DATA_TRUTH_TEST_IDS.evaluationsList}>
-          {evaluationsSnapshot.data.map((evaluation) => {
-            const gradeCount = gradesForEvaluation(notesSnapshot.data, evaluation.evaluationId).length;
-            return (
-              <View key={evaluation.evaluationId} style={[styles.historyCard, isTablet && styles.assignmentCardTablet]}>
-                <Text style={styles.historyTitle}>{evaluation.title}</Text>
-                <Text style={styles.meta}>
-                  {evaluation.className} • {evaluation.courseName} • {evaluation.periodName}
-                </Text>
-                <Text style={styles.statusBadge}>{evaluation.status}</Text>
-                <Text style={styles.meta}>
-                  {evaluation.date} • /{evaluation.scale} • {gradeCount} note(s)
-                </Text>
-                <View style={styles.actionsRow}>
-                  {canValidate && isDraftOrOpenEvaluationStatus(evaluation.status) ? (
-                    <TouchableOpacity
-                      style={styles.secondaryButton}
-                      onPress={() => void handleValidate(evaluation)}
-                      disabled={validating}
-                      testID={EVALUATIONS_V2_TEST_IDS.validateButton}
-                    >
-                      <Text style={styles.secondaryText}>{EVALUATIONS_V2_COPY.validate}</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                  <TouchableOpacity style={styles.primaryButton} onPress={() => void openGrades(evaluation)}>
-                    <Text style={styles.primaryText}>
-                      {evaluationAllowsGradeEntry(evaluation) ? EVALUATIONS_V2_COPY.enterGrades : "Consulter"}
-                    </Text>
+          <Text style={styles.label}>{PEDAGOGY_COPY.period}</Text>
+          <View style={styles.typeRow}>
+            <TouchableOpacity
+              style={[styles.typePill, periodFilter === ALL_PERIODS_FILTER && styles.typePillActive]}
+              onPress={() => setPeriodFilter(ALL_PERIODS_FILTER)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: periodFilter === ALL_PERIODS_FILTER }}
+              accessibilityLabel={PEDAGOGY_COPY.allPeriods}
+            >
+              <Text style={[styles.typeText, periodFilter === ALL_PERIODS_FILTER && styles.typeTextActive]}>
+                {PEDAGOGY_COPY.allPeriods}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <PeriodPills periods={periods} selectedId={periodFilter} onSelect={setPeriodFilter} />
+
+          <Text style={styles.label}>{PEDAGOGY_COPY.status}</Text>
+          <View style={styles.typeRow}>
+            {[
+              { id: ALL_STATUSES_FILTER, label: PEDAGOGY_COPY.allStatuses },
+              { id: PENDING_VALIDATION_FILTER, label: PEDAGOGY_COPY.pendingValidation },
+              { id: "Brouillon", label: "Brouillon" },
+              { id: "Ouverte", label: "Ouverte" },
+              { id: "Validée", label: "Validée" },
+              { id: "Publiée", label: "Publiée" },
+            ].map((option) => {
+              const active = statusFilter === option.id;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[styles.typePill, active && styles.typePillActive]}
+                  onPress={() => setStatusFilter(option.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={option.label}
+                >
+                  <Text style={[styles.typeText, active && styles.typeTextActive]}>{option.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {evaluationsSnapshot.status !== "success" ? (
+            <QueryStateView
+              snapshot={evaluationsSnapshot}
+              emptyMessage={EVALUATIONS_V2_COPY.emptyEvaluations}
+              errorMessage={EVALUATIONS_V2_COPY.errorEvaluations}
+              offlineMessage={EVALUATIONS_V2_COPY.offlineEvaluations}
+              emptyTestId={DATA_TRUTH_TEST_IDS.evaluationsEmpty}
+              errorTestId={DATA_TRUTH_TEST_IDS.evaluationsError}
+              onRetry={() => void loadEvaluations()}
+            />
+          ) : null}
+        </>
+      }
+      renderItem={({ item: evaluation }) => {
+        const entered = gradesForEvaluation(notesSnapshot.data, evaluation.evaluationId).length;
+        const rosterTotal = rosterStudentsForEvaluation(
+          (studentsData ?? []) as CanonicalRosterStudent[],
+          evaluation,
+        ).length;
+        const progression = rosterTotal > 0 ? `${entered}/${rosterTotal}` : `${entered} note(s)`;
+        return (
+          <View style={isTablet ? styles.assignmentCardTablet : undefined}>
+            <ExpandableEntityCard
+              title={evaluation.title}
+              subtitle={`${evaluation.className} • ${evaluation.courseName}`}
+              badge={evaluation.status}
+              expanded={expandedEvaluationId === evaluation.evaluationId}
+              onExpandedChange={() =>
+                setExpandedEvaluationId((current) => nextExclusiveExpandedKey(current, evaluation.evaluationId))
+              }
+              summaryActions={
+                <EvaluationSummaryActions
+                  progression={progression}
+                  allowsEntry={evaluationAllowsGradeEntry(evaluation)}
+                  onOpenGrades={() => void openGrades(evaluation)}
+                />
+              }
+            >
+              {evaluation.periodName ? (
+                <Text style={styles.meta}>{evaluation.periodName}</Text>
+              ) : null}
+              <Text style={styles.meta}>
+                {PEDAGOGY_COPY.date} : {evaluation.date} • /{evaluation.scale} • Coef. {evaluation.coefficient}
+              </Text>
+              <Text style={styles.meta}>
+                {PEDAGOGY_COPY.teacher} : {evaluation.teacherName || "—"}
+              </Text>
+              <View style={styles.actionsRow}>
+                {canUpdate && canEditEvaluationFields(evaluation) ? (
+                  <TouchableOpacity
+                    style={styles.secondaryButton}
+                    onPress={() => openEdit(evaluation)}
+                    accessibilityRole="button"
+                    accessibilityLabel={PEDAGOGY_COPY.editEvaluation}
+                  >
+                    <Text style={styles.secondaryText}>{PEDAGOGY_COPY.editEvaluation}</Text>
                   </TouchableOpacity>
-                </View>
+                ) : null}
+                {canValidate && isDraftOrOpenEvaluationStatus(evaluation.status) ? (
+                  <TouchableOpacity
+                    style={styles.secondaryButton}
+                    onPress={() => void handleValidate(evaluation)}
+                    disabled={validating}
+                    testID={EVALUATIONS_V2_TEST_IDS.validateButton}
+                  >
+                    <Text style={styles.secondaryText}>{EVALUATIONS_V2_COPY.validate}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {canValidate && evaluation.status === "Validée" ? (
+                  <TouchableOpacity
+                    style={styles.secondaryButton}
+                    onPress={() => void handlePublish(evaluation)}
+                    disabled={validating}
+                    accessibilityRole="button"
+                    accessibilityLabel={PEDAGOGY_COPY.publish}
+                  >
+                    <Text style={styles.secondaryText}>Publier</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
-            );
-          })}
-        </View>
-      )}
-    </ScrollView>
+            </ExpandableEntityCard>
+          </View>
+        );
+      }}
+    />
+  );
+}
+
+function EvaluationSummaryActions({
+  progression,
+  allowsEntry,
+  onOpenGrades,
+}: {
+  progression: string;
+  allowsEntry: boolean;
+  onOpenGrades: () => void;
+}) {
+  return (
+    <>
+      <Text style={styles.meta}>
+        {PEDAGOGY_COPY.progress} : {progression}
+      </Text>
+      <TouchableOpacity
+        style={styles.primaryButton}
+        onPress={onOpenGrades}
+        accessibilityRole="button"
+        accessibilityLabel={allowsEntry ? EVALUATIONS_V2_COPY.enterGrades : EVALUATIONS_V2_COPY.consult}
+      >
+        <Text style={styles.primaryText}>
+          {allowsEntry ? EVALUATIONS_V2_COPY.enterGrades : EVALUATIONS_V2_COPY.consult}
+        </Text>
+      </TouchableOpacity>
+    </>
   );
 }
 
@@ -790,6 +1048,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     gap: 8,
+    minHeight: MIN_TOUCH_TARGET_DP,
   },
   disabledButton: { opacity: 0.6 },
   primaryText: { color: "#FFFFFF", fontWeight: "900" },
@@ -800,6 +1059,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 8,
     flex: 1,
+    minHeight: MIN_TOUCH_TARGET_DP,
   },
   secondaryText: { color: "#92400E", fontWeight: "900" },
   backButton: {
@@ -858,7 +1118,7 @@ const styles = StyleSheet.create({
   errorText: { color: "#991B1B", fontWeight: "800", marginBottom: 12 },
   warning: { color: "#92400E", fontWeight: "800", marginBottom: 12 },
   statusBadge: { marginTop: 8, color: "#1D4ED8", fontWeight: "900" },
-  actionsRow: { gap: 8 },
+  actionsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   absentChip: {
     marginRight: 8,
     borderRadius: 12,

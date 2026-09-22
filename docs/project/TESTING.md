@@ -1,7 +1,7 @@
 # Stratégie de tests — Somafrik
 
 **Statut :** référence qualité & gates  
-**Dernière mise à jour :** 2026-08-14
+**Dernière mise à jour :** 2026-09-19
 **Liens :** [RELEASES.md](./RELEASES.md) · [CONTRIBUTING.md](./CONTRIBUTING.md) · [../ci-cd-security.md](../ci-cd-security.md)
 
 ---
@@ -57,6 +57,20 @@ Fichiers `*.test.js` exécutés via scripts `verify:*` (pas de runner Jest dédi
 - `gradesBoPersistence`, `evaluationAttachment`, `evaluationSyncRepository`
 - `teacherNotesWriteAccess`
 - helpers d’unicité présences, etc.
+- contrats bulletins LOT 0 : `backend/contracts/reportCard/*.test.js` (`npm run verify:report-card-lot0`)
+- profils académiques LOT 1 : `backend/lib/reportCard/academicRuleProfile*.test.js` (`npm run verify:report-card-lot1`)
+- calculabilité LOT 1.1 : mêmes gates LOT 1 (`academic-rule-profile-aggregation-contract` et contrats coefficient / pourcentage / pass_rule / rounding.stage / ranking / bornes)
+- schémas de bulletin LOT 2 : `backend/lib/reportCard/reportCardSchema*.test.js` (`npm run verify:report-card-lot2`)
+- moteur bulletin LOT 3 : `backend/lib/reportCard/reportCardEngine*.test.js` (`npm run verify:report-card-lot3`)
+- snapshot/publication bulletin LOT 4 : `backend/lib/reportCard/reportCardPublication*.test.js` (`npm run verify:report-card-lot4`)
+- PDF/QR imprimable bulletin LOT 5 : `backend/lib/reportCard/reportCardPdf*.test.js` (`npm run verify:report-card-lot5`)
+- configuration bulletin LOT 6 : `backend/lib/reportCard/reportCardConfiguration*.test.js` (`npm run verify:report-card-lot6`)
+- Web bulletins + `/verify` LOT 7 : `backend/lib/reportCard/reportCardHttp.test.js` + pages Web (`npm run verify:report-card-lot7`)
+- Mobile bulletins natif LOT 8 : `backend/lib/reportCard/reportCardLot8.http.test.js` + `Mobile/src/lib/reportCardLot8.test.ts` (`npm run verify:report-card-lot8`)
+- Historique / corrections / versions bulletin LOT 9 : `backend/lib/reportCard/reportCardLot9.http.test.js` + guards Web/Mobile (`npm run verify:report-card-lot9`)
+- Qualification Burundi A/B LOT 10 : `backend/lib/reportCard/reportCardLot10*.test.js` + guards Web/Mobile (`npm run verify:report-card-lot10`)
+- Artefact source + mapping traçable LOT 11 : `backend/lib/reportCard/reportCardLot11*.test.js` (domaine, HTTP, PG transactionnel) + guards Web (`npm run verify:report-card-lot11`) — Mobile hors périmètre
+- E2E Playwright S1 Bulletins (LOT 6→11, défaut #659) : `backend/scripts/verify-report-card-s1-e2e.js` (`npm run verify:report-card-s1-e2e`) — PG isolé, backend+Vite réels, aucun mock métier
 
 ```bash
 npm run verify:notes-sync
@@ -207,7 +221,8 @@ Détail Go/No Go par version : [RELEASES.md](./RELEASES.md).
 |--------|------|
 | Auteur PR | Tests locaux du périmètre + doc |
 | CI | Filet automatique |
-| CTO | Gate préprod / Go release |
+| CTO (ChatGPT sur #720) | Gate préprod / Go release — diff GitHub indépendant |
+| Cursor | Exécution tests + preuves sur Draft PR, puis STOP |
 
 ---
 

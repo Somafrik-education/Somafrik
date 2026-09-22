@@ -120,8 +120,9 @@ function main() {
 
   const studentNotes = stripComments(read(path.join(SRC, "screens", "StudentNotesScreen.tsx")));
   assert.match(studentNotes, /loadNotes/);
-  assert.match(studentNotes, /canonicalWeightedAverage/);
+  assert.match(studentNotes, /canonicalStudentGeneralAverage/);
   assert.match(studentNotes, /notesForStudent/);
+  assert.doesNotMatch(studentNotes, /loadSchoolCourses/);
   assert.doesNotMatch(studentNotes, /GradeBookService/);
   assert.doesNotMatch(studentNotes, /from ["']\.\.\/data\/catalog["']/);
   assert.doesNotMatch(studentNotes, /Trimestre 1/);
@@ -129,7 +130,7 @@ function main() {
   console.log("OK: StudentNotesScreen consultation canonique");
 
   const home = stripComments(read(path.join(SRC, "screens", "HomeScreen.tsx")));
-  assert.match(home, /canonicalWeightedAverage/);
+  assert.match(home, /canonicalStudentGeneralAverage/);
   assert.match(home, /parentAverageDisplay/);
   assert.match(home, /loadNotes/);
   assert.doesNotMatch(home, /getStudentAcademicSummary/);

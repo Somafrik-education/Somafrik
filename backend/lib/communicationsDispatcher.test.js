@@ -1,0 +1,303 @@
+"use strict";
+
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const {
+  createMemoryDeliveryAdapter,
+} = require("./communicationChannelFanout");
+const {
+  normalizeChannels,
+  dispatchCommunication,
+  dispatchProcessedEvents,
+  EVENT_EXTERNAL_CHANNEL_POLICY,
+  mandatoryChannelsForEvent,
+  resolveEffectiveChannels,
+} = require("./communicationsDispatcher");
+
+const SCHOOL_A = "11111111-1111-4111-8111-111111111111";
+const USER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+const NOTE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
+const EVENT_KEY = "attendance.student.absent:cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
+
+function adapterWithTarget() {
+  return createMemoryDeliveryAdapter({
+    notifications: [
+      {
+        id: NOTE_ID,
+        event_key: EVENT_KEY,
+        school_id: SCHOOL_A,
+        title: "Absence enregistrée",
+        body: "Un élève a été signalé(e) absent(e).",
+      },
+    ],
+    recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A }],
+    users: [{ id: USER_A, school_id: SCHOOL_A, email: "parent-a@test.local" }],
+  });
+}
+
+function envPreprod() {
+  return {
+    NODE_ENV: "test",
+    APP_ENV: "preproduction",
+    SMTP_HOST: "smtp.test.local",
+    MAIL_FROM: "noreply@somafrik.app",
+  };
+}
+
+test("normalizeChannels déduplique et refuse SMS / null / malformé", () => {
+  assert.deepEqual(normalizeChannels(["push", "EMAIL", "PUSH"]), ["PUSH", "EMAIL"]);
+  assert.throws(() => normalizeChannels(["SMS"]), (error) => error.code === "unsupported_channel");
+  assert.throws(() => normalizeChannels(null), (error) => error.code === "unsupported_channel");
+  assert.throws(() => normalizeChannels(undefined), (error) => error.code === "unsupported_channel");
+  assert.throws(() => normalizeChannels("PUSH"), (error) => error.code === "unsupported_channel");
+  assert.throws(() => normalizeChannels([""]), (error) => error.code === "unsupported_channel");
+});
+
+test("dispatchCommunication SMS ne crée aucune delivery et n'appelle pas PUSH", async () => {
+  const adapter = adapterWithTarget();
+  let pushCalled = false;
+  await assert.rejects(
+    () =>
+      dispatchCommunication({
+        eventKey: EVENT_KEY,
+        eventType: "attendance.student.absent",
+        schoolId: SCHOOL_A,
+        channels: ["SMS"],
+        adapter,
+        pushClient: {
+          async sendToTokens() {
+            pushCalled = true;
+            return { sent: 1 };
+          },
+        },
+        env: envPreprod(),
+      }),
+    (error) => error.code === "unsupported_channel",
+  );
+  assert.equal(pushCalled, false);
+  assert.equal(adapter.deliveries.length, 0);
+});
+
+test("IN_APP seul ne crée pas de delivery PUSH/EMAIL", async () => {
+  const adapter = adapterWithTarget();
+  const result = await dispatchCommunication({
+    eventKey: EVENT_KEY,
+    eventType: "attendance.student.absent",
+    schoolId: SCHOOL_A,
+    channels: ["IN_APP"],
+    adapter,
+    env: envPreprod(),
+  });
+  assert.deepEqual(result.channels, ["IN_APP"]);
+  assert.equal(result.enqueued, 0);
+  assert.equal(adapter.deliveries.length, 0);
+});
+
+test("PUSH seul n'enqueue pas EMAIL", async () => {
+  const adapter = adapterWithTarget();
+  await dispatchCommunication({
+    eventKey: EVENT_KEY,
+    eventType: "attendance.student.absent",
+    schoolId: SCHOOL_A,
+    channels: ["PUSH"],
+    adapter,
+    pushStore: { async listActiveForUser() { return []; } },
+    pushClient: { async sendToTokens() { throw new Error("ne doit pas envoyer sans device"); } },
+    mailer: { async sendMail() { throw new Error("EMAIL interdit pour PUSH-only"); } },
+    env: envPreprod(),
+  });
+  assert.equal(adapter.deliveries.length, 1);
+  assert.equal(adapter.deliveries[0].channel, "PUSH");
+});
+
+test("double dispatchCommunication n'ajoute pas de seconde delivery", async () => {
+  const adapter = adapterWithTarget();
+  const deps = {
+    eventKey: EVENT_KEY,
+    eventType: "attendance.student.absent",
+    schoolId: SCHOOL_A,
+    channels: ["PUSH", "EMAIL"],
+    adapter,
+    pushStore: { async listActiveForUser() { return []; } },
+    mailer: { async sendMail() {} },
+    env: envPreprod(),
+  };
+  await dispatchCommunication(deps);
+  await dispatchCommunication(deps);
+  assert.equal(adapter.deliveries.length, 2);
+  assert.deepEqual(
+    adapter.deliveries.map((row) => row.channel).sort(),
+    ["EMAIL", "PUSH"],
+  );
+});
+
+test("politique C4 conservatrice reste PUSH+EMAIL pour les 5 eventTypes", () => {
+  const types = [
+    "communication.message.created",
+    "communication.announcement.published",
+    "attendance.student.absent",
+    "pedagogy.grade.published",
+    "finance.payment.recorded",
+  ];
+  for (const eventType of types) {
+    assert.deepEqual(EVENT_EXTERNAL_CHANNEL_POLICY[eventType], ["PUSH", "EMAIL"]);
+  }
+});
+
+test("EMAIL optionnel opt-out n'enqueue pas EMAIL", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [
+      {
+        id: NOTE_ID,
+        event_key: EVENT_KEY,
+        event_type: "attendance.student.absent",
+        school_id: SCHOOL_A,
+        title: "Absence enregistrée",
+        body: "Un élève a été signalé(e) absent(e).",
+      },
+    ],
+    recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A }],
+    users: [{ id: USER_A, school_id: SCHOOL_A, email: "parent-a@test.local" }],
+    preferences: [{ user_id: USER_A, school_id: SCHOOL_A, channel: "EMAIL", enabled: false }],
+  });
+  await dispatchCommunication({
+    eventKey: EVENT_KEY,
+    eventType: "attendance.student.absent",
+    schoolId: SCHOOL_A,
+    channels: ["PUSH", "EMAIL"],
+    adapter,
+    pushStore: { async listActiveForUser() { return []; } },
+    mailer: { async sendMail() { throw new Error("EMAIL opt-out ne doit pas partir"); } },
+    env: envPreprod(),
+  });
+  assert.deepEqual(adapter.deliveries.map((row) => row.channel), ["PUSH"]);
+});
+
+test("PUSH=false n'enqueue pas PUSH et ne révoque aucun device", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [
+      {
+        id: NOTE_ID,
+        event_key: EVENT_KEY,
+        event_type: "attendance.student.absent",
+        school_id: SCHOOL_A,
+        title: "Absence",
+        body: "body",
+      },
+    ],
+    recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A }],
+    users: [{ id: USER_A, school_id: SCHOOL_A, email: "parent-a@test.local" }],
+    preferences: [{ user_id: USER_A, school_id: SCHOOL_A, channel: "PUSH", enabled: false }],
+  });
+  let revoked = false;
+  await dispatchCommunication({
+    eventKey: EVENT_KEY,
+    eventType: "attendance.student.absent",
+    schoolId: SCHOOL_A,
+    channels: ["PUSH", "EMAIL"],
+    adapter,
+    pushStore: {
+      async listActiveForUser() { return []; },
+      async revokeCurrent() { revoked = true; },
+      async revokeByToken() { revoked = true; },
+    },
+    mailer: { async sendMail() {} },
+    env: envPreprod(),
+  });
+  assert.deepEqual(adapter.deliveries.map((row) => row.channel), ["EMAIL"]);
+  assert.equal(revoked, false);
+});
+
+test("absence de préférence conserve IN_APP+PUSH+EMAIL", () => {
+  const channels = resolveEffectiveChannels({
+    eventType: "pedagogy.grade.published",
+    eventPolicyChannels: ["IN_APP", "PUSH", "EMAIL"],
+  });
+  assert.deepEqual(channels, ["IN_APP", "PUSH", "EMAIL"]);
+});
+
+test("mandatoryChannelsForEvent reset = EMAIL même si opt-out", () => {
+  assert.deepEqual(mandatoryChannelsForEvent("auth.password.reset"), ["EMAIL"]);
+  assert.deepEqual(mandatoryChannelsForEvent("pedagogy.grade.published"), []);
+  assert.equal(
+    resolveEffectiveChannels({
+      eventType: "auth.password.reset",
+      eventPolicyChannels: ["EMAIL"],
+      userEnabledChannels: [],
+    }).includes("EMAIL"),
+    true,
+  );
+});
+
+test("dispatchProcessedEvents drain même sans event C4 (reset EMAIL)", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    users: [{ id: USER_A, school_id: SCHOOL_A, email: "ada@test.local" }],
+    preferences: [{ user_id: USER_A, school_id: SCHOOL_A, channel: "EMAIL", enabled: false }],
+  });
+  await adapter.ensureDelivery({
+    deliveryKey: `auth.password.reset:${USER_A}:reset-1`,
+    eventKey: `auth.password.reset:${USER_A}:reset-1`,
+    notificationId: null,
+    schoolId: SCHOOL_A,
+    userId: USER_A,
+    channel: "EMAIL",
+    payload: { title: "reset", body: "body" },
+  });
+  let sent = 0;
+  await dispatchProcessedEvents({
+    adapter,
+    processed: [],
+    mailer: {
+      async sendMail() {
+        sent += 1;
+      },
+    },
+    pushClient: { async sendToTokens() { throw new Error("PUSH interdit"); } },
+    env: envPreprod(),
+  });
+  assert.equal(sent, 1);
+  assert.equal(adapter.deliveries[0].status, "sent");
+});
+
+test("IN_APP=false n'empêche pas le fan-out PUSH+EMAIL", async () => {
+  const adapter = createMemoryDeliveryAdapter({
+    notifications: [
+      {
+        id: NOTE_ID,
+        event_key: EVENT_KEY,
+        event_type: "attendance.student.absent",
+        school_id: SCHOOL_A,
+        title: "Absence",
+        body: "body",
+      },
+    ],
+    recipients: [{ notification_id: NOTE_ID, school_id: SCHOOL_A, user_id: USER_A }],
+    users: [{ id: USER_A, school_id: SCHOOL_A, email: "parent-a@test.local" }],
+    preferences: [{ user_id: USER_A, school_id: SCHOOL_A, channel: "IN_APP", enabled: false }],
+  });
+  await dispatchCommunication({
+    eventKey: EVENT_KEY,
+    eventType: "attendance.student.absent",
+    schoolId: SCHOOL_A,
+    channels: ["IN_APP", "PUSH", "EMAIL"],
+    adapter,
+    pushStore: { async listActiveForUser() { return []; } },
+    mailer: { async sendMail() {} },
+    env: envPreprod(),
+  });
+  assert.deepEqual(adapter.deliveries.map((row) => row.channel).sort(), ["EMAIL", "PUSH"]);
+});
+
+test("processOneEvent insère toujours notification_recipients (IN_APP n'est pas un continue)", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "communicationsNotificationsService.js"), "utf8");
+  const processFn = src.slice(src.indexOf("async function processOneEvent"));
+  const loop = processFn.slice(
+    processFn.indexOf("for (const recipient of spec.recipients)"),
+    processFn.indexOf("UPDATE communication_event_outbox SET status='processed'"),
+  );
+  assert.match(loop, /INSERT INTO notification_recipients/);
+  assert.doesNotMatch(loop, /continue/);
+  assert.doesNotMatch(loop, /allowInApp|enabledChannelsForUser/);
+});

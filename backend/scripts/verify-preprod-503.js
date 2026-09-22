@@ -23,7 +23,7 @@ const {
 } = require("../lib/preprod503Probe");
 
 const ROOT = path.resolve(__dirname, "../..");
-const DEFAULT_API = "https://somafrik-api-preprod.onrender.com";
+const DEFAULT_API = "https://api-preprod.somafrik.app";
 const DEFAULT_WEB = "https://preprod.somafrik.app";
 const LOCAL_PORT = 19773;
 

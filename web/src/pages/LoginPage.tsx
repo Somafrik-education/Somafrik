@@ -7,6 +7,7 @@ import { z } from "zod";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ui/Toast";
 import { Modal } from "../components/ui/Modal";
+import { PasswordVisibilityButton } from "../components/ui/PasswordVisibilityButton";
 import { BrandLogo } from "../components/BrandLogo";
 import { Button } from "../components/ui/shadcn/button";
 import { Input } from "../components/ui/shadcn/input";
@@ -19,9 +20,22 @@ import {
   FormMessage,
 } from "../components/ui/shadcn/form";
 import { getDefaultAppPath } from "../lib/superAdminAccess";
+import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
+import { schoolSetupGuidedApi } from "../lib/schoolSetupGuidedApi";
+import {
+  SCHOOL_SETUP_WELCOME_PATH,
+  shouldShowSchoolSetupWelcome,
+} from "../lib/schoolSetupGuidedWeb";
+import {
+  resetSchoolSetupWizardSessionDismiss,
+  SCHOOL_SETUP_SETTINGS_PATH,
+  shouldAutoOpenSchoolSetupWizard,
+} from "../lib/schoolSetupWeb";
+import { marketingTrial } from "../data/marketingContent";
 import { showDemoAccounts } from "../lib/featureFlags";
 import { cn } from "../lib/utils";
 import { DEMO_ACCOUNT_GROUPS, DEMO_SCHOOL_CODE, type DemoAccount } from "../lib/demoAccounts";
+import { validateAccountSecret } from "../lib/userAccountRules";
 import type { LoginProfile } from "../types";
 
 const PROFILES: { id: LoginProfile; label: string }[] = [
@@ -51,12 +65,25 @@ type LoginValues = z.infer<typeof loginSchema>;
 
 const passwordChangeSchema = z
   .object({
-    newPassword: z.string().min(6, "Le mot de passe doit contenir au moins 6 caractères."),
+    newPassword: z.string().min(1, "Nouveau mot de passe requis."),
     confirmPassword: z.string().min(1, "Confirmation requise."),
   })
-  .refine((values) => values.newPassword === values.confirmPassword, {
-    path: ["confirmPassword"],
-    message: "Les mots de passe ne correspondent pas.",
+  .superRefine((values, ctx) => {
+    const policyError = validateAccountSecret(values.newPassword);
+    if (policyError) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["newPassword"],
+        message: policyError,
+      });
+    }
+    if (values.newPassword !== values.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmPassword"],
+        message: "Les mots de passe ne correspondent pas.",
+      });
+    }
   });
 
 type PasswordChangeValues = z.infer<typeof passwordChangeSchema>;
@@ -69,6 +96,9 @@ export function LoginPage() {
   const [serverError, setServerError] = useState("");
   const [passwordChangeOpen, setPasswordChangeOpen] = useState(false);
   const [passwordChangeError, setPasswordChangeError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -89,8 +119,39 @@ export function LoginPage() {
   const submitting = form.formState.isSubmitting;
 
   useEffect(() => {
+    if (session?.accessToken && session.user?.mustChangePassword) {
+      setPasswordChangeOpen(true);
+      return;
+    }
     if (session?.accessToken && !session.user?.mustChangePassword) {
-      navigate(getDefaultAppPath(session.user?.role), { replace: true });
+      let cancelled = false;
+      const role = session.user?.role ?? "";
+      void (async () => {
+        let next = getDefaultAppPath(role);
+        try {
+          const [payload, guided] = await Promise.all([
+            schoolSetupStatusApi.get(),
+            schoolSetupGuidedApi.get().catch(() => null),
+          ]);
+          if (shouldShowSchoolSetupWelcome({ payload: guided, role, mustChangePassword: false })) {
+            next = SCHOOL_SETUP_WELCOME_PATH;
+          } else if (
+            shouldAutoOpenSchoolSetupWizard({
+              payload,
+              role,
+              mustChangePassword: false,
+            })
+          ) {
+            next = SCHOOL_SETUP_SETTINGS_PATH;
+          }
+        } catch {
+          /* destination par défaut */
+        }
+        if (!cancelled) navigate(next, { replace: true });
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
   }, [session, navigate]);
 
@@ -119,6 +180,10 @@ export function LoginPage() {
         schoolCode: values.profile === "school" ? values.schoolCode : undefined,
       });
 
+      // « Plus tard » est limité à une session authentifiée. Une nouvelle
+      // connexion ne doit jamais hériter du dismiss de l'utilisateur précédent.
+      resetSchoolSetupWizardSessionDismiss();
+
       if (result.user?.mustChangePassword) {
         passwordForm.reset({ newPassword: "", confirmPassword: "" });
         setPasswordChangeError("");
@@ -127,7 +192,22 @@ export function LoginPage() {
       }
 
       showToast("Connexion réussie", "success");
-      navigate(getDefaultAppPath(result.user?.role ?? ""), { replace: true });
+      const role = result.user?.role ?? "";
+      let next = getDefaultAppPath(role);
+      try {
+        const [payload, guided] = await Promise.all([
+          schoolSetupStatusApi.get(),
+          schoolSetupGuidedApi.get().catch(() => null),
+        ]);
+        if (shouldShowSchoolSetupWelcome({ payload: guided, role, mustChangePassword: false })) {
+          next = SCHOOL_SETUP_WELCOME_PATH;
+        } else if (shouldAutoOpenSchoolSetupWizard({ payload, role, mustChangePassword: false })) {
+          next = SCHOOL_SETUP_SETTINGS_PATH;
+        }
+      } catch {
+        /* destination par défaut */
+      }
+      navigate(next, { replace: true });
     } catch (err) {
       setServerError(err instanceof Error ? err.message : "Échec de la connexion");
     }
@@ -139,7 +219,22 @@ export function LoginPage() {
       await changePassword(values.newPassword.trim());
       setPasswordChangeOpen(false);
       showToast("Mot de passe mis à jour", "success");
-      navigate(getDefaultAppPath(session?.user?.role ?? ""), { replace: true });
+      const role = session?.user?.role ?? "";
+      let next = getDefaultAppPath(role);
+      try {
+        const [payload, guided] = await Promise.all([
+          schoolSetupStatusApi.get(),
+          schoolSetupGuidedApi.get().catch(() => null),
+        ]);
+        if (shouldShowSchoolSetupWelcome({ payload: guided, role, mustChangePassword: false })) {
+          next = SCHOOL_SETUP_WELCOME_PATH;
+        } else if (shouldAutoOpenSchoolSetupWizard({ payload, role, mustChangePassword: false })) {
+          next = SCHOOL_SETUP_SETTINGS_PATH;
+        }
+      } catch {
+        /* destination par défaut */
+      }
+      navigate(next, { replace: true });
     } catch (err) {
       setPasswordChangeError(
         err instanceof Error ? err.message : "Échec du changement de mot de passe",
@@ -151,6 +246,8 @@ export function LoginPage() {
     setPasswordChangeOpen(false);
     setSession(null);
     setPasswordChangeError("");
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
   }
 
   return (
@@ -243,16 +340,24 @@ export function LoginPage() {
                 render={({ field }) => (
                   <FormItem className="space-y-1">
                     <FormLabel required>Mot de passe</FormLabel>
-                    <FormControl>
-                      <Input
-                        className="h-[38px] bg-white"
-                        type="password"
-                        placeholder="Entrez votre mot de passe"
-                        autoComplete="current-password"
-                        data-testid="login-password"
-                        {...field}
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          className="h-[38px] bg-white pr-11"
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Entrez votre mot de passe"
+                          autoComplete="current-password"
+                          data-testid="login-password"
+                          {...field}
+                        />
+                      </FormControl>
+                      <PasswordVisibilityButton
+                        visible={showPassword}
+                        onToggle={() => setShowPassword((visible) => !visible)}
+                        showLabel="Afficher le mot de passe de connexion"
+                        hideLabel="Masquer le mot de passe de connexion"
                       />
-                    </FormControl>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -277,6 +382,15 @@ export function LoginPage() {
               </Button>
             </form>
           </Form>
+
+          <p className="mt-3 text-center text-sm">
+            <Link
+              to={marketingTrial.href}
+              className="font-bold text-brand transition hover:text-brand-700"
+            >
+              {marketingTrial.label}
+            </Link>
+          </p>
 
           {showDemoAccounts ? (
             <div className="mt-3 rounded-lg border border-dashed border-line bg-slate-50/90 p-2.5">
@@ -352,9 +466,24 @@ export function LoginPage() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel required>Nouveau mot de passe</FormLabel>
-                  <FormControl>
-                    <Input type="password" autoFocus {...field} />
-                  </FormControl>
+                  <div className="relative">
+                    <FormControl>
+                      <Input
+                        type={showNewPassword ? "text" : "password"}
+                        className="pr-11"
+                        autoComplete="new-password"
+                        autoFocus
+                        data-testid="login-new-password"
+                        {...field}
+                      />
+                    </FormControl>
+                    <PasswordVisibilityButton
+                      visible={showNewPassword}
+                      onToggle={() => setShowNewPassword((visible) => !visible)}
+                      showLabel="Afficher le nouveau mot de passe"
+                      hideLabel="Masquer le nouveau mot de passe"
+                    />
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
@@ -365,9 +494,23 @@ export function LoginPage() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel required>Confirmation</FormLabel>
-                  <FormControl>
-                    <Input type="password" {...field} />
-                  </FormControl>
+                  <div className="relative">
+                    <FormControl>
+                      <Input
+                        type={showConfirmPassword ? "text" : "password"}
+                        className="pr-11"
+                        autoComplete="new-password"
+                        data-testid="login-confirm-password"
+                        {...field}
+                      />
+                    </FormControl>
+                    <PasswordVisibilityButton
+                      visible={showConfirmPassword}
+                      onToggle={() => setShowConfirmPassword((visible) => !visible)}
+                      showLabel="Afficher la confirmation du mot de passe"
+                      hideLabel="Masquer la confirmation du mot de passe"
+                    />
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}

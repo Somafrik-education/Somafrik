@@ -1,0 +1,40 @@
+{
+  "id": "fixture.qualification.burundi-model-b",
+  "title": "Burundi modèle B — lignes TJ / EX / Total",
+  "qualification_only": true,
+  "not_a_country_pack": true,
+  "engine_id": "somafrik.report_card.v1",
+  "academic_rule_profile": {
+    "period_mode": "term",
+    "periods": ["T1", "T2", "T3"],
+    "annual": true,
+    "score_components": [
+      { "id": "TJ", "applicability": "always" },
+      { "id": "EX", "applicability": "per_subject" }
+    ],
+    "subject_groups": false,
+    "ranking": { "enabled": true, "ties": "competition" },
+    "rounding": { "decimals": 2 },
+    "missing_score": "NOT_APPLICABLE_not_zero",
+    "ex_not_applicable_example_subjects": ["TPA", "Religion-Morale"]
+  },
+  "report_card_schema": {
+    "layout": "flat_subject_rows",
+    "groups": [],
+    "columns": [
+      "TJ",
+      "EX",
+      "Total"
+    ],
+    "period_repeat": ["T1", "T2", "T3"],
+    "annual_columns": ["annual_max", "annual_total", "percentage", "rank"],
+    "appreciation_slots": ["T1", "T2", "T3", "annual"],
+    "decision_slot": true,
+    "signature_slots": ["teacher", "parents", "director"]
+  },
+  "rendering_template": {
+    "paper": "A4",
+    "orientation": "portrait",
+    "qr_required": true
+  }
+}

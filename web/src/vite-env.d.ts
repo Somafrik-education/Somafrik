@@ -13,6 +13,8 @@ interface ImportMetaEnv {
   readonly VITE_ENABLE_PUBLIC_DEMO?: string;
   /** Active uniquement la page directe /demo pour recette contrôlée. */
   readonly VITE_ENABLE_DEMO_ENTRY?: string;
+  /** Active le runtime Démo isolé sur /entry. */
+  readonly VITE_DEMO_RUNTIME?: string;
   /** API publique de création de session Démo. */
   readonly VITE_DEMO_ENTRY_API_URL?: string;
   /** Origine Web autorisée pour la redirection Démo. */

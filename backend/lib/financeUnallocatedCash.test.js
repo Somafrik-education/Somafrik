@@ -7,6 +7,7 @@ const { FINANCE_ERROR, studentMatchesClassScope } = require("./financeManagement
 const {
   UNALLOCATED_STATUS,
   PARTIAL_STATUS,
+  OVERPAYMENT_STATUS,
   resolvePaymentStatus,
   projectPaymentCash,
   projectPaymentsWithAllocations,
@@ -109,10 +110,16 @@ describe("financeUnallocatedCash", () => {
     assert.equal(resolvePaymentStatus(150, 150, "Espèces", 0), "Payé");
   });
 
-  it("0 < allocated < amount is Partiel, never Payé", () => {
-    assert.equal(resolvePaymentStatus(150, 100, "Espèces", 50), PARTIAL_STATUS);
+  it("leftover after covering targeted debt is Trop-perçu, never Partiel nor Payé", () => {
+    assert.equal(resolvePaymentStatus(150, 100, "Espèces", 50), OVERPAYMENT_STATUS);
     assert.notEqual(resolvePaymentStatus(150, 100, "Espèces", 50), "Payé");
-    assert.equal(resolvePaymentStatus(150, 1000, "Espèces", 50), PARTIAL_STATUS);
+    assert.notEqual(resolvePaymentStatus(150, 100, "Espèces", 50), PARTIAL_STATUS);
+    assert.equal(resolvePaymentStatus(2, 1, "Espèces", 1), OVERPAYMENT_STATUS);
+  });
+
+  it("0 < allocated < remaining with leftover 0 is Partiel, never Payé", () => {
+    assert.equal(resolvePaymentStatus(150, 1000, "Espèces", 0), PARTIAL_STATUS);
+    assert.notEqual(resolvePaymentStatus(150, 1000, "Espèces", 0), "Payé");
   });
 
   it("leftover === 0 follows remaining debt", () => {
@@ -136,13 +143,14 @@ describe("financeUnallocatedCash", () => {
     assert.equal(projected.unallocatedAmount, 150);
   });
 
-  it("projects Partiel when a receipt is only partially allocated", () => {
+  it("projects Trop-perçu when a receipt has leftover after covering targeted debt", () => {
     const projected = projectPaymentCash(
       { dbId: "pay-partial", amount: 150, status: "Payé" },
       [{ paymentId: "pay-partial", amount: 100, reversedAt: null }],
     );
-    assert.equal(projected.status, PARTIAL_STATUS);
+    assert.equal(projected.status, OVERPAYMENT_STATUS);
     assert.notEqual(projected.status, "Payé");
+    assert.notEqual(projected.status, PARTIAL_STATUS);
     assert.equal(projected.allocatedAmount, 100);
     assert.equal(projected.unallocatedAmount, 50);
   });

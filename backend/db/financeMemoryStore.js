@@ -290,7 +290,10 @@ function createFinanceMemoryStore({
           null;
         if (!student) return [];
         const rows = Array.isArray(student.enrollments) ? student.enrollments : [];
-        const active = rows.filter((row) => !row.status || String(row.status).toLowerCase() === "active");
+        const active = rows.filter((row) => {
+          const status = String(row.status ?? "").toLowerCase();
+          return !row.status || status === "active" || status === "enrolled";
+        });
         if (active.length) {
           return active
             .filter((row) => asTrimmed(row.classId))
@@ -894,12 +897,27 @@ function createFinanceMemoryStore({
       if (scope.mode === "none") return [];
       return tables.feeGrids.map(mapGridRow).filter((row) => fixtureRecordInScope(row, scope));
     },
-    listFinanceStudentFees: async (principal) => {
+    listFinanceStudentFees: async (principal, options = {}) => {
       const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
-      const fees = tables.studentFees
+      let fees = tables.studentFees
         .map(mapObligationRow)
         .filter((fee) => fixtureRecordInScope(fee, scope));
+      const studentKey = asTrimmed(options.studentId || options.studentKey);
+      if (studentKey) {
+        const student = await txApi().findStudent(studentKey, scopedPrincipal(principal));
+        if (!student) return [];
+        const keys = new Set(
+          [student.dbId, student.id, student.publicId, student.studentCode]
+            .map((value) => String(value ?? "").trim().toUpperCase())
+            .filter(Boolean),
+        );
+        fees = fees.filter(
+          (fee) =>
+            keys.has(String(fee.studentDbId ?? "").trim().toUpperCase()) ||
+            keys.has(String(fee.studentId ?? "").trim().toUpperCase()),
+        );
+      }
       const feeIds = new Set(fees.map((fee) => String(fee.dbId || fee.id)));
       return projectObligationPaidAmounts({
         fees,

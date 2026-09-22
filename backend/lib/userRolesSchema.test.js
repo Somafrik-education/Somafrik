@@ -7,6 +7,8 @@ const {
   NORMALIZE_ROLE_CODE_FUNCTION_SQL,
   backfillFromUsersRoleSql,
   inventoryUnknownUsersRoleSql,
+  seedDeterministicUserRolesSql,
+  missingMappedUserRolesSql,
 } = require("../db/userRolesSchema");
 
 test("normalizeRoleCode: CONSEILLER_PÉDAGOGIQUE → conseiller_pedagogique", () => {
@@ -47,4 +49,76 @@ test("inventaire avec catalogue exige une correspondance unique active school et
   assert.match(sql, /COUNT\(\*\)::int/);
   const catalogSql = backfillFromUsersRoleSql(true);
   assert.match(catalogSql, /u\.school_id IS NULL THEN NULL/);
+});
+
+test("schéma user_roles inclut le verrou FK students.user_id", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const schema = fs.readFileSync(path.join(__dirname, "../db/userRolesSchema.js"), "utf8");
+  assert.match(schema, /20260908_student_role_lock\.sql/);
+  assert.match(schema, /20260909_student_role_lock_trigger\.sql/);
+  const migration = fs.readFileSync(
+    path.join(__dirname, "../db/migrations/20260908_student_role_lock.sql"),
+    "utf8",
+  );
+  const triggerSql = fs.readFileSync(
+    path.join(__dirname, "../db/migrations/20260909_student_role_lock_trigger.sql"),
+    "utf8",
+  );
+  assert.match(migration, /st\.user_id = target_user_id/);
+  assert.match(migration, /somafrik_linked_active_student_id\(OLD\.user_id\)/);
+  assert.match(migration, /somafrik_linked_active_student_id\(NEW\.user_id\)/);
+  assert.match(migration, /DROP TRIGGER IF EXISTS user_roles_student_role_lock/);
+  assert.match(migration, /STUDENT_ROLE_LOCKED/);
+  assert.doesNotMatch(migration, /CREATE TRIGGER user_roles_student_role_lock/);
+  assert.doesNotMatch(migration, /student_code\s*=/);
+  assert.match(triggerSql, /BEFORE INSERT OR DELETE OR UPDATE/);
+  assert.match(triggerSql, /CREATE TRIGGER user_roles_student_role_lock/);
+});
+
+test("backfill user_roles n'insère pas de rôle staff sur un élève lié", () => {
+  const sql = backfillFromUsersRoleSql(false);
+  assert.match(sql, /to_jsonb\(st\)->>'user_id'/);
+  assert.match(sql, /= 'STUDENT'/);
+  assert.match(sql, /OR NOT EXISTS/);
+});
+
+test("ensureUserRolesCanonicalSchema repose le trigger après les backfills", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "../db/postgresRepository.js"), "utf8");
+  const start = src.indexOf("async ensureUserRolesCanonicalSchema()");
+  const end = src.indexOf("async ensureResidualCanonicalSchema()", start);
+  const body = src.slice(start, end);
+  const prelockQueryAt = body.lastIndexOf("await this.query(USER_ROLES_PRELOCK_SCHEMA_SQL)");
+  const backfillQueryAt = body.lastIndexOf("backfillFromUsersRoleSql(catalogAvailable)");
+  const triggerQueryAt = body.lastIndexOf("await this.query(STUDENT_ROLE_LOCK_TRIGGER_SQL)");
+  assert.ok(prelockQueryAt >= 0 && backfillQueryAt > prelockQueryAt && triggerQueryAt > backfillQueryAt);
+  assert.doesNotMatch(body, /await this\.query\(USER_ROLES_SCHEMA_SQL\)/);
+});
+
+test("seed user_roles déterministe : school_id du compte, pas de role_key NULL", () => {
+  const sql = seedDeterministicUserRolesSql(true);
+  assert.match(sql, /u\.school_id/);
+  assert.match(sql, /IS NOT NULL/);
+  assert.match(sql, /ON CONFLICT DO NOTHING/);
+  assert.match(sql, /to_jsonb\(st\)->>'user_id'/);
+  const missing = missingMappedUserRolesSql(true);
+  assert.match(missing, /IS NOT DISTINCT FROM u\.school_id/);
+});
+
+test("le seed démo PostgreSQL écrit user_roles après les INSERT users", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = fs.readFileSync(path.join(__dirname, "../db/postgresRepository.js"), "utf8");
+  const seedStart = src.indexOf("if (shouldSeedDemoData())");
+  const seedEnd = src.indexOf("await this.ensurePlatformPersonalDataDeny()", seedStart);
+  const block = src.slice(seedStart, seedEnd);
+  const usersInsert = block.indexOf("await this.seedIfEmpty()");
+  const rolesInsert = block.lastIndexOf("await this.ensureSeededUserRoles()");
+  assert.ok(usersInsert >= 0 && rolesInsert > usersInsert);
+  assert.ok(block.indexOf("await this.ensureV2Data()") < rolesInsert);
+  const authority = fs.readFileSync(path.join(__dirname, "liveRbacPrincipalAuthority.js"), "utf8");
+  assert.match(authority, /failClosedLegacyResolution/);
+  assert.doesNotMatch(authority, /principal\.permissions/);
 });

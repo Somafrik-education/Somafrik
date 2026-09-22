@@ -4,6 +4,7 @@ import { isPlatformCommunicationUser } from "./establishmentCommunication";
 import {
   canManageRolePermissions,
   canReadView,
+  hasBackOfficePermission,
   type PermissionContext,
 } from "./permissions";
 
@@ -27,6 +28,7 @@ const DOMAIN_VIEW_MAP: Partial<Record<DomainKey, string>> = {
   payments: "payments",
   paymentStatuses: "payments",
   feeGrids: "fees",
+  schoolFeeItems: "fees",
   studentFees: "fees",
   notes: "notes",
   evaluations: "notes",
@@ -50,6 +52,13 @@ export function canLoadDomain(ctx: PermissionContext, domain: DomainKey): boolea
     // GET /backoffice/notifications = catalogue plateforme (ALL/COUNTRY).
     // L'établissement lit /internal-notifications, pas ce domaine.
     return isPlatformCommunicationUser(ctx);
+  }
+
+  if (domain === "messages") {
+    // Un GET de la liste Messages est une donnée métier : aucun bypass de rôle.
+    // Le backend reste souverain et la permission effective doit explicitement
+    // autoriser la lecture avant de déclencher /backoffice/messages.
+    return hasBackOfficePermission(ctx, "Messages", "READ");
   }
 
   if (domain === "rolePermissions") {
@@ -76,8 +85,14 @@ export function filterDomainsByPermissions(
   return [...new Set(domains)].filter((domain) => canLoadDomain(ctx, domain));
 }
 
-/** Domaines topbar / recherche — uniquement ceux autorisés pour le rôle courant. */
+/**
+ * Domaines réellement nécessaires au chrome global.
+ *
+ * Les listes métier messages/annonces ne sont plus hydratées sur chaque route :
+ * leurs pages les demandent explicitement et les compteurs spécialisés restent
+ * découplés du bootstrap de la page courante.
+ */
 export function layoutDomainsForContext(ctx: PermissionContext): DomainKey[] {
-  const candidates: DomainKey[] = ["schools", "notifications", "messages", "announcements"];
+  const candidates: DomainKey[] = ["schools", "notifications"];
   return filterDomainsByPermissions(candidates, ctx);
 }

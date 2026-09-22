@@ -1,4 +1,4 @@
-import { applyL1PageAtomically, isL1StaleTransaction, markResourceState, purgeResourceAndReset } from "./repository";
+import { applyL1PageAtomically, isL1StaleTransaction, markResourceState, purgeResourceAndReset, replaceResourceSnapshotAtomically } from "./repository";
 import { L1PayloadError } from "./syncApi";
 import {
   logRc2L1Page,
@@ -12,6 +12,7 @@ import {
   L1_LOCAL_SCHEMA_VERSION,
   L1_RESOURCES,
   type L1Api,
+  type L1Page,
   type L1Partition,
   type L1Resource,
   type L1Store,
@@ -88,21 +89,20 @@ async function loadMeta(
   }
 }
 
+/**
+ * Prépare un full reconcile SANS purger le snapshot ready lisible.
+ * La purge n'a lieu que dans replaceResourceSnapshotAtomically, avec le nouveau full.
+ */
 async function beginFullReconcile(
-  store: L1Store,
-  partition: L1Partition,
+  _store: L1Store,
+  _partition: L1Partition,
   resource: L1Resource,
   isCurrent: () => boolean,
 ): Promise<"ok" | "discarded"> {
   logRc2L1Stage({ resource, stage: "reconcile_start" });
-  try {
-    await purgeResourceAndReset(store, partition, resource, "reconciling", isCurrent);
-  } catch (error) {
-    if (isL1StaleTransaction(error) || !isCurrent()) return "discarded";
-    rethrowUnexpected(resource, "reconcile", error);
-  }
+  if (!isCurrent()) return "discarded";
   logRc2L1Stage({ resource, stage: "reconcile_ok" });
-  return isCurrent() ? "ok" : "discarded";
+  return "ok";
 }
 
 async function syncOneResource(args: {
@@ -116,10 +116,12 @@ async function syncOneResource(args: {
   if (!isCurrent()) return { resource, outcome: "discarded" };
 
   let meta = await loadMeta(store, partition, resource, emptyMeta(partition, resource));
+  let keepReadableSnapshot = meta.state === "ready";
   let localFull = meta.state !== "ready" || !meta.cursor;
   let storedCursor = localFull && meta.state !== "reconciling" ? null : meta.cursor;
   let invalidReconcileUsed = false;
   let protocolReconcileUsed = false;
+  let pendingFullItems: L1Page["items"] = [];
 
   if (localFull && (meta.state === "empty" || !meta.cursor)) {
     logRc2L1Stage({ resource, stage: "reconcile_start" });
@@ -178,6 +180,7 @@ async function syncOneResource(args: {
         }
         storedCursor = null;
         localFull = true;
+        pendingFullItems = [];
         invalidReconcileUsed = false;
         meta = await loadMeta(store, partition, resource, emptyMeta(partition, resource));
         continue;
@@ -192,6 +195,7 @@ async function syncOneResource(args: {
         }
         storedCursor = null;
         localFull = true;
+        pendingFullItems = [];
         continue;
       }
       if (code === "NETWORK_UNAVAILABLE") {
@@ -221,6 +225,7 @@ async function syncOneResource(args: {
       }
       storedCursor = null;
       localFull = true;
+      pendingFullItems = [];
       continue;
     }
 
@@ -234,6 +239,7 @@ async function syncOneResource(args: {
       }
       storedCursor = null;
       localFull = true;
+      pendingFullItems = [];
       meta = await loadMeta(store, partition, resource, emptyMeta(partition, resource));
       continue;
     }
@@ -241,7 +247,29 @@ async function syncOneResource(args: {
     const nextState = localFull && page.hasMore ? "reconciling" : "ready";
     logRc2L1Stage({ resource, stage: "apply_start" });
     try {
-      await applyL1PageAtomically(store, partition, resource, page, nextState, isCurrent);
+      if (keepReadableSnapshot && localFull) {
+        pendingFullItems = pendingFullItems.concat(page.items);
+        if (page.hasMore) {
+          storedCursor = page.nextCursor;
+          continue;
+        }
+        await replaceResourceSnapshotAtomically(
+          store,
+          partition,
+          resource,
+          {
+            items: pendingFullItems,
+            nextCursor: page.nextCursor,
+            scopeHash: page.scopeHash,
+          },
+          "ready",
+          isCurrent,
+        );
+        pendingFullItems = [];
+        keepReadableSnapshot = false;
+      } else {
+        await applyL1PageAtomically(store, partition, resource, page, nextState, isCurrent);
+      }
     } catch (error) {
       if (isL1StaleTransaction(error) || !isCurrent()) return { resource, outcome: "discarded" };
       rethrowUnexpected(resource, "apply", error);

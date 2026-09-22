@@ -49,6 +49,10 @@ assert.doesNotMatch(generalBoot, /ON CONFLICT DO NOTHING/);
 assert.doesNotMatch(generalBoot, /NEW\.identity_initials := 'EL'/);
 assert.doesNotMatch(generalBoot, /DISABLE TRIGGER/);
 assert.match(repositoryFactory, /ensureStudentGeneralIdentityPg/);
+assert.match(repositoryFactory, /assertStudentGeneralIdentityPg/);
+assert.match(generalBoot, /STUDENT_CANONICAL_POSTGRES_ALLOCATOR_NOT_READY/);
+assert.match(generalBoot, /students_permanent_identity_insert/);
+assert.match(generalBoot, /pg_get_functiondef/);
 assert.match(repositoryFactory, /ensureStudentLifecyclePgSchema/);
 
 assert.doesNotMatch(allocation, /MEMORY_STUDENT_INITIALS/);

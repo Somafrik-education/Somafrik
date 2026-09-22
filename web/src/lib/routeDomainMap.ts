@@ -1,6 +1,7 @@
 import type { DomainKey } from "./domainLoaders";
 import { filterDomainsByPermissions, layoutDomainsForContext } from "./domainPermissions";
 import type { PermissionContext } from "./permissions";
+import { isParentRole } from "./format";
 
 const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   {
@@ -33,16 +34,17 @@ const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   { prefix: "/etablissement/enseignants", domains: ["teachers", "assignments", "classes"] },
   { prefix: "/etablissement/classes", domains: ["classes", "students", "teachers"] },
   { prefix: "/planning", domains: ["academicConfigs", "courseSchedules", "classes", "teachers", "assignments"] },
-  { prefix: "/finances", domains: ["schools", "feeGrids", "studentFees", "payments", "paymentStatuses", "students"] },
+  { prefix: "/finances", domains: ["schools", "feeGrids", "schoolFeeItems", "studentFees", "payments", "paymentStatuses", "students"] },
   { prefix: "/notes", domains: ["notes", "evaluations", "students", "classes"] },
-  { prefix: "/presences", domains: ["presences", "classes", "assignments", "teachers"] },
+  { prefix: "/presences", domains: ["presences", "classes", "students", "assignments", "teachers"] },
   { prefix: "/examens", domains: ["exams", "notes", "students", "classes"] },
   { prefix: "/bulletins", domains: ["bulletins", "notes", "students", "classes"] },
   { prefix: "/administration/documents", domains: ["documents", "schools"] },
   { prefix: "/pays", domains: ["countries", "users", "subscriptions"] },
   { prefix: "/etablissements", domains: ["schools", "countries", "users"] },
   { prefix: "/abonnements", domains: ["schools", "subscriptions", "countries"] },
-  { prefix: "/notifications", domains: ["notifications"] },
+  { prefix: "/notifications-plateforme", domains: ["notifications"] },
+  { prefix: "/notifications", domains: [] },
   { prefix: "/messages", domains: ["messages"] },
   { prefix: "/annonces", domains: ["announcements"] },
   { prefix: "/administration/utilisateurs", domains: ["users", "schools", "teachers"] },
@@ -61,7 +63,10 @@ export function domainsForPath(pathname: string, ctx: PermissionContext): Domain
     (rule) => pathname === rule.prefix || pathname.startsWith(`${rule.prefix}/`),
   ).sort((a, b) => b.prefix.length - a.prefix.length)[0];
 
-  const routeDomains = match?.domains ?? [];
+  const parentPublishedBulletins =
+    isParentRole(ctx.user?.role) &&
+    (pathname === "/bulletins" || pathname.startsWith("/bulletins/"));
+  const routeDomains = parentPublishedBulletins ? [] : (match?.domains ?? []);
   const combined = [...new Set([...layoutDomainsForContext(ctx), ...routeDomains])];
   return filterDomainsByPermissions(combined, ctx);
 }

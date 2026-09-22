@@ -9,14 +9,30 @@ import { MAX_HOME_KPIS } from "./roleHomeConfig";
 
 export const UX_V1_SPEC_VERSION = "2.0";
 
-export const UX_V1_VIEWPORTS = [320, 360, 390, 412] as const;
+export const UX_V1_VIEWPORTS = [320, 360, 390, 412, 430] as const;
 export const UX_V1_FONT_SCALES = [1, 1.3] as const;
 export const UX_V1_VALIDATION_VIEWPORT = { width: 360, height: 800 } as const;
 
-export const COMPACT_HEADER_ROW_DP = MIN_TOUCH_TARGET_DP;
-export const HEADER_MENU_SLOT_DP = MIN_TOUCH_TARGET_DP;
-export const HEADER_ACTIONS_SLOT_DP = MIN_TOUCH_TARGET_DP * 3;
+export const COMPACT_HEADER_ROW_DP = 76;
+export const HEADER_MENU_ICON_DP = 32;
+export const HEADER_MENU_TOUCH_DP = 48;
+export const HEADER_MENU_SLOT_DP = HEADER_MENU_TOUCH_DP;
+export const HEADER_ROW_PADDING_H = 4;
+export const HEADER_TITLE_MIN_DP = 96;
+/** Icônes compactes du trio Communication (Messages / Annonces / Notifications). */
+export const HEADER_COMPACT_ACTION_DP = 36;
+export const HEADER_COMMUNICATION_ICON_COUNT = 3;
+/**
+ * Slot droite : Actualiser (44) + trio Communication compact (3×36).
+ * 320 dp : titre restant ≥ 96, rangée 76 — pas de réécriture UX globale.
+ */
+export const HEADER_ACTIONS_SLOT_DP =
+  MIN_TOUCH_TARGET_DP + HEADER_COMPACT_ACTION_DP * HEADER_COMMUNICATION_ICON_COUNT;
 export const HEADER_BADGE_BAND_DP = 18;
+
+export function measureHeaderTitleWidth(viewportWidth: number): number {
+  return viewportWidth - (HEADER_ROW_PADDING_H + HEADER_MENU_SLOT_DP + HEADER_ACTIONS_SLOT_DP);
+}
 export const COMPACT_WELCOME_MAX_DP = 40;
 export const IDENTITY_CARD_MIN_DP = 88;
 export const MISSION_BANNER_MIN_DP = 72;

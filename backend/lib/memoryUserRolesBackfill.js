@@ -1,6 +1,7 @@
 "use strict";
 
 const { toRoleKey } = require("./userRoleLifecycle");
+const { findCanonicalLinkedStudent } = require("./studentRoleLock");
 
 const ACTIVE_STATUSES = new Set(["actif", "active"]);
 const UNAFFECTED = new Set(["", "sans affectation"]);
@@ -87,8 +88,12 @@ function backfillMemoryUserRolesFromSeedAccounts(tables, userAccounts = []) {
     if (!userId || !schoolId) {
       continue;
     }
+    const linked = findCanonicalLinkedStudent(tables.students, userId);
     for (const roleKey of roleKeysFromAccount(user)) {
       if (hasActiveRole(tables, userId, schoolId, roleKey)) {
+        continue;
+      }
+      if (linked && roleKey !== "STUDENT") {
         continue;
       }
       tables.userRoles.push({

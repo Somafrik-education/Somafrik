@@ -16,6 +16,7 @@ function run() {
   assert.match(classesScreen, /classPresenceBadgeTestId/);
   assert.match(classesScreen, /presencesSnapshot/);
   assert.match(classesScreen, /studentsSnapshot/);
+  assert.match(classesScreen, /schoolId: session\?\.user\?\.schoolId \?\? currentSchool\?\.id/);
   assert.doesNotMatch(
     classesScreen,
     /classNameMatches\(student\.className/,
@@ -38,10 +39,11 @@ function run() {
   assert.match(helper, /presenceBelongsToClass/);
   assert.match(helper, /presenceBelongsToSchool/);
   assert.match(helper, /studentBelongsToSchool/);
+  assert.match(helper, /schoolId\?: string \| null/);
   assert.doesNotMatch(
     helper,
     /if \(expected && rowSchool\)[\s\S]{0,120}return true;/,
-    "presenceBelongsToSchool ne doit plus être fail-open si l'un des schoolCode manque",
+    "le scope établissement ne doit jamais être fail-open si l'identité manque",
   );
   assert.doesNotMatch(
     helper,

@@ -94,4 +94,24 @@ describe("Taux de paiement (assiette obligations, pas payments.length)", () => {
     expect(formatPaymentRateKpi(fees).value).toBe("—");
     expect(getPaymentRateKpi(fees).rate).toBeNull();
   });
+
+  it("CDF et USD coexistent → — (pas de taux unique)", () => {
+    const fees = [
+      obligation("s1", { amountDue: 100_000, amountPaid: 20_000, currency: "CDF" }),
+      obligation("s2", { amountDue: 50, amountPaid: 10, currency: "USD" }),
+    ];
+    expect(getPaymentRateKpi(fees).rate).toBeNull();
+    expect(getPaymentRateKpi(fees).value).toBe("—");
+    expect(getPaymentRateKpi(fees).expectedAmount).toBe(0);
+  });
+
+  it("FIN-L2-07 — CDF + devise absente → —", () => {
+    const fees = [
+      obligation("s1", { amountDue: 100_000, amountPaid: 20_000, currency: "CDF" }),
+      obligation("s2", { amountDue: 50, amountPaid: 10 }),
+    ];
+    expect(getPaymentRateKpi(fees).rate).toBeNull();
+    expect(getPaymentRateKpi(fees).value).toBe("—");
+    expect(getPaymentRateKpi(fees).expectedAmount).toBe(0);
+  });
 });

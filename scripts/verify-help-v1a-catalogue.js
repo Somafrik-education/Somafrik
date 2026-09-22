@@ -48,7 +48,8 @@ function assertSourceGuards() {
   assert.match(blob, /searchHelpArticles/);
   assert.match(blob, /suggestHelpArticles/);
   assert.match(blob, /help\/users\/create/);
-  assert.match(blob, /help\/parent\/home/);
+  assert.match(blob, /help\/assistance\/contact/);
+  assert.match(blob, /groupHelpArticlesByCategory/);
   assert.match(blob, /help\/grades\/evaluations/);
   assert.doesNotMatch(blob, /help\/grades\/create-evaluation/);
   assert.doesNotMatch(blob, /help\/grades\/enter/);
@@ -67,11 +68,11 @@ function assertSourceGuards() {
   );
 
   const mobileSrc = walk(path.join(ROOT, "Mobile/src"))
-    .filter((file) => /\.(ts|tsx)$/.test(file))
+    .filter((file) => /\.(ts|tsx)$/.test(file) && !file.includes(`${path.sep}help${path.sep}`))
     .map((file) => fs.readFileSync(file, "utf8"))
     .join("\n");
   assert.doesNotMatch(mobileSrc, /@somafrik\/help-catalog/);
-  assert.doesNotMatch(mobileSrc, /HelpTrigger|HelpPanel/);
+  assert.doesNotMatch(mobileSrc, /HelpTrigger|HelpPanel|HelpSheet/);
 
   console.log("verify-help-v1a-catalogue: source guards OK");
 }

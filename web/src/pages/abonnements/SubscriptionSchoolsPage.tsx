@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from "../../lib/dates";
 import { useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
@@ -102,7 +103,7 @@ export function SubscriptionSchoolsPage() {
     setBusy(true);
     const nextYear = new Date();
     nextYear.setFullYear(nextYear.getFullYear() + 1);
-    const endDate = nextYear.toLocaleDateString("fr-FR").replace(/\//g, "-");
+    const endDate = formatDateForDisplay(nextYear);
     try {
       const target = state.subscriptions.find(
         (item) => normalize(String(item.schoolCode)) === normalize(String(subscription.schoolCode)),

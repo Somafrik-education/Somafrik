@@ -32,5 +32,5 @@ export const demoPageCopy = {
   privacy:
     "Aucun e-mail ni numéro de téléphone n’est requis pour accéder à la démonstration.",
   disabled:
-    "La démonstration publique est en cours de préparation.",
+    "La démonstration publique est en cours de préparation. Vous pouvez demander un mois d’essai gratuit pendant ce temps.",
 } as const;

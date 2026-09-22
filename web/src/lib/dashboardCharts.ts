@@ -72,12 +72,13 @@ export function buildPlatformDashboardCharts(
   user: SessionUser | null,
   state: ScopeState,
   chartConfig?: DashboardChartConfig,
+  options?: { schoolUnreadCount?: number },
 ) {
   if (!user) return { kpis: [] as Kpi[], charts: [] as PlatformChart[] };
 
   const schools = scopedSchools(user, state);
   const subscriptions = scopedSubscriptions(user, state);
-  const kpis = getLiveKpis(user, state);
+  const kpis = getLiveKpis(user, state, options);
 
   const schoolsByCountry = countByField(schools as unknown as Row[], "country").slice(0, 8);
 
@@ -215,8 +216,10 @@ export function buildEstablishmentDashboardCharts(
   user: SessionUser | null,
   state: BackOfficeState,
   users: ReturnType<typeof scopedUsers>,
+  options?: { schoolUnreadCount?: number },
 ) {
   const metrics = getEstablishmentMetrics(user, state, users);
+  const schoolUnreadCount = Math.max(0, Math.floor(Number(options?.schoolUnreadCount) || 0));
   const profile = getEstablishmentChartProfile(user?.role);
   const students = scopedStudents(user, state);
   const payments = scopedPayments(user, state);
@@ -241,6 +244,7 @@ export function buildEstablishmentDashboardCharts(
     { name: "Documents", value: metrics.documents, fill: CHART_COLORS.teal },
     { name: "Présences", value: metrics.presences, fill: CHART_COLORS.emerald },
     { name: "Messages", value: metrics.unreadMessages, fill: CHART_COLORS.amber },
+    { name: "Alertes à traiter", value: schoolUnreadCount, fill: CHART_COLORS.rose },
   ];
 
   const paymentStatus = countByField(payments as Row[], "status", {
@@ -341,6 +345,7 @@ export function buildEstablishmentDashboardCharts(
       timeZone: getCurrentSchool(user, state)?.timezone,
     }).value,
     paymentRateValue: formatPaymentRateKpi(scopedStudentFees(user, state)).value,
+    schoolUnreadCount,
   });
   return {
     metrics,
@@ -353,8 +358,9 @@ export function buildEstablishmentDashboardCharts(
 function buildEstablishmentKpiItems(
   metrics: ReturnType<typeof getEstablishmentMetrics>,
   profile: EstablishmentChartProfile,
-  extras: { todayPresenceValue: string; paymentRateValue: string },
+  extras: { todayPresenceValue: string; paymentRateValue: string; schoolUnreadCount: number },
 ) {
+  const unreadKpi = { label: "Alertes à traiter", value: formatMetric(extras.schoolUnreadCount) };
   if (profile === "academic") {
     return [
       { label: "Notes", value: formatMetric(metrics.notes) },
@@ -377,6 +383,7 @@ function buildEstablishmentKpiItems(
       { label: TODAY_PRESENCE_KPI_LABEL, value: extras.todayPresenceValue },
       { label: "Documents", value: formatMetric(metrics.documents) },
       { label: "Messages", value: formatMetric(metrics.unreadMessages) },
+      unreadKpi,
     ];
   }
   return [
@@ -384,6 +391,7 @@ function buildEstablishmentKpiItems(
     { label: TODAY_PRESENCE_KPI_LABEL, value: extras.todayPresenceValue },
     { label: "Élèves", value: formatMetric(metrics.students) },
     { label: PAYMENT_RATE_KPI_LABEL, value: extras.paymentRateValue },
+    unreadKpi,
   ];
 }
 

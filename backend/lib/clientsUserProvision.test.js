@@ -273,6 +273,43 @@ async function main() {
     { status: 403, code: USER_ROLE_ERROR.PLATFORM_ROLE_FORBIDDEN },
   );
 
+  const pendingSchool = await store.provisionUser(
+    {
+      firstName: "Patrick",
+      lastName: "Pending",
+      email: "patrick.pending.cd@test.local",
+      temporaryPassword: "SchoolPending!2026",
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+    },
+    countryAdmin,
+    auditMeta,
+  );
+  assert.ok((pendingSchool.roleKeys || []).includes("SCHOOL_ADMIN"));
+  assert.equal(pendingSchool.status, "En attente de validation");
+  const pendingRow = await store.getUserById(pendingSchool.id);
+  assert.equal(pendingRow.status, "pending_validation");
+  assert.equal(pendingRow.profile_payload?.validationStatus, "En attente de validation");
+  assert.ok(pendingRow.profile_payload?.validationRequestedBy);
+
+  await expectRejection(
+    store.provisionUser(
+      {
+        firstName: "Foreign",
+        lastName: "School",
+        email: "foreign.school.bi@test.local",
+        temporaryPassword: "SchoolForeign!2026",
+        roleKey: "SCHOOL_ADMIN",
+        countryCode: "BI",
+        schoolCode: "BI-2026-0001",
+      },
+      countryAdmin,
+      auditMeta,
+    ),
+    { status: 403, code: CLIENTS_ERROR.TENANT_MISMATCH },
+  );
+
   await expectRejection(
     store.createUser(
       { firstName: "Role", lastName: "Forbidden", email: "role.on.create@test.local", role: "Admin School", schoolCode: "BI-2026-0001" },
@@ -384,7 +421,7 @@ async function main() {
   );
   assert.equal(
     store._tables.userRoles.filter((row) => row.role_key === "SCHOOL_ADMIN" && row.status === "active").length,
-    4,
+    5,
     "rollback audit : aucun user_roles orphelin",
   );
 

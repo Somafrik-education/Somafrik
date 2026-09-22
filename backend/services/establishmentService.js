@@ -22,6 +22,7 @@ const {
   DUPLICATE_STRONG,
   DUPLICATE_CONTACT,
 } = require("../lib/schoolModule");
+const { persistableLogoRef, canonicalLogoSource, canonicalLogoUploadedAt } = require("../lib/schoolLogo");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
@@ -31,7 +32,6 @@ const ESTABLISHMENT_PROFILE_PATCH_FIELDS = new Set([
   "address",
   "phone",
   "email",
-  "logoUrl",
   "principalName",
   "principalEmail",
   "principalPhone",
@@ -183,7 +183,9 @@ function hydrateSchoolPayload(payload, state, { isNew = false } = {}) {
     principalName: String(payload.principalName ?? "").trim(),
     principalEmail: String(payload.principalEmail ?? payload.email ?? "").trim(),
     address: payload.address ?? "",
-    logoUrl: payload.logoUrl ?? "",
+    logoUrl: isNew ? "" : persistableLogoRef(payload.logoUrl),
+    logoSource: isNew ? "" : canonicalLogoSource(payload.logoSource),
+    logoUploadedAt: isNew ? "" : canonicalLogoUploadedAt(payload.logoUploadedAt),
     subscriptionPlan: payload.subscriptionPlan ?? "Standard",
     status: payload.status ?? "Actif",
     validationStatus: payload.validationStatus ?? "Validé",
@@ -200,6 +202,11 @@ class EstablishmentService {
     const school = (state.schools ?? []).find((item) => matchesSchoolLookup(item, code));
     assertCanReadEstablishment(principal, school);
     return school;
+  }
+
+  assertCanMutateLogo(principal, school) {
+    assertCanAccessEstablishment(principal, school);
+    assertCanUpdateEstablishment(principal, {});
   }
 
   getUsers(code, state, principal) {
@@ -293,8 +300,15 @@ class EstablishmentService {
   update(code, patch, state, principal) {
     const existing = (state.schools ?? []).find((item) => matchesSchoolLookup(item, code));
     assertCanAccessEstablishment(principal, existing);
-    const updateMode = assertCanUpdateEstablishment(principal, patch);
-    const effectivePatch = updateMode === "profile" ? filterEstablishmentProfilePatch(patch) : patch ?? {};
+    const incoming = { ...(patch ?? {}) };
+    delete incoming.logoUrl;
+    delete incoming.logoSource;
+    delete incoming.logoUploadedAt;
+    const updateMode = assertCanUpdateEstablishment(principal, incoming);
+    const effectivePatch = updateMode === "profile" ? filterEstablishmentProfilePatch(incoming) : incoming;
+    effectivePatch.logoUrl = persistableLogoRef(existing.logoUrl);
+    effectivePatch.logoSource = canonicalLogoSource(existing.logoSource);
+    effectivePatch.logoUploadedAt = canonicalLogoUploadedAt(existing.logoUploadedAt);
     const canEditCode = isSuperAdmin(principal);
     const canEditCountry = isSuperAdmin(principal);
 

@@ -63,15 +63,20 @@ function createMobilePushDevicesStore(repo) {
       return row;
     },
 
-    async listActiveForUser({ userId, backendEnvironment }) {
+    async listActiveForUser({ userId, schoolId, backendEnvironment }) {
+      const scopedUserId = uuidOrNull(userId);
+      const scopedSchoolId = uuidOrNull(schoolId);
+      const env = asTrimmed(backendEnvironment);
+      if (!scopedUserId || !scopedSchoolId || !env) return [];
       return all(
         `SELECT id, user_id, school_id, expo_push_token, platform, backend_environment, app_profile, last_seen_at
          FROM mobile_push_devices
          WHERE user_id = $1
-           AND backend_environment = $2
+           AND school_id = $2
+           AND backend_environment = $3
            AND revoked_at IS NULL
          ORDER BY last_seen_at DESC, created_at DESC`,
-        [userId, backendEnvironment],
+        [scopedUserId, scopedSchoolId, env],
       );
     },
 
@@ -147,10 +152,14 @@ function createMobilePushDevicesStore(repo) {
 function createMemoryMobilePushDevicesStore() {
   const rows = [];
   const receipts = [];
+  const schoolIds = new Map();
   return {
     _receipts: receipts,
-    async resolveSchoolId() {
-      return null;
+    async resolveSchoolId(schoolCode) {
+      const normalized = asTrimmed(schoolCode).toUpperCase();
+      if (!normalized || normalized === "*") return null;
+      if (!schoolIds.has(normalized)) schoolIds.set(normalized, require("node:crypto").randomUUID());
+      return schoolIds.get(normalized);
     },
     async upsertDevice({ userId, schoolId, expoPushToken, platform, backendEnvironment, appProfile }) {
       const existing = rows.find((row) => row.expo_push_token === expoPushToken);
@@ -184,9 +193,17 @@ function createMemoryMobilePushDevicesStore() {
       row.revoked_at = new Date().toISOString();
       return { ...row };
     },
-    async listActiveForUser({ userId, backendEnvironment }) {
+    async listActiveForUser({ userId, schoolId, backendEnvironment }) {
+      const scopedUserId = uuidOrNull(userId);
+      const scopedSchoolId = uuidOrNull(schoolId);
+      const env = asTrimmed(backendEnvironment);
+      if (!scopedUserId || !scopedSchoolId || !env) return [];
       return rows.filter(
-        (item) => item.user_id === userId && item.backend_environment === backendEnvironment && !item.revoked_at,
+        (item) =>
+          String(item.user_id) === String(scopedUserId) &&
+          String(item.school_id) === String(scopedSchoolId) &&
+          item.backend_environment === env &&
+          !item.revoked_at,
       );
     },
     async getByToken(expoPushToken) {

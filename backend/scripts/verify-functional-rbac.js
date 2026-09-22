@@ -30,18 +30,22 @@ async function request(pathname, { method = "GET", token, body } = {}) {
   return { status: response.status, data };
 }
 
-async function waitForHealth(child) {
+async function waitForHealth(child, logs) {
+  let lastStatus = null;
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    if (child.exitCode !== null) throw new Error(`Backend exited early with code ${child.exitCode}`);
+    if (child.exitCode !== null) {
+      throw new Error(`Backend exited early with code ${child.exitCode}\n${logs.value}`);
+    }
     try {
       const response = await fetch(`${BASE}/health`);
+      lastStatus = response.status;
       if (response.ok) return;
     } catch {
       /* retry */
     }
     await wait(250);
   }
-  throw new Error("Backend health timeout");
+  throw new Error(`Backend health timeout (lastStatus=${lastStatus})\n${logs.value}`);
 }
 
 async function login(identifier, password, schoolCode) {
@@ -56,11 +60,26 @@ async function login(identifier, password, schoolCode) {
 async function main() {
   const child = spawn("node", ["backend/scripts/dev-memory.js"], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), NODE_ENV: "development", SOMAFRIK_DB_REQUIRED: "false" },
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      NODE_ENV: "development",
+      SOMAFRIK_DB_REQUIRED: "false",
+      DATABASE_URL: "",
+      SOMAFRIK_DISABLE_LOGIN_LOCKOUT: "true",
+      COMMUNICATION_NOTIFICATIONS_WORKER: "disabled",
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const logs = { value: "" };
+  child.stderr.on("data", (chunk) => {
+    logs.value += String(chunk);
+  });
+  child.stdout.on("data", (chunk) => {
+    logs.value += String(chunk);
+  });
   try {
-    await waitForHealth(child);
+    await waitForHealth(child, logs);
     const superToken = await login("superadmin", "1234");
     const countryToken = await login("admin-rdc", "1234");
     const schoolToken = await login("admin", "1234", "CD-2026-0001");

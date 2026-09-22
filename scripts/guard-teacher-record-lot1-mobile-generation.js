@@ -14,7 +14,6 @@ const path = require("path");
 const ROOT = path.join(__dirname, "..");
 const FILES = [
   "Mobile/src/lib/userTeacherSync.ts",
-  "Mobile/src/screens/AdminCrudScreen.tsx",
   "Mobile/src/screens/TeachersScreen.tsx",
   "Mobile/src/lib/contactProvisioning.ts",
 ];
@@ -88,29 +87,6 @@ function main() {
           }
         }
         violations.push({ file: rel, id: rule.id, line, detail: `${rule.detail} :: ${snippet}` });
-      }
-    }
-
-    // AdminCrud: createInternalId must special-case teachers → createTeacherRecordId
-    if (rel.endsWith("AdminCrudScreen.tsx")) {
-      if (!/createTeacherRecordId/.test(source)) {
-        violations.push({
-          file: rel,
-          id: "MISSING_CREATE_TEACHER_RECORD_ID",
-          line: 0,
-          detail: "AdminCrudScreen doit utiliser createTeacherRecordId pour les enseignants",
-        });
-      }
-      if (!/toLowerCase\(\)\s*===\s*["']teachers["']/.test(source) && !/===\s*["']teachers["']/.test(source)) {
-        // must branch on teachers entity in createInternalId
-        if (!/prefix.*teachers|teachers.*createTeacherRecordId/i.test(source)) {
-          violations.push({
-            file: rel,
-            id: "MISSING_TEACHERS_ID_BRANCH",
-            line: 0,
-            detail: "createInternalId doit brancher sur entity teachers",
-          });
-        }
       }
     }
 

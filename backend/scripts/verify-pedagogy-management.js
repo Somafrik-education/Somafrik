@@ -245,6 +245,35 @@ function assertPermissionDenied(result, label) {
   assert.equal(result.data?.code, "PERMISSION_DENIED", `${label} code ${result.data?.code}`);
 }
 
+function assertParentNotesReadOnlyHttp(result, label) {
+  assert.equal(result.status, 403, `${label}: ${JSON.stringify(result.data)}`);
+  assert.equal(
+    result.data?.code,
+    "PARENT_NOTES_READ_ONLY",
+    `${label} code ${result.data?.code}`,
+  );
+}
+
+async function postParentNotes(port, token) {
+  return request(port, "/notes", {
+    method: "POST",
+    token,
+    body: {
+      evaluationId: "EVAL-PARENT-RO",
+      studentId: "CD-IN-EL-26-001",
+      value: 20,
+      scale: 20,
+    },
+  });
+}
+
+function assertCoursesReadAllowed(result, label) {
+  // Lecture catalogue : Matières:READ (matrice Enseignant). L'écriture reste 403.
+  // Contrat unitaire : routePermissionsCoverage.test.js « lecture seule enseignant ».
+  assert.equal(result.status, 200, `${label}: ${JSON.stringify(result.data)}`);
+  assert.ok(Array.isArray(result.data), `${label} doit renvoyer un tableau`);
+}
+
 function assertSessionTeacherCode(actual, message) {
   assert.equal(extractTeacherLoginId(actual), "ENS-0001", message);
 }
@@ -317,6 +346,11 @@ async function runMemoryHttpGuards() {
     const prefetToken = await loginReady(MEMORY_PORT, "prefet", "1234", "CD-2026-0001");
     const secretaryToken = await loginReady(MEMORY_PORT, "secretaire", "1234", "CD-2026-0001");
 
+    assertParentNotesReadOnlyHttp(
+      await postParentNotes(MEMORY_PORT, parentToken),
+      "parent POST /notes memory",
+    );
+
     const unauth = await request(MEMORY_PORT, "/courses", { method: "POST", body: {} });
     assert.equal(unauth.status, 401, "POST /courses sans token");
 
@@ -369,7 +403,7 @@ async function runMemoryHttpGuards() {
     );
 
     const teacherCoursesRead = await request(MEMORY_PORT, "/courses", { token: teacherToken });
-    assertPermissionDenied(teacherCoursesRead, "enseignant GET /courses memory");
+    assertCoursesReadAllowed(teacherCoursesRead, "enseignant GET /courses memory");
     assertPermissionDenied(
       await request(MEMORY_PORT, "/courses", {
         method: "POST",
@@ -427,6 +461,10 @@ async function runPostgresHttpGuards(databaseUrl) {
     const prefetToken = await login(PG_PORT, "prefet", "1234", "CD-2026-0001");
     const secretaryToken = await login(PG_PORT, "secretaire", "1234", "CD-2026-0001");
     const parentToken = await login(PG_PORT, "+243 820 000 001", "1234", "CD-2026-0001");
+    assertParentNotesReadOnlyHttp(
+      await postParentNotes(PG_PORT, parentToken),
+      "parent POST /notes pg",
+    );
     const stamp = Date.now();
     const schoolBId = (
       await pool.query(`SELECT id FROM schools WHERE school_code = 'BI-2026-0002'`)
@@ -599,7 +637,7 @@ async function runPostgresHttpGuards(databaseUrl) {
       "parent GET /courses",
     );
     const teacherCoursesRead = await request(PG_PORT, "/courses", { token: teacherToken });
-    assertPermissionDenied(teacherCoursesRead, "enseignant GET /courses");
+    assertCoursesReadAllowed(teacherCoursesRead, "enseignant GET /courses");
 
     // NOTES-P1 : POST /evaluations = Notes:CREATE + affectation PG.
     // Admin School n'a que « Modifier notes » (UPDATE) — ne pas l'utiliser ici.

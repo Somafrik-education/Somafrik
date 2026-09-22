@@ -48,6 +48,9 @@ export interface School {
   maxStudents?: number;
   maxTeachers?: number;
   logoUrl?: string;
+  hasLogo?: boolean;
+  logoSource?: string;
+  logoUploadedAt?: string;
   schoolCode?: string;
   /** Directeur / recteur / responsable principal (ETB-F01). */
   principalName?: string;
@@ -247,6 +250,28 @@ export interface PlatformNotification {
   createdBy?: string;
 }
 
+export type BusinessProfileKind = "student_login" | "teacher" | "staff" | "unassigned" | "conflict";
+
+/** Clés d'accès applicatif connues. Distinctes du type métier `BusinessProfileKind`. */
+export type KnownAccessRoleKey =
+  | "SUPER_ADMIN"
+  | "COUNTRY_ADMIN"
+  | "SCHOOL_ADMIN"
+  | "PROVISEUR"
+  | "PRINCIPAL"
+  | "PREFET_ETUDES"
+  | "ACCOUNTANT"
+  | "SECRETARY"
+  | "SUPERVISOR"
+  | "TEACHER"
+  | "PARENT"
+  | "STUDENT";
+
+export type AccessRoleKey = KnownAccessRoleKey | (string & {});
+
+/** Cycle de vie du compte (Actif / Suspendu / …), pas le type métier. */
+export type AccountLifecycleStatus = "Actif" | "Suspendu" | "Archivé" | (string & {});
+
 export interface UserAccount {
   id?: string;
   publicId?: string;
@@ -257,11 +282,22 @@ export interface UserAccount {
   gender?: string;
   phone?: string;
   email?: string;
+  /** Libellé du rôle d'accès primaire (pas le type métier). */
   role?: string;
+  /** Libellés des rôles d'accès. */
   roles?: string[];
-  roleKeys?: string[];
+  /** Clés canoniques des rôles d'accès (TEACHER, SECRETARY, …). */
+  roleKeys?: AccessRoleKey[];
+  /** Projection des rôles d'accès. « Sans affectation » = aucun rôle d'accès, pas l'absence de profil métier. */
   assignmentStatus?: string;
   secondaryRoles?: string[];
+  /** Type métier (élève lié, enseignant, staff, non affecté, conflit). Distinct des rôles d'accès. */
+  accountKind?: BusinessProfileKind;
+  /** Libellé API du type métier. Jamais « Sans affectation » pour un élève lié. */
+  businessProfileLabel?: string;
+  linkedStudent?: { studentId?: string; studentCode?: string; status?: string } | null;
+  linkedTeacher?: { teacherId?: string; teacherCode?: string; status?: string } | null;
+  businessProfileConflict?: boolean;
   scopeLevel?: string;
   countryScope?: string;
   /** Alias tenant historique = schools.school_code. Ne pas afficher comme code public. */
@@ -273,7 +309,8 @@ export interface UserAccount {
   schoolName?: string;
   accessChannel?: string;
   identifier?: string;
-  status?: string;
+  /** Cycle de vie du compte (Actif / Suspendu / …), pas le type métier. */
+  status?: AccountLifecycleStatus;
   validationStatus?: string;
   validationRequestedBy?: string;
   validationRequestedAt?: string;
@@ -300,6 +337,8 @@ export interface SessionUser extends UserAccount {
   assignedClassIds?: string[];
   assignedClassCodes?: string[];
   teacherCode?: string;
+  /** Enfants canoniquement liés (login Parent). */
+  children?: Record<string, unknown>[];
 }
 
 export interface SessionScope {
@@ -391,6 +430,7 @@ export type StudentFeeStatus =
 /** Grille tarifaire : règles par classe, année et période (séparée des dettes élève). */
 export interface FeeGrid {
   id: string;
+  schoolId?: string;
   schoolCode: string;
   academicYear: string;
   classId?: string;
@@ -410,6 +450,7 @@ export interface FeeGrid {
 export interface SchoolFeeItem {
   id: string;
   feeGridId: string;
+  schoolId?: string;
   schoolCode: string;
   className: string;
   feeType: SchoolFeeType;
@@ -428,6 +469,7 @@ export interface StudentFee {
   id: string;
   studentId: string;
   studentName?: string;
+  schoolId?: string;
   schoolCode: string;
   className: string;
   schoolFeeItemId: string;
@@ -519,6 +561,7 @@ export interface UnpaidDashboardStats {
   overdueLineCount: number;
   byClass: { className: string; amountDue: number; studentCount: number }[];
   currency: string;
+  totalsByCurrency: { currency: string; amount: number }[];
 }
 
 /** NE-001 — Types d'évaluation. */
@@ -606,6 +649,7 @@ export interface StudentGrade {
   value?: number;
   scale: number;
   evaluationCoefficient?: number;
+  /** Coefficient du cours porté par /api/notes (`subject_coefficient`). Pas /api/courses. */
   coefficient?: number;
   gradeStatus: GradeStatus;
   comment?: string;

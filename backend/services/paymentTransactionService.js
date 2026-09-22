@@ -1,5 +1,7 @@
 /**
- * Transaction atomique paiement : paiement + soldes + notification + audit (un seul save).
+ * Transaction atomique paiement : paiement + soldes + audit (un seul save).
+ * Inbox « paiement enregistré » = C4 `finance.payment.recorded` uniquement.
+ * Ne pas réinjecter le catalogue plateforme `state.notifications`.
  */
 const { BusinessError } = require("./authService");
 const { assertPaymentWrite } = require("./dataIntegrityService");
@@ -103,26 +105,6 @@ function applyPaymentToStudentFees(studentFees = [], payment) {
   });
 }
 
-function buildParentNotification(payment, student) {
-  const amount = Number(payment.amount ?? 0);
-  const currency = String(payment.currency ?? "CDF");
-  const formatted = new Intl.NumberFormat("fr-FR").format(amount);
-  const name = `${student.firstName ?? ""} ${student.lastName ?? student.name ?? ""}`.trim();
-  return {
-    id: `NOTIF-PAY-${String(payment.id ?? Date.now())}`,
-    audience: "Parents",
-    schoolCode: student.schoolCode,
-    title: "Paiement enregistré",
-    message: `Paiement de ${formatted} ${currency} (${String(payment.feeType ?? payment.label ?? "frais")}) enregistré pour ${name}. Réf. ${String(payment.reference ?? "")}.`,
-    type: "Paiement",
-    priority: "Normal",
-    channels: ["Somafrik"],
-    status: "Non lu",
-    date: String(payment.date ?? ""),
-    createdBy: String(payment.createdByName ?? "Système"),
-  };
-}
-
 function buildAuditEntry(payment, principal) {
   return {
     id: `AUDIT-PAY-${Date.now()}`,
@@ -198,7 +180,6 @@ function applyAtomicPayment(state, payload, principal) {
   assertPaymentWrite(state, payment);
 
   const nextStudentFees = applyPaymentToStudentFees(studentFees, payment);
-  const notification = buildParentNotification(payment, student);
   const auditEntry = buildAuditEntry(payment, principal);
 
   return {
@@ -207,7 +188,6 @@ function applyAtomicPayment(state, payload, principal) {
       ...state,
       payments: [payment, ...payments],
       studentFees: nextStudentFees,
-      notifications: [notification, ...(state.notifications ?? [])],
       auditLog: [auditEntry, ...(state.auditLog ?? [])].slice(0, 200),
     },
   };

@@ -1,0 +1,130 @@
+name: Demo entry API
+
+on:
+  pull_request:
+    paths:
+      - 'backend/demoGateway.js'
+      - 'backend/lib/bulkPlatformSeed.js'
+      - 'backend/lib/corsConfig.js'
+      - 'backend/lib/demoGatewayPolicy.js'
+      - 'backend/lib/demoResetSafety.js'
+      - 'backend/lib/demoShowcaseDataSeed.js'
+      - 'backend/lib/demoPublicPlatformSeed.js'
+      - 'backend/lib/subjectConflictScope.guard.test.js'
+      - 'backend/db/pedagogyPgStore.js'
+      - 'backend/scripts/seed-platform-bulk.js'
+      - 'backend/scripts/migrate-test-data.js'
+      - 'backend/scripts/seed-demo-public.js'
+      - 'backend/scripts/reset-demo-environment.js'
+      - 'backend/scripts/verify-demo-entry-api.js'
+      - 'backend/scripts/verify-demo-runtime-data.js'
+      - 'backend/package.json'
+      - '.github/workflows/demo-entry-api.yml'
+  workflow_dispatch:
+
+jobs:
+  demo-entry-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik_demo_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ github.run_id }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d somafrik_demo_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+      - name: Syntax guards
+        run: |
+          node --check backend/demoGateway.js
+          node --check backend/lib/bulkPlatformSeed.js
+          node --check backend/lib/demoGatewayPolicy.js
+          node --check backend/lib/demoResetSafety.js
+          node --check backend/lib/demoShowcaseDataSeed.js
+          node --check backend/lib/demoPublicPlatformSeed.js
+          node --check backend/scripts/seed-platform-bulk.js
+          node --check backend/scripts/seed-demo-public.js
+          node --check backend/scripts/reset-demo-environment.js
+          node --check backend/scripts/verify-demo-entry-api.js
+          node --check backend/scripts/verify-demo-runtime-data.js
+      - name: Verify public Demo seed contract
+        run: |
+          node <<'NODE'
+          const {
+            buildPublicDemoPlatformSeed,
+            verifyPublicDemoSeed,
+          } = require('./backend/lib/demoPublicPlatformSeed');
+          const proof = verifyPublicDemoSeed(buildPublicDemoPlatformSeed());
+          console.log(`Public Demo seed contract: OK ${JSON.stringify(proof)}`);
+          NODE
+      - name: Verify subject conflict scope
+        run: node --test backend/lib/subjectConflictScope.guard.test.js
+      - name: Verify one-shot demo entry API
+        run: npm --prefix backend run verify:demo-entry-api
+      - name: Bootstrap canonical PostgreSQL schema
+        env:
+          DATABASE_URL: postgresql://postgres:${{ github.run_id }}@127.0.0.1:5432/somafrik_demo_ci
+          SOMAFRIK_SKIP_DEMO_SEED: 'true'
+        run: |
+          node <<'NODE'
+          const { createPostgresRepository } = require('./backend/db/repositoryFactory');
+          (async () => {
+            const repository = createPostgresRepository(process.env.DATABASE_URL);
+            await repository.init();
+            if (!repository.ready || repository.engine === 'memory') {
+              throw new Error('PostgreSQL canonical bootstrap failed');
+            }
+            await repository.close?.();
+            console.log('PostgreSQL canonical bootstrap: OK');
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+      - name: Verify full Demo reset on PostgreSQL 16
+        env:
+          APP_ENV: demo
+          SOMAFRIK_SKIP_DEMO_SEED: 'true'
+          DATABASE_URL: postgresql://postgres:${{ github.run_id }}@127.0.0.1:5432/somafrik_demo_ci
+          SOMAFRIK_DEMO_DATABASE_URL_MARKER: somafrik_demo
+          SOMAFRIK_DEMO_RESET_CONFIRM: RESET_DEMO_DATA
+          DEMO_INTERNAL_SEED_PIN: CI_DEMO_RESET_TEST_VALUE_1234567890
+        run: npm --prefix backend run demo:reset
+      - name: Verify real Demo session and data hydration
+        env:
+          NODE_ENV: production
+          APP_ENV: demo
+          SOMAFRIK_ENV: demo
+          SOMAFRIK_SKIP_DEMO_SEED: 'true'
+          DATABASE_URL: postgresql://postgres:${{ github.run_id }}@demo-db-ci:5432/somafrik_demo_ci
+          PORT: '5100'
+          DEMO_INNER_PORT: '5101'
+          DEMO_FRONTEND_ORIGIN: https://demo.somafrik.app
+          DEMO_ENTRY_ORIGIN: https://somafrik.app
+          DEMO_DEFAULT_ROLE: school_admin
+          DEMO_SCHOOL_CODE: CD-IN-26-001
+          DEMO_IDENTIFIER: ADMIN-SCH-BULK-CD-0001-01
+          DEMO_INTERNAL_SEED_PIN: CI_DEMO_RESET_TEST_VALUE_1234567890
+          SOMAFRIK_PUSH_SELFTEST_ENABLED: 'false'
+        run: |
+          set -euo pipefail
+          echo '127.0.0.1 demo-db-ci' | sudo tee -a /etc/hosts >/dev/null
+          mkdir -p "$GITHUB_WORKSPACE/.demo-ci/communication" "$GITHUB_WORKSPACE/.demo-ci/report-card-source"
+          export SOMAFRIK_COMMUNICATION_STORAGE="$GITHUB_WORKSPACE/.demo-ci/communication"
+          export SOMAFRIK_REPORT_CARD_SOURCE_STORAGE="$GITHUB_WORKSPACE/.demo-ci/report-card-source"
+          npm --prefix backend run verify:demo-runtime-data

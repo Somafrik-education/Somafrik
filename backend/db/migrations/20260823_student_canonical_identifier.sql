@@ -264,19 +264,21 @@ $$;
 -- CHECK NOT VALID : les lignes legacy restent lisibles jusqu'au backfill opt-in
 -- (20260824 + script backfill-student-canonical-identifier.js).
 -- Les INSERT/UPDATE futurs sont déjà contrôlés. Ne pas VALIDATE ici (boot).
+-- Idempotence : ne PAS DROP/recréer si la contrainte existe déjà.
+-- ensureStudentGeneralIdentityPg installe une CHECK plus large (SEQ5 | EL) ;
+-- la recréer en EL-only à chaque boot fait échouer tout UPDATE students SEQ5 (23514).
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conname = 'students_canonical_identifier_format_check'
       AND conrelid = 'students'::regclass
   ) THEN
-    ALTER TABLE students DROP CONSTRAINT students_canonical_identifier_format_check;
+    ALTER TABLE students ADD CONSTRAINT students_canonical_identifier_format_check
+      CHECK (
+        student_code ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-EL-[0-9]{2}-[0-9]{3}$'
+        AND login_code IS NOT DISTINCT FROM student_code
+        AND identity_code IS NOT DISTINCT FROM student_code
+      ) NOT VALID;
   END IF;
-  ALTER TABLE students ADD CONSTRAINT students_canonical_identifier_format_check
-    CHECK (
-      student_code ~ '^[A-Z]{2}-[A-Z0-9]{2,5}-EL-[0-9]{2}-[0-9]{3}$'
-      AND login_code IS NOT DISTINCT FROM student_code
-      AND identity_code IS NOT DISTINCT FROM student_code
-    ) NOT VALID;
 END $$;

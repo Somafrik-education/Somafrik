@@ -15,7 +15,7 @@ import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
-import { IdentifyResponse, changePassword, identifyAccount, login, persistAuthenticatedSession, LoginResponse } from "../services/api";
+import { IdentifyResponse, changePassword, identifyAccount, login, persistAuthenticatedSession, LoginResponse, getApiBaseUrl } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { shouldShowDemoLogin } from "../config/env";
@@ -28,6 +28,8 @@ import {
   canSubmitLogin,
   mapLoginApiError,
   resolveIdentifierKeyboardType,
+  resolveLoginEmptyFieldsError,
+  resolveSecretFieldCopy,
   resolveSecretKeyboardType,
 } from "../lib/loginScreenSpec";
 import {
@@ -39,6 +41,15 @@ import {
 import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
 import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
+import { schoolLogoDisplayUri } from "../lib/schoolLogo";
+import {
+  resetSchoolSetupWizardSessionDismiss,
+  resolveMobilePostLoginNavigation,
+} from "../lib/schoolSetupMobile";
+import { schoolSetupGuidedApi } from "../lib/schoolSetupGuidedApi";
+import { shouldShowSchoolSetupWelcome } from "../lib/schoolSetupGuidedMobile";
+import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
+import { validateAccountSecret } from "../lib/userAccountRules";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -112,7 +123,7 @@ export default function LoginScreen({ navigation, route }: Props) {
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password.trim()) {
-      setErrorMessage(ERROR_MESSAGES.emptyFields);
+      setErrorMessage(resolveLoginEmptyFieldsError(identity?.role));
       return;
     }
 
@@ -129,11 +140,14 @@ export default function LoginScreen({ navigation, route }: Props) {
         buildMobileLoginPayload({
           role: identity.role,
           identifier: identifier.trim(),
-          pin: password.trim(),
+          ...(identity.role === "parent_student"
+            ? { password: password.trim() }
+            : { pin: password.trim() }),
           schoolCode: school?.code,
           platformContext,
         }),
       );
+      resetSchoolSetupWizardSessionDismiss();
 
       if (session.user.mustChangePassword) {
         setPendingSession(session);
@@ -163,9 +177,33 @@ export default function LoginScreen({ navigation, route }: Props) {
       },
     });
     setSession(safe);
-    navigation.navigate("Home", {
-      role: safe.role,
+    const role = safe.role ?? safe.user?.role;
+    const plan = await resolveMobilePostLoginNavigation({
+      role,
+      mustChangePassword: false,
+      getStatus: () => schoolSetupStatusApi.get(),
     });
+    let openWelcome = false;
+    try {
+      const guided = await schoolSetupGuidedApi.get();
+      openWelcome = shouldShowSchoolSetupWelcome({
+        payload: guided,
+        role,
+        mustChangePassword: false,
+      });
+    } catch {
+      openWelcome = false;
+    }
+    for (const destination of plan.destinations) {
+      if (destination === "Home") {
+        navigation.navigate("Home", { role: safe.role });
+      } else if (!openWelcome) {
+        navigation.navigate("SchoolSetup");
+      }
+    }
+    if (openWelcome) {
+      navigation.navigate("SchoolSetupWelcome");
+    }
   };
 
   const clearPasswordFieldError = (key: string) => {
@@ -183,8 +221,11 @@ export default function LoginScreen({ navigation, route }: Props) {
     const nextPassword = newPassword.trim();
     const confirmation = confirmPassword.trim();
     const nextErrors: Record<string, string> = {};
-    if (nextPassword.length < 6) {
-      nextErrors.newPassword = "Le nouveau mot de passe doit contenir au moins 6 caractères.";
+    if (!nextPassword) {
+      nextErrors.newPassword = "Le mot de passe doit contenir au moins 8 caractères.";
+    } else {
+      const policyError = validateAccountSecret(nextPassword);
+      if (policyError) nextErrors.newPassword = policyError;
     }
     if (!confirmation) {
       nextErrors.confirmPassword = "La confirmation du mot de passe est obligatoire.";
@@ -222,6 +263,8 @@ export default function LoginScreen({ navigation, route }: Props) {
   const loginReady = canSubmitLogin(identity, identifier, password, isLoading);
   const identifierKeyboard = resolveIdentifierKeyboardType(identifier);
   const secretKeyboard = resolveSecretKeyboardType(identity?.role);
+  const secretCopy = resolveSecretFieldCopy(identity?.role);
+  const schoolLogoUri = schoolLogoDisplayUri(school, getApiBaseUrl());
 
   return (
     <SafeAreaView
@@ -236,8 +279,8 @@ export default function LoginScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.container}
       >
       <View style={styles.schoolLogo} testID={LOGIN_TEST_IDS.schoolLogo}>
-        {school?.logoUrl ? (
-          <Image source={{ uri: school.logoUrl }} style={styles.schoolLogoImage} />
+        {school ? (
+          schoolLogoUri ? <Image source={{ uri: schoolLogoUri }} style={styles.schoolLogoImage} /> : null
         ) : (
           <Image source={somafrikLogo} style={styles.schoolLogoImage} />
         )}
@@ -294,18 +337,10 @@ export default function LoginScreen({ navigation, route }: Props) {
 
       {identity && (
         <FormField
-          label={
-            identity.role === "parent_student" || identity.role === "student"
-              ? LOGIN_SCREEN_COPY.pinLabel
-              : LOGIN_SCREEN_COPY.passwordLabel
-          }
+          label={secretCopy.label}
           required
           type="password"
-          placeholder={
-            identity.role === "parent_student" || identity.role === "student"
-              ? LOGIN_SCREEN_COPY.pinPlaceholder
-              : LOGIN_SCREEN_COPY.passwordPlaceholder
-          }
+          placeholder={secretCopy.placeholder}
           value={password}
           onChangeText={(value) => {
             setPassword(value);
@@ -319,11 +354,7 @@ export default function LoginScreen({ navigation, route }: Props) {
             if (loginReady) void handleLogin();
           }}
           testID={LOGIN_TEST_IDS.passwordInput}
-          accessibilityLabel={
-            identity.role === "parent_student" || identity.role === "student"
-              ? LOGIN_SCREEN_COPY.pinLabel
-              : LOGIN_SCREEN_COPY.passwordLabel
-          }
+          accessibilityLabel={secretCopy.label}
           containerStyle={styles.field}
         />
       )}

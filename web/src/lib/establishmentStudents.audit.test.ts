@@ -35,13 +35,14 @@ describe("audit tuiles Vue d'ensemble + écrans détail (SAFE / BUG)", () => {
     expect(overview).toContain("metrics.activeUsers");
   });
 
-  it("Classes : BUG latent — ClassesListPage fetch local distinct du DataContext/KPI", () => {
+  it("Classes : KPI hub = classes canoniques DataContext, liste = GET /classes", () => {
     const classes = readWeb("../pages/etablissement/ClassesListPage.tsx");
     const overview = readWeb("../pages/etablissement/EtablissementOverviewPage.tsx");
     expect(classes).toMatch(/classesApi\.list\(/);
     expect(classes).toMatch(/useState<SchoolClass\[\]>\(\[\]\)/);
     expect(classes).not.toContain("useData()");
-    expect(overview).toContain("scopedClasses(");
+    expect(overview).toContain("filterCanonicalClasses(");
+    expect(overview).not.toContain("scopedClasses(");
   });
 
   it("Enseignants : BUG latent — TeachersListPage fetch local distinct du DataContext/KPI", () => {

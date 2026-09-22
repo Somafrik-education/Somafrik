@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { NAV_GROUP_ORDER, type NavItem } from "../../lib/constants";
+import { type NavItem } from "../../lib/constants";
 import { useVisibleNavItems } from "./useVisibleNavItems";
 
 interface AppNavContentProps {
@@ -7,7 +7,7 @@ interface AppNavContentProps {
 }
 
 export function AppNavContent({ onNavigate }: AppNavContentProps) {
-  const { visible, dashboard, internalSchool, schoolCode } = useVisibleNavItems();
+  const { visible, dashboard, groupOrder, footerLabel } = useVisibleNavItems();
 
   function NavLinks({ items }: { items: NavItem[] }) {
     return items.map((item) => (
@@ -37,7 +37,7 @@ export function AppNavContent({ onNavigate }: AppNavContentProps) {
           </div>
         ) : null}
 
-        {NAV_GROUP_ORDER.map(({ group, label }) => {
+        {groupOrder.map(({ group, label }) => {
           const items = visible.filter((item) => item.group === group);
           if (!items.length) return null;
           if (items.length === 1) {
@@ -60,15 +60,9 @@ export function AppNavContent({ onNavigate }: AppNavContentProps) {
         })}
       </nav>
 
-      {internalSchool && schoolCode ? (
-        <p className="border-t border-line px-6 py-4 text-xs text-muted">
-          Établissement · {schoolCode}
-        </p>
-      ) : (
-        <p className="border-t border-line px-6 py-4 text-xs text-muted">
-          SaaS multi-pays · multi-établissements
-        </p>
-      )}
+      <p className="border-t border-line px-6 py-4 text-xs text-muted">
+        {footerLabel}
+      </p>
     </>
   );
 }

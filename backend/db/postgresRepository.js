@@ -3,7 +3,11 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 const { hashSecret } = require("../services/credentialService");
-const { shouldSeedDemoData } = require("../lib/demoSeedPolicy");
+const {
+  shouldSeedDemoData,
+  isStudentDemoAccount,
+  resolveStudentDemoLoginIdentity,
+} = require("../lib/demoSeedPolicy");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
 const { mapAssignment } = require("./teacherAssignmentsRepository");
@@ -36,6 +40,34 @@ const roleFromDb = Object.fromEntries(
 );
 roleFromDb.SUPER_ADMIN = "Super Administrateur Somafrik";
 roleFromDb.SUPERVISOR = "Surveillant";
+
+const CANONICAL_ROLE_KEYS = new Set([
+  "SUPER_ADMIN",
+  "COUNTRY_ADMIN",
+  "SCHOOL_ADMIN",
+  "PROVISEUR",
+  "PRINCIPAL",
+  "PREFET_ETUDES",
+  "TEACHER",
+  "SECRETARY",
+  "ACCOUNTANT",
+  "PARENT",
+  "STUDENT",
+  "SUPERVISOR",
+]);
+
+/**
+ * Seul un rôle canonique est persisté dans users.role.
+ * Un libellé démo sans correspondance reste NULL : pas de role_key inventé,
+ * et le boot suivant ne tombe pas sur USER_ROLES_MIGRATION_AMBIGUOUS.
+ */
+function canonicalPersistedRole(role) {
+  const raw = String(role ?? "").trim();
+  if (!raw) return null;
+  if (roleToDb[raw]) return roleToDb[raw];
+  const key = raw.toUpperCase().replace(/\s+/g, "_");
+  return CANONICAL_ROLE_KEYS.has(key) ? key : null;
+}
 
 function normalizeUserLookup(value) {
   return String(value ?? "").trim();
@@ -96,10 +128,12 @@ class PostgresRepository {
     await this.ensureAttendanceCanonicalUniqueness();
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
+    await this.ensureClassHeadTeachersCanonicalSchema();
     await this.ensureTeachersDomainConstraints();
     await this.ensureTeacherAssignmentsActiveUniqueness();
     await this.ensureUsersLoginIdentityConstraints();
     await this.ensureFinanceCanonicalSchema();
+    await this.ensureEnrollmentC18CanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
     await this.ensureTeacherCourseCanonicalReconcile();
     await this.ensurePlatformCanonicalSchema();
@@ -127,7 +161,13 @@ class PostgresRepository {
     await this.ensureEvaluationTypesCanonicalSchema();
     await this.stripLegacyEvaluationTypesPayloads();
     await this.ensureEvaluationTypesBootstrap();
+    await this.ensureAcademicRuleProfilesCanonicalSchema();
+    await this.ensureReportCardSchemasCanonicalSchema();
+    await this.ensureReportCardPublicationCanonicalSchema();
+    await this.ensureReportCardConfigurationCanonicalSchema();
+    await this.ensureReportCardSourceArtifactCanonicalSchema();
     await this.runSchoolSettingsCanonicalBoot();
+    await this.ensureSchoolSetupGuidedSchema();
     await this.runDocumentsExamsCanonicalBoot();
     if (shouldSeedDemoData()) {
       await this.seedIfEmpty();
@@ -135,6 +175,10 @@ class PostgresRepository {
       await this.ensureStudentUsers();
       await this.ensureDemoWebAccounts();
       await this.ensureV2Data();
+      // Après les INSERT users du seed : le passage canonique du début de init()
+      // a tourné sur une table encore vide. Sans cette écriture, Finance live
+      // fail-closed en 403. Pas de fallback JWT, pas d'écriture à la requête.
+      await this.ensureSeededUserRoles();
     }
     await this.ensurePlatformPersonalDataDeny();
     await this.ensureP1RgpdSchema();
@@ -470,6 +514,11 @@ class PostgresRepository {
     await this.query(ENSURE_CLASSES_STATUS_CHECK_SQL);
   }
 
+  async ensureClassHeadTeachersCanonicalSchema() {
+    const { CLASS_HEAD_TEACHERS_SCHEMA_SQL } = require("../lib/classHeadTeachersManagement");
+    await this.query(CLASS_HEAD_TEACHERS_SCHEMA_SQL);
+  }
+
   /**
    * Colonnes structurelles classes (level_id / stream_id / group_code) + unicité d'offre.
    * Doit s'exécuter après education_levels / education_streams.
@@ -491,6 +540,11 @@ class PostgresRepository {
   async ensureFinanceCanonicalSchema() {
     const { FINANCE_SCHEMA_SQL } = require("./financeSchema");
     await this.query(FINANCE_SCHEMA_SQL);
+  }
+
+  async ensureEnrollmentC18CanonicalSchema() {
+    const { ENROLLMENT_C18_SCHEMA_SQL } = require("./enrollmentC18Schema");
+    await this.query(ENROLLMENT_C18_SCHEMA_SQL);
   }
 
   async ensurePedagogyCanonicalSchema() {
@@ -572,7 +626,8 @@ class PostgresRepository {
 
   async ensureUserRolesCanonicalSchema() {
     const {
-      USER_ROLES_SCHEMA_SQL,
+      USER_ROLES_PRELOCK_SCHEMA_SQL,
+      STUDENT_ROLE_LOCK_TRIGGER_SQL,
       USER_ROLES_MIGRATION_AMBIGUOUS,
       NORMALIZE_ROLE_CODE_FUNCTION_SQL,
       inventoryUnknownUsersRoleSql,
@@ -608,10 +663,53 @@ class PostgresRepository {
       error.details = { unknownRoles, unknownSecondary };
       throw error;
     }
-    await this.query(USER_ROLES_SCHEMA_SQL);
+    // 20260908 DROP le trigger ; le backfill tourne ensuite ; 20260909 le repose.
+    // Sinon un INSERT staff héritée sur un élève lié abort le boot (STUDENT_ROLE_LOCKED)
+    // avant ON CONFLICT DO NOTHING. Aucune suppression des lignes anomaliques existantes.
+    await this.query(USER_ROLES_PRELOCK_SCHEMA_SQL);
     await this.query(backfillFromUsersRoleSql(catalogAvailable));
     if (hasProfilePayload) {
       await this.query(backfillFromSecondaryRolesSql(catalogAvailable));
+    }
+    await this.query(STUDENT_ROLE_LOCK_TRIGGER_SQL);
+  }
+
+  /**
+   * Complète user_roles après le seed démo PostgreSQL.
+   * Écrit le rôle canonique de chaque compte dont users.role est déterministe,
+   * sur users.school_id. Idempotent. Aucun repli JWT.
+   * Un libellé non résolu ne reçoit pas de ligne : s'il empêche un rôle
+   * déterministe d'être écrit, le boot échoue explicitement.
+   */
+  async ensureSeededUserRoles() {
+    const {
+      seedDeterministicUserRolesSql,
+      missingMappedUserRolesSql,
+      inventoryUnknownUsersRoleSql,
+      inventoryUnknownSecondaryRolesSql,
+    } = require("./userRolesSchema");
+    const catalogRel = await this.all(`SELECT to_regclass('public.establishment_roles') AS ref`);
+    const catalogAvailable = Boolean(catalogRel[0]?.ref);
+    await this.query(seedDeterministicUserRolesSql(catalogAvailable));
+    const missing = await this.all(missingMappedUserRolesSql(catalogAvailable));
+    const unknownRoles = await this.all(inventoryUnknownUsersRoleSql(catalogAvailable));
+    const profilePayloadColumns = await this.all(
+      `SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'users'
+         AND column_name = 'profile_payload'`,
+    );
+    const unknownSecondary = profilePayloadColumns.length
+      ? await this.all(inventoryUnknownSecondaryRolesSql(catalogAvailable))
+      : [];
+    if (missing.length || unknownRoles.length || unknownSecondary.length) {
+      const error = new Error(
+        "SEED_USER_ROLES_INCONSISTENT: le seed PostgreSQL n'a pas produit les user_roles canoniques.",
+      );
+      error.code = "SEED_USER_ROLES_INCONSISTENT";
+      error.details = { missing, unknownRoles, unknownSecondary };
+      throw error;
     }
   }
 
@@ -870,6 +968,31 @@ class PostgresRepository {
     await ensureEvaluationTypesBootstrap(this);
   }
 
+  async ensureAcademicRuleProfilesCanonicalSchema() {
+    const { ACADEMIC_RULE_PROFILE_SCHEMA_SQL } = require("./academicRuleProfileSchema");
+    await this.query(ACADEMIC_RULE_PROFILE_SCHEMA_SQL);
+  }
+
+  async ensureReportCardSchemasCanonicalSchema() {
+    const { REPORT_CARD_SCHEMA_SQL } = require("./reportCardSchemaSql");
+    await this.query(REPORT_CARD_SCHEMA_SQL);
+  }
+
+  async ensureReportCardPublicationCanonicalSchema() {
+    const { REPORT_CARD_PUBLICATION_SQL } = require("./reportCardPublicationSql");
+    await this.query(REPORT_CARD_PUBLICATION_SQL);
+  }
+
+  async ensureReportCardConfigurationCanonicalSchema() {
+    const { REPORT_CARD_CONFIGURATION_SQL } = require("./reportCardConfigurationSql");
+    await this.query(REPORT_CARD_CONFIGURATION_SQL);
+  }
+
+  async ensureReportCardSourceArtifactCanonicalSchema() {
+    const { REPORT_CARD_SOURCE_ARTIFACT_SQL } = require("./reportCardSourceArtifactSql");
+    await this.query(REPORT_CARD_SOURCE_ARTIFACT_SQL);
+  }
+
   getEvaluationTypesStore() {
     const { createEvaluationTypesPgStore } = require("./evaluationTypesPgStore");
     return createEvaluationTypesPgStore(this);
@@ -878,6 +1001,11 @@ class PostgresRepository {
   async runSchoolSettingsCanonicalBoot() {
     const { runSchoolSettingsCanonicalBoot } = require("../lib/schoolSettingsService");
     return runSchoolSettingsCanonicalBoot(this, console);
+  }
+
+  async ensureSchoolSetupGuidedSchema() {
+    const { ensureSchoolSetupGuidedSchema } = require("./schoolSetupGuidedSchema");
+    return ensureSchoolSetupGuidedSchema(this);
   }
 
   async ensureSchoolSettingsPreflight() {
@@ -1187,6 +1315,14 @@ class PostgresRepository {
     return this._mobilePushStore;
   }
 
+  getCommunicationPreferencesStore() {
+    return this;
+  }
+
+  getSchoolNotificationSettingsStore() {
+    return this;
+  }
+
   upsertMobilePushDevice(principal, payload) {
     const service = require("../lib/mobilePushDevicesService");
     return service.upsertFromSession(this.getMobilePushStore(), principal, payload);
@@ -1347,6 +1483,10 @@ class PostgresRepository {
 
   lookupParentIdentity(query, principal) {
     return this.getClientsStore().lookupParentIdentity(query, principal);
+  }
+
+  listParentRelations(query, principal) {
+    return this.getClientsStore().listParentRelations(query, principal);
   }
 
   archiveParentRelation(relationId, payload, principal, auditMeta) {
@@ -1694,6 +1834,10 @@ class PostgresRepository {
     return this.getFinanceStore().ensureEnrollmentObligations(input, principal, auditMeta);
   }
 
+  ensureEnrollmentObligationsInTx(tx, input, principal, auditMeta) {
+    return this.getFinanceStore().ensureEnrollmentObligationsInTx(tx, input, principal, auditMeta);
+  }
+
   async syncEnrollmentFinanceObligations(input = {}, principal) {
     const {
       isUnswallowableFinanceSyncError,
@@ -1724,8 +1868,8 @@ class PostgresRepository {
     }
   }
 
-  listFinanceStudentFees(principal) {
-    return this.getFinanceStore().listFinanceStudentFees(principal);
+  listFinanceStudentFees(principal, options) {
+    return this.getFinanceStore().listFinanceStudentFees(principal, options);
   }
 
   reconcileFinancePaymentAllocations(principal, options, auditMeta) {
@@ -1820,6 +1964,7 @@ class PostgresRepository {
       `ALTER TABLE schools ADD COLUMN IF NOT EXISTS profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb`,
     );
     await this.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+    await this.query(`ALTER TABLE schools ADD COLUMN IF NOT EXISTS trial_used BOOLEAN NOT NULL DEFAULT FALSE`);
   }
 
   async getDataset() {
@@ -1907,8 +2052,12 @@ class PostgresRepository {
         SELECT st.*, s.school_code, e.class_id, cl.name AS class_name, u.pin_hash AS student_pin_hash
         FROM students st
         JOIN schools s ON s.id = st.school_id
-        LEFT JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
-        LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+        LEFT JOIN users u ON u.school_id = st.school_id
+         AND (
+           st.user_id = u.id
+           OR (st.user_id IS NULL AND u.user_code = st.student_code)
+         )
+        LEFT JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
         LEFT JOIN classes cl ON cl.id = e.class_id
         ORDER BY st.created_at, st.student_code
       `),
@@ -1931,7 +2080,19 @@ class PostgresRepository {
       `),
       this.all(`
         SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,
-               sub.coefficient AS subject_coefficient, t.teacher_code, term.name AS term_name,
+               COALESCE(
+                 (
+                   SELECT sc.coefficient
+                   FROM school_courses sc
+                   WHERE sc.school_id = g.school_id
+                     AND sc.class_id = g.class_id
+                     AND sc.subject_id = g.subject_id
+                     AND sc.status = 'active'
+                   ORDER BY sc.created_at ASC, sc.id ASC
+                   LIMIT 1
+                 ),
+                 sub.coefficient
+               ) AS subject_coefficient, t.teacher_code, term.name AS term_name,
                ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
                ev.title AS evaluation_title, ev.status AS evaluation_status,
                ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
@@ -2243,6 +2404,55 @@ class PostgresRepository {
     );
   }
 
+  async createTrialAccessRequest(row) {
+    await this.init();
+    const { randomUUID } = require("node:crypto");
+    const publicRef = row.publicRef || `TRIAL-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const inserted = await this.one(
+      `INSERT INTO trial_access_requests (
+         public_ref, requester_name, role, school_name, country_iso, city, phone, email,
+         student_band, status, consent_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING *`,
+      [
+        publicRef,
+        row.requesterName || "",
+        row.role || "",
+        row.schoolName || "",
+        row.countryIso || "",
+        row.city || null,
+        row.phone || null,
+        row.email || "",
+        row.studentBand || null,
+        row.status || "nouvelle",
+        row.consentAt || new Date().toISOString(),
+      ],
+    );
+    return mapTrialAccessRequest(inserted);
+  }
+
+  async findOpenTrialRequest(email, schoolName) {
+    await this.init();
+    const row = await this.one(
+      `SELECT * FROM trial_access_requests
+       WHERE lower(email) = lower($1)
+         AND lower(school_name) = lower($2)
+         AND status IN ('nouvelle', 'contactee', 'qualifiee', 'essai_active')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [String(email ?? "").trim(), String(schoolName ?? "").trim()],
+    );
+    return mapTrialAccessRequest(row);
+  }
+
+  async listTrialAccessRequests() {
+    await this.init();
+    const rows = await this.all(
+      `SELECT * FROM trial_access_requests ORDER BY created_at DESC LIMIT 500`,
+    );
+    return rows.map(mapTrialAccessRequest);
+  }
+
   async executePrivacyErasure({ requestId, actorUserId, userId, identifier, schoolCode }) {
     await this.init();
     let dbUserId = await this.resolveDbUserId(userId);
@@ -2284,6 +2494,12 @@ class PostgresRepository {
            WHERE user_id = $1 AND revoked_at IS NULL`,
           [dbUserId],
         );
+      } catch {
+        /* table optionnelle selon le boot */
+      }
+      try {
+        const { deletePreferencesForUser } = require("../lib/communicationsPreferences");
+        await deletePreferencesForUser(this, dbUserId);
       } catch {
         /* table optionnelle selon le boot */
       }
@@ -2983,7 +3199,7 @@ class PostgresRepository {
     return this.one(
       `INSERT INTO subjects (school_id, subject_code, name, coefficient, level, description, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'active')
-       ON CONFLICT (subject_code) DO UPDATE SET
+       ON CONFLICT (school_id, subject_code) DO UPDATE SET
          name = EXCLUDED.name,
          coefficient = EXCLUDED.coefficient,
          updated_at = NOW()
@@ -3579,7 +3795,7 @@ class PostgresRepository {
         SELECT st.*, s.school_code, e.class_id, cl.name AS class_name, cl.class_code
         FROM students st
         JOIN schools s ON s.id = st.school_id
-        LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+        LEFT JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
         LEFT JOIN classes cl ON cl.id = e.class_id
         WHERE (st.student_code = $1 OR st.id::text = $1)`;
       if (schoolId) {
@@ -5144,6 +5360,7 @@ class PostgresRepository {
     }
 
     for (const user of seedData.userAccounts) {
+      if (isStudentDemoAccount(user)) continue;
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
       const row = await this.insertOne(
         client,
@@ -5160,7 +5377,7 @@ class PostgresRepository {
           user.phone ?? "",
           hashSecret(user.password),
           hashSecret(user.temporaryPassword || "1234"),
-          roleToDb[user.role] ?? user.role,
+          canonicalPersistedRole(user.role),
           this.toDbStatus(user.status),
           this.parseDate(user.lastLoginAt),
         ]
@@ -5215,7 +5432,7 @@ class PostgresRepository {
         client,
         `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
          VALUES ($1, $2, $3, $4, 'active')
-         ON CONFLICT (subject_code) DO UPDATE SET name = EXCLUDED.name
+         ON CONFLICT (school_id, subject_code) DO UPDATE SET name = EXCLUDED.name
          RETURNING id`,
         [schoolId, subjectCode, course.name, course.coefficient ?? 1]
       );
@@ -5273,6 +5490,7 @@ class PostgresRepository {
       studentIds.set(student.matricule, row.id);
       studentIds.set(row.student_code, row.id);
 
+      const studentLogin = resolveStudentDemoLoginIdentity(student, seedData.userAccounts);
       await client.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
          VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 'STUDENT', $8)
@@ -5282,8 +5500,8 @@ class PostgresRepository {
           row.student_code,
           student.firstName ?? firstName,
           lastNameParts.join(" ") || student.name,
-          student.parentEmail,
-          student.parentPhone,
+          studentLogin.email,
+          studentLogin.phone,
           hashSecret(student.pin ?? "1234"),
           student.archived ? "archived" : "active",
         ]
@@ -5434,7 +5652,7 @@ class PostgresRepository {
           user.phone ?? "",
           hashSecret(user.password),
           hashSecret(user.temporaryPassword || "1234"),
-          roleToDb[user.role] ?? user.role,
+          canonicalPersistedRole(user.role),
           this.toDbStatus(user.status),
           this.parseDate(user.lastLoginAt),
         ]
@@ -5448,7 +5666,7 @@ class PostgresRepository {
     }
     await this.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status)
-       SELECT st.school_id, st.student_code, st.first_name, st.last_name, st.parent_email, st.parent_phone,
+       SELECT st.school_id, st.student_code, st.first_name, st.last_name, '', '',
               NULL, $1, 'STUDENT', st.status
        FROM students st
        LEFT JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
@@ -5498,7 +5716,7 @@ class PostgresRepository {
             user.phone ?? "",
             hashSecret(user.password),
             hashSecret(user.temporaryPassword || user.password || "1234"),
-            roleToDb[user.role] ?? user.role,
+            canonicalPersistedRole(user.role),
             this.toDbStatus(user.status),
             this.parseDate(user.lastLoginAt),
           ]
@@ -5683,7 +5901,7 @@ class PostgresRepository {
     `;
     if (schoolCode && schoolCode !== "*") {
       params.push(schoolCode);
-      sql += ` WHERE upper(s.school_code) = $1`;
+      sql += ` WHERE (upper(s.school_code) = $1 OR upper(coalesce(s.login_code, '')) = $1)`;
     }
     sql += `
       GROUP BY sub.id, s.school_code, c.iso_code
@@ -5722,7 +5940,7 @@ class PostgresRepository {
     const row = await this.one(
       `INSERT INTO subjects (school_id, subject_code, name, coefficient, level, description, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (subject_code) DO UPDATE SET
+       ON CONFLICT (school_id, subject_code) DO UPDATE SET
          name = EXCLUDED.name,
          coefficient = EXCLUDED.coefficient,
          level = EXCLUDED.level,
@@ -5751,9 +5969,15 @@ class PostgresRepository {
     return { id: row.id, message: "Cours enregistré" };
   }
 
-  async deleteSubject(subjectCode) {
+  async deleteSubject(subjectCode, schoolCode) {
     await this.init();
-    const subject = await this.one("SELECT id, subject_code FROM subjects WHERE subject_code = $1", [String(subjectCode).trim().toUpperCase()]);
+    const school = await this.getSchoolByCode(schoolCode);
+    if (!school) throw new Error("Établissement introuvable");
+    const normalizedCode = String(subjectCode).trim().toUpperCase();
+    const subject = await this.one(
+      "SELECT id, subject_code FROM subjects WHERE school_id = $1 AND subject_code = $2",
+      [school.id, normalizedCode],
+    );
     if (!subject) throw new Error("Cours introuvable");
     const usage = await this.one("SELECT COUNT(*)::int AS count FROM grades WHERE subject_id = $1", [subject.id]);
     if (usage.count > 0) {
@@ -5764,6 +5988,7 @@ class PostgresRepository {
     await this.query("DELETE FROM subjects WHERE id = $1", [subject.id]);
     this.cachedDataset = null;
     await this.recordAudit({
+      schoolCode,
       action: "subject_delete",
       entityType: "subject",
       entityId: subject.subject_code,
@@ -6398,6 +6623,8 @@ class PostgresRepository {
     const canonical = student.login_code || student.identity_code || student.student_code;
     return {
       id: canonical,
+      studentUuid: student.id,
+      userId: student.user_id ?? student.userId ?? null,
       schoolId: student.school_id,
       publicId: canonical,
       identifier: canonical,
@@ -6461,6 +6688,12 @@ class PostgresRepository {
       grade.evaluation_legacy_id || grade.evaluation_uuid || grade.evaluation_id || null;
     const gradeStatus = fromGradeStatus(grade.grade_status ?? (grade.score == null ? "not_submitted" : "graded"));
     const score = grade.score == null ? undefined : Number(grade.score);
+    // Contrat DTO /api/notes :
+    // - coefficient = coefficient du cours (subject_coefficient PG)
+    // - evaluationCoefficient = coefficient de l'évaluation
+    // Ne pas confondre avec grades.coefficient (poids stocké sur la ligne de note).
+    const courseCoefficient = Number(grade.subject_coefficient);
+    const evaluationCoefficient = Number(grade.evaluation_coefficient);
     return {
       id: grade.id,
       schoolId: grade.school_id,
@@ -6470,7 +6703,7 @@ class PostgresRepository {
       subject: grade.subject_name,
       value: score,
       score,
-      coefficient: Number(grade.subject_coefficient ?? 1),
+      coefficient: Number.isFinite(courseCoefficient) && courseCoefficient > 0 ? courseCoefficient : 1,
       date: this.formatDate(grade.created_at),
       evaluationId,
       evaluationTitle: grade.evaluation_title || grade.comment || this.fromEvaluationType(grade.grade_type),
@@ -6478,7 +6711,10 @@ class PostgresRepository {
       evaluationTypeId: grade.evaluation_type_id || undefined,
       period: grade.term_name,
       scale: Number(grade.evaluation_max_score ?? grade.max_score ?? 20),
-      evaluationCoefficient: Number(grade.evaluation_coefficient ?? grade.coefficient ?? 1),
+      evaluationCoefficient:
+        Number.isFinite(evaluationCoefficient) && evaluationCoefficient > 0
+          ? evaluationCoefficient
+          : Number(grade.coefficient ?? 1),
       gradeStatus,
       status: gradeStatus,
       comment: grade.comment ?? "",
@@ -6716,6 +6952,49 @@ class PostgresRepository {
     return updated;
   }
 
+  getClassHeadTeachersRepository() {
+    if (!this._classHeadTeachersRepository) {
+      const { createClassHeadTeachersRepository } = require("./classHeadTeachersRepository");
+      this._classHeadTeachersRepository = createClassHeadTeachersRepository({
+        one: (sql, params) => this.one(sql, params),
+        all: (sql, params) => this.all(sql, params),
+        query: (sql, params) => this.query(sql, params),
+        getSchoolByCode: (code) => this.getSchoolByCode(code),
+        withTransaction: (fn) => this.withTransaction(fn),
+        createTxScope: (tx) => this.createTxScope(tx),
+        recordAudit: (payload, tx) => this.recordAudit(payload, tx),
+      });
+    }
+    return this._classHeadTeachersRepository;
+  }
+
+  listClassHeadTeacherCandidates(classCode, schoolCode, options) {
+    return this.getClassHeadTeachersRepository().listCandidates(classCode, schoolCode, options);
+  }
+
+  async assignClassHeadTeacher(classCode, schoolCode, body, principal, auditMeta) {
+    const updated = await this.getClassHeadTeachersRepository().assign(
+      classCode,
+      schoolCode,
+      body,
+      principal,
+      auditMeta,
+    );
+    this.cachedDataset = null;
+    return updated;
+  }
+
+  async removeClassHeadTeacher(classCode, schoolCode, principal, auditMeta) {
+    const updated = await this.getClassHeadTeachersRepository().remove(
+      classCode,
+      schoolCode,
+      principal,
+      auditMeta,
+    );
+    this.cachedDataset = null;
+    return updated;
+  }
+
   getClassStudentsRepository() {
     if (!this._classStudentsRepository) {
       const { createClassStudentsRepository } = require("./classStudentsRepository");
@@ -6940,7 +7219,19 @@ class PostgresRepository {
   async getGradeById(id) {
     const grade = await this.one(
       `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,
-              sub.coefficient AS subject_coefficient, t.teacher_code, term.name AS term_name,
+              COALESCE(
+                (
+                  SELECT sc.coefficient
+                  FROM school_courses sc
+                  WHERE sc.school_id = g.school_id
+                    AND sc.class_id = g.class_id
+                    AND sc.subject_id = g.subject_id
+                    AND sc.status = 'active'
+                  ORDER BY sc.created_at ASC, sc.id ASC
+                  LIMIT 1
+                ),
+                sub.coefficient
+              ) AS subject_coefficient, t.teacher_code, term.name AS term_name,
               ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
               ev.title AS evaluation_title, ev.status AS evaluation_status,
               ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
@@ -7316,6 +7607,26 @@ module.exports = { PostgresRepository };
 
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value ?? ""));
+}
+
+function mapTrialAccessRequest(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    publicRef: row.public_ref,
+    requesterName: row.requester_name,
+    role: row.role,
+    schoolName: row.school_name,
+    countryIso: row.country_iso,
+    city: row.city,
+    phone: row.phone,
+    email: row.email,
+    studentBand: row.student_band,
+    status: row.status,
+    consentAt: row.consent_at,
+    createdAt: row.created_at,
+    schoolId: row.school_id,
+  };
 }
 
 function toDbEvaluationType(type) {

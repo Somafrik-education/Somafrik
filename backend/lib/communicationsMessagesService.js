@@ -163,6 +163,37 @@ async function loadConversation(tx, conversationId) {
   return conversation;
 }
 
+function teacherStudentMessagingForbidden() {
+  return createClientsError(
+    403,
+    "Les enseignants ne peuvent pas envoyer de messages aux élèves.",
+    CLIENTS_ERROR.FORBIDDEN,
+  );
+}
+
+async function assertTeacherConversationHasNoStudentParticipant(tx, conversationId, sender, senderKind) {
+  if (senderKind !== "teacher") return;
+  if (typeof tx.listConversationParticipants !== "function") {
+    throw teacherStudentMessagingForbidden();
+  }
+  const participants = await tx.listConversationParticipants(conversationId);
+  for (const participant of participants) {
+    const participantUserId = asTrimmed(participant?.user_id || participant?.userId);
+    if (!participantUserId || participantUserId === String(sender.id)) continue;
+    const participantStatus = asTrimmed(participant?.status).toLowerCase();
+    if (participantStatus && participantStatus !== "active") continue;
+
+    if (classifyActor(participant?.role_label || participant?.roleLabel, []) === "student") {
+      throw teacherStudentMessagingForbidden();
+    }
+
+    const user = typeof tx.getUserById === "function" ? await tx.getUserById(participantUserId) : null;
+    if (user && (await loadKind(tx, user)) === "student") {
+      throw teacherStudentMessagingForbidden();
+    }
+  }
+}
+
 async function assertCanMessageRecipient(tx, { school, sender, senderKind, recipientUserId, studentRef }) {
   if (String(recipientUserId) === String(sender.id)) return;
   const recipient = await tx.getUserById(recipientUserId);
@@ -204,6 +235,9 @@ async function assertCanMessageRecipient(tx, { school, sender, senderKind, recip
   }
 
   if (senderKind === "teacher") {
+    if (recipientKind === "student") {
+      throw teacherStudentMessagingForbidden();
+    }
     const classIds =
       typeof tx.listTeacherActiveClassIds === "function"
         ? await tx.listTeacherActiveClassIds(sender.id, school.id)
@@ -466,6 +500,12 @@ async function sendOrCreate(store, rawPayload, principal, auditMeta) {
         throw createClientsError(403, "Conversation non disponible.", CLIENTS_ERROR.FORBIDDEN);
       }
       await requireActiveParticipant(tx, conversation.id, sender.id);
+      await assertTeacherConversationHasNoStudentParticipant(
+        tx,
+        conversation.id,
+        sender,
+        senderKind,
+      );
       return persistMessage(tx, {
         conversation,
         school,

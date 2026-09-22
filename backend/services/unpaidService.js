@@ -37,6 +37,12 @@ function computeUnpaidSeverity(daysLate) {
   return "Retard critique";
 }
 
+function normalizeReminderTimestamp(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+}
+
 function refreshStudentFeeStatuses(fees, now = new Date()) {
   return fees.map((fee) => {
     const balance = Math.max(0, Number(fee.amountDue) - Number(fee.amountPaid) - Number(fee.exemption ?? 0));
@@ -65,6 +71,23 @@ function scopeFees(state, principal) {
   return fees.filter((fee) => String(fee.schoolCode ?? "").trim().toUpperCase() === schoolCode);
 }
 
+function resolveStudentRecord(state, studentId) {
+  const key = String(studentId ?? "").trim();
+  if (!key) return undefined;
+  return (state.students ?? []).find((row) =>
+    [row.id, row.publicId, row.matricule, row.studentCode]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .includes(key),
+  );
+}
+
+function resolveStudentMatricule(state, studentId) {
+  const student = resolveStudentRecord(state, studentId);
+  const matricule = String(student?.matricule ?? student?.studentCode ?? student?.publicId ?? "").trim();
+  return matricule || undefined;
+}
+
 function listUnpaidFees(state, principal, filters = {}, now = new Date()) {
   let fees = scopeFees(state, principal).filter((fee) => {
     if (!UNPAID_FEE_STATUSES.has(fee.status) || fee.balance <= 0) return false;
@@ -84,7 +107,14 @@ function listUnpaidFees(state, principal, filters = {}, now = new Date()) {
   if (filters.search) {
     const q = normalize(filters.search);
     fees = fees.filter((fee) => {
-      const haystack = [fee.studentName, fee.studentId, fee.className, fee.label, fee.periodLabel]
+      const haystack = [
+        fee.studentName,
+        fee.studentId,
+        resolveStudentMatricule(state, fee.studentId),
+        fee.className,
+        fee.label,
+        fee.periodLabel,
+      ]
         .map((value) => normalize(value))
         .join(" ");
       return haystack.includes(q);
@@ -107,12 +137,16 @@ function aggregateByStudent(fees, reminders, state, now = new Date()) {
     const primary = studentFees.sort((a, b) => computeDaysLate(b.dueDate, now) - computeDaysLate(a.dueDate, now))[0];
     const daysLate = Math.max(...studentFees.map((fee) => computeDaysLate(fee.dueDate, now)), 0);
     const studentReminders = (reminders ?? []).filter((row) => row.studentId === studentId);
-    const lastReminderAt = studentReminders.map((row) => row.sentAt).sort((a, b) => b.localeCompare(a))[0];
+    const lastReminderAt = studentReminders
+      .map((row) => normalizeReminderTimestamp(row.sentAt))
+      .filter(Boolean)
+      .sort((a, b) => b.localeCompare(a))[0];
     const periods = [...new Set(studentFees.map((fee) => fee.periodLabel ?? fee.academicYear).filter(Boolean))];
 
     return {
       studentId,
       studentName: primary.studentName ?? studentId,
+      matricule: resolveStudentMatricule(state, studentId),
       className: primary.className,
       schoolCode: primary.schoolCode,
       periodLabel: periods.length === 1 ? String(periods[0]) : periods.length > 1 ? "Plusieurs périodes" : "—",

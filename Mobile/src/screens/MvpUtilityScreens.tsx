@@ -2,9 +2,12 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-nati
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
-import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
+import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { canReadRoute } from "../domain/security/permissions";
-import { displayRoleName, displayStatusName } from "../lib/format";
+import {
+  filterRowsByStudentScope,
+  resolveMobileStudentScope,
+} from "../lib/canonicalStudentIdentity";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 function ScreenShell({
@@ -64,130 +67,22 @@ function InfoCard({
   );
 }
 
-export function DocumentsScreen({ navigation }: any) {
-  const { session, selectedStudentId } = useAuth();
-  const { studentsData, announcementsData } = useAdminData();
-  const canOpenReportCards = canReadRoute(session, "ReportCards");
-  const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
-  const canOpenStudents = canReadRoute(session, "Students");
-  const canOpenAnnouncements = canReadRoute(session, "Announcements");
-
-  return (
-    <ScreenShell
-      title="Documents scolaires"
-      subtitle="Centre MVP pour bulletins, attestations et pieces administratives."
-    >
-      <InfoCard
-        icon="document-text-outline"
-        title="Bulletins PDF"
-        value="Disponible"
-        detail="Les bulletins publies peuvent etre ouverts en PDF depuis l'application mobile."
-        actionLabel={canOpenReportCards ? "Voir les bulletins" : undefined}
-        onPress={canOpenReportCards ? () => navigation.navigate("ReportCards") : undefined}
-      />
-      <InfoCard
-        icon="people-outline"
-        title="Dossiers eleves"
-        value={`${studentsData.length} dossier(s)`}
-        detail="Les informations eleves, presences, notes et paiements sont consolidees par dossier."
-        actionLabel={
-          session?.role === "student" || session?.role === "parent_student"
-            ? canOpenStudentDetail ? "Mon dossier" : undefined
-            : canOpenStudents ? "Ouvrir les eleves" : undefined
-        }
-        onPress={
-          session?.role === "student" || session?.role === "parent_student"
-            ? canOpenStudentDetail
-              ? () => navigation.navigate("StudentDetail", { studentId: selectedStudentId ?? session.user.id })
-              : undefined
-            : canOpenStudents
-              ? () => navigation.navigate("Students", { className: "Toutes les classes" })
-              : undefined
-        }
-      />
-      <InfoCard
-        icon="megaphone-outline"
-        title="Annonces archivees"
-        value={`${announcementsData.length} annonce(s)`}
-        detail="Les communications publiees restent consultables dans l'espace annonces."
-        actionLabel={canOpenAnnouncements ? "Ouvrir les annonces" : undefined}
-        onPress={canOpenAnnouncements ? () => navigation.navigate("Announcements") : undefined}
-      />
-    </ScreenShell>
-  );
-}
-
-export function ReportsScreen() {
-  const { studentsData, teachersData, classesData, paymentsData, presencesData, messagesData } = useAdminData();
-  const paymentStats = getPaymentStats(paymentsData, studentsData.map((student) => student.id));
-  const presenceStats = getPresenceStats(presencesData, studentsData.map((student) => student.id));
-
-  return (
-    <ScreenShell title="Rapports MVP" subtitle="Synthese operationnelle mobile et tablette.">
-      <View style={styles.grid}>
-        <Metric label="Eleves" value={studentsData.length} />
-        <Metric label="Enseignants" value={teachersData.length} />
-        <Metric label="Classes" value={classesData.length} />
-        <Metric label="Presence" value={`${presenceStats.rate}%`} />
-        <Metric label="Paiements" value={paymentStats.paidAmount.toLocaleString("fr-FR")} />
-        <Metric label="Messages" value={messagesData.length} />
-      </View>
-      <InfoCard
-        icon="analytics-outline"
-        title="Exports"
-        value="MVP"
-        detail="Les indicateurs principaux sont disponibles ici. Les exports Excel/PDF avances restent classes P2."
-      />
-    </ScreenShell>
-  );
-}
-
-export function AuditScreen() {
-  const { usersData, messagesData, presencesData } = useAdminData();
-  const recentUsers = usersData.slice(0, 4);
-
-  return (
-    <ScreenShell title="Audit et connexions" subtitle="Journal MVP des actions sensibles disponibles cote mobile.">
-      <InfoCard
-        icon="shield-checkmark-outline"
-        title="Controle des acces"
-        value={`${usersData.length} compte(s)`}
-        detail="Les rôles, statuts et permissions sont gérés depuis la plateforme et synchronisés avec le mobile."
-      />
-      <InfoCard
-        icon="calendar-outline"
-        title="Presences tracees"
-        value={`${presencesData.length} ligne(s)`}
-        detail="Les modifications d'appel portent les informations de statut, date et eleve concerne."
-      />
-      <InfoCard
-        icon="chatbubbles-outline"
-        title="Messages"
-        value={`${messagesData.length} message(s)`}
-        detail="Les messages conservent statut, priorite, direction et historique quand disponible."
-      />
-      {recentUsers.map((user) => (
-        <View key={user.id} style={styles.auditRow}>
-          <Text style={styles.auditTitle}>{user.firstName} {user.lastName}</Text>
-          <Text style={styles.auditMeta}>{displayRoleName(user.role)} - {displayStatusName(user.status)} - {user.identifier}</Text>
-        </View>
-      ))}
-    </ScreenShell>
-  );
-}
-
 export function MobilePaymentScreen({ navigation }: any) {
   const { session, selectedStudentId } = useAuth();
   const { paymentsData, studentsData } = useAdminData();
   const canOpenStudentPayments = canReadRoute(session, "StudentPayments");
-  const studentIds =
-    session?.role === "student"
-      ? [session.user.id]
-      : (session?.user.children ?? []).map((child) => child.id);
-  const scopedPayments = paymentsData.filter((payment) =>
-    studentIds.length ? studentIds.includes(payment.studentId) : true
+  const studentScope = resolveMobileStudentScope({
+    role: session?.role,
+    selectedStudentId,
+    children: session?.user.children,
+    linkedStudent: session?.user.linkedStudent,
+    user: session?.user,
+  });
+  const scopedPayments = filterRowsByStudentScope(paymentsData, studentScope);
+  const paymentStats = getPaymentStats(
+    scopedPayments,
+    studentScope.unscoped ? undefined : studentScope.studentIds,
   );
-  const paymentStats = getPaymentStats(scopedPayments, studentIds);
 
   return (
     <ScreenShell title="Paiement mobile" subtitle="Suivi MVP des paiements et recus.">
@@ -199,7 +94,7 @@ export function MobilePaymentScreen({ navigation }: any) {
         actionLabel={canOpenStudentPayments ? "Voir les frais" : undefined}
         onPress={
           canOpenStudentPayments
-            ? () => navigation.navigate("StudentPayments", { studentId: selectedStudentId ?? session?.user.id })
+            ? () => navigation.navigate("StudentPayments", { studentId: selectedStudentId })
             : undefined
         }
       />
@@ -212,7 +107,7 @@ export function MobilePaymentScreen({ navigation }: any) {
       <InfoCard
         icon="people-outline"
         title="Eleves lies"
-        value={`${studentIds.length || studentsData.length} eleve(s)`}
+        value={`${studentScope.unscoped ? studentsData.length : studentScope.identityCount} eleve(s)`}
         detail="Le parent voit les paiements de ses enfants ; l'administration voit le suivi global."
       />
     </ScreenShell>
@@ -343,14 +238,4 @@ const styles = StyleSheet.create({
   },
   metricValue: { fontSize: 20, fontWeight: "900", color: "#0F172A" },
   metricLabel: { marginTop: 4, color: "#64748B", fontWeight: "800" },
-  auditRow: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  auditTitle: { color: "#0F172A", fontWeight: "900" },
-  auditMeta: { marginTop: 4, color: "#64748B", fontWeight: "700" },
 });

@@ -72,6 +72,7 @@ export type MessageRecipient = {
   userId: string;
   displayName: string;
   roleLabel?: string;
+  kind?: string;
   studentId?: string;
   studentName?: string;
   className?: string;

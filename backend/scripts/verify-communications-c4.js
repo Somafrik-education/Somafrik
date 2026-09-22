@@ -44,19 +44,28 @@ function sourceGuards() {
   const mobileHttp = read("Mobile/src/services/httpClient.ts");
   const mobileRead = read("Mobile/src/lib/internalNotificationsRead.ts");
   const mobileScreen = read("Mobile/src/screens/InternalNotificationsScreen.tsx");
+  const mobileDestinations = read("Mobile/src/lib/pushNotificationDestinations.ts");
   const mobileHeader = read("Mobile/src/components/MobileAppHeader.tsx");
   const mobileIcons = read("Mobile/src/components/CommunicationHeaderIcons.tsx");
   const mobileNav = read("Mobile/src/navigation/AppNavigator.tsx");
   const mobileDrawer = read("Mobile/src/navigation/roleDrawerPreferences.ts");
   const schemaSql = read("backend/db/schema.sql");
+  // Le producteur L5 vit dans son propre fichier SQL, injecté par interpolation
+  // dans COMMUNICATIONS_C4_SCHEMA_SQL : le gate lit la source réelle.
+  const teacherReplacementOutbox = read("backend/db/teacherReplacementOutbox.sql");
 
   // 1-3 tables
   assert.match(schema, /communication_event_outbox/);
   assert.match(schema, /communication_notifications/);
   assert.match(schema, /notification_recipients/);
+  assert.match(schema, /communication_channel_deliveries/);
   assert.match(migration, /communication_event_outbox/);
   assert.match(migration, /communication_notifications/);
   assert.match(migration, /notification_recipients/);
+  const channelMigration = read("backend/db/migrations/20260907_communication_channel_deliveries.sql");
+  assert.match(channelMigration, /communication_channel_deliveries/);
+  const reliabilityMigration = read("backend/db/migrations/20260908_communication_channel_deliveries_reliability.sql");
+  assert.match(reliabilityMigration, /dispatch_started_at/);
   assert.match(bootstrap, /applyCommunicationsC4Schema/);
 
   // 4 event_key UNIQUE
@@ -77,6 +86,12 @@ function sourceGuards() {
   assert.doesNotMatch(mobileRead, /localStorage|AsyncStorage/);
   assert.doesNotMatch(webApi, /localStorage/);
   assert.doesNotMatch(mobileApi, /AsyncStorage/);
+  assert.match(mobileScreen, /Ouvrir|Lire/);
+  assert.match(mobileDestinations, /conversationId/);
+  assert.match(mobileDestinations, /announcement/);
+  assert.match(mobileDestinations, /"Messages"/);
+  assert.match(mobileDestinations, /"Announcements"/);
+  assert.match(mobileDestinations, /"InternalNotifications"/);
 
   // 7-8 sender système / humain
   assert.match(service, /SYSTEM_SENDER_NAME = "Somafrik"/);
@@ -110,12 +125,25 @@ function sourceGuards() {
   assert.match(schema, /communication\.announcement\.published/);
   assert.match(schema, /attendance\.student\.absent/);
   assert.match(schema, /pedagogy\.grade\.published/);
+  assert.match(schema, /pedagogy\.report_card\.published/);
+  assert.match(schema, /planning\.timetable\.changed/);
+  assert.match(teacherReplacementOutbox, /planning\.teacher\.replacement/);
+  assert.match(read("backend/db/pedagogySchema.js"), /planningWeeklyChangeRevision\.sql/);
+  assert.match(read("backend/db/planningWeeklyChangeRevision.sql"), /change_revision/);
+  assert.match(read("backend/db/pedagogySchema.js"), /courseScheduleReplacementChangeRevision\.sql/);
+  assert.match(read("backend/db/courseScheduleReplacementChangeRevision.sql"), /change_revision/);
   assert.match(schema, /finance\.payment\.recorded/);
+  assert.match(read("backend/lib/communicationsPaymentDueSweep.js"), /finance\.payment\.due/);
   assert.match(schema, /CREATE TRIGGER trg_c4_message_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_announcement_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_attendance_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_grade_event/);
   assert.match(schema, /CREATE TRIGGER trg_c4_payment_event/);
+  assert.match(schema, /trg_c4_report_card_event/);
+  assert.match(schema, /trg_c4_timetable_changed_event/);
+  assert.match(schema, /TEACHER_REPLACEMENT_OUTBOX_SQL/);
+  assert.match(teacherReplacementOutbox, /trg_c4_teacher_replacement_event/);
+  assert.match(teacherReplacementOutbox, /somafrik_enqueue_teacher_replacement_event/);
   assert.match(schema, /OLD\.publication_status/);
   assert.match(schema, /OLD\.payment_status/);
   assert.match(schema, /OLD\.status/);
@@ -127,30 +155,125 @@ function sourceGuards() {
   assert.doesNotMatch(service, /FROM notifications /);
   assert.doesNotMatch(service, /INTO notifications /);
 
-  // 16 /parametres/notifications ComingSoon
+  // 16 /parametres/notifications = config établissement Lot I ; Apparence/Intégrations restent ComingSoon
   assert.match(placeholders, /ComingSoonState/);
-  assert.match(placeholders, /Paramètres Notifications/);
+  assert.match(placeholders, /function SettingsAppearancePage/);
+  assert.match(placeholders, /export \{ SettingsNotificationsPage \}/);
   assert.match(settingsHub, /\/parametres\/notifications/);
-  assert.match(settingsHub, /status: "soon"/);
+  const notificationsCard = settingsHub.slice(
+    settingsHub.indexOf('to: "/parametres/notifications"'),
+    settingsHub.indexOf('to: "/parametres/apparence"'),
+  );
+  assert.match(notificationsCard, /status: "available"/);
+  assert.match(
+    settingsHub.slice(settingsHub.indexOf('to: "/parametres/apparence"'), settingsHub.indexOf('to: "/parametres/integrations"')),
+    /status: "soon"/,
+  );
 
   // 17-18 badges unread-count
   assert.match(webRead, /\.unreadCount\(/);
   assert.match(topbar, /useInternalNotificationsUnreadCount/);
   assert.match(mobileRead, /getInternalNotificationsUnreadCount/);
-  assert.match(mobileHeader, /useInternalNotificationsUnreadCount/);
+  assert.match(mobileHeader, /CommunicationHeaderIcons/);
   assert.match(mobileIcons, /useInternalNotificationsUnreadCount/);
   assert.match(mobileNav, /InternalNotifications/);
   assert.match(mobileDrawer, /InternalNotifications/);
   assert.match(platformPage, /InternalNotificationsCenter/);
+  assert.doesNotMatch(platformPage, /platformApi/);
+  assert.equal(exists("web/src/pages/PlatformNotificationsPage.tsx"), true);
+  assert.match(read("web/src/pages/PlatformNotificationsPage.tsx"), /platformApi\.createNotification/);
 
   // 19 aucun DELETE physique
   assert.doesNotMatch(service, /DELETE FROM communication_notifications/);
   assert.doesNotMatch(service, /DELETE FROM notification_recipients/);
   assert.doesNotMatch(httpTest, /DELETE FROM communication_notifications/);
 
-  // 20 aucun fournisseur externe
+  // 20 persist C4 sans fournisseur ; fan-out PUSH/EMAIL après drain
   assert.doesNotMatch(service, /twilio|whatsapp|firebase|expo push|fcm|smtp|sendgrid/i);
-  assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expo push|fcm/i);
+  assert.doesNotMatch(service, /communicationChannelFanout|fanOutNotificationChannels|communicationsDispatcher/);
+  const processFn = service.slice(service.indexOf("async function processOneEvent"));
+  const recipientLoop = processFn.slice(
+    processFn.indexOf("for (const recipient of spec.recipients)"),
+    processFn.indexOf("UPDATE communication_event_outbox SET status='processed'"),
+  );
+  assert.match(recipientLoop, /INSERT INTO notification_recipients/);
+  assert.doesNotMatch(recipientLoop, /continue/);
+  assert.doesNotMatch(worker, /twilio|whatsapp|firebase|expoPushService|nodemailer/i);
+  assert.match(worker, /dispatchProcessedEvents|communicationsDispatcher/);
+  assert.match(worker, /sweepPaymentDueOutbox/);
+  assert.doesNotMatch(worker, /fanOutNotificationChannels/);
+  const dispatcherSrc = read("backend/lib/communicationsDispatcher.js");
+  assert.match(dispatcherSrc, /function dispatchCommunication/);
+  assert.doesNotMatch(
+    dispatcherSrc,
+    /nodemailer|expoPushService|createExpoPushService|expo-server-sdk|@getbrevo|brevo|twilio|sendgrid|createSmtpTransport/i,
+  );
+  assert.match(dispatcherSrc, /function resolveEffectiveChannels/);
+  assert.match(dispatcherSrc, /function mandatoryChannelsForEvent/);
+  assert.match(dispatcherSrc, /auth\.password\.reset/);
+  const prefsSrc = read("backend/lib/communicationsPreferences.js");
+  assert.doesNotMatch(prefsSrc, /require\(["'][^"']*(nodemailer|expo-server-sdk|@getbrevo)/);
+  assert.doesNotMatch(prefsSrc, /mobile_push_devices|expo_push_token/);
+  const prefsSchema = read("backend/db/communicationsNotificationsSchema.js");
+  assert.match(prefsSchema, /user_communication_preferences/);
+  assert.match(prefsSchema, /PRIMARY KEY \(user_id, school_id, channel\)/);
+  const prefsMigration = read("backend/db/migrations/20260910_user_communication_preferences.sql");
+  assert.match(prefsMigration, /user_communication_preferences/);
+  assert.doesNotMatch(prefsMigration, /preferred_provider|push_provider|expo_push_token/i);
+  const resetHandler = read("backend/server.js");
+  const resetBlock = resetHandler.slice(
+    resetHandler.indexOf('app.post("/api/users/:id/reset-password"'),
+    resetHandler.indexOf('app.get("/api/payments"'),
+  );
+  assert.match(resetBlock, /enqueuePasswordResetNotification/);
+  assert.match(resetBlock, /auth\.password\.reset/);
+  assert.match(resetBlock, /if\s*\(\s*!temporaryPassword\s*\)/);
+  const resetTx = resetBlock.slice(resetBlock.indexOf("repository.withTransaction"), resetBlock.indexOf("await auditService.record"));
+  assert.doesNotMatch(resetTx, /sendMail|nodemailer|setImmediate/);
+  assert.doesNotMatch(resetBlock, /processOneEvent|communication_event_outbox/);
+  const resetEmail = read("backend/lib/passwordResetNotification.js");
+  assert.doesNotMatch(resetEmail, /temporaryPassword|SMTP_PASSWORD|brevo/i);
+  const trialHandler = read("backend/server.js");
+  const trialBlock = trialHandler.slice(
+    trialHandler.indexOf('app.post("/api/public/trial-requests"'),
+    trialHandler.indexOf('app.get("/api/privacy/erasure-requests"'),
+  );
+  assert.doesNotMatch(trialBlock, /deferNotification|sendMail|nodemailer|setImmediate/);
+  const trialCreate = read("backend/lib/trialAccessRequests.js");
+  assert.match(trialCreate, /enqueueTrialAccessRequestNotification/);
+  assert.match(trialCreate, /withTransaction/);
+  assert.doesNotMatch(trialCreate, /notifyTrialAccessRequest|setImmediate|nodemailer/);
+  const trialNotify = read("backend/lib/trialAccessRequestNotification.js");
+  assert.match(trialNotify, /trial\.access\.request:/);
+  assert.match(trialNotify, /ensureDelivery/);
+  assert.doesNotMatch(trialNotify, /nodemailer|sendMail|createTransport/);
+  assert.doesNotMatch(trialNotify, /processOneEvent|fanOutNotificationChannels/);
+  assert.match(schema, /communication_channel_deliveries_recipient_chk/);
+  const trialMigration = read("backend/db/migrations/20260911_trial_operational_email_deliveries.sql");
+  assert.match(trialMigration, /communication_channel_deliveries_recipient_chk/);
+  assert.match(trialMigration, /payload->>'to'/);
+  const fanout = read("backend/lib/communicationChannelFanout.js");
+  assert.match(fanout, /function operationalTrialEmailTo/);
+  assert.match(fanout, /trial\.access\.request/);
+  assert.match(fanout, /sqlPrimitivesFromStore/);
+  assert.match(fanout, /typeof store\.bind === "function"/);
+  const enqueueFn = fanout.slice(fanout.indexOf("async function enqueueChannelDeliveries"));
+  assert.match(enqueueFn, /preference lookup failed, enqueue policy channels/);
+  assert.match(fanout, /stale_processing_no_redelivery/);
+  assert.match(fanout, /recoverStaleProcessing/);
+  const sqlClaim = fanout.slice(fanout.indexOf("async claimDue"), fanout.indexOf("async markSent"));
+  assert.match(sqlClaim, /status IN \('pending','failed'\)/);
+  assert.doesNotMatch(sqlClaim, /status = 'processing' AND claimed_at/);
+  const fanoutTests = read("backend/lib/communicationChannelFanout.test.js");
+  assert.match(fanoutTests, /crash après succès Expo avant markSent n'envoie pas une seconde fois/);
+  assert.match(fanoutTests, /createClientsPgStore/);
+  assert.match(fanoutTests, /pas all sur la façade/);
+  assert.match(fanoutTests, /crash après succès SMTP avant markSent n'envoie pas une seconde fois/);
+  assert.match(fanoutTests, /payload.to n'override pas l'email tenant scoped user\+school/);
+  assert.match(fanoutTests, /EMAIL opérationnel trial.access.request utilise payload.to sans user\/school/);
+  assert.match(fanoutTests, /smtp_not_configured laisse la delivery EMAIL retryable/);
+  assert.match(fanout, /SMTP_NOT_CONFIGURED/);
+  assert.match(fanout.slice(fanout.indexOf("async function drainChannelDeliveries")), /markFailed/);
   assert.match(worker, /COMMUNICATION_NOTIFICATIONS_WORKER/);
   assert.match(worker, /stopCommunicationsNotificationsWorker/);
   assert.match(server, /stopCommunicationsNotificationsWorker/);
@@ -161,6 +284,9 @@ function sourceGuards() {
   assert.doesNotMatch(service, /Messages:READ[\s\S]{0,80}Announcements:READ[\s\S]{0,80}Notifications:READ/);
 
   assert.match(server, /GET \/api\/backoffice\/internal-notifications\/unread-count/);
+  assert.match(server, /GET \/api\/backoffice\/communications\/deliveries\/health/);
+  assert.match(rbac, /GET \/api\/backoffice\/communications\/deliveries\/health/);
+  assert.match(schema, /dispatch_started_at/);
   assert.match(server, /GET \/api\/backoffice\/internal-notifications/);
   assert.match(server, /POST \/api\/backoffice\/internal-notifications/);
   assert.match(server, /PATCH \/api\/backoffice\/internal-notifications\/:notificationId\/read/);
@@ -225,13 +351,50 @@ function main() {
   sourceGuards();
   run(process.execPath, ["--check", "backend/lib/communicationsNotificationsService.js"], "syntax notifications service");
   run(process.execPath, ["--check", "backend/lib/communicationsNotificationsWorker.js"], "syntax notifications worker");
+  run(process.execPath, ["--check", "backend/lib/communicationChannelFanout.js"], "syntax channel fanout");
+  run(process.execPath, ["--check", "backend/lib/communicationsDispatcher.js"], "syntax dispatcher");
+  run(process.execPath, ["--check", "backend/lib/passwordResetNotification.js"], "syntax password reset email");
+  run(process.execPath, ["--test", "backend/lib/communicationsChannelFanout.red-com-01.test.js"], "RED-COM-01 / 01b");
+  run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.red.test.js"], "RED-COM-04 dispatcher audit");
+  run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.test.js"], "dispatcher unit");
+  run(process.execPath, ["--test", "backend/lib/communicationsPreferences.test.js"], "preferences unit");
+  run(process.execPath, ["--test", "backend/lib/communicationsGlobalArchitecture.audit.test.js"], "architecture audit unique caller");
+  run(process.execPath, ["--test", "backend/lib/communicationsParentReadOnly.test.js"], "Parent messages read-only default");
+  run(process.execPath, ["--test", "backend/lib/communicationChannelFanout.test.js"], "channel fanout unit");
+  run(process.execPath, ["--test", "backend/lib/communicationsPasswordReset.red.test.js"], "PR C reset email source");
+  run(process.execPath, ["--test", "backend/lib/passwordResetNotification.test.js"], "password reset email unit");
   run(process.execPath, ["--check", "backend/server.js"], "syntax server");
   run(process.execPath, ["backend/lib/communicationsAttachments.test.js"], "communicationsAttachments unit");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/internalNotificationsC4.test.ts"], "web internal notifications C4");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/communicationHttpError.test.ts", "src/components/communications/InternalNotificationsCenter.p3.test.tsx", "src/pages/PlatformNotificationsPage.p3.test.tsx"], "web Lot P3 HTTP + loading plateforme");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/dashboardKpiTruth.test.ts"], "web KPI Alertes C4");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/dashboardPermissions.test.ts"], "web Lot J P1 RBAC operations");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/internalNotificationsC4.test.ts"], "mobile internal notifications C4");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationHeaderIcons.p3.test.ts"], "mobile Lot P3 header Communication");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/notificationInboxRoute.test.ts"], "mobile inbox routing context");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile C4 Ouvrir + push Communication");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationPagination.lotc.test.ts"], "mobile Lot C pagination RED-06");
+  run(process.execPath, ["--test", "backend/lib/communicationsFinanceMobileNavigation.test.js"], "fan-out push Communication destinations");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour COM-C4");
   run(process.execPath, ["backend/db/communicationsC4.bootstrap.pg.test.js"], "bootstrap payments cancelled_at CAS A/B");
   run(process.execPath, ["backend/lib/communicationsC4.http.pg.test.js"], "parcours HTTP PostgreSQL COM-C4");
+  // PR E — contrats préférences #551. Ne pas SKIP.
+  run(process.execPath, ["--test", "backend/lib/communicationsPreferences.red.test.js"], "RED-COM-05 preferences audit");
+  run(process.execPath, ["--test", "backend/lib/communicationsLegacy.audit.test.js"], "PR F legacy inventory");
+  run(process.execPath, ["--test", "backend/lib/communicationsLegacy.red.test.js"], "RED-COM-06 legacy consolidation");
+  // PR G — SMTP essai → delivery EMAIL. Ne pas SKIP.
+  run(process.execPath, ["--test", "backend/lib/communicationsTrialSmtp.red.test.js"], "RED-COM-07 trial SMTP durable");
+  run(process.execPath, ["--test", "backend/lib/communicationsDeliveryReliability.red.test.js"], "RED-COM-08 delivery reliability");
+  run(process.execPath, ["--test", "backend/lib/communicationsDeliveryHealth.test.js"], "Lot K delivery health");
+  run(process.execPath, ["--test", "backend/lib/communicationsFinal.audit.test.js"], "AUDIT-COM-FINAL audit H-K");
+  run(process.execPath, ["--test", "backend/lib/communicationsStudentLate.red.test.js"], "Lot L1 STUDENT_LATE RED/GREEN");
+  run(process.execPath, ["--test", "backend/lib/communicationsReportCardPublished.red.test.js"], "Lot L2 REPORT_CARD_PUBLISHED RED/GREEN");
+  run(process.execPath, ["--test", "backend/lib/communicationsPaymentDue.red.test.js"], "Lot L3 PAYMENT_DUE RED/GREEN");
+  run(process.execPath, ["--test", "backend/lib/communicationsTimetableChanged.red.test.js"], "Lot L4 TIMETABLE_CHANGED RED/GREEN");
+  run(process.execPath, ["--test", "backend/lib/communicationsTeacherReplacement.red.test.js"], "Lot L5 TEACHER_REPLACEMENT RED/GREEN");
+  run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
+  run(process.execPath, ["--test", "backend/lib/schoolNotificationSettings.test.js"], "Lot I school notification settings");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/pages/parametres/SettingsNotificationsPage.test.tsx"], "web Lot I notification settings");
   console.log("verify-communications-c4: GO");
 }
 

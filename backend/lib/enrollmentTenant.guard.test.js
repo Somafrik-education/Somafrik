@@ -92,3 +92,34 @@ test("ENR: HTTP projette login_code, pas leftover", () => {
   assert.match(getList, /enrollmentApiStudents/);
   assert.doesNotMatch(getList, /sanitizeUsersForResponse\(scoped\)/);
 });
+
+test("ENR: C18 enrollments utilise membership, pas leftover JWT", () => {
+  const server = read("server.js");
+  const helper = sliceFrom(
+    server,
+    "async function authorizeEnrollmentStudentOr404",
+    'app.get("/api/students/:studentId/enrollments"',
+  );
+  const c18 = sliceFrom(
+    server,
+    'app.get("/api/students/:studentId/enrollments"',
+    'app.patch("/api/students/:id"',
+  );
+  assert.match(helper, /enrollmentHttpPrincipal/);
+  assert.match(helper, /requireEnrollmentLoginCode/);
+  assert.match(c18, /authorizeEnrollmentStudentOr404/);
+  assert.match(c18, /refuseC18MutationForParentStudent/);
+  assert.match(c18, /scoped\.schoolCode/);
+  assert.doesNotMatch(c18, /req\.principal\?\.schoolCode/);
+  assert.doesNotMatch(c18, /assertSchoolAccess\(req\.principal/);
+});
+
+test("ENR: findStudent C18/fiche matche studentCode + UUID", () => {
+  const server = read("server.js");
+  const identity = read("lib/studentIdentityMatch.js");
+  const findFn = sliceFrom(server, "function findStudent(students, studentId)", "function principalLinkedStudentIds");
+  assert.match(findFn, /findStudentByIdentity/);
+  assert.match(identity, /item\.studentCode/);
+  assert.match(identity, /item\.studentUuid/);
+  assert.match(identity, /item\.matricule/);
+});

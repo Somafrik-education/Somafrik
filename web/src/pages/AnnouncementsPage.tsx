@@ -1,3 +1,4 @@
+import { formatDateTimeForDisplay } from "../lib/dates";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -15,13 +16,18 @@ import {
   type PlatformAudienceKey,
 } from "../lib/platformAnnouncementsApi";
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
+import { useDeepLinkId } from "../lib/notificationDeepLink";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
+import { filterCommunicationRows, excerptCommunication } from "../lib/communicationListFilter";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Field } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { ApiError } from "../api/client";
+import { CommunicationChrome, useCommunicationListQuery } from "../components/communications/CommunicationChrome";
+import { CommunicationHttpErrorState } from "../components/communications/CommunicationHttpErrorState";
+import { notifyAnnouncementsUnreadChanged } from "../lib/announcementsRead";
 
 const RECIPIENT_KIND_FALLBACK: AudienceKindOption[] = [
   { id: "parent", label: "parents" },
@@ -51,18 +57,7 @@ function isPlatformRow(row: UnifiedAnnouncement | null | undefined) {
   return row?.source === "platform" || row?.domain === "platform" || row?.type === "platform-announcement";
 }
 
-function formatDisplayDate(iso?: string) {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
+const formatDisplayDate = formatDateTimeForDisplay;
 
 function sortByPublishedAt(rows: UnifiedAnnouncement[]) {
   return [...rows].sort((left, right) => {
@@ -70,6 +65,18 @@ function sortByPublishedAt(rows: UnifiedAnnouncement[]) {
     const b = Date.parse(String(right.publishedAt || right.createdAt || "")) || 0;
     return b - a;
   });
+}
+
+function rowKey(row: { id: string; source?: string }) {
+  return `${row.source ?? "row"}-${row.id}`;
+}
+
+function mergeAnnouncementsByKey(
+  current: UnifiedAnnouncement[],
+  incoming: UnifiedAnnouncement[],
+): UnifiedAnnouncement[] {
+  const known = new Set(current.map(rowKey));
+  return sortByPublishedAt([...current, ...incoming.filter((row) => !known.has(rowKey(row)))]);
 }
 
 export function AnnouncementsPage() {
@@ -81,11 +88,17 @@ export function AnnouncementsPage() {
   const isGlobalSuperadmin = isSuperAdminRole(session?.user?.role);
   const schoolScope = hasCommunicationSchoolScope(activeSchoolCode) ? activeSchoolCode : undefined;
   const scopeReady = isGlobalSuperadmin || !requiresSelection || Boolean(schoolScope);
+  const deepLinkAnnouncementId = useDeepLinkId("announcementId");
   const [items, setItems] = useState<UnifiedAnnouncement[]>([]);
+  const { search, setSearch, unreadOnly, setUnreadOnly } = useCommunicationListQuery();
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<UnifiedAnnouncement | null>(null);
+  const [listLoaded, setListLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<unknown>(null);
+  const [schoolCursor, setSchoolCursor] = useState<string | null>(null);
+  const [platformCursor, setPlatformCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [scopeType, setScopeType] = useState<"school" | "roles" | "classes">("school");
@@ -104,13 +117,13 @@ export function AnnouncementsPage() {
   const loadList = useCallback(async () => {
     if (!canRead || !scopeReady) return;
     setLoading(true);
-    setError("");
+    setError(null);
     try {
       const [platformResult, schoolResult] = await Promise.all([
         platformAnnouncementsApi.list(),
         schoolScope
           ? announcementsApi.list(schoolScope)
-          : Promise.resolve({ items: [] as AnnouncementRecord[] }),
+          : Promise.resolve({ items: [] as AnnouncementRecord[], nextCursor: null }),
       ]);
       const platformItems = (platformResult.items ?? []).map((row) => ({
         ...row,
@@ -121,19 +134,54 @@ export function AnnouncementsPage() {
         source: "school" as const,
       }));
       setItems(sortByPublishedAt([...platformItems, ...schoolItems]));
+      setPlatformCursor(platformResult.nextCursor ?? null);
+      setSchoolCursor(schoolResult.nextCursor ?? null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Impossible de charger les annonces.");
+      setError(err);
       setItems([]);
+      setPlatformCursor(null);
+      setSchoolCursor(null);
     } finally {
       setLoading(false);
+      setListLoaded(true);
     }
   }, [canRead, schoolScope, scopeReady]);
+
+  const loadMoreAnnouncements = useCallback(async () => {
+    if ((!schoolCursor && !platformCursor) || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const pendingSchoolCursor = schoolCursor;
+      const pendingPlatformCursor = platformCursor;
+      const [platformResult, schoolResult] = await Promise.all([
+        pendingPlatformCursor
+          ? platformAnnouncementsApi.list({ cursor: pendingPlatformCursor })
+          : Promise.resolve({ items: [] as AnnouncementRecord[], nextCursor: pendingPlatformCursor }),
+        pendingSchoolCursor && schoolScope
+          ? announcementsApi.list(schoolScope, { cursor: pendingSchoolCursor })
+          : Promise.resolve({ items: [] as AnnouncementRecord[], nextCursor: pendingSchoolCursor }),
+      ]);
+      const incoming: UnifiedAnnouncement[] = [
+        ...(platformResult.items ?? []).map((row) => ({ ...row, source: "platform" as const })),
+        ...(schoolResult.items ?? []).map((row) => ({ ...row, source: "school" as const })),
+      ];
+      setItems((current) => mergeAnnouncementsByKey(current, incoming));
+      if (pendingPlatformCursor) setPlatformCursor(platformResult.nextCursor ?? null);
+      if (pendingSchoolCursor) setSchoolCursor(schoolResult.nextCursor ?? null);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : "Chargement interrompu", "error");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [schoolCursor, platformCursor, loadingMore, schoolScope, showToast]);
 
   useEffect(() => {
     if (!scopeReady) {
       setItems([]);
       setDetail(null);
       setClasses([]);
+      setPlatformCursor(null);
+      setSchoolCursor(null);
       return;
     }
     void loadList();
@@ -182,6 +230,7 @@ export function AnnouncementsPage() {
             setItems((current) =>
               current.map((item) => (item.id === next.id ? { ...item, readAt: next.readAt } : item)),
             );
+            notifyAnnouncementsUnreadChanged();
           }
         }
       } catch (err) {
@@ -196,9 +245,33 @@ export function AnnouncementsPage() {
     };
   }, [selectedId, schoolScope, scopeReady, canRead, showToast]);
 
+  // Deep-link notification : sélectionner l'annonce désignée par l'URL. On
+  // attend le chargement de la liste, dont dépend l'aiguillage plateforme/école.
+  useEffect(() => {
+    if (!deepLinkAnnouncementId || !canRead || !scopeReady || !listLoaded) return;
+    setSelectedId(deepLinkAnnouncementId);
+  }, [deepLinkAnnouncementId, canRead, scopeReady, listLoaded]);
+
   const selected = useMemo(
     () => items.find((row) => row.id === selectedId) ?? detail,
     [items, selectedId, detail],
+  );
+  const visibleItems = useMemo(
+    () =>
+      filterCommunicationRows(
+        items.map((row) => ({
+          ...row,
+          excerpt: excerptCommunication(String(row.content || row.message || "")),
+          author: isPlatformRow(row)
+            ? row.senderDisplayName || row.createdByName || ""
+            : row.createdByName || "",
+          audience: row.audienceLabel || "",
+          unread: !row.readAt,
+        })),
+        search,
+        unreadOnly,
+      ),
+    [items, search, unreadOnly],
   );
 
   async function handleUpload(fileList: FileList | null) {
@@ -288,6 +361,7 @@ export function AnnouncementsPage() {
       intentionRef.current = "";
       setSelectedId(saved.id);
       await loadList();
+      notifyAnnouncementsUnreadChanged();
       showToast("Annonce publiée", "success");
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.message : "Publication échouée. Réessayez.");
@@ -308,6 +382,7 @@ export function AnnouncementsPage() {
       showToast("Annonce archivée", "success");
       setSelectedId("");
       await loadList();
+      notifyAnnouncementsUnreadChanged();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "Archivage impossible.", "error");
     }
@@ -357,9 +432,20 @@ export function AnnouncementsPage() {
     : viewed?.createdByName;
 
   return (
-    <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+    <CommunicationChrome
+      surface="announcements"
+      title="Communication"
+      searchPlaceholder="Rechercher"
+      unreadLabel="Non lus"
+      countLabel={`${items.filter((row) => !row.readAt).length} non lue(s)`}
+      search={search}
+      onSearch={setSearch}
+      unreadOnly={unreadOnly}
+      onUnreadOnly={setUnreadOnly}
+      primaryAction={undefined}
+    >
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <div className="space-y-4">
-        <SectionHeader title="Annonces" description="Historique publié, lecture PostgreSQL." />
         {canCreate && isGlobalSuperadmin ? (
           <Card>
             <h2 className="mb-3 text-sm font-bold">Nouvelle annonce</h2>
@@ -537,44 +623,55 @@ export function AnnouncementsPage() {
         ) : null}
         {loading ? <p className="text-sm text-muted">Chargement des annonces…</p> : null}
         {error ? (
-          <div>
-            <p className="text-sm text-danger">{error}</p>
-            <Button type="button" variant="secondary" onClick={() => void loadList()}>
-              Réessayer
-            </Button>
-          </div>
+          <CommunicationHttpErrorState
+            error={error}
+            fallbackMessage="Impossible de charger les annonces."
+            onRetry={() => void loadList()}
+          />
         ) : null}
         {!loading && !error && !items.length ? <p className="text-sm text-muted">Aucune annonce.</p> : null}
-        <ul className="space-y-2">
-          {items.map((row) => (
+        <ul className="space-y-1">
+          {visibleItems.map((row) => (
             <li key={`${row.source ?? "row"}-${row.id}`}>
               <button
                 type="button"
-                className={`w-full rounded-xl border px-3 py-3 text-left ${
+                data-testid="announcement-item"
+                data-announcement-id={row.id}
+                aria-selected={selectedId === row.id}
+                className={`w-full rounded-lg border px-3 py-2 text-left ${
                   selectedId === row.id ? "border-brand bg-brand-50" : "border-line bg-white"
                 }`}
                 onClick={() => setSelectedId(row.id)}
               >
-                <p className="font-semibold text-ink">{row.title}</p>
-                <p className="text-xs text-muted">
+                <p className="truncate font-semibold text-ink">{row.title}</p>
+                <p className="truncate text-xs text-muted">
                   {isPlatformRow(row)
                     ? row.announcementType === "system"
                       ? "Annonce Somafrik"
                       : "Annonce administrative Somafrik"
                     : "Annonce établissement"}
                   {row.badge ? ` · ${row.badge}` : ""}
+                  {` · ${row.readAt ? "Lu" : "Non lu"}`}
                 </p>
-                <p className="text-xs text-muted">
-                  {isPlatformRow(row) ? row.senderDisplayName || row.createdByName || "Expéditeur" : row.createdByName || "Expéditeur"}{" "}
-                  · {formatDisplayDate(row.publishedAt || row.createdAt)}
-                </p>
-                <p className="text-xs">{row.readAt ? "Lu" : "Non lu"}</p>
               </button>
             </li>
           ))}
         </ul>
+        {!loading && !error && (schoolCursor || platformCursor) ? (
+          <div className="mt-4 flex justify-center">
+            <Button
+              type="button"
+              variant="secondary"
+              data-testid="announcements-load-more"
+              disabled={loadingMore}
+              onClick={() => void loadMoreAnnouncements()}
+            >
+              {loadingMore ? "Chargement…" : "Charger les annonces plus anciennes"}
+            </Button>
+          </div>
+        ) : null}
       </div>
-      <div>
+      <div data-testid="announcement-detail" data-announcement-id={viewed?.id || undefined}>
         {viewed ? (
           <Card>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">{originLabel}</p>
@@ -614,5 +711,6 @@ export function AnnouncementsPage() {
         )}
       </div>
     </div>
+    </CommunicationChrome>
   );
 }

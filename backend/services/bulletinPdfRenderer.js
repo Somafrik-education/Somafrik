@@ -1,19 +1,12 @@
-const fs = require("fs");
-const path = require("path");
 const puppeteer = require("puppeteer");
 const QRCode = require("qrcode");
 const { buildVerificationPayload, renderReportCardHtml } = require("../lib/bulletinTemplate");
+const { resolveSchoolLogoPath } = require("../lib/schoolLogo");
 
 let browserPromise = null;
 
-function resolveLogoPath() {
-  const assetsDir = path.join(__dirname, "..", "assets");
-  const candidates = ["somafrik-logo.jpg", "somafrik-logo.png"];
-  for (const name of candidates) {
-    const fullPath = path.join(assetsDir, name);
-    if (fs.existsSync(fullPath)) return fullPath;
-  }
-  return "";
+function resolveLogoPath(school) {
+  return resolveSchoolLogoPath(school);
 }
 
 async function getBrowser() {
@@ -55,7 +48,7 @@ async function renderReportCardPreviewHtml(report, school) {
     report,
     school,
     qrCodeDataUrl,
-    logoPath: resolveLogoPath(),
+    logoPath: resolveLogoPath(school),
   });
 }
 
@@ -68,7 +61,7 @@ async function renderReportCardPdf(report, school) {
     report,
     school,
     qrCodeDataUrl,
-    logoPath: resolveLogoPath(),
+    logoPath: resolveLogoPath(school),
   });
 
   const browser = await getBrowser();

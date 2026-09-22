@@ -11,6 +11,7 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { createClassesRepository } = require("../db/classesRepository");
 const { createClassStudentsRepository } = require("../db/classStudentsRepository");
+const { CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL } = require("./classHeadTeachersManagement");
 const { createTxAdapter } = require("../db/txAdapter");
 const { hashSecret, verifySecret } = require("../services/credentialService");
 const { studentIdentityInitials } = require("./studentCanonicalIdentifier");
@@ -149,6 +150,7 @@ async function setupFixture(pool) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS identity_year SMALLINT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS user_id UUID;
     CREATE TABLE IF NOT EXISTS identity_counters (
       school_id UUID NOT NULL REFERENCES schools(id),
       creation_year SMALLINT NOT NULL,
@@ -271,6 +273,7 @@ async function setupFixture(pool) {
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES education_class_groups(id);
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS group_code TEXT;
   `);
+  await pool.query(CLASS_HEAD_TEACHERS_LIST_JOIN_FIXTURE_SQL);
 
   await pool.query(
     "TRUNCATE enrollments, users, students, classes, school_class_groups, school_streams, school_levels, education_class_groups, education_streams, education_levels, academic_years, schools, countries CASCADE",
@@ -568,6 +571,43 @@ async function assertCanonicalStudentLogin(pool, studentCode, schoolCode, expect
   assert.equal(row.profile_payload?.identityCode, row.student_code);
   assert.equal(row.role, "STUDENT");
   assert.equal(row.user_school_id, row.student_school_id);
+  const linked = await pool.query(
+    `SELECT st.user_id, u.id AS user_id
+     FROM students st
+     JOIN users u ON u.id = st.user_id
+     JOIN schools s ON s.id = st.school_id
+     WHERE st.student_code = $1 AND s.school_code = $2`,
+    [studentCode, schoolCode],
+  );
+  assert.equal(linked.rowCount, 1, `students.user_id manquant pour ${studentCode}`);
+
+  const { hydrateUser } = require("./userRoleLifecycleService");
+  const { buildBusinessProfile, findActiveStudentProfileForUser } = require("./businessProfileIntegrity");
+  const userForHydrate = await pool.query(
+    `SELECT u.* FROM users u JOIN students st ON st.user_id = u.id
+     JOIN schools s ON s.id = st.school_id
+     WHERE st.student_code = $1 AND s.school_code = $2`,
+    [studentCode, schoolCode],
+  );
+  assert.equal(userForHydrate.rowCount, 1);
+  const studentRows = await pool.query(
+    `SELECT st.* FROM students st JOIN schools s ON s.id = st.school_id
+     WHERE st.student_code = $1 AND s.school_code = $2`,
+    [studentCode, schoolCode],
+  );
+  const studentRow = findActiveStudentProfileForUser(
+    studentRows.rows,
+    userForHydrate.rows[0],
+    userForHydrate.rows[0].school_id,
+  );
+  const hydrated = hydrateUser(
+    userForHydrate.rows[0],
+    [],
+    buildBusinessProfile({ studentRow, roleKeys: [] }),
+  );
+  assert.equal(hydrated.accountKind, "student_login");
+  assert.equal(hydrated.linkedStudent.studentCode, studentCode);
+  assert.notEqual(hydrated.businessProfileLabel, "Sans affectation");
   assert.equal(row.must_change_password, true);
   assert.match(String(row.password_hash), /^scrypt\$/);
   assert.equal(row.pin_hash, row.password_hash);

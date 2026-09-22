@@ -1,4 +1,9 @@
 import { unwrapList } from "../lib/dataTruth";
+import {
+  readNextCursor,
+  sortAnnouncementsByPublishedAt,
+  withListCursor,
+} from "../lib/communicationPagination";
 import { withCommunicationSchoolPayload, withCommunicationSchoolScope, hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
 import { getRequestSchoolScope } from "../lib/requestSchoolScope";
 import {
@@ -18,7 +23,7 @@ import {
 import type { CanonicalMessageContact, CanonicalMessageRelation } from "../lib/mobileCtaRbacAlignment";
 import type { CountryProfile, SchoolProfile, SubscriptionItem } from "../data/catalog";
 import type { PlatformNotification } from "../lib/scope";
-import { httpRequest } from "./httpClient";
+import { httpRequest, ApiClientError } from "./httpClient";
 
 export type {
   CanonicalAnnouncement,
@@ -44,27 +49,90 @@ export async function getCanonicalUsers(): Promise<CanonicalUserAccount[]> {
   return unwrapList(payload).map(normalizeUser).filter((row): row is CanonicalUserAccount => Boolean(row));
 }
 
-export async function getCanonicalAnnouncements(schoolCode?: string): Promise<CanonicalAnnouncement[]> {
+function mapCanonicalAnnouncements(
+  payload: unknown,
+  source: "school" | "platform",
+): CanonicalAnnouncement[] {
+  return unwrapList(payload)
+    .map(normalizeAnnouncement)
+    .filter((row): row is CanonicalAnnouncement => Boolean(row))
+    .map((row) => ({ ...row, source }));
+}
+
+export type CanonicalAnnouncementsPage = {
+  items: CanonicalAnnouncement[];
+  schoolCursor: string | null;
+  platformCursor: string | null;
+};
+
+export async function getCanonicalAnnouncementsPage(
+  schoolCode?: string,
+  options?: {
+    schoolCursor?: string | null;
+    platformCursor?: string | null;
+    includeSchool?: boolean;
+    includePlatform?: boolean;
+  },
+): Promise<CanonicalAnnouncementsPage> {
   const scope = schoolCode || getRequestSchoolScope();
+  const includeSchool = options?.includeSchool !== false;
+  const includePlatform = options?.includePlatform !== false;
+  const schoolPath = withListCursor("/backoffice/announcements", options?.schoolCursor);
+  const platformPath = withListCursor("/backoffice/platform-announcements", options?.platformCursor);
+
   const [platformPayload, schoolPayload] = await Promise.all([
-    httpRequest<unknown>("/backoffice/platform-announcements"),
-    hasCommunicationSchoolScope(scope)
-      ? httpRequest<unknown>(withCommunicationSchoolScope("/backoffice/announcements", scope))
+    includePlatform ? httpRequest<unknown>(platformPath) : Promise.resolve([]),
+    includeSchool && hasCommunicationSchoolScope(scope)
+      ? httpRequest<unknown>(withCommunicationSchoolScope(schoolPath, scope))
       : Promise.resolve([]),
   ]);
-  const platform = unwrapList(platformPayload)
-    .map(normalizeAnnouncement)
-    .filter((row): row is CanonicalAnnouncement => Boolean(row))
-    .map((row) => ({ ...row, source: "platform" as const }));
-  const school = unwrapList(schoolPayload)
-    .map(normalizeAnnouncement)
-    .filter((row): row is CanonicalAnnouncement => Boolean(row))
-    .map((row) => ({ ...row, source: "school" as const }));
-  return [...platform, ...school].sort((left, right) => {
-    const a = Date.parse(String(left.publishedAt || left.createdAt || left.date || "")) || 0;
-    const b = Date.parse(String(right.publishedAt || right.createdAt || right.date || "")) || 0;
-    return b - a;
-  });
+  const platform = includePlatform ? mapCanonicalAnnouncements(platformPayload, "platform") : [];
+  const school = includeSchool ? mapCanonicalAnnouncements(schoolPayload, "school") : [];
+  return {
+    items: sortAnnouncementsByPublishedAt([...platform, ...school]),
+    schoolCursor: includeSchool ? readNextCursor(schoolPayload) : String(options?.schoolCursor ?? "").trim() || null,
+    platformCursor: includePlatform
+      ? readNextCursor(platformPayload)
+      : String(options?.platformCursor ?? "").trim() || null,
+  };
+}
+
+export async function getCanonicalAnnouncements(schoolCode?: string): Promise<CanonicalAnnouncement[]> {
+  return (await getCanonicalAnnouncementsPage(schoolCode)).items;
+}
+
+async function fetchCanonicalAnnouncementByPath(
+  path: string,
+  source: "school" | "platform",
+): Promise<CanonicalAnnouncement | null> {
+  try {
+    const payload = await httpRequest<unknown>(path);
+    const row = normalizeAnnouncement(payload);
+    return row ? { ...row, source } : null;
+  } catch (error) {
+    if (error instanceof ApiClientError && (error.status === 404 || error.status === 403)) return null;
+    throw error;
+  }
+}
+
+export async function getCanonicalAnnouncementById(
+  announcementId: string,
+  schoolCode?: string,
+): Promise<CanonicalAnnouncement | null> {
+  const id = String(announcementId ?? "").trim();
+  if (!id) return null;
+  const scope = schoolCode || getRequestSchoolScope();
+  if (hasCommunicationSchoolScope(scope)) {
+    const school = await fetchCanonicalAnnouncementByPath(
+      withCommunicationSchoolScope(`/backoffice/announcements/${encodeURIComponent(id)}`, scope),
+      "school",
+    );
+    if (school) return school;
+  }
+  return fetchCanonicalAnnouncementByPath(
+    `/backoffice/platform-announcements/${encodeURIComponent(id)}`,
+    "platform",
+  );
 }
 
 function scopedMessagesPath(path: string, schoolCode?: string | null): string {
@@ -76,6 +144,66 @@ export async function getCanonicalMessages(schoolCode?: string): Promise<Canonic
   return unwrapList(payload)
     .map(normalizeMessage)
     .filter((row): row is CanonicalSchoolMessage => Boolean(row));
+}
+
+export type CanonicalConversation = {
+  id: string;
+  schoolCode?: string;
+  subject?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  participants?: Array<{ userId: string; name: string; roleLabel?: string }>;
+  lastMessage?: {
+    id: string;
+    body?: string;
+    sentAt?: string;
+    senderUserId?: string;
+    senderName?: string;
+  } | null;
+  unreadCount?: number;
+};
+
+export type CanonicalConversationsPage = {
+  items: CanonicalConversation[];
+  nextCursor: string | null;
+};
+
+export async function getCanonicalConversationsPage(
+  schoolCode?: string,
+  options?: { cursor?: string | null },
+): Promise<CanonicalConversationsPage> {
+  const path = withListCursor("/backoffice/conversations", options?.cursor);
+  const payload = await httpRequest<{ items?: CanonicalConversation[]; nextCursor?: string | null }>(
+    scopedMessagesPath(path, schoolCode),
+  );
+  return {
+    items: Array.isArray(payload?.items) ? payload.items : [],
+    nextCursor: readNextCursor(payload),
+  };
+}
+
+export async function getCanonicalConversations(schoolCode?: string): Promise<CanonicalConversation[]> {
+  return (await getCanonicalConversationsPage(schoolCode)).items;
+}
+
+export async function getCanonicalConversationMessages(
+  conversationId: string,
+  schoolCode?: string,
+): Promise<CanonicalSchoolMessage[]> {
+  const payload = await httpRequest<unknown>(
+    scopedMessagesPath(`/backoffice/conversations/${encodeURIComponent(conversationId)}/messages`, schoolCode),
+  );
+  return unwrapList(payload)
+    .map(normalizeMessage)
+    .filter((row): row is CanonicalSchoolMessage => Boolean(row));
+}
+
+export async function getMessagesUnreadCount(schoolCode?: string): Promise<number> {
+  const data = await httpRequest<{ count?: number }>(
+    scopedMessagesPath("/backoffice/messages/unread-count", schoolCode),
+  );
+  return Math.max(0, Number(data?.count) || 0);
 }
 
 function asTrimmedField(value: unknown): string {

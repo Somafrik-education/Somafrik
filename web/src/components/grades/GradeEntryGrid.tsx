@@ -10,10 +10,11 @@ import {
   gradesForEvaluation,
   isTeacherSessionRole,
   pedagogicalTeacherId,
+  studentMatchesEvaluationClass,
   upsertStudentGrade,
 } from "../../lib/evaluations";
-import { classNamesMatch } from "../../lib/classRules";
 import { formatStudentName } from "../../lib/gradeBook";
+import { PEDAGOGY_COPY } from "../../lib/pedagogyParityContract";
 
 type StudentRow = Record<string, unknown>;
 
@@ -47,9 +48,14 @@ export function GradeEntryGrid({
   const classStudents = useMemo(
     () =>
       students
-        .filter((student) => classNamesMatch(student.className, evaluation.className))
+        .filter((student) =>
+          studentMatchesEvaluationClass(student, {
+            classId: evaluation.classId,
+            className: evaluation.className,
+          }),
+        )
         .sort((a, b) => formatStudentName(a).localeCompare(formatStudentName(b), "fr")),
-    [students, evaluation.className],
+    [students, evaluation],
   );
 
   const evaluationGrades = gradesForEvaluation(grades, evaluation.id);
@@ -246,7 +252,7 @@ export function GradeEntryGrid({
             disabled={!hasDirtyRows || saving}
             onClick={() => void saveAll()}
           >
-            {saving ? "Enregistrement…" : "Enregistrer tout"}
+            {saving ? PEDAGOGY_COPY.saving : "Enregistrer les notes"}
           </Button>
         ) : null}
       </div>

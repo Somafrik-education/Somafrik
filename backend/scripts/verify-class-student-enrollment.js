@@ -247,6 +247,38 @@ async function main() {
       new RegExp(`^CD-IN-${studentIdentityInitials("Diop", "Awa")}-\\d{2}-\\d{5}$`),
     );
 
+    const usersAfterEnroll = await request("/backoffice/users", { token: tokenCd });
+    assert.equal(usersAfterEnroll.status, 200, JSON.stringify(usersAfterEnroll.data));
+    const studentAccount = (usersAfterEnroll.data ?? []).find(
+      (row) =>
+        String(row.publicId ?? "") === studentCode ||
+        String(row.identityCode ?? "") === studentCode ||
+        String(row.linkedStudent?.studentCode ?? "") === studentCode,
+    );
+    assert.ok(studentAccount, `compte technique élève attendu pour ${studentCode}`);
+    assert.equal(studentAccount.accountKind, "student_login");
+    assert.equal(studentAccount.businessProfileLabel, "Compte lié à un élève");
+    assert.equal(studentAccount.linkedStudent?.studentCode, studentCode);
+    assert.notEqual(studentAccount.businessProfileLabel, "Sans affectation");
+    assert.equal(studentAccount.linkedTeacher, null);
+    // Inscription pose students.user_id : grant Enseignant = STUDENT_ROLE_LOCKED
+    // (BUSINESS_PROFILE_CONFLICT reste le cas code-match sans FK).
+    const blockedTeacher = await request(`/backoffice/users/${encodeURIComponent(studentAccount.id)}/roles/grant`, {
+      method: "POST",
+      token: tokenCd,
+      body: { role: "Enseignant" },
+    });
+    assert.equal(blockedTeacher.status, 409, JSON.stringify(blockedTeacher.data));
+    assert.equal(blockedTeacher.data.code, "STUDENT_ROLE_LOCKED");
+    assert.match(String(blockedTeacher.data.message ?? ""), /ne peuvent pas être modifiés/);
+    const teachersAfterBlock = await request("/teachers", { token: tokenCd });
+    assert.equal(teachersAfterBlock.status, 200);
+    assert.equal(
+      (teachersAfterBlock.data ?? []).some((row) => String(row.userId) === String(studentAccount.id)),
+      false,
+      "aucune fiche enseignant créée pour le compte élève",
+    );
+
     const alphaPhone = await request(
       `/classes/${encodeURIComponent(activeClass.classCode)}/students`,
       {
@@ -331,6 +363,20 @@ async function main() {
     assert.equal(fetched.status, 200, JSON.stringify(fetched.data));
     assert.equal(fetched.data.classCode, activeClass.classCode);
     assertNoSecretLeak(fetched.data, "GET /students/:id");
+    const studentUuid = String(fetched.data.studentUuid ?? "").trim();
+    assert.ok(studentUuid, "UUID métier requis pour GET /students/:id");
+    const fetchedByUuid = await request(`/students/${encodeURIComponent(studentUuid)}`, {
+      token: tokenCd,
+    });
+    assert.equal(fetchedByUuid.status, 200, JSON.stringify(fetchedByUuid.data));
+    assert.equal(fetchedByUuid.data.studentCode, studentCode);
+    const otherSchool = await request(`/students/${encodeURIComponent(studentCode)}`, {
+      token: tokenBi,
+    });
+    assert.ok(
+      otherSchool.status === 403 || otherSchool.status === 404,
+      `autre établissement status=${otherSchool.status}`,
+    );
 
     const exported = await request("/data-export", { token: tokenCd });
     if (exported.status === 200) {

@@ -10,6 +10,7 @@ import {
 import { Button } from "./Button";
 import { Field, Input } from "./Field";
 import { Modal } from "./Modal";
+import { PasswordVisibilityButton } from "./PasswordVisibilityButton";
 
 export interface PromptOptions {
   title: string;
@@ -44,6 +45,7 @@ const EMPTY_STATE: PromptState = {
 
 export function PromptProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PromptState>(EMPTY_STATE);
+  const [showPassword, setShowPassword] = useState(false);
   const resolveRef = useRef<((value: string | null) => void) | null>(null);
   const validateRef = useRef<PromptOptions["validate"]>(undefined);
 
@@ -51,6 +53,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
     resolveRef.current?.(value);
     resolveRef.current = null;
     validateRef.current = undefined;
+    setShowPassword(false);
     setState(EMPTY_STATE);
   }, []);
 
@@ -58,6 +61,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
     return new Promise<string | null>((resolve) => {
       resolveRef.current = resolve;
       validateRef.current = options.validate;
+      setShowPassword(false);
       setState({
         open: true,
         title: options.title,
@@ -105,17 +109,30 @@ export function PromptProvider({ children }: { children: ReactNode }) {
         }
       >
         <form id="app-prompt-form" onSubmit={handleSubmit} className="space-y-3">
-          <Field label={state.placeholder ?? "Saisie"} required={state.required}>
-            <Input
-              type={state.inputType ?? "text"}
-              value={state.value}
-              autoFocus
-              required={state.required}
-              onChange={(event) =>
-                setState((prev) => ({ ...prev, value: event.target.value, error: "" }))
-              }
-            />
-          </Field>
+          <div className="relative">
+            <Field label={state.placeholder ?? "Saisie"} required={state.required}>
+              <Input
+                type={state.inputType === "password" && showPassword ? "text" : (state.inputType ?? "text")}
+                value={state.value}
+                autoComplete={state.inputType === "password" ? "new-password" : undefined}
+                className={state.inputType === "password" ? "pr-11" : undefined}
+                autoFocus
+                required={state.required}
+                onChange={(event) =>
+                  setState((prev) => ({ ...prev, value: event.target.value, error: "" }))
+                }
+              />
+            </Field>
+            {state.inputType === "password" ? (
+              <PasswordVisibilityButton
+                visible={showPassword}
+                onToggle={() => setShowPassword((visible) => !visible)}
+                showLabel="Afficher le mot de passe"
+                hideLabel="Masquer le mot de passe"
+                className="bottom-1"
+              />
+            ) : null}
+          </div>
           {state.error ? <p className="text-sm text-danger">{state.error}</p> : null}
         </form>
       </Modal>

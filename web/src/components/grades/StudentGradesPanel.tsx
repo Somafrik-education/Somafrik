@@ -13,9 +13,17 @@ interface StudentGradesPanelProps {
   state: BackOfficeState;
   user: SessionUser | null;
   period: string;
+  /** Note mise en évidence lorsqu'on arrive par un deep-link de notification. */
+  highlightGradeId?: string;
 }
 
-export function StudentGradesPanel({ student, state, user, period }: StudentGradesPanelProps) {
+export function StudentGradesPanel({
+  student,
+  state,
+  user,
+  period,
+  highlightGradeId = "",
+}: StudentGradesPanelProps) {
   const studentId = String(student?.id ?? "");
   const grades = scopedGrades(user, state).filter(
     (grade) => grade.studentId === studentId && (!period || grade.period === period),
@@ -68,7 +76,12 @@ export function StudentGradesPanel({ student, state, user, period }: StudentGrad
       <Card className="p-4">
         <SectionHeader title="Notes détaillées" />
         <div className="mt-4">
-          <Table columns={columns} rows={grades} rowKey={(row) => row.id} />
+          <Table
+            columns={columns}
+            rows={grades}
+            rowKey={(row) => row.id}
+            isRowSelected={(row) => Boolean(highlightGradeId) && String(row.id) === highlightGradeId}
+          />
         </div>
       </Card>
 

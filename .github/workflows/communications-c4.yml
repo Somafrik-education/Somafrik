@@ -5,24 +5,157 @@ on:
     branches: [develop]
     paths:
       - "backend/db/clientsCanonicalBootstrap.js"
+      - "backend/db/clientsPgStore.js"
       - "backend/db/communicationsC4.bootstrap.pg.test.js"
       - "backend/db/communicationsNotificationsSchema.js"
       - "backend/db/migrations/20260828_communications_c4_internal_notifications.sql"
       - "backend/lib/communicationsNotificationsService.js"
       - "backend/lib/communicationsNotificationsWorker.js"
+      - "backend/lib/communicationChannelFanout.js"
+      - "backend/lib/communicationChannelFanout.test.js"
+      - "backend/lib/communicationsFinanceMobileNavigation.test.js"
+      - "backend/lib/communicationsChannelFanout.red-com-01.test.js"
+      - "backend/lib/communicationsDispatcher.red.test.js"
+      - "backend/lib/communicationsDispatcher.js"
+      - "backend/lib/communicationsDispatcher.test.js"
+      - "backend/lib/communicationsGlobalArchitecture.audit.test.js"
+      - "docs/audits/communications-dispatcher-prd-2026-09-08.md"
+      - "backend/lib/passwordResetNotification.js"
+      - "backend/lib/passwordResetNotification.test.js"
+      - "backend/lib/communicationsPasswordReset.red.test.js"
+      - "backend/lib/communicationsPreferences.js"
+      - "backend/lib/communicationsPreferences.test.js"
+      - "backend/lib/communicationsPreferences.red.test.js"
+      - "docs/audits/communications-preferences-red-2026-09-08.md"
+      - "backend/lib/schoolNotificationPolicy.js"
+      - "backend/lib/schoolNotificationSettings.test.js"
+      - "backend/lib/schoolNotificationSafety.test.js"
+      - "backend/db/migrations/20260912_school_notification_settings.sql"
+      - "web/src/lib/schoolNotificationSettingsApi.ts"
+      - "web/src/pages/parametres/SettingsNotificationsPage.tsx"
+      - "web/src/pages/parametres/SettingsNotificationsPage.test.tsx"
+      - "backend/lib/communicationsLegacy.audit.test.js"
+      - "backend/lib/communicationsLegacy.red.test.js"
+      - "docs/audits/communications-legacy-green-2026-09-08.md"
+      - "web/src/pages/PlatformNotificationsPage.tsx"
+      - "web/src/pages/entity-page/paymentWorkflow.ts"
+      - "web/src/lib/scope.ts"
+      - "web/src/lib/dashboardCharts.ts"
+      - "web/src/lib/dashboardKpiTruth.test.ts"
+      - "web/src/lib/dashboardPermissions.ts"
+      - "web/src/lib/dashboardPermissions.test.ts"
+      - "web/src/lib/dashboardChartPeriod.ts"
+      - "web/src/pages/OverviewPage.tsx"
+      - "web/src/App.tsx"
+      - "backend/services/paymentTransactionService.js"
+      - "Mobile/src/lib/notificationInboxRoute.ts"
+      - "Mobile/src/lib/notificationInboxRoute.test.ts"
+      - "Mobile/src/lib/pushNotificationDestinations.ts"
+      - "Mobile/src/lib/pushNotificationNavigate.ts"
+      - "Mobile/src/lib/pushNotificationTap.ts"
+      - "Mobile/src/lib/financeNotificationNavigation.test.ts"
+      - "Mobile/src/lib/communicationPagination.ts"
+      - "Mobile/src/lib/communicationPagination.lotc.test.ts"
+      - "Mobile/src/components/PushNotificationsRuntime.tsx"
+      - "backend/lib/communicationsTrialSmtp.red.test.js"
+      - "backend/lib/communicationsDeliveryReliability.red.test.js"
+      - "backend/lib/communicationsDeliveryHealth.js"
+      - "backend/lib/communicationsDeliveryHealth.test.js"
+      - "backend/lib/communicationsFinal.audit.test.js"
+      - "backend/lib/communicationsStudentLate.red.test.js"
+      - "backend/lib/communicationsReportCardPublished.red.test.js"
+      - "backend/lib/communicationsPaymentDue.red.test.js"
+      - "backend/lib/communicationsTimetableChanged.red.test.js"
+      - "backend/lib/communicationsTeacherReplacement.red.test.js"
+      - "backend/lib/communicationsNavigationTargets.js"
+      - "backend/lib/communicationsNavigationContract.red.test.js"
+      - "backend/lib/communicationsPlanningNavigation.red.test.js"
+      - "backend/lib/communicationsUnreadPagination.red.test.js"
+      - "backend/lib/communicationsNavigationSecurity.red.test.js"
+      - "web/src/components/communications/InternalNotificationsCenter.navigation.red.test.tsx"
+      - "web/src/components/communications/InternalNotificationsCenter.counter.red.test.tsx"
+      - "docs/audits/notifications-navigation-red-2026-09-09.md"
+      - "docs/audits/notifications-navigation-green-2026-09-09.md"
+      - "docs/audits/notifications-deeplink-green-2026-09-09.md"
+      - "web/src/lib/notificationDeepLink.ts"
+      - "web/src/lib/notificationDeepLinkContract.test.ts"
+      - "web/src/pages/notificationDeepLinkJourney.test.tsx"
+      - "web/src/pages/MessagesConversationsPage.tsx"
+      - "web/src/pages/MessagesConversationsPage.lotc.test.tsx"
+      - "web/src/lib/messagesRead.ts"
+      - "web/src/lib/messagesRead.lotc.test.tsx"
+      - "web/src/lib/communicationHttpError.ts"
+      - "web/src/lib/communicationHttpError.test.ts"
+      - "web/src/components/communications/CommunicationHttpErrorState.tsx"
+      - "web/src/components/communications/InternalNotificationsCenter.p3.test.tsx"
+      - "web/src/pages/PlatformNotificationsPage.p3.test.tsx"
+      - "web/src/pages/AnnouncementsPage.tsx"
+      - "web/src/pages/AnnouncementsPage.deeplink.test.tsx"
+      - "web/src/pages/AnnouncementsPage.lotc.test.tsx"
+      - "web/src/lib/announcementsRead.ts"
+      - "web/src/lib/announcementsRead.lotc.test.tsx"
+      - "web/src/pages/EntityPage.tsx"
+      - "web/src/pages/EntityPage.deeplink.test.tsx"
+      - "web/src/pages/PresencesPage.tsx"
+      - "web/src/pages/PresencesPage.deeplink.test.tsx"
+      - "web/src/pages/GradesEvaluationsPage.tsx"
+      - "web/src/pages/GradesEvaluationsPage.deeplink.test.tsx"
+      - "web/src/pages/CoursePlanningPage.tsx"
+      - "web/src/pages/CoursePlanningPage.deeplink.test.tsx"
+      - "web/src/pages/finances/FinanceUnpaidPage.tsx"
+      - "web/src/pages/finances/FinanceUnpaidPage.deeplink.test.tsx"
+      - "web/src/pages/planning/PlanningSubstitutionsPage.tsx"
+      - "web/src/components/grades/StudentGradesPanel.tsx"
+      - "web/src/components/ui/DataTable.tsx"
+      - "web/src/design-system/data-display/Table.tsx"
+      - "backend/db/courseScheduleReplacementChangeRevision.sql"
+      - "backend/db/teacherReplacementOutbox.sql"
+      - "backend/db/migrations/20260918_communication_teacher_replacement_outbox.sql"
+      - "backend/db/pedagogySchema.js"
+      - "backend/lib/communicationsPaymentDueSweep.js"
+      - "backend/lib/communicationsPaymentDueEligibility.js"
+      - "backend/db/migrations/20260913_communication_student_late_outbox.sql"
+      - "backend/db/migrations/20260914_communication_report_card_published_outbox.sql"
+      - "backend/db/migrations/20260916_communication_timetable_changed_outbox.sql"
+      - "backend/db/migrations/20260917_communication_timetable_changed_revision.sql"
+      - "docs/audits/communications-student-late-green-2026-09-09.md"
+      - "docs/audits/communications-report-card-published-green-2026-09-09.md"
+      - "docs/audits/communications-timetable-changed-green-2026-09-09.md"
+      - "docs/audits/communications-teacher-replacement-green-2026-09-09.md"
+      - "docs/audits/communications-final-audit-2026-09-09.md"
+      - "backend/db/migrations/20260908_communication_channel_deliveries_reliability.sql"
+      - "docs/audits/communications-delivery-reliability-red-2026-09-08.md"
+      - "docs/audits/communications-delivery-reliability-green-2026-09-08.md"
+      - "backend/lib/trialAccessRequests.js"
+      - "backend/lib/trialAccessRequestNotification.js"
+      - "backend/lib/trialAccessRequestNotification.red.test.js"
+      - "backend/db/migrations/20260911_trial_operational_email_deliveries.sql"
+      - "docs/audits/communications-trial-smtp-green-2026-09-08.md"
+      - "web/src/pages/PlatformNotificationsPage.tsx"
+      - "web/src/pages/entity-page/paymentWorkflow.ts"
+      - "web/src/lib/scope.ts"
+      - "web/src/App.tsx"
+      - "backend/db/migrations/20260910_user_communication_preferences.sql"
+      - "backend/db/migrations/20260907_communication_channel_deliveries.sql"
       - "backend/lib/communicationsC4.http.pg.test.js"
       - "backend/scripts/verify-communications-c4.js"
       - "backend/server.js"
       - "backend/services/rbacService.js"
+      - "backend/data.js"
+      - "backend/lib/communicationsParentReadOnly.test.js"
       - "web/src/components/communications/InternalNotificationsCenter.tsx"
       - "web/src/components/layout/Topbar.tsx"
       - "web/src/lib/internalNotificationsApi.ts"
       - "web/src/lib/internalNotificationsRead.ts"
+      - "web/src/lib/notificationNavigation.ts"
       - "web/src/lib/internalNotificationsC4.test.ts"
       - "web/src/pages/NotificationsPage.tsx"
       - "web/src/pages/parametres/SettingsPlaceholders.tsx"
       - "Mobile/src/components/CommunicationHeaderIcons.tsx"
       - "Mobile/src/components/MobileAppHeader.tsx"
+      - "Mobile/src/lib/communicationHeaderIcons.p3.test.ts"
+      - "Mobile/src/lib/mobileUxV1Layout.ts"
+      - "Mobile/src/lib/mobileAppHeader.topbar.test.ts"
       - "Mobile/src/domain/security/permissions.ts"
       - "Mobile/src/lib/internalNotificationsRead.ts"
       - "Mobile/src/lib/internalNotificationsC4.test.ts"
@@ -86,6 +219,12 @@ jobs:
           npm ci --prefix backend
           npm ci --prefix web
           npm ci --prefix Mobile
+      - name: Verify Lot I safety guards
+        run: node --test backend/lib/schoolNotificationSafety.test.js
+      - name: Verify finance Mobile notification navigation
+        run: |
+          node --test backend/lib/communicationsFinanceMobileNavigation.test.js
+          npx --yes tsx Mobile/src/lib/financeNotificationNavigation.test.ts
       - name: Verify Communications C4 E2E
         shell: bash
         run: |
@@ -101,6 +240,57 @@ jobs:
           retention-days: 7
       - name: Build Web
         run: npm --prefix web run build
+      # Deuxième moitié du parcours « Ouvrir » : la page d'arrivée doit ouvrir
+      # la ressource désignée, pas seulement recevoir son identifiant dans l'URL.
+      - name: Deep-link notifications — destination réellement ouverte
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --prefix web vitest run --root web \
+            src/lib/notificationDeepLinkContract.test.ts \
+            src/pages/notificationDeepLinkJourney.test.tsx \
+            src/pages/AnnouncementsPage.deeplink.test.tsx \
+            src/pages/MessagesConversationsPage.lotc.test.tsx \
+            src/pages/AnnouncementsPage.lotc.test.tsx \
+            src/lib/messagesRead.lotc.test.tsx \
+            src/lib/announcementsRead.lotc.test.tsx \
+            src/lib/communicationHttpError.test.ts \
+            src/components/communications/InternalNotificationsCenter.p3.test.tsx \
+            src/pages/PlatformNotificationsPage.p3.test.tsx \
+            src/pages/EntityPage.deeplink.test.tsx \
+            src/pages/PresencesPage.deeplink.test.tsx \
+            src/pages/GradesEvaluationsPage.deeplink.test.tsx \
+            src/pages/CoursePlanningPage.deeplink.test.tsx \
+            src/pages/finances/FinanceUnpaidPage.deeplink.test.tsx 2>&1 | tee notifications-deeplink.log
+      - name: Preserve deep-link log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notifications-deeplink
+          path: notifications-deeplink.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: Typecheck Mobile
         working-directory: Mobile
         run: npx tsc --noEmit --project tsconfig.json
+      # Navigation des notifications (C0 fail-closed, C1 producteurs planning,
+      # C2 résolveur Web, C3 compteur et pagination). Ce pas est bloquant et
+      # placé en dernier, pour que les vérifications de non-régression du
+      # portail s'exécutent et restent lisibles quoi qu'il arrive ici.
+      - name: Notifications navigation C0 à C3
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            backend/lib/communicationsNavigationContract.red.test.js \
+            backend/lib/communicationsPlanningNavigation.red.test.js \
+            backend/lib/communicationsUnreadPagination.red.test.js \
+            backend/lib/communicationsNavigationSecurity.red.test.js 2>&1 | tee notifications-navigation.log
+      - name: Preserve notifications navigation log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notifications-navigation
+          path: notifications-navigation.log
+          if-no-files-found: warn
+          retention-days: 7

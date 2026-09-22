@@ -13,11 +13,12 @@ const roleAliases = {
   parent_student: "Parent",
 };
 
-// Compatibilité des rôles métier historiques. Ces jetons restent produits par
-// le catalogue live pour Enseignant/Parent ; les routes conservent ensuite leur
-// contrôle tenant et leur filtrage de destinataires.
+// Compatibilité des rôles métier historiques.
+// - "Messages parents" = capacité historique staff d'écrire aux parents.
+// - "Messages école" = inbox Parent historique, lecture uniquement.
+// Les droits canoniques restent Messages:READ / Messages:CREATE.
 const MESSAGE_READ_ALIASES = ["Messages parents", "Messages école"];
-const MESSAGE_WRITE_ALIASES = ["Messages parents", "Messages école"];
+const MESSAGE_WRITE_ALIASES = ["Messages parents"];
 
 const routePermissions = {
   ...COURSE_ROUTE_PERMISSIONS,
@@ -57,10 +58,39 @@ const routePermissions = {
   "GET /api/mobile-sync/l1/course-schedules": ["Planning de cours:READ", "ALL_PRIVILEGES"],
   "POST /api/classes": ["Classes:CREATE", "Gérer classes", "ALL_PRIVILEGES"],
   "PATCH /api/classes/:classCode": ["Classes:UPDATE", "Gérer classes", "ALL_PRIVILEGES"],
+  "GET /api/classes/:classCode/head-teacher/candidates": [
+    "Classes:UPDATE",
+    "Gérer classes",
+    "Affectations:CREATE",
+    "Affectations:UPDATE",
+    "Gérer affectations",
+    "ALL_PRIVILEGES",
+  ],
+  "PUT /api/classes/:classCode/head-teacher": [
+    "Classes:UPDATE",
+    "Gérer classes",
+    "Affectations:CREATE",
+    "Affectations:UPDATE",
+    "Gérer affectations",
+    "ALL_PRIVILEGES",
+  ],
+  "DELETE /api/classes/:classCode/head-teacher": [
+    "Classes:UPDATE",
+    "Gérer classes",
+    "Affectations:CREATE",
+    "Affectations:UPDATE",
+    "Gérer affectations",
+    "ALL_PRIVILEGES",
+  ],
   "GET /api/classes/:classCode/students": ["Élèves:READ", "Voir élèves", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/classes/:classCode/students": ["Élèves:CREATE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/students": ["Élèves:READ", "Voir élèves", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/students/:id": ["Élèves:READ", "Voir élèves", "Gérer élèves", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/students/:id": ["Élèves:READ", "Voir élèves", "Gérer élèves", "Voir enfant", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/students/:studentId/enrollments": ["Élèves:READ", "Voir élèves", "Gérer élèves", "Voir enfant", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/students/:studentId/enrollments/:enrollmentId/validate": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
+  "POST /api/students/:studentId/enrollments/:enrollmentId/assign-class": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
+  "POST /api/students/:studentId/enrollments/:enrollmentId/transfer": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
+  "POST /api/students/:studentId/enrollments/:enrollmentId/close": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/students/:id/report": ["Élèves:READ", "Notes:READ", "Bulletins:READ", "Voir bulletins", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/students/:id/report.pdf": ["Élèves:READ", "Notes:READ", "Bulletins:READ", "Voir bulletins", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/students/:id/payments": ["Paiements:READ", "Gérer paiements", "Voir paiements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
@@ -121,6 +151,9 @@ const routePermissions = {
   "POST /api/v2/subjects": ["Matières:CREATE", "Gérer cours", "ALL_PRIVILEGES"],
   "DELETE /api/v2/subjects/:code": ["Matières:DELETE", "Gérer cours", "ALL_PRIVILEGES"],
   "GET /api/v2/academic-years": ["Années Académiques:READ", "ALL_PRIVILEGES"],
+  "GET /api/v2/school-setup/status": ["Paramètres Établissement:READ"],
+  "GET /api/v2/school-setup/guided": ["Paramètres Établissement:READ"],
+  "POST /api/v2/school-setup/guided/steps/:stepKey/complete": ["Paramètres Établissement:UPDATE"],
   "POST /api/v2/academic-years": ["Années Académiques:CREATE", "ALL_PRIVILEGES"],
   "PATCH /api/v2/academic-years/:id": ["Années Académiques:UPDATE", "ALL_PRIVILEGES"],
   "GET /api/v2/exams": ["Examens:READ", "Valider examens", "Organiser examens", "Gérer cours", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
@@ -130,6 +163,7 @@ const routePermissions = {
   "POST /api/backoffice/countries": ["Contrôler tous les pays", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/countries/:code": ["Contrôler tous les pays", "ALL_PRIVILEGES"],
   "GET /api/backoffice/subscriptions": ["Gérer abonnements", "Suivre abonnements pays", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/trial-requests": ["ALL_PRIVILEGES"],
   "POST /api/backoffice/subscriptions": ["Gérer abonnements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "PATCH /api/backoffice/subscriptions/:subscriptionId": ["Gérer abonnements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "GET /api/backoffice/notifications": ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
@@ -143,6 +177,7 @@ const routePermissions = {
   "PATCH /api/backoffice/internal-notifications/:notificationId/archive": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "POST /api/backoffice/internal-notifications/attachments": ["Notifications:CREATE", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "GET /api/backoffice/internal-notifications/attachments/:attachmentId": ["Notifications:READ", "Gérer notifications", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
+  "GET /api/backoffice/communications/deliveries/health": ["Notifications:READ", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "GET /api/backoffice/role-permissions": ["ALL_PRIVILEGES"],
   "PUT /api/backoffice/role-permissions": ["ALL_PRIVILEGES"],
   "GET /api/backoffice/rbac/catalog": ["ALL_PRIVILEGES"],
@@ -165,6 +200,8 @@ const routePermissions = {
   "GET /api/backoffice/establishments/:code": ["Établissements:READ", "Paramètres Établissement:READ", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/establishments": ["Établissements:CREATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/establishments/:code": ["Établissements:UPDATE", "Paramètres Établissement:UPDATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PUT /api/backoffice/establishments/:code/logo": ["Établissements:UPDATE", "Paramètres Établissement:UPDATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "DELETE /api/backoffice/establishments/:code/logo": ["Établissements:UPDATE", "Paramètres Établissement:UPDATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "DELETE /api/backoffice/establishments/:code": ["Établissements:DELETE", "ALL_PRIVILEGES"],
   "POST /api/backoffice/establishments/import": ["Établissements:CREATE", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/import/students/validate": ["Élèves:CREATE", "Gérer élèves", "Gérer établissements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
@@ -196,11 +233,12 @@ const routePermissions = {
   "GET /api/backoffice/relations": ["Relations:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/relations": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/parents/identity": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/parents/relations": ["Relations:READ", "Élèves:READ", "Voir élèves", "Voir enfant", "Gérer élèves", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/parents/link": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/parents/relations/:relationId": ["Relations:UPDATE", "Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/messages": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/messages/unread-count": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/messages/recipients": ["Messages:READ", "Messages:CREATE", ...MESSAGE_READ_ALIASES, ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages/recipients": ["Messages:CREATE", ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/messages/:messageId": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/messages": ["Messages:CREATE", ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/messages/:messageId/read": ["Messages:UPDATE", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
@@ -376,6 +414,23 @@ const routePermissions = {
     "COUNTRY_PRIVILEGES",
   ],
   "PATCH /api/backoffice/establishments/:schoolCode/school-settings": [
+    "Paramètres Établissement:UPDATE",
+    "Gérer planning académique",
+    "ALL_PRIVILEGES",
+  ],
+  "GET /api/backoffice/establishments/:schoolCode/notification-settings": [
+    "Paramètres Établissement:READ",
+    "Paramètres Établissement:UPDATE",
+    "Gérer planning académique",
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+  ],
+  "PATCH /api/backoffice/establishments/:schoolCode/notification-settings": [
+    "Paramètres Établissement:UPDATE",
+    "Gérer planning académique",
+    "ALL_PRIVILEGES",
+  ],
+  "PUT /api/backoffice/establishments/:schoolCode/notification-settings": [
     "Paramètres Établissement:UPDATE",
     "Gérer planning académique",
     "ALL_PRIVILEGES",

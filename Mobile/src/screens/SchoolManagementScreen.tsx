@@ -21,15 +21,11 @@ export default function SchoolManagementScreen({
   const { syncStatus } = useAdminData();
   const isSchoolAdmin = session?.role === "school_admin";
   const items: { title: string; entity?: AdminEntity; route?: string }[] = [
-    { title: "🏫 Établissements", entity: "schools" },
     { title: "👤 Utilisateurs", entity: "users", route: "Users" },
     ...(isSchoolAdmin ? [] : [{ title: "👥 Élèves", entity: "students" as const, route: "Students" }]),
     { title: "👨‍🏫 Enseignants", entity: "teachers", route: "Teachers" },
     { title: "📚 Classes", route: "Classes" },
-    { title: "📖 Cours", entity: "courses" },
-    { title: "🔁 Affectations", entity: "assignments" },
     { title: "💰 Paiements", entity: "payments", route: "Payments" },
-    { title: "⚙️ Statuts paiement", entity: "paymentStatuses" },
     { title: "📢 Annonces", entity: "announcements", route: "Announcements" },
   ];
   const visibleItems = items.filter((item) =>
@@ -56,10 +52,6 @@ export default function SchoolManagementScreen({
           onPress={() => {
             if (item.route) {
               navigation.navigate(item.route as never);
-              return;
-            }
-            if (item.entity) {
-              navigation.navigate("AdminCrud", { entity: item.entity });
             }
           }}
         />

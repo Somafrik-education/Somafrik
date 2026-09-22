@@ -171,24 +171,27 @@ test("GP-003: sqlUsersScope cible school_id UUID, pas leftover", () => {
   assert.deepEqual(params, [SCHOOL_ID_A]);
 });
 
-test("GP-003: sqlUsersScope country inclut schoolless du pays, jamais l'autre pays", () => {
+test("GP-003: sqlUsersScope country = SCHOOL_ADMIN du pays, jamais staff métier ni l'autre pays", () => {
   const params = [];
   const pred = sqlUsersScope({ mode: "country", countryCode: "CD" }, params);
   assert.match(pred, /school_id IS NULL/);
   assert.match(pred, /profile_payload->>'countryCode'/);
+  assert.match(pred, /SCHOOL_ADMIN/);
   assert.doesNotMatch(pred, /school_code/);
   assert.doesNotMatch(pred, /COALESCE/i);
   assert.doesNotMatch(pred, /\sOR\s/i);
   assert.doesNotMatch(pred, /jwt/i);
   assert.deepEqual(params, ["CD"]);
   const rows = [
-    { id: "pays-cd", schoolId: "", countryCode: "CD" },
-    { id: "pays-bi", schoolId: "", countryCode: "BI" },
-    { id: "staff-cd", schoolId: SCHOOL_ID_A, countryCode: "CD" },
+    { id: "pays-cd", schoolId: "", countryCode: "CD", roleKeys: ["COUNTRY_ADMIN"] },
+    { id: "pays-bi", schoolId: "", countryCode: "BI", roleKeys: ["COUNTRY_ADMIN"] },
+    { id: "staff-cd", schoolId: SCHOOL_ID_A, countryCode: "CD", roleKeys: ["SECRETARY"] },
+    { id: "admin-cd", schoolId: SCHOOL_ID_A, countryCode: "CD", roleKeys: ["SCHOOL_ADMIN"] },
+    { id: "admin-bi", schoolId: SCHOOL_ID_B, countryCode: "BI", roleKeys: ["SCHOOL_ADMIN"] },
   ];
   assert.deepEqual(
     filterUsersRows(rows, { mode: "country", countryCode: "CD" }).map((row) => row.id),
-    ["pays-cd", "staff-cd"],
+    ["admin-cd"],
   );
 });
 

@@ -154,8 +154,9 @@ async function main() {
   assert.equal(Number(partialPay.amount), 150);
   assert.equal(Number(partialPay.allocatedAmount), 100);
   assert.equal(Number(partialPay.unallocatedAmount), 50);
-  assert.equal(partialPay.status, "Partiel");
+  assert.equal(partialPay.status, "Trop-perçu");
   assert.notEqual(partialPay.status, "Payé");
+  assert.notEqual(partialPay.status, "Partiel");
 
   const covered = createStore();
   await seedMensualite(covered, 150);

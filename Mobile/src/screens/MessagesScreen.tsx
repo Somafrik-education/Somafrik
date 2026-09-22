@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,27 +16,38 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import QueryStateView from "../components/QueryStateView";
 import StudentSwitcher from "../components/StudentSwitcher";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { useAuth } from "../context/AuthContext";
 import { messageThemes } from "../data/catalog";
-import { MessagePriority, MessageService } from "../domain/communication/MessageService";
+import { MessagePriority } from "../domain/communication/MessageService";
 import {
   canShowStaffMessagesComposer,
   resolveMessagesRouteAccess,
 } from "../lib/mobileCtaRbacAlignment";
-import { buildMessagePayload, collectSuccessfulAttachmentIds, isAllowedMessageAttachmentMime } from "../lib/messageAttachments";
+import {
+  buildConversationReplyPayload,
+  buildMessagePayload,
+  collectSuccessfulAttachmentIds,
+  isAllowedMessageAttachmentMime,
+  replyPostConfirmAction,
+} from "../lib/messageAttachments";
+import { mergeRowsById } from "../lib/communicationPagination";
 import { hasCommunicationSchoolScope, withCommunicationSchoolPayload } from "../lib/communicationSchoolScope";
+import { filterCommunicationRows } from "../lib/communicationListFilter";
+import { useMessagesUnreadCount } from "../lib/messagesRead";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
-import { sendClientsMessage, getMessageRecipients, uploadCommunicationAttachment, downloadCommunicationAttachment } from "../services/api";
+import { sendClientsMessage, replyClientsConversationMessage, getMessageRecipients, uploadCommunicationAttachment, downloadCommunicationAttachment } from "../services/api";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY } from "../lib/networkResilience";
 import { submitProtectedMutation } from "../lib/outbox";
 import { KeyboardAvoidingContainer } from "../components/KeyboardAwareScreen";
 import AccessibleIconButton from "../components/AccessibleIconButton";
+import CommunicationChrome from "../components/CommunicationChrome";
 import { MIN_TOUCH_TARGET_DP, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import {
   emptyResourceSnapshot,
@@ -44,22 +55,57 @@ import {
   snapshotFromSuccess,
   type ResourceSnapshot,
 } from "../lib/dataTruth";
-import { markCanonicalMessageRead, type CanonicalSchoolMessage } from "../services/domainHydrationApi";
+import {
+  getCanonicalConversationMessages,
+  getCanonicalConversationsPage,
+  markCanonicalMessageRead,
+  type CanonicalConversation,
+  type CanonicalSchoolMessage,
+} from "../services/domainHydrationApi";
 import type { CanonicalMessageRecipient } from "../services/api";
+import type { RootStackParamList } from "../navigation/AppNavigator";
 
-const messageService = new MessageService();
 const priorities: MessagePriority[] = ["Faible", "Moyenne", "Haute", "Critique"];
+
+function counterpartName(conversation: CanonicalConversation, selfId?: string) {
+  const others = (conversation.participants ?? []).filter((row) => row.userId !== selfId);
+  if (!others.length) return conversation.subject || "Conversation";
+  return others.map((row) => row.name || row.userId).join(", ");
+}
+
+function normalizeMessagingRole(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function isStudentMessageTarget(value?: { kind?: string; roleLabel?: string }): boolean {
+  const kind = normalizeMessagingRole(value?.kind);
+  const roleLabel = normalizeMessagingRole(value?.roleLabel);
+  return (
+    kind === "STUDENT" ||
+    roleLabel === "STUDENT" ||
+    roleLabel.includes("ELEVE") ||
+    roleLabel.includes("ETUDIANT")
+  );
+}
+
+function hasStudentParticipant(participants?: Array<{ roleLabel?: string }>): boolean {
+  return (participants ?? []).some((participant) => isStudentMessageTarget(participant));
+}
 
 export default function MessagesScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
+  const route = useRoute<RouteProp<RootStackParamList, "Messages">>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, "Messages">>();
   const {
-    messagesSnapshot,
     loadMessages,
     resourceScopeKey,
     activeSchoolCode,
     requiresSchoolSelection,
-    establishmentStudents,
   } = useAdminData();
 
   const [theme, setTheme] = useState(messageThemes[0]);
@@ -67,31 +113,48 @@ export default function MessagesScreen() {
   const [messageError, setMessageError] = useState("");
   const [priority, setPriority] = useState<MessagePriority>("Moyenne");
   const [query, setQuery] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [selectedRecipientUserId, setSelectedRecipientUserId] = useState("");
   const [recipientSnapshot, setRecipientSnapshot] =
     useState<ResourceSnapshot<CanonicalMessageRecipient>>(emptyResourceSnapshot());
   const [pendingAttachments, setPendingAttachments] = useState<Array<{ id: string; fileName: string }>>([]);
-  const [selectedMessage, setSelectedMessage] = useState<CanonicalSchoolMessage | null>(null);
+  const [conversationsSnapshot, setConversationsSnapshot] =
+    useState<ResourceSnapshot<CanonicalConversation>>(emptyResourceSnapshot());
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState<CanonicalConversation | null>(null);
+  const [threadMessages, setThreadMessages] = useState<CanonicalSchoolMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [sendHint, setSendHint] = useState("");
+  const [replyDraft, setReplyDraft] = useState("");
+  const [replyError, setReplyError] = useState("");
+  const [replying, setReplying] = useState(false);
   const sendLockRef = useRef(createInFlightLock());
   const sendIntentionRef = useRef(createIntentionStore());
+  const replyLockRef = useRef(createInFlightLock());
+  const replyIntentionRef = useRef(createIntentionStore());
+  const selectedConversationIdRef = useRef("");
+  selectedConversationIdRef.current = String(selectedConversation?.id ?? "");
 
   const role = session?.role;
+  const selfId = String(session?.user?.id ?? "");
   const messagesAccess = resolveMessagesRouteAccess(session);
   const canRead = messagesAccess.canReadList;
   const canSend = messagesAccess.canCompose;
+  const teacherSession = role === "teacher";
+  const teacherStudentThreadBlocked =
+    teacherSession && hasStudentParticipant(selectedConversation?.participants);
   const scopeReady = !requiresSchoolSelection || hasCommunicationSchoolScope(activeSchoolCode);
   const showStaffComposer = canShowStaffMessagesComposer(session) && scopeReady;
   const showComposer =
     scopeReady && (((role === "parent_student" || role === "teacher") && canSend) || showStaffComposer);
-  const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone ?? "";
+  const canReplyInThread = canSend && scopeReady && !teacherStudentThreadBlocked;
   const parentChildren = session?.user.children ?? [];
-  const teacherStudents = establishmentStudents;
   const staffSendBlocked =
     showComposer &&
-    !selectedMessage?.conversationId &&
+    !selectedConversation?.id &&
     (recipientSnapshot.status !== "success" || !selectedRecipientUserId);
+  const { count: unreadApiCount, refresh: refreshUnread } = useMessagesUnreadCount(canRead && scopeReady, activeSchoolCode);
 
   const loadCanonicalRecipients = useCallback(async () => {
     if (!canSend || !scopeReady) {
@@ -102,48 +165,74 @@ export default function MessagesScreen() {
     setRecipientSnapshot({ status: "loading", data: [] });
     try {
       const rows = await getMessageRecipients(activeSchoolCode);
-      setRecipientSnapshot(snapshotFromSuccess(rows));
+      const allowed = teacherSession ? rows.filter((row) => !isStudentMessageTarget(row)) : rows;
+      setRecipientSnapshot(snapshotFromSuccess(allowed));
       setSelectedRecipientUserId((current) =>
-        rows.some((row) => row.userId === current) ? current : "",
+        allowed.some((row) => row.userId === current) ? current : "",
       );
     } catch (error) {
       setRecipientSnapshot(snapshotFromFailure(error, []));
       setSelectedRecipientUserId("");
     }
-  }, [canSend, activeSchoolCode, scopeReady]);
+  }, [canSend, activeSchoolCode, scopeReady, teacherSession]);
+
+  const loadConversations = useCallback(async () => {
+    if (!canRead || !scopeReady) {
+      setConversationsSnapshot(emptyResourceSnapshot());
+      setNextCursor(null);
+      return;
+    }
+    setConversationsSnapshot((current) => ({ status: "loading", data: current.data }));
+    try {
+      const page = await getCanonicalConversationsPage(activeSchoolCode);
+      setConversationsSnapshot(snapshotFromSuccess(page.items));
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      setConversationsSnapshot(snapshotFromFailure(error, []));
+      setNextCursor(null);
+    }
+  }, [canRead, activeSchoolCode, scopeReady]);
+
+  const loadMoreConversations = useCallback(async () => {
+    if (!canRead || !scopeReady || !nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await getCanonicalConversationsPage(activeSchoolCode, { cursor: nextCursor });
+      setConversationsSnapshot((current) => snapshotFromSuccess(mergeRowsById(current.data, page.items)));
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      Alert.alert("Chargement interrompu", error instanceof Error ? error.message : "Réessayez.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [canRead, activeSchoolCode, scopeReady, nextCursor, loadingMore]);
 
   useFocusEffect(
     useCallback(() => {
-      if (canRead) void loadMessages();
+      if (canRead) {
+        void loadConversations();
+        void loadMessages();
+        void refreshUnread();
+      }
       if (canSend) void loadCanonicalRecipients();
-    }, [canRead, canSend, loadMessages, loadCanonicalRecipients, resourceScopeKey]),
+    }, [canRead, canSend, loadConversations, loadMessages, loadCanonicalRecipients, refreshUnread, resourceScopeKey]),
   );
 
-  const roleMessages = useMemo(() => {
-    const messages = messagesSnapshot.data;
-    if (role === "teacher") {
-      return messages.filter(
-        (item) =>
-          (item.direction === "Parent vers enseignant" || item.direction === "Enseignant vers parent") &&
-          (item.teacherId === session?.user.id || teacherStudents.some((student) => student.parentPhone === item.parentPhone)),
-      );
-    }
-    if (role === "parent_student" || role === "student") {
-      return messages.filter((item) => item.parentPhone === parentPhone);
-    }
-    return messages;
-  }, [messagesSnapshot.data, parentPhone, role, session?.user.id, teacherStudents]);
-
-  const visibleMessages = useMemo(() => messageService.search(roleMessages, query), [query, roleMessages]);
-  const receivedMessages = useMemo(
-    () => visibleMessages.filter((item) => isReceivedMessage(item, role, session)),
-    [role, session, visibleMessages],
+  const visibleConversations = useMemo(
+    () =>
+      filterCommunicationRows(
+        conversationsSnapshot.data.map((row) => ({
+          ...row,
+          title: counterpartName(row, selfId),
+          excerpt: row.lastMessage?.body || "",
+          author: row.lastMessage?.senderName || "",
+          unreadCount: row.unreadCount ?? 0,
+        })),
+        query,
+        unreadOnly,
+      ),
+    [conversationsSnapshot.data, query, unreadOnly, selfId],
   );
-  const sentMessages = useMemo(
-    () => visibleMessages.filter((item) => !isReceivedMessage(item, role, session)),
-    [role, session, visibleMessages],
-  );
-  const unreadCount = messageService.countUnreadForRole(role, session, visibleMessages);
 
   const pickAndUploadAttachments = async () => {
     try {
@@ -226,10 +315,15 @@ export default function MessagesScreen() {
     }
     setMessageError("");
     const selected = recipientSnapshot.data.find((row) => row.userId === selectedRecipientUserId);
+    if (teacherSession && isStudentMessageTarget(selected)) {
+      sendLockRef.current.end();
+      setMessageError("Les enseignants ne peuvent pas envoyer de messages aux élèves.");
+      return;
+    }
     const built = buildMessagePayload({
       message,
       recipientUserId: selectedRecipientUserId,
-      conversationId: selectedMessage?.conversationId,
+      conversationId: selectedConversation?.id,
       studentId: selected?.studentId || selectedStudentId || parentChildren[0]?.id,
       attachmentIds: pendingAttachments.map((file) => file.id),
       theme,
@@ -276,7 +370,9 @@ export default function MessagesScreen() {
         return;
       }
       sendIntentionRef.current.rotate(intentionId);
+      await loadConversations();
       await loadMessages();
+      await refreshUnread();
       setMessage("");
       setPendingAttachments([]);
       setSendHint("");
@@ -290,28 +386,139 @@ export default function MessagesScreen() {
     }
   };
 
-  const openMessage = async (item: CanonicalSchoolMessage) => {
-    setSelectedMessage(item);
-    if (!isReceivedMessage(item, role, session) || !isUnreadStatus(item.status)) return;
+  const closeThread = () => {
+    selectedConversationIdRef.current = "";
+    setSelectedConversation(null);
+    setThreadMessages([]);
+    setReplyDraft("");
+    setReplyError("");
+  };
+
+  const replyInThread = async () => {
+    if (!replyLockRef.current.tryBegin()) return;
+    const conversationId = String(selectedConversation?.id ?? "").trim();
+    if (!canReplyInThread || !conversationId) {
+      replyLockRef.current.end();
+      return;
+    }
+    const built = buildConversationReplyPayload({
+      conversationId,
+      message: replyDraft,
+    });
+    if (!built.ok) {
+      replyLockRef.current.end();
+      if (built.code === "empty_message") {
+        setReplyError("Message est obligatoire.");
+      }
+      return;
+    }
+    setReplyError("");
+    const payload = withCommunicationSchoolPayload(built.payload, activeSchoolCode);
+    const intentionId = `message-reply:${conversationId}:${String(payload.message)}`;
+    const idempotencyKey = replyIntentionRef.current.getOrCreate(intentionId);
+    setReplying(true);
     try {
-      const updated = await markCanonicalMessageRead(item.id, activeSchoolCode);
-      if (updated) setSelectedMessage(updated);
-      await loadMessages();
-    } catch {
-      // Aucun faux statut local : l'état serveur reste l'autorité.
+      try {
+        const submitted = await submitProtectedMutation({
+          domain: "messages",
+          method: "POST",
+          path: `/backoffice/conversations/${encodeURIComponent(conversationId)}/messages`,
+          payload,
+          idempotencyKey,
+          userId: String(session?.user.id ?? ""),
+          schoolScope: String(activeSchoolCode || session?.school?.code || session?.user.schoolCode || ""),
+          persistOutbox: true,
+          request: () => replyClientsConversationMessage(conversationId, payload, { idempotencyKey }),
+        });
+        if (submitted.outcome !== "confirmed") {
+          const queuedLike = submitted.outcome === "queued" || submitted.outcome === "in_flight";
+          Alert.alert(
+            queuedLike ? NETWORK_COPY.queued : NETWORK_COPY.failed,
+            queuedLike
+              ? "La réponse est conservée en file d'attente. Elle n'apparaîtra dans le fil qu'après confirmation serveur."
+              : submitted.error instanceof Error
+                ? submitted.error.message
+                : "Impossible d'envoyer la réponse.",
+          );
+          return;
+        }
+        replyIntentionRef.current.rotate(intentionId);
+        setReplyDraft("");
+      } catch (error) {
+        Alert.alert("Envoi impossible", error instanceof Error ? error.message : "Impossible d'envoyer la réponse.");
+        return;
+      }
+
+      try {
+        const thread = await getCanonicalConversationMessages(conversationId, activeSchoolCode);
+        const apply = replyPostConfirmAction({
+          mutationConfirmed: true,
+          refreshFailed: false,
+          activeConversationId: selectedConversationIdRef.current,
+          sentConversationId: conversationId,
+        });
+        if (apply.applyThread) {
+          setThreadMessages(thread);
+          try {
+            await refreshUnread();
+          } catch {
+            /* unread stale n'est pas un échec d'envoi */
+          }
+        }
+      } catch {
+        const refresh = replyPostConfirmAction({
+          mutationConfirmed: true,
+          refreshFailed: true,
+          activeConversationId: selectedConversationIdRef.current,
+          sentConversationId: conversationId,
+        });
+        if (refresh.announceRefreshWarning) {
+          Alert.alert(
+            "Fil non actualisé",
+            "La réponse a été envoyée. Rouvrez la conversation pour voir le fil à jour.",
+          );
+        }
+      }
+    } finally {
+      setReplying(false);
+      replyLockRef.current.end();
     }
   };
+
+  const openConversation = async (item: CanonicalConversation) => {
+    selectedConversationIdRef.current = String(item.id ?? "");
+    setSelectedConversation(item);
+    setReplyDraft("");
+    setReplyError("");
+    try {
+      const thread = await getCanonicalConversationMessages(item.id, activeSchoolCode);
+      setThreadMessages(thread);
+      await Promise.all(
+        thread
+          .filter((row) => row.senderUserId && row.senderUserId !== selfId && !row.readAt)
+          .map((row) => markCanonicalMessageRead(row.id, activeSchoolCode).catch(() => null)),
+      );
+      await loadConversations();
+      await refreshUnread();
+    } catch {
+      setThreadMessages([]);
+    }
+  };
+
+  const pendingConversationId = String(route.params?.conversationId ?? "").trim();
+  useEffect(() => {
+    if (!pendingConversationId || !canRead || !scopeReady) return;
+    void openConversation({ id: pendingConversationId });
+    navigation.setParams({ conversationId: undefined });
+  }, [pendingConversationId, canRead, scopeReady, navigation]);
 
   return (
     <View style={styles.screen}>
       <KeyboardAvoidingContainer>
       <SectionList
         sections={
-          canRead && messagesSnapshot.status === "success"
-            ? [
-                { title: "Messages reçus", data: receivedMessages },
-                { title: "Messages envoyés", data: sentMessages },
-              ]
+          canRead && conversationsSnapshot.status === "success"
+            ? [{ title: "Conversations", data: visibleConversations }]
             : []
         }
         keyExtractor={(item) => item.id}
@@ -319,10 +526,12 @@ export default function MessagesScreen() {
         refreshControl={
           canRead ? (
             <RefreshControl
-              refreshing={messagesSnapshot.status === "loading"}
+              refreshing={conversationsSnapshot.status === "loading"}
               onRefresh={() => {
+                void loadConversations();
                 void loadMessages();
                 if (canSend) void loadCanonicalRecipients();
+                void refreshUnread();
               }}
             />
           ) : undefined
@@ -332,14 +541,23 @@ export default function MessagesScreen() {
           <>
         {role === "parent_student" && <StudentSwitcher />}
         <StudentsScopeAlert />
-        <Text style={styles.title}>Messages</Text>
-        {!scopeReady ? (
-          <Text style={styles.subtitle}>Sélectionnez un établissement pour ouvrir Messages.</Text>
-        ) : (
-          <Text style={styles.subtitle}>
-            {canRead ? `${unreadCount} non lu(s) • données serveur` : "Rédaction uniquement • lecture non autorisée"}
-          </Text>
-        )}
+        <CommunicationChrome
+          surface="messages"
+          title="Communication"
+          searchPlaceholder="Rechercher"
+          unreadLabel="Non lus"
+          countLabel={
+            !scopeReady
+              ? "Sélectionnez un établissement pour ouvrir Messages."
+              : canRead
+                ? `${unreadApiCount} non lu(s)`
+                : "Rédaction uniquement • lecture non autorisée"
+          }
+          search={query}
+          onSearch={setQuery}
+          unreadOnly={unreadOnly}
+          onUnreadOnly={setUnreadOnly}
+        />
 
         {showComposer && (
           <View style={styles.composeCard} testID={USABILITY_TEST_IDS.messagesComposer}>
@@ -429,28 +647,18 @@ export default function MessagesScreen() {
                 : "Lecture non autorisée."
               : "Accès refusé aux messages."}
           </Text>
-        ) : messagesSnapshot.status !== "success" ? (
+        ) : conversationsSnapshot.status !== "success" ? (
           <QueryStateView
-            snapshot={messagesSnapshot}
-            emptyMessage="Aucun message pour ce compte."
-            errorMessage="Impossible de charger les messages."
-            offlineMessage="Réseau indisponible. Les messages n'ont pas pu être chargés."
+            snapshot={conversationsSnapshot}
+            emptyMessage="Aucune conversation."
+            errorMessage="Impossible de charger les conversations."
+            offlineMessage="Réseau indisponible. Les conversations n'ont pas pu être chargées."
             emptyTestId="messages-empty"
             errorTestId="messages-error"
-            onRetry={() => void loadMessages()}
-            loadingLabel="Chargement des messages…"
+            onRetry={() => void loadConversations()}
+            loadingLabel="Chargement des conversations…"
           />
-        ) : (
-          <FormField
-            label="Recherche"
-            hideVisibleLabel
-            type="search"
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Ex. thème ou parent"
-            accessibilityLabel="Rechercher un message"
-          />
-        )}
+        ) : null}
           </>
         }
         renderSectionHeader={({ section }) => (
@@ -458,74 +666,123 @@ export default function MessagesScreen() {
             {section.title} ({section.data.length})
           </Text>
         )}
-        renderItem={({ item }) => {
-          return (
-            <TouchableOpacity style={styles.messageCard} onPress={() => void openMessage(item)} accessibilityRole="button" accessibilityLabel={item.theme}>
-              <Text style={styles.messageTitle}>{item.theme}</Text>
-              <Text style={styles.meta}>
-                {item.senderName || item.direction} • {item.sentAt || item.date}
-              </Text>
-              <Text style={styles.messageBody} numberOfLines={3}>{item.message}</Text>
-              <Text style={styles.status}>Statut : {item.status}</Text>
-            </TouchableOpacity>
-          );
-        }}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.messageCard}
+            onPress={() => void openConversation(item)}
+            accessibilityRole="button"
+            accessibilityLabel={item.title}
+          >
+            <View style={styles.rowTop}>
+              <Text style={styles.messageTitle} numberOfLines={1}>{item.title}</Text>
+              {(item.unreadCount ?? 0) > 0 ? (
+                <Text style={styles.unread}>{item.unreadCount}</Text>
+              ) : null}
+            </View>
+            <Text style={styles.messageBody} numberOfLines={1}>{item.excerpt || "—"}</Text>
+            <Text style={styles.meta}>{item.lastMessage?.sentAt || item.updatedAt}</Text>
+          </TouchableOpacity>
+        )}
         ListEmptyComponent={
-          canRead && messagesSnapshot.status === "success" ? <Text style={styles.meta}>Aucun message.</Text> : null
+          canRead && conversationsSnapshot.status === "success" ? <Text style={styles.meta}>Aucune conversation.</Text> : null
+        }
+        ListFooterComponent={
+          canRead && conversationsSnapshot.status === "success" && nextCursor ? (
+            <TouchableOpacity
+              style={[styles.secondaryButton, loadingMore && styles.disabled]}
+              onPress={() => void loadMoreConversations()}
+              disabled={loadingMore}
+              testID="messages-load-more"
+              accessibilityRole="button"
+              accessibilityLabel="Charger les conversations plus anciennes"
+              accessibilityState={{ disabled: loadingMore, busy: loadingMore }}
+            >
+              <Text style={styles.secondaryButtonText}>
+                {loadingMore ? "Chargement…" : "Charger les conversations plus anciennes"}
+              </Text>
+            </TouchableOpacity>
+          ) : null
         }
       />
       </KeyboardAvoidingContainer>
 
-      <Modal visible={Boolean(selectedMessage)} transparent animationType="fade" onRequestClose={() => setSelectedMessage(null)}>
+      <Modal visible={Boolean(selectedConversation)} transparent animationType="fade" onRequestClose={closeThread}>
+        <KeyboardAvoidingContainer>
         <View style={styles.modalBackdrop}>
           <ScrollView contentContainerStyle={styles.readerCard} keyboardShouldPersistTaps="handled">
             <AccessibleIconButton
               accessibilityLabel="Fermer le message"
               icon="close"
-              onPress={() => setSelectedMessage(null)}
+              onPress={closeThread}
               style={styles.closeButton}
             />
-            <Text style={styles.cardTitle}>{selectedMessage?.theme}</Text>
-            <Text style={styles.meta}>
-              {selectedMessage?.senderName || selectedMessage?.senderUserId || selectedMessage?.direction} •{" "}
-              {selectedMessage?.sentAt || selectedMessage?.date}
-            </Text>
-            {selectedMessage?.status ? <Text style={styles.status}>Statut : {selectedMessage.status}</Text> : null}
-            {visibleMessages
-              .filter((item) => item.conversationId && item.conversationId === selectedMessage?.conversationId)
-              .sort((a, b) => String(a.sentAt ?? a.date).localeCompare(String(b.sentAt ?? b.date)))
-              .map((item) => (
-                <View key={item.id}>
-                  <Text style={styles.meta}>
-                    {item.senderName || item.direction} • {item.sentAt || item.date}
-                    {item.status === "pending" ? " • en attente d'envoi" : ""}
-                  </Text>
-                  <Text style={styles.readerBody}>{item.message}</Text>
-                  {(item.attachments ?? []).map((file) => (
-                    <TouchableOpacity
-                      key={file.id}
-                      onPress={() => {
-                        void downloadCommunicationAttachment(file.id, file.fileName, activeSchoolCode)
-                          .then((uri) => Linking.openURL(uri))
-                          .catch((error) =>
-                            Alert.alert(
-                              "Téléchargement refusé",
-                              error instanceof Error ? error.message : "Pièce jointe inaccessible.",
-                            ),
-                          );
-                      }}
-                    >
-                      <Text style={styles.meta}>{file.fileName}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ))}
-            {selectedMessage &&
-            !visibleMessages.some((item) => item.conversationId === selectedMessage.conversationId) ? (
-              <Text style={styles.readerBody}>{selectedMessage.message}</Text>
-            ) : null}
+            <Text style={styles.cardTitle}>{selectedConversation ? counterpartName(selectedConversation, selfId) : ""}</Text>
+            {threadMessages.map((item) => (
+              <View key={item.id}>
+                <Text style={styles.meta}>
+                  {item.senderName || item.senderUserId} • {item.sentAt || item.date}
+                </Text>
+                <Text style={styles.readerBody}>{item.message || item.theme}</Text>
+                {(item.attachments ?? []).map((file) => (
+                  <TouchableOpacity
+                    key={file.id}
+                    onPress={() => {
+                      void downloadCommunicationAttachment(file.id, file.fileName, activeSchoolCode)
+                        .then((uri) => Linking.openURL(uri))
+                        .catch((error) =>
+                          Alert.alert(
+                            "Téléchargement refusé",
+                            error instanceof Error ? error.message : "Pièce jointe inaccessible.",
+                          ),
+                        );
+                    }}
+                  >
+                    <Text style={styles.meta}>{file.fileName}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ))}
+            {canReplyInThread ? (
+              <View style={styles.threadReply} testID="messages-thread-reply-composer">
+                <FormField
+                  label="Réponse"
+                  required
+                  type="multiline"
+                  value={replyDraft}
+                  onChangeText={(value) => {
+                    setReplyDraft(value);
+                    setReplyError("");
+                  }}
+                  placeholder="Écrire une réponse…"
+                  editable={!replying}
+                  autoCorrect
+                  error={replyError}
+                  accessibilityLabel="Texte de la réponse"
+                  testID="messages-thread-reply-input"
+                />
+                <TouchableOpacity
+                  style={[styles.sendButton, styles.threadSendButton, replying && styles.disabled]}
+                  onPress={() => void replyInThread()}
+                  disabled={replying}
+                  testID="messages-thread-reply-send"
+                  accessibilityRole="button"
+                  accessibilityLabel="Envoyer la réponse"
+                  accessibilityState={{ busy: replying, disabled: replying }}
+                >
+                  {replying ? <ActivityIndicator color="#FFFFFF" /> : <Ionicons name="send-outline" size={20} color="#FFFFFF" />}
+                  <Text style={styles.sendText}>{replying ? NETWORK_COPY.recording : "Envoyer"}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <Text style={styles.meta} testID="messages-thread-reply-forbidden">
+                {teacherStudentThreadBlocked
+                  ? "Les enseignants ne peuvent pas envoyer de messages aux élèves."
+                  : "La réponse n'est pas autorisée."}
+              </Text>
+            )}
           </ScrollView>
         </View>
+        </KeyboardAvoidingContainer>
       </Modal>
     </View>
   );
@@ -574,39 +831,12 @@ function SegmentButton({ label, selected, onPress }: { label: string; selected: 
   );
 }
 
-function isUnreadStatus(status?: string) {
-  return ["Nouveau", "Distribué", "Envoyé"].includes(String(status));
-}
-
-function isReceivedMessage(message: CanonicalSchoolMessage, role: string | undefined, session: any) {
-  if (
-    [
-      "super_admin",
-      "school_admin",
-      "country_admin",
-      "principal",
-      "proviseur",
-      "prefet",
-      "secretary",
-      "accountant",
-      "adjoint",
-      "supervisor",
-    ].includes(String(role))
-  ) {
-    return message.direction === "Parent vers école";
-  }
-  if (role === "teacher") return message.direction === "Parent vers enseignant" && message.teacherId === session?.user.id;
-  return message.direction === "École vers parent" || message.direction === "Enseignant vers parent";
-}
-
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F8FAFC" },
-  content: { padding: 20 },
-  title: { color: "#0F172A", fontSize: 30, fontWeight: "900" },
-  subtitle: { color: "#64748B", fontWeight: "700", marginTop: 4, marginBottom: 16 },
-  composeCard: { backgroundColor: "#FFFFFF", borderRadius: 20, padding: 16, marginBottom: 18 },
-  cardTitle: { color: "#0F172A", fontSize: 18, fontWeight: "900", marginBottom: 10 },
-  label: { color: "#334155", fontSize: 12, fontWeight: "900", marginBottom: 6 },
+  content: { padding: 16 },
+  composeCard: { backgroundColor: "#FFFFFF", borderRadius: 16, padding: 14, marginBottom: 12 },
+  cardTitle: { color: "#0F172A", fontSize: 16, fontWeight: "800", marginBottom: 10 },
+  label: { color: "#334155", fontSize: 12, fontWeight: "800", marginBottom: 6 },
   choiceRow: { gap: 8, marginBottom: 12 },
   segmentRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   segmentButton: { flex: 1, minHeight: MIN_TOUCH_TARGET_DP, alignItems: "center", justifyContent: "center", borderRadius: 14, padding: 10, backgroundColor: "#F1F5F9" },
@@ -614,19 +844,21 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: "#0F172A" },
   chipText: { color: "#475569", fontWeight: "800" },
   chipTextActive: { color: "#FFFFFF" },
-  input: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14, padding: 12, marginBottom: 12, color: "#0F172A" },
-  messageInput: { minHeight: 100, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 14, padding: 12, marginBottom: 12, color: "#0F172A", textAlignVertical: "top" },
   sendButton: { backgroundColor: "#2563EB", borderRadius: 14, padding: 14, flexDirection: "row", justifyContent: "center", alignItems: "center" },
+  threadReply: { marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#E2E8F0" },
+  threadSendButton: { minHeight: MIN_TOUCH_TARGET_DP, marginTop: 4 },
   sendText: { color: "#FFFFFF", fontWeight: "900", marginLeft: 8 },
   disabled: { opacity: 0.5 },
   errorText: { color: "#B91C1C", fontWeight: "800", padding: 14 },
-  section: { marginBottom: 18 },
-  sectionTitle: { color: "#0F172A", fontSize: 18, fontWeight: "900", marginBottom: 8 },
-  messageCard: { backgroundColor: "#FFFFFF", borderRadius: 18, padding: 14, marginBottom: 10 },
-  messageTitle: { color: "#0F172A", fontWeight: "900" },
-  meta: { color: "#64748B", fontWeight: "700", marginTop: 4 },
-  messageBody: { color: "#334155", fontWeight: "700", marginTop: 8, lineHeight: 20 },
-  status: { color: "#2563EB", fontWeight: "800", marginTop: 8 },
+  sectionTitle: { color: "#0F172A", fontSize: 16, fontWeight: "800", marginBottom: 8 },
+  messageCard: { backgroundColor: "#FFFFFF", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 6, borderWidth: 1, borderColor: "#E2E8F0" },
+  rowTop: { flexDirection: "row", justifyContent: "space-between", gap: 8 },
+  messageTitle: { flex: 1, color: "#0F172A", fontWeight: "800" },
+  unread: { color: "#FFFFFF", backgroundColor: "#DC2626", overflow: "hidden", borderRadius: 9, paddingHorizontal: 6, fontSize: 11, fontWeight: "800" },
+  meta: { color: "#64748B", fontWeight: "600", marginTop: 4, fontSize: 12 },
+  messageBody: { color: "#334155", marginTop: 4 },
+  secondaryButton: { minHeight: 42, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: "#CBD5E1", paddingHorizontal: 14, alignItems: "center", justifyContent: "center" },
+  secondaryButtonText: { color: "#334155", fontWeight: "700" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.55)", justifyContent: "center", padding: 20 },
   readerCard: { backgroundColor: "#FFFFFF", borderRadius: 22, padding: 18 },
   closeButton: { alignSelf: "flex-end", padding: 8 },

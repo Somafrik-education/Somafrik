@@ -333,6 +333,32 @@ describe("GradesEvaluationsPage (D3.6c ToolLayout)", () => {
     renderPage();
     expect(screen.getByRole("button", { name: "Modifier" })).toBeInTheDocument();
   });
+
+  it("ouvre la saisie depuis la ligne avec Saisir les notes", () => {
+    permissions.canUpdate = true;
+    evaluationsForPage.current = [
+      {
+        id: "ev1",
+        title: "Interro 1",
+        subject: "Maths",
+        className: "6e A",
+        period: "Trimestre 1",
+        status: "Ouverte",
+        schoolCode: "SCH-001",
+        active: true,
+        date: "2026-09-10",
+        teacherName: "Seke",
+        coefficient: 2,
+        scale: 20,
+      },
+    ];
+    renderPage();
+    expect(screen.getByRole("button", { name: "Saisir les notes" })).toBeInTheDocument();
+    expect(screen.getByText("Date")).toBeInTheDocument();
+    expect(screen.getByText("Enseignant")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Saisir les notes" }));
+    expect(screen.getByLabelText("Évaluation")).toBeInTheDocument();
+  });
 });
 
 describe("GradesEvaluationsPage — file Préfet À valider", () => {

@@ -126,8 +126,11 @@ function runUnitGuards() {
   const dataContext = fs.readFileSync(path.join(ROOT, "web/src/context/DataContext.tsx"), "utf8");
   assert.match(dataContext, /stripClientSchoolsFromPutPayload/);
 
-  const adminCrud = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/AdminCrudScreen.tsx"), "utf8");
-  assert.match(adminCrud, /LEGACY_SCHOOLS_CRUD_RETIRED_MESSAGE/);
+  assert.equal(
+    fs.existsSync(path.join(ROOT, "Mobile/src/screens/AdminCrudScreen.tsx")),
+    false,
+    "AdminCrudScreen mort — CRUD établissements hors graphe Mobile",
+  );
 
   const adminData = fs.readFileSync(path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"), "utf8");
   const forbiddenMatch = adminData.match(

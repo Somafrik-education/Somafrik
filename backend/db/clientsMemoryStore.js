@@ -253,6 +253,8 @@ function createClientsMemoryStore(seed = {}) {
         return this.getUserById(id);
       },
       async reassignActiveUserRolesSchool(userId, _fromSchoolId, toSchoolId) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, userId, { operation: "reassign" });
         tables.userRoles = tables.userRoles.map((row) => {
           if (row.user_id !== userId || row.status !== "active" || row.revoked_at) return row;
           return { ...row, school_id: toSchoolId, updated_at: new Date() };
@@ -328,6 +330,11 @@ function createClientsMemoryStore(seed = {}) {
         return formatUserCode(year, next);
       },
       async insertUserRole(row) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, row.userId, {
+          operation: "grant",
+          roleKey: row.roleKey,
+        });
         const { randomUUID } = require("node:crypto");
         const exists = tables.userRoles.find(
           (item) =>
@@ -358,6 +365,11 @@ function createClientsMemoryStore(seed = {}) {
         return saved;
       },
       async revokeUserRole(row) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, row.userId, {
+          operation: "revoke",
+          roleKey: row.roleKey,
+        });
         const index = tables.userRoles.findIndex(
           (item) =>
             item.user_id === row.userId &&
@@ -384,6 +396,57 @@ function createClientsMemoryStore(seed = {}) {
       },
       async getTeacherBySchoolUser(schoolId, userId) {
         return tables.teachers.find((row) => row.school_id === schoolId && row.user_id === userId) ?? null;
+      },
+      async getCanonicalLinkedStudentByUserId(userId) {
+        const { findCanonicalLinkedStudent } = require("../lib/studentRoleLock");
+        return findCanonicalLinkedStudent(tables.students, userId);
+      },
+      async getActiveStudentProfileByUser(userId, schoolId) {
+        const { findActiveStudentProfileForUser } = require("../lib/businessProfileIntegrity");
+        const user = tables.users.find((row) => String(row.id) === String(userId));
+        if (!user) return null;
+        return findActiveStudentProfileForUser(tables.students, user, schoolId);
+      },
+      async getActiveTeacherProfileByUser(userId, schoolId) {
+        const { findActiveTeacherProfileForUser } = require("../lib/businessProfileIntegrity");
+        return findActiveTeacherProfileForUser(tables.teachers, userId, schoolId);
+      },
+      async listActiveStudentProfilesByUserIds(userIds = []) {
+        const { findActiveStudentProfileForUser } = require("../lib/businessProfileIntegrity");
+        const ids = new Set((userIds ?? []).map((id) => String(id)));
+        const rows = [];
+        for (const user of tables.users) {
+          if (!ids.has(String(user.id))) continue;
+          const student = findActiveStudentProfileForUser(tables.students, user, user.school_id);
+          if (!student) continue;
+          rows.push({
+            user_id: user.id,
+            student_id: student.id,
+            student_code: student.student_code ?? student.studentCode,
+            status: student.status,
+            school_id: student.school_id,
+          });
+        }
+        return rows;
+      },
+      async listActiveTeacherProfilesByUserIds(userIds = []) {
+        const { findActiveTeacherProfileForUser } = require("../lib/businessProfileIntegrity");
+        const ids = new Set((userIds ?? []).map((id) => String(id)));
+        const rows = [];
+        for (const id of ids) {
+          const user = tables.users.find((row) => String(row.id) === id);
+          if (!user) continue;
+          const teacher = findActiveTeacherProfileForUser(tables.teachers, user.id, user.school_id);
+          if (!teacher) continue;
+          rows.push({
+            user_id: user.id,
+            teacher_id: teacher.id,
+            teacher_code: teacher.teacher_code,
+            status: teacher.status,
+            school_id: teacher.school_id,
+          });
+        }
+        return rows;
       },
       async findAmbiguousTeacherIdentity(schoolId, identity) {
         const { isExactTeacherCivilIdentity } = require("../lib/teachersManagement");
@@ -562,7 +625,31 @@ function createClientsMemoryStore(seed = {}) {
           student_name: student
             ? `${student.first_name ?? ""} ${student.last_name ?? student.name ?? ""}`.trim()
             : "",
+          contact_first_name: contact?.first_name ?? "",
+          contact_last_name: contact?.last_name ?? "",
+          contact_phone: contact?.phone ?? "",
+          contact_email: contact?.email ?? "",
+          contact_user_id: contact?.user_id ?? null,
+          student_code: student?.student_code ?? student?.studentCode ?? "",
         };
+      },
+      async listRelationsByStudent(schoolId, studentRef) {
+        const student = tables.students.find(
+          (row) =>
+            String(row.school_id) === String(schoolId) &&
+            (String(row.id) === String(studentRef) ||
+              String(row.student_code ?? row.studentCode ?? "") === String(studentRef)),
+        );
+        if (!student) return [];
+        const matches = tables.relations.filter(
+          (relation) =>
+            String(relation.school_id) === String(schoolId) && String(relation.student_id) === String(student.id),
+        );
+        const rows = [];
+        for (const relation of matches) {
+          rows.push(await this.getRelationById(relation.id));
+        }
+        return rows.filter(Boolean);
       },
       async getRelationByContactAndStudent(contactId, studentId) {
         const matches = tables.relations.filter(
@@ -1058,8 +1145,44 @@ function createClientsMemoryStore(seed = {}) {
       async listSchoolUserIdsByRecipientKind() {
         return [];
       },
-      async listClassStudentUserIds() {
-        return [];
+      async listClassStudentUserIds(schoolId, classIds) {
+        if (!classIds?.length) return [];
+        const classSet = new Set(classIds.map((id) => String(id)));
+        const enrolledStudentIds = new Set(
+          tables.enrollments
+            .filter(
+              (row) =>
+                String(row.school_id) === String(schoolId) &&
+                classSet.has(String(row.class_id)) &&
+                String(row.status ?? "active") === "active",
+            )
+            .map((row) => String(row.student_id)),
+        );
+        const seen = new Set();
+        const rows = [];
+        for (const student of tables.students) {
+          if (!enrolledStudentIds.has(String(student.id))) continue;
+          if (String(student.school_id) !== String(schoolId)) continue;
+          if (String(student.status ?? "active") !== "active") continue;
+          const linkedUserId = String(student.user_id ?? student.userId ?? "").trim();
+          let user = null;
+          if (linkedUserId) {
+            user = tables.users.find(
+              (item) => String(item.id) === linkedUserId && String(item.school_id) === String(schoolId),
+            );
+          } else {
+            user = tables.users.find(
+              (item) =>
+                String(item.school_id) === String(schoolId) &&
+                String(item.user_code) === String(student.student_code ?? student.studentCode ?? ""),
+            );
+          }
+          if (!user || String(user.status ?? "active") !== "active") continue;
+          if (seen.has(String(user.id))) continue;
+          seen.add(String(user.id));
+          rows.push({ user_id: user.id });
+        }
+        return rows;
       },
       async listClassParentUserIds() {
         return [];
@@ -1098,6 +1221,9 @@ function createClientsMemoryStore(seed = {}) {
     getSchoolById: (id) => txApi.getSchoolById(id),
     getCountryByCode: (code) => txApi.getCountryByCode(code),
     getUserById: (id) => txApi.getUserById(id),
+    getStudentById: (id) => txApi.getStudentById(id),
+    listRelationsByStudent: (schoolId, studentRef) => txApi.listRelationsByStudent(schoolId, studentRef),
+    getCanonicalLinkedStudentByUserId: (id) => txApi.getCanonicalLinkedStudentByUserId(id),
     async withTransaction(fn) {
       if (transactionDepth > 0) {
         return fn(txApi);
@@ -1122,11 +1248,21 @@ function createClientsMemoryStore(seed = {}) {
       return filterUsersRows(this.listProjection().users, scope);
     },
     listProjection() {
+      const {
+        findActiveStudentProfileForUser,
+        findActiveTeacherProfileForUser,
+        buildBusinessProfile,
+      } = require("../lib/businessProfileIntegrity");
       const users = tables.users.map((row) => {
         const school = tables.schools.find((item) => item.id === row.school_id);
         const roleKeys = tables.userRoles
           .filter((item) => item.user_id === row.id && item.status === "active" && !item.revoked_at)
           .map((item) => item.role_key);
+        const businessProfile = buildBusinessProfile({
+          studentRow: findActiveStudentProfileForUser(tables.students, row, row.school_id),
+          teacherRow: findActiveTeacherProfileForUser(tables.teachers, row.id, row.school_id),
+          roleKeys,
+        });
         return userRoleLifecycleService.hydrateUser(
           {
             ...row,
@@ -1134,6 +1270,7 @@ function createClientsMemoryStore(seed = {}) {
             ...userCountryProjection(row, school),
           },
           roleKeys,
+          businessProfile,
         );
       });
       const contacts = tables.contacts.map((row) => {
@@ -1292,6 +1429,10 @@ function createClientsMemoryStore(seed = {}) {
       const { lookupParentIdentity } = require("../lib/parentLinking");
       return lookupParentIdentity(store, ...args);
     },
+    listParentRelations: (...args) => {
+      const { listParentRelations } = require("../lib/parentLinking");
+      return listParentRelations(store, ...args);
+    },
     archiveParentRelation: (...args) => {
       const { archiveParentRelation } = require("../lib/parentLinking");
       return archiveParentRelation(store, ...args);
@@ -1431,6 +1572,77 @@ function createClientsMemoryStore(seed = {}) {
       };
       tables.students.push(saved);
       return saved;
+    },
+    ensureStudentLoginUserRecord(row = {}) {
+      const studentCode = asTrimmed(row.student_code || row.studentCode || row.matricule);
+      const schoolId = row.school_id || row.schoolId;
+      if (!studentCode || !schoolId) return null;
+      const passwordHash = row.password_hash || row.passwordHash || "";
+      const pinHash = row.pin_hash || row.pinHash || passwordHash;
+      let user = tables.users.find(
+        (item) =>
+          String(item.school_id) === String(schoolId) &&
+          [item.user_code, item.identity_code, item.login_code].includes(studentCode),
+      );
+      if (!user) {
+        user = {
+          id: row.userId || row.user_id || randomUUID(),
+          school_id: schoolId,
+          user_code: studentCode,
+          identity_code: studentCode,
+          login_code: studentCode,
+          first_name: row.first_name || row.firstName || "",
+          last_name: row.last_name || row.lastName || "",
+          email: row.email || row.parentEmail || "",
+          phone: row.phone || row.parentPhone || "",
+          password_hash: passwordHash,
+          pin_hash: pinHash,
+          must_change_password:
+            row.must_change_password != null ? Boolean(row.must_change_password) : true,
+          role: "STUDENT",
+          status: "active",
+          profile_payload: {
+            identifier: studentCode,
+            identityCode: studentCode,
+          },
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+        tables.users.push(user);
+      } else if (passwordHash && !user.password_hash) {
+        user.password_hash = passwordHash;
+        user.pin_hash = pinHash || user.pin_hash;
+        if (row.must_change_password != null) {
+          user.must_change_password = Boolean(row.must_change_password);
+        }
+      }
+      const hasStudentRole = tables.userRoles.some(
+        (item) =>
+          String(item.user_id) === String(user.id) &&
+          item.role_key === "STUDENT" &&
+          item.status === "active" &&
+          !item.revoked_at,
+      );
+      if (!hasStudentRole) {
+        tables.userRoles.push({
+          id: randomUUID(),
+          user_id: user.id,
+          school_id: schoolId,
+          role_key: "STUDENT",
+          granted_at: new Date(),
+          status: "active",
+          revoked_at: null,
+        });
+      }
+      const studentRow = tables.students.find(
+        (item) =>
+          String(item.school_id) === String(schoolId) &&
+          [item.student_code, item.studentCode, item.identity_code].includes(studentCode),
+      );
+      if (studentRow && !studentRow.user_id) {
+        studentRow.user_id = user.id;
+      }
+      return user;
     },
     touchUserLastLogin(lookupKeys = []) {
       const keys = new Set(

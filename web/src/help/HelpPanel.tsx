@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   filterHelpArticles,
+  groupHelpArticlesByCategory,
   navigationIsAllowed,
-  popularHelpArticles,
   searchHelpArticles,
   suggestHelpArticles,
   type HelpArticle,
+  type HelpCategoryGroup,
   type HelpContext,
 } from "@somafrik/help-catalog";
 import { HELP_PANEL_ZCLASS } from "./helpZIndex";
@@ -31,16 +32,15 @@ export function HelpPanel({ context, onClose, onNavigate }: HelpPanelProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   const allowed = useMemo(() => filterHelpArticles(context), [context]);
   const suggestions = useMemo(() => suggestHelpArticles(context), [context]);
-  const popular = useMemo(() => popularHelpArticles(context), [context]);
+  const categories = useMemo(() => groupHelpArticlesByCategory(context), [context]);
   const searchResults = useMemo(() => searchHelpArticles(context, query), [context, query]);
-  const popularExclusive = useMemo(
-    () => popular.filter((article) => !suggestions.some((suggestion) => suggestion.id === article.id)),
-    [popular, suggestions],
-  );
+  const assistance = allowed.find((article) => article.id === "help/assistance/contact") ?? null;
   const activeArticle = allowed.find((article) => article.id === activeId) ?? null;
+  const categoryGroup = categories.find((group) => group.id === activeCategory) ?? null;
   const related = (activeArticle?.relatedArticles ?? [])
     .map((id) => allowed.find((article) => article.id === id))
     .filter((article): article is HelpArticle => Boolean(article));
@@ -146,8 +146,12 @@ export function HelpPanel({ context, onClose, onNavigate }: HelpPanelProps) {
               onQueryChange={setQuery}
               onSearchKeyDown={onSearchKeyDown}
               suggestions={suggestions}
-              popular={popularExclusive}
+              categories={categories}
+              categoryGroup={categoryGroup}
+              onOpenCategory={setActiveCategory}
+              onBackCategory={() => setActiveCategory(null)}
               searchResults={searchResults}
+              assistance={assistance}
               onOpen={setActiveId}
             />
           )}
@@ -162,16 +166,24 @@ function BrowseView({
   onQueryChange,
   onSearchKeyDown,
   suggestions,
-  popular,
+  categories,
+  categoryGroup,
+  onOpenCategory,
+  onBackCategory,
   searchResults,
+  assistance,
   onOpen,
 }: {
   query: string;
   onQueryChange: (value: string) => void;
   onSearchKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
   suggestions: readonly HelpArticle[];
-  popular: readonly HelpArticle[];
+  categories: readonly HelpCategoryGroup[];
+  categoryGroup: HelpCategoryGroup | null;
+  onOpenCategory: (id: string) => void;
+  onBackCategory: () => void;
   searchResults: readonly HelpArticle[];
+  assistance: HelpArticle | null;
   onOpen: (id: string) => void;
 }) {
   const searching = query.trim().length > 0;
@@ -197,6 +209,17 @@ function BrowseView({
           empty="Aucun article pour cette recherche."
           onOpen={onOpen}
         />
+      ) : categoryGroup ? (
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={onBackCategory}
+            className="text-sm font-semibold text-brand outline-none hover:underline focus-visible:ring-2 focus-visible:ring-brand/30"
+          >
+            Retour aux catégories
+          </button>
+          <ArticleList heading={categoryGroup.label} articles={categoryGroup.articles} empty="Aucun guide dans cette catégorie." onOpen={onOpen} />
+        </div>
       ) : (
         <>
           <ArticleList
@@ -205,12 +228,42 @@ function BrowseView({
             empty="Aucune suggestion pour cet écran."
             onOpen={onOpen}
           />
-          <ArticleList
-            heading="Guides populaires"
-            articles={popular}
-            empty="Aucun guide populaire pour votre rôle."
-            onOpen={onOpen}
-          />
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Catégories</h3>
+            {categories.length === 0 ? (
+              <p className="mt-2 text-sm text-muted">Aucune catégorie pour votre rôle.</p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {categories.map((group) => (
+                  <li key={group.id}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenCategory(group.id)}
+                      className="w-full rounded-lg border border-line px-3 py-2 text-left text-sm outline-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand/30"
+                    >
+                      <span className="font-semibold text-ink">{group.label}</span>
+                      <span className="mt-0.5 block text-muted">
+                        {group.articles.length} guide{group.articles.length > 1 ? "s" : ""}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          {assistance ? (
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Assistance</h3>
+              <button
+                type="button"
+                onClick={() => onOpen(assistance.id)}
+                className="mt-2 w-full rounded-lg border border-line px-3 py-2 text-left text-sm outline-none hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-brand/30"
+              >
+                <span className="font-semibold text-ink">{assistance.title}</span>
+                <span className="mt-0.5 block text-muted">{assistance.summary}</span>
+              </button>
+            </section>
+          ) : null}
         </>
       )}
     </div>

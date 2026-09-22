@@ -440,8 +440,40 @@ async function ensureStudentGeneralIdentityPg(repository) {
   await repository.query(STUDENT_GENERAL_IDENTITY_SQL);
 }
 
+async function assertStudentGeneralIdentityPg(repository) {
+  if (!repository || repository.engine === "memory") return;
+
+  const result = await repository.query(
+    `SELECT
+       EXISTS (
+         SELECT 1
+         FROM pg_trigger t
+         JOIN pg_class c ON c.oid = t.tgrelid
+         WHERE c.relname = 'students'
+           AND t.tgname = 'students_permanent_identity_insert'
+           AND NOT t.tgisinternal
+           AND t.tgenabled <> 'D'
+       ) AS trigger_enabled,
+       pg_get_functiondef('somafrik_assign_permanent_student_identity'::regproc) AS function_def`,
+  );
+  const row = result?.rows?.[0] ?? {};
+  const functionDef = String(row.function_def ?? "");
+
+  if (
+    row.trigger_enabled !== true ||
+    !functionDef.includes("somafrik_student_identity_taken") ||
+    !functionDef.includes("student_general_code_counters") ||
+    !functionDef.includes("person_initials")
+  ) {
+    const error = new Error("STUDENT_CANONICAL_POSTGRES_ALLOCATOR_NOT_READY");
+    error.code = "STUDENT_CANONICAL_POSTGRES_ALLOCATOR_NOT_READY";
+    throw error;
+  }
+}
+
 module.exports = {
   STUDENT_GENERAL_COUNTERS_MIGRATE_SQL,
   STUDENT_GENERAL_IDENTITY_SQL,
   ensureStudentGeneralIdentityPg,
+  assertStudentGeneralIdentityPg,
 };

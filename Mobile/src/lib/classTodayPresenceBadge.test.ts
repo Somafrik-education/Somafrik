@@ -95,6 +95,7 @@ function badge(input: {
   schoolClass?: SchoolClass;
   studentsStatus?: ResourceSnapshot<unknown>["status"];
   presencesStatus?: ResourceSnapshot<ClassPresenceRow>["status"];
+  schoolId?: string | null;
   schoolCode?: string | null;
 }) {
   return resolveClassTodayPresenceBadge({
@@ -103,6 +104,7 @@ function badge(input: {
     students: input.students,
     classes: [CLASS_A, CLASS_B, CLASS_A_HOMONYM],
     schoolClass: input.schoolClass ?? CLASS_B,
+    schoolId: input.schoolId,
     schoolCode: input.schoolCode === undefined ? SCHOOL : input.schoolCode,
     timeZone: TZ,
     now: NOW,
@@ -265,6 +267,44 @@ function run() {
   assert.equal(tenant.expected, 4);
   assert.equal(tenant.rate, 100);
   assert.equal(tenant.studentIds.includes("ext"), false);
+
+  // H1. PostgreSQL expose l'UUID commun mais des codes différents selon les projections :
+  // élèves/classes = school_code interne, présences = login_code public.
+  // L'UUID école canonique doit permettre d'afficher le taux sans ouvrir le scope tenant.
+  const pgSchoolId = "00000000-0000-4000-8000-000000000001";
+  const pgStudents = four.map((row) => ({
+    ...row,
+    schoolId: pgSchoolId,
+    schoolCode: "SCHOOL-INTERNAL-001",
+  }));
+  const pgPresenceRows = [
+    presence("s1", "Présent", { schoolId: pgSchoolId, schoolCode: "CD-NURU-26-001" }),
+    presence("s2", "Présent", { schoolId: pgSchoolId, schoolCode: "CD-NURU-26-001" }),
+    presence("s3", "Présent", { schoolId: pgSchoolId, schoolCode: "CD-NURU-26-001" }),
+    presence("s4", "Absent", { schoolId: pgSchoolId, schoolCode: "CD-NURU-26-001" }),
+  ];
+  const pgProjection = badge({
+    students: pgStudents,
+    presences: pgPresenceRows,
+    schoolId: pgSchoolId,
+    schoolCode: "CD-NURU-26-001",
+  });
+  assert.equal(pgProjection.kind, "rate");
+  assert.equal(pgProjection.rate, 75);
+  assert.equal(pgProjection.badgeText, "Présence 75 %");
+
+  const wrongPgSchool = badge({
+    students: pgStudents,
+    presences: pgPresenceRows.map((row) => ({
+      ...row,
+      schoolId: "00000000-0000-4000-8000-000000000099",
+      schoolCode: "CD-NURU-26-001",
+    })),
+    schoolId: pgSchoolId,
+    schoolCode: "CD-NURU-26-001",
+  });
+  assert.equal(wrongPgSchool.kind, "unset", "un UUID école différent reste hors tenant");
+  assert.equal(wrongPgSchool.recorded, 0);
 
   // H2. Ligne présence sans schoolCode / classId → fail-closed, jamais un taux inventé
   const missingSchool = badge({

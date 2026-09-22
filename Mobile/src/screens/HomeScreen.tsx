@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -11,10 +11,12 @@ import RoleDashboardLayout, {
 } from "../components/RoleDashboardLayout";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
-import { getPaymentCashKpi } from "../lib/paymentCashKpi";
+import { formatPaymentCashAmounts } from "../lib/paymentCashKpi";
+import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
 import { getPaymentStats, getPresenceStats } from "../domain/metrics/schoolMetrics";
-import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
+import { canReadEntity, canReadRoute, hasSecurityPermission } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
+import { useMessagesUnreadCount } from "../lib/messagesRead";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
 import { DATA_TRUTH_TEST_IDS, METRIC_PENDING_LABEL, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
 import {
@@ -24,9 +26,22 @@ import {
   formatHomePaymentRateKpi,
   formatHomePaymentsKpi,
 } from "../lib/homeDashboardKpis";
-import { countActiveUserAccounts } from "../lib/format";
+import { countActiveUserAccounts, isSchoolAdminRole } from "../lib/format";
+import { GuidedSchoolSetupDashboardCard } from "../components/schoolSetup/GuidedSchoolSetupDashboardCard";
+import { SchoolSetupDashboardWidget } from "../components/schoolSetup/SchoolSetupDashboardWidget";
+import { schoolSetupGuidedApi, type GuidedSetupPayload } from "../lib/schoolSetupGuidedApi";
+import { schoolSetupStatusApi, type SchoolSetupPayload } from "../lib/schoolSetupStatusApi";
+import { SCHOOL_SETUP_ROUTE, shouldShowDashboardSetupWidget } from "../lib/schoolSetupMobile";
+import { filterCanonicalClasses } from "../lib/schoolingTruth";
 import { TODAY_PRESENCE_KPI_LABEL, getTodayEstablishmentPresenceKpi } from "../lib/todayPresenceKpi";
-import { canonicalWeightedAverage, notesForStudent } from "../lib/evaluationsV2";
+import { notesForStudent } from "../lib/evaluationsV2";
+import { canonicalStudentGeneralAverage } from "../lib/pedagogyAverage";
+import {
+  filterRowsByStudentScope,
+  findStudentByIdentity,
+  resolveMobileStudentScope,
+  sessionStudentAliasKeys,
+} from "../lib/canonicalStudentIdentity";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import {
@@ -50,16 +65,22 @@ import {
   type RoleHomeActionKey,
   type RoleHomeKpiKey,
 } from "../lib/roleHomeConfig";
+import { useUnpaidLedger } from "../hooks/useUnpaidLedger";
+import { unpaidLedgerMetricValue } from "../lib/unpaidLedger";
 
 export default function HomeScreen({ navigation }: any) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
+  const [setupPayload, setSetupPayload] = useState<SchoolSetupPayload | null>(null);
+  const [guidedPayload, setGuidedPayload] = useState<GuidedSetupPayload | null>(null);
+  const [setupStatusFailed, setSetupStatusFailed] = useState(false);
   const {
     studentsData,
     studentsSnapshot,
     paymentsData,
     paymentsSnapshot,
     loadPayments,
+    studentFeesData,
     studentFeesSnapshot,
     loadStudentFees,
     notesSnapshot,
@@ -80,13 +101,13 @@ export default function HomeScreen({ navigation }: any) {
     loadClasses,
     loadAssignments,
     resourceScopeKey,
-    countriesData,
     teachersData,
     assignmentsData,
     classesData,
     classesSnapshot,
     assignmentsSnapshot,
     establishmentStudents,
+    activeSchoolCode,
   } = useAdminData();
   const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const teacherScopeState = {
@@ -101,11 +122,13 @@ export default function HomeScreen({ navigation }: any) {
     session?.school ??
     schoolsData[0] ??
     { name: "École", timezone: undefined, code: "" };
+  const canReadUnpaid = hasSecurityPermission(session, "Impayés", "READ");
+  const unpaidSchoolCode = activeSchoolCode || currentSchool.code;
+  const { state: unpaidLedger } = useUnpaidLedger(canReadUnpaid, unpaidSchoolCode);
 
   const canonicalPayments =
     paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty" ? paymentsData : [];
-  const paymentStats = getPaymentStats(canonicalPayments);
-  const cashKpi = getPaymentCashKpi(canonicalPayments);
+  const cashOverview = formatPaymentCashAmounts(canonicalPayments);
   const paymentsReady =
     paymentsSnapshot.status === "success" ||
     paymentsSnapshot.status === "empty" ||
@@ -115,7 +138,7 @@ export default function HomeScreen({ navigation }: any) {
   const usersValue = metricLabelFromSnapshot(usersSnapshot, (rows) => String(countActiveUserAccounts(rows)));
   const studentsValue = metricLabelFromSnapshot(studentsSnapshot, () => String(visibleStudents.length));
   const classesValue = metricLabelFromSnapshot(classesSnapshot, (rows) =>
-    String(rows.length || new Set(visibleStudents.map((student) => student.className)).size),
+    String(filterCanonicalClasses(rows).length),
   );
   const studentsReady =
     studentsSnapshot.status === "success" ||
@@ -136,6 +159,9 @@ export default function HomeScreen({ navigation }: any) {
     studentFeesSnapshot.status === "success" ||
     studentFeesSnapshot.status === "empty" ||
     (studentFeesSnapshot.status === "offline" && studentFeesSnapshot.data.length > 0);
+  const feeOverview = formatPaymentOverviewAmounts(studentFeesData);
+  const receivableLabel = studentFeesReady ? feeOverview.remainingLabel : "—";
+  const collectedLabel = paymentsReady ? cashOverview.collectedLabel : "—";
   const paymentRateValue = metricLabelFromSnapshot(
     studentFeesSnapshot,
     (rows) => formatHomePaymentRateKpi(rows).value,
@@ -147,16 +173,15 @@ export default function HomeScreen({ navigation }: any) {
     "0",
   );
   const announcementsValue = metricLabelFromSnapshot(announcementsSnapshot, (rows) => String(rows.length));
-  const unreadMessagesCount = getUnreadMessagesCount(session, messagesSnapshot.data, visibleStudents);
-  const unreadMessagesValue = metricLabelFromSnapshot(messagesSnapshot, () => String(unreadMessagesCount));
+  const { count: unreadMessagesApiCount } = useMessagesUnreadCount(
+    canAccessMessagesRoute(session) && Boolean(activeSchoolCode),
+    activeSchoolCode,
+  );
+  const unreadMessagesCount = unreadMessagesApiCount;
+  const unreadMessagesValue = metricLabelFromSnapshot(messagesSnapshot, () => String(unreadMessagesApiCount));
   const unreadMessages = messagesSnapshot.status === "success" || messagesSnapshot.status === "empty" ? unreadMessagesCount : 0;
   const teachersValue = String(teachersData.length);
   const teacherStudents = visibleStudents;
-  const teacherStudentIds = teacherStudents.map((student) => student.id);
-  const teacherPresenceStats = getPresenceStats(
-    presencesData.filter((presence) => isTodayPresence(presence.date)),
-    teacherStudentIds,
-  );
   const assignedClasses = teacherScopedClassLabels(session, teacherStudents, teacherScopeState);
   const sessionCourses = session?.user?.courses ?? [];
   const assignmentCourses = resolveTeacherAssignmentsForSession(session, teacherScopeState)
@@ -164,19 +189,33 @@ export default function HomeScreen({ navigation }: any) {
     .filter(Boolean);
   const courses = [...new Set([...sessionCourses, ...assignmentCourses])];
 
-  const linkedChild = session?.user?.children?.find((child: { id: string }) => child.id === selectedStudentId);
+  const studentAliasKeys = sessionStudentAliasKeys({
+    role: session?.role,
+    selectedStudentId,
+    user: session?.user,
+  });
+  const linkedChild = session?.user?.children?.find((child: { id: string }) =>
+    studentAliasKeys.includes(child.id),
+  );
   const selectedStudent =
-    studentsData.find((item) => item.id === selectedStudentId) ??
+    findStudentByIdentity(studentsData, studentAliasKeys) ??
     (linkedChild ? { id: linkedChild.id, name: linkedChild.name, className: linkedChild.className } : undefined);
-  const studentNotes = selectedStudentId ? notesForStudent(notesSnapshot.data, selectedStudentId) : [];
-  const canonicalAverage = canonicalWeightedAverage(studentNotes);
+  const studentNotes = studentAliasKeys.length
+    ? notesForStudent(notesSnapshot.data, studentAliasKeys)
+    : [];
+  const canonicalAverage = canonicalStudentGeneralAverage(studentNotes);
   const averageDisplay = parentAverageDisplay({
     notesReady: notesSnapshot.status === "success" || notesSnapshot.status === "empty",
     notesForStudent: studentNotes,
     average: canonicalAverage.available ? canonicalAverage.average ?? undefined : undefined,
   });
-  const studentPresences = presencesData.filter((presence) => presence.studentId === selectedStudentId);
-  const studentPayments = paymentsReady ? paymentsData.filter((payment) => payment.studentId === selectedStudentId) : [];
+  const studentScope = resolveMobileStudentScope({
+    role: session?.role,
+    selectedStudentId,
+    user: session?.user,
+  });
+  const studentPresences = filterRowsByStudentScope(presencesData, studentScope);
+  const studentPayments = paymentsReady ? filterRowsByStudentScope(paymentsData, studentScope) : [];
   const studentPresenceStats = getPresenceStats(studentPresences);
   const studentPaymentStats = getPaymentStats(studentPayments);
 
@@ -217,6 +256,41 @@ export default function HomeScreen({ navigation }: any) {
     ]),
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      const role = session?.role ?? session?.user?.role;
+      if (!isSchoolAdminRole(role)) {
+        setSetupPayload(null);
+        setSetupStatusFailed(false);
+        return;
+      }
+      let cancelled = false;
+      void schoolSetupStatusApi
+        .get()
+        .then((row) => {
+          if (cancelled) return;
+          setSetupPayload(row);
+          setSetupStatusFailed(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSetupPayload(null);
+          setSetupStatusFailed(true);
+        });
+      void schoolSetupGuidedApi
+        .get()
+        .then((row) => {
+          if (!cancelled) setGuidedPayload(row);
+        })
+        .catch(() => {
+          if (!cancelled) setGuidedPayload(null);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [session]),
+  );
+
   const shell = getRoleHomeShell(session);
   const userName = session?.user?.name ?? "Utilisateur";
   const isTeacher = session?.role === "teacher";
@@ -242,7 +316,7 @@ export default function HomeScreen({ navigation }: any) {
     ? canReadStudentPayments
     : canReadEntity(session, "payments") || canReadStudentPayments;
 
-  const kpiCatalog: Record<RoleHomeKpiKey, RoleDashboardKpi | null> = {
+  const kpiCatalog: Partial<Record<RoleHomeKpiKey, RoleDashboardKpi | null>> = {
     users: canReadEntity(session, "users")
       ? kpi("users", "person-outline", usersValue, ACTIVE_USERS_KPI_LABEL, "#2563EB", "#EFF6FF", () => navigation.navigate(usersRoute), DATA_TRUTH_TEST_IDS.homeUsersValue)
       : null,
@@ -267,10 +341,8 @@ export default function HomeScreen({ navigation }: any) {
           "checkmark-circle-outline",
           isParentLike
             ? `${studentPresenceStats.attended}/${studentPresenceStats.total}`
-            : isTeacher
-              ? `${teacherPresenceStats.rate}%`
-              : establishmentPresenceValue,
-          isParentLike || isTeacher ? "Présence" : TODAY_PRESENCE_KPI_LABEL,
+            : establishmentPresenceValue,
+          isParentLike ? "Présence" : TODAY_PRESENCE_KPI_LABEL,
           "#16A34A",
           "#ECFDF5",
           () =>
@@ -350,19 +422,16 @@ export default function HomeScreen({ navigation }: any) {
         )
       : null,
     pendingPayments: canReadEntity(session, "payments")
-      ? kpi("pendingPayments", "time-outline", paymentsReady ? formatAmount(paymentStats.pendingAmount) : "—", "À percevoir", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
+      ? kpi("pendingPayments", "time-outline", receivableLabel, "À percevoir", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
       : null,
     paidPayments: canReadEntity(session, "payments")
-      ? kpi("paidPayments", "checkmark-circle-outline", paymentsReady ? formatAmount(cashKpi.collectedAmount) : "—", "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))
+      ? kpi("paidPayments", "checkmark-circle-outline", collectedLabel, "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))
       : null,
-    unpaidPayments: canReadEntity(session, "payments")
-      ? kpi("unpaidPayments", "alert-circle-outline", paymentsReady ? String(paymentStats.pending) : "—", "Impayés", "#DC2626", "#FEF2F2", () => navigation.navigate("Payments"))
+    unpaidPayments: canReadUnpaid
+      ? kpi("unpaidPayments", "alert-circle-outline", unpaidLedgerMetricValue(unpaidLedger), "Impayés", "#DC2626", "#FEF2F2", () => navigation.navigate("Unpaid"))
       : null,
     paymentCount: canReadEntity(session, "payments")
       ? kpi("paymentCount", "card-outline", paymentsValue, PAYMENTS_KPI_LABEL, "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"), DATA_TRUTH_TEST_IDS.homePaymentsValue)
-      : null,
-    documents: canReadRoute(session, "Documents")
-      ? kpi("documents", "folder-open-outline", "—", "Documents", "#2563EB", "#EFF6FF", () => navigation.navigate("Documents"))
       : null,
     messages: canAccessMessagesRoute(session)
       ? kpi("messages", "chatbubbles-outline", unreadMessagesValue, "Messages", "#0F766E", "#ECFDF5", () => navigation.navigate("Messages"))
@@ -370,28 +439,17 @@ export default function HomeScreen({ navigation }: any) {
     announcements: canReadEntity(session, "announcements")
       ? kpi("announcements", "megaphone-outline", announcementsValue, "Annonces", "#7C3AED", "#F5F3FF", () => navigation.navigate("Announcements"))
       : null,
-    countries: isPlatformAdmin
-      ? kpi("countries", "earth-outline", String(countriesData.length), "Pays", "#2563EB", "#EFF6FF", () => navigation.navigate("AdminCrud", { entity: "countries" }))
-      : null,
-    schools: isPlatformAdmin
-      ? kpi("schools", "business-outline", String(schoolsData.length), "Établissements", "#7C3AED", "#F5F3FF", () => navigation.navigate("AdminCrud", { entity: "schools" }))
-      : null,
   };
 
   const kpis = selectHomeKpis(
     shell.kpiKeys.map((key) => kpiCatalog[key]).filter((item): item is RoleDashboardKpi => Boolean(item)),
   );
 
-  const actionCatalog: Record<RoleHomeActionKey, RoleDashboardAction | null> = {
+  const actionCatalog: Partial<Record<RoleHomeActionKey, RoleDashboardAction | null>> = {
     users: canReadEntity(session, "users") ? action("users", "person-circle-outline", "Utilisateurs", () => navigation.navigate("Users")) : null,
     classes: canReadRoute(session, "Classes") ? action("classes", "grid-outline", "Classes", () => navigation.navigate("Classes")) : null,
     teachers: canReadEntity(session, "teachers") ? action("teachers", "person-add-outline", "Enseignants", () => navigation.navigate("Teachers")) : null,
     payments: canReadEntity(session, "payments") ? action("payments", "card-outline", "Paiements", () => navigation.navigate("Payments")) : null,
-    platformNotifications: canReadView(session, "PlatformNotifications")
-      ? action("platformNotifications", "notifications-outline", "Notifications", () => navigation.navigate("PlatformNotifications"))
-      : canReadRoute(session, "InternalNotifications")
-        ? action("platformNotifications", "notifications-outline", "Notifications", () => navigation.navigate("InternalNotifications"))
-        : null,
     announcements: canReadEntity(session, "announcements") ? action("announcements", "megaphone-outline", "Annonces", () => navigation.navigate("Announcements")) : null,
     students: canReadEntity(session, "students") ? action("students", "people-outline", "Élèves", () => navigation.navigate(studentsRoute)) : null,
     attendance: canReadRoute(session, "TeacherAttendance") ? action("attendance", "checkbox-outline", "Présences", () => navigation.navigate("TeacherAttendance")) : null,
@@ -401,9 +459,11 @@ export default function HomeScreen({ navigation }: any) {
       ? action("messages", "chatbubbles-outline", unreadMessages > 0 ? `Messages (${unreadMessages})` : "Messages", () => navigation.navigate("Messages"))
       : null,
     timetable: canReadRoute(session, "Timetable") ? action("timetable", "time-outline", "Planning", () => navigation.navigate("Timetable")) : null,
-    profile: canShowHomeStudentAction(session, "profile", selectedStudentId)
-      ? action("profile", "person-outline", "Profil", () => navigation.navigate("StudentDetail", { studentId: selectedStudentId }))
-      : null,
+    profile: session?.role === "parent_student" && canReadRoute(session, "ParentProfile")
+      ? action("profile", "person-outline", "Mon profil", () => navigation.navigate("ParentProfile"))
+      : canShowHomeStudentAction(session, "profile", selectedStudentId)
+        ? action("profile", "person-outline", "Profil", () => navigation.navigate("StudentDetail", { studentId: selectedStudentId }))
+        : null,
     notes: canShowHomeStudentAction(session, "notes", selectedStudentId)
       ? action("notes", "book-outline", "Notes", () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }))
       : null,
@@ -413,7 +473,6 @@ export default function HomeScreen({ navigation }: any) {
     studentPayments: canShowHomeStudentAction(session, "studentPayments", selectedStudentId)
       ? action("studentPayments", "card-outline", "Paiements", () => navigation.navigate("StudentPayments", { studentId: selectedStudentId }))
       : null,
-    documents: canReadRoute(session, "Documents") ? action("documents", "folder-open-outline", "Documents", () => navigation.navigate("Documents")) : null,
   };
 
   const configuredActions = shell.actionKeys
@@ -436,6 +495,9 @@ export default function HomeScreen({ navigation }: any) {
 
   const latestAnnouncement = announcementsSnapshot.data[0];
   const showParentAnnouncement = isParentLike && Boolean(latestAnnouncement || canReadRoute(session, "Announcements"));
+  const setupRole = session?.role ?? session?.user?.role;
+  const showSetupWidget = shouldShowDashboardSetupWidget({ payload: setupPayload, role: setupRole });
+  const showSetupFailSoft = setupStatusFailed && isSchoolAdminRole(setupRole);
 
   return (
     <RoleDashboardLayout
@@ -486,10 +548,41 @@ export default function HomeScreen({ navigation }: any) {
       }}
       kpis={kpis}
       actions={actions}
-      showSecurityMatrix={shell.showSecurityMatrix && canReadView(session, "Permissions")}
-      onSecurityMatrixPress={() => navigation.navigate("Permissions")}
+      showSecurityMatrix={false}
       footerSlot={
-        showParentAnnouncement ? (
+        guidedPayload || (showSetupWidget && setupPayload) ? (
+          <View style={footerStyles.wrap}>
+            {guidedPayload ? (
+              <GuidedSchoolSetupDashboardCard
+                payload={guidedPayload}
+                role={setupRole}
+                onResume={() => navigation.navigate(SCHOOL_SETUP_ROUTE)}
+              />
+            ) : null}
+            {showSetupWidget && setupPayload ? (
+              <SchoolSetupDashboardWidget
+                payload={setupPayload}
+                heading="Configuration rapide"
+                actionLabel="Continuer"
+                onContinue={() => navigation.navigate(SCHOOL_SETUP_ROUTE)}
+              />
+            ) : null}
+          </View>
+        ) : showSetupFailSoft ? (
+          <View style={footerStyles.wrap} testID="school-setup-widget">
+            <TouchableOpacity
+              style={footerStyles.card}
+              onPress={() => navigation.navigate(SCHOOL_SETUP_ROUTE)}
+              accessibilityRole="button"
+              accessibilityLabel="Configurer l'établissement"
+            >
+              <Text style={footerStyles.cardTitle}>Configuration de l'établissement</Text>
+              <Text style={footerStyles.cardBody}>
+                Impossible de charger le statut. Ouvrez la configuration pour continuer.
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : showParentAnnouncement ? (
           <View style={footerStyles.wrap}>
             <Text style={footerStyles.title}>Dernière annonce</Text>
             <TouchableOpacity style={footerStyles.card} onPress={() => navigation.navigate("Announcements")}>
@@ -525,71 +618,6 @@ function action(
   onPress: () => void,
 ): RoleDashboardAction {
   return { key, icon, label, onPress };
-}
-
-function formatAmount(value: number) {
-  return `${Math.round(value).toLocaleString("fr-FR")} F`;
-}
-
-function isTodayPresence(dateValue?: string) {
-  return toDateKey(dateValue) === toDateKey(new Date());
-}
-
-function toDateKey(value?: string | Date) {
-  if (!value) return "";
-  if (value instanceof Date) {
-    return [
-      value.getFullYear(),
-      String(value.getMonth() + 1).padStart(2, "0"),
-      String(value.getDate()).padStart(2, "0"),
-    ].join("-");
-  }
-  const text = String(value).trim();
-  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-  const localMatch = text.match(/^(\d{2})-(\d{2})-(\d{4})/);
-  if (localMatch) return `${localMatch[3]}-${localMatch[2]}-${localMatch[1]}`;
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return toDateKey(parsed);
-}
-
-function getUnreadMessagesCount(
-  session: any,
-  messagesData: any[],
-  scopedStudents: any[],
-) {
-  if (
-    session?.role === "super_admin" ||
-    session?.role === "school_admin" ||
-    session?.role === "country_admin" ||
-    session?.role === "principal" ||
-    session?.role === "proviseur" ||
-    session?.role === "prefet" ||
-    session?.role === "secretary" ||
-    session?.role === "accountant" ||
-    session?.role === "adjoint"
-  ) {
-    return messagesData.filter(
-      (message) => message.status === "Nouveau" && message.direction === "Parent vers école",
-    ).length;
-  }
-  if (session?.role === "teacher") {
-    const teacherParents = scopedStudents.map((student) => student.parentPhone);
-    return messagesData.filter(
-      (message) =>
-        message.status === "Nouveau" &&
-        (message.teacherId === session.user.id || teacherParents.includes(message.parentPhone)) &&
-        message.direction === "Parent vers enseignant",
-    ).length;
-  }
-  const parentPhone = session?.user.parentPhone ?? session?.user.children?.[0]?.parentPhone;
-  return messagesData.filter(
-    (message) =>
-      message.status === "Nouveau" &&
-      message.parentPhone === parentPhone &&
-      (message.direction === "École vers parent" || message.direction === "Enseignant vers parent"),
-  ).length;
 }
 
 const footerStyles = StyleSheet.create({

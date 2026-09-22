@@ -12,7 +12,7 @@ Implémentation : un layout commun `RoleDashboardLayout` + `roleHomeConfig`. **P
 
 Ordre visuel :
 
-1. **Header compact commun** — menu, nom d’établissement, sync, recherche, notifications.
+1. **Header compact commun** — menu agrandi, nom d’établissement, actualiser, notifications. **Aucune icône Recherche.**
 2. **Carte identité** — nom/prénom, établissement (ou classe), `Espace …`.
 3. **Bannière métier colorée** — mission principale du rôle.
 4. **Vue métier** — 4 KPI maximum, réellement pertinents ; lien **Matrice sécurité** si autorisé.
@@ -49,8 +49,8 @@ Cibles tactiles : **>= 44 dp**.
 
 1. **Le header sert aux actions globales.**
    - gauche : menu latéral global ;
-   - centre : établissement / contexte courant (prioritaire, une ligne) ;
-   - droite : synchronisation, recherche, notifications selon permissions.
+   - puis : établissement / contexte courant (prioritaire, une ligne, `flex: 1`) ;
+   - droite : synchronisation et notifications selon permissions (pas de recherche).
 2. **La bottom navigation sert uniquement aux tâches quotidiennes du rôle.**
    - aucun onglet « Menu » ;
    - 5 entrées maximum au total, Accueil compris ;
@@ -73,14 +73,15 @@ Cibles tactiles : **>= 44 dp**.
 
 Ordre :
 
-`[☰]  [Nom établissement]        [Sync] [Recherche] [Notifications]`
+`[☰]  [Nom établissement]        [Sync] [Notifications]`
 
 Contraintes :
 - Safe Area haute réelle ; `headerStatusBarHeight: 0` côté navigator (pas de double inset) ;
-- slots : burger 44 dp à gauche, 3 actions 132 dp à droite ; nom d’établissement lisible au centre ;
-- cible tactile >= 44 dp ;
+- rangée TopBar `minHeight` **76 dp** (cible 72–80), contenu centré verticalement ;
+- slots : burger **48 dp** (icône **32 dp**) à gauche, 2 actions 88 dp à droite ; nom d’établissement lisible (`flex: 1`, une ligne) ;
+- cible tactile menu **48 × 48 dp**, autres actions >= 44 dp ;
 - le nom établissement est prioritaire, une ligne, **sans** ligne secondaire ville/rôle ;
-- maximum 3 actions à droite ;
+- maximum 2 actions à droite (Actualiser, Notifications) — **aucune loupe** ;
 - les actions non autorisées par RBAC ne sont pas affichées ;
 - le badge d’environnement reste **sous** la barre système (bande `HEADER_BADGE_BAND_DP` dans le header), jamais dans l’horloge / réseau / batterie ;
 - le badge non-production affiche la version de spec (`Développement · V2.0`) pour authentifier le bundle.

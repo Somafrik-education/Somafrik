@@ -1,3 +1,4 @@
+import { DateInput } from "../../components/ui/DateInput";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
@@ -37,10 +38,12 @@ import { inputToPeriodDate, normalizePeriodDate, periodDateToInput } from "../..
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { normalize } from "../../lib/format";
 import { QuickFeeGridModal } from "../../components/fees/QuickFeeGridModal";
-import { financeApi } from "../../lib/financeApi";
+import { financeApi, type FinanceCatalog } from "../../lib/financeApi";
 import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { formatFinanceAmount, resolveFinanceCurrency } from "../../lib/financeCurrency";
+import { formatPaymentOverviewAmounts } from "../../lib/paymentAmountBreakdown";
 import { EmptyState, ErrorState, LoadingState } from "../../design-system";
+import { FinanceCatalogConfig } from "./FinanceCatalogConfig";
 
 interface DraftItem {
   id?: string;
@@ -97,6 +100,7 @@ export function FinanceFeesPage() {
   const [feeTypeCatalog, setFeeTypeCatalog] = useState<Array<{ feeType: string; label: string }>>([
     { feeType: "Inscription", label: "Inscription" },
   ]);
+  const [catalog, setCatalog] = useState<FinanceCatalog | null>(null);
   const [catalogCurrency, setCatalogCurrency] = useState("");
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [catalogError, setCatalogError] = useState("");
@@ -106,10 +110,11 @@ export function FinanceFeesPage() {
     setCatalogError("");
     void financeApi
       .getFinanceCatalog()
-      .then((catalog) => {
-        const rows = catalog.feeTypeCatalog ?? catalog.canonicalFeeTypes ?? [];
+      .then((nextCatalog) => {
+        setCatalog(nextCatalog);
+        const rows = nextCatalog.feeTypeCatalog ?? nextCatalog.canonicalFeeTypes ?? [];
         if (rows.length) setFeeTypeCatalog(rows);
-        if (catalog.currency) setCatalogCurrency(catalog.currency);
+        if (nextCatalog.currency) setCatalogCurrency(nextCatalog.currency);
       })
       .catch((cause) => {
         setCatalogError(cause instanceof Error ? cause.message : "Impossible de charger le catalogue financier.");
@@ -126,7 +131,6 @@ export function FinanceFeesPage() {
 
   const allItems = scopedSchoolFeeItems(session?.user ?? null, state);
   const studentFees = scopedStudentFees(session?.user ?? null, state);
-  const currency = resolveFinanceCurrency(catalogCurrency, activeSchool?.currency, resolveSchoolCurrency(state, schoolCode));
   const classOptions = useMemo(() => classOptionsForSchool(state, schoolCode), [state, schoolCode]);
   const classChoices = useMemo(() => classChoicesForSchool(state, schoolCode), [state, schoolCode]);
   const years = useMemo(
@@ -148,7 +152,7 @@ export function FinanceFeesPage() {
     setBusy(true);
     try {
       await action();
-      await refresh();
+      await refresh(["feeGrids", "schoolFeeItems"]);
       showToast(message, "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Échec de la synchronisation", "error");
@@ -301,7 +305,7 @@ export function FinanceFeesPage() {
         idempotencyKey: applyIntentionRef.current.get(grid.id),
       });
       applyIntentionRef.current.set(grid.id, createFinanceIdempotencyKey());
-      await refresh();
+      await refresh(["feeGrids", "studentFees"]);
       if (!result.created) {
         showToast("Aucun frais généré", "error");
         return;
@@ -326,6 +330,7 @@ export function FinanceFeesPage() {
   ];
 
   const summary = studentFeeSummary(studentFees);
+  const remainingLabel = formatPaymentOverviewAmounts(studentFees).remainingLabel;
 
   return (
     <>
@@ -356,7 +361,7 @@ export function FinanceFeesPage() {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <Kpi label="Tarifs" value={grids.length} />
-          <Kpi label="Reste à payer" value={formatFinanceAmount(summary.totalBalance, currency)} />
+          <Kpi label="Reste à payer" value={remainingLabel} />
           <Kpi label="Échéances dépassées" value={summary.overdue} />
         </div>
 
@@ -396,24 +401,29 @@ export function FinanceFeesPage() {
               action={<Button onClick={() => window.location.reload()}>Réessayer</Button>}
             />
           </div>
-        ) : !grids.length ? (
-          <div className="mt-4">
-            <EmptyState
-              title="Aucun tarif défini"
-              description="Créez une grille par classe pour générer les obligations des élèves."
-              action={
-                canCreate ? (
-                  <Button size="sm" onClick={openCreate} disabled={!schoolCode}>
-                    Nouvelle grille
-                  </Button>
-                ) : null
-              }
-            />
-          </div>
         ) : (
-          <div className="mt-4">
-            <Table columns={columns} rows={grids} rowKey={(g) => g.id} onRowClick={setDetail} stackOnMobile />
-          </div>
+          <>
+            {catalog ? <FinanceCatalogConfig catalog={catalog} canWrite={canCreate || canUpdate} /> : null}
+            {!grids.length ? (
+              <div className="mt-4">
+                <EmptyState
+                  title="Aucun tarif défini"
+                  description="Créez une grille par classe pour générer les obligations des élèves."
+                  action={
+                    canCreate ? (
+                      <Button size="sm" onClick={openCreate} disabled={!schoolCode}>
+                        Nouvelle grille
+                      </Button>
+                    ) : null
+                  }
+                />
+              </div>
+            ) : (
+              <div className="mt-4">
+                <Table columns={columns} rows={grids} rowKey={(g) => g.id} onRowClick={setDetail} stackOnMobile />
+              </div>
+            )}
+          </>
         )}
       </Card>
 
@@ -576,8 +586,7 @@ export function FinanceFeesPage() {
                         />
                       </Field>
                       <Field label="Date limite">
-                        <Input
-                          type="date"
+                        <DateInput
                           value={periodDateToInput(item.dueDate)}
                           onChange={(e) => {
                             const next = [...draftItems];
@@ -647,7 +656,7 @@ function Kpi({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-lg border border-line/70 bg-surface/50 px-4 py-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-1 text-xl font-black text-ink">{value}</p>
+      <p className="mt-1 text-xl font-black text-ink whitespace-pre-line">{value}</p>
     </div>
   );
 }

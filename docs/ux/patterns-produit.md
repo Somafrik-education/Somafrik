@@ -155,12 +155,27 @@ Si le besoin dépasse P-009 → basculer vers **P-003**.
 
 ---
 
+### P-011 — Liste Mobile en cartes collapsed / expanded
+
+| Attribut | Valeur |
+|----------|--------|
+| **Type** | Page Liste (native `Mobile/`) |
+| **Objectif** | Parcourir une collection sans surcharge : identifier + état d’abord, détails/actions ensuite |
+| **Contient** | Cartes fermées (identité, sous-titre discriminant, badge d’état, chevron) ; zone ouverte (méta, actions secondaires, sous-listes) |
+| **Ne contient pas** | Toutes les méta + mutations visibles en permanence ; accordion sur l’Appel (4 statuts) ou sur Messages (fil + modal) |
+| **DO** | DO-047, DO-002, DO-028 |
+| **Réf. audit** | PR #597 ; contrat [progressive-disclosure-mobile.md](./progressive-disclosure-mobile.md) |
+
+**Exceptions nommées :** Appel (Roll-call compact), Messages (fil + modal), formulaires, KPI Accueil, menus, fiche élève, roster de saisie de notes.
+
+---
+
 ## Matrice Type de page → Pattern(s)
 
 | Type de page | Pattern(s) typiques |
 |--------------|---------------------|
 | Dashboard | P-004, P-005 |
-| Liste | P-002 (+ P-009 pour détail léger) |
+| Liste | P-002 (+ P-009 pour détail léger) ; **Mobile** P-011 |
 | Fiche | P-003 + P-001 |
 | Outil | P-007 |
 | Hub | P-006 |
@@ -197,3 +212,4 @@ Si le besoin dépasse P-009 → basculer vers **P-003**.
 | P-008 | Assistant de création | D1.3 |
 | P-009 | Consultation légère (Modal) | D1.3 |
 | P-010 | Rapport | D1.3 |
+| P-011 | Liste Mobile en cartes collapsed / expanded | Mobile native — GO CTO 2026-09-11 |

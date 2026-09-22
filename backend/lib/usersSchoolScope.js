@@ -37,6 +37,23 @@ function countryIsoFromPublicCode(code) {
   return /^[A-Z]{2}$/.test(iso) ? iso : "";
 }
 
+const PLATFORM_CATALOG_ROLE_KEYS = Object.freeze(["COUNTRY_ADMIN", "SCHOOL_ADMIN"]);
+
+function roleKeysFrom(user) {
+  return Array.isArray(user?.roleKeys)
+    ? user.roleKeys.map((key) => String(key ?? "").trim()).filter(Boolean)
+    : [];
+}
+
+function hasPlatformCatalogRole(roleKeys) {
+  const keys = Array.isArray(roleKeys) ? roleKeys : [];
+  return keys.includes("COUNTRY_ADMIN") || keys.includes("SCHOOL_ADMIN");
+}
+
+function hasSchoolAdminCatalogRole(roleKeys) {
+  return (Array.isArray(roleKeys) ? roleKeys : []).includes("SCHOOL_ADMIN");
+}
+
 function failClosed(message, code = CLIENTS_ERROR.TENANT_MISMATCH) {
   throw createClientsError(
     403,
@@ -294,15 +311,31 @@ function resolveUsersSchoolScope(principal) {
 }
 
 function sqlUsersScope(scope, params) {
-  if (!scope || scope.mode === "all") return "TRUE";
-  if (scope.mode === "none") return "FALSE";
+  if (!scope || scope.mode === "none") return "FALSE";
+  if (scope.mode === "all") {
+    return `EXISTS (
+      SELECT 1
+        FROM user_roles ur
+       WHERE ur.user_id = u.id
+         AND ur.revoked_at IS NULL
+         AND ur.status = 'active'
+         AND ur.role_key IN ('COUNTRY_ADMIN', 'SCHOOL_ADMIN')
+    )`;
+  }
   if (scope.mode === "country") {
     params.push(scope.countryCode);
     const n = params.length;
     return `(CASE
       WHEN u.school_id IS NULL THEN upper(btrim(u.profile_payload->>'countryCode')) = $${n}
       ELSE upper(btrim(c.iso_code)) = $${n}
-    END)`;
+    END) AND EXISTS (
+      SELECT 1
+        FROM user_roles ur
+       WHERE ur.user_id = u.id
+         AND ur.revoked_at IS NULL
+         AND ur.status = 'active'
+         AND ur.role_key IN ('SCHOOL_ADMIN')
+    )`;
   }
   if (scope.mode === "school") {
     const schoolId = String(scope.schoolId ?? "").trim();
@@ -317,11 +350,17 @@ function sqlUsersScope(scope, params) {
 
 function filterUsersRows(rows, scope) {
   const list = Array.isArray(rows) ? rows : [];
-  if (!scope || scope.mode === "all") return list;
-  if (scope.mode === "none") return [];
+  if (!scope || scope.mode === "none") return [];
+  if (scope.mode === "all") {
+    return list.filter((row) => hasPlatformCatalogRole(roleKeysFrom(row)));
+  }
   if (scope.mode === "country") {
     const country = normalizeLoginCode(scope.countryCode);
-    return list.filter((row) => normalizeLoginCode(row.countryCode) === country);
+    return list.filter(
+      (row) =>
+        hasSchoolAdminCatalogRole(roleKeysFrom(row)) &&
+        normalizeLoginCode(row.countryCode) === country,
+    );
   }
   if (scope.mode === "school") {
     if (scope.schoolId) {
@@ -358,8 +397,17 @@ function assertUsersTargetAccess(principal, current) {
   if (scope.mode === "none") {
     failClosed("Accès refusé : établissement hors périmètre.");
   }
-  if (scope.mode === "all") return scope;
+  const roleKeys = roleKeysFrom(current);
+  if (scope.mode === "all") {
+    if (!hasPlatformCatalogRole(roleKeys)) {
+      failClosed("Accès refusé : hors catalogue plateforme.");
+    }
+    return scope;
+  }
   if (scope.mode === "country") {
+    if (!hasSchoolAdminCatalogRole(roleKeys)) {
+      failClosed("Accès refusé : hors catalogue plateforme.");
+    }
     if (normalizeLoginCode(current?.countryCode) !== scope.countryCode) {
       failClosed("Accès refusé : établissement hors pays.");
     }
@@ -499,4 +547,7 @@ module.exports = {
   targetFromUserRow,
   sqlOneFromStore,
   normalizeLoginCode,
+  PLATFORM_CATALOG_ROLE_KEYS,
+  hasPlatformCatalogRole,
+  hasSchoolAdminCatalogRole,
 };

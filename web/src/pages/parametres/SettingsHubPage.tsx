@@ -9,11 +9,11 @@ import {
   FileText,
   type LucideIcon,
   KeyRound,
+  ListChecks,
   Lock,
   Network,
   Palette,
   PlugZap,
-  Wallet,
 } from "lucide-react";
 import { Badge, DashboardLayout } from "../../design-system";
 import { canReadView } from "../../lib/permissions";
@@ -50,6 +50,14 @@ const SETTING_CARDS: SettingCard[] = [
     view: "configuration",
   },
   {
+    to: "/parametres/configuration-etablissement",
+    title: "Configuration de l'établissement",
+    description: "Assistant de configuration : année scolaire, structure pédagogique, classes et comptes.",
+    icon: ListChecks,
+    status: "available",
+    view: "configuration",
+  },
+  {
     to: "/parametres/annee-scolaire",
     title: "Année scolaire",
     description: "Création de l'année scolaire/académique, périodes, dates, barème et année active.",
@@ -82,6 +90,14 @@ const SETTING_CARDS: SettingCard[] = [
     view: "bulletinDesign",
   },
   {
+    to: "/parametres/bulletins-configuration",
+    title: "Configuration bulletins",
+    description: "File d'attente, gabarit générique et activation du modèle de bulletin.",
+    icon: FileText,
+    status: "available",
+    view: "reportCardConfiguration",
+  },
+  {
     to: "/parametres/securite",
     title: "Sécurité",
     description: "Politique de mot de passe, PIN, session active et journal d'audit.",
@@ -98,19 +114,11 @@ const SETTING_CARDS: SettingCard[] = [
     view: "configuration",
   },
   {
-    to: "/parametres/finances",
-    title: "Finances",
-    description: "Types de frais, échéances, moyens de paiement et pénalités.",
-    icon: Wallet,
-    status: "available",
-    view: "configuration",
-  },
-  {
     to: "/parametres/notifications",
     title: "Notifications",
-    description: "Canaux (push, e-mail, SMS, WhatsApp), modèles et rappels automatiques.",
+    description: "Événements, destinataires et canaux autorisés pour l'établissement.",
     icon: BellRing,
-    status: "soon",
+    status: "available",
     view: "configuration",
   },
   {
@@ -156,6 +164,7 @@ const SUPERADMIN_SETTING_PATHS = new Set<string>([
   "/parametres/graphiques",
   "/parametres/securite",
   "/parametres/donnees",
+  "/parametres/bulletins-configuration",
 ]);
 const COUNTRY_ADMIN_SETTING_PATHS = new Set<string>([
   "/parametres/abonnements",

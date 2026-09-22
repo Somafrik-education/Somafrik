@@ -71,15 +71,16 @@ const PUBLIC_PATHS = new Set([
 ]);
 
 /**
- * Seules les routes publiques exactes (ou le lookup établissement pré-login)
- * omettent le Bearer. Toute autre route sous /schools/ exige un token.
+ * Seules les routes publiques exactes (lookup établissement pré-login
+ * et lecture du fichier logo) omettent le Bearer.
  */
 function isAuthPublicPath(path: string) {
   const pathname = (path.split("?")[0] ?? path).trim();
 
   return (
     PUBLIC_PATHS.has(pathname) ||
-    /^\/schools\/[^/]+$/.test(pathname)
+    /^\/schools\/[^/]+$/.test(pathname) ||
+    /^\/schools\/[^/]+\/logo$/.test(pathname)
   );
 }
 

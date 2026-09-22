@@ -5,11 +5,12 @@
  *
  * Chaîne couverte :
  * 0. Superadmin -> POST /users/provision Admin Pays BI + Admin School BI (atomique).
- * 1. Superadmin -> identité -> GRANT Admin Pays -> login.
- * 2. Admin Pays -> identité -> GRANT Admin School -> validation en attente.
- * 3. Superadmin -> identité -> GRANT Admin School actif -> login.
+ * 1. Superadmin -> provision Admin Pays CD -> login (sans établissement).
+ * 2. Admin Pays -> provision Admin School -> validation Superadmin requise.
+ * 3. Superadmin -> provision Admin School actif -> login.
  * 4. Admin School -> identité utilisateur -> GRANT Secrétaire -> GET/reload.
- * 5. PostgreSQL users/user_roles et isolation pays vérifiés directement.
+ * 5. GRANT Superadmin sur identité sans rôle → 403 catalogue (pas d'identité vide puis GRANT).
+ * 6. PostgreSQL users/user_roles et isolation pays vérifiés directement.
  *
  * Exécution : DATABASE_URL=postgresql://... node backend/scripts/verify-admin-user-creation.js
  */
@@ -201,6 +202,20 @@ async function grantRole(token, userId, role, expectedKey) {
   return granted.data;
 }
 
+async function provisionAccount(token, body) {
+  const created = await request("/backoffice/users/provision", {
+    method: "POST",
+    token,
+    body,
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.data));
+  assert.ok(
+    (created.data.roleKeys || []).includes(body.roleKey),
+    `provision ${body.roleKey}: ${JSON.stringify(created.data)}`,
+  );
+  return created.data;
+}
+
 async function assertPgRole(pool, userId, roleKey) {
   const result = await pool.query(
     `SELECT u.id, u.school_id, u.role, u.status, u.profile_payload,
@@ -328,22 +343,39 @@ async function main() {
     });
     assert.equal(countryActorDenied.status, 403, JSON.stringify(countryActorDenied.data));
 
-    // 1) Création Admin Pays par Superadmin (GRANT secondaire sur identité existante).
+    const foreignSchoolProvision = await request("/backoffice/users/provision", {
+      method: "POST",
+      token: provisionPaysLogin.token,
+      body: {
+        firstName: "Blocked",
+        lastName: `SchoolCd${stamp}`,
+        email: `blocked-school-cd-${stamp}@test.local`,
+        temporaryPassword: "BlockedSchool!2026",
+        roleKey: "SCHOOL_ADMIN",
+        countryCode: "CD",
+        schoolCode: SCHOOL_CD,
+      },
+    });
+    assert.equal(foreignSchoolProvision.status, 403, JSON.stringify(foreignSchoolProvision.data));
+
+    // 1) Superadmin -> provision Admin Pays CD (sans établissement).
     const countryEmail = `country-admin-${stamp}@test.local`;
     const countryPassword = "CountryAdmin!2026";
-    const countryIdentity = await createIdentity(superadmin.token, {
+    const countryIdentity = await provisionAccount(superadmin.token, {
       firstName: "Amina",
       lastName: `Country${stamp}`,
       email: countryEmail,
-      password: countryPassword,
-      schoolCode: SCHOOL_CD,
+      temporaryPassword: countryPassword,
+      roleKey: "COUNTRY_ADMIN",
+      countryCode: "CD",
+      countryScope: "RDC",
     });
-    const countryGranted = await grantRole(superadmin.token, countryIdentity.id, "Admin Pays", "COUNTRY_ADMIN");
-    assert.equal(countryGranted.role, "Admin Pays");
+    assert.equal(countryIdentity.role, "Admin Pays");
     const countryPg = await assertPgRole(pool, countryIdentity.id, "COUNTRY_ADMIN");
-    assert.equal(countryPg.school_code, SCHOOL_CD);
-    assert.equal(countryPg.country_code, "CD");
-    const countryAdmin = await login(countryEmail, countryPassword, SCHOOL_CD);
+    assert.equal(countryPg.school_id, null);
+    assert.equal(countryPg.role_school_id, null);
+    assert.equal(countryPg.profile_payload?.countryCode, "CD");
+    const countryAdmin = await login(countryEmail, countryPassword);
     assert.ok((countryAdmin.user.roleKeys || []).includes("COUNTRY_ADMIN"), "login Admin Pays sans COUNTRY_ADMIN");
 
     // Isolation pays : un Admin Pays CD ne peut pas créer dans BI.
@@ -359,34 +391,36 @@ async function main() {
     });
     assert.equal(foreignCreate.status, 403, JSON.stringify(foreignCreate.data));
 
-    // 2) Admin Pays -> Admin School : création autorisée, validation Superadmin requise.
+    // 2) Admin Pays -> provision Admin School : validation Superadmin requise.
     const pendingSchoolEmail = `school-admin-pending-${stamp}@test.local`;
-    const pendingSchool = await createIdentity(countryAdmin.token, {
+    const pendingSchool = await provisionAccount(countryAdmin.token, {
       firstName: "Patrick",
       lastName: `SchoolPending${stamp}`,
       email: pendingSchoolEmail,
-      password: "SchoolPending!2026",
+      temporaryPassword: "SchoolPending!2026",
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
       schoolCode: SCHOOL_CD,
     });
-    const pendingGranted = await grantRole(countryAdmin.token, pendingSchool.id, "Admin School", "SCHOOL_ADMIN");
-    assert.equal(pendingGranted.status, "En attente de validation");
+    assert.equal(pendingSchool.status, "En attente de validation");
     const pendingPg = await assertPgRole(pool, pendingSchool.id, "SCHOOL_ADMIN");
     assert.equal(pendingPg.status, "pending_validation");
     assert.equal(pendingPg.school_code, SCHOOL_CD);
     assert.equal(pendingPg.profile_payload?.validationStatus, "En attente de validation");
 
-    // 3) Superadmin -> Admin School actif, afin de tester ensuite ses mutations utilisateurs.
+    // 3) Superadmin -> provision Admin School actif, afin de tester ensuite ses mutations utilisateurs.
     const schoolAdminEmail = `school-admin-active-${stamp}@test.local`;
     const schoolAdminPassword = "SchoolAdmin!2026";
-    const activeSchoolIdentity = await createIdentity(superadmin.token, {
+    const activeSchoolIdentity = await provisionAccount(superadmin.token, {
       firstName: "Grace",
       lastName: `SchoolActive${stamp}`,
       email: schoolAdminEmail,
-      password: schoolAdminPassword,
+      temporaryPassword: schoolAdminPassword,
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
       schoolCode: SCHOOL_CD,
     });
-    const activeSchoolGranted = await grantRole(superadmin.token, activeSchoolIdentity.id, "Admin School", "SCHOOL_ADMIN");
-    assert.equal(activeSchoolGranted.status, "Actif");
+    assert.equal(activeSchoolIdentity.status, "Actif");
     const activeSchoolPg = await assertPgRole(pool, activeSchoolIdentity.id, "SCHOOL_ADMIN");
     assert.equal(activeSchoolPg.status, "active");
 
@@ -440,29 +474,42 @@ async function main() {
         body: { role: "Admin School" },
       },
     );
-    assert.equal(missingSchoolGrant.status, 400, JSON.stringify(missingSchoolGrant.data));
-    assert.equal(missingSchoolGrant.data.code, "INVALID_TENANT_SCOPE");
+    assert.equal(missingSchoolGrant.status, 403, JSON.stringify(missingSchoolGrant.data));
+    assert.equal(missingSchoolGrant.data.code, "TENANT_MISMATCH");
+
+    const unassignedSchoolIdentity = await createIdentity(superadmin.token, {
+      firstName: "Empty",
+      lastName: `School${stamp}`,
+      email: `empty-school-${stamp}@test.local`,
+      password: "EmptySchool!2026",
+      schoolCode: SCHOOL_CD,
+    });
+    const grantUnassignedSchool = await request(
+      `/backoffice/users/${encodeURIComponent(unassignedSchoolIdentity.id)}/roles/grant`,
+      {
+        method: "POST",
+        token: superadmin.token,
+        body: { role: "Admin School" },
+      },
+    );
+    assert.equal(grantUnassignedSchool.status, 403, JSON.stringify(grantUnassignedSchool.data));
+    assert.equal(grantUnassignedSchool.data.code, "TENANT_MISMATCH");
 
     const biSchoolEmail = `school-admin-bi-${stamp}@test.local`;
     const biSchoolPassword = "SchoolAdminBI!2026";
-    const biIdentity = await request("/backoffice/users", {
-      method: "POST",
-      token: superadmin.token,
-      body: {
-        firstName: "Diane",
-        lastName: `SchoolBI${stamp}`,
-        email: biSchoolEmail,
-        temporaryPassword: biSchoolPassword,
-        schoolCode: SCHOOL_BI,
-        countryCode: "BI",
-      },
+    const biIdentity = await provisionAccount(superadmin.token, {
+      firstName: "Diane",
+      lastName: `SchoolBI${stamp}`,
+      email: biSchoolEmail,
+      temporaryPassword: biSchoolPassword,
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "BI",
+      schoolCode: SCHOOL_BI,
     });
-    assert.equal(biIdentity.status, 201, JSON.stringify(biIdentity.data));
-    assert.equal(biIdentity.data.schoolCode, loginBi);
-    assert.equal(biIdentity.data.countryCode, "BI");
-    const biGranted = await grantRole(superadmin.token, biIdentity.data.id, "Admin School", "SCHOOL_ADMIN");
-    assert.equal(biGranted.status, "Actif");
-    const biPg = await assertPgRole(pool, biIdentity.data.id, "SCHOOL_ADMIN");
+    assert.equal(biIdentity.schoolCode, loginBi);
+    assert.equal(biIdentity.countryCode, "BI");
+    assert.equal(biIdentity.status, "Actif");
+    const biPg = await assertPgRole(pool, biIdentity.id, "SCHOOL_ADMIN");
     assert.equal(biPg.school_code, SCHOOL_BI);
     assert.equal(biPg.country_code, "BI");
     assert.equal(String(biPg.school_id), String(biPg.role_school_id));
@@ -483,14 +530,15 @@ async function main() {
     // P0 réaffectation tenant : SCHOOL_ADMIN CD → BI, compte dédié (ne pas toucher activeSchoolIdentity).
     const reassignEmail = `school-admin-reassign-${stamp}@test.local`;
     const reassignPassword = "SchoolReassign!2026";
-    const reassignIdentity = await createIdentity(superadmin.token, {
+    const reassignIdentity = await provisionAccount(superadmin.token, {
       firstName: "Irène",
       lastName: `Reassign${stamp}`,
       email: reassignEmail,
-      password: reassignPassword,
+      temporaryPassword: reassignPassword,
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
       schoolCode: SCHOOL_CD,
     });
-    await grantRole(superadmin.token, reassignIdentity.id, "Admin School", "SCHOOL_ADMIN");
 
     const forbiddenIdentityPatch = await request(`/backoffice/users/${encodeURIComponent(reassignIdentity.id)}`, {
       method: "PATCH",

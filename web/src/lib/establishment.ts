@@ -3,6 +3,11 @@ import { isActiveUserAccount, normalize } from "./format";
 import { dedupeClassesByName } from "./classRules";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 import { scopedSchools } from "./scope";
+import {
+  isSchoolScopedRole,
+  resolveSessionSchoolIdentity,
+  sameSchoolId,
+} from "./schoolCanonicalIdentity";
 import { projectScopedStudents } from "./studentsScope";
 
 type Row = Record<string, unknown>;
@@ -235,8 +240,38 @@ function scopedByStudentIds(user: SessionUser | null, state: BackOfficeState, ke
   );
 }
 
+function sessionSchoolCodeAliases(user: SessionUser): Set<string> {
+  const aliases = new Set<string>();
+  for (const value of [user.schoolCode, user.schoolPublicCode]) {
+    const next = normalize(value);
+    if (next && next !== "*") aliases.add(next);
+  }
+  return aliases;
+}
+
+/**
+ * Finance : les paiements sont un historique comptable de l'établissement.
+ * Autorité tenant = schoolId UUID. `schoolCode` / login_code restent des
+ * projections d'affichage, utilisées seulement si la ligne n'a pas d'UUID.
+ * Un paiement du tenant ne doit pas disparaître lorsque l'élève n'est plus dans
+ * le snapshot courant `students`.
+ */
 export function scopedPayments(user: SessionUser | null, state: BackOfficeState): Row[] {
-  return scopedByStudentIds(user, state, "payments");
+  const schoolCode = user?.schoolCode;
+  const rows = (state.payments ?? []) as Row[];
+  if (!user || !schoolCode || schoolCode === "*") return rows;
+  if (!isSchoolScopedRole(user.role)) return rows;
+
+  const identity = resolveSessionSchoolIdentity(user);
+  if (!identity?.schoolId) return [];
+
+  const aliases = sessionSchoolCodeAliases(user);
+  return rows.filter((row) => {
+    const rowSchoolId = String(row.schoolId ?? "").trim();
+    if (rowSchoolId) return sameSchoolId(rowSchoolId, identity.schoolId);
+    const rowCode = normalize(row.schoolCode);
+    return Boolean(rowCode && aliases.has(rowCode));
+  });
 }
 
 export function scopedPresences(user: SessionUser | null, state: BackOfficeState): Row[] {

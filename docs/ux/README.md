@@ -36,17 +36,18 @@ Doc technique DS : [design-system/](./design-system/README.md) · [Suivi migrati
 2. [Principes UX](./principes-ux.md)
 3. [Inventaire UI](./inventaire-ui.md)
 4. [Glossaire](./glossaire.md)
-5. [Décisions officielles](./decisions-officielles.md) — DO-001 → DO-046
+5. [Décisions officielles](./decisions-officielles.md) — DO-001 → DO-047
 6. [Architecture de navigation](./architecture-navigation.md)
 7. [Architecture des pages métier](./architecture-pages-metier.md)
-8. [Patterns Produit](./patterns-produit.md) — P-001 → P-010
-9. [Anti-patterns](./anti-patterns.md) — AP-001 → AP-012
-10. [Design Language & Design System](./design-language.md)
-11. [Design System technique (D2.1 → D2.6)](./design-system/README.md)
-12. [Layouts officiels (D2.2)](./design-system/LAYOUTS.md)
-13. [Feedback & états (D2.4)](./design-system/FEEDBACK.md)
-14. [Suivi des migrations](./design-system/SUIVI-MIGRATIONS.md)
-15. [Rapport stabilisation (D2.6)](./design-system/RAPPORT-D2.6.md)
+8. [Patterns Produit](./patterns-produit.md) — P-001 → P-011
+9. [Anti-patterns](./anti-patterns.md) — AP-001 → AP-013
+10. [Progressive disclosure Mobile](./progressive-disclosure-mobile.md) — DO-047 / P-011
+11. [Design Language & Design System](./design-language.md)
+12. [Design System technique (D2.1 → D2.6)](./design-system/README.md)
+13. [Layouts officiels (D2.2)](./design-system/LAYOUTS.md)
+14. [Feedback & états (D2.4)](./design-system/FEEDBACK.md)
+15. [Suivi des migrations](./design-system/SUIVI-MIGRATIONS.md)
+16. [Rapport stabilisation (D2.6)](./design-system/RAPPORT-D2.6.md)
 
 ## Quatre axes de revue UI (gouvernance mature)
 

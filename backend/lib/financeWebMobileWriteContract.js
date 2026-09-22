@@ -57,16 +57,55 @@ function isOpenObligationFromProjection(fee) {
   return Number.isFinite(balance) && balance > 0;
 }
 
-function collectOpenObligationsFromProjection(studentId, fees) {
-  const wanted = trim(studentId).toUpperCase();
-  if (!wanted) return [];
+function identityKey(value) {
+  return trim(value).toUpperCase();
+}
+
+/** Alias canoniques uniquement : UUID, code public / matricule, publicId. Pas de nom/classe. */
+function collectFinanceStudentIdentityKeys(identity) {
+  if (identity == null) return [];
+  if (typeof identity === "string") {
+    const key = identityKey(identity);
+    return key ? [key] : [];
+  }
+  const seen = new Set();
+  for (const value of [
+    identity.id,
+    identity.studentId,
+    identity.studentDbId,
+    identity.studentCode,
+    identity.matricule,
+    identity.publicId,
+  ]) {
+    const key = identityKey(value);
+    if (key) seen.add(key);
+  }
+  return [...seen];
+}
+
+function obligationBelongsToStudent(fee, identity) {
+  const wanted = new Set(collectFinanceStudentIdentityKeys(identity));
+  if (!wanted.size) return false;
+  const feeKeys = collectFinanceStudentIdentityKeys({
+    studentId: fee?.studentId,
+    studentDbId: fee?.studentDbId,
+    studentCode: fee?.studentCode,
+    matricule: fee?.matricule,
+    publicId: fee?.publicId,
+  });
+  return feeKeys.some((key) => wanted.has(key));
+}
+
+function collectOpenObligationsFromProjection(student, fees) {
+  const wanted = collectFinanceStudentIdentityKeys(student);
+  if (!wanted.length) return [];
   const rows = Array.isArray(fees) ? fees : [];
   const open = [];
   for (const fee of rows) {
     const id = trim(fee?.id ?? fee?.obligationId);
     if (!id) continue;
     if (isUnallocatedTarget(id)) continue;
-    if (trim(fee?.studentId).toUpperCase() !== wanted) continue;
+    if (!obligationBelongsToStudent(fee, student)) continue;
     if (!isOpenObligationFromProjection(fee)) continue;
     const balance = Number(fee.balance);
     const label = trim(fee.label) || trim(fee.feeType) || "Frais";
@@ -168,6 +207,8 @@ module.exports = {
   UNALLOCATED_TARGET,
   parseFinanceAmount,
   isUnallocatedTarget,
+  collectFinanceStudentIdentityKeys,
+  obligationBelongsToStudent,
   isOpenObligationFromProjection,
   collectOpenObligationsFromProjection,
   buildFinancePaymentItems,

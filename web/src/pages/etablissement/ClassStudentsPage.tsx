@@ -1,3 +1,4 @@
+import { DateInput } from "../../components/ui/DateInput";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import {
@@ -22,6 +23,7 @@ import {
 import { normalizeOptionalParentPhone } from "../../lib/parentPhone";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
+import { DISPLAY_DATE_HINT } from "../../lib/dates";
 
 type EnrollFormState = {
   firstName: string;
@@ -292,10 +294,9 @@ export function ClassStudentsPage() {
               ]}
             />
           </Field>
-          <Field label="Date de naissance" htmlFor="enroll-birth-date" hint="Format AAAA-MM-JJ">
-            <Input
+          <Field label="Date de naissance" htmlFor="enroll-birth-date" hint={`Format ${DISPLAY_DATE_HINT}`}>
+            <DateInput
               id="enroll-birth-date"
-              type="date"
               value={form.birthDate}
               onChange={(event) => setForm((current) => ({ ...current, birthDate: event.target.value }))}
             />

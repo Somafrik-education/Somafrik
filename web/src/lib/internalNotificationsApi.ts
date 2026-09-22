@@ -44,10 +44,16 @@ function scopedPayload(payload: Record<string, unknown>, schoolCode?: string) {
 }
 
 export const internalNotificationsApi = {
-  list: (schoolCode?: string) =>
-    api.get<{ items: InternalNotificationRecord[]; nextCursor: string | null }>(
-      scoped("/backoffice/internal-notifications", schoolCode),
-    ),
+  /** `cursor` reprend le `nextCursor` de la page précédente (pagination serveur inchangée). */
+  list: (schoolCode?: string, options?: { cursor?: string | null }) => {
+    const cursor = String(options?.cursor ?? "").trim();
+    const path = cursor
+      ? `/backoffice/internal-notifications?cursor=${encodeURIComponent(cursor)}`
+      : "/backoffice/internal-notifications";
+    return api.get<{ items: InternalNotificationRecord[]; nextCursor: string | null }>(
+      scoped(path, schoolCode),
+    );
+  },
   get: (id: string, schoolCode?: string) =>
     api.get<InternalNotificationRecord>(
       scoped(`/backoffice/internal-notifications/${encodeURIComponent(id)}`, schoolCode),

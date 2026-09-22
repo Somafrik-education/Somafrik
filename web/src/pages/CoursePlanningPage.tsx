@@ -12,6 +12,7 @@ import { useToast } from "../components/ui/Toast";
 import { useConfirm } from "../components/ui/ConfirmDialog";
 import { useFeaturePermissions } from "../lib/usePermissionContext";
 import { scopedClasses } from "../lib/establishment";
+import { useDeepLinkIds } from "../lib/notificationDeepLink";
 import { normalize } from "../lib/format";
 import { CoursePlanningCalendar } from "../components/planning/CoursePlanningCalendar";
 import {
@@ -133,6 +134,9 @@ export function CoursePlanningPage() {
   const { canRead, canCreate, canUpdate, canDelete } = useFeaturePermissions("Planning de cours");
   const replacements = useFeaturePermissions("Remplacements");
   const navigate = useNavigate();
+
+  const deepLinkSlot = useDeepLinkIds(["weeklySlotId", "occurrenceDate"] as const);
+  const appliedDeepLinkSlotRef = useRef("");
 
   const [selectedClassName, setSelectedClassName] = useState("");
   const selectedClassRef = useRef("");
@@ -278,6 +282,26 @@ export function CoursePlanningPage() {
     () => filterSlotsByClass(periodScopedSlots, selectedClassName),
     [periodScopedSlots, selectedClassName],
   );
+
+  // Deep-link notification : ouvrir le créneau hebdomadaire désigné par l'URL.
+  // On se place sur sa classe et, au besoin, sur toutes les périodes pour qu'il
+  // soit visible dans le calendrier, puis on ouvre sa fiche.
+  useEffect(() => {
+    const slotId = deepLinkSlot.weeklySlotId;
+    if (!slotId || !canRead || appliedDeepLinkSlotRef.current === slotId) return;
+    const slot = weeklySlots.find((row) => String(row.id) === slotId);
+    if (!slot) return;
+    appliedDeepLinkSlotRef.current = slotId;
+    if (slot.className) {
+      selectedClassRef.current = slot.className;
+      setSelectedClassName(slot.className);
+    }
+    if (!filterSlotsByPeriod([slot], activePeriod).length) {
+      setSelectedPeriodName(ALL_PLANNING_PERIODS);
+    }
+    openEdit({ ...slot, occurrenceDate: deepLinkSlot.occurrenceDate || undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkSlot.weeklySlotId, deepLinkSlot.occurrenceDate, canRead, weeklySlots, activePeriod]);
 
   useEffect(() => {
     if (!canRead || !selectedClassName || !visibleRange?.from || !visibleRange?.to) {
@@ -689,6 +713,7 @@ export function CoursePlanningPage() {
       </Card>
 
       {form ? (
+        <div data-testid="planning-slot-form" data-weekly-slot-id={form.id || undefined}>
         <Card className="p-6">
           <SectionHeader
             title={form.id ? "Modifier le créneau hebdomadaire" : "Planifier un cours"}
@@ -799,6 +824,7 @@ export function CoursePlanningPage() {
             </Button>
           </div>
         </Card>
+        </div>
       ) : null}
     </div>
   );

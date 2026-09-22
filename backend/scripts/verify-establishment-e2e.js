@@ -146,7 +146,6 @@ async function main() {
         principalName: "Awa Kabila",
         principalEmail: "awa@lycee-test.cd",
         principalPhone: "+243 990 000 112",
-        logoUrl: "https://cdn.somafrik.test/logo.png",
         status: "En attente",
         validationStatus: "En attente de validation",
       },
@@ -169,9 +168,10 @@ async function main() {
 
   const schoolCode = publicSchoolCodeFromRecord(created);
 
-  await check("2b. Le contact principal et le logo sont conservés", () => {
+  await check("2b. Le contact principal est conservé ; une URL de logo n'est pas acceptée", () => {
     assert.strictEqual(created.principalName, "Awa Kabila");
-    assert.strictEqual(created.logoUrl, "https://cdn.somafrik.test/logo.png");
+    assert.notEqual(created.logoUrl, "https://cdn.somafrik.test/logo.png");
+    assert.ok(!String(created.logoUrl ?? "").startsWith("http"), "logoUrl ne doit pas être une URL externe");
     assert.strictEqual(created.country, "RDC");
     assert.strictEqual(created.countryCode, "CD");
   });

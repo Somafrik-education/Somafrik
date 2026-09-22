@@ -40,6 +40,7 @@ const {
   CANONICAL_PAYMENT_METHODS,
 } = require("../lib/financeCatalog");
 const financeService = require("../lib/financeService");
+const { ROSTER_ENROLLMENT_SQL } = require("../lib/studentEnrollmentC18");
 
 function createFinancePgStore(repo) {
   async function withFinancePrincipal(principal) {
@@ -131,7 +132,7 @@ function createFinancePgStore(repo) {
           FROM students st
           JOIN schools s ON s.id = st.school_id
           JOIN countries ctry ON ctry.id = s.country_id
-          LEFT JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+          LEFT JOIN enrollments e ON e.student_id = st.id AND ${ROSTER_ENROLLMENT_SQL}
           LEFT JOIN classes cl ON cl.id = e.class_id
           WHERE (st.student_code = $1 OR st.id::text = $2)
             AND ${pred}
@@ -169,7 +170,7 @@ function createFinancePgStore(repo) {
            JOIN academic_years ay ON ay.id = e.academic_year_id
            WHERE e.student_id = $1
              AND e.school_id = $2
-             AND e.status = 'active'
+             AND ${ROSTER_ENROLLMENT_SQL}
              AND cl.school_id = $2
            ORDER BY e.enrollment_date DESC NULLS LAST, e.created_at DESC NULLS LAST`,
           [studentDbId, schoolId],
@@ -277,7 +278,7 @@ function createFinancePgStore(repo) {
                   ay.name AS academic_year
            FROM students st
            JOIN schools s ON s.id = st.school_id
-           JOIN enrollments e ON e.student_id = st.id AND e.status = 'active'
+           JOIN enrollments e ON e.student_id = st.id AND ${ROSTER_ENROLLMENT_SQL}
            JOIN classes cl ON cl.id = e.class_id
            LEFT JOIN academic_years ay ON ay.id = e.academic_year_id
            WHERE upper(btrim(s.login_code)) = $1
@@ -965,8 +966,20 @@ function createFinancePgStore(repo) {
     listFinanceStudentFees: async (principal) => {
       const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
       if (scope.mode === "none") return [];
+      const studentKey = asTrimmed(principal?.financeStudentKey || principal?.financeListOptions?.studentId || principal?.financeListOptions?.studentKey);
+      let studentDbId = null;
+      if (studentKey) {
+        const student = await bind(repo).findStudent(studentKey, principal);
+        if (!student?.dbId) return [];
+        studentDbId = student.dbId;
+      }
       const feeParams = [];
       const feePred = sqlSchoolPredicate("s", scope, feeParams);
+      let studentPred = "";
+      if (studentDbId) {
+        feeParams.push(studentDbId);
+        studentPred = `AND o.student_id = $${feeParams.length}`;
+      }
       const allocParams = [];
       const allocPred = sqlSchoolPredicate("s", scope, allocParams);
       const [rows, allocations] = await Promise.all([
@@ -984,7 +997,7 @@ function createFinancePgStore(repo) {
                AND obligation_id = o.id
                AND school_id = o.school_id
            ) pa ON TRUE
-           WHERE ${feePred}`,
+           WHERE ${feePred} ${studentPred}`,
           feeParams,
         ),
         repo.all(
@@ -1073,7 +1086,7 @@ function createFinancePgStore(repo) {
            JOIN schools s ON s.id = st.school_id
            JOIN enrollments e ON e.student_id = st.id
              AND e.school_id = st.school_id
-             AND lower(btrim(e.status)) = 'active'
+             AND ${ROSTER_ENROLLMENT_SQL}
            JOIN classes cl ON cl.id = e.class_id
              AND cl.school_id = st.school_id
            WHERE ${pred}
@@ -1169,6 +1182,13 @@ function createFinancePgStore(repo) {
           feeTypes,
         });
       },
+  };
+
+  const listFinanceStudentFeesBound = api.listFinanceStudentFees;
+  api.listFinanceStudentFees = async (principal, options) => {
+    const studentKey = asTrimmed(options?.studentId || options?.studentKey);
+    if (!studentKey) return listFinanceStudentFeesBound(principal);
+    return listFinanceStudentFeesBound({ ...principal, financeStudentKey: studentKey });
   };
 
   return api;

@@ -1,3 +1,4 @@
+import { formatDateTimeForDisplay } from "../lib/dates";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
@@ -10,29 +11,69 @@ import {
   type MessageRecipient,
 } from "../lib/messagesApi";
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
+import { useDeepLinkId } from "../lib/notificationDeepLink";
+import { filterCommunicationRows } from "../lib/communicationListFilter";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Field } from "../components/ui/Field";
 import { useToast } from "../components/ui/Toast";
 import { ApiError } from "../api/client";
+import { CommunicationChrome, useCommunicationListQuery } from "../components/communications/CommunicationChrome";
+import { EmptyState, LoadingState } from "@/design-system";
+import { CommunicationHttpErrorState } from "../components/communications/CommunicationHttpErrorState";
+import { notifyMessagesUnreadChanged } from "../lib/messagesRead";
 
-function formatDisplayDate(iso?: string) {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+function mergeConversationsById(
+  current: ConversationSummary[],
+  incoming: ConversationSummary[],
+): ConversationSummary[] {
+  const known = new Set(current.map((row) => row.id));
+  return [...current, ...incoming.filter((row) => !known.has(row.id))];
 }
+
+const formatDisplayDate = formatDateTimeForDisplay;
 
 function counterpartName(conversation: ConversationSummary, selfId?: string) {
   const others = (conversation.participants ?? []).filter((row) => row.userId !== selfId);
   if (!others.length) return conversation.subject || "Conversation";
   return others.map((row) => row.name || row.userId).join(", ");
+}
+
+function normalizeMessagingRole(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function isTeacherMessagingSession(session: ReturnType<typeof useAuth>["session"]): boolean {
+  const roles = [
+    session?.user?.role,
+    ...(session?.user?.roles ?? []),
+    ...(session?.user?.roleKeys ?? []),
+  ];
+  return roles.some((value) => {
+    const normalized = normalizeMessagingRole(value);
+    return normalized === "TEACHER" || normalized === "ENSEIGNANT";
+  });
+}
+
+function isStudentMessageTarget(value?: { kind?: string; roleLabel?: string }): boolean {
+  const kind = normalizeMessagingRole(value?.kind);
+  const role = normalizeMessagingRole(value?.roleLabel);
+  return (
+    kind === "STUDENT" ||
+    role === "STUDENT" ||
+    role.includes("ELEVE") ||
+    role.includes("ETUDIANT")
+  );
+}
+
+function hasStudentParticipant(
+  participants?: Array<{ roleLabel?: string }>,
+): boolean {
+  return (participants ?? []).some((participant) => isStudentMessageTarget(participant));
 }
 
 export function MessagesConversationsPage() {
@@ -41,9 +82,16 @@ export function MessagesConversationsPage() {
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Messages");
   const { showToast } = useToast();
   const selfId = String(session?.user?.id ?? "");
+  const teacherSession = isTeacherMessagingSession(session);
   const schoolScope = hasCommunicationSchoolScope(activeSchoolCode) ? activeSchoolCode : undefined;
   const scopeReady = !requiresSelection || Boolean(schoolScope);
+  const deepLinkConversationId = useDeepLinkId("conversationId");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState<unknown>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const { search, setSearch, unreadOnly, setUnreadOnly } = useCommunicationListQuery();
   const [selectedId, setSelectedId] = useState<string>("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -55,42 +103,77 @@ export function MessagesConversationsPage() {
   const intentionRef = useRef<string>("");
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async (options?: { silent?: boolean }) => {
     if (!canRead || !scopeReady) return;
-    const result = await messagesApi.listConversations("", schoolScope);
-    setConversations(result.items ?? []);
+    const silent = Boolean(options?.silent);
+    if (!silent) {
+      setListLoading(true);
+      setListError(null);
+    }
+    try {
+      const result = await messagesApi.listConversations("", schoolScope);
+      setConversations(result.items ?? []);
+      setNextCursor(result.nextCursor ?? null);
+    } catch (error) {
+      if (!silent) {
+        setConversations([]);
+        setNextCursor(null);
+        setListError(error);
+      }
+    } finally {
+      if (!silent) setListLoading(false);
+    }
   }, [canRead, schoolScope, scopeReady]);
+
+  const loadMoreConversations = useCallback(async () => {
+    if (!canRead || !scopeReady || !nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await messagesApi.listConversations(
+        `?cursor=${encodeURIComponent(nextCursor)}`,
+        schoolScope,
+      );
+      setConversations((current) => mergeConversationsById(current, result.items ?? []));
+      setNextCursor(result.nextCursor ?? null);
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Chargement interrompu", "error");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [canRead, schoolScope, scopeReady, nextCursor, loadingMore, showToast]);
 
   const loadThread = useCallback(async (conversationId: string) => {
     const result = await messagesApi.listMessages(conversationId, "", schoolScope);
     const items = result.items ?? [];
     setMessages(items);
     if (canUpdate) {
-      await Promise.all(
-        items
-          .filter((row) => row.senderUserId !== selfId && !row.readAt)
-          .map((row) => messagesApi.markRead(row.id, schoolScope).catch(() => null)),
-      );
+      const unread = items.filter((row) => row.senderUserId !== selfId && !row.readAt);
+      if (unread.length) {
+        await Promise.all(unread.map((row) => messagesApi.markRead(row.id, schoolScope).catch(() => null)));
+        await loadConversations({ silent: true });
+        notifyMessagesUnreadChanged();
+      }
     }
-  }, [canUpdate, schoolScope, selfId]);
+  }, [canUpdate, schoolScope, selfId, loadConversations]);
 
   useEffect(() => {
     if (!scopeReady) {
       setConversations([]);
+      setNextCursor(null);
       setUsers([]);
       return;
     }
-    void loadConversations().catch((error) => {
-      showToast(error instanceof ApiError ? error.message : "Impossible de charger les conversations", "error");
-    });
+    void loadConversations();
     void messagesApi.listRecipients(schoolScope).then((rows) => {
       const list = Array.isArray(rows) ? rows : rows?.items ?? [];
-      setUsers(list);
+      const allowed = teacherSession ? list.filter((row) => !isStudentMessageTarget(row)) : list;
+      setUsers(allowed);
+      setRecipientId((current) => allowed.some((row) => row.userId === current) ? current : "");
     }).catch((error) => {
       setUsers([]);
       showToast(error instanceof ApiError ? error.message : "Impossible de charger les destinataires", "error");
     });
-  }, [loadConversations, schoolScope, scopeReady, showToast]);
+  }, [loadConversations, schoolScope, scopeReady, showToast, teacherSession]);
 
   useEffect(() => {
     if (!selectedId || !scopeReady) {
@@ -102,9 +185,40 @@ export function MessagesConversationsPage() {
     });
   }, [loadThread, selectedId, showToast, scopeReady]);
 
+  // Deep-link notification : ouvrir la conversation désignée par l'URL.
+  useEffect(() => {
+    if (!deepLinkConversationId || !canRead || !scopeReady) return;
+    setSelectedId(deepLinkConversationId);
+  }, [deepLinkConversationId, canRead, scopeReady]);
+
   const selected = useMemo(
     () => conversations.find((row) => row.id === selectedId) ?? null,
     [conversations, selectedId],
+  );
+  const selectedParticipants =
+    selected?.participants ??
+    messages.find((row) => (row.participants?.length ?? 0) > 0)?.participants ??
+    [];
+  const teacherStudentThreadBlocked =
+    teacherSession && hasStudentParticipant(selectedParticipants);
+  const visibleConversations = useMemo(
+    () =>
+      filterCommunicationRows(
+        conversations.map((row) => ({
+          ...row,
+          title: counterpartName(row, selfId),
+          excerpt: row.lastMessage?.body || "",
+          author: row.lastMessage?.senderName || "",
+          unreadCount: row.unreadCount ?? 0,
+        })),
+        search,
+        unreadOnly,
+      ),
+    [conversations, search, unreadOnly, selfId],
+  );
+  const unreadTotal = useMemo(
+    () => conversations.reduce((sum, row) => sum + (row.unreadCount ?? 0), 0),
+    [conversations],
   );
 
   async function handleUpload(fileList: FileList | null) {
@@ -129,6 +243,17 @@ export function MessagesConversationsPage() {
       return;
     }
     if (!canCreate) return;
+    if (teacherStudentThreadBlocked) {
+      setSendError("Les enseignants ne peuvent pas envoyer de messages aux élèves.");
+      return;
+    }
+    if (!selectedId && teacherSession) {
+      const selectedRecipient = users.find((row) => row.userId === recipientId);
+      if (isStudentMessageTarget(selectedRecipient)) {
+        setSendError("Les enseignants ne peuvent pas envoyer de messages aux élèves.");
+        return;
+      }
+    }
     if (!intentionRef.current) intentionRef.current = crypto.randomUUID();
     setSending(true);
     setSendError("");
@@ -146,6 +271,7 @@ export function MessagesConversationsPage() {
       intentionRef.current = "";
       setSelectedId(saved.conversationId);
       await loadConversations();
+      notifyMessagesUnreadChanged();
       await loadThread(saved.conversationId);
       showToast("Message envoyé", "success");
     } catch (error) {
@@ -173,36 +299,81 @@ export function MessagesConversationsPage() {
   }
 
   return (
+    <>
+    {/* Communication — EntityListSearch communication-search */}
+    <CommunicationChrome
+      surface="messages"
+      title="Communication"
+      searchPlaceholder="Rechercher"
+      unreadLabel="Non lus"
+      countLabel={unreadTotal ? `${unreadTotal} non lu(s)` : "Messages"}
+      search={search}
+      onSearch={setSearch}
+      unreadOnly={unreadOnly}
+      onUnreadOnly={setUnreadOnly}
+      primaryAction={
+        canCreate ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setSelectedId("")}>
+            Nouvelle conversation
+          </Button>
+        ) : undefined
+      }
+    >
     <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr]">
       <Card className="p-4">
-        <SectionHeader title="Conversations" description="Fils auxquels vous participez." />
+        {listLoading ? <LoadingState message="Chargement des conversations…" /> : null}
+        {listError ? (
+          <CommunicationHttpErrorState
+            error={listError}
+            fallbackMessage="Impossible de charger les conversations"
+            onRetry={() => void loadConversations()}
+          />
+        ) : null}
+        {!listLoading && !listError && visibleConversations.length === 0 ? (
+          <EmptyState title="Aucune conversation." />
+        ) : null}
         <div className="mt-3 space-y-1">
-          {conversations.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted">Aucune conversation.</p>
-          ) : (
-            conversations.map((row) => (
+          {!listLoading && !listError
+            ? visibleConversations.map((row) => (
               <button
                 key={row.id}
                 type="button"
-                className={`w-full rounded-xl px-3 py-2 text-left ${selectedId === row.id ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                data-testid="messages-conversation-item"
+                data-conversation-id={row.id}
+                aria-selected={selectedId === row.id}
+                className={`w-full rounded-lg px-3 py-2 text-left ${selectedId === row.id ? "bg-slate-100" : "hover:bg-slate-50"}`}
                 onClick={() => setSelectedId(row.id)}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-ink">{counterpartName(row, selfId)}</span>
+                  <span className="truncate font-medium text-ink">{row.title}</span>
                   {(row.unreadCount ?? 0) > 0 ? (
-                    <span className="rounded-full bg-amber-500 px-2 py-0.5 text-xs text-white">{row.unreadCount}</span>
+                    <span
+                      data-testid="messages-unread-badge"
+                      className="rounded-full bg-amber-500 px-2 py-0.5 text-xs text-white"
+                    >
+                      {row.unreadCount}
+                    </span>
                   ) : null}
                 </div>
-                <p className="truncate text-xs text-muted">{row.lastMessage?.body || "—"}</p>
+                <p className="truncate text-xs text-muted">{row.excerpt || "—"}</p>
                 <p className="text-xs text-muted">{formatDisplayDate(row.lastMessage?.sentAt || row.updatedAt)}</p>
               </button>
             ))
-          )}
+            : null}
         </div>
-        {canCreate ? (
-          <Button className="mt-3 w-full" variant="secondary" size="sm" onClick={() => setSelectedId("")}>
-            Nouvelle conversation
-          </Button>
+        {!listLoading && !listError && nextCursor ? (
+          <div className="mt-4 flex justify-center">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              data-testid="messages-load-more"
+              disabled={loadingMore}
+              onClick={() => void loadMoreConversations()}
+            >
+              {loadingMore ? "Chargement…" : "Charger les conversations plus anciennes"}
+            </Button>
+          </div>
         ) : null}
       </Card>
 
@@ -211,7 +382,11 @@ export function MessagesConversationsPage() {
           title={selected ? counterpartName(selected, selfId) : "Nouveau message"}
           description={selected ? `Conversation ${selected.id.slice(0, 8)}` : "Choisissez un destinataire puis écrivez."}
         />
-        <div className="mt-4 flex-1 space-y-3 overflow-y-auto">
+        <div
+          className="mt-4 flex-1 space-y-3 overflow-y-auto"
+          data-testid="messages-thread"
+          data-conversation-id={selectedId || undefined}
+        >
           {messages.map((row) => (
             <div key={row.id} className={`max-w-[80%] rounded-2xl px-3 py-2 ${row.senderUserId === selfId ? "ml-auto bg-slate-900 text-white" : "bg-slate-100 text-ink"}`}>
               <p className="text-xs opacity-80">
@@ -245,7 +420,7 @@ export function MessagesConversationsPage() {
           ))}
         </div>
 
-        {canCreate ? (
+        {canCreate && !teacherStudentThreadBlocked ? (
           <div className="mt-4 space-y-3 border-t border-line pt-4">
             {!selectedId ? (
               <Field label="Destinataire">
@@ -295,7 +470,17 @@ export function MessagesConversationsPage() {
             </div>
           </div>
         ) : null}
+        {canCreate && teacherStudentThreadBlocked ? (
+          <p
+            className="mt-4 border-t border-line pt-4 text-sm text-muted"
+            data-testid="teacher-student-messaging-blocked"
+          >
+            Les enseignants ne peuvent pas envoyer de messages aux élèves.
+          </p>
+        ) : null}
       </Card>
     </div>
+    </CommunicationChrome>
+    </>
   );
 }

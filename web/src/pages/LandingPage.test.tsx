@@ -119,7 +119,7 @@ describe("LandingPage — vitrine publique", () => {
       if (href.startsWith("#")) {
         expect(ids.has(href.slice(1)), `ancre manquante : ${href}`).toBe(true);
       } else {
-        expect(["/", "/connexion", "/confidentialite", "/suppression-compte"]).toContain(href);
+        expect(["/", "/connexion", "/demande-essai", "/confidentialite", "/suppression-compte"]).toContain(href);
       }
     }
     for (const link of marketingNav) {

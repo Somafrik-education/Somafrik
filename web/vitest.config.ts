@@ -26,6 +26,9 @@ export default defineConfig({
       "src/data/**/*.{test,spec}.{ts,tsx}",
       "src/help/**/*.{test,spec}.{ts,tsx}",
     ],
+    // Les tests *.hydration.red.test.* documentent des bugs connus (phase RED).
+    // Ils s'exécutent uniquement via `npm run test:hydration-red`, pas la suite web CI.
+    exclude: ["**/node_modules/**", "**/dist/**", "**/*.hydration.red.test.{ts,tsx}"],
     css: false,
     globals: false,
     env: {

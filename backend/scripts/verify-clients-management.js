@@ -142,26 +142,31 @@ async function main() {
     });
     assert.equal(user.status, 201, JSON.stringify(user.data));
     assert.equal(collectSensitiveUserFieldPaths(user.data).length, 0);
+    const grantUnassignedDenied = await request(`/backoffice/users/${encodeURIComponent(user.data.id)}/roles/grant`, {
+      method: "POST",
+      token: superToken,
+      body: { role: "Admin School" },
+    });
+    assert.equal(grantUnassignedDenied.status, 403, JSON.stringify(grantUnassignedDenied.data));
+    assert.equal(grantUnassignedDenied.data?.code, "TENANT_MISMATCH");
 
     const publisherPassword = "E2eAnnPublisher!2026";
-    const publisher = await request("/backoffice/users", {
+    const publisher = await request("/backoffice/users/provision", {
       method: "POST",
-      token: schoolToken,
+      token: superToken,
       body: {
         firstName: "Publisher",
         lastName: "Annonce",
         email: "lot7-announcement-publisher@test.local",
         temporaryPassword: publisherPassword,
+        roleKey: "SCHOOL_ADMIN",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
       },
     });
     assert.equal(publisher.status, 201, JSON.stringify(publisher.data));
     assert.ok(publisher.data.id, "publisher id canonique");
-    const grantPublisher = await request(`/backoffice/users/${encodeURIComponent(publisher.data.id)}/roles/grant`, {
-      method: "POST",
-      token: superToken,
-      body: { role: "Admin School" },
-    });
-    assert.equal(grantPublisher.status, 200, JSON.stringify(grantPublisher.data));
+    assert.ok((publisher.data.roleKeys || []).includes("SCHOOL_ADMIN"));
     const publisherSession = await loginSession(
       publisher.data.identifier,
       publisherPassword,
@@ -211,23 +216,21 @@ async function main() {
     // -------------------------------------------------------------------------
     const adminSchoolPassword = "E2eAdminSchool!2026";
     const stamp = Date.now();
-    const secondAdmin = await request("/backoffice/users", {
+    const secondAdmin = await request("/backoffice/users/provision", {
       method: "POST",
-      token: schoolToken,
+      token: superToken,
       body: {
         firstName: "Second",
         lastName: "Admin",
         email: `admin-school-${stamp}@test.local`,
         temporaryPassword: adminSchoolPassword,
+        roleKey: "SCHOOL_ADMIN",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
       },
     });
     assert.equal(secondAdmin.status, 201, JSON.stringify(secondAdmin.data));
-    const grantAdmin = await request(`/backoffice/users/${encodeURIComponent(secondAdmin.data.id)}/roles/grant`, {
-      method: "POST",
-      token: superToken,
-      body: { role: "Admin School" },
-    });
-    assert.equal(grantAdmin.status, 200, JSON.stringify(grantAdmin.data));
+    assert.ok((secondAdmin.data.roleKeys || []).includes("SCHOOL_ADMIN"));
 
     const beforeSession = await loginSession(
       secondAdmin.data.identifier,

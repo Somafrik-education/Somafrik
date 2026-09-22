@@ -3,6 +3,7 @@
 const { ROLE_TO_DB, ROLE_FROM_DB, asTrimmed, createClientsError, CLIENTS_ERROR } = require("./clientsManagement");
 const { mergeRolePermissions } = require("./rolePermissionsResolution");
 
+/** Libellé d'accès vide. Ne pas l'utiliser comme type métier (voir businessProfileLabel / accountKind). */
 const UNAFFECTED_LABEL = "Sans affectation";
 
 const USER_ROLE_ERROR = Object.freeze({
@@ -21,6 +22,8 @@ const USER_ROLE_ERROR = Object.freeze({
   STUDENT_ROLE_FORBIDDEN: "STUDENT_ROLE_FORBIDDEN",
   TEACHER_REVOKE_BLOCKED_ACTIVE_ASSIGNMENTS: "TEACHER_REVOKE_BLOCKED_ACTIVE_ASSIGNMENTS",
   TEACHER_PROFILE_AMBIGUOUS: "TEACHER_PROFILE_AMBIGUOUS",
+  BUSINESS_PROFILE_CONFLICT: "BUSINESS_PROFILE_CONFLICT",
+  STUDENT_ROLE_LOCKED: "STUDENT_ROLE_LOCKED",
   USER_CODE_CONFLICT: "USER_CODE_CONFLICT",
   REPLACE_ROLES_FORBIDDEN: "REPLACE_ROLES_FORBIDDEN",
 });

@@ -93,18 +93,21 @@ assert.doesNotMatch(
 );
 
 const students = read("screens/StudentsScreen.tsx");
-assert.match(students, /style=\{styles\.studentRow\}/);
-assert.match(students, /style=\{styles\.studentMain\}/);
+assert.match(students, /ExpandableEntityCard/);
 assert.match(students, /STUDENT_ROW_TEST_ID\(student\.id\)/);
 assert.match(students, /openStudentDetail\(student\.id\)/);
 assert.match(students, /MIN_TOUCH_TARGET_DP/);
-const mainAt = students.indexOf("style={styles.studentMain}");
-const rowTestIdAt = students.indexOf("STUDENT_ROW_TEST_ID", mainAt);
-const mainCloseAt = students.indexOf("</TouchableOpacity>", rowTestIdAt);
+assert.match(students, /Ouvrir la fiche|SCOLARITE_COPY\.openStudentFiche/);
+const rowTestIdAt = students.indexOf("STUDENT_ROW_TEST_ID(student.id)");
 const overflowAt = students.indexOf("<StudentMutationControls", rowTestIdAt);
-assert.ok(mainAt >= 0 && rowTestIdAt > mainAt, "tap fiche porte studentMain + STUDENT_ROW_TEST_ID");
-assert.ok(mainCloseAt > rowTestIdAt, "la zone fiche se ferme");
-assert.ok(overflowAt > mainCloseAt, "⋮ est sœur de la zone fiche : tap overflow n'ouvre pas StudentDetail");
+const entityCloseAt = students.indexOf("</ExpandableEntityCard>", rowTestIdAt);
+assert.ok(rowTestIdAt >= 0, "tap résumé porte STUDENT_ROW_TEST_ID");
+assert.ok(overflowAt > rowTestIdAt && overflowAt < entityCloseAt, "⋮ est dans la zone dépliée, pas dans le résumé");
+assert.doesNotMatch(
+  students,
+  /testID=\{STUDENT_ROW_TEST_ID\(student\.id\)\}[\s\S]{0,280}openStudentDetail\(student\.id\)/,
+  "tap résumé n'ouvre pas StudentDetail",
+);
 
 assert.equal(STUDENT_OVERFLOW_A11Y_LABEL, "Actions de l'élève");
 

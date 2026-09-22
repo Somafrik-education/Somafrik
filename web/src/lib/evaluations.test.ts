@@ -9,6 +9,8 @@ import {
   isTeacherSessionRole,
   MISSING_EVALUATION_TEACHER,
   pedagogyNoteWritePayload,
+  resolveCanonicalClassId,
+  studentMatchesEvaluationClass,
   subjectOptionsForClass,
   upsertStudentGrade,
 } from "./evaluations";
@@ -431,5 +433,40 @@ describe("canEnterGradesForEvaluation — brouillon/ouverte/validée", () => {
     expect(payload.teacherId).toBeUndefined();
     expect(payload.authorId).toBeUndefined();
     expect(payload.studentId).toBe("s1");
+  });
+
+  it("resolveCanonicalClassId : nom de classe → UUID catalogue", () => {
+    const classes = [
+      { id: "uuid-6a", name: "6ème A" },
+      { id: "uuid-6b", name: "6ème B" },
+    ];
+    expect(resolveCanonicalClassId(classes, "6ème A")).toBe("uuid-6a");
+    expect(resolveCanonicalClassId(classes, "6ème A", "existing")).toBe("existing");
+    expect(resolveCanonicalClassId(classes, "Inconnue")).toBeUndefined();
+  });
+
+  it("studentMatchesEvaluationClass : classId prioritaire, sinon nom", () => {
+    const evaluation = {
+      id: "e1",
+      schoolCode: "SCH",
+      classId: "uuid-6a",
+      className: "6ème A",
+      subject: "Mathématiques",
+      period: "Trimestre 1",
+      evaluationType: "Devoir",
+      title: "D1",
+      scale: 20,
+      coefficient: 1,
+      status: "Ouverte" as const,
+      active: true,
+    };
+    expect(studentMatchesEvaluationClass({ id: "s1", classId: "uuid-6a", className: "Autre" }, evaluation)).toBe(true);
+    expect(studentMatchesEvaluationClass({ id: "s2", classId: "uuid-6b", className: "6ème A" }, evaluation)).toBe(false);
+    expect(
+      studentMatchesEvaluationClass(
+        { id: "s3", className: "6ème A" },
+        { ...evaluation, classId: undefined },
+      ),
+    ).toBe(true);
   });
 });

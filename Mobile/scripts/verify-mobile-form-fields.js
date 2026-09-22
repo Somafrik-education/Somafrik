@@ -58,6 +58,12 @@ function main() {
   assert.match(formField, /accessibilityLabel=\{accessibilityLabel \?\? accessibleLabel\}/);
   assert.match(formField, /formatFieldLabel/);
   assert.match(formField, /FieldLabel/);
+  assert.match(formField, /const \[passwordVisible, setPasswordVisible\] = useState\(false\)/);
+  assert.match(formField, /secureTextEntry=\{isPassword \? !passwordVisible : inputProps\.secureTextEntry\}/);
+  assert.match(formField, /eye-off-outline/);
+  assert.match(formField, /eye-outline/);
+  assert.match(formField, /Afficher le mot de passe/);
+  assert.match(formField, /Masquer le mot de passe/);
   assert.doesNotMatch(formField, /<Text style=\{styles\.label\}>\{visibleLabel\}<\/Text>/);
 
   const tokens = fs.readFileSync(path.join(SRC, "lib", "formFieldTokens.ts"), "utf8");
@@ -75,20 +81,8 @@ function main() {
   assert.match(student, /Téléphone du parent/);
   assert.doesNotMatch(student, /Prénom et nom sont obligatoires/);
 
-  const adminCrud = fs.readFileSync(path.join(SRC, "screens", "AdminCrudScreen.tsx"), "utf8");
-  assert.doesNotMatch(
-    adminCrud,
-    /keyboardType=\{field\.keyboardType \?\? "default"\}/,
-    "AdminCrud ne doit pas écraser le clavier canonique de FormField",
-  );
-  assert.match(adminCrud, /isRequiredAdminField\(entity, field\)/);
-  assert.match(adminCrud, /styles\.selectInputInvalid/);
-  assert.match(adminCrud, /fieldErrors\[field\.key\]/);
-
-  const notifications = fs.readFileSync(path.join(SRC, "screens", "PlatformNotificationsScreen.tsx"), "utf8");
-  assert.match(notifications, /await createPlatformNotification/);
-  assert.match(notifications, /await loadNotifications\(\)/);
-  assert.doesNotMatch(notifications, /upsertNotification\(/);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "AdminCrudScreen.tsx")), false);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "PlatformNotificationsScreen.tsx")), false);
 
   const login = fs.readFileSync(path.join(SRC, "screens", "LoginScreen.tsx"), "utf8");
   assert.match(login, /passwordFieldErrors\.newPassword/);

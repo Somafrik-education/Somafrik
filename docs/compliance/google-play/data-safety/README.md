@@ -38,9 +38,12 @@ python3 docs/compliance/google-play/data-safety/generate_data_safety_csv.py
 6. Importer le CSV dans Play Console puis relire l’aperçu de la fiche Store avant envoi.
 7. Avant tout merge de la PR de mise à jour, effectuer un **diff GitHub indépendant** et vérifier qu’aucune réponse de conformité n’a changé sans justification.
 
-## État déclaré au 5 septembre 2026
+## État déclaré au 22 septembre 2026
 
-Le candidat Android production a été réaudité : AAB v20, EAS build `5998c352-cefe-4d95-b86d-ceceac7b1d2b`, package `com.somafrik.app`, source `main@17a9bfbad8a19bcf1c4a29e5dd56fe91759c09f6`. L’audit final est consigné dans `audit-aab-v20-2026-09-05.md`.
+L’AAB v20 reste la dernière preuve binaire archivée et son audit est consigné dans
+`audit-aab-v20-2026-09-05.md`. Il ne constitue pas la preuve du candidat v24.
+Le candidat v24 doit être construit depuis le SHA de release final, puis faire
+l’objet d’un nouvel audit binaire avant envoi sur Google Play.
 
 - collecte de données : **oui** ;
 - chiffrement en transit : **oui** ;
@@ -49,8 +52,10 @@ Le candidat Android production a été réaudité : AAB v20, EAS build `5998c352
 - demande de suppression : `https://somafrik.app/suppression-compte` ;
 - aucune finalité publicité/marketing déclarée ;
 - notifications Android : token Expo Push, collecte facultative car dépendante de l’autorisation de notification ;
-- aucun changement des réponses CSV requis par l’audit du binaire v20.
+- aucun changement des réponses CSV n’a été requis par l’audit historique du binaire v20.
 
-Avant envoi Google Play : importer le CSV puis relire l’aperçu généré dans Play Console afin de détecter une éventuelle évolution du modèle Google ou une divergence d’interface.
+Avant envoi Google Play v24 : auditer le nouvel AAB, importer le CSV puis relire
+l’aperçu généré dans Play Console afin de détecter une éventuelle évolution du
+modèle Google ou une divergence d’interface.
 
 > Important : ce fichier est une déclaration de conformité, pas une configuration runtime. Toute modification doit être basée sur le comportement réel de la version Android publiée.

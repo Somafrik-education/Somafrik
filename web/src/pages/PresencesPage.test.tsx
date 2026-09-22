@@ -1,7 +1,17 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { PresencesPage } from "./PresencesPage";
+
+/** Les pages applicatives sont montées sous le Router : le deep-link lit l'URL. */
+function RoutedPresencesPage() {
+  return (
+    <MemoryRouter>
+      <PresencesPage />
+    </MemoryRouter>
+  );
+}
 import { ATTENDANCE_PEDAGOGICAL_TEACHER_COPY } from "../lib/attendanceAuthor";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -34,7 +44,8 @@ const dataState = vi.hoisted(() => ({
   ],
   assignments: [] as Record<string, unknown>[],
   teachers: [] as Record<string, unknown>[],
-  presences: [],
+  students: [] as Record<string, unknown>[],
+  presences: [] as Record<string, unknown>[],
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -94,8 +105,14 @@ describe("PresencesPage — roster canonique", () => {
     apiPost.mockReset();
     classStudentsList.mockReset();
     authSession.user = { id: "admin-1", role: "Admin School", schoolCode: "SCH-001", name: "Admin" };
+    dataState.classes = [
+      { id: "uuid-a", classId: "uuid-a", classCode: "CLS-A", name: "2ème A", students: 1 },
+      { id: "uuid-b", classId: "uuid-b", classCode: "CLS-B", name: "2ème A", students: 0 },
+    ];
     dataState.assignments = [];
     dataState.teachers = [];
+    dataState.students = [];
+    dataState.presences = [];
     classStudentsList.mockResolvedValue([
       {
         id: "ELE-1",
@@ -113,17 +130,72 @@ describe("PresencesPage — roster canonique", () => {
   });
 
   it("affiche deux cartes homonymes et le compteur PG, pas un filtre className", async () => {
-    render(<PresencesPage />);
+    render(<RoutedPresencesPage />);
     const cards = await screen.findAllByRole("button");
     const secondA = cards.filter((node) => node.textContent?.includes("2ème A"));
     expect(secondA).toHaveLength(2);
     expect(secondA[0].textContent).toMatch(/1 élève/);
+    expect(secondA[0].textContent).toMatch(/Non saisi/);
     expect(secondA[1].textContent).toMatch(/0 élève/);
+    expect(secondA[1].textContent).toMatch(/Présence —/);
+  });
+
+  it("#759 — 1ère Primaire A affiche 6 et le badge du jour quand /classes annonce 0", async () => {
+    const now = new Date();
+    const isoToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const students = Array.from({ length: 6 }, (_, index) => ({
+      id: `ELE-${index + 1}`,
+      matricule: `ELE-${index + 1}`,
+      classId: "uuid-p1",
+      classCode: "CLS-P1A",
+      status: "active",
+    }));
+    dataState.classes = [
+      { id: "uuid-p1", classId: "uuid-p1", classCode: "CLS-P1A", name: "1ère Primaire A", students: 0 },
+    ];
+    dataState.students = students;
+    dataState.presences = students.map((student, index) => ({
+      studentId: student.id,
+      classId: "uuid-p1",
+      classCode: "CLS-P1A",
+      date: isoToday,
+      status: index === 0 ? "Absent" : "Présent",
+      present: index !== 0,
+    }));
+
+    render(<RoutedPresencesPage />);
+    const card = (await screen.findAllByRole("button")).find((node) =>
+      node.textContent?.includes("1ère Primaire A"),
+    );
+    expect(card?.textContent).toMatch(/6 élève/);
+    expect(card?.textContent).not.toMatch(/0 élève/);
+    expect(card?.textContent).toMatch(/Présence 83 %/);
+    expect(card?.textContent).not.toMatch(/Présence —/);
+  });
+
+  it("PARITY-057 — lignes A/B/D ne complètent pas le roster A/B/C", async () => {
+    const now = new Date();
+    const isoToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    dataState.classes = [{ id: "uuid-a", classId: "uuid-a", classCode: "CLS-A", name: "6ème A", students: 3 }];
+    dataState.students = [
+      { id: "A", matricule: "A", classId: "uuid-a", classCode: "CLS-A" },
+      { id: "B", matricule: "B", classId: "uuid-a", classCode: "CLS-A" },
+      { id: "C", matricule: "C", classId: "uuid-a", classCode: "CLS-A" },
+    ];
+    dataState.presences = [
+      { studentId: "A", classId: "uuid-a", classCode: "CLS-A", date: isoToday, status: "Présent", present: true },
+      { studentId: "B", classId: "uuid-a", classCode: "CLS-A", date: isoToday, status: "Présent", present: true },
+      { studentId: "D", classId: "uuid-a", classCode: "CLS-A", date: isoToday, status: "Présent", present: true },
+    ];
+    render(<RoutedPresencesPage />);
+    const card = (await screen.findAllByRole("button")).find((node) => node.textContent?.includes("6ème A"));
+    expect(card?.textContent).toMatch(/Non saisi/);
+    expect(card?.textContent).not.toMatch(/Présence \d/);
   });
 
   it("charge le roster via GET /classes/:classCode/students (cas A className vide)", async () => {
     const user = userEvent.setup();
-    render(<PresencesPage />);
+    render(<RoutedPresencesPage />);
     const cards = await screen.findAllByRole("button");
     const classA = cards.find((node) => node.textContent?.includes("1 élève")) as HTMLElement;
     await user.click(classA);
@@ -131,6 +203,7 @@ describe("PresencesPage — roster canonique", () => {
       expect(classStudentsList).toHaveBeenCalledWith("CLS-A");
     });
     expect(await screen.findByText("Awa Diop")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tout présent" })).toBeInTheDocument();
   });
 
   it("n'expose plus assignStudentToClass ni update({ students })", () => {
@@ -156,7 +229,7 @@ describe("PresencesPage — roster canonique", () => {
     };
     dataState.assignments = [];
     dataState.teachers = [];
-    render(<PresencesPage />);
+    render(<RoutedPresencesPage />);
     const cards = await screen.findAllByRole("button");
     const classCards = cards.filter((node) => node.textContent?.includes("2ème A"));
     expect(classCards).toHaveLength(2);
@@ -171,8 +244,14 @@ describe("PresencesPage — enseignant pédagogique ≠ acteur JWT", () => {
     apiPost.mockReset();
     classStudentsList.mockReset();
     authSession.user = { id: "admin-1", role: "Admin School", schoolCode: "SCH-001", name: "Admin" };
+    dataState.classes = [
+      { id: "uuid-a", classId: "uuid-a", classCode: "CLS-A", name: "2ème A", students: 1 },
+      { id: "uuid-b", classId: "uuid-b", classCode: "CLS-B", name: "2ème A", students: 0 },
+    ];
     dataState.assignments = [];
     dataState.teachers = [];
+    dataState.students = [];
+    dataState.presences = [];
     classStudentsList.mockResolvedValue([
       {
         id: "ELE-1",
@@ -191,7 +270,7 @@ describe("PresencesPage — enseignant pédagogique ≠ acteur JWT", () => {
 
   async function openClassWithRoster() {
     const user = userEvent.setup();
-    render(<PresencesPage />);
+    render(<RoutedPresencesPage />);
     const cards = await screen.findAllByRole("button");
     const classA = cards.find((node) => node.textContent?.includes("1 élève")) as HTMLElement;
     await user.click(classA);

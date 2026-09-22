@@ -1,0 +1,45 @@
+{
+  "id": "fixture.qualification.burundi-model-a",
+  "title": "Burundi modèle A — bulletin rose (domaines)",
+  "qualification_only": true,
+  "not_a_country_pack": true,
+  "engine_id": "somafrik.report_card.v1",
+  "academic_rule_profile": {
+    "period_mode": "term",
+    "periods": ["T1", "T2", "T3"],
+    "annual": true,
+    "score_components": [
+      { "id": "COMPONENT_PERIOD", "applicability": "always" }
+    ],
+    "subject_groups": true,
+    "ranking": { "enabled": true, "ties": "competition" },
+    "rounding": { "decimals": 2 },
+    "missing_score": "NOT_APPLICABLE_not_zero"
+  },
+  "report_card_schema": {
+    "layout": "grouped_subjects",
+    "groups": [
+      "Français",
+      "Kirundi",
+      "Étude du milieu",
+      "Mathématiques",
+      "Arts",
+      "Anglais"
+    ],
+    "columns": [
+      "period_max",
+      "period_points",
+      "annual_max",
+      "annual_points",
+      "percentage",
+      "rank"
+    ],
+    "signature_slots": ["homeroom", "parents"]
+  },
+  "rendering_template": {
+    "paper": "A4",
+    "orientation": "portrait",
+    "qr_required": true,
+    "accent": "pink"
+  }
+}

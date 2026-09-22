@@ -5,6 +5,7 @@ import {
   marketingLegalRoutes,
   marketingLogin,
   marketingNav,
+  marketingTrial,
 } from "../../data/marketingContent";
 
 export function MarketingFooter() {
@@ -39,6 +40,12 @@ export function MarketingFooter() {
             className="mb-2 block rounded-md text-sm text-slate-300 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
           >
             {marketingLogin.ctaLabel}
+          </Link>
+          <Link
+            to={marketingTrial.href}
+            className="mb-2 block rounded-md text-sm text-slate-300 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          >
+            {marketingTrial.label}
           </Link>
           {marketingLegalRoutes.length > 0
             ? marketingLegalRoutes.map((route) => (

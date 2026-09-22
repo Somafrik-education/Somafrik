@@ -201,7 +201,13 @@ function main() {
   sourceGuards();
   run(
     process.execPath,
-    ["--test", "backend/lib/financeUnallocatedCash.test.js", "backend/lib/financeCatalog.test.js", "backend/lib/financeSchoolScope.test.js"],
+    [
+      "--test",
+      "backend/lib/financeUnallocatedCash.test.js",
+      "backend/lib/financeCatalog.test.js",
+      "backend/lib/financeSchoolScope.test.js",
+      "backend/services/unpaidService.test.js",
+    ],
     "tests unitaires caisse / catalogue F8 ont échoué",
   );
   run(

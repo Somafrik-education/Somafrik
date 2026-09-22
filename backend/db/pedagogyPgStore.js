@@ -226,7 +226,7 @@ function createPedagogyPgStore(repo) {
         return one(
           `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
            VALUES ($1, $2, $3, $4, 'active')
-           ON CONFLICT (subject_code) DO UPDATE SET name = EXCLUDED.name
+           ON CONFLICT (school_id, subject_code) DO UPDATE SET name = EXCLUDED.name
            RETURNING *`,
           [schoolId, code, name, coefficient],
         );
@@ -1238,6 +1238,19 @@ function createPedagogyPgStore(repo) {
         `),
         repo.all(`
           SELECT g.*, s.school_code, st.student_code, c.name AS class_name, sub.name AS subject_name,
+                 COALESCE(
+                   (
+                     SELECT sc.coefficient
+                     FROM school_courses sc
+                     WHERE sc.school_id = g.school_id
+                       AND sc.class_id = g.class_id
+                       AND sc.subject_id = g.subject_id
+                       AND sc.status = 'active'
+                     ORDER BY sc.created_at ASC, sc.id ASC
+                     LIMIT 1
+                   ),
+                   sub.coefficient
+                 ) AS subject_coefficient,
                  t.teacher_code, tm.name AS term_name, e.title AS evaluation_title,
                  e.max_score AS evaluation_max_score, e.coefficient AS evaluation_coefficient,
                  e.evaluation_type AS evaluation_type_pg, e.legacy_json_id AS evaluation_legacy_id,

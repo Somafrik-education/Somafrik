@@ -7,8 +7,7 @@ const navigateToDemoMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/demoNavigation", () => ({ navigateToDemo: navigateToDemoMock }));
 vi.mock("../lib/featureFlags", () => ({
-  demoEntryEnabled: true,
-  publicDemoEnabled: false,
+  publicDemoEnabled: true,
   showDemoAccounts: false,
   marketplaceEnabled: false,
 }));
@@ -31,7 +30,7 @@ async function fillRequiredFields(user: ReturnType<typeof userEvent.setup>) {
   await user.selectOptions(screen.getByLabelText(/pays/i), "CD");
 }
 
-describe("DemoEntryPage — promotion production contrôlée", () => {
+describe("DemoEntryPage — qualification publique", () => {
   beforeEach(() => {
     fetchMock.mockReset();
     navigateToDemoMock.mockReset();
@@ -44,15 +43,17 @@ describe("DemoEntryPage — promotion production contrôlée", () => {
     vi.unstubAllEnvs();
   });
 
-  it("permet la recette directe même quand le CTA public reste désactivé", () => {
+  it("ne demande ni e-mail ni téléphone avant l'entrée en démo", () => {
     renderPage();
     expect(screen.getByRole("heading", { level: 1, name: /découvrir somafrik/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /entrer dans la démo/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/profil/i)).toBeRequired();
+    expect(screen.getByLabelText(/rôle dans la découverte/i)).toBeRequired();
+    expect(screen.getByLabelText(/pays/i)).toBeRequired();
     expect(screen.queryByLabelText(/e-mail/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/téléphone|whatsapp/i)).not.toBeInTheDocument();
   });
 
-  it("crée une session via l'API Démo dédiée puis redirige uniquement vers demo.somafrik.app", async () => {
+  it("crée une session via l'API Démo dédiée puis redirige vers l'URL fournie", async () => {
     const user = userEvent.setup();
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -84,7 +85,7 @@ describe("DemoEntryPage — promotion production contrôlée", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(/démonstration n’est pas encore disponible/i);
   });
 
-  it("refuse une redirection vers un autre hôte", async () => {
+  it("refuse une redirection qui ne pointe pas vers un hôte de démo Somafrik", async () => {
     const user = userEvent.setup();
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -92,7 +93,9 @@ describe("DemoEntryPage — promotion production contrôlée", () => {
     });
 
     renderPage();
-    await fillRequiredFields(user);
+    await user.selectOptions(screen.getByLabelText(/profil/i), "enseignant");
+    await user.selectOptions(screen.getByLabelText(/rôle dans la découverte/i), "utilisateur");
+    await user.selectOptions(screen.getByLabelText(/pays/i), "CD");
     await user.click(screen.getByRole("button", { name: /entrer dans la démo/i }));
 
     expect(await screen.findByRole("status")).toHaveTextContent(/redirection de démo invalide/i);

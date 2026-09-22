@@ -33,6 +33,27 @@ test("backfill seed Admin School → SCHOOL_ADMIN sur le school_id du tenant", (
   assert.equal(biOnCd, undefined);
 });
 
+test("backfill n'ajoute pas de rôle staff à un compte lié par students.user_id", () => {
+  const tables = {
+    schools: [seedData.school],
+    userRoles: [],
+    students: [
+      {
+        id: "st-seed-lock",
+        school_id: seedData.school.id,
+        student_code: "CD-IN-61-26-00017",
+        status: "active",
+        user_id: "USER-ADMIN1",
+      },
+    ],
+  };
+  backfillMemoryUserRolesFromSeedAccounts(tables, seedData.userAccounts);
+  assert.equal(
+    tables.userRoles.some((row) => row.user_id === "USER-ADMIN1" && row.role_key === "SCHOOL_ADMIN"),
+    false,
+  );
+});
+
 test("backfill est idempotent", () => {
   const tables = { schools: [seedData.school], userRoles: [] };
   const first = backfillMemoryUserRolesFromSeedAccounts(tables, seedData.userAccounts);

@@ -120,6 +120,47 @@ function run() {
   assert.equal(isCancelledStatus("cancelled"), true);
   assert.equal(isCancelledStatus("En attente"), false);
 
+  const usdReceipt = normalizePaymentRow({
+    id: "pay-usd",
+    amount: 50,
+    currency: "USD",
+    status: "Payé",
+  });
+  assert.equal(
+    usdReceipt.currency,
+    "USD",
+    "FIN-L3-04 — GET /payments.currency doit survivre à normalizePaymentRow",
+  );
+  const blankReceipt = normalizePaymentRow({
+    id: "pay-blank",
+    amount: 80,
+    currency: "   ",
+    status: "Payé",
+  });
+  assert.equal(
+    String(blankReceipt.currency ?? "").trim(),
+    "",
+    "FIN-L3-04-B — devise vide/espaces non inventée",
+  );
+
+  const missingUnallocated = normalizePaymentRow({
+    id: "pay-e",
+    amount: 100,
+    allocatedAmount: 60,
+    currency: "CDF",
+    status: "Payé",
+  });
+  assert.notEqual(
+    missingUnallocated.unallocatedAmount,
+    40,
+    "FIN-L3-04-E — unallocatedAmount absent ne doit pas devenir collected-allocated",
+  );
+  assert.equal(
+    missingUnallocated.unallocatedAmount,
+    undefined,
+    "FIN-L3-04-E — ne pas inventer 0 si la donnée serveur est absente",
+  );
+
   const paymentsError = snapshotFromFailure({ status: 500, message: "Erreur paiements" }, []);
   assert.equal(paymentsError.status, "error");
   assert.equal(shouldRenderEmpty(paymentsError), false);

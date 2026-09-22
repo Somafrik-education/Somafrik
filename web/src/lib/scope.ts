@@ -23,7 +23,7 @@ import {
   scopedCountries as scopedCountriesForUser,
   SCHOOL_ADMIN_ROLE,
 } from "./orgHierarchy";
-import { isSuperadminManagedUser, isUnassignedUserAccount } from "./userAccounts";
+import { isSuperadminManagedUser } from "./userAccounts";
 import { isUserAccountVisible } from "./userAccountRules";
 import {
   projectScopedUsersForSchool,
@@ -174,7 +174,7 @@ export function projectScopedUsers(user: SessionUser | null, state: ScopeState):
     );
     const users = visible.filter(
       (account) =>
-        (account.role === SCHOOL_ADMIN_ROLE || isUnassignedUserAccount(account)) &&
+        account.role === SCHOOL_ADMIN_ROLE &&
         (countryScopeMatches(account.countryScope, user.countryScope) ||
           countrySchoolCodes.has(normalize(account.schoolCode))),
     );
@@ -222,12 +222,22 @@ export interface Kpi {
   suffix?: string;
 }
 
-export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] {
+export const SCHOOL_UNREAD_KPI_LABEL = "Alertes à traiter";
+
+export type LiveKpiOptions = {
+  /** Compteur C4 `notification_recipients` (read_at / archived_at) via unread-count. */
+  schoolUnreadCount?: number;
+};
+
+export function getLiveKpis(
+  user: SessionUser | null,
+  state: ScopeState,
+  options?: LiveKpiOptions,
+): Kpi[] {
   if (!user) return [];
   const schools = scopedSchools(user, state);
   const users = scopedUsers(user, state);
   const subscriptions = scopedSubscriptions(user, state);
-  const notifications = scopedNotifications(user, state);
   const countries = scopedCountries(user, state);
   const activeUsers = users.filter(isActiveUserAccount);
   const suspendedSchools = schools.filter((school) => school.status === "Suspendu").length;
@@ -240,6 +250,7 @@ export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] 
     .reduce((total, s) => total + Number(s.monthlyPrice ?? 0), 0);
 
   if (isInternalSchoolRole(user.role)) {
+    const schoolUnreadCount = Math.max(0, Math.floor(Number(options?.schoolUnreadCount) || 0));
     return [
       { label: ACTIVE_USERS_KPI_LABEL, value: activeUsers.length },
       {
@@ -248,10 +259,8 @@ export function getLiveKpis(user: SessionUser | null, state: ScopeState): Kpi[] 
       },
       { label: "Enseignants", value: countUsersByRole(users, ["Enseignant"]) },
       {
-        label: "Alertes à traiter",
-        value:
-          users.filter((u) => !isActiveUserAccount(u)).length +
-          notifications.filter((n) => n.status === "Non lu").length,
+        label: SCHOOL_UNREAD_KPI_LABEL,
+        value: schoolUnreadCount,
       },
     ];
   }

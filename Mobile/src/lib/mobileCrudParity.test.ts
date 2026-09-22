@@ -3,6 +3,7 @@ import { attachCanonicalRoleIdentity } from "./canonicalRoleIdentity";
 import { canManagePresences, canMutateEntity, canReadEntity, entityFeatureMap, hasSecurityPermission } from "../domain/security/permissions";
 import {
   CANONICAL_CRUD_ENTITIES,
+  canAssignClassHeadTeacher,
   canCancelSchoolPayment,
   canCreateTeacherIdentity,
   canGrantUserRole,
@@ -126,6 +127,20 @@ const readOnlyClasses = liveSession({
   permissions: ["Classes:READ", "Voir classes"],
 });
 assert.equal(canMutateEntity(readOnlyClasses, "classes", "CREATE"), false);
+assert.equal(canAssignClassHeadTeacher(adminSchool), true);
+assert.equal(canAssignClassHeadTeacher(readOnlyClasses), false);
+
+const adminSchoolRevokedWrites = liveSession({
+  sessionRole: "school_admin",
+  roleLabel: "Admin School",
+  roleKeys: ["SCHOOL_ADMIN"],
+  permissions: ["Classes:READ", "Voir classes"],
+});
+assert.equal(
+  canAssignClassHeadTeacher(adminSchoolRevokedWrites),
+  false,
+  "Admin School avec Classes:READ seul — pas de shortcut rôle",
+);
 assert.deepEqual(resolveEntityCrudAccess(readOnlyClasses, "classes"), {
   canRead: true,
   canCreate: false,
@@ -144,6 +159,7 @@ assert.equal(canMutateEntity(prefetTeachers, "teachers", "DELETE"), true);
 assert.equal(canMutateEntity(prefetTeachers, "teachers", "CREATE"), false);
 assert.equal(canCreateTeacherIdentity(prefetTeachers), false);
 assert.equal(canMutateEntity(prefetTeachers, "assignments", "CREATE"), true);
+assert.equal(canAssignClassHeadTeacher(prefetTeachers), true);
 assert.equal(canGrantUserRole(adminSchool), true, "GRANT/REVOKE rôle utilisateur = Utilisateurs:UPDATE");
 assert.equal(canGrantUserRole(prefetTeachers), false, "Préfet sans Utilisateurs:UPDATE ne révoque pas");
 

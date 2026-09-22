@@ -8,6 +8,7 @@
 const { asTrimmed, normalizeKey, money } = require("./financeManagement");
 const { resolveFinanceSchoolScope, schoolRecordInFinanceScope } = require("./financeSchoolScope");
 const { activeFeeTypeCatalog } = require("./financeFeeTypes");
+const { normalizeEnrollmentStatus } = require("./studentEnrollmentC18");
 
 const INACTIVE_STUDENT_STATUSES = new Set(["deleted", "archived", "inactive", "transferred", "sorti"]);
 
@@ -34,7 +35,7 @@ function foldPaymentStudentOptions(rows = []) {
     if (!studentId) continue;
     if (!isActiveStudentStatus(row.student_status || row.status || row.studentStatus)) continue;
     const enrollmentStatus = String(row.enrollment_status || row.enrollmentStatus || "active").trim() || "active";
-    if (normalizeKey(enrollmentStatus) !== "active" && normalizeKey(enrollmentStatus) !== "actif") continue;
+    if (normalizeEnrollmentStatus(enrollmentStatus) !== "ENROLLED") continue;
 
     let item = folded.get(studentId);
     if (!item) {

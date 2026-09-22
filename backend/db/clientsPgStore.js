@@ -147,6 +147,8 @@ function createClientsPgStore(repo) {
         );
       },
       async reassignActiveUserRolesSchool(userId, _fromSchoolId, toSchoolId) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, userId, { operation: "reassign" });
         await query(
           `UPDATE user_roles
            SET school_id = $2, updated_at = NOW()
@@ -231,6 +233,11 @@ function createClientsPgStore(repo) {
         return formatUserCode(year, nextValue);
       },
       async insertUserRole(row) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, row.userId, {
+          operation: "grant",
+          roleKey: row.roleKey,
+        });
         return one(
           `INSERT INTO user_roles (user_id, school_id, role_key, granted_by, granted_at, status)
            VALUES ($1, $2, $3, $4, NOW(), 'active')
@@ -239,6 +246,11 @@ function createClientsPgStore(repo) {
         );
       },
       async revokeUserRole(row) {
+        const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
+        await assertCanonicalStudentRolesLocked(this, row.userId, {
+          operation: "revoke",
+          roleKey: row.roleKey,
+        });
         return one(
           `UPDATE user_roles
            SET status = 'revoked', revoked_at = NOW(), revoked_by = $4, updated_at = NOW()
@@ -265,6 +277,36 @@ function createClientsPgStore(repo) {
           `SELECT * FROM teachers WHERE school_id = $1 AND user_id = $2 LIMIT 1`,
           [schoolId, userId],
         );
+      },
+      async getCanonicalLinkedStudentByUserId(userId) {
+        const { SELECT_CANONICAL_LINKED_STUDENT_SQL } = require("../lib/studentRoleLock");
+        return one(SELECT_CANONICAL_LINKED_STUDENT_SQL, [userId]);
+      },
+      async getActiveStudentProfileByUser(userId, schoolId) {
+        const {
+          SELECT_ACTIVE_STUDENT_FOR_USER_SQL,
+        } = require("../lib/businessProfileIntegrity");
+        return one(SELECT_ACTIVE_STUDENT_FOR_USER_SQL, [userId, schoolId]);
+      },
+      async getActiveTeacherProfileByUser(userId, schoolId) {
+        const {
+          SELECT_ACTIVE_TEACHER_FOR_USER_SQL,
+        } = require("../lib/businessProfileIntegrity");
+        return one(SELECT_ACTIVE_TEACHER_FOR_USER_SQL, [userId, schoolId]);
+      },
+      async listActiveStudentProfilesByUserIds(userIds = []) {
+        if (!userIds.length) return [];
+        const {
+          SELECT_STUDENT_PROFILES_FOR_USERS_SQL,
+        } = require("../lib/businessProfileIntegrity");
+        return all(SELECT_STUDENT_PROFILES_FOR_USERS_SQL, [userIds]);
+      },
+      async listActiveTeacherProfilesByUserIds(userIds = []) {
+        if (!userIds.length) return [];
+        const {
+          SELECT_TEACHER_PROFILES_FOR_USERS_SQL,
+        } = require("../lib/businessProfileIntegrity");
+        return all(SELECT_TEACHER_PROFILES_FOR_USERS_SQL, [userIds]);
       },
       async findAmbiguousTeacherIdentity(schoolId, identity) {
         const { isExactTeacherCivilIdentity } = require("../lib/teachersManagement");
@@ -478,6 +520,27 @@ function createClientsPgStore(repo) {
            JOIN students st ON st.id = r.student_id
            WHERE r.id::text = $1`,
           [id],
+        );
+      },
+      async listRelationsByStudent(schoolId, studentRef) {
+        return all(
+          `SELECT r.*, s.school_code,
+             trim(concat(c.first_name, ' ', c.last_name)) AS contact_name,
+             trim(concat(st.first_name, ' ', st.last_name)) AS student_name,
+             c.first_name AS contact_first_name,
+             c.last_name AS contact_last_name,
+             c.phone AS contact_phone,
+             c.email AS contact_email,
+             c.user_id AS contact_user_id,
+             st.student_code
+           FROM contact_relations r
+           JOIN schools s ON s.id = r.school_id
+           JOIN contacts c ON c.id = r.contact_id
+           JOIN students st ON st.id = r.student_id
+           WHERE r.school_id = $1
+             AND (st.id::text = $2 OR st.student_code = $2)
+           ORDER BY CASE WHEN r.status = 'active' THEN 0 ELSE 1 END, r.created_at DESC`,
+          [schoolId, studentRef],
         );
       },
       async getRelationByContactAndStudent(contactId, studentId) {
@@ -718,11 +781,24 @@ function createClientsPgStore(repo) {
         return row?.user_id ?? null;
       },
       async listParentUserIdsForStudent(schoolId, studentRef) {
+        // Fail-closed tenant : relation, contact ET compte utilisateur doivent
+        // appartenir à l'école de l'élève. `contacts.user_id` est un FK nu vers
+        // `users(id)`, la jointure rend l'invariant obligatoire.
         const rows = await all(
-          `SELECT DISTINCT c.user_id
+          `SELECT DISTINCT u.id AS user_id
            FROM students st
-           JOIN contact_relations r ON r.student_id = st.id AND r.status = 'active'
-           JOIN contacts c ON c.id = r.contact_id AND c.status = 'active' AND c.user_id IS NOT NULL
+           JOIN contact_relations r
+             ON r.student_id = st.id
+            AND r.school_id = st.school_id
+            AND r.status = 'active'
+           JOIN contacts c
+             ON c.id = r.contact_id
+            AND c.school_id = st.school_id
+            AND c.status = 'active'
+           JOIN users u
+             ON u.id = c.user_id
+            AND u.school_id = st.school_id
+            AND COALESCE(u.status, 'active') = 'active'
            WHERE st.school_id = $1 AND (st.id::text = $2 OR st.student_code = $2)`,
           [schoolId, asTrimmed(studentRef)],
         );
@@ -740,11 +816,21 @@ function createClientsPgStore(repo) {
         return row?.user_id ?? null;
       },
       async listSchoolAdminUserIds(schoolId) {
+        // Fail-closed tenant : le rôle doit être porté dans l'école de
+        // l'événement. Sans `ur.school_id`, un rôle SCHOOL_ADMIN actif d'un
+        // autre établissement qualifierait le compte comme admin ici.
         const rows = await all(
           `SELECT DISTINCT u.id
            FROM users u
-           JOIN user_roles ur ON ur.user_id = u.id AND ur.status = 'active' AND ur.revoked_at IS NULL
-           WHERE u.school_id = $1 AND upper(ur.role_key) IN ('SCHOOL_ADMIN', 'PROVISEUR', 'PRINCIPAL', 'PREFET_ETUDES')`,
+           JOIN user_roles ur
+             ON ur.user_id = u.id
+            AND ur.school_id = u.school_id
+            AND ur.school_id = $1
+            AND ur.status = 'active'
+            AND ur.revoked_at IS NULL
+           WHERE u.school_id = $1
+             AND COALESCE(u.status, 'active') = 'active'
+             AND upper(ur.role_key) IN ('SCHOOL_ADMIN', 'PROVISEUR', 'PRINCIPAL', 'PREFET_ETUDES')`,
           [schoolId],
         );
         return rows.map((row) => row.id);
@@ -1407,22 +1493,43 @@ function createClientsPgStore(repo) {
           `SELECT DISTINCT u.id AS user_id
            FROM enrollments e
            JOIN students st ON st.id = e.student_id AND st.school_id = e.school_id
-           JOIN users u ON u.school_id = st.school_id AND u.user_code = st.student_code
+           JOIN users u ON u.school_id = st.school_id
+            AND (
+              st.user_id = u.id
+              OR (
+                st.user_id IS NULL
+                AND u.user_code = st.student_code
+              )
+            )
            WHERE e.school_id = $1
              AND e.class_id = ANY($2::uuid[])
              AND e.status = 'active'
              AND COALESCE(st.status, 'active') = 'active'
-             AND COALESCE(u.status, 'active') = 'active'`,
+             AND COALESCE(u.status, 'active') = 'active'
+           ORDER BY u.id`,
           [schoolId, classIds],
         );
       },
       async listClassParentUserIds(schoolId, classIds) {
         if (!classIds?.length) return [];
+        // Fail-closed tenant : contact ET compte utilisateur doivent appartenir
+        // à l'école de l'inscription. Aucune contrainte PostgreSQL ne garantit
+        // contacts.user_id -> users.school_id, la jointure la rend obligatoire.
         return all(
-          `SELECT DISTINCT c.user_id
+          `SELECT DISTINCT u.id AS user_id
            FROM enrollments e
-           JOIN contact_relations r ON r.student_id = e.student_id AND r.status = 'active' AND r.school_id = e.school_id
-           JOIN contacts c ON c.id = r.contact_id AND c.status = 'active' AND c.user_id IS NOT NULL
+           JOIN contact_relations r
+             ON r.student_id = e.student_id
+            AND r.school_id = e.school_id
+            AND r.status = 'active'
+           JOIN contacts c
+             ON c.id = r.contact_id
+            AND c.school_id = e.school_id
+            AND c.status = 'active'
+           JOIN users u
+             ON u.id = c.user_id
+            AND u.school_id = e.school_id
+            AND COALESCE(u.status, 'active') = 'active'
            WHERE e.school_id = $1
              AND e.class_id = ANY($2::uuid[])
              AND e.status = 'active'`,
@@ -1486,6 +1593,9 @@ function createClientsPgStore(repo) {
     getSchoolById: (id) => bind({}).getSchoolById(id),
     getCountryByCode: (code) => bind({}).getCountryByCode(code),
     getUserById: (id) => bind({}).getUserById(id),
+    getStudentById: (id) => bind({}).getStudentById(id),
+    listRelationsByStudent: (schoolId, studentRef) => bind({}).listRelationsByStudent(schoolId, studentRef),
+    getCanonicalLinkedStudentByUserId: (id) => bind({}).getCanonicalLinkedStudentByUserId(id),
     withTransaction(fn) {
       return repo.withTransaction((tx) => fn(bind(tx)));
     },
@@ -1514,8 +1624,17 @@ function createClientsPgStore(repo) {
         list.push(row.role_key);
         rolesByUser.set(String(row.user_id), list);
       }
+      const profiles = await userRoleLifecycleService.loadBusinessProfilesByUserIds(
+        bind({}),
+        users.map((row) => row.id),
+        rolesByUser,
+      );
       return users.map((row) =>
-        userRoleLifecycleService.hydrateUser(row, rolesByUser.get(String(row.id)) ?? []),
+        userRoleLifecycleService.hydrateUser(
+          row,
+          rolesByUser.get(String(row.id)) ?? [],
+          profiles.get(String(row.id)),
+        ),
       );
     },
     async listProjection() {
@@ -1539,6 +1658,11 @@ function createClientsPgStore(repo) {
         list.push(row.role_key);
         rolesByUser.set(String(row.user_id), list);
       }
+      const profiles = await userRoleLifecycleService.loadBusinessProfilesByUserIds(
+        bind({}),
+        users.map((row) => row.id),
+        rolesByUser,
+      );
       const contacts = await repo.all(
         `SELECT c.*, s.school_code, s.name AS school_name
          FROM contacts c
@@ -1572,7 +1696,11 @@ function createClientsPgStore(repo) {
       );
       return {
         users: users.map((row) =>
-          userRoleLifecycleService.hydrateUser(row, rolesByUser.get(String(row.id)) ?? []),
+          userRoleLifecycleService.hydrateUser(
+            row,
+            rolesByUser.get(String(row.id)) ?? [],
+            profiles.get(String(row.id)),
+          ),
         ),
         contacts: contacts.map(mapContactRow),
         relations: relations.map(mapRelationRow),
@@ -1599,6 +1727,10 @@ function createClientsPgStore(repo) {
     lookupParentIdentity: (...args) => {
       const { lookupParentIdentity } = require("../lib/parentLinking");
       return lookupParentIdentity(store, ...args);
+    },
+    listParentRelations: (...args) => {
+      const { listParentRelations } = require("../lib/parentLinking");
+      return listParentRelations(store, ...args);
     },
     archiveParentRelation: (...args) => {
       const { archiveParentRelation } = require("../lib/parentLinking");

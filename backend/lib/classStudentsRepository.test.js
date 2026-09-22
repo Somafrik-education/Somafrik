@@ -40,9 +40,11 @@ function createMemoryDb() {
   let studentSeq = 1;
 
   function joinActiveEnrollment(student) {
-    const enrollment = enrollments.find(
-      (row) => row.student_id === student.id && row.status === "active",
-    );
+    const enrollment = enrollments.find((row) => {
+      if (row.student_id !== student.id) return false;
+      const status = String(row.status ?? "").toLowerCase();
+      return status === "active" || status === "enrolled" || status === "approved";
+    });
     const cls = classes.find((row) => row.id === enrollment?.class_id);
     const year = years.find((item) => item.id === enrollment?.academic_year_id);
     return {
@@ -64,6 +66,10 @@ function createMemoryDb() {
     },
     async one(sql, params = []) {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+
+      if (text.includes("FROM TEACHERS T")) {
+        return null;
+      }
 
       if (text.includes("FROM CLASSES CL") && text.includes("WHERE CL.CLASS_CODE")) {
         const classCode = params[0];
@@ -128,7 +134,7 @@ function createMemoryDb() {
           class_id: params[2],
           academic_year_id: params[3],
           enrollment_date: new Date().toISOString().slice(0, 10),
-          status: "active",
+          status: text.includes("ENROLLED") ? "ENROLLED" : "active",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
@@ -136,9 +142,11 @@ function createMemoryDb() {
         return { id: row.id, enrollment_date: row.enrollment_date };
       }
 
-      if (text.includes("FROM STUDENTS ST") && text.includes("WHERE ST.STUDENT_CODE") && text.includes("LIMIT 1")) {
+      if (text.includes("FROM STUDENTS ST") && text.includes("ST.STUDENT_CODE = $1") && text.includes("LIMIT 1")) {
         const student = students.find(
-          (row) => row.student_code === params[0] && row.school_id === params[1],
+          (row) =>
+            (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+            row.school_id === params[1],
         );
         if (!student) return null;
         return joinActiveEnrollment(student);
@@ -146,7 +154,9 @@ function createMemoryDb() {
 
       if (text.includes("SELECT ST.ID, ST.STUDENT_CODE") && text.includes("FROM STUDENTS ST")) {
         const student = students.find(
-          (row) => row.student_code === params[0] && row.school_id === params[1],
+          (row) =>
+            (row.student_code === params[0] || String(row.id) === String(params[0])) &&
+            row.school_id === params[1],
         );
         return student ?? null;
       }
@@ -184,7 +194,13 @@ function createMemoryDb() {
         const classId = params[0];
         const schoolId = params[1];
         return enrollments
-          .filter((row) => row.class_id === classId && row.status === "active")
+          .filter((row) => {
+            const status = String(row.status ?? "").toLowerCase();
+            return (
+              row.class_id === classId &&
+              (status === "active" || status === "enrolled")
+            );
+          })
           .map((enrollment) => {
             const student = students.find(
               (row) => row.id === enrollment.student_id && row.school_id === schoolId,
@@ -229,6 +245,10 @@ function createMemoryDb() {
           });
       }
 
+      if (text.includes("FROM CONTACT_RELATIONS")) {
+        return [];
+      }
+
       if (text.includes("FROM STUDENT_DOCUMENTS")) {
         return documents.filter(
           (row) => row.student_id === params[0] && row.school_id === params[1],
@@ -239,10 +259,16 @@ function createMemoryDb() {
     },
     async query(sql, params = []) {
       const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
-      if (text.startsWith("SELECT PG_ADVISORY_XACT_LOCK")) {
+      if (
+        text.startsWith("SELECT PG_ADVISORY_XACT_LOCK") ||
+        text.startsWith("SAVEPOINT ") ||
+        text.startsWith("RELEASE SAVEPOINT ") ||
+        text.startsWith("ROLLBACK TO SAVEPOINT ")
+      ) {
         return { rows: [] };
       }
       if (text.startsWith("INSERT INTO USERS")) {
+        const { randomUUID } = require("node:crypto");
         const userCode = params[1];
         if (users.some((row) => row.user_code === userCode)) {
           const error = new Error(
@@ -252,6 +278,7 @@ function createMemoryDb() {
           throw error;
         }
         const row = {
+          id: randomUUID(),
           user_code: userCode,
           school_id: params[0],
           password_hash: params[6],
@@ -260,7 +287,18 @@ function createMemoryDb() {
           role: "STUDENT",
         };
         users.push(row);
+        return { rows: [row] };
+      }
+      if (text.startsWith("INSERT INTO USER_ROLES")) {
         return { rows: [] };
+      }
+      if (text.startsWith("UPDATE STUDENTS SET USER_ID")) {
+        const userId = params[0];
+        const studentId = params[1];
+        const schoolId = params[2];
+        const student = students.find((row) => row.id === studentId && row.school_id === schoolId);
+        if (student) student.user_id = userId;
+        return { rows: student ? [student] : [] };
       }
       throw new Error(`Unhandled query(): ${text}`);
     },
@@ -284,6 +322,12 @@ function createMemoryDb() {
     },
     users() {
       return users.slice();
+    },
+    students() {
+      return students.slice();
+    },
+    enrollments() {
+      return enrollments.slice();
     },
   };
   memory.withTransaction = async (fn) =>
@@ -340,6 +384,18 @@ async function main() {
   assert.equal(enrolled.student.loginCode, enrolled.student.studentCode);
   assert.equal(enrolled.student.classCode, activeClass.class_code);
   assert.equal(enrolled.student.classId, activeClass.id);
+
+  const storedStudent = db.students().find((row) => row.student_code === enrolled.student.studentCode);
+  const storedLogin = db.users().find((row) => row.user_code === enrolled.student.studentCode);
+  assert.ok(storedStudent, "fiche students créée");
+  assert.ok(storedLogin, "compte users créé");
+  assert.equal(storedStudent.user_id, storedLogin.id, "B10 students.user_id === users.id");
+  const enrollment = db.enrollments().find((row) => row.student_id === storedStudent.id);
+  assert.equal(enrollment?.student_id, storedStudent.id, "B10 enrollments.student_id === students.id");
+  storedLogin.user_code = "CD-ITS-MR-26-00099";
+  assert.notEqual(storedLogin.user_code, storedStudent.student_code);
+  assert.equal(storedStudent.user_id, storedLogin.id, "B10 la liaison survit à la divergence des codes");
+  storedLogin.user_code = enrolled.student.studentCode;
   assert.equal(enrolled.student.className, "6ème A");
 
   const listed = await repo.listByClassCode(activeClass.class_code, "CD-2026-0001");
@@ -353,6 +409,8 @@ async function main() {
   schoolList.forEach(assertStudentProjectionHasNoSecret);
 
   const fetched = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+  const fetchedByUuid = await repo.getByStudentCode(storedStudent.id, "CD-2026-0001");
+  assert.equal(fetchedByUuid.studentCode, enrolled.student.studentCode);
   assert.equal(fetched.firstName, "Awa");
   assert.ok(Array.isArray(fetched.enrollments));
   assert.equal(fetched.enrollments.length, 1);
@@ -499,6 +557,25 @@ async function main() {
   assert.equal(verifySecret("1234", storedAwa.password_hash), false);
   assertStudentProjectionHasNoSecret(enrolled.student);
   assertStudentProjectionHasNoSecret(enrolledBi.student);
+  assert.equal(storedAwa.role, "STUDENT");
+
+  const previousOne = db.one.bind(db);
+  db.one = async (sql, params = []) => {
+    const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+    if (text.includes("FROM TEACHERS T")) {
+      return { id: "teacher-block", teacher_code: "ENS-BLOCK", status: "active" };
+    }
+    return previousOne(sql, params);
+  };
+  await assert.rejects(
+    () =>
+      repo.enroll(activeClass.class_code, "CD-2026-0001", {
+        firstName: "Prof",
+        lastName: "Converti",
+      }),
+    (error) => error.statusCode === 409 && error.code === "BUSINESS_PROFILE_CONFLICT",
+  );
+  db.one = previousOne;
 
   const generated = new Set(Array.from({ length: 32 }, () => generateTemporarySecret()));
   assert.equal(generated.size, 32);

@@ -21,5 +21,6 @@
       "@somafrik/help-catalog": ["../packages/help-catalog/src/index.js"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.hydration.red.test.tsx"]
 }

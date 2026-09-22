@@ -28,6 +28,7 @@ const PARENT_A2 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa94";
 const ADMIN_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa95";
 const PARENT_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa96";
 const SUPER_SA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa98";
+const STUDENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa99";
 const CLASS_A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb91";
 const SAME_TS = "2026-08-28T10:00:00.000Z";
 
@@ -292,6 +293,23 @@ async function seed(pool) {
     [schoolA.id, studentA.rows[0].id, CLASS_A, yearA.id],
   );
 
+  // Le compte élève est créé après la fiche : le trigger d'identité exige
+  // le matricule canonique déjà présent (STUDENT_CANONICAL_IDENTIFIER_REQUIRED).
+  await pool.query(
+    `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+     VALUES ($1, $2, $3, 'Élève', 'A', 'stu-com-a@test.local', 'Élève / Étudiant', 'active', FALSE)`,
+    [STUDENT_A, schoolA.id, studentA.rows[0].student_code],
+  );
+  await pool.query(
+    `UPDATE students SET user_id = $2 WHERE id = $1`,
+    [studentA.rows[0].id, STUDENT_A],
+  );
+  await pool.query(
+    `INSERT INTO user_roles (user_id, school_id, role_key, status)
+     VALUES ($1, $2, 'STUDENT', 'active')`,
+    [STUDENT_A, schoolA.id],
+  );
+
   await pool.query(
     `INSERT INTO contacts (school_id, country_id, first_name, last_name, contact_type, phone, status, user_id)
      VALUES
@@ -449,6 +467,48 @@ async function main() {
       body: { message: "Teacher vers parent de sa classe", participantUserIds: [PARENT_A], studentId: fixtures.studentA },
     });
     assert.equal(teacherToParent.status, 201, `C2-02 Teacher A → Parent A: ${JSON.stringify(teacherToParent.data)}`);
+
+    const teacherToStudent = await request("/backoffice/messages", {
+      method: "POST",
+      token: teacherA,
+      body: { message: "Teacher vers élève interdit", participantUserIds: [STUDENT_A] },
+    });
+    assert.equal(teacherToStudent.status, 403, "C2-15 Teacher → élève interdit");
+
+    const adminToStudent = await request("/backoffice/messages", {
+      method: "POST",
+      token: adminA,
+      body: { message: "Admin vers élève", participantUserIds: [STUDENT_A] },
+    });
+    assert.equal(adminToStudent.status, 201, `C2-15 Admin → élève autorisé: ${JSON.stringify(adminToStudent.data)}`);
+    await pool.query(
+      `INSERT INTO school_conversation_participants (
+         conversation_id, user_id, school_id, participant_role, status
+       )
+       SELECT $1, $2, id, 'recipient', 'active'
+       FROM schools
+       WHERE school_code = 'SCH-COM-A'
+       ON CONFLICT (conversation_id, user_id) DO NOTHING`,
+      [adminToStudent.data.conversationId, TEACHER_A],
+    );
+    const teacherReplyStudentThread = await request(
+      `/backoffice/conversations/${adminToStudent.data.conversationId}/messages`,
+      {
+        method: "POST",
+        token: teacherA,
+        body: { message: "Réponse enseignant interdite dans fil élève" },
+      },
+    );
+    assert.equal(teacherReplyStudentThread.status, 403, "C2-15 Teacher reply dans fil élève interdit");
+    const forbiddenTeacherReplyCount = await countRows(
+      pool,
+      `SELECT count(*)::int AS c
+       FROM school_messages
+       WHERE conversation_id = $1 AND body = 'Réponse enseignant interdite dans fil élève'`,
+      [adminToStudent.data.conversationId],
+    );
+    assert.equal(forbiddenTeacherReplyCount, 0, "C2-15 aucune mutation enseignant → élève");
+
     const teacherA2ToParent = await request("/backoffice/messages", {
       method: "POST",
       token: teacherA2,
@@ -493,6 +553,7 @@ async function main() {
     assert.ok(teacherIds.includes(PARENT_A), "C2-13 Teacher voit parent de ses élèves");
     assert.ok(teacherIds.includes(ADMIN_A), "C2-13 Teacher voit staff");
     assert.ok(!teacherIds.includes(PARENT_A2), "C2-13 Teacher ne voit pas parent hors affectation");
+    assert.ok(!teacherIds.includes(STUDENT_A), "C2-15 Teacher ne voit jamais un élève dans les destinataires");
     const adminRecipients = await request("/backoffice/messages/recipients", { token: adminA });
     assert.equal(adminRecipients.status, 200);
     const adminIds = recipientIds(adminRecipients.data);

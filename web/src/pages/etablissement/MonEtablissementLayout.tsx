@@ -8,7 +8,7 @@ import { usePermissionContext } from "../../lib/usePermissionContext";
  * Onglets Mon établissement — gestion opérationnelle des personnes et structures.
  */
 const ETABLISSEMENT_TABS: (TabItem & { view: string })[] = [
-  { to: "/etablissement/vue-ensemble", label: "Vue d'ensemble", icon: LayoutDashboard, view: "establishment" },
+  { to: "/etablissement/vue-ensemble", label: "Scolarité", icon: LayoutDashboard, view: "establishment" },
   { to: "/etablissement/comptes-utilisateurs", label: "Comptes utilisateurs", icon: UserRound, view: "users" },
   { to: "/etablissement/classes", label: "Classes", icon: School, view: "classes" },
   { to: "/etablissement/eleves", label: "Élèves", icon: GraduationCap, view: "students" },
@@ -22,14 +22,8 @@ export function MonEtablissementLayout() {
   const tabs = ETABLISSEMENT_TABS.filter((tab) => canReadView(ctx, tab.view));
 
   return (
-    <div className="space-y-5">
-      <div>
-        <p className="text-xs font-black uppercase tracking-wide text-brand">Mon établissement</p>
-        <h1 className="mt-1 text-2xl font-black text-ink">Mon établissement</h1>
-        <p className="mt-1 text-sm text-muted">
-          Comptes d'accès, classes, effectifs et liaisons parent-enfant de l'établissement.
-        </p>
-      </div>
+    <div className="space-y-4">
+      <p className="text-xs font-black uppercase tracking-wide text-brand">Mon établissement</p>
       <TabNav tabs={tabs} />
       <Outlet />
     </div>

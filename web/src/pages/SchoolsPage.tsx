@@ -31,6 +31,8 @@ import {
 import { appendAuditLog, auditActor, makeAuditEntry } from "../lib/audit";
 import { buildNewUserDraft } from "../lib/userAccounts";
 import { establishmentsApi } from "../lib/establishmentsApi";
+import { SchoolLogoUploadField } from "../components/SchoolLogoUploadField";
+import { schoolLogoSrc } from "../lib/schoolLogo";
 import { ApiError } from "../api/client";
 import { ensureSubscriptionOffers } from "../lib/subscriptionModule";
 import { resolveSchoolSubscription } from "../lib/subscriptions";
@@ -758,14 +760,16 @@ export function SchoolsPage() {
                 onChange={(e) => setEditing({ ...editing, address: e.target.value })}
               />
             </Field>
-            <Field label="Logo (URL)" hint="URL publique du logo de l'établissement.">
-              <Input
-                type="url"
-                value={editing.logoUrl ?? ""}
-                onChange={(e) => setEditing({ ...editing, logoUrl: e.target.value })}
-                placeholder="https://…"
-              />
-            </Field>
+            <SchoolLogoUploadField
+              school={editing}
+              canEdit={Boolean(canUpdate || canCreate)}
+              disabled={busy}
+              onChanged={async () => {
+                await refresh();
+              }}
+              onError={(message) => showToast(message, "error")}
+              onSuccess={(message) => showToast(message, "success")}
+            />
             <Field label="Offre d'abonnement">
               <Select
                 value={editing.subscriptionPlan ?? "Standard"}
@@ -866,11 +870,11 @@ function SchoolDetailView({ school, state }: { school: School; state: BackOffice
         <DetailRow label="Téléphone" value={school.phone} />
         <DetailRow label="Email" value={school.email} />
         <DetailRow label="Adresse" value={school.address} />
-        {school.logoUrl ? (
+        {schoolLogoSrc(school) ? (
           <div className="col-span-2">
             <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Logo</dt>
             <dd className="mt-1">
-              <img src={school.logoUrl} alt="" className="h-12 w-auto rounded border border-line" />
+              <img src={schoolLogoSrc(school) ?? ""} alt="" className="h-12 w-auto rounded border border-line" />
             </dd>
           </div>
         ) : null}

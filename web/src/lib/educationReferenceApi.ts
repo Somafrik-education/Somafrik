@@ -80,19 +80,15 @@ export const educationReferenceApi = {
     api.post<EducationClassGroup>(`/backoffice/education-class-groups/${encodeURIComponent(groupId)}/archive`, {}),
 
   getSchoolCatalog: (schoolCode?: string) =>
-    schoolCode
-      ? api.get<EducationSchoolCatalog>(
-          `/backoffice/establishments/${encodeURIComponent(schoolCode)}/education-reference/catalog`,
-        )
-      : api.get<EducationSchoolCatalog>("/education-reference/catalog"),
+    api.get<EducationSchoolCatalog>(
+      `/education-reference/catalog${schoolCode ? `?schoolCode=${encodeURIComponent(schoolCode)}` : ""}`,
+    ),
 
   saveSchoolActivation: (payload: { levelIds: string[]; streamIds: string[]; groupIds: string[] }, schoolCode?: string) =>
-    schoolCode
-      ? api.put<EducationSchoolCatalog>(
-          `/backoffice/establishments/${encodeURIComponent(schoolCode)}/education-reference/school-activation`,
-          payload,
-        )
-      : api.put<EducationSchoolCatalog>("/education-reference/school-activation", payload),
+    api.put<EducationSchoolCatalog>(
+      `/education-reference/school-activation${schoolCode ? `?schoolCode=${encodeURIComponent(schoolCode)}` : ""}`,
+      payload,
+    ),
 
   updateCountryLabels: (payload: EducationPedagogicalLabels & { countryCode: string }) =>
     api.patch<EducationPedagogicalLabels & { countryCode: string }>("/backoffice/education-reference/labels", payload),

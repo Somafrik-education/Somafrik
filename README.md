@@ -91,7 +91,7 @@ powershell -ExecutionPolicy Bypass -File scripts\docker-up.ps1
 |---------|------------|---------------|
 | Frontend web | https://somafrik.app | https://preprod.somafrik.app |
 | Connexion | https://somafrik.app/connexion | https://preprod.somafrik.app/connexion |
-| API | https://api.somafrik.app/api/health | https://somafrik-api-preprod.onrender.com/api/health |
+| API | https://api.somafrik.app/api/health | https://api-preprod.somafrik.app/api/health |
 
 En préproduction, les services Render sont `somafrik-web-preprod` (Static Site) et `somafrik-api-preprod` (Node). Déploiement et source de vérité : `docs/render.md` et `docs/preproduction.md`.
 

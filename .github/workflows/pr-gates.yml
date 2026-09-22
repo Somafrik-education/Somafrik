@@ -28,6 +28,7 @@ jobs:
       teachers: ${{ steps.detect.outputs.teachers }}
       finance: ${{ steps.detect.outputs.finance }}
       pedagogy: ${{ steps.detect.outputs.pedagogy }}
+      reportcard: ${{ steps.detect.outputs.reportcard }}
       planning: ${{ steps.detect.outputs.planning }}
       users: ${{ steps.detect.outputs.users }}
       platform: ${{ steps.detect.outputs.platform }}
@@ -60,6 +61,7 @@ jobs:
           teachers=false
           finance=false
           pedagogy=false
+          reportcard=false
           planning=false
           users=false
           platform=false
@@ -101,17 +103,18 @@ jobs:
             if [[ "$lower" =~ (teacher|subject|assignment) ]]; then teachers=true; fi
             if [[ "$lower" =~ (finance|payment|fee|cash|receipt) ]]; then finance=true; fi
             if [[ "$lower" =~ (pedagog|evaluation|grade|note|presence|attendance|reference) ]]; then pedagogy=true; fi
+            if [[ "$lower" =~ (reportcard|report-card|report_card) ]]; then reportcard=true; fi
             if [[ "$lower" =~ (planning|schedule|room|replacement|course) ]]; then planning=true; fi
             if [[ "$lower" =~ (user|client|parent|role|permission|identity) ]]; then users=true; fi
             if [[ "$lower" =~ (platform|school|country|notification|subscription|setting|document|exam|lockout|export) ]]; then platform=true; fi
           done <<< "$changed"
 
           targeted=false
-          for flag in db auth sync classes students teachers finance pedagogy planning users platform web mobile dependencies; do
+          for flag in db auth sync classes students teachers finance pedagogy reportcard planning users platform web mobile dependencies; do
             if [ "${!flag}" = "true" ]; then targeted=true; fi
           done
 
-          for flag in code workflows db auth sync classes students teachers finance pedagogy planning users platform web mobile dependencies targeted; do
+          for flag in code workflows db auth sync classes students teachers finance pedagogy reportcard planning users platform web mobile dependencies targeted; do
             printf '%s=%s\n' "$flag" "${!flag}" >> "$GITHUB_OUTPUT"
           done
 
@@ -131,8 +134,12 @@ jobs:
             backend/package-lock.json
             web/package-lock.json
             Mobile/package-lock.json
+      - name: Branding master
+        run: npm run verify:branding-master
       - name: Install dependencies
         run: npm run ci:install
+      - name: Parent E2E contract
+        run: npm run verify:parent-e2e-contract
       - name: Lint
         run: npm run lint
       - name: TypeScript
@@ -313,6 +320,58 @@ jobs:
           npm run verify:evaluation-types-data
           npm run verify:mobile-sync-l1-school-courses
 
+      - name: Report card LOT 0 contracts
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot0
+
+      - name: Report card LOT 1 profiles
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot1
+
+      - name: Report card LOT 2 schema
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot2
+
+      - name: Report card LOT 3 engine
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot3
+
+      - name: Report card LOT 4 snapshot publication
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot4
+
+      - name: Report card LOT 5 PDF and printable QR
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot5
+
+      - name: Report card LOT 6 configuration workflow
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot6
+
+      - name: Report card LOT 7 web and public verify
+        if: needs.scope.outputs.reportcard == 'true'
+        run: npm run verify:report-card-lot7
+
+      - name: Report card LOT 8 mobile bulletins
+        if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.mobile == 'true'
+        run: npm run verify:report-card-lot8
+
+      - name: Report card LOT 9 history corrections versions
+        if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+        run: npm run verify:report-card-lot9
+
+      - name: Report card LOT 10 Burundi A/B qualification
+        if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+        run: npm run verify:report-card-lot10
+
+      - name: Report card LOT 11 source artifact mapping
+        if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.web == 'true'
+        run: npm run verify:report-card-lot11
+
+      - name: Report card S1 E2E Playwright
+        if: needs.scope.outputs.reportcard == 'true' || needs.scope.outputs.web == 'true'
+        run: npm run verify:report-card-s1-e2e
+
       - name: Planning
         if: needs.scope.outputs.planning == 'true'
         run: |
@@ -323,6 +382,7 @@ jobs:
           npm run verify:planning-replacements
           npm run verify:planning-course-options
           npm run verify:mobile-sync-l1-course-schedules
+          npm run verify:school-course-ambiguity-inventory
 
       - name: Users
         if: needs.scope.outputs.users == 'true'
@@ -341,6 +401,36 @@ jobs:
           npm run verify:school-settings-data
           npm run verify:login-lockout-data
 
+      - name: School setup status LOT 0
+        if: needs.scope.outputs.platform == 'true'
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+          SOMAFRIK_DB_REQUIRED: "true"
+          SOMAFRIK_SKIP_DEMO_SEED: "true"
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}"
+          npm run verify:school-setup-status-lot0-red
+
+      - name: School setup resilience LOT 3
+        if: needs.scope.outputs.platform == 'true'
+        run: npm run verify:school-setup-lot3-red
+
+      - name: School setup optional completeness LOT 4
+        if: needs.scope.outputs.platform == 'true'
+        env:
+          GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+          if ! git merge-base "origin/${{ github.base_ref }}" HEAD >/dev/null 2>&1; then
+            git fetch --no-tags --deepen=100 origin || true
+            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          fi
+          npm run verify:school-setup-lot4-red
+
       - name: Web tests
         if: needs.scope.outputs.web == 'true'
         run: npm --prefix web test
@@ -357,7 +447,10 @@ jobs:
           npm run verify:mobile-l1-sqlite-cache
           npm run verify:mobile-l1-offline-reads
           npm run verify:mobile-rc2-offline-read-smoke
+          npm --prefix Mobile run test:mobile-parent-profile-audit
           npx --yes tsx Mobile/src/lib/roleSelectionLayout.test.ts
+          npx --yes tsx Mobile/src/lib/progressiveDisclosureUx.test.ts
+          node Mobile/scripts/verify-progressive-disclosure-red.js
 
       - name: Canonical sync
         if: needs.scope.outputs.sync == 'true'
@@ -367,10 +460,268 @@ jobs:
           npm run verify:sync-end-to-end
           node scripts/verify-remove-legacy-sync-core.js
 
+  lot0:
+    name: LOT 0 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 0 tests and Mobile verifies
+        run: |
+          set -euo pipefail
+          npm run test:lot0-parity
+          npm run verify:mobile-attendance-hydration
+          npm run verify:mobile-home-data-truth
+
+  lot1:
+    name: LOT 1 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true' || needs.scope.outputs.platform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 1 tests
+        run: |
+          set -euo pipefail
+          npm run test:lot1-parity
+
+  lot2:
+    name: LOT 2 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true' || needs.scope.outputs.students == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik
+          POSTGRES_USER: somafrik
+          POSTGRES_PASSWORD: somafrik123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U somafrik -d somafrik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 2 tests
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+          JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+          SOMAFRIK_DB_REQUIRED: "true"
+          SOMAFRIK_SKIP_DEMO_SEED: "true"
+        run: |
+          set -euo pipefail
+          npm run test:lot2-parity
+
+  lot3:
+    name: LOT 3 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true' || needs.scope.outputs.teachers == 'true' || needs.scope.outputs.users == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: somafrik
+          POSTGRES_USER: somafrik
+          POSTGRES_PASSWORD: somafrik123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U somafrik -d somafrik"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 3 tests
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://somafrik:somafrik123@localhost:5432/somafrik
+          JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+          SOMAFRIK_DB_REQUIRED: "true"
+          SOMAFRIK_SKIP_DEMO_SEED: "true"
+        run: |
+          set -euo pipefail
+          npm run test:lot3-parity
+
+  lot4:
+    name: LOT 4 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true' || needs.scope.outputs.finance == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 4 tests
+        run: |
+          set -euo pipefail
+          npm run test:lot4-parity
+
+  lot5:
+    name: LOT 5 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true' || needs.scope.outputs.pedagogy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 5 tests
+        run: |
+          set -euo pipefail
+          npm run test:lot5-parity
+
+  lot6:
+    name: LOT 6 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 6 tests
+        run: |
+          set -euo pipefail
+          npm run test:lot6-parity
+
+  lot7:
+    name: LOT 7 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 7 tests
+        run: |
+          set -euo pipefail
+          npm run test:lot7-parity
+
+  lot8:
+    name: LOT 8 parity
+    needs: scope
+    if: needs.scope.outputs.mobile == 'true' || needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: npm run ci:install
+      - name: LOT 8 tests
+        run: |
+          set -euo pipefail
+          npm run test:lot8-parity
+
   required:
     name: Required
     if: always()
-    needs: [scope, quality, secrets, core, targeted]
+    needs: [scope, quality, secrets, core, targeted, lot0, lot1, lot2, lot3, lot4, lot5, lot6, lot7, lot8]
     runs-on: ubuntu-latest
     steps:
       - name: Enforce required PR gates
@@ -380,9 +731,18 @@ jobs:
           SECRETS: ${{ needs.secrets.result }}
           CORE: ${{ needs.core.result }}
           TARGETED: ${{ needs.targeted.result }}
+          LOT0: ${{ needs.lot0.result }}
+          LOT1: ${{ needs.lot1.result }}
+          LOT2: ${{ needs.lot2.result }}
+          LOT3: ${{ needs.lot3.result }}
+          LOT4: ${{ needs.lot4.result }}
+          LOT5: ${{ needs.lot5.result }}
+          LOT6: ${{ needs.lot6.result }}
+          LOT7: ${{ needs.lot7.result }}
+          LOT8: ${{ needs.lot8.result }}
         run: |
           set -euo pipefail
-          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED"; do
+          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED" "$LOT0" "$LOT1" "$LOT2" "$LOT3" "$LOT4" "$LOT5" "$LOT6" "$LOT7" "$LOT8"; do
             case "$result" in
               success|skipped) ;;
               *) echo "Required gate failed: $result" >&2; exit 1 ;;

@@ -162,7 +162,8 @@ function main() {
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/announcementsPlatform.test.ts"], "mobile platform announcements");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/announcementsC3.test.ts"], "mobile announcements C3");
-  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/announcementsPlatform.test.ts", "src/lib/announcementsC3.test.ts"], "web announcements platform+C3");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/communicationPagination.lotc.test.ts"], "mobile Lot C pagination RED-06");
+  run("npm", ["--prefix", "web", "run", "test", "--", "src/lib/announcementsPlatform.test.ts", "src/lib/announcementsC3.test.ts", "src/lib/announcementsRead.lotc.test.tsx", "src/pages/PlatformNotificationsPage.p3.test.tsx"], "web announcements platform+C3 + P3 loading");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour platform-announcements");
   run(process.execPath, ["backend/lib/platformAnnouncements.http.pg.test.js"], "parcours HTTP PostgreSQL ANN-PLATFORM-1");
   console.log("verify-platform-announcements: GO — PostgreSQL réel inclus");

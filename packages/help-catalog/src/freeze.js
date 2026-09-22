@@ -1,12 +1,17 @@
+import { resolveHelpCategory } from "./categories.js";
+
 export function freezeArray(values) {
   return Object.freeze(Array.isArray(values) ? [...values] : []);
 }
 
 export function freezeArticle(article) {
+  const order = Number.isInteger(article.order) ? article.order : 100;
   return Object.freeze({
     id: article.id,
     title: article.title,
     summary: article.summary,
+    category: resolveHelpCategory(article),
+    order,
     roles: freezeArray(article.roles),
     permissions: freezeArray(article.permissions),
     platforms: freezeArray(article.platforms),

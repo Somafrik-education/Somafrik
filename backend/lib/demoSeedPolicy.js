@@ -6,6 +6,48 @@ function isProductionEnvironment(env = process.env) {
   return env.NODE_ENV === "production";
 }
 
+function normalizeDemoRole(role) {
+  return String(role ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toUpperCase();
+}
+
+/**
+ * Les comptes Élève du seed ne peuvent pas être insérés dans `users` avant les
+ * lignes `students` : le trigger d'identité lève STUDENT_CANONICAL_IDENTIFIER_REQUIRED.
+ * `ensureStudentUsers()` les crée ensuite depuis le matricule PostgreSQL.
+ */
+function isStudentDemoAccount(user) {
+  const normalized = normalizeDemoRole(user?.role);
+  return normalized === "STUDENT" || normalized === "ELEVE / ETUDIANT";
+}
+
+/**
+ * Identité de connexion du compte élève (users.email / users.phone).
+ * Le contact parent (students.parent_email / parent_phone) n'est pas une
+ * identité de login élève : le recopier viole uq_users_school_email/phone
+ * dès qu'un compte Parent occupe déjà le même couple établissement+email.
+ */
+function resolveStudentDemoLoginIdentity(student, userAccounts = []) {
+  const keys = new Set(
+    [student?.matricule, student?.publicId, student?.loginCode, student?.identifier]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean),
+  );
+  if (!keys.size) {
+    return { email: "", phone: "" };
+  }
+  const match = (Array.isArray(userAccounts) ? userAccounts : []).find(
+    (user) => isStudentDemoAccount(user) && keys.has(String(user.publicId ?? "").trim()),
+  );
+  return {
+    email: String(match?.email ?? "").trim(),
+    phone: String(match?.phone ?? "").trim(),
+  };
+}
+
 function prepareDemoSeedIntegrity() {
   if (demoSeedIntegrityPrepared) return;
 
@@ -60,6 +102,8 @@ function assertProductionSecurityConfiguration(env = process.env) {
 
 module.exports = {
   isProductionEnvironment,
+  isStudentDemoAccount,
+  resolveStudentDemoLoginIdentity,
   shouldSeedDemoData,
   assertProductionSecurityConfiguration,
 };

@@ -322,7 +322,7 @@ BEGIN
     JOIN academic_years ay ON ay.id = e.academic_year_id
    WHERE e.student_id = NEW.student_id
      AND e.school_id = NEW.school_id
-     AND lower(btrim(e.status)) = 'active'
+     AND lower(btrim(e.status)) IN ('active', 'enrolled')
      AND lower(btrim(ay.name)) = lower(btrim(NEW.academic_year))
    ORDER BY e.enrollment_date DESC NULLS LAST, e.created_at DESC NULLS LAST
    LIMIT 1

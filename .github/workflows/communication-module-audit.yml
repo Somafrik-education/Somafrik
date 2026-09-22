@@ -1,0 +1,103 @@
+name: Communication module audit
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "docs/audits/communication-module-audit.md"
+      - "docs/audits/evidence/communication-module-audit-matrix.json"
+      - "docs/audits/evidence/communication-module-audit-test-results.json"
+      - "scripts/communication-module-audit.inventory.test.js"
+      - "scripts/communication-module-audit.red.test.js"
+      - "scripts/verify-communication-module-audit.js"
+      - ".github/workflows/communication-module-audit.yml"
+      - "backend/lib/communicationsMessagesService.js"
+      - "backend/lib/communicationsAnnouncementsService.js"
+      - "backend/lib/communicationsNotificationsService.js"
+      - "backend/lib/communicationsC2.http.pg.test.js"
+      - "backend/lib/communicationsC3.http.pg.test.js"
+      - "backend/lib/communicationsC4.http.pg.test.js"
+      - "web/src/pages/MessagesConversationsPage.tsx"
+      - "web/src/pages/AnnouncementsPage.tsx"
+      - "web/src/components/communications/InternalNotificationsCenter.tsx"
+      - "Mobile/src/screens/MessagesScreen.tsx"
+      - "Mobile/src/screens/AnnouncementsScreen.tsx"
+      - "Mobile/src/screens/InternalNotificationsScreen.tsx"
+      - "Mobile/src/lib/pushNotificationDestinations.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  communication-module-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Record exact HEAD
+        run: |
+          echo "EXACT_HEAD=$(git rev-parse HEAD)"
+          git log -1 --oneline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            web/package-lock.json
+            Mobile/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+          npm ci --prefix web
+          npm ci --prefix Mobile
+      - name: Lint (web)
+        run: npm run lint
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Secret scan
+        env:
+          GITLEAKS_VERSION: "8.24.3"
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            git fetch origin develop
+            BASE="$(git merge-base origin/develop HEAD)"
+            HEAD="$(git rev-parse HEAD)"
+          fi
+          git fetch --no-tags origin "${BASE}"
+          echo "GITLEAKS_LOG_OPTS=${BASE}..${HEAD}"
+          git log --oneline "${BASE}..${HEAD}"
+          gitleaks detect --source . --log-opts="${BASE}..${HEAD}" --verbose --redact --exit-code 1
+      - name: Audit Communication (inventaire GREEN + RED lock + C2/C3/C4)
+        run: node scripts/verify-communication-module-audit.js

@@ -12,25 +12,29 @@ import PaymentMutationControls from "../components/PaymentMutationControls";
 import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
-import { getPaymentCashKpi } from "../lib/paymentCashKpi";
+import { getPaymentCashKpi, formatPaymentCashAmounts } from "../lib/paymentCashKpi";
+import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
 import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
-import { formatFinanceAmount, resolveFinanceCurrency } from "../lib/financeCurrency";
+import { resolveFinanceCurrency } from "../lib/financeCurrency";
 import {
   STUDENT_PAYMENTS_KPI_DENSITY as KPI,
   STUDENT_SUB_SCREENS_COPY,
   STUDENT_SUB_SCREENS_TEST_IDS,
 } from "../lib/studentSubScreensSpec";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
+import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentPayments">;
 
 export default function StudentPaymentsScreen({ route, navigation }: Partial<Props>) {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
-  const { selectedStudentId } = useAuth();
+  const { session, selectedStudentId } = useAuth();
+  useParentStudentRouteSelection(route?.params?.studentId);
   const {
     paymentsData,
     paymentsSnapshot,
@@ -42,9 +46,20 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const [paymentStudents, setPaymentStudents] = useState<PaymentStudent[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<string[]>([]);
   const [catalogCurrency, setCatalogCurrency] = useState("");
-  const studentId = route?.params?.studentId ?? selectedStudentId;
+  const studentId = resolveParentSafeStudentId({
+    role: session?.role,
+    routeStudentId: route?.params?.studentId,
+    selectedStudentId,
+    user: session?.user,
+  });
+  const studentAliasKeys = sessionStudentAliasKeys({
+    role: session?.role,
+    selectedStudentId: studentId,
+    user: session?.user,
+  });
+  const aliasKeySet = new Set(studentAliasKeys.map((key) => normalizeId(key)));
   const pickerStudents: PaymentStudent[] = paymentStudents;
-  const student = studentId ? pickerStudents.find((item) => item.id === studentId) : undefined;
+  const student = findStudentByIdentity(pickerStudents, studentAliasKeys);
 
   const refreshFinance = useCallback(async () => {
     await Promise.all([
@@ -73,36 +88,27 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const paiementsEleve = useMemo(
     () =>
       paymentsSnapshot.status === "success"
-        ? paymentsData.filter((paiement) => normalizeId(paiement.studentId) === normalizeId(studentId))
+        ? paymentsData.filter((paiement) => aliasKeySet.has(normalizeId(paiement.studentId)))
         : [],
-    [paymentsData, paymentsSnapshot.status, studentId],
+    [paymentsData, paymentsSnapshot.status, studentAliasKeys],
   );
   const sortedPayments = [...paiementsEleve].sort(
     (left, right) => parsePaymentDate(paymentPaidAt(right) || right.date) - parsePaymentDate(paymentPaidAt(left) || left.date),
   );
-  const studentFees = studentFeesData.filter(
-    (fee) => normalizeId(fee.studentId) === normalizeId(studentId),
-  );
+  const studentFees = studentFeesData.filter((fee) => aliasKeySet.has(normalizeId(fee.studentId)));
   const paymentRateKpi = getPaymentRateKpi(studentFees);
+  const paymentAmountOverview = formatPaymentOverviewAmounts(studentFees);
   const cashKpi = getPaymentCashKpi(paiementsEleve);
+  const cashOverview = formatPaymentCashAmounts(paiementsEleve);
   const feesReady =
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
   const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
-  const expectedLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(paymentRateKpi.expectedAmount, catalogCurrency)
-      : "—";
-  const imputedLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(paymentRateKpi.collectedAmount, catalogCurrency)
-      : "—";
+  const expectedLabel = feesReady ? paymentAmountOverview.expectedLabel : "—";
+  const imputedLabel = feesReady ? paymentAmountOverview.collectedLabel : "—";
   const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
-  const remainingLabel =
-    feesReady && paymentRateKpi.expectedAmount > 0
-      ? formatFinanceAmount(remaining, catalogCurrency)
-      : "—";
-  const collectedLabel = paymentsReady ? formatFinanceAmount(cashKpi.collectedAmount, catalogCurrency) : "—";
-  const unallocatedLabel = paymentsReady ? formatFinanceAmount(cashKpi.unallocatedAmount, catalogCurrency) : "—";
+  const remainingLabel = feesReady ? paymentAmountOverview.remainingLabel : remaining >= 0 ? "—" : "—";
+  const collectedLabel = paymentsReady ? cashOverview.collectedLabel : "—";
+  const unallocatedLabel = paymentsReady ? cashOverview.unallocatedLabel : "—";
   const showQueryState = paymentsSnapshot.status !== "success" || sortedPayments.length === 0;
 
   const financeHeader = (
@@ -221,10 +227,13 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={financeHeader}
           renderItem={({ item }) => (
-            <>
-              <PaymentReceiptCard payment={item} studentName={student?.name} currency={catalogCurrency} showItems />
-              <PaymentCancelControls payment={item} onChanged={() => refreshFinance()} />
-            </>
+            <PaymentReceiptCard
+              payment={item}
+              studentName={student?.name}
+              currency={catalogCurrency}
+              showItems
+              actions={<PaymentCancelControls payment={item} onChanged={() => refreshFinance()} />}
+            />
           )}
         />
       )}

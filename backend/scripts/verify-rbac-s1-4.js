@@ -241,7 +241,7 @@ async function runHttpTestsIfAvailable() {
       role: "parent_student",
       schoolCode: "CD-2026-0001",
       identifier: "+243 820 000 001",
-      pin: "1234",
+      password: "1234",
     },
   });
   assert.strictEqual(parentMobileRes.status, 200, "parent mobile login");

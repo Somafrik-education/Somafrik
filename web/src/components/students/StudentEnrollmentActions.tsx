@@ -1,3 +1,4 @@
+import { DateInput } from "../ui/DateInput";
 import { useMemo, useState } from "react";
 import { Button } from "../../design-system";
 import { RequiredMark } from "../../design-system/forms/RequiredMark";
@@ -50,6 +51,7 @@ export function StudentEnrollmentActions({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [selectedClassId, setSelectedClassId] = useState("");
+  const [assignEffectiveDate, setAssignEffectiveDate] = useState("");
   const [confirmValidate, setConfirmValidate] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const [confirmTransfer, setConfirmTransfer] = useState(false);
@@ -90,6 +92,13 @@ export function StudentEnrollmentActions({
       ),
     [schoolClasses],
   );
+
+  const classChanged =
+    enrollment != null &&
+    enrollment.status === "ENROLLED" &&
+    Boolean(enrollment.classId) &&
+    Boolean(selectedClassId) &&
+    selectedClassId !== enrollment.classId;
 
   if (!enrollment) {
     return null;
@@ -152,6 +161,10 @@ export function StudentEnrollmentActions({
       setError("Sélectionnez une classe existante avant d'affecter.");
       return;
     }
+    if (classChanged && !assignEffectiveDate) {
+      setError("Date effective obligatoire pour un changement de classe (JJ-MM-AAAA).");
+      return;
+    }
     setBusy("assign");
     setError(null);
     setSuccess(null);
@@ -165,6 +178,7 @@ export function StudentEnrollmentActions({
           changes: {
             classId: selected.id,
             className: selected.name,
+            ...(assignEffectiveDate ? { effectiveDate: assignEffectiveDate } : {}),
           },
         },
         authContext,
@@ -326,9 +340,25 @@ export function StudentEnrollmentActions({
                 ))}
               </select>
             </label>
+            {classChanged ? (
+              <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm">
+                <span className="font-semibold text-ink">
+                  Date effective
+                  <RequiredMark />
+                </span>
+                <DateInput
+                  className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
+                  value={assignEffectiveDate}
+                  onChange={(event) => setAssignEffectiveDate(event.target.value)}
+                  placeholder="JJ-MM-AAAA"
+                  required
+                  data-testid="enrollment-assign-effective-date"
+                />
+              </label>
+            ) : null}
             <Button
               type="button"
-              disabled={busy != null || !selectedClassId}
+              disabled={busy != null || !selectedClassId || (classChanged && !assignEffectiveDate)}
               onClick={() => void runAssign()}
               data-testid="enrollment-assign-confirm"
             >
@@ -363,8 +393,7 @@ export function StudentEnrollmentActions({
                 </p>
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="font-semibold text-ink">Date de transfert</span>
-                  <input
-                    type="date"
+                  <DateInput
                     className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
                     value={transferDate}
                     onChange={(event) => setTransferDate(event.target.value)}
@@ -443,8 +472,7 @@ export function StudentEnrollmentActions({
                 </p>
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="font-semibold text-ink">Date de clôture</span>
-                  <input
-                    type="date"
+                  <DateInput
                     className="min-h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink"
                     value={closureDate}
                     onChange={(event) => setClosureDate(event.target.value)}

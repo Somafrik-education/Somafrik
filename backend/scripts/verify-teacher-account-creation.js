@@ -79,7 +79,7 @@ async function loginWithoutPasswordGate(identifier, schoolCode, password = "1234
 }
 
 async function createTeacherViaUsers(token, payload) {
-  const user = await request("/backoffice/users", {
+  const orchestrated = await request("/backoffice/users/create-teacher", {
     method: "POST",
     token,
     body: {
@@ -92,23 +92,18 @@ async function createTeacherViaUsers(token, payload) {
       temporaryPassword: payload.temporaryPassword,
     },
   });
-  assert.equal(user.status, 201, `create user ${JSON.stringify(user.data)}`);
-  const granted = await request(`/backoffice/users/${encodeURIComponent(user.data.id)}/roles/grant`, {
-    method: "POST",
-    token,
-    body: { role: "Enseignant" },
-  });
-  assert.equal(granted.status, 200, `grant teacher ${JSON.stringify(granted.data)}`);
+  assert.equal(orchestrated.status, 201, `create-teacher ${JSON.stringify(orchestrated.data)}`);
+  assert.ok(orchestrated.data?.credentials?.login, "login one-shot attendu");
   const listed = await request("/teachers", { token });
   assert.equal(listed.status, 200, JSON.stringify(listed.data));
-  const teacher = (listed.data ?? []).find((row) => String(row.userId) === String(user.data.id));
-  assert.ok(teacher, "profil enseignant attendu après GRANT Enseignant");
+  const teacher = (listed.data ?? []).find((row) => String(row.userId) === String(orchestrated.data.user.id));
+  assert.ok(teacher, "profil enseignant attendu après POST /backoffice/users/create-teacher");
   return {
     status: 201,
     data: {
       ...teacher,
       mustChangePassword: true,
-      userId: user.data.id,
+      userId: orchestrated.data.user.id,
     },
   };
 }
@@ -135,6 +130,8 @@ async function main() {
       SOMAFRIK_DB_REQUIRED: "false",
       // Force le mode mémoire : éviter l'init PG partiel (doublons classes en base locale).
       DATABASE_URL: "",
+      // Fixture mémoire : ne pas hériter du skip seed du job PG CI.
+      SOMAFRIK_SKIP_DEMO_SEED: "false",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -348,8 +345,8 @@ async function main() {
     });
     assert.equal(underage.status, 403);
 
-    // Falsification tenant / champs techniques
-    const forged = await request("/teachers", {
+    // Falsification tenant / champs techniques — tombstone /teachers (indépendant de l'acteur)
+    const forgedTombstone = await request("/teachers", {
       method: "POST",
       token: admin.token,
       body: teacherPayload({
@@ -362,7 +359,8 @@ async function main() {
         teacherCode: "HACK",
       }),
     });
-    assert.equal(forged.status, 403);
+    assert.equal(forgedTombstone.status, 403);
+    assert.equal(forgedTombstone.data.code, "TEACHER_IDENTITY_MUST_COME_FROM_USERS");
 
     // Isolation : admin BI ne voit pas l'enseignant CD
     const listedBi = await request("/teachers", { token: adminBi.token });
@@ -374,8 +372,8 @@ async function main() {
     });
     assert.equal(crossGet.status, 404);
 
-    // Authz : enseignant / parent refusés en création
-    const teacherCreate = await request("/teachers", {
+    // Authz tombstone : enseignant / parent refusés sur POST /teachers
+    const teacherCreateTombstone = await request("/teachers", {
       method: "POST",
       token: teacherSeed.token,
       body: teacherPayload({
@@ -385,9 +383,9 @@ async function main() {
         temporaryPassword: "TempPass7",
       }),
     });
-    assert.equal(teacherCreate.status, 403);
+    assert.equal(teacherCreateTombstone.status, 403);
 
-    const parentCreate = await request("/teachers", {
+    const parentCreateTombstone = await request("/teachers", {
       method: "POST",
       token: parent.token,
       body: teacherPayload({
@@ -397,7 +395,119 @@ async function main() {
         temporaryPassword: "TempPass8",
       }),
     });
-    assert.equal(parentCreate.status, 403);
+    assert.equal(parentCreateTombstone.status, 403);
+
+    // RBAC / tenant sur le chemin canonique POST /backoffice/users/create-teacher
+    const listedCdBeforeCanon = await request("/teachers", { token: admin.token });
+    const listedBiBeforeCanon = await request("/teachers", { token: adminBi.token });
+    assert.equal(listedCdBeforeCanon.status, 200);
+    assert.equal(listedBiBeforeCanon.status, 200);
+    const cdTeacherCountBefore = listedCdBeforeCanon.data.length;
+    const biTeacherCountBefore = listedBiBeforeCanon.data.length;
+
+    const teacherCreateCanonical = await request("/backoffice/users/create-teacher", {
+      method: "POST",
+      token: teacherSeed.token,
+      body: teacherPayload({
+        firstName: "Refuse",
+        lastName: "TeacherCanon",
+        phone: "+243 811 000 017",
+        email: "refuse.teacher.canon@test.local",
+        temporaryPassword: "TempPass17",
+      }),
+    });
+    assert.equal(teacherCreateCanonical.status, 403, JSON.stringify(teacherCreateCanonical.data));
+
+    const parentCreateCanonical = await request("/backoffice/users/create-teacher", {
+      method: "POST",
+      token: parent.token,
+      body: teacherPayload({
+        firstName: "Refuse",
+        lastName: "ParentCanon",
+        phone: "+243 811 000 018",
+        email: "refuse.parent.canon@test.local",
+        temporaryPassword: "TempPass18",
+      }),
+    });
+    assert.equal(parentCreateCanonical.status, 403, JSON.stringify(parentCreateCanonical.data));
+
+    const student = await login("CD-IN-EL-26-001", "CD-2026-0001");
+    const studentCreateCanonical = await request("/backoffice/users/create-teacher", {
+      method: "POST",
+      token: student.token,
+      body: teacherPayload({
+        firstName: "Refuse",
+        lastName: "StudentCanon",
+        phone: "+243 811 000 019",
+        email: "refuse.student.canon@test.local",
+        temporaryPassword: "TempPass19",
+      }),
+    });
+    assert.equal(studentCreateCanonical.status, 403, JSON.stringify(studentCreateCanonical.data));
+
+    const forgedByCd = await request("/backoffice/users/create-teacher", {
+      method: "POST",
+      token: admin.token,
+      body: teacherPayload({
+        firstName: "Forge",
+        lastName: "CanonCd",
+        phone: "+243 811 000 020",
+        email: "forge.canon.cd@test.local",
+        temporaryPassword: "TempPass20",
+        schoolCode: "BI-2026-0002",
+      }),
+    });
+    assert.equal(forgedByCd.status, 403, JSON.stringify(forgedByCd.data));
+
+    const forgedByBi = await request("/backoffice/users/create-teacher", {
+      method: "POST",
+      token: adminBi.token,
+      body: teacherPayload({
+        firstName: "Forge",
+        lastName: "CanonBi",
+        phone: "+243 811 000 021",
+        email: "forge.canon.bi@test.local",
+        temporaryPassword: "TempPass21",
+        schoolCode: "CD-2026-0001",
+      }),
+    });
+    assert.equal(forgedByBi.status, 403, JSON.stringify(forgedByBi.data));
+
+    const listedCdAfterCanon = await request("/teachers", { token: admin.token });
+    const listedBiAfterCanon = await request("/teachers", { token: adminBi.token });
+    assert.equal(listedCdAfterCanon.status, 200);
+    assert.equal(listedBiAfterCanon.status, 200);
+    assert.equal(listedCdAfterCanon.data.length, cdTeacherCountBefore, "aucun teacher CD créé par RBAC/tenant refusé");
+    assert.equal(listedBiAfterCanon.data.length, biTeacherCountBefore, "aucun teacher BI créé par schoolCode forgé");
+    const leakedEmails = ["forge.canon.cd@test.local", "forge.canon.bi@test.local", "refuse.teacher.canon@test.local"];
+    for (const email of leakedEmails) {
+      assert.equal(
+        listedCdAfterCanon.data.some((row) => String(row.email ?? "").toLowerCase() === email),
+        false,
+        `teacher CD inattendu pour ${email}`,
+      );
+      assert.equal(
+        listedBiAfterCanon.data.some((row) => String(row.email ?? "").toLowerCase() === email),
+        false,
+        `teacher BI inattendu pour ${email}`,
+      );
+    }
+    const usersCd = await request("/backoffice/users", { token: admin.token });
+    const usersBi = await request("/backoffice/users", { token: adminBi.token });
+    assert.equal(usersCd.status, 200);
+    assert.equal(usersBi.status, 200);
+    for (const email of leakedEmails) {
+      assert.equal(
+        (usersCd.data ?? []).some((row) => String(row.email ?? "").toLowerCase() === email),
+        false,
+        `user CD inattendu pour ${email}`,
+      );
+      assert.equal(
+        (usersBi.data ?? []).some((row) => String(row.email ?? "").toLowerCase() === email),
+        false,
+        `user BI inattendu pour ${email}`,
+      );
+    }
 
     // Non-régression Classes + inscription élèves
     const { prepareCanonicalClassContext, postCanonicalClass } = require("../lib/canonicalClassHttp");

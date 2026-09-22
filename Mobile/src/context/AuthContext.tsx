@@ -9,6 +9,7 @@ import {
 } from "../services/api";
 import { enrichSessionPermissions } from "../domain/security/permissions";
 import { attachCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
+import { isLinkedParentStudent, resolveSessionStudentId } from "../lib/canonicalStudentIdentity";
 import { canRestorePersistedSession } from "../lib/dataTruth";
 import { dismissPendingPushNavigation } from "../lib/pushNotificationTap";
 import { blockOutboxOnLogout } from "../lib/outbox";
@@ -39,7 +40,7 @@ import {
 
 export type { PermissionsBootstrapState };
 
-type AuthContextValue = {
+export type AuthContextValue = {
   session: LoginResponse | null;
   selectedStudentId: string | null;
   bootstrapping: boolean;
@@ -51,7 +52,7 @@ type AuthContextValue = {
   logout: () => void;
 };
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 function stripSecrets(session: LoginResponse | null): LoginResponse | null {
   if (!session) return null;
@@ -109,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       : enrichSessionPermissions(stripped);
     sessionRef.current = next;
     setSessionState(next);
-    setSelectedStudentId(next?.user.children?.[0]?.id ?? next?.user.id ?? null);
+    setSelectedStudentId(resolveSessionStudentId(next?.user));
     return next;
   }, []);
 
@@ -323,6 +324,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [clearAuthenticatedState, refreshEffectivePermissions, saveSession],
   );
 
+  const selectStudentId = useCallback((studentId: string) => {
+    const current = sessionRef.current;
+    if (current?.role === "parent_student" && !isLinkedParentStudent({
+      user: current.user,
+      selectedStudentId: studentId,
+    })) {
+      return;
+    }
+    setSelectedStudentId(studentId);
+  }, []);
+
   const logout = useCallback(() => {
     clearRequestSchoolScope();
     clearStoredSchoolCode();
@@ -340,7 +352,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       permissionsBootstrap,
       permissionsBootstrapError,
       setSession,
-      setSelectedStudentId,
+      setSelectedStudentId: selectStudentId,
       refreshEffectivePermissions,
       logout,
     }),
@@ -351,6 +363,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       permissionsBootstrap,
       permissionsBootstrapError,
       setSession,
+      selectStudentId,
       refreshEffectivePermissions,
       logout,
     ],

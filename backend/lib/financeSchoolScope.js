@@ -53,18 +53,42 @@ async function findEmittedLoginCode(requested, one) {
 }
 
 /**
- * Attache `financeLoginCode` depuis le membership UUID (PostgreSQL).
+ * Attache membership Finance depuis PostgreSQL.
+ * Rôle établissement : `sub` → users.id → users.school_id UUID (autorité tenant)
+ * et schools.login_code (projection SQL, pas un alias de filterRows).
  * Superadmin / Admin Pays globaux : pas de lookup.
  * Superadmin / Admin Pays request-scoped : trouve l'école demandée, n'émet que login_code.
- * Rôle établissement : toujours membership UUID, le header request-scoped n'est pas l'autorité.
- * login_code NULL/vide ⇒ financeLoginCode vide ⇒ mode none.
+ * login_code NULL/vide ⇒ financeLoginCode vide ⇒ SQL mode none.
  * Sans `one` (fixtures mémoire) : fail-closed — utiliser
  * `attachFinanceFixtureScope` côté store mémoire.
  */
+function existingFinanceLoginCode(principal) {
+  const existing = normalizeLoginCode(principal?.financeLoginCode);
+  return existing && existing !== "*" ? existing : "";
+}
+
+function existingFinanceSchoolId(principal) {
+  return String(principal?.effectiveSchoolId || principal?.schoolId || "").trim();
+}
+
+function withFinanceMembership(principal, { loginCode, schoolId }) {
+  const next = { ...principal, financeLoginCode: loginCode };
+  if (schoolId) {
+    next.schoolId = schoolId;
+    if (!String(principal?.effectiveSchoolId ?? "").trim()) {
+      next.effectiveSchoolId = schoolId;
+    }
+  }
+  return next;
+}
+
 async function attachFinanceMembershipScope(principal, one) {
   if (!principal) return principal;
-  const existing = normalizeLoginCode(principal.financeLoginCode);
-  if (existing && existing !== "*") {
+  const existingLogin = existingFinanceLoginCode(principal);
+  const existingSchoolId = existingFinanceSchoolId(principal);
+  // financeLoginCode n'est plus un alias tenant : un token historique
+  // `sub + schoolCode` sans schoolId doit encore résoudre users.school_id.
+  if (existingLogin && existingSchoolId) {
     return principal;
   }
 
@@ -77,27 +101,34 @@ async function attachFinanceMembershipScope(principal, one) {
   }
 
   if (typeof one !== "function") {
-    return { ...principal, financeLoginCode: "" };
+    return withFinanceMembership(principal, { loginCode: "", schoolId: existingSchoolId });
   }
 
   if ((platform || adminPays) && requestScoped) {
     const requested = tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode);
-    if (!requested) return { ...principal, financeLoginCode: "" };
-    const loginCode = await findEmittedLoginCode(requested, one);
-    return { ...principal, financeLoginCode: loginCode };
+    if (!requested) {
+      return withFinanceMembership(principal, { loginCode: existingLogin, schoolId: existingSchoolId });
+    }
+    const loginCode = existingLogin || (await findEmittedLoginCode(requested, one));
+    return withFinanceMembership(principal, { loginCode, schoolId: existingSchoolId });
   }
 
   const userId = String(principal.sub ?? "").trim();
-  if (!userId) return { ...principal, financeLoginCode: "" };
+  if (!userId) {
+    return withFinanceMembership(principal, { loginCode: existingLogin, schoolId: existingSchoolId });
+  }
   const row = await one(
-    `SELECT s.login_code
+    `SELECT s.login_code, u.school_id
      FROM users u
      INNER JOIN schools s ON s.id = u.school_id
      WHERE u.id::text = $1
      LIMIT 1`,
     [userId],
   );
-  return { ...principal, financeLoginCode: normalizeLoginCode(row?.login_code) };
+  return withFinanceMembership(principal, {
+    loginCode: existingLogin || normalizeLoginCode(row?.login_code),
+    schoolId: existingSchoolId || String(row?.school_id ?? "").trim(),
+  });
 }
 
 /**

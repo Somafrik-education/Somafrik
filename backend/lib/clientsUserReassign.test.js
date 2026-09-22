@@ -26,14 +26,13 @@ async function expectRejection(promise, { status, code }) {
 }
 
 async function createSchoolAdmin(store, principal, auditMeta, { firstName, lastName, email, schoolCode, countryCode }) {
-  const created = await store.createUser(
-    { firstName, lastName, email, schoolCode, countryCode },
+  const created = await store.provisionUser(
+    { firstName, lastName, email, schoolCode, countryCode, roleKey: "SCHOOL_ADMIN" },
     principal,
     auditMeta,
   );
-  const granted = await store.grantUserRole(created.id, { role: "Admin School" }, principal, auditMeta);
-  assert.ok((granted.roleKeys || []).includes("SCHOOL_ADMIN"));
-  return granted;
+  assert.ok((created.roleKeys || []).includes("SCHOOL_ADMIN"));
+  return created;
 }
 
 async function main() {
@@ -174,18 +173,18 @@ async function main() {
     { status: 409, code: CLIENTS_ERROR.CONFLICT },
   );
 
-  const countryIdentity = await store.createUser(
+  const countryIdentity = await store.provisionUser(
     {
       firstName: "Amina",
       lastName: "Pays",
       email: "amina.pays@test.local",
       countryCode: "CD",
       countryScope: "RDC",
+      roleKey: "COUNTRY_ADMIN",
     },
     superAdmin,
     auditMeta,
   );
-  await store.grantUserRole(countryIdentity.id, { role: "Admin Pays" }, superAdmin, auditMeta);
   await expectRejection(
     store.reassignUserSchool(countryIdentity.id, { schoolCode: "BI-2026-0001" }, superAdmin, auditMeta),
     { status: 409, code: CLIENTS_ERROR.ROLE_SCOPE_CONFLICT },
@@ -262,6 +261,38 @@ async function main() {
     store.updateUser(cdVictim.id, { firstName: "Hacked" }, biAdmin, auditMeta),
     { status: 403, code: CLIENTS_ERROR.TENANT_MISMATCH },
   );
+
+  const linkedStudentUser = await store.createUser(
+    {
+      firstName: "Marc",
+      lastName: "Lock",
+      email: "marc.reassign.lock@test.local",
+      schoolCode: "CD-2026-0001",
+    },
+    superAdmin,
+    auditMeta,
+  );
+  store._tables.students.push({
+    id: "st-reassign-lock",
+    school_id: "school-cd",
+    student_code: "CD-IN-61-26-00017",
+    status: "active",
+    user_id: linkedStudentUser.id,
+  });
+  store._tables.userRoles.push({
+    user_id: linkedStudentUser.id,
+    school_id: "school-cd",
+    role_key: "STUDENT",
+    status: "active",
+    revoked_at: null,
+  });
+  // Superadmin hors catalogue plateforme : 403 (P0). Le verrou 409 STUDENT_ROLE_LOCKED
+  // reste couvert sur le chemin établissement (studentRoleLock.test.js, userRoleLifecycle.pg.test.js).
+  await expectRejection(
+    store.reassignUserSchool(linkedStudentUser.id, { schoolCode: "BI-2026-0001", countryCode: "BI" }, superAdmin, auditMeta),
+    { status: 403, code: CLIENTS_ERROR.FORBIDDEN },
+  );
+  assert.equal((await store.getUserById(linkedStudentUser.id)).school_id, "school-cd");
 
   console.log("clientsUserReassign.test.js OK");
 }

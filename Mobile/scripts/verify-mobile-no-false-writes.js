@@ -30,9 +30,6 @@ function main() {
   runUnit("mobileCrudParity.test.ts");
 
   const navigator = read(path.join("navigation", "AppNavigator.tsx"));
-  const gate = read(path.join("screens", "SafeAdminCrudScreen.tsx"));
-  const permissions = read(path.join("screens", "PermissionsScreen.tsx"));
-  const rawAdminCrud = read(path.join("screens", "AdminCrudScreen.tsx"));
   const users = read(path.join("screens", "UsersScreen.tsx"));
   const classes = read(path.join("screens", "ClassesScreen.tsx"));
   const teachers = read(path.join("screens", "TeachersScreen.tsx"));
@@ -41,29 +38,27 @@ function main() {
   const announcements = read(path.join("screens", "AnnouncementsScreen.tsx"));
   const adminCtx = read(path.join("context", "AdminDataContext.tsx"));
 
-  assert.match(navigator, /SafeAdminCrudScreen/);
+  assert.doesNotMatch(
+    navigator,
+    /name="AdminCrud"/,
+    "#577 L0 : AdminCrud ne doit plus être enregistré dans le graphe Mobile live",
+  );
   assert.doesNotMatch(
     navigator,
     /component=\{AdminCrudScreen\}/,
     "AppNavigator ne doit jamais exposer AdminCrudScreen sans gate fail-closed",
   );
-  assert.match(gate, /canRunGenericAdminCrud/);
-  assert.match(gate, /Aucune modification locale n&apos;est appliquée/);
-  assert.match(gate, /SAFE_ADMIN_CRUD_ENTITIES|canRunGenericAdminCrud/);
+  assert.doesNotMatch(navigator, /\bAdminCrud\b/, "type AdminCrud retiré du graphe");
 
-  assert.doesNotMatch(
-    permissions,
-    /updateRoleFeatureAccess/,
-    "PermissionsScreen ne doit plus simuler une attribution ou un retrait de droit local",
+  assert.equal(
+    fs.existsSync(path.join(SRC, "screens", "PermissionsScreen.tsx")),
+    false,
+    "PermissionsScreen orphelin supprimé — pas de surface RBAC Mobile morte",
   );
-  assert.doesNotMatch(permissions, /synchronis[ée]s automatiquement/i);
-  assert.match(permissions, /Modification Mobile désactivée/);
-  assert.match(permissions, /L’attribution et le retrait des droits ne sont plus simulés localement/);
-
-  assert.match(rawAdminCrud, /if \(entity === "assignments"\)[\s\S]*?await createTeacherAssignment/);
-  assert.match(rawAdminCrud, /if \(entity === "courses"\)[\s\S]*?await createCourse/);
-  assert.match(rawAdminCrud, /if \(entity === "assignments"\)[\s\S]*?deleteTeacherAssignment/);
-  assert.match(rawAdminCrud, /if \(entity === "courses"\)[\s\S]*?deleteCourse/);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "AdminCrudScreen.tsx")), false);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "SafeAdminCrudScreen.tsx")), false);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "MenuScreen.tsx")), false);
+  assert.equal(fs.existsSync(path.join(SRC, "screens", "PlatformNotificationsScreen.tsx")), false);
 
   const safety = read(path.join("lib", "mobileMutationSafety.ts"));
   assert.match(safety, /MOBILE_GENERIC_ADMIN_CRUD_IN_RC1 = false/);
@@ -83,8 +78,10 @@ function main() {
   assert.match(userControls, /grantClientsUserRole/);
   assert.match(userControls, /revokeClientsUserRole/);
   assert.match(userControls, /testID="users-create"/);
-  assert.match(userControls, /testID="users-grant-teacher"/);
-  assert.match(userControls, /testID="users-revoke-teacher"/);
+  assert.match(userControls, /testID="users-manage-roles"/);
+  assert.match(userControls, /listAssignableEstablishmentRoles/);
+  assert.doesNotMatch(userControls, /users-grant-teacher/);
+  assert.doesNotMatch(userControls, /users-revoke-teacher/);
   assert.match(userControls, /SecretHandoffModal/);
 
   assert.match(teachers, /TeacherMutationControls/);
@@ -167,7 +164,7 @@ function main() {
   assert.match(adminCtx, /LOCAL_WRITE_FORBIDDEN_ENTITIES/);
   assert.match(adminCtx, /if \(LOCAL_WRITE_FORBIDDEN_ENTITIES.has\(entity\)\) return;/);
 
-  console.log("OK: faux writes AdminCrud/RBAC bloqués; CRUD canonique branché sur les APIs PostgreSQL");
+  console.log("OK: AdminCrud absent du graphe live; faux writes/RBAC bloqués; CRUD canonique branché sur les APIs PostgreSQL");
 }
 
 main();
