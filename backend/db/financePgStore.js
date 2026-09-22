@@ -1259,4 +1259,8 @@ function createFinancePgStore(repo) {
   return api;
 }
 
-module.exports = { createFinancePgStore };
+module.exports = {
+  createFinancePgStore,
+  financeRowMatchesLinkedStudent,
+  filterFinanceRowsForLinkedStudent,
+};
