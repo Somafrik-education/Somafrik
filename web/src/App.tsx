@@ -82,6 +82,8 @@ import {
   UsersPage,
   ReportCardSchoolWorkflowPage,
   ReportCardHistoryPage,
+  ReportCardsEntryPage,
+  ReportCardStaffRoute,
   ReportCardSuperadminWorkflowPage,
   VerifyReportCardPage,
 } from "./lazyPages";
@@ -352,7 +354,9 @@ export default function App() {
           path="/bulletins/historique"
           element={
             <PermissionRoute view="bulletins">
-              <ReportCardHistoryPage />
+              <ReportCardStaffRoute>
+                <ReportCardHistoryPage />
+              </ReportCardStaffRoute>
             </PermissionRoute>
           }
         />
@@ -360,7 +364,9 @@ export default function App() {
           path="/bulletins/modele"
           element={
             <PermissionRoute view="bulletins" action="CREATE" fallbackPath="/bulletins">
-              <ReportCardSchoolWorkflowPage />
+              <ReportCardStaffRoute>
+                <ReportCardSchoolWorkflowPage />
+              </ReportCardStaffRoute>
             </PermissionRoute>
           }
         />
@@ -368,7 +374,7 @@ export default function App() {
           path="/bulletins"
           element={
             <PermissionRoute view="bulletins">
-              <EntityPage entity="bulletins" />
+              <ReportCardsEntryPage />
             </PermissionRoute>
           }
         />
