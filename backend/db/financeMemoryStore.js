@@ -38,6 +38,39 @@ const {
   CANONICAL_PAYMENT_METHODS,
 } = require("../lib/financeCatalog");
 const financeService = require("../lib/financeService");
+const {
+  principalIsParentOrStudent,
+  collectLinkedStudentKeys,
+} = require("../lib/parentScope");
+
+function fixtureLinkedStudentKeys(principal) {
+  if (!principalIsParentOrStudent(principal)) return null;
+  return new Set(
+    collectLinkedStudentKeys(principal)
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean),
+  );
+}
+
+function fixtureFinanceRowMatchesLinkedStudent(row, principal) {
+  const allowed = fixtureLinkedStudentKeys(principal);
+  if (allowed === null) return true;
+  if (!allowed.size) return false;
+  return [
+    row?.studentId,
+    row?.studentDbId,
+    row?.student_id,
+    row?.studentCode,
+    row?.student_code,
+    row?.publicId,
+    row?.matricule,
+    row?.id,
+    row?.dbId,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .some((value) => allowed.has(value));
+}
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -278,11 +311,12 @@ function createFinanceMemoryStore({
           const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
           if (!fixtureRecordInScope(student, scope)) return null;
         }
-        return {
+        const mapped = {
           ...projectFixtureSchoolIdentity(student),
           dbId: student.dbId || student.id,
           schoolCode: student.schoolCode,
         };
+        return fixtureFinanceRowMatchesLinkedStudent(mapped, principal) ? mapped : null;
       },
       async listActiveEnrollmentsForStudent(studentDbId, schoolId) {
         const student =
@@ -513,6 +547,13 @@ function createFinanceMemoryStore({
           const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
           if (!fixtureRecordInScope(mapped, scope)) return null;
         }
+        if (!fixtureFinanceRowMatchesLinkedStudent({
+          ...mapped,
+          studentDbId: row.student_id,
+          studentCode: row.student_code,
+        }, principal)) {
+          return null;
+        }
         const items = await this.listPaymentItems(row.id);
         const allocations = await this.listAllocations(row.id);
         return projectPaymentCash(decoratePaymentWithItems(mapped, items), allocations);
@@ -569,7 +610,7 @@ function createFinanceMemoryStore({
           const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
           if (!fixtureRecordInScope(mapped, scope)) return null;
         }
-        return mapped;
+        return fixtureFinanceRowMatchesLinkedStudent(mapped, principal) ? mapped : null;
       },
       async updateObligation(fee) {
         const row = tables.studentFees.find((item) => item.id === (fee.dbId || fee.id));
@@ -862,6 +903,7 @@ function createFinanceMemoryStore({
       financeService.upsertFeeGrid(api, payload, scopedPrincipal(principal)),
     getFinanceFeeGrid: async (id, principal) => {
       const scoped = scopedPrincipal(principal);
+      if (principalIsParentOrStudent(scoped)) return null;
       const grid = await txApi().getGrid(id, scoped);
       if (!grid) return null;
       return { grid, items: await txApi().listItemsByGrid(grid.dbId) };
@@ -893,19 +935,23 @@ function createFinanceMemoryStore({
       );
     },
     listFinanceFeeGrids: async (principal) => {
-      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
+      const scoped = scopedPrincipal(principal);
+      if (principalIsParentOrStudent(scoped)) return [];
+      const scope = resolveFinanceSchoolScope(scoped);
       if (scope.mode === "none") return [];
       return tables.feeGrids.map(mapGridRow).filter((row) => fixtureRecordInScope(row, scope));
     },
     listFinanceStudentFees: async (principal, options = {}) => {
-      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
+      const scoped = scopedPrincipal(principal);
+      const scope = resolveFinanceSchoolScope(scoped);
       if (scope.mode === "none") return [];
       let fees = tables.studentFees
         .map(mapObligationRow)
-        .filter((fee) => fixtureRecordInScope(fee, scope));
+        .filter((fee) => fixtureRecordInScope(fee, scope))
+        .filter((fee) => fixtureFinanceRowMatchesLinkedStudent(fee, scoped));
       const studentKey = asTrimmed(options.studentId || options.studentKey);
       if (studentKey) {
-        const student = await txApi().findStudent(studentKey, scopedPrincipal(principal));
+        const student = await txApi().findStudent(studentKey, scoped);
         if (!student) return [];
         const keys = new Set(
           [student.dbId, student.id, student.publicId, student.studentCode]
@@ -961,7 +1007,8 @@ function createFinanceMemoryStore({
       return mapStatusRow(row);
     },
     async listPaymentStudentOptions(principal) {
-      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
+      const scoped = scopedPrincipal(principal);
+      const scope = resolveFinanceSchoolScope(scoped);
       if (scope.mode === "none") return [];
       const students = typeof listSchoolStudents === "function" ? await listSchoolStudents(principal) : [];
       const rows = [];
@@ -978,6 +1025,7 @@ function createFinanceMemoryStore({
                 status: "active",
               },
             ];
+        if (!fixtureFinanceRowMatchesLinkedStudent(student, scoped)) continue;
         for (const enrollment of enrollments) {
           rows.push({
             student_id: student.id || student.studentId || student.dbId,
@@ -1032,7 +1080,9 @@ function createFinanceMemoryStore({
       return resolveCatalogPaymentMethods(saved);
     },
     async listCatalogFeeTypes(principal) {
-      const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
+      const scoped = scopedPrincipal(principal);
+      if (principalIsParentOrStudent(scoped)) return [];
+      const scope = resolveFinanceSchoolScope(scoped);
       if (scope.mode === "none") return [];
       const grids = tables.feeGrids.filter(
         (row) => fixtureRecordInScope(mapGridRow(row), scope) && normalizeKey(row.status) === "active",
