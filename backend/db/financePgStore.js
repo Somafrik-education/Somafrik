@@ -961,7 +961,9 @@ function createFinancePgStore(repo) {
     upsertFinanceFeeGrid: async (payload, principal) =>
       financeService.upsertFeeGrid(api, payload, await withFinancePrincipal(principal)),
     getFinanceFeeGrid: async (id, principal) => {
-      const grid = await bind(repo).getGrid(id, principal);
+      const scopedPrincipal = await withFinancePrincipal(principal);
+      if (principalIsParentOrStudent(scopedPrincipal)) return null;
+      const grid = await bind(repo).getGrid(id, scopedPrincipal);
       if (!grid) return null;
       return { grid, items: await bind(repo).listItemsByGrid(grid.dbId) };
     },
@@ -1211,7 +1213,9 @@ function createFinancePgStore(repo) {
         return resolveCatalogPaymentMethods(saved);
       },
       async listCatalogFeeTypes(principal) {
-        const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
+        const scopedPrincipal = await withFinancePrincipal(principal);
+        if (principalIsParentOrStudent(scopedPrincipal)) return [];
+        const scope = resolveFinanceSchoolScope(scopedPrincipal);
         if (scope.mode === "none") return [];
         const params = [];
         const pred = sqlSchoolPredicate("s", scope, params);
