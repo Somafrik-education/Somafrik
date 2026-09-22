@@ -41,13 +41,16 @@ test("PARITY-035 — GET role-permissions lecture compat ; PUT interdit ; admin 
   assert.match(evidence, /Conserver GET lecture/);
 });
 
-test("PARITY-056 — paiements Web EntityPage live + Mobile canonique ; pas AdminCrud", () => {
+test("PARITY-056 — paiements Web live via route entry + Mobile canonique ; pas AdminCrud", () => {
   const app = read("web/src/App.tsx");
+  const entry = read("web/src/pages/finances/FinancePaymentsEntryPage.tsx");
   const entity = read("web/src/pages/EntityPage.tsx");
   const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
   const evidence = read("docs/audits/evidence/lot8-legacy-red-green.md");
   assert.match(app, /path="paiements"/);
-  assert.match(app, /EntityPage entity="payments"/);
+  assert.match(app, /FinancePaymentsEntryPage/);
+  assert.match(entry, /EntityPage entity="payments"/);
+  assert.match(entry, /ParentFinancePage/);
   assert.match(app, /FinanceFeesPage/);
   assert.match(app, /FinanceUnpaidPage/);
   assert.match(entity, /financeApi|FinancePaymentsOverview/);

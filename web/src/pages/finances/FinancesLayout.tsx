@@ -8,6 +8,7 @@ import { demoRuntimeEnabled } from "../../lib/featureFlags";
 import { firstAllowedFinanceLeaf } from "../../lib/financeRouteAccess";
 import { canReadView } from "../../lib/permissions";
 import { getDefaultAppPath } from "../../lib/superAdminAccess";
+import { parentFinanceShellDecision } from "../../lib/parentFinanceRoute";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 
 const FINANCE_TABS: (TabItem & { view: string })[] = [
@@ -30,15 +31,31 @@ export function FinanceIndexRedirect() {
 /** Module Finances : en-tête + onglets, contenu via <Outlet />. */
 export function FinancesLayout() {
   const ctx = usePermissionContext();
+  const { session } = useAuth();
   const tabs = FINANCE_TABS.filter((tab) => canReadView(ctx, tab.view));
   const location = useLocation();
 
-  // La Démo est un tenant établissement unique : le schoolCode de session est
-  // identique au scope utilisé par DomainRouteBootstrap. Ne pas dépendre ici
-  // d'ActiveSchoolProvider permet de conserver les tests RBAC de route isolés.
+  // Hook toujours appelé avant toute bifurcation de rendu pour respecter
+  // l'ordre React ; le résultat n'est utilisé que par le shell staff.
   const schoolCode = String(ctx.user?.schoolCode ?? "").trim();
   const hydrationKey = buildDomainRouteHydrationKey(location.key, location.pathname, schoolCode);
   const hydrationStatus = useDomainRouteHydrationStatus(hydrationKey);
+
+  const parentDecision = parentFinanceShellDecision(
+    session?.user?.role,
+    location.pathname,
+    canReadView(ctx, "payments"),
+  );
+
+  if (parentDecision === "dashboard") {
+    return <Navigate to={getDefaultAppPath(session?.user?.role)} replace />;
+  }
+  if (parentDecision === "payments") {
+    return <Navigate to="/finances/paiements" replace />;
+  }
+  if (parentDecision === "content") {
+    return <Outlet />;
+  }
 
   const demoWaiting = demoRuntimeEnabled && (hydrationStatus === "idle" || hydrationStatus === "loading");
   const demoFailed = demoRuntimeEnabled && hydrationStatus === "error";

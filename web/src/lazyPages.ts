@@ -136,6 +136,10 @@ export const FinanceIndexRedirect = lazyPage(
   () => import("./pages/finances/FinancesLayout"),
   "FinanceIndexRedirect",
 );
+export const FinancePaymentsEntryPage = lazyPage(
+  () => import("./pages/finances/FinancePaymentsEntryPage"),
+  "FinancePaymentsEntryPage",
+);
 export const FinanceFeesPage = lazyPage(() => import("./pages/finances/FinanceFeesPage"), "FinanceFeesPage");
 export const FinanceUnpaidPage = lazyPage(() => import("./pages/finances/FinanceUnpaidPage"), "FinanceUnpaidPage");
 export const MonEtablissementLayout = lazyPage(
