@@ -172,10 +172,10 @@ function main() {
 
   const rbac = fs.readFileSync(path.join(ROOT, "backend", "services", "rbacService.js"), "utf8");
   assert.match(rbac, /const MESSAGE_READ_ALIASES = \["Messages parents", "Messages école"\];/);
-  assert.match(rbac, /const MESSAGE_WRITE_ALIASES = \\["Messages parents"\\];/);
+  assert.match(rbac, /const MESSAGE_WRITE_ALIASES = \["Messages parents"\];/);
   assert.doesNotMatch(
     rbac,
-    /const MESSAGE_WRITE_ALIASES = \\[[^\\]]*"Messages école"/,
+    /const MESSAGE_WRITE_ALIASES = \["Messages parents", "Messages école"\];/,
     "\"Messages école\" doit rester un alias de lecture uniquement",
   );
   assert.match(
