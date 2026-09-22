@@ -103,7 +103,7 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
       );
       assert.deepEqual(
         tabs.map((tab) => tab.route),
-        ["Profil", "Notes", "Presences", "FraisEleve"],
+        ["ParentProfile", "Notes", "Presences", "FraisEleve"],
       );
     },
   },
