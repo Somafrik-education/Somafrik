@@ -110,7 +110,7 @@ assert.deepEqual(drawerLabels(teacher).slice(0, 4), ["Mes classes", "Présences"
 assert.equal(drawerLabels(teacher).includes("Appel"), false);
 assert.deepEqual(tabLabels(teacher), ["Classes", "Élèves", "Appel", "Notes"]);
 
-assert.deepEqual(drawerLabels(parent).slice(0, 4), ["Notes", "Présences", "Bulletins", "Paiements"]);
+assert.deepEqual(drawerLabels(parent).slice(0, 5), ["Mon profil", "Notes", "Présences", "Bulletins", "Paiements"]);
 assert.equal(drawerLabels(parent).includes("Paiement mobile"), false);
 assert.deepEqual(tabLabels(parent), ["Profil", "Notes", "Présence", "Frais"]);
 
