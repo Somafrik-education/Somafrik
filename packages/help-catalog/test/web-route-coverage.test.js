@@ -81,6 +81,7 @@ const BOOTSTRAP_NULL_PATHS = Object.freeze(["/bienvenue-etablissement"]);
  */
 const PROTECTED_HELP_PATHS = Object.freeze({
   "/tableau-de-bord": HELP_SCREEN.DASHBOARD,
+  "/mon-profil": HELP_SCREEN.PARENT_HOME,
   "/etablissement": HELP_SCREEN.DASHBOARD,
   "/planning": HELP_SCREEN.PLANNING,
   "/finances": HELP_SCREEN.PAYMENTS,
