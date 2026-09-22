@@ -1,5 +1,8 @@
+import { useEffect, useMemo } from "react";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { useAuth } from "../context/AuthContext";
+import { useData } from "../context/DataContext";
+import { parentLinkedStudents } from "../lib/parentNotes";
 
 function display(value: unknown) {
   const normalized = String(value ?? "").trim();
@@ -18,9 +21,15 @@ function fullName(user: Record<string, any>) {
 
 export function ParentProfilePage() {
   const { session } = useAuth();
+  const { state, ensureDomains } = useData();
   const user = (session?.user ?? {}) as Record<string, any>;
-  const children = Array.isArray(user.children) ? user.children : [];
+  const schoolCode = String(user.schoolCode ?? session?.school?.code ?? "").trim();
+  const children = useMemo(() => parentLinkedStudents(user, state), [user, state]);
   const schoolName = display(session?.school?.name ?? user.schoolName ?? user.schoolCode);
+
+  useEffect(() => {
+    void ensureDomains(["students"], schoolCode ? { schoolCode } : undefined).catch(() => undefined);
+  }, [ensureDomains, schoolCode]);
 
   return (
     <div className="space-y-6" data-testid="parent-profile-page">
