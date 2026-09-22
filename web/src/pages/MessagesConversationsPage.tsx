@@ -375,14 +375,6 @@ export function MessagesConversationsPage() {
             </Button>
           </div>
         ) : null}
-        {canCreate && teacherStudentThreadBlocked ? (
-          <p
-            className="mt-4 border-t border-line pt-4 text-sm text-muted"
-            data-testid="teacher-student-messaging-blocked"
-          >
-            Les enseignants ne peuvent pas envoyer de messages aux élèves.
-          </p>
-        ) : null}
       </Card>
 
       <Card className="flex min-h-[520px] flex-col p-4">
@@ -477,6 +469,14 @@ export function MessagesConversationsPage() {
               </Button>
             </div>
           </div>
+        ) : null}
+        {canCreate && teacherStudentThreadBlocked ? (
+          <p
+            className="mt-4 border-t border-line pt-4 text-sm text-muted"
+            data-testid="teacher-student-messaging-blocked"
+          >
+            Les enseignants ne peuvent pas envoyer de messages aux élèves.
+          </p>
         ) : null}
       </Card>
     </div>
