@@ -69,6 +69,7 @@ const {
   assertProductionSecrets,
   warnIfUnsafeDevelopmentSecrets,
 } = require("./lib/productionSecrets");
+const { withDeployGitSha } = require("./lib/deployGitSha");
 const { assertProductionCors, buildCorsOptions } = require("./lib/corsConfig");
 const {
   sanitizeUserForResponse,
@@ -329,14 +330,14 @@ app.get("/api/health", asyncHandler(async (_req, res) => {
   const attachments = await probeCommunicationStorageWritable();
   const reportCardSource = await probeReportCardSourceStorageWritable();
   const ready = Boolean(attachments.ready && reportCardSource.ready);
-  const payload = {
+  const payload = withDeployGitSha({
     status: ready ? "ok" : "not_ready",
     database: repository.engine ?? "postgresql",
     version: process.env.npm_package_version ?? "1.0.0",
     timestamp: new Date().toISOString(),
     attachments,
     reportCardSource,
-  };
+  });
   if (!ready) {
     return res.status(503).json(payload);
   }
