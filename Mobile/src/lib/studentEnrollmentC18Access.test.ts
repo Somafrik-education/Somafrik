@@ -13,6 +13,7 @@ test("C18 Mobile RBAC : admin autorisé, parent/élève/teacher lecture refusés
   assert.equal(canMutateC18Mobile({ role: "Admin School", permissions: ["Élèves:UPDATE"] }), true);
   assert.equal(canMutateC18Mobile({ role: "Admin School", permissions: ["ALL_PRIVILEGES"] }), true);
   assert.equal(canMutateC18Mobile({ role: "Parent", permissions: ["Élèves:UPDATE", "Voir enfant"] }), false);
+  assert.equal(canMutateC18Mobile({ role: "parent_student", permissions: ["Élèves:UPDATE"] }), false);
   assert.equal(canMutateC18Mobile({ role: "Élève / Étudiant", permissions: ["Élèves:UPDATE"] }), false);
   assert.equal(canMutateC18Mobile({ role: "Enseignant", permissions: ["Élèves:READ", "Voir élèves"] }), false);
 });
