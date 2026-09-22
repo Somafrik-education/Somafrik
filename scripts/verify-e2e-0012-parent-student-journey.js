@@ -757,8 +757,8 @@ async function main() {
 
   console.log("\n=== E2E 0012 : Parcours parent / élève ===");
   console.log(`Établissement : ${schoolCode}`);
-  console.log(`Parent A       : ${parentAPhone} (mot de passe ${PARENT_PASSWORD}) — enfants Jean + Marie`);
-  console.log(`Parent B       : ${parentBPhone} (mot de passe ${PARENT_PASSWORD}) — enfant Paul`);
+  console.log(`Parent A       : ${parentAPhone} (mot de passe de test) — enfants Jean + Marie`);
+  console.log(`Parent B       : ${parentBPhone} (mot de passe de test) — enfant Paul`);
   console.log(`Annonce        : ${announcement.title}\n`);
   console.table(results);
 
