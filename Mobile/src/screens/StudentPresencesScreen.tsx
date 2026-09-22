@@ -6,6 +6,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
+import QueryStateView from "../components/QueryStateView";
 import { getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 import { useAdminData } from "../context/AdminDataContext";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
@@ -87,31 +88,43 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
         </Text>
       </TouchableOpacity>
 
-      <FlatList
-        data={presencesEleve}
-        keyExtractor={(item) => item.id}
-        testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesList}
-        contentContainerStyle={listContentStyle}
-        ListEmptyComponent={
-          <Text style={styles.empty} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesEmpty}>
-            {STUDENT_SUB_SCREENS_COPY.presencesEmpty}
-          </Text>
-        }
-        renderItem={({ item }) => {
-          const status = normalizePresenceStatus(item);
-          return (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.card}
-              testID={PRESENCE_ROW_TEST_ID(item.id)}
-              onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
-            >
-              <Text style={styles.cardTitle}>{item.date}</Text>
-              <Text style={[styles.badge, getPresenceStyle(status)]}>{status}</Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
+      {presencesSnapshot.status !== "success" || presencesEleve.length === 0 ? (
+        <QueryStateView
+          snapshot={
+            presencesSnapshot.status === "success" && presencesEleve.length === 0
+              ? { status: "empty", data: [] }
+              : presencesSnapshot
+          }
+          emptyMessage={STUDENT_SUB_SCREENS_COPY.presencesEmpty}
+          errorMessage="Impossible de charger les présences."
+          offlineMessage="Réseau indisponible. Les présences n'ont pas pu être actualisées."
+          emptyTestId={STUDENT_SUB_SCREENS_TEST_IDS.presencesEmpty}
+          errorTestId="student-presences-error"
+          onRetry={() => void loadPresences()}
+          loadingLabel="Chargement des présences…"
+        />
+      ) : (
+        <FlatList
+          data={presencesEleve}
+          keyExtractor={(item) => item.id}
+          testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesList}
+          contentContainerStyle={listContentStyle}
+          renderItem={({ item }) => {
+            const status = normalizePresenceStatus(item);
+            return (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.card}
+                testID={PRESENCE_ROW_TEST_ID(item.id)}
+                onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
+              >
+                <Text style={styles.cardTitle}>{item.date}</Text>
+                <Text style={[styles.badge, getPresenceStyle(status)]}>{status}</Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
