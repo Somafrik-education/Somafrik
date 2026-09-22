@@ -1503,6 +1503,7 @@ export function getEffectivePermissions() {
     modules?: unknown;
     source?: string;
     resolvedAt?: string;
+    children?: StudentSummary[];
   }>("/auth/effective-permissions", { method: "GET" });
 }
 

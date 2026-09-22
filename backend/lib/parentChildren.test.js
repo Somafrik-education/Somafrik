@@ -72,6 +72,59 @@ function run() {
   );
   assert.strictEqual(wrongKey.length, 0);
 
+  // Projection PG : student.id = code, relation.toStudentId = UUID, contact via user_id.
+  const viaContactUser = resolveParentChildren(
+    { id: "USER-PARENT", identifier: "+243 000", phone: "+243 000", schoolCode },
+    {
+      contacts: [{ id: "CNT-PG", userId: "USER-PARENT", schoolCode, status: "Actif" }],
+      students: [
+        {
+          id: "STU-CODE",
+          studentUuid: "uuid-child",
+          schoolCode,
+          name: "Enfant Lié",
+          className: "6ème A",
+        },
+        {
+          id: "STU-OTHER-SCHOOL",
+          studentUuid: "uuid-foreign",
+          schoolCode: "SCH-OTHER",
+          name: "Hors tenant",
+        },
+        {
+          id: "STU-PHONE-ONLY",
+          schoolCode,
+          name: "Téléphone seul",
+          parentPhone: "+243 000",
+        },
+      ],
+      relations: [
+        {
+          fromContactId: "CNT-PG",
+          toStudentId: "uuid-child",
+          schoolCode,
+          status: "Actif",
+        },
+        {
+          fromContactId: "CNT-PG",
+          toStudentId: "uuid-foreign",
+          schoolCode: "SCH-OTHER",
+          status: "Actif",
+        },
+        {
+          fromContactId: "CNT-PG",
+          toStudentId: "uuid-archived",
+          schoolCode,
+          status: "Inactif",
+        },
+      ],
+    },
+    schoolCode,
+  );
+  assert.strictEqual(viaContactUser.length, 1);
+  assert.strictEqual(viaContactUser[0].id, "STU-CODE");
+  assert.strictEqual(viaContactUser[0].studentUuid, "uuid-child");
+
   console.log("parentChildren.test.js : OK");
 }
 

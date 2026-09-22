@@ -16,6 +16,12 @@ import {
   STUDENT_SUB_SCREENS_TEST_IDS,
 } from "../lib/studentSubScreensSpec";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, metricLabelFromSnapshot } from "../lib/dataTruth";
+import {
+  countLinkedParentChildren,
+  parentChildNameFromSession,
+  parentHomeIdentityName,
+  parentPresenceSummary,
+} from "../lib/parentLinkedMetrics";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
 import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
@@ -52,12 +58,36 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
     studentAliasKeys.includes(String(presence.studentId ?? "")),
   );
   const presenceStats = getPresenceStats(presencesEleve);
-  const presenceRateLabel = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
-  const presenceMetaLabel = metricLabelFromSnapshot(
-    presencesSnapshot,
-    () => `${presenceStats.attended}/${presenceStats.total} présent(s), ${presenceStats.justified} justifié(s)`,
-    "0/0 présent(s), 0 justifié(s)",
-  );
+  const isParent = session?.role === "parent_student";
+  const parentLinkedCount = isParent ? countLinkedParentChildren(session?.user) : 1;
+  const parentPresence = parentPresenceSummary({
+    linkedCount: parentLinkedCount,
+    ready: presencesSnapshot.status === "success" || presencesSnapshot.status === "empty",
+    attended: presenceStats.attended,
+    total: presenceStats.total,
+    justified: presenceStats.justified,
+    rate: presenceStats.rate,
+  });
+  const presenceRateLabel = isParent
+    ? parentPresence.rate
+    : metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
+  const presenceMetaLabel = isParent
+    ? parentPresence.meta
+    : metricLabelFromSnapshot(
+        presencesSnapshot,
+        () => `${presenceStats.attended}/${presenceStats.total} présent(s), ${presenceStats.justified} justifié(s)`,
+        "0/0 présent(s), 0 justifié(s)",
+      );
+  const presenceTitle = isParent
+    ? parentHomeIdentityName({
+        childName: parentChildNameFromSession({
+          user: session?.user,
+          aliasKeys: studentAliasKeys,
+          rosterName: student?.name,
+        }),
+        linkedCount: parentLinkedCount,
+      })
+    : student?.name ?? "Élève";
 
   return (
     <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesScreen}>
@@ -74,7 +104,7 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
       <Text style={styles.title} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesTitle}>
         {STUDENT_SUB_SCREENS_COPY.presencesTitle}
       </Text>
-      <Text style={styles.subtitle}>{student?.name ?? "Élève"}</Text>
+      <Text style={styles.subtitle}>{presenceTitle}</Text>
 
       <TouchableOpacity
         activeOpacity={0.85}

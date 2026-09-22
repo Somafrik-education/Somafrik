@@ -10,6 +10,7 @@
 
 const { principalHasRole } = require("./userRoleLifecycle");
 const { collectStudentIdentityKeys } = require("./studentIdentityMatch");
+const { resolveParentChildren } = require("./parentChildren");
 
 function trim(value) {
   return String(value ?? "").trim();
@@ -201,6 +202,116 @@ function classRefsFromStudents(students = []) {
   };
 }
 
+function isInactiveParentStudent(row = {}) {
+  if (row.archived === true) return true;
+  const status = String(row.status ?? "").trim().toLowerCase();
+  return ["inactive", "inactif", "archived", "archivé", "archive", "deleted", "supprimé", "supprime"].includes(
+    status,
+  );
+}
+
+function loginSchoolAliases(school = {}, schoolCode = "") {
+  const aliases = new Set();
+  for (const value of [
+    schoolCode,
+    school.code,
+    school.schoolCode,
+    school.legacySchoolCode,
+    school.loginCode,
+  ]) {
+    const code = trim(value).toUpperCase();
+    if (code) aliases.add(code);
+  }
+  return aliases;
+}
+
+function studentBelongsToLoginSchool(row = {}, school = {}, schoolCode = "", schoolId = "") {
+  const aliases = loginSchoolAliases(school, schoolCode);
+  const rowSchoolId = trim(row.schoolId ?? row.school_id);
+  if (schoolId && rowSchoolId && rowSchoolId !== schoolId) return false;
+  const rowCode = trim(row.schoolCode ?? row.school_code).toUpperCase();
+  if (rowCode && aliases.size && !aliases.has(rowCode)) return false;
+  if (!rowCode && !rowSchoolId) return false;
+  return true;
+}
+
+function sortParentChildren(rows = []) {
+  return [...rows].sort((left, right) => {
+    const name = trim(left.name).localeCompare(trim(right.name), "fr");
+    if (name) return name;
+    return trim(left.id).localeCompare(trim(right.id));
+  });
+}
+
+async function loadLiveSchoolStudents(repository, schoolCode, fallbackStudents = []) {
+  if (!repository || typeof repository.listSchoolStudents !== "function") {
+    return fallbackStudents;
+  }
+  const code = trim(schoolCode);
+  if (!code || code === "*") return fallbackStudents;
+  try {
+    const live = await repository.listSchoolStudents(code);
+    if (Array.isArray(live) && live.length) return live;
+  } catch {
+    /* projection login : conserver les élèves déjà chargés */
+  }
+  return fallbackStudents;
+}
+
+/**
+ * Enfants de session Parent (login Mobile / refresh permissions).
+ *
+ * PostgreSQL live (`contacts.user_id` → `contact_relations` actives, même
+ * school_id) est exclusif : 0 lien ou erreur = 0 enfant. Pas de repli
+ * téléphone. La projection mémoire ne sert que si cette lecture est absente.
+ */
+async function resolveParentLoginChildren({
+  repository,
+  user = {},
+  school = null,
+  state = {},
+  schoolCode = "",
+} = {}) {
+  const normalizedSchoolCode = trim(schoolCode || school?.code || user.schoolCode).toUpperCase();
+  const schoolId = trim(school?.id || user.schoolId);
+  const fallbackStudents = Array.isArray(state.students) ? state.students : [];
+  const students = await loadLiveSchoolStudents(repository, normalizedSchoolCode, fallbackStudents);
+  const principal = {
+    role: "Parent",
+    roleKeys: Array.isArray(user.roleKeys) && user.roleKeys.length ? user.roleKeys : ["PARENT"],
+    sub: trim(user.id),
+    schoolCode: normalizedSchoolCode,
+    schoolId,
+  };
+  const lookup = await lookupCanonicalParentLinkedStudents({
+    repository,
+    principal,
+    schoolStudents: students,
+  });
+
+  if (lookup.status === CANONICAL_LOOKUP_ERROR) {
+    return [];
+  }
+
+  if (lookup.status === CANONICAL_LOOKUP_OK) {
+    return sortParentChildren(
+      (lookup.students ?? []).filter(
+        (row) =>
+          !isInactiveParentStudent(row) &&
+          studentBelongsToLoginSchool(row, school, normalizedSchoolCode, schoolId),
+      ),
+    );
+  }
+
+  return sortParentChildren(
+    resolveParentChildren(
+      user,
+      { ...state, students },
+      normalizedSchoolCode,
+    ),
+  );
+}
+
 function scopeSchoolClassesForLinkedStudents(rows, linkedStudents) {
   const { classCodes, classIds } = classRefsFromStudents(linkedStudents);
   const codeSet = new Set(classCodes);
@@ -240,6 +351,7 @@ module.exports = {
   restrictStudentIdsToCanonicalChildren,
   lookupCanonicalParentLinkedStudents,
   resolveParentLinkedHydration,
+  resolveParentLoginChildren,
   classRefsFromStudents,
   scopeSchoolClassesForLinkedStudents,
   CANONICAL_LOOKUP_OK,
