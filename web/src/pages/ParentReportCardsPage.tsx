@@ -43,7 +43,7 @@ function safeFilePart(value: string) {
 
 export function ParentReportCardsPage() {
   const { session } = useAuth();
-  const { state, ensureDomains } = useData();
+  const { state } = useData();
   const user = session?.user ?? null;
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [period, setPeriod] = useState(ALL_PERIODS);
@@ -60,10 +60,6 @@ export function ParentReportCardsPage() {
     () => resolveParentDashboardStudent(user, state, selectedStudentId),
     [user, state, selectedStudentId],
   );
-
-  useEffect(() => {
-    void ensureDomains(["students"]).catch(() => undefined);
-  }, [ensureDomains]);
 
   useEffect(() => {
     if (!selectedChild) {
