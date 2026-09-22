@@ -18,6 +18,7 @@ export const TrialRequestPage = lazyPage(() => import("./pages/TrialRequestPage"
 export const PrivacyPolicyPage = lazyPage(() => import("./pages/LegalPages"), "PrivacyPolicyPage");
 export const AccountDeletionPage = lazyPage(() => import("./pages/LegalPages"), "AccountDeletionPage");
 export const DashboardEntryPage = lazyPage(() => import("./pages/DashboardEntryPage"), "DashboardEntryPage");
+export const ParentProfilePage = lazyPage(() => import("./pages/ParentProfilePage"), "ParentProfilePage");
 /** Alias explicite (ex. lazy routes type DashboardPage). */
 export const DashboardPage = DashboardEntryPage;
 export const MarketplacePage = lazyPage(() => import("./pages/MarketplacePage"), "MarketplacePage");
