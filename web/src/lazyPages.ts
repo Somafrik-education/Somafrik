@@ -234,3 +234,4 @@ export const GradesEvaluationsPage = lazyPage(
   () => import("./pages/GradesEvaluationsPage"),
   "GradesEvaluationsPage",
 );
+export const BulletinsEntryPage = lazyPage(() => import("./pages/BulletinsEntryPage"), "BulletinsEntryPage");
