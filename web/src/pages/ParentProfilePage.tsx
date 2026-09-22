@@ -33,7 +33,7 @@ export function ParentProfilePage() {
           <ProfileField label="Identifiant" value={value(user.identifier ?? user.publicId ?? user.id)} />
           <ProfileField
             label="Établissement"
-            value={value(session?.school?.name ?? user.schoolName ?? user.schoolCode)}
+            value={value(user.schoolName ?? user.schoolCode)}
           />
         </div>
       </Card>
