@@ -76,6 +76,7 @@ function resolveWebScreen(pathname) {
   if (path.startsWith("/etablissement")) return HELP_SCREEN.DASHBOARD;
   if (path.startsWith("/administration")) return HELP_SCREEN.USERS;
   if (path.startsWith("/tableau-de-bord")) return HELP_SCREEN.DASHBOARD;
+  if (path.startsWith("/mon-profil")) return HELP_SCREEN.PARENT_HOME;
   if (path.startsWith("/presences")) return HELP_SCREEN.ATTENDANCE;
   if (path.startsWith("/notes")) return HELP_SCREEN.GRADES;
   if (path.startsWith("/examens")) return HELP_SCREEN.EXAMS;
