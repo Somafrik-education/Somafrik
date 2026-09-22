@@ -1,13 +1,12 @@
 /**
- * Audit Mobile — Profil Parent / parcours parent_student.
+ * Gate Mobile — Profil Parent / parcours parent_student.
  *
- * Contrats P0/P1 : le comportement *souhaité* est asserté.
- * Les cas qui échouent documentent l'état réel (RED autorisé, phase audit).
+ * Contrats P0/P1/P2 attendus GREEN.
  *
  *   npx --yes tsx Mobile/src/lib/mobileParentProfile.test.ts
  *   npm --prefix Mobile run test:mobile-parent-profile-audit
  *
- * Ne pas « vertir » ces assertions pour masquer un défaut.
+ * Ne pas affaiblir ces assertions pour masquer un défaut.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -21,6 +20,7 @@ import {
 import {
   filterRowsByStudentScope,
   resolveMobileStudentScope,
+  resolveParentSafeStudentId,
   sessionStudentAliasKeys,
 } from "./canonicalStudentIdentity";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
