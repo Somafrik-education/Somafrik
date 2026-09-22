@@ -7,6 +7,7 @@ Ce dossier est la source de vérité versionnée pour la déclaration **Sécurit
 - `somafrik_google_play_data_safety.csv` : fichier **versionné** à importer dans **Play Console → Contenu de l'application → Sécurité des données → Importer depuis le fichier CSV**.
 - `CURRENT.sha256` : empreintes SHA-256 du CSV (CRLF d’import Play, et équivalent LF).
 - `generate_data_safety_csv.py` : générateur déterministe du CSV. Les réponses métier doivent être modifiées dans ce script puis le CSV doit être régénéré **et** `CURRENT.sha256` recalculé.
+- `audit-aab-v20-2026-09-05.md` : réaudit du binaire Android production v20 réellement construit.
 
 ## Règle de maintenance
 
@@ -37,9 +38,12 @@ python3 docs/compliance/google-play/data-safety/generate_data_safety_csv.py
 6. Importer le CSV dans Play Console puis relire l’aperçu de la fiche Store avant envoi.
 7. Avant tout merge de la PR de mise à jour, effectuer un **diff GitHub indépendant** et vérifier qu’aucune réponse de conformité n’a changé sans justification.
 
-## État déclaré au 5 septembre 2026
+## État déclaré au 22 septembre 2026
 
-CSV régénéré et versionné dans git. **Réaudit Android final et nouvel AAB** restent dus avant import Play Console / GO store (mandat CTO #503). Ne pas traiter ce CSV comme une déclaration déjà contrôlée en Console.
+L’AAB v20 reste la dernière preuve binaire archivée et son audit est consigné dans
+`audit-aab-v20-2026-09-05.md`. Il ne constitue pas la preuve du candidat v24.
+Le candidat v24 doit être construit depuis le SHA de release final, puis faire
+l’objet d’un nouvel audit binaire avant envoi sur Google Play.
 
 - collecte de données : **oui** ;
 - chiffrement en transit : **oui** ;
@@ -47,6 +51,11 @@ CSV régénéré et versionné dans git. **Réaudit Android final et nouvel AAB*
 - comptes créés/provisionnés par l’établissement ou Somafrik ;
 - demande de suppression : `https://somafrik.app/suppression-compte` ;
 - aucune finalité publicité/marketing déclarée ;
-- notifications Android : token Expo Push, collecte facultative car dépendante de l’autorisation de notification.
+- notifications Android : token Expo Push, collecte facultative car dépendante de l’autorisation de notification ;
+- aucun changement des réponses CSV n’a été requis par l’audit historique du binaire v20.
+
+Avant envoi Google Play v24 : auditer le nouvel AAB, importer le CSV puis relire
+l’aperçu généré dans Play Console afin de détecter une éventuelle évolution du
+modèle Google ou une divergence d’interface.
 
 > Important : ce fichier est une déclaration de conformité, pas une configuration runtime. Toute modification doit être basée sur le comportement réel de la version Android publiée.

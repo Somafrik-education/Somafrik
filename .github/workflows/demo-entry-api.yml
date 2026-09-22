@@ -10,7 +10,10 @@ on:
       - 'backend/lib/demoResetSafety.js'
       - 'backend/lib/demoShowcaseDataSeed.js'
       - 'backend/lib/demoPublicPlatformSeed.js'
+      - 'backend/lib/subjectConflictScope.guard.test.js'
+      - 'backend/db/pedagogyPgStore.js'
       - 'backend/scripts/seed-platform-bulk.js'
+      - 'backend/scripts/migrate-test-data.js'
       - 'backend/scripts/seed-demo-public.js'
       - 'backend/scripts/reset-demo-environment.js'
       - 'backend/scripts/verify-demo-entry-api.js'
@@ -69,6 +72,8 @@ jobs:
           const proof = verifyPublicDemoSeed(buildPublicDemoPlatformSeed());
           console.log(`Public Demo seed contract: OK ${JSON.stringify(proof)}`);
           NODE
+      - name: Verify subject conflict scope
+        run: node --test backend/lib/subjectConflictScope.guard.test.js
       - name: Verify one-shot demo entry API
         run: npm --prefix backend run verify:demo-entry-api
       - name: Bootstrap canonical PostgreSQL schema

@@ -226,7 +226,7 @@ function createPedagogyPgStore(repo) {
         return one(
           `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
            VALUES ($1, $2, $3, $4, 'active')
-           ON CONFLICT (subject_code) DO UPDATE SET name = EXCLUDED.name
+           ON CONFLICT (school_id, subject_code) DO UPDATE SET name = EXCLUDED.name
            RETURNING *`,
           [schoolId, code, name, coefficient],
         );

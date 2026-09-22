@@ -280,7 +280,7 @@ async function insertSchoolBundle(client, bundle, schoolId) {
       client,
       `INSERT INTO subjects (school_id, subject_code, name, coefficient, status)
        VALUES ($1, $2, $3, $4, 'active')
-       ON CONFLICT (subject_code) DO UPDATE SET name = EXCLUDED.name
+       ON CONFLICT (school_id, subject_code) DO UPDATE SET name = EXCLUDED.name
        RETURNING id`,
       [schoolId, code, course.name, course.coefficient ?? 1],
     );

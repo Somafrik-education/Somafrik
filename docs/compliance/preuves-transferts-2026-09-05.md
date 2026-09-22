@@ -4,31 +4,35 @@ Relevé factuel pour `sous-traitants-transferts.md`. Pas de secrets.
 
 ## Render (API production)
 
+Contrôle via métadonnées du service Render `Somafrik-api-prod` (`srv-dac22v8jo6nc739b3t9g`) :
+
 ```text
-dig +short api.somafrik.app
-somafrik-api-prod.onrender.com.
-gcp-us-west1-1.origin.onrender.com.
+branch: main
+region: frankfurt
+runtime: node
+healthCheckPath: /api/health
 ```
 
-**Lecture :** région Render **Oregon** (GCP `us-west1`). Identique pour `somafrik-api-preprod.onrender.com` et `preprod.somafrik.app`.
+**Lecture :** l’API production est hébergée en région Render **Frankfurt (Allemagne)**. Le CNAME public `*.onrender.com` ou la résolution DNS ne doit pas être utilisé seul pour déduire la région d’exécution du service ; la métadonnée de service Render fait foi pour l’inventaire opérationnel.
 
-`/api/health` production et préprod : `{"status":"ok","database":"postgresql",...}` le 5 septembre 2026 — ne divulgue pas l’hôte PostgreSQL.
+`/api/health` production : `database=postgresql`; aucune chaîne de connexion n’est publiée.
 
-## Cloudflare
+## Supabase production
 
-En-tête `cf-ray: …-CMH` observé depuis cette sonde : **edge** Cloudflare (pas la région d’origin Render).
+Contrôle via métadonnées projet Supabase `Somafrik-prod` (`loyubruyrxcaeshonkwp`) :
+
+```text
+region: eu-west-1
+status: ACTIVE_HEALTHY
+postgres: 17.6.1.166
+```
+
+**Lecture :** la base PostgreSQL de production est hébergée en **Irlande (AWS eu-west-1, EEE)**. Ne jamais recopier le mot de passe, la chaîne `DATABASE_URL` ou un secret dans ce document.
 
 ## Expo
 
-Documentation prestataire : Push Service hébergé sur GCP aux États-Unis.
+Documentation prestataire : le service Expo Push implique un traitement sur l’infrastructure GCP aux États-Unis. Le build EAS production est utilisé pour fabriquer les binaires Android ; aucun secret EAS n’est versé dans git.
 
-## Supabase
+## Cloudflare / CDN
 
-Pas de hostname pooler dans git. Extraction ops :
-
-```js
-new URL(process.env.DATABASE_URL).hostname
-// attendu : aws-0-<aws-region>.pooler.supabase.com
-```
-
-Ne jamais commiter l’URL complète.
+Un point de présence CDN ou un identifiant d’edge observé depuis une sonde ne constitue pas une preuve de la région d’origine de l’API. Il doit être distingué de la région d’exécution Render.
