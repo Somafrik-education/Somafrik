@@ -8,6 +8,7 @@ import { demoRuntimeEnabled } from "../../lib/featureFlags";
 import { firstAllowedFinanceLeaf } from "../../lib/financeRouteAccess";
 import { canReadView } from "../../lib/permissions";
 import { getDefaultAppPath } from "../../lib/superAdminAccess";
+import { isParentRole } from "../../lib/format";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 
 const FINANCE_TABS: (TabItem & { view: string })[] = [
@@ -27,11 +28,40 @@ export function FinanceIndexRedirect() {
   return <Navigate to={leaf} replace />;
 }
 
+export type ParentFinanceShellDecision = "staff" | "content" | "payments" | "dashboard";
+
+export function parentFinanceShellDecision(
+  role: string | undefined,
+  pathname: string,
+  canReadPayments: boolean,
+): ParentFinanceShellDecision {
+  if (!isParentRole(role)) return "staff";
+  if (!canReadPayments) return "dashboard";
+  if (pathname !== "/finances/paiements") return "payments";
+  return "content";
+}
+
 /** Module Finances : en-tête + onglets, contenu via <Outlet />. */
 export function FinancesLayout() {
   const ctx = usePermissionContext();
+  const { session } = useAuth();
   const tabs = FINANCE_TABS.filter((tab) => canReadView(ctx, tab.view));
   const location = useLocation();
+  const parentDecision = parentFinanceShellDecision(
+    session?.user?.role,
+    location.pathname,
+    canReadView(ctx, "payments"),
+  );
+
+  if (parentDecision === "dashboard") {
+    return <Navigate to={getDefaultAppPath(session?.user?.role)} replace />;
+  }
+  if (parentDecision === "payments") {
+    return <Navigate to="/finances/paiements" replace />;
+  }
+  if (parentDecision === "content") {
+    return <Outlet />;
+  }
 
   // La Démo est un tenant établissement unique : le schoolCode de session est
   // identique au scope utilisé par DomainRouteBootstrap. Ne pas dépendre ici
