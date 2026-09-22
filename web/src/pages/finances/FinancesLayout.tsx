@@ -34,6 +34,13 @@ export function FinancesLayout() {
   const { session } = useAuth();
   const tabs = FINANCE_TABS.filter((tab) => canReadView(ctx, tab.view));
   const location = useLocation();
+
+  // Hook toujours appelé avant toute bifurcation de rendu pour respecter
+  // l'ordre React ; le résultat n'est utilisé que par le shell staff.
+  const schoolCode = String(ctx.user?.schoolCode ?? "").trim();
+  const hydrationKey = buildDomainRouteHydrationKey(location.key, location.pathname, schoolCode);
+  const hydrationStatus = useDomainRouteHydrationStatus(hydrationKey);
+
   const parentDecision = parentFinanceShellDecision(
     session?.user?.role,
     location.pathname,
@@ -49,13 +56,6 @@ export function FinancesLayout() {
   if (parentDecision === "content") {
     return <Outlet />;
   }
-
-  // La Démo est un tenant établissement unique : le schoolCode de session est
-  // identique au scope utilisé par DomainRouteBootstrap. Ne pas dépendre ici
-  // d'ActiveSchoolProvider permet de conserver les tests RBAC de route isolés.
-  const schoolCode = String(ctx.user?.schoolCode ?? "").trim();
-  const hydrationKey = buildDomainRouteHydrationKey(location.key, location.pathname, schoolCode);
-  const hydrationStatus = useDomainRouteHydrationStatus(hydrationKey);
 
   const demoWaiting = demoRuntimeEnabled && (hydrationStatus === "idle" || hydrationStatus === "loading");
   const demoFailed = demoRuntimeEnabled && hydrationStatus === "error";
