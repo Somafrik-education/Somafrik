@@ -17,6 +17,7 @@ import {
 import { metricLabelFromSnapshot } from "../lib/dataTruth";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentPresences">;
 
@@ -24,6 +25,7 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
+  useParentStudentRouteSelection(route?.params?.studentId);
   const { studentsData, presencesData, loadPresences, loadStudents, presencesSnapshot, resourceScopeKey } = useAdminData();
   const studentId = resolveParentSafeStudentId({
     role: session?.role,
