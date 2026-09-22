@@ -333,7 +333,17 @@ async function main() {
   assert.doesNotMatch(prGates, /verify:mobile-release-readiness/);
   assert.match(e2eRuntime, /runs-on:\s*\[self-hosted, linux, android, somafrik-mobile-e2e\]/);
   assert.doesNotMatch(e2eRuntime, /runs-on:\s*ubuntu-latest/);
-  assert.match(aabWorkflow, /ref: develop/);
+  assert.doesNotMatch(aabWorkflow, /ref:\s*develop/);
+  assert.match(aabWorkflow, /candidate_sha:/);
+  assert.match(aabWorkflow, /candidate_sha must be a full 40-character hex SHA/);
+  assert.match(aabWorkflow, /candidate_sha must equal workflow dispatch SHA/);
+  assert.match(aabWorkflow, /DISPATCH_SHA:\s*\$\{\{\s*github\.sha\s*\}\}/);
+  assert.match(aabWorkflow, /\[0-9a-fA-F\]\{40\}/);
+  assert.match(aabWorkflow, /ref:\s*\$\{\{\s*env\.CANDIDATE_SHA\s*\}\}/);
+  assert.match(aabWorkflow, /"\$actual" != "\$CANDIDATE_SHA"/);
+  assert.match(aabWorkflow, /SOMAFRIK_TOOLING_SHA:\s*\$\{\{\s*env\.CANDIDATE_SHA\s*\}\}/);
+  assert.match(aabWorkflow, /permissions:\s*[\s\S]*contents:\s*read/);
+  assert.doesNotMatch(aabWorkflow, /Overlay evidence scripts|cp tooling\//);
   const lotFWorkflow = read(path.join(ROOT, ".github", "workflows", "android-release-readiness.yml"));
   assert.match(lotFWorkflow, /Mobile\/\*\*/);
   assert.match(lotFWorkflow, /\.github\/workflows\/\*\*/);
