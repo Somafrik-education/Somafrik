@@ -1,6 +1,7 @@
 import type { DomainKey } from "./domainLoaders";
 import { filterDomainsByPermissions, layoutDomainsForContext } from "./domainPermissions";
 import type { PermissionContext } from "./permissions";
+import { isParentRole } from "./format";
 
 const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   {
@@ -62,7 +63,10 @@ export function domainsForPath(pathname: string, ctx: PermissionContext): Domain
     (rule) => pathname === rule.prefix || pathname.startsWith(`${rule.prefix}/`),
   ).sort((a, b) => b.prefix.length - a.prefix.length)[0];
 
-  const routeDomains = match?.domains ?? [];
+  const parentPublishedBulletins =
+    isParentRole(ctx.user?.role) &&
+    (pathname === "/bulletins" || pathname.startsWith("/bulletins/"));
+  const routeDomains = parentPublishedBulletins ? [] : (match?.domains ?? []);
   const combined = [...new Set([...layoutDomainsForContext(ctx), ...routeDomains])];
   return filterDomainsByPermissions(combined, ctx);
 }
