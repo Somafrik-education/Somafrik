@@ -112,6 +112,11 @@ assert.deepEqual(tabLabels(teacher), ["Classes", "Élèves", "Appel", "Notes"]);
 
 assert.deepEqual(drawerLabels(parent).slice(0, 4), ["Notes", "Présences", "Bulletins", "Paiements"]);
 assert.equal(drawerLabels(parent).includes("Paiement mobile"), false);
+assert.equal(
+  getAllowedRoleDrawerItems(parent).find((item) => item.label === "Paiements")?.route,
+  "StudentPayments",
+  "Parent : Paiements doit ouvrir la destination canonique StudentPayments",
+);
 assert.deepEqual(tabLabels(parent), ["Profil", "Notes", "Présence", "Frais"]);
 
 assert.deepEqual(drawerLabels(student).slice(0, 2), ["Notes", "Présences"]);

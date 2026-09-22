@@ -180,6 +180,14 @@ const cases: { id: string; title: string; run: () => void }[] = [
     },
   },
   {
+    id: "PARENT-P0-05B",
+    title: "MobilePayment legacy interdit au Parent",
+    run() {
+      assert.equal(canReadRoute(parentSession(), "MobilePayment"), false);
+      assert.equal(canReadRoute(parentSession(), "StudentPayments"), true);
+    },
+  },
+  {
     id: "PARENT-P0-06",
     title: "FeeGrids staff interdit",
     run() {
