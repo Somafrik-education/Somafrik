@@ -74,7 +74,7 @@
     "test:l1-sqlite-cache": "npx --yes tsx src/offline/l1/l1SqliteCache.test.ts",
     "test:l1-hydration-red": "npx --yes tsx src/offline/l1/syncEngine.hydration.red.test.ts",
     "test:parite-l0-l1-red": "npx --yes tsx src/lib/pariteL0Hygiene.red.test.ts && npx --yes tsx src/lib/pariteL1UnpaidKpi.red.test.ts",
-    "test:mobile-parent-profile-audit": "npx --yes tsx src/lib/mobileParentProfile.audit.red.test.ts",
+    "test:mobile-parent-profile-audit": "npx --yes tsx src/lib/mobileParentProfile.test.ts",
     "test:mobile-parent-p0": "npx --yes tsx src/lib/mobileParentP0.security.test.ts",
     "test:parite-l0-green": "npx --yes tsx src/lib/pariteL0Hygiene.red.test.ts",
     "test:parite-l1-green": "npx --yes tsx src/lib/pariteL1UnpaidKpi.red.test.ts && npx --yes tsx src/lib/unpaidLedger.test.ts && npm run test:parite-l1-ux",
