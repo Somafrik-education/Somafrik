@@ -29,19 +29,6 @@ function formatAverage(value: number | null) {
   return value == null ? "—" : `${value.toFixed(1).replace(".", ",")} / 20`;
 }
 
-function formatMoney(value: number, currency: string) {
-  if (!currency) return value.toLocaleString("fr-FR");
-  try {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: 2,
-    }).format(value);
-  } catch {
-    return `${value.toLocaleString("fr-FR")} ${currency}`;
-  }
-}
-
 function latestAnnouncement(rows: AnnouncementRecord[]) {
   return [...rows].sort((left, right) => {
     const a = Date.parse(String(left.publishedAt || left.createdAt || "")) || 0;
@@ -273,25 +260,17 @@ export function ParentDashboardPage() {
         />
         <DashboardMetricCard
           label="Reste à payer"
-          value={
-            paymentsPermission.canRead
-              ? formatMoney(metrics.remainingAmount, metrics.currency)
-              : "Non autorisé"
-          }
+          value={paymentsPermission.canRead ? metrics.remainingLabel : "Non autorisé"}
           detail={
             paymentsPermission.canRead
-              ? `Attendu ${formatMoney(metrics.expectedAmount, metrics.currency)} · payé ${formatMoney(metrics.paidAmount, metrics.currency)}`
+              ? `Attendu ${metrics.expectedLabel} · imputé ${metrics.paidLabel}`
               : "Accès non disponible"
           }
           to={DASHBOARD_LINKS.payments}
         />
         <DashboardMetricCard
           label="Paiements"
-          value={
-            paymentsPermission.canRead
-              ? formatMoney(metrics.paymentAmount, metrics.currency)
-              : "Non autorisé"
-          }
+          value={paymentsPermission.canRead ? metrics.paymentLabel : "Non autorisé"}
           detail={
             paymentsPermission.canRead
               ? `${metrics.paymentCount} paiement(s) dans l'historique`
@@ -381,8 +360,8 @@ function DashboardMetricCard({
   return (
     <Card className="p-5">
       <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-2 text-2xl font-black text-ink">{value}</p>
-      <p className="mt-1 min-h-10 text-sm text-muted">{detail}</p>
+      <p className="mt-2 whitespace-pre-line text-2xl font-black text-ink">{value}</p>
+      <p className="mt-1 min-h-10 whitespace-pre-line text-sm text-muted">{detail}</p>
       <Link className="mt-3 inline-block text-sm font-bold text-brand hover:underline" to={to}>
         Consulter
       </Link>
