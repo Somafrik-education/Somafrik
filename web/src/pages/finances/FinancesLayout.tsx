@@ -8,7 +8,7 @@ import { demoRuntimeEnabled } from "../../lib/featureFlags";
 import { firstAllowedFinanceLeaf } from "../../lib/financeRouteAccess";
 import { canReadView } from "../../lib/permissions";
 import { getDefaultAppPath } from "../../lib/superAdminAccess";
-import { isParentRole } from "../../lib/format";
+import { parentFinanceShellDecision } from "../../lib/parentFinanceRoute";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 
 const FINANCE_TABS: (TabItem & { view: string })[] = [
@@ -26,19 +26,6 @@ export function FinanceIndexRedirect() {
     return <Navigate to={getDefaultAppPath(session?.user?.role)} replace />;
   }
   return <Navigate to={leaf} replace />;
-}
-
-export type ParentFinanceShellDecision = "staff" | "content" | "payments" | "dashboard";
-
-export function parentFinanceShellDecision(
-  role: string | undefined,
-  pathname: string,
-  canReadPayments: boolean,
-): ParentFinanceShellDecision {
-  if (!isParentRole(role)) return "staff";
-  if (!canReadPayments) return "dashboard";
-  if (pathname !== "/finances/paiements") return "payments";
-  return "content";
 }
 
 /** Module Finances : en-tête + onglets, contenu via <Outlet />. */
