@@ -452,6 +452,48 @@ async function main() {
       body: { message: "Teacher vers parent de sa classe", participantUserIds: [PARENT_A], studentId: fixtures.studentA },
     });
     assert.equal(teacherToParent.status, 201, `C2-02 Teacher A → Parent A: ${JSON.stringify(teacherToParent.data)}`);
+
+    const teacherToStudent = await request("/backoffice/messages", {
+      method: "POST",
+      token: teacherA,
+      body: { message: "Teacher vers élève interdit", participantUserIds: [STUDENT_A] },
+    });
+    assert.equal(teacherToStudent.status, 403, "C2-15 Teacher → élève interdit");
+
+    const adminToStudent = await request("/backoffice/messages", {
+      method: "POST",
+      token: adminA,
+      body: { message: "Admin vers élève", participantUserIds: [STUDENT_A] },
+    });
+    assert.equal(adminToStudent.status, 201, `C2-15 Admin → élève autorisé: ${JSON.stringify(adminToStudent.data)}`);
+    await pool.query(
+      `INSERT INTO school_conversation_participants (
+         conversation_id, user_id, school_id, participant_role, status
+       )
+       SELECT $1, $2, id, 'recipient', 'active'
+       FROM schools
+       WHERE school_code = 'SCH-COM-A'
+       ON CONFLICT (conversation_id, user_id) DO NOTHING`,
+      [adminToStudent.data.conversationId, TEACHER_A],
+    );
+    const teacherReplyStudentThread = await request(
+      `/backoffice/conversations/${adminToStudent.data.conversationId}/messages`,
+      {
+        method: "POST",
+        token: teacherA,
+        body: { message: "Réponse enseignant interdite dans fil élève" },
+      },
+    );
+    assert.equal(teacherReplyStudentThread.status, 403, "C2-15 Teacher reply dans fil élève interdit");
+    const forbiddenTeacherReplyCount = await countRows(
+      pool,
+      `SELECT count(*)::int AS c
+       FROM school_messages
+       WHERE conversation_id = $1 AND body = 'Réponse enseignant interdite dans fil élève'`,
+      [adminToStudent.data.conversationId],
+    );
+    assert.equal(forbiddenTeacherReplyCount, 0, "C2-15 aucune mutation enseignant → élève");
+
     const teacherA2ToParent = await request("/backoffice/messages", {
       method: "POST",
       token: teacherA2,
@@ -496,6 +538,7 @@ async function main() {
     assert.ok(teacherIds.includes(PARENT_A), "C2-13 Teacher voit parent de ses élèves");
     assert.ok(teacherIds.includes(ADMIN_A), "C2-13 Teacher voit staff");
     assert.ok(!teacherIds.includes(PARENT_A2), "C2-13 Teacher ne voit pas parent hors affectation");
+    assert.ok(!teacherIds.includes(STUDENT_A), "C2-15 Teacher ne voit jamais un élève dans les destinataires");
     const adminRecipients = await request("/backoffice/messages/recipients", { token: adminA });
     assert.equal(adminRecipients.status, 200);
     const adminIds = recipientIds(adminRecipients.data);
