@@ -403,33 +403,50 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
   {
     id: "MP-011",
     severity: "P1",
-    title: "Logout doit vider selectedStudentId et attendre clearSecureSession",
+    title: "Logout vide l'état Parent immédiatement et purge SecureStore via logoutSession",
     run() {
       const auth = read("context/AuthContext.tsx");
       assert.match(auth, /setSelectedStudentId\(null\)/);
-      assert.match(
-        auth,
-        /await clearSecureSession|void clearSecureSession/,
-        "clearSecureSession n'est pas invoqué dans logout() — seulement via logoutSession async",
-      );
       const logoutFn = auth.slice(auth.indexOf("const logout = useCallback"));
       assert.match(
         logoutFn,
-        /clearSecureSession/,
-        "logout() n'appelle pas clearSecureSession de façon synchrone — tokens peuvent survivre au changement de session",
+        /clearAuthenticatedState\(\)/,
+        "logout() doit vider immédiatement la session mémoire et selectedStudentId",
+      );
+      assert.match(
+        logoutFn,
+        /logoutSession\(\)/,
+        "logout() doit déléguer la révocation/purge locale à services\/api.logout",
+      );
+      const api = read("services/api.ts");
+      const apiLogout = api.slice(api.indexOf("export async function logout()"));
+      assert.match(
+        apiLogout,
+        /finally\s*\{[\s\S]*await clearSecureSession\(\)/,
+        "services/api.logout doit toujours purger SecureStore dans finally",
       );
     },
   },
   {
     id: "MP-012",
     severity: "P1",
-    title: "StudentDetail ne doit pas GET /students/:id hors enfants liés",
+    title: "StudentDetail refuse un studentId Parent hors enfants liés avant GET",
     run() {
       const src = read("screens/StudentDetailScreen.tsx");
       assert.match(
         src,
-        /user\.children|childAliasKeys|session\.user\.children/,
-        "getSchoolStudent(studentId) sans preuve d'appartenance aux enfants du Parent",
+        /resolveParentSafeStudentId\(\{[\s\S]*routeStudentId:[\s\S]*selectedStudentId:[\s\S]*user:\s*session\?\.user/,
+        "StudentDetail doit résoudre l'id via le helper Parent fail-closed",
+      );
+      assert.match(
+        src,
+        /if\s*\(!studentId\)\s*\{[\s\S]*return;/,
+        "StudentDetail doit stopper le chargement sans id enfant autorisé",
+      );
+      assert.match(
+        src,
+        /isLinkedParentStudent\(\{\s*user:\s*session\.user,\s*selectedStudentId:\s*requested\s*\}\)/,
+        "un deep-link étranger doit être recoupé aux enfants liés",
       );
     },
   },
