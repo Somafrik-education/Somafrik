@@ -351,11 +351,29 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
   {
     id: "MP-010",
     severity: "P1",
-    title: "StudentPresencesScreen doit exposer loading / erreur / retry",
+    title: "StudentPresencesScreen doit exposer loading / erreur / offline / retry sans faux empty",
     run() {
       const src = read("screens/StudentPresencesScreen.tsx");
       assert.match(src, /QueryStateView/, "pas de QueryStateView — vide et erreur indistinguables");
-      assert.match(src, /onRetry/, "aucun retry présences");
+      assert.match(
+        src,
+        /presencesSnapshot\.status\s*!==\s*"success"/,
+        "la liste est rendue avant succès — loading/error/offline peuvent être masqués",
+      );
+      assert.match(src, /emptyMessage=\{DATA_TRUTH_COPY\.emptyPresences\}/);
+      assert.match(src, /errorMessage=\{DATA_TRUTH_COPY\.errorPresences\}/);
+      assert.match(src, /offlineMessage=\{DATA_TRUTH_COPY\.offlinePresences\}/);
+      assert.match(
+        src,
+        /onRetry=\{\(\) => void loadPresences\(\)\}/,
+        "Retry n'est pas relié à loadPresences()",
+      );
+      const truth = read("lib/dataTruth.ts");
+      assert.match(truth, /emptyPresences:/);
+      assert.match(truth, /errorPresences:/);
+      assert.match(truth, /offlinePresences:/);
+      assert.match(truth, /presencesEmpty:/);
+      assert.match(truth, /presencesError:/);
     },
   },
   {
