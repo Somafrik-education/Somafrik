@@ -1,6 +1,6 @@
 import { NAV_ITEMS, type NavItem } from "../../lib/constants";
 import { canReadFinanceModule } from "../../lib/financeRouteAccess";
-import { isInternalSchoolRole } from "../../lib/format";
+import { isInternalSchoolRole, isParentRole } from "../../lib/format";
 import { canReadView, canAccessSchoolBackOffice } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { useAuth } from "../../context/AuthContext";
@@ -10,9 +10,16 @@ export function useVisibleNavItems() {
   const { session } = useAuth();
   const role = session?.user?.role;
   const internalSchool = isInternalSchoolRole(role);
+  const parentRole = isParentRole(role);
   const schoolBackOffice = canAccessSchoolBackOffice(role);
+  const sourceItems: NavItem[] = parentRole
+    ? [
+        ...NAV_ITEMS,
+        { view: "parentProfile", path: "/mon-profil", label: "Mon profil", group: "dashboard" },
+      ]
+    : NAV_ITEMS;
 
-  const visible = NAV_ITEMS.filter((item) => {
+  const visible = sourceItems.filter((item) => {
     if (item.schoolOnly && !schoolBackOffice) return false;
     if (internalSchool && (item.view === "users" || item.view === "permissions")) return false;
     if (item.path === "/finances") return canReadFinanceModule(ctx);
