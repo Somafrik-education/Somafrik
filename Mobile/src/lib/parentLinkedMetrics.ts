@@ -6,7 +6,9 @@
 export const PARENT_UNLINKED_COPY = "Aucun enfant lié";
 export const PARENT_UNLINKED_KPI = "—";
 
-export function countLinkedParentChildren(user: { children?: unknown } | null | undefined): number {
+export function countLinkedParentChildren(
+  user: { children?: unknown; [key: string]: unknown } | null | undefined,
+): number {
   return Array.isArray(user?.children) ? user.children.length : 0;
 }
 

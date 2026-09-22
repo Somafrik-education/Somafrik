@@ -117,12 +117,11 @@ const refreshed = applyLivePermissionsToSession(
   } as RefreshableSession,
   {
     permissions: ["Notes:READ"],
-    children: linkedUser.children as Array<Record<string, unknown>>,
+    children: linkedUser.children,
   },
 );
-const refreshedChildren = refreshed.user?.children as Array<{ name?: string }> | undefined;
 assert.equal(countLinkedParentChildren(refreshed.user), 1);
-assert.equal(refreshedChildren?.[0]?.name, "Maeva Kabila");
+assert.equal(refreshed.user?.children?.[0]?.name, "Maeva Kabila");
 
 const preserved = applyLivePermissionsToSession(
   {
