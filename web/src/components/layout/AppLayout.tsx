@@ -33,6 +33,7 @@ const ETABLISSEMENT_PAGE_NAV = [
 
 const PAGE_NAV_ITEMS = [
   ...NAV_ITEMS,
+  { view: "parentProfile", path: "/mon-profil", label: "Mon profil", group: "dashboard" as const },
   ...SUBSCRIPTION_NAV,
   ...ETABLISSEMENT_PAGE_NAV,
   ...SCHOOL_ENTITY_MODULES.filter((module) => module.key !== "contacts").map((module) => ({
