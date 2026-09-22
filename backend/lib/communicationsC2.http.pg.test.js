@@ -247,9 +247,8 @@ async function seed(pool) {
        ($5, $8, 'PAR-COM-A2', 'Parent', 'A2', 'par-com-a2@test.local', 'Parent', 'active', FALSE),
        ($6, $9, 'ADM-COM-B', 'Admin', 'B', 'adm-com-b@test.local', 'Admin School', 'active', FALSE),
        ($7, $9, 'PAR-COM-B', 'Parent', 'B', 'par-com-b@test.local', 'Parent', 'active', FALSE),
-       ($10, NULL, 'SUPER-COM', 'Super', 'Admin', 'super-com@test.local', 'Super Administrateur Somafrik', 'active', FALSE),
-       ($11, $8, 'STU-COM-A', 'Élève', 'Compte', 'stu-com-a@test.local', 'Élève / Étudiant', 'active', FALSE)`,
-    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA, STUDENT_A],
+       ($10, NULL, 'SUPER-COM', 'Super', 'Admin', 'super-com@test.local', 'Super Administrateur Somafrik', 'active', FALSE)`,
+    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
@@ -261,9 +260,8 @@ async function seed(pool) {
        ($5, $8, 'PARENT', 'active'),
        ($6, $9, 'SCHOOL_ADMIN', 'active'),
        ($7, $9, 'PARENT', 'active'),
-       ($10, NULL, 'SUPER_ADMIN', 'active'),
-       ($11, $8, 'STUDENT', 'active')`,
-    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA, STUDENT_A],
+       ($10, NULL, 'SUPER_ADMIN', 'active')`,
+    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA],
   );
 
   await pool.query(
@@ -293,6 +291,23 @@ async function seed(pool) {
     `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, enrollment_date, status)
      VALUES ($1, $2, $3, $4, '2025-09-01', 'active')`,
     [schoolA.id, studentA.rows[0].id, CLASS_A, yearA.id],
+  );
+
+  // Le compte élève est créé après la fiche : le trigger d'identité exige
+  // le matricule canonique déjà présent (STUDENT_CANONICAL_IDENTIFIER_REQUIRED).
+  await pool.query(
+    `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+     VALUES ($1, $2, $3, 'Élève', 'A', 'stu-com-a@test.local', 'Élève / Étudiant', 'active', FALSE)`,
+    [STUDENT_A, schoolA.id, studentA.rows[0].student_code],
+  );
+  await pool.query(
+    `UPDATE students SET user_id = $2 WHERE id = $1`,
+    [studentA.rows[0].id, STUDENT_A],
+  );
+  await pool.query(
+    `INSERT INTO user_roles (user_id, school_id, role_key, status)
+     VALUES ($1, $2, 'STUDENT', 'active')`,
+    [STUDENT_A, schoolA.id],
   );
 
   await pool.query(
