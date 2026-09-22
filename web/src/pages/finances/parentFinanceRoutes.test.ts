@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { financePaymentsRouteMode } from "./FinancePaymentsEntryPage";
-import { parentFinanceShellDecision } from "./FinancesLayout";
+import { parentFinanceShellDecision } from "../../lib/parentFinanceRoute";
 
 describe("P1-08 — routage Finance Parent", () => {
   it("envoie le rôle Parent vers la page dédiée", () => {
