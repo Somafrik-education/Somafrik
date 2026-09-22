@@ -2,7 +2,7 @@ import { normalize } from "./format";
 
 const C18_MUTATION_TOKENS = ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"];
 
-const PARENT_STUDENT_ROLES = new Set(["parent", "eleve / etudiant", "student", "eleve"]);
+const PARENT_STUDENT_ROLES = new Set(["parent_student", "parent", "eleve / etudiant", "student", "eleve"]);
 
 export const C18_VALIDATE_SOURCE = ["PRE_REGISTERED", "PENDING_REVIEW", "INCOMPLETE"] as const;
 export const C18_ASSIGN_SOURCE = ["APPROVED", "ENROLLED"] as const;

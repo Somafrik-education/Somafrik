@@ -445,6 +445,7 @@ jobs:
           npm run verify:mobile-l1-sqlite-cache
           npm run verify:mobile-l1-offline-reads
           npm run verify:mobile-rc2-offline-read-smoke
+          npm --prefix Mobile run test:mobile-parent-profile-audit
           npx --yes tsx Mobile/src/lib/roleSelectionLayout.test.ts
           npx --yes tsx Mobile/src/lib/progressiveDisclosureUx.test.ts
           node Mobile/scripts/verify-progressive-disclosure-red.js

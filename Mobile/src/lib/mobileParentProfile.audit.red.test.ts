@@ -1,8 +1,10 @@
 /**
  * Audit Mobile — Profil Parent / parcours parent_student.
  *
- * Contrats P0/P1 : le comportement *souhaité* est asserté.
- * Les cas qui échouent documentent l'état réel (RED autorisé, phase audit).
+ * Gate de régression Parent Mobile.
+ *
+ * Historique : ce fichier est né pendant l'audit #740 avec des RED attendus.
+ * Depuis les correctifs P0/P1, tous les contrats ci-dessous doivent rester GREEN.
  *
  *   npx --yes tsx Mobile/src/lib/mobileParentProfile.audit.red.test.ts
  *   npm --prefix Mobile run test:mobile-parent-profile-audit
@@ -101,7 +103,7 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
       );
       assert.deepEqual(
         tabs.map((tab) => tab.route),
-        ["Profil", "Notes", "Presences", "FraisEleve"],
+        ["ParentProfile", "Notes", "Presences", "FraisEleve"],
       );
     },
   },
@@ -124,15 +126,20 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
   {
     id: "MP-INV-03",
     severity: "INV",
-    title: "Inventaire : onglet Profil = StudentDetailScreen (fiche enfant, pas compte parent)",
+    title: "Inventaire : le Parent dispose d'un profil compte dédié",
     run() {
       const tabs = read("navigation/roleTabPreferences.ts");
-      assert.match(tabs, /Profil:\s*StudentDetailScreen/);
+      assert.match(tabs, /ParentProfile:\s*ParentProfileScreen/);
       const screens = fs.readdirSync(path.join(srcRoot, "screens"));
       assert.equal(
-        screens.some((name) => /ParentProfile|ParentSettings|ProfilParent/i.test(name)),
-        false,
-        "aucun écran dédié Profil Parent n'existe encore — constat d'inventaire",
+        screens.some((name) => /ParentProfile|ProfilParent/i.test(name)),
+        true,
+        "ParentProfileScreen doit rester présent",
+      );
+      assert.doesNotMatch(
+        tabs,
+        /ParentProfile:\s*StudentDetailScreen/,
+        "le profil Parent ne doit jamais revenir vers la fiche enfant",
       );
     },
   },
@@ -396,44 +403,68 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
   {
     id: "MP-011",
     severity: "P1",
-    title: "Logout doit vider selectedStudentId et attendre clearSecureSession",
+    title: "Logout vide l'état Parent immédiatement et purge SecureStore via logoutSession",
     run() {
       const auth = read("context/AuthContext.tsx");
       assert.match(auth, /setSelectedStudentId\(null\)/);
-      assert.match(
-        auth,
-        /await clearSecureSession|void clearSecureSession/,
-        "clearSecureSession n'est pas invoqué dans logout() — seulement via logoutSession async",
-      );
       const logoutFn = auth.slice(auth.indexOf("const logout = useCallback"));
       assert.match(
         logoutFn,
-        /clearSecureSession/,
-        "logout() n'appelle pas clearSecureSession de façon synchrone — tokens peuvent survivre au changement de session",
+        /clearAuthenticatedState\(\)/,
+        "logout() doit vider immédiatement la session mémoire et selectedStudentId",
+      );
+      assert.match(
+        logoutFn,
+        /logoutSession\(\)/,
+        "logout() doit déléguer la révocation/purge locale à services\/api.logout",
+      );
+      const api = read("services/api.ts");
+      const apiLogout = api.slice(api.indexOf("export async function logout()"));
+      assert.match(
+        apiLogout,
+        /finally\s*\{[\s\S]*await clearSecureSession\(\)/,
+        "services/api.logout doit toujours purger SecureStore dans finally",
       );
     },
   },
   {
     id: "MP-012",
     severity: "P1",
-    title: "StudentDetail ne doit pas GET /students/:id hors enfants liés",
+    title: "StudentDetail refuse un studentId Parent hors enfants liés avant GET",
     run() {
       const src = read("screens/StudentDetailScreen.tsx");
       assert.match(
         src,
-        /user\.children|childAliasKeys|session\.user\.children/,
-        "getSchoolStudent(studentId) sans preuve d'appartenance aux enfants du Parent",
+        /resolveParentSafeStudentId\(\{[\s\S]*routeStudentId:[\s\S]*selectedStudentId:[\s\S]*user:\s*session\?\.user/,
+        "StudentDetail doit résoudre l'id via le helper Parent fail-closed",
+      );
+      assert.match(
+        src,
+        /if\s*\(!studentId\)\s*\{[\s\S]*return;/,
+        "StudentDetail doit stopper le chargement sans id enfant autorisé",
+      );
+      assert.match(
+        src,
+        /isLinkedParentStudent\(\{\s*user:\s*session\.user,\s*selectedStudentId:\s*requested\s*\}\)/,
+        "un deep-link étranger doit être recoupé aux enfants liés",
       );
     },
   },
   {
     id: "MP-013",
     severity: "P2",
-    title: "Modèle legacy Parent.ts / test.ts ne doivent plus porter un PIN en clair",
+    title: "Les artefacts legacy Parent PIN doivent rester supprimés",
     run() {
-      const legacy = read("models/Parent.ts");
-      assert.equal(/private pin: string/.test(legacy), false, "Mobile/src/models/Parent.ts stocke encore un PIN en clair");
-      assert.equal(fs.existsSync(path.join(srcRoot, "test.ts")), false, "Mobile/src/test.ts legacy encore présent");
+      assert.equal(
+        fs.existsSync(path.join(srcRoot, "models/Parent.ts")),
+        false,
+        "Mobile/src/models/Parent.ts legacy ne doit pas réapparaître",
+      );
+      assert.equal(
+        fs.existsSync(path.join(srcRoot, "test.ts")),
+        false,
+        "Mobile/src/test.ts legacy ne doit pas réapparaître",
+      );
     },
   },
   {

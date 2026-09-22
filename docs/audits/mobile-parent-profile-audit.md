@@ -1,5 +1,7 @@
 # Audit Mobile — Profil Parent
 
+> **Statut actuel (22-09-2026)** — Ce document conserve la photographie historique de l'audit #740. Les mentions « RED », « aucun profil Parent », « PIN » et les chemins de navigation décrits plus bas correspondent à l'état audité de septembre 2026 et **ne décrivent plus le produit courant**. La régression courante est gardée par `npm --prefix Mobile run test:mobile-parent-profile-audit`; les correctifs Parent P0/P1 ont été livrés depuis cet audit, et le legacy `Mobile/src/models/Parent.ts` / `Mobile/src/test.ts` est supprimé par #787. L'audit transversal de référence reste #767.
+
 Phase constat uniquement. Aucune correction métier. Aucun changement Web. Aucun changement Backend fonctionnel. Aucun merge. PR Draft.
 
 ## Base auditée
