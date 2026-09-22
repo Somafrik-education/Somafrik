@@ -6,6 +6,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
+import QueryStateView from "../components/QueryStateView";
 import { getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 import { useAdminData } from "../context/AdminDataContext";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
@@ -14,7 +15,7 @@ import {
   STUDENT_SUB_SCREENS_COPY,
   STUDENT_SUB_SCREENS_TEST_IDS,
 } from "../lib/studentSubScreensSpec";
-import { metricLabelFromSnapshot } from "../lib/dataTruth";
+import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, metricLabelFromSnapshot } from "../lib/dataTruth";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
 import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
@@ -87,31 +88,38 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
         </Text>
       </TouchableOpacity>
 
-      <FlatList
-        data={presencesEleve}
-        keyExtractor={(item) => item.id}
-        testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesList}
-        contentContainerStyle={listContentStyle}
-        ListEmptyComponent={
-          <Text style={styles.empty} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesEmpty}>
-            {STUDENT_SUB_SCREENS_COPY.presencesEmpty}
-          </Text>
-        }
-        renderItem={({ item }) => {
-          const status = normalizePresenceStatus(item);
-          return (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.card}
-              testID={PRESENCE_ROW_TEST_ID(item.id)}
-              onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
-            >
-              <Text style={styles.cardTitle}>{item.date}</Text>
-              <Text style={[styles.badge, getPresenceStyle(status)]}>{status}</Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
+      {presencesSnapshot.status !== "success" ? (
+        <QueryStateView
+          snapshot={presencesSnapshot}
+          emptyMessage={DATA_TRUTH_COPY.emptyPresences}
+          errorMessage={DATA_TRUTH_COPY.errorPresences}
+          offlineMessage={DATA_TRUTH_COPY.offlinePresences}
+          emptyTestId={DATA_TRUTH_TEST_IDS.presencesEmpty}
+          errorTestId={DATA_TRUTH_TEST_IDS.presencesError}
+          onRetry={() => void loadPresences()}
+        />
+      ) : (
+        <FlatList
+          data={presencesEleve}
+          keyExtractor={(item) => item.id}
+          testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesList}
+          contentContainerStyle={listContentStyle}
+          renderItem={({ item }) => {
+            const status = normalizePresenceStatus(item);
+            return (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.card}
+                testID={PRESENCE_ROW_TEST_ID(item.id)}
+                onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
+              >
+                <Text style={styles.cardTitle}>{item.date}</Text>
+                <Text style={[styles.badge, getPresenceStyle(status)]}>{status}</Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
