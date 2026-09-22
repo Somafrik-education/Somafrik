@@ -33,16 +33,15 @@ export function FinanceIndexRedirect() {
 export function FinancesLayout() {
   const ctx = usePermissionContext();
   const { session } = useAuth();
-  if (isParentRole(session?.user?.role)) return <ParentFinancePage />;
-  const tabs = FINANCE_TABS.filter((tab) => canReadView(ctx, tab.view));
   const location = useLocation();
 
-  // La Démo est un tenant établissement unique : le schoolCode de session est
-  // identique au scope utilisé par DomainRouteBootstrap. Ne pas dépendre ici
-  // d'ActiveSchoolProvider permet de conserver les tests RBAC de route isolés.
+  // Garder l'ordre des hooks stable, y compris pour le shell Parent.
   const schoolCode = String(ctx.user?.schoolCode ?? "").trim();
   const hydrationKey = buildDomainRouteHydrationKey(location.key, location.pathname, schoolCode);
   const hydrationStatus = useDomainRouteHydrationStatus(hydrationKey);
+
+  if (isParentRole(session?.user?.role)) return <ParentFinancePage />;
+  const tabs = FINANCE_TABS.filter((tab) => canReadView(ctx, tab.view));
 
   const demoWaiting = demoRuntimeEnabled && (hydrationStatus === "idle" || hydrationStatus === "loading");
   const demoFailed = demoRuntimeEnabled && hydrationStatus === "error";
