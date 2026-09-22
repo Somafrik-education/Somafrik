@@ -138,6 +138,8 @@ jobs:
         run: npm run verify:branding-master
       - name: Install dependencies
         run: npm run ci:install
+      - name: Parent E2E contract
+        run: npm run verify:parent-e2e-contract
       - name: Lint
         run: npm run lint
       - name: TypeScript

@@ -1,7 +1,7 @@
 /**
  * E2E 0012 : Parcours parent / élève (+ contrat identité D3.4b)
  *
- * Le parent se connecte (téléphone + PIN), consulte ses enfants, présences,
+ * Le parent se connecte (téléphone + mot de passe), consulte ses enfants, présences,
  * notes publiées, paiements, annonces, puis se déconnecte.
  * Vérifie l'isolation : pas d'enfants d'autres parents, notes non publiées
  * masquées, paiements limités aux enfants liés.
@@ -61,7 +61,7 @@ const {
   validateEvaluationGrades,
 } = require("./e2e-grades-rules");
 
-const PARENT_PIN = "847392";
+const PARENT_PASSWORD = "ParentE2E2026!";
 const CLASS_NAME = "6ème A";
 const PERIOD = "Trimestre 1";
 const SUBJECT = "Mathématiques";
@@ -93,7 +93,7 @@ function createStudentFromContact(state, contactDraft, schoolCode, enrollment) {
   };
 }
 
-function createParentUser(contact, schoolCode, phone, pin) {
+function createParentUser(contact, schoolCode, phone, password) {
   return {
     id: newId("USERS"),
     contactId: contact.id,
@@ -108,7 +108,7 @@ function createParentUser(contact, schoolCode, phone, pin) {
     scopeLevel: "Établissement",
     accessChannel: "Application",
     status: "Actif",
-    password: pin,
+    password,
     mustChangePassword: false,
     permissions: [],
   };
@@ -177,8 +177,8 @@ async function main() {
   );
   assert.ok(parentBContactFlow.ok, parentBContactFlow.error);
 
-  const parentAUser = createParentUser(parentAContactFlow.contact, schoolCode, parentAPhone, PARENT_PIN);
-  const parentBUser = createParentUser(parentBContactFlow.contact, schoolCode, parentBPhone, PARENT_PIN);
+  const parentAUser = createParentUser(parentAContactFlow.contact, schoolCode, parentAPhone, PARENT_PASSWORD);
+  const parentBUser = createParentUser(parentBContactFlow.contact, schoolCode, parentBPhone, PARENT_PASSWORD);
 
   // Parcours principal : relations-only (pas de parentPhone — D3.4b).
   const childSpecs = [
@@ -421,12 +421,12 @@ async function main() {
     roleDetected.includes("parent"),
   );
 
-  const loginData = await mobileLoginFull("parent_student", parentAPhone, PARENT_PIN, schoolCode);
+  const loginData = await mobileLoginFull("parent_student", parentAPhone, PARENT_PASSWORD, schoolCode);
   const parentToken = loginData.accessToken;
   const loginChildren = loginData.user?.children ?? [];
   pushResult(
     results,
-    "4. Parent connecté (téléphone + PIN)",
+    "4. Parent connecté (téléphone + mot de passe)",
     "200",
     String(loginData.user?.role ?? "—"),
     Boolean(parentToken) && loginData.user?.role === "Parent",
@@ -574,7 +574,7 @@ async function main() {
 
   // ── Vérifications métier (isolation) ─────────────────────────────────────
 
-  const parentBLogin = await mobileLoginFull("parent_student", parentBPhone, PARENT_PIN, schoolCode);
+  const parentBLogin = await mobileLoginFull("parent_student", parentBPhone, PARENT_PASSWORD, schoolCode);
   const parentBToken = parentBLogin.accessToken;
   const parentBChildren = parentBLogin.user?.children ?? [];
   pushResult(
@@ -585,7 +585,7 @@ async function main() {
     parentBChildren.length === 1 && String(parentBChildren[0]?.id) === String(children.childB1.id),
   );
 
-  const parentAReLogin = await mobileLoginFull("parent_student", parentAPhone, PARENT_PIN, schoolCode);
+  const parentAReLogin = await mobileLoginFull("parent_student", parentAPhone, PARENT_PASSWORD, schoolCode);
   const parentAStudentsRes = await request("/students", { token: parentAReLogin.accessToken });
   const parentAStudents = Array.isArray(parentAStudentsRes.data)
     ? parentAStudentsRes.data
@@ -654,7 +654,7 @@ async function main() {
     schoolCode,
   );
   assert.ok(parentCContactFlow.ok, parentCContactFlow.error);
-  const parentCUser = createParentUser(parentCContactFlow.contact, schoolCode, parentCPhone, PARENT_PIN);
+  const parentCUser = createParentUser(parentCContactFlow.contact, schoolCode, parentCPhone, PARENT_PASSWORD);
   const phoneChildFlow = createStudentFromContact(
     { ...state, contacts: [...allContacts, parentCContactFlow.contact], students: allStudents },
     {
@@ -757,8 +757,8 @@ async function main() {
 
   console.log("\n=== E2E 0012 : Parcours parent / élève ===");
   console.log(`Établissement : ${schoolCode}`);
-  console.log(`Parent A       : ${parentAPhone} (PIN ${PARENT_PIN}) — enfants Jean + Marie`);
-  console.log(`Parent B       : ${parentBPhone} (PIN ${PARENT_PIN}) — enfant Paul`);
+  console.log(`Parent A       : ${parentAPhone} (mot de passe de test) — enfants Jean + Marie`);
+  console.log(`Parent B       : ${parentBPhone} (mot de passe de test) — enfant Paul`);
   console.log(`Annonce        : ${announcement.title}\n`);
   console.table(results);
 
