@@ -28,6 +28,7 @@ const schoolAdminForbiddenFeatures = new Set(["Établissements", "Abonnements"])
 const PARENT_ALLOWED_ROUTES = new Set([
   "Home",
   "Profil",
+  "ParentProfile",
   "StudentDetail",
   "StudentNotes",
   "Notes",
@@ -150,6 +151,7 @@ export const entityFeatureMap: Record<string, string> = {
 
 export const routeFeatureMap: Record<string, string> = {
   Profil: "Élèves",
+  ParentProfile: "Élèves",
   StudentDetail: "Élèves",
   StudentNotes: "Notes",
   StudentPresences: "Présences",
@@ -496,6 +498,7 @@ export function canReadFeeGrids(session: any): boolean {
 }
 
 export function canReadRoute(session: any, routeName?: string) {
+  if (routeName === "ParentProfile") return isParentMobileSession(session);
   if (isParentMobileSession(session)) {
     if (!routeName || !PARENT_ALLOWED_ROUTES.has(routeName)) return false;
   }
