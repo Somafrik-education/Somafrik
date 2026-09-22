@@ -59,6 +59,11 @@ assert.doesNotMatch(messages, /ExpandableCommunicationCard/);
 assert.doesNotMatch(messages, /Archiver/);
 assert.match(messages, /accessibilityLabel=\{item\.title\}/);
 assert.match(messages, /Modal visible=\{Boolean\(selectedConversation\)\}/);
+assert.match(messages, /function isStudentMessageTarget/);
+assert.match(messages, /teacherSession \? rows\.filter\(\(row\) => !isStudentMessageTarget\(row\)\) : rows/);
+assert.match(messages, /const teacherStudentThreadBlocked/);
+assert.match(messages, /canReplyInThread = canSend && scopeReady && !teacherStudentThreadBlocked/);
+assert.match(messages, /Les enseignants ne peuvent pas envoyer de messages aux élèves\./);
 
 assert.doesNotMatch(api, /EXPO_PUBLIC_COMMUNICATION_UX_SMOKE/);
 assert.doesNotMatch(hydration, /EXPO_PUBLIC_COMMUNICATION_UX_SMOKE/);

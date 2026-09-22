@@ -73,6 +73,29 @@ function counterpartName(conversation: CanonicalConversation, selfId?: string) {
   return others.map((row) => row.name || row.userId).join(", ");
 }
 
+function normalizeMessagingRole(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function isStudentMessageTarget(value?: { kind?: string; roleLabel?: string }): boolean {
+  const kind = normalizeMessagingRole(value?.kind);
+  const roleLabel = normalizeMessagingRole(value?.roleLabel);
+  return (
+    kind === "STUDENT" ||
+    roleLabel === "STUDENT" ||
+    roleLabel.includes("ELEVE") ||
+    roleLabel.includes("ETUDIANT")
+  );
+}
+
+function hasStudentParticipant(participants?: Array<{ roleLabel?: string }>): boolean {
+  return (participants ?? []).some((participant) => isStudentMessageTarget(participant));
+}
+
 export default function MessagesScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const { session, selectedStudentId } = useAuth();
@@ -118,11 +141,14 @@ export default function MessagesScreen() {
   const messagesAccess = resolveMessagesRouteAccess(session);
   const canRead = messagesAccess.canReadList;
   const canSend = messagesAccess.canCompose;
+  const teacherSession = role === "teacher";
+  const teacherStudentThreadBlocked =
+    teacherSession && hasStudentParticipant(selectedConversation?.participants);
   const scopeReady = !requiresSchoolSelection || hasCommunicationSchoolScope(activeSchoolCode);
   const showStaffComposer = canShowStaffMessagesComposer(session) && scopeReady;
   const showComposer =
     scopeReady && (((role === "parent_student" || role === "teacher") && canSend) || showStaffComposer);
-  const canReplyInThread = canSend && scopeReady;
+  const canReplyInThread = canSend && scopeReady && !teacherStudentThreadBlocked;
   const parentChildren = session?.user.children ?? [];
   const staffSendBlocked =
     showComposer &&
@@ -139,15 +165,16 @@ export default function MessagesScreen() {
     setRecipientSnapshot({ status: "loading", data: [] });
     try {
       const rows = await getMessageRecipients(activeSchoolCode);
-      setRecipientSnapshot(snapshotFromSuccess(rows));
+      const allowed = teacherSession ? rows.filter((row) => !isStudentMessageTarget(row)) : rows;
+      setRecipientSnapshot(snapshotFromSuccess(allowed));
       setSelectedRecipientUserId((current) =>
-        rows.some((row) => row.userId === current) ? current : "",
+        allowed.some((row) => row.userId === current) ? current : "",
       );
     } catch (error) {
       setRecipientSnapshot(snapshotFromFailure(error, []));
       setSelectedRecipientUserId("");
     }
-  }, [canSend, activeSchoolCode, scopeReady]);
+  }, [canSend, activeSchoolCode, scopeReady, teacherSession]);
 
   const loadConversations = useCallback(async () => {
     if (!canRead || !scopeReady) {
@@ -288,6 +315,11 @@ export default function MessagesScreen() {
     }
     setMessageError("");
     const selected = recipientSnapshot.data.find((row) => row.userId === selectedRecipientUserId);
+    if (teacherSession && isStudentMessageTarget(selected)) {
+      sendLockRef.current.end();
+      setMessageError("Les enseignants ne peuvent pas envoyer de messages aux élèves.");
+      return;
+    }
     const built = buildMessagePayload({
       message,
       recipientUserId: selectedRecipientUserId,
@@ -743,7 +775,9 @@ export default function MessagesScreen() {
               </View>
             ) : (
               <Text style={styles.meta} testID="messages-thread-reply-forbidden">
-                La réponse n'est pas autorisée.
+                {teacherStudentThreadBlocked
+                  ? "Les enseignants ne peuvent pas envoyer de messages aux élèves."
+                  : "La réponse n'est pas autorisée."}
               </Text>
             )}
           </ScrollView>

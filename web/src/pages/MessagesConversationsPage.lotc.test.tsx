@@ -3,7 +3,7 @@
  * Badge unread après lecture + pagination nextCursor sans doublon ni perte de scope.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
@@ -25,9 +25,12 @@ const permissions = vi.hoisted(() => ({
   canUpdate: true,
   canDelete: true,
 }));
+const authSession = vi.hoisted(() => ({
+  current: { user: { id: "user-1", role: "Admin School", schoolCode: "SCH-001", roleKeys: ["SCHOOL_ADMIN"] } },
+}));
 
 vi.mock("../context/AuthContext", () => ({
-  useAuth: () => ({ session: { user: { id: "user-1", role: "Admin School", schoolCode: "SCH-001" } } }),
+  useAuth: () => ({ session: authSession.current }),
 }));
 
 vi.mock("../context/ActiveSchoolContext", () => ({
@@ -105,6 +108,9 @@ function PermissionFlushApp() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  authSession.current = {
+    user: { id: "user-1", role: "Admin School", schoolCode: "SCH-001", roleKeys: ["SCHOOL_ADMIN"] },
+  };
   permissions.canRead = true;
   permissions.canCreate = true;
   permissions.canUpdate = true;
@@ -238,5 +244,72 @@ describe("Lot C — Messages Web unread + pagination", () => {
     expect(banner).toHaveTextContent("HTTP 403");
     expect(banner).not.toHaveTextContent("message API brut");
     expect(screen.getByRole("button", { name: "Réessayer" })).toBeInTheDocument();
+  });
+
+  it("V24 — enseignant : les comptes élèves sont retirés des destinataires", async () => {
+    authSession.current = {
+      user: { id: "teacher-1", role: "Enseignant", schoolCode: "SCH-001", roleKeys: ["TEACHER"] },
+    };
+    listConversations.mockResolvedValue({ items: [], nextCursor: null });
+    listRecipients.mockResolvedValue({
+      items: [
+        {
+          userId: "student-1",
+          displayName: "Élève A",
+          roleLabel: "Élève / Étudiant",
+          kind: "student",
+        },
+        {
+          userId: "parent-1",
+          displayName: "Parent A",
+          roleLabel: "Parent",
+          kind: "parent",
+        },
+      ],
+    });
+
+    renderPage();
+
+    const recipientSelect = await screen.findByRole("combobox");
+    expect(within(recipientSelect).queryByRole("option", { name: "Élève A" })).toBeNull();
+    expect(within(recipientSelect).getByRole("option", { name: "Parent A" })).toBeInTheDocument();
+  });
+
+  it("V24 — enseignant : aucune réponse possible dans un fil contenant un élève", async () => {
+    authSession.current = {
+      user: { id: "teacher-1", role: "Enseignant", schoolCode: "SCH-001", roleKeys: ["TEACHER"] },
+    };
+    listRecipients.mockResolvedValue({ items: [] });
+    listConversations.mockResolvedValue({
+      items: [
+        {
+          id: "conv-student",
+          subject: "Fil élève",
+          participants: [
+            { userId: "teacher-1", name: "Teacher A", roleLabel: "Enseignant" },
+            { userId: "student-1", name: "Élève A", roleLabel: "Élève / Étudiant" },
+          ],
+          unreadCount: 0,
+          updatedAt: "2026-09-22T08:00:00.000Z",
+          lastMessage: {
+            id: "msg-student",
+            body: "Question",
+            sentAt: "2026-09-22T08:00:00.000Z",
+            senderUserId: "student-1",
+            senderName: "Élève A",
+          },
+        },
+      ],
+      nextCursor: null,
+    });
+    listMessages.mockResolvedValue({ items: [] });
+
+    renderPage();
+    await userEvent.click(await screen.findByTestId("messages-conversation-item"));
+
+    expect(await screen.findByTestId("teacher-student-messaging-blocked")).toHaveTextContent(
+      "Les enseignants ne peuvent pas envoyer de messages aux élèves.",
+    );
+    expect(screen.queryByRole("button", { name: "Envoyer" })).toBeNull();
   });
 });
