@@ -1,5 +1,9 @@
 import { isParentRole } from "./format";
 
+export function financePaymentsRouteMode(role?: string): "parent" | "staff" {
+  return isParentRole(role) ? "parent" : "staff";
+}
+
 export type ParentFinanceShellDecision =
   | "staff"
   | "content"
