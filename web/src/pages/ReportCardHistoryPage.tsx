@@ -1,16 +1,22 @@
 import { FormEvent, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { isParentRole } from "../lib/format";
 import {
   reportCardHistoryApi,
   type PublishedVersionRow,
 } from "../lib/reportCardHistoryApi";
 
 export function ReportCardHistoryPage() {
+  const { session } = useAuth();
   const [reportCardId, setReportCardId] = useState("");
   const [versions, setVersions] = useState<PublishedVersionRow[]>([]);
   const [reason, setReason] = useState("");
   const [sourceVersion, setSourceVersion] = useState("1");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  if (isParentRole(session?.user?.role)) return <Navigate to="/bulletins" replace />;
 
   async function reload(id: string) {
     const data = await reportCardHistoryApi.listHistory(id);
