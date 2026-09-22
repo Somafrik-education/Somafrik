@@ -18,7 +18,7 @@ const IOS_BUNDLE_IDENTIFIER = "com.somafrik.app";
 const APP_SLUG = "somafrik";
 const APP_SCHEME = "somafrik";
 const APP_VERSION = "1.2.1";
-const ANDROID_VERSION_CODE = 13;
+const ANDROID_VERSION_CODE = 24;
 
 /** Nom launcher identique partout. L'environnement se distingue par le badge in-app. */
 const DISPLAY_NAMES = {
