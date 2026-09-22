@@ -13,11 +13,12 @@ const roleAliases = {
   parent_student: "Parent",
 };
 
-// Compatibilité des rôles métier historiques. Ces jetons restent produits par
-// le catalogue live pour Enseignant/Parent ; les routes conservent ensuite leur
-// contrôle tenant et leur filtrage de destinataires.
+// Compatibilité des rôles métier historiques.
+// - "Messages parents" = capacité historique staff d'écrire aux parents.
+// - "Messages école" = inbox Parent historique, lecture uniquement.
+// Les droits canoniques restent Messages:READ / Messages:CREATE.
 const MESSAGE_READ_ALIASES = ["Messages parents", "Messages école"];
-const MESSAGE_WRITE_ALIASES = ["Messages parents", "Messages école"];
+const MESSAGE_WRITE_ALIASES = ["Messages parents"];
 
 const routePermissions = {
   ...COURSE_ROUTE_PERMISSIONS,
@@ -237,7 +238,7 @@ const routePermissions = {
   "PATCH /api/parents/relations/:relationId": ["Relations:UPDATE", "Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/messages": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/messages/unread-count": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
-  "GET /api/backoffice/messages/recipients": ["Messages:READ", "Messages:CREATE", ...MESSAGE_READ_ALIASES, ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "GET /api/backoffice/messages/recipients": ["Messages:CREATE", ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/messages/:messageId": ["Messages:READ", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/messages": ["Messages:CREATE", ...MESSAGE_WRITE_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/backoffice/messages/:messageId/read": ["Messages:UPDATE", ...MESSAGE_READ_ALIASES, "Gérer messages", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
