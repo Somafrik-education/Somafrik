@@ -311,6 +311,22 @@ function gitNameOnly(args: string[]) {
 
 function lot4CommittedFiles() {
   const baseRef = String(process.env.GITHUB_BASE_REF || "develop").replace(/^origin\//, "");
+  // Une promotion develop -> main contient volontairement tout l'écart accumulé
+  // depuis la dernière release. L4-09 doit contrôler les changements propres au
+  // candidat au-dessus de develop, et non requalifier tout cet historique comme
+  // un unique chantier LOT 4.
+  if (baseRef === "main") {
+    try {
+      execFileSync("git", ["merge-base", "--is-ancestor", "origin/develop", "HEAD"], {
+        cwd: repoRoot,
+        stdio: "ignore",
+      });
+      return gitNameOnly(["origin/develop...HEAD"]);
+    } catch {
+      // Une PR ordinaire vers main qui ne contient pas develop conserve le
+      // calcul standard ci-dessous et reste contrôlée contre sa vraie base.
+    }
+  }
   const bases = [process.env.GITHUB_BASE_SHA, `origin/${baseRef}`, "origin/develop"].filter(
     (value, index, all): value is string => Boolean(value) && all.indexOf(value) === index,
   );
