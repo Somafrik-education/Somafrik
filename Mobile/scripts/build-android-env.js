@@ -58,6 +58,7 @@ function resolveAndroidSdk() {
 }
 
 function ensureLocalProperties(sdkDir) {
+  fs.mkdirSync(androidDir, { recursive: true });
   const sdkPath = sdkDir.replace(/\\/g, "/");
   const content = `sdk.dir=${sdkPath}\n`;
   if (fs.existsSync(localPropertiesPath)) {
