@@ -78,7 +78,10 @@ describe("P0 production RBAC web", () => {
       role: "Élève / Étudiant",
       permissions: ["Voir notes", "Notes:READ", "Présences:READ"],
     });
-    expect(canReadView(parent, "students")).toBe(true);
+    expect(canReadView(parent, "students")).toBe(false);
+    expect(canReadView(parent, "parentProfile")).toBe(true);
+    expect(canReadView(parent, "notes")).toBe(true);
+    expect(canReadView(parent, "messages")).toBe(true);
     expect(canReadView(parent, "users")).toBe(false);
     expect(canReadView(student, "notes")).toBe(true);
     expect(canReadView(student, "users")).toBe(false);
