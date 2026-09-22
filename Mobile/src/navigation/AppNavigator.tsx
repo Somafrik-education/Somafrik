@@ -19,6 +19,7 @@ import StudentDetailScreen from "../screens/StudentDetailScreen";
 import StudentNotesScreen from "../screens/StudentNotesScreen";
 import StudentPresencesScreen from "../screens/StudentPresencesScreen";
 import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
+import ParentProfileScreen from "../screens/ParentProfileScreen";
 import TeachersScreen from "../screens/TeachersScreen";
 import UsersScreen from "../screens/UsersScreen";
 import PaymentsScreen from "../screens/PaymentsScreen";
@@ -85,6 +86,7 @@ export type RootStackParamList = {
   StudentNotes: { studentId: string };
   StudentPresences: { studentId: string };
   StudentPayments: { studentId: string };
+  ParentProfile: undefined;
   SchoolManagement: undefined;
   Classes: undefined;
   Schooling: undefined;
@@ -275,6 +277,9 @@ export default function AppNavigator() {
         />
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Home" component={HomeTabs} options={{ headerShown: false }} />
+        {canReadRoute(session, "ParentProfile") && (
+          <Stack.Screen name="ParentProfile" component={ParentProfileScreen} options={{ title: "Mon profil" }} />
+        )}
 
         {canOpenAdminScreens && (
           <>
