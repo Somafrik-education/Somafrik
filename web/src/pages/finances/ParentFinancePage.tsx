@@ -19,7 +19,7 @@ export function ParentFinancePage() {
   const { session } = useAuth();
   const { state, ensureDomains } = useData();
   const user = session?.user ?? null;
-  const schoolCode = String(user?.schoolCode ?? session?.school?.code ?? "").trim();
+  const schoolCode = String(user?.schoolCode ?? "").trim();
   const children = useMemo(() => parentLinkedStudents(user, state), [user, state]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
 
