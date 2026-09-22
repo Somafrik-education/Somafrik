@@ -5,6 +5,8 @@ import { TabNav, type TabItem } from "../../components/layout/TabNav";
 import { useAuth } from "../../context/AuthContext";
 import { buildDomainRouteHydrationKey, useDomainRouteHydrationStatus } from "../../lib/domainRouteHydration";
 import { demoRuntimeEnabled } from "../../lib/featureFlags";
+import { isParentRole } from "../../lib/format";
+import { ParentFinancePage } from "./ParentFinancePage";
 import { firstAllowedFinanceLeaf } from "../../lib/financeRouteAccess";
 import { canReadView } from "../../lib/permissions";
 import { getDefaultAppPath } from "../../lib/superAdminAccess";
@@ -30,6 +32,8 @@ export function FinanceIndexRedirect() {
 /** Module Finances : en-tête + onglets, contenu via <Outlet />. */
 export function FinancesLayout() {
   const ctx = usePermissionContext();
+  const { session } = useAuth();
+  if (isParentRole(session?.user?.role)) return <ParentFinancePage />;
   const tabs = FINANCE_TABS.filter((tab) => canReadView(ctx, tab.view));
   const location = useLocation();
 
