@@ -37,6 +37,7 @@ function outils(item: RoleDrawerItem): RoleDrawerItem {
 
 const I = {
   students: { label: "Élèves", icon: "people-outline" as const, route: "Students", view: "students" },
+  parentProfile: { label: "Mon profil", icon: "person-circle-outline" as const, route: "ParentProfile", view: "ParentProfile" },
   teacherStudents: { label: "Mes élèves", icon: "people-outline" as const, route: "TeacherStudents", view: "TeacherStudents" },
   classes: { label: "Classes", icon: "grid-outline" as const, route: "Classes", view: "classes" },
   schooling: { label: "Scolarité", icon: "school-outline" as const, route: "Schooling", view: "Schooling" },
@@ -255,10 +256,11 @@ const teacherItems: RoleDrawerItem[] = [
 ];
 
 const parentItems: RoleDrawerItem[] = [
+  quotidien(I.parentProfile),
   quotidien(I.studentNotes),
   quotidien(I.studentPresences),
   quotidien(I.reportCards),
-  quotidien(I.mobilePayment),
+  quotidien(I.studentPayments),
   quotidien(I.messages),
   quotidien(I.announcements),
   quotidien(I.internalNotifications),
