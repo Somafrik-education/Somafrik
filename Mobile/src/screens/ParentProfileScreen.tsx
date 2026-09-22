@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
@@ -90,7 +91,7 @@ function ProfileCard({
 }: {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <View style={styles.card}>
