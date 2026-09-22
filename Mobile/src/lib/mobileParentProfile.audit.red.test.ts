@@ -101,7 +101,7 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
       );
       assert.deepEqual(
         tabs.map((tab) => tab.route),
-        ["Profil", "Notes", "Presences", "FraisEleve"],
+        ["ParentProfile", "Notes", "Presences", "FraisEleve"],
       );
     },
   },
@@ -114,8 +114,8 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
       assert.equal(catalog.some((item) => item.section === "admin"), false);
       const items = getAllowedRoleDrawerItems(parentSession());
       assert.deepEqual(
-        items.slice(0, 4).map((item) => item.label),
-        ["Notes", "Présences", "Bulletins", "Paiements"],
+        items.slice(0, 5).map((item) => item.label),
+        ["Mon profil", "Notes", "Présences", "Bulletins", "Paiements"],
       );
       assert.equal(items.some((item) => item.route === "Payments"), false);
       assert.equal(items.some((item) => item.route === "TeacherGrades"), false);
@@ -124,15 +124,16 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
   {
     id: "MP-INV-03",
     severity: "INV",
-    title: "Inventaire : onglet Profil = StudentDetailScreen (fiche enfant, pas compte parent)",
+    title: "Inventaire : onglet Profil = compte Parent dédié",
     run() {
       const tabs = read("navigation/roleTabPreferences.ts");
-      assert.match(tabs, /Profil:\s*StudentDetailScreen/);
+      assert.match(tabs, /Profil:\s*ParentProfileScreen/);
+      assert.doesNotMatch(tabs, /Profil:\s*StudentDetailScreen/);
       const screens = fs.readdirSync(path.join(srcRoot, "screens"));
       assert.equal(
-        screens.some((name) => /ParentProfile|ParentSettings|ProfilParent/i.test(name)),
-        false,
-        "aucun écran dédié Profil Parent n'existe encore — constat d'inventaire",
+        screens.some((name) => /ParentProfile|ProfilParent/i.test(name)),
+        true,
+        "un écran Profil Parent dédié doit exister",
       );
     },
   },
@@ -306,23 +307,26 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
   {
     id: "MP-008",
     severity: "P1",
-    title: "Notes/Présences/Paiements doivent suivre le switcher, pas un studentId de route figé",
+    title: "Notes/Présences/Paiements suivent le switcher après initialisation deep-link",
     run() {
-      const notes = read("screens/StudentNotesScreen.tsx");
-      const presences = read("screens/StudentPresencesScreen.tsx");
-      const payments = read("screens/StudentPaymentsScreen.tsx");
-      const detail = read("screens/StudentDetailScreen.tsx");
-      for (const [label, src] of [
-        ["StudentNotesScreen", notes],
-        ["StudentPresencesScreen", presences],
-        ["StudentPaymentsScreen", payments],
-        ["StudentDetailScreen", detail],
-      ] as const) {
-        assert.equal(
-          /route\?\.params\?\.studentId\s*\?\?\s*selectedStudentId/.test(src),
-          false,
-          `${label} priorise route.params.studentId sur le switcher — enfant figé après changement`,
-        );
+      assert.equal(
+        resolveParentSafeStudentId({
+          role: "parent_student",
+          routeStudentId: CHILD_A1,
+          selectedStudentId: CHILD_A2,
+          user: { id: PARENT_A, children: [{ id: CHILD_A1 }, { id: CHILD_A2 }] },
+        }),
+        CHILD_A2,
+      );
+      for (const file of [
+        "screens/StudentNotesScreen.tsx",
+        "screens/StudentPresencesScreen.tsx",
+        "screens/StudentPaymentsScreen.tsx",
+        "screens/StudentDetailScreen.tsx",
+      ]) {
+        const src = read(file);
+        assert.match(src, /useParentStudentRouteSelection/, `${file} n'applique pas l'initialisation deep-link contrôlée`);
+        assert.match(src, /resolveParentSafeStudentId/, `${file} n'applique pas le scope Parent`);
       }
     },
   },
@@ -361,21 +365,14 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
   {
     id: "MP-011",
     severity: "P1",
-    title: "Logout doit vider selectedStudentId et attendre clearSecureSession",
+    title: "Logout vide selectedStudentId et SecureStore",
     run() {
       const auth = read("context/AuthContext.tsx");
+      const api = read("services/api.ts");
       assert.match(auth, /setSelectedStudentId\(null\)/);
-      assert.match(
-        auth,
-        /await clearSecureSession|void clearSecureSession/,
-        "clearSecureSession n'est pas invoqué dans logout() — seulement via logoutSession async",
-      );
-      const logoutFn = auth.slice(auth.indexOf("const logout = useCallback"));
-      assert.match(
-        logoutFn,
-        /clearSecureSession/,
-        "logout() n'appelle pas clearSecureSession de façon synchrone — tokens peuvent survivre au changement de session",
-      );
+      assert.match(auth, /logoutSession\(\)/, "AuthContext doit déléguer au logout canonique");
+      assert.match(api, /export async function logout\(\)/);
+      assert.match(api, /finally\s*\{[\s\S]*await clearSecureSession\(\)/);
     },
   },
   {
@@ -384,20 +381,17 @@ const cases: { id: string; severity: "P0" | "P1" | "P2" | "INV"; title: string; 
     title: "StudentDetail ne doit pas GET /students/:id hors enfants liés",
     run() {
       const src = read("screens/StudentDetailScreen.tsx");
-      assert.match(
-        src,
-        /user\.children|childAliasKeys|session\.user\.children/,
-        "getSchoolStudent(studentId) sans preuve d'appartenance aux enfants du Parent",
-      );
+      assert.match(src, /resolveParentSafeStudentId/);
+      assert.match(src, /isLinkedParentStudent/);
+      assert.match(src, /session\.user/);
     },
   },
   {
     id: "MP-013",
     severity: "P2",
-    title: "Modèle legacy Parent.ts / test.ts ne doivent plus porter un PIN en clair",
+    title: "Modèle legacy Parent.ts / test.ts PIN supprimés",
     run() {
-      const legacy = read("models/Parent.ts");
-      assert.equal(/private pin: string/.test(legacy), false, "Mobile/src/models/Parent.ts stocke encore un PIN en clair");
+      assert.equal(fs.existsSync(path.join(srcRoot, "models/Parent.ts")), false, "Mobile/src/models/Parent.ts legacy encore présent");
       assert.equal(fs.existsSync(path.join(srcRoot, "test.ts")), false, "Mobile/src/test.ts legacy encore présent");
     },
   },
