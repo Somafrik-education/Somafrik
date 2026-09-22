@@ -94,7 +94,18 @@ describe("parentDashboard — scope enfant", () => {
           studentId: "stu-a",
           amountDue: 100,
           amountPaid: 40,
-          balance: 60,
+          exemption: 10,
+          balance: 50,
+          currency: "EUR",
+        },
+        {
+          id: "f-a-cancelled",
+          studentId: "stu-a",
+          amountDue: 500,
+          amountPaid: 500,
+          exemption: 0,
+          balance: 0,
+          status: "Annulé",
           currency: "EUR",
         },
         {
@@ -116,10 +127,14 @@ describe("parentDashboard — scope enfant", () => {
     expect(metrics.evaluationCount).toBe(1);
     expect(metrics.presenceRate).toBe(50);
     expect(metrics.presenceRecorded).toBe(2);
-    expect(metrics.expectedAmount).toBe(100);
+    expect(metrics.expectedAmount).toBe(90);
     expect(metrics.paidAmount).toBe(40);
-    expect(metrics.remainingAmount).toBe(60);
+    expect(metrics.remainingAmount).toBe(50);
     expect(metrics.paymentAmount).toBe(40);
     expect(metrics.paymentCount).toBe(1);
+    expect(metrics.expectedLabel).toContain("90");
+    expect(metrics.paidLabel).toContain("40");
+    expect(metrics.remainingLabel).toContain("50");
+    expect(metrics.paymentLabel).toContain("40");
   });
 });
