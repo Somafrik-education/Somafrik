@@ -1,6 +1,8 @@
 import type { SessionUser, StudentFee, StudentGrade } from "../types";
 import { getPresenceStats, type PresenceRow } from "./presenceMetrics";
 import { isParentNotesRole, parentGradesKpis, parentLinkedStudents } from "./parentNotes";
+import { formatPaymentOverviewAmounts } from "./paymentAmountBreakdown";
+import { formatPaymentCashAmounts, type CashPaymentRow } from "./paymentCashKpi";
 
 export type ParentDashboardStudent = Record<string, unknown>;
 export type ParentDashboardRow = Record<string, unknown>;
@@ -79,6 +81,10 @@ export type ParentDashboardMetrics = {
   paymentAmount: number;
   paymentCount: number;
   currency: string;
+  expectedLabel: string;
+  paidLabel: string;
+  remainingLabel: string;
+  paymentLabel: string;
 };
 
 export function buildParentDashboardMetrics(input: {
@@ -100,6 +106,10 @@ export function buildParentDashboardMetrics(input: {
       paymentAmount: 0,
       paymentCount: 0,
       currency: "",
+      expectedLabel: "—",
+      paidLabel: "—",
+      remainingLabel: "—",
+      paymentLabel: "—",
     };
   }
 
@@ -121,18 +131,18 @@ export function buildParentDashboardMetrics(input: {
   ) as unknown as StudentFee[];
   const payments = filterParentDashboardRows(input.payments, input.student);
 
-  const expectedAmount = fees.reduce((sum, row) => sum + Number(row.amountDue ?? 0), 0);
-  const paidAmount = fees.reduce((sum, row) => sum + Number(row.amountPaid ?? 0), 0);
-  const remainingAmount = fees.reduce((sum, row) => sum + Number(row.balance ?? 0), 0);
-  const paymentAmount = payments.reduce(
-    (sum, row) => sum + Number(row.totalAmount ?? row.amount ?? 0),
-    0,
-  );
-  const currency = String(
-    fees.find((row) => String(row.currency ?? "").trim())?.currency ??
-      payments.find((row) => String(row.currency ?? "").trim())?.currency ??
-      "",
-  ).trim();
+  const feeOverview = formatPaymentOverviewAmounts(fees);
+  const cashOverview = formatPaymentCashAmounts(payments as CashPaymentRow[]);
+  const expectedAmount = feeOverview.buckets.reduce((sum, row) => sum + row.expectedAmount, 0);
+  const paidAmount = feeOverview.buckets.reduce((sum, row) => sum + row.collectedAmount, 0);
+  const remainingAmount = feeOverview.buckets.reduce((sum, row) => sum + row.remainingAmount, 0);
+  const paymentAmount = cashOverview.buckets.reduce((sum, row) => sum + row.collectedAmount, 0);
+  const currency =
+    feeOverview.buckets.length === 1
+      ? feeOverview.buckets[0].currencyKey
+      : cashOverview.buckets.length === 1
+        ? cashOverview.buckets[0].currencyKey
+        : "";
 
   return {
     presenceRate: presence.total ? presence.rate : null,
@@ -145,5 +155,9 @@ export function buildParentDashboardMetrics(input: {
     paymentAmount,
     paymentCount: payments.length,
     currency,
+    expectedLabel: feeOverview.expectedLabel,
+    paidLabel: feeOverview.collectedLabel,
+    remainingLabel: feeOverview.remainingLabel,
+    paymentLabel: cashOverview.collectedLabel,
   };
 }
