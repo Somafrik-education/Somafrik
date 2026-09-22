@@ -410,16 +410,7 @@ app.get("/api/schools/:code/logo", asyncHandler(async (req, res) => {
 app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { backOfficeAccessService } = await getRuntime();
   const response = await handleBusinessAction(() => backOfficeAccessService.login(req.body));
-  if (response?.role === "parent_student" || response?.user?.role === "Parent") {
-    const state = await getAuthoritativeBackOfficeState();
-    const schoolCode =
-      response.schoolContext?.code ??
-      response.schoolContext?.schoolCode ??
-      response.user?.schoolCode ??
-      req.body?.schoolCode;
-    const children = sanitizeUsersForResponse(resolveParentChildren(response.user, state, schoolCode));
-    response.user = { ...response.user, children };
-  }
+  await attachCanonicalParentChildren(response, req.body?.schoolCode);
   // HOTFIX-PRE-E1-02 : enrichir la session enseignant avec affectations BO (IDs stables),
   // sans élargir les droits — affectations explicitement actives uniquement (fail-closed).
   if (response?.role === "teacher" || response?.user?.role === "Enseignant") {
@@ -438,21 +429,68 @@ app.post("/api/identify", loginRateLimiter, asyncHandler(async (req, res) => {
 app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
   const { authService } = await getRuntime();
   const response = await handleBusinessAction(() => authService.login(req.body));
-  if (response?.role === "parent_student" || response?.user?.role === "Parent") {
-    const state = await getAuthoritativeBackOfficeState();
-    const schoolCode =
-      response.school?.code ??
-      response.schoolContext?.code ??
-      response.user?.schoolCode ??
-      req.body?.schoolCode;
-    if (schoolCode && !response.user.schoolCode) {
-      response.user = { ...response.user, schoolCode };
-    }
-    const children = sanitizeUsersForResponse(resolveParentChildren(response.user, state, schoolCode));
-    response.user = { ...response.user, children };
-  }
+  await attachCanonicalParentChildren(response, req.body?.schoolCode);
   await sendAuthenticatedResponse(req, res, response, "mobile_login");
 }));
+
+async function attachCanonicalParentChildren(response, requestedSchoolCode) {
+  if (!response?.user) return response;
+  if (response.role !== "parent_student" && response.user.role !== "Parent") return response;
+  const { resolveParentLoginChildren } = require("./lib/parentScope");
+  const state = await getAuthoritativeBackOfficeState();
+  const school = response.school ?? response.schoolContext ?? null;
+  const schoolCode =
+    school?.code ??
+    school?.schoolCode ??
+    response.user.schoolCode ??
+    requestedSchoolCode;
+  if (schoolCode && !response.user.schoolCode) {
+    response.user = { ...response.user, schoolCode };
+  }
+  const children = sanitizeUsersForResponse(
+    await resolveParentLoginChildren({
+      repository,
+      user: response.user,
+      school,
+      state,
+      schoolCode,
+    }),
+  );
+  response.user = { ...response.user, children };
+  return response;
+}
+
+async function parentSessionChildrenForPrincipal(principal) {
+  const { principalIsParent, resolveParentLoginChildren } = require("./lib/parentScope");
+  if (!principalIsParent(principal)) return null;
+  try {
+    const state = await getAuthoritativeBackOfficeState();
+    const schoolCode = String(principal.schoolCode ?? "").trim();
+    const children = await resolveParentLoginChildren({
+      repository,
+      user: {
+        id: principal.sub,
+        role: "Parent",
+        roleKeys: principal.roleKeys,
+        schoolCode,
+        schoolId: principal.schoolId,
+        contactId: principal.contactId,
+        identifier: principal.identifier,
+        phone: principal.phone,
+      },
+      school: {
+        id: principal.schoolId,
+        code: schoolCode,
+      },
+      state,
+      schoolCode,
+    });
+    return sanitizeUsersForResponse(children);
+  } catch {
+    // Ne pas écraser les enfants déjà en session si la projection est indisponible.
+    return null;
+  }
+}
 
 app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
   const { refreshToken } = req.body ?? {};
@@ -473,6 +511,7 @@ app.post("/api/auth/refresh", asyncHandler(async (req, res) => {
 }));
 
 app.get("/api/auth/effective-permissions", requireAuth, asyncHandler(async (req, res) => {
+  const linkedChildren = await parentSessionChildrenForPrincipal(req.principal);
   if (typeof repository.resolveEffectivePermissions === "function") {
     const live = await repository.resolveEffectivePermissions(req.principal);
     return res.json({
@@ -481,11 +520,15 @@ app.get("/api/auth/effective-permissions", requireAuth, asyncHandler(async (req,
       roleKeys: live.roleKeys,
       source: live.source,
       resolvedAt: live.resolvedAt,
+      ...(linkedChildren ? { children: linkedChildren } : {}),
     });
   }
   const rolePermissionsMap = await getRolePermissionsMap();
   const permissions = mergeRolePermissions(req.principal.role, [], rolePermissionsMap);
-  res.json({ permissions });
+  res.json({
+    permissions,
+    ...(linkedChildren ? { children: linkedChildren } : {}),
+  });
 }));
 
 app.post("/api/auth/logout", requireAuth, asyncHandler(async (req, res) => {
@@ -6367,7 +6410,7 @@ async function sendAuthenticatedResponse(req, res, response, action) {
   }
   if (principal.role === "Parent" && (!principal.studentIds?.length) && Array.isArray(response.user?.children)) {
     principal.studentIds = response.user.children
-      .flatMap((child) => [child.id, child.publicId, child.matricule])
+      .flatMap((child) => [child.id, child.publicId, child.matricule, child.studentUuid, child.studentCode])
       .map((value) => String(value ?? "").trim())
       .filter(Boolean);
   }

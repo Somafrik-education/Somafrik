@@ -24,6 +24,16 @@ export type EffectivePermissionsPayload = {
   modules?: unknown;
   source?: string;
   resolvedAt?: string;
+  /** Enfants canoniques Parent. Absent = ne pas écraser la session. */
+  children?: RefreshableSessionChild[];
+};
+
+export type RefreshableSessionChild = {
+  id?: string;
+  name?: string;
+  studentUuid?: string;
+  className?: string;
+  schoolCode?: string;
 };
 
 export type RefreshableSession = {
@@ -33,6 +43,7 @@ export type RefreshableSession = {
     id?: string;
     permissions?: string[];
     roleKeys?: string[];
+    children?: RefreshableSessionChild[];
     [key: string]: unknown;
   } | null;
   [key: string]: unknown;
@@ -70,6 +81,7 @@ export function applyLivePermissionsToSession<T extends RefreshableSession>(
   const nextUser = {
     ...(session.user ?? {}),
     permissions,
+    ...(Array.isArray(payload.children) ? { children: payload.children } : {}),
     ...(hasRoleKeys
       ? {
           roleKeys,
