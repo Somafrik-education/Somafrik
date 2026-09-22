@@ -39,12 +39,50 @@ function counterpartName(conversation: ConversationSummary, selfId?: string) {
   return others.map((row) => row.name || row.userId).join(", ");
 }
 
+function normalizeMessagingRole(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase();
+}
+
+function isTeacherMessagingSession(session: ReturnType<typeof useAuth>["session"]): boolean {
+  const roles = [
+    session?.user?.role,
+    ...(session?.user?.roles ?? []),
+    ...(session?.user?.roleKeys ?? []),
+  ];
+  return roles.some((value) => {
+    const normalized = normalizeMessagingRole(value);
+    return normalized === "TEACHER" || normalized === "ENSEIGNANT";
+  });
+}
+
+function isStudentMessageTarget(value?: { kind?: string; roleLabel?: string }): boolean {
+  const kind = normalizeMessagingRole(value?.kind);
+  const role = normalizeMessagingRole(value?.roleLabel);
+  return (
+    kind === "STUDENT" ||
+    role === "STUDENT" ||
+    role.includes("ELEVE") ||
+    role.includes("ETUDIANT")
+  );
+}
+
+function hasStudentParticipant(
+  participants?: Array<{ roleLabel?: string }>,
+): boolean {
+  return (participants ?? []).some((participant) => isStudentMessageTarget(participant));
+}
+
 export function MessagesConversationsPage() {
   const { session } = useAuth();
   const { activeSchoolCode, requiresSelection } = useActiveSchool();
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Messages");
   const { showToast } = useToast();
   const selfId = String(session?.user?.id ?? "");
+  const teacherSession = isTeacherMessagingSession(session);
   const schoolScope = hasCommunicationSchoolScope(activeSchoolCode) ? activeSchoolCode : undefined;
   const scopeReady = !requiresSelection || Boolean(schoolScope);
   const deepLinkConversationId = useDeepLinkId("conversationId");
@@ -128,12 +166,14 @@ export function MessagesConversationsPage() {
     void loadConversations();
     void messagesApi.listRecipients(schoolScope).then((rows) => {
       const list = Array.isArray(rows) ? rows : rows?.items ?? [];
-      setUsers(list);
+      const allowed = teacherSession ? list.filter((row) => !isStudentMessageTarget(row)) : list;
+      setUsers(allowed);
+      setRecipientId((current) => allowed.some((row) => row.userId === current) ? current : "");
     }).catch((error) => {
       setUsers([]);
       showToast(error instanceof ApiError ? error.message : "Impossible de charger les destinataires", "error");
     });
-  }, [loadConversations, schoolScope, scopeReady, showToast]);
+  }, [loadConversations, schoolScope, scopeReady, showToast, teacherSession]);
 
   useEffect(() => {
     if (!selectedId || !scopeReady) {
@@ -155,6 +195,12 @@ export function MessagesConversationsPage() {
     () => conversations.find((row) => row.id === selectedId) ?? null,
     [conversations, selectedId],
   );
+  const selectedParticipants =
+    selected?.participants ??
+    messages.find((row) => (row.participants?.length ?? 0) > 0)?.participants ??
+    [];
+  const teacherStudentThreadBlocked =
+    teacherSession && hasStudentParticipant(selectedParticipants);
   const visibleConversations = useMemo(
     () =>
       filterCommunicationRows(
@@ -197,6 +243,17 @@ export function MessagesConversationsPage() {
       return;
     }
     if (!canCreate) return;
+    if (teacherStudentThreadBlocked) {
+      setSendError("Les enseignants ne peuvent pas envoyer de messages aux élèves.");
+      return;
+    }
+    if (!selectedId && teacherSession) {
+      const selectedRecipient = users.find((row) => row.userId === recipientId);
+      if (isStudentMessageTarget(selectedRecipient)) {
+        setSendError("Les enseignants ne peuvent pas envoyer de messages aux élèves.");
+        return;
+      }
+    }
     if (!intentionRef.current) intentionRef.current = crypto.randomUUID();
     setSending(true);
     setSendError("");
@@ -318,6 +375,14 @@ export function MessagesConversationsPage() {
             </Button>
           </div>
         ) : null}
+        {canCreate && teacherStudentThreadBlocked ? (
+          <p
+            className="mt-4 border-t border-line pt-4 text-sm text-muted"
+            data-testid="teacher-student-messaging-blocked"
+          >
+            Les enseignants ne peuvent pas envoyer de messages aux élèves.
+          </p>
+        ) : null}
       </Card>
 
       <Card className="flex min-h-[520px] flex-col p-4">
@@ -363,7 +428,7 @@ export function MessagesConversationsPage() {
           ))}
         </div>
 
-        {canCreate ? (
+        {canCreate && !teacherStudentThreadBlocked ? (
           <div className="mt-4 space-y-3 border-t border-line pt-4">
             {!selectedId ? (
               <Field label="Destinataire">
