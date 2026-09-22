@@ -266,7 +266,7 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
   {
     id: "PARENT-P0-12",
-    title: "route.params B1 rejeté",
+    title: "route params Parent ne verrouille jamais le StudentSwitcher",
     run() {
       assert.equal(
         resolveParentSafeStudentId({
@@ -275,7 +275,18 @@ const cases: { id: string; title: string; run: () => void }[] = [
           selectedStudentId: CHILD_A1,
           user: parentUser,
         }),
+        CHILD_A1,
+        "un deep-link étranger ne doit jamais remplacer l'enfant déjà sélectionné",
+      );
+      assert.equal(
+        resolveParentSafeStudentId({
+          role: "parent_student",
+          routeStudentId: CHILD_B1,
+          selectedStudentId: null,
+          user: parentUser,
+        }),
         null,
+        "sans sélection courante, un deep-link étranger reste fail-closed",
       );
       assert.equal(
         resolveParentSafeStudentId({
@@ -284,8 +295,14 @@ const cases: { id: string; title: string; run: () => void }[] = [
           selectedStudentId: CHILD_A2,
           user: parentUser,
         }),
-        CHILD_A1,
+        CHILD_A2,
+        "après initialisation, le switcher courant doit gagner sur l'ancien route param",
       );
+      const hook = read("lib/useParentStudentRouteSelection.ts");
+      assert.match(hook, /appliedRouteRef/);
+      assert.match(hook, /isLinkedParentStudent/);
+      assert.match(hook, /setSelectedStudentId\(requested\)/);
+
       const detail = read("screens/StudentDetailScreen.tsx");
       const notes = read("screens/StudentNotesScreen.tsx");
       const presences = read("screens/StudentPresencesScreen.tsx");
@@ -296,7 +313,8 @@ const cases: { id: string; title: string; run: () => void }[] = [
         ["StudentPresencesScreen", presences],
         ["StudentPaymentsScreen", payments],
       ] as const) {
-        assert.match(src, /resolveParentSafeStudentId/, `${label} n'applique pas le rejet P0`);
+        assert.match(src, /useParentStudentRouteSelection/, `${label} n'initialise pas le deep-link Parent`);
+        assert.match(src, /resolveParentSafeStudentId/, `${label} n'applique pas le scope Parent`);
       }
     },
   },
