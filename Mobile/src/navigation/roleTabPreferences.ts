@@ -9,6 +9,7 @@ import StudentDetailScreen from "../screens/StudentDetailScreen";
 import StudentNotesScreen from "../screens/StudentNotesScreen";
 import StudentPresencesScreen from "../screens/StudentPresencesScreen";
 import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
+import ParentProfileScreen from "../screens/ParentProfileScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import { shortBottomTabLabel } from "../lib/mobileUxV1Layout";
@@ -36,7 +37,7 @@ const SCREEN_BY_TAB: Record<string, ComponentType<any>> = {
   Classes: ClassesScreen,
   TeacherGrades: TeacherGradesScreen,
   Enseignants: TeachersScreen,
-  Profil: StudentDetailScreen,
+  Profil: ParentProfileScreen,
   Notes: StudentNotesScreen,
   Presences: StudentPresencesScreen,
   FraisEleve: StudentPaymentsScreen,
