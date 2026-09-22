@@ -459,9 +459,11 @@ export default function HomeScreen({ navigation }: any) {
       ? action("messages", "chatbubbles-outline", unreadMessages > 0 ? `Messages (${unreadMessages})` : "Messages", () => navigation.navigate("Messages"))
       : null,
     timetable: canReadRoute(session, "Timetable") ? action("timetable", "time-outline", "Planning", () => navigation.navigate("Timetable")) : null,
-    profile: canShowHomeStudentAction(session, "profile", selectedStudentId)
-      ? action("profile", "person-outline", "Profil", () => navigation.navigate("StudentDetail", { studentId: selectedStudentId }))
-      : null,
+    profile: session?.role === "parent_student" && canReadRoute(session, "ParentProfile")
+      ? action("profile", "person-outline", "Mon profil", () => navigation.navigate("ParentProfile"))
+      : canShowHomeStudentAction(session, "profile", selectedStudentId)
+        ? action("profile", "person-outline", "Profil", () => navigation.navigate("StudentDetail", { studentId: selectedStudentId }))
+        : null,
     notes: canShowHomeStudentAction(session, "notes", selectedStudentId)
       ? action("notes", "book-outline", "Notes", () => navigation.navigate("StudentNotes", { studentId: selectedStudentId }))
       : null,
