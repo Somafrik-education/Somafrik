@@ -9,6 +9,8 @@ export const STUDENT_SUB_SCREENS_COPY = {
   paymentsSectionTitle: "Historique détaillé",
   notesEmpty: "Aucune note disponible",
   presencesEmpty: "Aucune présence enregistrée",
+  presencesError: "Impossible de charger les présences.",
+  presencesOffline: "Réseau indisponible. Les présences n'ont pas pu être chargées.",
   paymentsEmpty: "Aucun paiement enregistré",
 } as const;
 
@@ -22,6 +24,7 @@ export const STUDENT_SUB_SCREENS_TEST_IDS = {
   presencesTitle: "student-presences-title",
   presencesList: "student-presences-list",
   presencesEmpty: "student-presences-empty",
+  presencesError: "student-presences-error",
   presenceRowPrefix: "student-presence-row-",
   paymentsScreen: "student-payments-screen",
   paymentsTitle: "student-payments-title",

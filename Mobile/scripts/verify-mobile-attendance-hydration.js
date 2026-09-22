@@ -19,6 +19,7 @@ function main() {
     "src/domain/metrics/schoolMetrics.test.ts",
     "src/lib/classTodayPresenceBadge.test.ts",
     "src/lib/classesScreenPresenceContract.test.ts",
+    "src/lib/studentPresencesQueryState.test.ts",
   ]) {
     const unit = spawnSync("npx", ["--yes", "tsx", file], {
       cwd: MOBILE,

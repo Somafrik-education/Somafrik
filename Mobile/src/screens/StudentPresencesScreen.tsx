@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import StudentSwitcher from "../components/StudentSwitcher";
 import { getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 import { useAdminData } from "../context/AdminDataContext";
+import QueryStateView from "../components/QueryStateView";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
   PRESENCE_ROW_TEST_ID,
@@ -17,6 +18,7 @@ import {
 import { metricLabelFromSnapshot } from "../lib/dataTruth";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import { filterPresencesForAliases, reloadStudentPresences, resolveStudentPresencesView } from "../lib/studentPresencesQueryState";
 import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentPresences">;
@@ -47,9 +49,8 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
     }, [loadStudents, loadPresences, resourceScopeKey]),
   );
 
-  const presencesEleve = presencesData.filter((presence) =>
-    studentAliasKeys.includes(String(presence.studentId ?? "")),
-  );
+  const presencesEleve = filterPresencesForAliases(presencesData, studentAliasKeys);
+  const presencesView = resolveStudentPresencesView(presencesSnapshot, presencesEleve);
   const presenceStats = getPresenceStats(presencesEleve);
   const presenceRateLabel = metricLabelFromSnapshot(presencesSnapshot, () => `${presenceStats.rate}%`, "0%");
   const presenceMetaLabel = metricLabelFromSnapshot(
@@ -87,31 +88,43 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
         </Text>
       </TouchableOpacity>
 
-      <FlatList
-        data={presencesEleve}
-        keyExtractor={(item) => item.id}
-        testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesList}
-        contentContainerStyle={listContentStyle}
-        ListEmptyComponent={
-          <Text style={styles.empty} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesEmpty}>
-            {STUDENT_SUB_SCREENS_COPY.presencesEmpty}
-          </Text>
-        }
-        renderItem={({ item }) => {
-          const status = normalizePresenceStatus(item);
-          return (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.card}
-              testID={PRESENCE_ROW_TEST_ID(item.id)}
-              onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
-            >
-              <Text style={styles.cardTitle}>{item.date}</Text>
-              <Text style={[styles.badge, getPresenceStyle(status)]}>{status}</Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
+      {presencesView.kind === "list" ? (
+        <FlatList
+          data={presencesView.rows}
+          keyExtractor={(item) => item.id}
+          testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesList}
+          contentContainerStyle={listContentStyle}
+          ListEmptyComponent={
+            <Text style={styles.empty} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesEmpty}>
+              {STUDENT_SUB_SCREENS_COPY.presencesEmpty}
+            </Text>
+          }
+          renderItem={({ item }) => {
+            const status = normalizePresenceStatus(item);
+            return (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.card}
+                testID={PRESENCE_ROW_TEST_ID(item.id)}
+                onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
+              >
+                <Text style={styles.cardTitle}>{item.date}</Text>
+                <Text style={[styles.badge, getPresenceStyle(status)]}>{status}</Text>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      ) : (
+        <QueryStateView
+          snapshot={presencesView.snapshot}
+          emptyMessage={STUDENT_SUB_SCREENS_COPY.presencesEmpty}
+          errorMessage={STUDENT_SUB_SCREENS_COPY.presencesError}
+          offlineMessage={STUDENT_SUB_SCREENS_COPY.presencesOffline}
+          emptyTestId={STUDENT_SUB_SCREENS_TEST_IDS.presencesEmpty}
+          errorTestId={STUDENT_SUB_SCREENS_TEST_IDS.presencesError}
+          onRetry={() => reloadStudentPresences(loadPresences)}
+        />
+      )}
     </View>
   );
 }
