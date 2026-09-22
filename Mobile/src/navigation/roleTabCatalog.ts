@@ -27,7 +27,7 @@ const teacherTabs: RoleTabCatalogItem[] = [
 ];
 
 const parentStudentTabs: RoleTabCatalogItem[] = [
-  { tabName: "Profil", route: "Profil", label: "Profil", quickActionLabel: "Profil" },
+  { tabName: "Profil", route: "ParentProfile", label: "Profil", quickActionLabel: "Mon profil" },
   { tabName: "Notes", route: "Notes", label: "Notes", quickActionLabel: "Notes" },
   { tabName: "Presences", route: "Presences", label: "Présence", quickActionLabel: "Présences" },
   { tabName: "FraisEleve", route: "FraisEleve", label: "Frais", quickActionLabel: "Paiements" },
