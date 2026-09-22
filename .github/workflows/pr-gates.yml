@@ -308,6 +308,7 @@ jobs:
           npm run verify:finance-multi-item-payment
           npm run verify:finance-web-mobile-convergence
           npm run verify:finance-rbac
+          node --test backend/lib/parentFinanceReadScope.test.js
 
       - name: Pedagogy
         if: needs.scope.outputs.pedagogy == 'true'
