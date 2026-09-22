@@ -315,7 +315,8 @@
     "mobile:docker": "powershell -ExecutionPolicy Bypass -File scripts/mobile-docker-connect.ps1",
     "mobile:host": "powershell -ExecutionPolicy Bypass -File scripts/mobile-host-expo.ps1",
     "mobile:host:tunnel": "powershell -ExecutionPolicy Bypass -File scripts/mobile-host-expo.ps1 -Tunnel",
-    "firewall:dev": "powershell -ExecutionPolicy Bypass -File scripts/open-firewall-dev.ps1"
+    "firewall:dev": "powershell -ExecutionPolicy Bypass -File scripts/open-firewall-dev.ps1",
+    "verify:parent-e2e-contract": "node scripts/verify-parent-e2e-contract.js"
   },
   "devDependencies": {
     "playwright": "^1.61.1"
