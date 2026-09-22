@@ -141,6 +141,8 @@ on:
       - "backend/scripts/verify-communications-c4.js"
       - "backend/server.js"
       - "backend/services/rbacService.js"
+      - "backend/data.js"
+      - "backend/lib/communicationsParentReadOnly.test.js"
       - "web/src/components/communications/InternalNotificationsCenter.tsx"
       - "web/src/components/layout/Topbar.tsx"
       - "web/src/lib/internalNotificationsApi.ts"

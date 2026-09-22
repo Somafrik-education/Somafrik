@@ -359,6 +359,7 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsDispatcher.test.js"], "dispatcher unit");
   run(process.execPath, ["--test", "backend/lib/communicationsPreferences.test.js"], "preferences unit");
   run(process.execPath, ["--test", "backend/lib/communicationsGlobalArchitecture.audit.test.js"], "architecture audit unique caller");
+  run(process.execPath, ["--test", "backend/lib/communicationsParentReadOnly.test.js"], "Parent messages read-only default");
   run(process.execPath, ["--test", "backend/lib/communicationChannelFanout.test.js"], "channel fanout unit");
   run(process.execPath, ["--test", "backend/lib/communicationsPasswordReset.red.test.js"], "PR C reset email source");
   run(process.execPath, ["--test", "backend/lib/passwordResetNotification.test.js"], "password reset email unit");
