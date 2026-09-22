@@ -17,6 +17,7 @@ const {
   CANONICAL_API_URLS,
   DISPLAY_NAMES,
 } = require("../config/releaseEnvironments");
+const { evidenceLogLine, writeAabEvidence } = require("./aabEvidence");
 
 const MOBILE = path.join(__dirname, "..");
 const ANDROID = path.join(MOBILE, "android");
@@ -251,9 +252,24 @@ function bundleReleaseAab(label) {
 
   const aabs = listAabs();
   assert.ok(aabs.length > 0, `${label}: aucun .aab sous android/app/build/outputs/bundle/release/`);
+  const keepEvidence = process.env.SOMAFRIK_AAB_EVIDENCE === "1";
   for (const aab of aabs) {
     const stat = fs.statSync(aab);
     assert.ok(stat.size > 1000, `${label}: AAB trop petit (${aab})`);
+    if (keepEvidence) {
+      const evidenceDir = process.env.SOMAFRIK_AAB_EVIDENCE_DIR
+        || path.join(MOBILE, "dist", "aab-evidence");
+      const written = writeAabEvidence({
+        aabPath: aab,
+        profile: label,
+        androidDir: ANDROID,
+        evidenceDir,
+        candidateSha: process.env.SOMAFRIK_CANDIDATE_SHA || null,
+        toolingSha: process.env.SOMAFRIK_TOOLING_SHA || process.env.GITHUB_SHA || null,
+      });
+      console.log(evidenceLogLine(written.report));
+      console.log(`OK: AAB evidence ${written.reportPath} — storeReady=false, aucun upload`);
+    }
     console.log(`OK: AAB réel ${label} ${aab} (${stat.size} octets) — non commité, aucun upload`);
     fs.rmSync(aab, { force: true });
   }
