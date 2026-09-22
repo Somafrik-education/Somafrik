@@ -258,7 +258,7 @@ const parentItems: RoleDrawerItem[] = [
   quotidien(I.studentNotes),
   quotidien(I.studentPresences),
   quotidien(I.reportCards),
-  quotidien(I.mobilePayment),
+  quotidien(I.studentPayments),
   quotidien(I.messages),
   quotidien(I.announcements),
   quotidien(I.internalNotifications),
