@@ -184,7 +184,7 @@ function main() {
   );
   assert.match(
     rbac,
-    /"GET \/api\/backoffice\/messages\/recipients":\s*\["Messages:READ",\s*"Messages:CREATE",\s*\.\.\.MESSAGE_READ_ALIASES,\s*\.\.\.MESSAGE_WRITE_ALIASES,\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
+    /"GET \/api\/backoffice\/messages\/recipients":\s*\["Messages:CREATE",\s*\.\.\.MESSAGE_WRITE_ALIASES,\s*"Gérer messages",\s*"COUNTRY_PRIVILEGES",\s*"ALL_PRIVILEGES"\]/,
   );
   assert.match(
     rbac,
