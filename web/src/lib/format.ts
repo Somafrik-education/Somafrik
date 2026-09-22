@@ -214,6 +214,11 @@ export function normalizeRoleKey(role?: string): string {
   return normalize(role);
 }
 
+export function isParentRole(role?: string): boolean {
+  const key = normalizeRoleKey(role);
+  return key === "parent" || key === "parent_student" || key.includes("parent");
+}
+
 export function isInternalSchoolRole(role?: string): boolean {
   const key = normalizeRoleKey(role);
   return [
