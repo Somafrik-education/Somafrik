@@ -632,6 +632,26 @@ app.post(
   }),
 );
 
+app.get("/api/web/push-config", requireAuth, asyncHandler(async (req, res) => {
+  res.json(repository.webPushPublicConfig());
+}));
+
+app.post("/api/web/push-subscriptions", requireAuth, asyncHandler(async (req, res) => {
+  const subscription = await repository.upsertWebPushSubscription(req.principal, req.body || {});
+  await auditService.record(req, "web_push_subscription_upsert", "web_push_subscription", subscription.id, {
+    backendEnvironment: subscription.backendEnvironment,
+  });
+  res.json(subscription);
+}));
+
+app.delete("/api/web/push-subscriptions/current", requireAuth, asyncHandler(async (req, res) => {
+  const result = await repository.revokeCurrentWebPushSubscription(req.principal, req.body || {});
+  await auditService.record(req, "web_push_subscription_revoke", "web_push_subscription", result.id, {
+    revoked: result.revoked,
+  });
+  res.json(result);
+}));
+
 app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res) => {
   const newPassword = String(req.body?.newPassword ?? "").trim();
   const passwordError = validateAccountSecret(newPassword);

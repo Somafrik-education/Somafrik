@@ -431,7 +431,10 @@ jobs:
 
       - name: Web tests
         if: needs.scope.outputs.web == 'true'
-        run: npm --prefix web test
+        run: |
+          set -euo pipefail
+          npm --prefix web test
+          npm run verify:web-push
 
       - name: Mobile safety
         if: needs.scope.outputs.mobile == 'true'
