@@ -3,7 +3,7 @@ import { canManageUserAccount } from "./userAccounts";
 import { isPendingValidationStatus } from "./orgHierarchy";
 import { PLANNING_WEB_UI_ENABLED, VIEW_PERMISSION_FEATURES } from "./constants";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
-import { isInternalSchoolRole, normalize, isSchoolAdminRole } from "./format";
+import { isInternalSchoolRole, isParentRole, normalize, isSchoolAdminRole } from "./format";
 import { canSchoolAdminMutateTeachers } from "./pedagogyGovernance";
 import {
   isSuperAdminRole,
@@ -430,6 +430,7 @@ export function hasBackOfficePermission(
 }
 
 export function canReadView(ctx: PermissionContext, viewName: string): boolean {
+  if (viewName === "parentProfile") return isParentRole(ctx.user?.role);
   if (viewName === "planning" && !PLANNING_WEB_UI_ENABLED) {
     return false;
   }
