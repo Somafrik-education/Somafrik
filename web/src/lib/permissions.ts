@@ -3,7 +3,7 @@ import { canManageUserAccount } from "./userAccounts";
 import { isPendingValidationStatus } from "./orgHierarchy";
 import { PLANNING_WEB_UI_ENABLED, VIEW_PERMISSION_FEATURES } from "./constants";
 import { getInternalRoleDefaults } from "./internalRoleDefaults";
-import { isInternalSchoolRole, normalize, isSchoolAdminRole } from "./format";
+import { isInternalSchoolRole, isParentRole, normalize, isSchoolAdminRole } from "./format";
 import { canSchoolAdminMutateTeachers } from "./pedagogyGovernance";
 import {
   isSuperAdminRole,
@@ -429,7 +429,27 @@ export function hasBackOfficePermission(
   });
 }
 
+const PARENT_ALLOWED_WEB_VIEWS = new Set([
+  "overview",
+  "parentProfile",
+  "notes",
+  "presences",
+  "bulletins",
+  "payments",
+  "messages",
+  "announcements",
+  "notifications",
+  "documents",
+]);
+
+function isParentWebSession(ctx: PermissionContext): boolean {
+  if (isParentRole(ctx.user?.role)) return true;
+  return Boolean(ctx.user?.roleKeys?.some((key) => String(key ?? "").trim().toUpperCase() === "PARENT"));
+}
+
 export function canReadView(ctx: PermissionContext, viewName: string): boolean {
+  if (isParentWebSession(ctx) && !PARENT_ALLOWED_WEB_VIEWS.has(viewName)) return false;
+  if (viewName === "parentProfile") return isParentWebSession(ctx);
   if (viewName === "planning" && !PLANNING_WEB_UI_ENABLED) {
     return false;
   }
