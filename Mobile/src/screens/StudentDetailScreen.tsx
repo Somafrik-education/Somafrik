@@ -32,6 +32,7 @@ import {
   resolveParentSafeStudentId,
   sessionStudentAliasKeys,
 } from "../lib/canonicalStudentIdentity";
+import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
 import {
   archiveParentRelation,
   assignStudentEnrollmentClass,
@@ -81,6 +82,7 @@ export default function StudentDetailScreen({
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const containerStyle = [styles.container, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId, permissionsBootstrap } = useAuth();
+  useParentStudentRouteSelection(route?.params?.studentId);
   const {
     notesData,
     presencesData,

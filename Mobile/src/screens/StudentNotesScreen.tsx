@@ -27,6 +27,7 @@ import {
   courseOptionsFromNotes,
 } from "../lib/pedagogyAverage";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentNotes">;
 
@@ -34,6 +35,7 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
+  useParentStudentRouteSelection(route?.params?.studentId);
   const { studentsData, notesSnapshot, loadNotes } = useAdminData();
   const studentId = resolveParentSafeStudentId({
     role: session?.role,
