@@ -24,6 +24,8 @@ export type EffectivePermissionsPayload = {
   modules?: unknown;
   source?: string;
   resolvedAt?: string;
+  /** Enfants canoniques Parent. Absent = ne pas écraser la session. */
+  children?: Array<Record<string, unknown>>;
 };
 
 export type RefreshableSession = {
@@ -70,6 +72,7 @@ export function applyLivePermissionsToSession<T extends RefreshableSession>(
   const nextUser = {
     ...(session.user ?? {}),
     permissions,
+    ...(Array.isArray(payload.children) ? { children: payload.children } : {}),
     ...(hasRoleKeys
       ? {
           roleKeys,

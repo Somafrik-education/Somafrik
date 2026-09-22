@@ -20,6 +20,11 @@ import { useMessagesUnreadCount } from "../lib/messagesRead";
 import { buildOverflowQuickActionItems } from "../navigation/roleTabPreferences";
 import { DATA_TRUTH_TEST_IDS, METRIC_PENDING_LABEL, metricLabelFromSnapshot, parentAverageDisplay } from "../lib/dataTruth";
 import {
+  countLinkedParentChildren,
+  parentHomeIdentityName,
+  parentRatioKpiLabel,
+} from "../lib/parentLinkedMetrics";
+import {
   ACTIVE_USERS_KPI_LABEL,
   PAYMENT_RATE_KPI_LABEL,
   PAYMENTS_KPI_LABEL,
@@ -204,11 +209,16 @@ export default function HomeScreen({ navigation }: any) {
     ? notesForStudent(notesSnapshot.data, studentAliasKeys)
     : [];
   const canonicalAverage = canonicalStudentGeneralAverage(studentNotes);
-  const averageDisplay = parentAverageDisplay({
-    notesReady: notesSnapshot.status === "success" || notesSnapshot.status === "empty",
-    notesForStudent: studentNotes,
-    average: canonicalAverage.available ? canonicalAverage.average ?? undefined : undefined,
-  });
+  const isParent = session?.role === "parent_student";
+  const parentLinkedCount = isParent ? countLinkedParentChildren(session?.user) : 0;
+  const averageDisplay =
+    isParent && parentLinkedCount === 0
+      ? { available: false, label: "—" }
+      : parentAverageDisplay({
+          notesReady: notesSnapshot.status === "success" || notesSnapshot.status === "empty",
+          notesForStudent: studentNotes,
+          average: canonicalAverage.available ? canonicalAverage.average ?? undefined : undefined,
+        });
   const studentScope = resolveMobileStudentScope({
     role: session?.role,
     selectedStudentId,
@@ -296,7 +306,14 @@ export default function HomeScreen({ navigation }: any) {
   const isTeacher = session?.role === "teacher";
   const isParentLike = session?.role === "parent_student" || session?.role === "student";
 
-  const identityName = isParentLike ? selectedStudent?.name ?? "Élève" : userName;
+  const identityName = isParent
+    ? parentHomeIdentityName({
+        childName: selectedStudent?.name,
+        linkedCount: parentLinkedCount,
+      })
+    : isParentLike
+      ? selectedStudent?.name ?? "Élève"
+      : userName;
   const identityContext = isTeacher
     ? assignedClasses.join(", ") || currentSchool.name
     : isParentLike
@@ -339,9 +356,16 @@ export default function HomeScreen({ navigation }: any) {
       ? kpi(
           "presence",
           "checkmark-circle-outline",
-          isParentLike
-            ? `${studentPresenceStats.attended}/${studentPresenceStats.total}`
-            : establishmentPresenceValue,
+          isParent
+            ? parentRatioKpiLabel({
+                linkedCount: parentLinkedCount,
+                ready: presencesReady,
+                numerator: studentPresenceStats.attended,
+                denominator: studentPresenceStats.total,
+              })
+            : isParentLike
+              ? `${studentPresenceStats.attended}/${studentPresenceStats.total}`
+              : establishmentPresenceValue,
           isParentLike ? "Présence" : TODAY_PRESENCE_KPI_LABEL,
           "#16A34A",
           "#ECFDF5",
@@ -357,11 +381,18 @@ export default function HomeScreen({ navigation }: any) {
       ? kpi(
           "payments",
           "card-outline",
-          isParentLike
-            ? paymentsReady
-              ? `${studentPaymentStats.paid}/${studentPaymentStats.total}`
-              : "—"
-            : paymentsValue,
+          isParent
+            ? parentRatioKpiLabel({
+                linkedCount: parentLinkedCount,
+                ready: paymentsReady,
+                numerator: studentPaymentStats.paid,
+                denominator: studentPaymentStats.total,
+              })
+            : isParentLike
+              ? paymentsReady
+                ? `${studentPaymentStats.paid}/${studentPaymentStats.total}`
+                : "—"
+              : paymentsValue,
           PAYMENTS_KPI_LABEL,
           "#EA580C",
           "#FFF7ED",

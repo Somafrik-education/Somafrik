@@ -27,6 +27,11 @@ import {
   courseOptionsFromNotes,
 } from "../lib/pedagogyAverage";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import {
+  countLinkedParentChildren,
+  parentChildNameFromSession,
+  parentHomeIdentityName,
+} from "../lib/parentLinkedMetrics";
 import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentNotes">;
@@ -49,6 +54,17 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
     user: session?.user,
   });
   const student = findStudentByIdentity(studentsData, studentAliasKeys);
+  const notesIdentity =
+    session?.role === "parent_student"
+      ? parentHomeIdentityName({
+          childName: parentChildNameFromSession({
+            user: session?.user,
+            aliasKeys: studentAliasKeys,
+            rosterName: student?.name,
+          }),
+          linkedCount: countLinkedParentChildren(session?.user),
+        })
+      : student?.name ?? "Élève";
 
   useFocusEffect(
     useCallback(() => {
@@ -92,7 +108,7 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
       <Text style={styles.title} testID={STUDENT_SUB_SCREENS_TEST_IDS.notesTitle}>
         {STUDENT_SUB_SCREENS_COPY.notesTitle}
       </Text>
-      <Text style={styles.subtitle}>{student?.name ?? "Élève"}</Text>
+      <Text style={styles.subtitle}>{notesIdentity}</Text>
 
       <View style={[styles.summaryCard, { backgroundColor: "#2563EB" }]}>
         <Text style={[styles.summaryLabel, { color: "#DBEAFE" }]}>

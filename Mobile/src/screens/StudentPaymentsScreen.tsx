@@ -26,6 +26,12 @@ import {
 } from "../lib/studentSubScreensSpec";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import {
+  PARENT_UNLINKED_KPI,
+  countLinkedParentChildren,
+  parentChildNameFromSession,
+  parentHomeIdentityName,
+} from "../lib/parentLinkedMetrics";
 import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentPayments">;
@@ -103,12 +109,27 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const feesReady =
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
   const paymentsReady = paymentsSnapshot.status === "success" || paymentsSnapshot.status === "empty";
-  const expectedLabel = feesReady ? paymentAmountOverview.expectedLabel : "—";
-  const imputedLabel = feesReady ? paymentAmountOverview.collectedLabel : "—";
+  const isParent = session?.role === "parent_student";
+  const parentUnlinked = isParent && countLinkedParentChildren(session?.user) === 0;
+  const expectedLabel = parentUnlinked || !feesReady ? PARENT_UNLINKED_KPI : paymentAmountOverview.expectedLabel;
+  const imputedLabel = parentUnlinked || !feesReady ? PARENT_UNLINKED_KPI : paymentAmountOverview.collectedLabel;
   const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
-  const remainingLabel = feesReady ? paymentAmountOverview.remainingLabel : remaining >= 0 ? "—" : "—";
-  const collectedLabel = paymentsReady ? cashOverview.collectedLabel : "—";
-  const unallocatedLabel = paymentsReady ? cashOverview.unallocatedLabel : "—";
+  const remainingLabel =
+    parentUnlinked || !feesReady || !Number.isFinite(remaining)
+      ? PARENT_UNLINKED_KPI
+      : paymentAmountOverview.remainingLabel;
+  const collectedLabel = parentUnlinked || !paymentsReady ? PARENT_UNLINKED_KPI : cashOverview.collectedLabel;
+  const unallocatedLabel = parentUnlinked || !paymentsReady ? PARENT_UNLINKED_KPI : cashOverview.unallocatedLabel;
+  const paymentIdentity = isParent
+    ? parentHomeIdentityName({
+        childName: parentChildNameFromSession({
+          user: session?.user,
+          aliasKeys: studentAliasKeys,
+          rosterName: student?.name,
+        }),
+        linkedCount: countLinkedParentChildren(session?.user),
+      })
+    : student?.name ?? "Élève";
   const showQueryState = paymentsSnapshot.status !== "success" || sortedPayments.length === 0;
 
   const financeHeader = (
@@ -123,7 +144,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
           student?.className ? localStyles.subtitleWithClass : localStyles.subtitleSolo,
         ]}
       >
-        {student?.name ?? "Élève"}
+        {paymentIdentity}
       </Text>
       {student?.className ? (
         <Text style={localStyles.classLabel}>Classe : {student.className}</Text>
