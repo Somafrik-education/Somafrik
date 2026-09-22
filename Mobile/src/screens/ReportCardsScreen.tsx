@@ -7,6 +7,7 @@ import { useAdminData } from "../context/AdminDataContext";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import { ReportCardWorkflowCards } from "../components/ReportCardWorkflowCards";
 import QueryStateView from "../components/QueryStateView";
+import StudentSwitcher from "../components/StudentSwitcher";
 import { ReportCardSnapshotView } from "../components/bulletin/ReportCardSnapshotView";
 import { downloadReportCardPdf } from "../services/api";
 import {
@@ -228,8 +229,11 @@ export default function ReportCardsScreen() {
   const showQueryState =
     reportCardsSnapshot.status !== "success" || rows.length === 0;
 
+  const isParentView = ["parent_student", "parent"].includes(String(session?.role ?? "").toLowerCase());
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={contentStyle}>
+      {isParentView ? <StudentSwitcher /> : null}
       <Text style={styles.title}>Bulletins</Text>
       <Text style={styles.subtitle}>
         {reportCardsSnapshot.status === "success"
