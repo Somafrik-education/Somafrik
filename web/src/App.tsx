@@ -28,6 +28,7 @@ import {
   AnnouncementsPage,
   FinanceFeesPage,
   FinanceIndexRedirect,
+  FinancePaymentsEntryPage,
   FinanceUnpaidPage,
   FinancesLayout,
   GradesEvaluationsPage,
@@ -280,7 +281,7 @@ export default function App() {
             path="paiements"
             element={
               <PermissionRoute view="payments">
-                <EntityPage entity="payments" />
+                <FinancePaymentsEntryPage />
               </PermissionRoute>
             }
           />
