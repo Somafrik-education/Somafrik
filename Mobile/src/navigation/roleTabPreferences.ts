@@ -5,7 +5,6 @@ import UsersScreen from "../screens/UsersScreen";
 import StudentsScreen from "../screens/StudentsScreen";
 import TeachersScreen from "../screens/TeachersScreen";
 import PaymentsScreen from "../screens/PaymentsScreen";
-import StudentDetailScreen from "../screens/StudentDetailScreen";
 import StudentNotesScreen from "../screens/StudentNotesScreen";
 import StudentPresencesScreen from "../screens/StudentPresencesScreen";
 import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
