@@ -47,6 +47,23 @@ function main() {
   const users = read(path.join("screens", "UsersScreen.tsx"));
   const home = read(path.join("screens", "HomeScreen.tsx"));
   const context = read(path.join("context", "AdminDataContext.tsx"));
+
+  const parentProfile = read(path.join("screens", "ParentProfileScreen.tsx"));
+  const roleTabs = read(path.join("navigation", "roleTabCatalog.ts"));
+  const tabPreferences = read(path.join("navigation", "roleTabPreferences.ts"));
+  const navigator = read(path.join("navigation", "AppNavigator.tsx"));
+  const permissions = read(path.join("domain", "security", "permissions.ts"));
+  assert.match(parentProfile, /testID=["']parent-profile-screen["']/);
+  assert.match(parentProfile, /Mon compte/);
+  assert.match(parentProfile, /Mes enfants liés/);
+  assert.match(roleTabs, /tabName:\s*["']ParentProfile["'][\s\S]*route:\s*["']ParentProfile["']/);
+  assert.match(roleTabs, /if \(role === ["']parent_student["']\) return parentStudentTabs/);
+  assert.match(roleTabs, /if \(role === ["']student["']\) return studentTabs/);
+  assert.match(tabPreferences, /ParentProfile:\s*ParentProfileScreen/);
+  assert.match(navigator, /name=["']ParentProfile["']\s+component=\{ParentProfileScreen\}/);
+  assert.match(permissions, /routeName === ["']ParentProfile["']\) return isParentMobileSession\(session\)/);
+  assert.match(home, /navigation\.navigate\(["']ParentProfile["']\)/);
+  console.log("OK: ParentProfile Mobile dédié au responsable, séparé de StudentDetail");
   assert.match(users, /usersSnapshot/);
   assert.match(users, /loadUsers/);
   assert.match(home, /usersSnapshot/);

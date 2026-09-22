@@ -496,6 +496,7 @@ export function canReadFeeGrids(session: any): boolean {
 }
 
 export function canReadRoute(session: any, routeName?: string) {
+  if (routeName === "ParentProfile") return isParentMobileSession(session);
   if (isParentMobileSession(session)) {
     if (!routeName || !PARENT_ALLOWED_ROUTES.has(routeName)) return false;
   }

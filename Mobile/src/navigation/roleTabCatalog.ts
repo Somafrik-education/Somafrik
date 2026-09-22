@@ -27,6 +27,13 @@ const teacherTabs: RoleTabCatalogItem[] = [
 ];
 
 const parentStudentTabs: RoleTabCatalogItem[] = [
+  { tabName: "ParentProfile", route: "ParentProfile", label: "Profil", quickActionLabel: "Mon profil" },
+  { tabName: "Notes", route: "Notes", label: "Notes", quickActionLabel: "Notes" },
+  { tabName: "Presences", route: "Presences", label: "Présence", quickActionLabel: "Présences" },
+  { tabName: "FraisEleve", route: "FraisEleve", label: "Frais", quickActionLabel: "Paiements" },
+];
+
+const studentTabs: RoleTabCatalogItem[] = [
   { tabName: "Profil", route: "Profil", label: "Profil", quickActionLabel: "Profil" },
   { tabName: "Notes", route: "Notes", label: "Notes", quickActionLabel: "Notes" },
   { tabName: "Presences", route: "Presences", label: "Présence", quickActionLabel: "Présences" },
@@ -50,7 +57,8 @@ const platformTabs: RoleTabCatalogItem[] = [
 ];
 
 export function getRoleTabCatalog(role?: string): RoleTabCatalogItem[] {
-  if (role === "parent_student" || role === "student") return parentStudentTabs;
+  if (role === "parent_student") return parentStudentTabs;
+  if (role === "student") return studentTabs;
   if (role === "teacher") return teacherTabs;
   if (role === "principal" || role === "prefet" || role === "proviseur") return teacherTabs;
   if (role === "secretary") return secretaryTabs;

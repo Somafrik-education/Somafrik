@@ -9,6 +9,7 @@ import StudentDetailScreen from "../screens/StudentDetailScreen";
 import StudentNotesScreen from "../screens/StudentNotesScreen";
 import StudentPresencesScreen from "../screens/StudentPresencesScreen";
 import StudentPaymentsScreen from "../screens/StudentPaymentsScreen";
+import ParentProfileScreen from "../screens/ParentProfileScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import { shortBottomTabLabel } from "../lib/mobileUxV1Layout";
@@ -37,6 +38,7 @@ const SCREEN_BY_TAB: Record<string, ComponentType<any>> = {
   TeacherGrades: TeacherGradesScreen,
   Enseignants: TeachersScreen,
   Profil: StudentDetailScreen,
+  ParentProfile: ParentProfileScreen,
   Notes: StudentNotesScreen,
   Presences: StudentPresencesScreen,
   FraisEleve: StudentPaymentsScreen,
@@ -54,6 +56,7 @@ const ICONS_BY_TAB: Record<
   TeacherGrades: { icon: "reader-outline", focusedIcon: "reader", quickActionIcon: "reader-outline" },
   Enseignants: { icon: "school-outline", focusedIcon: "school", quickActionIcon: "person-add-outline" },
   Profil: { icon: "person-outline", focusedIcon: "person", quickActionIcon: "person-outline" },
+  ParentProfile: { icon: "person-circle-outline", focusedIcon: "person-circle", quickActionIcon: "person-circle-outline" },
   Notes: { icon: "book-outline", focusedIcon: "book", quickActionIcon: "book-outline" },
   Presences: { icon: "calendar-outline", focusedIcon: "calendar", quickActionIcon: "calendar-outline" },
   FraisEleve: { icon: "wallet-outline", focusedIcon: "wallet", quickActionIcon: "card-outline" },
