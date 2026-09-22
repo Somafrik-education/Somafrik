@@ -43,6 +43,7 @@ import {
   NotificationsPage,
   ParametresLayout,
   ParentChildRelationsPage,
+  ParentProfilePage,
   PermissionsPage,
   PlatformNotificationsPage,
   PlanningConflictsPage,
@@ -106,6 +107,14 @@ export default function App() {
           </ProtectedRoute>
         }
       >
+        <Route
+          path="/mon-profil"
+          element={
+            <PermissionRoute view="parentProfile">
+              <ParentProfilePage />
+            </PermissionRoute>
+          }
+        />
         <Route
           path="/tableau-de-bord"
           element={
