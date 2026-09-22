@@ -9,6 +9,7 @@ import { marketplaceEnabled } from "./lib/featureFlags";
 import {
   AdministrationLayout,
   BulletinDesignPage,
+  BulletinsEntryPage,
   CancellationRequestPage,
   ChangeOfferPage,
   ChartSettingsPage,
@@ -367,7 +368,7 @@ export default function App() {
           path="/bulletins"
           element={
             <PermissionRoute view="bulletins">
-              <EntityPage entity="bulletins" />
+              <BulletinsEntryPage />
             </PermissionRoute>
           }
         />
