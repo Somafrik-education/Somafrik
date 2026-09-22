@@ -654,7 +654,7 @@ async function main() {
     schoolCode,
   );
   assert.ok(parentCContactFlow.ok, parentCContactFlow.error);
-  const parentCUser = createParentUser(parentCContactFlow.contact, schoolCode, parentCPhone, PARENT_PIN);
+  const parentCUser = createParentUser(parentCContactFlow.contact, schoolCode, parentCPhone, PARENT_PASSWORD);
   const phoneChildFlow = createStudentFromContact(
     { ...state, contacts: [...allContacts, parentCContactFlow.contact], students: allStudents },
     {
@@ -757,8 +757,8 @@ async function main() {
 
   console.log("\n=== E2E 0012 : Parcours parent / élève ===");
   console.log(`Établissement : ${schoolCode}`);
-  console.log(`Parent A       : ${parentAPhone} (PIN ${PARENT_PIN}) — enfants Jean + Marie`);
-  console.log(`Parent B       : ${parentBPhone} (PIN ${PARENT_PIN}) — enfant Paul`);
+  console.log(`Parent A       : ${parentAPhone} (mot de passe ${PARENT_PASSWORD}) — enfants Jean + Marie`);
+  console.log(`Parent B       : ${parentBPhone} (mot de passe ${PARENT_PASSWORD}) — enfant Paul`);
   console.log(`Annonce        : ${announcement.title}\n`);
   console.table(results);
 
