@@ -28,6 +28,7 @@ const PARENT_A2 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa94";
 const ADMIN_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa95";
 const PARENT_B = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa96";
 const SUPER_SA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa98";
+const STUDENT_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa99";
 const CLASS_A = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb91";
 const SAME_TS = "2026-08-28T10:00:00.000Z";
 
@@ -246,8 +247,9 @@ async function seed(pool) {
        ($5, $8, 'PAR-COM-A2', 'Parent', 'A2', 'par-com-a2@test.local', 'Parent', 'active', FALSE),
        ($6, $9, 'ADM-COM-B', 'Admin', 'B', 'adm-com-b@test.local', 'Admin School', 'active', FALSE),
        ($7, $9, 'PAR-COM-B', 'Parent', 'B', 'par-com-b@test.local', 'Parent', 'active', FALSE),
-       ($10, NULL, 'SUPER-COM', 'Super', 'Admin', 'super-com@test.local', 'Super Administrateur Somafrik', 'active', FALSE)`,
-    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA],
+       ($10, NULL, 'SUPER-COM', 'Super', 'Admin', 'super-com@test.local', 'Super Administrateur Somafrik', 'active', FALSE),
+       ($11, $8, 'STU-COM-A', 'Élève', 'Compte', 'stu-com-a@test.local', 'Élève / Étudiant', 'active', FALSE)`,
+    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA, STUDENT_A],
   );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
@@ -259,8 +261,9 @@ async function seed(pool) {
        ($5, $8, 'PARENT', 'active'),
        ($6, $9, 'SCHOOL_ADMIN', 'active'),
        ($7, $9, 'PARENT', 'active'),
-       ($10, NULL, 'SUPER_ADMIN', 'active')`,
-    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA],
+       ($10, NULL, 'SUPER_ADMIN', 'active'),
+       ($11, $8, 'STUDENT', 'active')`,
+    [ADMIN_A, TEACHER_A, TEACHER_A2, PARENT_A, PARENT_A2, ADMIN_B, PARENT_B, schoolA.id, schoolB.id, SUPER_SA, STUDENT_A],
   );
 
   await pool.query(
