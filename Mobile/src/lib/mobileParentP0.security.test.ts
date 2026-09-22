@@ -275,7 +275,8 @@ const cases: { id: string; title: string; run: () => void }[] = [
           selectedStudentId: CHILD_A1,
           user: parentUser,
         }),
-        null,
+        CHILD_A1,
+        "le switcher courant reste prioritaire sur un route param étranger",
       );
       assert.equal(
         resolveParentSafeStudentId({
@@ -284,7 +285,18 @@ const cases: { id: string; title: string; run: () => void }[] = [
           selectedStudentId: CHILD_A2,
           user: parentUser,
         }),
-        CHILD_A1,
+        CHILD_A2,
+        "après changement du switcher, un ancien route param ne fige pas l'enfant",
+      );
+      assert.equal(
+        resolveParentSafeStudentId({
+          role: "parent_student",
+          routeStudentId: CHILD_B1,
+          selectedStudentId: null,
+          user: parentUser,
+        }),
+        null,
+        "sans sélection courante, un deep-link étranger reste rejeté",
       );
       const detail = read("screens/StudentDetailScreen.tsx");
       const notes = read("screens/StudentNotesScreen.tsx");
