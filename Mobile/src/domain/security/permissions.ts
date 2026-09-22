@@ -35,7 +35,6 @@ const PARENT_ALLOWED_ROUTES = new Set([
   "Presences",
   "FraisEleve",
   "StudentPayments",
-  "MobilePayment",
   "Messages",
   "Announcements",
   "InternalNotifications",
