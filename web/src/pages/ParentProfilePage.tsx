@@ -23,9 +23,9 @@ export function ParentProfilePage() {
   const { session } = useAuth();
   const { state, ensureDomains } = useData();
   const user = (session?.user ?? {}) as Record<string, any>;
-  const schoolCode = String(user.schoolCode ?? session?.school?.code ?? "").trim();
+  const schoolCode = String(user.schoolCode ?? "").trim();
   const children = useMemo(() => parentLinkedStudents(user, state), [user, state]);
-  const schoolName = display(session?.school?.name ?? user.schoolName ?? user.schoolCode);
+  const schoolName = display(user.schoolName ?? user.schoolCode);
 
   useEffect(() => {
     void ensureDomains(["students"], schoolCode ? { schoolCode } : undefined).catch(() => undefined);
