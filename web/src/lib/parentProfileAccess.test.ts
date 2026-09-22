@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { canReadView } from "./permissions";
 import { isParentRole } from "./format";
@@ -27,9 +28,9 @@ describe("Parent profile access", () => {
   });
 
   it("enregistre une page profil Parent dédiée et une entrée de navigation", () => {
-    const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
-    const nav = readFileSync(new URL("../components/layout/useVisibleNavItems.ts", import.meta.url), "utf8");
-    const page = readFileSync(new URL("../pages/ParentProfilePage.tsx", import.meta.url), "utf8");
+    const app = readFileSync(path.resolve(process.cwd(), "src/App.tsx"), "utf8");
+    const nav = readFileSync(path.resolve(process.cwd(), "src/components/layout/useVisibleNavItems.ts"), "utf8");
+    const page = readFileSync(path.resolve(process.cwd(), "src/pages/ParentProfilePage.tsx"), "utf8");
 
     expect(app).toContain('path="/mon-profil"');
     expect(app).toContain("<ParentProfilePage />");
