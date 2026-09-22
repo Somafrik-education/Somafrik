@@ -138,9 +138,25 @@ async function archiveExam(repo, examId, principal, auditMeta, schoolCode) {
   });
 }
 
+function filterReportCardsForPrincipal(rows, principal) {
+  const { principalIsParentOrStudent, collectLinkedStudentKeys } = require("./parentScope");
+  if (!principalIsParentOrStudent(principal)) return rows ?? [];
+
+  const allowed = new Set(collectLinkedStudentKeys(principal));
+  if (!allowed.size) return [];
+
+  return (rows ?? []).filter((row) => {
+    const studentId = String(row?.studentId ?? row?.student_id ?? "").trim();
+    const status = String(row?.status ?? "").trim().toLowerCase();
+    const published = status === "published" || status === "publié" || status === "publie";
+    return published && studentId && allowed.has(studentId);
+  });
+}
+
 async function listReportCards(repo, principal, schoolCode) {
   const { store, school } = await withSchoolStore(repo, principal, schoolCode, assertReportCardsRead);
-  return store.listReportCards(school.id);
+  const rows = await store.listReportCards(school.id);
+  return filterReportCardsForPrincipal(rows, principal);
 }
 
 async function generateReportCard(repo, payload, principal, auditMeta, schoolCode) {
@@ -372,6 +388,7 @@ module.exports = {
   cancelExam,
   archiveExam,
   listReportCards,
+  filterReportCardsForPrincipal,
   generateReportCard,
   publishReportCard,
   archiveReportCard,
