@@ -26,6 +26,7 @@ import {
 } from "../lib/studentSubScreensSpec";
 import { studentSubScreenStyles as styles } from "../lib/studentSubScreenLayout";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import { useParentStudentRouteSelection } from "../lib/useParentStudentRouteSelection";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentPayments">;
 
@@ -33,6 +34,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
+  useParentStudentRouteSelection(route?.params?.studentId);
   const {
     paymentsData,
     paymentsSnapshot,
