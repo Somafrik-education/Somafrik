@@ -38,7 +38,7 @@ function verifySignedBundle(aabPath) {
   if (jar.error || jar.status !== 0 || !/jar verified/i.test((jar.stdout || "") + (jar.stderr || ""))) throw new Error("HOLD: jarsigner verification failed.");
   const cert = spawnSync("keytool", ["-printcert", "-jarfile", aabPath], { encoding: "utf8" });
   const output = (cert.stdout || "") + (cert.stderr || "");
-  const hashes = [...output.matchAll(/SHA[\\s-]*256\\s*:\\s*([0-9a-f:]{64,95})/gi)].map(m => m[1].replace(/:/g, "").toUpperCase());
+  const hashes = [...output.matchAll(/SHA[\s-]*256\s*:\s*([0-9a-f:]{64,95})/gi)].map(m => m[1].replace(/:/g, "").toUpperCase());
   if (cert.error || cert.status !== 0 || !hashes.includes(EXPECTED)) throw new Error("HOLD: AAB certificate does not match Google Play upload certificate.");
   console.log("AAB signed with verified EAS/Google Play upload certificate.");
 }
