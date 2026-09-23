@@ -8,6 +8,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const { mobileRoot, androidDir, loadBuildEnv, runGradle } = require("./build-android-env");
 const { ANDROID_VERSION_CODE } = require("../config/releaseEnvironments");
+const { configureUploadSigning, verifySignedBundle } = require("./local-eas-upload-signing");
 
 const profile = process.argv[2] || process.env.EXPO_PUBLIC_RELEASE_PROFILE || "production";
 if (profile !== "preproduction" && profile !== "production") {
@@ -61,6 +62,8 @@ if (nativeVersionCode !== ANDROID_VERSION_CODE) {
   process.exit(1);
 }
 
+if (profile === "production") configureUploadSigning(androidDir);
+
 console.log(`Build AAB ${profile} avec API: ${apiUrl}`);
 console.log(`versionCode natif/canonique: ${nativeVersionCode}`);
 console.log(`JAVA_HOME: ${process.env.JAVA_HOME}`);
@@ -84,6 +87,8 @@ if (!fs.existsSync(aabPath)) {
   console.error(`AAB introuvable apres build: ${aabPath}`);
   process.exit(1);
 }
+
+if (profile === "production") verifySignedBundle(aabPath);
 
 const distDir = path.join(mobileRoot, "dist");
 fs.mkdirSync(distDir, { recursive: true });
