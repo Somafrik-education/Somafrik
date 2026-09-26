@@ -74,13 +74,13 @@ export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolea
 
   if (!enabled) return <p className="mt-4 text-sm text-muted">Activités réservées à l'administration de l'établissement.</p>;
   return (
-    <div className="mt-4 space-y-3" aria-live="polite">
+    <div className="mt-2 space-y-2" aria-live="polite">
       {error ? <p role="alert" className="text-sm text-rose-700">Actualisation indisponible. Réessayez ultérieurement.</p> : null}
       {!items.length && !error ? <p className="text-sm text-muted">Aucune activité récente.</p> : null}
-      <ol className="space-y-3">
+      <ol className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
         {items.map((item) => (
           <li key={item.id} className="border-b border-line pb-2">
-            <p className="text-sm font-semibold text-ink">{item.label}</p>
+            <p className="text-xs font-semibold text-ink">{item.label}</p>
             <time className="text-xs text-muted" dateTime={item.at}>{formatDateTimeForDisplay(item.at)}</time>
           </li>
         ))}

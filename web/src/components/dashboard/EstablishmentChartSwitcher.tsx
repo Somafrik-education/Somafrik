@@ -34,16 +34,16 @@ export function EstablishmentChartSwitcher({
   }
 
   return (
-    <section aria-label="Graphique métier" className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-bold text-ink">Graphique métier</h2>
+    <section aria-label="Graphique métier" className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-ink">Graphique métier</h2>
         <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
           Indicateur
           <select
             value={selectedChart.id}
             onChange={(event) => setSelectedId(event.target.value)}
             aria-label="Choisir le graphique métier"
-            className="min-w-[12rem] rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink"
+            className="min-w-[10rem] rounded-lg border border-line bg-white px-2 py-1 text-xs text-ink"
           >
             {charts.map((chart) => (
               <option key={chart.id} value={chart.id}>{chart.title}</option>
@@ -54,6 +54,7 @@ export function EstablishmentChartSwitcher({
       <DashboardChartGrid
         charts={[selectedChart]}
         singleColumn
+        compact
         periodContext={periodContext}
         orderScope="establishment"
         orderUserKey={orderUserKey}
