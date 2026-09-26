@@ -195,6 +195,7 @@ export function DashboardChartGrid({
   orderUserKey,
   showTypeBadge = false,
   emptyMessage = "Aucun graphique disponible pour votre rôle dans ce périmètre.",
+  singleColumn = false,
 }: {
   charts: ChartConfig[];
   periodContext: DashboardPeriodContext;
@@ -202,6 +203,7 @@ export function DashboardChartGrid({
   orderUserKey?: string;
   showTypeBadge?: boolean;
   emptyMessage?: string;
+  singleColumn?: boolean;
 }) {
   const [orderedIds, setOrderedIds] = useState<string[]>(() =>
     applyChartOrder(charts, orderScope, orderUserKey).map((chart) => chart.id),
@@ -299,7 +301,7 @@ export function DashboardChartGrid({
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className={singleColumn ? "grid min-w-0 grid-cols-1 gap-4" : "grid gap-4 lg:grid-cols-2"}>
         {orderedCharts.map((chart, index) => (
           <DashboardChartGridItem
             key={chart.id}
