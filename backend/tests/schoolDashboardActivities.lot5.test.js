@@ -1,7 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { listSchoolDashboardActivities } = require("../lib/schoolDashboardActivities");
+const { listSchoolDashboardActivities, DASHBOARD_ACTIVITY_ACTIONS } = require("../lib/schoolDashboardActivities");
 
 const schoolId = "11111111-1111-4111-8111-111111111111";
 const foreignSchoolId = "22222222-2222-4222-8222-222222222222";
@@ -29,11 +29,13 @@ test("school dashboard feed is tenant-scoped, allowlisted and redacts audit payl
   } };
   const page = await listSchoolDashboardActivities(repository, principal, { limit: "10" });
   assert.equal(params[0], schoolId);
-  assert.deepEqual(params[1], ["create_class", "update_class", "enroll_student"]);
+  assert.deepEqual(params[1], DASHBOARD_ACTIVITY_ACTIONS);
+  assert.ok(params[1].includes("upsert_attendance_batch"));
+  assert.ok(params[1].includes("create_payment"));
   assert.match(sql, /a\.school_id = \$1::uuid/);
   assert.match(sql, /a\.action = ANY\(\$2::text\[\]\)/);
-  assert.doesNotMatch(sql, /new_value|old_value|ip_address|user_agent/);
-  assert.deepEqual(page.items, [{ id: "33333333-3333-4333-8333-333333333333", label: "Classe créée", at: "2026-09-26T12:00:00Z" }]);
+  assert.doesNotMatch(sql, /old_value|ip_address|user_agent|student_name|studentName/);
+  assert.deepEqual(page.items, [{ id: "33333333-3333-4333-8333-333333333333", label: "Classe créée", at: "2026-09-26T12:00:00Z", detail: null }]);
   assert.equal(page.nextCursor, null);
 });
 

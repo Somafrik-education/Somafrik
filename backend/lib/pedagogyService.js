@@ -363,6 +363,7 @@ async function createCourseSchedule(store, rawPayload, principal, auditMeta) {
       action: "create_course_schedule",
       entityType: "course_schedule",
       entityId: saved.id,
+      schoolId: saved.schoolId,
       schoolCode: saved.schoolCode,
       newValue: { ...saved, capacityWarning: warning },
     });
@@ -418,6 +419,7 @@ async function updateCourseSchedule(store, scheduleId, patchRaw, principal, audi
       action: "update_course_schedule",
       entityType: "course_schedule",
       entityId: saved.id,
+      schoolId: saved.schoolId,
       schoolCode: saved.schoolCode,
       oldValue: existing,
       newValue: { ...saved, capacityWarning: warning },
@@ -437,6 +439,7 @@ async function deleteCourseSchedule(store, scheduleId, principal, auditMeta) {
       action: "cancel_course_schedule",
       entityType: "course_schedule",
       entityId: existing.id,
+      schoolId: existing.schoolId,
       schoolCode: existing.schoolCode,
       oldValue: existing,
       newValue: saved,

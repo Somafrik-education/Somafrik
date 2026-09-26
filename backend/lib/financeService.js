@@ -341,6 +341,7 @@ async function writeFinanceAudit(tx, principal, auditMeta, entry) {
     throw createFinanceError(500, "Audit Finance indisponible dans la transaction.");
   }
   await tx.recordFinanceAudit({
+    schoolId: entry.schoolId,
     schoolCode: entry.schoolCode || primaryFinanceSchoolCode(principal) || principal?.schoolCode,
     userId: principal?.sub || principal?.id,
     action: entry.action,
@@ -549,6 +550,7 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
       action: "create_payment",
       entityType: "payment",
       entityId: result.id,
+      schoolId: school.id,
       schoolCode: result.schoolCode,
       newValue: result,
     });

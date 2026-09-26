@@ -22,8 +22,9 @@ test("only selects safe fields and scopes by school UUID", async () => {
   const page = await listSchoolDashboardActivities(repository, principal);
   assert.equal(params[0], schoolId);
   assert.match(sql, /a.school_id = \$1::uuid/);
-  assert.doesNotMatch(sql, /new_value|old_value|ip_address|user_agent/);
-  assert.deepEqual(page.items[0], { id: "22222222-2222-4222-8222-222222222222", label: "Classe créée", at: "2026-09-26T12:00:00Z" });
+  assert.doesNotMatch(sql, /old_value|ip_address|user_agent|student_name|studentName/);
+  assert.match(sql, /new_value->>'dayOfWeek'/);
+  assert.deepEqual(page.items[0], { id: "22222222-2222-4222-8222-222222222222", label: "Classe créée", at: "2026-09-26T12:00:00Z", detail: null });
 });
 
 test("rejects malformed pagination cursor", async () => {
@@ -60,7 +61,7 @@ test("never resolves a platform or non-school role to an establishment", async (
 
 test("school activity feed allows audited attendance and planning events without exposing audit payload", async () => {
   let sql, params;
-  const actions = ["upsert_attendance", "create_course_schedule", "update_course_schedule", "cancel_course_schedule"];
+  const actions = ["upsert_attendance", "upsert_attendance_batch", "create_course_schedule", "update_course_schedule", "cancel_course_schedule", "create_payment"];
   const repository = { all: async (query, args) => {
     sql = query;
     params = args;
@@ -69,6 +70,27 @@ test("school activity feed allows audited attendance and planning events without
   const page = await listSchoolDashboardActivities(repository, principal);
   assert.equal(params[0], schoolId);
   for (const action of actions) assert.ok(params[1].includes(action));
-  assert.deepEqual(page.items.map((item) => item.label), ["Appel enregistré", "Cours planifié", "Planning modifié", "Cours annulé"]);
-  assert.doesNotMatch(sql, /new_value|old_value|ip_address|user_agent/);
+  assert.deepEqual(page.items.map((item) => item.label), ["Appel enregistré", "Appel enregistré", "Cours planifié", "Planning modifié", "Cours annulé", "Paiement enregistré"]);
+  assert.doesNotMatch(sql, /old_value|ip_address|user_agent|student_name|studentName/);
+});
+
+test("planning move projects weekday and time without payment identity", () => {
+  const { projectActivityDetail } = require("../lib/schoolDashboardActivities");
+  assert.equal(
+    projectActivityDetail({
+      action: "update_course_schedule",
+      day_of_week: "1",
+      start_time: "08:00:00",
+      end_time: "09:30",
+      class_name: "6ème A",
+      subject_name: "Mathématiques",
+      student_name: "Ne pas afficher",
+    }),
+    "6ème A · Mathématiques · lundi 08:00–09:30",
+  );
+  assert.match(
+    projectActivityDetail({ action: "create_payment", amount: "250000", currency: "CDF", student_name: "Secret" }),
+    /^250[ \u00a0\u202f]000 CDF$/,
+  );
+  assert.equal(projectActivityDetail({ action: "upsert_attendance_batch", attendance_count: "28" }), "28 présences");
 });

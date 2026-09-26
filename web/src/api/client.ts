@@ -2,6 +2,7 @@
 // VITE_API_URL obligatoire (ex. https://api.somafrik.app ou http://localhost:5000).
 
 import { API_URL } from "../lib/apiUrl";
+import { DASHBOARD_SYNC_EVENT, mutationRefreshesDashboard } from "../lib/dashboardSync";
 
 const API_BASE_URL = `${API_URL.replace(/\/$/, "")}/api`;
 
@@ -108,8 +109,8 @@ export async function request<T = unknown>(
     );
   }
 
-  if (typeof window !== "undefined" && options.method && !["GET", "HEAD", "OPTIONS"].includes(options.method.toUpperCase()) && /^\/(?:attendance|presences|course-schedules)(?:\/|\?|$)/.test(path)) {
-    window.dispatchEvent(new Event("somafrik:dashboard-activities-changed"));
+  if (typeof window !== "undefined" && mutationRefreshesDashboard(options.method, path)) {
+    window.dispatchEvent(new Event(DASHBOARD_SYNC_EVENT));
   }
   return data as T;
 }

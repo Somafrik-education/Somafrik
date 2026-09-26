@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { formatDateTimeForDisplay } from "../../lib/dates";
+import { DASHBOARD_SYNC_EVENT, DASHBOARD_SYNC_INTERVAL_MS } from "../../lib/dashboardSync";
 
-type Activity = { id: string; label: string; at: string };
+type Activity = { id: string; label: string; at: string; detail?: string | null };
 type Page = { items: Activity[]; nextCursor: string | null };
 
 export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolean; schoolKey: string }) {
@@ -45,15 +46,15 @@ export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolea
     void refresh();
     // Same-tab attendance/planning writes trigger an immediate refresh.
     // Short fallback covers updates made by other connected users.
-    const timer = window.setInterval(() => void refresh(), 10_000);
+    const timer = window.setInterval(() => void refresh(), DASHBOARD_SYNC_INTERVAL_MS);
     const onFocus = () => void refresh();
-    window.addEventListener("somafrik:dashboard-activities-changed", onFocus);
+    window.addEventListener(DASHBOARD_SYNC_EVENT, onFocus);
     window.addEventListener("focus", onFocus);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
-      window.removeEventListener("somafrik:dashboard-activities-changed", onFocus);
+      window.removeEventListener(DASHBOARD_SYNC_EVENT, onFocus);
     };
   }, [enabled, schoolKey, revision]);
 
@@ -85,6 +86,7 @@ export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolea
         {items.map((item) => (
           <li key={item.id} className="border-b border-line pb-2">
             <p className="text-xs font-semibold text-ink">{item.label}</p>
+            {item.detail ? <p className="text-xs text-ink">{item.detail}</p> : null}
             <time className="text-xs text-muted" dateTime={item.at}>{formatDateTimeForDisplay(item.at)}</time>
           </li>
         ))}

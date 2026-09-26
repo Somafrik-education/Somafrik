@@ -24,6 +24,7 @@ const { drainOutbox, list } = require("./communicationsNotificationsService");
 const { ensureClientsCanonicalBootstrap } = require("../db/clientsCanonicalBootstrap");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const { createPedagogyPgStore } = require("../db/pedagogyPgStore");
+const { guardPgPool } = require("./pgPoolGuard");
 
 const ROOT = path.resolve(__dirname, "../..");
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
@@ -59,11 +60,11 @@ function withDatabaseName(databaseUrl, databaseName) {
 async function withIsolatedPg(run) {
   if (!DATABASE_URL) return { skipped: true };
   const dbName = `somafrik_pln_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  const admin = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
+  const admin = guardPgPool(new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") }));
   await admin.query(`CREATE DATABASE ${dbName}`);
   await admin.end();
   const url = withDatabaseName(DATABASE_URL, dbName);
-  const pool = new Pool({ connectionString: url });
+  const pool = guardPgPool(new Pool({ connectionString: url }));
   try {
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
@@ -72,20 +73,24 @@ async function withIsolatedPg(run) {
     await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
     return { skipped: false, ...(await run(pool)) };
   } finally {
-    await pool.end();
-    const drop = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
-    await drop.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      [dbName],
-    );
-    await drop.query(`DROP DATABASE IF EXISTS ${dbName}`);
-    await drop.end();
+    await pool.end().catch(() => {});
+    const drop = guardPgPool(new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") }));
+    try {
+      await drop.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+        [dbName],
+      );
+      await drop.query(`DROP DATABASE IF EXISTS ${dbName}`);
+    } finally {
+      await drop.end().catch(() => {});
+    }
   }
 }
 
 async function withRepo(pool, fn) {
   const { createPostgresRepository } = require("../db/repositoryFactory");
   const repo = createPostgresRepository(pool.options.connectionString);
+  guardPgPool(repo.pool);
   await repo.init();
   try {
     return await fn(repo);
