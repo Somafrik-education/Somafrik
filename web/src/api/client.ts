@@ -108,6 +108,9 @@ export async function request<T = unknown>(
     );
   }
 
+  if (typeof window !== "undefined" && options.method && !["GET", "HEAD", "OPTIONS"].includes(options.method.toUpperCase()) && /^\/(?:attendance|presences|course-schedules)(?:\/|\?|$)/.test(path)) {
+    window.dispatchEvent(new Event("somafrik:dashboard-activities-changed"));
+  }
   return data as T;
 }
 

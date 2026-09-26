@@ -56,3 +56,19 @@ test("never resolves a platform or non-school role to an establishment", async (
     assert.deepEqual(resolved, jwt);
   }
 });
+
+
+test("school activity feed allows audited attendance and planning events without exposing audit payload", async () => {
+  let sql, params;
+  const actions = ["upsert_attendance", "create_course_schedule", "update_course_schedule", "cancel_course_schedule"];
+  const repository = { all: async (query, args) => {
+    sql = query;
+    params = args;
+    return actions.map((action, index) => ({ id: `22222222-2222-4222-8222-22222222222${index}`, action, created_at: "2026-09-26T12:00:00Z" }));
+  } };
+  const page = await listSchoolDashboardActivities(repository, principal);
+  assert.equal(params[0], schoolId);
+  for (const action of actions) assert.ok(params[1].includes(action));
+  assert.deepEqual(page.items.map((item) => item.label), ["Appel enregistré", "Cours planifié", "Planning modifié", "Cours annulé"]);
+  assert.doesNotMatch(sql, /new_value|old_value|ip_address|user_agent/);
+});

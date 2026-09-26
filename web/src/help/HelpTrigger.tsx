@@ -16,7 +16,7 @@ export const HelpTrigger = forwardRef<HTMLButtonElement, HelpTriggerProps>(
         aria-expanded={expanded}
         aria-haspopup="dialog"
         className={cn(
-          "no-print fixed bottom-24 right-4 inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-full bg-brand px-3 text-sm font-semibold text-white shadow-card outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 sm:bottom-20 sm:min-w-0 sm:px-4",
+          "no-print fixed bottom-4 right-4 lg:bottom-4 lg:left-4 lg:right-auto inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-full bg-brand px-3 text-sm font-semibold text-white shadow-card outline-none transition hover:bg-brand-700 focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-2 sm:bottom-4 sm:min-w-0 sm:px-4",
           HELP_TRIGGER_ZCLASS,
           className,
         )}
