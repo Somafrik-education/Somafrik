@@ -32,6 +32,18 @@ Ajouter un nom à l’allowlist ne crée pas la ligne, et une ligne sans `school
 - Détail public du planning : jour, heure, classe, matière. Montant et devise pour un paiement. Nombre de présences pour un appel. Jamais le JSON d’audit, jamais le nom porté par le paiement.
 - Après une écriture élève, classe, présence, planning ou paiement : événement local immédiat. Le tableau de bord relit les domaines KPI et le fil. Les autres sessions sont reprises par le poll de 10 s déjà convenu, étendu aux indicateurs. Une erreur réseau s’affiche et la tentative suivante reprend.
 
+## Échec CI Communications C4 (run 36275098043)
+
+Le job `communications-c4` a échoué sur `RED-N4-TR-01` avec `terminating connection due to administrator command`. Ce n’est pas une assertion du tableau de bord : le fichier `communicationsPlanningNavigation.red.test.js` n’est pas modifié par le correctif métier, et les tests suivants du même job (`RED-N4-TR-02`, `RED-N4-TR-03`, `RED-N4-SEPARATION`) sont passés.
+
+Le journal PostgreSQL du service, horodaté à la même seconde que l’échec (`22:09:06.980` et `22:09:06.982`, PID 1352 et 1355), porte exactement `FATAL: terminating connection due to administrator command`, puis un checkpoint forcé. C’est la signature de `pg_terminate_backend`, appelé dans le `finally` de `withIsolatedPg` avant `DROP DATABASE`. Le même message a déjà fait échouer `RED-N5-02` sur le run 36261274250, puis le run suivant de cette PR était vert. Le serveur est resté disponible.
+
+`guardPgPool` absorbe cette coupure de nettoyage sur les pools du pas « Notifications navigation C0 à C3 ». Une autre erreur de connexion continue de remonter. La CI de ce commit doit repasser entièrement verte avant Ready.
+
+## Dette technique distincte — `enroll_student`
+
+Hors de ce correctif. `POST /api/classes/:classCode/students` valide l’inscription, puis appelle `auditService.record(..., "enroll_student", ...)` après le commit (`backend/server.js`). Si cet audit échoue, l’élève existe sans activité. L’inscription et l’événement doivent être écrits dans la même transaction. Ce chantier ne bloque pas l’explication de C4 et ne change pas la production.
+
 ## Recette préproduction (0/8 tant que Render n’a pas cette branche)
 
 - [ ] Un appel enregistré apparaît sans recharger la page.
