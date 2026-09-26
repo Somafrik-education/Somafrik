@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { todayPeriodDate } from "../../lib/dates";
+import { SchoolRecentActivities } from "./SchoolRecentActivities";
 
 type Metric = { label: string; value: string; icon: string; tone: string };
 type Props = {
@@ -12,10 +13,12 @@ type Props = {
   canReadClasses: boolean;
   canReadPayments: boolean;
   children: ReactNode;
+  activitiesEnabled: boolean;
+  schoolKey: string;
 };
 
 /** LOT 1: layout only. Historical filters and new widgets arrive in later lots. */
-export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, canReadStudents, canReadTeachers, canReadClasses, canReadPayments, children }: Props) {
+export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, canReadStudents, canReadTeachers, canReadClasses, canReadPayments, activitiesEnabled, schoolKey, children }: Props) {
   const consultationDate = todayPeriodDate();
 
   const metrics: Metric[] = [
@@ -60,7 +63,7 @@ export function EstablishmentDashboardLayout({ students, teachers, classes, reve
         <div className="min-w-0">{children}</div>
         <aside aria-label="Activités récentes" className="rounded-xl border border-line bg-white p-5">
           <h2 className="text-lg font-bold text-ink">Activités récentes</h2>
-          <p className="mt-4 text-sm text-muted">Le fil d'activités sera disponible après le LOT 3.</p>
+          <SchoolRecentActivities enabled={activitiesEnabled} schoolKey={schoolKey} />
         </aside>
       </div>
     </section>
