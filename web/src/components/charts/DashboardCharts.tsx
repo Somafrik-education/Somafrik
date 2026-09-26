@@ -319,15 +319,15 @@ export function renderConfiguredChart(chart: RenderableChart, options: { compact
     case "pie":
       if (options.compact) {
         return (
-          <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1">
-            <div className="h-[125px] w-full min-w-0 shrink-0">
+          <div className="flex h-full min-w-0 flex-row items-center justify-center gap-4">
+            <div className="h-[125px] min-w-0 flex-[0_1_55%]">
               <DonutChart data={data} innerRadius={chart.type === "pie" ? 0 : 38} outerRadius={58} showLegend={false} />
             </div>
-            <ul className="flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] font-semibold" aria-label="Légende du graphique">
+            <ul className="flex min-w-0 flex-[1_1_45%] flex-col items-start justify-center gap-1.5 text-[11px] font-semibold" aria-label="Légende du graphique">
               {data.map((item, index) => (
-                <li key={`${item.name}-${index}`} className="flex items-center gap-1 whitespace-nowrap">
+                <li key={`${item.name}-${index}`} className="flex min-w-0 items-center gap-1.5">
                   <span aria-hidden="true" className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.fill ?? CHART_PALETTE[index % CHART_PALETTE.length] }} />
-                  <span>{item.name}</span>
+                  <span className="break-words">{item.name}</span>
                 </li>
               ))}
             </ul>
