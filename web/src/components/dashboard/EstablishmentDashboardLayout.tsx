@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { todayPeriodDate } from "../../lib/dates";
 import { SchoolRecentActivities } from "./SchoolRecentActivities";
+import { SchoolDashboardSecondaryWidgets } from "./SchoolDashboardSecondaryWidgets";
+import type { TodayPresenceKpi } from "../../lib/presenceMetrics";
 
 type Metric = { label: string; value: string; icon: string; tone: string };
 type Props = {
@@ -15,10 +17,13 @@ type Props = {
   children: ReactNode;
   activitiesEnabled: boolean;
   schoolKey: string;
+  levels: Array<{ name: string; value: number }>;
+  attendance: TodayPresenceKpi;
+  canReadPresences: boolean;
 };
 
 /** LOT 1: layout only. Historical filters and new widgets arrive in later lots. */
-export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, canReadStudents, canReadTeachers, canReadClasses, canReadPayments, activitiesEnabled, schoolKey, children }: Props) {
+export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, canReadStudents, canReadTeachers, canReadClasses, canReadPayments, activitiesEnabled, schoolKey, levels, attendance, canReadPresences, children }: Props) {
   const consultationDate = todayPeriodDate();
 
   const metrics: Metric[] = [
@@ -66,6 +71,7 @@ export function EstablishmentDashboardLayout({ students, teachers, classes, reve
           <SchoolRecentActivities enabled={activitiesEnabled} schoolKey={schoolKey} />
         </aside>
       </div>
+      <SchoolDashboardSecondaryWidgets levels={levels} attendance={attendance} showLevels={canReadStudents} showAttendance={canReadPresences} />
     </section>
   );
 }
