@@ -7,7 +7,7 @@ vi.mock("../../lib/dates", () => ({ formatDateTimeForDisplay: (date: string) => 
 
 import { SchoolRecentActivities } from "./SchoolRecentActivities";
 
-const entry = (id: string) => ({ id, label: "Classe créée", at: "2026-09-26T12:00:00Z" });
+const entry = (id: string) => ({ id, label: id === "old" ? "Ancienne école" : "Nouvelle école", at: "2026-09-26T12:00:00Z" });
 
 describe("LOT 5 — recent school activities", () => {
   beforeEach(() => get.mockReset());
@@ -30,10 +30,11 @@ describe("LOT 5 — recent school activities", () => {
     get.mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
       .mockResolvedValue({ items: [entry("new")], nextCursor: null });
     const { rerender } = render(<SchoolRecentActivities enabled schoolKey="school-a" />);
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(get).toHaveBeenCalled());
     rerender(<SchoolRecentActivities enabled schoolKey="school-b" />);
-    expect(await screen.findByText("Classe créée")).toBeInTheDocument();
+    expect(await screen.findByText("Nouvelle école")).toBeInTheDocument();
     await act(async () => resolveOld({ items: [entry("old")], nextCursor: null }));
-    expect(screen.getAllByText("Classe créée")).toHaveLength(1);
+    expect(screen.getByText("Nouvelle école")).toBeInTheDocument();
+    expect(screen.queryByText("Ancienne école")).not.toBeInTheDocument();
   });
 });
