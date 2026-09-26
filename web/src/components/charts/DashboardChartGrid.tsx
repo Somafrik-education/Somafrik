@@ -119,7 +119,7 @@ function DashboardChartCard({
         />
       }
     >
-      {renderConfiguredChart(appliedChart)}
+      {renderConfiguredChart(appliedChart, { compact })}
     </ChartPanel>
   );
 }
