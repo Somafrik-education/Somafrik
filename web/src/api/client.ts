@@ -108,8 +108,7 @@ export async function request<T = unknown>(
     );
   }
 
-  return data as T;
-}
+  if (typeof window !== "undefined" && options.method && !["GET", "HEAD", "OPTIONS"].includes(options.method.toUpperCase()) && /^\/(?:attendance|presences|course-schedules)(?:\/|\?|$)/.test(path)) {\n    window.dispatchEvent(new Event("somafrik:dashboard-activities-changed"));\n  }\n  return data as T;\n}
 
 export async function requestBlob(path: string, options: RequestInit = {}, retried = false): Promise<Blob> {
   const token = accessTokenProvider();
