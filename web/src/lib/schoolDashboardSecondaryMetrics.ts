@@ -15,6 +15,7 @@ export function buildSchoolDashboardSecondaryMetrics(
   const classes = scopedClasses(user, state, students);
   const classByKey = new Map<string, Record<string, unknown>>();
   for (const schoolClass of classes) {
+    if (schoolClass.schoolId && String(schoolClass.schoolId).toLowerCase() !== String(user?.schoolId ?? "").toLowerCase()) continue;
     for (const value of [schoolClass.id, schoolClass.classCode, schoolClass.code, schoolClass.name]) {
       const key = String(value ?? "").trim().toLocaleLowerCase("fr");
       if (key) classByKey.set(key, schoolClass);
