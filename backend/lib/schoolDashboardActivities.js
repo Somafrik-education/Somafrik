@@ -4,7 +4,7 @@
 const ALLOWED = Object.freeze({
   create_class: "Classe créée",
   update_class: "Classe modifiée",
-  enroll_student: "Élève inscrit",
+  enroll_student: "Élève inscrit",\n  upsert_attendance: "Appel enregistré",
 });
 const ACTIONS = Object.keys(ALLOWED);
 const { matchesSchoolLookup } = require("./schoolCodeV2");
