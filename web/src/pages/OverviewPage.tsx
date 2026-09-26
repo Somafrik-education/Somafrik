@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { EstablishmentDashboardLayout } from "../components/dashboard/EstablishmentDashboardLayout";
+import { getEstablishmentMetrics } from "../lib/establishment";
+import { scopedPayments } from "../lib/establishment";
+import { getPaymentCashBreakdown } from "../lib/paymentCashKpi";
 import { LoadingState, ErrorState } from "@/design-system";
 import { GuidedSchoolSetupDashboardCard } from "../components/schoolSetup/GuidedSchoolSetupDashboardCard";
 import { schoolSetupGuidedApi, type GuidedSetupPayload } from "../lib/schoolSetupGuidedApi";
@@ -112,6 +116,13 @@ export function OverviewPage() {
   );
 
   const users = scopedUsers(scopedUser, state);
+  const establishmentMetrics = useMemo(() => internalSchool ? getEstablishmentMetrics(scopedUser, state, users) : null, [internalSchool, scopedUser, state, users]);
+  const revenue = useMemo(() => {
+    if (!internalSchool) return "—";
+    const buckets = getPaymentCashBreakdown(scopedPayments(scopedUser, state));
+    if (buckets.length !== 1 || !buckets[0].currencyKey) return "—";
+    return `${new Intl.NumberFormat("fr-FR").format(buckets[0].collectedAmount)} ${buckets[0].currencyLabel}`;
+  }, [internalSchool, scopedUser, state]);
 
   const platformCharts = useMemo(() => {
     if (internalSchool) return [];
@@ -163,13 +174,30 @@ export function OverviewPage() {
       {guidedPayload ? (
         <GuidedSchoolSetupDashboardCard payload={guidedPayload} role={user?.role} />
       ) : null}
-      <DashboardChartGrid
-        charts={charts}
-        periodContext={periodContext}
-        orderScope={orderScope}
-        orderUserKey={orderUserKey}
-        showTypeBadge={canConfigureCharts}
-      />
+      {internalSchool && establishmentMetrics ? (
+        <EstablishmentDashboardLayout
+          students={establishmentMetrics.students}
+          teachers={establishmentMetrics.teachers}
+          classes={establishmentMetrics.classes}
+          revenue={revenue}
+        >
+          <DashboardChartGrid
+            charts={charts}
+            periodContext={periodContext}
+            orderScope={orderScope}
+            orderUserKey={orderUserKey}
+            showTypeBadge={canConfigureCharts}
+          />
+        </EstablishmentDashboardLayout>
+      ) : (
+        <DashboardChartGrid
+          charts={charts}
+          periodContext={periodContext}
+          orderScope={orderScope}
+          orderUserKey={orderUserKey}
+          showTypeBadge={canConfigureCharts}
+        />
+      )}
     </div>
   );
 }
