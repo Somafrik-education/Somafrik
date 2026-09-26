@@ -11,8 +11,9 @@
 | SHA audité | `21934f0e2a65f232ce8212547d2ef7a19a822fcb` |
 | Commit | `chore(release): reconcile main ancestry into develop (#800)` |
 | Date d’audit | 2026-09-26 |
-| Livrable | ce document uniquement |
-| Verdict | **HOLD.** Le socle visuel et les règles métier existent. Le contrat #805 (cartes KPI, graphique métier unique, fil d’activités, filtres année/date) n’est pas implémenté. Les cinq lots ci-dessous sont le périmètre autorisé. |
+| Livrable | ce document + la maquette archivée |
+| Maquette | `docs/audits/evidence/tableau-de-bord-web-maquette-805.png` |
+| Verdict | **HOLD.** Le socle métier existe. La maquette fixe la mise en page du contenu. Les cinq lots ci-dessous sont le périmètre autorisé. La coque globale (sidebar, topbar) ne suit pas la maquette. |
 
 ---
 
@@ -22,7 +23,7 @@
 
 La maquette reste la référence de mise en page. Ses chiffres sont fictifs et ne deviennent pas des constantes. Quand la maquette et une règle déjà verrouillée divergent, **la règle métier gagne**. Les écarts sont listés dans la section « Règles qui priment sur la maquette ».
 
-La navigation latérale, l’isolation établissement, le RBAC des graphiques, le taux de paiement et la présence du jour sont des contrats à conserver. Les lots ne les réécrivent pas.
+L’isolation établissement, le RBAC, le taux de paiement et la présence du jour sont des contrats à conserver. La maquette redessine aussi la sidebar et la barre du haut : ce chrome est partagé par tout le back-office et **reste hors des cinq lots**. Le contenu de l’accueil établissement, lui, suit la maquette.
 
 **Hors périmètre de tous les lots :**
 
@@ -37,24 +38,67 @@ La navigation latérale, l’isolation établissement, le RBAC des graphiques, l
 
 ## Maquette
 
-L’issue archive la maquette au chemin bibliothèque `/Somafrik/Maquettes/tableau-de-bord-web.png` (24 septembre 2026). Ce fichier **n’est pas dans le dépôt**, et l’issue n’a ni commentaire ni pièce jointe. L’audit visuel pixel n’est donc pas possible.
+Fichier versé pour les lots suivants : `docs/audits/evidence/tableau-de-bord-web-maquette-805.png` (1536×1024). L’issue citait `/Somafrik/Maquettes/tableau-de-bord-web.png`, absent du dépôt au moment du premier passage. La capture runtime actuelle, à ne pas prendre pour cible, reste `docs/user-guides/assets/web/02-tableau-de-bord-etablissement.png`.
 
-Le contrat fonctionnel utilisé ici est le texte de #805 :
+Lecture de la zone **contenu** (c’est le contrat visuel des lots 1 à 4) :
 
-- navigation latérale ;
-- filtres année scolaire et date ;
-- cartes KPI élèves, enseignants, classes, recettes ;
-- graphique central interchangeable : effectifs, inscriptions, présences, notes moyennes, recettes, impayés, par classe ou par niveau ;
-- répartition par niveau et taux de présence ;
-- fil d’activités à droite, horodaté, avec lien vers l’objet, permissions et isolation par établissement ;
-- états chargement / vide / erreur ;
-- pas de rechargement complet au changement de série ;
-- temps réel : reconnexion, déduplication, pagination, repli polling ;
-- accessibilité, responsive, tests unitaires, intégration et E2E.
+```text
+Titre « Tableau de bord »
+Sous-titre « Vue d'ensemble de votre établissement »     [calendrier] Aujourd'hui
 
-La capture runtime actuelle, qui ne doit pas être confondue avec la maquette, est `docs/user-guides/assets/web/02-tableau-de-bord-etablissement.png`. Elle montre la grille « Administration / Scolarité / Pédagogie / Présences / Paiements / Effectifs par classe », des barres agrégées, et un sélecteur Quotidien–Annuel sur chaque carte. Pas de cartes KPI, pas de sélecteur métier, pas de colonne d’activités.
+[Élèves] [Enseignants] [Classes] [Recettes (devise)]
+ valeur     valeur        valeur    montant
+ variation vs mois dernier, seulement si elle est calculable
 
-**Blocage lot 5 visuel :** déposer le PNG dans le dépôt (ou le joindre à #805) avant la validation visuelle. Les lots 1 à 4 peuvent démarrer sur le contrat textuel.
++----------------------------------+  +----------------------+
+| Évolution des effectifs          |  | Activités récentes   |
+| sous-titre de la série           |  | pastille temps réel  |
+| barres par mois de l'année       |  | 8 lignes typées      |
+| sélecteur (menu ouvert) :        |  | lien vers l'objet    |
+|   Effectifs                      |  | « Voir toutes les    |
+|   Inscriptions                   |  |    activités »       |
+|   Présences                      |  +----------------------+
+|   Notes moyennes                 |
+|   Recettes                       |
+|   Impayés                        |
+|   Par classe                     |
+|   Par niveau                     |
++----------------+-----------------+
+| Répartition    | Taux de présence |
+| par niveau     | (aujourd'hui)    |
+| donut + total  | anneau + légende |
++----------------+-----------------+
+```
+
+Le sélecteur ouvert sur la maquette met **Par classe** et **Par niveau** dans le même menu que les séries temporelles. Ce ne sont pas un second contrôle. « Effectifs » est une série mensuelle sur l’année scolaire (l’exemple trace Sept → Juin). « Par classe » et « Par niveau » changent le graphique en répartition, plus en courbe mensuelle.
+
+Les huit lignes d’activité dessinées, comme **formes** et non comme données :
+
+| Forme | Titre | Détail visible |
+| --- | --- | --- |
+| Inscription | Nouvel élève inscrit | nom, classe |
+| Paiement | Paiement reçu | montant, devise, parent |
+| Présence | Présence enregistrée | classe, présents / attendus |
+| Note | Note saisie | matière, classe — pas la note chiffrée |
+| Enseignant | Nouvel enseignant | nom, discipline |
+| Communication | Message envoyé | objet, classe |
+| Cours | Cours créé | matière, classe |
+| Frais | Frais réglé | libellé de frais, montant |
+
+« Frais réglé » et « Paiement reçu » sont deux libellés du même domaine financier. Un seul type d’événement paiement suffit s’il n’existe qu’une écriture. L’horodatage est relatif (« il y a 2 min »). Le lien « Voir toutes les activités » est la suite paginée du même fil, pas un nouveau module.
+
+Chiffres de la maquette, **interdits en dur** : 1 248 élèves, 62 enseignants, 24 classes, 12 450 000, +5 %, +2 %, +1, +8 %, 92 %, 250 000, 500 000, Institut Nuruyetu, CD-KIN-26-0001, Kambale Samuel, Ndaya Marie. La légende de présence ne boucle pas : 1 148 + 80 + 20 + 12 = 1 260, alors que 1 148 / 1 248 = 92 %. Une seule population, un seul dénominateur.
+
+### Ce que la maquette dessine et que les lots ne changent pas
+
+La maquette redessine toute la coque :
+
+- sidebar : Tableau de bord, Établissement, Scolarité, Élèves, Enseignants, Cours & Emplois du temps, Présences, Notes & Évaluations, Finance, Communication, Rapports, Paramètres, plus un encart « Besoin d'aide ? » ;
+- topbar : nom d’établissement et code au centre, année scolaire à droite, cloche, identité.
+
+Le produit actuel a une autre architecture, volontaire. `NAV_ITEMS` groupe Élèves, Enseignants et Classes dans « Mon établissement ». Le commentaire de `web/src/lib/constants.ts` laisse Messages, Annonces et Notifications dans la topbar, pas dans le menu. La topbar réelle ajoute recherche, rafraîchissement, messages, annonces, préférences et déconnexion. `HelpHost` couvre déjà l’aide.
+
+Déplacer l’année scolaire dans la topbar globale la ferait apparaître sur toutes les routes. Les filtres année et date vivent donc dans l’en-tête **de la page** tableau de bord. La sidebar et la topbar ne sont pas dans les cinq lots. Un ticket de navigation séparé pourra plus tard mapper chaque entrée de la maquette vers une route existante, sans créer de module.
 
 ---
 
@@ -70,7 +114,7 @@ La capture runtime actuelle, qui ne doit pas être confondue avec la maquette, e
 | Largeur | `AppLayout` — `main` dans `max-w-6xl` | Colonne unique. Une rail d’activités à droite ne tient pas sans exception de layout **limitée à cette page**. |
 | Carte setup | `GuidedSchoolSetupDashboardCard` au-dessus de la grille | À conserver. Elle ne fait pas partie de la maquette mais c’est un flux métier actif. |
 
-Les libellés de navigation (`NAV_ITEMS` dans `web/src/lib/constants.ts`) ne sont pas à réécrire dans ces lots. Le chantier est le contenu de l’outlet établissement, pas une nouvelle coque.
+Les libellés de navigation ne sont pas à réécrire dans ces lots. Le chantier est le contenu de l’outlet établissement. L’écart de coque est décrit plus haut et reste hors lots.
 
 ### Ce que la page établissement affiche vraiment
 
@@ -103,12 +147,12 @@ L’ordre des cartes est aussi local (`chartOrder.ts`), par utilisateur. Le type
 | Élèves | `scopedStudents` → `projectScopedStudents` (autorité `schoolId`) | Effectif du snapshot courant. Sous filtre de période, `activeStudentsInPeriod` ne compte que les élèves qui ont une présence, une note ou un paiement dans la fenêtre. Ce n’est pas l’effectif inscrit. |
 | Enseignants | `scopedTeachers` | Portée établissement, avec repli sur les classes des élèves scopés. |
 | Classes | `scopedClasses` | Idem. L’enseignant est restreint par `teacherScopedClassNames`. |
-| Recettes | `getPaymentRateKpi` sur `student_fee_obligations` | Le KPI verrouillé est **Taux de paiement** (`Σ amountPaid / Σ (amountDue − exemption)`). Multi-devises ou montant manquant → `—`. `collectedAmount` existe dans le résultat mais n’est pas affiché. Le donut « Paiements » compte des **lignes** de paiement par statut, pas un montant encaissé. |
+| Recettes | `getPaymentRateKpi` sur `student_fee_obligations` | La 4e carte de la maquette est un **montant** encaissé, pas le taux. `collectedAmount` existe et n’est pas affiché. Multi-devises ou montant manquant → `—`. Le taux (`Σ amountPaid / Σ (amountDue − exemption)`) reste la formule du taux ; il n’est pas la carte. Le libellé de devise vient de l’obligation, pas du « FC » dessiné. Aucune variation « vs mois dernier » n’est stockée. |
 | Impayés | `unpaidService.buildDashboard` | `totalAmountDue`, effectif, `byClass`. Utilisé par la page Finances, pas par l’accueil. |
 | Inscriptions | table `enrollments` (`academic_year_id`, `enrollment_date`, `status`, `class_id`) | Pas de série dashboard. Le domaine Web `studentEnrollment.ts` connaît la source et le statut, pas un agrégat temporel d’accueil. |
 | Présences | deux formules distinctes | Jauge dashboard : `(présents + retards) / lignes enregistrées` (`getPresenceStats`). KPI « Présence du jour » : `—` tant que l’appel n’est pas complet (`recorded !== expected`), fuseau `Africa/Kinshasa` par défaut. Une ligne manquante n’est pas une absence. |
 | Notes moyennes | `gradeBook.ts` + `backend/lib/gradesCanonical.js` (`weightedAverage`) | Le graphique « Notes par cours » est un **comptage** de lignes, pas une moyenne. Les statuts absent / justifié / dispensé / non remis sont exclus de la moyenne. |
-| Par niveau | `levelName` sur le domaine élève / scolarité (`studentDomain.ts`, `schoolingTruth.ts`) | Le dashboard groupe par `className`, pas par niveau. |
+| Par niveau | `education_levels.name` (`level_code`, `display_order`, scopé pays puis `school_levels`) | Pas de colonne cycle. Maternelle / Primaire / Secondaire sur la maquette sont un exemple, pas une taxonomie à coder. Le dashboard groupe aujourd’hui par `className`. |
 | Activités | notifications internes (`useInternalNotificationsUnreadCount`, poll 30 s, curseur) ; `audit_logs` | Pas de fil. `GET /api/audit` est réservé Super Admin / Admin Pays **et** listé dans `SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM`. Les deux gardes se ferment. Ce n’est pas un flux établissement. |
 
 ### Permissions et isolation
@@ -140,18 +184,21 @@ Il n’y a pas de Playwright. Les E2E du dépôt sont des scripts Node (`scripts
 
 ## Règles qui priment sur la maquette
 
-1. Aucun effectif, montant ou pourcentage de la maquette n’est codé en dur.
-2. « Recettes » ne remplace pas « Taux de paiement ». Si un montant encaissé est affiché, il sort de `collectedAmount`, une seule devise, sinon `—`.
-3. « Présence du jour » reste `—` si l’appel est incomplet. La jauge historique `(présents + retards) / lignes` est un autre indicateur et doit porter un autre libellé.
-4. L’effectif élèves de la carte est le snapshot scolarité scopé, pas le sous-ensemble « actif sur la période ».
-5. Une moyenne de notes passe par `gradeBook` / `weightedAverage`. Un comptage de copies n’est pas une moyenne.
-6. Un impayé est le reste dû des obligations (`unpaidService`), pas le nombre de paiements au statut Impayé.
-7. Une série dont le module n’est pas en `READ` n’apparaît pas, y compris dans le sélecteur.
-8. Un enseignant ne voit que ses classes affectées. S’il n’a aucune affectation résolue, le repli actuel (portée établissement) reste en vigueur : ne pas le « durcir » dans ces lots.
-9. Parent et plateforme ne changent pas de page.
-10. La carte de configuration guidée reste au-dessus du nouveau contenu.
-11. En démo, les domaines critiques continuent de bloquer l’affichage d’un effectif partiel.
-12. Le fil d’activités ne lit pas `audit_logs.old_value` / `new_value` et n’ouvre pas `GET /api/audit` aux rôles établissement.
+1. Aucun effectif, montant, pourcentage, nom ou code de la maquette n’est codé en dur.
+2. La 4e carte affiche `collectedAmount` et la devise réelle. Multi-devises ou montant manquant → `—`. Cela n’abroge pas `getPaymentRateKpi` : le taux n’est simplement pas cette carte.
+3. Pas de ligne « +5 % vs mois dernier » tant qu’un snapshot du mois précédent n’existe pas. La maquette mélange d’ailleurs un écart en effectif (`+1` classes) et des pourcentages.
+4. « Taux de présence (aujourd’hui) » est le KPI du jour : `—` si l’appel est incomplet. La légende et le pourcentage partagent le même dénominateur. Pas de 92 % partiel. Le libellé « Taux de présence global » de la maquette n’est pas un second indicateur.
+5. L’effectif élèves de la carte est le snapshot scolarité scopé, pas le sous-ensemble « actif sur la période ».
+6. L’axe mensuel d’« Effectifs » suit `startDate` / `endDate` de l’année scolaire choisie. Sept → Juin n’est qu’un exemple.
+7. Les parts du donut sont les `education_levels.name` actifs de l’établissement, dans `display_order`. Pas un regroupement Maternelle / Primaire / Secondaire inventé, et pas un découpage du nom de classe.
+8. Une moyenne de notes passe par `gradeBook` / `weightedAverage`. Un comptage de copies n’est pas une moyenne. Le fil « Note saisie » ne publie pas la valeur.
+9. Un impayé est le reste dû des obligations (`unpaidService`), pas le nombre de paiements au statut Impayé.
+10. Une série dont le module n’est pas en `READ` n’apparaît pas, y compris dans le sélecteur.
+11. Un enseignant ne voit que ses classes affectées. S’il n’a aucune affectation résolue, le repli actuel (portée établissement) reste en vigueur.
+12. Parent, plateforme, sidebar et topbar ne changent pas.
+13. La carte de configuration guidée reste au-dessus du nouveau contenu.
+14. En démo, les domaines critiques continuent de bloquer l’affichage d’un effectif partiel.
+15. Le fil d’activités ne lit pas `audit_logs.old_value` / `new_value` et n’ouvre pas `GET /api/audit` aux rôles établissement.
 
 ---
 
@@ -170,23 +217,23 @@ Lot 1  structure + cartes KPI + contrat de filtres
 
 ### Lot 1 — Structure visuelle et cartes KPI
 
-**Objectif.** Poser la page établissement de #805 sans retirer les graphiques existants.
+**Objectif.** Poser l’en-tête et les quatre cartes de la maquette, sans retirer les graphiques existants et sans toucher à la coque.
 
 **Dans la PR**
 
-- Exception de layout **uniquement** pour l’accueil établissement de `OverviewPage` : zone filtres + rangée de cartes. `max-w-6xl` des autres routes ne bouge pas. Parent et plateforme inchangés.
-- Cartes, dans cet ordre, pour le profil qui voit aujourd’hui le jeu complet : Élèves, Enseignants, Classes, puis le KPI finance déjà verrouillé (**Taux de paiement**, pas un montant fictif). Les profils `academic`, `finance` et `operations` affichent le sous-ensemble déjà calculé par `buildEstablishmentKpiItems`, plus les cartes élèves / enseignants / classes seulement si le `READ` correspondant existe.
-- Brancher `kpiItems` (aujourd’hui mort) au lieu d’inventer une deuxième formule.
-- Filtres affichés : année scolaire via `academicYearsApi.list()` (année `isCurrent` par défaut) et une date ou une plage. En lot 1, ces filtres **pilotent les cartes dont la règle est déjà définie** (présence du jour = date civile + fuseau ; taux de paiement = obligations de l’année si le DTO porte déjà l’année). Ils ne recalculent pas encore les graphiques historiques : le sélecteur par graphique reste en place jusqu’au lot 2, pour ne pas avoir deux vérités silencieuses. Le libellé de l’année est visible même quand l’historique n’est pas encore filtré.
-- États chargement / vide / erreur de la rangée, y compris hors démo : erreur réseau sur l’année scolaire, aucune année, taux ou présence non calculables (`—`, pas `0`).
-- Conserver `GuidedSchoolSetupDashboardCard`, la grille actuelle, le RBAC et la démo critique.
+- En-tête de page, accueil établissement seulement : titre « Tableau de bord », sous-titre « Vue d'ensemble de votre établissement », sélecteur d’année (`academicYearsApi.list()`, année `isCurrent` par défaut) et sélecteur de date dont la valeur par défaut est aujourd’hui. Ces deux contrôles restent dans la page. Pas dans `Topbar`.
+- Quatre cartes, dans l’ordre de la maquette : Élèves, Enseignants, Classes, Recettes. Recettes = `collectedAmount` + devise de l’obligation. `—` si non calculable. Pas de ligne de variation. Un rôle sans `READ` sur le module ne voit pas la carte.
+- Les profils `academic`, `finance` et `operations` ne gagnent pas une carte hors permission. `kpiItems` (utilisateurs actifs, présence du jour, taux, alertes) ne deviennent pas ces quatre cartes : ce sont d’autres indicateurs. Les afficher en plus, sous les quatre cartes, seulement s’ils sont déjà autorisés pour le profil. Ne pas les perdre en silence.
+- En lot 1, l’année et la date sont affichées et mémorisées pour les lots 2 à 4. Elles ne recalculent pas encore la grille historique, qui garde son sélecteur par graphique jusqu’au lot 2.
+- États chargement / vide / erreur de la rangée, y compris hors démo.
+- Conserver `GuidedSchoolSetupDashboardCard`, la grille actuelle, le RBAC et la démo critique. Exception de largeur locale à cette page. `max-w-6xl` des autres routes ne bouge pas.
 
 **Hors PR**
 
-- Sélecteur métier, rail d’activités, donut par niveau.
+- Sélecteur métier, rail d’activités, donut par niveau, anneau de présence.
+- Variation « vs mois dernier ».
 - Changement de `getPaymentRateKpi`, `getTodayEstablishmentPresenceKpi`, `studentsScope`.
-- Suppression du drag-and-drop ou de `ChartSettingsPage`.
-- Reconstruction de la sidebar.
+- Sidebar, topbar, encart d’aide, `ChartSettingsPage`.
 
 **Fichiers touchés (prévision)**
 
@@ -197,27 +244,30 @@ Lot 1  structure + cartes KPI + contrat de filtres
 
 **Terminé quand**
 
-- Un admin établissement voit les cartes avec les mêmes valeurs que les formules actuelles, y compris `—`.
-- Un rôle sans `READ` Paiements ne voit pas le taux.
+- Un admin établissement voit les quatre cartes, recettes en devise réelle ou `—`, sans pourcentage inventé.
+- Un rôle sans `READ` Paiements ne voit pas Recettes.
 - La grille de graphiques actuelle est encore là et ses tests passent.
-- Aucune constante numérique de maquette.
+- Sidebar et topbar identiques aux autres pages.
+- Aucune constante de la maquette.
 
 ### Lot 2 — Graphique métier interchangeable
 
 **Objectif.** Un graphique central, un sélecteur, pas de rechargement de page.
 
-**Sélecteur autorisé** (une option n’est rendue que si le module est en `READ`) :
+Ordre du menu, celui de la maquette. Une option sans `READ` est absente.
 
-| Option | Série | Unité | Source imposée |
+| Option | Géométrie | Unité | Source imposée |
 | --- | --- | --- | --- |
-| Effectifs | par classe, ou par niveau si `levelName` est présent | élèves | `scopedStudents` / classes scopées. Pas le sous-ensemble « actif sur la période » sauf libellé explicite. |
-| Inscriptions | comptes par jour ou par mois dans l’année choisie | inscriptions | `enrollments` (`enrollment_date`, `status`, `academic_year_id`, `school_id`). Si le snapshot Web ne porte pas ces lignes, **ajouter une lecture** scopée établissement. Ne pas approximer avec `createdAt` élève. |
-| Présences | répartition Présent / Absent / Retard / Justifié | lignes, plus le taux de `getPresenceStats` clairement sous-titré | Pas la formule « Présence du jour ». |
-| Notes moyennes | moyenne de classe ou de niveau | points /20 | `gradeBook.ts` aligné sur `gradesCanonical.weightedAverage`. Interdit : compter les copies comme aujourd’hui dans `notes-course`. |
-| Recettes | montant encaissé | devise unique | `collectedAmount` / obligations. Multi-devises → état « non calculable », pas une somme mixte. |
-| Impayés | reste dû, découpage classe | devise du dashboard impayés | `unpaidService.buildDashboard`. Interdit : réutiliser le donut de statuts de paiement. |
+| Effectifs | barres par mois entre `startDate` et `endDate` de l’année | élèves | effectif inscrit du mois, pas `activeStudentsInPeriod`. Titre « Évolution des effectifs ». |
+| Inscriptions | barres par mois sur la même année | inscriptions | `enrollments` (`enrollment_date`, `status`, `academic_year_id`, `school_id`). Lecture scopée si le snapshot Web ne les porte pas. Pas le `createdAt` de la fiche élève. |
+| Présences | barres par mois, volume d’appels enregistrés | lignes | `getPresenceStats` sur le mois. Ce n’est pas le KPI du jour. |
+| Notes moyennes | barres par mois | points /20 | `gradeBook.ts` / `weightedAverage`. Interdit : compter les copies comme `notes-course`. |
+| Recettes | barres par mois | devise unique | encaissé du mois. Multi-devises → état non calculable. |
+| Impayés | barres par mois, ou reste dû du mois si la donnée n’a pas d’historique mensuel | devise | `unpaidService.buildDashboard`. Pas le donut de statuts de paiement. |
+| Par classe | répartition, une barre ou part par classe | élèves | classes scopées. |
+| Par niveau | répartition par `education_levels.name` | élèves | référentiel pays + `school_levels`. Sans niveau, état vide. Pas de taxonomie Maternelle / Primaire / Secondaire en dur. |
 
-Découpage classe / niveau : contrôle du graphique, pas une septième métrique. Sans `levelName`, le mode niveau est désactivé avec un état vide explicite. Ne pas déduire le niveau en découpant le nom de classe.
+Le titre et le sous-titre changent avec l’option. L’exemple « Nombre d'élèves par mois sur l'année scolaire » ne reste affiché que pour Effectifs.
 
 **Dans la PR**
 
@@ -265,7 +315,7 @@ Découpage classe / niveau : contrôle du graphique, pas une septième métrique
 - Pagination par curseur, déduplication par id, reprise après coupure.
 - Transport v1 : polling authentifié (même idée que les 30 s des notifications, intervalle à fixer dans la PR et testé), refresh au focus, retry avec backoff. Pas de WebSocket nouveau dans ce lot. Le critère #805 « reconnexion + fallback polling » est satisfait par ce client : la reconnexion est le retry du poll. Un canal SSE éventuel est un lot ultérieur, hors #805, seulement s’il réutilise cette même lecture et ce même masque.
 - Le fil respecte les filtres année / date du lot 1.
-- UI : horodatage, lien, états chargement / vide / erreur, « charger la suite ».
+- UI alignée sur la colonne de la maquette : titre « Activités récentes », pastille verte seulement si le dernier poll a réussi, ligne avec icône, titre, détail, temps relatif, lien vers la route déjà existante. « Voir toutes les activités » charge la page suivante du même fil. Les huit formes du tableau maquette sont des libellés, pas huit jeux de données fictifs. « Note saisie » n’affiche pas la valeur.
 
 **Hors PR**
 
@@ -292,8 +342,8 @@ Découpage classe / niveau : contrôle du graphique, pas une septième métrique
 
 **Dans la PR**
 
-- Répartition par niveau : agrégat `levelName` (référentiel), pas un top 8 de `className`.
-- Taux de présence secondaire : libellé distinct de « Présence du jour ». Formule de plage = `getPresenceStats`. La carte « Présence du jour » du lot 1 ne change pas.
+- Donut « Répartition par niveau » : parts = niveaux actifs de l’établissement (`display_order`), total au centre = même effectif que la carte Élèves. Pas les trois cycles dessinés s’ils ne sont pas les niveaux réels. Pas un top 8 de `className`.
+- Anneau « Taux de présence (aujourd'hui) » : formule `getTodayEstablishmentPresenceKpi`. Appel incomplet → `—` et légende vide, pas un pourcentage partiel. Présents, absents, retards et justifiés sont ceux de cette même population, et leur somme est le dénominateur. Le caption « Taux de présence global » n’est pas ajouté.
 - Responsive de **cette page** : cartes en 1 colonne puis 2 ; graphique pleine largeur ; fil sous le graphique sous `lg`, à droite au-dessus. La sidebar existante (`lg`) et le drawer ne sont pas redessinés.
 - Les états vide / erreur restent lisibles à 360 px et à largeur desktop.
 - Accessibilité de la page : sélecteur et filtres étiquetés, fil annoncé comme liste, graphique central accompagné d’un résumé texte (la valeur ou « aucune donnée »), pas seulement un `canvas` Recharts. Le drag-and-drop de l’ancienne grille disparaît avec elle sur cet accueil ; ne pas réintroduire un drag sans alternative clavier.
@@ -301,12 +351,13 @@ Découpage classe / niveau : contrôle du graphique, pas une septième métrique
 **Hors PR**
 
 - Nouveau breakpoint global, refonte Topbar, ou changement des autres pages dans `max-w-6xl`.
-- Troisième formule de présence.
+- Troisième formule de présence, ou regroupement de niveaux en cycles.
+- Sidebar, topbar, encart « Besoin d'aide ? ».
 
 **Terminé quand**
 
-- Niveau absent → état vide, pas un regroupement par nom de classe.
-- Les deux taux de présence ne partagent pas le même libellé.
+- Les parts du donut sont les niveaux canoniques, ou un état vide.
+- Appel du jour incomplet → `—`, et la somme de la légende égale le dénominateur quand le taux est affiché.
 - La page reste utilisable avec le drawer mobile déjà en place.
 
 ### Lot 5 — Tests E2E, sécurité et validation visuelle
@@ -319,7 +370,7 @@ Découpage classe / niveau : contrôle du graphique, pas une septième métrique
 - Intégration backend : pagination, déduplication, isolation `school_id`, masque par rôle.
 - E2E dans le harness existant (`scripts/verify-e2e-*.js` ou équivalent node), pas une introduction de Playwright : parcours admin établissement, option interdite absente, activité de l’autre école absente.
 - Sécurité : relire que `GET /api/audit` n’a pas changé de garde ; qu’aucun payload d’activité ne contient `old_value` ; que le changement d’établissement purge le fil (même contrat que DataContext RED-8).
-- Visuel : seulement après dépôt du PNG. Comparer la structure (cartes, graphique, deux secondaires, fil), pas les chiffres fictifs. La capture `02-tableau-de-bord-etablissement.png` est l’état **avant**, pas la cible.
+- Visuel : comparer le contenu à `docs/audits/evidence/tableau-de-bord-web-maquette-805.png` (quatre cartes, sélecteur à huit entrées, deux graphiques du bas, fil). Ne pas comparer la sidebar ni la topbar, qui sont hors lots. Ne pas comparer les chiffres. La capture `02-tableau-de-bord-etablissement.png` est l’état avant.
 
 **Hors PR**
 
@@ -328,7 +379,7 @@ Découpage classe / niveau : contrôle du graphique, pas une septième métrique
 **Terminé quand**
 
 - CI des suites touchées verte.
-- Le PNG est dans le dépôt ou la PR reste Draft avec le blocage visuel explicite.
+- L’écart visuel restant est limité à la coque (sidebar, topbar), documentée comme hors lots.
 
 ---
 
@@ -336,7 +387,8 @@ Découpage classe / niveau : contrôle du graphique, pas une septième métrique
 
 | Glissement | Conséquence |
 | --- | --- |
-| Remplacer le taux de paiement par un montant « recettes » de maquette | Contredit le fail-closed multi-devises. |
+| Coder 12 450 000, le « FC », ou « +8 % vs mois dernier » | Montant fictif. La carte recettes n’existe que si `collectedAmount` est calculable. |
+| Réécrire la sidebar pour coller à la maquette | Contredit le menu actuel et le choix « communication dans la topbar ». |
 | Utiliser `activeStudentsInPeriod` comme effectif | L’effectif chute dès qu’on filtre une date sans présence. |
 | Compter les notes ou parser le nom de classe | Moyennes et niveaux faux. |
 | Brancher le fil sur `GET /api/audit` | 403, et fuite de valeurs d’audit si la garde est retirée. |
@@ -351,4 +403,4 @@ Découpage classe / niveau : contrôle du graphique, pas une septième métrique
 HOLD maintenu. Les PR d’implémentation ne s’ouvrent qu’après acceptation de ce découpage.
 
 Ordre : **1 → 2 et 3 → 4 → 5**.  
-Condition visuelle du lot 5 : fichier `/Somafrik/Maquettes/tableau-de-bord-web.png` versé au dépôt ou joint à #805.
+La maquette de contenu est archivée. La coque (sidebar, topbar, aide) reste celle du produit.
