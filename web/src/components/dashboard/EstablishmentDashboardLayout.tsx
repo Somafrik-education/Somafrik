@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { ReactNode } from "react";
 
 type Metric = { label: string; value: string; icon: string; tone: string };
@@ -12,9 +11,8 @@ type Props = {
 
 /** LOT 1: layout only. Historical filters and new widgets arrive in later lots. */
 export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, children }: Props) {
-  const [consultationDate, setConsultationDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const currentYear = new Date().getFullYear();
-  const schoolYear = `${currentYear}-${currentYear + 1}`;
+  const consultationDate = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
+
   const metrics: Metric[] = [
     { label: "Élèves", value: students.toLocaleString("fr-FR"), icon: "👥", tone: "bg-blue-50 border-blue-100" },
     { label: "Enseignants", value: teachers.toLocaleString("fr-FR"), icon: "▣", tone: "bg-emerald-50 border-emerald-100" },
@@ -31,17 +29,15 @@ export function EstablishmentDashboardLayout({ students, teachers, classes, reve
         <div className="flex flex-wrap gap-3">
           <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
             Année scolaire
-            <select disabled value={schoolYear} aria-label="Année scolaire (filtre historique à venir)" className="rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm text-ink">
-              <option value={schoolYear}>{schoolYear}</option>
-            </select>
+            <span className="rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm text-ink">Non sélectionnée</span>
           </label>
           <label className="flex flex-col gap-1 text-xs font-semibold text-muted">
             Date de consultation
-            <input type="date" value={consultationDate} onChange={(event) => setConsultationDate(event.target.value)} className="rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink" />
+            <span className="rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm text-ink">{consultationDate}</span>
           </label>
         </div>
       </header>
-      <p className="text-xs text-muted">Les indicateurs ci-dessous reflètent les données actuellement disponibles ; la sélection historique sera activée lorsque les snapshots seront disponibles.</p>
+      <p className="text-xs text-muted">Les indicateurs reflètent les données actuelles. Les filtres historiques seront activés après validation de leur contrat métier.</p>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
           <article key={metric.label} className={`rounded-xl border p-4 ${metric.tone}`}>
