@@ -108,7 +108,11 @@ export async function request<T = unknown>(
     );
   }
 
-  if (typeof window !== "undefined" && options.method && !["GET", "HEAD", "OPTIONS"].includes(options.method.toUpperCase()) && /^\/(?:attendance|presences|course-schedules)(?:\/|\?|$)/.test(path)) {\n    window.dispatchEvent(new Event("somafrik:dashboard-activities-changed"));\n  }\n  return data as T;\n}
+  if (typeof window !== "undefined" && options.method && !["GET", "HEAD", "OPTIONS"].includes(options.method.toUpperCase()) && /^\/(?:attendance|presences|course-schedules)(?:\/|\?|$)/.test(path)) {
+    window.dispatchEvent(new Event("somafrik:dashboard-activities-changed"));
+  }
+  return data as T;
+}
 
 export async function requestBlob(path: string, options: RequestInit = {}, retried = false): Promise<Blob> {
   const token = accessTokenProvider();
