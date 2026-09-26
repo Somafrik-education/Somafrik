@@ -118,11 +118,11 @@ export function OverviewPage() {
   const users = scopedUsers(scopedUser, state);
   const establishmentMetrics = useMemo(() => internalSchool ? getEstablishmentMetrics(scopedUser, state, users) : null, [internalSchool, scopedUser, state, users]);
   const revenue = useMemo(() => {
-    if (!internalSchool) return "—";
+    if (!internalSchool || !hasBackOfficePermission(ctx, "Paiements", "READ")) return "—";
     const buckets = getPaymentCashBreakdown(scopedPayments(scopedUser, state));
     if (buckets.length !== 1 || !buckets[0].currencyKey) return "—";
     return `${new Intl.NumberFormat("fr-FR").format(buckets[0].collectedAmount)} ${buckets[0].currencyLabel}`;
-  }, [internalSchool, scopedUser, state]);
+  }, [internalSchool, scopedUser, state, ctx]);
 
   const platformCharts = useMemo(() => {
     if (internalSchool) return [];
@@ -180,6 +180,10 @@ export function OverviewPage() {
           teachers={establishmentMetrics.teachers}
           classes={establishmentMetrics.classes}
           revenue={revenue}
+          canReadStudents={hasBackOfficePermission(ctx, "Élèves", "READ")}
+          canReadTeachers={hasBackOfficePermission(ctx, "Enseignants", "READ")}
+          canReadClasses={hasBackOfficePermission(ctx, "Classes", "READ")}
+          canReadPayments={hasBackOfficePermission(ctx, "Paiements", "READ")}
         >
           <DashboardChartGrid
             charts={charts}
