@@ -6,18 +6,22 @@ type Props = {
   teachers: number;
   classes: number;
   revenue: string;
+  canReadStudents: boolean;
+  canReadTeachers: boolean;
+  canReadClasses: boolean;
+  canReadPayments: boolean;
   children: ReactNode;
 };
 
 /** LOT 1: layout only. Historical filters and new widgets arrive in later lots. */
-export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, children }: Props) {
+export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, canReadStudents, canReadTeachers, canReadClasses, canReadPayments, children }: Props) {
   const consultationDate = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
 
   const metrics: Metric[] = [
-    { label: "Élèves", value: students.toLocaleString("fr-FR"), icon: "👥", tone: "bg-blue-50 border-blue-100" },
-    { label: "Enseignants", value: teachers.toLocaleString("fr-FR"), icon: "▣", tone: "bg-emerald-50 border-emerald-100" },
-    { label: "Classes", value: classes.toLocaleString("fr-FR"), icon: "▤", tone: "bg-violet-50 border-violet-100" },
-    { label: "Recettes", value: revenue, icon: "◉", tone: "bg-orange-50 border-orange-100" },
+    ...(canReadStudents ? [{ label: "Élèves", value: students.toLocaleString("fr-FR"), icon: "👥", tone: "bg-blue-50 border-blue-100" }] : []),
+    ...(canReadTeachers ? [{ label: "Enseignants", value: teachers.toLocaleString("fr-FR"), icon: "▣", tone: "bg-emerald-50 border-emerald-100" }] : []),
+    ...(canReadClasses ? [{ label: "Classes", value: classes.toLocaleString("fr-FR"), icon: "▤", tone: "bg-violet-50 border-violet-100" }] : []),
+    ...(canReadPayments ? [{ label: "Recettes", value: revenue, icon: "◉", tone: "bg-orange-50 border-orange-100" }] : []),
   ];
   return (
     <section className="space-y-5" aria-label="Tableau de bord établissement">
