@@ -300,7 +300,7 @@ export interface RenderableChart {
   gaugeLabel?: string;
 }
 
-export function renderConfiguredChart(chart: RenderableChart) {
+export function renderConfiguredChart(chart: RenderableChart, options: { compact?: boolean } = {}) {
   const data =
     chart.data.length > 0
       ? chart.data
@@ -316,9 +316,25 @@ export function renderConfiguredChart(chart: RenderableChart) {
     case "bar-horizontal":
       return <VerticalBarChart data={data} layout="horizontal" />;
     case "donut":
-      return <DonutChart data={data} />;
     case "pie":
-      return <PieChartFull data={data} />;
+      if (options.compact) {
+        return (
+          <div className="flex h-full min-w-0 flex-col items-center justify-center gap-1">
+            <div className="h-[125px] w-full min-w-0 shrink-0">
+              <DonutChart data={data} innerRadius={chart.type === "pie" ? 0 : 38} outerRadius={58} showLegend={false} />
+            </div>
+            <ul className="flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] font-semibold" aria-label="Légende du graphique">
+              {data.map((item, index) => (
+                <li key={`${item.name}-${index}`} className="flex items-center gap-1 whitespace-nowrap">
+                  <span aria-hidden="true" className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.fill ?? CHART_PALETTE[index % CHART_PALETTE.length] }} />
+                  <span>{item.name}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      }
+      return chart.type === "pie" ? <PieChartFull data={data} /> : <DonutChart data={data} />;
     case "area":
       return <AreaTrendChart data={data} />;
     case "stacked-bar":
