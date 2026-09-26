@@ -119,10 +119,12 @@ export function DonutChart({
   data,
   innerRadius = 58,
   outerRadius = 88,
+  showLegend = true,
 }: {
   data: ChartDatum[];
   innerRadius?: number;
   outerRadius?: number;
+  showLegend?: boolean;
 }) {
   if (!data.length || data.every((item) => item.value === 0)) {
     return <EmptyChart message="Aucune donnée à afficher." />;
@@ -146,7 +148,7 @@ export function DonutChart({
           ))}
         </Pie>
         <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-        <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 600 }} />
+        {showLegend ? <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 600 }} /> : null}
       </PieChart>
     </ResponsiveContainer>
   );

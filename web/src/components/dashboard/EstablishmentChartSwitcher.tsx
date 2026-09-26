@@ -53,6 +53,7 @@ export function EstablishmentChartSwitcher({
       </div>
       <DashboardChartGrid
         charts={[selectedChart]}
+        singleColumn
         periodContext={periodContext}
         orderScope="establishment"
         orderUserKey={orderUserKey}

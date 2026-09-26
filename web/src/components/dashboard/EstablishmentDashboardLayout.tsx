@@ -64,12 +64,12 @@ export function EstablishmentDashboardLayout({ students, teachers, classes, reve
           </article>
         ))}
       </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
         <div className="min-w-0 space-y-4">
           {children}
           <SchoolDashboardSecondaryWidgets levels={levels} attendance={attendance} showLevels={canReadStudents} showAttendance={canReadPresences} />
         </div>
-        <aside aria-label="Activités récentes" className="rounded-xl border border-line bg-white p-5">
+        <aside aria-label="Activités récentes" className="min-w-0 self-start rounded-xl border border-line bg-white p-5 shadow-sm">
           <h2 className="text-lg font-bold text-ink">Activités récentes</h2>
           <SchoolRecentActivities enabled={activitiesEnabled} schoolKey={schoolKey} />
         </aside>
