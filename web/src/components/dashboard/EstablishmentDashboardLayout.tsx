@@ -22,7 +22,7 @@ type Props = {
   canReadPresences: boolean;
 };
 
-/** LOT 1: layout only. Historical filters and new widgets arrive in later lots. */
+/** Establishment dashboard: central chart and compact secondary cards share the main column. */
 export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, canReadStudents, canReadTeachers, canReadClasses, canReadPayments, activitiesEnabled, schoolKey, levels, attendance, canReadPresences, children }: Props) {
   const consultationDate = todayPeriodDate();
 
@@ -65,13 +65,15 @@ export function EstablishmentDashboardLayout({ students, teachers, classes, reve
         ))}
       </div>
       <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-        <div className="min-w-0">{children}</div>
+        <div className="min-w-0 space-y-4">
+          {children}
+          <SchoolDashboardSecondaryWidgets levels={levels} attendance={attendance} showLevels={canReadStudents} showAttendance={canReadPresences} />
+        </div>
         <aside aria-label="Activités récentes" className="rounded-xl border border-line bg-white p-5">
           <h2 className="text-lg font-bold text-ink">Activités récentes</h2>
           <SchoolRecentActivities enabled={activitiesEnabled} schoolKey={schoolKey} />
         </aside>
       </div>
-      <SchoolDashboardSecondaryWidgets levels={levels} attendance={attendance} showLevels={canReadStudents} showAttendance={canReadPresences} />
     </section>
   );
 }
