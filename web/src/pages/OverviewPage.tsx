@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { EstablishmentDashboardLayout } from "../components/dashboard/EstablishmentDashboardLayout";
 import { EstablishmentChartSwitcher } from "../components/dashboard/EstablishmentChartSwitcher";
 import { getEstablishmentMetrics } from "../lib/establishment";
+import { buildSchoolDashboardSecondaryMetrics } from "../lib/schoolDashboardSecondaryMetrics";
 import { scopedPayments } from "../lib/establishment";
 import { getPaymentCashBreakdown } from "../lib/paymentCashKpi";
 import { LoadingState, ErrorState } from "@/design-system";
@@ -118,6 +119,7 @@ export function OverviewPage() {
 
   const users = scopedUsers(scopedUser, state);
   const establishmentMetrics = useMemo(() => internalSchool ? getEstablishmentMetrics(scopedUser, state, users) : null, [internalSchool, scopedUser, state, users]);
+  const secondaryMetrics = useMemo(() => internalSchool ? buildSchoolDashboardSecondaryMetrics(scopedUser, state) : null, [internalSchool, scopedUser, state]);
   const revenue = useMemo(() => {
     if (!internalSchool || !hasBackOfficePermission(ctx, "Paiements", "READ")) return "—";
     const buckets = getPaymentCashBreakdown(scopedPayments(scopedUser, state));
@@ -175,7 +177,7 @@ export function OverviewPage() {
       {guidedPayload ? (
         <GuidedSchoolSetupDashboardCard payload={guidedPayload} role={user?.role} />
       ) : null}
-      {internalSchool && establishmentMetrics ? (
+      {internalSchool && establishmentMetrics && secondaryMetrics ? (
         <EstablishmentDashboardLayout
           students={establishmentMetrics.students}
           teachers={establishmentMetrics.teachers}
@@ -187,6 +189,9 @@ export function OverviewPage() {
           canReadPayments={hasBackOfficePermission(ctx, "Paiements", "READ")}
           activitiesEnabled={!demoRuntimeEnabled && user?.role === "Admin School"}
           schoolKey={activeSchoolCode ?? ""}
+          levels={secondaryMetrics.levels}
+          attendance={secondaryMetrics.attendance}
+          canReadPresences={hasBackOfficePermission(ctx, "Présences", "READ")}
         >
           <EstablishmentChartSwitcher
             charts={establishmentCharts}
