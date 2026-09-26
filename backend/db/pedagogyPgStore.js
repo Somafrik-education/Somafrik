@@ -126,7 +126,13 @@ function createPedagogyPgStore(repo) {
         return query(sql, params);
       },
       async getSchoolByCode(code) {
-        const row = await one("SELECT * FROM schools WHERE school_code = $1", [asTrimmed(code).toUpperCase()]);
+        const row = await one(
+          `SELECT * FROM schools
+           WHERE upper(school_code) = $1
+              OR upper(coalesce(login_code, '')) = $1
+           LIMIT 1`,
+          [asTrimmed(code).toUpperCase()],
+        );
         if (!row) return null;
         const profile = parsePayload(row.profile_payload);
         return { ...row, code: row.school_code, timezone: profile.timezone };
