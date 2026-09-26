@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { EstablishmentDashboardLayout } from "../components/dashboard/EstablishmentDashboardLayout";
+import { EstablishmentChartSwitcher } from "../components/dashboard/EstablishmentChartSwitcher";
 import { getEstablishmentMetrics } from "../lib/establishment";
 import { scopedPayments } from "../lib/establishment";
 import { getPaymentCashBreakdown } from "../lib/paymentCashKpi";
@@ -185,10 +186,9 @@ export function OverviewPage() {
           canReadClasses={hasBackOfficePermission(ctx, "Classes", "READ")}
           canReadPayments={hasBackOfficePermission(ctx, "Paiements", "READ")}
         >
-          <DashboardChartGrid
-            charts={charts}
+          <EstablishmentChartSwitcher
+            charts={establishmentCharts}
             periodContext={periodContext}
-            orderScope={orderScope}
             orderUserKey={orderUserKey}
             showTypeBadge={canConfigureCharts}
           />
