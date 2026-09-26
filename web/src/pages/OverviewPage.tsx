@@ -185,7 +185,7 @@ export function OverviewPage() {
           canReadTeachers={hasBackOfficePermission(ctx, "Enseignants", "READ")}
           canReadClasses={hasBackOfficePermission(ctx, "Classes", "READ")}
           canReadPayments={hasBackOfficePermission(ctx, "Paiements", "READ")}
-          activitiesEnabled={user?.role === "Admin School"}
+          activitiesEnabled={!demoRuntimeEnabled && user?.role === "Admin School"}
           schoolKey={activeSchoolCode ?? ""}
         >
           <EstablishmentChartSwitcher
