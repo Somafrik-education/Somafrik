@@ -7,6 +7,21 @@ const ALLOWED = Object.freeze({
   enroll_student: "Élève inscrit",
 });
 const ACTIONS = Object.keys(ALLOWED);
+const { matchesSchoolLookup } = require("./schoolCodeV2");
+
+/** Resolve an Admin School tenant from the trusted JWT school code when no scope header is sent. */
+async function resolveSchoolDashboardPrincipal(principal, lookupSchool) {
+  if (principal?.role !== "Admin School") return principal;
+  const existing = String(principal.effectiveSchoolId ?? "").trim();
+  if (existing) return principal;
+  const schoolCode = String(principal.schoolCode ?? "").trim();
+  if (!schoolCode || schoolCode === "*" || typeof lookupSchool !== "function") return principal;
+  const school = await lookupSchool(schoolCode);
+  if (!school || !matchesSchoolLookup(school, schoolCode)) return principal;
+  const id = String(school.id ?? school.schoolId ?? school.school_id ?? "").trim();
+  return id ? { ...principal, effectiveSchoolId: id } : principal;
+}
+
 
 async function listSchoolDashboardActivities(repository, principal, query = {}) {
   if (principal?.role !== "Admin School") {
@@ -61,4 +76,4 @@ async function listSchoolDashboardActivities(repository, principal, query = {}) 
   };
 }
 
-module.exports = { listSchoolDashboardActivities };
+module.exports = { listSchoolDashboardActivities, resolveSchoolDashboardPrincipal };
