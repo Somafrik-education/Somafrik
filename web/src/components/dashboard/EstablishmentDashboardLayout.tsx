@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { todayPeriodDate } from "../../lib/dates";
 
 type Metric = { label: string; value: string; icon: string; tone: string };
 type Props = {
@@ -15,7 +16,7 @@ type Props = {
 
 /** LOT 1: layout only. Historical filters and new widgets arrive in later lots. */
 export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, canReadStudents, canReadTeachers, canReadClasses, canReadPayments, children }: Props) {
-  const consultationDate = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
+  const consultationDate = todayPeriodDate();
 
   const metrics: Metric[] = [
     ...(canReadStudents ? [{ label: "Élèves", value: students.toLocaleString("fr-FR"), icon: "👥", tone: "bg-blue-50 border-blue-100" }] : []),
