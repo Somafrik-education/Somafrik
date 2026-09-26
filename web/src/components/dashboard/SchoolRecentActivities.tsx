@@ -109,7 +109,7 @@ export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolea
     <div className="mt-2 space-y-2" aria-live="polite">
       {error ? <p role="alert" className="text-sm text-rose-700">Actualisation indisponible. Réessayez ultérieurement.</p> : null}
       {!items.length && !error ? <p className="text-sm text-muted">Aucune activité récente.</p> : null}
-      <ol className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+      <ol className="max-h-[560px] space-y-2 overflow-y-auto xl:max-h-[min(75vh,900px)] pr-1">
         {items.map((item) => (
           <li key={item.id} className="border-b border-line pb-2">
             <p className="text-xs font-semibold text-ink">{item.label}</p>
