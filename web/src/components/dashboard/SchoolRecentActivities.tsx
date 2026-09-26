@@ -27,6 +27,7 @@ export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolea
       try {
         const page = await api.get<Page>("/dashboard/school-activities?limit=10");
         if (cancelled) return;
+        if (!page || !Array.isArray(page.items)) { setError(true); return; }
         setItems((previous) => {
           const seen = new Set<string>();
           return [...page.items, ...previous].filter((item) => {
@@ -57,6 +58,7 @@ export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolea
     setLoading(true);
     try {
       const page = await api.get<Page>(`/dashboard/school-activities?limit=10&cursor=${encodeURIComponent(cursor)}`);
+      if (!page || !Array.isArray(page.items)) { setError(true); return; }
       setItems((previous) => {
         const seen = new Set(previous.map((item) => item.id));
         return [...previous, ...page.items.filter((item) => !seen.has(item.id))];
