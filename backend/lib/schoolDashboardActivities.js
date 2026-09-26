@@ -4,7 +4,8 @@
 const ALLOWED = Object.freeze({
   create_class: "Classe créée",
   update_class: "Classe modifiée",
-  enroll_student: "Élève inscrit",\n  upsert_attendance: "Appel enregistré",
+  enroll_student: "Élève inscrit",
+  upsert_attendance: "Appel enregistré",
   create_course_schedule: "Cours planifié",
   update_course_schedule: "Planning modifié",
   cancel_course_schedule: "Cours annulé",
