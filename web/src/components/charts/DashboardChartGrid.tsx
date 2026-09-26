@@ -128,6 +128,7 @@ function DashboardChartGridItem({
   chart,
   periodContext,
   showTypeBadge,
+  compact,
   index,
   reorderable,
   draggingIndex,
