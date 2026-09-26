@@ -23,7 +23,9 @@ function state(presences: unknown[] = []) {
 
 describe("LOT 4 — widgets secondaires établissement", () => {
   it("compte uniquement les élèves du schoolId autorisé et utilise le niveau des classes", () => {
-    const result = buildSchoolDashboardSecondaryMetrics(user, state());
+    const data = state();
+    data.classes.push({ id: "foreign-class", schoolId: otherSchoolId, schoolCode: "AUTRE", name: "Primaire A", level: "Secondaire" } as typeof data.classes[number]);
+    const result = buildSchoolDashboardSecondaryMetrics(user, data);
     expect(result.levels).toEqual([{ name: "Primaire", value: 2 }]);
     expect(result.attendance.rate).toBeNull();
   });
