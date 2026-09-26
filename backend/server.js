@@ -748,6 +748,16 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
 }));
 
 
+// LOT 3: projection minimale des événements métier, distincte de /api/audit.
+app.get("/api/dashboard/school-activities", requireAuth, asyncHandler(async (req, res) => {
+  const { listSchoolDashboardActivities, resolveSchoolDashboardPrincipal } = require("./lib/schoolDashboardActivities");
+  if (!requireCanonicalPg(res, "all", "Activités récentes")) return;
+  const principal = await resolveSchoolDashboardPrincipal(req.principal, lookupSchoolForEffectiveScope);
+  const result = await listSchoolDashboardActivities(repository, principal, req.query);
+  res.set("Cache-Control", "no-store");
+  res.json(result);
+}));
+
 app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
   if (!schoolCode || schoolCode === "*") {

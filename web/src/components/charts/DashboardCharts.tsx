@@ -119,10 +119,12 @@ export function DonutChart({
   data,
   innerRadius = 58,
   outerRadius = 88,
+  showLegend = true,
 }: {
   data: ChartDatum[];
   innerRadius?: number;
   outerRadius?: number;
+  showLegend?: boolean;
 }) {
   if (!data.length || data.every((item) => item.value === 0)) {
     return <EmptyChart message="Aucune donnée à afficher." />;
@@ -146,7 +148,7 @@ export function DonutChart({
           ))}
         </Pie>
         <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
-        <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 600 }} />
+        {showLegend ? <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 12, fontWeight: 600 }} /> : null}
       </PieChart>
     </ResponsiveContainer>
   );
@@ -298,7 +300,7 @@ export interface RenderableChart {
   gaugeLabel?: string;
 }
 
-export function renderConfiguredChart(chart: RenderableChart) {
+export function renderConfiguredChart(chart: RenderableChart, options: { compact?: boolean } = {}) {
   const data =
     chart.data.length > 0
       ? chart.data
@@ -314,9 +316,25 @@ export function renderConfiguredChart(chart: RenderableChart) {
     case "bar-horizontal":
       return <VerticalBarChart data={data} layout="horizontal" />;
     case "donut":
-      return <DonutChart data={data} />;
     case "pie":
-      return <PieChartFull data={data} />;
+      if (options.compact) {
+        return (
+          <div className="flex h-full min-w-0 flex-row items-center justify-center gap-4">
+            <div className="h-[125px] min-w-0 flex-[0_1_55%]">
+              <DonutChart data={data} innerRadius={chart.type === "pie" ? 0 : 38} outerRadius={58} showLegend={false} />
+            </div>
+            <ul className="flex min-w-0 flex-[1_1_45%] flex-col items-start justify-center gap-1.5 text-[11px] font-semibold" aria-label="Légende du graphique">
+              {data.map((item, index) => (
+                <li key={`${item.name}-${index}`} className="flex min-w-0 items-center gap-1.5">
+                  <span aria-hidden="true" className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: item.fill ?? CHART_PALETTE[index % CHART_PALETTE.length] }} />
+                  <span className="break-words">{item.name}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      }
+      return chart.type === "pie" ? <PieChartFull data={data} /> : <DonutChart data={data} />;
     case "area":
       return <AreaTrendChart data={data} />;
     case "stacked-bar":

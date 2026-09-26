@@ -65,6 +65,7 @@ function DashboardChartCard({
   onPeriodChange,
   periodContext,
   showTypeBadge,
+  compact,
   index,
   reorderable,
   onDragStart,
@@ -75,6 +76,7 @@ function DashboardChartCard({
   onPeriodChange: (period: ChartPeriod) => void;
   periodContext: DashboardPeriodContext;
   showTypeBadge: boolean;
+  compact: boolean;
   index: number;
   reorderable: boolean;
   onDragStart: (event: DragEvent<HTMLButtonElement>, index: number) => void;
@@ -96,7 +98,8 @@ function DashboardChartCard({
     <ChartPanel
       title={appliedChart.title}
       description={description}
-      height={appliedChart.type === "gauge" ? 240 : 300}
+      height={compact ? 180 : appliedChart.type === "gauge" ? 240 : 300}
+      className={compact ? "!p-3" : ""}
       leading={
         reorderable ? (
           <DragHandle
@@ -116,7 +119,7 @@ function DashboardChartCard({
         />
       }
     >
-      {renderConfiguredChart(appliedChart)}
+      {renderConfiguredChart(appliedChart, { compact })}
     </ChartPanel>
   );
 }
@@ -125,6 +128,7 @@ function DashboardChartGridItem({
   chart,
   periodContext,
   showTypeBadge,
+  compact,
   index,
   reorderable,
   draggingIndex,
@@ -138,6 +142,7 @@ function DashboardChartGridItem({
   chart: ChartConfig;
   periodContext: DashboardPeriodContext;
   showTypeBadge: boolean;
+  compact: boolean;
   index: number;
   reorderable: boolean;
   draggingIndex: number | null;
@@ -179,6 +184,7 @@ function DashboardChartGridItem({
         onPeriodChange={handlePeriodChange}
         periodContext={periodContext}
         showTypeBadge={showTypeBadge}
+        compact={compact}
         index={index}
         reorderable={reorderable}
         onDragStart={onDragStart}
@@ -195,6 +201,8 @@ export function DashboardChartGrid({
   orderUserKey,
   showTypeBadge = false,
   emptyMessage = "Aucun graphique disponible pour votre rôle dans ce périmètre.",
+  singleColumn = false,
+  compact = false,
 }: {
   charts: ChartConfig[];
   periodContext: DashboardPeriodContext;
@@ -202,6 +210,8 @@ export function DashboardChartGrid({
   orderUserKey?: string;
   showTypeBadge?: boolean;
   emptyMessage?: string;
+  singleColumn?: boolean;
+  compact?: boolean;
 }) {
   const [orderedIds, setOrderedIds] = useState<string[]>(() =>
     applyChartOrder(charts, orderScope, orderUserKey).map((chart) => chart.id),
@@ -299,13 +309,14 @@ export function DashboardChartGrid({
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className={singleColumn ? "grid min-w-0 grid-cols-1 gap-4" : "grid gap-4 lg:grid-cols-2"}>
         {orderedCharts.map((chart, index) => (
           <DashboardChartGridItem
             key={chart.id}
             chart={chart}
             periodContext={periodContext}
             showTypeBadge={showTypeBadge}
+            compact={compact}
             index={index}
             reorderable={reorderable}
             draggingIndex={draggingIndex}

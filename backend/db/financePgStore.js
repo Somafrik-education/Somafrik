@@ -479,14 +479,23 @@ function createFinancePgStore(repo) {
           cancelledNow: Boolean(row),
         };
       },
-      async recordFinanceAudit({ schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
-        const school = schoolCode && schoolCode !== "*" ? await this.getSchoolByCode(schoolCode) : null;
+      async recordFinanceAudit({ schoolId, schoolCode, userId, action, entityType, entityId, oldValue, newValue, ipAddress, userAgent }) {
+        let resolvedSchoolId = null;
+        const explicitId = asTrimmed(schoolId);
+        if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(explicitId)) {
+          const byId = await one("SELECT id FROM schools WHERE id = $1::uuid", [explicitId]);
+          resolvedSchoolId = byId?.id ?? null;
+        }
+        if (!resolvedSchoolId && schoolCode && schoolCode !== "*") {
+          const school = await this.getSchoolByCode(schoolCode);
+          resolvedSchoolId = school?.id ?? null;
+        }
         const actorId = await this.resolveActorUserId({ sub: userId });
         await query(
           `INSERT INTO audit_logs (school_id, user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)`,
           [
-            school?.id ?? null,
+            resolvedSchoolId,
             actorId,
             action,
             entityType,
