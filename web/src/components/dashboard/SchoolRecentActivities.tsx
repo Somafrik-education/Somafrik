@@ -43,13 +43,13 @@ export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolea
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 30_000);
+    // Same-tab attendance/planning writes trigger an immediate refresh.\n    // Short fallback covers updates made by other connected users.\n    const timer = window.setInterval(() => void refresh(), 10_000);\n    window.addEventListener("somafrik:dashboard-activities-changed", onFocus);
     const onFocus = () => void refresh();
     window.addEventListener("focus", onFocus);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("focus", onFocus);\n      window.removeEventListener("somafrik:dashboard-activities-changed", onFocus);
     };
   }, [enabled, schoolKey, revision]);
 
