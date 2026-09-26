@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { BackOfficeState, SessionUser } from "../types";
 import { buildSchoolDashboardSecondaryMetrics } from "./schoolDashboardSecondaryMetrics";
+import { civilDateKeyInTimeZone } from "./presenceMetrics";
 
 const schoolId = "11111111-1111-4111-8111-111111111111";
 const otherSchoolId = "22222222-2222-4222-8222-222222222222";
 const user = { role: "Admin School", schoolId, schoolCode: "CD-IN-26-001" } as SessionUser;
-const today = new Date();
-const date = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, "0"), String(today.getDate()).padStart(2, "0")].join("-");
+const date = civilDateKeyInTimeZone(new Date(), "UTC");
 
 function state(presences: unknown[] = []) {
   return {
-    schools: [{ id: schoolId, code: user.schoolCode, name: "École test", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }],
+    schools: [{ id: schoolId, code: user.schoolCode, name: "École test", timezone: "UTC" }],
     students: [
       { id: "a", schoolId, schoolCode: user.schoolCode, className: "Primaire A" },
       { id: "b", schoolId, schoolCode: user.schoolCode, className: "Primaire A" },
