@@ -57,6 +57,13 @@ async function resolveSchoolDashboardPrincipal(principal, lookupSchool) {
   if (principal?.role !== "Admin School") return principal;
   const existing = String(principal.effectiveSchoolId ?? "").trim();
   if (existing) return principal;
+  // The authenticated JWT already carries the canonical tenant UUID. A missing
+  // lookup by public/legacy school code must not block a valid school session.
+  // Never read the tenant UUID from query parameters or request body.
+  const jwtSchoolId = String(principal.schoolId ?? "").trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jwtSchoolId)) {
+    return { ...principal, effectiveSchoolId: jwtSchoolId };
+  }
   const schoolCode = String(principal.schoolCode ?? "").trim();
   if (!schoolCode || schoolCode === "*" || typeof lookupSchool !== "function") return principal;
   const school = await lookupSchool(schoolCode);
