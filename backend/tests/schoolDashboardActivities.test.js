@@ -42,6 +42,21 @@ test("resolves school UUID from verified school JWT when no X-Somafrik-School-Co
   assert.equal(queriedSchoolId, schoolId);
 });
 
+test("uses the authenticated JWT school UUID when code lookup cannot resolve an internal alias", async () => {
+  const jwt = { role: "Admin School", schoolCode: "SCH-A3A33AC861644EE5A967", schoolId };
+  const resolved = await resolveSchoolDashboardPrincipal(jwt, async () => { throw Error("lookup should not be necessary"); });
+  assert.equal(resolved.effectiveSchoolId, schoolId);
+  let queriedSchoolId;
+  await listSchoolDashboardActivities({ all: async (_sql, params) => { queriedSchoolId = params[0]; return []; } }, resolved);
+  assert.equal(queriedSchoolId, schoolId);
+});
+
+test("ignores malformed JWT school UUID and fails closed if code lookup fails", async () => {
+  const jwt = { role: "Admin School", schoolCode: "SCH-NOT-FOUND", schoolId: "not-a-uuid" };
+  const resolved = await resolveSchoolDashboardPrincipal(jwt, async () => null);
+  await assert.rejects(listSchoolDashboardActivities({ all: async () => { throw Error("must not query"); } }, resolved), { statusCode: 403 });
+});
+
 test("rejects missing or mismatched school records without cross-tenant fallback", async () => {
   const jwt = { role: "Admin School", schoolCode: "CD-IN-26-001" };
   for (const school of [null, { id: schoolId, login_code: "CD-OTHER-26-001", school_code: "CD-2026-0002" }]) {
