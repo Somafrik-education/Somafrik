@@ -63,6 +63,26 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
   return refreshInFlight;
 }
 
+/** Refresh ahead of JWT expiry so polling does not send an already expired token. */
+function expiresSoon(token: string, leewaySeconds = 60): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: unknown };
+    return typeof payload.exp === "number" && payload.exp <= Date.now() / 1000 + leewaySeconds;
+  } catch {
+    return false; // Opaque/demo tokens still use the server's 401 fallback.
+  }
+}
+
+async function tokenForRequest(path: string): Promise<string | null> {
+  const token = accessTokenProvider();
+  if (!token || isAuthRefreshPath(path)) return token;
+  if (refreshInFlight) return (await refreshInFlight) ?? accessTokenProvider();
+  if (expiresSoon(token) && refreshTokenProvider()) {
+    return (await refreshAccessTokenOnce()) ?? accessTokenProvider();
+  }
+  return token;
+}
+
 function isAuthRefreshPath(path: string) {
   // Logout is authenticated: a 401 on expired access must refresh once, then revoke.
   return path.startsWith("/auth/refresh") || path.startsWith("/backoffice/login");
@@ -73,7 +93,7 @@ export async function request<T = unknown>(
   options: RequestInit = {},
   retried = false,
 ): Promise<T> {
-  const token = accessTokenProvider();
+  const token = await tokenForRequest(path);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -95,7 +115,9 @@ export async function request<T = unknown>(
 
   if (!response.ok) {
     if (response.status === 401 && !retried && !isAuthRefreshPath(path)) {
-      const next = await refreshAccessTokenOnce();
+      // A concurrent request may have already rotated the token: retry with it.
+      const rotated = accessTokenProvider();
+      const next = rotated && rotated !== token ? rotated : await refreshAccessTokenOnce();
       if (next) return request<T>(path, options, true);
     }
     const payload = data && typeof data === "object" ? (data as { message?: unknown; code?: unknown; details?: unknown }) : null;
@@ -116,7 +138,7 @@ export async function request<T = unknown>(
 }
 
 export async function requestBlob(path: string, options: RequestInit = {}, retried = false): Promise<Blob> {
-  const token = accessTokenProvider();
+  const token = await tokenForRequest(path);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -128,7 +150,9 @@ export async function requestBlob(path: string, options: RequestInit = {}, retri
 
   if (!response.ok) {
     if (response.status === 401 && !retried && !isAuthRefreshPath(path)) {
-      const next = await refreshAccessTokenOnce();
+      // A concurrent request may have already rotated the token: retry with it.
+      const rotated = accessTokenProvider();
+      const next = rotated && rotated !== token ? rotated : await refreshAccessTokenOnce();
       if (next) return requestBlob(path, options, true);
     }
     const text = await response.text();
