@@ -15,7 +15,6 @@ import { usePermissionContext } from "../../lib/usePermissionContext";
 import { domainsForPath } from "../../lib/routeDomainMap";
 import { Button } from "../ui/Button";
 import { CommunicationPreferencesPanel } from "../account/CommunicationPreferencesPanel";
-import { GlobalSearch } from "./GlobalSearch";
 
 /** Icône d'accès rapide (haut à droite) avec pastille rouge de comptage optionnelle. */
 function TopbarIcon({
@@ -106,26 +105,25 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
-        <GlobalSearch />
         {error ? (
           <p className="hidden max-w-xs truncate text-xs text-danger md:block" title={error}>
             {error}
           </p>
         ) : null}
-        <Button
-          variant="secondary"
-          size="sm"
+        <button
+          type="button"
           onClick={() => {
             const domains = domainsForPath(location.pathname, ctx);
             void refresh(domains.length > 0 ? domains : undefined);
           }}
           disabled={loading}
-          aria-label={loading ? "Synchronisation en cours" : "Rafraîchir les données"}
-          className="px-2.5 sm:px-3"
+          aria-label={loading ? "Actualisation en cours" : "Actualiser les données"}
+          title={loading ? "Actualisation en cours" : "Actualiser les données"}
+          aria-busy={loading}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-slate-600 transition hover:bg-slate-50 hover:text-brand disabled:cursor-wait disabled:opacity-60"
         >
-          <RefreshCw className={`h-4 w-4 sm:hidden ${loading ? "animate-spin" : ""}`} />
-          <span className="hidden sm:inline">{loading ? "Synchronisation…" : "Rafraîchir"}</span>
-        </Button>
+          <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} strokeWidth={1.8} aria-hidden="true" />
+        </button>
         {canReadMessages ? (
           <TopbarIcon to="/messages" label="Messages" count={unreadMessages}>
             <Mail className="h-5 w-5" strokeWidth={1.8} />
