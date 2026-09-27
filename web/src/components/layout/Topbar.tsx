@@ -117,7 +117,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
             void refresh(domains.length > 0 ? domains : undefined);
           }}
           disabled={loading}
-          aria-label={loading ? "Actualisation en cours" : "Actualiser les données"}
+          aria-label={loading ? "Synchronisation en cours" : "Rafraîchir les données"}
           title={loading ? "Actualisation en cours" : "Actualiser les données"}
           aria-busy={loading}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-line text-slate-600 transition hover:bg-slate-50 hover:text-brand disabled:cursor-wait disabled:opacity-60"
