@@ -114,7 +114,6 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     presencesSnapshot,
     assignmentsSnapshot,
     resourceScopeKey,
-    establishmentStudents,
   } = useAdminData();
   const saveLockRef = useRef(createInFlightLock());
   const intentionRef = useRef(createIntentionStore());
@@ -130,7 +129,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     }),
     [teachersData, assignmentsData, classesData, assignmentsSnapshot.source],
   );
-  const classStudents = establishmentStudents;
+  // `studentsData` est déjà la projection tenant-scopée du contexte. L'appel doit
+  // consommer exactement ce roster canonique, comme la liste des classes, sans
+  // appliquer une seconde projection qui peut vider les élèves ENROLLED.
+  const classStudents = studentsData;
   const assignedClasses = useMemo(
     () => listScopedAttendanceClasses(studentsData, classesData, session, scopeState),
     [studentsData, classesData, session, scopeState],
