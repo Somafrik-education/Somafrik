@@ -187,6 +187,39 @@ function run() {
     listed[0].classId === "uuid-a" ? ["s1"] : ["s2"],
   );
 
+  // Régression 28-09-2026 : le Web voyait le roster mais l'Appel Mobile affichait 0/0.
+  // Vérifie les deux classes demandées avec l'identité canonique classId + classCode.
+  const primaryClasses: SchoolClass[] = [
+    { id: "uuid-p1a", publicId: "CLS-P1A", classCode: "CLS-P1A", name: "1ère Primaire A", level: "1ère Primaire", track: "A", teacherId: "" },
+    { id: "uuid-p2a", publicId: "CLS-P2A", classCode: "CLS-P2A", name: "2ème Primaire A", level: "2ème Primaire", track: "A", teacherId: "" },
+  ];
+  const primaryRoster = [
+    ...Array.from({ length: 6 }, (_, index) => student({
+      id: `p1-${index + 1}`,
+      classId: "uuid-p1a",
+      classCode: "CLS-P1A",
+      className: "1ère Primaire A",
+      status: "ENROLLED",
+    })),
+    ...Array.from({ length: 9 }, (_, index) => student({
+      id: `p2-${index + 1}`,
+      classId: "uuid-p2a",
+      classCode: "CLS-P2A",
+      className: "2ème Primaire A",
+      status: "ENROLLED",
+    })),
+  ];
+  assert.equal(
+    filterStudentsByClassIdentity(primaryRoster, { classId: "uuid-p1a", classCode: "CLS-P1A", className: "1ère Primaire A" }, primaryClasses).length,
+    6,
+    "1ère Primaire A : le roster Mobile conserve les 6 élèves ENROLLED",
+  );
+  assert.equal(
+    filterStudentsByClassIdentity(primaryRoster, { classId: "uuid-p2a", classCode: "CLS-P2A", className: "2ème Primaire A" }, primaryClasses).length,
+    9,
+    "2ème Primaire A : le roster Mobile conserve les 9 élèves ENROLLED",
+  );
+
   assert.equal(assertAttendanceClassIdentity({ className: "2ème A" }), false);
   assert.equal(assertAttendanceClassIdentity({ classId: "uuid-a", classCode: "CLS-A", className: "2ème A" }), true);
   assert.equal(presenceIntentionId("uuid-a", "23-08-2026"), "presence:uuid-a:23-08-2026");
