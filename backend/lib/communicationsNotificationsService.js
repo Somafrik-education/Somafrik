@@ -29,6 +29,7 @@ const {
   isSchoolWideRecipientKind,
   recipientCategoriesFromContext,
   resolveUserRecipientCategories,
+  expandSchoolWideRecipientKinds,
 } = require("./schoolNotificationPolicy");
 
 const DEFAULT_LIMIT = 50;
@@ -102,6 +103,19 @@ function parseAudience(payload) {
   return { scope: "classes", classIds, recipientKinds: kinds };
 }
 
+async function snapshotRecipientKinds(tx, { userId, schoolId, kind, context = {} }) {
+  const rawKinds = Array.isArray(context.kinds) && context.kinds.length
+    ? context.kinds
+    : [kind].filter(Boolean);
+  const kinds = await expandSchoolWideRecipientKinds(tx, {
+    userId,
+    schoolId,
+    kind,
+    kinds: rawKinds,
+  });
+  return kinds;
+}
+
 async function resolveManualRecipients(tx, schoolId, audience) {
   const ids = new Map();
   const add = (userId, kind, context = {}) => {
@@ -109,14 +123,24 @@ async function resolveManualRecipients(tx, schoolId, audience) {
     if (id) ids.set(id, { userId: id, kind, context });
   };
   if (audience.scope === "school") {
-    const rows = await tx.listSchoolActiveUserIds(schoolId);
-    for (const row of rows) add(row.user_id || row.id, "school", { scope: "school" });
+    const rows = typeof tx.listSchoolActiveUserIds === "function" ? await tx.listSchoolActiveUserIds(schoolId) : [];
+    for (const row of rows) {
+      const userId = row.user_id || row.id;
+      const kinds = await snapshotRecipientKinds(tx, {
+        userId,
+        schoolId,
+        kind: "school",
+        context: { kinds: ["school"] },
+      });
+      if (!kinds.length) continue;
+      add(userId, "school", { scope: "school", kinds });
+    }
     return [...ids.values()];
   }
   if (audience.scope === "roles") {
     for (const kind of audience.recipientKinds) {
       for (const row of await tx.listSchoolUserIdsByRecipientKind(schoolId, kind)) {
-        add(row.user_id || row.id, kind, { scope: "roles" });
+        add(row.user_id || row.id, kind, { scope: "roles", kinds: [kind] });
       }
     }
     return [...ids.values()];
@@ -129,7 +153,9 @@ async function resolveManualRecipients(tx, schoolId, audience) {
     if (kind === "teacher") rows = await tx.listClassTeacherUserIds(schoolId, audience.classIds);
     if (kind === "student") rows = await tx.listClassStudentUserIds(schoolId, audience.classIds);
     if (kind === "staff") rows = await tx.listSchoolUserIdsByRecipientKind(schoolId, "staff");
-    for (const row of rows) add(row.user_id || row.id, kind, { scope: "classes", classIds: audience.classIds });
+    for (const row of rows) {
+      add(row.user_id || row.id, kind, { scope: "classes", classIds: audience.classIds, kinds: [kind] });
+    }
   }
   return [...ids.values()];
 }
@@ -507,6 +533,13 @@ async function createManual(store, rawPayload, principal, auditMeta, idempotency
         });
       }
     }
+    await tx.query(
+      `INSERT INTO communication_event_outbox (
+         event_key, event_type, school_id, actor_user_id, source_entity_type, source_entity_id, payload, status
+       ) VALUES ($1,'notification.manual',$2,$3,'notification',$4,$5::jsonb,'pending')
+       ON CONFLICT (event_key) DO NOTHING`,
+      [eventKey, school.id, userId, row.source_entity_id || row.id, JSON.stringify({ audience })],
+    );
     const recipientRow = await tx.one(
       `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at
        FROM communication_notifications n JOIN schools s ON s.id = n.school_id
@@ -611,9 +644,16 @@ async function eventSpec(tx, event) {
           }
         })()
         : (row.audience_reason || {});
-      const kinds = Array.isArray(parsed.kinds) && parsed.kinds.length
+      const rawKinds = Array.isArray(parsed.kinds) && parsed.kinds.length
         ? parsed.kinds
         : [row.recipient_kind].filter(Boolean);
+      const kinds = await snapshotRecipientKinds(tx, {
+        userId: row.user_id,
+        schoolId,
+        kind: row.recipient_kind,
+        context: { kinds: rawKinds },
+      });
+      if (!kinds.length) continue;
       addExact(row.user_id, row.recipient_kind, { announcementId: sourceId, kinds });
     }
     title = "Nouvelle annonce";

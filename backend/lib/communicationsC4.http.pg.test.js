@@ -9,6 +9,7 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { drainOutbox } = require("./communicationsNotificationsService");
+const { dispatchProcessedEvents } = require("./communicationsDispatcher");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_COM_C4_IT_DATABASE ?? "somafrik_com_c4_it")
@@ -663,6 +664,105 @@ async function main() {
     assert.equal(await notificationCount(`attendance.student.absent:${committedPending}`), 0, "C4-14 pas encore dispatché");
     await drainOutbox(store, { limit: 20 });
     assert.equal(await notificationCount(`attendance.student.absent:${committedPending}`), 1, "C4-14 dispatcher ultérieur crée la notification");
+
+    // P0 PUSH — Annonce Tous + createManual school-wide → sendToTokens, isolation school_id.
+    const TOKEN_PARENT_A = "ExponentPushToken[c4-p0-parent-a]";
+    const TOKEN_PARENT_B = "ExponentPushToken[c4-p0-parent-b]";
+    await pool.query(
+      `INSERT INTO mobile_push_devices (
+         user_id, school_id, expo_push_token, platform, backend_environment, app_profile
+       ) VALUES
+         ($1,$2,$3,'android','preproduction','preproduction'),
+         ($4,$5,$6,'android','preproduction','preproduction')`,
+      [PARENT_A, fixtures.schoolA, TOKEN_PARENT_A, PARENT_B, fixtures.schoolB, TOKEN_PARENT_B],
+    );
+    const envPush = { NODE_ENV: "test", APP_ENV: "preproduction" };
+    const recordingPush = () => {
+      const sent = [];
+      return {
+        sent,
+        async sendToTokens(tokens, message) {
+          sent.push({ tokens: [...tokens], title: message?.title, data: message?.data });
+          return { sent: tokens.length };
+        },
+      };
+    };
+    async function dispatchPush(processed, pushClient) {
+      await dispatchProcessedEvents({
+        store,
+        repository: repo,
+        processed,
+        pushStore: repo.getMobilePushStore(),
+        pushClient,
+        mailer: { async sendMail() {} },
+        env: envPush,
+        logger: { error() {}, info() {} },
+      });
+    }
+    function parseKinds(context) {
+      const parsed = typeof context === "string" ? JSON.parse(context || "{}") : (context || {});
+      return Array.isArray(parsed.kinds) ? parsed.kinds : [];
+    }
+
+    const announcementTous = await request("/backoffice/announcements", {
+      method: "POST",
+      token: adminA,
+      headers: { "Idempotency-Key": randomUUID() },
+      body: { title: "Réunion P0 Tous", message: "Samedi 9h", audience: "Tous" },
+    });
+    assert.equal(announcementTous.status, 201, `P0 annonce Tous: ${JSON.stringify(announcementTous.data)}`);
+    const announcementProcessed = await drainOutbox(store, { limit: 50 });
+    const parentTousCtx = (await pool.query(
+      `SELECT r.recipient_kind, r.recipient_context
+         FROM notification_recipients r
+         JOIN communication_notifications n ON n.id = r.notification_id
+        WHERE n.source_entity_id = $1 AND r.user_id = $2`,
+      [announcementTous.data.id, PARENT_A],
+    )).rows[0];
+    assert.ok(parentTousCtx, "P0 Parent A destinataire de l'annonce Tous");
+    assert.equal(parseKinds(parentTousCtx.recipient_context).includes("PARENT"), true, "P0 snapshot kinds PARENT");
+    const parentBTous = await count(
+      pool,
+      `SELECT count(*)::int c FROM notification_recipients r
+       JOIN communication_notifications n ON n.id = r.notification_id
+       WHERE n.source_entity_id = $1 AND r.user_id = $2`,
+      [announcementTous.data.id, PARENT_B],
+    );
+    assert.equal(parentBTous, 0, "P0 annonce Tous isolée school_id");
+    const pushAnn = recordingPush();
+    await dispatchPush(announcementProcessed, pushAnn);
+    const annTokens = pushAnn.sent.flatMap((row) => row.tokens);
+    assert.equal(annTokens.includes(TOKEN_PARENT_A), true, "P0 Annonce Tous → sendToTokens OUI");
+    assert.equal(annTokens.includes(TOKEN_PARENT_B), false, "P0 Annonce Tous → token école B NON");
+
+    const manualTousKey = randomUUID();
+    const manualTous = await request("/backoffice/internal-notifications", {
+      method: "POST",
+      token: adminA,
+      headers: { "Idempotency-Key": manualTousKey },
+      body: { title: "Notif métier P0", body: "Message admin Tous" },
+    });
+    assert.equal(manualTous.status, 201, `P0 createManual: ${JSON.stringify(manualTous.data)}`);
+    const manualEventKey = `notification.manual:${fixtures.schoolA}:${manualTousKey}`;
+    assert.equal(
+      await count(pool, `SELECT count(*)::int c FROM communication_event_outbox WHERE event_key=$1`, [manualEventKey]),
+      1,
+      "P0 createManual enqueue outbox",
+    );
+    const manualParentCtx = (await pool.query(
+      `SELECT r.recipient_kind, r.recipient_context
+         FROM notification_recipients r
+        WHERE r.notification_id = $1 AND r.user_id = $2`,
+      [manualTous.data.id, PARENT_A],
+    )).rows[0];
+    assert.ok(manualParentCtx, "P0 createManual Parent A destinataire");
+    assert.equal(parseKinds(manualParentCtx.recipient_context).includes("PARENT"), true, "P0 createManual snapshot PARENT");
+    const manualProcessed = await drainOutbox(store, { limit: 50 });
+    const pushManual = recordingPush();
+    await dispatchPush(manualProcessed, pushManual);
+    const manualTokens = pushManual.sent.flatMap((row) => row.tokens);
+    assert.equal(manualTokens.includes(TOKEN_PARENT_A), true, "P0 createManual → sendToTokens OUI");
+    assert.equal(manualTokens.includes(TOKEN_PARENT_B), false, "P0 createManual → token école B NON");
 
     console.log("COM-C4 GO — notifications internes, outbox, read/unread, tenant, RBAC et PJ validés.");
   } finally {

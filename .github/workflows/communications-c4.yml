@@ -138,6 +138,7 @@ on:
       - "backend/db/migrations/20260910_user_communication_preferences.sql"
       - "backend/db/migrations/20260907_communication_channel_deliveries.sql"
       - "backend/lib/communicationsC4.http.pg.test.js"
+      - "backend/lib/communicationsPushWitness.audit.test.js"
       - "backend/scripts/verify-communications-c4.js"
       - "backend/server.js"
       - "backend/services/rbacService.js"

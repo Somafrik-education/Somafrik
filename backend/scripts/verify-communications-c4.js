@@ -211,6 +211,25 @@ function sourceGuards() {
   assert.match(dispatcherSrc, /function resolveEffectiveChannels/);
   assert.match(dispatcherSrc, /function mandatoryChannelsForEvent/);
   assert.match(dispatcherSrc, /auth\.password\.reset/);
+  assert.match(dispatcherSrc, /"notification\.manual": \["PUSH", "EMAIL"\]/);
+  assert.match(service, /expandSchoolWideRecipientKinds/);
+  const createManualFn = service.slice(
+    service.indexOf("async function createManual"),
+    service.indexOf("async function downloadAttachment"),
+  );
+  assert.match(createManualFn, /INSERT INTO communication_event_outbox/);
+  assert.match(createManualFn, /notification\.manual/);
+  assert.doesNotMatch(createManualFn, /dispatchProcessedEvents|fanOutNotificationChannels|expoPushService/);
+  const announcementSpec = service.slice(
+    service.indexOf('eventType === "communication.announcement.published"'),
+    service.indexOf('eventType === "attendance.student.absent"'),
+  );
+  assert.match(announcementSpec, /snapshotRecipientKinds|expandSchoolWideRecipientKinds/);
+  assert.match(announcementSpec, /if \(!kinds\.length\) continue/);
+  assert.doesNotMatch(messages, /expandSchoolWideRecipientKinds|dispatchProcessedEvents/);
+  assert.match(httpTest, /audience: "Tous"/);
+  assert.match(httpTest, /P0 createManual → sendToTokens OUI/);
+  assert.match(httpTest, /TOKEN_PARENT_B/);
   const prefsSrc = read("backend/lib/communicationsPreferences.js");
   assert.doesNotMatch(prefsSrc, /require\(["'][^"']*(nodemailer|expo-server-sdk|@getbrevo)/);
   assert.doesNotMatch(prefsSrc, /mobile_push_devices|expo_push_token/);
@@ -394,6 +413,7 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsTeacherReplacement.red.test.js"], "Lot L5 TEACHER_REPLACEMENT RED/GREEN");
   run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
   run(process.execPath, ["--test", "backend/lib/schoolNotificationSettings.test.js"], "Lot I school notification settings");
+  run(process.execPath, ["--test", "backend/lib/communicationsPushWitness.audit.test.js"], "P0 PUSH Annonce Tous + createManual");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/pages/parametres/SettingsNotificationsPage.test.tsx"], "web Lot I notification settings");
   console.log("verify-communications-c4: GO");
 }
