@@ -144,6 +144,10 @@ test("politique C4 conservatrice reste PUSH+EMAIL pour les 5 eventTypes", () => 
   }
 });
 
+test("notification.manual rejoint la politique PUSH+EMAIL sans être Lot I", () => {
+  assert.deepEqual(EVENT_EXTERNAL_CHANNEL_POLICY["notification.manual"], ["PUSH", "EMAIL"]);
+});
+
 test("EMAIL optionnel opt-out n'enqueue pas EMAIL", async () => {
   const adapter = createMemoryDeliveryAdapter({
     notifications: [

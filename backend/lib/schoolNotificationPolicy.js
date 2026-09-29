@@ -466,6 +466,35 @@ function recipientCategoriesFromContext(context) {
   return cats;
 }
 
+function collectMappedRecipientCategories(kind, kinds = []) {
+  const raw = Array.isArray(kinds) && kinds.length ? kinds : [kind];
+  const mapped = [];
+  let schoolWide = isSchoolWideRecipientKind(kind);
+  for (const item of raw) {
+    if (isSchoolWideRecipientKind(item)) schoolWide = true;
+    const cat = mapRecipientKindToCategory(item);
+    if (cat && !mapped.includes(cat)) mapped.push(cat);
+  }
+  return { mapped, schoolWide };
+}
+
+/**
+ * Snapshot déterministe des catégories Lot I.
+ * Audience établissement (`school`) → rôles réels du user dans l'école.
+ * Fail-closed : tableau vide si aucun rôle mappable (le caller n'enqueue pas).
+ * À appeler sur un store bound (tx), jamais sur la façade worker.
+ */
+async function expandSchoolWideRecipientKinds(store, { userId, schoolId, kind, kinds, adapter } = {}) {
+  const { mapped, schoolWide } = collectMappedRecipientCategories(kind, kinds);
+  if (!schoolWide) return mapped;
+  const resolved = await resolveUserRecipientCategories(store, { userId, schoolId, adapter });
+  const expanded = [...mapped];
+  for (const cat of resolved) {
+    if (!expanded.includes(cat)) expanded.push(cat);
+  }
+  return expanded;
+}
+
 function createMemorySchoolNotificationStore({ schools = [], rows = [], schoolLookup } = {}) {
   const table = rows.map((row) => ({ ...row }));
   const schoolByCode = new Map(
@@ -539,6 +568,7 @@ module.exports = {
   mapRecipientKindToCategory,
   isSchoolWideRecipientKind,
   recipientCategoriesFromContext,
+  expandSchoolWideRecipientKinds,
   resolveUserRecipientCategories,
   resolveAllowedChannels,
   getSchoolPolicyEventsBySchoolId,
