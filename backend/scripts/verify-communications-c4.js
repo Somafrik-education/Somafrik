@@ -394,6 +394,7 @@ function main() {
   run(process.execPath, ["--test", "backend/lib/communicationsTeacherReplacement.red.test.js"], "Lot L5 TEACHER_REPLACEMENT RED/GREEN");
   run(process.execPath, ["--test", "backend/lib/trialAccessRequestNotification.red.test.js"], "trial EMAIL durable unit");
   run(process.execPath, ["--test", "backend/lib/schoolNotificationSettings.test.js"], "Lot I school notification settings");
+  run(process.execPath, ["--test", "backend/lib/communicationsPushWitness.audit.test.js"], "AUDIT PUSH witness DM vs annonce vs métier");
   run("npm", ["--prefix", "web", "run", "test", "--", "src/pages/parametres/SettingsNotificationsPage.test.tsx"], "web Lot I notification settings");
   console.log("verify-communications-c4: GO");
 }
