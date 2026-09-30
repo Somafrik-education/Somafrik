@@ -855,7 +855,7 @@ const userAccounts = [
     schoolCode: "*",
     accessChannel: "Application",
     identifier: "superadmin",
-    password: "1234",
+    password: "",
     status: "Actif",
     permissions: rolePermissions["Super Administrateur Somafrik"],
     temporaryPassword: "",

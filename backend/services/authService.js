@@ -12,6 +12,10 @@ const {
   sanitizeUserForResponse,
   sanitizeUsersForResponse,
 } = require("../lib/sanitizeUserForResponse");
+const {
+  isPlatformSuperadminAccount,
+  rejectsKnownSuperadminSecret,
+} = require("../lib/superadminSeedSecret");
 
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCK_DURATION_MS = 15 * 60 * 1000;
@@ -811,6 +815,9 @@ class AuthService {
     }
 
     const normalizedSecret = String(secret ?? "");
+    if (isPlatformSuperadminAccount(user, options) && rejectsKnownSuperadminSecret(normalizedSecret)) {
+      return false;
+    }
     const parentOnly = options.role === "parent_student";
 
     if (user.passwordHash && verifySecret(normalizedSecret, user.passwordHash)) {

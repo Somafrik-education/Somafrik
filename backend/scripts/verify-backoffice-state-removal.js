@@ -1,5 +1,6 @@
 "use strict";
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -304,7 +305,7 @@ async function runHttpGuards() {
 
     const superLogin = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: "superadmin@somafrik.app", password: "1234" },
+      body: { identifier: "superadmin@somafrik.app", password: superadminLoginPassword() },
     });
     const superToken = superLogin.data.accessToken || superLogin.data.token;
 

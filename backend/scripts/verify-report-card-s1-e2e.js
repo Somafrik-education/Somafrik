@@ -7,6 +7,7 @@
  *
  * Aucun mock du workflow métier. PostgreSQL isolé. Interdit : waitForTimeout numérique Playwright.
  */
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn, execSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -191,6 +192,7 @@ async function prepareDatabase(databaseUrl) {
   const isolatedUrl = await ensureIsolatedDatabase(databaseUrl, PG_HTTP_DATABASE);
   const pool = new Pool({ connectionString: isolatedUrl });
   const passwordHash = hashSecret("1234");
+  const superadminPasswordHash = hashSecret(superadminLoginPassword());
   let schoolAId = "";
   let schoolBId = "";
   try {
@@ -224,7 +226,7 @@ async function prepareDatabase(databaseUrl) {
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status, must_change_password)
        VALUES (NULL, 'USR-2026-000002', 'Super', 'Admin', 'superadmin-e2e@test.cd', $1, $1, 'SUPER_ADMIN', 'active', FALSE)`,
-      [passwordHash],
+      [superadminPasswordHash],
     );
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status, must_change_password)
@@ -612,7 +614,7 @@ async function runBrowserScenarios({ schoolAId }) {
 
     await named("e2e-report-card-superadmin-explicit-mapping", async () => {
       await logout(page);
-      await loginAsSuperadmin(page, "superadmin", "1234");
+      await loginAsSuperadmin(page, "superadmin", superadminLoginPassword());
       await page.goto(`${WEB_URL}/parametres/bulletins-configuration`, { waitUntil: "domcontentloaded" });
       await page.getByRole("heading", { name: /configuration bulletins/i }).waitFor();
       const schoolInput = page.getByTestId("report-card-target-school").or(page.getByLabel(/établissement cible/i));
@@ -689,7 +691,7 @@ async function runBrowserScenarios({ schoolAId }) {
       await waitWorkflowState(page, "APPROVED");
 
       await logout(page);
-      await loginAsSuperadmin(page, "superadmin", "1234");
+      await loginAsSuperadmin(page, "superadmin", superadminLoginPassword());
       await page.goto(`${WEB_URL}/parametres/bulletins-configuration`, { waitUntil: "domcontentloaded" });
       await page.getByTestId("report-card-target-school").or(page.getByLabel(/établissement cible/i)).fill(state.schoolId);
       await clickAndWaitHttp(

@@ -5,6 +5,7 @@
  *   node backend/scripts/verify-rbac-s1-4.js
  *   SOMAFRIK_API_URL=http://127.0.0.1:5055/api node backend/scripts/verify-rbac-s1-4.js
  */
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("assert");
 const path = require("path");
 
@@ -216,7 +217,7 @@ async function runHttpTestsIfAvailable() {
 
   const schoolAdmin = await login("admin", "1234", "CD-2026-0001");
   const secretary = await login("secretaire", "1234", "CD-2026-0001");
-  const superadmin = await login("superadmin@somafrik.app", "1234");
+  const superadmin = await login("superadmin@somafrik.app", superadminLoginPassword());
 
   // Mobile teacher / parent for MVP RBAC
   const teacherMobileRes = await request("/login", {

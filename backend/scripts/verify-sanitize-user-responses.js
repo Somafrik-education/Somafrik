@@ -9,6 +9,7 @@
  */
 const assert = require("assert");
 const path = require("path");
+const { superadminLoginPassword, applySuperadminSeedSecrets } = require("../lib/superadminSeedSecret");
 
 const {
   SENSITIVE_USER_FIELDS,
@@ -31,6 +32,7 @@ function assertNoSensitiveFields(payload, label, options = {}) {
 
 async function runServiceLoginTests() {
   const data = require("../data");
+  applySuperadminSeedSecrets(data);
   const { BackOfficeAccessService } = require("../services/backOfficeAccessService");
   const { AuthService } = require("../services/authService");
 
@@ -63,7 +65,7 @@ async function runServiceLoginTests() {
 
   const login = await backOffice.login({
     identifier: "superadmin@somafrik.app",
-    password: "1234",
+    password: superadminLoginPassword(),
   });
   assertNoSensitiveFields(login.user, "BackOfficeAccessService.login.user");
   assert.ok(login.user?.role, "role présent après sanitization");
@@ -197,7 +199,7 @@ async function runHttpTestsIfAvailable() {
 
   const login = await loginFull(
     process.env.SOMAFRIK_VERIFY_IDENTIFIER || "superadmin@somafrik.app",
-    process.env.SOMAFRIK_VERIFY_PASSWORD || "1234",
+    process.env.SOMAFRIK_VERIFY_PASSWORD || superadminLoginPassword(),
   );
   assert.ok(login?.accessToken, "login accessToken attendu");
   assert.ok(login.refreshToken, "refreshToken top-level attendu");

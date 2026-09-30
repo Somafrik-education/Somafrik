@@ -4,6 +4,7 @@
  * PARITY-037 — preuve HTTP : contrat canonique === alias, 403 hors scope, Deprecation.
  *   node --test backend/lib/educationSchoolCatalog.http.test.js
  */
+const { superadminLoginPassword } = require("./superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
@@ -85,7 +86,7 @@ test("PARITY-037 HTTP canonique et alias partagent le DTO, 403 hors scope, Depre
   });
   try {
     await waitForHealth(child, stderrRef);
-    const superToken = await login("superadmin", "1234");
+    const superToken = await login("superadmin", superadminLoginPassword());
     const tokenA = await login("admin", "1234", SCHOOL_A);
     const tokenB = await login("admin", "1234", SCHOOL_B);
 

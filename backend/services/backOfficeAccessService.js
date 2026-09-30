@@ -16,6 +16,10 @@ const {
   sanitizeUsersForResponse,
 } = require("../lib/sanitizeUserForResponse");
 const { attachCanonicalSchoolIdentity } = require("../lib/sessionSchoolIdentity");
+const {
+  isPlatformSuperadminAccount,
+  rejectsKnownSuperadminSecret,
+} = require("../lib/superadminSeedSecret");
 
 const SUPER_ADMIN_ROLE = "Super Administrateur Somafrik";
 const LEGACY_SUPER_ADMIN_ROLE = "Super Administrateur OKAFRIK";
@@ -185,6 +189,9 @@ class BackOfficeAccessService {
 
   verifyPassword(user, password) {
     const normalizedPassword = String(password ?? "");
+    if (isPlatformSuperadminAccount(user) && rejectsKnownSuperadminSecret(normalizedPassword)) {
+      return false;
+    }
 
     if (user.passwordHash && verifySecret(normalizedPassword, user.passwordHash)) {
       return true;

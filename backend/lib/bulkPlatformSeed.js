@@ -163,7 +163,7 @@ function buildSuperAdmins() {
       schoolCode: "*",
       accessChannel: "Application",
       identifier: index === 1 ? "superadmin" : `superadmin-${pad(index, 2)}`,
-      password: "1234",
+      password: "",
       status: "Actif",
       permissions: rolePermissions["Super Administrateur Somafrik"],
       temporaryPassword: "",

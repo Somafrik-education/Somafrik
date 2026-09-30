@@ -3,7 +3,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const seedData = require("../data");
-const { isStudentDemoAccount, resolveStudentDemoLoginIdentity, shouldSeedDemoData } = require("./demoSeedPolicy");
+const { isStudentDemoAccount, resolveStudentDemoLoginIdentity, shouldSeedDemoData, assertProductionSecurityConfiguration } = require("./demoSeedPolicy");
+const { superadminLoginPassword } = require("./superadminSeedSecret");
 
 test("isStudentDemoAccount reconnaît le compte démo Élève avant toute ligne students", () => {
   const student = seedData.userAccounts.find((user) => user.id === "USER-STUDENT-0001");
@@ -102,4 +103,25 @@ test("les écritures users du seed démo restent uniques par établissement+emai
   }
   const duplicates = [...groups.entries()].filter(([, sources]) => sources.length > 1);
   assert.deepEqual(duplicates, [], "aucune collision school+email dans le seed prévu");
+});
+
+test("SKIP_DEMO_SEED=true n'est pas suffisant : production refuse aussi un bootstrap Superadmin 1234", () => {
+  assert.throws(
+    () =>
+      assertProductionSecurityConfiguration({
+        NODE_ENV: "production",
+        SOMAFRIK_SKIP_DEMO_SEED: "true",
+        BOOTSTRAP_SUPERADMIN_PASSWORD: "1234",
+      }),
+    /Superadmin/,
+  );
+});
+
+test("le seed démo n'applique pas 1234 au Superadmin", () => {
+  assert.equal(shouldSeedDemoData({ NODE_ENV: "test" }), true);
+  const superadmin = seedData.userAccounts.find((user) => user.id === "USER-SUPERADMIN");
+  assert.ok(superadmin);
+  assert.equal(superadmin.password, superadminLoginPassword());
+  assert.notEqual(superadmin.password, "1234");
+  assert.ok(String(superadmin.password).length >= 12);
 });

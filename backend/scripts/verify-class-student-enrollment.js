@@ -4,6 +4,7 @@
  * Vérification API inscription élève depuis une classe (mémoire) :
  * création + relecture, falsification corps, rôles, isolation, classe inactive.
  */
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
@@ -430,7 +431,7 @@ async function main() {
 
     const superLogin = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: "superadmin", password: "1234" },
+      body: { identifier: "superadmin", password: superadminLoginPassword() },
     });
     assert.equal(superLogin.status, 200, JSON.stringify(superLogin.data));
     const superToken = superLogin.data.accessToken || superLogin.data.token;
