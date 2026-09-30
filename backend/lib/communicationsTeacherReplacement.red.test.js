@@ -108,6 +108,22 @@ function withDatabaseName(databaseUrl, databaseName) {
   return parsed.toString();
 }
 
+function ignoreLatePgErrors(pool) {
+  if (pool && typeof pool.on === "function") {
+    pool.on("error", () => {});
+  }
+}
+
+async function endPool(pool) {
+  if (!pool || typeof pool.end !== "function") return;
+  ignoreLatePgErrors(pool);
+  try {
+    await pool.end();
+  } catch {
+    /* already closed */
+  }
+}
+
 let isolatedPgMutex = Promise.resolve();
 
 async function withIsolatedPg(run) {
@@ -117,10 +133,12 @@ async function withIsolatedPg(run) {
     }
     const dbName = `somafrik_tr_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
     const admin = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
+    ignoreLatePgErrors(admin);
     await admin.query(`CREATE DATABASE ${dbName}`);
-    await admin.end();
+    await endPool(admin);
     const url = withDatabaseName(DATABASE_URL, dbName);
     const pool = new Pool({ connectionString: url });
+    ignoreLatePgErrors(pool);
     try {
       await pool.query("DROP SCHEMA public CASCADE");
       await pool.query("CREATE SCHEMA public");
@@ -129,14 +147,14 @@ async function withIsolatedPg(run) {
       await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
       return { skipped: false, ...(await run(pool)) };
     } finally {
-      await pool.end();
+      await endPool(pool);
       const drop = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
-      await drop.query(
-        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-        [dbName],
-      );
-      await drop.query(`DROP DATABASE IF EXISTS ${dbName}`);
-      await drop.end();
+      ignoreLatePgErrors(drop);
+      try {
+        await drop.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+      } finally {
+        await endPool(drop);
+      }
     }
   };
   const queued = isolatedPgMutex.then(execute, execute);
@@ -150,10 +168,12 @@ async function withIsolatedPg(run) {
 async function withRepo(pool, fn) {
   const { createPostgresRepository } = require("../db/repositoryFactory");
   const repo = createPostgresRepository(pool.options.connectionString);
+  ignoreLatePgErrors(repo.pool);
   await repo.init();
   try {
     return await fn(repo);
   } finally {
+    ignoreLatePgErrors(repo.pool);
     await repo.close();
   }
 }
