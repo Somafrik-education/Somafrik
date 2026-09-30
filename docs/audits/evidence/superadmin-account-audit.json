@@ -1,0 +1,119 @@
+{
+  "audit": "SUPERADMIN-ACCOUNT-INTEGRAL",
+  "governance": "AUDIT_ONLY_HOLD",
+  "sha": "7e21d376",
+  "branchBase": "develop",
+  "date": "2026-09-30",
+  "searchNote": "GitHub query 'superadmin' misses the role. Canonical role is 'Super Administrateur Somafrik'; login identifier is 'superadmin'; PG key SUPER_ADMIN; mobile role super_admin.",
+  "identity": {
+    "roleLabel": "Super Administrateur Somafrik",
+    "legacyLabel": "Super Administrateur OKAFRIK",
+    "roleKey": "SUPER_ADMIN",
+    "identifier": "superadmin",
+    "email": "superadmin@somafrik.app",
+    "seedId": "USER-SUPERADMIN",
+    "schoolCode": "*",
+    "mobileRole": "super_admin",
+    "seedPassword": "1234",
+    "files": [
+      "backend/data.js:843-867",
+      "web/src/lib/demoAccounts.ts:18-28",
+      "backend/lib/bulkPlatformSeed.js:163-175",
+      "backend/lib/superadminBootstrap.js:1-48",
+      "web/src/lib/orgHierarchy.ts:4-6"
+    ]
+  },
+  "authPipeline": {
+    "webLogin": "POST /api/backoffice/login without schoolCode",
+    "mobileLogin": "POST /api/login loginPlatformAccount without schoolCode",
+    "jwtSchoolCode": "*",
+    "personalDataDeny": "backend/server.js:6813-6826 before school scope",
+    "rbac": "backend/services/rbacService.js:582-604 ALL_PRIVILEGES after deny",
+    "effectiveSchoolHeader": "X-Somafrik-School-Code"
+  },
+  "contract": {
+    "denyStudentPii": true,
+    "allowPlatformGovernance": true,
+    "cannotGrantSuperAdmin": true,
+    "canGrantCountryAndSchoolAdmin": true
+  },
+  "findings": [
+    {
+      "id": "P0-1",
+      "priority": "P0",
+      "title": "Seed Superadmin password 1234 versioned",
+      "files": ["backend/data.js:857-858", "web/src/lib/demoAccounts.ts:18-28", "backend/lib/bulkPlatformSeed.js:166"],
+      "mitigationProd": "SOMAFRIK_SKIP_DEMO_SEED=true required"
+    },
+    {
+      "id": "P0-2",
+      "priority": "P0",
+      "title": "Password verify accepts plaintext",
+      "files": ["backend/services/authService.js:808-835", "backend/services/backOfficeAccessService.js:186-202"]
+    },
+    {
+      "id": "P0-3",
+      "priority": "P0",
+      "title": "classStudentsAuthz fail-open for Superadmin and missing principal",
+      "files": ["backend/lib/classStudentsAuthz.js:171-196"],
+      "note": "HTTP middleware currently denies; helper contradicts P0-2"
+    },
+    {
+      "id": "P0-4",
+      "priority": "P0",
+      "title": "SOMAFRIK_AUTH_OPTIONAL bypasses canAccess",
+      "files": ["backend/services/rbacService.js:583-585", "backend/lib/productionSecrets.js:80-82"]
+    },
+    {
+      "id": "P1-1",
+      "priority": "P1",
+      "title": "Finance school scope mode all for Superadmin",
+      "files": ["backend/lib/financeSchoolScope.js:164-167"]
+    },
+    {
+      "id": "P1-2",
+      "priority": "P1",
+      "title": "isSuperAdminPrincipal ignores roleKeys in server.js",
+      "files": ["backend/server.js:5214-5216", "backend/lib/platformPersonalDataGuard.js:315-319"]
+    },
+    {
+      "id": "P1-3",
+      "priority": "P1",
+      "title": "Web Superadmin login bypasses school/country suspension",
+      "files": ["backend/services/backOfficeAccessService.js:235-237"]
+    },
+    {
+      "id": "P1-4",
+      "priority": "P1",
+      "title": "Messages UI allowed without school switcher",
+      "files": ["web/src/lib/superAdminAccess.ts:6-20"]
+    },
+    {
+      "id": "P1-5",
+      "priority": "P1",
+      "title": "Mobile catalogue CRUD vs reduced navigation",
+      "files": ["Mobile/src/navigation/roleDrawerPreferences.ts"]
+    },
+    {
+      "id": "P2-1",
+      "priority": "P2",
+      "title": "OKAFRIK legacy alias",
+      "files": ["web/src/lib/orgHierarchy.ts:5-6"]
+    }
+  ],
+  "tests": {
+    "denyPersonalDataHttp": "backend/scripts/verify-platform-personal-data-deny.js",
+    "guardUnit": "backend/lib/platformPersonalDataGuard.test.js",
+    "usersTenant": "backend/lib/usersTenant.http.pg.test.js",
+    "platformLogin": "backend/lib/authPlatformLogin.test.js",
+    "gaps": [
+      "No HTTP PATCH /api/students Superadmin in verify script",
+      "No Web useVisibleNavItems Superadmin suite",
+      "No PermissionRoute /etablissement Superadmin redirect test"
+    ]
+  },
+  "runtime": {
+    "liveReplay": false,
+    "reason": "No API/PostgreSQL in this agent environment for Superadmin session capture"
+  }
+}
