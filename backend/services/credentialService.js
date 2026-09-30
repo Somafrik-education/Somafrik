@@ -35,9 +35,10 @@ function firstPlainSecret(...values) {
 }
 
 /**
- * P0-02 — materialise passwordHash/pinHash depuis les champs clair du compte mémoire.
- * Ne réécrit jamais un hash scrypt déjà présent. Ne strippe pas password/pin versionnés
- * (seed établissement 1234 hors périmètre P0-02).
+ * P0-02 — materialise passwordHash/pinHash depuis les champs clair de confiance
+ * (password / pin / temporaryPassword des fixtures démo). Ne réécrit jamais un
+ * hash scrypt déjà présent. Un passwordHash/pinHash non-scrypt n'est jamais
+ * promu : verifySecret reste fail-closed.
  */
 function materializeAccountSecretHashes(user) {
   if (!user || typeof user !== "object") {
@@ -45,14 +46,14 @@ function materializeAccountSecretHashes(user) {
   }
 
   if (!isHashedSecret(user.passwordHash)) {
-    const secret = firstPlainSecret(user.password, user.temporaryPassword, user.passwordHash);
+    const secret = firstPlainSecret(user.password, user.temporaryPassword);
     if (secret) {
       user.passwordHash = hashSecret(secret);
     }
   }
 
   if (!isHashedSecret(user.pinHash)) {
-    const secret = firstPlainSecret(user.pin, user.temporaryPassword, user.password, user.pinHash);
+    const secret = firstPlainSecret(user.pin, user.temporaryPassword, user.password);
     if (secret) {
       user.pinHash = hashSecret(secret);
     }
