@@ -1,6 +1,7 @@
 "use strict";
 
 const seedData = require("../data");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 const SCHOOL_SETTINGS_ERROR = Object.freeze({
   FORBIDDEN: "FORBIDDEN",
@@ -23,8 +24,6 @@ const SCHOOL_SETTINGS_ERROR = Object.freeze({
   SCHOOL_SETTINGS_MATERIALIZE_MISMATCH: "SCHOOL_SETTINGS_MATERIALIZE_MISMATCH",
   SCHOOL_SETTINGS_UNAVAILABLE: "SCHOOL_SETTINGS_UNAVAILABLE",
 });
-
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
 const PERIOD_MODES = Object.freeze(["trimestre", "semestre", "periode"]);
 const REPORT_CARD_MODES = Object.freeze(["period", "annual", "custom"]);
@@ -71,10 +70,6 @@ function createSchoolSettingsError(status, message, code, details) {
   error.code = code || SCHOOL_SETTINGS_ERROR.FORBIDDEN;
   if (details) error.details = details;
   return error;
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
 
 function isCountryAdminPrincipal(principal) {

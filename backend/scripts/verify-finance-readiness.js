@@ -103,7 +103,7 @@ function sourceGuards() {
   );
   assert.match(attachFn, /SELECT s\.login_code/);
   assert.doesNotMatch(attachFn, /coalesce\(nullif\(btrim\(s\.login_code\)/);
-  assert.match(attachFn, /isPlatformSuperadminRole\(principal\)/);
+  assert.match(attachFn, /isSuperAdminPrincipal\(principal\)/);
   assert.match(attachFn, /adminPays && requestScoped/);
   assert.doesNotMatch(attachFn, /\(platform \|\| adminPays\) && requestScoped/);
   const itemsProjection = pgStore.slice(

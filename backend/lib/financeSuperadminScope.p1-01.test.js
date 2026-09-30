@@ -200,7 +200,7 @@ test("garde source : SUPER_ADMIN ne doit plus produire mode: all", () => {
   assert.match(resolveFn, /if \(!principal\) \{\s*return \{ mode: "none" \}/);
   assert.doesNotMatch(resolveFn, /mode:\s*["']all["']/);
   assert.doesNotMatch(resolveFn, /return \{ mode: "all" \}/);
-  assert.match(resolveFn, /isPlatformSuperadminRole\(principal\)/);
+  assert.match(resolveFn, /isSuperAdminPrincipal\(principal\)/);
 
   const canAccess = fs
     .readFileSync(path.join(__dirname, "../services/rbacService.js"), "utf8")

@@ -9,13 +9,9 @@
 
 const { TenantScopeService } = require("../services/tenantScopeService");
 const { isFinanceLiveRbacRouteKey } = require("./financeRbacRouteMatrix");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 const tenantScope = new TenantScopeService();
-
-function isPlatformSuperadminRole(principal) {
-  return SUPER_ADMIN_ROLES.has(principal?.role);
-}
 
 /**
  * P1-01 — Superadmin n'est pas un utilisateur Finance scolaire.
@@ -24,7 +20,7 @@ function isPlatformSuperadminRole(principal) {
  * Les abonnements Somafrik restent hors de cette matrice (`isFinanceLiveRbacRouteKey`).
  */
 function isSchoolFinanceForbiddenForSuperadmin(principal, routeKey) {
-  if (!isPlatformSuperadminRole(principal)) return false;
+  if (!isSuperAdminPrincipal(principal)) return false;
   return isFinanceLiveRbacRouteKey(routeKey);
 }
 
@@ -102,7 +98,7 @@ function withFinanceMembership(principal, { loginCode, schoolId }) {
 async function attachFinanceMembershipScope(principal, one) {
   if (!principal) return principal;
   // P1-01 : Superadmin n'acquiert jamais un membership Finance scolaire.
-  if (isPlatformSuperadminRole(principal)) {
+  if (isSuperAdminPrincipal(principal)) {
     return principal;
   }
   const existingLogin = existingFinanceLoginCode(principal);
@@ -157,7 +153,7 @@ async function attachFinanceMembershipScope(principal, one) {
  */
 function attachFinanceFixtureScope(principal) {
   if (!principal) return principal;
-  if (isPlatformSuperadminRole(principal)) {
+  if (isSuperAdminPrincipal(principal)) {
     return principal;
   }
   const existing = normalizeLoginCode(principal.financeLoginCode);
@@ -184,7 +180,7 @@ function resolveFinanceSchoolScope(principal) {
     return { mode: "none" };
   }
   // P1-01 : Superadmin = admin plateforme, jamais Finance scolaire globale.
-  if (isPlatformSuperadminRole(principal)) {
+  if (isSuperAdminPrincipal(principal)) {
     return { mode: "none" };
   }
   if (principal.role === "Admin Pays" && !tenantScope.hasEffectiveSchoolScope(principal)) {
@@ -268,5 +264,5 @@ module.exports = {
   publicSchoolCodeFromRow,
   findEmittedLoginCode,
   isSchoolFinanceForbiddenForSuperadmin,
-  isPlatformSuperadminRole,
+  isSuperAdminPrincipal,
 };

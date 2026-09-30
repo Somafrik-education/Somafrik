@@ -2,6 +2,7 @@
 
 const { getCountryCodeFromScope } = require("./countryScope");
 const { randomBytes } = require("node:crypto");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 const CLIENTS_ERROR = Object.freeze({
   TENANT_MISMATCH: "TENANT_MISMATCH",
@@ -32,8 +33,6 @@ const CLIENTS_ERROR = Object.freeze({
   PARENT_NAME_REQUIRED: "PARENT_NAME_REQUIRED",
   PARENT_RELATION_TYPE_INVALID: "PARENT_RELATION_TYPE_INVALID",
 });
-
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
 const ROLE_TO_DB = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -78,10 +77,6 @@ function validatePersonName(value, field = "name", maxLength = 120) {
     throw createClientsError(400, `${field} invalide.`);
   }
   return normalized;
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
 
 function isCountryAdminPrincipal(principal) {

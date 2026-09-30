@@ -3,6 +3,7 @@
 const { BusinessError } = require("../services/authService");
 const { isPlatformAdminPrincipal } = require("./platformPersonalDataGuard");
 const { stripSensitiveFieldsDeep } = require("./sanitizeUserForResponse");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 const DATA_EXPORT_FORMAT = "somafrik-export";
 const DATA_EXPORT_VERSION = 1;
@@ -15,8 +16,6 @@ const DATA_EXPORT_ERROR = Object.freeze({
   SCHOOL_REQUIRED: "SCHOOL_REQUIRED",
   SCHOOL_NOT_FOUND: "SCHOOL_NOT_FOUND",
 });
-
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
 const EXPORT_SENSITIVE_KEY_PATTERN =
   /^(password|password_hash|passwordhash|pin|pin_hash|pinhash|temporarypassword|temporarysecret|refresh_token|refresh_token_hash|refreshtoken|refreshtokenhash|jwt_secret|jwtsecret|access_token|accesstoken|database_url|db_password|postgres_password|connectionstring|secret)$/i;
@@ -31,10 +30,6 @@ const DATA_EXPORT_READ_PERMISSIONS = Object.freeze([
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
 
 function isCountryAdminPrincipal(principal) {

@@ -9,12 +9,9 @@ const {
   normalizeSchoolCode,
   publicSchoolCodeFromRecord,
 } = require("./schoolCodeV2");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 const SCHOOL_SCOPE_HEADER = "X-Somafrik-School-Code";
-const SUPER_ADMIN_ROLES = new Set([
-  "Super Administrateur Somafrik",
-  "Super Administrateur OKAFRIK",
-]);
 
 function resolvePrincipalSchoolCode(principal) {
   const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
@@ -63,10 +60,6 @@ function scopeError(statusCode, message, code) {
   const error = new BusinessError(statusCode, message);
   error.code = code;
   return error;
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(String(principal?.role ?? "").trim());
 }
 
 function isCountryAdminPrincipal(principal) {
