@@ -9,7 +9,7 @@
  * createCourseScheduleReplacement(...) → remplacement PG créé → 0 event C4 TEACHER_REPLACEMENT.
  */
 
-const { describe, test } = require("node:test");
+const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -67,8 +67,6 @@ const STUDENT_B = "e8000000-0000-4000-8000-000000000092";
 const NOTE_ID = "f8000000-0000-4000-8000-000000000001";
 const OCCURRENCE = "2026-08-24";
 
-describe.configure({ concurrency: 1 });
-
 function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
@@ -110,33 +108,43 @@ function withDatabaseName(databaseUrl, databaseName) {
   return parsed.toString();
 }
 
+let isolatedPgMutex = Promise.resolve();
+
 async function withIsolatedPg(run) {
-  if (!DATABASE_URL) {
-    return { skipped: true };
-  }
-  const dbName = `somafrik_tr_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-  const admin = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
-  await admin.query(`CREATE DATABASE ${dbName}`);
-  await admin.end();
-  const url = withDatabaseName(DATABASE_URL, dbName);
-  const pool = new Pool({ connectionString: url });
-  try {
-    await pool.query("DROP SCHEMA public CASCADE");
-    await pool.query("CREATE SCHEMA public");
-    await pool.query(read("backend/db/schema.sql"));
-    await pool.query(PEDAGOGY_SCHEMA_SQL);
-    await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
-    return { skipped: false, ...(await run(pool)) };
-  } finally {
-    await pool.end();
-    const drop = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
-    await drop.query(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
-      [dbName],
-    );
-    await drop.query(`DROP DATABASE IF EXISTS ${dbName}`);
-    await drop.end();
-  }
+  const execute = async () => {
+    if (!DATABASE_URL) {
+      return { skipped: true };
+    }
+    const dbName = `somafrik_tr_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const admin = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
+    await admin.query(`CREATE DATABASE ${dbName}`);
+    await admin.end();
+    const url = withDatabaseName(DATABASE_URL, dbName);
+    const pool = new Pool({ connectionString: url });
+    try {
+      await pool.query("DROP SCHEMA public CASCADE");
+      await pool.query("CREATE SCHEMA public");
+      await pool.query(read("backend/db/schema.sql"));
+      await pool.query(PEDAGOGY_SCHEMA_SQL);
+      await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
+      return { skipped: false, ...(await run(pool)) };
+    } finally {
+      await pool.end();
+      const drop = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
+      await drop.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+        [dbName],
+      );
+      await drop.query(`DROP DATABASE IF EXISTS ${dbName}`);
+      await drop.end();
+    }
+  };
+  const queued = isolatedPgMutex.then(execute, execute);
+  isolatedPgMutex = queued.then(
+    () => undefined,
+    () => undefined,
+  );
+  return queued;
 }
 
 async function withRepo(pool, fn) {
