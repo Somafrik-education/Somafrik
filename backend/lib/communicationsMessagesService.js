@@ -133,18 +133,15 @@ function resolveWritableSchoolCode(principal, rawPayload) {
   denyPlatformSchoolMessages(principal);
   const principalCode = asTrimmed(principal?.schoolCode).toUpperCase();
   if (!principalCode || principalCode === "*") {
-    throw createClientsError(403, "Établissement requis.", CLIENTS_ERROR.TENANT_MISMATCH);
-  }
-  const requested = asTrimmed(
-    rawPayload?.effectiveSchoolCode || rawPayload?.schoolCode || rawPayload?.school_code,
-  ).toUpperCase();
-  if (requested && requested !== "*" && requested !== principalCode) {
     throw createClientsError(
       403,
-      "Accès refusé : établissement hors périmètre.",
+      "Établissement requis (effectiveSchoolCode).",
       CLIENTS_ERROR.TENANT_MISMATCH,
     );
   }
+  // JWT schoolCode is the only tenant. Client schoolCode / effectiveSchoolCode
+  // is ignored (COM-C1: Admin A posting schoolCode B still writes into school A).
+  asTrimmed(rawPayload?.effectiveSchoolCode || rawPayload?.schoolCode || rawPayload?.school_code);
   return principalCode;
 }
 
@@ -618,7 +615,7 @@ async function markMessageRead(store, messageId, principal, auditMeta, query = {
   });
 }
 
-function canBypassParticipation(_principal) {
+function canBypassParticipation() {
   return false;
 }
 

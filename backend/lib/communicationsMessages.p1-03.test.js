@@ -140,13 +140,15 @@ test("P1-03 Admin School A → Messages B refusés", async () => {
     roleKeys: ["SCHOOL_ADMIN"],
     schoolCode: SCHOOL_A,
   };
-  assert.throws(
-    () => resolveWritableSchoolCode(adminA, { effectiveSchoolCode: SCHOOL_B }),
-    expectDenied,
+  assert.equal(
+    resolveWritableSchoolCode(adminA, { effectiveSchoolCode: SCHOOL_B }),
+    SCHOOL_A,
+    "schoolCode / effectiveSchoolCode client ignorés ; JWT A fait autorité",
   );
-  await assert.rejects(
-    () => listConversations(schoolStore(), adminA, { effectiveSchoolCode: SCHOOL_B }),
-    expectDenied,
+  const listed = await listConversations(schoolStore(), adminA, { effectiveSchoolCode: SCHOOL_B });
+  assert.deepEqual(
+    listed.items.map((row) => row.id),
+    ["conv-a"],
   );
   await assert.rejects(() => getConversation(schoolStore(), "conv-b", adminA, {}), (error) => {
     return error.statusCode === 403 || error.statusCode === 404;
@@ -163,7 +165,7 @@ test("P1-03 utilisateur scolaire autorisé A → périmètre A uniquement", asyn
   };
   const listed = await listConversations(schoolStore(), teacher, {});
   assert.equal(listed.items.every((row) => row.schoolCode === SCHOOL_A), true);
-  assert.throws(() => resolveWritableSchoolCode(teacher, { schoolCode: SCHOOL_B }), expectDenied);
+  assert.equal(resolveWritableSchoolCode(teacher, { schoolCode: SCHOOL_B }), SCHOOL_A);
 });
 
 test("P1-03 Admin Pays non reconnu comme lecteur Messages scolaires", async () => {
@@ -195,6 +197,8 @@ test("garde source : SUPER_ADMIN / schoolCode * ne deviennent pas all messages",
   const source = fs.readFileSync(path.join(__dirname, "communicationsMessagesService.js"), "utf8");
   assert.match(source, /function denyPlatformSchoolMessages/);
   assert.match(source, /isPlatformAdminPrincipal\(principal\)/);
+  assert.match(source, /Établissement requis \(effectiveSchoolCode\)/);
+  assert.match(source, /function canBypassParticipation\(\) \{\s*return false;/);
   const bypass = source.slice(
     source.indexOf("function canBypassParticipation"),
     source.indexOf("async function listConversations"),
