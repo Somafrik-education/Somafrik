@@ -89,6 +89,10 @@ function sourceGuards() {
   );
   assert.match(resolveFn, /financeLoginCode/);
   assert.doesNotMatch(resolveFn, /principal\.schoolCode/);
+  assert.match(resolveFn, /if \(!principal\) \{\s*return \{ mode: "none" \}/);
+  assert.doesNotMatch(resolveFn, /return \{ mode: "all" \}/);
+  assert.match(scopeLib, /isSchoolFinanceForbiddenForSuperadmin/);
+  assert.match(read("backend/lib/financeSuperadminScope.p1-01.test.js"), /SUPER_ADMIN ne doit plus produire mode: all/);
   const predFn = scopeLib.slice(scopeLib.indexOf("function sqlSchoolPredicate"), scopeLib.indexOf("function countryIsoFromRecord"));
   assert.match(predFn, /login_code/);
   assert.doesNotMatch(predFn, /school_code/);
@@ -99,7 +103,9 @@ function sourceGuards() {
   );
   assert.match(attachFn, /SELECT s\.login_code/);
   assert.doesNotMatch(attachFn, /coalesce\(nullif\(btrim\(s\.login_code\)/);
-  assert.match(attachFn, /\(platform \|\| adminPays\) && requestScoped/);
+  assert.match(attachFn, /isPlatformSuperadminRole\(principal\)/);
+  assert.match(attachFn, /adminPays && requestScoped/);
+  assert.doesNotMatch(attachFn, /\(platform \|\| adminPays\) && requestScoped/);
   const itemsProjection = pgStore.slice(
     pgStore.indexOf("FROM school_fee_items i"),
     pgStore.indexOf("FROM student_fee_obligations o"),
@@ -160,15 +166,6 @@ function sourceGuards() {
   assert.match(httpTest, /F8-P0-004 aucune payment_reminders B créée/);
   assert.match(httpTest, /F8-P0-004 Superadmin request-scoped A ne paie pas B/);
   assert.match(httpTest, /F8-P0-004 Superadmin global n'accède pas aux paiements élève/);
-  const financeScope = read("backend/lib/financeSchoolScope.js");
-  const resolveFn = financeScope.slice(
-    financeScope.indexOf("function resolveFinanceSchoolScope"),
-    financeScope.indexOf("function sqlSchoolPredicate"),
-  );
-  assert.match(resolveFn, /if \(!principal\) \{\s*return \{ mode: "none" \}/);
-  assert.doesNotMatch(resolveFn, /return \{ mode: "all" \}/);
-  assert.match(financeScope, /isSchoolFinanceForbiddenForSuperadmin/);
-  assert.match(read("backend/lib/financeSuperadminScope.p1-01.test.js"), /SUPER_ADMIN ne doit plus produire mode: all/);
   assert.match(httpTest, /F8-P1-006 Admin Pays CI ne paie pas A/);
   assert.match(httpTest, /F8-P1-006 Admin Pays CI crée grille A/);
   assert.match(httpTest, /F8-P1-006 Admin Pays CI refuse grille B/);
