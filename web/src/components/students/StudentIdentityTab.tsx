@@ -1,10 +1,13 @@
 import { useStudentEditingContext } from "../../hooks/useStudentEditingContext";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
+import type { SchoolStudent } from "../../lib/studentsApi";
 import { Card, SectionHeader } from "../../design-system";
 import { StudentEditingPanel } from "./editing/StudentEditingPanel";
 
 interface StudentIdentityTabProps {
   workspace: StudentWorkspaceViewModel;
+  dossier?: SchoolStudent | null;
+  onIdentityPersisted?: () => void | Promise<void>;
 }
 
 interface IdentityFieldProps {
@@ -28,8 +31,13 @@ function IdentityField({ label, value }: IdentityFieldProps) {
 
 export function StudentIdentityTab({
   workspace,
+  dossier = null,
+  onIdentityPersisted,
 }: StudentIdentityTabProps) {
-  const editing = useStudentEditingContext(workspace.studentId);
+  const editing = useStudentEditingContext(workspace.studentId, {
+    dossier,
+    onIdentityPersisted,
+  });
 
   return (
     <div className="space-y-6">
@@ -67,7 +75,7 @@ export function StudentIdentityTab({
       <Card className="p-6">
         <SectionHeader
           title="Édition contrôlée"
-          description="Les modifications passent par validation, ChangeSet et confirmation. Médical et documents restent en lecture seule."
+          description="Les champs persistés (prénom, nom, sexe, naissance, lieu, téléphone, e-mail) sont enregistrés en PostgreSQL. Nationalité, adresse et nom d'usage restent hors contrat PATCH."
         />
         <div className="mt-6">
           <StudentEditingPanel

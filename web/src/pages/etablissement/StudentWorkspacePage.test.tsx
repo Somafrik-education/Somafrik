@@ -38,6 +38,10 @@ vi.mock("../../hooks/useStudentWorkspace", () => ({
   useStudentWorkspace: (...args: unknown[]) => useStudentWorkspaceMock(...args),
 }));
 
+vi.mock("../../context/DataContext", () => ({
+  useData: () => ({ refresh: vi.fn(async () => undefined) }),
+}));
+
 vi.mock("../../hooks/useStudentEditingContext", () => ({
   useStudentEditingContext: (...args: unknown[]) =>
     useStudentEditingContextMock(...args),
@@ -63,6 +67,8 @@ describe("StudentWorkspacePage (D3.1)", () => {
     vi.clearAllMocks();
     useStudentWorkspaceMock.mockReturnValue({
       workspace,
+      dossier: null,
+      refresh: vi.fn(async () => undefined),
       loading: false,
       error: null,
     });

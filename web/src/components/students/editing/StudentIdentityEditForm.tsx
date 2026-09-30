@@ -68,7 +68,8 @@ export function StudentIdentityEditForm({
         label="Nom d'usage"
         value={merged.preferredName ?? ""}
         error={fieldError(errors, "preferredName")}
-        disabled={disabled}
+        disabled
+        hint="Non persisté (hors contrat PATCH PostgreSQL)."
         onChange={(next) => set("preferredName", next)}
       />
       <div>
@@ -121,7 +122,8 @@ export function StudentIdentityEditForm({
         label="Nationalité"
         value={merged.nationality ?? ""}
         error={fieldError(errors, "nationality")}
-        disabled={disabled}
+        disabled
+        hint="Non persisté (hors contrat PATCH PostgreSQL)."
         onChange={(next) => set("nationality", next)}
       />
       <Field
@@ -149,12 +151,14 @@ export function StudentIdentityEditForm({
           label="Adresse"
           value={merged.address ?? ""}
           error={fieldError(errors, "address")}
-          disabled={disabled}
+          disabled
+          hint="Non persisté (hors contrat PATCH PostgreSQL)."
           onChange={(next) => set("address", next)}
         />
       </div>
       <p className="sm:col-span-2 text-xs text-muted">
-        Matricule et identifiant non modifiables.
+        Matricule et identifiant non modifiables. Téléphone et e-mail sont les
+        coordonnées parent enregistrées en base.
       </p>
     </form>
   );
@@ -171,6 +175,7 @@ function Field({
   date = false,
   required,
   autoFocus,
+  hint,
 }: {
   id: string;
   label: string;
@@ -182,6 +187,7 @@ function Field({
   date?: boolean;
   required?: boolean;
   autoFocus?: boolean;
+  hint?: string;
 }) {
   return (
     <div>
@@ -222,6 +228,8 @@ function Field({
         <p id={`${id}-error`} className="mt-1 text-xs text-danger" role="alert">
           {error}
         </p>
+      ) : hint ? (
+        <p className="mt-1 text-xs text-muted">{hint}</p>
       ) : null}
     </div>
   );

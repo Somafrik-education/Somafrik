@@ -1,4 +1,5 @@
 import type { Person, Student } from "./studentDomain";
+import { toApiDate } from "./dates";
 import type {
   EditableEnrollment,
   EditableGuardianContact,
@@ -50,13 +51,62 @@ export function toEditableStudentIdentity(input: {
     lastName,
     preferredName: person?.middleName?.trim() || null,
     gender: normalizeGender(person?.gender ?? student.gender),
-    birthDate:
-      (person?.birthDate ?? student.birthDate)?.trim().slice(0, 10) || null,
-    birthPlace: person?.birthPlace?.trim() || null,
+    birthDate: toApiDate(person?.birthDate ?? student.birthDate) || null,
+    birthPlace:
+      person?.birthPlace?.trim() ||
+      String(student.birthPlace ?? "").trim() ||
+      null,
     nationality: person?.nationality?.trim() || null,
     address: person?.address?.trim() || null,
-    phone: normalizePhone(person?.phone ?? student.phone),
-    email: normalizeEmail(person?.email ?? student.email),
+    phone: normalizePhone(
+      person?.phone ?? student.phone ?? String(student.parentPhone ?? ""),
+    ),
+    email: normalizeEmail(
+      person?.email ?? student.email ?? String(student.parentEmail ?? ""),
+    ),
+  };
+}
+
+/** Snapshot C1.7 depuis le dossier PostgreSQL GET /api/students/:studentCode. */
+export function toEditableStudentIdentityFromDossier(
+  dossier: {
+    studentCode?: string;
+    id?: string;
+    schoolCode: string;
+    matricule?: string;
+    firstName?: string;
+    lastName?: string;
+    gender?: string;
+    birthDate?: string;
+    birthPlace?: string;
+    parentPhone?: string;
+    parentEmail?: string;
+    updatedAt?: string;
+    createdAt?: string;
+  },
+): EditableStudentIdentity {
+  const studentId = String(dossier.studentCode || dossier.id || "").trim();
+  const updatedAt =
+    String(dossier.updatedAt ?? "").trim() ||
+    String(dossier.createdAt ?? "").trim() ||
+    new Date(0).toISOString();
+
+  return {
+    studentId,
+    schoolCode: String(dossier.schoolCode ?? "").trim(),
+    matricule: String(dossier.matricule || dossier.studentCode || studentId).trim(),
+    version: deriveVersion(updatedAt),
+    updatedAt,
+    firstName: String(dossier.firstName ?? "").trim(),
+    lastName: String(dossier.lastName ?? "").trim(),
+    preferredName: null,
+    gender: normalizeGender(dossier.gender),
+    birthDate: toApiDate(dossier.birthDate) || null,
+    birthPlace: String(dossier.birthPlace ?? "").trim() || null,
+    nationality: null,
+    address: null,
+    phone: normalizePhone(dossier.parentPhone),
+    email: normalizeEmail(dossier.parentEmail),
   };
 }
 
