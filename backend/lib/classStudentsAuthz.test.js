@@ -437,7 +437,21 @@ function testStudentCodeUuidMatriculeConvergeWithoutTenantWiden() {
   );
 }
 
+function testSuperAdminRolesExportForMobileSync() {
+  const { SUPER_ADMIN_ROLES } = require("./classStudentsAuthz");
+  assert.equal(typeof SUPER_ADMIN_ROLES.has, "function");
+  assert.equal(SUPER_ADMIN_ROLES.has("Super Administrateur Somafrik"), true);
+  const { resolveAssignmentsSyncScope } = require("./mobileSyncScope");
+  const scope = resolveAssignmentsSyncScope({
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: "CD-2026-0001",
+  });
+  assert.equal(scope.scopeKind, "school-wide");
+}
+
 function main() {
+  testSuperAdminRolesExportForMobileSync();
   testActiveStatusHelper();
   testTeacherClassGateRequiresStableId();
   testTeacherWithoutAssignmentsDenied();

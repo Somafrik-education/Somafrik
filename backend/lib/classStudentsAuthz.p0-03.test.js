@@ -39,6 +39,19 @@ test("P0-03 rôle inconnu est fail-closed", () => {
   expect403(() => scopeSchoolClassesForPrincipal(unknown, rows));
 });
 
+test("P0-03 SUPER_ADMIN_ROLES reste exporté pour mobileSyncScope", () => {
+  const { SUPER_ADMIN_ROLES } = require("./classStudentsAuthz");
+  assert.equal(typeof SUPER_ADMIN_ROLES.has, "function");
+  assert.equal(SUPER_ADMIN_ROLES.has("Super Administrateur Somafrik"), true);
+  const { resolveAssignmentsSyncScope } = require("./mobileSyncScope");
+  const scope = resolveAssignmentsSyncScope({
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: "CD-2026-0001",
+  });
+  assert.equal(scope.scopeKind, "school-wide");
+});
+
 test("P0-03 rôle scolaire explicitement autorisé reste ouvert dans son tenant", () => {
   const admin = { role: "Admin School" };
   assert.equal(principalHasClassAccess(admin, "Classe A"), true);

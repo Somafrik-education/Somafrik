@@ -8,6 +8,8 @@ const {
   studentMatchesLinkedKeys,
 } = require("./parentScope");
 
+const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
+
 const SCHOOL_WIDE_STUDENT_READ_ROLES = new Set([
   "Admin School",
   "Admin Pays",
@@ -338,6 +340,7 @@ function authorizeStudentReadForPrincipal(student, principal, studentRef, resolv
 }
 
 module.exports = {
+  SUPER_ADMIN_ROLES,
   SCHOOL_WIDE_STUDENT_READ_ROLES,
   ACTIVE_ASSIGNMENT_STATUSES,
   isParentOrStudentRole,
