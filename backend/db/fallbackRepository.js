@@ -3036,11 +3036,14 @@ class FallbackRepository {
         },
         findStudent: async (studentKey, principal) => {
           const dataset = await this.getDataset();
-          const scope = resolveFinanceSchoolScope(attachFinanceFixtureScope(principal));
-          if (scope.mode === "none") return null;
+          let scope = null;
+          if (principal) {
+            scope = resolveFinanceSchoolScope(attachFinanceFixtureScope(principal));
+            if (scope.mode === "none") return null;
+          }
           const student =
             (dataset.students ?? []).find((row) => {
-              if (principal && !schoolRecordInFinanceScope(fixtureSchoolRecord(row), scope)) {
+              if (scope && !schoolRecordInFinanceScope(fixtureSchoolRecord(row), scope)) {
                 return false;
               }
               return studentMatches(row, studentKey);

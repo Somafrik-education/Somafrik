@@ -160,6 +160,15 @@ function sourceGuards() {
   assert.match(httpTest, /F8-P0-004 aucune payment_reminders B créée/);
   assert.match(httpTest, /F8-P0-004 Superadmin request-scoped A ne paie pas B/);
   assert.match(httpTest, /F8-P0-004 Superadmin global n'accède pas aux paiements élève/);
+  const financeScope = read("backend/lib/financeSchoolScope.js");
+  const resolveFn = financeScope.slice(
+    financeScope.indexOf("function resolveFinanceSchoolScope"),
+    financeScope.indexOf("function sqlSchoolPredicate"),
+  );
+  assert.match(resolveFn, /if \(!principal\) \{\s*return \{ mode: "none" \}/);
+  assert.doesNotMatch(resolveFn, /return \{ mode: "all" \}/);
+  assert.match(financeScope, /isSchoolFinanceForbiddenForSuperadmin/);
+  assert.match(read("backend/lib/financeSuperadminScope.p1-01.test.js"), /SUPER_ADMIN ne doit plus produire mode: all/);
   assert.match(httpTest, /F8-P1-006 Admin Pays CI ne paie pas A/);
   assert.match(httpTest, /F8-P1-006 Admin Pays CI crée grille A/);
   assert.match(httpTest, /F8-P1-006 Admin Pays CI refuse grille B/);
@@ -206,6 +215,7 @@ function main() {
       "backend/lib/financeUnallocatedCash.test.js",
       "backend/lib/financeCatalog.test.js",
       "backend/lib/financeSchoolScope.test.js",
+      "backend/lib/financeSuperadminScope.p1-01.test.js",
       "backend/services/unpaidService.test.js",
     ],
     "tests unitaires caisse / catalogue F8 ont échoué",

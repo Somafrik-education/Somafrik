@@ -8,9 +8,25 @@
  */
 
 const { TenantScopeService } = require("../services/tenantScopeService");
+const { isFinanceLiveRbacRouteKey } = require("./financeRbacRouteMatrix");
 
 const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 const tenantScope = new TenantScopeService();
+
+function isPlatformSuperadminRole(principal) {
+  return SUPER_ADMIN_ROLES.has(principal?.role);
+}
+
+/**
+ * P1-01 — Superadmin n'est pas un utilisateur Finance scolaire.
+ * ALL_PRIVILEGES / schoolCode "*" / request-scope ne doivent pas ouvrir
+ * paiements, obligations, grilles ou impayés d'établissement.
+ * Les abonnements Somafrik restent hors de cette matrice (`isFinanceLiveRbacRouteKey`).
+ */
+function isSchoolFinanceForbiddenForSuperadmin(principal, routeKey) {
+  if (!isPlatformSuperadminRole(principal)) return false;
+  return isFinanceLiveRbacRouteKey(routeKey);
+}
 
 function normalizeLoginCode(value) {
   return String(value ?? "")
@@ -56,8 +72,9 @@ async function findEmittedLoginCode(requested, one) {
  * Attache membership Finance depuis PostgreSQL.
  * Rôle établissement : `sub` → users.id → users.school_id UUID (autorité tenant)
  * et schools.login_code (projection SQL, pas un alias de filterRows).
- * Superadmin / Admin Pays globaux : pas de lookup.
- * Superadmin / Admin Pays request-scoped : trouve l'école demandée, n'émet que login_code.
+ * Superadmin : jamais de membership Finance scolaire (P1-01).
+ * Admin Pays globaux : pas de lookup.
+ * Admin Pays request-scoped : trouve l'école demandée, n'émet que login_code.
  * login_code NULL/vide ⇒ financeLoginCode vide ⇒ SQL mode none.
  * Sans `one` (fixtures mémoire) : fail-closed — utiliser
  * `attachFinanceFixtureScope` côté store mémoire.
@@ -84,6 +101,10 @@ function withFinanceMembership(principal, { loginCode, schoolId }) {
 
 async function attachFinanceMembershipScope(principal, one) {
   if (!principal) return principal;
+  // P1-01 : Superadmin n'acquiert jamais un membership Finance scolaire.
+  if (isPlatformSuperadminRole(principal)) {
+    return principal;
+  }
   const existingLogin = existingFinanceLoginCode(principal);
   const existingSchoolId = existingFinanceSchoolId(principal);
   // financeLoginCode n'est plus un alias tenant : un token historique
@@ -92,11 +113,10 @@ async function attachFinanceMembershipScope(principal, one) {
     return principal;
   }
 
-  const platform = SUPER_ADMIN_ROLES.has(principal.role);
   const adminPays = principal.role === "Admin Pays";
   const requestScoped = tenantScope.hasEffectiveSchoolScope(principal);
 
-  if ((platform || adminPays) && !requestScoped) {
+  if (adminPays && !requestScoped) {
     return principal;
   }
 
@@ -104,7 +124,7 @@ async function attachFinanceMembershipScope(principal, one) {
     return withFinanceMembership(principal, { loginCode: "", schoolId: existingSchoolId });
   }
 
-  if ((platform || adminPays) && requestScoped) {
+  if (adminPays && requestScoped) {
     const requested = tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode);
     if (!requested) {
       return withFinanceMembership(principal, { loginCode: existingLogin, schoolId: existingSchoolId });
@@ -137,18 +157,20 @@ async function attachFinanceMembershipScope(principal, one) {
  */
 function attachFinanceFixtureScope(principal) {
   if (!principal) return principal;
+  if (isPlatformSuperadminRole(principal)) {
+    return principal;
+  }
   const existing = normalizeLoginCode(principal.financeLoginCode);
   if (existing && existing !== "*") {
     return principal;
   }
-  const platform = SUPER_ADMIN_ROLES.has(principal.role);
   const adminPays = principal.role === "Admin Pays";
   const requestScoped = tenantScope.hasEffectiveSchoolScope(principal);
-  if ((platform || adminPays) && !requestScoped) {
+  if (adminPays && !requestScoped) {
     return principal;
   }
   const requested =
-    (platform || adminPays) && requestScoped
+    adminPays && requestScoped
       ? tenantScope.normalizeSchoolCode(principal.effectiveSchoolCode)
       : normalizeLoginCode(principal.schoolCode);
   if (!requested || requested === "*") {
@@ -159,11 +181,11 @@ function attachFinanceFixtureScope(principal) {
 
 function resolveFinanceSchoolScope(principal) {
   if (!principal) {
-    return { mode: "all" };
+    return { mode: "none" };
   }
-  const platform = SUPER_ADMIN_ROLES.has(principal.role);
-  if (platform && !tenantScope.hasEffectiveSchoolScope(principal)) {
-    return { mode: "all" };
+  // P1-01 : Superadmin = admin plateforme, jamais Finance scolaire globale.
+  if (isPlatformSuperadminRole(principal)) {
+    return { mode: "none" };
   }
   if (principal.role === "Admin Pays" && !tenantScope.hasEffectiveSchoolScope(principal)) {
     const countryCode = String(principal.countryCode || "").trim().toUpperCase();
@@ -245,4 +267,6 @@ module.exports = {
   primaryFinanceSchoolCode,
   publicSchoolCodeFromRow,
   findEmittedLoginCode,
+  isSchoolFinanceForbiddenForSuperadmin,
+  isPlatformSuperadminRole,
 };

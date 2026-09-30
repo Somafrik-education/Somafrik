@@ -84,6 +84,15 @@ const admin = {
   permissions: ["Paiements:UPDATE"],
 };
 
+const adminB = {
+  role: "Admin School",
+  schoolCode: "BI-2026-0001",
+  firstName: "Admin",
+  lastName: "B",
+  sub: "USR-RATE-ADMIN-B",
+  permissions: ["Paiements:UPDATE"],
+};
+
 function canonicalRate(fees) {
   const active = fees.filter((fee) => String(fee.status) !== "Annulé");
   if (!active.length) return null;
@@ -304,7 +313,15 @@ async function main() {
   });
   const [isolatedTarget] = await studentFees(isolated);
   await payExplicit(isolated, [{ obligationId: isolatedTarget.id, amount: 100 }]);
-  const allFees = await isolated.listFinanceStudentFees({ role: "Super Administrateur Somafrik", schoolCode: "*" });
+  const superFees = await isolated.listFinanceStudentFees({
+    role: "Super Administrateur Somafrik",
+    schoolCode: "*",
+  });
+  assert.equal(superFees.length, 0, "P1-01 Superadmin ne lit pas les obligations scolaires");
+  const allFees = [
+    ...(await isolated.listFinanceStudentFees(admin)),
+    ...(await isolated.listFinanceStudentFees(adminB)),
+  ];
   const biFee = allFees.find((fee) => fee.schoolCode === "BI-2026-0001");
   assert.equal(Number(biFee.amountPaid), 0, "allocation CD n'alimente pas BI");
   assert.equal(canonicalRate(scopedCd(allFees)), 100);

@@ -111,7 +111,7 @@ async function main() {
   const store = createStore();
   const grid = await seedGrid(store);
 
-  const fees = await store.listFinanceStudentFees();
+  const fees = await store.listFinanceStudentFees(admin);
   assert.equal(fees.length, 2);
   const inscription = fees.find((row) => row.feeType === "Inscription");
   const transport = fees.find((row) => row.feeType === "Transport");
@@ -120,7 +120,7 @@ async function main() {
 
   const appliedAgain = await store.applyFinanceFeeGrid(grid.id, admin);
   assert.equal(appliedAgain.created, 0);
-  assert.equal((await store.listFinanceStudentFees()).length, 2);
+  assert.equal((await store.listFinanceStudentFees(admin)).length, 2);
 
   const payment = await store.createSchoolPayment(
     {
@@ -135,7 +135,7 @@ async function main() {
   );
   assert.match(payment.reference, /^CD-2026-0001-\d{4}-PAY-0001$/);
   assert.equal(payment.overpaymentAmount, 0);
-  const afterPay = (await store.listFinanceStudentFees()).find((row) => row.feeType === "Inscription");
+  const afterPay = (await store.listFinanceStudentFees(admin)).find((row) => row.feeType === "Inscription");
   assert.equal(afterPay.balance, 0);
   assert.equal(afterPay.status, "Payé");
 
@@ -149,7 +149,7 @@ async function main() {
     accountant,
   );
   assert.equal(overpay.overpaymentAmount, 10_000);
-  const annex = (await store.listFinanceStudentFees()).find((row) => row.feeType === "Transport");
+  const annex = (await store.listFinanceStudentFees(admin)).find((row) => row.feeType === "Transport");
   assert.equal(annex.balance, 0);
 
   await assert.rejects(
@@ -168,7 +168,7 @@ async function main() {
   const cancelled = await store.cancelSchoolPayment(payment.reference, "Erreur de saisie", admin);
   assert.equal(cancelled.status, "Annulé");
   assert.equal(cancelled.cancelledBy, admin.sub);
-  const restored = (await store.listFinanceStudentFees()).find((row) => row.feeType === "Inscription");
+  const restored = (await store.listFinanceStudentFees(admin)).find((row) => row.feeType === "Inscription");
   assert.equal(restored.balance, 50_000);
   assert.equal(store.tables.auditLogs.filter((row) => row.action === "cancel_payment").length, 1);
   const cancelledAgain = await store.cancelSchoolPayment(payment.reference, "Erreur de saisie", admin);
@@ -221,7 +221,7 @@ async function main() {
 
   const rollbackStore = createStore();
   await seedGrid(rollbackStore);
-  const feesBefore = await rollbackStore.listFinanceStudentFees();
+  const feesBefore = await rollbackStore.listFinanceStudentFees(admin);
   const inscriptionBefore = feesBefore.find((row) => row.feeType === "Inscription");
   failAuditWrites(rollbackStore);
   await assert.rejects(
@@ -243,7 +243,7 @@ async function main() {
     false,
     "rollback paiement : aucun audit create_payment",
   );
-  const inscriptionAfterFailedPay = (await rollbackStore.listFinanceStudentFees()).find(
+  const inscriptionAfterFailedPay = (await rollbackStore.listFinanceStudentFees(admin)).find(
     (row) => row.feeType === "Inscription",
   );
   assert.equal(inscriptionAfterFailedPay.balance, inscriptionBefore.balance);
@@ -251,7 +251,7 @@ async function main() {
 
   const cancelRollbackStore = createStore();
   await seedGrid(cancelRollbackStore);
-  const cancelInscription = (await cancelRollbackStore.listFinanceStudentFees()).find(
+  const cancelInscription = (await cancelRollbackStore.listFinanceStudentFees(admin)).find(
     (row) => row.feeType === "Inscription",
   );
   const persisted = await cancelRollbackStore.createSchoolPayment(
@@ -272,7 +272,7 @@ async function main() {
   const stillActive = await cancelRollbackStore.getSchoolPayment(persisted.reference, admin);
   assert.equal(stillActive.status, "Payé");
   assert.equal(stillActive.cancelledBy, null);
-  const inscriptionStillPaid = (await cancelRollbackStore.listFinanceStudentFees()).find(
+  const inscriptionStillPaid = (await cancelRollbackStore.listFinanceStudentFees(admin)).find(
     (row) => row.feeType === "Inscription",
   );
   assert.equal(inscriptionStillPaid.balance, 0);

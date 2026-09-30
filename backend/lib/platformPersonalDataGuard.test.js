@@ -18,6 +18,7 @@ const {
 const seedData = require("../data");
 
 require("./authOptionalFailClosed.test.js");
+require("./financeSuperadminScope.p1-01.test.js");
 
 const rbac = new RbacService();
 

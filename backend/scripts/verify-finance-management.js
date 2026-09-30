@@ -415,7 +415,12 @@ async function main() {
         items: [{ feeType: "Autre", label: "SuperAdmin", amount: 1_000, status: "Actif" }],
       },
     });
-    assert.equal(superGrid.status, 201, JSON.stringify(superGrid.data));
+    assert.equal(superGrid.status, 403, JSON.stringify(superGrid.data));
+    assert.equal(superGrid.data?.code, "PERMISSION_DENIED");
+    const superPayments = await request("/payments", { token: superToken });
+    assert.equal(superPayments.status, 403, JSON.stringify(superPayments.data));
+    const superSubscriptions = await request("/backoffice/subscriptions", { token: superToken });
+    assert.equal(superSubscriptions.status, 200, JSON.stringify(superSubscriptions.data));
 
     const directorPay = await request("/payments", {
       method: "POST",
