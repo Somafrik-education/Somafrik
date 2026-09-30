@@ -1,6 +1,7 @@
 "use strict";
 
 const { getCountryCodeFromScope } = require("./countryScope");
+const { isSuperAdminPrincipal, SUPER_ADMIN_ROLES } = require("./superadminPrincipal");
 
 const ESTABLISHMENT_ROLES_ERROR = Object.freeze({
   FORBIDDEN: "FORBIDDEN",
@@ -15,7 +16,6 @@ const ESTABLISHMENT_ROLES_ERROR = Object.freeze({
   LEGACY_ESTABLISHMENT_ROLES_AMBIGUOUS: "LEGACY_ESTABLISHMENT_ROLES_AMBIGUOUS",
 });
 
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 const PLATFORM_ROLE_NAMES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK", "Admin Pays", "Admin School"]);
 const FORBIDDEN_PERMISSIONS = new Set(["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"]);
 
@@ -38,10 +38,6 @@ function createEstablishmentRolesError(status, message, code, details) {
   error.code = code || ESTABLISHMENT_ROLES_ERROR.FORBIDDEN;
   if (details) error.details = details;
   return error;
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
 
 function isSchoolAdminPrincipal(principal) {

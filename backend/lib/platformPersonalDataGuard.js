@@ -10,12 +10,9 @@
  * Ce module ne dépend pas de rbacService ni de data.js (évite les cycles).
  */
 
-const PLATFORM_PERSONAL_DATA_DENY = "PLATFORM_PERSONAL_DATA_DENIED";
+const { isSuperAdminPrincipal, SUPER_ADMIN_ROLE_LABELS } = require("./superadminPrincipal");
 
-const SUPER_ADMIN_ROLE_LABELS = Object.freeze([
-  "Super Administrateur Somafrik",
-  "Super Administrateur OKAFRIK",
-]);
+const PLATFORM_PERSONAL_DATA_DENY = "PLATFORM_PERSONAL_DATA_DENIED";
 
 const COUNTRY_ADMIN_ROLE_LABELS = Object.freeze(["Admin Pays"]);
 
@@ -310,12 +307,6 @@ function roleKeySet(principal) {
     if (normalized) keys.add(normalized);
   }
   return keys;
-}
-
-function isSuperAdminPrincipal(principal) {
-  const label = asTrimmed(principal?.role);
-  if (SUPER_ADMIN_ROLE_LABELS.includes(label)) return true;
-  return roleKeySet(principal).has("SUPER_ADMIN");
 }
 
 function isCountryAdminPrincipal(principal) {

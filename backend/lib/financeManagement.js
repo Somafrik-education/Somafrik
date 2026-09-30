@@ -5,6 +5,7 @@ const {
   obligationStatusFromBalance,
   toMoney,
 } = require("./financeDomainInvariants");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 const FINANCE_ERROR = Object.freeze({
   PAYMENT_NOT_FOUND: "PAYMENT_NOT_FOUND",
@@ -363,11 +364,6 @@ function permissionSet(principal) {
 function hasAnyPermission(principal, expected) {
   const permissions = permissionSet(principal);
   return expected.some((permission) => permissions.has(permission));
-}
-
-function isSuperAdminPrincipal(principal) {
-  const role = asTrimmed(principal?.role);
-  return role === "Super Administrateur Somafrik" || role === "Super Administrateur OKAFRIK";
 }
 
 function canManageFeeGrids(principal) {

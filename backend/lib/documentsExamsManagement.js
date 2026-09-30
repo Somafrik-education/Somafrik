@@ -1,5 +1,7 @@
 "use strict";
 
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
+
 const DOCUMENTS_EXAMS_ERROR = Object.freeze({
   FORBIDDEN: "FORBIDDEN",
   NOT_FOUND: "NOT_FOUND",
@@ -20,8 +22,6 @@ const DOCUMENTS_EXAMS_ERROR = Object.freeze({
   LEGACY_DOCUMENTS_AMBIGUOUS: "LEGACY_DOCUMENTS_AMBIGUOUS",
   LEGACY_EXAM_STATUS_AMBIGUOUS: "LEGACY_EXAM_STATUS_AMBIGUOUS",
 });
-
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
 const EXAM_STATUSES = Object.freeze(["draft", "scheduled", "validated", "completed", "cancelled", "archived"]);
 const DETERMINISTIC_EXAM_STATUS_ALIASES = Object.freeze({
@@ -108,10 +108,6 @@ function createDocumentsExamsError(status, message, code, details) {
   error.code = code || DOCUMENTS_EXAMS_ERROR.FORBIDDEN;
   if (details) error.details = details;
   return error;
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
 
 function principalHasAnyPermission(principal, allowed) {

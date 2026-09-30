@@ -87,6 +87,7 @@ const {
   scopeMvpDatasetForPrincipal,
 } = require("./lib/mvpAccess");
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
+const { isSuperAdminPrincipal } = require("./lib/superadminPrincipal");
 const { createRateLimiter, loginRateLimitKey, trialRequestRateLimitKey } = require("./lib/rateLimit");
 const {
   assertPushSelfTestAllowed,
@@ -363,9 +364,8 @@ if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
     requireAuth,
     asyncHandler(async (req, res) => {
       if (
-        !["Super Administrateur Somafrik", "Admin School", "Enseignant"].includes(
-          req.principal?.role,
-        )
+        !isSuperAdminPrincipal(req.principal) &&
+        !["Admin School", "Enseignant"].includes(req.principal?.role)
       ) {
         throw new BusinessError(403, "Accès debug refusé.");
       }
@@ -3951,7 +3951,7 @@ app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(as
 app.get("/api/audit", requireAuth, requirePermission("GET /api/audit"), asyncHandler(async (req, res) => {
   // P0-2 : Superadmin / Admin Pays sont déjà 403 dans requireAuth (données perso établissement).
   // Ce filtre refuse les autres profils : GET /api/audit n'est pas un journal plateforme.
-  if (!["Super Administrateur Somafrik", "Admin Pays"].includes(req.principal.role)) {
+  if (!isSuperAdminPrincipal(req.principal) && req.principal.role !== "Admin Pays") {
     throw new BusinessError(403, "Seuls les administrateurs habilités peuvent consulter l'audit.");
   }
   if (req.query.schoolCode) {
@@ -3971,9 +3971,7 @@ app.get("/api/audit", requireAuth, requirePermission("GET /api/audit"), asyncHan
 app.get("/api/v2/subjects", requireAuth, requirePermission("GET /api/v2/subjects"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
   const isPlatform =
-    req.principal?.role === "Super Administrateur Somafrik" ||
-    req.principal?.role === "Super Administrateur OKAFRIK" ||
-    req.principal?.role === "Admin Pays";
+    isSuperAdminPrincipal(req.principal) || req.principal?.role === "Admin Pays";
   if (!isPlatform && (!schoolCode || schoolCode === "*")) {
     console.error(JSON.stringify({
       kind: "subjects_catalog_load_failure",
@@ -5206,10 +5204,6 @@ function mergeSchoolRows(dbSchools = [], storedSchools = []) {
   });
 
   return [...rows.values()];
-}
-
-function isSuperAdminPrincipal(principal) {
-  return principal?.role === "Super Administrateur Somafrik" || principal?.role === "Super Administrateur OKAFRIK";
 }
 
 /**
