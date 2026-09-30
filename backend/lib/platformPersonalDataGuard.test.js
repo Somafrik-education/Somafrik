@@ -17,6 +17,8 @@ const {
 } = require("./platformPersonalDataGuard");
 const seedData = require("../data");
 
+require("./authOptionalFailClosed.test.js");
+
 const rbac = new RbacService();
 
 const SUPER = {
