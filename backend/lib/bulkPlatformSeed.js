@@ -250,7 +250,7 @@ function buildSchoolRecord(country, schoolIndex) {
     primaryColor: "#2563EB",
     subscriptionPlan: ["Essentiel", "Standard", "Premium"][(schoolIndex - 1) % 3],
     subscriptionStartDate: "01-09-2025",
-    subscriptionEndDate: "31-08-2026",
+    subscriptionEndDate: "31-08-2027",
     validationStatus: "Validé",
     subscriptionStatus: "À jour",
     maxStudents: 1200,
@@ -273,7 +273,7 @@ function buildSubscription(school, country) {
     status: "Actif",
     paymentStatus: "À jour",
     startDate: "01-09-2025",
-    endDate: "31-08-2026",
+    endDate: "31-08-2027",
     lastPaymentDate: "01-06-2026",
   };
 }
