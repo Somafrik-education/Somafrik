@@ -10,6 +10,7 @@
  * Exécution: `node scripts/verify-suspension.js` ou `npm run check:suspension`.
  */
 
+const { superadminLoginPassword } = require("../backend/lib/superadminSeedSecret");
 const { AuthService, BusinessError } = require("../backend/services/authService");
 const { BackOfficeAccessService } = require("../backend/services/backOfficeAccessService");
 
@@ -83,7 +84,7 @@ function buildFixtures({ suspendedCountry = null, suspendedSchool = null } = {})
     {
       id: "U-SUPER",
       identifier: "superadmin@somafrik.app",
-      password: "1234",
+      password: superadminLoginPassword(),
       role: "Super Administrateur Somafrik",
       status: "Actif",
       accessChannel: "BackOffice",
@@ -142,7 +143,7 @@ async function main() {
       authService.assertSchoolCanConnect("CD-2026-0001")
     );
     await expectAllowed("Base | Connexion BackOffice Super Admin", () =>
-      backOffice.login({ identifier: "superadmin@somafrik.app", password: "1234" })
+      backOffice.login({ identifier: "superadmin@somafrik.app", password: superadminLoginPassword() })
     );
     await expectAllowed("Base | Connexion BackOffice Admin Pays RDC", () =>
       backOffice.login({ identifier: "adminpays.cd@somafrik.app", password: "1234" })
@@ -165,7 +166,7 @@ async function main() {
       backOffice.login({ identifier: "admin.cd1@somafrik.app", password: "1234", schoolCode: "CD-2026-0001" })
     );
     await expectAllowed("Pays suspendu | Super Admin garde l'accès (peut réactiver)", () =>
-      backOffice.login({ identifier: "superadmin@somafrik.app", password: "1234" })
+      backOffice.login({ identifier: "superadmin@somafrik.app", password: superadminLoginPassword() })
     );
     await expectAllowed("Pays suspendu | Autre pays (Sénégal) reste accessible", () =>
       authService.assertSchoolCanConnect("SN-2026-0001")
@@ -185,7 +186,7 @@ async function main() {
       authService.assertSchoolCanConnect("SN-2026-0001")
     );
     await expectAllowed("École suspendue | Super Admin garde l'accès (peut réactiver)", () =>
-      backOffice.login({ identifier: "superadmin@somafrik.app", password: "1234" })
+      backOffice.login({ identifier: "superadmin@somafrik.app", password: superadminLoginPassword() })
     );
   }
 

@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const { AuthService, BusinessError } = require("../services/authService");
 const { attachMemoryLoginLockoutStore } = require("./loginLockout");
+const { superadminLoginPassword } = require("./superadminSeedSecret");
 
 function platformFixture() {
   const school = {
@@ -27,8 +28,8 @@ function platformFixture() {
     schoolCode: "*",
     accessChannel: "Application",
     status: "Actif",
-    password: "1234",
-    pin: "1234",
+    password: superadminLoginPassword(),
+    pin: superadminLoginPassword(),
   };
   const countryAdmin = {
     id: "USER-COUNTRY-RDC",
@@ -77,7 +78,7 @@ test("Superadmin se connecte sans schoolCode ni école fictive", async () => {
   const session = await service.login({
     role: "super_admin",
     identifier: "superadmin",
-    pin: "1234",
+    pin: superadminLoginPassword(),
   });
   assert.equal(session.role, "super_admin");
   assert.equal(session.school, undefined);
@@ -120,6 +121,44 @@ test("PLATFORM n'est pas une école valide", async () => {
       service.login({
         role: "super_admin",
         schoolCode: "PLATFORM",
+        identifier: "superadmin",
+        pin: superadminLoginPassword(),
+      }),
+    (error) => error instanceof BusinessError && error.statusCode === 401,
+  );
+});
+
+test("Superadmin refuse 1234 même si le secret stocké correspond", async () => {
+  attachMemoryLoginLockoutStore();
+  const { school } = platformFixture();
+  const { hashSecret } = require("../services/credentialService");
+  const hashed1234 = hashSecret("1234");
+  const service = new AuthService({
+    school,
+    schools: [school],
+    teachers: [],
+    students: [],
+    userAccounts: [
+      {
+        id: "USER-SUPERADMIN",
+        identifier: "superadmin",
+        firstName: "Super",
+        lastName: "Admin",
+        role: "Super Administrateur Somafrik",
+        schoolCode: "*",
+        accessChannel: "Application",
+        status: "Actif",
+        passwordHash: hashed1234,
+        pinHash: hashed1234,
+      },
+    ],
+    countries: [{ name: "RDC", code: "CD", status: "Actif" }],
+    subscriptions: [],
+  });
+  await assert.rejects(
+    () =>
+      service.login({
+        role: "super_admin",
         identifier: "superadmin",
         pin: "1234",
       }),

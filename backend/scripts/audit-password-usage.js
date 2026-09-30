@@ -10,11 +10,12 @@ require("dotenv").config({ path: path.join(__dirname, "..", "..", ".env") });
 const { Pool } = require("pg");
 const { verifySecret } = require("../services/credentialService");
 const { resolveDatabaseUrl } = require("../db/connectionConfig");
+const { nonProductionFallbackPassword } = require("../lib/superadminSeedSecret");
 
 const KNOWN_PASSWORDS = [
   { label: "demo-seed", value: "1234" },
   { label: "e2e-bootstrap", value: "E2eTest!2026" },
-  { label: "wipe-bootstrap", value: "change-me-now" },
+  { label: "non-prod-superadmin-fallback", value: nonProductionFallbackPassword() },
 ];
 
 function matchPassword(hash, plain) {

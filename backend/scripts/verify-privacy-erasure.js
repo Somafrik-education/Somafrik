@@ -1,5 +1,6 @@
 "use strict";
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
@@ -76,7 +77,7 @@ async function main() {
 
     const superLogin = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: "superadmin", password: "1234" },
+      body: { identifier: "superadmin", password: superadminLoginPassword() },
     });
     assert.equal(superLogin.status, 200, JSON.stringify(superLogin.data));
     const forbidden = await request("/privacy/erasure-requests", { token: superLogin.data.accessToken });

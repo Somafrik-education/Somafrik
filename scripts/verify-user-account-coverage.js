@@ -6,6 +6,7 @@
  *   SOMAFRIK_API_URL=http://127.0.0.1:5000/api node scripts/verify-user-account-coverage.js
  */
 const seedData = require("../backend/data");
+const { superadminLoginPassword } = require("../backend/lib/superadminSeedSecret");
 
 const REQUIRED_USER_FIELDS = ["id", "lastName", "firstName", "role", "identifier", "status"];
 const MANAGED_MOBILE_ROLES = new Set([
@@ -269,7 +270,7 @@ async function fetchLiveState() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       identifier: "superadmin",
-      password: "1234",
+      password: superadminLoginPassword(),
     }),
   });
   if (!loginRes.ok) {

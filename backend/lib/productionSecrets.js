@@ -9,6 +9,7 @@ const KNOWN_WEAK_POSTGRES_PASSWORDS = new Set([
   Buffer.from("c29tYWZyaWsxMjM=", "base64").toString("utf8"),
 ]);
 const { collectAccessTtlProductionViolations } = require("./authTokenPolicy");
+const { collectProductionSuperadminSecretViolations } = require("./superadminSeedSecret");
 
 const MIN_JWT_SECRET_LENGTH = 32;
 
@@ -86,6 +87,7 @@ function collectProductionSecretViolations(env = process.env) {
   }
 
   violations.push(...collectAccessTtlProductionViolations(env));
+  violations.push(...collectProductionSuperadminSecretViolations(env));
 
   return violations;
 }

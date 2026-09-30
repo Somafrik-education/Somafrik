@@ -4,6 +4,7 @@
  * LOT 7 — parcours Clients HTTP (mémoire).
  */
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { collectSensitiveUserFieldPaths } = require("../lib/sanitizeUserForResponse");
@@ -106,7 +107,7 @@ async function main() {
   });
   try {
     await waitForHealth(child);
-    const superToken = await login("superadmin", "1234");
+    const superToken = await login("superadmin", superadminLoginPassword());
     const schoolToken = await login("admin", "1234", "CD-2026-0001");
 
     for (const key of ["users", "contacts", "relations", "messages", "announcements"]) {

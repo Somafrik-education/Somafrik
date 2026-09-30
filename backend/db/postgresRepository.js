@@ -8,6 +8,7 @@ const {
   isStudentDemoAccount,
   resolveStudentDemoLoginIdentity,
 } = require("../lib/demoSeedPolicy");
+const { hashSeedUserSecrets } = require("../lib/superadminSeedSecret");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
 const { mapAssignment } = require("./teacherAssignmentsRepository");
@@ -5362,6 +5363,7 @@ class PostgresRepository {
     for (const user of seedData.userAccounts) {
       if (isStudentDemoAccount(user)) continue;
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
+      const { passwordHash, pinHash } = hashSeedUserSecrets(user);
       const row = await this.insertOne(
         client,
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, last_login_at)
@@ -5375,8 +5377,8 @@ class PostgresRepository {
           user.lastName,
           user.email ?? "",
           user.phone ?? "",
-          hashSecret(user.password),
-          hashSecret(user.temporaryPassword || "1234"),
+          passwordHash,
+          pinHash,
           canonicalPersistedRole(user.role),
           this.toDbStatus(user.status),
           this.parseDate(user.lastLoginAt),
@@ -5629,6 +5631,7 @@ class PostgresRepository {
 
     for (const user of seedData.userAccounts.filter((item) => platformRoles.has(item.role))) {
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
+      const { passwordHash, pinHash } = hashSeedUserSecrets(user);
       await this.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, last_login_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -5650,8 +5653,8 @@ class PostgresRepository {
           user.lastName,
           user.email ?? "",
           user.phone ?? "",
-          hashSecret(user.password),
-          hashSecret(user.temporaryPassword || "1234"),
+          passwordHash,
+          pinHash,
           canonicalPersistedRole(user.role),
           this.toDbStatus(user.status),
           this.parseDate(user.lastLoginAt),

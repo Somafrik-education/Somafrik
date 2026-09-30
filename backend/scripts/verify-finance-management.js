@@ -4,6 +4,7 @@
  * LOT 4 — parcours Finance HTTP (mémoire) : RBAC, annulation, cooldown, isolation.
  */
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { canCancelPayment, cancelPayment } = require("../lib/financeService");
@@ -231,7 +232,7 @@ async function main() {
     const accountantToken = await login(accountant.identifier, "E2eTest!2026", "CD-2026-0001");
     const secretaryToken = await login(secretary.identifier, "E2eTest!2026", "CD-2026-0001");
     const directorToken = await login(director.identifier, "E2eTest!2026", "CD-2026-0001");
-    const superToken = await login("superadmin", "1234");
+    const superToken = await login("superadmin", superadminLoginPassword());
     const prefetToken = await login("prefet", "1234", "CD-2026-0001");
     const teacherToken = await login("ENS-0001", "1234", "CD-2026-0001");
 

@@ -6,6 +6,7 @@
  *   node backend/scripts/verify-rbac-admin-01.js
  *   SOMAFRIK_API_URL=http://127.0.0.1:5000/api node backend/scripts/verify-rbac-admin-01.js
  */
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("assert");
 const path = require("path");
 const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
@@ -121,7 +122,7 @@ async function runHttpTestsIfAvailable() {
   }
 
   const schoolAdmin = await login("admin", "1234", "CD-2026-0001");
-  const superadmin = await login("superadmin@somafrik.app", "1234");
+  const superadmin = await login("superadmin@somafrik.app", superadminLoginPassword());
   assert.ok(schoolAdmin?.accessToken, "Admin School login");
   assert.ok(superadmin?.accessToken, "Superadmin login");
 

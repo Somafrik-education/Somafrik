@@ -5,6 +5,8 @@
  * Aucun nom / niveau / filière / groupe texte libre.
  */
 
+const { superadminLoginPassword } = require("./superadminSeedSecret");
+
 async function login(request, identifier, password, schoolCode) {
   const result = await request("/backoffice/login", {
     method: "POST",
@@ -143,7 +145,7 @@ async function prepareCanonicalClassContext(request, options) {
     superToken: providedSuperToken,
     schoolToken: providedSchoolToken,
     superIdentifier = "superadmin",
-    superPassword = "1234",
+    superPassword = superadminLoginPassword(),
     schoolIdentifier = "admin",
     schoolPassword = "1234",
   } = options;

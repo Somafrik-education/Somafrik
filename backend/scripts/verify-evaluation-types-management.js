@@ -1,5 +1,6 @@
 "use strict";
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -96,7 +97,7 @@ async function runMemorySuite() {
     const unauth = await request(MEMORY_PORT, "/evaluation-types");
     assert.equal(unauth.status, 401);
 
-    const superToken = await login(MEMORY_PORT, "superadmin", "1234");
+    const superToken = await login(MEMORY_PORT, "superadmin", superadminLoginPassword());
     const adminToken = await login(MEMORY_PORT, "admin", "1234", "CD-2026-0001");
     const adminBi = await login(MEMORY_PORT, "admin", "1234", "BI-2026-0002");
     const teacherToken = await login(MEMORY_PORT, "ENS-0001", "1234", "CD-2026-0001");
