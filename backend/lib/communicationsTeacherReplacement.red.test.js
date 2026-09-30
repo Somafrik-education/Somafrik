@@ -9,7 +9,7 @@
  * createCourseScheduleReplacement(...) → remplacement PG créé → 0 event C4 TEACHER_REPLACEMENT.
  */
 
-const { test } = require("node:test");
+const { describe, test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -66,6 +66,8 @@ const STUDENT_A2 = "e8000000-0000-4000-8000-000000000091";
 const STUDENT_B = "e8000000-0000-4000-8000-000000000092";
 const NOTE_ID = "f8000000-0000-4000-8000-000000000001";
 const OCCURRENCE = "2026-08-24";
+
+describe.configure({ concurrency: 1 });
 
 function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), "utf8");
