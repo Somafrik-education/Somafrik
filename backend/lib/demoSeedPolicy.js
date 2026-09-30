@@ -69,6 +69,10 @@ function prepareDemoSeedIntegrity() {
   );
   const { applySuperadminSeedSecrets } = require("./superadminSeedSecret");
   applySuperadminSeedSecrets(seedData);
+  const { materializeAccountSecretHashes } = require("../services/credentialService");
+  for (const user of seedData.userAccounts ?? []) {
+    materializeAccountSecretHashes(user);
+  }
   demoSeedIntegrityPrepared = true;
 }
 

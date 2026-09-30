@@ -7,7 +7,7 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env.local"), overr
 require("dotenv").config();
 const { AuthService, BusinessError } = require("./services/authService");
 const { BackOfficeAccessService } = require("./services/backOfficeAccessService");
-const { hashSecret } = require("./services/credentialService");
+const { materializeAccountSecretHashes } = require("./services/credentialService");
 const {
   validatePasswordPolicy,
   validateAccountSecret,
@@ -4310,14 +4310,11 @@ function normalizeBackOfficeUserCredentials(user = {}) {
   const temporaryPassword = String(next.temporaryPassword ?? "").trim();
 
   if (temporaryPassword && !next.passwordHash && !next.pinHash) {
-    const secretHash = hashSecret(temporaryPassword);
-    next.passwordHash = secretHash;
-    next.pinHash = secretHash;
     next.mustChangePassword = next.mustChangePassword ?? true;
     next.hasTemporaryPassword = true;
   }
 
-  return next;
+  return materializeAccountSecretHashes(next);
 }
 
 function isDbUserUuid(value) {

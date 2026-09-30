@@ -125,3 +125,19 @@ test("le seed démo n'applique pas 1234 au Superadmin", () => {
   assert.notEqual(superadmin.password, "1234");
   assert.ok(String(superadmin.password).length >= 12);
 });
+
+test("P0-02 le seed mémoire materialise des hash scrypt pour la connexion", () => {
+  assert.equal(shouldSeedDemoData({ NODE_ENV: "test" }), true);
+  const { verifySecret } = require("../services/credentialService");
+  const admin = seedData.userAccounts.find((user) => user.id === "USER-ADMIN1");
+  assert.ok(admin);
+  assert.match(String(admin.passwordHash), /^scrypt\$/);
+  assert.equal(verifySecret("1234", admin.passwordHash), true);
+  assert.equal(admin.password, "1234");
+
+  const superadmin = seedData.userAccounts.find((user) => user.id === "USER-SUPERADMIN");
+  assert.ok(superadmin);
+  assert.match(String(superadmin.passwordHash), /^scrypt\$/);
+  assert.equal(verifySecret("1234", superadmin.passwordHash), false);
+  assert.equal(verifySecret(superadminLoginPassword(), superadmin.passwordHash), true);
+});

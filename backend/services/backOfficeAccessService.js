@@ -1,6 +1,6 @@
 const { BusinessError } = require("./authService");
 const { CommunicationService } = require("./communicationService");
-const { verifySecret } = require("./credentialService");
+const { verifySecret, materializeAccountSecretHashes } = require("./credentialService");
 const {
   getLoginAttemptKey,
   assertLoginNotLocked,
@@ -50,7 +50,9 @@ class BackOfficeAccessService {
   }) {
     this.school = school;
     this.schools = schools;
-    this.userAccounts = userAccounts;
+    this.userAccounts = Array.isArray(userAccounts)
+      ? userAccounts.map((user) => materializeAccountSecretHashes(user))
+      : userAccounts;
     this.students = students;
     this.relations = relations;
     this.countries = countries;
@@ -201,12 +203,7 @@ class BackOfficeAccessService {
       return true;
     }
 
-    const temporaryPassword = String(user.temporaryPassword ?? "").trim();
-    if (temporaryPassword && temporaryPassword === normalizedPassword) {
-      return true;
-    }
-
-    return String(user.password ?? "") === normalizedPassword;
+    return false;
   }
 
   isPlatformAdmin(user) {
