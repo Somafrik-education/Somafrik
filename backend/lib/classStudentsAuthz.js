@@ -168,8 +168,8 @@ function teacherHasActiveClassAssignment(principal, classContext) {
  * @returns {boolean}
  */
 function principalHasClassAccess(principal, className) {
-  if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
-    return true;
+  if (!principal) {
+    return false;
   }
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
     return true;
@@ -191,8 +191,8 @@ function principalHasClassAccess(principal, className) {
  * @returns {object[]}
  */
 function scopeClassStudentsForPrincipal(principal, classContext, rows, resolveAuthorizedStudent) {
-  if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
-    return rows;
+  if (!principal) {
+    throw new BusinessError(403, "Accès refusé: principal requis.");
   }
 
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
@@ -223,7 +223,7 @@ function scopeClassStudentsForPrincipal(principal, classContext, rows, resolveAu
     return scoped;
   }
 
-  return rows;
+  throw new BusinessError(403, "Accès refusé: rôle hors périmètre.");
 }
 
 /**
@@ -236,8 +236,8 @@ function scopeClassStudentsForPrincipal(principal, classContext, rows, resolveAu
  * @returns {object[]}
  */
 function scopeSchoolStudentsForPrincipal(principal, rows, resolveAuthorizedStudent) {
-  if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
-    return rows;
+  if (!principal) {
+    throw new BusinessError(403, "Accès refusé: principal requis.");
   }
 
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
@@ -261,7 +261,7 @@ function scopeSchoolStudentsForPrincipal(principal, rows, resolveAuthorizedStude
     return (rows ?? []).filter((row) => studentMatchesLinkedKeys(row, linkedIds));
   }
 
-  return rows;
+  throw new BusinessError(403, "Accès refusé: rôle hors périmètre.");
 }
 
 /**
@@ -273,8 +273,8 @@ function scopeSchoolStudentsForPrincipal(principal, rows, resolveAuthorizedStude
  * @returns {object[]}
  */
 function scopeSchoolClassesForPrincipal(principal, rows) {
-  if (!principal || SUPER_ADMIN_ROLES.has(principal.role)) {
-    return rows;
+  if (!principal) {
+    throw new BusinessError(403, "Accès refusé: principal requis.");
   }
 
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
@@ -306,7 +306,7 @@ function scopeSchoolClassesForPrincipal(principal, rows) {
     });
   }
 
-  return rows;
+  throw new BusinessError(403, "Accès refusé: rôle hors périmètre.");
 }
 
 /**
