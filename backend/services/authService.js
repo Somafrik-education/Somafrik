@@ -1,5 +1,5 @@
 const { AccountIdentifier } = require("./accountIdentifier");
-const { verifySecret } = require("./credentialService");
+const { verifySecret, materializeAccountSecretHashes } = require("./credentialService");
 const { resolveParentChildren } = require("../lib/parentChildren");
 const {
   getLoginAttemptKey,
@@ -309,7 +309,9 @@ class AuthService {
     this.teachers = teachers;
     this.students = students;
     this.relations = relations;
-    this.userAccounts = userAccounts;
+    this.userAccounts = Array.isArray(userAccounts)
+      ? userAccounts.map((user) => materializeAccountSecretHashes(user))
+      : userAccounts;
     this.countries = countries;
     this.subscriptions = subscriptions;
     this.assignments = assignments;
@@ -828,17 +830,6 @@ class AuthService {
       return true;
     }
 
-    const temporaryPassword = String(user.temporaryPassword ?? "").trim();
-    if (temporaryPassword && temporaryPassword === normalizedSecret) {
-      return true;
-    }
-
-    if (String(user.password ?? "") === normalizedSecret) {
-      return true;
-    }
-    if (!parentOnly && String(user.pin ?? "") === normalizedSecret) {
-      return true;
-    }
     return false;
   }
 

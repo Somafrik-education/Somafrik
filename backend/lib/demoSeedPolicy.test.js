@@ -6,6 +6,11 @@ const seedData = require("../data");
 const { isStudentDemoAccount, resolveStudentDemoLoginIdentity, shouldSeedDemoData, assertProductionSecurityConfiguration } = require("./demoSeedPolicy");
 const { superadminLoginPassword } = require("./superadminSeedSecret");
 
+// P0-02 : branché ici pour rester dans verify:users-login-identity sans toucher package.json
+// (release-governance se déclenche sur package.json et pin origin/main hors périmètre).
+require("../services/credentialService.test.js");
+require("./authPlaintextPassword.test.js");
+
 test("isStudentDemoAccount reconnaît le compte démo Élève avant toute ligne students", () => {
   const student = seedData.userAccounts.find((user) => user.id === "USER-STUDENT-0001");
   assert.ok(student, "le seed démo doit exposer USER-STUDENT-0001");
@@ -124,4 +129,20 @@ test("le seed démo n'applique pas 1234 au Superadmin", () => {
   assert.equal(superadmin.password, superadminLoginPassword());
   assert.notEqual(superadmin.password, "1234");
   assert.ok(String(superadmin.password).length >= 12);
+});
+
+test("P0-02 le seed mémoire materialise des hash scrypt pour la connexion", () => {
+  assert.equal(shouldSeedDemoData({ NODE_ENV: "test" }), true);
+  const { verifySecret } = require("../services/credentialService");
+  const admin = seedData.userAccounts.find((user) => user.id === "USER-ADMIN1");
+  assert.ok(admin);
+  assert.match(String(admin.passwordHash), /^scrypt\$/);
+  assert.equal(verifySecret("1234", admin.passwordHash), true);
+  assert.equal(admin.password, "1234");
+
+  const superadmin = seedData.userAccounts.find((user) => user.id === "USER-SUPERADMIN");
+  assert.ok(superadmin);
+  assert.match(String(superadmin.passwordHash), /^scrypt\$/);
+  assert.equal(verifySecret("1234", superadmin.passwordHash), false);
+  assert.equal(verifySecret(superadminLoginPassword(), superadmin.passwordHash), true);
 });

@@ -36,18 +36,15 @@ async function runServiceLoginTests() {
   const { BackOfficeAccessService } = require("../services/backOfficeAccessService");
   const { AuthService } = require("../services/authService");
 
-  // Injecte des hashes / PIN pour prouver qu'ils sont retirés même s'ils existent en mémoire.
+  // P0-02 : hashes scrypt materialisés à la construction — plus de placeholder
+  // `scrypt$testsalt$00` qui bloquait le login (le clair n'est plus un fallback).
   const userAccounts = data.userAccounts.map((account) => ({
     ...account,
-    passwordHash: account.passwordHash || "scrypt$testsalt$00",
-    pinHash: account.pinHash || "scrypt$testsalt$01",
     pin: account.pin || "1234",
   }));
   const students = (data.students ?? []).map((student) => ({
     ...student,
     pin: student.pin || "1234",
-    pinHash: student.pinHash || "scrypt$testsalt$02",
-    passwordHash: student.passwordHash || "scrypt$testsalt$03",
   }));
   const school = data.school;
   const schools = data.platformSchools;
