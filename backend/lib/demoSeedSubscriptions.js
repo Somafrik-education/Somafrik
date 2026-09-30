@@ -46,7 +46,7 @@ function buildDemoSubscriptions({ subscriptions = [], platformSchools = [], coun
       status: school.status,
       paymentStatus: index % 8 === 0 ? "En retard" : "À jour",
       startDate: "01-09-2025",
-      endDate: index % 8 === 0 ? "31-05-2026" : "31-08-2026",
+      endDate: index % 8 === 0 ? "31-05-2026" : "31-08-2027",
       lastPaymentDate: `${String((index % 27) + 1).padStart(2, "0")}-05-2026`,
     });
     seen.add(school.code);

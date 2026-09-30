@@ -29,7 +29,7 @@ const school = {
   primaryColor: "#2563EB",
   subscriptionPlan: "Premium",
   subscriptionStartDate: "01-09-2025",
-  subscriptionEndDate: "31-08-2026",
+  subscriptionEndDate: "31-08-2027",
   validationStatus: "Validé",
   subscriptionStatus: "À jour",
   maxStudents: 1200,
@@ -581,7 +581,7 @@ const subscriptions = [
     lifecycleStatus: "Actif",
     paymentStatus: "À jour",
     startDate: "01-09-2025",
-    endDate: "31-08-2026",
+    endDate: "31-08-2027",
     lastPaymentDate: "01-06-2026",
   },
   {
@@ -1321,7 +1321,7 @@ while (subscriptions.length < 50) {
     status: schoolItem.status,
     paymentStatus: index % 8 === 0 ? "En retard" : "À jour",
     startDate: "01-09-2025",
-    endDate: index % 8 === 0 ? "31-05-2026" : "31-08-2026",
+    endDate: index % 8 === 0 ? "31-05-2026" : "31-08-2027",
     lastPaymentDate: `${String((index % 27) + 1).padStart(2, "0")}-05-2026`,
   });
 }

@@ -1,4 +1,5 @@
 import { Link, Navigate, useParams } from "react-router-dom";
+import { useCallback } from "react";
 import { StudentWorkspaceHeader } from "../../components/students/StudentWorkspaceHeader";
 import { StudentWorkspaceTabs } from "../../components/students/StudentWorkspaceTabs";
 import {
@@ -7,6 +8,7 @@ import {
   LoadingState,
   RecordLayout,
 } from "../../design-system";
+import { useData } from "../../context/DataContext";
 import { useStudentEditingContext } from "../../hooks/useStudentEditingContext";
 import { useStudentWorkspace } from "../../hooks/useStudentWorkspace";
 import type { StudentEnrollmentRecord } from "../../lib/studentEnrollment";
@@ -47,13 +49,21 @@ function enrollmentOverrideForCanonicalWorkspace(
 export function StudentWorkspacePage() {
   const { studentId = "", section } = useParams();
   const normalizedStudentId = studentId.trim();
+  const { refresh: refreshDomains } = useData();
   const editing = useStudentEditingContext(normalizedStudentId);
-  const { workspace, loading, error } = useStudentWorkspace(normalizedStudentId, {
-    enrollmentOverride: enrollmentOverrideForCanonicalWorkspace(
-      editing.enrollmentRecords,
-    ),
-  });
+  const { workspace, dossier, loading, error, refresh } = useStudentWorkspace(
+    normalizedStudentId,
+    {
+      enrollmentOverride: enrollmentOverrideForCanonicalWorkspace(
+        editing.enrollmentRecords,
+      ),
+    },
+  );
   const permissionCtx = usePermissionContext();
+  const onIdentityPersisted = useCallback(async () => {
+    await refresh();
+    await refreshDomains(["students"]).catch(() => undefined);
+  }, [refresh, refreshDomains]);
 
   if (!normalizedStudentId) {
     return <Navigate to="/etablissement/eleves" replace />;
@@ -124,6 +134,8 @@ export function StudentWorkspacePage() {
       <RecordLayout.Content>
         <StudentWorkspaceTabs
           workspace={workspace}
+          dossier={dossier}
+          onIdentityPersisted={onIdentityPersisted}
           modules={visibleModules}
           activeModuleId={resolvedModuleId}
           accessDenied={!canAccessRequestedModule}

@@ -57,6 +57,20 @@ test("resolveStudentDemoLoginIdentity n'emprunte pas le contact parent", () => {
   assert.equal(marieLogin.phone, "");
 });
 
+test("l'abonnement seed CD-2026-0001 autorise encore la connexion à la date du jour", () => {
+  const { resolveSchoolAccess } = require("../services/schoolSubscriptionAccessService");
+  const access = resolveSchoolAccess("CD-2026-0001", {
+    schools: seedData.platformSchools,
+    subscriptions: seedData.subscriptions,
+  });
+  assert.notEqual(
+    access.level,
+    "blocked",
+    `seed CD-2026-0001 bloqué (${access.lifecycle}, ${access.daysLate} j) — renouveler endDate démo`,
+  );
+  assert.ok(["full", "limited"].includes(access.level));
+});
+
 test("les écritures users du seed démo restent uniques par établissement+email", () => {
   const planned = [];
   for (const user of seedData.userAccounts) {

@@ -5,6 +5,7 @@ import type {
 } from "../../lib/studentWorkspace";
 import { buildStudentWorkspacePath } from "../../lib/studentWorkspaceNavigation";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
+import type { SchoolStudent } from "../../lib/studentsApi";
 import { ForbiddenState } from "../../design-system";
 import { StudentDocumentsTab } from "./StudentDocumentsTab";
 import { StudentEnrollmentTab } from "./StudentEnrollmentTab";
@@ -18,6 +19,8 @@ import { StudentWorkspaceNavigation } from "./StudentWorkspaceNavigation";
 
 interface StudentWorkspaceTabsProps {
   workspace: StudentWorkspaceViewModel;
+  dossier?: SchoolStudent | null;
+  onIdentityPersisted?: () => void | Promise<void>;
   modules: readonly StudentWorkspaceModule[];
   activeModuleId: StudentWorkspaceModuleId;
   accessDenied?: boolean;
@@ -27,12 +30,20 @@ function renderActiveTab(
   moduleId: StudentWorkspaceModuleId,
   workspace: StudentWorkspaceViewModel,
   module: StudentWorkspaceModule | undefined,
+  dossier?: SchoolStudent | null,
+  onIdentityPersisted?: () => void | Promise<void>,
 ) {
   switch (moduleId) {
     case "overview":
       return <StudentOverviewTab workspace={workspace} />;
     case "identity":
-      return <StudentIdentityTab workspace={workspace} />;
+      return (
+        <StudentIdentityTab
+          workspace={workspace}
+          dossier={dossier}
+          onIdentityPersisted={onIdentityPersisted}
+        />
+      );
     case "enrollments":
       return <StudentEnrollmentTab workspace={workspace} />;
     case "guardians":
@@ -52,6 +63,8 @@ function renderActiveTab(
 
 export function StudentWorkspaceTabs({
   workspace,
+  dossier = null,
+  onIdentityPersisted,
   modules,
   activeModuleId,
   accessDenied = false,
@@ -79,7 +92,13 @@ export function StudentWorkspaceTabs({
           }
         />
       ) : (
-        renderActiveTab(activeModuleId, workspace, activeModule)
+        renderActiveTab(
+          activeModuleId,
+          workspace,
+          activeModule,
+          dossier,
+          onIdentityPersisted,
+        )
       )}
     </div>
   );
