@@ -20,6 +20,10 @@ const {
   mapAttachmentRow,
 } = require("./communicationsAttachments");
 const { RbacService } = require("../services/rbacService");
+const {
+  PLATFORM_PERSONAL_DATA_DENY,
+  isPlatformAdminPrincipal,
+} = require("./platformPersonalDataGuard");
 
 const MESSAGE_MAX_LENGTH = 8000;
 const DEFAULT_LIMIT = 50;
@@ -106,21 +110,40 @@ async function writeClientsAudit(tx, principal, auditMeta, entry) {
   });
 }
 
+function denyPlatformSchoolMessages(principal) {
+  if (!principal || typeof principal !== "object" || Array.isArray(principal)) {
+    throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
+  }
+  if (
+    isPlatformAdminPrincipal(principal) ||
+    isSuperAdminPrincipal(principal) ||
+    isCountryAdminPrincipal(principal)
+  ) {
+    const error = createClientsError(
+      403,
+      "Accès aux données personnelles établissement interdit pour un administrateur plateforme.",
+      CLIENTS_ERROR.FORBIDDEN,
+    );
+    error.code = PLATFORM_PERSONAL_DATA_DENY;
+    throw error;
+  }
+}
+
 function resolveWritableSchoolCode(principal, rawPayload) {
+  denyPlatformSchoolMessages(principal);
+  const principalCode = asTrimmed(principal?.schoolCode).toUpperCase();
+  if (!principalCode || principalCode === "*") {
+    throw createClientsError(403, "Établissement requis.", CLIENTS_ERROR.TENANT_MISMATCH);
+  }
   const requested = asTrimmed(
     rawPayload?.effectiveSchoolCode || rawPayload?.schoolCode || rawPayload?.school_code,
   ).toUpperCase();
-  const principalCode = asTrimmed(principal?.schoolCode).toUpperCase();
-  if (isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) {
-    const schoolCode = requested && requested !== "*" ? requested : principalCode;
-    if (!schoolCode || schoolCode === "*") {
-      throw createClientsError(
-        400,
-        "Établissement requis (effectiveSchoolCode).",
-        CLIENTS_ERROR.TENANT_MISMATCH,
-      );
-    }
-    return schoolCode;
+  if (requested && requested !== "*" && requested !== principalCode) {
+    throw createClientsError(
+      403,
+      "Accès refusé : établissement hors périmètre.",
+      CLIENTS_ERROR.TENANT_MISMATCH,
+    );
   }
   return principalCode;
 }
@@ -595,7 +618,7 @@ async function markMessageRead(store, messageId, principal, auditMeta, query = {
   });
 }
 
-function canBypassParticipation() {
+function canBypassParticipation(_principal) {
   return false;
 }
 

@@ -17,8 +17,8 @@ export function useMessagesUnreadCount(enabled: boolean, schoolCode?: string | n
   const [count, setCount] = useState(0);
   const schoolScope = hasCommunicationSchoolScope(schoolCode) ? schoolCode : undefined;
   useEffect(() => {
+    setCount(0);
     if (!enabled) {
-      setCount(0);
       return;
     }
     let cancelled = false;

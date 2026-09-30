@@ -280,6 +280,7 @@ export function canManageRolePermissions(ctx: PermissionContext): boolean {
 
 function superAdminAllowsFeature(features: string | (string | null)[] | null, action: string): boolean {
   const featureList = Array.isArray(features) ? features : [features];
+  if (featureList.includes("Messages")) return false;
   if (featureList.includes("Droits par rôle")) return action === "READ" || action === "UPDATE";
   if (featureList.includes("Paramètres graphiques")) return true;
   return featureList.every((feature) => isSuperAdminAllowedFeature(feature));
@@ -372,12 +373,15 @@ export function hasBackOfficePermission(
   action: string = "READ",
 ): boolean {
   if (!ctx.user) return false;
+  const featureList = Array.isArray(features) ? features : [features];
+  if (featureList.includes("Messages") && isPlatformCommunicationUser(ctx)) {
+    return false;
+  }
   if (isSuperAdminRole(ctx.user.role)) {
     return superAdminAllowsFeature(features, action);
   }
 
   const normalizedAction = action === "R" ? "READ" : action;
-  const featureList = Array.isArray(features) ? features : [features];
 
   if (
     isPlatformCommunicationUser(ctx) &&
@@ -432,6 +436,9 @@ export function hasBackOfficePermission(
 export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   if (viewName === "parentProfile") return isParentRole(ctx.user?.role);
   if (viewName === "planning" && !PLANNING_WEB_UI_ENABLED) {
+    return false;
+  }
+  if (viewName === "messages" && isPlatformCommunicationUser(ctx)) {
     return false;
   }
   // Accès au hub Paramètres : Super Admin, Admin School (établissement) et Admin Pays.
