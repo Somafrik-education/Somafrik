@@ -580,10 +580,6 @@ class RbacService {
   }
 
   canAccess(principal, routeKey) {
-    if (process.env.SOMAFRIK_AUTH_OPTIONAL === "true") {
-      return true;
-    }
-
     const requiredPermissions = routePermissions[routeKey];
     if (!Array.isArray(requiredPermissions) || requiredPermissions.length === 0) {
       return false;
