@@ -204,7 +204,7 @@ async function main() {
     const skippedTotal = first.skipped + second.skipped;
     assert.equal(createdTotal, 1);
     assert.equal(skippedTotal, 1);
-    const fees = await store.listFinanceStudentFees();
+    const fees = await store.listFinanceStudentFees(admin);
     assert.equal(fees.length, 1);
     const inscription = fees[0];
 
@@ -219,13 +219,13 @@ async function main() {
       admin,
     );
     assert.match(payment.reference, /^CD-2026-0001-\d{4}-PAY-/);
-    const paid = (await store.listFinanceStudentFees())[0];
+    const paid = (await store.listFinanceStudentFees(admin))[0];
     assert.equal(Number(paid.balance), 0);
 
     const cancelled = await store.cancelSchoolPayment(payment.reference, "Saisie erronée", admin);
     assert.equal(cancelled.status, "Annulé");
     assert.equal(String(cancelled.cancelledBy), String(admin.sub));
-    const restored = (await store.listFinanceStudentFees())[0];
+    const restored = (await store.listFinanceStudentFees(admin))[0];
     assert.equal(Number(restored.balance), 40_000);
     const cancelAudit = await pool.query(
       `SELECT * FROM audit_logs WHERE action = 'cancel_payment' AND entity_id = $1`,
@@ -266,7 +266,7 @@ async function main() {
     assert.equal(paymentsAfterFailedCreate.rowCount, 0);
     const createAudits = await pool.query(`SELECT * FROM audit_logs WHERE action = 'create_payment'`);
     assert.equal(createAudits.rowCount, 1);
-    const obligationAfterFailedCreate = (await store.listFinanceStudentFees())[0];
+    const obligationAfterFailedCreate = (await store.listFinanceStudentFees(admin))[0];
     assert.equal(Number(obligationAfterFailedCreate.balance), 40_000);
 
     const concurrentPayment = await store.createSchoolPayment(
@@ -286,7 +286,7 @@ async function main() {
     restoreCancelAudit();
     const stillOpen = await store.getSchoolPayment(concurrentPayment.reference, admin);
     assert.notEqual(stillOpen.status, "Annulé");
-    assert.equal(Number((await store.listFinanceStudentFees())[0].balance), 0);
+    assert.equal(Number((await store.listFinanceStudentFees(admin))[0].balance), 0);
     const cancelAuditsAfterFailed = await pool.query(
       `SELECT * FROM audit_logs WHERE action = 'cancel_payment' AND entity_id = $1`,
       [concurrentPayment.reference],
@@ -309,7 +309,7 @@ async function main() {
       [concurrentPayment.dbId],
     );
     assert.equal(openAllocations.rowCount, 0);
-    const reversedOnce = (await store.listFinanceStudentFees())[0];
+    const reversedOnce = (await store.listFinanceStudentFees(admin))[0];
     assert.equal(Number(reversedOnce.balance), 40_000);
     const cancelledRow = await pool.query("SELECT cancelled_by FROM payments WHERE payment_code = $1", [
       concurrentPayment.reference,
@@ -676,10 +676,12 @@ async function main() {
     const listedA = await store.listFinanceStudentFees(admin);
     assert.equal(listedA.some((row) => String(row.dbId) === String(collide.rows[0].id)), false);
     assert.equal(listedA.every((row) => row.schoolCode === "CD-2026-0001"), true);
-    const platform = await store.listFinanceStudentFees({
+    const superNone = await store.listFinanceStudentFees({
       role: "Super Administrateur Somafrik",
       schoolCode: "*",
     });
+    assert.equal(superNone.length, 0, "P1-01 Superadmin ne liste pas les obligations scolaires");
+    const platform = await store.listFinanceStudentFees(adminB);
     const collided = platform.find((row) => String(row.dbId) === String(collide.rows[0].id));
     assert.ok(collided);
     assert.equal(Number(collided.amountPaid), 0, "allocation A jamais projetée sur B malgré identifiant collisionné");

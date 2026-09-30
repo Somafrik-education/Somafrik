@@ -1,6 +1,7 @@
 const seedData = require("../data");
 const { COURSE_ROUTE_PERMISSIONS } = require("../lib/coursesRbacPolicy");
 const { isPlatformPersonalDataForbidden } = require("../lib/platformPersonalDataGuard");
+const { isSchoolFinanceForbiddenForSuperadmin } = require("../lib/financeSchoolScope");
 
 const roleAliases = {
   super_admin: "Super Administrateur Somafrik",
@@ -592,6 +593,11 @@ class RbacService {
     // P0-2 : deny plateforme AVANT requiredPermissions.some(...)
     // (ALL_PRIVILEGES / COUNTRY_PRIVILEGES ne doivent jamais ouvrir les données perso).
     if (isPlatformPersonalDataForbidden(principal, routeKey)) {
+      return false;
+    }
+
+    // P1-01 : ALL_PRIVILEGES ne transforme pas Superadmin en Finance scolaire globale.
+    if (isSchoolFinanceForbiddenForSuperadmin(principal, routeKey)) {
       return false;
     }
 
