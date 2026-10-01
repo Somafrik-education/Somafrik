@@ -21,6 +21,8 @@ require("./authOptionalFailClosed.test.js");
 require("./financeSuperadminScope.p1-01.test.js");
 require("./superadminPrincipal.p1-02.test.js");
 require("./communicationsMessages.p1-03.test.js");
+require("./classStudentsAuthz.p0-03.test.js");
+require("./superadminClosure.p1-05.audit.test.js");
 
 const rbac = new RbacService();
 
