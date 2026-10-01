@@ -21,7 +21,6 @@ import { hasCommunicationSchoolScope } from "./communicationSchoolScope";
 import type { SessionUser } from "../types";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const STORAGE_KEY = "somafrik.activeSchoolCode";
 
 function ctx(user: Partial<SessionUser>): PermissionContext {
   return {
