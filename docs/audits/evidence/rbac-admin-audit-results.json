@@ -1,0 +1,452 @@
+{
+  "generatedAt": "2026-10-01T17:13:02.085Z",
+  "mandate": "AUDIT + RED tests — aucune correction fonctionnelle",
+  "suites": [
+    {
+      "label": "backend-red",
+      "command": "node --test backend/lib/rbacAdminAudit.red.test.js backend/lib/administrationCompleteness.red.test.js",
+      "expectFail": true,
+      "exitCode": 1,
+      "classified": true,
+      "nodeTap": {
+        "failCount": 10,
+        "passCount": 0,
+        "names": [
+          {
+            "ok": false,
+            "name": "RED-ADM-REL Superadmin n'est pas bloqué sur GET/POST /backoffice/relations"
+          },
+          {
+            "ok": false,
+            "name": "RED-ADM-DOC Superadmin n'est pas bloqué sur /school-documents"
+          },
+          {
+            "ok": false,
+            "name": "RED-ADM-CONF Conformité Administration consomme GET /api/audit ou un workflow persisté"
+          },
+          {
+            "ok": false,
+            "name": "RED-ADM-REL-DELETE une API d'archivage/suppression Relations existe sous /backoffice/relations"
+          },
+          {
+            "ok": false,
+            "name": "RED-ADM-DROITS-RESET un endpoint retire l'override école sans DENY substitutif"
+          },
+          {
+            "ok": false,
+            "name": "RED-01 SUPER_ADMIN exprime puis enregistre un droit modifiable sans partir d'une matrice vide"
+          },
+          {
+            "ok": false,
+            "name": "RED-02 SUPER_ADMIN modifie Lecture : UI → API → persistance → relecture effective"
+          },
+          {
+            "ok": false,
+            "name": "RED-03 SUPER_ADMIN : diagnostic Création / Lecture / Modification / Suppression"
+          },
+          {
+            "ok": false,
+            "name": "RED-04 SUPER_ADMIN recharge après modification : les droits non touchés restent"
+          },
+          {
+            "ok": false,
+            "name": "RED-01b Enregistrer sans changement depuis le chemin Superadmin n'écrit pas un DENY école"
+          }
+        ]
+      },
+      "tail": [
+        "  expected: 0",
+        "  actual: 2",
+        "  operator: 'strictEqual'",
+        "  stack: |-",
+        "    failWithGaps (/workspace/backend/lib/rbacAdminAudit.red.test.js:28:10)",
+        "    TestContext.<anonymous> (/workspace/backend/lib/rbacAdminAudit.red.test.js:214:3)",
+        "    async Test.run (node:internal/test_runner/test:980:9)",
+        "    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)",
+        "  ...",
+        "# Subtest: RED-01b Enregistrer sans changement depuis le chemin Superadmin n'écrit pas un DENY école",
+        "not ok 10 - RED-01b Enregistrer sans changement depuis le chemin Superadmin n'écrit pas un DENY école",
+        "  ---",
+        "  duration_ms: 0.820944",
+        "  location: '/workspace/backend/lib/rbacAdminAudit.red.test.js:217:1'",
+        "  failureType: 'testCodeFailure'",
+        "  error: |-",
+        "    RED-01b ÉCART MÉTIER (1) — Enregistrer sans toggle (draft vide) persiste un DENY école et annule le grant global : {\"canCreate\":false,\"canRead\":false,\"canUpdate\":false,\"canDelete\":false,\"configured\":false,\"locks\":null}",
+        "    ",
+        "    1 !== 0",
+        "    ",
+        "  code: 'ERR_ASSERTION'",
+        "  name: 'AssertionError'",
+        "  expected: 0",
+        "  actual: 1",
+        "  operator: 'strictEqual'",
+        "  stack: |-",
+        "    failWithGaps (/workspace/backend/lib/rbacAdminAudit.red.test.js:28:10)",
+        "    TestContext.<anonymous> (/workspace/backend/lib/rbacAdminAudit.red.test.js:242:3)",
+        "    async Test.run (node:internal/test_runner/test:980:9)",
+        "    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)",
+        "  ...",
+        "1..10",
+        "# tests 10",
+        "# suites 0",
+        "# pass 0",
+        "# fail 10",
+        "# cancelled 0",
+        "# skipped 0",
+        "# todo 0",
+        "# duration_ms 55.110694"
+      ]
+    },
+    {
+      "label": "backend-green",
+      "command": "node --test backend/lib/rbacAdminAudit.green.test.js backend/lib/administrationCompleteness.green.test.js",
+      "expectFail": false,
+      "exitCode": 0,
+      "classified": true,
+      "nodeTap": {
+        "failCount": 0,
+        "passCount": 12,
+        "names": [
+          {
+            "ok": true,
+            "name": "VERT — APIs Administration réellement câblées (Utilisateurs / Rôles / Droits)"
+          },
+          {
+            "ok": true,
+            "name": "VERT — Relations et documents scolaires existent côté API, deny plateforme documenté"
+          },
+          {
+            "ok": true,
+            "name": "VERT — pas de DELETE /backoffice/relations ni reset override RBAC dans server.js"
+          },
+          {
+            "ok": true,
+            "name": "VERT — tables réelles Documents / Relations présentes dans les migrations"
+          },
+          {
+            "ok": true,
+            "name": "RED-05 VERT — invariant SUPER_ADMIN users/role_permissions refusé ; archive rôles système refusée"
+          },
+          {
+            "ok": true,
+            "name": "RED-06 VERT — fail-closed : module inconnu, rôle vide, contexte établissement invalide, permission absente"
+          },
+          {
+            "ok": true,
+            "name": "RED-07 VERT — isolation établissement : patch école A n'autorise pas école B"
+          },
+          {
+            "ok": true,
+            "name": "RED-08 VERT — isolation pays : une config CD n'autorise pas implicitement BI"
+          },
+          {
+            "ok": true,
+            "name": "RED-09 VERT — SCHOOL_ADMIN / COUNTRY_ADMIN ne peuvent pas écrire la matrice ni lister le catalogue"
+          },
+          {
+            "ok": true,
+            "name": "RED-10 VERT — dépendance CREATE/UPDATE/DELETE → READ : UI helper + backend, pas seulement l'écran"
+          },
+          {
+            "ok": true,
+            "name": "VERT — PUT legacy role-permissions reste fermé ; PATCH métier Superadmin existe encore"
+          },
+          {
+            "ok": true,
+            "name": "VERT — rôles métier du référentiel réel (pas de tables inventées)"
+          }
+        ]
+      },
+      "tail": [
+        "  ...",
+        "# Subtest: RED-07 VERT — isolation établissement : patch école A n'autorise pas école B",
+        "ok 7 - RED-07 VERT — isolation établissement : patch école A n'autorise pas école B",
+        "  ---",
+        "  duration_ms: 2.252444",
+        "  ...",
+        "# Subtest: RED-08 VERT — isolation pays : une config CD n'autorise pas implicitement BI",
+        "ok 8 - RED-08 VERT — isolation pays : une config CD n'autorise pas implicitement BI",
+        "  ---",
+        "  duration_ms: 0.280366",
+        "  ...",
+        "# Subtest: RED-09 VERT — SCHOOL_ADMIN / COUNTRY_ADMIN ne peuvent pas écrire la matrice ni lister le catalogue",
+        "ok 9 - RED-09 VERT — SCHOOL_ADMIN / COUNTRY_ADMIN ne peuvent pas écrire la matrice ni lister le catalogue",
+        "  ---",
+        "  duration_ms: 0.599869",
+        "  ...",
+        "# Subtest: RED-10 VERT — dépendance CREATE/UPDATE/DELETE → READ : UI helper + backend, pas seulement l'écran",
+        "ok 10 - RED-10 VERT — dépendance CREATE/UPDATE/DELETE → READ : UI helper + backend, pas seulement l'écran",
+        "  ---",
+        "  duration_ms: 1.108241",
+        "  ...",
+        "# Subtest: VERT — PUT legacy role-permissions reste fermé ; PATCH métier Superadmin existe encore",
+        "ok 11 - VERT — PUT legacy role-permissions reste fermé ; PATCH métier Superadmin existe encore",
+        "  ---",
+        "  duration_ms: 0.419972",
+        "  ...",
+        "# Subtest: VERT — rôles métier du référentiel réel (pas de tables inventées)",
+        "ok 12 - VERT — rôles métier du référentiel réel (pas de tables inventées)",
+        "  ---",
+        "  duration_ms: 0.093755",
+        "  ...",
+        "1..12",
+        "# tests 12",
+        "# suites 0",
+        "# pass 12",
+        "# fail 0",
+        "# cancelled 0",
+        "# skipped 0",
+        "# todo 0",
+        "# duration_ms 79.171384"
+      ]
+    },
+    {
+      "label": "web-red",
+      "command": "npm --prefix web run test:rbac-admin-audit-red",
+      "expectFail": true,
+      "exitCode": 1,
+      "classified": true,
+      "tail": [
+        "+ Received:",
+        "\"import { Outlet } from \\\"react-router-dom\\\";",
+        "import { ClipboardCheck, FileText, Link2, ShieldCheck, Users } from \\\"lucide-react\\\";",
+        "import { TabNav, type TabItem } from \\\"../../components/layout/TabNav\\\";",
+        "",
+        "const ADMINISTRATION_TABS: TabItem[] = [",
+        "  { to: \\\"/administration/relations\\\", label: \\\"Relations\\\", icon: Link2 },",
+        "  { to: \\\"/administration/utilisateurs\\\", label: \\\"Utilisateurs\\\", icon: Users },",
+        "  { to: \\\"/administration/permissions\\\", label: \\\"Rôles et droits\\\", icon: ShieldCheck },",
+        "  { to: \\\"/administration/documents\\\", label: \\\"Documents\\\", icon: FileText },",
+        "  { to: \\\"/administration/conformite\\\", label: \\\"Conformité\\\", icon: ClipboardCheck },",
+        "];",
+        "",
+        "/** Module Administration : en-tête + onglets, contenu via <Outlet />. */",
+        "export function AdministrationLayout() {",
+        "  return (",
+        "    <div className=\\\"space-y-5\\\">",
+        "      <div>",
+        "        <p className=\\\"text-xs font-black uppercase tracking-wide text-brand\\\">Gouvernance</p>",
+        "        <h1 className=\\\"mt-1 text-2xl font-black text-ink\\\">Administration</h1>",
+        "        <p className=\\\"mt-1 text-sm text-muted\\\">",
+        "          Comptes et rôles, documents administratifs et conformité de la plateforme.",
+        "        </p>",
+        "      </div>",
+        "      <TabNav tabs={ADMINISTRATION_TABS} />",
+        "      <Outlet />",
+        "    </div>",
+        "  );",
+        "}",
+        "\"",
+        "",
+        " ❯ src/lib/administrationCompleteness.audit.red.test.ts:64:20",
+        "     62|   it(\"RED-ADM-TABS : le layout n'affiche que les onglets réellement au…",
+        "     63|     const layout = read(\"../pages/administration/AdministrationLayout.…",
+        "     64|     expect(layout).toMatch(/canReadView|visibleTabs/);",
+        "       |                    ^",
+        "     65|   });",
+        "     66| });",
+        "",
+        "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/9]⎯"
+      ]
+    },
+    {
+      "label": "web-green",
+      "command": "npm --prefix web run test -- src/pages/PermissionsPage.audit.green.test.tsx src/lib/permissions.rbacAdmin.audit.green.test.ts src/lib/administrationCompleteness.audit.green.test.ts src/pages/PermissionsPage.test.tsx src/lib/rbacLocks.test.ts",
+      "expectFail": false,
+      "exitCode": 0,
+      "classified": true,
+      "tail": [
+        "> somafrik-web@1.0.0 test",
+        "> vitest run src/pages/PermissionsPage.audit.green.test.tsx src/lib/permissions.rbacAdmin.audit.green.test.ts src/lib/administrationCompleteness.audit.green.test.ts src/pages/PermissionsPage.test.tsx src/lib/rbacLocks.test.ts",
+        "",
+        "",
+        " RUN  v4.1.10 /workspace/web",
+        "",
+        "",
+        " Test Files  5 passed (5)",
+        "      Tests  17 passed (17)",
+        "   Start at  17:13:00",
+        "   Duration  1.68s (transform 482ms, setup 463ms, import 652ms, tests 420ms, environment 2.40s)"
+      ]
+    },
+    {
+      "label": "backend-existing-unimpacted",
+      "command": "node --test backend/lib/functionalRbac.test.js backend/lib/rbacMandatoryPermissions.test.js",
+      "expectFail": false,
+      "exitCode": 0,
+      "classified": true,
+      "nodeTap": {
+        "failCount": 0,
+        "passCount": 31,
+        "names": [
+          {
+            "ok": true,
+            "name": "cascade établissement > pays > global > DENY"
+          },
+          {
+            "ok": true,
+            "name": "multi-rôle union et rôle révoqué ignoré"
+          },
+          {
+            "ok": true,
+            "name": "COUNTRY_ADMIN conserve COUNTRY_PRIVILEGES"
+          },
+          {
+            "ok": true,
+            "name": "invariants SUPER_ADMIN et archive protégée"
+          },
+          {
+            "ok": true,
+            "name": "backfill parse Module:ACTION et Gérer"
+          },
+          {
+            "ok": true,
+            "name": "409 expectedUpdatedAt et audit rollback mémoire si audit échoue"
+          },
+          {
+            "ok": true,
+            "name": "OCC 409 si deux PATCH RBAC dans la même milliseconde (lost update)"
+          },
+          {
+            "ok": true,
+            "name": "OCC TEST A : PATCH d'une ligne plus ancienne avance le MAX du scope"
+          },
+          {
+            "ok": true,
+            "name": "OCC TEST C : aucun élargissement RBAC (ACCOUNTANT / PREFET / TEACHER)"
+          },
+          {
+            "ok": true,
+            "name": "PATCH schoolCode n'est pas traité comme un UUID"
+          },
+          {
+            "ok": true,
+            "name": "fusion des cartes : liste vide n'écrase pas Admin School"
+          },
+          {
+            "ok": true,
+            "name": "backfill conserve Élèves:READ pour SCHOOL_ADMIN malgré catalogue plateforme vide"
+          },
+          {
+            "ok": true,
+            "name": "live-resolve Admin School : Élèves:READ si grants métier absents mais carte seed présente"
+          },
+          {
+            "ok": true,
+            "name": "live-resolve SUPER_ADMIN sans roleKeys conserve ALL_PRIVILEGES si d'autres grants existent"
+          },
+          {
+            "ok": true,
+            "name": "POST /api/classes accepte Classes:CREATE après overlay live"
+          },
+          {
+            "ok": true,
+            "name": "PUT planning-exams accepte Examens:UPDATE après overlay live"
+          },
+          {
+            "ok": true,
+            "name": "GET /api/v2/subjects accepte Matières:READ ou Affectations:CREATE"
+          },
+          {
+            "ok": true,
+            "name": "POST /api/assignments exige Affectations:CREATE, pas Matières:CREATE"
+          },
+          {
+            "ok": true,
+            "name": "live CRUD : Impayés:READ reste propre au Comptable, pas à la Secrétaire"
+          },
+          {
+            "ok": true,
+            "name": "catalogue établissement vide : fail-closed même si grants backfill existent"
+          },
+          {
+            "ok": true,
+            "name": "catalogue plateforme vide n'efface pas SCHOOL_ADMIN"
+          },
+          {
+            "ok": true,
+            "name": "seed live SCHOOL_ADMIN inclut Affectations:CREATE"
+          },
+          {
+            "ok": true,
+            "name": "backfill modules manquants : SCHOOL_ADMIN Affectations:CREATE sans écraser un DENY"
+          },
+          {
+            "ok": true,
+            "name": "mandatoryPermissionsForRole : SUPER_ADMIN uniquement, rien inventé pour SCHOOL/COUNTRY_ADMIN"
+          },
+          {
+            "ok": true,
+            "name": "dépendances intra-module : CREATE/UPDATE/DELETE → READ"
+          },
+          {
+            "ok": true,
+            "name": "PATCH refuse invariant SUPER_ADMIN sans écriture — MANDATORY_PERMISSION"
+          },
+          {
+            "ok": true,
+            "name": "PATCH refuse CREATE sans READ — MANDATORY_PERMISSION dependency"
+          },
+          {
+            "ok": true,
+            "name": "PATCH facultatif autorisé : CREATE+READ puis retrait CREATE"
+          },
+          {
+            "ok": true,
+            "name": "catalogue expose mandatoryByRole + dependencies"
+          },
+          {
+            "ok": true,
+            "name": "GET configured expose locks dependency et overlay invariant"
+          },
+          {
+            "ok": true,
+            "name": "assertMandatoryPermissionPatch PREFET users.read=false autorisé"
+          }
+        ]
+      },
+      "tail": [
+        "  ...",
+        "# Subtest: PATCH refuse invariant SUPER_ADMIN sans écriture — MANDATORY_PERMISSION",
+        "ok 26 - PATCH refuse invariant SUPER_ADMIN sans écriture — MANDATORY_PERMISSION",
+        "  ---",
+        "  duration_ms: 1.36421",
+        "  ...",
+        "# Subtest: PATCH refuse CREATE sans READ — MANDATORY_PERMISSION dependency",
+        "ok 27 - PATCH refuse CREATE sans READ — MANDATORY_PERMISSION dependency",
+        "  ---",
+        "  duration_ms: 0.208509",
+        "  ...",
+        "# Subtest: PATCH facultatif autorisé : CREATE+READ puis retrait CREATE",
+        "ok 28 - PATCH facultatif autorisé : CREATE+READ puis retrait CREATE",
+        "  ---",
+        "  duration_ms: 1.037685",
+        "  ...",
+        "# Subtest: catalogue expose mandatoryByRole + dependencies",
+        "ok 29 - catalogue expose mandatoryByRole + dependencies",
+        "  ---",
+        "  duration_ms: 0.809154",
+        "  ...",
+        "# Subtest: GET configured expose locks dependency et overlay invariant",
+        "ok 30 - GET configured expose locks dependency et overlay invariant",
+        "  ---",
+        "  duration_ms: 0.850515",
+        "  ...",
+        "# Subtest: assertMandatoryPermissionPatch PREFET users.read=false autorisé",
+        "ok 31 - assertMandatoryPermissionPatch PREFET users.read=false autorisé",
+        "  ---",
+        "  duration_ms: 0.14658",
+        "  ...",
+        "1..31",
+        "# tests 31",
+        "# suites 0",
+        "# pass 31",
+        "# fail 0",
+        "# cancelled 0",
+        "# skipped 0",
+        "# todo 0",
+        "# duration_ms 152.715035"
+      ]
+    }
+  ]
+}
