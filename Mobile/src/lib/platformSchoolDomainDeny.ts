@@ -1,6 +1,6 @@
 /**
- * P1-04 — Superadmin / Admin Pays ne sont pas des Admin School globaux.
- * Miroir Mobile du contrat Backend P1-02 + P0-2 / P1-01 / P1-03.
+ * P1-04 / P1-08 — Superadmin / Admin Pays / ALL_PRIVILEGES seul ne sont pas
+ * des Admin School globaux. Miroir Mobile du contrat Backend P1-02 + P0-2.
  * Ne pas ouvrir de domaine scolaire via ALL_PRIVILEGES ou schoolCode "*".
  */
 import { isSuperAdminRole, sessionRoleToPlatformRole } from "./orgHierarchy";
@@ -69,6 +69,7 @@ const SCHOOL_BOUND_SESSION_ROLES = new Set([
   "supervisor",
   "teacher",
   "parent_student",
+  "student",
 ]);
 
 function collectRoleTokens(session: unknown): string[] {
@@ -123,7 +124,12 @@ export function hasSchoolBoundSessionRole(session: unknown): boolean {
   const role = String(row?.role ?? "").trim();
   if (SCHOOL_BOUND_SESSION_ROLES.has(role)) return true;
   const platform = sessionRoleToPlatformRole(role);
-  return platform === "Admin School" || platform === "Enseignant" || platform === "Parent";
+  return (
+    platform === "Admin School" ||
+    platform === "Enseignant" ||
+    platform === "Parent" ||
+    platform === "Élève / Étudiant"
+  );
 }
 
 function collectPermissionTokens(session: unknown): string[] {
@@ -161,8 +167,12 @@ export function shouldDenySchoolDomain(session: unknown, featureOrView?: string 
   return false;
 }
 
+/**
+ * P1-08 — même deny que la navigation : ALL_PRIVILEGES seul ou schoolCode "*"
+ * ne déclenchent jamais l'hydratation tenant scolaire.
+ */
 export function shouldSkipSchoolTenantHydration(session: unknown): boolean {
-  return isPlatformAdminSession(session);
+  return shouldDenySchoolDomain(session);
 }
 
 /** Collections PII / métier établissement : jamais présentées à Superadmin / Admin Pays. */
@@ -191,8 +201,7 @@ export function constrainPlatformSchoolNavigation<T extends { destination: strin
   target: T,
   session: unknown,
 ): T {
-  if (!isPlatformAdminSession(session)) return target;
-  if (isSchoolDomainView(target.destination)) {
+  if (shouldDenySchoolDomain(session, target.destination)) {
     return { ...target, destination: "Home" };
   }
   return target;

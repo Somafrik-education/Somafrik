@@ -6,7 +6,7 @@ import {
   sessionRoleToPlatformRole,
 } from "./orgHierarchy";
 import { ALL_SCHOOLS_CODE, isAllSchoolsSelection } from "./activeSchool";
-import { isPlatformAdminSession, stripSchoolDomainCollections } from "./platformSchoolDomainDeny";
+import { shouldSkipSchoolTenantHydration, stripSchoolDomainCollections } from "./platformSchoolDomainDeny";
 
 export type PlatformNotification = {
   id?: string;
@@ -240,7 +240,7 @@ export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
     notifications: (payload.notifications as any[]) ?? [],
   };
 
-  if (isPlatformAdminSession(session) || session.role === "country_admin" || session.role === "super_admin") {
+  if (shouldSkipSchoolTenantHydration(session)) {
     const scoped = stripSchoolDomainCollections({
       ...payload,
       countries: scopedCountries(user, scopeState),

@@ -1,6 +1,6 @@
 import type { Student } from "../data/catalog";
 import { sessionRoleToPlatformRole } from "./orgHierarchy";
-import { isPlatformAdminSession } from "./platformSchoolDomainDeny";
+import { shouldSkipSchoolTenantHydration } from "./platformSchoolDomainDeny";
 
 export type SchoolScopeErrorCode =
   | "MISSING_CANONICAL_IDENTITY"
@@ -90,7 +90,7 @@ export function isEstablishmentStaffSession(session: StudentScopeSession): boole
 }
 
 function isPlatformUnscopedRole(session: StudentScopeSession): boolean {
-  return isPlatformAdminSession(session);
+  return shouldSkipSchoolTenantHydration(session);
 }
 
 /**

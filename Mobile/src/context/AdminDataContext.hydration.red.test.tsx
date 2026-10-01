@@ -238,6 +238,17 @@ function superAdminSession(): TestSession {
   };
 }
 
+function allPrivilegesOnlySession(): TestSession {
+  return {
+    role: "",
+    permissions: ["ALL_PRIVILEGES"],
+    user: {
+      id: "priv-only",
+      name: "Privileges Only",
+    },
+  };
+}
+
 function AuthGate({ session, children }: { session: TestSession; children: ReactNode }) {
   const Ctx = authHarness.Ctx;
   if (!Ctx) throw new Error("Auth harness context not initialized");
@@ -342,6 +353,32 @@ describe("CHANTIER SYNC — Mobile AdminDataContext (tests RED)", () => {
       await result.current.refreshBackOfficeState().catch(() => undefined);
     });
     expect(apiStore.studentsCalls).toBe(0);
+  });
+
+  it("5b. ALL_PRIVILEGES seul : aucun fetch élèves même avec établissement actif", async () => {
+    const session = allPrivilegesOnlySession();
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <AuthGate session={session}>
+          <AdminDataProvider>{children}</AdminDataProvider>
+        </AuthGate>
+      );
+    }
+    const { result } = renderHook(() => useObserved(), { wrapper: Wrapper });
+
+    apiStore.activeSchoolForFetch = SCHOOL_A;
+    await act(async () => {
+      result.current.setActiveSchoolCode(SCHOOL_A);
+    });
+    expect(apiStore.studentsCalls).toBe(0);
+    expect(result.current.studentsData).toEqual([]);
+
+    await act(async () => {
+      await result.current.refreshBackOfficeState().catch(() => undefined);
+      await result.current.loadStudents().catch(() => undefined);
+    });
+    expect(apiStore.studentsCalls).toBe(0);
+    expect(result.current.studentsData).toEqual([]);
   });
 
   it("6. erreur réseau pendant refresh : snapshot valide conservé", async () => {
