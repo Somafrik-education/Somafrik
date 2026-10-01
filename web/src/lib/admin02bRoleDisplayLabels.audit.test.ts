@@ -8,7 +8,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 describe("ADMIN-02B STOP — UI n'expose pas encore d'alias d'affichage", () => {
   it("PermissionsPage renomme roleName métier, pas displayLabel", () => {
     const page = readFileSync(join(ROOT, "../pages/PermissionsPage.tsx"), "utf8");
-    expect(page).toContain("{ roleName: nextName }");
+    expect(page).toContain("updateRole(role.id, { roleName: nextName })");
     expect(page).toContain("isProtectedRole");
     expect(page).not.toContain("displayLabel");
     expect(page).not.toContain("effectiveLabel");
