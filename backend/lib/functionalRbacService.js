@@ -11,6 +11,12 @@ const {
   nextMonotonicUpdatedAt,
   looksLikeUuid,
   PROTECTED_SYSTEM_ROLE_KEYS,
+  RBAC_AUDIT_ACTIONS,
+  RBAC_HISTORY_ACTIONS,
+  sanitizeRbacAuditValue,
+  rbacAuditActor,
+  clampRbacHistoryLimit,
+  clampRbacHistoryOffset,
 } = require("./functionalRbacManagement");
 const {
   resolveEffectivePermissionSet,
@@ -51,6 +57,7 @@ async function writeRbacAudit(tx, principal, auditMeta, entry) {
   if (typeof tx.recordAudit !== "function") {
     throw createFunctionalRbacError(500, "Audit indisponible dans la transaction.", FUNCTIONAL_RBAC_ERROR.FORBIDDEN);
   }
+  const actor = rbacAuditActor(principal);
   await tx.recordAudit(
     {
       schoolCode: entry.schoolCode || principal?.schoolCode,
@@ -58,13 +65,35 @@ async function writeRbacAudit(tx, principal, auditMeta, entry) {
       action: entry.action,
       entityType: entry.entityType,
       entityId: String(entry.entityId ?? ""),
-      oldValue: entry.oldValue,
-      newValue: entry.newValue,
+      oldValue: sanitizeRbacAuditValue(entry.oldValue == null ? null : { ...actor, ...entry.oldValue }),
+      newValue: sanitizeRbacAuditValue(entry.newValue == null ? null : { ...actor, ...entry.newValue }),
       ipAddress: auditMeta?.ipAddress,
       userAgent: auditMeta?.userAgent,
     },
     tx,
   );
+}
+
+function crudSnapshot(row) {
+  return {
+    canCreate: Boolean(row?.canCreate),
+    canRead: Boolean(row?.canRead),
+    canUpdate: Boolean(row?.canUpdate),
+    canDelete: Boolean(row?.canDelete),
+  };
+}
+
+function permissionAuditScope(scope, extra = {}) {
+  return {
+    roleKey: extra.roleKey || null,
+    moduleKey: extra.moduleKey || null,
+    scopeType: scope?.scopeType || null,
+    countryId: scope?.countryId || null,
+    schoolId: scope?.schoolId || null,
+    countryCode: scope?.countryCode || null,
+    schoolCode: scope?.schoolCode || null,
+    source: extra.source || scope?.scopeType || null,
+  };
 }
 
 function actorId(principal) {
@@ -479,21 +508,6 @@ function sanitizeGrantPatch(rawGrant) {
   };
 }
 
-function diffGrant(before, after) {
-  const events = [];
-  for (const action of ["canCreate", "canRead", "canUpdate", "canDelete"]) {
-    const was = Boolean(before?.[action]);
-    const next = Boolean(after[action]);
-    if (was === next) continue;
-    events.push({
-      action: next ? "ROLE_PERMISSION_GRANTED" : "ROLE_PERMISSION_REVOKED",
-      field: action,
-      moduleKey: after.moduleKey,
-    });
-  }
-  return events;
-}
-
 async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta) {
   assertSuperAdmin(principal);
   const payload = rawPayload ?? {};
@@ -549,7 +563,6 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
       const grantIndex = indexGrants(roleGrants);
       const saved = [];
       const written = [];
-      const auditEvents = [];
       for (const grant of grants) {
         const beforeRow = beforeByModule[grant.moduleKey] || null;
         if (!beforeRow) {
@@ -586,28 +599,32 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
         });
         saved.push(after);
         written.push(after);
-        for (const event of diffGrant(beforeRow || emptyCrud(), grant)) {
-          auditEvents.push(event);
-        }
       }
 
       if (written.length) {
-        await writeRbacAudit(scopeRepo, principal, auditMeta, {
-          action: "ROLE_PERMISSION_MATRIX_UPDATED",
-          entityType: "role_module_permissions",
-          entityId: `${roleKey}:${scope.scopeType}:${scope.schoolCode || scope.countryCode || "global"}`,
-          schoolCode: scope.schoolCode,
-          oldValue: { grants: beforeRows, scope },
-          newValue: { grants: written, scope },
-        });
-        for (const event of auditEvents) {
+        for (const after of written) {
+          const beforeRow = beforeByModule[after.moduleKey] || null;
           await writeRbacAudit(scopeRepo, principal, auditMeta, {
-            action: event.action,
+            action: RBAC_AUDIT_ACTIONS.PERMISSION_OVERRIDE_CREATE_OR_UPDATE,
             entityType: "role_module_permissions",
-            entityId: `${roleKey}:${event.moduleKey}`,
+            entityId: `${roleKey}:${after.moduleKey}:${scope.scopeType}:${scope.schoolCode || scope.countryCode || "global"}`,
             schoolCode: scope.schoolCode,
-            oldValue: { moduleKey: event.moduleKey, field: event.field },
-            newValue: { moduleKey: event.moduleKey, field: event.field, after: grants.find((g) => g.moduleKey === event.moduleKey) },
+            oldValue: {
+              ...permissionAuditScope(scope, {
+                roleKey,
+                moduleKey: after.moduleKey,
+                source: beforeRow ? scope.scopeType : "none",
+              }),
+              crud: crudSnapshot(beforeRow || emptyCrud()),
+            },
+            newValue: {
+              ...permissionAuditScope(scope, {
+                roleKey,
+                moduleKey: after.moduleKey,
+                source: scope.scopeType,
+              }),
+              crud: crudSnapshot(after),
+            },
           });
         }
       }
@@ -690,13 +707,34 @@ async function resetConfiguredPermissionOverrides(repo, rawPayload, principal, a
           updatedBy: actorId(principal),
           updatedAt: nextMonotonicUpdatedAt(currentUpdatedAt),
         });
+        const remaining = await scopedStore.listGrantsForRoles([roleKey]);
+        const inheritedGrant = pickGrant(indexGrants(remaining), roleKey, moduleKey, {
+          schoolId: scope.schoolId,
+          countryId: scope.countryId,
+        });
+        const inheritedFlags = overlayMandatoryFlags(
+          roleKey,
+          moduleKey,
+          crudFromRow(inheritedGrant) || emptyCrud(),
+        );
         await writeRbacAudit(scopeRepo, principal, auditMeta, {
-          action: "ROLE_PERMISSION_OVERRIDE_RESET",
+          action: RBAC_AUDIT_ACTIONS.PERMISSION_OVERRIDE_RESET,
           entityType: "role_module_permissions",
           entityId: `${roleKey}:${moduleKey}:${scope.schoolCode}`,
           schoolCode: scope.schoolCode,
-          oldValue: { grant: target, scope },
-          newValue: { grant: null, scope, moduleKey },
+          oldValue: {
+            ...permissionAuditScope(scope, { roleKey, moduleKey, source: "school" }),
+            crud: crudSnapshot(target),
+          },
+          newValue: {
+            ...permissionAuditScope(scope, {
+              roleKey,
+              moduleKey,
+              source: grantSource(inheritedGrant),
+            }),
+            crud: crudSnapshot(inheritedFlags),
+            inherited: true,
+          },
         });
       }
 
@@ -850,6 +888,92 @@ function getModuleOrThrow(moduleKey) {
   return module;
 }
 
+function parseAuditJson(value) {
+  if (value == null) return null;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function formatAuditCrud(crud) {
+  if (!crud || typeof crud !== "object") return "";
+  const flags = [
+    crud.canCreate ? "C" : "-",
+    crud.canRead ? "R" : "-",
+    crud.canUpdate ? "U" : "-",
+    crud.canDelete ? "D" : "-",
+  ].join("");
+  return flags === "----" ? "aucun" : flags;
+}
+
+function formatAuditScope(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  if (payload.schoolCode) return `école ${payload.schoolCode}`;
+  if (payload.countryCode) return `pays ${payload.countryCode}`;
+  if (payload.scopeType === "school") return "établissement";
+  if (payload.scopeType === "country") return "pays";
+  if (payload.scopeType === "global") return "global";
+  return payload.scope || payload.source || "";
+}
+
+function summarizeAuditSide(payload) {
+  if (!payload || typeof payload !== "object") return "—";
+  if (payload.crud) {
+    const source = payload.source && payload.source !== "none" ? ` (${payload.source})` : "";
+    return `${formatAuditCrud(payload.crud)}${source}`;
+  }
+  if (payload.status === "archived") return `archivé (${payload.roleName || payload.roleKey || ""})`.trim();
+  if (payload.roleName) return payload.roleName;
+  return "—";
+}
+
+function mapRbacHistoryItem(row) {
+  const oldValue = sanitizeRbacAuditValue(parseAuditJson(row.oldValue ?? row.old_value));
+  const newValue = sanitizeRbacAuditValue(parseAuditJson(row.newValue ?? row.new_value));
+  const payload = newValue || oldValue || {};
+  const before = summarizeAuditSide(oldValue);
+  const after = summarizeAuditSide(newValue);
+  return {
+    id: row.id,
+    createdAt: row.createdAt || row.created_at || null,
+    actor: payload.actor || oldValue?.actor || row.actor || row.userCode || row.user_code || "system",
+    action: row.action,
+    role: payload.roleName || payload.roleKey || oldValue?.roleName || oldValue?.roleKey || "",
+    roleKey: payload.roleKey || oldValue?.roleKey || null,
+    moduleKey: payload.moduleKey || oldValue?.moduleKey || null,
+    scope: formatAuditScope(payload) || formatAuditScope(oldValue),
+    before,
+    after,
+    summary: `${before} → ${after}`,
+  };
+}
+
+async function listRbacAuditHistory(repo, query, principal) {
+  assertSuperAdmin(principal);
+  if (typeof repo.getAuditLogs !== "function") {
+    throw createFunctionalRbacError(500, "Journal d'audit indisponible.", FUNCTIONAL_RBAC_ERROR.FORBIDDEN);
+  }
+  const limit = clampRbacHistoryLimit(query?.limit);
+  const offset = clampRbacHistoryOffset(query?.offset);
+  const rows = await repo.getAuditLogs({
+    actions: [...RBAC_HISTORY_ACTIONS],
+    limit: limit + 1,
+    offset,
+  });
+  const list = Array.isArray(rows) ? rows : [];
+  const hasMore = list.length > limit;
+  return {
+    items: list.slice(0, limit).map(mapRbacHistoryItem),
+    limit,
+    offset,
+    hasMore,
+  };
+}
+
 module.exports = {
   rbacStore,
   functionalRbacAuditMetaFromRequest,
@@ -859,6 +983,7 @@ module.exports = {
   getEffectivePermissionsConfigured,
   patchConfiguredPermissions,
   resetConfiguredPermissionOverrides,
+  listRbacAuditHistory,
   resolveEffectivePermissionsForPrincipal,
   archiveRbacRole,
   throwLegacyRolePermissionsWrite,

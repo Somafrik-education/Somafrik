@@ -3145,6 +3145,12 @@ app.post("/api/backoffice/rbac/roles/:roleId/archive", requireAuth, requirePermi
   res.json(archived);
 }));
 
+app.get("/api/backoffice/rbac/history", requireAuth, requirePermission("GET /api/backoffice/rbac/history"), asyncHandler(async (req, res) => {
+  const { listRbacAuditHistory } = require("./lib/functionalRbacService");
+  const history = await listRbacAuditHistory(repository, req.query ?? {}, req.principal);
+  res.json(history);
+}));
+
 app.get("/api/backoffice/dashboard-chart-config", requireAuth, requirePermission("GET /api/backoffice/dashboard-chart-config"), asyncHandler(async (req, res) => {
   const platform = await repository.listPlatformProjection();
   res.json(sanitizeDashboardChartConfig(platform.dashboardChartConfig));

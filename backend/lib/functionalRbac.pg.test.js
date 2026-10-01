@@ -239,7 +239,7 @@ async function main() {
     );
 
     const auditsBefore = await pool.query(
-      `SELECT COUNT(*)::int AS c FROM audit_logs WHERE action = 'ROLE_PERMISSION_MATRIX_UPDATED'`,
+      `SELECT COUNT(*)::int AS c FROM audit_logs WHERE action = 'PERMISSION_OVERRIDE_CREATE_OR_UPDATE'`,
     );
     const failRepo = createRepo(pool, { failAudit: true });
     failRepo.getFunctionalRbacStore = () => createFunctionalRbacPgStore(failRepo);
@@ -273,7 +273,7 @@ async function main() {
     const studentGrant = grantsAfterFail.find((row) => row.moduleKey === "students");
     assert.equal(studentGrant.canCreate, false, "rollback si audit échoue");
     const auditsAfter = await pool.query(
-      `SELECT COUNT(*)::int AS c FROM audit_logs WHERE action = 'ROLE_PERMISSION_MATRIX_UPDATED'`,
+      `SELECT COUNT(*)::int AS c FROM audit_logs WHERE action = 'PERMISSION_OVERRIDE_CREATE_OR_UPDATE'`,
     );
     assert.equal(auditsAfter.rows[0].c, auditsBefore.rows[0].c);
 
