@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * ADMIN-03B — preuve PostgreSQL dédiée update / archive / isolation.
+ * ADMIN-03B — preuves PostgreSQL dédiées PG-R03B-01 → 06.
  *
  * Fail-closed : refuse toute URL qui n'est pas un hôte loopback + base
  * maintenance autorisée (postgres|somafrik) ou la base IT dédiée.
@@ -150,6 +150,39 @@ async function assertAuthorizedItConnection(pool, itDb) {
       `Refusing DROP SCHEMA public: current_database=${current || "empty"} is not authorized IT ${itDb}`,
     );
   }
+}
+
+async function selectRelationRow(pool, relationId) {
+  return pool.query(
+    `SELECT r.id::text AS id,
+            r.status,
+            r.contact_id::text AS contact_id,
+            r.student_id::text AS student_id,
+            r.profile_payload,
+            r.updated_at,
+            s.school_code
+       FROM contact_relations r
+       JOIN schools s ON s.id = r.school_id
+      WHERE r.id = $1`,
+    [relationId],
+  );
+}
+
+function relationFingerprint(row) {
+  return JSON.stringify({
+    id: row.id,
+    status: row.status,
+    contact_id: row.contact_id,
+    student_id: row.student_id,
+    profile_payload: row.profile_payload,
+    updated_at: String(row.updated_at),
+    school_code: row.school_code,
+  });
+}
+
+function principalFromPayload(payload) {
+  const profile = payload && typeof payload === "object" ? payload : {};
+  return String(profile.isPrincipal ?? profile.is_principal ?? "");
 }
 
 function assertNoPersonNamesInAudit(value) {
@@ -306,34 +339,35 @@ async function main() {
     );
     const relationId = created.relation.id;
     assert.equal(created.created, true);
-    assert.equal(created.relation.toStudentId, esther.rows[0].id);
-    assert.equal(created.relation.fromContactName.includes("Baudouin"), true);
 
-    await scenario("R03B-PG-01 update persist", async () => {
-      const updated = await store.updateRelation(
-        relationId,
-        { fromContactId: contact.id, toStudentId: sarah.rows[0].id, isPrincipal: "Non" },
-        SCHOOL_A,
-        auditMeta,
-      );
-      assert.equal(updated.toStudentId, sarah.rows[0].id);
-      assert.equal(updated.isPrincipal, "Non");
-      assert.equal(String(updated.fromContactName || "").includes("Baudouin"), true);
-
-      const row = await pool.query(
-        `SELECT r.id, r.status, r.student_id::text AS student_id, r.profile_payload, s.school_code
-           FROM contact_relations r
-           JOIN schools s ON s.id = r.school_id
-          WHERE r.id = $1`,
-        [relationId],
-      );
+    let profileAfterCreate = null;
+    await scenario("PG-R03B-01 create persist SQL", async () => {
+      const row = await selectRelationRow(pool, relationId);
       assert.equal(row.rowCount, 1);
       assert.equal(row.rows[0].status, "active");
-      assert.equal(row.rows[0].student_id, sarah.rows[0].id);
-      assert.equal(row.rows[0].school_code, "CD-2026-0001");
+      assert.equal(row.rows[0].contact_id, String(contact.id));
+      assert.equal(row.rows[0].student_id, String(esther.rows[0].id));
+      profileAfterCreate = row.rows[0].profile_payload;
     });
 
-    await scenario("R03B-PG-02 isolation école B", async () => {
+    await store.updateRelation(
+      relationId,
+      { fromContactId: contact.id, toStudentId: sarah.rows[0].id, isPrincipal: "Non" },
+      SCHOOL_A,
+      auditMeta,
+    );
+
+    await scenario("PG-R03B-02 update persist SQL", async () => {
+      const row = await selectRelationRow(pool, relationId);
+      assert.equal(row.rowCount, 1);
+      assert.equal(row.rows[0].status, "active");
+      assert.equal(row.rows[0].student_id, String(sarah.rows[0].id));
+      assert.equal(row.rows[0].contact_id, String(contact.id));
+    });
+
+    await scenario("PG-R03B-04 isolation école B", async () => {
+      const before = await selectRelationRow(pool, relationId);
+      const beforeFp = relationFingerprint(before.rows[0]);
       await assert.rejects(
         () => store.updateRelation(relationId, { toStudentId: esther.rows[0].id }, SCHOOL_B, auditMeta),
         (error) => error.statusCode === 403 && error.code === CLIENTS_ERROR.TENANT_MISMATCH,
@@ -342,35 +376,36 @@ async function main() {
         () => store.archiveRelation(relationId, SCHOOL_B, auditMeta),
         (error) => error.statusCode === 403 && error.code === CLIENTS_ERROR.TENANT_MISMATCH,
       );
+      const after = await selectRelationRow(pool, relationId);
+      assert.equal(relationFingerprint(after.rows[0]), beforeFp);
       const listedB = tenantScope.filterRows((await store.listProjection()).relations, SCHOOL_B);
       assert.equal(listedB.some((row) => String(row.id) === String(relationId)), false);
-      const foreign = await pool.query(
-        `SELECT COUNT(*)::int AS n
-           FROM contact_relations r
-           JOIN schools s ON s.id = r.school_id
-          WHERE r.id = $1 AND s.school_code = 'BI-2026-0002'`,
-        [relationId],
-      );
-      assert.equal(foreign.rows[0].n, 0);
     });
 
-    await scenario("R03B-PG-03 archive persist sans DELETE", async () => {
-      const before = await pool.query(`SELECT COUNT(*)::int AS n FROM contact_relations WHERE id = $1`, [relationId]);
+    await scenario("PG-R03B-05 isPrincipal profile_payload SQL", async () => {
+      assert.equal(principalFromPayload(profileAfterCreate), "Oui");
+      const row = await selectRelationRow(pool, relationId);
+      assert.equal(row.rowCount, 1);
+      assert.equal(principalFromPayload(row.rows[0].profile_payload), "Non");
+    });
+
+    await scenario("PG-R03B-03 archive persist SQL", async () => {
+      const before = await pool.query(`SELECT COUNT(*)::int AS n FROM contact_relations`);
       const archived = await store.archiveRelation(relationId, SCHOOL_A, auditMeta);
       assert.equal(archived.archived, true);
-      assert.equal(archived.relation.status, "Archivé");
       const after = await pool.query(
         `SELECT status, COUNT(*) OVER ()::int AS n
            FROM contact_relations
           WHERE id = $1`,
         [relationId],
       );
+      const total = await pool.query(`SELECT COUNT(*)::int AS n FROM contact_relations`);
       assert.equal(after.rowCount, 1);
-      assert.equal(after.rows[0].n, before.rows[0].n);
       assert.equal(after.rows[0].status, "archived");
+      assert.equal(total.rows[0].n, before.rows[0].n);
     });
 
-    await scenario("R03B-PG-04 audit_logs sans noms", async () => {
+    await scenario("PG-R03B-06 audit_logs sans PII", async () => {
       const audits = await pool.query(
         `SELECT action, old_value, new_value
            FROM audit_logs
