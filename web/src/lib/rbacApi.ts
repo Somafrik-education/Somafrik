@@ -39,6 +39,8 @@ export type RbacActionLock = {
   reason: "role_invariant" | "dependency" | null;
 };
 
+export type RbacGrantSource = "school" | "country" | "global" | "none";
+
 export type RbacModule = {
   moduleKey: string;
   moduleName: string;
@@ -50,6 +52,8 @@ export type RbacModule = {
   canUpdate?: boolean;
   canDelete?: boolean;
   configured?: boolean;
+  source?: RbacGrantSource;
+  inherited?: boolean;
   actions?: RbacAction[];
   dependencies?: Record<string, RbacAction[]>;
   mandatory?: Partial<RbacActionFlags>;
@@ -82,6 +86,14 @@ export type RbacPatchPermissionsPayload = {
   grants: RbacCrudGrant[];
 };
 
+export type RbacResetOverridePayload = {
+  roleKey: string;
+  countryCode?: string;
+  schoolCode?: string;
+  moduleKey: string;
+  expectedUpdatedAt?: string | null;
+};
+
 export type RbacConfiguredQuery = {
   roleKey: string;
   countryCode?: string;
@@ -99,6 +111,8 @@ export const rbacApi = {
   },
   patchPermissions: (payload: RbacPatchPermissionsPayload) =>
     api.patch<RbacConfiguredMatrix>("/backoffice/rbac/permissions", payload),
+  resetOverride: (payload: RbacResetOverridePayload) =>
+    api.post<RbacConfiguredMatrix>("/backoffice/rbac/permissions/reset", payload),
   createRole: (payload: Record<string, unknown>) => api.post<RbacRole>("/backoffice/rbac/roles", payload),
   updateRole: (roleId: string, payload: Record<string, unknown>) =>
     api.patch<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}`, payload),

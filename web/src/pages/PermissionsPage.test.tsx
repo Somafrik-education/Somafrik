@@ -6,9 +6,10 @@ import type {
   RbacConfiguredQuery,
   RbacCrudGrant,
   RbacPatchPermissionsPayload,
+  RbacResetOverridePayload,
 } from "../lib/rbacApi";
 
-const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
+const { catalog, patchMock, getConfiguredMock, resetMock } = vi.hoisted(() => {
   const catalog: RbacCatalog = {
     modules: [
       {
@@ -93,10 +94,13 @@ const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
           moduleName: "Élèves",
           appliesWeb: true,
           appliesMobile: true,
-          canCreate: false,
-          canRead: true,
-          canUpdate: true,
-          canDelete: true,
+            canCreate: false,
+            canRead: true,
+            canUpdate: true,
+            canDelete: true,
+            configured: false,
+            source: "global",
+            inherited: true,
         },
       ],
     };
@@ -105,7 +109,28 @@ const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
     void payload;
     return { updatedAt: "2026-08-16T11:00:00.000Z" };
   });
-  return { catalog, patchMock, getConfiguredMock };
+  const resetMock = vi.fn(async (_payload: RbacResetOverridePayload) => ({
+    roleKey: "PREFET_ETUDES",
+    roleName: "Préfet des études",
+    scopeType: "school" as const,
+    updatedAt: null,
+    modules: [
+      {
+        moduleKey: "students",
+        moduleName: "Élèves",
+        appliesWeb: true,
+        appliesMobile: true,
+        canCreate: false,
+        canRead: true,
+        canUpdate: true,
+        canDelete: true,
+        configured: false,
+        source: "global" as const,
+        inherited: true,
+      },
+    ],
+  }));
+  return { catalog, patchMock, getConfiguredMock, resetMock };
 });
 
 vi.mock("../lib/rbacApi", () => ({
@@ -113,6 +138,7 @@ vi.mock("../lib/rbacApi", () => ({
     getCatalog: vi.fn(async (): Promise<RbacCatalog> => catalog),
     getConfigured: (query: RbacConfiguredQuery) => getConfiguredMock(query),
     patchPermissions: (payload: RbacPatchPermissionsPayload) => patchMock(payload),
+    resetOverride: (payload: RbacResetOverridePayload) => resetMock(payload),
     createRole: vi.fn(),
     updateRole: vi.fn(),
     archiveRole: vi.fn(),
@@ -191,6 +217,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   beforeEach(() => {
     patchMock.mockClear();
     getConfiguredMock.mockClear();
+    resetMock.mockClear();
   });
 
   it("enregistre uniquement le delta CRUD du module sélectionné", async () => {
@@ -236,5 +263,53 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
       expect(box).toBeChecked();
       expect(box).toBeDisabled();
     }
+  });
+
+  it("hydrate l'héritage global et n'enregistre pas sans modification", async () => {
+    await selectPath("PREFET_ETUDES", "students");
+    expect(await screen.findByLabelText("Élèves Lecture")).toBeChecked();
+    expect(screen.getByLabelText("Élèves Modification")).toBeChecked();
+    expect(screen.getByLabelText("Élèves Suppression")).toBeChecked();
+    expect(screen.getByLabelText("Élèves Création")).not.toBeChecked();
+    expect(screen.getByText(/Hérité du catalogue global/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Réinitialiser à l'héritage" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    expect(patchMock).not.toHaveBeenCalled();
+  });
+
+  it("Réinitialiser à l'héritage appelle resetOverride", async () => {
+    getConfiguredMock.mockImplementationOnce(async () => ({
+      roleKey: "PREFET_ETUDES",
+      roleName: "Préfet des études",
+      scopeType: "school",
+      updatedAt: "2026-08-16T10:00:00.000Z",
+      modules: [
+        {
+          moduleKey: "students",
+          moduleName: "Élèves",
+          appliesWeb: true,
+          appliesMobile: true,
+          canCreate: false,
+          canRead: true,
+          canUpdate: false,
+          canDelete: false,
+          configured: true,
+          source: "school",
+          inherited: false,
+        },
+      ],
+    }));
+    await selectPath("PREFET_ETUDES", "students");
+    fireEvent.click(await screen.findByRole("button", { name: "Réinitialiser à l'héritage" }));
+    await waitFor(() => expect(resetMock).toHaveBeenCalled());
+    expect(resetMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        moduleKey: "students",
+      }),
+    );
+    await waitFor(() => expect(screen.getByText(/Hérité du catalogue global/)).toBeInTheDocument());
   });
 });

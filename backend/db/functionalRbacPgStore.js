@@ -182,6 +182,28 @@ function createFunctionalRbacPgStore(repo) {
     return mapGrantRow(row);
   }
 
+  async function archiveGrant(input) {
+    const actor = asTrimmed(input.updatedBy) || null;
+    const writeAt = input.updatedAt ? new Date(input.updatedAt).toISOString() : null;
+    const row = await one(
+      `UPDATE role_module_permissions
+       SET status = 'archived',
+           updated_by = $2,
+           version = version + 1,
+           updated_at = COALESCE(
+             $3::timestamptz,
+             GREATEST(
+               date_trunc('milliseconds', clock_timestamp()),
+               date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond'
+             )
+           )
+       WHERE id = $1 AND status = 'active'
+       RETURNING *`,
+      [input.id, actor, writeAt],
+    );
+    return mapGrantRow(row);
+  }
+
   async function resolveCountryAndSchool({ countryCode, schoolCode, countryId, schoolId }) {
     let country = null;
     let school = null;
@@ -279,6 +301,7 @@ function createFunctionalRbacPgStore(repo) {
     unlockFunctionalRbacScope,
     countActiveGrants,
     upsertGrant,
+    archiveGrant,
     resolveCountryAndSchool,
     listRolesWithUsage,
     markSystemProtected,

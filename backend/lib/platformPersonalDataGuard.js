@@ -260,6 +260,7 @@ const PLATFORM_ADMIN_ALLOWED = Object.freeze([
   "GET /api/backoffice/rbac/permissions",
   "GET /api/backoffice/rbac/permissions/effective",
   "PATCH /api/backoffice/rbac/permissions",
+  "POST /api/backoffice/rbac/permissions/reset",
   "POST /api/backoffice/rbac/roles",
   "PATCH /api/backoffice/rbac/roles/:roleId",
   "POST /api/backoffice/rbac/roles/:roleId/archive",

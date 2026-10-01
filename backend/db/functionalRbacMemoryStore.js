@@ -126,6 +126,20 @@ function createFunctionalRbacMemoryStore(seed = {}) {
       grants.push(row);
       return mapGrantRow(row);
     },
+    async archiveGrant(input) {
+      const actor = asTrimmed(input.updatedBy) || null;
+      const index = grants.findIndex((row) => row.id === input.id && row.status === "active");
+      if (index < 0) return null;
+      const now = input.updatedAt ? new Date(input.updatedAt).toISOString() : nextMonotonicUpdatedAt(grants[index].updated_at);
+      grants[index] = {
+        ...grants[index],
+        status: "archived",
+        version: Number(grants[index].version ?? 1) + 1,
+        updated_by: actor,
+        updated_at: now,
+      };
+      return mapGrantRow(grants[index]);
+    },
     async resolveCountryAndSchool({ countryCode, schoolCode, countryId, schoolId }) {
       const resolve = seed.resolveCountryAndSchool;
       if (typeof resolve === "function") {
