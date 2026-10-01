@@ -65,7 +65,7 @@ const { catalog, patchMock, getConfiguredMock, getEffectiveMock } = vi.hoisted((
     ],
   });
   const getConfiguredMock = vi.fn(async (query: RbacConfiguredQuery) => emptySchoolMatrix(query));
-  const getEffectiveMock = vi.fn(async () => ({
+  const getEffectiveMock = vi.fn(async (_query: RbacConfiguredQuery) => ({
     roleKey: "PRINCIPAL",
     modules: [
       {
