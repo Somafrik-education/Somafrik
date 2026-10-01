@@ -370,6 +370,22 @@ function mapRelationRow(row) {
   };
 }
 
+/** Projection audit_logs : identifiants + statut, jamais les noms de personnes. */
+function mapRelationAuditValue(row) {
+  if (!row) return null;
+  const profile = parsePayload(row.profile_payload);
+  const principalFlag = normalizeRelationPrincipalFlag(profile.isPrincipal ?? profile.is_principal);
+  return {
+    id: row.id,
+    relationType: row.relation_type === "parent_student" ? "Parent → Élève" : (row.relation_type ?? row.relationType),
+    fromContactId: row.contact_id ?? row.fromContactId,
+    toStudentId: row.student_id ?? row.toStudentId,
+    schoolCode: row.school_code ?? row.schoolCode,
+    status: fromDbStatus(row.status),
+    isPrincipal: principalFlag || "Non",
+  };
+}
+
 function mapMessageRow(row) {
   const profile = parsePayload(row.profile_payload);
   const statusMap = {
@@ -482,6 +498,7 @@ module.exports = {
   mapContactRow,
   normalizeRelationPrincipalFlag,
   mapRelationRow,
+  mapRelationAuditValue,
   mapMessageRow,
   mapAnnouncementRow,
 };

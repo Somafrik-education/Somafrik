@@ -22,6 +22,7 @@ const {
   mapUserRow,
   mapContactRow,
   mapRelationRow,
+  mapRelationAuditValue,
   normalizeRelationPrincipalFlag,
   mapMessageRow,
   mapAnnouncementRow,
@@ -730,7 +731,7 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
             action: "create_relation",
             entityType: "relation",
             entityId: relation.id,
-            newValue: mapRelationRow(relation),
+            newValue: mapRelationAuditValue(relation),
           });
         }
       }
@@ -976,7 +977,7 @@ async function createRelation(store, rawPayload, principal, auditMeta) {
         action: "create_relation",
         entityType: "relation",
         entityId: saved.id,
-        newValue: mapRelationRow(saved),
+        newValue: mapRelationAuditValue(saved),
       });
     }
     return { created, relation: mapRelationRow(saved) };
@@ -1097,8 +1098,8 @@ async function updateRelation(store, relationId, rawPayload, principal, auditMet
       action: "update_relation",
       entityType: "relation",
       entityId: saved.id,
-      oldValue: mapRelationRow(existing),
-      newValue: mapRelationRow(saved),
+      oldValue: mapRelationAuditValue(existing),
+      newValue: mapRelationAuditValue(saved),
     });
     return mapRelationRow(saved);
   });

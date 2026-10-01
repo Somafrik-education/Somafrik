@@ -15,7 +15,10 @@ const ADMINISTRATION_TABS: (TabItem & { view: string })[] = [
 /** Module Administration : en-tête + onglets, contenu via <Outlet />. */
 export function AdministrationLayout() {
   const ctx = usePermissionContext();
-  const tabs = ADMINISTRATION_TABS.filter((tab) => canReadView(ctx, tab.view));
+  // ADMIN-03B : masquer uniquement Relations. Documents / Conformité / Users / Permissions restent visibles.
+  const tabs = ADMINISTRATION_TABS.filter(
+    (tab) => tab.to !== "/administration/relations" || canReadView(ctx, "relations"),
+  );
 
   return (
     <div className="space-y-5">

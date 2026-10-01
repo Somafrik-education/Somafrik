@@ -75,10 +75,16 @@ describe("ADMIN-03B Relations — Option A UI", () => {
     expect(canArchiveParentRelation(ctx(schoolAdmin()))).toBe(true);
   });
 
-  it("AdministrationLayout filtre Relations par canReadView", () => {
+  it("AdministrationLayout masque uniquement Relations via canReadView", () => {
     const layout = readFileSync(join(ROOT, "../pages/administration/AdministrationLayout.tsx"), "utf8");
-    expect(layout).toContain("canReadView(ctx, tab.view)");
+    expect(layout).toContain('tab.to !== "/administration/relations"');
+    expect(layout).toContain('canReadView(ctx, "relations")');
+    expect(layout).not.toContain("canReadView(ctx, tab.view)");
     expect(layout).toContain('view: "relations"');
+    expect(layout).toContain('to: "/administration/documents"');
+    expect(layout).toContain('to: "/administration/conformite"');
+    expect(layout).toContain('to: "/administration/utilisateurs"');
+    expect(layout).toContain('to: "/administration/permissions"');
   });
 
   it("EntityPage persist update/archive et plus de delete local Relations", () => {

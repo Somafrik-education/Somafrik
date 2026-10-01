@@ -129,6 +129,9 @@ async function createSchoolARelation(store) {
   return { contact, relation: created.relation };
 }
 
+const PERSON_NAME_KEYS = new Set(["fromContactName", "toStudentName", "contact_name", "student_name"]);
+const PERSON_NAME_VALUES = ["Baudouin", "Esther", "Sarah", "OKITO"];
+
 function assertNoPiiSecrets(value) {
   const forbidden = ["password", "pin", "secret", "token", "authorization", "jwt"];
   const walk = (node) => {
@@ -136,6 +139,9 @@ function assertNoPiiSecrets(value) {
     if (typeof node === "string") {
       assert.equal(forbidden.includes(node.toLowerCase()), false, node);
       assert.equal(node.includes("hunter2"), false);
+      for (const name of PERSON_NAME_VALUES) {
+        assert.equal(node.includes(name), false, `audit leaked person name ${name}: ${node}`);
+      }
     }
     if (Array.isArray(node)) {
       for (const item of node) walk(item);
@@ -145,6 +151,7 @@ function assertNoPiiSecrets(value) {
       for (const [key, nested] of Object.entries(node)) {
         assert.equal(forbidden.includes(key.toLowerCase()), false, key);
         assert.equal(["phone", "email", "address"].includes(key), false, key);
+        assert.equal(PERSON_NAME_KEYS.has(key), false, key);
         walk(nested);
       }
     }
@@ -305,7 +312,21 @@ test("R03B-15 aucun payload PII inutile dans l'audit", async () => {
   for (const entry of audits) {
     assertNoPiiSecrets(entry.oldValue);
     assertNoPiiSecrets(entry.newValue);
+    if (entry.newValue) {
+      assert.equal(Object.hasOwn(entry.newValue, "fromContactName"), false);
+      assert.equal(Object.hasOwn(entry.newValue, "toStudentName"), false);
+      assert.ok(entry.newValue.fromContactId);
+      assert.ok(entry.newValue.toStudentId);
+    }
   }
+  const serviceSrc = readUtf8("./clientsService.js");
+  assert.match(serviceSrc, /oldValue:\s*mapRelationAuditValue\(existing\)/);
+  assert.match(serviceSrc, /newValue:\s*mapRelationAuditValue\(saved\)/);
+  assert.doesNotMatch(serviceSrc, /oldValue:\s*mapRelationRow\(/);
+  assert.doesNotMatch(serviceSrc, /newValue:\s*mapRelationRow\(/);
+  const archiveSrc = readUtf8("./parentLinking.js");
+  assert.match(archiveSrc, /oldValue:\s*mapRelationAuditValue\(existing\)/);
+  assert.match(archiveSrc, /newValue:\s*mapRelationAuditValue\(saved\)/);
 });
 
 test("ADMIN-03B PATCH status=archived est refusé (archive dédiée)", async () => {
