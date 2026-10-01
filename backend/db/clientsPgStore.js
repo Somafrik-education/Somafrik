@@ -18,12 +18,19 @@ const USER_SCHOOL_SELECT = `s.school_code, s.login_code AS school_login_code, s.
 
 async function loadRoleDisplayIndex(queryable) {
   const { indexRoleDisplayContracts } = require("../lib/roleDisplayLabels");
-  try {
-    const rows = await queryable.all(`SELECT role_code, role_name, display_label FROM establishment_roles`);
-    return indexRoleDisplayContracts(rows);
-  } catch {
-    return new Map();
-  }
+  const all = (...args) => queryable.all(...args);
+  const probe = await all(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'establishment_roles'
+         AND column_name = 'display_label'
+     ) AS available`,
+  );
+  if (!probe?.[0]?.available) return new Map();
+  const rows = await all(`SELECT role_code, role_name, display_label FROM establishment_roles`);
+  return indexRoleDisplayContracts(rows);
 }
 
 function attachDisplayLabelToUserRow(row, index) {
