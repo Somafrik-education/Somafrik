@@ -133,8 +133,8 @@ const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHis
       ],
     };
   });
-  const updateRoleMock = vi.fn(async () => catalog.roles[0]);
-  const getHistoryMock = vi.fn(async () => ({
+  const updateRoleMock = vi.fn(async (_roleId: string, _payload: Record<string, unknown>) => catalog.roles[0]);
+  const getHistoryMock = vi.fn(async (_query?: { limit?: number; offset?: number }) => ({
     items: [
       {
         id: "aud-1",
