@@ -10,7 +10,10 @@ import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
 import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";
 import { useMessagesUnreadCount } from "../../lib/messagesRead";
 import { canReadView, hasBackOfficePermission } from "../../lib/permissions";
-import { isPlatformCommunicationUser } from "../../lib/establishmentCommunication";
+import {
+  hasWebInternalNotificationScope,
+  resolveWebNotificationsHref,
+} from "../../lib/webSchoolDomainDeny";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { domainsForPath } from "../../lib/routeDomainMap";
 import { Button } from "../ui/Button";
@@ -59,7 +62,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
   const [preferencesOpen, setPreferencesOpen] = useState(false);
 
   const canReadNotifications = canReadView(ctx, "notifications");
-  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const hasInternalNotificationScope = hasWebInternalNotificationScope(user, activeSchoolCode);
   const canPollC4Unread = hasBackOfficePermission(ctx, "Notifications", "READ") && hasInternalNotificationScope;
   const internalUnreadCount = useInternalNotificationsUnreadCount(
     canPollC4Unread,
@@ -70,17 +73,14 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
     : canReadNotifications
       ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length
       : 0;
-  const notificationsHref = hasInternalNotificationScope
-    ? "/notifications"
-    : isPlatformCommunicationUser(ctx)
-      ? "/notifications-plateforme"
-      : "/notifications";
+  // Superadmin / Admin Pays : toujours /notifications-plateforme, jamais Inbox C4.
+  const notificationsHref = resolveWebNotificationsHref(user);
 
   const canReadMessages = canReadView(ctx, "messages");
-  const unreadMessages = useMessagesUnreadCount(canReadMessages, activeSchoolCode);
+  const unreadMessages = useMessagesUnreadCount(canReadMessages, activeSchoolCode, user);
 
   const canReadAnnouncements = canReadView(ctx, "announcements");
-  const unreadAnnouncements = useAnnouncementsUnreadCount(canReadAnnouncements, activeSchoolCode);
+  const unreadAnnouncements = useAnnouncementsUnreadCount(canReadAnnouncements, activeSchoolCode, user);
   const canOpenPersonalPreferences = Boolean(user?.schoolCode && user.schoolCode !== "*");
 
   return (

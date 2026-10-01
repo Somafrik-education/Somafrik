@@ -13,9 +13,13 @@ export function notifyMessagesUnreadChanged(): void {
  * Badge Messages : compteur PostgreSQL (GET unread-count).
  * Aucun snapshot BackOffice / DataContext comme source de vérité.
  */
-export function useMessagesUnreadCount(enabled: boolean, schoolCode?: string | null): number {
+export function useMessagesUnreadCount(
+  enabled: boolean,
+  schoolCode?: string | null,
+  user?: { role?: string } | null,
+): number {
   const [count, setCount] = useState(0);
-  const schoolScope = hasCommunicationSchoolScope(schoolCode) ? schoolCode : undefined;
+  const schoolScope = hasCommunicationSchoolScope(schoolCode, user) ? schoolCode : undefined;
   useEffect(() => {
     setCount(0);
     if (!enabled) {

@@ -615,7 +615,7 @@ export default function App() {
           <Route
             path="donnees"
             element={
-              <PermissionRoute view="configuration">
+              <PermissionRoute view="dataExport">
                 <SettingsDataPage />
               </PermissionRoute>
             }

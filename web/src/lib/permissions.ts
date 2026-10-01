@@ -24,6 +24,7 @@ import {
   isPlatformCommunicationFeature,
   isPlatformCommunicationUser,
 } from "./establishmentCommunication";
+import { shouldDenyWebSchoolDomain } from "./webSchoolDomainDeny";
 
 const SCHOOL_ADMIN_FORBIDDEN_FEATURES = new Set(["Établissements", "Abonnements"]);
 
@@ -440,6 +441,10 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   }
   if (viewName === "messages" && isPlatformCommunicationUser(ctx)) {
     return false;
+  }
+  if (viewName === "dataExport") {
+    if (shouldDenyWebSchoolDomain(ctx.user)) return false;
+    return isSchoolAdminRole(ctx.user?.role);
   }
   // Accès au hub Paramètres : Super Admin, Admin School (établissement) et Admin Pays.
   // Le détail des cartes/pages reste filtré par les vues dédiées (configuration, subscriptions…).

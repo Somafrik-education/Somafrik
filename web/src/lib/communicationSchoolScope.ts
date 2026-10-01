@@ -1,4 +1,5 @@
 import { isAllSchoolsSelection, readStoredSchoolCode } from "./activeSchool";
+import { shouldDenyWebSchoolDomain } from "./webSchoolDomainDeny";
 
 /** Établissement actif Communications — jamais "*" ni une saisie libre. */
 export function resolveCommunicationSchoolScope(activeSchoolCode?: string | null): string {
@@ -7,7 +8,11 @@ export function resolveCommunicationSchoolScope(activeSchoolCode?: string | null
   return code;
 }
 
-export function hasCommunicationSchoolScope(activeSchoolCode?: string | null): boolean {
+export function hasCommunicationSchoolScope(
+  activeSchoolCode?: string | null,
+  user?: { role?: string } | null,
+): boolean {
+  if (shouldDenyWebSchoolDomain(user)) return false;
   return Boolean(resolveCommunicationSchoolScope(activeSchoolCode));
 }
 
