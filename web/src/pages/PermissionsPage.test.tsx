@@ -133,27 +133,34 @@ const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHis
       ],
     };
   });
-  const updateRoleMock = vi.fn(async (_roleId: string, _payload: Record<string, unknown>) => catalog.roles[0]);
-  const getHistoryMock = vi.fn(async (_query?: { limit?: number; offset?: number }) => ({
-    items: [
-      {
-        id: "aud-1",
-        createdAt: "2026-10-01T10:00:00.000Z",
-        actor: "superadmin",
-        action: "ROLE_RENAME",
-        role: "Préfet des études",
-        roleKey: "PREFET_ETUDES",
-        moduleKey: null,
-        scope: "school",
-        before: "Préfet des études",
-        after: "Préfet pédagogique",
-        summary: "Préfet des études → Préfet pédagogique",
-      },
-    ],
-    limit: 20,
-    offset: 0,
-    hasMore: false,
-  }));
+  const updateRoleMock = vi.fn(async (roleId: string, payload: Record<string, unknown>) => {
+    void roleId;
+    void payload;
+    return catalog.roles[0];
+  });
+  const getHistoryMock = vi.fn(async (query?: { limit?: number; offset?: number }) => {
+    void query;
+    return {
+      items: [
+        {
+          id: "aud-1",
+          createdAt: "2026-10-01T10:00:00.000Z",
+          actor: "superadmin",
+          action: "ROLE_RENAME",
+          role: "Préfet des études",
+          roleKey: "PREFET_ETUDES",
+          moduleKey: null,
+          scope: "school",
+          before: "Préfet des études",
+          after: "Préfet pédagogique",
+          summary: "Préfet des études → Préfet pédagogique",
+        },
+      ],
+      limit: 20,
+      offset: 0,
+      hasMore: false,
+    };
+  });
   return { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHistoryMock };
 });
 
