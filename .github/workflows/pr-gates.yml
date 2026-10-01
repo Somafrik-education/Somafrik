@@ -265,6 +265,12 @@ jobs:
           npm run verify:runtime-bootstrap
           npm run verify:supabase-data-api-lockdown
 
+      - name: ADMIN-01 PostgreSQL PG-01–08
+        if: needs.scope.outputs.auth == 'true'
+        run: |
+          set -euo pipefail
+          node backend/lib/functionalRbacAdmin01.pg.test.js
+
       - name: Auth and RBAC
         if: needs.scope.outputs.auth == 'true'
         run: |
