@@ -165,6 +165,8 @@ const REPOSITORY_METHODS = Object.freeze([
   "updateClientsContact",
   "provisionClientsContactAccount",
   "createClientsRelation",
+  "updateClientsRelation",
+  "archiveClientsRelation",
   "linkParent",
   "lookupParentIdentity",
   "listParentRelations",

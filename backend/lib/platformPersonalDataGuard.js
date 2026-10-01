@@ -181,6 +181,8 @@ const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "POST /api/backoffice/contacts/:contactId/provision-account",
   "GET /api/backoffice/relations",
   "POST /api/backoffice/relations",
+  "PATCH /api/backoffice/relations/:relationId",
+  "POST /api/backoffice/relations/:relationId/archive",
   "GET /api/parents/identity",
   "GET /api/parents/relations",
   "POST /api/parents/link",

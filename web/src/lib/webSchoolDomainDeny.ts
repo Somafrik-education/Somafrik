@@ -23,6 +23,7 @@ const WEB_SCHOOL_DOMAIN_FEATURES = new Set([
   "Examens",
   "Bulletins",
   "Documents",
+  "Relations",
   "Mon abonnement",
 ]);
 

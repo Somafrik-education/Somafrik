@@ -3307,6 +3307,25 @@ app.post("/api/backoffice/relations", requireAuth, requirePermission("POST /api/
   res.status(created ? 201 : 200).json(body);
 }));
 
+app.patch("/api/backoffice/relations/:relationId", requireAuth, requirePermission("PATCH /api/backoffice/relations/:relationId"), asyncHandler(async (req, res) => {
+  const row = await repository.updateClientsRelation(
+    req.params.relationId,
+    req.body ?? {},
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(row);
+}));
+
+app.post("/api/backoffice/relations/:relationId/archive", requireAuth, requirePermission("POST /api/backoffice/relations/:relationId/archive"), asyncHandler(async (req, res) => {
+  const result = await repository.archiveClientsRelation(
+    req.params.relationId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(result);
+}));
+
 app.get("/api/parents/identity", requireAuth, requirePermission("GET /api/parents/identity"), asyncHandler(async (req, res) => {
   const result = await repository.lookupParentIdentity(req.query ?? {}, req.principal);
   res.json({

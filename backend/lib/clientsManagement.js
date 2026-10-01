@@ -346,8 +346,16 @@ function mapContactRow(row) {
   };
 }
 
+function normalizeRelationPrincipalFlag(value) {
+  const raw = asTrimmed(value).toLowerCase();
+  if (value === true || raw === "oui" || raw === "true" || raw === "1") return "Oui";
+  if (value === false || raw === "non" || raw === "false" || raw === "0") return "Non";
+  return "";
+}
+
 function mapRelationRow(row) {
   const profile = parsePayload(row.profile_payload);
+  const principalFlag = normalizeRelationPrincipalFlag(profile.isPrincipal ?? profile.is_principal);
   return {
     id: row.id,
     relationType: row.relation_type === "parent_student" ? "Parent → Élève" : row.relation_type,
@@ -357,6 +365,7 @@ function mapRelationRow(row) {
     toStudentName: profile.toStudentName ?? row.student_name ?? "",
     schoolCode: row.school_code,
     status: fromDbStatus(row.status),
+    isPrincipal: principalFlag || "Non",
     createdAt: formatDate(row.created_at),
   };
 }
@@ -471,6 +480,7 @@ module.exports = {
   mapUserRow,
   mapUserRowToAuthAccount,
   mapContactRow,
+  normalizeRelationPrincipalFlag,
   mapRelationRow,
   mapMessageRow,
   mapAnnouncementRow,

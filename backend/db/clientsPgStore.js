@@ -600,6 +600,22 @@ function createClientsPgStore(repo) {
           [id],
         ).then(async (saved) => (saved ? this.getRelationById(saved.id) : null));
       },
+      async updateRelation(id, patch) {
+        const saved = await one(
+          `UPDATE contact_relations
+           SET contact_id = $2, student_id = $3, relation_type = $4, profile_payload = $5::jsonb, updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [
+            id,
+            patch.contactId,
+            patch.studentId,
+            patch.relationType || "parent_student",
+            JSON.stringify(patch.profile ?? {}),
+          ],
+        );
+        return saved ? this.getRelationById(saved.id) : null;
+      },
       async insertConversation(row) {
         return one(
           `INSERT INTO school_conversations (
@@ -1720,6 +1736,8 @@ function createClientsPgStore(repo) {
     updateContact: (...args) => clientsService.updateContact(store, ...args),
     provisionContactAccount: (...args) => clientsService.provisionContactAccount(store, ...args),
     createRelation: (...args) => clientsService.createRelation(store, ...args),
+    updateRelation: (...args) => clientsService.updateRelation(store, ...args),
+    archiveRelation: (...args) => clientsService.archiveRelation(store, ...args),
     linkParent: (...args) => {
       const { linkParent } = require("../lib/parentLinking");
       return linkParent(store, ...args);

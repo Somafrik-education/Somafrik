@@ -703,6 +703,19 @@ function createClientsMemoryStore(seed = {}) {
         };
         return this.getRelationById(id);
       },
+      async updateRelation(id, patch) {
+        const index = tables.relations.findIndex((relation) => String(relation.id) === String(id));
+        if (index < 0) return null;
+        tables.relations[index] = {
+          ...tables.relations[index],
+          contact_id: patch.contactId ?? tables.relations[index].contact_id,
+          student_id: patch.studentId ?? tables.relations[index].student_id,
+          relation_type: patch.relationType ?? tables.relations[index].relation_type,
+          profile_payload: patch.profile ?? tables.relations[index].profile_payload,
+          updated_at: new Date(),
+        };
+        return this.getRelationById(id);
+      },
       async insertConversation(row) {
         const saved = {
           id: randomUUID(),
@@ -1421,6 +1434,8 @@ function createClientsMemoryStore(seed = {}) {
     updateContact: (...args) => clientsService.updateContact(store, ...args),
     provisionContactAccount: (...args) => clientsService.provisionContactAccount(store, ...args),
     createRelation: (...args) => clientsService.createRelation(store, ...args),
+    updateRelation: (...args) => clientsService.updateRelation(store, ...args),
+    archiveRelation: (...args) => clientsService.archiveRelation(store, ...args),
     linkParent: (...args) => {
       const { linkParent } = require("../lib/parentLinking");
       return linkParent(store, ...args);

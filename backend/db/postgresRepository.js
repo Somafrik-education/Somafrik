@@ -1477,6 +1477,16 @@ class PostgresRepository {
     return this.getClientsStore().createRelation(payload, principal, auditMeta);
   }
 
+  updateClientsRelation(relationId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().updateRelation(relationId, payload, principal, auditMeta);
+  }
+
+  archiveClientsRelation(relationId, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().archiveRelation(relationId, principal, auditMeta);
+  }
+
   linkParent(payload, principal, auditMeta) {
     this.cachedDataset = null;
     return this.getClientsStore().linkParent(payload, principal, auditMeta);

@@ -321,25 +321,23 @@ export function canManageNotes(ctx: PermissionContext): boolean {
   );
 }
 
-/** Liaison parent : mêmes jetons que POST /api/parents/link — pas la whitelist CRM. */
+/** Liaison parent : jetons établissement uniquement — pas SUPER_ADMIN / COUNTRY_ADMIN. */
 export function canLinkParent(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;
-  if (isSuperAdminRole(ctx.user.role)) return true;
-  if (ctx.user.role === COUNTRY_ADMIN_ROLE) return true;
+  if (isSuperAdminRole(ctx.user.role) || ctx.user.role === COUNTRY_ADMIN_ROLE) return false;
   const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
   return tokens.some(
     (permission) =>
-      permission === normalize("ALL_PRIVILEGES") ||
-      permission === normalize("COUNTRY_PRIVILEGES") ||
       permission === normalize("Gérer utilisateurs") ||
       permission === normalize("Relations:CREATE"),
   );
 }
 
-/** Archivage relation parent-enfant : mêmes jetons que PATCH /api/parents/relations/:id. */
+/** Archivage relation : rôles établissement uniquement. */
 export function canArchiveParentRelation(ctx: PermissionContext): boolean {
-  if (canLinkParent(ctx)) return true;
   if (!ctx.user) return false;
+  if (isSuperAdminRole(ctx.user.role) || ctx.user.role === COUNTRY_ADMIN_ROLE) return false;
+  if (canLinkParent(ctx)) return true;
   const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
   return tokens.some((permission) => permission === normalize("Relations:UPDATE"));
 }
@@ -482,6 +480,7 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     return hasBackOfficePermission(ctx, "Contacts", "READ");
   }
   if (viewName === "relations") {
+    if (isSuperAdminRole(ctx.user?.role) || ctx.user?.role === COUNTRY_ADMIN_ROLE) return false;
     return hasBackOfficePermission(ctx, "Relations", "READ");
   }
   if (viewName === "messages") {
