@@ -26,81 +26,89 @@ import {
   shouldSkipSchoolTenantHydration,
   stripSchoolDomainCollections,
 } from "./platformSchoolDomainDeny";
-import { projectScopedStudentsForSession } from "./studentsScope";
+import { projectScopedStudentsForSession, type StudentScopeSession } from "./studentsScope";
 import { scopeBackOfficeForSession } from "./scope";
 import { resolveNotificationsInboxRoute } from "./notificationInboxRoute";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-function schoolAdmin() {
+function session(input: {
+  role?: string;
+  roleLabel?: string;
+  roleKeys?: string[];
+  permissions?: string[];
+  schoolCode?: string;
+  id?: string;
+}) {
   return attachCanonicalRoleIdentity({
-    role: "school_admin",
-    permissions: ["Élèves:READ", "Messages:READ", "Paiements:READ", "Notes:READ", "Présences:READ"],
+    role: input.role ?? "",
+    permissions: input.permissions ?? [],
     user: {
-      id: "admin-nuru",
-      name: "Admin School",
-      schoolCode: "CD-IN-26-001",
-      role: "Admin School",
-      roleKeys: ["SCHOOL_ADMIN"],
-      permissions: ["Élèves:READ", "Messages:READ", "Paiements:READ", "Notes:READ", "Présences:READ"],
+      id: input.id ?? `${input.role ?? "anon"}-p108`,
+      name: input.roleLabel ?? input.role ?? "anon",
+      schoolCode: input.schoolCode,
+      role: input.roleLabel ?? input.role,
+      roleKeys: input.roleKeys,
+      permissions: input.permissions ?? [],
     },
-    school: { code: "CD-IN-26-001" },
+    school: input.schoolCode ? { code: input.schoolCode } : undefined,
+  })!;
+}
+
+function schoolAdmin(permissions: string[] = ["Élèves:READ", "Messages:READ", "Paiements:READ", "Notes:READ", "Présences:READ"]) {
+  return session({
+    role: "school_admin",
+    roleLabel: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    permissions,
+    schoolCode: "CD-IN-26-001",
+    id: "admin-nuru",
   });
 }
 
-function teacher() {
-  return attachCanonicalRoleIdentity({
+function teacher(permissions: string[] = ["Élèves:READ", "Notes:READ", "Présences:READ"]) {
+  return session({
     role: "teacher",
-    permissions: ["Élèves:READ", "Notes:READ", "Présences:READ"],
-    user: {
-      id: "ens-1",
-      name: "Enseignant",
-      schoolCode: "CD-IN-26-001",
-      role: "Enseignant",
-      roleKeys: ["TEACHER"],
-      permissions: ["Élèves:READ", "Notes:READ", "Présences:READ"],
-    },
+    roleLabel: "Enseignant",
+    roleKeys: ["TEACHER"],
+    permissions,
+    schoolCode: "CD-IN-26-001",
+    id: "ens-1",
   });
 }
 
 function parent() {
-  return attachCanonicalRoleIdentity({
+  return session({
     role: "parent_student",
+    roleLabel: "Parent",
+    roleKeys: ["PARENT"],
     permissions: ["Élèves:READ", "Notifications:READ"],
-    user: {
-      id: "par-1",
-      name: "Parent",
-      schoolCode: "CD-IN-26-001",
-      role: "Parent",
-      roleKeys: ["PARENT"],
-      permissions: ["Élèves:READ", "Notifications:READ"],
-    },
+    schoolCode: "CD-IN-26-001",
+    id: "par-1",
   });
 }
 
-function student() {
-  return attachCanonicalRoleIdentity({
+function student(permissions: string[] = ["Élèves:READ"]) {
+  return session({
     role: "student",
-    permissions: ["Élèves:READ"],
-    user: {
-      id: "stu-1",
-      name: "Élève",
-      schoolCode: "CD-IN-26-001",
-      role: "Élève / Étudiant",
-      roleKeys: ["STUDENT"],
-      permissions: ["Élèves:READ"],
-    },
+    roleLabel: "Élève / Étudiant",
+    roleKeys: ["STUDENT"],
+    permissions,
+    schoolCode: "CD-IN-26-001",
+    id: "stu-1",
   });
 }
 
-const allPrivilegesOnly = {
+const allPrivilegesOnly: StudentScopeSession & { permissions: string[] } = {
+  role: "",
   permissions: ["ALL_PRIVILEGES"],
-  user: { id: "priv-only", permissions: ["ALL_PRIVILEGES"] },
+  user: { role: "", schoolCode: "", schoolId: "", schoolPublicCode: "" },
 };
 
-const allPrivilegesWildcard = {
+const allPrivilegesWildcard: StudentScopeSession & { permissions: string[] } = {
+  role: "",
   permissions: ["ALL_PRIVILEGES"],
-  user: { id: "priv-star", permissions: ["ALL_PRIVILEGES"], schoolCode: "*" },
+  user: { role: "", schoolCode: "*", schoolId: "", schoolPublicCode: "" },
   school: { code: "*" },
 };
 
@@ -127,28 +135,20 @@ assert.equal(shouldSkipSchoolTenantHydration(teacher()), false, "Teacher hydrate
 assert.equal(shouldSkipSchoolTenantHydration(parent()), false, "Parent hydrate");
 assert.equal(shouldSkipSchoolTenantHydration(student()), false, "Student hydrate");
 
-const schoolAdminWithPrivileges = attachCanonicalRoleIdentity({
-  ...schoolAdmin(),
-  permissions: [...(schoolAdmin().permissions ?? []), "ALL_PRIVILEGES"],
-});
 assert.equal(
-  shouldSkipSchoolTenantHydration(schoolAdminWithPrivileges),
+  shouldSkipSchoolTenantHydration(
+    schoolAdmin(["Élèves:READ", "Messages:READ", "Paiements:READ", "Notes:READ", "Présences:READ", "ALL_PRIVILEGES"]),
+  ),
   false,
   "Admin School + ALL_PRIVILEGES hydrate toujours son tenant",
 );
 assert.equal(
-  shouldSkipSchoolTenantHydration({
-    ...teacher(),
-    permissions: ["ALL_PRIVILEGES", "Élèves:READ"],
-  }),
+  shouldSkipSchoolTenantHydration(teacher(["ALL_PRIVILEGES", "Élèves:READ"])),
   false,
   "Teacher + ALL_PRIVILEGES hydrate toujours",
 );
 assert.equal(
-  shouldSkipSchoolTenantHydration({
-    ...student(),
-    permissions: ["ALL_PRIVILEGES", "Élèves:READ"],
-  }),
+  shouldSkipSchoolTenantHydration(student(["ALL_PRIVILEGES", "Élèves:READ"])),
   false,
   "Student + ALL_PRIVILEGES hydrate toujours",
 );
