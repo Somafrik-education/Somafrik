@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyMandatoryOverlay,
+  crudFlagsEqual,
   describeActionLock,
   mandatoryFlagsForModule,
   toggleCrudFlag,
@@ -56,5 +57,11 @@ describe("rbacLocks — contrat catalogue", () => {
         { create: true, read: true, update: true, delete: false },
       ),
     ).toEqual({ canCreate: true, canRead: true, canUpdate: true, canDelete: false });
+  });
+
+  it("crudFlagsEqual détecte un delta réel", () => {
+    const inherited = { canCreate: false, canRead: true, canUpdate: true, canDelete: true };
+    expect(crudFlagsEqual(inherited, inherited)).toBe(true);
+    expect(crudFlagsEqual(inherited, { ...inherited, canCreate: true })).toBe(false);
   });
 });

@@ -186,6 +186,7 @@ const routePermissions = {
   "GET /api/backoffice/rbac/permissions": ["ALL_PRIVILEGES"],
   "GET /api/backoffice/rbac/permissions/effective": ["ALL_PRIVILEGES"],
   "PATCH /api/backoffice/rbac/permissions": ["ALL_PRIVILEGES"],
+  "POST /api/backoffice/rbac/permissions/reset": ["ALL_PRIVILEGES"],
   "POST /api/backoffice/rbac/roles": ["ALL_PRIVILEGES", "Rôles Établissement:CREATE"],
   "PATCH /api/backoffice/rbac/roles/:roleId": ["ALL_PRIVILEGES", "Rôles Établissement:UPDATE"],
   "POST /api/backoffice/rbac/roles/:roleId/archive": ["ALL_PRIVILEGES", "Rôles Établissement:UPDATE"],

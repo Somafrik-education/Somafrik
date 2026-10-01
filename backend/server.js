@@ -3102,6 +3102,17 @@ app.patch("/api/backoffice/rbac/permissions", requireAuth, requirePermission("PA
   res.json(saved);
 }));
 
+app.post("/api/backoffice/rbac/permissions/reset", requireAuth, requirePermission("POST /api/backoffice/rbac/permissions/reset"), asyncHandler(async (req, res) => {
+  const { resetConfiguredPermissionOverrides, functionalRbacAuditMetaFromRequest } = require("./lib/functionalRbacService");
+  const reset = await resetConfiguredPermissionOverrides(
+    repository,
+    req.body ?? {},
+    req.principal,
+    functionalRbacAuditMetaFromRequest(req),
+  );
+  res.json(reset);
+}));
+
 app.post("/api/backoffice/rbac/roles", requireAuth, requirePermission("POST /api/backoffice/rbac/roles"), asyncHandler(async (req, res) => {
   const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
   const created = await repository.createEstablishmentRole(

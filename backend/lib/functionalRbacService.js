@@ -16,6 +16,11 @@ const {
   resolveEffectivePermissionSet,
   parsePermissionStringsToModuleCrud,
   emptyCrud,
+  crudEqual,
+  crudFromRow,
+  grantSource,
+  pickGrant,
+  indexGrants,
 } = require("./functionalRbacResolution");
 const { assertSuperAdmin, asTrimmed, normalizeRoleCode } = require("./establishmentRolesManagement");
 const { toRoleKey, toRoleLabel } = require("./userRoleLifecycle");
@@ -375,6 +380,8 @@ async function getConfiguredPermissions(repo, query, principal) {
     countryId: scope.countryId,
     schoolId: scope.schoolId,
   });
+  const roleGrants = await store.listGrantsForRoles([roleKey]);
+  const grantIndex = indexGrants(roleGrants);
   const updatedAt = await store.maxUpdatedAtForScope({
     roleKey,
     scopeType: scope.scopeType,
@@ -383,20 +390,26 @@ async function getConfiguredPermissions(repo, query, principal) {
   });
   const byModule = Object.fromEntries(grants.map((grant) => [grant.moduleKey, grant]));
   const modules = listFunctionalModules().map((module) => {
-    const grant = byModule[module.moduleKey];
-    const flags = overlayMandatoryFlags(roleKey, module.moduleKey, {
-      canCreate: Boolean(grant?.canCreate),
-      canRead: Boolean(grant?.canRead),
-      canUpdate: Boolean(grant?.canUpdate),
-      canDelete: Boolean(grant?.canDelete),
+    const scopeGrant = byModule[module.moduleKey];
+    const effectiveGrant = pickGrant(grantIndex, roleKey, module.moduleKey, {
+      schoolId: scope.schoolId,
+      countryId: scope.countryId,
     });
+    const source = grantSource(effectiveGrant);
+    const flags = overlayMandatoryFlags(
+      roleKey,
+      module.moduleKey,
+      crudFromRow(effectiveGrant) || emptyCrud(),
+    );
     return {
       moduleKey: module.moduleKey,
       moduleName: module.moduleName,
       appliesWeb: module.appliesWeb,
       appliesMobile: module.appliesMobile,
       ...flags,
-      configured: Boolean(grant),
+      configured: Boolean(scopeGrant),
+      source,
+      inherited: Boolean(effectiveGrant) && source !== scope.scopeType,
       ...moduleContractDto(roleKey, module.moduleKey, flags),
     };
   });
@@ -422,6 +435,7 @@ async function getEffectivePermissionsConfigured(repo, query, principal) {
   }
   const scope = await resolveScopeIds(store, query);
   const grants = await store.listGrantsForRoles([roleKey]);
+  const grantIndex = indexGrants(grants);
   const resolved = resolveEffectivePermissionSet([roleKey], grants, {
     schoolId: scope.schoolId,
     countryId: scope.countryId,
@@ -432,11 +446,21 @@ async function getEffectivePermissionsConfigured(repo, query, principal) {
     scopeType: scope.scopeType,
     countryCode: scope.countryCode,
     schoolCode: scope.schoolCode,
-    modules: listFunctionalModules().map((module) => ({
-      moduleKey: module.moduleKey,
-      moduleName: module.moduleName,
-      ...(resolved.modules[module.moduleKey] || emptyCrud()),
-    })),
+    modules: listFunctionalModules().map((module) => {
+      const effectiveGrant = pickGrant(grantIndex, roleKey, module.moduleKey, {
+        schoolId: scope.schoolId,
+        countryId: scope.countryId,
+      });
+      const source = grantSource(effectiveGrant);
+      return {
+        moduleKey: module.moduleKey,
+        moduleName: module.moduleName,
+        ...(resolved.modules[module.moduleKey] || emptyCrud()),
+        source,
+        configured: source === scope.scopeType,
+        inherited: Boolean(effectiveGrant) && source !== scope.scopeType,
+      };
+    }),
     permissions: resolved.permissions,
   };
 }
@@ -521,10 +545,36 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
 
       const beforeRows = await scopedStore.listGrantsForScope(scopeLock);
       const beforeByModule = Object.fromEntries(beforeRows.map((row) => [row.moduleKey, row]));
+      const roleGrants = await scopedStore.listGrantsForRoles([roleKey]);
+      const grantIndex = indexGrants(roleGrants);
       const saved = [];
+      const written = [];
       const auditEvents = [];
       for (const grant of grants) {
-        const before = beforeByModule[grant.moduleKey] || emptyCrud();
+        const beforeRow = beforeByModule[grant.moduleKey] || null;
+        if (!beforeRow) {
+          const inheritedGrant = pickGrant(grantIndex, roleKey, grant.moduleKey, {
+            schoolId: scope.schoolId,
+            countryId: scope.countryId,
+          });
+          const inheritedFlags = overlayMandatoryFlags(
+            roleKey,
+            grant.moduleKey,
+            crudFromRow(inheritedGrant) || emptyCrud(),
+          );
+          if (crudEqual(grant, inheritedFlags)) {
+            saved.push({
+              moduleKey: grant.moduleKey,
+              ...inheritedFlags,
+              skipped: true,
+              source: grantSource(inheritedGrant),
+            });
+            continue;
+          }
+        } else if (crudEqual(beforeRow, grant)) {
+          saved.push({ ...beforeRow, skipped: true });
+          continue;
+        }
         const after = await scopedStore.upsertGrant({
           roleKey,
           scopeType: scope.scopeType,
@@ -535,28 +585,31 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
           updatedBy: actorId(principal),
         });
         saved.push(after);
-        for (const event of diffGrant(before, grant)) {
+        written.push(after);
+        for (const event of diffGrant(beforeRow || emptyCrud(), grant)) {
           auditEvents.push(event);
         }
       }
 
-      await writeRbacAudit(scopeRepo, principal, auditMeta, {
-        action: "ROLE_PERMISSION_MATRIX_UPDATED",
-        entityType: "role_module_permissions",
-        entityId: `${roleKey}:${scope.scopeType}:${scope.schoolCode || scope.countryCode || "global"}`,
-        schoolCode: scope.schoolCode,
-        oldValue: { grants: beforeRows, scope },
-        newValue: { grants: saved, scope },
-      });
-      for (const event of auditEvents) {
+      if (written.length) {
         await writeRbacAudit(scopeRepo, principal, auditMeta, {
-          action: event.action,
+          action: "ROLE_PERMISSION_MATRIX_UPDATED",
           entityType: "role_module_permissions",
-          entityId: `${roleKey}:${event.moduleKey}`,
+          entityId: `${roleKey}:${scope.scopeType}:${scope.schoolCode || scope.countryCode || "global"}`,
           schoolCode: scope.schoolCode,
-          oldValue: { moduleKey: event.moduleKey, field: event.field },
-          newValue: { moduleKey: event.moduleKey, field: event.field, after: grants.find((g) => g.moduleKey === event.moduleKey) },
+          oldValue: { grants: beforeRows, scope },
+          newValue: { grants: written, scope },
         });
+        for (const event of auditEvents) {
+          await writeRbacAudit(scopeRepo, principal, auditMeta, {
+            action: event.action,
+            entityType: "role_module_permissions",
+            entityId: `${roleKey}:${event.moduleKey}`,
+            schoolCode: scope.schoolCode,
+            oldValue: { moduleKey: event.moduleKey, field: event.field },
+            newValue: { moduleKey: event.moduleKey, field: event.field, after: grants.find((g) => g.moduleKey === event.moduleKey) },
+          });
+        }
       }
 
       const updatedAt = await scopedStore.maxUpdatedAtForScope(scopeLock);
@@ -568,6 +621,86 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
         updatedAt,
         grants: saved,
       };
+    } finally {
+      if (typeof scopedStore.unlockFunctionalRbacScope === "function") {
+        await scopedStore.unlockFunctionalRbacScope(scopeLock);
+      }
+    }
+  });
+}
+
+async function resetConfiguredPermissionOverrides(repo, rawPayload, principal, auditMeta) {
+  assertSuperAdmin(principal);
+  const payload = rawPayload ?? {};
+  const roleKey = toRoleKey(payload.roleKey || payload.role);
+  if (!roleKey) {
+    throw createFunctionalRbacError(400, "role_key obligatoire.", FUNCTIONAL_RBAC_ERROR.INVALID_ROLE);
+  }
+  const moduleKey = asTrimmed(payload.moduleKey || payload.module_key);
+  if (!moduleKey || !isKnownModuleKey(moduleKey)) {
+    throw createFunctionalRbacError(400, `module_key obligatoire et connu.`, FUNCTIONAL_RBAC_ERROR.INVALID_MODULE);
+  }
+  const store = rbacStore(repo);
+
+  return repo.withTransaction(async (tx) => {
+    const scopeRepo = repo.createTxScope(tx);
+    const scopedStore = rbacStore(scopeRepo);
+    const scope = await resolveScopeIds(scopedStore, payload);
+    if (scope.scopeType !== "school") {
+      throw createFunctionalRbacError(
+        400,
+        "Le reset d'override ne s'applique qu'à un établissement.",
+        FUNCTIONAL_RBAC_ERROR.INVALID_SCOPE,
+      );
+    }
+    const scopeLock = {
+      roleKey,
+      scopeType: scope.scopeType,
+      countryId: scope.countryId,
+      schoolId: scope.schoolId,
+    };
+    try {
+      if (typeof scopedStore.lockFunctionalRbacScope === "function") {
+        await scopedStore.lockFunctionalRbacScope(scopeLock);
+      }
+      const currentUpdatedAt = await scopedStore.maxUpdatedAtForScope(scopeLock);
+      const expected = payload.expectedUpdatedAt;
+      if (currentUpdatedAt && expected && !timestampsEqual(currentUpdatedAt, expected)) {
+        throw createFunctionalRbacError(
+          409,
+          "Conflit de concurrence : la matrice a été modifiée. Rechargez avant d'enregistrer.",
+          FUNCTIONAL_RBAC_ERROR.CONFLICT,
+          { expectedUpdatedAt: expected, actualUpdatedAt: currentUpdatedAt },
+        );
+      }
+      if (currentUpdatedAt && !expected) {
+        throw createFunctionalRbacError(
+          409,
+          "expectedUpdatedAt obligatoire pour éviter un last-write-wins.",
+          FUNCTIONAL_RBAC_ERROR.CONFLICT,
+          { actualUpdatedAt: currentUpdatedAt },
+        );
+      }
+
+      const beforeRows = await scopedStore.listGrantsForScope(scopeLock);
+      const target = beforeRows.find((row) => row.moduleKey === moduleKey);
+      if (target && typeof scopedStore.archiveGrant === "function") {
+        await scopedStore.archiveGrant({
+          id: target.id,
+          updatedBy: actorId(principal),
+          updatedAt: nextMonotonicUpdatedAt(currentUpdatedAt),
+        });
+        await writeRbacAudit(scopeRepo, principal, auditMeta, {
+          action: "ROLE_PERMISSION_OVERRIDE_RESET",
+          entityType: "role_module_permissions",
+          entityId: `${roleKey}:${moduleKey}:${scope.schoolCode}`,
+          schoolCode: scope.schoolCode,
+          oldValue: { grant: target, scope },
+          newValue: { grant: null, scope, moduleKey },
+        });
+      }
+
+      return getConfiguredPermissions(scopeRepo, payload, principal);
     } finally {
       if (typeof scopedStore.unlockFunctionalRbacScope === "function") {
         await scopedStore.unlockFunctionalRbacScope(scopeLock);
@@ -725,6 +858,7 @@ module.exports = {
   getConfiguredPermissions,
   getEffectivePermissionsConfigured,
   patchConfiguredPermissions,
+  resetConfiguredPermissionOverrides,
   resolveEffectivePermissionsForPrincipal,
   archiveRbacRole,
   throwLegacyRolePermissionsWrite,

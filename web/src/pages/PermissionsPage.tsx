@@ -22,6 +22,7 @@ import {
 } from "../lib/rbacApi";
 import {
   applyMandatoryOverlay,
+  crudFlagsEqual,
   describeActionLock,
   lockTooltip,
   mandatoryFlagsForModule,
@@ -66,6 +67,21 @@ function toCrudGrant(moduleKey: string, source?: Partial<RbacCrudFlags> | null):
     moduleKey,
     ...toCrudFlags(source),
   };
+}
+
+function inheritanceCaption(module: { source?: string; moduleName?: string } | undefined, roleName?: string) {
+  const name = roleName || "ce rôle";
+  if (!module) return "";
+  if (module.source === "school") {
+    return `Override établissement pour ${name}. Réinitialiser restaure l'héritage pays/global (premier match, sans fusion des flags).`;
+  }
+  if (module.source === "country") {
+    return `Hérité de la politique pays pour ${name}. Enregistrer n'écrit un override établissement que si vous modifiez une case.`;
+  }
+  if (module.source === "global") {
+    return `Hérité du catalogue global pour ${name}. Enregistrer n'écrit un override établissement que si vous modifiez une case.`;
+  }
+  return `Aucun droit configuré pour ${name} : refus par défaut. Cocher puis Enregistrer crée un override établissement.`;
 }
 
 function formatDate(value?: string | null) {
@@ -221,6 +237,12 @@ export function PermissionsPage() {
     () => mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, selectedModuleKey),
     [catalog?.mandatoryByRole, selectedRoleKey, selectedModuleKey],
   );
+  const loadedFlags = useMemo(
+    () => applyMandatoryOverlay(toCrudFlags(selectedModule), selectedMandatory),
+    [selectedModule, selectedMandatory],
+  );
+  const dirty = Boolean(selectedModule) && !crudFlagsEqual(draft, loadedFlags);
+  const hasSchoolOverride = selectedModule?.source === "school" || selectedModule?.configured === true;
 
   function toggle(field: keyof RbacCrudFlags) {
     if (!canManage) return;
@@ -228,7 +250,7 @@ export function PermissionsPage() {
   }
 
   async function save() {
-    if (!canManage || !selectedRoleKey || !selectedModuleKey) return;
+    if (!canManage || !selectedRoleKey || !selectedModuleKey || !dirty) return;
     setBusy(true);
     try {
       const saved = await rbacApi.patchPermissions({
@@ -251,6 +273,33 @@ export function PermissionsPage() {
           : status === 409
             ? "Conflit : la matrice a été modifiée. Rechargez avant d'enregistrer."
             : message || "Échec de l'enregistrement",
+        "error",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetOverride() {
+    if (!canManage || !selectedRoleKey || !selectedModuleKey || !hasSchoolOverride) return;
+    setBusy(true);
+    try {
+      const next = await rbacApi.resetOverride({
+        roleKey: selectedRoleKey,
+        countryCode,
+        schoolCode,
+        moduleKey: selectedModuleKey,
+        expectedUpdatedAt: matrix?.updatedAt ?? null,
+      });
+      setMatrix(next);
+      showToast("Override établissement retiré. L'héritage pays/global s'applique à nouveau.", "success");
+    } catch (error) {
+      const status = error instanceof ApiError ? error.status : 0;
+      const message = error instanceof ApiError ? error.message : "";
+      showToast(
+        status === 409
+          ? "Conflit : la matrice a été modifiée. Rechargez avant de réinitialiser."
+          : message || "Échec de la réinitialisation",
         "error",
       );
     } finally {
@@ -313,9 +362,21 @@ export function PermissionsPage() {
           <>
             <PrintButton documentTitle="Rôles et droits — Somafrik" />
             {canManage && tab === "permissions" ? (
-              <Button size="sm" onClick={() => void save()} disabled={busy || !pathComplete}>
-                Enregistrer
-              </Button>
+              <>
+                {hasSchoolOverride ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void resetOverride()}
+                    disabled={busy || !pathComplete}
+                  >
+                    Réinitialiser à l'héritage
+                  </Button>
+                ) : null}
+                <Button size="sm" onClick={() => void save()} disabled={busy || !pathComplete || !dirty}>
+                  Enregistrer
+                </Button>
+              </>
             ) : null}
           </>
         }
@@ -472,6 +533,7 @@ export function PermissionsPage() {
                 Module « {selectedModule?.moduleName} » — Création / Lecture / Modification / Suppression pour{" "}
                 {selectedRole?.roleName}.
               </p>
+              <p className="mt-2 text-sm text-muted">{inheritanceCaption(selectedModule, selectedRole?.roleName)}</p>
               <p className="mt-2 text-xs text-muted">
                 Case verrouillée (cadenas) : invariant de rôle ou prérequis de lecture tant qu’une action de
                 création, modification ou suppression est active. Impossible à décocher ici ; le serveur refuse
