@@ -277,6 +277,9 @@ function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
 function mapUserRow(row) {
   const profile = parsePayload(row.profile_payload);
   const role = ROLE_FROM_DB[row.role] ?? row.role;
+  const { toRoleKey } = require("./userRoleLifecycle");
+  const { resolveEffectiveRoleLabel } = require("./roleDisplayLabels");
+  const roleKey = toRoleKey(role);
   const schoolCode = row.school_code ?? (role === "Admin Pays" ? "*" : "");
   const identityCode = row.identity_code ?? profile.identityCode ?? "";
   const loginCode = row.login_code ?? profile.identifier ?? "";
@@ -295,6 +298,11 @@ function mapUserRow(row) {
     phone: row.phone ?? "",
     email: row.email ?? "",
     role,
+    roleKey,
+    effectiveRoleLabel: resolveEffectiveRoleLabel({
+      defaultLabel: role,
+      displayLabel: row.display_label ?? row.displayLabel ?? row.effectiveRoleLabel,
+    }),
     secondaryRoles: profile.secondaryRoles ?? [],
     scopeLevel: role === "Super Administrateur Somafrik" ? "Global" : role === "Admin Pays" ? "Pays" : "Établissement",
     countryScope: row.country_name ?? profile.countryScope ?? "",

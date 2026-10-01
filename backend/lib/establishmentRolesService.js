@@ -153,6 +153,64 @@ async function updateRole(repo, roleId, rawPatch, principal, auditMeta) {
   });
 }
 
+async function updateRoleDisplayLabel(repo, roleId, rawPatch, principal, auditMeta) {
+  assertSuperAdmin(principal);
+  const store = rolesStore(repo);
+  const existing = await store.getRoleById(roleId);
+  if (!existing) {
+    throw createEstablishmentRolesError(404, "Rôle introuvable.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
+  }
+  const { normalizeDisplayLabel } = require("./roleDisplayLabels");
+  const nextLabel = normalizeDisplayLabel(rawPatch?.displayLabel ?? rawPatch?.display_label);
+  const previous = existing.displayLabel ?? null;
+  const resetting = nextLabel == null;
+  return repo.withTransaction(async (tx) => {
+    const scope = repo.createTxScope(tx);
+    const scopedStore = rolesStore(scope);
+    const saved = await scopedStore.updateRoleDisplayLabel(roleId, nextLabel);
+    if (!saved) {
+      throw createEstablishmentRolesError(404, "Rôle introuvable.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
+    }
+    await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
+      action: resetting ? RBAC_AUDIT_ACTIONS.ROLE_DISPLAY_LABEL_RESET : RBAC_AUDIT_ACTIONS.ROLE_DISPLAY_LABEL_UPDATE,
+      entityType: "establishment_role",
+      entityId: roleId,
+      oldValue: {
+        roleKey: existing.roleKey || String(existing.roleCode || "").toUpperCase(),
+        oldDisplayLabel: previous,
+        newDisplayLabel: nextLabel,
+      },
+      newValue: {
+        roleKey: saved.roleKey || String(saved.roleCode || "").toUpperCase(),
+        oldDisplayLabel: previous,
+        newDisplayLabel: nextLabel,
+      },
+    });
+    return saved;
+  });
+}
+
+async function resetRoleDisplayLabel(repo, roleId, principal, auditMeta) {
+  return updateRoleDisplayLabel(repo, roleId, { displayLabel: null }, principal, auditMeta);
+}
+
+async function listRoleDisplayLabels(repo, principal) {
+  if (!principal) {
+    throw createEstablishmentRolesError(403, "Accès refusé.", ESTABLISHMENT_ROLES_ERROR.FORBIDDEN);
+  }
+  const store = rolesStore(repo);
+  if (typeof store.listRoleDisplayContracts === "function") {
+    return store.listRoleDisplayContracts();
+  }
+  const roles = await store.listRoles({ includeArchived: true });
+  return (roles ?? []).map((role) => ({
+    roleKey: role.roleKey,
+    defaultLabel: role.defaultLabel,
+    displayLabel: role.displayLabel,
+    effectiveLabel: role.effectiveLabel,
+  }));
+}
+
 async function archiveRole(repo, roleId, principal, auditMeta) {
   assertSuperAdmin(principal);
   const store = rolesStore(repo);
@@ -239,6 +297,9 @@ module.exports = {
   ensureEstablishmentRolesBootstrap,
   createRole,
   updateRole,
+  updateRoleDisplayLabel,
+  resetRoleDisplayLabel,
+  listRoleDisplayLabels,
   archiveRole,
   assertEstablishmentRoleAssignable,
   getCombinedRolePermissionsMap,

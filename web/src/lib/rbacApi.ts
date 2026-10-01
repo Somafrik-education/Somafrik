@@ -4,6 +4,10 @@ export type RbacRole = {
   id: string;
   roleCode: string;
   roleName: string;
+  roleKey?: string;
+  defaultLabel?: string;
+  displayLabel?: string | null;
+  effectiveLabel?: string;
   scope: string;
   displayOrder: number;
   status: "active" | "archived";
@@ -142,6 +146,11 @@ export const rbacApi = {
   createRole: (payload: Record<string, unknown>) => api.post<RbacRole>("/backoffice/rbac/roles", payload),
   updateRole: (roleId: string, payload: Record<string, unknown>) =>
     api.patch<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}`, payload),
+  updateRoleDisplayLabel: (roleId: string, displayLabel: string) =>
+    api.patch<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}/display-label`, { displayLabel }),
+  resetRoleDisplayLabel: (roleId: string) =>
+    api.post<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}/display-label/reset`, {}),
+  listRoleDisplayLabels: () => api.get<{ items: Array<{ roleKey: string; defaultLabel: string; displayLabel: string | null; effectiveLabel: string }> }>("/backoffice/rbac/role-display-labels"),
   archiveRole: (roleId: string) =>
     api.post<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}/archive`, {}),
   getHistory: (query: RbacHistoryQuery = {}) => {

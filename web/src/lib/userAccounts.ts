@@ -319,9 +319,11 @@ export function formatBusinessProfileKind(
 
 /** Rôles d'accès uniquement. Distinct du type métier. */
 export function formatAccessRolesDisplay(
-  user: Pick<UserAccount, "role" | "roles" | "roleKeys" | "assignmentStatus" | "accountKind" | "linkedStudent">,
+  user: Pick<UserAccount, "role" | "roles" | "roleKeys" | "assignmentStatus" | "accountKind" | "linkedStudent" | "effectiveRoleLabel">,
 ): string {
   if (isStudentLinkedAccount(user)) return STUDENT_ACCESS_ROLE_LABEL;
+  const visual = String(user.effectiveRoleLabel ?? "").trim();
+  if (visual) return visual;
   const keys = accessRoleKeysOf(user);
   if (keys.length) {
     if (!isEmptyAccessLabel(user.assignmentStatus)) return String(user.assignmentStatus).trim();

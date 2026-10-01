@@ -3134,6 +3134,32 @@ app.patch("/api/backoffice/rbac/roles/:roleId", requireAuth, requirePermission("
   res.json(updated);
 }));
 
+app.get("/api/backoffice/rbac/role-display-labels", requireAuth, requirePermission("GET /api/backoffice/rbac/role-display-labels"), asyncHandler(async (req, res) => {
+  const labels = await repository.listEstablishmentRoleDisplayLabels(req.principal);
+  res.json({ items: labels });
+}));
+
+app.patch("/api/backoffice/rbac/roles/:roleId/display-label", requireAuth, requirePermission("PATCH /api/backoffice/rbac/roles/:roleId/display-label"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const updated = await repository.updateEstablishmentRoleDisplayLabel(
+    req.params.roleId,
+    req.body ?? {},
+    req.principal,
+    establishmentRolesAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/rbac/roles/:roleId/display-label/reset", requireAuth, requirePermission("POST /api/backoffice/rbac/roles/:roleId/display-label/reset"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const reset = await repository.resetEstablishmentRoleDisplayLabel(
+    req.params.roleId,
+    req.principal,
+    establishmentRolesAuditMetaFromRequest(req),
+  );
+  res.json(reset);
+}));
+
 app.post("/api/backoffice/rbac/roles/:roleId/archive", requireAuth, requirePermission("POST /api/backoffice/rbac/roles/:roleId/archive"), asyncHandler(async (req, res) => {
   const { archiveRbacRole, functionalRbacAuditMetaFromRequest } = require("./lib/functionalRbacService");
   const archived = await archiveRbacRole(

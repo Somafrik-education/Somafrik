@@ -16,6 +16,31 @@ const { sqlUsersScope } = require("../lib/usersSchoolScope");
 
 const USER_SCHOOL_SELECT = `s.school_code, s.login_code AS school_login_code, s.name AS school_name`;
 
+async function loadRoleDisplayIndex(queryable) {
+  const { indexRoleDisplayContracts } = require("../lib/roleDisplayLabels");
+  const all = (...args) => queryable.all(...args);
+  const probe = await all(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'establishment_roles'
+         AND column_name = 'display_label'
+     ) AS available`,
+  );
+  if (!probe?.[0]?.available) return new Map();
+  const rows = await all(`SELECT role_code, role_name, display_label FROM establishment_roles`);
+  return indexRoleDisplayContracts(rows);
+}
+
+function attachDisplayLabelToUserRow(row, index) {
+  if (!row) return row;
+  const { toRoleKey } = require("../lib/userRoleLifecycle");
+  const { lookupRoleDisplayContract } = require("../lib/roleDisplayLabels");
+  const contract = lookupRoleDisplayContract(index, toRoleKey(row.role)) || lookupRoleDisplayContract(index, row.role);
+  return { ...row, display_label: contract?.displayLabel ?? null };
+}
+
 function userSchoolReturningSql(schoolIdSql) {
   return `(SELECT school_code FROM schools WHERE id = ${schoolIdSql}) AS school_code,
           (SELECT login_code FROM schools WHERE id = ${schoolIdSql}) AS school_login_code,
@@ -63,7 +88,7 @@ function createClientsPgStore(repo) {
         return one("SELECT * FROM countries WHERE iso_code = $1", [normalized]);
       },
       async getUserById(id) {
-        return one(
+        const row = await one(
           `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
            FROM users u
            LEFT JOIN schools s ON s.id = u.school_id
@@ -71,6 +96,8 @@ function createClientsPgStore(repo) {
            WHERE u.id::text = $1 OR u.user_code = $1`,
           [id],
         );
+        const index = await loadRoleDisplayIndex({ all });
+        return attachDisplayLabelToUserRow(row, index);
       },
       async listSchoolUsers(schoolId) {
         return all(
@@ -1645,11 +1672,16 @@ function createClientsPgStore(repo) {
         users.map((row) => row.id),
         rolesByUser,
       );
+      const { decorateUserWithRoleDisplay } = require("../lib/roleDisplayLabels");
+      const displayIndex = await loadRoleDisplayIndex(repo);
       return users.map((row) =>
-        userRoleLifecycleService.hydrateUser(
-          row,
-          rolesByUser.get(String(row.id)) ?? [],
-          profiles.get(String(row.id)),
+        decorateUserWithRoleDisplay(
+          userRoleLifecycleService.hydrateUser(
+            attachDisplayLabelToUserRow(row, displayIndex),
+            rolesByUser.get(String(row.id)) ?? [],
+            profiles.get(String(row.id)),
+          ),
+          displayIndex,
         ),
       );
     },
@@ -1710,12 +1742,17 @@ function createClientsPgStore(repo) {
          LEFT JOIN users u ON u.id = a.created_by
          ORDER BY a.created_at DESC`,
       );
+      const { decorateUserWithRoleDisplay } = require("../lib/roleDisplayLabels");
+      const displayIndex = await loadRoleDisplayIndex(repo);
       return {
         users: users.map((row) =>
-          userRoleLifecycleService.hydrateUser(
-            row,
-            rolesByUser.get(String(row.id)) ?? [],
-            profiles.get(String(row.id)),
+          decorateUserWithRoleDisplay(
+            userRoleLifecycleService.hydrateUser(
+              attachDisplayLabelToUserRow(row, displayIndex),
+              rolesByUser.get(String(row.id)) ?? [],
+              profiles.get(String(row.id)),
+            ),
+            displayIndex,
           ),
         ),
         contacts: contacts.map(mapContactRow),

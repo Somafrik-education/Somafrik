@@ -136,10 +136,16 @@ function assertPermissionsWithinDelegation(assignerPermissions = [], requestedPe
 }
 
 function mapRoleRow(row) {
+  const { applyRoleDisplayContract } = require("./roleDisplayLabels");
+  const display = applyRoleDisplayContract(row);
   return {
     id: row.id,
     roleCode: row.role_code,
     roleName: row.role_name,
+    roleKey: display.roleKey,
+    defaultLabel: display.defaultLabel,
+    displayLabel: display.displayLabel,
+    effectiveLabel: display.effectiveLabel,
     scope: row.scope,
     displayOrder: Number(row.display_order ?? 0),
     status: row.status === "archived" ? "archived" : "active",

@@ -30,6 +30,7 @@ import {
   toggleCrudFlag,
   type RbacAction,
 } from "../lib/rbacLocks";
+import { resolveEffectiveRoleLabel } from "../lib/roleDisplayLabels";
 
 const CRUD_ACTIONS = [
   { key: "canCreate" as const, action: "create" as RbacAction, label: "Création" },
@@ -122,6 +123,8 @@ export function PermissionsPage() {
   const [roleForm, setRoleForm] = useState({ roleName: "", roleCode: "" });
   const [editingRoleId, setEditingRoleId] = useState("");
   const [editingRoleName, setEditingRoleName] = useState("");
+  const [editingDisplayRoleId, setEditingDisplayRoleId] = useState("");
+  const [editingDisplayLabel, setEditingDisplayLabel] = useState("");
   const [historyItems, setHistoryItems] = useState<RbacHistoryItem[]>([]);
   const [historyOffset, setHistoryOffset] = useState(0);
   const [historyHasMore, setHistoryHasMore] = useState(false);
@@ -153,7 +156,7 @@ export function PermissionsPage() {
       },
       ...activeRoles.map((role) => ({
         value: role.roleCode,
-        label: `${role.roleName} (${role.roleCode})`,
+        label: `${role.effectiveLabel || role.roleName} (${role.roleCode})`,
       })),
     ],
     [activeRoles, schoolCode],
@@ -387,6 +390,41 @@ export function PermissionsPage() {
     }
   }
 
+  async function onSaveDisplayLabel(role: RbacRole) {
+    if (!canManage) return;
+    setBusy(true);
+    try {
+      const next = editingDisplayLabel.trim();
+      if (!next) {
+        await rbacApi.resetRoleDisplayLabel(role.id);
+      } else {
+        await rbacApi.updateRoleDisplayLabel(role.id, next);
+      }
+      setEditingDisplayRoleId("");
+      await refreshCatalog();
+      showToast(next ? "Libellé affiché mis à jour" : "Libellé par défaut restauré", "success");
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Enregistrement du libellé affiché impossible.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onResetDisplayLabel(role: RbacRole) {
+    if (!canManage) return;
+    setBusy(true);
+    try {
+      await rbacApi.resetRoleDisplayLabel(role.id);
+      setEditingDisplayRoleId("");
+      await refreshCatalog();
+      showToast("Libellé par défaut restauré", "success");
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Restauration impossible.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onToggleRoleStatus(role: RbacRole) {
     if (!canManage || isProtectedRole(role, catalog)) return;
     setBusy(true);
@@ -483,8 +521,10 @@ export function PermissionsPage() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
-                  <th className="px-3 py-3 text-left">Nom</th>
-                  <th className="px-3 py-3 text-left">Code technique</th>
+                  <th className="px-3 py-3 text-left">Rôle technique</th>
+                  <th className="px-3 py-3 text-left">Libellé par défaut</th>
+                  <th className="px-3 py-3 text-left">Libellé affiché</th>
+                  <th className="px-3 py-3 text-left">Libellé effectif</th>
                   <th className="px-3 py-3 text-left">Portée</th>
                   <th className="px-3 py-3 text-left">Statut</th>
                   <th className="px-3 py-3 text-left">Utilisateurs actifs</th>
@@ -496,8 +536,15 @@ export function PermissionsPage() {
                 {roles.map((role) => {
                   const protectedRole = isProtectedRole(role, catalog);
                   const editing = editingRoleId === role.id;
+                  const editingDisplay = editingDisplayRoleId === role.id;
+                  const defaultLabel = role.defaultLabel || role.roleName;
+                  const effectiveLabel = role.effectiveLabel || resolveEffectiveRoleLabel({
+                    defaultLabel,
+                    displayLabel: role.displayLabel,
+                  });
                   return (
                   <tr key={role.id} className="border-b border-line/70">
+                    <td className="px-3 py-2.5 font-mono text-xs">{role.roleCode}</td>
                     <td className="px-3 py-2.5 font-medium">
                       {canManage && !protectedRole && editing ? (
                         <Input
@@ -506,16 +553,62 @@ export function PermissionsPage() {
                           aria-label={`Libellé ${role.roleCode}`}
                         />
                       ) : (
-                        role.roleName
+                        defaultLabel
                       )}
                     </td>
-                    <td className="px-3 py-2.5 font-mono text-xs">{role.roleCode}</td>
+                    <td className="px-3 py-2.5">
+                      {canManage && editingDisplay ? (
+                        <Input
+                          value={editingDisplayLabel}
+                          onChange={(event) => setEditingDisplayLabel(event.target.value)}
+                          aria-label={`Libellé affiché ${role.roleCode}`}
+                          placeholder={defaultLabel}
+                        />
+                      ) : (
+                        role.displayLabel || "—"
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">{effectiveLabel || "—"}</td>
                     <td className="px-3 py-2.5">{displayScopeName(role.scope)}</td>
                     <td className="px-3 py-2.5">{displayStatusName(role.status)}</td>
                     <td className="px-3 py-2.5">{role.activeUserCount ?? 0}</td>
                     <td className="px-3 py-2.5">{formatDate(role.updatedAt)}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex flex-wrap gap-2">
+                        {canManage ? (
+                          editingDisplay ? (
+                            <Button
+                              size="sm"
+                              onClick={() => void onSaveDisplayLabel(role)}
+                              disabled={busy}
+                              aria-label={`Enregistrer le libellé affiché ${role.roleCode}`}
+                            >
+                              Enregistrer
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                setEditingDisplayRoleId(role.id);
+                                setEditingDisplayLabel(role.displayLabel || "");
+                              }}
+                              disabled={busy}
+                            >
+                              Modifier
+                            </Button>
+                          )
+                        ) : null}
+                        {canManage ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void onResetDisplayLabel(role)}
+                            disabled={busy || !role.displayLabel}
+                          >
+                            Restaurer le défaut
+                          </Button>
+                        ) : null}
                         {canManage && !protectedRole && role.status === "active" ? (
                           editing ? (
                             <Button size="sm" onClick={() => void onRenameRole(role)} disabled={busy || !editingRoleName.trim()}>
@@ -672,7 +765,7 @@ export function PermissionsPage() {
               </span>
               {" · Rôle "}
               <span className="font-semibold text-brand">
-                {selectedRole.roleName} ({selectedRole.roleCode})
+                {selectedRole.effectiveLabel || selectedRole.roleName} ({selectedRole.roleCode})
               </span>
             </p>
           ) : null}
