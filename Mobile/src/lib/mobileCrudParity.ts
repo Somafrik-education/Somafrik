@@ -6,7 +6,8 @@
  * L’attribution et le retrait des droits de la matrice restent hors Mobile
  * (`MOBILE_ROLE_PERMISSION_MUTATION_ENABLED`).
  */
-import { canMutateEntity, canReadEntity, type SecurityAction, isSuperAdminSessionRole } from "../domain/security/permissions";
+import { canMutateEntity, canReadEntity, type SecurityAction } from "../domain/security/permissions";
+import { shouldDenySchoolDomain } from "./platformSchoolDomainDeny";
 
 export const CANONICAL_CRUD_ENTITIES = [
   "classes",
@@ -48,8 +49,7 @@ export function canRecordSchoolPayment(session: any): boolean {
 
 export function canAssignClassHeadTeacher(session: any): boolean {
   if (!session) return false;
-  const role = session.role ?? session.user?.role;
-  if (isSuperAdminSessionRole(role) || isSuperAdminSessionRole(session.user?.role)) return true;
+  if (shouldDenySchoolDomain(session, "Classes")) return false;
   return (
     canMutateEntity(session, "classes", "UPDATE") ||
     canMutateEntity(session, "assignments", "CREATE") ||

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
+import { shouldSkipSchoolTenantHydration } from "../../lib/platformSchoolDomainDeny";
 import { createL1Api } from "./syncApi";
 import { httpRequest } from "../../services/httpClient";
 import { openNativeL1Database } from "./database";
@@ -25,7 +26,7 @@ export default function L1CacheRuntime() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (!session) {
+      if (!session || shouldSkipSchoolTenantHydration(session)) {
         await invalidateL1CacheSession();
         return;
       }

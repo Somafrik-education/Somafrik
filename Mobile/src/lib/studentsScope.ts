@@ -1,5 +1,6 @@
 import type { Student } from "../data/catalog";
-import { isSuperAdminRole, sessionRoleToPlatformRole } from "./orgHierarchy";
+import { sessionRoleToPlatformRole } from "./orgHierarchy";
+import { isPlatformAdminSession } from "./platformSchoolDomainDeny";
 
 export type SchoolScopeErrorCode =
   | "MISSING_CANONICAL_IDENTITY"
@@ -89,9 +90,7 @@ export function isEstablishmentStaffSession(session: StudentScopeSession): boole
 }
 
 function isPlatformUnscopedRole(session: StudentScopeSession): boolean {
-  const role = session?.role;
-  if (role === "super_admin" || role === "country_admin") return true;
-  return isSuperAdminRole(sessionRoleToPlatformRole(role));
+  return isPlatformAdminSession(session);
 }
 
 /**
@@ -164,7 +163,7 @@ export function projectScopedStudentsForSession(
     return wrap(null, received, received, null);
   }
   if (isPlatformUnscopedRole(session)) {
-    return wrap(session, received, received, null);
+    return wrap(session, received, [], null);
   }
 
   const schoolId = resolveSessionSchoolId(session);

@@ -103,9 +103,7 @@ export class MessageService {
     }
 
     if (
-      role === "super_admin" ||
       role === "school_admin" ||
-      role === "country_admin" ||
       role === "principal" ||
       role === "proviseur" ||
       role === "prefet" ||

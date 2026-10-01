@@ -28,6 +28,7 @@ import { noteConnectivityFailure, noteConnectivitySuccess } from "../lib/connect
 import { clearRequestSchoolScope, setRequestSchoolScope } from "../lib/requestSchoolScope";
 import { normalize } from "../lib/format";
 import { hasPlatformBackofficePrivilege } from "../domain/security/permissions";
+import { shouldSkipSchoolTenantHydration } from "../lib/platformSchoolDomainDeny";
 import { scopeBackOfficeForSession, scopedSchools, type PlatformNotification } from "../lib/scope";
 import {
   applyCreatedPlatformNotification,
@@ -39,6 +40,7 @@ import {
 import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getStudentFees, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard, type CanonicalStudentFee } from "../services/api";
 import {
   getCanonicalAnnouncements,
+  getCanonicalAnnouncementsPage,
   getCanonicalCountries,
   getCanonicalMessages,
   getCanonicalNotifications,
@@ -583,7 +585,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshBackOfficeState = useCallback(async () => {
-    if (!session) {
+    if (!session || shouldSkipSchoolTenantHydration(session)) {
       return;
     }
     const scope = resourceScopeKeyRef.current;
@@ -654,7 +656,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadPayments = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setPaymentsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -669,7 +671,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadStudentFees = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setStudentFeesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -699,7 +701,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadTeachers = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setTeachersSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -714,7 +716,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadStudents = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setStudentsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -739,7 +741,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session, permissionsBootstrap]);
 
   const loadClasses = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setClassesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -760,7 +762,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session, permissionsBootstrap]);
 
   const loadAssignments = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setAssignmentsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -785,7 +787,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session, permissionsBootstrap]);
 
   const loadSchoolCourses = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setSchoolCoursesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -809,7 +811,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     const scope = resourceScopeKeyRef.current;
     setAnnouncementsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = await getCanonicalAnnouncements(activeSchoolCode);
+      const skipSchool = shouldSkipSchoolTenantHydration(session);
+      const rows = skipSchool
+        ? (await getCanonicalAnnouncementsPage(undefined, { includeSchool: false })).items
+        : await getCanonicalAnnouncements(activeSchoolCode);
       if (resourceScopeKeyRef.current !== scope) return;
       setAnnouncementsData(rows);
       setAnnouncementsSnapshot(snapshotFromSuccess(rows));
@@ -820,7 +825,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session, activeSchoolCode]);
 
   const loadMessages = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setMessagesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -887,7 +892,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadPlanningWeekly = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setCourseSchedulesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -907,7 +912,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session, permissionsBootstrap]);
 
   const loadPlanningCourseOptions = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setPlanningCourseOptionsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -921,7 +926,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadRooms = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setRoomsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -935,7 +940,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadReplacements = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setReplacementsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -949,7 +954,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadReportCards = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setReportCardsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -963,7 +968,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadEvaluations = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -979,7 +984,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const loadEvaluation = useCallback(
     async (evaluationId: string) => {
       const key = String(evaluationId ?? "").trim();
-      if (!session || !key) return null;
+      if (!session || !key || shouldSkipSchoolTenantHydration(session)) return null;
       const scope = resourceScopeKeyRef.current;
       setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
       try {
@@ -1002,7 +1007,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   );
 
   const loadNotes = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setNotesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -1024,7 +1029,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loadPresences = useCallback(async () => {
-    if (!session) return false;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return false;
     const scope = resourceScopeKeyRef.current;
     setPresencesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -1042,7 +1047,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
 
   const loadEvaluationGrades = useCallback(
     async (evaluationId: string) => {
-      if (!session) return [];
+      if (!session || shouldSkipSchoolTenantHydration(session)) return [];
       const scope = resourceScopeKeyRef.current;
       setNotesSnapshot((current) => ({ ...current, status: "loading" }));
       try {
@@ -1103,7 +1108,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         setActiveSchoolCodeState("");
         clearStoredSchoolCode();
       }
-    } else if (resourceChanged) {
+    } else if (resourceChanged && !shouldSkipSchoolTenantHydration(session)) {
       markTenantResourcesSwitching();
     }
     if (!plan.loadPrincipal && !plan.loadTenant) {
@@ -1119,6 +1124,11 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       void loaders.loadSubscriptions();
       void loaders.loadNotifications();
     }
+    if (shouldSkipSchoolTenantHydration(session)) {
+      void loaders.loadUsers();
+      void loaders.loadAnnouncements();
+      return;
+    }
     const tenantReady =
       !requiresSchoolSelection || Boolean(activeSchoolCode && activeSchoolCode !== ALL_SCHOOLS_CODE);
     const skipTenantUntilSchoolChosen = requiresSchoolSelection && plan.resetKind === "principal";
@@ -1132,6 +1142,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       void loaders.loadMessages();
     }
   }, [
+    session,
     principalScopeKey,
     resourceScopeKey,
     requiresSchoolSelection,
@@ -1148,6 +1159,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     const handleOnline = () => {
+      if (shouldSkipSchoolTenantHydration(session)) return;
       refreshBackOfficeState().catch(() => null);
     };
 

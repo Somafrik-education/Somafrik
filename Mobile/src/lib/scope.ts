@@ -6,6 +6,7 @@ import {
   sessionRoleToPlatformRole,
 } from "./orgHierarchy";
 import { ALL_SCHOOLS_CODE, isAllSchoolsSelection } from "./activeSchool";
+import { isPlatformAdminSession, stripSchoolDomainCollections } from "./platformSchoolDomainDeny";
 
 export type PlatformNotification = {
   id?: string;
@@ -239,33 +240,15 @@ export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
     notifications: (payload.notifications as any[]) ?? [],
   };
 
-  if (session.role === "country_admin") {
-    const scoped = {
+  if (isPlatformAdminSession(session) || session.role === "country_admin" || session.role === "super_admin") {
+    const scoped = stripSchoolDomainCollections({
       ...payload,
       countries: scopedCountries(user, scopeState),
       schools: scopedSchools(user, scopeState),
       subscriptions: scopedSubscriptions(user, scopeState),
       users: scopedUsers(user, scopeState),
       notifications: scopedNotifications(user, scopeState),
-    } as T;
-    if (activeSchoolCode && !isAllSchoolsSelection(activeSchoolCode)) {
-      return trustServerScopedPlatformTenant(payload, scoped);
-    }
-    return scoped;
-  }
-
-  if (session.role === "super_admin") {
-    const scoped = {
-      ...payload,
-      countries: scopedCountries(user, scopeState),
-      schools: scopedSchools(user, scopeState),
-      subscriptions: scopedSubscriptions(user, scopeState),
-      users: scopedUsers(user, scopeState),
-      notifications: scopedNotifications(user, scopeState),
-    } as T;
-    if (activeSchoolCode && !isAllSchoolsSelection(activeSchoolCode)) {
-      return trustServerScopedPlatformTenant(payload, scoped);
-    }
+    } as Record<string, unknown>) as T;
     return scoped;
   }
 
