@@ -934,6 +934,21 @@ class PostgresRepository {
     return updateRole(this, roleId, patch, principal, auditMeta);
   }
 
+  updateEstablishmentRoleDisplayLabel(roleId, patch, principal, auditMeta) {
+    const { updateRoleDisplayLabel } = require("../lib/establishmentRolesService");
+    return updateRoleDisplayLabel(this, roleId, patch, principal, auditMeta);
+  }
+
+  resetEstablishmentRoleDisplayLabel(roleId, principal, auditMeta) {
+    const { resetRoleDisplayLabel } = require("../lib/establishmentRolesService");
+    return resetRoleDisplayLabel(this, roleId, principal, auditMeta);
+  }
+
+  listEstablishmentRoleDisplayLabels(principal) {
+    const { listRoleDisplayLabels } = require("../lib/establishmentRolesService");
+    return listRoleDisplayLabels(this, principal);
+  }
+
   archiveEstablishmentRole(roleId, principal, auditMeta) {
     const { archiveRole } = require("../lib/establishmentRolesService");
     return archiveRole(this, roleId, principal, auditMeta);

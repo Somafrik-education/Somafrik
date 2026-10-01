@@ -9,7 +9,7 @@ import type {
   RbacResetOverridePayload,
 } from "../lib/rbacApi";
 
-const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHistoryMock } = vi.hoisted(() => {
+const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, updateRoleDisplayLabelMock, resetRoleDisplayLabelMock, getHistoryMock } = vi.hoisted(() => {
   const catalog: RbacCatalog = {
     modules: [
       {
@@ -40,6 +40,25 @@ const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHis
         schoolAssignable: true,
         activeUserCount: 2,
         updatedAt: "2026-08-16T10:00:00.000Z",
+        roleKey: "PREFET_ETUDES",
+        defaultLabel: "Préfet des études",
+        displayLabel: null,
+        effectiveLabel: "Préfet des études",
+      },
+      {
+        id: "role-school",
+        roleCode: "SCHOOL_ADMIN",
+        roleName: "Admin School",
+        scope: "school",
+        displayOrder: 2,
+        status: "active",
+        schoolAssignable: false,
+        activeUserCount: 3,
+        updatedAt: "2026-08-16T10:00:00.000Z",
+        roleKey: "SCHOOL_ADMIN",
+        defaultLabel: "Admin School",
+        displayLabel: null,
+        effectiveLabel: "Admin School",
       },
       {
         id: "role-super",
@@ -51,9 +70,13 @@ const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHis
         schoolAssignable: false,
         activeUserCount: 1,
         updatedAt: "2026-08-16T10:00:00.000Z",
+        roleKey: "SUPER_ADMIN",
+        defaultLabel: "Super Administrateur Somafrik",
+        displayLabel: null,
+        effectiveLabel: "Super Administrateur Somafrik",
       },
     ],
-    protectedRoleKeys: ["SUPER_ADMIN"],
+    protectedRoleKeys: ["SUPER_ADMIN", "SCHOOL_ADMIN"],
     mandatoryByRole: {
       SUPER_ADMIN: {
         users: { create: true, read: true, update: true, delete: true },
@@ -138,6 +161,15 @@ const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHis
     void payload;
     return catalog.roles[0];
   });
+  const updateRoleDisplayLabelMock = vi.fn(async (roleId: string, displayLabel: string) => {
+    void roleId;
+    void displayLabel;
+    return { ...catalog.roles[1], displayLabel, effectiveLabel: displayLabel };
+  });
+  const resetRoleDisplayLabelMock = vi.fn(async (roleId: string) => {
+    void roleId;
+    return catalog.roles[1];
+  });
   const getHistoryMock = vi.fn(async (query?: { limit?: number; offset?: number }) => {
     void query;
     return {
@@ -161,7 +193,7 @@ const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHis
       hasMore: false,
     };
   });
-  return { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHistoryMock };
+  return { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, updateRoleDisplayLabelMock, resetRoleDisplayLabelMock, getHistoryMock };
 });
 
 vi.mock("../lib/rbacApi", () => ({
@@ -172,6 +204,8 @@ vi.mock("../lib/rbacApi", () => ({
     resetOverride: (payload: RbacResetOverridePayload) => resetMock(payload),
     createRole: vi.fn(),
     updateRole: (roleId: string, payload: Record<string, unknown>) => updateRoleMock(roleId, payload),
+    updateRoleDisplayLabel: (roleId: string, displayLabel: string) => updateRoleDisplayLabelMock(roleId, displayLabel),
+    resetRoleDisplayLabel: (roleId: string) => resetRoleDisplayLabelMock(roleId),
     archiveRole: vi.fn(),
     getHistory: (query?: { limit?: number; offset?: number }) => getHistoryMock(query),
   },
@@ -251,6 +285,8 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
     getConfiguredMock.mockClear();
     resetMock.mockClear();
     updateRoleMock.mockClear();
+    updateRoleDisplayLabelMock.mockClear();
+    resetRoleDisplayLabelMock.mockClear();
     getHistoryMock.mockClear();
   });
 
@@ -359,6 +395,25 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
     expect(updateRoleMock).toHaveBeenCalledWith("role-prefet", { roleName: "Préfet pédagogique" });
     expect(screen.queryByRole("button", { name: "Renommer" })).not.toBeNull();
     expect(screen.getAllByText("Protégé").length).toBeGreaterThan(0);
+  });
+
+  it("permet d'éditer le libellé affiché d'un rôle protégé sans rename ADMIN-02", async () => {
+    render(<PermissionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Rôles" }));
+    expect(screen.getByText("SCHOOL_ADMIN")).toBeInTheDocument();
+    expect(screen.getAllByText("Admin School").length).toBeGreaterThan(0);
+    expect(screen.getByText("Rôle technique")).toBeInTheDocument();
+    expect(screen.getByText("Libellé par défaut")).toBeInTheDocument();
+    expect(screen.getByText("Libellé affiché")).toBeInTheDocument();
+    expect(screen.getByText("Libellé effectif")).toBeInTheDocument();
+    const modifyButtons = screen.getAllByRole("button", { name: "Modifier" });
+    fireEvent.click(modifyButtons[1]);
+    const input = await screen.findByLabelText("Libellé affiché SCHOOL_ADMIN");
+    fireEvent.change(input, { target: { value: "Directeur" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer le libellé affiché SCHOOL_ADMIN" }));
+    await waitFor(() => expect(updateRoleDisplayLabelMock).toHaveBeenCalled());
+    expect(updateRoleDisplayLabelMock).toHaveBeenCalledWith("role-school", "Directeur");
+    expect(updateRoleMock).not.toHaveBeenCalled();
   });
 
   it("affiche l'historique paginé des modifications RBAC", async () => {

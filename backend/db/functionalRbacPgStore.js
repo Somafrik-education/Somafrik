@@ -266,10 +266,12 @@ function createFunctionalRbacPgStore(repo) {
        ORDER BY er.display_order, er.role_name`,
       [includeArchived],
     );
+    const { applyRoleDisplayContract } = require("../lib/roleDisplayLabels");
     return rows.map((row) => ({
       id: row.id,
       roleCode: row.role_code,
       roleName: row.role_name,
+      ...applyRoleDisplayContract(row),
       scope: row.scope,
       displayOrder: Number(row.display_order ?? 0),
       status: row.status === "archived" ? "archived" : "active",

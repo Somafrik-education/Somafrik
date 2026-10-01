@@ -927,6 +927,9 @@ function summarizeAuditSide(payload) {
     return `${formatAuditCrud(payload.crud)}${source}`;
   }
   if (payload.status === "archived") return `archivé (${payload.roleName || payload.roleKey || ""})`.trim();
+  if (payload.oldDisplayLabel !== undefined || payload.newDisplayLabel !== undefined) {
+    return payload.newDisplayLabel || "défaut";
+  }
   if (payload.roleName) return payload.roleName;
   return "—";
 }

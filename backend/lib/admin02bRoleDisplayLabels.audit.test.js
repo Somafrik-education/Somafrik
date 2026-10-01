@@ -1,14 +1,13 @@
 "use strict";
 
 /**
- * ADMIN-02B — audit stockage libellés d’affichage.
- * STOP : aucune colonne display propre, aucune migration créée.
+ * ADMIN-02B — garde statique : display_label hors chemins d'autorisation.
  */
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const path = require("node:path");
+const path = require("path");
 const { ROLE_TO_DB } = require("./clientsManagement");
 const { toRoleKey, toRoleLabel } = require("./userRoleLifecycle");
 const { isProtectedSystemRole, assertNotProtectedMutation } = require("./functionalRbacManagement");
@@ -18,24 +17,15 @@ function readUtf8(relativePath) {
   return fs.readFileSync(path.join(__dirname, relativePath), "utf8");
 }
 
-test("ADMIN-02B STOP — establishment_roles n'a pas de display_label", () => {
-  const schema = readUtf8("../db/establishmentRolesSchema.js");
-  assert.match(schema, /role_code TEXT NOT NULL/);
-  assert.match(schema, /role_name TEXT NOT NULL/);
-  assert.match(schema, /establishment_roles_role_name_unique UNIQUE \(role_name\)/);
-  assert.doesNotMatch(schema, /display_label/);
-  assert.doesNotMatch(schema, /displayLabel/);
-  assert.doesNotMatch(readUtf8("../db/migrations/20260816_establishment_roles_canonical.sql"), /display_label/);
-});
+const RBAC_RESOLVER_FILES = [
+  "./userRoleLifecycle.js",
+  "./functionalRbacResolution.js",
+  "./rbacMandatoryPermissions.js",
+  "../services/rbacService.js",
+  "./liveRbacPrincipalAuthority.js",
+];
 
-test("ADMIN-02B STOP — users.role et user_roles.role_key restent l'identité", () => {
-  const schema = readUtf8("../db/schema.sql");
-  assert.match(schema, /CREATE TABLE IF NOT EXISTS users \([\s\S]*role TEXT,/);
-  assert.match(schema, /CREATE TABLE IF NOT EXISTS user_roles \([\s\S]*role_key TEXT NOT NULL/);
-  assert.doesNotMatch(schema, /display_label/);
-});
-
-test("ADMIN-02B STOP — Directeur est déjà l'identité PRINCIPAL, pas SCHOOL_ADMIN", () => {
+test("ADMIN-02B — Directeur reste l'identité PRINCIPAL, pas SCHOOL_ADMIN", () => {
   assert.equal(ROLE_TO_DB.Directeur, "PRINCIPAL");
   assert.equal(toRoleKey("Directeur"), "PRINCIPAL");
   assert.equal(toRoleKey("Admin School"), "SCHOOL_ADMIN");
@@ -43,7 +33,7 @@ test("ADMIN-02B STOP — Directeur est déjà l'identité PRINCIPAL, pas SCHOOL_
   assert.notEqual(toRoleKey("Directeur"), "SCHOOL_ADMIN");
 });
 
-test("ADMIN-02B STOP — rôles protégés non renommables via ADMIN-02", () => {
+test("ADMIN-02B — rôles protégés restent non renommables via ADMIN-02", () => {
   for (const key of ["SUPER_ADMIN", "COUNTRY_ADMIN", "SCHOOL_ADMIN"]) {
     assert.equal(isProtectedSystemRole(key), true, key);
     assert.throws(
@@ -53,29 +43,30 @@ test("ADMIN-02B STOP — rôles protégés non renommables via ADMIN-02", () => 
   }
 });
 
-test("ADMIN-02B STOP — aucune API display-label / audit dédié", () => {
-  const server = readUtf8("../server.js");
-  assert.doesNotMatch(server, /ROLE_DISPLAY_LABEL_UPDATE/);
-  assert.doesNotMatch(server, /ROLE_DISPLAY_LABEL_RESET/);
-  assert.doesNotMatch(server, /\/api\/backoffice\/rbac\/role-display/);
-  assert.doesNotMatch(server, /displayLabel/);
-  const rbac = readUtf8("./functionalRbacManagement.js");
-  assert.doesNotMatch(rbac, /ROLE_DISPLAY_LABEL/);
+test("ADMIN-02B — resolvers RBAC / toRoleKey ne consomment pas displayLabel", () => {
+  for (const file of RBAC_RESOLVER_FILES) {
+    const body = readUtf8(file);
+    assert.doesNotMatch(body, /displayLabel|effectiveLabel|display_label/, file);
+  }
+  const toRoleKeySrc = readUtf8("./userRoleLifecycle.js");
+  assert.match(toRoleKeySrc, /function toRoleKey\(/);
+  assert.doesNotMatch(toRoleKeySrc, /displayLabel/);
 });
 
-test("ADMIN-02B STOP — updateRole ADMIN-02 mute roleName, pas un alias", () => {
+test("ADMIN-02B — users.role et user_roles.role_key restent l'identité", () => {
+  const schema = readUtf8("../db/schema.sql");
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS users \([\s\S]*role TEXT,/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS user_roles \([\s\S]*role_key TEXT NOT NULL/);
+  assert.doesNotMatch(schema, /display_label/);
+});
+
+test("ADMIN-02B — API display-label dédiée, rename ADMIN-02 inchangé", () => {
+  const server = readUtf8("../server.js");
+  assert.match(server, /updateEstablishmentRoleDisplayLabel/);
+  assert.match(server, /resetEstablishmentRoleDisplayLabel/);
   const service = readUtf8("./establishmentRolesService.js");
   assert.match(service, /assertNotProtectedMutation/);
   assert.match(service, /roleName: nextName/);
-  assert.doesNotMatch(service, /displayLabel/);
-});
-
-test("ADMIN-02B STOP — aucune migration display_label ajoutée", () => {
-  const migrationsDir = path.join(__dirname, "../db/migrations");
-  const files = fs.readdirSync(migrationsDir);
-  for (const file of files) {
-    const body = fs.readFileSync(path.join(migrationsDir, file), "utf8");
-    assert.doesNotMatch(body, /display_label/, file);
-    assert.doesNotMatch(body, /role_display_labels/, file);
-  }
+  const renameFn = service.slice(service.indexOf("async function updateRole("), service.indexOf("async function updateRoleDisplayLabel"));
+  assert.doesNotMatch(renameFn, /displayLabel/);
 });

@@ -6,6 +6,7 @@ import CommunicationPreferencesSheet from "./CommunicationPreferencesSheet";
 import { useAuth } from "../context/AuthContext";
 import { isSuperAdminSessionRole } from "../domain/security/permissions";
 import { resolveCanonicalRoleIdentity } from "../lib/canonicalRoleIdentity";
+import { visibleRoleLabel } from "../lib/roleDisplayLabels";
 import { getAllowedRoleDrawerSections, type RoleDrawerItem } from "../navigation/roleDrawerPreferences";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { getReleaseProfile } from "../config/env";
@@ -66,7 +67,11 @@ export default function RoleNavigationDrawer({
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
   const userName = session?.user?.name ?? "Utilisateur";
   const identity = resolveCanonicalRoleIdentity(session);
-  const roleLabel = identity.roleLabel || ROLE_LABELS[session?.role ?? ""] || "Compte Somafrik";
+  const roleLabel =
+    visibleRoleLabel(session?.user) ||
+    identity.roleLabel ||
+    ROLE_LABELS[session?.role ?? ""] ||
+    "Compte Somafrik";
   const canOpenPersonalPreferences = Boolean(
     (session?.user?.schoolCode && session.user.schoolCode !== "*") ||
       (session?.school?.code && session.school.code !== "*"),

@@ -284,6 +284,10 @@ export interface UserAccount {
   email?: string;
   /** Libellé du rôle d'accès primaire (pas le type métier). */
   role?: string;
+  /** Clé canonique du rôle d'accès primaire. Jamais un alias d'affichage. */
+  roleKey?: string;
+  /** Libellé visuel résolu (display_label ou role). Hors RBAC. */
+  effectiveRoleLabel?: string;
   /** Libellés des rôles d'accès. */
   roles?: string[];
   /** Clés canoniques des rôles d'accès (TEACHER, SECRETARY, …). */

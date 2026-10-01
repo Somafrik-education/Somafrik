@@ -136,6 +136,23 @@ function createEstablishmentRolesPgStore(repo) {
     return getRoleById(row.id);
   }
 
+  async function updateRoleDisplayLabel(roleId, displayLabel) {
+    const row = await one(
+      `UPDATE establishment_roles
+       SET display_label = $2, updated_at = NOW()
+       WHERE id = $1::uuid
+       RETURNING *`,
+      [roleId, displayLabel],
+    );
+    return hydrateRole(row);
+  }
+
+  async function listRoleDisplayContracts() {
+    const { applyRoleDisplayContract } = require("../lib/roleDisplayLabels");
+    const rows = await all(`SELECT role_code, role_name, display_label FROM establishment_roles`);
+    return rows.map((row) => applyRoleDisplayContract(row));
+  }
+
   async function updateRole(roleId, patch) {
     const row = await one(
       `UPDATE establishment_roles
@@ -250,6 +267,8 @@ function createEstablishmentRolesPgStore(repo) {
     getRoleByNameOrCode,
     insertRole,
     updateRole,
+    updateRoleDisplayLabel,
+    listRoleDisplayContracts,
     archiveRole,
     getPermissionsMap,
     inventoryLegacyUserRolesPayloads,

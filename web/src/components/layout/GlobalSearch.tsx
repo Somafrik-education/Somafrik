@@ -8,6 +8,7 @@ import { canReadView } from "../../lib/permissions";
 import { scopedSchools, scopedUsers } from "../../lib/scope";
 import { scopedStudents } from "../../lib/establishment";
 import { displayRoleName, normalize } from "../../lib/format";
+import { visibleRoleLabel } from "../../lib/roleDisplayLabels";
 
 interface SearchHit {
   id: string;
@@ -80,7 +81,7 @@ export function GlobalSearch() {
             label:
               `${String(u.firstName ?? "")} ${String(u.lastName ?? "")}`.trim() ||
               String(u.identifier ?? ""),
-            sub: [String(u.identifier ?? ""), displayRoleName(String(u.role ?? ""))].filter(Boolean).join(" · "),
+            sub: [String(u.identifier ?? ""), displayRoleName(visibleRoleLabel(u) || String(u.role ?? ""))].filter(Boolean).join(" · "),
             to: "/etablissement/comptes-utilisateurs",
           }),
         );

@@ -4026,6 +4026,21 @@ class FallbackRepository {
     return createRole(this, payload, principal, auditMeta);
   }
 
+  updateEstablishmentRoleDisplayLabel(roleId, patch, principal, auditMeta) {
+    const { updateRoleDisplayLabel } = require("../lib/establishmentRolesService");
+    return updateRoleDisplayLabel(this, roleId, patch, principal, auditMeta);
+  }
+
+  resetEstablishmentRoleDisplayLabel(roleId, principal, auditMeta) {
+    const { resetRoleDisplayLabel } = require("../lib/establishmentRolesService");
+    return resetRoleDisplayLabel(this, roleId, principal, auditMeta);
+  }
+
+  listEstablishmentRoleDisplayLabels(principal) {
+    const { listRoleDisplayLabels } = require("../lib/establishmentRolesService");
+    return listRoleDisplayLabels(this, principal);
+  }
+
   updateEstablishmentRole(roleId, patch, principal, auditMeta) {
     const { updateRole } = require("../lib/establishmentRolesService");
     return updateRole(this, roleId, patch, principal, auditMeta);

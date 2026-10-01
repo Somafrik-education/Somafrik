@@ -493,14 +493,14 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                   onChange={(e) => setSelectedCatalogueRoleId(e.target.value)}
                   options={assignableRoles.map((role) => ({
                     value: role.id,
-                    label: displayRoleName(role.roleName),
+                    label: displayRoleName(role.effectiveLabel || role.roleName),
                   }))}
                 />
               </FormField>
               {selectedCatalogueRole ? (
                 <div className="rounded-xl border border-line bg-slate-50/60 p-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-bold text-ink">{displayRoleName(selectedCatalogueRole.roleName)}</p>
+                    <p className="text-sm font-bold text-ink">{displayRoleName(selectedCatalogueRole.effectiveLabel || selectedCatalogueRole.roleName)}</p>
                     <Badge tone="neutral">{selectedCatalogueRole.roleCode}</Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted">
