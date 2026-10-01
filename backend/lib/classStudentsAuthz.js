@@ -12,7 +12,6 @@ const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Admin
 
 const SCHOOL_WIDE_STUDENT_READ_ROLES = new Set([
   "Admin School",
-  "Admin Pays",
   "Préfet des études",
   "Proviseur",
   "Directeur",
@@ -20,6 +19,9 @@ const SCHOOL_WIDE_STUDENT_READ_ROLES = new Set([
   "Surveillant",
   "Comptable",
 ]);
+
+/** Métadonnées classes : Admin Pays reste lecteur établissement, pas l'annuaire élèves. */
+const SCHOOL_WIDE_CLASS_READ_ROLES = new Set([...SCHOOL_WIDE_STUDENT_READ_ROLES, "Admin Pays"]);
 
 /** Statuts d'affectation explicitement actifs (tout le reste = fail-closed). */
 const ACTIVE_ASSIGNMENT_STATUSES = new Set(["active", "actif", "open", "ouverte"]);
@@ -277,7 +279,7 @@ function scopeSchoolClassesForPrincipal(principal, rows) {
     throw new BusinessError(403, "Accès refusé: principal requis.");
   }
 
-  if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
+  if (principalHasAnyRole(principal, SCHOOL_WIDE_CLASS_READ_ROLES)) {
     return rows;
   }
 
@@ -342,6 +344,7 @@ function authorizeStudentReadForPrincipal(student, principal, studentRef, resolv
 module.exports = {
   SUPER_ADMIN_ROLES,
   SCHOOL_WIDE_STUDENT_READ_ROLES,
+  SCHOOL_WIDE_CLASS_READ_ROLES,
   ACTIVE_ASSIGNMENT_STATUSES,
   isParentOrStudentRole,
   isExplicitlyActiveAssignmentStatus,

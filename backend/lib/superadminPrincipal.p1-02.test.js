@@ -140,14 +140,12 @@ test("garde source : une seule function isSuperAdminPrincipal Backend", () => {
   assert.deepEqual(hits, ["lib/superadminPrincipal.js"], hits.join(", "));
 });
 
-test("P1-02 ne branche pas l'autorité canonique sur les scopes school-domain mode all", () => {
+test("P1-02 ne branche pas l'autorité canonique pour accorder mode all", () => {
   const files = [
     "usersSchoolScope.js",
-    "planningSchoolScope.js",
     "presenceSchoolScope.js",
     "academicYearSchoolScope.js",
     "enrollmentSchoolScope.js",
-    "mobileSyncScope.js",
     "classStudentsAuthz.js",
   ];
   for (const file of files) {

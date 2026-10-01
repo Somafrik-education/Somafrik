@@ -32,6 +32,16 @@ test("P0-03 SUPER_ADMIN n'obtient aucun accès scolaire global", () => {
   expect403(() => scopeSchoolClassesForPrincipal(superadmin, rows));
 });
 
+test("P1-06 Admin Pays n'obtient pas l'annuaire élèves school-wide", () => {
+  const country = { role: "Admin Pays", roleKeys: ["COUNTRY_ADMIN"] };
+  assert.equal(principalHasClassAccess(country, "Classe A"), false);
+  expect403(() => scopeClassStudentsForPrincipal(country, { classCode: "CLS-1" }, rows, () => undefined));
+  expect403(() => scopeSchoolStudentsForPrincipal(country, rows, () => undefined));
+  assert.deepEqual(scopeSchoolClassesForPrincipal(country, [{ id: "cls-1", classCode: "CLS-1" }]), [
+    { id: "cls-1", classCode: "CLS-1" },
+  ]);
+});
+
 test("P0-03 rôle inconnu est fail-closed", () => {
   assert.equal(principalHasClassAccess(unknown, "Classe A"), false);
   expect403(() => scopeClassStudentsForPrincipal(unknown, { classCode: "CLS-1" }, rows, () => undefined));

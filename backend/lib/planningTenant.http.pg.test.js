@@ -709,46 +709,13 @@ async function main() {
     assert.ok(schedulesB.every((row) => row.schoolCode === LOGIN_B && row.schoolId === fixture.schoolBId), "PL-09 projection login_code B");
     assert.equal(schedulesB.some((row) => row.schoolCode === LEFTOVER_B || row.schoolCode === LOGIN_A), false);
 
-    const leftoverCodes = [LEFTOVER_A, LEFTOVER_B, LEFTOVER_A2, LEFTOVER_NO_LOGIN];
     const getSuper = await request("/course-schedules", { token: tokenSuper });
-    assert.equal(getSuper.status, 200, `PL-10 Superadmin: ${getSuper.status}`);
-    const superRows = unwrapList(getSuper.data);
-    assert.ok(superRows.some((row) => String(row.id) === SLOT_A));
-    assert.ok(superRows.some((row) => String(row.id) === SLOT_B));
-    assert.equal(
-      superRows.some((row) => String(row.id) === SLOT_NO_LOGIN),
-      false,
-      `PL-15 Superadmin omet row sans login_code: ${JSON.stringify(superRows)}`,
-    );
-    assert.equal(
-      superRows.some((row) => leftoverCodes.includes(String(row.schoolCode ?? "").trim())),
-      false,
-      `PL-15 Superadmin n'émet aucun leftover: ${JSON.stringify(superRows.map((row) => row.schoolCode))}`,
-    );
-    assert.ok(
-      superRows.every((row) => String(row.schoolCode ?? "").trim()),
-      "PL-15 Superadmin: schoolCode = login_code uniquement",
-    );
+    assert.equal(getSuper.status, 403, `P1-06 Superadmin Planning refusé: ${getSuper.status} ${JSON.stringify(getSuper.data)}`);
+    assert.equal(getSuper.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
 
     const getPays = await request("/course-schedules", { token: tokenPaysCd });
-    assert.equal(getPays.status, 200, `PL-11 Admin Pays: ${JSON.stringify(getPays.data)}`);
-    const paysRows = unwrapList(getPays.data);
-    assert.equal(
-      paysRows.some((row) => String(row.id) === SLOT_B || row.schoolCode === LOGIN_B || row.schoolCode === LEFTOVER_B),
-      false,
-      "PL-11 Admin Pays CD ne voit pas BI",
-    );
-    assert.ok(paysRows.some((row) => String(row.id) === SLOT_A || row.schoolCode === LOGIN_A), "PL-11 voit CD");
-    assert.equal(
-      paysRows.some((row) => String(row.id) === SLOT_NO_LOGIN || row.schoolCode === LEFTOVER_NO_LOGIN),
-      false,
-      `PL-15 Admin Pays CD n'émet pas leftover login_code NULL: ${JSON.stringify(paysRows.map((row) => row.schoolCode))}`,
-    );
-    assert.equal(
-      paysRows.some((row) => leftoverCodes.includes(String(row.schoolCode ?? "").trim())),
-      false,
-      "PL-15 Admin Pays: aucun leftover",
-    );
+    assert.equal(getPays.status, 403, `P1-06 Admin Pays Planning refusé: ${JSON.stringify(getPays.data)}`);
+    assert.equal(getPays.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
 
     const getA2 = await request("/course-schedules", { token: tokenA2 });
     assert.equal(unwrapList(getA2.data).some((row) => String(row.id) === SLOT_A), false, "PL-12 A2 jamais A");
