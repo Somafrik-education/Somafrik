@@ -23,6 +23,7 @@ require("./superadminPrincipal.p1-02.test.js");
 require("./communicationsMessages.p1-03.test.js");
 require("./planningSyncDeny.p1-06.test.js");
 require("./allPrivilegesSchoolDomainDeny.p1-12.test.js");
+require("./superadminClosure.p1-13.audit.test.js");
 
 const rbac = new RbacService();
 
