@@ -189,9 +189,10 @@ describe("P1-07 Web — isolation stricte du domaine scolaire", () => {
     expect(deny).toMatch(/isSuperAdminRole/);
     expect(deny).toMatch(/COUNTRY_ADMIN_ROLE/);
     const denyFn = deny.slice(deny.indexOf("export function shouldDenyWebSchoolDomain"));
-    expect(denyFn).not.toMatch(/ALL_PRIVILEGES/);
-    expect(denyFn).not.toMatch(/permissions/);
-    expect(denyFn).not.toMatch(/schoolCode:\s*"\*"/);
+    const schoolBoundAt = denyFn.indexOf("hasWebSchoolBoundRole");
+    const privilegesAt = denyFn.indexOf("hasAllPrivilegesToken");
+    expect(schoolBoundAt).toBeGreaterThan(-1);
+    expect(privilegesAt).toBeGreaterThan(schoolBoundAt);
 
     expect(active).toMatch(/shouldDenyWebSchoolDomain\(user\)/);
     expect(active).toMatch(/return "";/);

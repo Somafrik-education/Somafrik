@@ -24,7 +24,7 @@ import {
   isPlatformCommunicationFeature,
   isPlatformCommunicationUser,
 } from "./establishmentCommunication";
-import { shouldDenyWebSchoolDomain } from "./webSchoolDomainDeny";
+import { isWebSchoolDomainFeature, shouldDenyWebSchoolDomain } from "./webSchoolDomainDeny";
 
 const SCHOOL_ADMIN_FORBIDDEN_FEATURES = new Set(["Établissements", "Abonnements"]);
 
@@ -375,6 +375,12 @@ export function hasBackOfficePermission(
 ): boolean {
   if (!ctx.user) return false;
   const featureList = Array.isArray(features) ? features : [features];
+  if (
+    shouldDenyWebSchoolDomain(ctx.user) &&
+    featureList.some((feature) => isWebSchoolDomainFeature(feature))
+  ) {
+    return false;
+  }
   if (featureList.includes("Messages") && isPlatformCommunicationUser(ctx)) {
     return false;
   }
