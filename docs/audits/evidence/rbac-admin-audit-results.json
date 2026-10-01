@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-01T17:11:09.448Z",
+  "generatedAt": "2026-10-01T17:13:02.085Z",
   "mandate": "AUDIT + RED tests — aucune correction fonctionnelle",
   "suites": [
     {
@@ -67,7 +67,7 @@
         "# Subtest: RED-01b Enregistrer sans changement depuis le chemin Superadmin n'écrit pas un DENY école",
         "not ok 10 - RED-01b Enregistrer sans changement depuis le chemin Superadmin n'écrit pas un DENY école",
         "  ---",
-        "  duration_ms: 0.955621",
+        "  duration_ms: 0.820944",
         "  location: '/workspace/backend/lib/rbacAdminAudit.red.test.js:217:1'",
         "  failureType: 'testCodeFailure'",
         "  error: |-",
@@ -94,7 +94,7 @@
         "# cancelled 0",
         "# skipped 0",
         "# todo 0",
-        "# duration_ms 63.368981"
+        "# duration_ms 55.110694"
       ]
     },
     {
@@ -162,32 +162,32 @@
         "# Subtest: RED-07 VERT — isolation établissement : patch école A n'autorise pas école B",
         "ok 7 - RED-07 VERT — isolation établissement : patch école A n'autorise pas école B",
         "  ---",
-        "  duration_ms: 2.7485",
+        "  duration_ms: 2.252444",
         "  ...",
         "# Subtest: RED-08 VERT — isolation pays : une config CD n'autorise pas implicitement BI",
         "ok 8 - RED-08 VERT — isolation pays : une config CD n'autorise pas implicitement BI",
         "  ---",
-        "  duration_ms: 0.303178",
+        "  duration_ms: 0.280366",
         "  ...",
         "# Subtest: RED-09 VERT — SCHOOL_ADMIN / COUNTRY_ADMIN ne peuvent pas écrire la matrice ni lister le catalogue",
         "ok 9 - RED-09 VERT — SCHOOL_ADMIN / COUNTRY_ADMIN ne peuvent pas écrire la matrice ni lister le catalogue",
         "  ---",
-        "  duration_ms: 0.463303",
+        "  duration_ms: 0.599869",
         "  ...",
         "# Subtest: RED-10 VERT — dépendance CREATE/UPDATE/DELETE → READ : UI helper + backend, pas seulement l'écran",
         "ok 10 - RED-10 VERT — dépendance CREATE/UPDATE/DELETE → READ : UI helper + backend, pas seulement l'écran",
         "  ---",
-        "  duration_ms: 0.964193",
+        "  duration_ms: 1.108241",
         "  ...",
         "# Subtest: VERT — PUT legacy role-permissions reste fermé ; PATCH métier Superadmin existe encore",
         "ok 11 - VERT — PUT legacy role-permissions reste fermé ; PATCH métier Superadmin existe encore",
         "  ---",
-        "  duration_ms: 0.40896",
+        "  duration_ms: 0.419972",
         "  ...",
         "# Subtest: VERT — rôles métier du référentiel réel (pas de tables inventées)",
         "ok 12 - VERT — rôles métier du référentiel réel (pas de tables inventées)",
         "  ---",
-        "  duration_ms: 0.090344",
+        "  duration_ms: 0.093755",
         "  ...",
         "1..12",
         "# tests 12",
@@ -197,7 +197,7 @@
         "# cancelled 0",
         "# skipped 0",
         "# todo 0",
-        "# duration_ms 83.840085"
+        "# duration_ms 79.171384"
       ]
     },
     {
@@ -265,8 +265,8 @@
         "",
         " Test Files  5 passed (5)",
         "      Tests  17 passed (17)",
-        "   Start at  17:11:07",
-        "   Duration  1.71s (transform 541ms, setup 445ms, import 663ms, tests 423ms, environment 2.52s)"
+        "   Start at  17:13:00",
+        "   Duration  1.68s (transform 482ms, setup 463ms, import 652ms, tests 420ms, environment 2.40s)"
       ]
     },
     {
@@ -410,32 +410,32 @@
         "# Subtest: PATCH refuse invariant SUPER_ADMIN sans écriture — MANDATORY_PERMISSION",
         "ok 26 - PATCH refuse invariant SUPER_ADMIN sans écriture — MANDATORY_PERMISSION",
         "  ---",
-        "  duration_ms: 1.416959",
+        "  duration_ms: 1.36421",
         "  ...",
         "# Subtest: PATCH refuse CREATE sans READ — MANDATORY_PERMISSION dependency",
         "ok 27 - PATCH refuse CREATE sans READ — MANDATORY_PERMISSION dependency",
         "  ---",
-        "  duration_ms: 0.208341",
+        "  duration_ms: 0.208509",
         "  ...",
         "# Subtest: PATCH facultatif autorisé : CREATE+READ puis retrait CREATE",
         "ok 28 - PATCH facultatif autorisé : CREATE+READ puis retrait CREATE",
         "  ---",
-        "  duration_ms: 1.101246",
+        "  duration_ms: 1.037685",
         "  ...",
         "# Subtest: catalogue expose mandatoryByRole + dependencies",
         "ok 29 - catalogue expose mandatoryByRole + dependencies",
         "  ---",
-        "  duration_ms: 0.467423",
+        "  duration_ms: 0.809154",
         "  ...",
         "# Subtest: GET configured expose locks dependency et overlay invariant",
         "ok 30 - GET configured expose locks dependency et overlay invariant",
         "  ---",
-        "  duration_ms: 0.596104",
+        "  duration_ms: 0.850515",
         "  ...",
         "# Subtest: assertMandatoryPermissionPatch PREFET users.read=false autorisé",
         "ok 31 - assertMandatoryPermissionPatch PREFET users.read=false autorisé",
         "  ---",
-        "  duration_ms: 0.141884",
+        "  duration_ms: 0.14658",
         "  ...",
         "1..31",
         "# tests 31",
@@ -445,7 +445,7 @@
         "# cancelled 0",
         "# skipped 0",
         "# todo 0",
-        "# duration_ms 150.76793"
+        "# duration_ms 152.715035"
       ]
     }
   ]
