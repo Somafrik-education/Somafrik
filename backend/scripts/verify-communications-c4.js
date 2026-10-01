@@ -16,10 +16,17 @@ function exists(relative) {
 }
 
 function run(cmd, args, label) {
-  const result = spawnSync(cmd, args, { cwd: ROOT, encoding: "utf8" });
+  const result = spawnSync(cmd, args, {
+    cwd: ROOT,
+    encoding: "utf8",
+    maxBuffer: 20 * 1024 * 1024,
+  });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
-  assert.equal(result.status, 0, label);
+  if (result.status !== 0) {
+    const tail = `${result.error ? `${result.error}\n` : ""}${result.stderr || ""}\n${result.stdout || ""}`.slice(-4000);
+    assert.equal(result.status, 0, `${label}\n${tail}`);
+  }
 }
 
 function sourceGuards() {

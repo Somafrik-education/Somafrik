@@ -15,7 +15,6 @@ export const SUPER_ADMIN_PLATFORM_VIEWS = [
   "permissions",
   "chartSettings",
   "notifications",
-  "messages",
   "announcements",
 ] as const;
 

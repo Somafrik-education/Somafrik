@@ -85,6 +85,7 @@ export function MessagesConversationsPage() {
   const teacherSession = isTeacherMessagingSession(session);
   const schoolScope = hasCommunicationSchoolScope(activeSchoolCode) ? activeSchoolCode : undefined;
   const scopeReady = !requiresSelection || Boolean(schoolScope);
+  const schoolEpochRef = useRef(0);
   const deepLinkConversationId = useDeepLinkId("conversationId");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -103,8 +104,21 @@ export function MessagesConversationsPage() {
   const intentionRef = useRef<string>("");
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const loadConversations = useCallback(async (options?: { silent?: boolean }) => {
+  const clearSchoolBoundState = useCallback(() => {
+    setConversations([]);
+    setNextCursor(null);
+    setUsers([]);
+    setSelectedId("");
+    setMessages([]);
+    setRecipientId("");
+    setDraft("");
+    setPendingFiles([]);
+    setListError(null);
+  }, []);
+
+  const loadConversations = useCallback(async (options?: { silent?: boolean; epoch?: number }) => {
     if (!canRead || !scopeReady) return;
+    const epoch = options?.epoch ?? schoolEpochRef.current;
     const silent = Boolean(options?.silent);
     if (!silent) {
       setListLoading(true);
@@ -112,68 +126,79 @@ export function MessagesConversationsPage() {
     }
     try {
       const result = await messagesApi.listConversations("", schoolScope);
+      if (epoch !== schoolEpochRef.current) return;
       setConversations(result.items ?? []);
       setNextCursor(result.nextCursor ?? null);
     } catch (error) {
+      if (epoch !== schoolEpochRef.current) return;
       if (!silent) {
         setConversations([]);
         setNextCursor(null);
         setListError(error);
       }
     } finally {
-      if (!silent) setListLoading(false);
+      if (!silent && epoch === schoolEpochRef.current) setListLoading(false);
     }
   }, [canRead, schoolScope, scopeReady]);
 
   const loadMoreConversations = useCallback(async () => {
     if (!canRead || !scopeReady || !nextCursor || loadingMore) return;
+    const epoch = schoolEpochRef.current;
     setLoadingMore(true);
     try {
       const result = await messagesApi.listConversations(
         `?cursor=${encodeURIComponent(nextCursor)}`,
         schoolScope,
       );
+      if (epoch !== schoolEpochRef.current) return;
       setConversations((current) => mergeConversationsById(current, result.items ?? []));
       setNextCursor(result.nextCursor ?? null);
     } catch (error) {
+      if (epoch !== schoolEpochRef.current) return;
       showToast(error instanceof ApiError ? error.message : "Chargement interrompu", "error");
     } finally {
-      setLoadingMore(false);
+      if (epoch === schoolEpochRef.current) setLoadingMore(false);
     }
   }, [canRead, schoolScope, scopeReady, nextCursor, loadingMore, showToast]);
 
   const loadThread = useCallback(async (conversationId: string) => {
+    const epoch = schoolEpochRef.current;
     const result = await messagesApi.listMessages(conversationId, "", schoolScope);
+    if (epoch !== schoolEpochRef.current) return;
     const items = result.items ?? [];
     setMessages(items);
     if (canUpdate) {
       const unread = items.filter((row) => row.senderUserId !== selfId && !row.readAt);
       if (unread.length) {
         await Promise.all(unread.map((row) => messagesApi.markRead(row.id, schoolScope).catch(() => null)));
-        await loadConversations({ silent: true });
+        if (epoch !== schoolEpochRef.current) return;
+        await loadConversations({ silent: true, epoch });
         notifyMessagesUnreadChanged();
       }
     }
   }, [canUpdate, schoolScope, selfId, loadConversations]);
 
   useEffect(() => {
-    if (!scopeReady) {
-      setConversations([]);
-      setNextCursor(null);
-      setUsers([]);
+    schoolEpochRef.current += 1;
+    const epoch = schoolEpochRef.current;
+    clearSchoolBoundState();
+    if (!canRead || !scopeReady) {
+      setListLoading(false);
       return;
     }
-    void loadConversations();
+    void loadConversations({ epoch });
     void messagesApi.listRecipients(schoolScope).then((rows) => {
+      if (epoch !== schoolEpochRef.current) return;
       const list = Array.isArray(rows) ? rows : rows?.items ?? [];
       const allowed = teacherSession ? list.filter((row) => !isStudentMessageTarget(row)) : list;
       setUsers(allowed);
       setRecipientId((current) => allowed.some((row) => row.userId === current) ? current : "");
     }).catch((error) => {
+      if (epoch !== schoolEpochRef.current) return;
       setUsers([]);
       showToast(error instanceof ApiError ? error.message : "Impossible de charger les destinataires", "error");
     });
-  }, [loadConversations, schoolScope, scopeReady, showToast, teacherSession]);
+  }, [clearSchoolBoundState, loadConversations, schoolScope, scopeReady, canRead, showToast, teacherSession]);
 
   useEffect(() => {
     if (!selectedId || !scopeReady) {

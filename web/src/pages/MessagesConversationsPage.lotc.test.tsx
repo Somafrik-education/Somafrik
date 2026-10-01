@@ -189,7 +189,7 @@ describe("Lot C — Messages Web unread + pagination", () => {
   it("RED-04 — loadThread dépend de loadConversations, sans exemption exhaustive-deps", () => {
     const page = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "MessagesConversationsPage.tsx"), "utf8");
     const loadThread = page.slice(page.indexOf("const loadThread = useCallback"), page.indexOf("const loadThread = useCallback") + 1200);
-    expect(loadThread).toMatch(/loadConversations\(\{\s*silent:\s*true\s*\}\)/);
+    expect(loadThread).toMatch(/loadConversations\(\{\s*silent:\s*true(?:,\s*epoch)?\s*\}\)/);
     expect(loadThread).toMatch(/\}, \[canUpdate, schoolScope, selfId, loadConversations\]\);/);
     expect(loadThread).not.toMatch(/eslint-disable-next-line react-hooks\/exhaustive-deps/);
   });
