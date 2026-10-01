@@ -57,7 +57,7 @@ export function hasAllPrivilegesToken(user?: { permissions?: string[] } | null):
 }
 
 export function isWebSchoolDomainFeature(feature?: string | null): boolean {
-  return Boolean(feature) && WEB_SCHOOL_DOMAIN_FEATURES.has(feature);
+  return typeof feature === "string" && WEB_SCHOOL_DOMAIN_FEATURES.has(feature);
 }
 
 /**
