@@ -22,6 +22,7 @@ require("./financeSuperadminScope.p1-01.test.js");
 require("./superadminPrincipal.p1-02.test.js");
 require("./communicationsMessages.p1-03.test.js");
 require("./planningSyncDeny.p1-06.test.js");
+require("./superadminClosure.p1-11.audit.test.js");
 
 const rbac = new RbacService();
 

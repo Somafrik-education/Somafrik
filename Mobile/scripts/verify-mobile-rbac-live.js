@@ -51,6 +51,15 @@ function main() {
   }
   process.stdout.write(p108.stdout || "");
 
+  const p111 = spawnSync("npx", ["--yes", "tsx", path.join("src", "lib", "superadminClosure.p1-11.audit.test.ts")], {
+    cwd: MOBILE,
+    encoding: "utf8",
+  });
+  if (p111.status !== 0) {
+    throw new Error(p111.stderr || p111.stdout || "superadminClosure.p1-11.audit.test.ts failed");
+  }
+  process.stdout.write(p111.stdout || "");
+
   const auth = read(path.join("context", "AuthContext.tsx"));
   const navigator = read(path.join("navigation", "AppNavigator.tsx"));
   const permissions = read(path.join("domain", "security", "permissions.ts"));
