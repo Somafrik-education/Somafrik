@@ -2,6 +2,7 @@ const seedData = require("../data");
 const { COURSE_ROUTE_PERMISSIONS } = require("../lib/coursesRbacPolicy");
 const { isPlatformPersonalDataForbidden } = require("../lib/platformPersonalDataGuard");
 const { isSchoolFinanceForbiddenForSuperadmin } = require("../lib/financeSchoolScope");
+const { omitAllPrivilegesForUnboundSchoolDomain } = require("../lib/allPrivilegesSchoolDomainDeny");
 
 const roleAliases = {
   super_admin: "Super Administrateur Somafrik",
@@ -601,7 +602,12 @@ class RbacService {
       return false;
     }
 
-    const permissions = new Set(principal.permissions ?? this.permissionsFor(principal.role));
+    // P1-12 : ALL_PRIVILEGES seul n'ouvre pas le domaine scolaire.
+    const permissions = omitAllPrivilegesForUnboundSchoolDomain(
+      principal,
+      routeKey,
+      new Set(principal.permissions ?? this.permissionsFor(principal.role)),
+    );
     return requiredPermissions.some((permission) => permissions.has(permission));
   }
 }
