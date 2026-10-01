@@ -5,7 +5,8 @@
 **Base `origin/develop` :** `c805b15239842f717b2b50670dabee3c2fb9257f`  
 **Écran :** Web → Super Admin → Administration → Rôles et droits (`/administration/permissions`)  
 **Date :** 2026-10-01  
-**Statut :** DRAFT / HOLD — attendre validation CTO. Ne pas Ready. Ne pas Merge.
+**Statut :** DRAFT / HOLD — attendre validation CTO. Ne pas Ready. Ne pas Merge.  
+**Complément :** inventaire complet Relations · Utilisateurs · Rôles · Droits · Documents · Conformité (§13–16). Parent HEAD droits : `38b3d96b`.
 
 **Hors périmètre respecté :** aucun refactor opportuniste, aucune migration DB, aucun changement de schéma PostgreSQL, aucun contournement RBAC, aucun élargissement de privilèges, aucun changement de rôle système.
 
@@ -344,5 +345,177 @@ Ne pas rétablir le legacy PUT parce qu’il « marchait ».
 - `web/package.json` (`test:rbac-admin-audit-red`)
 - `scripts/verify-rbac-admin-audit.js`
 - `package.json` (`verify:rbac-admin-audit`)
+- `backend/lib/administrationCompleteness.red.test.js`
+- `backend/lib/administrationCompleteness.green.test.js`
+- `web/src/lib/administrationCompleteness.audit.red.test.ts`
+- `web/src/lib/administrationCompleteness.audit.green.test.ts`
+- `docs/audits/evidence/administration-completeness-matrix.json`
 
-**STOP.** Pas de correctif. Pas de Ready. Pas de Merge.
+---
+
+## 13. Complément — inventaire fonctionnel Administration
+
+Périmètre des 5 onglets de `AdministrationLayout` (`web/src/pages/administration/AdministrationLayout.tsx:5-11`) :
+
+| Onglet | Route | Composant | `PermissionRoute` |
+|--------|-------|-----------|-------------------|
+| Relations | `/administration/relations` | `EntityPage entity="relations"` | `view="relations"` |
+| Utilisateurs | `/administration/utilisateurs` | `UsersPage` | parent `view="users"` |
+| Rôles et droits | `/administration/permissions` | `PermissionsPage` | `view="permissions"` |
+| Documents | `/administration/documents` | `EntityPage entity="documents"` | `view="documents"` |
+| Conformité | `/administration/conformite` | `ReportsPage` | `view="reports"` |
+
+Les onglets sont **toujours tous affichés**. Aucun filtre `canReadView`. Un Superadmin clique Documents / Conformité et se fait **rediriger** (vues hors `SUPER_ADMIN_ALLOWED_VIEWS`).
+
+Matrice machine : [`docs/audits/evidence/administration-completeness-matrix.json`](./evidence/administration-completeness-matrix.json)
+
+Légende : **A** bout-en-bout · **B** incomplet · **C** façade UI · **D** attendu / absent.
+
+### 13.1 Relations
+
+Nature réelle : **lien parent → élève** (`contact_relations`), pas un CRM plateforme. Le cœur opérationnel est `/etablissement/relations-parent-enfant` (`POST /api/parents/link`, `PATCH /api/parents/relations/:id`).
+
+| Action UI | Rôle | API | Authz | Service | PG | Persist / relecture | Tests | État |
+|-----------|------|-----|-------|---------|-----|---------------------|-------|------|
+| Liste | Superadmin : vue OK | `GET /backoffice/relations` | `Relations:READ` **puis** deny `platformPersonalDataGuard.js:182` | `listClientsProjection` | `contact_relations` | GET 403 plateforme | RED-ADM-REL | **D** Superadmin / **A** école |
+| Créer | Superadmin UI CREATE | `POST /backoffice/relations` | CREATE + deny plateforme | `createRelation` → `ensureActiveParentRelation` | `contact_relations` | 403 plateforme | RED-ADM-REL | **D** / **A** |
+| Modifier | Bouton UPDATE | même POST | — | create idempotent | même | pas de PATCH | — | **B** |
+| Supprimer | Bouton DELETE | **aucune** | — | `deleteEntityFromState` | **non** | refresh recharge l’ancien GET | RED-ADM-REL-DELETE | **C** |
+| Hydratation admin | — | — | — | `routeDomainMap` n’a **pas** `/administration/relations` | — | liste potentiellement vide même hors deny | RED-ADM-REL | **B** |
+
+`clientsApi` : `listRelations` + `createRelation` seulement (`clientsApi.ts:78-79`).
+
+### 13.2 Utilisateurs
+
+Chaîne démontrée pour le Superadmin **sur le catalogue plateforme** (Admin Pays / Admin School uniquement).
+
+| Action | SUPERADMIN | SCHOOL_ADMIN | API | PG | Persist + relecture | Tests | État |
+|--------|------------|--------------|-----|----|---------------------|-------|------|
+| Consulter | Oui (filtre `isSuperadminManagedUser`) | Oui sur son école | `GET /backoffice/users` | `users`, `user_roles` | `ensureDomains` + refresh | UsersPage.schoolAdminScope | **A** |
+| Créer | Provision COUNTRY/SCHOOL_ADMIN | create / create-teacher | `POST .../provision` / `.../users` / `.../create-teacher` | `users`, `user_roles`, `teachers` | `refresh(["users"])` | superadminCreateCountry | **A** |
+| Modifier identité | Cibles plateforme | Même établissement | `PATCH /users/:id` | `users` | refresh | editTenantReadonly | **A** |
+| Valider / refuser pending | Oui | Non | PATCH status | `users` | refresh | verify-admin-user-creation | **A** / **D** |
+| Suspendre / réactiver | Oui | Si SUSPEND | PATCH | `users` | refresh | — | **A** |
+| Attribuer rôles | Plateforme | Rôles établissement | grant/revoke | `user_roles` | refresh | userRoleLifecycle | **A** |
+| Réaffecter établissement | Oui (pas COUNTRY_ADMIN) | Non | `POST .../reassign-school` | `users`, `user_roles`, `sessions` | refresh | editTenantReadonly | **A** / **D** |
+| Reset mot de passe | Oui | Si UPDATE | `POST /api/users/:id/reset-password` | `users`, `sessions`, `login_lockouts` | persist **A** ; UI sans refresh | productionRbac | **B** |
+| Créer SUPER_ADMIN | Interdit | Interdit | provision allowlist | — | — | clientsService | **D** protégé |
+| CSV / print | Client | Client | — | — | — | — | **C** |
+
+Protections Superadmin : pas dans la liste mutuelle ; pas de provision SUPER_ADMIN ; `canManageUserAccount` limité à COUNTRY_ADMIN / SCHOOL_ADMIN.
+
+### 13.3 Rôles
+
+Onglet **Rôles** de `PermissionsPage` (pas un 6ᵉ onglet).
+
+| Action | SUPERADMIN | SCHOOL_ADMIN | API | PG | Relecture | État |
+|--------|------------|--------------|-----|----|-----------|------|
+| Catalogue | Oui | 403 ; Paramètres lecture assignable | `GET /rbac/catalog` | `establishment_roles` | getCatalog | **A** |
+| Créer rôle métier | Oui | Non | `POST /rbac/roles` | `establishment_roles` | refreshCatalog | **A** |
+| Modifier libellé | API oui, **UI non** | Non | `PATCH /rbac/roles/:id` | même | — | **B** |
+| Archiver / réactiver | Oui si non protégé | Non | archive / PATCH status | `system_protected` | refreshCatalog | **A** |
+| Rôles système | Affichés « Protégé » | — | `assertNotProtectedArchive` | — | — | **A** |
+
+### 13.4 Droits
+
+Diagnostic #851 inchangé.
+
+| Action | SUPERADMIN | SCHOOL_ADMIN | API | PG | État |
+|--------|------------|--------------|-----|----|------|
+| CRUD par module | Selecteurs + PATCH ; hydratation école vide | Fermé | GET+PATCH `/rbac/permissions` | `role_module_permissions` | **B** |
+| Héritage global/pays/école | Texte UI ; moteur oui ; écran non | — | GET `.../effective` non branché | même | **D** dans l’UI |
+| Overrides | Écrits trop facilement (DENY) | — | PATCH school | même | **B** dangereux |
+| Reset override | **Absent** | — | pas d’endpoint | — | **D** |
+| Audit mutations | Écrit `audit_logs` | — | pas d’écran Administration | `audit_logs` | **B** |
+
+### 13.5 Documents
+
+`/parametres/documents` = **gabarits bulletins** (`bulletinDesign`). Hors cet inventaire.
+
+`/administration/documents` = métadonnées `school_documents` (attestations).
+
+| Action | SUPERADMIN | SCHOOL_ADMIN | API | PG | Persist | État |
+|--------|------------|--------------|-----|----|---------|------|
+| Ouvrir l’onglet | **Deny** `documents` ∉ allowed views | Si `Documents:READ` | — | — | — | **D** Superadmin |
+| Liste | Inaccessible | `GET /school-documents` | deny plateforme si appelé en Superadmin | `school_documents` | GET | **A** école |
+| Ajout / modification | — | POST / PATCH | `documentsExamsService` | même | refresh | **A** école |
+| Archivage | — | `POST .../archive` | — | `status=archived` | refresh | **A** école |
+| Upload / download | **Absent** | **Absent** | pas dans `schoolDocumentsApi` | `storage_key` non exposé | — | **D** |
+
+Champs UI : `studentName`, `documentType`, `title`, `format`, `status`, `generatedAt` — pas de fichier.
+
+### 13.6 Conformité
+
+Pas un workflow de conformité.
+
+`ReportsPage` rend `MVP_COVERAGE` (`constants.ts`) : tableau statique « Couvert / P0 ». **Aucune API, aucune table, aucune relecture.**
+
+APIs existantes **non branchées** : `GET /api/audit` (lui-même deny plateforme pour Superadmin, `platformPersonalDataGuard.js:213` + commentaire `server.js:3952-3953`), `GET /api/v2/reports/advanced`, `privacy/erasure-requests`.
+
+| Action | SUPERADMIN | SCHOOL_ADMIN | API | PG | État |
+|--------|------------|--------------|-----|----|------|
+| Voir la table MVP | Deny vue `reports` | Si `Rapports:READ` | — | — | **C** / **D** Superadmin |
+| Imprimer | — | PrintButton | — | — | **C** |
+| Journal / workflow / historique | Absent de la page | Absent | APIs orphelines ici | `audit_logs` ailleurs | **D** |
+
+---
+
+## 14. Matrice finale
+
+| FONCTION | SUPERADMIN | SCHOOL_ADMIN | UI | API | DB | TEST | ÉTAT | MANQUANT |
+|----------|------------|--------------|----|-----|----|------|------|----------|
+| Nav onglets Administration | 5 onglets non filtrés | Accès parent si users READ | Layout | — | — | green completeness | **C** | Filtrer les onglets |
+| Relations liste/création | Vue OK, API 403 | Chaîne PG si jeton | EntityPage | GET/POST relations | `contact_relations` | RED-ADM-REL | **D** / **A** | Débloquer ou retirer |
+| Relations update | POST create | POST create | EntityPage | pas de PATCH | même | — | **B** | PATCH |
+| Relations delete | Local | Local | EntityPage | — | non | RED-ADM-REL-DELETE | **C** | Archive persistée |
+| Users consulter/créer/éditer | Plateforme A | École A | UsersPage | backoffice/users | `users` | UsersPage.* | **A** | — |
+| Users valider pending | A | D | UsersPage | PATCH | `users` | verify-admin | **A** / **D** | — |
+| Users rôles | A | A établissement | UsersPage | grant/revoke | `user_roles` | lifecycle | **A** | — |
+| Users réaffecter | A | D | UsersPage | reassign-school | users+roles+sessions | editTenant | **A** / **D** | — |
+| Users reset MDP | B | B | UsersPage | reset-password | users+sessions | productionRbac | **B** | refresh UI |
+| Users CSV | C | C | UsersPage | — | — | — | **C** | — |
+| Rôles catalogue/création/archive | A | D (Paramètres RO) | PermissionsPage | /rbac/roles | `establishment_roles` | functional-rbac | **A** | — |
+| Rôles modifier libellé | B | D | — | PATCH existe | même | — | **B** | UI |
+| Droits CRUD console | B | D | PermissionsPage | PATCH permissions | `role_module_permissions` | RED-01..04 | **B** | Hydratation effective |
+| Droits effective / reset | D | D | — | GET effective only | même | RED-ADM-DROITS-RESET | **D** | UI + reset |
+| Documents CRUD meta | D | A | EntityPage | school-documents | `school_documents` | RED-ADM-DOC | **D** / **A** | Accès Superadmin |
+| Documents fichier | D | D | — | — | storage_key | RED-ADM-DOC | **D** | Upload/download |
+| Conformité MVP | D | C | ReportsPage | — | — | RED-ADM-CONF | **C** / **D** | Retirer ou brancher |
+| Conformité audit/workflow | D | D | — | audit / advanced / erasure | audit_logs | RED-ADM-CONF | **D** | Écran réel |
+
+---
+
+## 15. BACKLOG ADMINISTRATION À COMPLÉTER
+
+Uniquement ce qui est **manquant ou incomplet** (constaté). Pas d’implémentation ici.
+
+1. **Droits — hydrater l’effectif et interdire le DENY fantôme** (PR-1 déjà proposée). État B dangereux.
+2. **Droits — afficher l’héritage et reset d’override école** (GET effective existe ; reset absent). État D.
+3. **Droits — consulter l’audit des PATCH** (`audit_logs` écrits, pas d’UI Administration). État B.
+4. **Rôles — UI de modification de libellé** (PATCH API déjà là). État B.
+5. **Relations Administration — chaîne Superadmin cassée** (vue ouverte, API 403 + pas de domaine de hydrate). État D. Décision : retirer l’onglet plateforme **ou** ouvrir un mode non perso-élève.
+6. **Relations — suppression persistée** sur cet écran (archive parents existe ailleurs). État C.
+7. **Relations — vrai update** (aujourd’hui POST create). État B.
+8. **Documents Administration — onglet visible, route Superadmin fermée.** État D. Retirer l’onglet ou autoriser une lecture plateforme non perso.
+9. **Documents — upload / téléchargement** (`storage_key` non exposé). État D.
+10. **Conformité — façade `MVP_COVERAGE`.** État C. Brancher `GET /api/audit` / rapports / erasure **ou** retirer l’onglet.
+11. **Conformité Superadmin** — vue `reports` interdite + `GET /api/audit` deny plateforme. État D.
+12. **Layout — filtrer les onglets** selon `canReadView` (Documents/Conformité actuellement cliquables puis redirigés). État C.
+13. **Users — refresh après reset mot de passe.** État B.
+
+Ne pas lancer PR-1 RBAC en croyant Documents / Relations / Conformité opérationnels pour le Superadmin : **ils ne le sont pas**.
+
+---
+
+## 16. Nouveaux tests (complément)
+
+| Fichier | Couleur | Contenu |
+|---------|---------|---------|
+| `backend/lib/administrationCompleteness.red.test.js` | RED | Relations/Documents non deny ; Conformité persistée ; DELETE relations ; reset droits |
+| `backend/lib/administrationCompleteness.green.test.js` | GREEN | APIs users/rbac présentes ; deny actuel documenté ; tables réelles |
+| `web/src/lib/administrationCompleteness.audit.red.test.ts` | RED | Superadmin documents/reports ; hydrate relations ; reset/effective UI ; tabs filtrés |
+| `web/src/lib/administrationCompleteness.audit.green.test.ts` | GREEN | 5 onglets ; faits d’accès ; ReportsPage statique ; clients sans deleteRelation |
+
+Les RED Droits #851 (RED-01..04) restent rouges. Aucun verdissement artificiel.
+
+**STOP.** Pas de correctif. Pas de Ready. Pas de Merge. Attendre nouveau diff CTO depuis `38b3d96b`.

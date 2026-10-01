@@ -54,8 +54,18 @@ function summarizeNodeTest(output) {
 }
 
 const suites = [
-  run("backend-red", "node", ["--test", "backend/lib/rbacAdminAudit.red.test.js"], { expectFail: true }),
-  run("backend-green", "node", ["--test", "backend/lib/rbacAdminAudit.green.test.js"], { expectFail: false }),
+  run(
+    "backend-red",
+    "node",
+    ["--test", "backend/lib/rbacAdminAudit.red.test.js", "backend/lib/administrationCompleteness.red.test.js"],
+    { expectFail: true },
+  ),
+  run(
+    "backend-green",
+    "node",
+    ["--test", "backend/lib/rbacAdminAudit.green.test.js", "backend/lib/administrationCompleteness.green.test.js"],
+    { expectFail: false },
+  ),
   run("web-red", "npm", ["--prefix", "web", "run", "test:rbac-admin-audit-red"], { expectFail: true }),
   run(
     "web-green",
@@ -68,6 +78,7 @@ const suites = [
       "--",
       "src/pages/PermissionsPage.audit.green.test.tsx",
       "src/lib/permissions.rbacAdmin.audit.green.test.ts",
+      "src/lib/administrationCompleteness.audit.green.test.ts",
       "src/pages/PermissionsPage.test.tsx",
       "src/lib/rbacLocks.test.ts",
     ],

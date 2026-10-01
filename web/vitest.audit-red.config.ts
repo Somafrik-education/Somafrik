@@ -17,7 +17,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/design-system/test/setup.ts"],
-    include: ["src/pages/PermissionsPage.audit.red.test.tsx"],
+    include: [
+      "src/pages/PermissionsPage.audit.red.test.tsx",
+      "src/lib/administrationCompleteness.audit.red.test.ts",
+    ],
     css: false,
     globals: false,
     env: {

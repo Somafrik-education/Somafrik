@@ -1,0 +1,277 @@
+{
+  "generatedAt": "2026-10-01",
+  "baseDevelop": "c805b15239842f717b2b50670dabee3c2fb9257f",
+  "parentHead": "38b3d96b5aa26591a4768e2cef7cc183c3ebfd2b",
+  "legend": {
+    "A": "FONCTIONNELLE DE BOUT EN BOUT",
+    "B": "PRÉSENTE MAIS INCOMPLÈTE",
+    "C": "UI/FAÇADE SANS CHAÎNE MÉTIER COMPLÈTE",
+    "D": "FONCTIONNALITÉ MÉTIER ATTENDUE MAIS ABSENTE"
+  },
+  "rows": [
+    {
+      "fonction": "Administration — navigation onglets",
+      "superadmin": "5 onglets toujours visibles, sans filtre canReadView",
+      "schoolAdmin": "Peut ouvrir /administration si Utilisateurs:READ ; nav principale masque users/permissions",
+      "ui": "AdministrationLayout.tsx TabNav",
+      "api": "—",
+      "db": "—",
+      "test": "administrationCompleteness.audit.green.test.ts",
+      "etat": "C",
+      "manquant": "Filtrage des onglets selon droits réels"
+    },
+    {
+      "fonction": "Relations — consulter liste",
+      "superadmin": "Vue autorisée ; GET 403 PLATFORM_PERSONAL_DATA_DENIED ; pas de hydrate /administration/relations",
+      "schoolAdmin": "GET /backoffice/relations si Relations:READ",
+      "ui": "EntityPage entity=relations",
+      "api": "GET /api/backoffice/relations",
+      "db": "contact_relations",
+      "test": "RED-ADM-REL + platformPersonalDataGuard",
+      "etat": "D Superadmin / A SCHOOL_ADMIN (si jeton)",
+      "manquant": "Chaîne Superadmin ou retrait de l'onglet"
+    },
+    {
+      "fonction": "Relations — créer lien parent→élève",
+      "superadmin": "UI CREATE possible ; POST 403",
+      "schoolAdmin": "POST /backoffice/relations → ensureActiveParentRelation",
+      "ui": "EntityPage submit",
+      "api": "POST /api/backoffice/relations",
+      "db": "contact_relations",
+      "test": "RED-ADM-REL",
+      "etat": "D Superadmin / A SCHOOL_ADMIN",
+      "manquant": "API Superadmin ou surface établissement uniquement"
+    },
+    {
+      "fonction": "Relations — modifier",
+      "superadmin": "Bouton UPDATE ; submit = POST create",
+      "schoolAdmin": "Idempotent create, pas de PATCH",
+      "ui": "EntityPage",
+      "api": "POST only",
+      "db": "contact_relations",
+      "test": "administrationCompleteness.audit.green (pas deleteRelation)",
+      "etat": "B",
+      "manquant": "PATCH métier"
+    },
+    {
+      "fonction": "Relations — supprimer/archiver",
+      "superadmin": "Bouton local",
+      "schoolAdmin": "deleteEntityFromState ; PUT clients stripé",
+      "ui": "EntityPage delete",
+      "api": "aucune sous /backoffice/relations",
+      "db": "non persisté",
+      "test": "RED-ADM-REL-DELETE",
+      "etat": "C",
+      "manquant": "PATCH archive (existe sur /api/parents/relations/:id, pas cet écran)"
+    },
+    {
+      "fonction": "Utilisateurs — consulter",
+      "superadmin": "Catalogue plateforme Admin Pays / Admin School",
+      "schoolAdmin": "Comptes de l'établissement (plutôt /etablissement/comptes-utilisateurs)",
+      "ui": "UsersPage",
+      "api": "GET /api/backoffice/users",
+      "db": "users, user_roles, schools, countries",
+      "test": "UsersPage.schoolAdminScope / usersSchoolScope",
+      "etat": "A",
+      "manquant": "—"
+    },
+    {
+      "fonction": "Utilisateurs — créer",
+      "superadmin": "Provision COUNTRY_ADMIN / SCHOOL_ADMIN only",
+      "schoolAdmin": "createUser / create-teacher",
+      "ui": "UsersPage openCreateFlow",
+      "api": "POST /users/provision | POST /users | POST /users/create-teacher",
+      "db": "users, user_roles, teachers",
+      "test": "UsersPage.superadminCreateCountry / verify-admin-user-creation",
+      "etat": "A",
+      "manquant": "Création SUPER_ADMIN volontairement absente (D protégé)"
+    },
+    {
+      "fonction": "Utilisateurs — modifier identité",
+      "superadmin": "Cibles plateforme only",
+      "schoolAdmin": "Même établissement",
+      "ui": "UsersPage editor",
+      "api": "PATCH /api/backoffice/users/:userId",
+      "db": "users",
+      "test": "UsersPage.editTenantReadonly",
+      "etat": "A",
+      "manquant": "—"
+    },
+    {
+      "fonction": "Utilisateurs — activer / suspendre / valider / refuser",
+      "superadmin": "Valider/refuser pending + suspendre cibles plateforme",
+      "schoolAdmin": "Suspendre si Utilisateurs:SUSPEND ; pas de validation pending",
+      "ui": "UsersPage detail",
+      "api": "PATCH /users/:userId",
+      "db": "users.status / profile_payload",
+      "test": "verify-admin-user-creation",
+      "etat": "A Superadmin / B SCHOOL_ADMIN (pas de validation)",
+      "manquant": "Validation Admin Pays (D par design actuel)"
+    },
+    {
+      "fonction": "Utilisateurs — rôles grant/revoke",
+      "superadmin": "COUNTRY_ADMIN / SCHOOL_ADMIN",
+      "schoolAdmin": "Rôles établissement assignables",
+      "ui": "UsersPage Attribuer",
+      "api": "GET assignable-roles ; POST grant/revoke",
+      "db": "user_roles",
+      "test": "userRoleLifecycle.pg.test.js",
+      "etat": "A",
+      "manquant": "—"
+    },
+    {
+      "fonction": "Utilisateurs — réaffecter établissement",
+      "superadmin": "Oui sauf cible COUNTRY_ADMIN",
+      "schoolAdmin": "Non",
+      "ui": "UsersPage Réaffecter",
+      "api": "POST /users/:id/reassign-school",
+      "db": "users.school_id, user_roles.school_id, sessions",
+      "test": "UsersPage.editTenantReadonly",
+      "etat": "A Superadmin / D SCHOOL_ADMIN",
+      "manquant": "—"
+    },
+    {
+      "fonction": "Utilisateurs — reset mot de passe",
+      "superadmin": "Oui si canManageUserAccount",
+      "schoolAdmin": "Oui si UPDATE / Gérer utilisateurs",
+      "ui": "UsersPage",
+      "api": "POST /api/users/:id/reset-password",
+      "db": "users.password_hash, sessions, login_lockouts",
+      "test": "permissions.productionRbac.test.ts",
+      "etat": "B",
+      "manquant": "Relecture UI après reset (pas de refresh)"
+    },
+    {
+      "fonction": "Utilisateurs — CSV / impression / filtres",
+      "superadmin": "Client only",
+      "schoolAdmin": "Client only",
+      "ui": "UsersPage",
+      "api": "—",
+      "db": "—",
+      "test": "—",
+      "etat": "C",
+      "manquant": "Export serveur optionnel"
+    },
+    {
+      "fonction": "Rôles — catalogue",
+      "superadmin": "GET catalog",
+      "schoolAdmin": "403 ; lecture assignable en Paramètres",
+      "ui": "PermissionsPage onglet Rôles",
+      "api": "GET /api/backoffice/rbac/catalog",
+      "db": "establishment_roles",
+      "test": "rbacMandatoryPermissions.test.js / verify-functional-rbac",
+      "etat": "A Superadmin",
+      "manquant": "—"
+    },
+    {
+      "fonction": "Rôles — créer rôle métier",
+      "superadmin": "Oui",
+      "schoolAdmin": "Non",
+      "ui": "PermissionsPage createRole",
+      "api": "POST /api/backoffice/rbac/roles",
+      "db": "establishment_roles",
+      "test": "verify-functional-rbac",
+      "etat": "A Superadmin",
+      "manquant": "—"
+    },
+    {
+      "fonction": "Rôles — modifier libellé",
+      "superadmin": "API PATCH existe ; UI archive/réactive seulement",
+      "schoolAdmin": "Non",
+      "ui": "pas de formulaire d'édition",
+      "api": "PATCH /api/backoffice/rbac/roles/:roleId",
+      "db": "establishment_roles",
+      "test": "—",
+      "etat": "B",
+      "manquant": "Formulaire UI updateRole"
+    },
+    {
+      "fonction": "Rôles — archiver / protéger système",
+      "superadmin": "Archive métier ; système Protégé",
+      "schoolAdmin": "Non",
+      "ui": "PermissionsPage",
+      "api": "POST .../archive ; assertNotProtectedArchive",
+      "db": "establishment_roles.system_protected",
+      "test": "RED-05 VERT",
+      "etat": "A",
+      "manquant": "—"
+    },
+    {
+      "fonction": "Droits — CRUD par module (console)",
+      "superadmin": "Selecteurs OK ; hydratation école vide ; Enregistrer = override/DENY",
+      "schoolAdmin": "Vue fermée",
+      "ui": "PermissionsPage Droits",
+      "api": "GET+PATCH /rbac/permissions",
+      "db": "role_module_permissions",
+      "test": "rbacAdminAudit.red.test.js",
+      "etat": "B",
+      "manquant": "Hydrater l'effectif ; pas de DENY fantôme"
+    },
+    {
+      "fonction": "Droits — héritage / effective / reset override",
+      "superadmin": "GET effective existe, UI non branchée ; pas de reset",
+      "schoolAdmin": "Non",
+      "ui": "texte d'héritage seulement",
+      "api": "GET .../effective ; pas de DELETE/reset",
+      "db": "role_module_permissions",
+      "test": "RED-ADM-DROITS-RESET",
+      "etat": "D",
+      "manquant": "UI effective + reset héritage"
+    },
+    {
+      "fonction": "Droits — audit des modifications",
+      "superadmin": "Écrit audit_logs au PATCH ; pas d'écran ici",
+      "schoolAdmin": "Non",
+      "ui": "—",
+      "api": "recordAudit ROLE_PERMISSION_*",
+      "db": "audit_logs",
+      "test": "functionalRbac.test.js OCC/audit",
+      "etat": "B",
+      "manquant": "Consultation audit dans Administration"
+    },
+    {
+      "fonction": "Documents — liste / CRUD métadonnées",
+      "superadmin": "PermissionRoute deny (vue absente) + API deny",
+      "schoolAdmin": "GET/POST/PATCH/archive school-documents",
+      "ui": "EntityPage documents",
+      "api": "/api/school-documents",
+      "db": "school_documents",
+      "test": "RED-ADM-DOC + documentsExams.test.js",
+      "etat": "D Superadmin / A SCHOOL_ADMIN métadonnées",
+      "manquant": "Accès Superadmin si l'onglet reste visible"
+    },
+    {
+      "fonction": "Documents — upload / téléchargement fichier",
+      "superadmin": "Absent",
+      "schoolAdmin": "Champs titre/type seulement ; storage_key non exposé UI",
+      "ui": "entityModules documents fields",
+      "api": "pas d'upload/download",
+      "db": "school_documents.storage_key inutilisé UI",
+      "test": "RED-ADM-DOC",
+      "etat": "D",
+      "manquant": "Stockage binaire + download"
+    },
+    {
+      "fonction": "Conformité — couverture MVP",
+      "superadmin": "Vue reports deny",
+      "schoolAdmin": "Table statique MVP_COVERAGE",
+      "ui": "ReportsPage",
+      "api": "aucune",
+      "db": "aucune",
+      "test": "RED-ADM-CONF",
+      "etat": "C / D Superadmin",
+      "manquant": "Workflow conformité réel"
+    },
+    {
+      "fonction": "Conformité — journal audit / rapports avancés / effacement",
+      "superadmin": "GET /api/audit aussi deny plateforme ; page non branchée",
+      "schoolAdmin": "APIs hors écran",
+      "ui": "—",
+      "api": "GET /api/audit, GET /v2/reports/advanced, privacy/erasure",
+      "db": "audit_logs / selon implémentation",
+      "test": "RED-ADM-CONF",
+      "etat": "D",
+      "manquant": "Brancher ou retirer l'onglet"
+    }
+  ]
+}
