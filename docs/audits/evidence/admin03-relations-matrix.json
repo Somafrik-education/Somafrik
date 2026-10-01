@@ -1,0 +1,228 @@
+{
+  "lot": "ADMIN-03A",
+  "status": "DRAFT / HOLD",
+  "ready": false,
+  "merge": false,
+  "base": {
+    "develop": "2ba3c7d75d20d2d2c0df9c0f50e9b91df124165d",
+    "main": "ef8bc9517ffc94aa770743713d0f561f92a9fc1e",
+    "merge858": "2ba3c7d75d20d2d2c0df9c0f50e9b91df124165d",
+    "auditReference": "#851"
+  },
+  "legend": {
+    "A": "fonction E2E réelle (UI + API + PG)",
+    "B": "partielle",
+    "C": "façade UI",
+    "D": "volontairement interdite"
+  },
+  "tables": [
+    {
+      "name": "contact_relations",
+      "role": "lien parent/responsable → élève",
+      "fks": ["school_id → schools.id", "country_id → countries.id", "contact_id → contacts.id", "student_id → students.id"],
+      "scope": "school_id + country_id obligatoires",
+      "uniqueActive": "uq_contact_relations_active (school_id, contact_id, student_id) WHERE status=active"
+    },
+    {
+      "name": "contacts",
+      "role": "personne responsable (noms, téléphone, email, adresse)",
+      "fks": ["school_id → schools.id", "country_id → countries.id", "user_id → users.id"]
+    },
+    {
+      "name": "students",
+      "role": "élève cible",
+      "fks": ["school_id → schools.id"]
+    },
+    {
+      "name": "users",
+      "role": "compte éventuel du responsable (via contacts.user_id / user_roles PARENT)"
+    },
+    {
+      "name": "user_roles",
+      "role": "rôle PARENT issu du linking, pas un rôle Administration"
+    },
+    {
+      "name": "schools",
+      "role": "tenant établissement"
+    },
+    {
+      "name": "countries",
+      "role": "tenant pays"
+    },
+    {
+      "name": "audit_logs",
+      "role": "create_relation / archive_relation (écriture école, lecture GET /api/audit interdite plateforme)"
+    }
+  ],
+  "endpoints": [
+    {
+      "route": "GET /api/backoffice/relations",
+      "auth": "requireAuth + requirePermission",
+      "permissions": ["Relations:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+      "guard": "SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM",
+      "service": "listClientsProjection → tenantScopeService.filterRows",
+      "persist": "SELECT contact_relations"
+    },
+    {
+      "route": "POST /api/backoffice/relations",
+      "auth": "requireAuth + requirePermission",
+      "permissions": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+      "guard": "SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM",
+      "service": "clientsService.createRelation → ensureActiveParentRelation",
+      "persist": "INSERT contact_relations"
+    },
+    {
+      "route": "GET /api/parents/identity",
+      "guard": "SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM",
+      "pii": true
+    },
+    {
+      "route": "GET /api/parents/relations",
+      "guard": "SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM",
+      "pii": ["firstName", "lastName", "phone", "email"],
+      "failClosed": "studentId absent → 400"
+    },
+    {
+      "route": "POST /api/parents/link",
+      "guard": "SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM",
+      "persist": "contacts + users + user_roles + contact_relations"
+    },
+    {
+      "route": "PATCH /api/parents/relations/:relationId",
+      "guard": "SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM",
+      "behavior": "archive only (status=archived), pas d'update de champs"
+    },
+    {
+      "route": "PATCH /api/backoffice/relations",
+      "state": "ABSENT"
+    },
+    {
+      "route": "DELETE /api/backoffice/relations",
+      "state": "ABSENT"
+    }
+  ],
+  "matrix": [
+    {
+      "action": "Ouvrir Administration > Relations",
+      "SUPER_ADMIN": "C",
+      "COUNTRY_ADMIN": "C",
+      "SCHOOL_ADMIN": "A",
+      "AUTRE": "D (sauf Préfet/Secrétaire si Relations:READ)",
+      "API": "GET /api/backoffice/relations",
+      "DB": "contact_relations",
+      "GUARD": "FORBIDDEN plateforme",
+      "etat": "UI Superadmin/Country ouverte ; API 403 plateforme"
+    },
+    {
+      "action": "Lister relations (noms + type)",
+      "SUPER_ADMIN": "D",
+      "COUNTRY_ADMIN": "D",
+      "SCHOOL_ADMIN": "A",
+      "AUTRE": "B/D selon jeton",
+      "API": "GET /api/backoffice/relations",
+      "DB": "contact_relations + contacts + students",
+      "GUARD": "FORBIDDEN",
+      "etat": "GREEN refuse plateforme ; GREEN isolation école"
+    },
+    {
+      "action": "Créer relation (rattachement parent/élève)",
+      "SUPER_ADMIN": "D",
+      "COUNTRY_ADMIN": "D",
+      "SCHOOL_ADMIN": "A",
+      "AUTRE": "D sauf jeton Relations:CREATE",
+      "API": "POST /api/backoffice/relations | POST /api/parents/link",
+      "DB": "INSERT contact_relations",
+      "GUARD": "FORBIDDEN",
+      "etat": "create persisté"
+    },
+    {
+      "action": "Modifier champs relation (type, principal, …)",
+      "SUPER_ADMIN": "D",
+      "COUNTRY_ADMIN": "D",
+      "SCHOOL_ADMIN": "C",
+      "AUTRE": "D",
+      "API": "PATCH backoffice ABSENT",
+      "DB": "aucune écriture de champs",
+      "GUARD": "n/a + parents PATCH = archive only",
+      "etat": "update incomplet/absent"
+    },
+    {
+      "action": "Supprimer / archiver",
+      "SUPER_ADMIN": "D",
+      "COUNTRY_ADMIN": "D",
+      "SCHOOL_ADMIN": "B",
+      "AUTRE": "D",
+      "API": "PATCH /api/parents/relations/:id (archive) ; DELETE backoffice ABSENT",
+      "DB": "status=archived si parents API",
+      "GUARD": "FORBIDDEN",
+      "etat": "Admin EntityPage delete = local (strip PUT) ; fiche parent-enfant archive persistée"
+    },
+    {
+      "action": "Téléphone / email / adresse",
+      "SUPER_ADMIN": "D",
+      "COUNTRY_ADMIN": "D",
+      "SCHOOL_ADMIN": "A via contacts + GET /api/parents/relations",
+      "AUTRE": "D",
+      "API": "contacts + parents/relations",
+      "DB": "contacts.phone/email/address",
+      "GUARD": "FORBIDDEN (contacts + parents + students + data-export + audit)",
+      "etat": "mapRelationRow backoffice n'expose pas phone/email"
+    },
+    {
+      "action": "Navigation fiche élève → responsables",
+      "SUPER_ADMIN": "D",
+      "COUNTRY_ADMIN": "D",
+      "SCHOOL_ADMIN": "A",
+      "AUTRE": "B (Élèves:READ / Voir enfant)",
+      "API": "GET /api/parents/relations?studentId=",
+      "DB": "contact_relations JOIN contacts",
+      "GUARD": "FORBIDDEN",
+      "etat": "studentId requis fail-closed"
+    }
+  ],
+  "relScenarios": [
+    { "id": "REL-01", "title": "SUPER_ADMIN ouvre Relations", "result": "GREEN-FAÇADE", "detail": "UI canReadView=true ; API GET 403" },
+    { "id": "REL-02", "title": "SUPER_ADMIN GET PII école", "result": "GREEN-DENY", "detail": "relations + contacts + students + data-export + audit" },
+    { "id": "REL-03", "title": "SUPER_ADMIN POST relation", "result": "GREEN-DENY", "detail": "POST backoffice + parents/link 403" },
+    { "id": "REL-04", "title": "SUPER_ADMIN PATCH relation", "result": "GREEN-DENY", "detail": "PATCH backoffice absent ; parents PATCH 403" },
+    { "id": "REL-05", "title": "SUPER_ADMIN DELETE/archive", "result": "GREEN-DENY", "detail": "DELETE backoffice absent ; archive 403" },
+    { "id": "REL-06", "title": "SCHOOL_ADMIN lit son école", "result": "GREEN", "detail": "filterRows schoolId/schoolCode" },
+    { "id": "REL-07", "title": "SCHOOL_ADMIN crée dans son école", "result": "GREEN", "detail": "POST persist ensureActiveParentRelation" },
+    { "id": "REL-08", "title": "SCHOOL_ADMIN tente école B", "result": "GREEN", "detail": "assertSchoolScope 403 TENANT_MISMATCH" },
+    { "id": "REL-09", "title": "relation A invisible depuis B", "result": "GREEN", "detail": "filterRows exclut school B" },
+    { "id": "REL-10", "title": "schoolId absent / scope invalide", "result": "GREEN-SCHOOL / LATENT-PLATFORM", "detail": "SCHOOL_ADMIN fail-closed ; Superadmin assertSchoolScope ouvert si guard retiré" }
+  ],
+  "privacy": {
+    "personalFields": [
+      "fromContactName",
+      "toStudentName",
+      "contact first/last/phone/email/address",
+      "student names",
+      "relation type linking two persons",
+      "user account of parent"
+    ],
+    "whySuperadminDenied": "SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM avant requiredPermissions.some — ALL_PRIVILEGES / schoolCode ne passent pas",
+    "appliesTo": {
+      "read": true,
+      "create": true,
+      "patch": true,
+      "deleteArchive": true,
+      "exports": true
+    },
+    "indirectBypass": "aucun endpoint Relations hors liste ; contacts/students/data-export/audit aussi FORBIDDEN",
+    "uiLeak": "onglet + canLinkParent Superadmin = façade ; pas de payload API. PUT state strip relations. Logs audit create_relation côté école uniquement."
+  },
+  "createUpdateDelete": {
+    "create": "EXISTE et persiste (POST /api/backoffice/relations + POST /api/parents/link)",
+    "updateFields": "ABSENT (pas de PATCH backoffice ; parents PATCH = archive only)",
+    "delete": "ABSENT backoffice ; UI Admin = local (stripClientClients) ; archive persistée uniquement via PATCH /api/parents/relations/:id"
+  },
+  "options": {
+    "A": "Relations = données établissement. Superadmin n'accède pas aux personnes. Onglet réservé rôles école.",
+    "B": "Superadmin : métriques agrégées non personnelles uniquement.",
+    "C": "Accès exceptionnel support/audit tracé — INTERDIT d'implémenter."
+  },
+  "recommendation": "A par défaut (aligne UI, catalogue seed '-' et barrière API). B seulement si le produit exige un observatoire plateforme sans PII (nouvel endpoint ADMIN-03B). C hors périmètre.",
+  "migrations": false,
+  "metierModified": false
+}
