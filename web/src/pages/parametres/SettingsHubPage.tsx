@@ -111,7 +111,7 @@ const SETTING_CARDS: SettingCard[] = [
     description: "Export CSV d'extrait affiché et export JSON versionné. La restauration complète n'est pas disponible.",
     icon: DatabaseBackup,
     status: "available",
-    view: "configuration",
+    view: "dataExport",
   },
   {
     to: "/parametres/notifications",
@@ -163,13 +163,9 @@ const SUPERADMIN_SETTING_PATHS = new Set<string>([
   "/parametres/abonnements",
   "/parametres/graphiques",
   "/parametres/securite",
-  "/parametres/donnees",
   "/parametres/bulletins-configuration",
 ]);
-const COUNTRY_ADMIN_SETTING_PATHS = new Set<string>([
-  "/parametres/abonnements",
-  "/parametres/donnees",
-]);
+const COUNTRY_ADMIN_SETTING_PATHS = new Set<string>(["/parametres/abonnements"]);
 
 /** Hub Paramètres : grille de cartes par domaine de configuration (P-006). */
 export function SettingsHubPage() {

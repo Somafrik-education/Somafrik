@@ -30,6 +30,7 @@ import {
 } from "../lib/dashboardDemoHydration";
 import { filterDomainsByPermissions } from "../lib/domainPermissions";
 import { DASHBOARD_METRIC_DOMAINS, DASHBOARD_SYNC_EVENT, DASHBOARD_SYNC_INTERVAL_MS } from "../lib/dashboardSync";
+import { hasWebInternalNotificationScope } from "../lib/webSchoolDomainDeny";
 
 type DemoCriticalStatus = "idle" | "loading" | "ready" | "error";
 
@@ -153,7 +154,7 @@ export function OverviewPage() {
     };
   }, [internalSchool, activeSchoolCode]);
 
-  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const hasInternalNotificationScope = hasWebInternalNotificationScope(user, activeSchoolCode);
   const schoolUnreadCount = useInternalNotificationsUnreadCount(
     Boolean(
       internalSchool &&

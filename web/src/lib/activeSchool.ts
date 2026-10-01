@@ -1,5 +1,6 @@
 import type { SessionUser } from "../types";
 import { normalize } from "./format";
+import { shouldDenyWebSchoolDomain } from "./webSchoolDomainDeny";
 
 const STORAGE_KEY = "somafrik.activeSchoolCode";
 
@@ -37,6 +38,9 @@ export function pickInitialSchoolCode(
   user: SessionUser | null,
   availableCodes: string[],
 ): string {
+  if (shouldDenyWebSchoolDomain(user)) {
+    return "";
+  }
   if (user?.schoolCode && user.schoolCode !== ALL_SCHOOLS_CODE) {
     return user.schoolCode;
   }
@@ -50,6 +54,7 @@ export function pickInitialSchoolCode(
 /** Utilisateur avec périmètre limité à l'établissement actif (données + config). */
 export function withSchoolScope(user: SessionUser | null, schoolCode: string): SessionUser | null {
   if (!user) return null;
+  if (shouldDenyWebSchoolDomain(user)) return user;
   if (!userRequiresSchoolSelection(user)) return user;
   if (!schoolCode) return user;
   if (isAllSchoolsSelection(schoolCode)) {

@@ -18,6 +18,7 @@ import {
 import { hasCommunicationSchoolScope } from "../lib/communicationSchoolScope";
 import { useDeepLinkId } from "../lib/notificationDeepLink";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
+import { shouldDenyWebSchoolDomain } from "../lib/webSchoolDomainDeny";
 import { filterCommunicationRows, excerptCommunication } from "../lib/communicationListFilter";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
@@ -86,8 +87,11 @@ export function AnnouncementsPage() {
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Announcements");
   const { showToast } = useToast();
   const isGlobalSuperadmin = isSuperAdminRole(session?.user?.role);
-  const schoolScope = hasCommunicationSchoolScope(activeSchoolCode) ? activeSchoolCode : undefined;
-  const scopeReady = isGlobalSuperadmin || !requiresSelection || Boolean(schoolScope);
+  const denySchoolDomain = shouldDenyWebSchoolDomain(session?.user);
+  const schoolScope = hasCommunicationSchoolScope(activeSchoolCode, session?.user)
+    ? activeSchoolCode
+    : undefined;
+  const scopeReady = denySchoolDomain || isGlobalSuperadmin || !requiresSelection || Boolean(schoolScope);
   const deepLinkAnnouncementId = useDeepLinkId("announcementId");
   const [items, setItems] = useState<UnifiedAnnouncement[]>([]);
   const { search, setSearch, unreadOnly, setUnreadOnly } = useCommunicationListQuery();

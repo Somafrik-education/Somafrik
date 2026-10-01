@@ -16,9 +16,13 @@ export function notifyAnnouncementsUnreadChanged(): void {
  * C3 établissement + plateforme Superadmin agrégés.
  */
 
-export function useAnnouncementsUnreadCount(enabled: boolean, schoolCode?: string | null): number {
+export function useAnnouncementsUnreadCount(
+  enabled: boolean,
+  schoolCode?: string | null,
+  user?: { role?: string } | null,
+): number {
   const [count, setCount] = useState(0);
-  const schoolScope = hasCommunicationSchoolScope(schoolCode) ? schoolCode : undefined;
+  const schoolScope = hasCommunicationSchoolScope(schoolCode, user) ? schoolCode : undefined;
   useEffect(() => {
     if (!enabled) {
       setCount(0);
