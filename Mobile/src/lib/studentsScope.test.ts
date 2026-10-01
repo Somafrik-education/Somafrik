@@ -213,7 +213,7 @@ const thirteen = Array.from({ length: 13 }, (_, index) => student(index));
   const leaked = thirteen.slice(0, 3);
   for (const role of ["super_admin", "country_admin"] as const) {
     const projection = projectScopedStudentsForSession(
-      { role, user: { id: role, schoolCode: "*" } },
+      { role, user: { schoolCode: "*" } },
       leaked,
     );
     assert.equal(projection.received, 3, `${role} reçoit encore le payload brut`);
