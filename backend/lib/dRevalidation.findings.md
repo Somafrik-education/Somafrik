@@ -32,7 +32,7 @@ Preuve locale extras : **8 PASS / 0 FAIL**. Gates Planning / Présences / Sync L
 | PL-01 / PL-02 / PL-14 | Planning lecture | A jamais B ; leftover B jamais B ; projection `login_code` | **fermé** |
 | PL-04 / PL-05 | Planning write | 0 write B | **fermé** |
 | PL-06 / PL-07 / PL-08 | Planning fail-closed | sans `sub` / `school_id` / `login_code` vide | **fermé** |
-| PL-11 | Planning Admin Pays | CD jamais BI | **fermé** |
+| PL-11 | Planning Admin Pays | 403 fail-closed (P1-06) ; CD jamais BI | **fermé** |
 | PR-01 / PR-02 | Présences lecture | A jamais B ; leftover B jamais B ; projection `login_code` | **fermé** |
 | PR-04 / PR-05 / PR-11 | Présences write | 0 write B | **fermé** |
 | PR-06 / PR-07 / PR-08 | Présences fail-closed | sans `sub` / `school_id` / `login_code` vide | **fermé** |

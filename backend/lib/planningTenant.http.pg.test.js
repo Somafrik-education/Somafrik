@@ -2,7 +2,7 @@
 
 /**
  * GP-014 — leftover JWT ≠ login_code du même tenant.
- * Dual-identity A/B + fail-closed + Admin Pays borné au pays.
+ * Dual-identity A/B + fail-closed. Superadmin / Admin Pays : 403 (P1-06).
  * GET/POST/PATCH/DELETE /api/course-schedules uniquement.
  */
 
@@ -709,13 +709,33 @@ async function main() {
     assert.ok(schedulesB.every((row) => row.schoolCode === LOGIN_B && row.schoolId === fixture.schoolBId), "PL-09 projection login_code B");
     assert.equal(schedulesB.some((row) => row.schoolCode === LEFTOVER_B || row.schoolCode === LOGIN_A), false);
 
+    const leftoverCodes = [LEFTOVER_A, LEFTOVER_B, LEFTOVER_A2, LEFTOVER_NO_LOGIN];
     const getSuper = await request("/course-schedules", { token: tokenSuper });
-    assert.equal(getSuper.status, 403, `P1-06 Superadmin Planning refusé: ${getSuper.status} ${JSON.stringify(getSuper.data)}`);
+    assert.equal(getSuper.status, 403, `PL-10 Superadmin Planning refusé: ${getSuper.status} ${JSON.stringify(getSuper.data)}`);
     assert.equal(getSuper.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
+    const superRows = unwrapList(getSuper.data);
+    assert.equal(superRows.length, 0, "PL-15 Superadmin n'émet aucune ligne Planning");
+    assert.equal(
+      superRows.some((row) => leftoverCodes.includes(String(row.schoolCode ?? "").trim())),
+      false,
+      "PL-15 Superadmin n'émet aucun leftover",
+    );
 
     const getPays = await request("/course-schedules", { token: tokenPaysCd });
-    assert.equal(getPays.status, 403, `P1-06 Admin Pays Planning refusé: ${JSON.stringify(getPays.data)}`);
+    assert.equal(getPays.status, 403, `PL-11 Admin Pays Planning refusé: ${JSON.stringify(getPays.data)}`);
     assert.equal(getPays.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
+    const paysRows = unwrapList(getPays.data);
+    assert.equal(paysRows.length, 0, "PL-11 Admin Pays n'obtient aucune donnée scolaire");
+    assert.equal(
+      paysRows.some((row) => String(row.id) === SLOT_B || row.schoolCode === LOGIN_B || row.schoolCode === LEFTOVER_B),
+      false,
+      "PL-11 Admin Pays CD ne voit pas BI",
+    );
+    assert.equal(
+      paysRows.some((row) => leftoverCodes.includes(String(row.schoolCode ?? "").trim())),
+      false,
+      "PL-15 Admin Pays: aucun leftover",
+    );
 
     const getA2 = await request("/course-schedules", { token: tokenA2 });
     assert.equal(unwrapList(getA2.data).some((row) => String(row.id) === SLOT_A), false, "PL-12 A2 jamais A");
@@ -750,7 +770,7 @@ async function main() {
     ).rows[0].c;
     assert.equal(countBFinal, countBBefore, "POST leftover JWT B: toujours 0 write B");
 
-    console.log("OK planningTenant.http.pg.test.js — PL-02/06/07/08/09/11/14 dual-identity");
+    console.log("OK planningTenant.http.pg.test.js — PL-02/06/07/08/09/11/14/15 dual-identity");
   } finally {
     await stopChild(child);
     await pool.end();
