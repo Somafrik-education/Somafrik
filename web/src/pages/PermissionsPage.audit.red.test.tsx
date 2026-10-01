@@ -65,19 +65,22 @@ const { catalog, patchMock, getConfiguredMock, getEffectiveMock } = vi.hoisted((
     ],
   });
   const getConfiguredMock = vi.fn(async (query: RbacConfiguredQuery) => emptySchoolMatrix(query));
-  const getEffectiveMock = vi.fn(async (_query: RbacConfiguredQuery) => ({
-    roleKey: "PRINCIPAL",
-    modules: [
-      {
-        moduleKey: "students",
-        moduleName: "Élèves",
-        canCreate: false,
-        canRead: true,
-        canUpdate: true,
-        canDelete: true,
-      },
-    ],
-  }));
+  const getEffectiveMock = vi.fn(async (query: RbacConfiguredQuery) => {
+    void query;
+    return {
+      roleKey: "PRINCIPAL",
+      modules: [
+        {
+          moduleKey: "students",
+          moduleName: "Élèves",
+          canCreate: false,
+          canRead: true,
+          canUpdate: true,
+          canDelete: true,
+        },
+      ],
+    };
+  });
   const patchMock = vi.fn(async (payload: RbacPatchPermissionsPayload) => {
     void payload;
     return { updatedAt: "2026-10-01T12:00:00.000Z" };
