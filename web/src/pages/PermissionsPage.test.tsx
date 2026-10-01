@@ -109,27 +109,30 @@ const { catalog, patchMock, getConfiguredMock, resetMock } = vi.hoisted(() => {
     void payload;
     return { updatedAt: "2026-08-16T11:00:00.000Z" };
   });
-  const resetMock = vi.fn(async (_payload: RbacResetOverridePayload) => ({
-    roleKey: "PREFET_ETUDES",
-    roleName: "Préfet des études",
-    scopeType: "school" as const,
-    updatedAt: null,
-    modules: [
-      {
-        moduleKey: "students",
-        moduleName: "Élèves",
-        appliesWeb: true,
-        appliesMobile: true,
-        canCreate: false,
-        canRead: true,
-        canUpdate: true,
-        canDelete: true,
-        configured: false,
-        source: "global" as const,
-        inherited: true,
-      },
-    ],
-  }));
+  const resetMock = vi.fn(async (payload: RbacResetOverridePayload) => {
+    void payload;
+    return {
+      roleKey: "PREFET_ETUDES",
+      roleName: "Préfet des études",
+      scopeType: "school" as const,
+      updatedAt: null,
+      modules: [
+        {
+          moduleKey: "students",
+          moduleName: "Élèves",
+          appliesWeb: true,
+          appliesMobile: true,
+          canCreate: false,
+          canRead: true,
+          canUpdate: true,
+          canDelete: true,
+          configured: false,
+          source: "global" as const,
+          inherited: true,
+        },
+      ],
+    };
+  });
   return { catalog, patchMock, getConfiguredMock, resetMock };
 });
 
