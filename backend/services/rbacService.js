@@ -236,6 +236,8 @@ const routePermissions = {
   "POST /api/backoffice/contacts/:contactId/provision-account": ["Contacts:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/relations": ["Relations:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/relations": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/relations/:relationId": ["Relations:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/relations/:relationId/archive": ["Relations:UPDATE", "Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/parents/identity": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/parents/relations": ["Relations:READ", "Élèves:READ", "Voir élèves", "Voir enfant", "Gérer élèves", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/parents/link": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],

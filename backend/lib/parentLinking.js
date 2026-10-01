@@ -22,6 +22,7 @@ const {
   mapUserRow,
   mapContactRow,
   mapRelationRow,
+  mapRelationAuditValue,
   parsePayload,
   toDbStatus,
 } = require("./clientsManagement");
@@ -558,8 +559,8 @@ async function archiveParentRelation(store, relationId, rawPatch, principal, aud
       action: "archive_relation",
       entityType: "relation",
       entityId: existing.id,
-      oldValue: mapRelationRow(existing),
-      newValue: mapRelationRow(saved),
+      oldValue: mapRelationAuditValue(existing),
+      newValue: mapRelationAuditValue(saved),
     });
     return { relation: mapRelationRow(saved), archived: true };
   });

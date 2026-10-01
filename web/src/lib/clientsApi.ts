@@ -77,6 +77,10 @@ export const clientsApi = {
 
   listRelations: () => api.get<unknown[]>("/backoffice/relations"),
   createRelation: (payload: Record<string, unknown>) => api.post("/backoffice/relations", payload),
+  updateRelation: (relationId: string, payload: Record<string, unknown>) =>
+    api.patch(`/backoffice/relations/${encodeURIComponent(relationId)}`, payload),
+  archiveRelation: (relationId: string) =>
+    api.post(`/backoffice/relations/${encodeURIComponent(relationId)}/archive`, {}),
 
   listMessages: () =>
     api.get<unknown[]>(withCommunicationSchoolScope("/backoffice/messages", readActiveCommunicationSchoolScope())),

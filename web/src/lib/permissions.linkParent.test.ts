@@ -29,4 +29,11 @@ describe("canLinkParent — aligné POST /api/parents/link", () => {
     expect(canLinkParent(ctx("Enseignant", ["Élèves:READ", "Notes:UPDATE"]))).toBe(false);
     expect(canArchiveParentRelation(ctx("Enseignant", ["Élèves:READ"]))).toBe(false);
   });
+
+  it("refuse SUPER_ADMIN et COUNTRY_ADMIN même avec ALL_PRIVILEGES", () => {
+    expect(canLinkParent(ctx("Super Administrateur Somafrik", ["ALL_PRIVILEGES"]))).toBe(false);
+    expect(canArchiveParentRelation(ctx("Super Administrateur Somafrik", ["ALL_PRIVILEGES"]))).toBe(false);
+    expect(canLinkParent(ctx("Admin Pays", ["COUNTRY_PRIVILEGES"]))).toBe(false);
+    expect(canArchiveParentRelation(ctx("Admin Pays", ["COUNTRY_PRIVILEGES"]))).toBe(false);
+  });
 });

@@ -22,6 +22,8 @@ const {
   mapUserRow,
   mapContactRow,
   mapRelationRow,
+  mapRelationAuditValue,
+  normalizeRelationPrincipalFlag,
   mapMessageRow,
   mapAnnouncementRow,
   parsePayload,
@@ -729,7 +731,7 @@ async function provisionContactAccount(store, contactId, rawPayload, principal, 
             action: "create_relation",
             entityType: "relation",
             entityId: relation.id,
-            newValue: mapRelationRow(relation),
+            newValue: mapRelationAuditValue(relation),
           });
         }
       }
@@ -949,17 +951,163 @@ async function createRelation(store, rawPayload, principal, auditMeta) {
       student,
     });
 
+    const principalFlag = normalizeRelationPrincipalFlag(rawPayload?.isPrincipal ?? rawPayload?.is_principal);
+    let saved = relation;
+    if (created && principalFlag && typeof tx.updateRelation === "function") {
+      const profile = {
+        ...parsePayload(relation.profile_payload),
+        fromContactName: `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim(),
+        toStudentName: `${student.first_name ?? ""} ${student.last_name ?? student.name ?? ""}`.trim(),
+        isPrincipal: principalFlag,
+      };
+      saved = await tx.updateRelation(relation.id, {
+        contactId: contact.id,
+        studentId: student.id,
+        relationType: relation.relation_type || "parent_student",
+        profile,
+      });
+      if (principalFlag === "Oui") {
+        await demoteOtherPrincipalRelations(tx, contact.school_id, student.id, saved.id);
+      }
+    }
+
     if (created) {
       await writeClientsAudit(tx, principal, auditMeta, {
         schoolCode,
         action: "create_relation",
         entityType: "relation",
-        entityId: relation.id,
-        newValue: mapRelationRow(relation),
+        entityId: saved.id,
+        newValue: mapRelationAuditValue(saved),
       });
     }
-    return { created, relation: mapRelationRow(relation) };
+    return { created, relation: mapRelationRow(saved) };
   });
+}
+
+function relationTypeFromPayload(rawPayload) {
+  const { CANONICAL_RELATION_TYPE } = require("./parentLinking");
+  const raw = asTrimmed(rawPayload?.relationType || rawPayload?.relation_type);
+  if (!raw) return CANONICAL_RELATION_TYPE;
+  const accepted = new Set([
+    CANONICAL_RELATION_TYPE,
+    "parent → élève",
+    "parent-enfant",
+    "parent_child",
+  ]);
+  if (accepted.has(raw.toLowerCase())) return CANONICAL_RELATION_TYPE;
+  throw createClientsError(400, "Type de relation non supporté.");
+}
+
+async function demoteOtherPrincipalRelations(tx, schoolId, studentId, keepRelationId) {
+  if (typeof tx.listRelationsByStudent !== "function" || typeof tx.updateRelation !== "function") {
+    return;
+  }
+  const rows = await tx.listRelationsByStudent(schoolId, studentId);
+  for (const row of rows ?? []) {
+    if (String(row.id) === String(keepRelationId)) continue;
+    if (toDbStatus(row.status) !== "active") continue;
+    const profile = { ...parsePayload(row.profile_payload) };
+    if (normalizeRelationPrincipalFlag(profile.isPrincipal ?? profile.is_principal) !== "Oui") continue;
+    profile.isPrincipal = "Non";
+    await tx.updateRelation(row.id, {
+      contactId: row.contact_id,
+      studentId: row.student_id,
+      relationType: row.relation_type || "parent_student",
+      profile,
+    });
+  }
+}
+
+async function updateRelation(store, relationId, rawPayload, principal, auditMeta) {
+  const endpoints = relationEndpointsFromPayload(rawPayload);
+  ignoreClientScope(rawPayload);
+  const requestedStatus = toDbStatus(rawPayload?.status || "");
+  if (requestedStatus === "archived") {
+    throw createClientsError(400, "Utilisez l'archivage pour clôturer une relation.");
+  }
+
+  const id = asTrimmed(relationId);
+  if (!id) {
+    throw createClientsError(404, "Relation introuvable.", CLIENTS_ERROR.RELATION_NOT_FOUND);
+  }
+
+  return store.withTransaction(async (tx) => {
+    const existing = typeof tx.getRelationById === "function" ? await tx.getRelationById(id) : null;
+    if (!existing) {
+      throw createClientsError(404, "Relation introuvable.", CLIENTS_ERROR.RELATION_NOT_FOUND);
+    }
+    assertSchoolScope(principal, existing.school_code);
+    await assertSchoolInPrincipalCountry(store, principal, existing.school_code);
+    if (toDbStatus(existing.status) === "archived") {
+      throw createClientsError(409, "Relation archivée.", CLIENTS_ERROR.CONFLICT);
+    }
+
+    const contactId = endpoints.contactId || existing.contact_id;
+    const studentId = endpoints.studentId || existing.student_id;
+    if (!contactId || !studentId) {
+      throw createClientsError(400, "Contact parent et élève obligatoires.");
+    }
+
+    const contact = await tx.getContactById(contactId);
+    if (!contact || asTrimmed(contact.school_code).toUpperCase() !== asTrimmed(existing.school_code).toUpperCase()) {
+      throw createClientsError(404, "Contact introuvable.", CLIENTS_ERROR.CONTACT_NOT_FOUND);
+    }
+    const student = await tx.getStudentById(studentId);
+    if (!student || String(student.school_id) !== String(contact.school_id)) {
+      throw createClientsError(404, "Élève introuvable.", CLIENTS_ERROR.STUDENT_NOT_FOUND);
+    }
+
+    if (String(contactId) !== String(existing.contact_id) || String(studentId) !== String(existing.student_id)) {
+      const other =
+        typeof tx.getActiveRelationByContactAndStudent === "function"
+          ? await tx.getActiveRelationByContactAndStudent(contactId, studentId)
+          : null;
+      if (other && String(other.id) !== String(existing.id)) {
+        throw createClientsError(409, "Cette relation existe déjà.", CLIENTS_ERROR.DUPLICATE);
+      }
+    }
+
+    const profile = {
+      ...parsePayload(existing.profile_payload),
+      fromContactName: `${contact.first_name ?? contact.firstName ?? ""} ${contact.last_name ?? contact.lastName ?? ""}`.trim(),
+      toStudentName: `${student.first_name ?? student.firstName ?? ""} ${student.last_name ?? student.lastName ?? student.name ?? ""}`.trim(),
+    };
+    const principalFlag = normalizeRelationPrincipalFlag(rawPayload?.isPrincipal ?? rawPayload?.is_principal);
+    if (principalFlag) profile.isPrincipal = principalFlag;
+
+    const relationType = rawPayload?.relationType || rawPayload?.relation_type
+      ? relationTypeFromPayload(rawPayload)
+      : existing.relation_type || "parent_student";
+
+    const saved = await tx.updateRelation(existing.id, {
+      contactId: contact.id,
+      studentId: student.id,
+      relationType,
+      profile,
+    });
+    if (!saved) {
+      throw createClientsError(404, "Relation introuvable.", CLIENTS_ERROR.RELATION_NOT_FOUND);
+    }
+
+    if (profile.isPrincipal === "Oui") {
+      await demoteOtherPrincipalRelations(tx, contact.school_id, student.id, saved.id);
+    }
+
+    await writeClientsAudit(tx, principal, auditMeta, {
+      schoolCode: existing.school_code,
+      action: "update_relation",
+      entityType: "relation",
+      entityId: saved.id,
+      oldValue: mapRelationAuditValue(existing),
+      newValue: mapRelationAuditValue(saved),
+    });
+    return mapRelationRow(saved);
+  });
+}
+
+async function archiveRelation(store, relationId, principal, auditMeta) {
+  const { archiveParentRelation } = require("./parentLinking");
+  return archiveParentRelation(store, relationId, { status: "archived" }, principal, auditMeta);
 }
 
 async function sendMessage(store, rawPayload, principal, auditMeta) {
@@ -1008,6 +1156,8 @@ module.exports = {
   updateContact,
   provisionContactAccount,
   createRelation,
+  updateRelation,
+  archiveRelation,
   sendMessage,
   markMessageRead,
   createAnnouncement,
