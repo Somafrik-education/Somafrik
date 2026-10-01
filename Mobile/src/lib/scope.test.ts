@@ -245,6 +245,28 @@ function run() {
   assert.equal(trusted.users[0]?.id, "tenant-user");
   assert.equal(trusted.schools[0]?.code, SCHOOL);
 
+  const privilegesOnlyScoped = scopeBackOfficeForSession(
+    emptyPayload({
+      users: [
+        { id: "usr-admin", role: "Admin School", schoolCode: SCHOOL },
+        { id: "usr-teacher", role: "Enseignant", schoolCode: SCHOOL },
+      ],
+      schools: [
+        { code: SCHOOL, name: "Nuru" },
+        { code: OTHER, name: "Autre" },
+      ],
+      subscriptions: [{ schoolCode: SCHOOL, plan: "Standard" }],
+      students: [{ id: "stu-1", schoolCode: SCHOOL }],
+      notifications: [{ id: "ntf-1", title: "Plateforme", message: "ok" }],
+    }),
+    { role: "", permissions: ["ALL_PRIVILEGES"], user: { permissions: ["ALL_PRIVILEGES"] } },
+  ) as Record<string, Array<{ id?: string; code?: string }>>;
+  assert.equal(privilegesOnlyScoped.students.length, 0, "P1-08 : élèves stripés");
+  assert.equal(privilegesOnlyScoped.users.length, 2, "P1-08 : Users plateforme sans schoolCode");
+  assert.equal(privilegesOnlyScoped.schools.length, 2, "P1-08 : catalogue écoles conservé");
+  assert.equal(privilegesOnlyScoped.subscriptions.length, 1);
+  assert.equal(privilegesOnlyScoped.notifications.length, 1);
+
   console.log("scope.test.ts OK");
 }
 
