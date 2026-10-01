@@ -124,6 +124,9 @@ const leftover = {
   presences: [{ id: "pre-1" }],
   paymentStatuses: [{ id: "st-1" }],
   schools: [{ code: "CD-IN-26-001" }],
+  users: [{ id: "usr-1", schoolCode: "CD-IN-26-001", role: "Admin School" }],
+  subscriptions: [{ schoolCode: "CD-IN-26-001" }],
+  notifications: [{ id: "ntf-1", title: "Plateforme", message: "ok" }],
 };
 
 assert.equal(isSuperAdminPrincipalSession(allPrivilegesOnly), false);
@@ -217,7 +220,7 @@ const projected = projectScopedStudentsForSession(allPrivilegesOnly, leftover.st
 assert.equal(projected.kept, 0);
 assert.equal(projected.students.length, 0);
 
-const scoped = scopeBackOfficeForSession(leftover, allPrivilegesOnly, "CD-IN-26-001") as Record<string, unknown[]>;
+const scoped = scopeBackOfficeForSession(leftover, allPrivilegesOnly) as Record<string, unknown[]>;
 assert.equal(scoped.students.length, 0);
 assert.equal(scoped.teachers.length, 0);
 assert.equal(scoped.classes.length, 0);
@@ -226,6 +229,14 @@ assert.equal(scoped.payments.length, 0);
 assert.equal(scoped.presences.length, 0);
 assert.equal(scoped.notes.length, 0);
 assert.equal(scoped.schools.length, 1, "catalogue établissements plateforme conservé");
+assert.equal(scoped.users.length, 1, "Users plateforme conservé sans schoolCode injecté");
+assert.equal(scoped.subscriptions.length, 1, "abonnements plateforme conservés");
+assert.equal(scoped.notifications.length, 1, "notifications plateforme conservées");
+
+const scopedWildcard = scopeBackOfficeForSession(leftover, allPrivilegesWildcard) as Record<string, unknown[]>;
+assert.equal(scopedWildcard.students.length, 0);
+assert.equal(scopedWildcard.users.length, 1, "schoolCode * ne vide pas Users");
+assert.equal(scopedWildcard.schools.length, 1);
 
 const schoolScoped = scopeBackOfficeForSession(leftover, schoolAdmin(), "CD-IN-26-001") as Record<string, unknown[]>;
 assert.equal(schoolScoped.students.length, 1, "Admin School conserve les collections de son tenant");
@@ -241,6 +252,19 @@ assert.doesNotMatch(
   skipFn.slice(0, 280),
   /return isPlatformAdminSession\(session\)/,
   "P1-08 : skip hydratation n'est plus limité aux rôles plateforme",
+);
+
+const scopeSrc = fs.readFileSync(path.join(ROOT, "src/lib/scope.ts"), "utf8");
+const skipScope = scopeSrc.slice(scopeSrc.indexOf("if (shouldSkipSchoolTenantHydration(session))"));
+assert.match(
+  skipScope.slice(0, 900),
+  /isPlatformAdminSession\(session\)/,
+  "P1-08 : catalogues plateforme Superadmin/Pays inchangés",
+);
+assert.match(
+  skipScope.slice(0, 900),
+  /: payload/,
+  "P1-08 : ALL_PRIVILEGES seul conserve Users/écoles/abonnements",
 );
 const navFn = denySrc.slice(denySrc.indexOf("export function constrainPlatformSchoolNavigation"));
 assert.match(navFn, /shouldDenySchoolDomain\(session, target\.destination\)/);
