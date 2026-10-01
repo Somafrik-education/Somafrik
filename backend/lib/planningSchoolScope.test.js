@@ -51,26 +51,25 @@ test("GP-014: membership login_code + school_id sont l'autorité", () => {
   );
 });
 
-test("GP-014: Superadmin global reste global", () => {
+test("P1-06: Superadmin global n'est plus Planning global", () => {
   const scope = resolvePlanningSchoolScope({
     role: "Super Administrateur Somafrik",
     schoolCode: "",
   });
-  assert.equal(scope.mode, "all");
-  assert.equal(filterPlanningRows([{ schoolCode: LOGIN_B }], scope).length, 1);
+  assert.equal(scope.mode, "none");
+  assert.equal(filterPlanningRows([{ schoolCode: LOGIN_B }], scope).length, 0);
 });
 
-test("GP-014: Admin Pays global = pays, jamais leftover schoolCode", () => {
+test("P1-06: Admin Pays global n'est plus Planning pays", () => {
   const scope = resolvePlanningSchoolScope({
     role: "Admin Pays",
     countryCode: "CD",
     schoolCode: LEFTOVER_A,
   });
-  assert.equal(scope.mode, "country");
-  assert.equal(scope.countryCode, "CD");
+  assert.equal(scope.mode, "none");
   assert.equal(
     filterPlanningRows([{ schoolCode: LOGIN_A, countryCode: "CD" }], scope).length,
-    1,
+    0,
   );
   assert.equal(
     filterPlanningRows([{ schoolCode: LOGIN_B, countryCode: "BI" }], scope).length,

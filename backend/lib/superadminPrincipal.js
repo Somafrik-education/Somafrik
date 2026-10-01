@@ -13,9 +13,9 @@
  *
  * Le login `superadmin` n'est pas une preuve de rôle à lui seul.
  *
- * Ne pas brancher ce helper sur les scopes school-domain qui accordent
- * `mode: all` (users/planning/presence/academicYear/enrollment/mobileSync).
- * Superadmin n'est pas un Admin School global.
+ * Ne pas brancher ce helper pour *accorder* `mode: all` sur un scope
+ * school-domain (users/presence/academicYear/enrollment). Superadmin n'est
+ * pas un Admin School global. Planning / mobileSync sont fail-closed (P1-06).
  */
 
 const SUPER_ADMIN_ROLE_LABELS = Object.freeze([

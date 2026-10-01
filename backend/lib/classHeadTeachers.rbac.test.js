@@ -9,24 +9,24 @@ const {
   HEAD_TEACHER_REMOVE_ROUTE,
   HEAD_TEACHER_WRITE_PERMISSIONS,
 } = require("./classHeadTeachersManagement");
-const { PLATFORM_ADMIN_ALLOWED } = require("./platformPersonalDataGuard");
+const { SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM } = require("./platformPersonalDataGuard");
 
 const rbac = new RbacService();
 
 test("routes professeur principal sont cataloguées", () => {
   for (const key of [HEAD_TEACHER_CANDIDATES_ROUTE, HEAD_TEACHER_ASSIGN_ROUTE, HEAD_TEACHER_REMOVE_ROUTE]) {
     assert.deepEqual(routePermissions[key], [...HEAD_TEACHER_WRITE_PERMISSIONS]);
-    assert.ok(PLATFORM_ADMIN_ALLOWED.includes(key), key);
+    assert.ok(SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM.includes(key), key);
   }
 });
 
-test("RBAC : superadmin et admin établissement autorisés, enseignant refusé", () => {
+test("RBAC : Superadmin refusé (P1-06), admin établissement autorisé, enseignant refusé", () => {
   assert.equal(
     rbac.canAccess(
       { role: "Super Administrateur Somafrik", permissions: ["ALL_PRIVILEGES"] },
       HEAD_TEACHER_ASSIGN_ROUTE,
     ),
-    true,
+    false,
   );
   assert.equal(
     rbac.canAccess({ role: "Admin School", permissions: ["Gérer classes"] }, HEAD_TEACHER_ASSIGN_ROUTE),
