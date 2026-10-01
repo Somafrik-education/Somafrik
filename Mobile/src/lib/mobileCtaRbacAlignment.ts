@@ -22,6 +22,7 @@
  */
 import { normalize } from "./format";
 import { getEffectivePermissionsForSession, hasPlatformBackofficePrivilege, hasSecurityPermission } from "../domain/security/permissions";
+import { shouldDenySchoolDomain } from "./platformSchoolDomainDeny";
 
 export const MESSAGES_READ_ALLOWLIST = [
   "Messages:READ",
@@ -69,11 +70,13 @@ function hasLivePlatformToken(session: any): boolean {
 
 export function canReadBackofficeMessagesList(session: any): boolean {
   if (!session) return false;
+  if (shouldDenySchoolDomain(session, "Messages")) return false;
   return liveHasExact(getEffectivePermissionsForSession(session), MESSAGES_READ_ALLOWLIST);
 }
 
 export function canAccessBackofficeMessagesComposer(session: any): boolean {
   if (!session) return false;
+  if (shouldDenySchoolDomain(session, "Messages")) return false;
   return liveHasExact(getEffectivePermissionsForSession(session), MESSAGES_CREATE_ALLOWLIST);
 }
 

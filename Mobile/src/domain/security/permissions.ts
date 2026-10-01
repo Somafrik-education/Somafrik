@@ -9,6 +9,10 @@ import { COUNTRY_SCOPE_MODULES } from "../../lib/roleGovernance";
 import { SCHOOL_ENTITY_VIEWS, VIEW_PERMISSION_FEATURES, ENTITY_VIEW_MAP } from "../../lib/constants";
 import { isSchoolSettingsOperator, isSchoolSettingsView } from "../../lib/schoolSettingsAccess";
 import { canReadExams } from "../../lib/examPermissions";
+import {
+  isSuperAdminPrincipalSession,
+  shouldDenySchoolDomain,
+} from "../../lib/platformSchoolDomainDeny";
 
 export type SecurityAction = "READ" | "CREATE" | "UPDATE" | "DELETE" | "SUSPEND";
 
@@ -116,9 +120,6 @@ const SUPER_ADMIN_ALLOWED_VIEWS = new Set([
   "chartSettings",
   "notifications",
   "PlatformNotifications",
-  "InternalNotifications",
-  "messages",
-  "Messages",
   "announcements",
   "Announcements",
   "configuration",
@@ -349,7 +350,8 @@ function hasSecurityPermissionInternal(
 
 export function hasSecurityPermission(session: any, feature: string | undefined, action: SecurityAction = "READ") {
   if (!feature) return true;
-  if (isSuperAdminSessionRole(session?.role)) {
+  if (shouldDenySchoolDomain(session, feature)) return false;
+  if (isSuperAdminSessionRole(session?.role) || isSuperAdminPrincipalSession(session)) {
     return SUPER_ADMIN_ALLOWED_FEATURES.has(feature);
   }
 
@@ -401,7 +403,8 @@ export function canReadView(session: any, viewName: string): boolean {
   if (isParentMobileSession(session) && PARENT_BLOCKED_VIEWS.has(viewName)) {
     return false;
   }
-  if (isSuperAdminSessionRole(session?.role)) {
+  if (shouldDenySchoolDomain(session, viewName)) return false;
+  if (isSuperAdminSessionRole(session?.role) || isSuperAdminPrincipalSession(session)) {
     return SUPER_ADMIN_ALLOWED_VIEWS.has(viewName);
   }
   if (viewName === "PlatformNotifications") {
@@ -485,7 +488,8 @@ export function canMutateEntity(session: any, entity: string, action: Exclude<Se
 
 /** GET /finance/fee-grids — Frais & tarifs:READ | Paiements:READ | Impayés:READ. */
 export function canReadFeeGrids(session: any): boolean {
-  if (isSuperAdminSessionRole(session?.role)) return false;
+  if (shouldDenySchoolDomain(session, "FeeGrids")) return false;
+  if (isSuperAdminSessionRole(session?.role) || isSuperAdminPrincipalSession(session)) return false;
   if (isParentMobileSession(session)) return false;
   return (
     hasSecurityPermission(session, "Frais & tarifs", "READ") ||
@@ -499,7 +503,8 @@ export function canReadRoute(session: any, routeName?: string) {
   if (isParentMobileSession(session)) {
     if (!routeName || !PARENT_ALLOWED_ROUTES.has(routeName)) return false;
   }
-  if (isSuperAdminSessionRole(session?.role)) {
+  if (shouldDenySchoolDomain(session, routeName)) return false;
+  if (isSuperAdminSessionRole(session?.role) || isSuperAdminPrincipalSession(session)) {
     return Boolean(routeName) && SUPER_ADMIN_ALLOWED_VIEWS.has(routeName as string);
   }
   if (routeName === "PlatformNotifications") {

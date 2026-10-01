@@ -10,6 +10,7 @@ import {
   type PushTapResponse,
 } from "../lib/pushNotificationTap";
 import { constrainParentPushNavigation, type AllowedPushNavigationParams } from "../lib/pushNotificationDestinations";
+import { constrainPlatformSchoolNavigation } from "../lib/platformSchoolDomainDeny";
 import { dispatchRegisteredPushNavigation } from "../lib/pushNotificationNavigate";
 import {
   observePushRegistrationFailure,
@@ -33,7 +34,10 @@ function navigateTo(
   params?: AllowedPushNavigationParams,
   session?: { role?: string | null; user?: { children?: unknown } | null } | null,
 ) {
-  const scoped = constrainParentPushNavigation({ destination: destination as never, params }, session);
+  const scoped = constrainPlatformSchoolNavigation(
+    constrainParentPushNavigation({ destination: destination as never, params }, session),
+    session,
+  );
   dispatchRegisteredPushNavigation(navigationRef, scoped.destination, scoped.params);
 }
 

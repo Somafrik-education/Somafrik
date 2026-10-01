@@ -162,20 +162,18 @@ function run() {
   ) as Record<string, Array<{ id?: string; code?: string }>>;
 
   for (const entity of [
-    "users",
     "students",
     "teachers",
     "classes",
     "courses",
     "payments",
     "presences",
-    "announcements",
     "messages",
   ]) {
     assert.equal(
       superSessionScoped[entity]?.length,
-      1,
-      `${entity} request-scoped ne doit pas disparaître sur SCH-* != login_code V2`,
+      0,
+      `${entity} scolaire ne doit jamais être présenté au Superadmin (P1-04)`,
     );
   }
   assert.equal(superSessionScoped.schools.length, 2, "le sélecteur Superadmin conserve la liste principale");
@@ -185,8 +183,8 @@ function run() {
     { role: "country_admin", user: { schoolCode: "*", countryScope: "CD", countryCode: "CD" } },
     SCHOOL,
   ) as Record<string, Array<{ id?: string; code?: string }>>;
-  assert.equal(countrySessionScoped.users.length, 1);
-  assert.equal(countrySessionScoped.students.length, 1);
+  assert.equal(countrySessionScoped.students.length, 0, "Admin Pays n'est pas Admin School (P1-04)");
+  assert.equal(countrySessionScoped.messages.length, 0);
   assert.equal(countrySessionScoped.schools.length, 2, "Admin Pays conserve les écoles de son pays");
 
   // Admin School : le JWT/repository impose déjà le tenant. Une projection Users

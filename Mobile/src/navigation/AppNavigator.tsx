@@ -6,6 +6,7 @@ import { navigationRef } from "./rootNavigation";
 import { flushPendingPushNavigation } from "../lib/pushNotificationTap";
 import { dispatchRegisteredPushNavigation } from "../lib/pushNotificationNavigate";
 import { constrainParentPushNavigation } from "../lib/pushNotificationDestinations";
+import { constrainPlatformSchoolNavigation } from "../lib/platformSchoolDomainDeny";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -254,7 +255,10 @@ export default function AppNavigator() {
         onReady={() => {
         flushPendingPushNavigation(
           (destination, params) => {
-            const scoped = constrainParentPushNavigation({ destination, params }, session);
+            const scoped = constrainPlatformSchoolNavigation(
+              constrainParentPushNavigation({ destination, params }, session),
+              session,
+            );
             dispatchRegisteredPushNavigation(navigationRef, scoped.destination, scoped.params);
           },
           {

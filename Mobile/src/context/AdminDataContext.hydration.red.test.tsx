@@ -313,7 +313,7 @@ describe("CHANTIER SYNC — Mobile AdminDataContext (tests RED)", () => {
     await waitFor(() => expect(result.current.studentsData.length).toBe(STUDENT_COUNT));
   });
 
-  it("5. changement de scope A → B : isolation tenant, jamais « 0 élève » avant fin d'hydratation", async () => {
+  it("5. Superadmin : sélection A → B n'hydrate jamais les élèves", async () => {
     const session = superAdminSession();
     function Wrapper({ children }: { children: ReactNode }) {
       return (
@@ -329,35 +329,19 @@ describe("CHANTIER SYNC — Mobile AdminDataContext (tests RED)", () => {
     await act(async () => {
       result.current.setActiveSchoolCode(SCHOOL_A);
     });
-    await waitFor(() => expect(result.current.studentsData.length).toBe(STUDENT_COUNT));
-    studentHistory.length = 0;
-    metricHistory.length = 0;
-    studentHistory.push(STUDENT_COUNT);
+    expect(apiStore.studentsCalls).toBe(0);
+    expect(result.current.studentsData).toEqual([]);
 
-    apiStore.holdStudents = deferred();
     apiStore.activeSchoolForFetch = SCHOOL_B;
     await act(async () => {
       result.current.setActiveSchoolCode(SCHOOL_B);
     });
-
-    expect(
-      result.current.studentsData.some((row) => row.schoolCode === SCHOOL_A),
-      "aucune donnée de A ne doit rester présentée sous B",
-    ).toBe(false);
-
-    const transition = collapseCounts(studentHistory);
-    expect(
-      metricHistory.includes("0"),
-      `reset interne A→B ne doit pas être lu comme 0 métier. students: ${transition} métriques: ${metricHistory.join(",")}`,
-    ).toBe(false);
-    expect(shouldRenderEmpty(result.current.studentsSnapshot)).toBe(false);
-    expect(result.current.studentsSnapshot.status).toBe("loading");
-
+    expect(apiStore.studentsCalls).toBe(0);
+    expect(result.current.studentsData).toEqual([]);
     await act(async () => {
-      apiStore.holdStudents?.resolve();
+      await result.current.refreshBackOfficeState().catch(() => undefined);
     });
-    await waitFor(() => expect(result.current.studentsData.length).toBe(5));
-    expect(result.current.studentsData.every((row) => row.schoolCode === SCHOOL_B)).toBe(true);
+    expect(apiStore.studentsCalls).toBe(0);
   });
 
   it("6. erreur réseau pendant refresh : snapshot valide conservé", async () => {
@@ -388,7 +372,7 @@ describe("CHANTIER SYNC — Mobile AdminDataContext (tests RED)", () => {
     expect(shouldRenderEmpty(result.current.studentsSnapshot)).toBe(false);
   });
 
-  it("8. Mobile stale response : A termine après B et n'écrase pas B (students + users)", async () => {
+  it("8. Superadmin : refresh scolaire no-op, users plateforme restent isolés du tenant", async () => {
     const session = superAdminSession();
     function Wrapper({ children }: { children: ReactNode }) {
       return (
@@ -403,33 +387,15 @@ describe("CHANTIER SYNC — Mobile AdminDataContext (tests RED)", () => {
     await act(async () => {
       result.current.setActiveSchoolCode(SCHOOL_A);
     });
-    await waitFor(() => expect(result.current.studentsData.length).toBe(STUDENT_COUNT));
-    await waitFor(() => expect(result.current.usersData.length).toBe(USER_COUNT));
-
-    const holdA = deferred();
-    apiStore.holdStudents = holdA;
-    const staleA = result.current.refreshBackOfficeState();
-    const staleUsers = result.current.loadUsers();
-
-    apiStore.activeSchoolForFetch = SCHOOL_B;
-    apiStore.holdStudents = null;
-    await act(async () => {
-      result.current.setActiveSchoolCode(SCHOOL_B);
-    });
+    expect(result.current.studentsData).toEqual([]);
+    expect(apiStore.studentsCalls).toBe(0);
 
     await act(async () => {
-      holdA.resolve();
-      await Promise.all([staleA.catch(() => undefined), staleUsers.catch(() => undefined)]);
+      await result.current.refreshBackOfficeState().catch(() => undefined);
+      await result.current.loadStudents();
     });
-
-    expect(
-      result.current.studentsData.every((row) => row.schoolCode === SCHOOL_B),
-      "A ne doit jamais écraser B sur students",
-    ).toBe(true);
-    expect(
-      result.current.usersData.every((row) => row.schoolCode === SCHOOL_B),
-      "A ne doit jamais écraser B sur users",
-    ).toBe(true);
+    expect(apiStore.studentsCalls).toBe(0);
+    expect(result.current.studentsData).toEqual([]);
   });
 
   it("9. [] PostgreSQL réel = vide métier ; domaine chargé en refresh ≠ zéro", async () => {
