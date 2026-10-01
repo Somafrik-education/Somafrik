@@ -190,6 +190,7 @@ const routePermissions = {
   "POST /api/backoffice/rbac/roles": ["ALL_PRIVILEGES", "Rôles Établissement:CREATE"],
   "PATCH /api/backoffice/rbac/roles/:roleId": ["ALL_PRIVILEGES", "Rôles Établissement:UPDATE"],
   "POST /api/backoffice/rbac/roles/:roleId/archive": ["ALL_PRIVILEGES", "Rôles Établissement:UPDATE"],
+  "GET /api/backoffice/rbac/history": ["ALL_PRIVILEGES"],
   "DELETE /api/students/:id": ["Élèves:DELETE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/backoffice/dashboard-chart-config": ["ALL_PRIVILEGES"],
   "PUT /api/backoffice/dashboard-chart-config": ["ALL_PRIVILEGES"],

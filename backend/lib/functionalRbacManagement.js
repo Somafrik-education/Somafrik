@@ -23,6 +23,47 @@ const LEGACY_ROLE_PERMISSIONS_WRITE_MESSAGE =
 
 const PROTECTED_SYSTEM_ROLE_KEYS = new Set(["SUPER_ADMIN", "COUNTRY_ADMIN", "SCHOOL_ADMIN"]);
 
+const RBAC_AUDIT_ACTIONS = Object.freeze({
+  ROLE_CREATE: "ROLE_CREATE",
+  ROLE_RENAME: "ROLE_RENAME",
+  ROLE_ARCHIVE: "ROLE_ARCHIVE",
+  PERMISSION_OVERRIDE_CREATE_OR_UPDATE: "PERMISSION_OVERRIDE_CREATE_OR_UPDATE",
+  PERMISSION_OVERRIDE_RESET: "PERMISSION_OVERRIDE_RESET",
+});
+
+const RBAC_HISTORY_ACTIONS = Object.freeze([
+  RBAC_AUDIT_ACTIONS.ROLE_CREATE,
+  RBAC_AUDIT_ACTIONS.ROLE_RENAME,
+  RBAC_AUDIT_ACTIONS.ROLE_ARCHIVE,
+  RBAC_AUDIT_ACTIONS.PERMISSION_OVERRIDE_CREATE_OR_UPDATE,
+  RBAC_AUDIT_ACTIONS.PERMISSION_OVERRIDE_RESET,
+  "ROLE_CREATED",
+  "ROLE_UPDATED",
+  "ROLE_ARCHIVED",
+  "ROLE_PERMISSION_MATRIX_UPDATED",
+  "ROLE_PERMISSION_OVERRIDE_RESET",
+  "ROLE_PERMISSION_GRANTED",
+  "ROLE_PERMISSION_REVOKED",
+]);
+
+const RBAC_HISTORY_DEFAULT_LIMIT = 20;
+const RBAC_HISTORY_MAX_LIMIT = 50;
+
+const FORBIDDEN_AUDIT_KEYS = new Set([
+  "jwt",
+  "token",
+  "password",
+  "pin",
+  "secret",
+  "authorization",
+  "accesstoken",
+  "refreshtoken",
+  "access_token",
+  "refresh_token",
+  "idtoken",
+  "id_token",
+]);
+
 /** Invariants Superadmin — jamais retirables, même via la matrice. */
 const SUPER_ADMIN_INVARIANT_MODULES = Object.freeze({
   role_permissions: { canCreate: false, canRead: true, canUpdate: true, canDelete: false },
@@ -64,15 +105,62 @@ function normalizeScope({ scopeType, countryId, schoolId, countryCode, schoolCod
   return { scopeType: "global", countryId: null, schoolId: null };
 }
 
-function assertNotProtectedArchive(roleKey) {
+function isProtectedSystemRole(roleKey) {
   const key = String(toRoleKey(roleKey) || "").toUpperCase();
-  if (PROTECTED_SYSTEM_ROLE_KEYS.has(key)) {
+  return PROTECTED_SYSTEM_ROLE_KEYS.has(key);
+}
+
+function assertNotProtectedMutation(roleKey, mutation = "modifiés") {
+  if (isProtectedSystemRole(roleKey)) {
     throw createFunctionalRbacError(
       403,
-      "Les rôles plateforme SUPER_ADMIN / COUNTRY_ADMIN / SCHOOL_ADMIN ne peuvent pas être archivés.",
+      `Les rôles plateforme SUPER_ADMIN / COUNTRY_ADMIN / SCHOOL_ADMIN ne peuvent pas être ${mutation}.`,
       FUNCTIONAL_RBAC_ERROR.ROLE_PROTECTED,
     );
   }
+}
+
+function assertNotProtectedArchive(roleKey) {
+  assertNotProtectedMutation(roleKey, "archivés");
+}
+
+function looksLikeJwt(value) {
+  return typeof value === "string" && /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(value.trim());
+}
+
+function sanitizeRbacAuditValue(value, depth = 0) {
+  if (value == null || typeof value !== "object") {
+    return looksLikeJwt(value) ? "[redacted]" : value;
+  }
+  if (depth > 6) return "[truncated]";
+  if (Array.isArray(value)) {
+    return value.slice(0, 50).map((item) => sanitizeRbacAuditValue(item, depth + 1));
+  }
+  const out = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (FORBIDDEN_AUDIT_KEYS.has(String(key).toLowerCase())) continue;
+    out[key] = sanitizeRbacAuditValue(nested, depth + 1);
+  }
+  return out;
+}
+
+function rbacAuditActor(principal) {
+  return {
+    actor: asTrimmed(principal?.identifier || principal?.sub || principal?.id) || null,
+    actorRole: asTrimmed(principal?.role) || null,
+  };
+}
+
+function clampRbacHistoryLimit(rawLimit) {
+  const parsed = Number(rawLimit);
+  if (!Number.isFinite(parsed) || parsed <= 0) return RBAC_HISTORY_DEFAULT_LIMIT;
+  return Math.min(Math.trunc(parsed), RBAC_HISTORY_MAX_LIMIT);
+}
+
+function clampRbacHistoryOffset(rawOffset) {
+  const parsed = Number(rawOffset);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.trunc(parsed);
 }
 
 function assertSuperAdminInvariantPatch(roleKey, grants = []) {
@@ -116,11 +204,21 @@ module.exports = {
   LEGACY_ROLE_PERMISSIONS_WRITE_CODE,
   LEGACY_ROLE_PERMISSIONS_WRITE_MESSAGE,
   PROTECTED_SYSTEM_ROLE_KEYS,
+  RBAC_AUDIT_ACTIONS,
+  RBAC_HISTORY_ACTIONS,
+  RBAC_HISTORY_DEFAULT_LIMIT,
+  RBAC_HISTORY_MAX_LIMIT,
   SUPER_ADMIN_INVARIANT_MODULES,
   createFunctionalRbacError,
   throwLegacyRolePermissionsWrite,
   normalizeScope,
+  isProtectedSystemRole,
+  assertNotProtectedMutation,
   assertNotProtectedArchive,
+  sanitizeRbacAuditValue,
+  rbacAuditActor,
+  clampRbacHistoryLimit,
+  clampRbacHistoryOffset,
   assertSuperAdminInvariantPatch,
   timestampsEqual,
   nextMonotonicUpdatedAt,

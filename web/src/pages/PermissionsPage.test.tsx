@@ -9,7 +9,7 @@ import type {
   RbacResetOverridePayload,
 } from "../lib/rbacApi";
 
-const { catalog, patchMock, getConfiguredMock, resetMock } = vi.hoisted(() => {
+const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHistoryMock } = vi.hoisted(() => {
   const catalog: RbacCatalog = {
     modules: [
       {
@@ -133,7 +133,28 @@ const { catalog, patchMock, getConfiguredMock, resetMock } = vi.hoisted(() => {
       ],
     };
   });
-  return { catalog, patchMock, getConfiguredMock, resetMock };
+  const updateRoleMock = vi.fn(async () => catalog.roles[0]);
+  const getHistoryMock = vi.fn(async () => ({
+    items: [
+      {
+        id: "aud-1",
+        createdAt: "2026-10-01T10:00:00.000Z",
+        actor: "superadmin",
+        action: "ROLE_RENAME",
+        role: "Préfet des études",
+        roleKey: "PREFET_ETUDES",
+        moduleKey: null,
+        scope: "school",
+        before: "Préfet des études",
+        after: "Préfet pédagogique",
+        summary: "Préfet des études → Préfet pédagogique",
+      },
+    ],
+    limit: 20,
+    offset: 0,
+    hasMore: false,
+  }));
+  return { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, getHistoryMock };
 });
 
 vi.mock("../lib/rbacApi", () => ({
@@ -143,8 +164,9 @@ vi.mock("../lib/rbacApi", () => ({
     patchPermissions: (payload: RbacPatchPermissionsPayload) => patchMock(payload),
     resetOverride: (payload: RbacResetOverridePayload) => resetMock(payload),
     createRole: vi.fn(),
-    updateRole: vi.fn(),
+    updateRole: (roleId: string, payload: Record<string, unknown>) => updateRoleMock(roleId, payload),
     archiveRole: vi.fn(),
+    getHistory: (query?: { limit?: number; offset?: number }) => getHistoryMock(query),
   },
 }));
 
@@ -221,6 +243,8 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
     patchMock.mockClear();
     getConfiguredMock.mockClear();
     resetMock.mockClear();
+    updateRoleMock.mockClear();
+    getHistoryMock.mockClear();
   });
 
   it("enregistre uniquement le delta CRUD du module sélectionné", async () => {
@@ -314,5 +338,30 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
       }),
     );
     await waitFor(() => expect(screen.getByText(/Hérité du catalogue global/)).toBeInTheDocument());
+  });
+
+  it("permet de renommer un rôle métier sans toucher au code technique", async () => {
+    render(<PermissionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Rôles" }));
+    expect(screen.getByText("PREFET_ETUDES")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Renommer" }));
+    const input = await screen.findByLabelText("Libellé PREFET_ETUDES");
+    fireEvent.change(input, { target: { value: "Préfet pédagogique" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer le libellé" }));
+    await waitFor(() => expect(updateRoleMock).toHaveBeenCalled());
+    expect(updateRoleMock).toHaveBeenCalledWith("role-prefet", { roleName: "Préfet pédagogique" });
+    expect(screen.queryByRole("button", { name: "Renommer" })).not.toBeNull();
+    expect(screen.getAllByText("Protégé").length).toBeGreaterThan(0);
+  });
+
+  it("affiche l'historique paginé des modifications RBAC", async () => {
+    render(<PermissionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Historique" }));
+    await waitFor(() => expect(getHistoryMock).toHaveBeenCalled());
+    expect(getHistoryMock).toHaveBeenCalledWith({ limit: 20, offset: 0 });
+    expect(await screen.findByText("Historique des modifications")).toBeInTheDocument();
+    expect(screen.getByText("ROLE_RENAME")).toBeInTheDocument();
+    expect(screen.getByText("Préfet des études → Préfet pédagogique")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Suivant" })).toBeDisabled();
   });
 });

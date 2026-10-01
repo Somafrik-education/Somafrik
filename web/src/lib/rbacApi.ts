@@ -100,6 +100,32 @@ export type RbacConfiguredQuery = {
   schoolCode?: string;
 };
 
+export type RbacHistoryQuery = {
+  limit?: number;
+  offset?: number;
+};
+
+export type RbacHistoryItem = {
+  id: string;
+  createdAt: string | null;
+  actor: string;
+  action: string;
+  role: string;
+  roleKey?: string | null;
+  moduleKey?: string | null;
+  scope: string;
+  before: string;
+  after: string;
+  summary: string;
+};
+
+export type RbacHistoryPage = {
+  items: RbacHistoryItem[];
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+};
+
 export const rbacApi = {
   getCatalog: () => api.get<RbacCatalog>("/backoffice/rbac/catalog"),
   getConfigured: (query: RbacConfiguredQuery) => {
@@ -118,4 +144,11 @@ export const rbacApi = {
     api.patch<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}`, payload),
   archiveRole: (roleId: string) =>
     api.post<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}/archive`, {}),
+  getHistory: (query: RbacHistoryQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.limit != null) params.set("limit", String(query.limit));
+    if (query.offset != null) params.set("offset", String(query.offset));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return api.get<RbacHistoryPage>(`/backoffice/rbac/history${suffix}`);
+  },
 };

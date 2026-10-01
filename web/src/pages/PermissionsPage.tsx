@@ -18,6 +18,7 @@ import {
   type RbacConfiguredMatrix,
   type RbacCrudFlags,
   type RbacCrudGrant,
+  type RbacHistoryItem,
   type RbacRole,
 } from "../lib/rbacApi";
 import {
@@ -47,7 +48,14 @@ function LockIcon({ label }: { label: string }) {
   );
 }
 
-type TabKey = "permissions" | "roles";
+type TabKey = "permissions" | "roles" | "history";
+
+const HISTORY_PAGE_SIZE = 20;
+
+function isProtectedRole(role: RbacRole, catalog: RbacCatalog | null) {
+  const code = String(role.roleCode || "").toUpperCase();
+  return Boolean(role.systemProtected) || Boolean(catalog?.protectedRoleKeys?.includes(code));
+}
 
 function emptyCrud(): RbacCrudFlags {
   return { canCreate: false, canRead: false, canUpdate: false, canDelete: false };
@@ -112,6 +120,12 @@ export function PermissionsPage() {
   const [draft, setDraft] = useState(emptyCrud());
   const [busy, setBusy] = useState(false);
   const [roleForm, setRoleForm] = useState({ roleName: "", roleCode: "" });
+  const [editingRoleId, setEditingRoleId] = useState("");
+  const [editingRoleName, setEditingRoleName] = useState("");
+  const [historyItems, setHistoryItems] = useState<RbacHistoryItem[]>([]);
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE_SIZE);
 
   const countryOptions = useMemo(
     () => [{ value: "", label: "Choisir un pays…" }, ...countries.map(formatCountryOption)],
@@ -331,8 +345,50 @@ export function PermissionsPage() {
     }
   }
 
+  async function loadHistory(nextOffset = 0) {
+    if (!canManage) return;
+    setBusy(true);
+    try {
+      const page = await rbacApi.getHistory({ limit: HISTORY_PAGE_SIZE, offset: nextOffset });
+      setHistoryItems(page.items);
+      setHistoryOffset(page.offset);
+      setHistoryHasMore(page.hasMore);
+      setHistoryLimit(page.limit);
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Impossible de charger l'historique.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!canManage || tab !== "history") return;
+    void loadHistory(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManage, tab]);
+
+  async function onRenameRole(role: RbacRole) {
+    if (!canManage || isProtectedRole(role, catalog)) return;
+    const nextName = editingRoleName.trim();
+    if (!nextName || nextName === role.roleName) {
+      setEditingRoleId("");
+      return;
+    }
+    setBusy(true);
+    try {
+      await rbacApi.updateRole(role.id, { roleName: nextName });
+      setEditingRoleId("");
+      await refreshCatalog();
+      showToast("Libellé du rôle mis à jour", "success");
+    } catch (error) {
+      showToast(error instanceof ApiError ? error.message : "Renommage impossible.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onToggleRoleStatus(role: RbacRole) {
-    if (!canManage || role.systemProtected) return;
+    if (!canManage || isProtectedRole(role, catalog)) return;
     setBusy(true);
     try {
       if (role.status === "active") {
@@ -389,6 +445,11 @@ export function PermissionsPage() {
         <Button variant={tab === "roles" ? "primary" : "secondary"} size="sm" onClick={() => setTab("roles")}>
           Rôles
         </Button>
+        {canManage ? (
+          <Button variant={tab === "history" ? "primary" : "secondary"} size="sm" onClick={() => setTab("history")}>
+            Historique
+          </Button>
+        ) : null}
       </div>
 
       {tab === "roles" ? (
@@ -432,29 +493,122 @@ export function PermissionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {roles.map((role) => (
+                {roles.map((role) => {
+                  const protectedRole = isProtectedRole(role, catalog);
+                  const editing = editingRoleId === role.id;
+                  return (
                   <tr key={role.id} className="border-b border-line/70">
-                    <td className="px-3 py-2.5 font-medium">{role.roleName}</td>
+                    <td className="px-3 py-2.5 font-medium">
+                      {canManage && !protectedRole && editing ? (
+                        <Input
+                          value={editingRoleName}
+                          onChange={(event) => setEditingRoleName(event.target.value)}
+                          aria-label={`Libellé ${role.roleCode}`}
+                        />
+                      ) : (
+                        role.roleName
+                      )}
+                    </td>
                     <td className="px-3 py-2.5 font-mono text-xs">{role.roleCode}</td>
                     <td className="px-3 py-2.5">{displayScopeName(role.scope)}</td>
                     <td className="px-3 py-2.5">{displayStatusName(role.status)}</td>
                     <td className="px-3 py-2.5">{role.activeUserCount ?? 0}</td>
                     <td className="px-3 py-2.5">{formatDate(role.updatedAt)}</td>
                     <td className="px-3 py-2.5">
-                      {canManage && !role.systemProtected && role.status === "active" ? (
-                        <Button variant="secondary" size="sm" onClick={() => void onToggleRoleStatus(role)} disabled={busy}>
-                          Archiver
-                        </Button>
-                      ) : role.systemProtected ? (
-                        <span className="text-xs text-muted">Protégé</span>
-                      ) : (
-                        "—"
-                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {canManage && !protectedRole && role.status === "active" ? (
+                          editing ? (
+                            <Button size="sm" onClick={() => void onRenameRole(role)} disabled={busy || !editingRoleName.trim()}>
+                              Enregistrer le libellé
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                setEditingRoleId(role.id);
+                                setEditingRoleName(role.roleName);
+                              }}
+                              disabled={busy}
+                            >
+                              Renommer
+                            </Button>
+                          )
+                        ) : null}
+                        {canManage && !protectedRole && role.status === "active" ? (
+                          <Button variant="secondary" size="sm" onClick={() => void onToggleRoleStatus(role)} disabled={busy}>
+                            Archiver
+                          </Button>
+                        ) : protectedRole ? (
+                          <span className="text-xs text-muted">Protégé</span>
+                        ) : (
+                          "—"
+                        )}
+                      </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
+          </div>
+        </div>
+      ) : tab === "history" ? (
+        <div className="mt-6 space-y-4">
+          <h2 className="text-base font-semibold text-ink">Historique des modifications</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
+                  <th className="px-3 py-3 text-left">Date / heure</th>
+                  <th className="px-3 py-3 text-left">Acteur</th>
+                  <th className="px-3 py-3 text-left">Action</th>
+                  <th className="px-3 py-3 text-left">Rôle</th>
+                  <th className="px-3 py-3 text-left">Module</th>
+                  <th className="px-3 py-3 text-left">Portée</th>
+                  <th className="px-3 py-3 text-left">Avant → après</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historyItems.length ? (
+                  historyItems.map((item) => (
+                    <tr key={item.id} className="border-b border-line/70">
+                      <td className="px-3 py-2.5">{formatDate(item.createdAt)}</td>
+                      <td className="px-3 py-2.5">{item.actor}</td>
+                      <td className="px-3 py-2.5 font-mono text-xs">{item.action}</td>
+                      <td className="px-3 py-2.5">{item.role || "—"}</td>
+                      <td className="px-3 py-2.5">{item.moduleKey || "—"}</td>
+                      <td className="px-3 py-2.5">{item.scope || "—"}</td>
+                      <td className="px-3 py-2.5">{item.summary}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-3 py-6 text-center text-muted" colSpan={7}>
+                      Aucune modification RBAC enregistrée.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || historyOffset <= 0}
+              onClick={() => void loadHistory(Math.max(0, historyOffset - historyLimit))}
+            >
+              Précédent
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || !historyHasMore}
+              onClick={() => void loadHistory(historyOffset + historyLimit)}
+            >
+              Suivant
+            </Button>
           </div>
         </div>
       ) : (

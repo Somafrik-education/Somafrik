@@ -2597,7 +2597,7 @@ class PostgresRepository {
     );
   }
 
-  async getAuditLogs({ schoolCode, userId, action, from, to, limit = 100 } = {}) {
+  async getAuditLogs({ schoolCode, userId, action, actions, from, to, limit = 100, offset = 0 } = {}) {
     await this.init();
     const filters = [];
     const params = [];
@@ -2609,10 +2609,17 @@ class PostgresRepository {
     if (schoolCode) addFilter("s.school_code = ?", schoolCode);
     if (userId) addFilter("a.user_id = ?", userId);
     if (action) addFilter("a.action = ?", action);
+    if (Array.isArray(actions) && actions.length) {
+      params.push(actions);
+      filters.push(`a.action = ANY($${params.length}::text[])`);
+    }
     if (from) addFilter("a.created_at >= ?", from);
     if (to) addFilter("a.created_at <= ?", to);
 
     params.push(Math.min(Number(limit) || 100, 500));
+    const limitIdx = params.length;
+    params.push(Math.max(0, Number(offset) || 0));
+    const offsetIdx = params.length;
     const rows = await this.all(
       `SELECT a.*, s.school_code, u.user_code, u.first_name, u.last_name
        FROM audit_logs a
@@ -2620,7 +2627,7 @@ class PostgresRepository {
        LEFT JOIN users u ON u.id = a.user_id
        ${filters.length ? `WHERE ${filters.join(" AND ")}` : ""}
        ORDER BY a.created_at DESC
-       LIMIT $${params.length}`,
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       params
     );
 

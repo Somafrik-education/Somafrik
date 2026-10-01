@@ -471,12 +471,15 @@ class FallbackRepository {
     });
   }
 
-  async getAuditLogs({ schoolCode, userId, action, limit = 100 } = {}) {
+  async getAuditLogs({ schoolCode, userId, action, actions, limit = 100, offset = 0 } = {}) {
+    const capped = Math.min(Number(limit) || 100, 500);
+    const start = Math.max(0, Number(offset) || 0);
     return this.auditLogs
       .filter((row) => !schoolCode || row.schoolCode === schoolCode)
       .filter((row) => !userId || row.userId === userId)
       .filter((row) => !action || row.action === action)
-      .slice(0, Math.min(Number(limit) || 100, 500));
+      .filter((row) => !Array.isArray(actions) || !actions.length || actions.includes(row.action))
+      .slice(start, start + capped);
   }
 
   async getBackOfficeState() {

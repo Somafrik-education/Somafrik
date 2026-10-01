@@ -10,6 +10,13 @@ const {
   isPlatformRoleName,
   isSuperAdminPrincipal,
 } = require("./establishmentRolesManagement");
+const {
+  assertNotProtectedMutation,
+  isProtectedSystemRole,
+  RBAC_AUDIT_ACTIONS,
+  sanitizeRbacAuditValue,
+  rbacAuditActor,
+} = require("./functionalRbacManagement");
 const { createEstablishmentRolesPgStore } = require("../db/establishmentRolesPgStore");
 
 function rolesStore(repo) {
@@ -23,6 +30,7 @@ async function writeEstablishmentRolesAudit(tx, principal, auditMeta, entry) {
   if (typeof tx.recordAudit !== "function") {
     throw createEstablishmentRolesError(500, "Audit indisponible dans la transaction.");
   }
+  const actor = rbacAuditActor(principal);
   await tx.recordAudit(
     {
       schoolCode: entry.schoolCode || principal?.schoolCode,
@@ -30,13 +38,24 @@ async function writeEstablishmentRolesAudit(tx, principal, auditMeta, entry) {
       action: entry.action,
       entityType: entry.entityType,
       entityId: String(entry.entityId ?? ""),
-      oldValue: entry.oldValue,
-      newValue: entry.newValue,
+      oldValue: sanitizeRbacAuditValue(entry.oldValue == null ? null : { ...actor, ...entry.oldValue }),
+      newValue: sanitizeRbacAuditValue(entry.newValue == null ? null : { ...actor, ...entry.newValue }),
       ipAddress: auditMeta?.ipAddress,
       userAgent: auditMeta?.userAgent,
     },
     tx,
   );
+}
+
+function roleAuditSnapshot(role) {
+  return {
+    roleId: role?.id ?? null,
+    roleKey: String(role?.roleCode || "").toUpperCase() || null,
+    roleCode: role?.roleCode ?? null,
+    roleName: role?.roleName ?? null,
+    scope: role?.scope ?? null,
+    status: role?.status ?? null,
+  };
 }
 
 function buildSeedRolesFromData() {
@@ -59,7 +78,7 @@ async function createRole(repo, rawPayload, principal, auditMeta) {
   if (!roleName || !roleCode) {
     throw createEstablishmentRolesError(400, "Nom et code de rôle obligatoires.");
   }
-  if (isPlatformRoleName(roleName)) {
+  if (isPlatformRoleName(roleName) || isProtectedSystemRole(roleCode) || isProtectedSystemRole(roleName)) {
     throw createEstablishmentRolesError(403, "Rôle plateforme réservé.", ESTABLISHMENT_ROLES_ERROR.PERMISSION_FORBIDDEN);
   }
   const permissions = sanitizePermissionList(payload.permissions ?? []);
@@ -78,10 +97,10 @@ async function createRole(repo, rawPayload, principal, auditMeta) {
         delegationPermissions,
       });
       await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
-        action: "ROLE_CREATED",
+        action: RBAC_AUDIT_ACTIONS.ROLE_CREATE,
         entityType: "establishment_role",
         entityId: saved.id,
-        newValue: saved,
+        newValue: roleAuditSnapshot(saved),
       });
       return saved;
     } catch (error) {
@@ -101,6 +120,11 @@ async function updateRole(repo, roleId, rawPatch, principal, auditMeta) {
   if (!existing) {
     throw createEstablishmentRolesError(404, "Rôle introuvable.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
   }
+  assertNotProtectedMutation(existing.roleCode || existing.roleName, "renommés ou modifiés");
+  const nextName = patch.roleName !== undefined ? asTrimmed(patch.roleName) : undefined;
+  if (patch.roleName !== undefined && !nextName) {
+    throw createEstablishmentRolesError(400, "Libellé de rôle obligatoire.");
+  }
   const permissions = patch.permissions !== undefined ? sanitizePermissionList(patch.permissions) : undefined;
   const delegationPermissions =
     patch.delegationPermissions !== undefined ? sanitizePermissionList(patch.delegationPermissions) : undefined;
@@ -108,7 +132,7 @@ async function updateRole(repo, roleId, rawPatch, principal, auditMeta) {
     const scope = repo.createTxScope(tx);
     const scopedStore = rolesStore(scope);
     const saved = await scopedStore.updateRole(roleId, {
-      roleName: patch.roleName ? asTrimmed(patch.roleName) : undefined,
+      roleName: nextName,
       displayOrder: patch.displayOrder != null ? Number(patch.displayOrder) : undefined,
       schoolAssignable: patch.schoolAssignable,
       permissions,
@@ -117,14 +141,15 @@ async function updateRole(repo, roleId, rawPatch, principal, auditMeta) {
     if (!saved) {
       throw createEstablishmentRolesError(404, "Rôle introuvable ou archivé.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
     }
+    const renamed = Boolean(nextName && nextName !== existing.roleName);
     await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
-      action: "ROLE_UPDATED",
+      action: renamed ? RBAC_AUDIT_ACTIONS.ROLE_RENAME : "ROLE_UPDATED",
       entityType: "establishment_role",
       entityId: roleId,
-      oldValue: existing,
-      newValue: saved,
+      oldValue: roleAuditSnapshot(existing),
+      newValue: roleAuditSnapshot({ ...saved, roleCode: existing.roleCode }),
     });
-    return saved;
+    return { ...saved, roleCode: existing.roleCode };
   });
 }
 
@@ -145,11 +170,11 @@ async function archiveRole(repo, roleId, principal, auditMeta) {
       throw createEstablishmentRolesError(404, "Rôle introuvable ou déjà archivé.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
     }
     await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
-      action: "ROLE_ARCHIVED",
+      action: RBAC_AUDIT_ACTIONS.ROLE_ARCHIVE,
       entityType: "establishment_role",
       entityId: roleId,
-      oldValue: existing,
-      newValue: saved,
+      oldValue: roleAuditSnapshot(existing),
+      newValue: roleAuditSnapshot(saved),
     });
     return saved;
   });
