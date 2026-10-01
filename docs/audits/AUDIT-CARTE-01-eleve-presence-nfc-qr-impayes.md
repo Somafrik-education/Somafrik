@@ -1,10 +1,21 @@
 # AUDIT-CARTE-01 — Carte Élève / Présence NFC-QR / Contrôle Impayés
 
 **Type :** audit d’architecture (caractérisation) — **aucune implémentation**  
-**Statut :** Audit **OUVERT** — NO-GO implémentation jusqu’à décision CTO  
-**Base :** `develop` @ `ae9fa504` (`fix(authz): P1-12 deny school domain for ALL_PRIVILEGES-only (#855)`)  
-**Date :** 2026-10-01  
-**Contraintes honorées :** aucun DDL request-time, aucune migration exécutée, aucun merge, aucun code métier.
+**Statut :** Audit **OUVERT / HOLD / NO MERGE** — orientation architecture **validée CTO**, fermeture d’audit **refusée**, **aucune implémentation**, **aucune PR0**  
+**PR :** [#857](https://github.com/Somafrik-education/Somafrik/pull/857) — **Draft uniquement**  
+**Date initiale :** 2026-10-01  
+**Complément CTO :** 2026-10-01 — paramétrage, non-régression Présences, gates Stores, contrat D1/D2/D7/D8  
+**Contraintes honorées :** aucun DDL request-time, aucune migration exécutée, aucun merge, aucun code métier, aucun manifeste Android/iOS, aucune dépendance QR/NFC.
+
+### Traçabilité des SHA (ne pas confondre)
+
+| Référence | SHA | Signification |
+|-----------|-----|----------------|
+| Caractérisation initiale de ce document | `develop` @ `ae9fa504` (`#855`) | SHA **lu** lors du premier dépôt d’audit. Il décrit l’état du code **alors** caractérisé. |
+| Base GitHub **actuelle** de #857 | `develop` @ `2a1df064` (`#853` Superadmin Droits) | `origin/develop` a **avancé après** l’ouverture de #857. Ce n’est **pas** une modification clandestine de #857. Ne plus présenter `ae9fa504` comme la base GitHub courante. |
+| Complément documentaire | même branche `cursor/audit-carte-01-3224` | Un seul fichier : ce document. |
+
+Le diff GitHub indépendant CTO de #857 confirme : **un fichier Markdown ajouté**, zéro code métier.
 
 ---
 
@@ -17,7 +28,8 @@
 | Implémentation métier | **INTERDITE** dans ce lot |
 | Migration / DDL | **INTERDIT** |
 | PR Ready / merge | **INTERDIT** |
-| Livrable | Matrice, flux cible, schéma, découpage PR **futur** |
+| Livrable | Matrice, flux cible, schéma, paramétrage, gates Stores, découpage PR **futur** |
+| PR0 implémentation | **INTERDITE** tant que l’audit n’est pas clos |
 
 ### Méthode
 
@@ -46,14 +58,34 @@ Somafrik **peut** porter une carte physique élève **sans recréer** Élèves, 
 | Faut-il écrire `IMPAYÉ=true` sur la puce ? | **Non — interdit.** La situation change ; elle doit rester calculée serveur. |
 | NTAG + QR statique suffisent-ils pour un contrôle d’accès fort ? | **Non.** Suffisant pour une **identification scolaire** (qui prétend être cet élève). Insuffisant pour une **authentification anti-clonage**. |
 
-**Recommandation d’architecture (pas encore une ADR acceptée) :**
+**Orientation architecture : validée CTO. Fermeture d’audit : non. Implémentation : non.**
 
 1. NFC = canal principal, QR = secours. Les deux transportent le **même** capability opaque.  
 2. Scan **authentifié staff**, jamais public.  
 3. Présence et finance sont **deux lectures / écritures indépendantes** après résolution `Carte → Élève → inscription active → classe → établissement`.  
-4. Impayé **informatif par défaut** : la dette ne corrompt jamais l’appel.  
-5. V1 **online-only** pour le scan (la finance n’a pas de vérité hors ligne).  
-6. Réutiliser le contrat crypto des bulletins (token ≥128 bits, SHA-256, révocation) — **ne pas** réutiliser le JSON bulletin legacy.
+4. **D1 figé :** impayé **informatif** — la dette ne corrompt jamais l’appel.  
+5. **D7 figé :** V1 **online-only** (la finance n’a pas de vérité hors ligne).  
+6. **D8 figé :** une **carte logique active** par élève et établissement (`nfc_qr`).  
+7. **D2 figé :** badge « À jour » = sens métier **B** (réellement impayé / échu), pas la dette ouverte A.  
+8. QR/NFC est un **canal supplémentaire**. Les appels manuels Web/Mobile **restent** le chemin canonique.  
+9. Fonctionnalité **désactivable** via le paramétrage établissement existant (`school_settings`). Défaut = **off**.  
+10. Réutiliser le contrat crypto des bulletins (token ≥128 bits, SHA-256, révocation) — **ne pas** réutiliser le JSON bulletin legacy.
+
+---
+
+## 1.1 Contrat figé CTO (complément)
+
+Ces décisions sont **normatives pour tout chantier futur**. Elles ne valent pas autorisation d’implémenter.
+
+| ID | Décision | Statut |
+|----|----------|--------|
+| **D1** | Contrôle impayé **informatif**. Le scan enregistre la présence même en anomalie financière. Aucun gate pédagogique. | **Figé** |
+| **D2** | Badge « À jour » = définition **B** (module Impayés) : échéance future « À payer » **n’affiche pas** l’élève comme débiteur en anomalie. Partiel avant échéance = **Paiement partiel**. Échéance dépassée = **Échéance impayée**. | **Figé** |
+| **D7** | V1 scan **online-only**, fail-closed sans réseau. | **Figé** |
+| **D8** | **Une** carte logique `active` par élève et par établissement (médias NFC+QR = la même carte). | **Figé** |
+| **Présences** | Carte désactivée ⇒ comportement **strictement identique à aujourd’hui**. Carte activée ⇒ appels manuels Web/Mobile **conservés**. QR/NFC = canal **en plus**, jamais un remplacement. | **Figé** |
+
+D3, D4, D5, D6, D9, D10 restent ouverts (voir §11). **PR0 n’est pas ouverte.**
 
 ---
 
@@ -290,6 +322,40 @@ Une échéance future « À payer » **n’apparaît pas** au ledger Impayés. U
 | Enseignant × finance | Matrice : Enseignant **« - »** sur Paiements — un prof qui scanne **ne doit pas** recevoir montants/détail dette sans droit |
 | Révocation existante | Sessions (`revoke-all`, password reset), push devices, `user_roles`, capability bulletin — **pas de carte** |
 
+### 5.5 Paramétrage / capabilities — audit de l’existant
+
+La carte **doit pouvoir être éteinte**. Elle **ne doit pas** inventer un second système de configuration. Inventaire des mécanismes déjà présents :
+
+| Mécanisme | Rôle réel | Par établissement ? | Convient pour activer « Carte élève » ? |
+|-----------|-----------|---------------------|----------------------------------------|
+| **`school_settings` + `GET/PATCH /api/school-settings`** | Scalaires établissement LOT 4 : `period_mode`, `default_scale`, `report_card_mode` | **Oui** | **Oui — étendre cette table et cette API.** C’est le store canonique de paramètres établissement. Trigger `AFTER INSERT ON schools` + backfill existent déjà. |
+| `schoolSubscriptionAccessService.FEATURE_RULES` | Cycle de vie **SaaS** (`full` / `limited` / `blocked`) : `write_presence`, `write_notes`, `connect`… | Via l’abonnement | **Non.** Coupler la carte à l’impayé **SaaS** casserait l’invariant Présences (`write_presence` doit rester indépendant). Un add-on payant éventuel est un lot **ultérieur**, pas le master switch. |
+| `web/src/lib/featureFlags.ts` | Flags **globaux** env (`VITE_ENABLE_MARKETPLACE`, démo) | Non | **Non.** |
+| `schools.profile_payload` JSONB | Extras de profil (slogan, couleur, `schoolYear` orphelin) | Oui | **Non.** LOT 4 a **quitté** le JSON pour les paramètres. |
+| `school_academic_configs.config_payload` | Legacy strippé (`allowCustom*`, etc.) | — | **Non.** Écriture académique JSON **interdite**. |
+| `school_notification_settings` | Matrice événement × destinataire × canal | Oui | **Non.** Domaine Communications. Ne pas y piggybacker. |
+| RBAC fonctionnel (`module_key` + `Présences:*`) | **Qui** a le droit | Rôle | **Orthogonal.** Nécessaire pour émettre/scanner, **insuffisant** pour activer le produit école. |
+| Hub Paramètres « Intégrations » | `ComingSoonState` — « NFC et webhooks » | — | **Non.** Écran mort, **pas** un store. Ne pas y loger la carte. |
+
+**Minimum futur (colonnes, pas une table parallèle)** — à ajouter **plus tard** sur `school_settings`, défaut **false** (non-régression) :
+
+| Colonne proposée | Défaut | Sens |
+|------------------|--------|------|
+| `student_card_enabled` | `false` | Master **Carte élève**. Off ⇒ aucun issue, aucun scan, aucun écran carte. |
+| `student_card_qr_enabled` | `false` | Sous-option QR de secours. Ignorée si master off. |
+| `student_card_nfc_enabled` | `false` | Sous-option NFC. Ignorée si master off. **Ne débloque pas** la permission Android (gate PR8). |
+| `student_card_finance_check_enabled` | `false` | Sous-option **contrôle financier informatif** (D1). Off ⇒ le scan peut quand même pointer ; **pas** de badge finance. |
+
+Règles :
+
+1. Master off ⇒ les trois sous-options sont **sans effet**. Comportement Présences = **aujourd’hui**.  
+2. QR ou NFC on **sans** master ⇒ traité comme off (fail-closed).  
+3. Finance on **sans** master ⇒ off. Finance on + master on + RBAC finance absent ⇒ présence OK, DTO finance omis (même règle qu’un enseignant sans Paiements).  
+4. UI : section **Paramètres établissement** via le PATCH `school-settings` existant (`Paramètres Établissement:UPDATE`). **Pas** de nouveau hub, **pas** d’écran Intégrations, **pas** de `VITE_*`.  
+5. Lecture fail-closed : colonne absente / false = fonctionnalité absente.
+
+L’architecture **permet** ces quatre booléens : `patchSchoolSettings` n’accepte aujourd’hui que `periodMode` / `defaultScale` / `reportCardMode` ; un futur allowlist étendu reste **le même endpoint**. C’est une **extension**, pas un système parallèle.
+
 ---
 
 ## 6. Définition proposée pour le badge scan
@@ -298,20 +364,24 @@ Une échéance future « À payer » **n’apparaît pas** au ledger Impayés. U
 
 | Badge | Règle (alignée code actuel) |
 |-------|------------------------------|
-| **À jour** | Aucune obligation ouverte (`collectOpenObligationsFromProjection` vide). Les échéances futures restent une **dette ouverte** : ce n’est **pas** « à jour » au sens A. Si le produit veut coller au **module Impayés**, une échéance future seule peut s’afficher À jour — **décision CTO obligatoire**. |
-| **Paiement partiel** | Au moins une ligne `Partiellement payé`. |
+| **À jour** | **D2 figé = B.** L’élève n’est **pas** au ledger Impayés : pas d’échéance dépassée, pas de ligne `En retard`, pas de `Partiellement payé` affiché comme anomalie d’impayé. Une échéance future « À payer » **ne** fait **pas** apparaître l’élève comme débiteur en anomalie. |
+| **Paiement partiel** | Au moins une ligne `Partiellement payé` (y compris avant échéance — déjà dans le module Impayés). |
 | **Échéance impayée** | Au moins une ligne `balance > 0` et (`En retard` ou `due_date` passée), aligné `isOverdueStudentFee`. |
-| **Situation à vérifier** | Sync finance en échec ; pas d’obligations alors qu’une grille devrait exister ; devises mixtes ; paiements `Non imputé` sans dette ouverte ; élève hors scope ; 403. |
+| **Situation à vérifier** | Sync finance en échec ; pas d’obligations alors qu’une grille devrait exister ; devises mixtes ; paiements `Non imputé` sans dette ouverte ; élève hors scope ; 403 ; sous-option finance off alors que le staff a demandé le badge. |
 
 Priorité d’affichage recommandée si plusieurs lignes : **Situation à vérifier > Échéance impayée > Paiement partiel > À jour**.
 
-**Décision produit à trancher :** « À jour » = zéro dette ouverte (A) **ou** hors ledger Impayés (B). L’audit **ne choisit pas** à la place du métier ; il constate que les deux existent déjà.
+**D2 figé CTO :** ne **pas** utiliser la définition A (toute dette ouverte) pour le badge scan. `collectOpenObligationsFromProjection` reste l’outil d’**allocation**, pas le libellé portail.
 
 ---
 
 ## 7. Minimum de nouvelles tables / colonnes / endpoints
 
 Aucun DDL request-time. Toute évolution future = **migration boot / fichier SQL versionné**, comme le reste de Somafrik.
+
+### 7.0 Colonnes de paramétrage (pas une table parallèle)
+
+Étendre **`school_settings`** (mêmes `GET/PATCH /api/school-settings`) avec les quatre booléens du §5.5, défaut `false`. Aucune table `student_card_settings`. Aucun flag env. Aucun `FEATURE_RULES` SaaS en V1.
 
 ### 7.1 Une table nouvelle (référentiels existants inchangés)
 
@@ -345,7 +415,9 @@ Optionnel V1.1 : `student_access_card_events` append-only (scan, révocation).
 | POST | `/api/student-cards/:id/lost` | UPDATE | `lost` + révocation |
 | POST | `/api/student-cards/:id/revoke` | UPDATE | Révocation admin |
 | POST | `/api/student-cards/:id/replace` | UPDATE | Nouvelle ligne, ancienne `replaced` |
-| POST | `/api/student-cards/scan` | `Présences:CREATE` **ou** `Cartes:SCAN` | Vérifie capability ; résout chaîne ; **optionnellement** upsert présence ; **optionnellement** projette finance **si** `Impayés:READ` \| `Paiements:READ` \| `Frais:READ` |
+| POST | `/api/student-cards/scan` | `Présences:CREATE` **ou** `Cartes:SCAN` | Master off ⇒ 404/403, **aucun** write présence. Master on : capability → chaîne ; upsert présence **optionnel** ; finance **si** sous-option + RBAC Impayés/Paiements/Frais |
+
+Tous les endpoints cartes sont **no-op / refus** si `student_card_enabled = false`. Ils ne doivent **jamais** court-circuiter `POST /api/presences` manuel.
 
 Pas d’équivalent public `/verify` (contrairement aux bulletins). Un QR photographié ne doit pas être vérifiable par un anonyme.
 
@@ -353,6 +425,7 @@ Pas d’équivalent public `/verify` (contrairement aux bulletins). Un QR photog
 
 | Besoin | Réutiliser |
 |--------|------------|
+| Activation produit | **`school_settings`** (`student_card_*`, défaut false) via `PATCH /api/school-settings` |
 | Identité élève | `students` + `classStudentsRepository` |
 | Classe / année | `enrollments` C18 + `classes` + `academic_years.is_current` |
 | Pointage | `upsertAttendance` / `POST /api/presences` |
@@ -380,7 +453,7 @@ Pas d’équivalent public `/verify` (contrairement aux bulletins). Un QR photog
 | 10 | Inférence Retard | MANQUANT | Pas de lien planning | Le scan doit envoyer Présent **ou** Retard explicitement |
 | 11 | Outbox présence | RÉUTILISABLE plus tard | Mobile déjà | Hors ligne V1 : finance menteuse |
 | 12 | Obligations / allocations | RÉUTILISABLE | SoT finance | Deux définitions d’impayé |
-| 13 | Module Impayés | RÉUTILISABLE (ledger) | Plus strict que dette ouverte | Badge « À jour » ambigu |
+| 13 | Module Impayés | RÉUTILISABLE (ledger) | D2 figé = B pour le badge scan | Ne pas utiliser la dette ouverte A comme libellé portail |
 | 14 | Flag `IMPAYÉ` sur puce | INTERDIT | N’existe pas, ne pas créer | Stale immédiat |
 | 15 | Capability bulletin | RÉUTILISABLE (pattern) | Token + hash + revoke | Clonage photo jusqu’à révocation |
 | 16 | QR bulletin legacy | RISQUE — ne pas réutiliser | JSON matricule + moyenne | PII + clone trivial |
@@ -398,6 +471,14 @@ Pas d’équivalent public `/verify` (contrairement aux bulletins). Un QR photog
 | 28 | Platform Super Admin | EXISTANT deny | `platformPersonalDataGuard` | Scan école interdit au platform sans scope |
 | 29 | Offline finance | MANQUANT | — | Afficher un badge stale hors ligne = même erreur que `IMPAYÉ` sur puce |
 | 30 | Clonage NTAG / photo QR | RISQUE | UID NTAG et QR statique se copient | Identification ≠ authentification forte |
+| 31 | `school_settings` | RÉUTILISABLE (à étendre) | Store canonique paramètres établissement | **Ne pas** créer `student_card_settings` |
+| 32 | `FEATURE_RULES` SaaS | RISQUE si mal utilisé | Cycle de vie abo, pas un switch produit | Coupler carte ↔ `write_presence` casserait §10.0 |
+| 33 | `featureFlags.ts` env | INTERDIT pour la carte | Flags globaux démo/marketplace | Pas de `VITE_ENABLE_STUDENT_CARD` |
+| 34 | Hub Intégrations ComingSoon | INTERDIT comme store | Écran mort « NFC et webhooks » | Parallel UX, zéro persistance |
+| 35 | Appels manuels Web/Mobile | RÉUTILISABLE + **non-régression** | Canal canonique, carte = additif | Retirer/masquer l’appel = **NO-GO** |
+| 36 | `CAMERA` Android actuelle | EXISTANT (photo compte) | `app.json` + verify native | PR7 = **nouvelle finalité** Store, pas un « déjà OK » |
+| 37 | GATE-QR-STORES | MANQUANT | Revue Play/App Store QR absente | **Bloque PR7** |
+| 38 | GATE-NFC-STORES | MANQUANT | Revue NFC absente ; permission bloquée | **Bloque PR8** |
 
 ---
 
@@ -427,7 +508,7 @@ Réutiliser le vocabulaire déjà compris (sessions, bulletins) :
 
 1. Perdue → `lost` + secret mort.  
 2. Remplacée → nouvelle ligne, `replaced_by_card_id`, ancien secret mort.  
-3. Une seule carte `active` par élève et par établissement (contrainte à trancher : 1 vs N médias NFC+QR = **une** carte logique `nfc_qr`).  
+3. **D8 figé :** une seule carte logique `active` par élève et par établissement (médias NFC+QR = `nfc_qr`, un seul secret).  
 4. Transfert / archive élève → révocation en cascade (hook C18 / `studentLifecyclePg`, **à ajouter plus tard**, pas un second cycle de vie).
 
 ### 9.4 Hors ligne
@@ -452,7 +533,31 @@ Réponse minimale :
 
 ---
 
-## 10. Compatibilité présence — empêcher les doubles pointages
+## 10. Compatibilité présence — non-régression et doubles pointages
+
+### 10.0 Invariant figé — non-régression Présences
+
+> **Carte désactivée = comportement Somafrik strictement identique à aujourd’hui.**
+
+Preuves de « aujourd’hui » à ne pas altérer :
+
+| Surface | Contrat actuel à conserver |
+|---------|----------------------------|
+| Web | `PresencesPage.tsx` — appel manuel par classe, chips Présent / Retard / Absent / Justifié |
+| Mobile | `TeacherAttendanceScreen.tsx` — roster manuel, outbox `presences` |
+| HTTP | `POST /api/presences` + `requireSchoolSubscriptionFeature("write_presence")` + `Présences:CREATE\|UPDATE` |
+| Persistance | `UNIQUE (school_id, student_id, attendance_date)` + `ON CONFLICT DO UPDATE` |
+
+**Même lorsque la carte est activée :**
+
+- les appels manuels Web et Mobile **restent disponibles** et **suffisants** ;
+- QR/NFC est un **canal supplémentaire** d’identification vers le **même** `upsertAttendance` ;
+- aucun écran d’appel existant n’est retiré, masqué, ni rendu dépendant de `student_card_enabled` ;
+- `write_presence` / RBAC Présences **ne** passent **pas** par le master carte.
+
+Tests de non-régression **obligatoires** avant tout merge futur de scan : Maestro `07-attendance` / `12-attendance-mutation`, `presenceTenant.http.pg.test.js`, parcours Web PresencesPage — **verts avec carte off et avec carte on**.
+
+### 10.1 Doubles pointages
 
 **Déjà garanti au grain Somafrik (1 statut / élève / jour / école).**
 
@@ -467,40 +572,72 @@ Si le produit veut un portique « entrée matin / sortie soir », le modèle act
 
 ---
 
-## 11. Décisions à trancher avant tout code (CTO / métier)
+## 11. Décisions — figées vs encore ouvertes
 
-| ID | Décision | Recommandation d’audit |
-|----|----------|------------------------|
-| D1 | Impayé informatif vs bloquant | **Informatif** — aligné à l’existant (aucun gate pédagogique) |
-| D2 | « À jour » = définition A ou B | À trancher ; documenter dans une ADR avant le DTO |
-| D3 | Nom/prénom imprimés | UX ; techniquement disponible |
-| D4 | Photo obligatoire pour émettre une carte | Non bloquant scan ; bloquant impression |
-| D5 | Qui a le droit de scanner | Préfet / Secrétaire / Enseignant affecté ; pas Parent / Élève |
-| D6 | Kiosque sans `teacherId` | Nouveau chemin `created_by` staff **ou** service enseignant « Accueil » — **À MODIFIER** présences |
-| D7 | V1 online-only | Oui |
-| D8 | Une carte active / élève | Oui (`nfc_qr` unique) |
-| D9 | NFC Android (débloquer permission) | Lot mobile **séparé** + revue Play / `verify-native-prebuild` |
-| D10 | NFC crypto ultérieur | Après V1, pas dans le minimum |
+| ID | Décision | Statut |
+|----|----------|--------|
+| D1 | Impayé informatif vs bloquant | **Figé : informatif** |
+| D2 | « À jour » = A (dette ouverte) ou B (impayé/échu) | **Figé : B** |
+| D3 | Nom/prénom imprimés | Ouvert (UX) |
+| D4 | Photo obligatoire pour émettre une carte | Ouvert |
+| D5 | Qui a le droit de scanner | Ouvert — recommandation : Préfet / Secrétaire / Enseignant affecté ; pas Parent / Élève |
+| D6 | Kiosque sans `teacherId` | Ouvert — `created_by` staff **ou** teacher « Accueil » |
+| D7 | V1 online-only | **Figé : oui** |
+| D8 | Une carte logique active / élève / établissement | **Figé : oui** |
+| D9 | NFC Android (débloquer permission) | Ouvert — **bloqué par GATE-NFC-STORES** |
+| D10 | NFC crypto ultérieur | Ouvert — après V1 |
+
+**Présences actuelles obligatoirement conservées** — figé, voir §10.0.
 
 ---
 
-## 12. Découpage PR **futur** (non exécuté)
+## 12. Découpage PR **futur** (non exécuté) et gates Stores
 
-Aucun de ces PR n’est ouvert par cet audit. Ordre imposé par les dépendances et la gouvernance Somafrik (Draft → CI → review CTO → merge `develop`).
+Aucun de ces PR n’est ouvert par cet audit. **PR0 n’est pas ouverte.** Ordre imposé : Draft → CI → review CTO → merge `develop`, **plus** les gates Stores ci-dessous.
+
+### 12.1 GATE-QR-STORES — bloque PR7
+
+**PR7 (scanner QR mobile) ne peut pas commencer** avant une revue dédiée **QR caméra / Google Play / App Store**, hors de ce complément. Cette revue (documentaire, encore à produire plus tard) devra contrôler au minimum :
+
+| Point | État actuel (preuve) | Exigence de la revue |
+|-------|----------------------|----------------------|
+| Dépendance choisie | Aucune (`expo-camera`, barcode, vision-camera **absents** de `Mobile/package.json`) | Choisir **une** lib ; justifier taille, licence, maintenance ; **interdit** d’ajouter NFC dans le même lot |
+| `CAMERA` Android | Déjà déclarée pour **photo de compte** (`Mobile/app.json` `permissions: ["CAMERA"]` ; `verify-native-prebuild.js` / `verify-mobile-security.js` l’exigent) | Second usage (scan QR) = **nouvelle finalité** Play. Mettre à jour Data safety (`docs/mobile/PLAY-STORE-DATA-INVENTORY.md` : « Photo de compte » seulement aujourd’hui). Ne pas élargir à `READ_MEDIA_IMAGES`. |
+| iOS `Info.plist` / usage description | `expo-image-picker` : *« Somafrik utilise l'appareil photo pour prendre la photo du compte. »* — **pas** de string scan QR | `NSCameraUsageDescription` doit couvrir **les deux** usages (compte **et** scan carte), ou la revue refuse. |
+| Expo / prebuild | Plugin image-picker uniquement | Prebuild + asserts `verify-native-prebuild` / `verify-mobile-release-readiness` **verts** après la dépendance |
+| Demande de permission | Caméra aujourd’hui au flux photo compte | **Uniquement au moment du scan** (pas au login, pas au boot). Refus / refus permanent : scan QR **indisponible**, appel manuel **intact** (invariant §10.0) |
+| Déclarations Store | Inventaire Play sans NFC, caméra = photo compte | Questionnaire Play + App Store Privacy : caméra = scan d’identifiant scolaire **en plus** de la photo compte ; pas de tracking |
+
+Tant que **GATE-QR-STORES** n’est pas **clos par diff GitHub indépendant CTO**, PR7 reste **NO-GO**.
+
+### 12.2 GATE-NFC-STORES — bloque PR8
+
+**PR8 a son gate NFC séparé.** Il ne démarre pas avec PR7.
+
+| Point | État actuel | Exigence |
+|-------|-------------|----------|
+| Permission Android NFC | **Bloquée** : `app.config.js` `blockedPermissions`, `withSomafrikAndroidSecurity.js`, assert `verify-native-prebuild.js` (`NFC présent` = échec) | Revue Play + raison d’usage ; retirer NFC **seulement** de la blocklist, **sans** toucher RECORD_AUDIO / LOCATION / CONTACTS / etc. |
+| iOS Core NFC | Absent (`ios` sans `NFCReaderUsageDescription` / entitlements) | Revue App Store + entitlement NFC ; iPhone sans NFC ⇒ QR de secours |
+| Dépendance | Aucune `nfc-manager` / `expo-nfc` | Lot isolé après GATE-QR-STORES **et** GATE-NFC-STORES |
+| Hardware NTAG | Non traité | Hors Stores ; clonage déjà au §9 |
+
+### 12.3 Table des PR futurs
 
 | PR | Contenu | Dépend | Interdit dans le PR |
 |----|---------|--------|---------------------|
-| **PR0 — Contrat** | ADR + contrat figé (états carte, AAD, DTO scan, D1–D10) sur le modèle LOT0 bulletins | — | Routes, tables, UI |
-| **PR1 — DDL cartes** | Migration versionnée `student_access_cards` + CHECK status + unique partielle 1 carte active / élève / école | PR0 | Handler HTTP métier, DDL request-time |
-| **PR2 — Cycle de vie** | Issue / list / lost / revoke / replace + RBAC + tests tenant | PR1 | Présence, finance, Mobile |
-| **PR3 — Scan resolve** | `POST /api/student-cards/scan` : token → élève → enrollment roster année courante → classe. **Sans** write présence | PR2 | Upsert présence, montants |
-| **PR4 — Scan → présence** | Adapter vers `upsertAttendance` existant ; idempotency ; D6 si kiosque | PR3 | Nouvelle table attendance |
-| **PR5 — Scan → finance** | Projection badge via `listFinanceStudentFees` ; gate RBAC finance ; **zéro** write finance | PR3 | Recalcul client, flag carte |
-| **PR6 — Web émission** | Impression / PDF carte (photo, matricule, QR) | PR2 + pipeline photo si D4 | NFC |
-| **PR7 — Mobile QR secours** | Dépendance scanner + écran staff | PR3–PR5 | Débloquer NFC |
-| **PR8 — Mobile NFC** | Retirer `android.permission.NFC` de la blocklist **uniquement** après revue sécurité native | PR7 | Élargir les autres permissions bloquées |
+| **PR0 — Contrat** | ADR + contrat figé (états carte, AAD, DTO scan, D1/D2/D7/D8, paramétrage `school_settings`) | **Audit clos** — **pas maintenant** | Routes, tables, UI. **Ne pas ouvrir.** |
+| **PR1 — DDL cartes + settings** | Migration `student_access_cards` + colonnes `school_settings` §5.5 (défaut `false`) | PR0 | Handler HTTP métier, DDL request-time |
+| **PR2 — Cycle de vie** | Issue / list / lost / revoke / replace + RBAC + tests tenant ; **respect master off** | PR1 | Présence, finance, Mobile |
+| **PR3 — Scan resolve** | `POST /api/student-cards/scan` ; 404/403 si master off | PR2 | Upsert présence, montants |
+| **PR4 — Scan → présence** | Adapter vers `upsertAttendance` existant ; **non-régression appels manuels** | PR3 | Nouvelle table attendance ; retirer UI d’appel |
+| **PR5 — Scan → finance** | Badge D2=B via `listFinanceStudentFees` **si** sous-option finance + RBAC | PR3 | Recalcul client, flag carte, gate bloquant |
+| **PR6 — Web émission** | Impression / PDF ; gated par master | PR2 + photo si D4 | NFC |
+| **GATE-QR-STORES** | Revue Stores QR/caméra (document) | — | Code Mobile |
+| **PR7 — Mobile QR secours** | Dépendance scanner + permission runtime au scan | PR3–PR5 **et GATE-QR-STORES clos** | Débloquer NFC ; commencer sans le gate |
+| **GATE-NFC-STORES** | Revue Stores NFC (document) | — | Code Mobile |
+| **PR8 — Mobile NFC** | Retirer NFC de la blocklist **uniquement** après le gate | PR7 **et GATE-NFC-STORES clos** | Élargir les autres permissions bloquées |
 
-Chaque PR d’implémentation future exigera un **diff GitHub indépendant CTO** avant merge — conformément à la gouvernance rappelée dans le mandat.
+Chaque PR d’implémentation future exigera un **diff GitHub indépendant CTO** avant merge.
 
 ---
 
@@ -511,7 +648,9 @@ Chaque PR d’implémentation future exigera un **diff GitHub indépendant CTO**
 - Contrôle d’accès bâtiment, cantine, transport.  
 - Présence par séance / cours.  
 - Paiement au scan.  
-- Application parent qui scanne la carte de l’enfant.
+- Application parent qui scanne la carte de l’enfant.  
+- **PR0** et tout code métier.  
+- **GATE-QR-STORES** / **GATE-NFC-STORES** en tant que revues Stores exécutées (seulement **exigées** ici, pas rédigées comme dossiers Store).
 
 ---
 
@@ -531,17 +670,24 @@ Chaque PR d’implémentation future exigera un **diff GitHub indépendant CTO**
 | Appel mobile | `Mobile/src/screens/TeacherAttendanceScreen.tsx`, `Mobile/src/lib/attendanceOffline.ts` |
 | Documents PHOTO | `web/src/lib/studentDocuments.ts` |
 | Docs présence / sécu | `docs/ux/design-system/AUDIT-D3.5-presences.md`, `docs/project/SECURITY.md`, `docs/project/DATABASE.md` |
+| Paramètres établissement | `backend/db/schoolSettingsSchema.js`, `backend/lib/schoolSettingsManagement.js`, `backend/lib/schoolSettingsService.js`, `docs/project/CURRENT-SETTINGS-INVENTORY.md` |
+| Abonnement SaaS (à ne pas confondre) | `backend/services/schoolSubscriptionAccessService.js` (`FEATURE_RULES`, `write_presence`) |
+| Flags env | `web/src/lib/featureFlags.ts` |
+| Hub Paramètres / Intégrations | `web/src/pages/parametres/SettingsHubPage.tsx`, `SettingsPlaceholders.tsx` |
+| Caméra / Play | `Mobile/app.json`, `Mobile/scripts/verify-mobile-security.js`, `docs/mobile/PLAY-STORE-DATA-INVENTORY.md` |
 
 ---
 
 ## 15. Conclusion
 
-**GO architecture, NO-GO implémentation immédiate.**
+**Orientation architecture : validée CTO. Audit : non clos. Implémentation : NO-GO. PR0 : non ouverte.**
 
-Le socle métier (élève, inscription, classe, appel journalier, obligations, RBAC tenant) **existe et doit être réutilisé**. Ce qui manque est un **médiateur d’identification révocable** plus un **contrat unique** d’inscription active, un **chemin kiosque** pour l’auteur de l’appel, un **badge finance informatif** dérivé de `student-fees`, et — plus tard — les **médias** NFC/QR mobile.
+Le socle métier (élève, inscription, classe, appel journalier, obligations, RBAC tenant, `school_settings`) **existe et doit être réutilisé**. Ce qui manque reste un **médiateur d’identification révocable**, un **contrat unique** d’inscription active, un **chemin kiosque** éventuel, un **badge finance informatif D2=B**, l’**extension** (pas un clone) de `school_settings`, et — seulement après gates Stores — les **médias** QR puis NFC.
 
-Le plus petit écart sûr :
+Contrat déjà figé : **D1 informatif**, **D2 = B (impayé/échu)**, **D7 online-only**, **D8 une carte logique**, **Présences manuelles conservées**, master carte **off par défaut**.
 
-1 table `student_access_cards` + 6 routes cycle de vie/scan + 0 copie des référentiels + 0 bit financier sur la puce.
+Le plus petit écart sûr, **quand** l’audit sera clos :
 
-Prochaine étape humaine : trancher D1–D10 et n’ouvrir **PR0 (contrat)** qu’après ce diff GitHub indépendant.
+colonnes `school_settings` (défaut false) + 1 table `student_access_cards` + 6 routes cycle de vie/scan + 0 copie des référentiels + 0 bit financier sur la puce + 0 régression d’appel manuel.
+
+**Prochaine action autorisée :** nouveau diff GitHub indépendant de ce complément #857. **Pas** de PR0. **Pas** de Ready. **Pas** de merge.
