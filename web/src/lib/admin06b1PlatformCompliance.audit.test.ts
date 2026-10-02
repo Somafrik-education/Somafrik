@@ -114,7 +114,12 @@ describe("ADMIN-06B1 Conformité plateforme A1", () => {
     expect(page).toContain('status: "success"');
     expect(page).toContain("Impossible de charger la conformité plateforme");
     expect(page).toContain("ErrorState");
-    expect(page).toMatch(/state\.status === "success"[\s\S]*configurée/);
-    expect(page).not.toMatch(/status === "error"[\s\S]*configurée/);
+    const errorBlock = page.slice(page.indexOf('state.status === "error"'), page.indexOf('state.status === "success"'));
+    expect(errorBlock).toContain("ErrorState");
+    expect(errorBlock).not.toContain("configuredLabel");
+    expect(errorBlock).not.toContain("CapabilityRow");
+    expect(errorBlock).not.toContain("configurée");
+    expect(page).toContain('state.status === "success"');
+    expect(page).toContain("configuredLabel");
   });
 });

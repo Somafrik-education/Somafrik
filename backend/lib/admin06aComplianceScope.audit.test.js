@@ -288,7 +288,8 @@ test("C06A-14 routes confidentialité / suppression cohérentes", () => {
   );
 });
 
-test("C06A-15 aucun endpoint conformité plateforme non-PII canonique", () => {
+test("C06A-15 endpoint conformité plateforme non-PII = A1 backoffice (ADMIN-06B1)", () => {
+  assert.match(serverSrc, /app\.get\("\/api\/backoffice\/platform-compliance"/);
   assert.doesNotMatch(serverSrc, /app\.(get|post)\("\/api\/(compliance|platform-compliance|conformite)/);
   assert.doesNotMatch(serverSrc, /nonPiiCompliance|platformGovernanceCompliance/);
   assert.equal(SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM.includes("GET /api/audit"), true);
