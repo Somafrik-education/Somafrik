@@ -69,6 +69,40 @@ const PROVISIONABLE_ROLE_KEYS = Object.freeze(["COUNTRY_ADMIN", "SCHOOL_ADMIN"])
 const COUNTRY_ADMIN_KEY = "COUNTRY_ADMIN";
 const SCHOOL_ADMIN_KEY = "SCHOOL_ADMIN";
 
+function isPendingValidationAccount(user = {}) {
+  const status = String(user.status ?? "").trim().toLowerCase();
+  const profile = parsePayload(user.profile_payload);
+  const validation = String(profile.validationStatus ?? user.validationStatus ?? "").trim().toLowerCase();
+  return (
+    status === "pending_validation" ||
+    status === "en attente de validation" ||
+    validation === "en attente de validation"
+  );
+}
+
+function isLeavingPendingValidation(existing, patch = {}) {
+  if (patch.status !== undefined) {
+    const next = String(toDbStatus(patch.status) ?? "").toLowerCase();
+    if (next && next !== "pending_validation") return true;
+  }
+  if (patch.validationStatus !== undefined) {
+    const next = String(patch.validationStatus).trim().toLowerCase();
+    if (next && next !== "en attente de validation" && next !== "pending") return true;
+  }
+  return false;
+}
+
+function assertPendingValidationMutation(principal, existing, patch) {
+  if (!isPendingValidationAccount(existing)) return;
+  if (!isLeavingPendingValidation(existing, patch)) return;
+  if (isSuperAdminPrincipal(principal)) return;
+  throw createClientsError(
+    403,
+    "Validation ou refus d'un compte en attente réservé au Superadmin.",
+    CLIENTS_ERROR.FORBIDDEN,
+  );
+}
+
 function actorUserId(principal) {
   return asTrimmed(principal?.sub || principal?.id || principal?.userId);
 }
@@ -463,6 +497,7 @@ async function updateUser(store, userId, rawPatch, principal, auditMeta) {
   assertUsersTargetAccess(attached, { ...targetFromUserRow(existing), roleKeys });
   const schoolCode = existing.school_login_code || existing.school_code;
   assertSafeUserPatch(attached, existing, patch);
+  assertPendingValidationMutation(attached, existing, patch);
 
   return store.withTransaction(async (tx) => {
     const locked = await tx.getUserById(userId);
