@@ -68,12 +68,11 @@ function teacher(): SessionUser {
 }
 
 describe("ADMIN-06A Conformité — UI et canReadView(reports)", () => {
-  it("C06A-01 ReportsPage school = MVP_COVERAGE ; Superadmin = A1 (ADMIN-06B1)", () => {
+  it("C06A-01 ReportsPage school = A2 ; Superadmin = A1 (ADMIN-06B2)", () => {
     const page = readFileSync(join(ROOT, "../pages/ReportsPage.tsx"), "utf8");
-    expect(page).toContain('import { MVP_COVERAGE } from "../lib/constants"');
-    expect(page).toContain("MVP_COVERAGE");
+    expect(page).toContain("SchoolComplianceDashboard");
     expect(page).toContain("getPlatformCompliance");
-    expect(page).not.toMatch(/erasure-requests|\/api\/audit|data-export|reports\/advanced/);
+    expect(page).not.toMatch(/MVP_COVERAGE|\/api\/audit|reports\/advanced/);
     expect(MVP_COVERAGE.length).toBeGreaterThan(0);
     expect(MVP_COVERAGE[0]).toMatchObject({ module: "Authentification par établissement" });
   });
