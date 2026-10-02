@@ -1339,7 +1339,10 @@ class FallbackRepository {
       school,
       students: seedData.students,
       teachers: seedData.teachers,
-      classes: seedData.classes,
+      classes: seedData.classes.map((row) => ({
+        ...row,
+        schoolCode: row.schoolCode ?? seedData.school.code,
+      })),
       notes: seedData.notes,
       payments: seedData.payments,
       presences: seedData.presences,

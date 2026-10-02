@@ -106,10 +106,7 @@ function buildMemoryAdvancedReports({
   );
   const schoolExams = exams.filter((row) => schoolCodeOf(row) === schoolCode);
   const schoolSubscriptions = subscriptions.filter((row) => schoolCodeOf(row) === schoolCode);
-  const schoolClasses = classes.filter((row) => {
-    const code = schoolCodeOf(row);
-    return !code || code === schoolCode;
-  });
+  const schoolClasses = classes.filter((row) => schoolCodeOf(row) === schoolCode);
 
   const paid = schoolPayments
     .filter((payment) => isPaidPayment(payment))

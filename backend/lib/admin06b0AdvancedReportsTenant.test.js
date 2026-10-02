@@ -261,3 +261,37 @@ test("R06B0 fallback seed Unikin ne fuit pas vers Burundi", async () => {
   assert.equal(unikin.global.schools, 1);
   assert.notEqual(unikin.global.schools, seedData.platformSchools.length);
 });
+
+test("R06B0-19 classe sans schoolCode brute n'est pas exposée à un autre tenant", () => {
+  const scopeSrc = readUtf8("./advancedReportsScope.js");
+  assert.doesNotMatch(scopeSrc, /return !code \|\| code === schoolCode/);
+  const leaked = buildMemoryAdvancedReports({
+    ...datasetB(),
+    classes: [{ id: "orphan", name: "6ème A" }],
+  });
+  assert.equal(leaked.academic.length, 0);
+  assert.equal(leaked.academic.some((row) => row.label === "6ème A"), false);
+});
+
+test("R06B0-20 fallback Unikin conserve ses classes legacy après rattachement", async () => {
+  const repo = new FallbackRepository();
+  const unikin = await repo.getAdvancedReportsV2(SCHOOL_A_ID);
+  const legacyNames = seedData.classes.map((row) => row.name);
+  assert.ok(unikin.academic.length > 0);
+  assert.deepEqual(unikin.academic.map((row) => row.label), legacyNames);
+  assert.equal(unikin.academic.some((row) => row.label === "6ème A"), true);
+});
+
+test("R06B0-21 fallback Burundi academic.length === 0", async () => {
+  const repo = new FallbackRepository();
+  const burundi = await repo.getAdvancedReportsV2(SCHOOL_B_ID);
+  assert.equal(burundi.academic.length, 0);
+});
+
+test("R06B0-22 aucune classe CD-2026-0001 dans la réponse BI", async () => {
+  const repo = new FallbackRepository();
+  const burundi = await repo.getAdvancedReportsV2(SCHOOL_B_ID);
+  const cdLabels = new Set(seedData.classes.map((row) => row.name));
+  assert.equal(burundi.academic.some((row) => cdLabels.has(row.label)), false);
+  assert.equal(burundi.academic.some((row) => row.label === "6ème A"), false);
+});
