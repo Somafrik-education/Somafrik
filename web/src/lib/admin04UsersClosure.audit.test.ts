@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { mergeRemoteSnapshot } from "./backofficeStateMerge";
 import { canResetTargetUserPassword, canResetUserPassword, type PermissionContext } from "./permissions";
 import { formatAccessRolesDisplay } from "./userAccounts";
-import type { SessionUser, UserAccount } from "../types";
+import type { BackOfficeState, SessionUser, UserAccount } from "../types";
 import { EMPTY_DASHBOARD_CHART_CONFIG } from "./chartTypes";
 
 function ctx(user: Partial<SessionUser>): PermissionContext {
@@ -15,7 +15,7 @@ function ctx(user: Partial<SessionUser>): PermissionContext {
   };
 }
 
-function baseState() {
+function baseState(): BackOfficeState {
   return {
     schools: [],
     users: [],
@@ -83,7 +83,6 @@ describe("ADMIN-04 Web — reset + displayLabel visuel", () => {
   it("COUNTRY_PRIVILEGES autorise le reset d’un SCHOOL_ADMIN", () => {
     const country = ctx({
       role: "Admin Pays",
-      countryCode: "CD",
       permissions: ["COUNTRY_PRIVILEGES"],
     });
     expect(canResetUserPassword(country)).toBe(true);
@@ -91,7 +90,6 @@ describe("ADMIN-04 Web — reset + displayLabel visuel", () => {
       canResetTargetUserPassword(country, {
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
-        countryCode: "CD",
         status: "Actif",
       } as UserAccount),
     ).toBe(true);

@@ -72,7 +72,6 @@ describe("P0 production RBAC web", () => {
   it("Admin Pays avec COUNTRY_PRIVILEGES peut réinitialiser un SCHOOL_ADMIN", () => {
     const country = ctx({
       role: "Admin Pays",
-      countryCode: "CD",
       permissions: ["COUNTRY_PRIVILEGES"],
     });
     expect(
