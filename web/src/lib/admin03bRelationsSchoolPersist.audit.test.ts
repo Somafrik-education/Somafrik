@@ -75,12 +75,11 @@ describe("ADMIN-03B Relations — Option A UI", () => {
     expect(canArchiveParentRelation(ctx(schoolAdmin()))).toBe(true);
   });
 
-  it("AdministrationLayout masque uniquement Relations via canReadView", () => {
+  it("AdministrationLayout masque les onglets non ouvrables via canReadView", () => {
     const layout = readFileSync(join(ROOT, "../pages/administration/AdministrationLayout.tsx"), "utf8");
-    expect(layout).toContain('tab.to !== "/administration/relations"');
-    expect(layout).toContain('canReadView(ctx, "relations")');
-    expect(layout).not.toContain("canReadView(ctx, tab.view)");
+    expect(layout).toContain("canReadView(ctx, tab.view)");
     expect(layout).toContain('view: "relations"');
+    expect(layout).toContain('view: "documents"');
     expect(layout).toContain('to: "/administration/documents"');
     expect(layout).toContain('to: "/administration/conformite"');
     expect(layout).toContain('to: "/administration/utilisateurs"');

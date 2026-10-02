@@ -21,6 +21,18 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function drainChildLogs(child) {
+  const logs = [];
+  const collect = (chunk) => {
+    const text = String(chunk);
+    logs.push(text);
+    if (logs.length > 200) logs.shift();
+  };
+  child.stdout?.on("data", collect);
+  child.stderr?.on("data", collect);
+  return logs;
+}
+
 function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
   parsed.pathname = `/${databaseName}`;
@@ -48,6 +60,7 @@ async function request(port, pathname, { method = "GET", token, body } = {}) {
     method,
     headers: {
       "Content-Type": "application/json",
+      Connection: "close",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -66,7 +79,7 @@ async function waitForHealth(child, port) {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`Backend exited early with code ${child.exitCode}`);
     try {
-      const response = await fetch(`${baseUrl(port)}/health`);
+      const response = await fetch(`${baseUrl(port)}/health`, { headers: { Connection: "close" } });
       if (response.ok) return;
     } catch {
       /* retry */
@@ -104,6 +117,7 @@ async function runMemorySuite() {
     env: { ...process.env, PORT: String(MEMORY_PORT), NODE_ENV: "development", SOMAFRIK_DB_REQUIRED: "false" },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  drainChildLogs(child);
   try {
     await waitForHealth(child, MEMORY_PORT);
     const unauth = await request(MEMORY_PORT, "/exams");
@@ -292,6 +306,7 @@ async function runPgSuite(databaseUrl) {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  drainChildLogs(child);
   try {
     await waitForHealth(child, PG_PORT);
     const adminToken = await login(PG_PORT, "admin-http@test.cd", "1234", "CD-2026-0001");

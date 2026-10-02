@@ -4145,6 +4145,25 @@ class FallbackRepository {
       });
       if (shouldSeedDemoData()) {
         const store = this._documentsExamsStore;
+        const seedSchool = (code) => {
+          const wanted = String(code ?? "").trim().toUpperCase();
+          const listed = [seedData.school, ...(seedData.platformSchools ?? [])];
+          const found = listed.find(
+            (item) => String(item.code ?? item.schoolCode ?? "").trim().toUpperCase() === wanted,
+          );
+          return store.registerSchool(found || { code });
+        };
+        for (const student of seedData.students ?? []) {
+          const school = seedSchool(student.schoolCode);
+          if (!school) continue;
+          store.registerStudent({
+            id: student.id,
+            school_id: school.id,
+            student_code: student.matricule ?? student.identifier ?? student.id,
+            first_name: student.firstName ?? "",
+            last_name: student.lastName ?? student.name ?? "",
+          });
+        }
         for (const exam of seedData.exams ?? []) {
           const school = store.registerSchool({ code: exam.schoolCode });
           if (school) void store.insertExam(school.id, exam);
@@ -4154,7 +4173,7 @@ class FallbackRepository {
           if (school) void store.generateReportCard(school.id, bulletin);
         }
         for (const document of seedData.documents ?? []) {
-          const school = store.registerSchool({ code: document.schoolCode });
+          const school = seedSchool(document.schoolCode);
           if (school) {
             void store.insertSchoolDocument(school.id, {
               ...document,
