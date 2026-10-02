@@ -3026,6 +3026,11 @@ app.get("/api/backoffice/trial-requests", requireAuth, requirePermission("GET /a
   res.json(await listTrialAccessRequests(repository, req.principal));
 }));
 
+app.get("/api/backoffice/platform-compliance", requireAuth, requirePermission("GET /api/backoffice/platform-compliance"), asyncHandler(async (req, res) => {
+  const { getPlatformCompliance } = require("./lib/platformCompliance");
+  res.json(await getPlatformCompliance(repository, req.principal));
+}));
+
 app.get("/api/backoffice/notifications", requireAuth, requirePermission("GET /api/backoffice/notifications"), asyncHandler(async (req, res) => {
   const platform = await repository.listPlatformProjection();
   sendList(res, tenantScopeService.filterRows(platform.notifications ?? [], req.principal), req.query, ["title", "message", "type", "status"]);

@@ -359,6 +359,20 @@ class FallbackRepository {
     });
   }
 
+  async getPlatformPrivacyRequestCounts() {
+    let pending = 0;
+    let processed = 0;
+    let rejected = 0;
+    let total = 0;
+    for (const row of this.privacyRequests.values()) {
+      total += 1;
+      if (row.status === "pending") pending += 1;
+      else if (row.status === "processed") processed += 1;
+      else if (row.status === "rejected") rejected += 1;
+    }
+    return { total, pending, processed, rejected };
+  }
+
   async createTrialAccessRequest(row) {
     const { randomUUID } = require("node:crypto");
     const stored = {

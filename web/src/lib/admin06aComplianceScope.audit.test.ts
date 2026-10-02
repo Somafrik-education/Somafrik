@@ -68,21 +68,22 @@ function teacher(): SessionUser {
 }
 
 describe("ADMIN-06A Conformité — UI et canReadView(reports)", () => {
-  it("C06A-01 ReportsPage = MVP_COVERAGE façade", () => {
+  it("C06A-01 ReportsPage school = MVP_COVERAGE ; Superadmin = A1 (ADMIN-06B1)", () => {
     const page = readFileSync(join(ROOT, "../pages/ReportsPage.tsx"), "utf8");
     expect(page).toContain('import { MVP_COVERAGE } from "../lib/constants"');
-    expect(page).toContain("const rows = MVP_COVERAGE");
-    expect(page).not.toMatch(/fetch\(|erasure-requests|\/api\/audit|data-export|reports\/advanced/);
+    expect(page).toContain("MVP_COVERAGE");
+    expect(page).toContain("getPlatformCompliance");
+    expect(page).not.toMatch(/erasure-requests|\/api\/audit|data-export|reports\/advanced/);
     expect(MVP_COVERAGE.length).toBeGreaterThan(0);
     expect(MVP_COVERAGE[0]).toMatchObject({ module: "Authentification par établissement" });
   });
 
-  it("C06A-02 Superadmin canReadView(reports) = false", () => {
-    expect(isSuperAdminAllowedView("reports")).toBe(false);
+  it("C06A-02 Superadmin canReadView(reports) = true (vue plateforme ADMIN-06B1)", () => {
+    expect(isSuperAdminAllowedView("reports")).toBe(true);
     expect(isSuperAdminAllowedFeature("Rapports")).toBe(false);
-    expect(canReadView(ctx(superadmin()), "reports")).toBe(false);
+    expect(canReadView(ctx(superadmin()), "reports")).toBe(true);
     const access = readFileSync(join(ROOT, "superAdminAccess.ts"), "utf8");
-    expect(access).not.toMatch(/SUPER_ADMIN_ALLOWED_VIEWS[\s\S]*reports/);
+    expect(access).toContain('"reports"');
     expect(access).not.toContain('"Rapports"');
   });
 

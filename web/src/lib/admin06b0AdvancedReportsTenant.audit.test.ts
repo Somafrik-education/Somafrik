@@ -50,8 +50,8 @@ function schoolAdmin(): SessionUser {
 describe("ADMIN-06B0 Conformité — tenant safety + façade Country", () => {
   it("R06B0-16 COUNTRY_ADMIN canReadView(reports) = false", () => {
     expect(canReadView(ctx(countryAdmin()), "reports")).toBe(false);
-    expect(canReadView(ctx(superadmin()), "reports")).toBe(false);
-    expect(isSuperAdminAllowedView("reports")).toBe(false);
+    expect(canReadView(ctx(superadmin()), "reports")).toBe(true);
+    expect(isSuperAdminAllowedView("reports")).toBe(true);
     const permissions = readFileSync(join(ROOT, "permissions.ts"), "utf8");
     expect(permissions).not.toContain('feature !== "Rapports"');
   });

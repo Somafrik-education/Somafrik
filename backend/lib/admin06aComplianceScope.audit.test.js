@@ -95,12 +95,13 @@ function expectedAuditHttp(principal) {
   return { status: 200, code: null, layer: "repository.getAuditLogs" };
 }
 
-test("C06A-01 ReportsPage = MVP_COVERAGE façade", () => {
+test("C06A-01 ReportsPage school = MVP_COVERAGE ; Superadmin = A1 (ADMIN-06B1)", () => {
   const page = readUtf8("../../web/src/pages/ReportsPage.tsx");
   const constants = readUtf8("../../web/src/lib/constants.ts");
   assert.match(page, /import \{ MVP_COVERAGE \} from "\.\.\/lib\/constants"/);
-  assert.match(page, /const rows = MVP_COVERAGE/);
-  assert.doesNotMatch(page, /fetch\(|api\.|useQuery|erasure|audit|data-export|reports\/advanced/);
+  assert.match(page, /MVP_COVERAGE/);
+  assert.match(page, /getPlatformCompliance/);
+  assert.doesNotMatch(page, /erasure-requests|\/api\/audit|data-export|reports\/advanced/);
   assert.match(constants, /export const MVP_COVERAGE/);
   assert.match(constants, /Authentification par établissement/);
 });
@@ -287,7 +288,8 @@ test("C06A-14 routes confidentialité / suppression cohérentes", () => {
   );
 });
 
-test("C06A-15 aucun endpoint conformité plateforme non-PII canonique", () => {
+test("C06A-15 endpoint conformité plateforme non-PII = A1 backoffice (ADMIN-06B1)", () => {
+  assert.match(serverSrc, /app\.get\("\/api\/backoffice\/platform-compliance"/);
   assert.doesNotMatch(serverSrc, /app\.(get|post)\("\/api\/(compliance|platform-compliance|conformite)/);
   assert.doesNotMatch(serverSrc, /nonPiiCompliance|platformGovernanceCompliance/);
   assert.equal(SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM.includes("GET /api/audit"), true);

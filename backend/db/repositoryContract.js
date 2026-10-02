@@ -24,6 +24,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "createPrivacyRequest",
   "getPrivacyRequest",
   "listPrivacyRequests",
+  "getPlatformPrivacyRequestCounts",
   "executePrivacyErasure",
   "purgeRetention",
   "createTrialAccessRequest",
