@@ -347,9 +347,10 @@ export function canResetUserPassword(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;
   if (isSuperAdminRole(ctx.user.role)) return true;
   if (hasBackOfficePermission(ctx, "Utilisateurs", "UPDATE")) return true;
-  return getCurrentRolePermissions(ctx).some(
-    (permission) => normalize(permission) === normalize("Gérer utilisateurs"),
-  );
+  return getCurrentRolePermissions(ctx).some((permission) => {
+    const token = normalize(permission);
+    return token === normalize("Gérer utilisateurs") || token === normalize("COUNTRY_PRIVILEGES");
+  });
 }
 
 export function canResetTargetUserPassword(

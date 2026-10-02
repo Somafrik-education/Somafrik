@@ -300,7 +300,7 @@ export function UsersPage() {
       title: "Mot de passe temporaire",
       description: `Définir un mot de passe temporaire pour ${user.firstName ?? user.identifier}.`,
       defaultValue: "Soma1234",
-      placeholder: "Mot de passe (min. 6 caractères)",
+      placeholder: "Mot de passe (min. 8 caractères)",
       inputType: "password",
       confirmLabel: "Réinitialiser",
       required: true,
@@ -310,6 +310,12 @@ export function UsersPage() {
     setBusy(true);
     try {
       const issued = await resetUserAccountPassword(user, temporaryPassword);
+      try {
+        await refresh(["users"]);
+      } catch (error) {
+        showToast(formatCaughtApiError(error, "Échec du rechargement après réinitialisation"), "error");
+        throw error;
+      }
       showToast(`Mot de passe réinitialisé · provisoire : ${issued}`, "success");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Échec de la réinitialisation", "error");
@@ -786,6 +792,14 @@ export function UsersPage() {
               <Row label="Établissement" value={getUserEstablishmentLabel(detail)} />
               <Row label="Canal" value={formatAccessChannelLabel(detail.accessChannel)} />
               <Row label="Statut" value={detail.status} />
+              <Row
+                label="Mot de passe"
+                value={
+                  detail.hasTemporaryPassword || detail.mustChangePassword
+                    ? "Temporaire — à changer à la prochaine connexion"
+                    : "—"
+                }
+              />
               <Row label="Dernière connexion" value={detail.lastLoginAt ?? "—"} />
               <Row label="Validation" value={detail.validationStatus ?? "—"} />
             </dl>
