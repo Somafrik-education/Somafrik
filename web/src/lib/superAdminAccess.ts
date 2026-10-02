@@ -15,6 +15,7 @@ export const SUPER_ADMIN_PLATFORM_VIEWS = [
   "chartSettings",
   "notifications",
   "announcements",
+  "reports",
 ] as const;
 
 export const SUPER_ADMIN_SCHOOL_SETTINGS_VIEWS = ["configuration"] as const;

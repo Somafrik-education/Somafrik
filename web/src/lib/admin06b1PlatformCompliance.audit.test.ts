@@ -7,7 +7,7 @@ import { canReadView, type PermissionContext } from "./permissions";
 import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE, SUPER_ADMIN_ROLE } from "./orgHierarchy";
 import { isSuperAdminAllowedFeature, isSuperAdminAllowedView } from "./superAdminAccess";
 import { INTERNAL_ROLE_DEFAULT_PERMISSIONS } from "./internalRoleDefaults";
-import { VIEW_PERMISSION_FEATURES, MVP_COVERAGE } from "./constants";
+import { PLATFORM_COMPLIANCE_PATH } from "./platformComplianceApi";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
@@ -55,30 +55,8 @@ function schoolAdmin(): SessionUser {
   } as SessionUser;
 }
 
-function teacher(): SessionUser {
-  return {
-    id: "teacher-1",
-    firstName: "Enseignant",
-    lastName: "Test",
-    identifier: "teacher-1",
-    role: "Enseignant",
-    permissions: ["Élèves:READ", "Notes:READ"],
-    schoolCode: "CD-2026-0001",
-  } as SessionUser;
-}
-
-describe("ADMIN-06A Conformité — UI et canReadView(reports)", () => {
-  it("C06A-01 ReportsPage school = MVP_COVERAGE ; Superadmin = A1 (ADMIN-06B1)", () => {
-    const page = readFileSync(join(ROOT, "../pages/ReportsPage.tsx"), "utf8");
-    expect(page).toContain('import { MVP_COVERAGE } from "../lib/constants"');
-    expect(page).toContain("MVP_COVERAGE");
-    expect(page).toContain("getPlatformCompliance");
-    expect(page).not.toMatch(/erasure-requests|\/api\/audit|data-export|reports\/advanced/);
-    expect(MVP_COVERAGE.length).toBeGreaterThan(0);
-    expect(MVP_COVERAGE[0]).toMatchObject({ module: "Authentification par établissement" });
-  });
-
-  it("C06A-02 Superadmin canReadView(reports) = true (vue plateforme ADMIN-06B1)", () => {
+describe("ADMIN-06B1 Conformité plateforme A1", () => {
+  it("C06B1-01 SUPER_ADMIN canReadView(reports) = true", () => {
     expect(isSuperAdminAllowedView("reports")).toBe(true);
     expect(isSuperAdminAllowedFeature("Rapports")).toBe(false);
     expect(canReadView(ctx(superadmin()), "reports")).toBe(true);
@@ -87,36 +65,56 @@ describe("ADMIN-06A Conformité — UI et canReadView(reports)", () => {
     expect(access).not.toContain('"Rapports"');
   });
 
-  it("C06A-03 Country Admin canReadView(reports) = false (ADMIN-06B0)", () => {
-    expect(VIEW_PERMISSION_FEATURES.reports).toBe("Rapports");
+  it("C06B1-02 COUNTRY_ADMIN canReadView(reports) = false", () => {
     expect(canReadView(ctx(countryAdmin()), "reports")).toBe(false);
   });
 
-  it("C06A-04 School Admin canReadView(reports) = true (façade)", () => {
+  it("C06B1-03 SCHOOL_ADMIN Rapports:READ reste true", () => {
     expect(canReadView(ctx(schoolAdmin()), "reports")).toBe(true);
     expect(INTERNAL_ROLE_DEFAULT_PERMISSIONS["Admin School"]).toContain("Rapports:READ");
-    expect(canReadView(ctx(teacher()), "reports")).toBe(false);
-    expect(INTERNAL_ROLE_DEFAULT_PERMISSIONS.Enseignant).not.toContain("Rapports:READ");
   });
 
-  it("C06A layout filtre Conformité par canReadView(reports)", () => {
+  it("C06B1-19 ReportsPage Superadmin fetch A1 uniquement", () => {
+    const page = readFileSync(join(ROOT, "../pages/ReportsPage.tsx"), "utf8");
+    const api = readFileSync(join(ROOT, "platformComplianceApi.ts"), "utf8");
+    expect(api).toContain('"/backoffice/platform-compliance"');
+    expect(api).toContain("api.get<PlatformCompliancePayload>(PLATFORM_COMPLIANCE_PATH)");
+    expect(api).not.toMatch(/schoolCode|schoolId|countryCode|userId|requestId/);
+    expect(api).not.toMatch(/api\.(post|put|patch|delete)/);
+    expect(PLATFORM_COMPLIANCE_PATH).toBe("/backoffice/platform-compliance");
+    expect(page).toContain("isSuperAdminRole");
+    expect(page).toContain("getPlatformCompliance");
+    expect(page).toContain("Conformité plateforme");
+    expect(page).not.toMatch(/erasure-requests|\/api\/audit|data-export|reports\/advanced/);
+  });
+
+  it("C06B1-20 ReportsPage School Admin ne fetch PAS A1", () => {
+    const page = readFileSync(join(ROOT, "../pages/ReportsPage.tsx"), "utf8");
+    expect(page).toContain("MVP_COVERAGE");
+    expect(page).toContain("SchoolMvpCoverageFacade");
+    expect(page).toMatch(/if \(isSuperAdminRole\(session\?\.user\?\.role\)\)/);
+    expect(page).toContain("getPlatformCompliance()");
+  });
+
+  it("C06B1-21 Country Admin n’ouvre pas ReportsPage", () => {
+    expect(canReadView(ctx(countryAdmin()), "reports")).toBe(false);
     const layout = readFileSync(join(ROOT, "../pages/administration/AdministrationLayout.tsx"), "utf8");
-    expect(layout).toContain('to: "/administration/conformite"');
+    const app = readFileSync(join(ROOT, "../App.tsx"), "utf8");
     expect(layout).toContain('view: "reports"');
     expect(layout).toContain("canReadView(ctx, tab.view)");
-    const app = readFileSync(join(ROOT, "../App.tsx"), "utf8");
-    expect(app).toContain('path="conformite"');
     expect(app).toContain('view="reports"');
     expect(app).toContain("<ReportsPage />");
+    expect(app).toContain("PermissionRoute");
   });
 
-  it("C06A-14 routes publiques confidentialité / suppression", () => {
-    const app = readFileSync(join(ROOT, "../App.tsx"), "utf8");
-    const legal = readFileSync(join(ROOT, "../pages/LegalPages.tsx"), "utf8");
-    expect(app).toContain('path="/confidentialite"');
-    expect(app).toContain('path="/suppression-compte"');
-    expect(legal).toContain("/api/privacy/erasure-requests");
-    expect(legal).toContain('to="/suppression-compte"');
-    expect(legal).not.toMatch(/old_value|storageKey|signed URL/i);
+  it("C06B1-22 erreur A1 UI ≠ faux état conforme", () => {
+    const page = readFileSync(join(ROOT, "../pages/ReportsPage.tsx"), "utf8");
+    expect(page).toContain('status: "loading"');
+    expect(page).toContain('status: "error"');
+    expect(page).toContain('status: "success"');
+    expect(page).toContain("Impossible de charger la conformité plateforme");
+    expect(page).toContain("ErrorState");
+    expect(page).toMatch(/state\.status === "success"[\s\S]*configurée/);
+    expect(page).not.toMatch(/status === "error"[\s\S]*configurée/);
   });
 });

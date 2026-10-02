@@ -95,12 +95,13 @@ function expectedAuditHttp(principal) {
   return { status: 200, code: null, layer: "repository.getAuditLogs" };
 }
 
-test("C06A-01 ReportsPage = MVP_COVERAGE façade", () => {
+test("C06A-01 ReportsPage school = MVP_COVERAGE ; Superadmin = A1 (ADMIN-06B1)", () => {
   const page = readUtf8("../../web/src/pages/ReportsPage.tsx");
   const constants = readUtf8("../../web/src/lib/constants.ts");
   assert.match(page, /import \{ MVP_COVERAGE \} from "\.\.\/lib\/constants"/);
-  assert.match(page, /const rows = MVP_COVERAGE/);
-  assert.doesNotMatch(page, /fetch\(|api\.|useQuery|erasure|audit|data-export|reports\/advanced/);
+  assert.match(page, /MVP_COVERAGE/);
+  assert.match(page, /getPlatformCompliance/);
+  assert.doesNotMatch(page, /erasure-requests|\/api\/audit|data-export|reports\/advanced/);
   assert.match(constants, /export const MVP_COVERAGE/);
   assert.match(constants, /Authentification par établissement/);
 });

@@ -2430,6 +2430,24 @@ class PostgresRepository {
     );
   }
 
+  async getPlatformPrivacyRequestCounts() {
+    await this.init();
+    const row = await this.one(
+      `SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+         COUNT(*) FILTER (WHERE status = 'processed')::int AS processed,
+         COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected
+       FROM privacy_requests`,
+    );
+    return {
+      total: Number(row?.total) || 0,
+      pending: Number(row?.pending) || 0,
+      processed: Number(row?.processed) || 0,
+      rejected: Number(row?.rejected) || 0,
+    };
+  }
+
   async createTrialAccessRequest(row) {
     await this.init();
     const { randomUUID } = require("node:crypto");
