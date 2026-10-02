@@ -438,7 +438,7 @@ export function canReadView(session: any, viewName: string): boolean {
       return false;
     }
     const feature = countryFeature;
-    if (feature && !COUNTRY_SCOPE_MODULES.has(feature) && feature !== "Rapports") {
+    if (feature && !COUNTRY_SCOPE_MODULES.has(feature)) {
       return false;
     }
   }

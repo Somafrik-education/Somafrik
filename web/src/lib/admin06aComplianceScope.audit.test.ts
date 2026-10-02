@@ -86,9 +86,9 @@ describe("ADMIN-06A Conformité — UI et canReadView(reports)", () => {
     expect(access).not.toContain('"Rapports"');
   });
 
-  it("C06A-03 Country Admin canReadView(reports) = true (façade)", () => {
+  it("C06A-03 Country Admin canReadView(reports) = false (ADMIN-06B0)", () => {
     expect(VIEW_PERMISSION_FEATURES.reports).toBe("Rapports");
-    expect(canReadView(ctx(countryAdmin()), "reports")).toBe(true);
+    expect(canReadView(ctx(countryAdmin()), "reports")).toBe(false);
   });
 
   it("C06A-04 School Admin canReadView(reports) = true (façade)", () => {

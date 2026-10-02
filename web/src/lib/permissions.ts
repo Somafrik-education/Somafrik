@@ -500,7 +500,7 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
       return false;
     }
     const feature = VIEW_PERMISSION_FEATURES[viewName];
-    if (feature && !COUNTRY_SCOPE_MODULES.has(feature) && feature !== "Rapports") {
+    if (feature && !COUNTRY_SCOPE_MODULES.has(feature)) {
       return false;
     }
   }

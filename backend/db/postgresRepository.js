@@ -6342,47 +6342,68 @@ class PostgresRepository {
     }));
   }
 
-  async getAdvancedReportsV2() {
+  async getAdvancedReportsV2(schoolId) {
+    const { assertAdvancedReportsSchoolId } = require("../lib/advancedReportsScope");
+    const scopedSchoolId = assertAdvancedReportsSchoolId(schoolId);
     await this.init();
     const [academic, financial, attendance, exams, global] = await Promise.all([
-      this.all(`
+      this.all(
+        `
         SELECT cl.name AS label, AVG(g.score / NULLIF(g.max_score, 0) * 20) AS value, COUNT(g.id) AS count
         FROM grades g
-        JOIN classes cl ON cl.id = g.class_id
+        JOIN classes cl ON cl.id = g.class_id AND cl.school_id = $1
+        WHERE g.school_id = $1
         GROUP BY cl.name
         ORDER BY value DESC NULLS LAST
         LIMIT 10
-      `),
-      this.one(`
+      `,
+        [scopedSchoolId],
+      ),
+      this.one(
+        `
         SELECT
           COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN amount ELSE 0 END), 0) AS paid,
           COALESCE(SUM(CASE WHEN payment_status <> 'paid' THEN amount ELSE 0 END), 0) AS unpaid,
           COUNT(*) AS payments
         FROM payments
-      `),
-      this.all(`
+        WHERE school_id = $1
+      `,
+        [scopedSchoolId],
+      ),
+      this.all(
+        `
         SELECT status AS label, COUNT(*) AS count
         FROM attendance
+        WHERE school_id = $1
         GROUP BY status
         ORDER BY count DESC
-      `),
-      this.all(`
+      `,
+        [scopedSchoolId],
+      ),
+      this.all(
+        `
         SELECT ex.exam_type AS label,
                AVG(er.score / NULLIF(er.max_score, 0) * 20) AS average,
                AVG(CASE WHEN er.score >= er.max_score / 2 THEN 1 ELSE 0 END) * 100 AS success_rate
         FROM exams ex
-        LEFT JOIN exam_results er ON er.exam_id = ex.id
+        LEFT JOIN exam_results er ON er.exam_id = ex.id AND er.school_id = $1
+        WHERE ex.school_id = $1
         GROUP BY ex.exam_type
         ORDER BY ex.exam_type
-      `),
-      this.one(`
+      `,
+        [scopedSchoolId],
+      ),
+      this.one(
+        `
         SELECT
-          (SELECT COUNT(*) FROM countries) AS countries,
-          (SELECT COUNT(*) FROM schools) AS schools,
-          (SELECT COUNT(*) FROM students) AS students,
-          (SELECT COUNT(*) FROM teachers) AS teachers,
-          (SELECT COUNT(*) FROM subscriptions WHERE status = 'active') AS active_subscriptions
-      `),
+          1 AS countries,
+          1 AS schools,
+          (SELECT COUNT(*) FROM students WHERE school_id = $1) AS students,
+          (SELECT COUNT(*) FROM teachers WHERE school_id = $1) AS teachers,
+          (SELECT COUNT(*) FROM subscriptions WHERE school_id = $1 AND status = 'active') AS active_subscriptions
+      `,
+        [scopedSchoolId],
+      ),
     ]);
 
     const attendanceTotal = attendance.reduce((sum, row) => sum + Number(row.count), 0);
