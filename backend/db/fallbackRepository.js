@@ -4158,11 +4158,11 @@ class FallbackRepository {
         }
         for (const exam of seedData.exams ?? []) {
           const school = store.registerSchool({ code: exam.schoolCode });
-          if (school) void store.insertExam(school.id, exam).catch(() => {});
+          if (school) void store.insertExam(school.id, exam);
         }
         for (const bulletin of seedData.bulletins ?? []) {
           const school = store.registerSchool({ code: bulletin.schoolCode });
-          if (school) void store.generateReportCard(school.id, bulletin).catch(() => {});
+          if (school) void store.generateReportCard(school.id, bulletin);
         }
         for (const document of seedData.documents ?? []) {
           const school = store.registerSchool({ code: document.schoolCode });
@@ -4170,7 +4170,7 @@ class FallbackRepository {
             void store.insertSchoolDocument(school.id, {
               ...document,
               status: String(document.status).includes("génération") ? "generating" : "available",
-            }).catch(() => {});
+            });
           }
         }
       }

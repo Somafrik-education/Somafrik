@@ -12,6 +12,7 @@ const {
   assertReportCardsRead,
   assertReportCardsWrite,
   assertDocumentsRead,
+  assertDocumentsCreate,
   assertDocumentsWrite,
   assertTemplatesWrite,
   documentsExamsAuditMetaFromRequest,
@@ -234,7 +235,7 @@ async function listSchoolDocuments(repo, principal, schoolCode) {
 
 async function createSchoolDocument(repo, payload, principal, auditMeta, schoolCode) {
   assertSchoolDocumentsPlatformDenied(principal);
-  return mutate(repo, principal, auditMeta, schoolCode, assertDocumentsRead, assertDocumentsWrite, async (store, school, scopedSchool) => {
+  return mutate(repo, principal, auditMeta, schoolCode, assertDocumentsRead, assertDocumentsCreate, async (store, school, scopedSchool) => {
     const saved = await store.insertSchoolDocument(school.id, payload, principal?.sub);
     return {
       value: saved,

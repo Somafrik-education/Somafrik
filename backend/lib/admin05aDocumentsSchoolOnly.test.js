@@ -397,3 +397,94 @@ test("D05-18 platformPersonalDataGuard non élargi", () => {
   assert.match(service, /assertSchoolDocumentsPlatformDenied/);
   assert.match(service, /isPlatformPersonalDataForbidden\(principal, "GET \/api\/school-documents"\)/);
 });
+
+const SCHOOL_CREATE_ONLY = {
+  sub: "admin-create-only",
+  role: "Admin School",
+  roleKeys: ["SCHOOL_ADMIN"],
+  permissions: ["Documents:READ", "Documents:CREATE"],
+  schoolCode: "CD-2026-0001",
+  schoolId: "school-a",
+};
+
+const SCHOOL_UPDATE_ONLY = {
+  sub: "admin-update-only",
+  role: "Admin School",
+  roleKeys: ["SCHOOL_ADMIN"],
+  permissions: ["Documents:READ", "Documents:UPDATE"],
+  schoolCode: "CD-2026-0001",
+  schoolId: "school-a",
+};
+
+test("D05-LP-01 READ + CREATE peut CREATE", async () => {
+  const { repo } = createMemoryRepo();
+  const created = await createSchoolDocument(
+    repo,
+    { title: "CREATE only", documentType: "attestation" },
+    SCHOOL_CREATE_ONLY,
+    AUDIT,
+  );
+  assert.equal(created.title, "CREATE only");
+  const listed = await listSchoolDocuments(repo, SCHOOL_CREATE_ONLY);
+  assert.equal(listed.some((row) => row.id === created.id), true);
+});
+
+test("D05-LP-02 READ + CREATE ne peut pas PATCH via service → 403", async () => {
+  const { repo } = createMemoryRepo();
+  const created = await createSchoolDocument(
+    repo,
+    { title: "No patch", documentType: "attestation" },
+    SCHOOL_A,
+    AUDIT,
+  );
+  await expectRejection(patchSchoolDocument(repo, created.id, { title: "Hack CREATE" }, SCHOOL_CREATE_ONLY, AUDIT), {
+    status: 403,
+    code: DOCUMENTS_EXAMS_ERROR.FORBIDDEN,
+  });
+  const listed = await listSchoolDocuments(repo, SCHOOL_A);
+  assert.equal(listed.find((row) => row.id === created.id).title, "No patch");
+});
+
+test("D05-LP-03 READ + CREATE ne peut pas ARCHIVE via service → 403", async () => {
+  const { repo } = createMemoryRepo();
+  const created = await createSchoolDocument(
+    repo,
+    { title: "No archive", documentType: "attestation" },
+    SCHOOL_A,
+    AUDIT,
+  );
+  await expectRejection(archiveSchoolDocument(repo, created.id, SCHOOL_CREATE_ONLY, AUDIT), {
+    status: 403,
+    code: DOCUMENTS_EXAMS_ERROR.FORBIDDEN,
+  });
+  const listed = await listSchoolDocuments(repo, SCHOOL_A);
+  assert.equal(listed.find((row) => row.id === created.id).status, "available");
+});
+
+test("D05-LP-04 READ + UPDATE conserve PATCH/ARCHIVE", async () => {
+  const { repo } = createMemoryRepo();
+  const created = await createSchoolDocument(
+    repo,
+    { title: "Update path", documentType: "attestation" },
+    SCHOOL_UPDATE_ONLY,
+    AUDIT,
+  );
+  const patched = await patchSchoolDocument(repo, created.id, { title: "Update path v2" }, SCHOOL_UPDATE_ONLY, AUDIT);
+  assert.equal(patched.title, "Update path v2");
+  const archived = await archiveSchoolDocument(repo, created.id, SCHOOL_UPDATE_ONLY, AUDIT);
+  assert.equal(archived.status, "archived");
+  const management = readUtf8("./documentsExamsManagement.js");
+  assert.match(management, /function assertDocumentsCreate/);
+  assert.match(management, /function assertDocumentsWrite/);
+  const writeFn = management.slice(
+    management.indexOf("function assertDocumentsWrite"),
+    management.indexOf("function assertTemplatesWrite"),
+  );
+  assert.doesNotMatch(writeFn, /Documents:CREATE/);
+  const service = readUtf8("./documentsExamsService.js");
+  assert.match(service, /assertDocumentsCreate,/);
+  const fallback = readUtf8("../db/fallbackRepository.js");
+  assert.doesNotMatch(fallback, /insertExam\([^)]*\)\.catch\(\(\) => \{\}\)/);
+  assert.doesNotMatch(fallback, /generateReportCard\([^)]*\)\.catch\(\(\) => \{\}\)/);
+  assert.doesNotMatch(fallback, /insertSchoolDocument\([\s\S]{0,240}\)\.catch\(\(\) => \{\}\)/);
+});

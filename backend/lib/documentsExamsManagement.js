@@ -188,9 +188,17 @@ function assertDocumentsRead(principal) {
   }
 }
 
-function assertDocumentsWrite(principal) {
+function assertDocumentsCreate(principal) {
   if (isSuperAdminPrincipal(principal)) return;
   const allowed = ["Documents:CREATE", "Documents:UPDATE", "Valider bulletins", "ALL_PRIVILEGES"];
+  if (!principalHasAnyPermission(principal, allowed)) {
+    throw createDocumentsExamsError(403, "Vous n'avez pas le droit de créer un document.", DOCUMENTS_EXAMS_ERROR.FORBIDDEN);
+  }
+}
+
+function assertDocumentsWrite(principal) {
+  if (isSuperAdminPrincipal(principal)) return;
+  const allowed = ["Documents:UPDATE", "Valider bulletins", "ALL_PRIVILEGES"];
   if (!principalHasAnyPermission(principal, allowed)) {
     throw createDocumentsExamsError(403, "Vous n'avez pas le droit de modifier les documents.", DOCUMENTS_EXAMS_ERROR.FORBIDDEN);
   }
@@ -489,6 +497,7 @@ module.exports = {
   assertReportCardsRead,
   assertReportCardsWrite,
   assertDocumentsRead,
+  assertDocumentsCreate,
   assertDocumentsWrite,
   assertTemplatesWrite,
   canonicalizeExamStatus,
