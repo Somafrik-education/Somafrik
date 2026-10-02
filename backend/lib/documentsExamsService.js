@@ -15,8 +15,10 @@ const {
   assertDocumentsWrite,
   assertTemplatesWrite,
   documentsExamsAuditMetaFromRequest,
+  mapSchoolDocumentAuditValue,
 } = require("./documentsExamsManagement");
 const { createDocumentsExamsPgStore } = require("../db/documentsExamsPgStore");
+const { isPlatformPersonalDataForbidden } = require("./platformPersonalDataGuard");
 
 function recordsStore(repo) {
   if (typeof repo.getDocumentsExamsStore === "function") {
@@ -214,41 +216,75 @@ async function archiveTemplate(repo, templateId, principal, auditMeta, schoolCod
   });
 }
 
+function assertSchoolDocumentsPlatformDenied(principal) {
+  if (isPlatformPersonalDataForbidden(principal, "GET /api/school-documents")) {
+    throw createDocumentsExamsError(
+      403,
+      "Accès plateforme interdit aux documents établissement.",
+      DOCUMENTS_EXAMS_ERROR.FORBIDDEN,
+    );
+  }
+}
+
 async function listSchoolDocuments(repo, principal, schoolCode) {
+  assertSchoolDocumentsPlatformDenied(principal);
   const { store, school } = await withSchoolStore(repo, principal, schoolCode, assertDocumentsRead);
   return store.listSchoolDocuments(school.id);
 }
 
 async function createSchoolDocument(repo, payload, principal, auditMeta, schoolCode) {
+  assertSchoolDocumentsPlatformDenied(principal);
   return mutate(repo, principal, auditMeta, schoolCode, assertDocumentsRead, assertDocumentsWrite, async (store, school, scopedSchool) => {
     const saved = await store.insertSchoolDocument(school.id, payload, principal?.sub);
     return {
       value: saved,
-      audit: { schoolCode: scopedSchool, action: "create_school_document", entityType: "school_document", entityId: saved.id, newValue: saved },
+      audit: {
+        schoolCode: scopedSchool,
+        action: "create_school_document",
+        entityType: "school_document",
+        entityId: saved.id,
+        newValue: mapSchoolDocumentAuditValue(saved),
+      },
     };
   });
 }
 
 async function patchSchoolDocument(repo, documentId, payload, principal, auditMeta, schoolCode) {
+  assertSchoolDocumentsPlatformDenied(principal);
   return mutate(repo, principal, auditMeta, schoolCode, assertDocumentsRead, assertDocumentsWrite, async (store, school, scopedSchool) => {
     const previous = (await store.listSchoolDocuments(school.id)).find((row) => row.id === documentId);
     if (!previous) throw createDocumentsExamsError(404, "Document introuvable.", DOCUMENTS_EXAMS_ERROR.NOT_FOUND);
     const saved = await store.updateSchoolDocument(school.id, documentId, payload);
     return {
       value: saved,
-      audit: { schoolCode: scopedSchool, action: "update_school_document", entityType: "school_document", entityId: documentId, oldValue: previous, newValue: saved },
+      audit: {
+        schoolCode: scopedSchool,
+        action: "update_school_document",
+        entityType: "school_document",
+        entityId: documentId,
+        oldValue: mapSchoolDocumentAuditValue(previous),
+        newValue: mapSchoolDocumentAuditValue(saved),
+      },
     };
   });
 }
 
 async function archiveSchoolDocument(repo, documentId, principal, auditMeta, schoolCode) {
+  assertSchoolDocumentsPlatformDenied(principal);
   return mutate(repo, principal, auditMeta, schoolCode, assertDocumentsRead, assertDocumentsWrite, async (store, school, scopedSchool) => {
     const previous = (await store.listSchoolDocuments(school.id)).find((row) => row.id === documentId);
     if (!previous) throw createDocumentsExamsError(404, "Document introuvable.", DOCUMENTS_EXAMS_ERROR.NOT_FOUND);
     const saved = await store.archiveSchoolDocument(school.id, documentId);
     return {
       value: saved,
-      audit: { schoolCode: scopedSchool, action: "archive_school_document", entityType: "school_document", entityId: documentId, oldValue: previous, newValue: saved },
+      audit: {
+        schoolCode: scopedSchool,
+        action: "archive_school_document",
+        entityType: "school_document",
+        entityId: documentId,
+        oldValue: mapSchoolDocumentAuditValue(previous),
+        newValue: mapSchoolDocumentAuditValue(saved),
+      },
     };
   });
 }

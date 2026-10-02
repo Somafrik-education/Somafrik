@@ -190,7 +190,7 @@ function assertDocumentsRead(principal) {
 
 function assertDocumentsWrite(principal) {
   if (isSuperAdminPrincipal(principal)) return;
-  const allowed = ["Documents:UPDATE", "Valider bulletins", "ALL_PRIVILEGES"];
+  const allowed = ["Documents:CREATE", "Documents:UPDATE", "Valider bulletins", "ALL_PRIVILEGES"];
   if (!principalHasAnyPermission(principal, allowed)) {
     throw createDocumentsExamsError(403, "Vous n'avez pas le droit de modifier les documents.", DOCUMENTS_EXAMS_ERROR.FORBIDDEN);
   }
@@ -320,20 +320,55 @@ function mapTemplateRow(row, extras = {}) {
   };
 }
 
+function canonicalizeDocumentStatus(value) {
+  const status = asTrimmed(value);
+  return DOCUMENT_STATUSES.includes(status) ? status : null;
+}
+
+function prepareSchoolDocumentWrite(payload = {}) {
+  const body = ignoreClientScope(payload);
+  delete body.storageKey;
+  if (hasOwn(body, "status")) {
+    const raw = asTrimmed(body.status);
+    if (!raw) {
+      delete body.status;
+    } else {
+      const status = canonicalizeDocumentStatus(raw);
+      if (!status) {
+        throw createDocumentsExamsError(400, "Statut de document invalide.", DOCUMENTS_EXAMS_ERROR.INVALID_STATUS);
+      }
+      body.status = status;
+    }
+  }
+  return body;
+}
+
 function mapSchoolDocumentRow(row, extras = {}) {
   return {
     id: row.id,
     schoolId: row.school_id,
     schoolCode: extras.schoolCode ?? row.school_code ?? "",
-    studentId: row.student_id,
+    studentId: row.student_id ?? null,
     studentName: extras.studentName ?? "",
     documentType: row.document_type,
     title: row.title,
-    storageKey: row.storage_key,
-    mimeType: row.mime_type,
+    mimeType: row.mime_type ?? null,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapSchoolDocumentAuditValue(doc) {
+  if (!doc) return null;
+  return {
+    id: doc.id,
+    schoolId: doc.schoolId,
+    schoolCode: doc.schoolCode,
+    studentId: doc.studentId ?? null,
+    documentType: doc.documentType,
+    title: doc.title,
+    status: doc.status,
   };
 }
 
@@ -464,7 +499,10 @@ module.exports = {
   mapExamRow,
   mapReportCardRow,
   mapTemplateRow,
+  canonicalizeDocumentStatus,
+  prepareSchoolDocumentWrite,
   mapSchoolDocumentRow,
+  mapSchoolDocumentAuditValue,
   classifyResidualExam,
   classifyResidualReportCard,
   classifyResidualDocument,
