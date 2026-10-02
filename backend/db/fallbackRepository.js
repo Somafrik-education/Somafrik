@@ -4145,13 +4145,24 @@ class FallbackRepository {
       });
       if (shouldSeedDemoData()) {
         const store = this._documentsExamsStore;
+        for (const student of seedData.students ?? []) {
+          const school = store.registerSchool({ code: student.schoolCode });
+          if (!school) continue;
+          store.registerStudent({
+            id: student.id,
+            school_id: school.id,
+            student_code: student.matricule ?? student.identifier ?? student.id,
+            first_name: student.firstName ?? "",
+            last_name: student.lastName ?? student.name ?? "",
+          });
+        }
         for (const exam of seedData.exams ?? []) {
           const school = store.registerSchool({ code: exam.schoolCode });
-          if (school) void store.insertExam(school.id, exam);
+          if (school) void store.insertExam(school.id, exam).catch(() => {});
         }
         for (const bulletin of seedData.bulletins ?? []) {
           const school = store.registerSchool({ code: bulletin.schoolCode });
-          if (school) void store.generateReportCard(school.id, bulletin);
+          if (school) void store.generateReportCard(school.id, bulletin).catch(() => {});
         }
         for (const document of seedData.documents ?? []) {
           const school = store.registerSchool({ code: document.schoolCode });
@@ -4159,7 +4170,7 @@ class FallbackRepository {
             void store.insertSchoolDocument(school.id, {
               ...document,
               status: String(document.status).includes("génération") ? "generating" : "available",
-            });
+            }).catch(() => {});
           }
         }
       }
