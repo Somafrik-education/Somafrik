@@ -606,13 +606,8 @@ app.get(/^\/verify\/rc(\/.*)?$/, (req, res, next) => {
 });
 
 app.get("/api/privacy/erasure-requests", requireAuth, requirePermission("GET /api/privacy/erasure-requests"), asyncHandler(async (req, res) => {
-  const { sanitizePrivacyRequest } = require("./lib/privacyErasure");
-  const schoolCode = String(req.principal.schoolCode ?? "").trim().toUpperCase();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(403, "Périmètre établissement insuffisant.");
-  }
-  const rows = await repository.listPrivacyRequests({ schoolCode });
-  res.json(rows.map(sanitizePrivacyRequest));
+  const { listSchoolPrivacyRequests } = require("./lib/schoolCompliance");
+  res.json(await listSchoolPrivacyRequests(repository, req.principal));
 }));
 
 app.post("/api/privacy/erasure-requests/self/execute", requireAuth, asyncHandler(async (req, res) => {

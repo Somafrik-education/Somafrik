@@ -60,9 +60,10 @@ describe("ADMIN-06B0 Conformité — tenant safety + façade Country", () => {
     expect(canReadView(ctx(schoolAdmin()), "reports")).toBe(true);
   });
 
-  it("ReportsPage reste MVP_COVERAGE", () => {
+  it("ReportsPage Superadmin A1 / école A2, audit hors page", () => {
     const page = readFileSync(join(ROOT, "../pages/ReportsPage.tsx"), "utf8");
-    expect(page).toContain("MVP_COVERAGE");
-    expect(page).not.toMatch(/erasure-requests|data-export|\/api\/audit/);
+    expect(page).toContain("SchoolComplianceDashboard");
+    expect(page).toContain("getPlatformCompliance");
+    expect(page).not.toMatch(/\/api\/audit/);
   });
 });

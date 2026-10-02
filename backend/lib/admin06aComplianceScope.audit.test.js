@@ -95,13 +95,12 @@ function expectedAuditHttp(principal) {
   return { status: 200, code: null, layer: "repository.getAuditLogs" };
 }
 
-test("C06A-01 ReportsPage school = MVP_COVERAGE ; Superadmin = A1 (ADMIN-06B1)", () => {
+test("C06A-01 ReportsPage school = A2 ; Superadmin = A1 (ADMIN-06B2)", () => {
   const page = readUtf8("../../web/src/pages/ReportsPage.tsx");
   const constants = readUtf8("../../web/src/lib/constants.ts");
-  assert.match(page, /import \{ MVP_COVERAGE \} from "\.\.\/lib\/constants"/);
-  assert.match(page, /MVP_COVERAGE/);
+  assert.match(page, /SchoolComplianceDashboard/);
   assert.match(page, /getPlatformCompliance/);
-  assert.doesNotMatch(page, /erasure-requests|\/api\/audit|data-export|reports\/advanced/);
+  assert.doesNotMatch(page, /MVP_COVERAGE|\/api\/audit|reports\/advanced/);
   assert.match(constants, /export const MVP_COVERAGE/);
   assert.match(constants, /Authentification par établissement/);
 });
@@ -201,8 +200,10 @@ test("C06A-10 school tenant ne voit pas les demandes d'une autre école", async 
   assert.equal(bi.length, 1);
   assert.equal(cd[0].school_code, "CD-2026-0001");
   assert.equal(bi[0].school_code, "BI-2026-0002");
-  assert.match(serverSrc, /listPrivacyRequests\(\{ schoolCode \}\)/);
-  assert.match(serverSrc, /if \(!schoolCode \|\| schoolCode === "\*"\)/);
+  const schoolComplianceSrc = readUtf8("./schoolCompliance.js");
+  assert.match(schoolComplianceSrc, /listPrivacyRequests\(\{ schoolCode \}\)/);
+  assert.match(schoolComplianceSrc, /if \(!schoolCode \|\| schoolCode === "\*"\)/);
+  assert.match(serverSrc, /listSchoolPrivacyRequests\(repository, req\.principal\)/);
 });
 
 test("C06A-11 self-erasure est distinct du workflow admin", async () => {
