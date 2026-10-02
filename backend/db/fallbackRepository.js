@@ -1328,28 +1328,27 @@ class FallbackRepository {
     }));
   }
 
-  async getAdvancedReportsV2() {
-    const paid = seedData.payments.filter((payment) => payment.status === "PAYE").reduce((sum, payment) => sum + Number(payment.amount), 0);
-    const unpaid = seedData.payments.filter((payment) => payment.status !== "PAYE").reduce((sum, payment) => sum + Number(payment.amount), 0);
-    const present = seedData.presences.filter((presence) => presence.present || presence.status === "Retard").length;
-
-    return {
-      academic: seedData.classes.map((item) => ({ label: item.name, average: "12.50", grades: seedData.notes.length })),
-      financial: { paid, unpaid, payments: seedData.payments.length, forecast: paid + unpaid },
-      attendance: {
-        rate: seedData.presences.length ? Math.round((present / seedData.presences.length) * 100) : 0,
-        total: seedData.presences.length,
-        breakdown: [],
-      },
-      exams: [],
-      global: {
-        countries: seedData.countries.length,
-        schools: seedData.platformSchools.length,
-        students: seedData.students.length,
-        teachers: seedData.teachers.length,
-        activeSubscriptions: seedData.subscriptions.filter((item) => item.status === "Actif").length,
-      },
-    };
+  async getAdvancedReportsV2(schoolId) {
+    const { assertAdvancedReportsSchoolId, buildMemoryAdvancedReports, schoolIdFromRecord } = require("../lib/advancedReportsScope");
+    const scopedSchoolId = assertAdvancedReportsSchoolId(schoolId);
+    const school =
+      seedData.platformSchools.find((row) => schoolIdFromRecord(row) === scopedSchoolId) ??
+      (await this.getSchoolByCode(scopedSchoolId));
+    return buildMemoryAdvancedReports({
+      schoolId: scopedSchoolId,
+      school,
+      students: seedData.students,
+      teachers: seedData.teachers,
+      classes: seedData.classes.map((row) => ({
+        ...row,
+        schoolCode: row.schoolCode ?? seedData.school.code,
+      })),
+      notes: seedData.notes,
+      payments: seedData.payments,
+      presences: seedData.presences,
+      exams: seedData.exams,
+      subscriptions: seedData.subscriptions,
+    });
   }
 
   async listSchoolClasses(schoolCode) {

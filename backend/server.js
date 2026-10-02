@@ -4194,8 +4194,13 @@ app.get("/api/v2/documents", requireAuth, requirePermission("GET /api/v2/documen
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["code", "type", "title", "studentCode", "studentName"]);
 }));
 
-app.get("/api/v2/reports/advanced", requireAuth, requirePermission("GET /api/v2/reports/advanced"), asyncHandler(async (_req, res) => {
-  res.json(await cacheService.remember("v2:reports:advanced", () => repository.getAdvancedReportsV2()));
+app.get("/api/v2/reports/advanced", requireAuth, requirePermission("GET /api/v2/reports/advanced"), asyncHandler(async (req, res) => {
+  const { getAdvancedReportsForPrincipal } = require("./lib/advancedReportsScope");
+  res.json(await getAdvancedReportsForPrincipal({
+    repository,
+    cache: cacheService,
+    principal: req.principal,
+  }));
 }));
 
 app.get("/api/mvp/readiness", requireAuth, asyncHandler(async (req, res) => {

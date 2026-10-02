@@ -259,17 +259,16 @@ test("C06A-13 advanced reports scope réel caractérisé", () => {
   assert.equal(isPlatformPersonalDataForbiddenHttp(SCHOOL_ADMIN, "GET", "/api/v2/reports/advanced"), false);
   assert.equal(rbac.canAccess(SCHOOL_ADMIN, "GET /api/v2/reports/advanced"), true);
   assert.equal(rbac.canAccess(SUPER, "GET /api/v2/reports/advanced"), false);
-  assert.match(advancedHandler, /asyncHandler\(async \(_req, res\) =>/);
-  assert.match(advancedHandler, /cacheService\.remember\("v2:reports:advanced"/);
-  assert.match(pgSrc, /async getAdvancedReportsV2\(\)/);
-  const start = pgSrc.indexOf("async getAdvancedReportsV2()");
+  assert.match(advancedHandler, /getAdvancedReportsForPrincipal/);
+  assert.match(advancedHandler, /principal: req\.principal/);
+  assert.match(pgSrc, /async getAdvancedReportsV2\(schoolId\)/);
+  const start = pgSrc.indexOf("async getAdvancedReportsV2(schoolId)");
   const query = pgSrc.slice(start, pgSrc.indexOf("mapCountry(country)", start));
   assert.match(query, /FROM grades/);
-  assert.match(query, /FROM payments/);
-  assert.match(query, /FROM attendance/);
-  assert.match(query, /FROM students/);
-  assert.doesNotMatch(query, /school_id|school_code/);
-  assert.doesNotMatch(query, /WHERE\s+s\.|WHERE\s+school/i);
+  assert.match(query, /WHERE g\.school_id = \$1/);
+  assert.match(query, /WHERE school_id = \$1/);
+  assert.match(query, /WHERE ex\.school_id = \$1/);
+  assert.match(query, /FROM students WHERE school_id = \$1/);
 });
 
 test("C06A-14 routes confidentialité / suppression cohérentes", () => {
