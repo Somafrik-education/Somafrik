@@ -78,19 +78,34 @@ function toCrudGrant(moduleKey: string, source?: Partial<RbacCrudFlags> | null):
   };
 }
 
-function inheritanceCaption(module: { source?: string; moduleName?: string } | undefined, roleName?: string) {
-  const name = roleName || "ce rôle";
-  if (!module) return "";
-  if (module.source === "school") {
-    return `Override établissement pour ${name}. Réinitialiser restaure l'héritage pays/global (premier match, sans fusion des flags).`;
-  }
-  if (module.source === "country") {
-    return `Hérité de la politique pays pour ${name}. Enregistrer n'écrit un override établissement que si vous modifiez une case.`;
-  }
-  if (module.source === "global") {
-    return `Hérité du catalogue global pour ${name}. Enregistrer n'écrit un override établissement que si vous modifiez une case.`;
-  }
-  return `Aucun droit configuré pour ${name} : refus par défaut. Cocher puis Enregistrer crée un override établissement.`;
+const DISCARD_DIRTY_CONFIRM =
+  "Des modifications ne sont pas encore enregistrées. Abandonner ces changements ?";
+
+function sourceLabel(source?: string) {
+  if (source === "school") return "Établissement";
+  if (source === "country") return "Pays";
+  if (source === "global") return "Global";
+  return "Refus par défaut";
+}
+
+function sortModules<T extends { moduleKey: string; moduleName?: string; displayOrder?: number }>(
+  modules: T[],
+  catalogModules: Array<{ moduleKey: string; displayOrder?: number }> = [],
+) {
+  const catalogOrder = new Map(
+    catalogModules.map((module, index) => [module.moduleKey, module.displayOrder ?? (index + 1) * 10]),
+  );
+  return [...modules].sort((left, right) => {
+    const leftOrder = left.displayOrder ?? catalogOrder.get(left.moduleKey) ?? 9999;
+    const rightOrder = right.displayOrder ?? catalogOrder.get(right.moduleKey) ?? 9999;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return String(left.moduleName ?? left.moduleKey).localeCompare(String(right.moduleName ?? right.moduleKey), "fr");
+  });
+}
+
+function confirmDiscardDirty(dirtyCount: number) {
+  if (dirtyCount <= 0) return true;
+  return window.confirm(DISCARD_DIRTY_CONFIRM);
 }
 
 function formatDate(value?: string | null) {
@@ -116,9 +131,8 @@ export function PermissionsPage() {
   const [countryCode, setCountryCode] = useState("");
   const [schoolCode, setSchoolCode] = useState("");
   const [selectedRoleKey, setSelectedRoleKey] = useState("");
-  const [selectedModuleKey, setSelectedModuleKey] = useState("");
   const [matrix, setMatrix] = useState<RbacConfiguredMatrix | null>(null);
-  const [draft, setDraft] = useState(emptyCrud());
+  const [draftByModule, setDraftByModule] = useState<Record<string, RbacCrudFlags>>({});
   const [busy, setBusy] = useState(false);
   const [roleForm, setRoleForm] = useState({ roleName: "", roleCode: "" });
   const [editingRoleId, setEditingRoleId] = useState("");
@@ -162,23 +176,15 @@ export function PermissionsPage() {
     [activeRoles, schoolCode],
   );
 
-  const modules = matrix?.modules?.length ? matrix.modules : catalog?.modules ?? [];
-  const moduleOptions = useMemo(
-    () => [
-      {
-        value: "",
-        label: selectedRoleKey ? "Choisir un module fonctionnel…" : "Sélectionnez d'abord un rôle",
-      },
-      ...modules.map((module) => ({ value: module.moduleKey, label: module.moduleName })),
-    ],
-    [modules, selectedRoleKey],
+  const matrixModules = useMemo(
+    () => sortModules(matrix?.modules ?? [], catalog?.modules ?? []),
+    [matrix?.modules, catalog?.modules],
   );
 
   const selectedCountry = countries.find((country) => country.code === countryCode);
   const selectedSchool = schoolsInCountry.find((school) => school.code === schoolCode);
   const selectedRole = roles.find((role) => role.roleCode === selectedRoleKey);
-  const selectedModule = modules.find((module) => module.moduleKey === selectedModuleKey);
-  const pathComplete = Boolean(countryCode && schoolCode && selectedRoleKey && selectedModuleKey);
+  const pathComplete = Boolean(countryCode && schoolCode && selectedRoleKey);
 
   useEffect(() => {
     if (!canManage) return;
@@ -199,23 +205,6 @@ export function PermissionsPage() {
   }, [canManage]);
 
   useEffect(() => {
-    setSchoolCode("");
-    setSelectedRoleKey("");
-    setSelectedModuleKey("");
-    setMatrix(null);
-  }, [countryCode]);
-
-  useEffect(() => {
-    setSelectedRoleKey("");
-    setSelectedModuleKey("");
-    setMatrix(null);
-  }, [schoolCode]);
-
-  useEffect(() => {
-    setSelectedModuleKey("");
-  }, [selectedRoleKey]);
-
-  useEffect(() => {
     if (!canManage || !selectedRoleKey || !countryCode || !schoolCode) return;
     let cancelled = false;
     setBusy(true);
@@ -224,6 +213,12 @@ export function PermissionsPage() {
       .then((payload) => {
         if (cancelled) return;
         setMatrix(payload);
+        const nextDraft: Record<string, RbacCrudFlags> = {};
+        for (const module of payload.modules ?? []) {
+          const mandatory = mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, module.moduleKey);
+          nextDraft[module.moduleKey] = applyMandatoryOverlay(toCrudFlags(module), mandatory);
+        }
+        setDraftByModule(nextDraft);
       })
       .catch(() => {
         if (!cancelled) showToast("Impossible de charger la matrice des droits.", "error");
@@ -235,39 +230,73 @@ export function PermissionsPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canManage, selectedRoleKey, countryCode, schoolCode]);
+  }, [canManage, selectedRoleKey, countryCode, schoolCode, catalog?.mandatoryByRole]);
 
-  useEffect(() => {
-    if (!selectedModule) {
-      setDraft(emptyCrud());
-      return;
+  const loadedByModule = useMemo(() => {
+    const next: Record<string, RbacCrudFlags> = {};
+    for (const module of matrixModules) {
+      const mandatory = mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, module.moduleKey);
+      next[module.moduleKey] = applyMandatoryOverlay(toCrudFlags(module), mandatory);
     }
-    const mandatory = mandatoryFlagsForModule(
-      catalog?.mandatoryByRole,
-      selectedRoleKey,
-      selectedModule.moduleKey,
-    );
-    setDraft(applyMandatoryOverlay(toCrudFlags(selectedModule), mandatory));
-  }, [selectedModule, catalog?.mandatoryByRole, selectedRoleKey]);
+    return next;
+  }, [matrixModules, catalog?.mandatoryByRole, selectedRoleKey]);
 
-  const selectedMandatory = useMemo(
-    () => mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, selectedModuleKey),
-    [catalog?.mandatoryByRole, selectedRoleKey, selectedModuleKey],
+  const dirtyModuleKeys = useMemo(
+    () =>
+      matrixModules
+        .map((module) => module.moduleKey)
+        .filter((moduleKey) => {
+          const draft = draftByModule[moduleKey];
+          const loaded = loadedByModule[moduleKey];
+          if (!draft || !loaded) return false;
+          return !crudFlagsEqual(draft, loaded);
+        }),
+    [matrixModules, draftByModule, loadedByModule],
   );
-  const loadedFlags = useMemo(
-    () => applyMandatoryOverlay(toCrudFlags(selectedModule), selectedMandatory),
-    [selectedModule, selectedMandatory],
-  );
-  const dirty = Boolean(selectedModule) && !crudFlagsEqual(draft, loadedFlags);
-  const hasSchoolOverride = selectedModule?.source === "school" || selectedModule?.configured === true;
+  const dirtyCount = dirtyModuleKeys.length;
+  const dirty = dirtyCount > 0;
 
-  function toggle(field: keyof RbacCrudFlags) {
+  function applyScope(nextCountry: string, nextSchool: string, nextRole: string) {
+    setCountryCode(nextCountry);
+    setSchoolCode(nextSchool);
+    setSelectedRoleKey(nextRole);
+    setMatrix(null);
+    setDraftByModule({});
+  }
+
+  function onCountryChange(nextCountry: string) {
+    if (nextCountry === countryCode) return;
+    if (!confirmDiscardDirty(dirtyCount)) return;
+    applyScope(nextCountry, "", "");
+  }
+
+  function onSchoolChange(nextSchool: string) {
+    if (nextSchool === schoolCode) return;
+    if (!confirmDiscardDirty(dirtyCount)) return;
+    applyScope(countryCode, nextSchool, "");
+  }
+
+  function onRoleChange(nextRole: string) {
+    if (nextRole === selectedRoleKey) return;
+    if (!confirmDiscardDirty(dirtyCount)) return;
+    applyScope(countryCode, schoolCode, nextRole);
+  }
+
+  function toggle(moduleKey: string, field: keyof RbacCrudFlags) {
     if (!canManage) return;
-    setDraft((current) => toggleCrudFlag(current, field, selectedMandatory));
+    const mandatory = mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, moduleKey);
+    setDraftByModule((current) => {
+      const base = current[moduleKey] ?? loadedByModule[moduleKey] ?? emptyCrud();
+      return { ...current, [moduleKey]: toggleCrudFlag(base, field, mandatory) };
+    });
   }
 
   async function save() {
-    if (!canManage || !selectedRoleKey || !selectedModuleKey || !dirty) return;
+    if (!canManage || !selectedRoleKey || !pathComplete || !dirty) return;
+    const grants = dirtyModuleKeys.map((moduleKey) => {
+      const mandatory = mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, moduleKey);
+      return toCrudGrant(moduleKey, applyMandatoryOverlay(draftByModule[moduleKey] ?? emptyCrud(), mandatory));
+    });
     setBusy(true);
     try {
       const saved = await rbacApi.patchPermissions({
@@ -275,10 +304,17 @@ export function PermissionsPage() {
         countryCode,
         schoolCode,
         expectedUpdatedAt: matrix?.updatedAt ?? null,
-        grants: [toCrudGrant(selectedModuleKey, applyMandatoryOverlay(draft, selectedMandatory))],
+        grants,
       });
       const next = await rbacApi.getConfigured({ roleKey: selectedRoleKey, countryCode, schoolCode });
-      setMatrix({ ...next, updatedAt: saved.updatedAt ?? next.updatedAt });
+      const nextMatrix = { ...next, updatedAt: saved.updatedAt ?? next.updatedAt };
+      setMatrix(nextMatrix);
+      const nextDraft: Record<string, RbacCrudFlags> = {};
+      for (const module of nextMatrix.modules ?? []) {
+        const mandatory = mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, module.moduleKey);
+        nextDraft[module.moduleKey] = applyMandatoryOverlay(toCrudFlags(module), mandatory);
+      }
+      setDraftByModule(nextDraft);
       showToast("Droits enregistrés", "success");
     } catch (error) {
       const status = error instanceof ApiError ? error.status : 0;
@@ -297,18 +333,35 @@ export function PermissionsPage() {
     }
   }
 
-  async function resetOverride() {
-    if (!canManage || !selectedRoleKey || !selectedModuleKey || !hasSchoolOverride) return;
+  async function resetOverride(moduleKey: string) {
+    if (!canManage || !selectedRoleKey || !pathComplete) return;
+    const preservedDirtyDrafts = dirtyModuleKeys.reduce<Record<string, RbacCrudFlags>>((acc, dirtyModuleKey) => {
+      if (dirtyModuleKey !== moduleKey && draftByModule[dirtyModuleKey]) {
+        acc[dirtyModuleKey] = draftByModule[dirtyModuleKey];
+      }
+      return acc;
+    }, {});
     setBusy(true);
     try {
       const next = await rbacApi.resetOverride({
         roleKey: selectedRoleKey,
         countryCode,
         schoolCode,
-        moduleKey: selectedModuleKey,
+        moduleKey,
         expectedUpdatedAt: matrix?.updatedAt ?? null,
       });
       setMatrix(next);
+      const nextDraft: Record<string, RbacCrudFlags> = {};
+      for (const module of next.modules ?? []) {
+        const mandatory = mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, module.moduleKey);
+        nextDraft[module.moduleKey] = applyMandatoryOverlay(toCrudFlags(module), mandatory);
+      }
+      for (const [dirtyModuleKey, preservedDraft] of Object.entries(preservedDirtyDrafts)) {
+        if (!nextDraft[dirtyModuleKey]) continue;
+        const mandatory = mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, dirtyModuleKey);
+        nextDraft[dirtyModuleKey] = applyMandatoryOverlay(toCrudFlags(preservedDraft), mandatory);
+      }
+      setDraftByModule(nextDraft);
       showToast("Override établissement retiré. L'héritage pays/global s'applique à nouveau.", "success");
     } catch (error) {
       const status = error instanceof ApiError ? error.status : 0;
@@ -449,28 +502,16 @@ export function PermissionsPage() {
         title="Rôles et droits"
         description={
           canManage
-            ? "Point canonique Super administrateur : pays → établissement → rôle → module → droits. PostgreSQL est la source d’autorité."
+            ? "Point canonique Super administrateur : pays → établissement → rôle → tous les modules. PostgreSQL est la source d’autorité."
             : "Consultation réservée. Seul le Super administrateur peut modifier les droits."
         }
         actions={
           <>
             <PrintButton documentTitle="Rôles et droits — Somafrik" />
             {canManage && tab === "permissions" ? (
-              <>
-                {hasSchoolOverride ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void resetOverride()}
-                    disabled={busy || !pathComplete}
-                  >
-                    Réinitialiser à l'héritage
-                  </Button>
-                ) : null}
-                <Button size="sm" onClick={() => void save()} disabled={busy || !pathComplete || !dirty}>
-                  Enregistrer
-                </Button>
-              </>
+              <Button size="sm" onClick={() => void save()} disabled={busy || !pathComplete || !dirty}>
+                Enregistrer les droits
+              </Button>
             ) : null}
           </>
         }
@@ -715,12 +756,12 @@ export function PermissionsPage() {
             <p>Résolution restrictive : établissement → pays → global → refus par défaut. Multi-rôle = union des rôles actifs.</p>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
             <Field label="Pays" hint="Pays canoniques">
               <Select
                 id="rbac-country"
                 value={countryCode}
-                onChange={(event) => setCountryCode(event.target.value)}
+                onChange={(event) => onCountryChange(event.target.value)}
                 options={countryOptions}
               />
             </Field>
@@ -728,7 +769,7 @@ export function PermissionsPage() {
               <Select
                 id="rbac-school"
                 value={schoolCode}
-                onChange={(event) => setSchoolCode(event.target.value)}
+                onChange={(event) => onSchoolChange(event.target.value)}
                 options={schoolOptions}
                 disabled={!countryCode}
               />
@@ -737,18 +778,9 @@ export function PermissionsPage() {
               <Select
                 id="rbac-role"
                 value={selectedRoleKey}
-                onChange={(event) => setSelectedRoleKey(event.target.value)}
+                onChange={(event) => onRoleChange(event.target.value)}
                 options={roleOptions}
                 disabled={!schoolCode}
-              />
-            </Field>
-            <Field label="Module fonctionnel" hint="Catalogue réel Web + mobile">
-              <Select
-                id="rbac-module"
-                value={selectedModuleKey}
-                onChange={(event) => setSelectedModuleKey(event.target.value)}
-                options={moduleOptions}
-                disabled={!selectedRoleKey}
               />
             </Field>
           </div>
@@ -772,22 +804,28 @@ export function PermissionsPage() {
 
           {!pathComplete ? (
             <p className="mt-6 rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-              Sélectionnez un pays, un établissement, un rôle, puis un module pour afficher les droits.
+              Sélectionnez un pays, un établissement et un rôle pour afficher tous les modules.
             </p>
           ) : (
             <>
-              <p className="mt-4 rounded-lg bg-brand-50 px-4 py-3 text-sm font-medium text-brand">
-                Module « {selectedModule?.moduleName} » — Création / Lecture / Modification / Suppression pour{" "}
-                {selectedRole?.roleName}.
-              </p>
-              <p className="mt-2 text-sm text-muted">{inheritanceCaption(selectedModule, selectedRole?.roleName)}</p>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-brand-50 px-4 py-3 text-sm font-medium text-brand">
+                <p>
+                  Matrice complète — {matrixModules.length} module{matrixModules.length > 1 ? "s" : ""} pour{" "}
+                  {selectedRole?.effectiveLabel || selectedRole?.roleName}.
+                </p>
+                <p data-testid="rbac-dirty-count" className={dirty ? "text-ink" : "text-muted"}>
+                  {dirty
+                    ? `${dirtyCount} module${dirtyCount > 1 ? "s" : ""} modifié${dirtyCount > 1 ? "s" : ""}`
+                    : "Aucun changement"}
+                </p>
+              </div>
               <p className="mt-2 text-xs text-muted">
                 Case verrouillée (cadenas) : invariant de rôle ou prérequis de lecture tant qu’une action de
                 création, modification ou suppression est active. Impossible à décocher ici ; le serveur refuse
                 aussi toute modification contraire.
               </p>
               <div className="mt-4 overflow-x-auto">
-                <table className="w-full border-collapse text-sm">
+                <table data-testid="rbac-permissions-matrix" className="min-w-[720px] w-full border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-line text-xs uppercase tracking-wide text-muted">
                       <th className="px-3 py-3 text-left font-semibold">Module</th>
@@ -796,42 +834,79 @@ export function PermissionsPage() {
                           {action.label}
                         </th>
                       ))}
+                      <th className="px-3 py-3 text-left font-semibold">Source</th>
+                      <th className="px-3 py-3 text-left font-semibold">Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="border-b border-line/70">
-                      <td className="px-3 py-2.5 font-medium text-ink">{selectedModule?.moduleName}</td>
-                      {CRUD_ACTIONS.map((action) => {
-                        const lock = describeActionLock({
-                          action: action.action,
-                          flags: draft,
-                          mandatory: selectedMandatory,
-                        });
-                        const tooltip = lock.locked ? lockTooltip(lock.reason) : undefined;
-                        return (
-                          <td key={action.key} className="px-3 py-2.5 text-center">
-                            <label
-                              className="inline-flex items-center justify-center gap-1"
-                              title={tooltip}
-                            >
-                              <input
-                                type="checkbox"
-                                className="h-4 w-4 accent-brand disabled:cursor-not-allowed disabled:opacity-80"
-                                checked={Boolean(draft[action.key])}
-                                disabled={!canManage || busy || lock.locked}
-                                onChange={() => toggle(action.key)}
-                                aria-label={`${selectedModule?.moduleName} ${action.label}`}
-                                aria-disabled={lock.locked || undefined}
-                              />
-                              {lock.locked ? <LockIcon label={tooltip || ""} /> : null}
-                            </label>
+                    {matrixModules.map((module) => {
+                      const flags = draftByModule[module.moduleKey] ?? loadedByModule[module.moduleKey] ?? emptyCrud();
+                      const mandatory = mandatoryFlagsForModule(
+                        catalog?.mandatoryByRole,
+                        selectedRoleKey,
+                        module.moduleKey,
+                      );
+                      const hasSchoolOverride = module.source === "school" || module.configured === true;
+                      return (
+                        <tr
+                          key={module.moduleKey}
+                          data-module-key={module.moduleKey}
+                          className="border-b border-line/70"
+                        >
+                          <td className="px-3 py-2.5 font-medium text-ink">{module.moduleName}</td>
+                          {CRUD_ACTIONS.map((action) => {
+                            const lock = describeActionLock({
+                              action: action.action,
+                              flags,
+                              mandatory,
+                            });
+                            const tooltip = lock.locked ? lockTooltip(lock.reason) : undefined;
+                            return (
+                              <td key={action.key} className="px-3 py-2.5 text-center">
+                                <label className="inline-flex items-center justify-center gap-1" title={tooltip}>
+                                  <input
+                                    type="checkbox"
+                                    className="h-4 w-4 accent-brand disabled:cursor-not-allowed disabled:opacity-80"
+                                    checked={Boolean(flags[action.key])}
+                                    disabled={!canManage || busy || lock.locked}
+                                    onChange={() => toggle(module.moduleKey, action.key)}
+                                    aria-label={`${module.moduleName} ${action.label}`}
+                                    aria-disabled={lock.locked || undefined}
+                                  />
+                                  {lock.locked ? <LockIcon label={tooltip || ""} /> : null}
+                                </label>
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-2.5 text-muted">{sourceLabel(module.source)}</td>
+                          <td className="px-3 py-2.5">
+                            {hasSchoolOverride ? (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => void resetOverride(module.moduleKey)}
+                                disabled={busy}
+                                aria-label={`Réinitialiser ${module.moduleName}`}
+                              >
+                                Réinitialiser
+                              </Button>
+                            ) : (
+                              "—"
+                            )}
                           </td>
-                        );
-                      })}
-                    </tr>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+              {canManage ? (
+                <div className="mt-4 flex justify-end">
+                  <Button size="sm" onClick={() => void save()} disabled={busy || !dirty}>
+                    Enregistrer les droits
+                  </Button>
+                </div>
+              ) : null}
             </>
           )}
         </>

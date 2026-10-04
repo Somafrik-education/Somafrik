@@ -153,11 +153,7 @@ describe("PermissionsPage ADMIN-06C module Audit", () => {
       target: { value: "SCHOOL_ADMIN" },
     });
     await waitFor(() => expect(getConfiguredMock).toHaveBeenCalled());
-    const moduleSelect = document.getElementById("rbac-module") as HTMLSelectElement;
-    expect([...moduleSelect.options].some((option) => option.value === "audit" && option.textContent === "Audit")).toBe(
-      true,
-    );
-    fireEvent.change(moduleSelect, { target: { value: "audit" } });
+    expect(document.getElementById("rbac-module")).toBeNull();
     expect(await screen.findByLabelText("Audit Lecture")).toBeInTheDocument();
     expect(screen.getByLabelText("Audit Création")).toBeInTheDocument();
     expect(screen.getByLabelText("Audit Modification")).toBeInTheDocument();
