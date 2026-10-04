@@ -2,6 +2,14 @@
   "lot": "AUDIT-ROLE-LABELS-01",
   "status": "DRAFT_HOLD",
   "verdict": "OPTION_B",
+  "ctoReview": "PASS",
+  "implementationOrder": ["ROLE-LABELS-API-01", "ROLE-LABELS-WEB-01", "ROLE-LABELS-MOBILE-01"],
+  "frozenDefaults": {
+    "SCHOOL_ADMIN": "Admin School",
+    "STUDENT": "Élève / Étudiant",
+    "TEACHER": "Enseignant"
+  },
+  "collisionRule": "visible labels must never be converted back to roleKey; toRoleKey(Directeur)=PRINCIPAL",
   "base": "be63efa6948c5baaa468408157be7f56d6398c30",
   "admin02b": "COMPLET_BACKEND_PARTIEL_UI",
   "p0": [],

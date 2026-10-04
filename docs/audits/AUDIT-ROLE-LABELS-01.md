@@ -2,6 +2,8 @@
 
 **Statut : DRAFT / HOLD — PAS READY — PAS MERGE**
 
+**Contrôle CTO GitHub : PASS** (HEAD `72e97d30`, base `develop@be63efa6`). CI **38/38** y compris PR Gates et Communications C4.
+
 **Type : AUDIT ONLY** — aucun changement produit, aucune mutation `display_label` persistée hors stores mémoire de test.
 
 Base obligatoire : `develop@be63efa6948c5baaa468408157be7f56d6398c30` (merge #869)
@@ -20,6 +22,20 @@ ADMIN-02B n’est **pas INCOHÉRENT** sur l’autorité : `display_label` n’en
 ADMIN-02B n’est **pas COMPLET** sur les interfaces réellement visibles.
 
 Aucun **P0**. Bootstrap **n’écrase pas** `display_label` (pas un blocker). Country / School Admin **ne peuvent pas** écrire le libellé (403).
+
+### Contrat produit figé par le CTO
+
+Fallbacks tant que Superadmin n’a pas personnalisé :
+
+| roleKey | defaultLabel (immuable comme fallback) |
+|---|---|
+| SCHOOL_ADMIN | **Admin School** |
+| STUDENT | **Élève / Étudiant** |
+| TEACHER | **Enseignant** |
+
+`SCHOOL_ADMIN → Directeur`, `STUDENT → Étudiant`, `TEACHER → Professeur` changent **uniquement** `effectiveLabel`. Jamais `roleKey`, JWT, permissions, guards.
+
+Collision visuelle **acceptée** : `SCHOOL_ADMIN.displayLabel = "Directeur"` alors que `toRoleKey("Directeur") = PRINCIPAL`. Acceptable **uniquement** parce que les libellés visibles ne sont **jamais** reconvertis en rôle technique.
 
 ---
 
@@ -312,13 +328,16 @@ Aucune conclusion « complet » : la matrice n’est pas verte.
 
 ## 16. Découpage PR éventuel (OPTION B)
 
-| PR | Objet | Sévérité |
-|---|---|---|
-| **ROLE-LABELS-WEB-01** | Topbar / GlobalSearch sans remap ; SecuritySettings ; UsersPage filtre/création/attribution via catalogue `effectiveLabel` | P1 |
-| **ROLE-LABELS-MOBILE-01** | Conserver `effectiveRoleLabel` dans `normalizeUser` + session ; drawer / Users sans carte hard-codée comme autorité | P1 |
-| **ROLE-LABELS-API-01** | `/identify` + messages + compliance décorés ; DTO multi-rôle `effectiveLabels[]` | P1 / P2 |
+Périmètre inchangé. **Ordre d’exécution figé par le CTO** : l’API fournit le contrat avant que les clients cessent leurs remaps locaux.
 
-Pas de migration. Pas de changement `roleKey`. Pas de JWT.
+| Ordre | PR | Objet | Sévérité |
+|---|---|---|---|
+| **1** | **ROLE-LABELS-API-01** | `/identify` + DTO users/messages + multi-rôle `effectiveLabels[]` ; contrat `roleKey / defaultLabel / displayLabel / effectiveRoleLabel` | P1 / P2 |
+| **2** | **ROLE-LABELS-WEB-01** | Topbar / GlobalSearch sans remap ; SecuritySettings ; UsersPage filtre/création/attribution via catalogue `effectiveLabel` | P1 |
+| **3** | **ROLE-LABELS-MOBILE-01** | Conserver `effectiveRoleLabel` dans `normalizeUser` + session ; drawer / Users sans carte hard-codée comme autorité | P1 |
+
+Pas de migration. Pas de changement `roleKey`. Pas de JWT.  
+Ne pas démarrer API-01 tant que #871 n’est pas clos.
 
 ---
 
@@ -377,9 +396,9 @@ Voir fichiers d’audit. Ils **documentent l’état actuel** (y compris les éc
 ## Verdict
 
 ```
-OPTION B
+OPTION B — confirmée CTO
 ADMIN-02B existe mais la propagation Web/Mobile est incomplète.
-PR correctrices minimales : ROLE-LABELS-WEB-01, ROLE-LABELS-MOBILE-01, ROLE-LABELS-API-01.
+Séquence après clôture #871 : ROLE-LABELS-API-01 → ROLE-LABELS-WEB-01 → ROLE-LABELS-MOBILE-01.
 ```
 
 STOP. DRAFT / HOLD. PAS READY. PAS MERGE.
