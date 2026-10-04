@@ -239,10 +239,15 @@ test("R06B0-15 cache key contient l'identité tenant canonique", () => {
 
 test("R06B0-18 guard plateforme inchangé sur advanced reports", () => {
   assert.equal(SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM.includes("GET /api/v2/reports/advanced"), true);
+  assert.equal(SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM.includes("GET /api/audit"), true);
   const guard = readUtf8("./platformPersonalDataGuard.js");
   assert.match(guard, /GET \/api\/v2\/reports\/advanced/);
-  const audit = readUtf8("../server.js");
-  assert.match(audit, /Seuls les administrateurs habilités peuvent consulter l'audit/);
+  const audit = readUtf8("../server.js").slice(
+    readUtf8("../server.js").indexOf('app.get("/api/audit"'),
+    readUtf8("../server.js").indexOf('app.get("/api/v2/subjects"'),
+  );
+  assert.match(audit, /listSchoolAuditSummaries\(repository, req\.principal/);
+  assert.doesNotMatch(audit, /getAdvancedReportsForPrincipal/);
 });
 
 test("R06B0 fallback seed Unikin ne fuit pas vers Burundi", async () => {

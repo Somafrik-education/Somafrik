@@ -8,11 +8,13 @@ const {
   listSchoolErasureRequestsMock,
   executeSchoolErasureRequestMock,
   exportSchoolDataMock,
+  listSchoolAuditSummariesMock,
 } = vi.hoisted(() => ({
   useAuthMock: vi.fn(),
   listSchoolErasureRequestsMock: vi.fn(),
   executeSchoolErasureRequestMock: vi.fn(),
   exportSchoolDataMock: vi.fn(),
+  listSchoolAuditSummariesMock: vi.fn(),
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -23,6 +25,10 @@ vi.mock("../lib/schoolComplianceApi", () => ({
   listSchoolErasureRequests: listSchoolErasureRequestsMock,
   executeSchoolErasureRequest: executeSchoolErasureRequestMock,
   exportSchoolData: exportSchoolDataMock,
+}));
+
+vi.mock("../lib/schoolAuditApi", () => ({
+  listSchoolAuditSummaries: listSchoolAuditSummariesMock,
 }));
 
 import { SchoolComplianceDashboard } from "./SchoolComplianceDashboard";
@@ -73,7 +79,9 @@ describe("SchoolComplianceDashboard ADMIN-06B2", () => {
     listSchoolErasureRequestsMock.mockReset();
     executeSchoolErasureRequestMock.mockReset();
     exportSchoolDataMock.mockReset();
+    listSchoolAuditSummariesMock.mockReset();
     listSchoolErasureRequestsMock.mockResolvedValue([]);
+    listSchoolAuditSummariesMock.mockResolvedValue([]);
     executeSchoolErasureRequestMock.mockResolvedValue(SUCCESS_EXEC);
     exportSchoolDataMock.mockResolvedValue({
       format: "somafrik-export",

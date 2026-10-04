@@ -12,8 +12,13 @@ import {
 } from "../components/ui/shadcn/card";
 import { ErrorState, LoadingState } from "@/design-system";
 import { formatDateTimeForDisplay } from "../lib/dates";
-import { canReadView, hasBackOfficePermission } from "../lib/permissions";
+import { isSchoolAdminRole } from "../lib/format";
+import { canReadView, getCurrentRolePermissions, hasBackOfficePermission } from "../lib/permissions";
 import { usePermissionContext } from "../lib/usePermissionContext";
+import {
+  listSchoolAuditSummaries,
+  type SchoolAuditSummary,
+} from "../lib/schoolAuditApi";
 import {
   executeSchoolErasureRequest,
   exportSchoolData,
@@ -27,6 +32,12 @@ type PrivacyLoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "success"; rows: SchoolErasureRequest[] };
+
+type AuditLoadState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "success"; rows: SchoolAuditSummary[] };
 
 function statusLabel(status: string): string {
   if (status === "pending") return "En attente";
@@ -61,6 +72,8 @@ export function SchoolComplianceDashboard() {
   const canListPrivacy = hasBackOfficePermission(ctx, "Utilisateurs", "READ");
   const canExecutePrivacy = hasBackOfficePermission(ctx, "Utilisateurs", "UPDATE");
   const canExportSchoolData = canReadView(ctx, "dataExport");
+  const canReadAudit =
+    isSchoolAdminRole(ctx.user?.role) && getCurrentRolePermissions(ctx).includes("Audit:READ");
 
   const [privacyState, setPrivacyState] = useState<PrivacyLoadState>(
     canListPrivacy ? { status: "loading" } : { status: "idle" },
@@ -74,6 +87,12 @@ export function SchoolComplianceDashboard() {
   const [exportSuccess, setExportSuccess] = useState("");
   const executingRef = useRef(false);
   const exportingRef = useRef(false);
+  const [auditState, setAuditState] = useState<AuditLoadState>(
+    canReadAudit ? { status: "loading" } : { status: "idle" },
+  );
+  const [auditAction, setAuditAction] = useState("");
+  const auditActionRef = useRef("");
+  auditActionRef.current = auditAction;
 
   const loadPrivacy = useCallback(async () => {
     if (!canListPrivacy) {
@@ -100,6 +119,33 @@ export function SchoolComplianceDashboard() {
   useEffect(() => {
     void loadPrivacy();
   }, [loadPrivacy]);
+
+  const loadAudit = useCallback(async () => {
+    if (!canReadAudit) {
+      setAuditState({ status: "idle" });
+      return;
+    }
+    setAuditState({ status: "loading" });
+    try {
+      const rows = await listSchoolAuditSummaries({
+        action: auditActionRef.current.trim() || undefined,
+        limit: 50,
+      });
+      setAuditState({ status: "success", rows: Array.isArray(rows) ? rows : [] });
+    } catch (error: unknown) {
+      setAuditState({
+        status: "error",
+        message:
+          error instanceof Error && error.message
+            ? error.message
+            : "Impossible de charger le journal d’audit.",
+      });
+    }
+  }, [canReadAudit]);
+
+  useEffect(() => {
+    void loadAudit();
+  }, [loadAudit]);
 
   async function confirmExecute() {
     if (!pendingRequest || executingRef.current || !canExecutePrivacy) return;
@@ -195,6 +241,21 @@ export function SchoolComplianceDashboard() {
     [canExecutePrivacy, executing],
   );
 
+  const auditColumns: Column<SchoolAuditSummary>[] = useMemo(
+    () => [
+      {
+        key: "createdAt",
+        header: "Date",
+        render: (row) => formatDateTimeForDisplay(row.createdAt) || "—",
+      },
+      { key: "actor", header: "Acteur", render: (row) => row.actor || "Système" },
+      { key: "action", header: "Action", render: (row) => row.action || "—" },
+      { key: "entityType", header: "Type", render: (row) => row.entityType || "—" },
+      { key: "entityId", header: "Entité", render: (row) => row.entityId || "—" },
+    ],
+    [],
+  );
+
   return (
     <div className="space-y-6">
       <Card>
@@ -269,12 +330,48 @@ export function SchoolComplianceDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Journaux d’audit</CardTitle>
+          <CardTitle className="text-base">Journal d’audit</CardTitle>
+          <CardDescription>Activité de votre établissement uniquement, sans détail brut.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted">
-            Les journaux d’audit établissement ne sont pas encore exposés dans ce module.
-          </p>
+        <CardContent className="space-y-4">
+          {!canReadAudit ? (
+            <p className="text-sm text-muted">Vous n’avez pas le droit de consulter le journal d’audit.</p>
+          ) : (
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-sm text-ink">
+                Action
+                <input
+                  className="mt-1 block w-56 rounded-lg border border-line px-3 py-2 text-sm"
+                  value={auditAction}
+                  onChange={(event) => setAuditAction(event.target.value)}
+                  placeholder="privacy_erasure"
+                />
+              </label>
+              <Button variant="secondary" size="sm" onClick={() => void loadAudit()}>
+                Filtrer
+              </Button>
+            </div>
+          )}
+
+          {auditState.status === "loading" ? (
+            <LoadingState message="Chargement du journal d’audit…" />
+          ) : null}
+
+          {auditState.status === "error" ? (
+            <ErrorState title="Impossible de charger le journal d’audit" message={auditState.message} />
+          ) : null}
+
+          {auditState.status === "success" && auditState.rows.length === 0 ? (
+            <p className="text-sm text-muted">Aucune activité d’audit.</p>
+          ) : null}
+
+          {auditState.status === "success" && auditState.rows.length > 0 ? (
+            <Table
+              columns={auditColumns}
+              rows={auditState.rows}
+              rowKey={(row) => row.id || `${row.action}-${row.createdAt}`}
+            />
+          ) : null}
         </CardContent>
       </Card>
 

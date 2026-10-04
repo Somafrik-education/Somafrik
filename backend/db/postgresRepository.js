@@ -2640,6 +2640,58 @@ class PostgresRepository {
     );
   }
 
+  async listSchoolAuditSummaries({ schoolCode, action, entityType, from, to, limit = 50, offset = 0 } = {}) {
+    await this.init();
+    const jwtSchool = String(schoolCode ?? "").trim().toUpperCase();
+    if (!jwtSchool || jwtSchool === "*") return [];
+    const school = await this.getSchoolByCode(jwtSchool);
+    if (!school?.id) return [];
+
+    const filters = ["a.school_id = $1"];
+    const params = [school.id];
+    if (action) {
+      params.push(action);
+      filters.push(`a.action = $${params.length}`);
+    }
+    if (entityType) {
+      params.push(entityType);
+      filters.push(`a.entity_type = $${params.length}`);
+    }
+    if (from) {
+      params.push(from);
+      filters.push(`a.created_at >= $${params.length}`);
+    }
+    if (to) {
+      params.push(to);
+      filters.push(`a.created_at <= $${params.length}`);
+    }
+    params.push(Math.min(Math.max(Number(limit) || 50, 1), 100));
+    const limitIdx = params.length;
+    params.push(Math.max(0, Number(offset) || 0));
+    const offsetIdx = params.length;
+
+    const rows = await this.all(
+      `SELECT a.id, a.action, a.entity_type, a.entity_id, a.created_at,
+              u.first_name, u.last_name
+       FROM audit_logs a
+       INNER JOIN schools s ON s.id = a.school_id
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE ${filters.join(" AND ")}
+       ORDER BY a.created_at DESC
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      params,
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      action: row.action,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      actor: [row.first_name, row.last_name].filter(Boolean).join(" ") || "Système",
+      createdAt: row.created_at,
+    }));
+  }
+
   async getAuditLogs({ schoolCode, userId, action, actions, from, to, limit = 100, offset = 0 } = {}) {
     await this.init();
     const filters = [];
