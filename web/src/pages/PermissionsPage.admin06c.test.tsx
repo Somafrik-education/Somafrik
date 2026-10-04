@@ -51,27 +51,30 @@ const { catalog, getConfiguredMock } = vi.hoisted(() => {
       COUNTRY_ADMIN: {},
     },
   };
-  const getConfiguredMock = vi.fn(async (_query: RbacConfiguredQuery): Promise<RbacConfiguredMatrix> => ({
-    roleKey: "SCHOOL_ADMIN",
-    roleName: "Admin School",
-    scopeType: "school",
-    updatedAt: null,
-    modules: [
-      {
-        moduleKey: "audit",
-        moduleName: "Audit",
-        appliesWeb: true,
-        appliesMobile: false,
-        canCreate: false,
-        canRead: false,
-        canUpdate: false,
-        canDelete: false,
-        configured: false,
-        source: "none",
-        inherited: false,
-      },
-    ],
-  }));
+  const getConfiguredMock = vi.fn(async (query: RbacConfiguredQuery): Promise<RbacConfiguredMatrix> => {
+    void query;
+    return {
+      roleKey: "SCHOOL_ADMIN",
+      roleName: "Admin School",
+      scopeType: "school",
+      updatedAt: null,
+      modules: [
+        {
+          moduleKey: "audit",
+          moduleName: "Audit",
+          appliesWeb: true,
+          appliesMobile: false,
+          canCreate: false,
+          canRead: false,
+          canUpdate: false,
+          canDelete: false,
+          configured: false,
+          source: "none",
+          inherited: false,
+        },
+      ],
+    };
+  });
   return { catalog, getConfiguredMock };
 });
 
