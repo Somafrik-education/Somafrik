@@ -85,14 +85,30 @@ function createClientsMemoryStore(seed = {}) {
 
   const auditLog = [];
   let transactionDepth = 0;
+  let store;
 
   function isActiveUserStatus(status) {
     const normalized = String(status ?? "active").toLowerCase();
     return normalized !== "deleted" && normalized !== "archived";
   }
 
+  function resolveEstablishmentRolesStore() {
+    const repo = store?.rootRepository || seed.rootRepository;
+    if (repo && typeof repo.getEstablishmentRolesStore === "function") {
+      return repo.getEstablishmentRolesStore();
+    }
+    if (typeof seed.getEstablishmentRolesStore === "function") {
+      return seed.getEstablishmentRolesStore();
+    }
+    return null;
+  }
+
   function bind() {
     return {
+      getEstablishmentRolesStore: resolveEstablishmentRolesStore,
+      get rootRepository() {
+        return store?.rootRepository || seed.rootRepository || null;
+      },
       async one(sql, params = []) {
         const query = String(sql ?? "");
         if (!query.includes("FROM users u")) {
@@ -1228,8 +1244,9 @@ function createClientsMemoryStore(seed = {}) {
   }
 
   const txApi = bind();
-  const store = {
+  store = {
     bind,
+    getEstablishmentRolesStore: resolveEstablishmentRolesStore,
     getSchoolByCode: (code) => txApi.getSchoolByCode(code),
     getSchoolById: (id) => txApi.getSchoolById(id),
     getCountryByCode: (code) => txApi.getCountryByCode(code),

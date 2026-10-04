@@ -24,6 +24,9 @@ const { sanitizePrivacyRequest } = require("./privacyErasure");
 const { resolveSchoolComplianceScope } = require("./schoolCompliance");
 const { updateRoleDisplayLabel, resetRoleDisplayLabel } = require("./establishmentRolesService");
 const { createEstablishmentRolesMemoryStore } = require("../db/establishmentRolesMemoryStore");
+const { createClientsMemoryStore } = require("../db/clientsMemoryStore");
+const { createClientsPgStore } = require("../db/clientsPgStore");
+const messagesService = require("./communicationsMessagesService");
 const { attachMemoryLoginLockoutStore } = require("./loginLockout");
 
 function readUtf8(relativePath) {
@@ -286,6 +289,327 @@ test("API-RL-15 / API-RL-16 messages roleLabel décoré, roleKey inchangé", () 
   const index = catalogIndex([{ role_code: "TEACHER", display_label: "Professeur" }]);
   assert.equal(resolveVisibleRoleLabel("TEACHER", index, "Enseignant"), "Professeur");
   assert.equal(toRoleKey("Enseignant"), "TEACHER");
+});
+
+const SCHOOL_CODE = "CD-2026-0001";
+
+function seedSchoolUser(tables, { id, role, roleKey, firstName, lastName }) {
+  tables.users.push({
+    id,
+    school_id: "school-1",
+    user_code: id,
+    first_name: firstName,
+    last_name: lastName,
+    email: `${id}@school.test`,
+    role,
+    status: "active",
+  });
+  tables.userRoles.push({
+    user_id: id,
+    role_key: roleKey,
+    status: "active",
+    revoked_at: null,
+  });
+}
+
+async function messagesRuntime({ teacherLabel = "Professeur", adminLabel = null } = {}) {
+  const { repo, store: rolesStore } = rolesRepo();
+  if (teacherLabel != null) {
+    await updateRoleDisplayLabel(repo, "role-teacher", { displayLabel: teacherLabel }, SUPER, {});
+  }
+  if (adminLabel != null) {
+    await updateRoleDisplayLabel(repo, "role-school", { displayLabel: adminLabel }, SUPER, {});
+  }
+  const clients = createClientsMemoryStore({
+    school: {
+      id: "school-1",
+      code: SCHOOL_CODE,
+      schoolCode: SCHOOL_CODE,
+      name: "École Test",
+      country: "Congo",
+      countryCode: "CD",
+    },
+    rootRepository: repo,
+    getEstablishmentRolesStore: () => repo.getEstablishmentRolesStore(),
+  });
+  seedSchoolUser(clients._tables, {
+    id: "user-admin",
+    role: "Admin School",
+    roleKey: "SCHOOL_ADMIN",
+    firstName: "Ada",
+    lastName: "Admin",
+  });
+  seedSchoolUser(clients._tables, {
+    id: "user-teacher",
+    role: "Enseignant",
+    roleKey: "TEACHER",
+    firstName: "Tom",
+    lastName: "Teacher",
+  });
+  seedSchoolUser(clients._tables, {
+    id: "user-teacher-2",
+    role: "Enseignant",
+    roleKey: "TEACHER",
+    firstName: "Léa",
+    lastName: "Teacher",
+  });
+  const adminPrincipal = {
+    sub: "user-admin",
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    schoolCode: SCHOOL_CODE,
+  };
+  const teacherPrincipal = {
+    sub: "user-teacher",
+    role: "Enseignant",
+    roleKeys: ["TEACHER"],
+    schoolCode: SCHOOL_CODE,
+  };
+  const originalBind = clients.bind.bind(clients);
+  clients.bind = (...args) => {
+    const tx = originalBind(...args);
+    tx.listTeacherActiveClassIds = async () => ["class-1"];
+    return tx;
+  };
+  const originalWithTransaction = clients.withTransaction.bind(clients);
+  clients.withTransaction = async (fn) =>
+    originalWithTransaction(async (tx) => {
+      tx.listTeacherActiveClassIds = async () => ["class-1"];
+      return fn(tx);
+    });
+  return {
+    repo,
+    rolesStore,
+    clients,
+    adminPrincipal,
+    teacherPrincipal,
+    adminId: "user-admin",
+    teacherId: "user-teacher",
+    teacher2Id: "user-teacher-2",
+  };
+}
+
+function spyContractLoads(rolesStore) {
+  const original = rolesStore.listRoleDisplayContracts.bind(rolesStore);
+  const probe = { calls: 0 };
+  rolesStore.listRoleDisplayContracts = async (...args) => {
+    probe.calls += 1;
+    return original(...args);
+  };
+  return probe;
+}
+
+test("API-RL-15A clients store réel + catalogue : recipient TEACHER → Professeur", async () => {
+  const ctx = await messagesRuntime();
+  const recipients = await messagesService.listAuthorizedRecipients(ctx.clients, ctx.adminPrincipal, {});
+  const teacher = recipients.items.find((row) => row.userId === ctx.teacherId);
+  assert.ok(teacher, "destinataire TEACHER présent");
+  assert.equal(teacher.roleKey, "TEACHER");
+  assert.equal(teacher.roleLabel, "Professeur");
+});
+
+test("API-RL-15B participant TEACHER → Professeur", async () => {
+  const ctx = await messagesRuntime();
+  const sent = await messagesService.createConversation(
+    ctx.clients,
+    { message: "Bonjour classe", participantUserIds: [ctx.teacherId] },
+    ctx.adminPrincipal,
+    {},
+  );
+  const conversation = await messagesService.getConversation(
+    ctx.clients,
+    sent.conversationId,
+    ctx.adminPrincipal,
+    {},
+  );
+  const teacher = conversation.participants.find((row) => row.userId === ctx.teacherId);
+  assert.ok(teacher, "participant TEACHER présent");
+  assert.equal(teacher.roleKey, "TEACHER");
+  assert.equal(teacher.roleLabel, "Professeur");
+});
+
+test("API-RL-15C senderRoleLabel → Professeur", async () => {
+  const ctx = await messagesRuntime();
+  const sent = await messagesService.createConversation(
+    ctx.clients,
+    { message: "Devoirs", participantUserIds: [ctx.adminId] },
+    ctx.teacherPrincipal,
+    {},
+  );
+  assert.equal(sent.senderRoleLabel, "Professeur");
+  const detail = await messagesService.getMessage(ctx.clients, sent.id, ctx.teacherPrincipal, {});
+  assert.equal(detail.senderRoleLabel, "Professeur");
+  const history = await messagesService.listConversationMessages(
+    ctx.clients,
+    sent.conversationId,
+    ctx.teacherPrincipal,
+    {},
+  );
+  assert.equal(history.items[0].senderRoleLabel, "Professeur");
+  const inbox = await messagesService.listMessages(ctx.clients, ctx.teacherPrincipal, {});
+  assert.equal(inbox[0].senderRoleLabel, "Professeur");
+});
+
+test("API-RL-15D reset display_label → Enseignant", async () => {
+  const ctx = await messagesRuntime();
+  const before = await messagesService.listAuthorizedRecipients(ctx.clients, ctx.adminPrincipal, {});
+  assert.equal(before.items.find((row) => row.userId === ctx.teacherId).roleLabel, "Professeur");
+  await resetRoleDisplayLabel(ctx.repo, "role-teacher", SUPER, {});
+  const after = await messagesService.listAuthorizedRecipients(ctx.clients, ctx.adminPrincipal, {});
+  const teacher = after.items.find((row) => row.userId === ctx.teacherId);
+  assert.equal(teacher.roleLabel, "Enseignant");
+  assert.equal(teacher.roleKey, "TEACHER");
+  const sent = await messagesService.createConversation(
+    ctx.clients,
+    { message: "Reset", participantUserIds: [ctx.adminId] },
+    ctx.teacherPrincipal,
+    {},
+  );
+  assert.equal(sent.senderRoleLabel, "Enseignant");
+  const conversation = await messagesService.getConversation(
+    ctx.clients,
+    sent.conversationId,
+    ctx.teacherPrincipal,
+    {},
+  );
+  assert.equal(conversation.participants.find((row) => row.userId === ctx.teacherId).roleLabel, "Enseignant");
+});
+
+test("API-RL-15E roleKey reste TEACHER partout", async () => {
+  const ctx = await messagesRuntime();
+  const sent = await messagesService.createConversation(
+    ctx.clients,
+    { message: "Identité", participantUserIds: [ctx.teacherId] },
+    ctx.adminPrincipal,
+    {},
+  );
+  const recipients = await messagesService.listAuthorizedRecipients(ctx.clients, ctx.adminPrincipal, {});
+  const conversation = await messagesService.getConversation(
+    ctx.clients,
+    sent.conversationId,
+    ctx.adminPrincipal,
+    {},
+  );
+  assert.equal(recipients.items.find((row) => row.userId === ctx.teacherId).roleKey, "TEACHER");
+  assert.equal(conversation.participants.find((row) => row.userId === ctx.teacherId).roleKey, "TEACHER");
+  assert.notEqual(toRoleKey(recipients.items.find((row) => row.userId === ctx.teacherId).roleLabel), "PRINCIPAL");
+});
+
+test("API-RL-15F SCHOOL_ADMIN → Directeur sans devenir PRINCIPAL", async () => {
+  const ctx = await messagesRuntime({ adminLabel: "Directeur" });
+  const recipients = await messagesService.listAuthorizedRecipients(ctx.clients, ctx.teacherPrincipal, {});
+  const admin = recipients.items.find((row) => row.userId === ctx.adminId);
+  assert.ok(admin, "destinataire SCHOOL_ADMIN présent");
+  assert.equal(admin.roleKey, "SCHOOL_ADMIN");
+  assert.equal(admin.roleLabel, "Directeur");
+  assert.equal(toRoleKey(admin.roleLabel), "PRINCIPAL");
+  assert.notEqual(admin.roleKey, "PRINCIPAL");
+  const sent = await messagesService.createConversation(
+    ctx.clients,
+    { message: "Collision", participantUserIds: [ctx.adminId] },
+    ctx.teacherPrincipal,
+    {},
+  );
+  const conversation = await messagesService.getConversation(
+    ctx.clients,
+    sent.conversationId,
+    ctx.teacherPrincipal,
+    {},
+  );
+  const participant = conversation.participants.find((row) => row.userId === ctx.adminId);
+  assert.equal(participant.roleKey, "SCHOOL_ADMIN");
+  assert.equal(participant.roleLabel, "Directeur");
+});
+
+test("API-RL-15G aucun N+1 catalogue par participant/conversation", async () => {
+  const ctx = await messagesRuntime();
+  const probe = spyContractLoads(ctx.rolesStore);
+
+  probe.calls = 0;
+  const recipients = await messagesService.listAuthorizedRecipients(ctx.clients, ctx.adminPrincipal, {});
+  assert.ok(recipients.items.length >= 2);
+  assert.equal(probe.calls, 1, "GET recipients : un seul chargement catalogue");
+
+  probe.calls = 0;
+  await messagesService.createConversation(
+    ctx.clients,
+    { message: "Conv 1", participantUserIds: [ctx.teacherId] },
+    ctx.adminPrincipal,
+    {},
+  );
+  assert.equal(probe.calls, 1, "createConversation : un seul chargement catalogue");
+
+  probe.calls = 0;
+  await messagesService.createConversation(
+    ctx.clients,
+    { message: "Conv 2", participantUserIds: [ctx.teacher2Id] },
+    ctx.adminPrincipal,
+    {},
+  );
+  const listed = await messagesService.listConversations(ctx.clients, ctx.adminPrincipal, {});
+  assert.ok(listed.items.length >= 2);
+  assert.equal(probe.calls, 2, "create + listConversations : 1 chargement par opération API");
+  assert.equal(
+    listed.items.every((row) => row.participants.some((item) => item.roleLabel === "Professeur")),
+    true,
+  );
+
+  probe.calls = 0;
+  const history = await messagesService.listConversationMessages(
+    ctx.clients,
+    listed.items[0].id,
+    ctx.adminPrincipal,
+    {},
+  );
+  assert.ok(history.items.length >= 1);
+  assert.equal(probe.calls, 1, "conversation messages : un seul chargement catalogue");
+});
+
+test("API-RL-15 fallback/memory clients store charge le catalogue via rootRepository", async () => {
+  const { repo } = rolesRepo();
+  await updateRoleDisplayLabel(repo, "role-teacher", { displayLabel: "Professeur" }, SUPER, {});
+  const clients = createClientsMemoryStore({ rootRepository: repo });
+  const index = await loadRoleDisplayIndexFromRepo(clients);
+  assert.equal(resolveVisibleRoleLabel("TEACHER", index), "Professeur");
+  const txIndex = await loadRoleDisplayIndexFromRepo(clients.bind());
+  assert.equal(resolveVisibleRoleLabel("TEACHER", txIndex), "Professeur");
+});
+
+test("API-RL-15 PG clients store délègue au catalogue repository sans SQL N+1", async () => {
+  const { repo, store: rolesStore } = rolesRepo();
+  await updateRoleDisplayLabel(repo, "role-teacher", { displayLabel: "Professeur" }, SUPER, {});
+  const fakePgRepo = {
+    getEstablishmentRolesStore: () => rolesStore,
+    withTransaction: async (fn) => fn(fakePgRepo),
+    one: async () => null,
+    all: async () => {
+      throw new Error("SELECT establishment_roles interdit si le store rôles est disponible");
+    },
+    query: async () => ({ rows: [] }),
+  };
+  const clients = createClientsPgStore(fakePgRepo);
+  const index = await loadRoleDisplayIndexFromRepo(clients);
+  assert.equal(resolveVisibleRoleLabel("TEACHER", index), "Professeur");
+  const txIndex = await loadRoleDisplayIndexFromRepo(clients.bind({}));
+  assert.equal(resolveVisibleRoleLabel("TEACHER", txIndex), "Professeur");
+});
+
+test("API-RL-15 PG queryable .all charge establishment_roles une fois", async () => {
+  let catalogSelects = 0;
+  const pgQueryable = {
+    all: async (sql) => {
+      const text = String(sql);
+      if (text.includes("information_schema.columns")) return [{ available: true }];
+      if (text.includes("establishment_roles")) {
+        catalogSelects += 1;
+        return [{ role_code: "TEACHER", role_name: "Enseignant", display_label: "Professeur" }];
+      }
+      return [];
+    },
+  };
+  const index = await loadRoleDisplayIndexFromRepo(pgQueryable);
+  assert.equal(resolveVisibleRoleLabel("TEACHER", index), "Professeur");
+  assert.equal(catalogSelects, 1);
 });
 
 test("API-RL-17 / API-RL-18 compliance roleLabel décoré, guards inchangés", () => {

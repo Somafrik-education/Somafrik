@@ -130,18 +130,84 @@ function decorateIdentifyRole(managedRole, user, index) {
   };
 }
 
-/**
- * Index par requête, depuis establishment_roles. Pas de cache process.
- */
-async function loadRoleDisplayIndexFromRepo(repo) {
-  if (!repo) return new Map();
-  try {
-    const store = typeof repo.getEstablishmentRolesStore === "function" ? repo.getEstablishmentRolesStore() : null;
+function pushUniqueSource(sources, seen, value) {
+  if (!value || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  sources.push(value);
+}
+
+function collectRoleDisplaySources(repo) {
+  const seen = new Set();
+  const sources = [];
+  pushUniqueSource(sources, seen, repo);
+  if (!repo || typeof repo !== "object") return sources;
+  pushUniqueSource(sources, seen, repo.rootRepository);
+  pushUniqueSource(sources, seen, repo.repository);
+  pushUniqueSource(sources, seen, repo._repository);
+  pushUniqueSource(sources, seen, repo._repo);
+  pushUniqueSource(sources, seen, repo.repo);
+  if (typeof repo.getRepository === "function") {
+    try {
+      pushUniqueSource(sources, seen, repo.getRepository());
+    } catch {
+      /* ignore incapable repository accessor */
+    }
+  }
+  return sources;
+}
+
+async function loadRoleDisplayContractsFromQueryable(queryable) {
+  if (!queryable || typeof queryable.all !== "function") return null;
+  const all = (...args) => queryable.all(...args);
+  const probe = await all(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'establishment_roles'
+         AND column_name = 'display_label'
+     ) AS available`,
+  );
+  if (!probe?.[0]?.available) return [];
+  return all(`SELECT role_code, role_name, display_label FROM establishment_roles`);
+}
+
+async function loadRoleDisplayIndexFromAuthority(source) {
+  if (typeof source?.getEstablishmentRolesStore === "function") {
+    const store = source.getEstablishmentRolesStore();
     if (store && typeof store.listRoleDisplayContracts === "function") {
       return indexRoleDisplayContracts(await store.listRoleDisplayContracts());
     }
-  } catch {
-    return new Map();
+  }
+  if (typeof source?.listRoleDisplayContracts === "function") {
+    return indexRoleDisplayContracts(await source.listRoleDisplayContracts());
+  }
+  return null;
+}
+
+/**
+ * Index par requête, depuis establishment_roles. Pas de cache process.
+ * Accepte le repository racine, un clients store / tx, ou un queryable PG.
+ */
+async function loadRoleDisplayIndexFromRepo(repo) {
+  if (!repo) return new Map();
+  const sources = collectRoleDisplaySources(repo);
+  for (const source of sources) {
+    try {
+      const index = await loadRoleDisplayIndexFromAuthority(source);
+      if (index) return index;
+    } catch {
+      /* essayer la source suivante plutôt que de masquer un store incapable */
+    }
+  }
+  for (const source of sources) {
+    if (typeof source.all !== "function") continue;
+    try {
+      const rows = await loadRoleDisplayContractsFromQueryable(source);
+      if (rows) return indexRoleDisplayContracts(rows);
+    } catch {
+      /* queryable sans establishment_roles : source suivante */
+    }
   }
   return new Map();
 }

@@ -17,20 +17,8 @@ const { sqlUsersScope } = require("../lib/usersSchoolScope");
 const USER_SCHOOL_SELECT = `s.school_code, s.login_code AS school_login_code, s.name AS school_name`;
 
 async function loadRoleDisplayIndex(queryable) {
-  const { indexRoleDisplayContracts } = require("../lib/roleDisplayLabels");
-  const all = (...args) => queryable.all(...args);
-  const probe = await all(
-    `SELECT EXISTS (
-       SELECT 1
-       FROM information_schema.columns
-       WHERE table_schema = 'public'
-         AND table_name = 'establishment_roles'
-         AND column_name = 'display_label'
-     ) AS available`,
-  );
-  if (!probe?.[0]?.available) return new Map();
-  const rows = await all(`SELECT role_code, role_name, display_label FROM establishment_roles`);
-  return indexRoleDisplayContracts(rows);
+  const { loadRoleDisplayIndexFromRepo } = require("../lib/roleDisplayLabels");
+  return loadRoleDisplayIndexFromRepo(queryable);
 }
 
 function attachDisplayLabelToUserRow(row, index) {
@@ -57,6 +45,12 @@ function createClientsPgStore(repo) {
       one,
       all,
       query,
+      rootRepository: repo,
+      getEstablishmentRolesStore() {
+        return typeof repo.getEstablishmentRolesStore === "function"
+          ? repo.getEstablishmentRolesStore()
+          : null;
+      },
       async getSchoolByCode(code) {
         const normalized = asTrimmed(code).toUpperCase();
         if (!normalized) return null;
@@ -96,11 +90,11 @@ function createClientsPgStore(repo) {
            WHERE u.id::text = $1 OR u.user_code = $1`,
           [id],
         );
-        const index = await loadRoleDisplayIndex({ all });
+        const index = await loadRoleDisplayIndex(this);
         return attachDisplayLabelToUserRow(row, index);
       },
       async listSchoolUsers(schoolId) {
-        return all(
+        const rows = await all(
           `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
            FROM users u
            LEFT JOIN schools s ON s.id = u.school_id
@@ -108,6 +102,8 @@ function createClientsPgStore(repo) {
            WHERE u.school_id = $1 AND COALESCE(u.status, 'active') = 'active'`,
           [schoolId],
         );
+        const index = await loadRoleDisplayIndex(this);
+        return rows.map((row) => attachDisplayLabelToUserRow(row, index));
       },
       async insertUser(row) {
         return one(
@@ -1632,6 +1628,12 @@ function createClientsPgStore(repo) {
 
   const store = {
     bind,
+    rootRepository: repo,
+    getEstablishmentRolesStore() {
+      return typeof repo.getEstablishmentRolesStore === "function"
+        ? repo.getEstablishmentRolesStore()
+        : null;
+    },
     getSchoolByCode: (code) => bind({}).getSchoolByCode(code),
     getSchoolById: (id) => bind({}).getSchoolById(id),
     getCountryByCode: (code) => bind({}).getCountryByCode(code),

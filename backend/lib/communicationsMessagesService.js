@@ -378,7 +378,21 @@ async function listAuthorizedRecipients(store, principal, query = {}) {
   return { items };
 }
 
-function mapHistoryMessage(row, extras = {}) {
+function resolveMessageSenderRoleLabel(row, extras, displayIndex) {
+  const { resolveVisibleRoleLabel } = require("./roleDisplayLabels");
+  const roleOrKey =
+    extras.senderRoleKey ||
+    row.sender_role_key ||
+    row.senderRoleKey ||
+    extras.senderRole ||
+    row.sender_role ||
+    extras.senderRoleLabel ||
+    row.sender_role_label ||
+    "";
+  return resolveVisibleRoleLabel(roleOrKey, displayIndex, roleOrKey);
+}
+
+function mapHistoryMessage(row, extras = {}, displayIndex) {
   const mapped = mapMessageRow(row);
   const readerReadAt = row.reader_read_at ?? row.read_at;
   return {
@@ -386,7 +400,7 @@ function mapHistoryMessage(row, extras = {}) {
     type: "message",
     content: mapped.body ?? mapped.message,
     senderName: row.sender_name ?? extras.senderName ?? mapped.senderName ?? "",
-    senderRoleLabel: row.sender_role_label ?? extras.senderRoleLabel ?? "",
+    senderRoleLabel: resolveMessageSenderRoleLabel(row, extras, displayIndex),
     createdAt: formatDateTime(row.created_at) || mapped.sentAt,
     sentAt: mapped.sentAt,
     readAt: readerReadAt ? formatDateTime(readerReadAt) : "",
@@ -412,24 +426,38 @@ async function hydrateAttachments(tx, messageIds) {
   return byMessage;
 }
 
-async function loadParticipants(tx, conversationId) {
+async function loadParticipants(tx, conversationId, displayIndex) {
   if (typeof tx.listConversationParticipants !== "function") return [];
   const rows = await tx.listConversationParticipants(conversationId);
-  const displayIndex = await loadMessageDisplayIndex(tx);
+  const index = displayIndex || (await loadMessageDisplayIndex(null, tx));
   return rows.map((row) => ({
     userId: row.user_id,
     name: displayName(row),
     ...decorateMessageRole(
       { role: row.role_label ?? row.participant_role, roleKey: row.role_key ?? row.roleKey },
-      displayIndex,
+      index,
     ),
     status: row.status ?? "active",
   }));
 }
 
+function hasRoleDisplayAuthority(obj) {
+  if (!obj || typeof obj !== "object") return false;
+  return (
+    typeof obj.getEstablishmentRolesStore === "function" ||
+    typeof obj.listRoleDisplayContracts === "function" ||
+    typeof obj.all === "function" ||
+    Boolean(obj.rootRepository || obj.repository || obj._repository || obj._repo || obj.repo)
+  );
+}
+
 async function loadMessageDisplayIndex(store, tx) {
   const { loadRoleDisplayIndexFromRepo } = require("./roleDisplayLabels");
-  return loadRoleDisplayIndexFromRepo(store || tx);
+  if (store) {
+    const index = await loadRoleDisplayIndexFromRepo(store);
+    if (index.size > 0 || hasRoleDisplayAuthority(store)) return index;
+  }
+  return loadRoleDisplayIndexFromRepo(tx);
 }
 
 function decorateMessageRole(row, displayIndex) {
@@ -463,7 +491,7 @@ async function bindAttachments(tx, schoolId, senderUserId, messageId, attachment
   return attached.map(mapAttachmentRow);
 }
 
-async function persistMessage(tx, { conversation, school, schoolCode, sender, body, payload, attachmentIds, principal, auditMeta }) {
+async function persistMessage(tx, { conversation, school, schoolCode, sender, body, payload, attachmentIds, principal, auditMeta, displayIndex }) {
   const messageProfile = {
     studentId: payload.studentId,
     teacherId: payload.teacherId,
@@ -504,6 +532,7 @@ async function persistMessage(tx, { conversation, school, schoolCode, sender, bo
       sender_role_label: sender.role ?? "",
     },
     { attachments, senderName: displayName(sender), senderRoleLabel: sender.role ?? "" },
+    displayIndex,
   );
   await writeClientsAudit(tx, principal, auditMeta, {
     schoolCode,
@@ -525,6 +554,7 @@ async function sendOrCreate(store, rawPayload, principal, auditMeta) {
   const attachmentIds = Array.isArray(payload.attachmentIds) ? payload.attachmentIds : [];
 
   return store.withTransaction(async (tx) => {
+    const displayIndex = await loadMessageDisplayIndex(store, tx);
     const { school, schoolCode } = await requireSchool(store, principal, rawPayload);
     const sender = await tx.getUserById(senderUserId);
     if (!sender || (sender.school_id && sender.school_id !== school.id && !isSuperAdminPrincipal(principal))) {
@@ -556,6 +586,7 @@ async function sendOrCreate(store, rawPayload, principal, auditMeta) {
         attachmentIds,
         principal,
         auditMeta,
+        displayIndex,
       });
     }
 
@@ -591,6 +622,7 @@ async function sendOrCreate(store, rawPayload, principal, auditMeta) {
       attachmentIds,
       principal,
       auditMeta,
+      displayIndex,
     });
   });
 }
@@ -615,6 +647,7 @@ async function markMessageRead(store, messageId, principal, auditMeta, query = {
   }
   const { school } = await requireSchool(store, principal, query);
   return store.withTransaction(async (tx) => {
+    const displayIndex = await loadMessageDisplayIndex(store, tx);
     const message = await tx.getMessageById(messageId);
     if (!message || message.school_id !== school.id) {
       throw createClientsError(404, "Message introuvable.", CLIENTS_ERROR.MESSAGE_NOT_FOUND);
@@ -631,6 +664,7 @@ async function markMessageRead(store, messageId, principal, auditMeta, query = {
         sender_role_label: sender?.role ?? "",
       },
       { attachments, senderName: displayName(sender) },
+      displayIndex,
     );
   });
 }
@@ -655,10 +689,11 @@ async function listConversations(store, principal, query = {}) {
     cursor,
     bypass: canBypassParticipation(principal),
   });
+  const displayIndex = await loadMessageDisplayIndex(store, tx);
   const page = rows.slice(0, limit);
   const items = [];
   for (const row of page) {
-    const participants = await loadParticipants(tx, row.id);
+    const participants = await loadParticipants(tx, row.id, displayIndex);
     items.push({
       id: row.id,
       type: "conversation",
@@ -697,7 +732,8 @@ async function getConversation(store, conversationId, principal, query = {}) {
   if (!canBypassParticipation(principal)) {
     await requireActiveParticipant(tx, conversation.id, userId);
   }
-  const participants = await loadParticipants(tx, conversation.id);
+  const displayIndex = await loadMessageDisplayIndex(store, tx);
+  const participants = await loadParticipants(tx, conversation.id, displayIndex);
   return {
     id: conversation.id,
     type: "conversation",
@@ -730,15 +766,20 @@ async function listConversationMessages(store, conversationId, principal, query 
   });
   const chronological = [...rows].reverse();
   const page = chronological.slice(Math.max(0, chronological.length - limit));
+  const displayIndex = await loadMessageDisplayIndex(store, tx);
   const attachments = await hydrateAttachments(tx, page.map((row) => row.id));
-  const participants = await loadParticipants(tx, conversation.id);
+  const participants = await loadParticipants(tx, conversation.id, displayIndex);
   const items = page.map((row) =>
-    mapHistoryMessage(row, {
-      attachments: attachments.get(String(row.id)) ?? [],
-      participants,
-      senderName: row.sender_name,
-      senderRoleLabel: row.sender_role_label,
-    }),
+    mapHistoryMessage(
+      row,
+      {
+        attachments: attachments.get(String(row.id)) ?? [],
+        participants,
+        senderName: row.sender_name,
+        senderRoleLabel: row.sender_role_label,
+      },
+      displayIndex,
+    ),
   );
   const oldest = items[0];
   return {
@@ -758,13 +799,18 @@ async function listMessages(store, principal, query = {}) {
     schoolId: school.id,
     bypass: canBypassParticipation(principal),
   });
+  const displayIndex = await loadMessageDisplayIndex(store, tx);
   const attachments = await hydrateAttachments(tx, rows.map((row) => row.id));
   return rows.map((row) =>
-    mapHistoryMessage(row, {
-      attachments: attachments.get(String(row.id)) ?? [],
-      senderName: row.sender_name,
-      senderRoleLabel: row.sender_role_label,
-    }),
+    mapHistoryMessage(
+      row,
+      {
+        attachments: attachments.get(String(row.id)) ?? [],
+        senderName: row.sender_name,
+        senderRoleLabel: row.sender_role_label,
+      },
+      displayIndex,
+    ),
   );
 }
 
@@ -781,8 +827,9 @@ async function getMessage(store, messageId, principal, query = {}) {
   }
   const read =
     typeof tx.getMessageRead === "function" ? await tx.getMessageRead(message.id, userId) : null;
+  const displayIndex = await loadMessageDisplayIndex(store, tx);
   const attachments = (await hydrateAttachments(tx, [message.id])).get(String(message.id)) ?? [];
-  const participants = await loadParticipants(tx, message.conversation_id);
+  const participants = await loadParticipants(tx, message.conversation_id, displayIndex);
   const sender = await tx.getUserById(message.sender_user_id);
   return mapHistoryMessage(
     {
@@ -792,6 +839,7 @@ async function getMessage(store, messageId, principal, query = {}) {
       sender_role_label: sender?.role ?? "",
     },
     { attachments, participants, senderName: displayName(sender) },
+    displayIndex,
   );
 }
 

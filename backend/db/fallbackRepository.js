@@ -3683,6 +3683,8 @@ class FallbackRepository {
             }))
           : [],
       });
+      store.rootRepository = this;
+      store.getEstablishmentRolesStore = () => this.getEstablishmentRolesStore();
       store.assertEstablishmentRoleAssignable = (role, principal) =>
         this.assertEstablishmentRoleAssignable(role, principal);
       store.listEstablishmentAssignableRoles = (principal) =>
