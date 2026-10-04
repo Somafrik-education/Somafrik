@@ -85,15 +85,15 @@ describe("ADMIN-06B1 Conformité plateforme A1", () => {
     expect(page).toContain("isSuperAdminRole");
     expect(page).toContain("getPlatformCompliance");
     expect(page).toContain("Conformité plateforme");
-    expect(page).not.toMatch(/erasure-requests|\/api\/audit|data-export|reports\/advanced/);
+    expect(page).not.toMatch(/\/api\/audit|reports\/advanced/);
   });
 
   it("C06B1-20 ReportsPage School Admin ne fetch PAS A1", () => {
     const page = readFileSync(join(ROOT, "../pages/ReportsPage.tsx"), "utf8");
-    expect(page).toContain("MVP_COVERAGE");
-    expect(page).toContain("SchoolMvpCoverageFacade");
+    expect(page).toContain("SchoolComplianceDashboard");
     expect(page).toMatch(/if \(isSuperAdminRole\(session\?\.user\?\.role\)\)/);
     expect(page).toContain("getPlatformCompliance()");
+    expect(page).not.toContain("MVP_COVERAGE");
   });
 
   it("C06B1-21 Country Admin n’ouvre pas ReportsPage", () => {

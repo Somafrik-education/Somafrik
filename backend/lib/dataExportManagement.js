@@ -23,10 +23,10 @@ const EXPORT_SENSITIVE_KEY_PATTERN =
 const DATA_EXPORT_READ_PERMISSIONS = Object.freeze([
   "Paramètres Établissement:READ",
   "Paramètres Établissement:UPDATE",
-  "Gérer planning académique",
-  "ALL_PRIVILEGES",
-  "COUNTRY_PRIVILEGES",
 ]);
+
+const SCHOOL_ADMIN_ROLE_LABELS = Object.freeze(["Admin School"]);
+const SCHOOL_ADMIN_ROLE_KEYS = Object.freeze(["SCHOOL_ADMIN"]);
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -34,6 +34,37 @@ function asTrimmed(value) {
 
 function isCountryAdminPrincipal(principal) {
   return asTrimmed(principal?.role) === "Admin Pays";
+}
+
+function pushRoleToken(tokens, value) {
+  if (value == null) return;
+  if (typeof value === "string" || typeof value === "number") {
+    tokens.push(asTrimmed(value));
+  }
+}
+
+function collectPrincipalRoleTokens(principal) {
+  const tokens = [];
+  pushRoleToken(tokens, principal?.role);
+  pushRoleToken(tokens, principal?.roleKey);
+  pushRoleToken(tokens, principal?.role_key);
+  if (Array.isArray(principal?.roleKeys)) {
+    for (const item of principal.roleKeys) pushRoleToken(tokens, item);
+  }
+  return tokens.filter(Boolean);
+}
+
+function isSchoolAdminPrincipal(principal) {
+  if (!principal || typeof principal !== "object" || Array.isArray(principal)) return false;
+  return collectPrincipalRoleTokens(principal).some((token) => {
+    if (SCHOOL_ADMIN_ROLE_LABELS.includes(token)) return true;
+    return SCHOOL_ADMIN_ROLE_KEYS.includes(token.toUpperCase());
+  });
+}
+
+function hasConcreteSchoolScope(principal) {
+  const schoolCode = asTrimmed(principal?.schoolCode).toUpperCase();
+  return Boolean(schoolCode) && schoolCode !== "*";
 }
 
 function principalHasAnyPermission(principal, allowed) {
@@ -50,6 +81,12 @@ function createDataExportError(status, message, code, details) {
 
 function assertDataExportRead(principal) {
   if (isPlatformAdminPrincipal(principal) || isSuperAdminPrincipal(principal) || isCountryAdminPrincipal(principal)) {
+    throw createDataExportError(403, "Accès refusé à l'export des données.", DATA_EXPORT_ERROR.FORBIDDEN);
+  }
+  if (!isSchoolAdminPrincipal(principal)) {
+    throw createDataExportError(403, "Accès refusé à l'export des données.", DATA_EXPORT_ERROR.FORBIDDEN);
+  }
+  if (!hasConcreteSchoolScope(principal)) {
     throw createDataExportError(403, "Accès refusé à l'export des données.", DATA_EXPORT_ERROR.FORBIDDEN);
   }
   if (principalHasAnyPermission(principal, DATA_EXPORT_READ_PERMISSIONS)) return;

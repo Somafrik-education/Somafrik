@@ -449,7 +449,12 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   }
   if (viewName === "dataExport") {
     if (shouldDenyWebSchoolDomain(ctx.user)) return false;
-    return isSchoolAdminRole(ctx.user?.role);
+    if (!isSchoolAdminRole(ctx.user?.role)) return false;
+    const permissions = getCurrentRolePermissions(ctx);
+    return (
+      permissions.includes("Paramètres Établissement:READ") ||
+      permissions.includes("Paramètres Établissement:UPDATE")
+    );
   }
   // Accès au hub Paramètres : Super Admin, Admin School (établissement) et Admin Pays.
   // Le détail des cartes/pages reste filtré par les vues dédiées (configuration, subscriptions…).

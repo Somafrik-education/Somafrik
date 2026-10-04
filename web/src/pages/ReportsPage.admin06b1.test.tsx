@@ -2,9 +2,11 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import type { PlatformCompliancePayload } from "../lib/platformComplianceApi";
 
-const { useAuthMock, getPlatformComplianceMock } = vi.hoisted(() => ({
+const { useAuthMock, getPlatformComplianceMock, listSchoolErasureRequestsMock, exportSchoolDataMock } = vi.hoisted(() => ({
   useAuthMock: vi.fn(),
   getPlatformComplianceMock: vi.fn(),
+  listSchoolErasureRequestsMock: vi.fn(),
+  exportSchoolDataMock: vi.fn(),
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -13,6 +15,12 @@ vi.mock("../context/AuthContext", () => ({
 
 vi.mock("../lib/platformComplianceApi", () => ({
   getPlatformCompliance: getPlatformComplianceMock,
+}));
+
+vi.mock("../lib/schoolComplianceApi", () => ({
+  listSchoolErasureRequests: listSchoolErasureRequestsMock,
+  executeSchoolErasureRequest: vi.fn(),
+  exportSchoolData: exportSchoolDataMock,
 }));
 
 import { ReportsPage } from "./ReportsPage";
@@ -58,14 +66,15 @@ describe("ReportsPage ADMIN-06B1", () => {
     expect(screen.queryByText("Conformité MVP")).not.toBeInTheDocument();
   });
 
-  it("C06B1-20 School Admin conserve MVP_COVERAGE et ne fetch pas A1", () => {
+  it("C06B1-20 School Admin ouvre A2 et ne fetch pas A1", () => {
     useAuthMock.mockReturnValue({
       session: { user: { role: SCHOOL_ADMIN_ROLE, permissions: ["Rapports:READ"], schoolCode: "CD-2026-0001" } },
     });
     render(<ReportsPage />);
     expect(getPlatformComplianceMock).not.toHaveBeenCalled();
-    expect(screen.getByText("Conformité MVP")).toBeInTheDocument();
+    expect(screen.getByText("Conformité établissement")).toBeInTheDocument();
     expect(screen.queryByText("Conformité plateforme")).not.toBeInTheDocument();
+    expect(screen.queryByText("Conformité MVP")).not.toBeInTheDocument();
   });
 
   it("C06B1-21 Country Admin ne fetch pas A1", () => {

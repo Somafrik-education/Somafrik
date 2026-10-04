@@ -138,10 +138,10 @@ describe("P1-07 Web — isolation stricte du domaine scolaire", () => {
     expect(hasCommunicationSchoolScope("CD-2026-0001", schoolAdmin())).toBe(true);
   });
 
-  it("Export : vue dataExport fermée pour la plateforme, ouverte Admin School", () => {
+  it("Export : vue dataExport fermée pour la plateforme, ouverte Admin School + Paramètres", () => {
     const superCtx = ctx(superadmin());
     const paysCtx = ctx(countryAdmin());
-    const schoolCtx = ctx(schoolAdmin());
+    const schoolCtx = ctx(schoolAdmin({ permissions: ["Paramètres Établissement:READ"] }));
     expect(canReadView(superCtx, "dataExport")).toBe(false);
     expect(canReadView(paysCtx, "dataExport")).toBe(false);
     expect(canReadView(schoolCtx, "dataExport")).toBe(true);
@@ -170,7 +170,12 @@ describe("P1-07 Web — isolation stricte du domaine scolaire", () => {
     expect(canReadView(school, "messages")).toBe(true);
     expect(canReadView(school, "announcements")).toBe(true);
     expect(canReadView(school, "notifications")).toBe(true);
-    expect(canReadView(school, "dataExport")).toBe(true);
+    expect(
+      canReadView(
+        ctx(schoolAdmin({ permissions: ["Paramètres Établissement:READ"] })),
+        "dataExport",
+      ),
+    ).toBe(true);
   });
 
   it("garde source : les quatre écarts #845 sont fermés côté Web uniquement", () => {
@@ -202,6 +207,8 @@ describe("P1-07 Web — isolation stricte du domaine scolaire", () => {
 
     expect(permissions).toMatch(/viewName === "dataExport"/);
     expect(permissions).toMatch(/shouldDenyWebSchoolDomain\(ctx\.user\)/);
+    expect(permissions).toMatch(/Paramètres Établissement:READ/);
+    expect(permissions).toMatch(/Paramètres Établissement:UPDATE/);
 
     expect(topbar).toMatch(/hasWebInternalNotificationScope\(user, activeSchoolCode\)/);
     expect(topbar).toMatch(/resolveWebNotificationsHref\(user\)/);
