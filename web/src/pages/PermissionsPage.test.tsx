@@ -255,7 +255,7 @@ const expectedGrant: RbacCrudGrant = {
   canDelete: false,
 };
 
-async function selectPath(roleKey: string, moduleKey: string) {
+async function selectPath(roleKey: string) {
   render(<PermissionsPage />);
   await screen.findByText("Rôles et droits");
   fireEvent.change(document.getElementById("rbac-country") as HTMLSelectElement, { target: { value: "CD" } });
@@ -274,9 +274,10 @@ async function selectPath(roleKey: string, moduleKey: string) {
     target: { value: roleKey },
   });
   await waitFor(() => expect(getConfiguredMock).toHaveBeenCalled());
-  fireEvent.change(document.getElementById("rbac-module") as HTMLSelectElement, {
-    target: { value: moduleKey },
-  });
+}
+
+function saveButtons() {
+  return screen.getAllByRole("button", { name: "Enregistrer les droits" });
 }
 
 describe("PermissionsPage — matrice CRUD Superadmin", () => {
@@ -291,10 +292,10 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   });
 
   it("enregistre uniquement le delta CRUD du module sélectionné", async () => {
-    await selectPath("PREFET_ETUDES", "students");
+    await selectPath("PREFET_ETUDES");
     const deleteBox = await screen.findByLabelText("Élèves Suppression");
     fireEvent.click(deleteBox);
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    fireEvent.click(saveButtons()[0]);
     await waitFor(() => expect(patchMock).toHaveBeenCalled());
     expect(patchMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -307,7 +308,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   });
 
   it("verrouille READ tant que UPDATE/DELETE sont actifs (dépendance)", async () => {
-    await selectPath("PREFET_ETUDES", "students");
+    await selectPath("PREFET_ETUDES");
     const readBox = await screen.findByLabelText("Élèves Lecture");
     expect(readBox).toBeChecked();
     expect(readBox).toBeDisabled();
@@ -316,7 +317,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   });
 
   it("cocher CREATE force et verrouille READ", async () => {
-    await selectPath("PREFET_ETUDES", "students");
+    await selectPath("PREFET_ETUDES");
     const createBox = await screen.findByLabelText("Élèves Création");
     const readBox = await screen.findByLabelText("Élèves Lecture");
     expect(createBox).not.toBeDisabled();
@@ -327,7 +328,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   });
 
   it("SUPER_ADMIN Utilisateurs : cases obligatoires checked + disabled", async () => {
-    await selectPath("SUPER_ADMIN", "users");
+    await selectPath("SUPER_ADMIN");
     for (const action of ["Création", "Lecture", "Modification", "Suppression"]) {
       const box = await screen.findByLabelText(`Utilisateurs ${action}`);
       expect(box).toBeChecked();
@@ -336,15 +337,15 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   });
 
   it("hydrate l'héritage global et n'enregistre pas sans modification", async () => {
-    await selectPath("PREFET_ETUDES", "students");
+    await selectPath("PREFET_ETUDES");
     expect(await screen.findByLabelText("Élèves Lecture")).toBeChecked();
     expect(screen.getByLabelText("Élèves Modification")).toBeChecked();
     expect(screen.getByLabelText("Élèves Suppression")).toBeChecked();
     expect(screen.getByLabelText("Élèves Création")).not.toBeChecked();
-    expect(screen.getByText(/Hérité du catalogue global/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Réinitialiser à l'héritage" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    expect(screen.getByText("Global")).toBeInTheDocument();
+    expect(saveButtons()[0]).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Réinitialiser Élèves" })).toBeNull();
+    fireEvent.click(saveButtons()[0]);
     expect(patchMock).not.toHaveBeenCalled();
   });
 
@@ -370,8 +371,8 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
         },
       ],
     }));
-    await selectPath("PREFET_ETUDES", "students");
-    fireEvent.click(await screen.findByRole("button", { name: "Réinitialiser à l'héritage" }));
+    await selectPath("PREFET_ETUDES");
+    fireEvent.click(await screen.findByRole("button", { name: "Réinitialiser Élèves" }));
     await waitFor(() => expect(resetMock).toHaveBeenCalled());
     expect(resetMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -380,7 +381,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
         moduleKey: "students",
       }),
     );
-    await waitFor(() => expect(screen.getByText(/Hérité du catalogue global/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Global")).toBeInTheDocument());
   });
 
   it("permet de renommer un rôle métier sans toucher au code technique", async () => {
