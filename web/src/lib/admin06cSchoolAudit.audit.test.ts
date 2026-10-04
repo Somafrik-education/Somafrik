@@ -85,7 +85,10 @@ describe("ADMIN-06C journal d’audit school-only — API / permissions", () => 
     const defaults = readFileSync(join(ROOT, "internalRoleDefaults.ts"), "utf8");
     expect(defaults).not.toContain("Audit:READ");
     const page = readFileSync(join(ROOT, "../pages/PermissionsPage.tsx"), "utf8");
-    expect(page).toContain("label: module.moduleName");
+    expect(page).toContain('data-testid="rbac-permissions-matrix"');
+    expect(page).toContain("matrixModules.map");
+    expect(page).not.toContain("rbac-module");
+    expect(page).not.toContain("Module fonctionnel");
     expect(page).toContain("Rôles et droits");
   });
 

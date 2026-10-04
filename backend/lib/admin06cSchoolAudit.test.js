@@ -663,8 +663,9 @@ test("C06C-RBAC-05 reset override → retour deny", async () => {
 
 test("C06C-RBAC-06 PermissionsPage expose Audit", () => {
   const page = readUtf8("../../web/src/pages/PermissionsPage.tsx");
-  assert.match(page, /modules\.map\(\(module\) => \(\{ value: module\.moduleKey, label: module\.moduleName \}\)\)/);
-  assert.match(page, /selectedModule\?\.moduleName/);
+  assert.match(page, /data-testid="rbac-permissions-matrix"/);
+  assert.match(page, /matrixModules\.map/);
+  assert.doesNotMatch(page, /id="rbac-module"|Module fonctionnel|selectedModuleKey/);
   const catalog = readUtf8("./functionalModulesCatalog.js");
   assert.match(catalog, /moduleKey: "audit"/);
   assert.match(catalog, /moduleName: "Audit"/);
