@@ -1276,14 +1276,18 @@ function createClientsMemoryStore(seed = {}) {
           teacherRow: findActiveTeacherProfileForUser(tables.teachers, row.id, row.school_id),
           roleKeys,
         });
-        return userRoleLifecycleService.hydrateUser(
-          {
-            ...row,
-            ...schoolPublicProjectionFromSchool(school, "*"),
-            ...userCountryProjection(row, school),
-          },
-          roleKeys,
-          businessProfile,
+        const { decorateUserWithRoleDisplay } = require("../lib/roleDisplayLabels");
+        return decorateUserWithRoleDisplay(
+          userRoleLifecycleService.hydrateUser(
+            {
+              ...row,
+              ...schoolPublicProjectionFromSchool(school, "*"),
+              ...userCountryProjection(row, school),
+            },
+            roleKeys,
+            businessProfile,
+          ),
+          new Map(),
         );
       });
       const contacts = tables.contacts.map((row) => {

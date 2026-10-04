@@ -423,7 +423,9 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
 
 app.post("/api/identify", loginRateLimiter, asyncHandler(async (req, res) => {
   const { authService } = await getRuntime();
-  handleBusinessResponse(res, () => authService.identify(req.body));
+  const { loadRoleDisplayIndexFromRepo } = require("./lib/roleDisplayLabels");
+  const displayIndex = await loadRoleDisplayIndexFromRepo(repository);
+  handleBusinessResponse(res, () => authService.identify(req.body, displayIndex));
 }));
 
 app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
@@ -6508,16 +6510,21 @@ async function sendAuthenticatedResponse(req, res, response, action) {
   });
   await touchUserLastLogin(principal);
 
+  const { decorateUserWithRoleDisplay, loadRoleDisplayIndexFromRepo } = require("./lib/roleDisplayLabels");
+  const displayIndex = await loadRoleDisplayIndexFromRepo(repository);
   const safePayload = sanitizeAuthPayloadForResponse({
     ...response,
     user: response.user
-      ? {
-          ...response.user,
-          role: principal.role,
-          roles: principal.roles,
-          roleKeys: principal.roleKeys,
-          permissions: principal.permissions,
-        }
+      ? decorateUserWithRoleDisplay(
+          {
+            ...response.user,
+            role: principal.role,
+            roles: principal.roles,
+            roleKeys: principal.roleKeys,
+            permissions: principal.permissions,
+          },
+          displayIndex,
+        )
       : response.user,
   });
 

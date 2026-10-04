@@ -350,6 +350,7 @@ async function listAuthorizedRecipients(store, principal, query = {}) {
   if (!sender) throw createClientsError(403, "Expéditeur non autorisé.", CLIENTS_ERROR.FORBIDDEN);
   const senderKind = await loadKind(tx, sender);
   const users = typeof tx.listSchoolUsers === "function" ? await tx.listSchoolUsers(school.id) : [];
+  const displayIndex = await loadMessageDisplayIndex(store, tx);
   const items = [];
   for (const recipient of users) {
     if (!recipient?.id || String(recipient.id) === String(sender.id)) continue;
@@ -369,7 +370,7 @@ async function listAuthorizedRecipients(store, principal, query = {}) {
     items.push({
       userId: recipient.id,
       displayName: displayName(recipient),
-      roleLabel: recipient.role || "",
+      ...decorateMessageRole(recipient, displayIndex),
       kind,
       ...context,
     });
@@ -414,12 +415,31 @@ async function hydrateAttachments(tx, messageIds) {
 async function loadParticipants(tx, conversationId) {
   if (typeof tx.listConversationParticipants !== "function") return [];
   const rows = await tx.listConversationParticipants(conversationId);
+  const displayIndex = await loadMessageDisplayIndex(tx);
   return rows.map((row) => ({
     userId: row.user_id,
     name: displayName(row),
-    roleLabel: row.role_label ?? row.participant_role ?? "",
+    ...decorateMessageRole(
+      { role: row.role_label ?? row.participant_role, roleKey: row.role_key ?? row.roleKey },
+      displayIndex,
+    ),
     status: row.status ?? "active",
   }));
+}
+
+async function loadMessageDisplayIndex(store, tx) {
+  const { loadRoleDisplayIndexFromRepo } = require("./roleDisplayLabels");
+  return loadRoleDisplayIndexFromRepo(store || tx);
+}
+
+function decorateMessageRole(row, displayIndex) {
+  const { toRoleKey } = require("./userRoleLifecycle");
+  const { resolveVisibleRoleLabel } = require("./roleDisplayLabels");
+  const roleKey = toRoleKey(row?.roleKey || row?.role || row?.role_label || "");
+  return {
+    roleKey,
+    roleLabel: resolveVisibleRoleLabel(roleKey || row?.role, displayIndex, row?.role || row?.role_label),
+  };
 }
 
 async function bindAttachments(tx, schoolId, senderUserId, messageId, attachmentIds) {

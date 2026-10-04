@@ -3749,12 +3749,18 @@ class FallbackRepository {
     return Promise.resolve(this.getClientsStore().listProjection());
   }
 
-  listClientsUsers(scope) {
-    return Promise.resolve(this.getClientsStore().listUsers(scope));
+  async listClientsUsers(scope) {
+    const { decorateUserWithRoleDisplay, loadRoleDisplayIndexFromRepo } = require("../lib/roleDisplayLabels");
+    const users = this.getClientsStore().listUsers(scope);
+    const index = await loadRoleDisplayIndexFromRepo(this);
+    return users.map((user) => decorateUserWithRoleDisplay(user, index));
   }
 
-  listClientsAuthAccounts() {
-    return Promise.resolve(this.getClientsStore().listAuthAccounts());
+  async listClientsAuthAccounts() {
+    const { decorateUserWithRoleDisplay, loadRoleDisplayIndexFromRepo } = require("../lib/roleDisplayLabels");
+    const accounts = this.getClientsStore().listAuthAccounts();
+    const index = await loadRoleDisplayIndexFromRepo(this);
+    return accounts.map((user) => decorateUserWithRoleDisplay(user, index));
   }
 
   createClientsUser(payload, principal, auditMeta) {
