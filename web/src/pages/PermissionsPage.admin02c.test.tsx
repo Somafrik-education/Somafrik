@@ -136,22 +136,35 @@ const { catalog, patchMock, getConfiguredMock, resetMock } = vi.hoisted(() => {
     return { updatedAt: "2026-10-04T11:00:00.000Z" };
   });
   const resetMock = vi.fn(async (payload: RbacResetOverridePayload) => {
-    void payload;
     const next = prefetMatrix();
-    next.modules = next.modules.map((module) =>
-      module.moduleKey === "classes"
-        ? {
-            ...module,
-            configured: false,
-            source: "global",
-            inherited: true,
-            canCreate: false,
-            canRead: true,
-            canUpdate: true,
-            canDelete: true,
-          }
-        : module,
-    );
+    next.modules = next.modules.map((module) => {
+      if (module.moduleKey !== payload.moduleKey) return module;
+      if (module.moduleKey === "classes") {
+        return {
+          ...module,
+          configured: false,
+          source: "global",
+          inherited: true,
+          canCreate: false,
+          canRead: true,
+          canUpdate: true,
+          canDelete: true,
+        };
+      }
+      if (module.moduleKey === "audit") {
+        return {
+          ...module,
+          configured: false,
+          source: "none",
+          inherited: false,
+          canCreate: false,
+          canRead: false,
+          canUpdate: false,
+          canDelete: false,
+        };
+      }
+      return module;
+    });
     next.updatedAt = "2026-10-04T11:30:00.000Z";
     return next;
   });
@@ -356,24 +369,115 @@ describe("PermissionsPage ADMIN-02C — matrice complète", () => {
     expect(auditRow?.textContent).toContain("Refus par défaut");
   });
 
-  it("MATRIX-17 / MATRIX-18 reset d'une ligne recharge toute la matrice", async () => {
+  it("MATRIX-17A préserve les drafts dirty des autres modules lors du reset Classes", async () => {
     await selectPrefet();
-    expect(screen.getByRole("button", { name: "Réinitialiser Classes" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Réinitialiser Audit" })).toBeNull();
+    fireEvent.click(screen.getByLabelText("Audit Lecture"));
+    fireEvent.click(screen.getByLabelText("Utilisateurs Création"));
+    expect(screen.getByTestId("rbac-dirty-count").textContent).toBe("2 modules modifiés");
+
     fireEvent.click(screen.getByRole("button", { name: "Réinitialiser Classes" }));
     await waitFor(() => expect(resetMock).toHaveBeenCalledTimes(1));
-    expect(resetMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        roleKey: "PREFET_ETUDES",
-        moduleKey: "classes",
-        schoolCode: "CD-2026-0001",
-      }),
-    );
+
+    expect(screen.getByLabelText("Audit Lecture")).toBeChecked();
+    expect(screen.getByLabelText("Utilisateurs Création")).toBeChecked();
     await waitFor(() => {
       expect(document.querySelector('[data-module-key="classes"]')?.textContent).toContain("Global");
     });
-    expect(screen.getByLabelText("Audit Lecture")).toBeInTheDocument();
-    expect(screen.getByLabelText("Utilisateurs Lecture")).toBeInTheDocument();
+  });
+
+  it("MATRIX-17B reset du module dirty abandonne seulement son draft local", async () => {
+    getConfiguredMock.mockImplementationOnce(async () => ({
+      roleKey: "PREFET_ETUDES",
+      roleName: "Préfet des études",
+      scopeType: "school",
+      updatedAt: "2026-10-04T10:00:00.000Z",
+      modules: [
+        moduleRow("users", "Utilisateurs", 60, {
+          canRead: true,
+          canUpdate: true,
+          canDelete: true,
+          source: "global",
+          inherited: true,
+        }),
+        moduleRow("audit", "Audit", 300, {
+          configured: true,
+          source: "school",
+          inherited: false,
+        }),
+      ],
+    }));
+    resetMock.mockImplementationOnce(async (payload: RbacResetOverridePayload) => ({
+      roleKey: "PREFET_ETUDES",
+      roleName: "Préfet des études",
+      scopeType: "school",
+      updatedAt: "2026-10-04T11:30:00.000Z",
+      modules: [
+        moduleRow("users", "Utilisateurs", 60, {
+          canRead: true,
+          canUpdate: true,
+          canDelete: true,
+          source: "global",
+          inherited: true,
+        }),
+        moduleRow("audit", "Audit", 300, {
+          configured: false,
+          source: "none",
+          inherited: false,
+        }),
+      ],
+    }));
+
+    await selectPrefet();
+    fireEvent.click(screen.getByLabelText("Audit Lecture"));
+    fireEvent.click(screen.getByLabelText("Utilisateurs Création"));
+    expect(screen.getByTestId("rbac-dirty-count").textContent).toBe("2 modules modifiés");
+
+    fireEvent.click(screen.getByRole("button", { name: "Réinitialiser Audit" }));
+    await waitFor(() => expect(resetMock).toHaveBeenCalledWith(expect.objectContaining({ moduleKey: "audit" })));
+
+    expect(screen.getByLabelText("Audit Lecture")).not.toBeChecked();
+    expect(screen.getByLabelText("Utilisateurs Création")).toBeChecked();
+    expect(screen.getByTestId("rbac-dirty-count").textContent).toBe("1 module modifié");
+  });
+
+  it("MATRIX-18A reset Classes cible uniquement moduleKey classes", async () => {
+    await selectPrefet();
+    fireEvent.click(screen.getByRole("button", { name: "Réinitialiser Classes" }));
+    await waitFor(() => expect(resetMock).toHaveBeenCalledTimes(1));
+    expect(resetMock).toHaveBeenCalledWith({
+      roleKey: "PREFET_ETUDES",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+      moduleKey: "classes",
+      expectedUpdatedAt: "2026-10-04T10:00:00.000Z",
+    });
+  });
+
+  it("MATRIX-18B save après reset conserve les dirty et utilise le nouvel updatedAt", async () => {
+    await selectPrefet();
+    fireEvent.click(screen.getByLabelText("Audit Lecture"));
+    fireEvent.click(screen.getByLabelText("Utilisateurs Création"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Réinitialiser Classes" }));
+    await waitFor(() => expect(resetMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Enregistrer les droits" })[0]);
+    await waitFor(() => expect(patchMock).toHaveBeenCalledTimes(1));
+
+    const payload = patchMock.mock.calls[0][0];
+    expect(payload.grants.map((grant) => grant.moduleKey).sort()).toEqual(["audit", "users"]);
+    expect(payload.expectedUpdatedAt).toBe("2026-10-04T11:30:00.000Z");
+  });
+
+  it("MATRIX-18C dirtyCount reste correct après reset d'un module tiers", async () => {
+    await selectPrefet();
+    fireEvent.click(screen.getByLabelText("Audit Lecture"));
+    fireEvent.click(screen.getByLabelText("Utilisateurs Création"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Réinitialiser Classes" }));
+    await waitFor(() => expect(resetMock).toHaveBeenCalledTimes(1));
+
+    expect(screen.getByTestId("rbac-dirty-count").textContent).toBe("2 modules modifiés");
   });
 
   it("MATRIX-19 409 ne perd pas silencieusement les données", async () => {
