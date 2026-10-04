@@ -175,9 +175,16 @@ describe("SchoolComplianceDashboard ADMIN-06B2", () => {
     expect(exportSchoolDataMock).not.toHaveBeenCalled();
   });
 
+  it("EX06B2-10 SCHOOL_ADMIN sans Paramètres ne voit pas l’export", () => {
+    auth(["Rapports:READ", "Utilisateurs:READ"]);
+    render(<SchoolComplianceDashboard />);
+    expect(screen.queryByRole("button", { name: /Exporter les données/i })).not.toBeInTheDocument();
+    expect(exportSchoolDataMock).not.toHaveBeenCalled();
+  });
+
   it("C06B2-21 / C06B2-22 / C06B2-23 export sur action, sans schoolCode", async () => {
     const user = userEvent.setup();
-    auth(["Rapports:READ", "Utilisateurs:READ"]);
+    auth(["Rapports:READ", "Utilisateurs:READ", "Paramètres Établissement:READ"]);
     render(<SchoolComplianceDashboard />);
     expect(exportSchoolDataMock).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /Exporter les données/i }));

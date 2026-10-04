@@ -59,7 +59,7 @@ describe("ADMIN-06B2 Conformité établissement A2", () => {
     const reportsOnly = ctx(schoolUser(["Rapports:READ"]));
     expect(hasBackOfficePermission(reportsOnly, "Utilisateurs", "READ")).toBe(false);
     expect(hasBackOfficePermission(reportsOnly, "Utilisateurs", "UPDATE")).toBe(false);
-    expect(canReadView(reportsOnly, "dataExport")).toBe(true);
+    expect(canReadView(reportsOnly, "dataExport")).toBe(false);
 
     const readOnly = ctx(schoolUser(["Rapports:READ", "Utilisateurs:READ"]));
     expect(hasBackOfficePermission(readOnly, "Utilisateurs", "READ")).toBe(true);
@@ -75,6 +75,22 @@ describe("ADMIN-06B2 Conformité établissement A2", () => {
     expect(dashboard).toContain('canReadView(ctx, "dataExport")');
     expect(dashboard).toContain("if (!canListPrivacy)");
     expect(dashboard).toContain("listSchoolErasureRequests");
+  });
+
+  it("EX06B2-10 SCHOOL_ADMIN sans Paramètres READ/UPDATE → dataExport false", () => {
+    expect(canReadView(ctx(schoolUser(["Rapports:READ", "ALL_PRIVILEGES"])), "dataExport")).toBe(false);
+  });
+
+  it("EX06B2-11 SCHOOL_ADMIN + Paramètres READ → dataExport true", () => {
+    expect(canReadView(ctx(schoolUser(["Paramètres Établissement:READ"])), "dataExport")).toBe(true);
+  });
+
+  it("EX06B2-12 SCHOOL_ADMIN + Paramètres UPDATE → dataExport true", () => {
+    expect(canReadView(ctx(schoolUser(["Paramètres Établissement:UPDATE"])), "dataExport")).toBe(true);
+  });
+
+  it("EX06B2-13 Proviseur + Paramètres READ → dataExport false", () => {
+    expect(canReadView(ctx(schoolUser(["Paramètres Établissement:READ"], "Proviseur")), "dataExport")).toBe(false);
   });
 
   it("C06B2 API web n'accepte aucun schoolCode client", () => {
