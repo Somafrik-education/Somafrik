@@ -25,6 +25,20 @@ const {
   projectAuditSummary,
   sanitizeAuditFilters,
 } = require("./schoolAudit");
+const { listFunctionalModules, getModuleByKey } = require("./functionalModulesCatalog");
+const {
+  resolveEffectivePermissionSet,
+  parsePermissionStringsToModuleCrud,
+} = require("./functionalRbacResolution");
+const {
+  listRbacCatalog,
+  getEffectivePermissionsConfigured,
+  patchConfiguredPermissions,
+  resetConfiguredPermissionOverrides,
+} = require("./functionalRbacService");
+const { createFunctionalRbacMemoryStore } = require("../db/functionalRbacMemoryStore");
+const { mandatoryPermissionsForRole } = require("./rbacMandatoryPermissions");
+const { SUPER_ADMIN_INVARIANT_MODULES } = require("./functionalRbacManagement");
 
 const rbac = new RbacService();
 
@@ -460,6 +474,9 @@ test("C06C pas de nouvelle permission ni grant Audit par défaut", () => {
   assert.match(rbacSrc, /"GET \/api\/audit": \["Audit:READ"\]/);
   const defaults = readUtf8("../../web/src/lib/internalRoleDefaults.ts");
   assert.doesNotMatch(defaults, /Audit:READ/);
+  assert.equal(mandatoryPermissionsForRole("SCHOOL_ADMIN").audit, undefined);
+  assert.equal(mandatoryPermissionsForRole("SUPER_ADMIN").audit, undefined);
+  assert.equal(SUPER_ADMIN_INVARIANT_MODULES.audit, undefined);
 });
 
 test("C06C fallback schoolCode vide ou * fail closed", async () => {
@@ -467,4 +484,261 @@ test("C06C fallback schoolCode vide ou * fail closed", async () => {
   seedAuditRows(repo);
   assert.deepEqual(await repo.listSchoolAuditSummaries({ schoolCode: "" }), []);
   assert.deepEqual(await repo.listSchoolAuditSummaries({ schoolCode: "*" }), []);
+});
+
+function auditRbacRepo() {
+  const store = createFunctionalRbacMemoryStore({
+    resolveCountryAndSchool: async ({ schoolCode }) => ({
+      country: { id: "cd", code: "CD" },
+      school: { id: "nuru", school_code: schoolCode || "CD-2026-0001", country_id: "cd", country_code: "CD" },
+    }),
+  });
+  const repo = {
+    getFunctionalRbacStore: () => store,
+    createTxScope: () => repo,
+    withTransaction: async (fn) => fn(repo),
+    recordAudit: async () => true,
+    listEstablishmentRoles: async () => [
+      { id: "r-school", roleCode: "SCHOOL_ADMIN", roleName: "Admin School", scope: "school", status: "active" },
+    ],
+  };
+  return { repo, store };
+}
+
+const SUPER_PRINCIPAL = {
+  role: "Super Administrateur Somafrik",
+  identifier: "superadmin",
+  roleKeys: ["SUPER_ADMIN"],
+};
+
+test("C06C-RBAC-01 catalogue contient moduleKey audit / moduleName Audit", async () => {
+  const module = getModuleByKey("audit");
+  assert.equal(module.moduleKey, "audit");
+  assert.equal(module.moduleName, "Audit");
+  assert.equal(module.appliesWeb, true);
+  assert.equal(module.appliesMobile, false);
+  assert.ok(listFunctionalModules().some((row) => row.moduleKey === "audit" && row.moduleName === "Audit"));
+  const { repo } = auditRbacRepo();
+  const catalog = await listRbacCatalog(repo, SUPER_PRINCIPAL);
+  const listed = catalog.modules.find((row) => row.moduleKey === "audit");
+  assert.equal(listed.moduleName, "Audit");
+  assert.equal(listed.appliesMobile, false);
+});
+
+test("C06C-RBAC-02 SCHOOL_ADMIN sans grant audit → pas Audit:READ", async () => {
+  const resolved = resolveEffectivePermissionSet(["SCHOOL_ADMIN"], [], { schoolId: "nuru" });
+  assert.equal(resolved.modules.audit.canRead, false);
+  assert.equal(resolved.permissions.includes("Audit:READ"), false);
+  const live = require("../data").rolePermissionsForLiveRbac();
+  const parsed = parsePermissionStringsToModuleCrud(live["Admin School"] || []);
+  assert.equal(parsed.audit.canRead, false);
+  const { repo } = auditRbacRepo();
+  const effective = await getEffectivePermissionsConfigured(
+    repo,
+    { roleKey: "SCHOOL_ADMIN", countryCode: "CD", schoolCode: "CD-2026-0001" },
+    SUPER_PRINCIPAL,
+  );
+  assert.equal(effective.permissions.includes("Audit:READ"), false);
+});
+
+test("C06C-RBAC-03 grant établissement audit canRead=true → Audit:READ", async () => {
+  const granted = resolveEffectivePermissionSet(
+    ["SCHOOL_ADMIN"],
+    [
+      {
+        roleKey: "SCHOOL_ADMIN",
+        scopeType: "school",
+        schoolId: "nuru",
+        moduleKey: "audit",
+        canCreate: false,
+        canRead: true,
+        canUpdate: false,
+        canDelete: false,
+      },
+    ],
+    { schoolId: "nuru" },
+  );
+  assert.equal(granted.permissions.includes("Audit:READ"), true);
+  const { repo } = auditRbacRepo();
+  await patchConfiguredPermissions(
+    repo,
+    {
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+      grants: [{ moduleKey: "audit", canCreate: false, canRead: true, canUpdate: false, canDelete: false }],
+    },
+    SUPER_PRINCIPAL,
+    {},
+  );
+  const effective = await getEffectivePermissionsConfigured(
+    repo,
+    { roleKey: "SCHOOL_ADMIN", countryCode: "CD", schoolCode: "CD-2026-0001" },
+    SUPER_PRINCIPAL,
+  );
+  assert.equal(effective.permissions.includes("Audit:READ"), true);
+  assert.doesNotThrow(() =>
+    assertSchoolAuditRead({
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      permissions: effective.permissions,
+      schoolCode: "CD-2026-0001",
+    }),
+  );
+});
+
+test("C06C-RBAC-04 canRead=false → pas Audit:READ", async () => {
+  const denied = resolveEffectivePermissionSet(
+    ["SCHOOL_ADMIN"],
+    [
+      {
+        roleKey: "SCHOOL_ADMIN",
+        scopeType: "school",
+        schoolId: "nuru",
+        moduleKey: "audit",
+        canCreate: false,
+        canRead: false,
+        canUpdate: false,
+        canDelete: false,
+      },
+    ],
+    { schoolId: "nuru" },
+  );
+  assert.equal(denied.permissions.includes("Audit:READ"), false);
+  const { repo } = auditRbacRepo();
+  await patchConfiguredPermissions(
+    repo,
+    {
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+      grants: [{ moduleKey: "audit", canCreate: false, canRead: false, canUpdate: false, canDelete: false }],
+    },
+    SUPER_PRINCIPAL,
+    {},
+  );
+  const effective = await getEffectivePermissionsConfigured(
+    repo,
+    { roleKey: "SCHOOL_ADMIN", countryCode: "CD", schoolCode: "CD-2026-0001" },
+    SUPER_PRINCIPAL,
+  );
+  assert.equal(effective.permissions.includes("Audit:READ"), false);
+});
+
+test("C06C-RBAC-05 reset override → retour deny", async () => {
+  const { repo } = auditRbacRepo();
+  const saved = await patchConfiguredPermissions(
+    repo,
+    {
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+      grants: [{ moduleKey: "audit", canCreate: false, canRead: true, canUpdate: false, canDelete: false }],
+    },
+    SUPER_PRINCIPAL,
+    {},
+  );
+  const reset = await resetConfiguredPermissionOverrides(
+    repo,
+    {
+      roleKey: "SCHOOL_ADMIN",
+      countryCode: "CD",
+      schoolCode: "CD-2026-0001",
+      moduleKey: "audit",
+      expectedUpdatedAt: saved.updatedAt,
+    },
+    SUPER_PRINCIPAL,
+    {},
+  );
+  const audit = reset.modules.find((row) => row.moduleKey === "audit");
+  assert.equal(audit.canRead, false);
+  assert.equal(audit.configured, false);
+  const effective = await getEffectivePermissionsConfigured(
+    repo,
+    { roleKey: "SCHOOL_ADMIN", countryCode: "CD", schoolCode: "CD-2026-0001" },
+    SUPER_PRINCIPAL,
+  );
+  assert.equal(effective.permissions.includes("Audit:READ"), false);
+});
+
+test("C06C-RBAC-06 PermissionsPage expose Audit", () => {
+  const page = readUtf8("../../web/src/pages/PermissionsPage.tsx");
+  assert.match(page, /modules\.map\(\(module\) => \(\{ value: module\.moduleKey, label: module\.moduleName \}\)\)/);
+  assert.match(page, /selectedModule\?\.moduleName/);
+  const catalog = readUtf8("./functionalModulesCatalog.js");
+  assert.match(catalog, /moduleKey: "audit"/);
+  assert.match(catalog, /moduleName: "Audit"/);
+});
+
+test("C06C-RBAC-07 Audit:CREATE seul → GET /api/audit refusé", () => {
+  const principal = {
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    permissions: ["Audit:CREATE"],
+    schoolCode: "CD-2026-0001",
+  };
+  assert.equal(rbac.canAccess(principal, "GET /api/audit"), false);
+  assert.throws(() => assertSchoolAuditRead(principal), forbidden);
+});
+
+test("C06C-RBAC-08 Audit:UPDATE seul → GET /api/audit refusé", () => {
+  const principal = {
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    permissions: ["Audit:UPDATE"],
+    schoolCode: "CD-2026-0001",
+  };
+  assert.equal(rbac.canAccess(principal, "GET /api/audit"), false);
+  assert.throws(() => assertSchoolAuditRead(principal), forbidden);
+});
+
+test("C06C-RBAC-09 Audit:DELETE seul → GET /api/audit refusé", () => {
+  const principal = {
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    permissions: ["Audit:DELETE"],
+    schoolCode: "CD-2026-0001",
+  };
+  assert.equal(rbac.canAccess(principal, "GET /api/audit"), false);
+  assert.throws(() => assertSchoolAuditRead(principal), forbidden);
+});
+
+test("C06C-RBAC-10 Audit:READ → autorisé pour SCHOOL_ADMIN", () => {
+  const principal = {
+    role: "Admin School",
+    roleKeys: ["SCHOOL_ADMIN"],
+    permissions: ["Audit:READ"],
+    schoolCode: "CD-2026-0001",
+  };
+  assert.equal(rbac.canAccess(principal, "GET /api/audit"), true);
+  assert.doesNotThrow(() => assertSchoolAuditRead(principal));
+  assert.throws(
+    () =>
+      assertSchoolAuditRead({
+        ...principal,
+        role: "Super Administrateur Somafrik",
+        roleKeys: ["SUPER_ADMIN"],
+        permissions: ["Audit:READ", "ALL_PRIVILEGES"],
+        schoolCode: "*",
+      }),
+    forbidden,
+  );
+  assert.throws(
+    () =>
+      assertSchoolAuditRead({
+        ...principal,
+        role: "Admin Pays",
+        roleKeys: ["COUNTRY_ADMIN"],
+        permissions: ["Audit:READ", "COUNTRY_PRIVILEGES"],
+        schoolCode: "*",
+      }),
+    forbidden,
+  );
+});
+
+test("C06C-RBAC legacy Auditer connexions ne produit pas Audit:READ", () => {
+  const parsedSuper = parsePermissionStringsToModuleCrud(["ALL_PRIVILEGES", "Auditer connexions"]);
+  const parsedCountry = parsePermissionStringsToModuleCrud(["COUNTRY_PRIVILEGES", "Auditer utilisateurs pays"]);
+  assert.equal(parsedSuper.audit.canRead, false);
+  assert.equal(parsedCountry.audit.canRead, false);
 });

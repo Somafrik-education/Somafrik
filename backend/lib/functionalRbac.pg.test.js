@@ -9,7 +9,12 @@ const { FUNCTIONAL_RBAC_SCHEMA_SQL } = require("../db/functionalRbacSchema");
 const { createEstablishmentRolesPgStore } = require("../db/establishmentRolesPgStore");
 const { createFunctionalRbacPgStore } = require("../db/functionalRbacPgStore");
 const { createTxAdapter } = require("../db/txAdapter");
-const { patchConfiguredPermissions, ensureFunctionalRbacBootstrap } = require("./functionalRbacService");
+const {
+  patchConfiguredPermissions,
+  resetConfiguredPermissionOverrides,
+  getEffectivePermissionsConfigured,
+  ensureFunctionalRbacBootstrap,
+} = require("./functionalRbacService");
 const { resolveEffectivePermissionSet } = require("./functionalRbacResolution");
 const { FUNCTIONAL_RBAC_ERROR } = require("./functionalRbacManagement");
 
@@ -644,6 +649,59 @@ async function main() {
       "TEST B : pas de lost update — un seul delta appliqué",
     );
     assert.equal(studentsChanged || gradesChanged, true, "TEST B : le gagnant a bien écrit");
+
+    const auditModule = await pool.query(
+      `SELECT module_key, module_name, applies_web, applies_mobile
+       FROM functional_modules WHERE module_key = 'audit'`,
+    );
+    assert.equal(auditModule.rowCount, 1, "C06C-RBAC PG : module audit seedé");
+    assert.equal(auditModule.rows[0].module_name, "Audit");
+    assert.equal(auditModule.rows[0].applies_mobile, false);
+
+    const schoolAdminBefore = resolveEffectivePermissionSet(
+      ["SCHOOL_ADMIN"],
+      await store.listGrantsForRoles(["SCHOOL_ADMIN"]),
+      { schoolId: schoolA.rows[0].id, countryId: country.rows[0].id },
+    );
+    assert.equal(schoolAdminBefore.permissions.includes("Audit:READ"), false, "C06C-RBAC PG : default deny");
+
+    const granted = await patchConfiguredPermissions(
+      repo,
+      {
+        roleKey: "SCHOOL_ADMIN",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
+        grants: [{ moduleKey: "audit", canCreate: false, canRead: true, canUpdate: false, canDelete: false }],
+      },
+      superAdmin,
+      {},
+    );
+    const schoolAdminGranted = await getEffectivePermissionsConfigured(
+      repo,
+      { roleKey: "SCHOOL_ADMIN", countryCode: "CD", schoolCode: "CD-2026-0001" },
+      superAdmin,
+    );
+    assert.equal(schoolAdminGranted.permissions.includes("Audit:READ"), true, "C06C-RBAC PG : grant READ");
+
+    const reset = await resetConfiguredPermissionOverrides(
+      repo,
+      {
+        roleKey: "SCHOOL_ADMIN",
+        countryCode: "CD",
+        schoolCode: "CD-2026-0001",
+        moduleKey: "audit",
+        expectedUpdatedAt: granted.updatedAt,
+      },
+      superAdmin,
+      {},
+    );
+    assert.equal(reset.modules.find((row) => row.moduleKey === "audit")?.canRead, false);
+    const schoolAdminReset = await getEffectivePermissionsConfigured(
+      repo,
+      { roleKey: "SCHOOL_ADMIN", countryCode: "CD", schoolCode: "CD-2026-0001" },
+      superAdmin,
+    );
+    assert.equal(schoolAdminReset.permissions.includes("Audit:READ"), false, "C06C-RBAC PG : reset deny");
 
     console.log("functionalRbac.pg.test.js OK");
   } finally {

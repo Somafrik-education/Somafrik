@@ -77,6 +77,18 @@ describe("ADMIN-06C journal d’audit school-only — API / permissions", () => 
     expect(dashboard).not.toMatch(/oldValue|newValue|ipAddress|userAgent/);
   });
 
+  it("C06C-RBAC-01 / C06C-RBAC-06 catalogue et UI exposent Audit", () => {
+    const catalog = readFileSync(join(ROOT, "../../../backend/lib/functionalModulesCatalog.js"), "utf8");
+    expect(catalog).toContain('moduleKey: "audit"');
+    expect(catalog).toContain('moduleName: "Audit"');
+    expect(catalog).toContain("appliesMobile: false");
+    const defaults = readFileSync(join(ROOT, "internalRoleDefaults.ts"), "utf8");
+    expect(defaults).not.toContain("Audit:READ");
+    const page = readFileSync(join(ROOT, "../pages/PermissionsPage.tsx"), "utf8");
+    expect(page).toContain("label: module.moduleName");
+    expect(page).toContain("Rôles et droits");
+  });
+
   it("C06C-24 A1 ReportsPage reste inchangé", () => {
     const page = readFileSync(join(ROOT, "../pages/ReportsPage.tsx"), "utf8");
     expect(page).toContain("PlatformComplianceDashboard");

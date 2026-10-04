@@ -37,6 +37,7 @@ const FUNCTIONAL_MODULES = Object.freeze([
   { moduleKey: "planning", moduleName: "Planning de cours", appliesWeb: true, appliesMobile: false, displayOrder: 270 },
   { moduleKey: "rooms", moduleName: "Salles", appliesWeb: true, appliesMobile: false, displayOrder: 280 },
   { moduleKey: "replacements", moduleName: "Remplacements", appliesWeb: true, appliesMobile: false, displayOrder: 290 },
+  { moduleKey: "audit", moduleName: "Audit", appliesWeb: true, appliesMobile: false, displayOrder: 300 },
 ]);
 
 const MODULE_BY_KEY = Object.freeze(Object.fromEntries(FUNCTIONAL_MODULES.map((row) => [row.moduleKey, row])));
