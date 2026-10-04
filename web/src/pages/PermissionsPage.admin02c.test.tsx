@@ -406,26 +406,29 @@ describe("PermissionsPage ADMIN-02C — matrice complète", () => {
         }),
       ],
     }));
-    resetMock.mockImplementationOnce(async (payload: RbacResetOverridePayload) => ({
-      roleKey: "PREFET_ETUDES",
-      roleName: "Préfet des études",
-      scopeType: "school",
-      updatedAt: "2026-10-04T11:30:00.000Z",
-      modules: [
-        moduleRow("users", "Utilisateurs", 60, {
-          canRead: true,
-          canUpdate: true,
-          canDelete: true,
-          source: "global",
-          inherited: true,
-        }),
-        moduleRow("audit", "Audit", 300, {
-          configured: false,
-          source: "none",
-          inherited: false,
-        }),
-      ],
-    }));
+    resetMock.mockImplementationOnce(async (payload: RbacResetOverridePayload) => {
+      void payload;
+      return {
+        roleKey: "PREFET_ETUDES",
+        roleName: "Préfet des études",
+        scopeType: "school",
+        updatedAt: "2026-10-04T11:30:00.000Z",
+        modules: [
+          moduleRow("users", "Utilisateurs", 60, {
+            canRead: true,
+            canUpdate: true,
+            canDelete: true,
+            source: "global",
+            inherited: true,
+          }),
+          moduleRow("audit", "Audit", 300, {
+            configured: false,
+            source: "none",
+            inherited: false,
+          }),
+        ],
+      };
+    });
 
     await selectPrefet();
     fireEvent.click(screen.getByLabelText("Audit Lecture"));
