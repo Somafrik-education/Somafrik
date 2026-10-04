@@ -67,7 +67,7 @@ const multiRole = {
   ],
 };
 
-describe("WEB-RL-01→28 ROLE-LABELS-WEB-01", () => {
+describe("WEB-RL-01→43 ROLE-LABELS-WEB-01", () => {
   it("WEB-RL-01 Topbar SCHOOL_ADMIN → Directeur", () => {
     const topbar = read("components/layout/Topbar.tsx");
     expect(topbar).toContain("{visibleRoleLabel(user)}");
@@ -432,5 +432,61 @@ describe("WEB-RL-01→28 ROLE-LABELS-WEB-01", () => {
       "SUPERVISOR",
     ]);
     expect(defaultLabelForRoleKey("RESPONSABLE_PEDAGOGIQUE")).toBe("");
+  });
+
+  it("WEB-RL-38 apiAvailable=true + roles=[] → []", () => {
+    expect(
+      resolveCreatableRolesFromApi({
+        apiRoles: [],
+        allowlistLabels: ["Enseignant", "Secrétaire", "Préfet des études"],
+        apiAvailable: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it("WEB-RL-39 API 200 malformed → aucun fallback local", () => {
+    expect(
+      resolveCreatableRolesFromApi({
+        apiRoles: [
+          { roleKey: "", roleName: "Enseignant" },
+          { roleKey: "Directeur", roleName: "Directeur" },
+          { roleKey: "Coordinateur pédagogique", roleName: "Coordinateur pédagogique" },
+        ],
+        allowlistLabels: ["Enseignant", "Secrétaire", "Préfet des études"],
+        apiAvailable: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it("WEB-RL-40 UsersPage création [] ne propose plus de rôle historique", () => {
+    const page = read("pages/UsersPage.tsx");
+    expect(page).toContain("apiAvailable: assignableApiAvailable !== false");
+    expect(page).not.toContain("if (fromApi.length)");
+  });
+
+  it("WEB-RL-41 attribution [] ne ressuscite pas le catalogue local", () => {
+    const page = read("pages/UsersPage.tsx");
+    expect(page).toContain("setAssignableRoles(decorateAssignableRoles(fromApi, roleDisplayCatalog))");
+    expect(page).not.toMatch(/if \(fromApi\.length\) \{[\s\S]*setAssignableRoles/);
+  });
+
+  it("WEB-RL-42 API rejetée : fallback système historique autorisé", () => {
+    expect(
+      resolveCreatableRolesFromApi({
+        apiRoles: [],
+        allowlistLabels: ["Enseignant", "Secrétaire", "Préfet des études"],
+        apiAvailable: false,
+      }).map((row) => row.roleKey),
+    ).toEqual(["TEACHER", "SECRETARY", "PREFET_ETUDES"]);
+  });
+
+  it("WEB-RL-43 fallback indisponibilité ne fabrique aucun rôle custom", () => {
+    const fallback = resolveCreatableRolesFromApi({
+      apiRoles: [],
+      allowlistLabels: ["Enseignant", "Coordinateur pédagogique", "Responsable académique", "Responsable vie scolaire"],
+      apiAvailable: false,
+    });
+    expect(fallback.map((row) => row.roleKey)).toEqual(["TEACHER"]);
+    expect(fallback.some((row) => /COORDINATEUR|RESP_PED|RESPONSABLE/.test(row.roleKey))).toBe(false);
   });
 });

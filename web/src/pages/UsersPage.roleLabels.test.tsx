@@ -275,6 +275,27 @@ describe("UsersPage ROLE-LABELS-WEB-01", () => {
     expect(clientsApi.grantUserRole).not.toHaveBeenCalledWith("usr-custom-1", "Coordinateur pédagogique");
   });
 
+  it("WEB-RL-40 création API [] : aucun rôle historique proposé", async () => {
+    vi.mocked(clientsApi.listAssignableRoles).mockResolvedValue({ roles: [] });
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Nouvel utilisateur" }));
+    const roleSelect = await screen.findByLabelText(/^Rôle/i);
+    await waitFor(() => {
+      const values = [...roleSelect.querySelectorAll("option")].map((option) => (option as HTMLOptionElement).value);
+      expect(values.filter(Boolean)).toEqual([]);
+    });
+    expect(within(roleSelect).queryByRole("option", { name: /Professeur|Enseignant|Secrétaire/ })).not.toBeInTheDocument();
+    expect(within(roleSelect).queryByRole("option", { name: "Responsable académique" })).not.toBeInTheDocument();
+  });
+
+  it("WEB-RL-41 attribution API [] : aucune checkbox rôle", async () => {
+    vi.mocked(clientsApi.listAssignableRoles).mockResolvedValue({ roles: [] });
+    renderPage();
+    fireEvent.click(screen.getAllByRole("button", { name: "Attribuer" })[0]);
+    expect(await screen.findByText("Aucun rôle attribuable pour votre périmètre.")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
   it("échec API : aucun faux roleKey custom dans le sélecteur de création", async () => {
     vi.mocked(clientsApi.listAssignableRoles).mockRejectedValue(new Error("assignable-roles unavailable"));
     renderPage();

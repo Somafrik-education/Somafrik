@@ -93,6 +93,12 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     vi.mocked(clientsApi.createUser).mockReset();
     vi.mocked(clientsApi.provisionUser).mockReset();
     vi.mocked(clientsApi.grantUserRole).mockReset();
+    vi.mocked(clientsApi.listAssignableRoles).mockResolvedValue({
+      roles: [
+        { roleKey: "COUNTRY_ADMIN", roleName: "Admin Pays" },
+        { roleKey: "SCHOOL_ADMIN", roleName: "Admin School" },
+      ],
+    });
     sessionStorage.setItem("somafrik.activeSchoolCode", "CD-2026-0001");
   });
 
@@ -149,6 +155,7 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     openCreateForm();
     fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Grace" } });
     fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Ndayishimiye" } });
+    await waitFor(() => expect(screen.getByLabelText(/^Rôle/i).querySelector('option[value="SCHOOL_ADMIN"]')).toBeTruthy());
     fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "SCHOOL_ADMIN" } });
     fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "BI" } });
     fireEvent.submit(document.getElementById("user-form")!);
@@ -166,6 +173,7 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     openCreateForm();
     fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Grace" } });
     fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Ndayishimiye" } });
+    await waitFor(() => expect(screen.getByLabelText(/^Rôle/i).querySelector('option[value="SCHOOL_ADMIN"]')).toBeTruthy());
     fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "SCHOOL_ADMIN" } });
     fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "BI" } });
     fireEvent.change(screen.getByLabelText(/Établissement/i), { target: { value: "BI-2026-0001" } });
@@ -194,6 +202,7 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     openCreateForm();
     fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Amina" } });
     fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Nshimirimana" } });
+    await waitFor(() => expect(screen.getByLabelText(/^Rôle/i).querySelector('option[value="COUNTRY_ADMIN"]')).toBeTruthy());
     fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "COUNTRY_ADMIN" } });
     fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "BI" } });
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
@@ -221,6 +230,7 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     openCreateForm();
     fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Awa" } });
     fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Bukavu" } });
+    await waitFor(() => expect(screen.getByLabelText(/^Rôle/i).querySelector('option[value="SCHOOL_ADMIN"]')).toBeTruthy());
     fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "SCHOOL_ADMIN" } });
     fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "RDC" } });
     fireEvent.change(screen.getByLabelText(/Établissement/i), { target: { value: "CD-2026-0002" } });

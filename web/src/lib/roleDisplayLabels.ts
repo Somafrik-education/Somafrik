@@ -291,7 +291,7 @@ export function resolveCreatableRolesFromApi(input: {
       }))
       .filter((role) => role.roleKey !== "PARENT" && role.roleKey !== "STUDENT"),
   );
-  if (input.apiAvailable && fromApi.length) {
+  if (input.apiAvailable) {
     if (input.platformOnly) {
       const allowed = new Set(systemFromAllowlist.map((row) => row.roleKey));
       return fromApi.filter((role) => allowed.has(role.roleKey));

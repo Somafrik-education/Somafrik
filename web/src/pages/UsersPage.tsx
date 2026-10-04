@@ -124,7 +124,7 @@ export function UsersPage() {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [roleDisplayCatalog, setRoleDisplayCatalog] = useState<Map<string, RoleDisplayContract>>(new Map());
   const [apiAssignableRoles, setApiAssignableRoles] = useState<Array<{ roleKey: string; roleName: string }>>([]);
-  const [assignableApiAvailable, setAssignableApiAvailable] = useState(false);
+  const [assignableApiAvailable, setAssignableApiAvailable] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [reassigning, setReassigning] = useState<UserAccount | null>(null);
   const [reassignCountry, setReassignCountry] = useState("");
@@ -160,7 +160,7 @@ export function UsersPage() {
         resolveCreatableRolesFromApi({
           apiRoles: apiAssignableRoles,
           allowlistLabels: creatableRoles,
-          apiAvailable: assignableApiAvailable,
+          apiAvailable: assignableApiAvailable !== false,
           platformOnly: isSuperadminView || isCountryAdminView,
         }).filter(isAdministrableAssignableRole),
         roleDisplayCatalog,
@@ -433,23 +433,9 @@ export function UsersPage() {
       const response = await clientsApi.listAssignableRoles();
       const roles = Array.isArray(response?.roles) ? response.roles : [];
       const fromApi = roles.filter(isCanonicalAssignableRole).filter(isAdministrableAssignableRole);
-      if (fromApi.length) {
-        setApiAssignableRoles(fromApi);
-        setAssignableApiAvailable(true);
-        setAssignableRoles(decorateAssignableRoles(fromApi, roleDisplayCatalog));
-        return;
-      }
-      setAssignableRoles(
-        decorateAssignableRoles(
-          resolveCreatableRolesFromApi({
-            apiRoles: [],
-            allowlistLabels: creatableRoles,
-            apiAvailable: false,
-            platformOnly: isSuperadminView || isCountryAdminView,
-          }).filter(isAdministrableAssignableRole),
-          roleDisplayCatalog,
-        ),
-      );
+      setApiAssignableRoles(fromApi);
+      setAssignableApiAvailable(true);
+      setAssignableRoles(decorateAssignableRoles(fromApi, roleDisplayCatalog));
     } catch {
       setAssignableApiAvailable(false);
       setAssignableRoles(
