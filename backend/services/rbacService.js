@@ -400,9 +400,6 @@ const routePermissions = {
   "GET /api/data-export": [
     "Paramètres Établissement:READ",
     "Paramètres Établissement:UPDATE",
-    "Gérer planning académique",
-    "ALL_PRIVILEGES",
-    "COUNTRY_PRIVILEGES",
   ],
   "GET /api/school-settings": [
     "Paramètres Établissement:READ",

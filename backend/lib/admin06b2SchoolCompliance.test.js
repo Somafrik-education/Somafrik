@@ -23,7 +23,7 @@ const {
 const { listSchoolPrivacyRequests, resolveSchoolComplianceScope } = require("./schoolCompliance");
 const { getPlatformCompliance } = require("./platformCompliance");
 const { exportSchoolData } = require("./dataExportService");
-const { assertDataExportRead, resolveExportSchoolCode } = require("./dataExportManagement");
+const { assertDataExportRead, resolveExportSchoolCode, DATA_EXPORT_READ_PERMISSIONS } = require("./dataExportManagement");
 
 const rbac = new RbacService();
 
@@ -227,7 +227,22 @@ test("C06B2 audit privacy_erasure / export_school_data sans secret", async () =>
 });
 
 test("C06B2 export A ignore query B — fallback", async () => {
-  const repo = new FallbackRepository();
+  const repo = {
+    async withReadOnlyRepeatableRead(fn) {
+      return fn({
+        async one(sql) {
+          if (String(sql).includes("FROM schools")) {
+            return { id: "school-1", school_code: "CD-2026-0001", status: "active" };
+          }
+          return null;
+        },
+        async all() {
+          return [];
+        },
+      });
+    },
+    async recordAudit() {},
+  };
   const envelope = await exportSchoolData(repo, SCHOOL_A, "BI-2026-0002");
   assert.equal(envelope.schoolCode, "CD-2026-0001");
   assert.ok(Array.isArray(envelope.includedDomains));
@@ -239,4 +254,111 @@ test("C06B2 pas de nouvelle route compliance", () => {
   assert.match(serverSrc, /app\.get\("\/api\/privacy\/erasure-requests"/);
   assert.match(serverSrc, /app\.post\("\/api\/privacy\/erasure-requests\/:requestId\/execute"/);
   assert.match(serverSrc, /app\.get\("\/api\/data-export"/);
+});
+
+function forbiddenExport(error) {
+  return error.statusCode === 403;
+}
+
+test("EX06B2-01 Proviseur + Paramètres Établissement:READ → 403", () => {
+  assert.throws(
+    () =>
+      assertDataExportRead({
+        role: "Proviseur",
+        roleKeys: ["PRINCIPAL"],
+        permissions: ["Paramètres Établissement:READ"],
+        schoolCode: "CD-2026-0001",
+      }),
+    forbiddenExport,
+  );
+});
+
+test("EX06B2-02 Préfet + Paramètres Établissement:READ → 403", () => {
+  assert.throws(
+    () =>
+      assertDataExportRead({
+        role: "Préfet des études",
+        roleKeys: ["PREFET"],
+        permissions: ["Paramètres Établissement:READ"],
+        schoolCode: "CD-2026-0001",
+      }),
+    forbiddenExport,
+  );
+});
+
+test("EX06B2-03 rôle école + Paramètres Établissement:UPDATE → 403", () => {
+  assert.throws(
+    () =>
+      assertDataExportRead({
+        role: "Secrétaire",
+        roleKeys: ["SECRETARY"],
+        permissions: ["Paramètres Établissement:UPDATE"],
+        schoolCode: "CD-2026-0001",
+      }),
+    forbiddenExport,
+  );
+});
+
+test("EX06B2-04 rôle école + Gérer planning académique → 403", () => {
+  assert.throws(
+    () =>
+      assertDataExportRead({
+        role: "Enseignant",
+        permissions: ["Gérer planning académique"],
+        schoolCode: "CD-2026-0001",
+      }),
+    forbiddenExport,
+  );
+});
+
+test("EX06B2-05 rôle école + ALL_PRIVILEGES → 403", () => {
+  assert.throws(
+    () =>
+      assertDataExportRead({
+        role: "Comptable",
+        roleKeys: ["ACCOUNTANT"],
+        permissions: ["ALL_PRIVILEGES"],
+        schoolCode: "CD-2026-0001",
+      }),
+    forbiddenExport,
+  );
+});
+
+test("EX06B2-06 COUNTRY_ADMIN + COUNTRY_PRIVILEGES → 403", () => {
+  assert.throws(() => assertDataExportRead(COUNTRY), forbiddenExport);
+});
+
+test("EX06B2-07 SUPER_ADMIN + ALL_PRIVILEGES → 403", () => {
+  assert.throws(() => assertDataExportRead(SUPER), forbiddenExport);
+});
+
+test("EX06B2-08 SCHOOL_ADMIN + JWT concret + Paramètres READ → autorisé", () => {
+  assert.doesNotThrow(() =>
+    assertDataExportRead({
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      permissions: ["Paramètres Établissement:READ"],
+      schoolCode: "CD-2026-0001",
+    }),
+  );
+});
+
+test("EX06B2-09 SCHOOL_ADMIN A + ?schoolCode=B → export A", () => {
+  assert.doesNotThrow(() => assertDataExportRead(SCHOOL_A));
+  assert.equal(resolveExportSchoolCode(SCHOOL_A, "BI-2026-0002"), "CD-2026-0001");
+});
+
+test("EX06B2 catalogue et permissions historiques retirées", () => {
+  assert.deepEqual([...DATA_EXPORT_READ_PERMISSIONS], [
+    "Paramètres Établissement:READ",
+    "Paramètres Établissement:UPDATE",
+  ]);
+  assert.deepEqual(routePermissions["GET /api/data-export"], [
+    "Paramètres Établissement:READ",
+    "Paramètres Établissement:UPDATE",
+  ]);
+  assert.equal(DATA_EXPORT_READ_PERMISSIONS.includes("Gérer planning académique"), false);
+  assert.equal(DATA_EXPORT_READ_PERMISSIONS.includes("ALL_PRIVILEGES"), false);
+  assert.equal(DATA_EXPORT_READ_PERMISSIONS.includes("COUNTRY_PRIVILEGES"), false);
+  assert.equal(routePermissions["GET /api/data-export"].includes("ALL_PRIVILEGES"), false);
 });
