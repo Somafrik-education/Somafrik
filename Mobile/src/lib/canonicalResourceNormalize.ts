@@ -8,6 +8,7 @@ import type {
   UserAccount,
 } from "../data/catalog";
 import type { PlatformNotification } from "./scope";
+import { parseRoleDisplayContracts, type RoleDisplayContract } from "./roleDisplayLabels";
 
 export type CanonicalTeacher = Teacher & {
   teacherCode: string;
@@ -17,7 +18,10 @@ export type CanonicalTeacher = Teacher & {
 
 export type CanonicalUserAccount = UserAccount & {
   activeRoles?: string[];
+  roleKey?: string;
   roleKeys?: string[];
+  effectiveRoleLabel?: string;
+  effectiveRoleLabels?: RoleDisplayContract[];
   accountKind?: string;
   businessProfileLabel?: string;
   businessProfileConflict?: boolean;
@@ -161,6 +165,9 @@ export function normalizeUser(value: unknown): CanonicalUserAccount | null {
   const linkedStudent = optionalLinkedStudent(row);
   const linkedTeacher = optionalLinkedTeacher(row);
   const businessProfileLabel = optionalText(row.businessProfileLabel ?? row.business_profile_label);
+  const roleKey = optionalText(row.roleKey ?? row.role_key) || roleKeysExplicit[0];
+  const effectiveRoleLabel = optionalText(row.effectiveRoleLabel ?? row.effective_role_label);
+  const effectiveRoleLabels = parseRoleDisplayContracts(row.effectiveRoleLabels ?? row.effective_role_labels);
   return {
     id,
     publicId: text(row.publicId ?? row.public_id ?? row.userCode ?? row.user_code),
@@ -171,7 +178,10 @@ export function normalizeUser(value: unknown): CanonicalUserAccount | null {
     email: text(row.email) || undefined,
     role: activeRoles[0] || text(row.role),
     activeRoles: activeRoles.length ? activeRoles : roleKeysExplicit,
+    ...(roleKey ? { roleKey } : {}),
     roleKeys: roleKeysExplicit.length ? roleKeysExplicit : activeRoles,
+    ...(effectiveRoleLabel ? { effectiveRoleLabel } : {}),
+    ...(effectiveRoleLabels.length ? { effectiveRoleLabels } : {}),
     secondaryRoles: secondaryRoles.length ? secondaryRoles : activeRoles.slice(1),
     scopeLevel: text(row.scopeLevel ?? row.scope_level),
     countryScope: tenant.countryScope || tenant.countryCode,

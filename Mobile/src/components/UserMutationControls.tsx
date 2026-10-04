@@ -22,13 +22,14 @@ import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
   alignRolesToCatalogue,
   createSingleFlight,
-  currentAccessRoleLabels,
+  currentAccessRoleKeys,
   saveUserRoleChanges,
   visibleAssignableRoles,
   type AssignableRoleChoice,
 } from "../lib/userRoleAssignment";
+import { indexRoleDisplayCatalog } from "../lib/roleDisplayLabels";
 import { createClientsUser, grantClientsUserRole, revokeClientsUserRole, updateClientsUser } from "../services/api";
-import { listAssignableEstablishmentRoles } from "../services/schoolSettingsApi";
+import { listAssignableEstablishmentRoles, listRoleDisplayLabels } from "../services/schoolSettingsApi";
 
 type UserRow = {
   id: string;
@@ -190,26 +191,34 @@ export default function UserMutationControls({
     setRolesOpen(true);
     setRolesLoading(true);
     try {
-      const payload = await listAssignableEstablishmentRoles();
-      const choices = visibleAssignableRoles(payload.roles ?? []);
-      const aligned = alignRolesToCatalogue(currentAccessRoleLabels(row), choices);
+      const [payload, display] = await Promise.all([
+        listAssignableEstablishmentRoles(),
+        listRoleDisplayLabels().catch(() => ({ items: [] })),
+      ]);
+      const catalog = indexRoleDisplayCatalog(Array.isArray(display?.items) ? display.items : []);
+      const roles = Array.isArray(payload?.roles) ? payload.roles : [];
+      const choices = visibleAssignableRoles(roles, catalog);
+      const aligned = alignRolesToCatalogue(currentAccessRoleKeys(row), choices);
       setRoleChoices(choices);
       setSelectedRoles(aligned);
       setBaselineRoles(aligned);
       setCatalogReady(true);
     } catch (err) {
+      setRoleChoices([]);
+      setSelectedRoles([]);
+      setBaselineRoles(currentAccessRoleKeys(row));
       setRolesError(err instanceof Error ? err.message : "Impossible de charger les rôles.");
-      setCatalogReady(false);
+      setCatalogReady(true);
     } finally {
       setRolesLoading(false);
     }
   };
 
-  const toggleRole = (roleName: string) => {
+  const toggleRole = (roleKey: string) => {
     if (rolesSaving || !row) return;
-    if (!canAssignRoleToUserAccount(row, roleName)) return;
+    if (!canAssignRoleToUserAccount(row, roleKey)) return;
     setSelectedRoles((current) =>
-      current.includes(roleName) ? current.filter((item) => item !== roleName) : [...current, roleName],
+      current.includes(roleKey) ? current.filter((item) => item !== roleKey) : [...current, roleKey],
     );
   };
 
@@ -360,16 +369,16 @@ export default function UserMutationControls({
         <Text style={styles.hint}>Aucun rôle attribuable pour votre périmètre.</Text>
       ) : null}
       {roleChoices.map((role) => {
-        const checked = selectedRoles.includes(role.roleName);
-        const incompatible = row ? !canAssignRoleToUserAccount(row, role.roleName) : false;
+        const checked = selectedRoles.includes(role.roleKey);
+        const incompatible = row ? !canAssignRoleToUserAccount(row, role.roleKey) : false;
         return (
           <TouchableOpacity
             key={role.roleKey}
             style={styles.roleRow}
-            onPress={() => toggleRole(role.roleName)}
+            onPress={() => toggleRole(role.roleKey)}
             disabled={rolesSaving || rolesLoading || incompatible}
             accessibilityRole="checkbox"
-            accessibilityLabel={role.roleName}
+            accessibilityLabel={role.optionLabel}
             accessibilityState={{ checked, disabled: rolesSaving || rolesLoading || incompatible }}
             testID={`users-role-option-${role.roleKey}`}
           >
@@ -377,7 +386,7 @@ export default function UserMutationControls({
               {checked ? <Text style={styles.checkboxMark}>✓</Text> : null}
             </View>
             <View style={styles.roleCopy}>
-              <Text style={styles.roleName}>{role.roleName}</Text>
+              <Text style={styles.roleName}>{role.optionLabel}</Text>
               {incompatible && isTeacherRoleLabel(role.roleName) ? (
                 <Text style={styles.hint}>{STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE}</Text>
               ) : null}

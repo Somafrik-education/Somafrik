@@ -23,22 +23,6 @@ import {
 import { sanitizeUserFacingError } from "../services/safeLogger";
 import { useHelpUi } from "../help/HelpUiContext";
 
-const ROLE_LABELS: Record<string, string> = {
-  super_admin: "Superadmin",
-  country_admin: "Admin pays",
-  school_admin: "Admin établissement",
-  principal: "Directeur",
-  proviseur: "Proviseur",
-  prefet: "Préfet des études",
-  secretary: "Secrétariat",
-  accountant: "Comptable",
-  adjoint: "Adjoint",
-  supervisor: "Surveillant",
-  teacher: "Enseignant",
-  parent_student: "Parent",
-  student: "Élève",
-};
-
 function canShowPushSelfTestButton(session: {
   role?: string;
   permissions?: string[];
@@ -67,11 +51,7 @@ export default function RoleNavigationDrawer({
   const schoolName = session?.school?.name ?? session?.user?.schoolCode ?? "Somafrik";
   const userName = session?.user?.name ?? "Utilisateur";
   const identity = resolveCanonicalRoleIdentity(session);
-  const roleLabel =
-    visibleRoleLabel(session?.user) ||
-    identity.roleLabel ||
-    ROLE_LABELS[session?.role ?? ""] ||
-    "Compte Somafrik";
+  const roleLabel = visibleRoleLabel(session?.user) || identity.roleLabel || "Compte Somafrik";
   const canOpenPersonalPreferences = Boolean(
     (session?.user?.schoolCode && session.user.schoolCode !== "*") ||
       (session?.school?.code && session.school.code !== "*"),

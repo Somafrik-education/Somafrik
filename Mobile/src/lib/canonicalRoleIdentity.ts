@@ -1,5 +1,10 @@
 import { normalize } from "./format";
 import { sessionRoleToPlatformRole } from "./orgHierarchy";
+import {
+  parseRoleDisplayContracts,
+  visibleRoleLabel,
+  type RoleDisplayContract,
+} from "./roleDisplayLabels";
 
 /**
  * L1 — identité de rôle Mobile.
@@ -23,6 +28,7 @@ export type CanonicalRoleIdentity = {
 export const UNAFFECTED_ROLE_LABEL = "Sans affectation";
 export const UNAFFECTED_SESSION_ROLE = "unassigned";
 
+/** Fallback DEFAULT uniquement. ADJOINT = alias legacy, hors catalogue seed ADMIN-02B. */
 const ROLE_KEY_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Super Administrateur Somafrik",
   COUNTRY_ADMIN: "Admin Pays",
@@ -184,8 +190,6 @@ function collectRoleKeys(session: any): string[] {
 
   const fromUserRole = canonicalizeRoleKey(session?.user?.role);
   if (fromUserRole) return [fromUserRole];
-  const fromRoleLabel = canonicalizeRoleKey(session?.roleLabel);
-  if (fromRoleLabel) return [fromRoleLabel];
   const fromSessionAlias = canonicalizeRoleKey(session?.role);
   return fromSessionAlias ? [fromSessionAlias] : [];
 }
@@ -212,11 +216,21 @@ export function resolveCanonicalRoleIdentity(session: any): CanonicalRoleIdentit
   }
 
   const roleKey = roleKeys[0] ?? "";
-  const explicitLabel = String(session?.user?.role ?? session?.roleLabel ?? "").trim();
+  const contracts = parseRoleDisplayContracts(
+    session?.user?.effectiveRoleLabels ?? session?.effectiveRoleLabels,
+  );
+  const primaryContract = contracts.find((row) => row.roleKey === roleKey);
   const roleLabel =
-    (explicitLabel && canonicalizeRoleKey(explicitLabel) === roleKey ? explicitLabel : "") ||
+    visibleRoleLabel({
+      role: session?.user?.role,
+      roleKey,
+      effectiveRoleLabel: session?.user?.effectiveRoleLabel ?? session?.effectiveRoleLabel,
+      defaultLabel: primaryContract?.defaultLabel,
+      displayLabel: primaryContract?.displayLabel,
+    }) ||
+    primaryContract?.effectiveLabel ||
+    String(session?.roleLabel ?? "").trim() ||
     roleLabelFromRoleKey(roleKey) ||
-    explicitLabel ||
     sessionRoleToPlatformRole(session?.role) ||
     String(session?.role ?? "").trim() ||
     "Utilisateur";
@@ -238,21 +252,31 @@ export function attachCanonicalRoleIdentity<T>(session: T | null | undefined): T
     roleLabel?: string;
     roleKey?: string;
     roleKeys?: string[];
+    effectiveRoleLabel?: string;
+    effectiveRoleLabels?: RoleDisplayContract[];
     permissions?: string[];
     user?: Record<string, unknown>;
   };
   const identity = resolveCanonicalRoleIdentity(current);
+  const effectiveRoleLabel =
+    current.user?.effectiveRoleLabel ?? current.effectiveRoleLabel ?? identity.roleLabel;
+  const effectiveRoleLabels =
+    current.user?.effectiveRoleLabels ?? current.effectiveRoleLabels;
   return {
     ...current,
     role: identity.sessionRole,
     roleLabel: identity.roleLabel,
     roleKey: identity.roleKey,
     roleKeys: identity.roleKeys,
+    effectiveRoleLabel,
+    ...(effectiveRoleLabels ? { effectiveRoleLabels } : {}),
     user: {
       ...(current.user ?? {}),
-      role: identity.roleLabel,
+      role: current.user?.role ?? identity.roleLabel,
       roleKey: identity.roleKey,
       roleKeys: identity.roleKeys,
+      effectiveRoleLabel,
+      ...(effectiveRoleLabels ? { effectiveRoleLabels } : {}),
     },
   };
 }

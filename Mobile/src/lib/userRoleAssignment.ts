@@ -1,9 +1,5 @@
 /**
- * Affectation multi-rôles Mobile — parité fonctionnelle avec web/src/pages/UsersPage.tsx.
- *
- * Le catalogue affichable vient exclusivement de GET /establishment-roles/assignable.
- * Aucune liste locale de rôles administrables n'est définie ici.
- * Parent et Élève / Étudiant sont exclus comme sur le Web (libellé + clés d'affectation interdites).
+ * Affectation multi-rôles Mobile — identité = roleKey, affichage = effectiveLabel.
  */
 import {
   areStudentRolesLocked,
@@ -15,6 +11,13 @@ import {
   type BusinessProfileUser,
 } from "./businessProfile";
 import { normalize } from "./format";
+import {
+  decorateAssignableRoles,
+  grantIdentityForRoleKey,
+  isServerProvidedRoleKey,
+  type DecoratedAssignableRole,
+  type RoleDisplayContract,
+} from "./roleDisplayLabels";
 
 export type EstablishmentRoleCatalogueEntry = {
   id?: string;
@@ -24,19 +27,16 @@ export type EstablishmentRoleCatalogueEntry = {
   permissions?: string[];
 };
 
-export type AssignableRoleChoice = {
-  roleKey: string;
-  roleName: string;
-};
+export type AssignableRoleChoice = DecoratedAssignableRole;
 
 export type RoleBearingUser = BusinessProfileUser & {
   roles?: string[];
   activeRoles?: string[];
+  roleKey?: string;
 };
 
 const UNAFFECTED_LABEL = "sans affectation";
 
-/** Clés que le backend refuse déjà via isForbiddenAssignRoleKey (PARENT / STUDENT). */
 const FORBIDDEN_ASSIGN_ROLE_KEYS = new Set(["PARENT", "STUDENT", "ELEVE", "ETUDIANT", "ELEVE_ETUDIANT"]);
 
 export class RoleAssignmentRejected extends Error {
@@ -51,7 +51,6 @@ export class RoleAssignmentRejected extends Error {
 
 export type SingleFlightResult<T> = { status: "skipped" } | { status: "done"; value: T };
 
-/** Empêche un second tap d'Enregistrer de relancer la mutation tant que la première est en cours. */
 export function createSingleFlight() {
   let pending = false;
   return {
@@ -68,55 +67,38 @@ export function createSingleFlight() {
   };
 }
 
-/** Parité Web UsersPage.isAdministrableRoleLabel. */
 export function isAdministrableRoleLabel(role: string): boolean {
   return role !== "Parent" && role !== "Élève / Étudiant";
-}
-
-function roleKeyToken(value: string): string {
-  return String(value ?? "")
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/[\s/.-]+/g, "_");
 }
 
 function isForbiddenAssignableIdentity(roleKey: string, roleName: string): boolean {
   if (!isAdministrableRoleLabel(roleName)) return true;
   const name = normalize(roleName);
   if (name === "parent" || name === "eleve / etudiant" || name === "eleve" || name === "etudiant") return true;
-  const key = roleKeyToken(roleKey);
-  const nameKey = roleKeyToken(roleName);
-  return FORBIDDEN_ASSIGN_ROLE_KEYS.has(key) || FORBIDDEN_ASSIGN_ROLE_KEYS.has(nameKey);
+  return FORBIDDEN_ASSIGN_ROLE_KEYS.has(roleKey);
 }
 
 export function isCanonicalAssignableRole(
   role: EstablishmentRoleCatalogueEntry,
-): role is EstablishmentRoleCatalogueEntry & { roleName: string } {
+): role is EstablishmentRoleCatalogueEntry & { roleName: string; roleKey: string } {
   const roleName = String(role.roleName ?? "").trim();
-  const roleKey = String(role.roleKey ?? role.roleCode ?? "").trim();
+  const roleKey = grantIdentityForRoleKey(role.roleKey ?? role.roleCode);
   return Boolean(roleKey && roleName && normalize(roleName) !== UNAFFECTED_LABEL);
 }
 
-/**
- * Rôles proposés dans la modale. Les libellés restent ceux du catalogue backend.
- * Les permissions ne sont pas exposées : la matrice reste hors de cet écran.
- */
-export function visibleAssignableRoles(catalog: EstablishmentRoleCatalogueEntry[]): AssignableRoleChoice[] {
-  const seen = new Set<string>();
-  const choices: AssignableRoleChoice[] = [];
+export function visibleAssignableRoles(
+  catalog: EstablishmentRoleCatalogueEntry[],
+  displayCatalog: Map<string, RoleDisplayContract> = new Map(),
+): AssignableRoleChoice[] {
+  const raw: Array<{ roleKey: string; roleName: string }> = [];
   for (const entry of catalog) {
     if (!isCanonicalAssignableRole(entry)) continue;
     const roleName = String(entry.roleName).trim();
-    const roleKey = String(entry.roleKey ?? entry.roleCode).trim();
-    if (isForbiddenAssignableIdentity(roleKey, roleName)) continue;
-    const dedupe = normalize(roleName);
-    if (seen.has(dedupe)) continue;
-    seen.add(dedupe);
-    choices.push({ roleKey, roleName });
+    const roleKey = grantIdentityForRoleKey(entry.roleKey ?? entry.roleCode);
+    if (!roleKey || isForbiddenAssignableIdentity(roleKey, roleName)) continue;
+    raw.push({ roleKey, roleName });
   }
-  return choices;
+  return decorateAssignableRoles(raw, displayCatalog);
 }
 
 function cleanRoleLabel(value: unknown): string {
@@ -125,48 +107,42 @@ function cleanRoleLabel(value: unknown): string {
   return label;
 }
 
-function uniqueLabels(values: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const value of values) {
-    const key = normalize(value);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    result.push(value);
-  }
-  return result;
+/** Autorité des mutations : roleKeys / roleKey. Fallback legacy sur un rôle système uniquement. */
+export function currentAccessRoleKeys(user: RoleBearingUser): string[] {
+  const fromKeys = (user.roleKeys ?? [])
+    .map((key) => grantIdentityForRoleKey(key))
+    .filter(Boolean);
+  if (fromKeys.length) return [...new Set(fromKeys)];
+  const primary = grantIdentityForRoleKey(user.roleKey);
+  if (primary) return [primary];
+  return [];
 }
 
-/** Rôles actuellement actifs. Même priorité que le Web : `roles`, puis le libellé unique. */
+/** @deprecated identité = currentAccessRoleKeys. Conservé pour lecture historique. */
 export function currentAccessRoleLabels(user: RoleBearingUser): string[] {
-  const fromRoles = uniqueLabels((user.roles ?? []).map(cleanRoleLabel).filter(Boolean));
+  const keys = currentAccessRoleKeys(user);
+  if (keys.length) return keys;
+  const fromRoles = (user.roles ?? []).map(cleanRoleLabel).filter(Boolean);
   if (fromRoles.length) return fromRoles;
-  const fromActive = uniqueLabels((user.activeRoles ?? []).map(cleanRoleLabel).filter(Boolean));
+  const fromActive = (user.activeRoles ?? []).map(cleanRoleLabel).filter(Boolean);
   if (fromActive.length) return fromActive;
   const single = cleanRoleLabel(user.role);
   return single ? [single] : [];
 }
 
-function matchesChoice(label: string, choice: AssignableRoleChoice): boolean {
-  const value = normalize(label);
-  if (value === normalize(choice.roleName) || value === normalize(choice.roleKey)) return true;
-  const token = roleKeyToken(label);
-  return token === roleKeyToken(choice.roleKey) || token === roleKeyToken(choice.roleName);
-}
-
 /**
- * Aligne les rôles actifs sur les libellés du catalogue (pré-cochage).
- * Un rôle actif absent du catalogue est conservé pour ne pas être révoqué par omission.
+ * Aligne les rôles actifs sur le catalogue par roleKey.
+ * Un rôle actif absent du catalogue est conservé (fail-closed, pas de révocation silencieuse).
  */
-export function alignRolesToCatalogue(currentLabels: string[], catalog: AssignableRoleChoice[]): string[] {
+export function alignRolesToCatalogue(currentKeys: string[], catalog: AssignableRoleChoice[]): string[] {
   const selected: string[] = [];
   const seen = new Set<string>();
-  for (const label of currentLabels) {
-    const match = catalog.find((choice) => matchesChoice(label, choice));
-    const next = match?.roleName ?? label;
-    const key = normalize(next);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
+  const byKey = new Map(catalog.map((choice) => [choice.roleKey, choice.roleKey]));
+  for (const raw of currentKeys) {
+    const identity = grantIdentityForRoleKey(raw) || (isServerProvidedRoleKey(raw) ? raw : "");
+    const next = identity ? byKey.get(identity) ?? identity : "";
+    if (!next || seen.has(next)) continue;
+    seen.add(next);
     selected.push(next);
   }
   return selected;
@@ -206,9 +182,11 @@ export async function applyUserRoleAssignment(input: {
   onGranted?: (role: string) => void;
   onRevoked?: (role: string) => void;
 }): Promise<{ toGrant: string[]; toRevoke: string[]; unchanged: string[] }> {
-  const diff = diffRoleAssignment(input.currentRoles, input.selectedRoles);
+  const currentRoles = input.currentRoles.map((role) => grantIdentityForRoleKey(role) || role);
+  const selectedRoles = input.selectedRoles.map((role) => grantIdentityForRoleKey(role) || role);
+  const diff = diffRoleAssignment(currentRoles, selectedRoles);
   if (isStudentLinkedAccount(input.user) || areStudentRolesLocked(input.user)) {
-    const teacherGrant = diff.toGrant.some((role) => isTeacherRoleLabel(role));
+    const teacherGrant = diff.toGrant.some((role) => isTeacherRoleLabel(role) || role === "TEACHER");
     throw new RoleAssignmentRejected(
       teacherGrant ? STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE : STUDENT_ROLE_LOCKED_MESSAGE,
       409,
@@ -216,33 +194,43 @@ export async function applyUserRoleAssignment(input: {
   }
 
   for (const role of diff.toGrant) {
-    if (!canAssignRoleToUserAccount(input.user, role)) {
+    const identity = grantIdentityForRoleKey(role);
+    if (!identity) continue;
+    if (!canAssignRoleToUserAccount(input.user, identity)) {
       throw new RoleAssignmentRejected(
-        isTeacherRoleLabel(role) ? STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE : STUDENT_ROLE_LOCKED_MESSAGE,
+        isTeacherRoleLabel(identity) || identity === "TEACHER"
+          ? STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE
+          : STUDENT_ROLE_LOCKED_MESSAGE,
         409,
       );
     }
     try {
-      await input.grant(input.userId, role);
+      await input.grant(input.userId, identity);
     } catch (error) {
       throw new RoleAssignmentRejected(rejectionMessage(error), rejectionStatus(error));
     }
-    input.onGranted?.(role);
+    input.onGranted?.(identity);
   }
 
   for (const role of diff.toRevoke) {
+    const identity = grantIdentityForRoleKey(role);
+    if (!identity) continue;
     if (isStudentLinkedAccount(input.user) || areStudentRolesLocked(input.user)) {
       throw new RoleAssignmentRejected(STUDENT_ROLE_LOCKED_MESSAGE, 409);
     }
     try {
-      await input.revoke(input.userId, role);
+      await input.revoke(input.userId, identity);
     } catch (error) {
       throw new RoleAssignmentRejected(rejectionMessage(error), rejectionStatus(error));
     }
-    input.onRevoked?.(role);
+    input.onRevoked?.(identity);
   }
 
-  return diff;
+  return {
+    toGrant: diff.toGrant.map((role) => grantIdentityForRoleKey(role) || role).filter(Boolean),
+    toRevoke: diff.toRevoke.map((role) => grantIdentityForRoleKey(role) || role).filter(Boolean),
+    unchanged: diff.unchanged.map((role) => grantIdentityForRoleKey(role) || role).filter(Boolean),
+  };
 }
 
 export async function commitUserRoleChanges(input: {
@@ -276,7 +264,7 @@ export async function saveUserRoleChanges(
       try {
         await input.reloadAfterFailure();
       } catch {
-        /* Le refus API reste la vérité affichée. Un échec de relecture ne devient pas un succès. */
+        /* Le refus API reste la vérité affichée. */
       }
     }
     return { ok: false, message, status };
