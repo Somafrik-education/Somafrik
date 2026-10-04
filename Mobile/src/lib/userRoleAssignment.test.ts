@@ -14,7 +14,7 @@ import {
   alignRolesToCatalogue,
   applyUserRoleAssignment,
   createSingleFlight,
-  currentAccessRoleLabels,
+  currentAccessRoleKeys,
   diffRoleAssignment,
   saveUserRoleChanges,
   visibleAssignableRoles,
@@ -84,89 +84,90 @@ describe("pré-sélection et diff", () => {
   const choices = visibleAssignableRoles(catalogue);
 
   it("les rôles actuels sont pré-cochés, y compris via la clé backend", () => {
-    const labels = currentAccessRoleLabels({
+    const keys = currentAccessRoleKeys({
+      roleKeys: ["TEACHER", "ACCOUNTANT"],
       roles: ["Enseignant", "Comptable"],
       activeRoles: ["Enseignant", "Comptable"],
     });
-    assert.deepEqual(alignRolesToCatalogue(labels, choices), ["Enseignant", "Comptable"]);
-    assert.deepEqual(alignRolesToCatalogue(["TEACHER", "ACCOUNTANT"], choices), ["Enseignant", "Comptable"]);
+    assert.deepEqual(alignRolesToCatalogue(keys, choices), ["TEACHER", "ACCOUNTANT"]);
+    assert.deepEqual(alignRolesToCatalogue(["TEACHER", "ACCOUNTANT"], choices), ["TEACHER", "ACCOUNTANT"]);
   });
 
   it("un utilisateur à plusieurs rôles reste éditable sans appel inutile", () => {
-    const current = alignRolesToCatalogue(["Enseignant", "Comptable"], choices);
+    const current = alignRolesToCatalogue(["TEACHER", "ACCOUNTANT"], choices);
     const diff = diffRoleAssignment(current, current);
     assert.deepEqual(diff.toGrant, []);
     assert.deepEqual(diff.toRevoke, []);
-    assert.deepEqual(diff.unchanged, ["Enseignant", "Comptable"]);
+    assert.deepEqual(diff.unchanged, ["TEACHER", "ACCOUNTANT"]);
   });
 
   it("ajout et retrait dans la même validation produisent le diff, sans toucher l'inchangé", () => {
-    const diff = diffRoleAssignment(["Enseignant", "Secrétaire"], ["Enseignant", "Comptable"]);
-    assert.deepEqual(diff.toGrant, ["Comptable"]);
-    assert.deepEqual(diff.toRevoke, ["Secrétaire"]);
-    assert.deepEqual(diff.unchanged, ["Enseignant"]);
+    const diff = diffRoleAssignment(["TEACHER", "SECRETARY"], ["TEACHER", "ACCOUNTANT"]);
+    assert.deepEqual(diff.toGrant, ["ACCOUNTANT"]);
+    assert.deepEqual(diff.toRevoke, ["SECRETARY"]);
+    assert.deepEqual(diff.unchanged, ["TEACHER"]);
   });
 });
 
 describe("mutations canoniques", () => {
   const choices = visibleAssignableRoles(catalogue);
 
-  it("l'ajout appelle grantClientsUserRole avec le libellé du catalogue", async () => {
+  it("l'ajout appelle grantClientsUserRole avec le roleKey canonique", async () => {
     const api = callsOf();
-    const current = alignRolesToCatalogue(currentAccessRoleLabels(staff), choices);
-    const selected = [...current, "Comptable"];
+    const current = alignRolesToCatalogue(currentAccessRoleKeys({ ...staff, roleKeys: ["SECRETARY"] }), choices);
+    const selected = [...current, "ACCOUNTANT"];
     const diff = await applyUserRoleAssignment({
-      user: staff,
+      user: { ...staff, roleKeys: ["SECRETARY"] },
       userId: staff.id,
       currentRoles: current,
       selectedRoles: selected,
       grant: api.grant,
       revoke: api.revoke,
     });
-    assert.deepEqual(diff.toGrant, ["Comptable"]);
-    assert.deepEqual(api.grants, ["Comptable"]);
+    assert.deepEqual(diff.toGrant, ["ACCOUNTANT"]);
+    assert.deepEqual(api.grants, ["ACCOUNTANT"]);
     assert.deepEqual(api.revokes, []);
   });
 
   it("le retrait appelle revokeClientsUserRole", async () => {
     const api = callsOf();
     await applyUserRoleAssignment({
-      user: { ...staff, roles: ["Secrétaire", "Surveillant"], activeRoles: ["Secrétaire", "Surveillant"] },
+      user: { ...staff, roleKeys: ["SECRETARY", "SUPERVISOR"], roles: ["Secrétaire", "Surveillant"], activeRoles: ["Secrétaire", "Surveillant"] },
       userId: staff.id,
-      currentRoles: ["Secrétaire", "Surveillant"],
-      selectedRoles: ["Secrétaire"],
+      currentRoles: ["SECRETARY", "SUPERVISOR"],
+      selectedRoles: ["SECRETARY"],
       grant: api.grant,
       revoke: api.revoke,
     });
-    assert.deepEqual(api.revokes, ["Surveillant"]);
+    assert.deepEqual(api.revokes, ["SUPERVISOR"]);
     assert.deepEqual(api.grants, []);
   });
 
   it("ajout et retrait appellent les deux mutations dans cet ordre, pas le rôle inchangé", async () => {
     const api = callsOf();
     await applyUserRoleAssignment({
-      user: staff,
+      user: { ...staff, roleKeys: ["TEACHER", "SECRETARY"] },
       userId: staff.id,
-      currentRoles: ["Enseignant", "Secrétaire"],
-      selectedRoles: ["Enseignant", "Comptable"],
+      currentRoles: ["TEACHER", "SECRETARY"],
+      selectedRoles: ["TEACHER", "ACCOUNTANT"],
       grant: api.grant,
       revoke: api.revoke,
     });
-    assert.deepEqual(api.order, ["grant:Comptable", "revoke:Secrétaire"]);
-    assert.equal(api.order.some((entry) => entry.endsWith("Enseignant")), false);
+    assert.deepEqual(api.order, ["grant:ACCOUNTANT", "revoke:SECRETARY"]);
+    assert.equal(api.order.some((entry) => entry.endsWith("TEACHER") || entry.endsWith("Enseignant")), false);
   });
 
   it("aucun appel pour un rôle inchangé", async () => {
     const api = callsOf();
     const diff = await applyUserRoleAssignment({
-      user: { ...staff, roles: ["Enseignant", "Comptable"] },
+      user: { ...staff, roleKeys: ["TEACHER", "ACCOUNTANT"], roles: ["Enseignant", "Comptable"] },
       userId: staff.id,
-      currentRoles: ["Enseignant", "Comptable"],
-      selectedRoles: ["Enseignant", "Comptable"],
+      currentRoles: ["TEACHER", "ACCOUNTANT"],
+      selectedRoles: ["TEACHER", "ACCOUNTANT"],
       grant: api.grant,
       revoke: api.revoke,
     });
-    assert.deepEqual(diff.unchanged, ["Enseignant", "Comptable"]);
+    assert.deepEqual(diff.unchanged, ["TEACHER", "ACCOUNTANT"]);
     assert.deepEqual(api.grants, []);
     assert.deepEqual(api.revokes, []);
   });
@@ -211,7 +212,7 @@ describe("verrou élève et conflit Enseignant", () => {
           user: linked,
           userId: linked.id,
           currentRoles: [],
-          selectedRoles: ["Enseignant"],
+          selectedRoles: ["TEACHER"],
           grant: api.grant,
           revoke: api.revoke,
         }),
@@ -236,10 +237,10 @@ describe("erreurs API et rechargement", () => {
     const result = await saveUserRoleChanges({
       user: staff,
       userId: staff.id,
-      currentRoles: ["Secrétaire"],
-      selectedRoles: ["Secrétaire", "Comptable"],
+      currentRoles: ["SECRETARY"],
+      selectedRoles: ["SECRETARY", "ACCOUNTANT"],
       grant: async () => {
-        grants.push("Comptable");
+        grants.push("ACCOUNTANT");
         throw denied;
       },
       revoke: async (_id, role) => {
@@ -258,7 +259,7 @@ describe("erreurs API et rechargement", () => {
       assert.equal(result.status, 403);
     }
     assert.equal(localSuccess, false);
-    assert.deepEqual(grants, ["Comptable"]);
+    assert.deepEqual(grants, ["ACCOUNTANT"]);
     assert.deepEqual(revokes, []);
     assert.equal(reloaded, 1);
   });
@@ -267,8 +268,8 @@ describe("erreurs API et rechargement", () => {
     const result = await saveUserRoleChanges({
       user: staff,
       userId: staff.id,
-      currentRoles: ["Secrétaire"],
-      selectedRoles: ["Secrétaire", "Comptable"],
+      currentRoles: ["SECRETARY"],
+      selectedRoles: ["SECRETARY", "ACCOUNTANT"],
       grant: async () => {
         throw new Error("Network request failed");
       },
@@ -290,7 +291,7 @@ describe("erreurs API et rechargement", () => {
     const result = await saveUserRoleChanges({
       user: staff,
       userId: staff.id,
-      currentRoles: ["Enseignant"],
+      currentRoles: ["TEACHER"],
       selectedRoles: [],
       grant: async () => undefined,
       revoke: async () => {
@@ -330,8 +331,8 @@ describe("erreurs API et rechargement", () => {
     const result = await saveUserRoleChanges({
       user: staff,
       userId: staff.id,
-      currentRoles: ["Secrétaire"],
-      selectedRoles: ["Enseignant", "Comptable"],
+      currentRoles: ["SECRETARY"],
+      selectedRoles: ["TEACHER", "ACCOUNTANT"],
       grant: async () => undefined,
       revoke: async () => undefined,
       reload: async () => {
@@ -366,7 +367,8 @@ describe("contrat de parité — pas de gestion limitée au rôle Enseignant", (
     assert.match(controls, /Gérer les rôles/);
     assert.match(controls, /Sélectionnez les rôles d'accès de cet utilisateur\./);
     assert.match(controls, /listAssignableEstablishmentRoles/);
-    assert.match(controls, /visibleAssignableRoles/);
+    assert.match(controls, /loadAssignableRolesForMutation/);
+    assert.match(controls, /canCommitAssignableRoles/);
     assert.match(controls, /saveUserRoleChanges/);
     assert.match(controls, /createSingleFlight/);
     assert.match(controls, /grantClientsUserRole/);

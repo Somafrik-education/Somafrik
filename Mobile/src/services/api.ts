@@ -155,11 +155,20 @@ export type IdentifyResponse = {
   roleLabel: string;
 };
 
+export type RoleDisplayContract = {
+  roleKey: string;
+  defaultLabel: string;
+  displayLabel?: string | null;
+  effectiveLabel: string;
+};
+
 export type LoginResponse = {
   role: UserRole;
   roleLabel?: string;
   roleKey?: string;
   roleKeys?: string[];
+  effectiveRoleLabel?: string;
+  effectiveRoleLabels?: RoleDisplayContract[];
   accessToken?: string;
   refreshToken?: string;
   tokenType?: string;
@@ -180,9 +189,12 @@ export type LoginResponse = {
     countryScope?: string;
     countryCode?: string;
     role?: string;
+    roleLabel?: string;
     roleKey?: string;
     roleKeys?: string[];
     roles?: string[];
+    effectiveRoleLabel?: string;
+    effectiveRoleLabels?: RoleDisplayContract[];
     permissions?: string[];
     mustChangePassword?: boolean;
     parentPhone?: string;
@@ -256,7 +268,11 @@ export async function persistAuthenticatedSession(session: LoginResponse): Promi
   };
   await saveSessionProfile({
     role: safeSession.role,
+    roleLabel: safeSession.roleLabel,
+    roleKey: safeSession.roleKey,
     roleKeys: safeSession.roleKeys,
+    effectiveRoleLabel: safeSession.effectiveRoleLabel,
+    effectiveRoleLabels: safeSession.effectiveRoleLabels,
     permissions: safeSession.permissions,
     user: safeSession.user as unknown as Record<string, unknown>,
     ...(safeSession.school
@@ -1342,6 +1358,7 @@ export type CanonicalMessageRecipient = {
   userId: string;
   displayName: string;
   roleLabel?: string;
+  roleKey?: string;
   kind?: string;
   studentId?: string;
   studentName?: string;

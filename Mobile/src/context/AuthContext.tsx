@@ -69,7 +69,11 @@ function asPersistedProfile(profile: Awaited<ReturnType<typeof getSessionProfile
   if (!profile?.user) return null;
   return {
     role: profile.role as LoginResponse["role"],
+    roleLabel: profile.roleLabel,
+    roleKey: profile.roleKey,
     roleKeys: profile.roleKeys,
+    effectiveRoleLabel: profile.effectiveRoleLabel as LoginResponse["effectiveRoleLabel"],
+    effectiveRoleLabels: profile.effectiveRoleLabels as LoginResponse["effectiveRoleLabels"],
     permissions: profile.permissions,
     user: profile.user as LoginResponse["user"],
     school: profile.school as LoginResponse["school"],
@@ -131,12 +135,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!current?.user) return;
         await saveSessionProfile({
           role: current.role,
+          roleLabel: current.roleLabel,
+          roleKey: current.roleKey,
           roleKeys: next.roleKeys,
+          effectiveRoleLabel: current.effectiveRoleLabel ?? current.user?.effectiveRoleLabel,
+          effectiveRoleLabels: current.effectiveRoleLabels ?? current.user?.effectiveRoleLabels,
           permissions: next.permissions,
           user: {
             ...(current.user as unknown as Record<string, unknown>),
             permissions: next.permissions,
             roleKeys: next.roleKeys,
+            effectiveRoleLabel: current.user?.effectiveRoleLabel ?? current.effectiveRoleLabel,
+            effectiveRoleLabels: current.user?.effectiveRoleLabels ?? current.effectiveRoleLabels,
           },
           ...(current.school ? { school: current.school as unknown as Record<string, unknown> } : {}),
         });

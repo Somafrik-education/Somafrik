@@ -287,7 +287,8 @@ test("RL-25 scan hard-coded documenté (classe A)", () => {
   const mobileDrawer = readUtf8("../../Mobile/src/components/RoleNavigationDrawer.tsx");
   const mobileIdentity = readUtf8("../../Mobile/src/lib/canonicalRoleIdentity.ts");
   assert.match(webFormat, /"admin school": "Administrateur d’établissement"/);
-  assert.match(mobileDrawer, /school_admin: "Admin établissement"/);
+  assert.match(mobileDrawer, /visibleRoleLabel/);
+  assert.doesNotMatch(mobileDrawer, /school_admin: "Admin établissement"/);
   assert.match(mobileIdentity, /SCHOOL_ADMIN: "Admin School"/);
   assert.match(mobileIdentity, /TEACHER: "Enseignant"/);
   const evidence = JSON.parse(readUtf8("../../docs/audits/evidence/role-label-surfaces.json"));

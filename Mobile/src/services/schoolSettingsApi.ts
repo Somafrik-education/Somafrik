@@ -244,6 +244,17 @@ export function listAssignableEstablishmentRoles() {
   return httpRequest<{ roles: AssignableEstablishmentRole[] }>("/establishment-roles/assignable");
 }
 
+export function listRoleDisplayLabels() {
+  return httpRequest<{
+    items?: Array<{
+      roleKey: string;
+      defaultLabel: string;
+      displayLabel?: string | null;
+      effectiveLabel: string;
+    }>;
+  }>("/backoffice/rbac/role-display-labels");
+}
+
 /** Catalogue établissement canonique utilisé aussi par le Web (SchoolSubjectsPanel). */
 export function listSchoolSubjects() {
   return httpRequest<unknown>("/v2/subjects").then((payload) =>
