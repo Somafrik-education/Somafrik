@@ -3,7 +3,12 @@
 /**
  * ADMIN-02B — résolution unique des libellés d'affichage.
  * DISPLAY ONLY. Ne jamais passer displayLabel / effectiveLabel à toRoleKey.
+ * Index request-scoped uniquement : jamais de cache process.
  */
+
+const { AsyncLocalStorage } = require("node:async_hooks");
+
+const roleDisplayRequestScope = new AsyncLocalStorage();
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -185,11 +190,7 @@ async function loadRoleDisplayIndexFromAuthority(source) {
   return null;
 }
 
-/**
- * Index par requête, depuis establishment_roles. Pas de cache process.
- * Accepte le repository racine, un clients store / tx, ou un queryable PG.
- */
-async function loadRoleDisplayIndexFromRepo(repo) {
+async function loadRoleDisplayIndexUncached(repo) {
   if (!repo) return new Map();
   const sources = collectRoleDisplaySources(repo);
   for (const source of sources) {
@@ -212,6 +213,52 @@ async function loadRoleDisplayIndexFromRepo(repo) {
   return new Map();
 }
 
+function createRoleDisplayRequestScope() {
+  return { indexPromise: null };
+}
+
+function runWithRoleDisplayRequestScope(fn) {
+  if (roleDisplayRequestScope.getStore()) return fn();
+  return roleDisplayRequestScope.run(createRoleDisplayRequestScope(), fn);
+}
+
+function createRoleDisplayIndexLoader(queryable) {
+  let indexPromise = null;
+  return function loadRoleDisplayIndexOnce() {
+    if (!indexPromise) {
+      const scope = roleDisplayRequestScope.getStore();
+      if (scope) {
+        if (!scope.indexPromise) {
+          scope.indexPromise = loadRoleDisplayIndexUncached(queryable);
+        }
+        indexPromise = scope.indexPromise;
+      } else {
+        indexPromise = loadRoleDisplayIndexUncached(queryable);
+      }
+    }
+    return indexPromise;
+  };
+}
+
+/**
+ * Index par requête, depuis establishment_roles. Pas de cache process.
+ * Accepte le repository racine, un clients store / tx, ou un queryable PG.
+ */
+async function loadRoleDisplayIndexFromRepo(repo) {
+  if (!repo) return new Map();
+  if (typeof repo.loadRoleDisplayIndexOnce === "function") {
+    return repo.loadRoleDisplayIndexOnce();
+  }
+  const scope = roleDisplayRequestScope.getStore();
+  if (scope) {
+    if (!scope.indexPromise) {
+      scope.indexPromise = loadRoleDisplayIndexUncached(repo);
+    }
+    return scope.indexPromise;
+  }
+  return loadRoleDisplayIndexUncached(repo);
+}
+
 module.exports = {
   asTrimmed,
   normalizeDisplayLabel,
@@ -225,5 +272,8 @@ module.exports = {
   resolveVisibleRoleLabel,
   decorateUserWithRoleDisplay,
   decorateIdentifyRole,
+  runWithRoleDisplayRequestScope,
+  createRoleDisplayIndexLoader,
+  loadRoleDisplayIndexUncached,
   loadRoleDisplayIndexFromRepo,
 };

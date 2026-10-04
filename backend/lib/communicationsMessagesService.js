@@ -453,11 +453,17 @@ function hasRoleDisplayAuthority(obj) {
 
 async function loadMessageDisplayIndex(store, tx) {
   const { loadRoleDisplayIndexFromRepo } = require("./roleDisplayLabels");
-  if (store) {
-    const index = await loadRoleDisplayIndexFromRepo(store);
-    if (index.size > 0 || hasRoleDisplayAuthority(store)) return index;
+  if (tx && typeof tx.loadRoleDisplayIndexOnce === "function") {
+    return tx.loadRoleDisplayIndexOnce();
   }
-  return loadRoleDisplayIndexFromRepo(tx);
+  if (store && typeof store.loadRoleDisplayIndexOnce === "function") {
+    return store.loadRoleDisplayIndexOnce();
+  }
+  if (tx) {
+    const index = await loadRoleDisplayIndexFromRepo(tx);
+    if (index.size > 0 || hasRoleDisplayAuthority(tx)) return index;
+  }
+  return loadRoleDisplayIndexFromRepo(store);
 }
 
 function decorateMessageRole(row, displayIndex) {
@@ -940,18 +946,25 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
   };
 }
 
+function withRoleDisplayRequestScope(fn) {
+  return (...args) => {
+    const { runWithRoleDisplayRequestScope } = require("./roleDisplayLabels");
+    return runWithRoleDisplayRequestScope(() => fn(...args));
+  };
+}
+
 module.exports = {
   MESSAGE_MAX_LENGTH,
-  sendOrCreate,
-  createConversation,
-  replyToConversation,
-  markMessageRead,
-  listConversations,
-  getConversation,
-  listConversationMessages,
-  listMessages,
-  listAuthorizedRecipients,
-  getMessage,
+  sendOrCreate: withRoleDisplayRequestScope(sendOrCreate),
+  createConversation: withRoleDisplayRequestScope(createConversation),
+  replyToConversation: withRoleDisplayRequestScope(replyToConversation),
+  markMessageRead: withRoleDisplayRequestScope(markMessageRead),
+  listConversations: withRoleDisplayRequestScope(listConversations),
+  getConversation: withRoleDisplayRequestScope(getConversation),
+  listConversationMessages: withRoleDisplayRequestScope(listConversationMessages),
+  listMessages: withRoleDisplayRequestScope(listMessages),
+  listAuthorizedRecipients: withRoleDisplayRequestScope(listAuthorizedRecipients),
+  getMessage: withRoleDisplayRequestScope(getMessage),
   unreadCount,
   uploadAttachment,
   downloadAttachment,

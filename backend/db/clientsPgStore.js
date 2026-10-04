@@ -40,8 +40,7 @@ function createClientsPgStore(repo) {
     const one = (sql, params) => (client.one ? client.one(sql, params) : repo.one(sql, params));
     const all = (sql, params) => (client.all ? client.all(sql, params) : repo.all(sql, params));
     const query = (sql, params) => (client.query ? client.query(sql, params) : repo.query(sql, params));
-
-    return {
+    const queryable = {
       one,
       all,
       query,
@@ -51,6 +50,13 @@ function createClientsPgStore(repo) {
           ? repo.getEstablishmentRolesStore()
           : null;
       },
+    };
+    const { createRoleDisplayIndexLoader } = require("../lib/roleDisplayLabels");
+    const loadRoleDisplayIndexOnce = createRoleDisplayIndexLoader(queryable);
+
+    return {
+      ...queryable,
+      loadRoleDisplayIndexOnce,
       async getSchoolByCode(code) {
         const normalized = asTrimmed(code).toUpperCase();
         if (!normalized) return null;
@@ -90,7 +96,7 @@ function createClientsPgStore(repo) {
            WHERE u.id::text = $1 OR u.user_code = $1`,
           [id],
         );
-        const index = await loadRoleDisplayIndex(this);
+        const index = await loadRoleDisplayIndexOnce();
         return attachDisplayLabelToUserRow(row, index);
       },
       async listSchoolUsers(schoolId) {
@@ -102,7 +108,7 @@ function createClientsPgStore(repo) {
            WHERE u.school_id = $1 AND COALESCE(u.status, 'active') = 'active'`,
           [schoolId],
         );
-        const index = await loadRoleDisplayIndex(this);
+        const index = await loadRoleDisplayIndexOnce();
         return rows.map((row) => attachDisplayLabelToUserRow(row, index));
       },
       async insertUser(row) {

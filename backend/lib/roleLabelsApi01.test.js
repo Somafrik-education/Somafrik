@@ -612,6 +612,176 @@ test("API-RL-15 PG queryable .all charge establishment_roles une fois", async ()
   assert.equal(catalogSelects, 1);
 });
 
+function pgLikeUsers() {
+  return [
+    {
+      id: "user-admin",
+      user_code: "user-admin",
+      school_id: "school-1",
+      school_code: SCHOOL_CODE,
+      first_name: "Ada",
+      last_name: "Admin",
+      role: "Admin School",
+      status: "active",
+      role_keys: ["SCHOOL_ADMIN"],
+    },
+    {
+      id: "user-teacher",
+      user_code: "user-teacher",
+      school_id: "school-1",
+      school_code: SCHOOL_CODE,
+      first_name: "Tom",
+      last_name: "Teacher",
+      role: "Enseignant",
+      status: "active",
+      role_keys: ["TEACHER"],
+    },
+    {
+      id: "user-teacher-2",
+      user_code: "user-teacher-2",
+      school_id: "school-1",
+      school_code: SCHOOL_CODE,
+      first_name: "Léa",
+      last_name: "Teacher",
+      role: "Enseignant",
+      status: "active",
+      role_keys: ["TEACHER"],
+    },
+  ];
+}
+
+function createPgLikeMessagesClients({ withRolesStore = true, teacherLabel = "Professeur" } = {}) {
+  const { repo, store: rolesStore } = rolesRepo();
+  const catalogProbe = { contracts: 0, sql: 0 };
+  const original = rolesStore.listRoleDisplayContracts.bind(rolesStore);
+  rolesStore.listRoleDisplayContracts = async (...args) => {
+    catalogProbe.contracts += 1;
+    return original(...args);
+  };
+  const users = pgLikeUsers();
+  const school = {
+    id: "school-1",
+    school_code: SCHOOL_CODE,
+    login_code: SCHOOL_CODE,
+    country_id: "country-cd",
+    country_code: "CD",
+    country_name: "Congo",
+    name: "École Test",
+  };
+  const fakePgRepo = {
+    getEstablishmentRolesStore: withRolesStore ? () => rolesStore : undefined,
+    withTransaction: async (fn) => fn(fakePgRepo),
+    one: async (sql, params = []) => {
+      const text = String(sql);
+      if (text.includes("FROM schools")) {
+        return school;
+      }
+      if (text.includes("FROM users u") && (text.includes("u.id::text") || text.includes("user_code"))) {
+        return users.find((row) => row.id === params[0] || row.user_code === params[0]) ?? null;
+      }
+      return null;
+    },
+    all: async (sql, params = []) => {
+      const text = String(sql);
+      if (text.includes("information_schema.columns")) return [{ available: true }];
+      if (text.includes("establishment_roles")) {
+        catalogProbe.sql += 1;
+        return [
+          { role_code: "TEACHER", role_name: "Enseignant", display_label: teacherLabel },
+          { role_code: "SCHOOL_ADMIN", role_name: "Admin School", display_label: null },
+        ];
+      }
+      if (text.includes("FROM users u") && text.includes("u.school_id")) {
+        return users.filter((row) => row.school_id === params[0] && (row.status ?? "active") === "active");
+      }
+      if (text.includes("FROM user_roles")) {
+        const user = users.find((row) => row.id === params[0]);
+        return (user?.role_keys ?? []).map((role_key) => ({ role_key, user_id: params[0] }));
+      }
+      if (text.includes("teacher_assignments")) {
+        return [{ class_id: "class-1" }];
+      }
+      return [];
+    },
+    query: async () => ({ rows: [] }),
+  };
+  const clients = createClientsPgStore(fakePgRepo);
+  return {
+    repo,
+    rolesStore,
+    clients,
+    catalogProbe,
+    users,
+    adminPrincipal: {
+      sub: "user-admin",
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: SCHOOL_CODE,
+    },
+    teacherId: "user-teacher",
+  };
+}
+
+test("API-RL-15G-PG-A runtime Messages PG-like : recipients TEACHER → Professeur, 1 catalogue", async () => {
+  const { repo, clients, catalogProbe, adminPrincipal, teacherId } = createPgLikeMessagesClients();
+  await updateRoleDisplayLabel(repo, "role-teacher", { displayLabel: "Professeur" }, SUPER, {});
+  const recipients = await messagesService.listAuthorizedRecipients(clients, adminPrincipal, {});
+  const teacher = recipients.items.find((row) => row.userId === teacherId);
+  assert.ok(teacher, "destinataire TEACHER présent");
+  assert.equal(teacher.roleKey, "TEACHER");
+  assert.equal(teacher.roleLabel, "Professeur");
+  assert.equal(catalogProbe.contracts, 1, "un seul chargement catalogue pour GET recipients");
+  assert.equal(catalogProbe.sql, 0, "pas de SELECT establishment_roles si le store rôles est disponible");
+});
+
+test("API-RL-15G-PG-B même tx PG : getUserById N + listSchoolUsers = 1 catalogue", async () => {
+  const { repo, clients, catalogProbe } = createPgLikeMessagesClients();
+  await updateRoleDisplayLabel(repo, "role-teacher", { displayLabel: "Professeur" }, SUPER, {});
+  const tx = clients.bind({});
+  const admin = await tx.getUserById("user-admin");
+  const teacher = await tx.getUserById("user-teacher");
+  const teacher2 = await tx.getUserById("user-teacher-2");
+  const listed = await tx.listSchoolUsers("school-1");
+  assert.equal(admin.display_label, null);
+  assert.equal(teacher.display_label, "Professeur");
+  assert.equal(teacher2.display_label, "Professeur");
+  assert.equal(listed.length, 3);
+  assert.equal(
+    listed.find((row) => row.id === "user-teacher").display_label,
+    "Professeur",
+  );
+  assert.equal(catalogProbe.contracts, 1);
+});
+
+test("API-RL-15G-PG-C deux opérations PG distinctes : pas de cache process", async () => {
+  const { repo, clients, catalogProbe, adminPrincipal } = createPgLikeMessagesClients();
+  await updateRoleDisplayLabel(repo, "role-teacher", { displayLabel: "Professeur" }, SUPER, {});
+  await messagesService.listAuthorizedRecipients(clients, adminPrincipal, {});
+  await messagesService.listAuthorizedRecipients(clients, adminPrincipal, {});
+  assert.equal(catalogProbe.contracts, 2, "chaque opération API recharge le catalogue");
+});
+
+test("API-RL-15G-PG-D queryable SQL PG-like : 1 SELECT establishment_roles par tx", async () => {
+  const { clients, catalogProbe } = createPgLikeMessagesClients({ withRolesStore: false });
+  const tx = clients.bind({});
+  await tx.getUserById("user-admin");
+  await tx.getUserById("user-teacher");
+  const listed = await tx.listSchoolUsers("school-1");
+  assert.equal(listed.find((row) => row.id === "user-teacher").display_label, "Professeur");
+  assert.equal(catalogProbe.sql, 1, "un seul SELECT establishment_roles pour la tx");
+  assert.equal(catalogProbe.contracts, 0);
+});
+
+test("API-RL-15G-PG-E roleKey reste TEACHER sur le chemin PG-like", async () => {
+  const { repo, clients, adminPrincipal, teacherId } = createPgLikeMessagesClients();
+  await updateRoleDisplayLabel(repo, "role-teacher", { displayLabel: "Professeur" }, SUPER, {});
+  const recipients = await messagesService.listAuthorizedRecipients(clients, adminPrincipal, {});
+  const teacher = recipients.items.find((row) => row.userId === teacherId);
+  assert.equal(teacher.roleKey, "TEACHER");
+  assert.equal(teacher.roleLabel, "Professeur");
+  assert.notEqual(toRoleKey(teacher.roleLabel), "PRINCIPAL");
+});
+
 test("API-RL-17 / API-RL-18 compliance roleLabel décoré, guards inchangés", () => {
   const index = catalogIndex([{ role_code: "SCHOOL_ADMIN", display_label: "Directeur" }]);
   const row = sanitizePrivacyRequest({ role_label: "Admin School", school_code: "CD-1", identifier: "x" }, index);
