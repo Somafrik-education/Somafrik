@@ -98,6 +98,13 @@ describe("SchoolComplianceDashboard ADMIN-06B2", () => {
     HTMLAnchorElement.prototype.click = vi.fn();
   });
 
+  it("WEB-RL-25 SCHOOL_ADMIN display Directeur apparaît dans le tableau conformité", async () => {
+    auth(["Rapports:READ", "Utilisateurs:READ"]);
+    listSchoolErasureRequestsMock.mockResolvedValue([request({ roleLabel: "Directeur" })]);
+    render(<SchoolComplianceDashboard />);
+    expect(await screen.findByText("Directeur")).toBeInTheDocument();
+  });
+
   it("C06B2-03 School Admin ouvre SchoolComplianceDashboard", async () => {
     auth(["Rapports:READ", "Utilisateurs:READ", "Utilisateurs:UPDATE"]);
     render(<SchoolComplianceDashboard />);

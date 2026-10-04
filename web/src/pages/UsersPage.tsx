@@ -29,7 +29,6 @@ import {
   accountKindLabel,
   isTeacherRoleLabel,
   formatLockedRolesDisplay,
-  STUDENT_ACCESS_ROLE_LABEL,
   STUDENT_ROLES_LOCKED_LABEL,
   STUDENT_ROLE_LOCKED_MESSAGE,
   STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE,
@@ -43,6 +42,18 @@ import {
   shouldProvisionPlatformUser,
 } from "../lib/userAccounts";
 import { clientsApi } from "../lib/clientsApi";
+import { rbacApi } from "../lib/rbacApi";
+import {
+  canonicalAccessRoleKey,
+  decorateAssignableRoles,
+  defaultLabelForRoleKey,
+  grantIdentityForRoleKey,
+  indexRoleDisplayCatalog,
+  resolveCreatableRolesFromApi,
+  userHasAccessRoleKey,
+  type DecoratedAssignableRole,
+  type RoleDisplayContract,
+} from "../lib/roleDisplayLabels";
 import {
   COUNTRY_ADMIN_ROLE,
   isPendingValidationStatus,
@@ -109,8 +120,11 @@ export function UsersPage() {
   const [detail, setDetail] = useState<UserAccount | null>(null);
   const [editing, setEditing] = useState<UserAccount | null>(null);
   const [assigning, setAssigning] = useState<UserAccount | null>(null);
-  const [assignableRoles, setAssignableRoles] = useState<Array<{ roleKey: string; roleName: string }>>([]);
+  const [assignableRoles, setAssignableRoles] = useState<DecoratedAssignableRole[]>([]);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const [roleDisplayCatalog, setRoleDisplayCatalog] = useState<Map<string, RoleDisplayContract>>(new Map());
+  const [apiAssignableRoles, setApiAssignableRoles] = useState<Array<{ roleKey: string; roleName: string }>>([]);
+  const [assignableApiAvailable, setAssignableApiAvailable] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [reassigning, setReassigning] = useState<UserAccount | null>(null);
   const [reassignCountry, setReassignCountry] = useState("");
@@ -121,10 +135,55 @@ export function UsersPage() {
     [scopeUser, state, schoolCode],
   );
 
+  useEffect(() => {
+    void Promise.resolve(rbacApi.listRoleDisplayLabels())
+      .then((response) => {
+        const items = Array.isArray(response?.items) ? response.items : [];
+        setRoleDisplayCatalog(indexRoleDisplayCatalog(items));
+      })
+      .catch(() => undefined);
+    void Promise.resolve(clientsApi.listAssignableRoles())
+      .then((response) => {
+        const roles = Array.isArray(response?.roles) ? response.roles : [];
+        setApiAssignableRoles(roles.filter(isCanonicalAssignableRole));
+        setAssignableApiAvailable(true);
+      })
+      .catch(() => {
+        setApiAssignableRoles([]);
+        setAssignableApiAvailable(false);
+      });
+  }, []);
+
+  const decoratedCreatableRoles = useMemo(
+    () =>
+      decorateAssignableRoles(
+        resolveCreatableRolesFromApi({
+          apiRoles: apiAssignableRoles,
+          allowlistLabels: creatableRoles,
+          apiAvailable: assignableApiAvailable !== false,
+          platformOnly: isSuperadminView || isCountryAdminView,
+        }).filter(isAdministrableAssignableRole),
+        roleDisplayCatalog,
+      ),
+    [apiAssignableRoles, assignableApiAvailable, creatableRoles, isCountryAdminView, isSuperadminView, roleDisplayCatalog],
+  );
+
   const roleOptions = useMemo(() => {
-    const labels = [...creatableRoles, ...allUsers.map((user) => user.role)].filter(isCanonicalRoleLabel);
-    return [...new Set(labels)];
-  }, [allUsers, creatableRoles]);
+    const fromUsers = allUsers.flatMap((user) => {
+      const keys = (user.roleKeys ?? []).map((key) => String(key ?? "").trim().toUpperCase()).filter(Boolean);
+      const primary = grantIdentityForRoleKey(user.roleKey) || canonicalAccessRoleKey(user.role);
+      return primary ? [...keys, primary] : keys;
+    });
+    const fromCreatable = decoratedCreatableRoles.map((role) => role.roleKey);
+    const uniqueKeys = [...new Set([...fromUsers, ...fromCreatable].filter(Boolean))];
+    return decorateAssignableRoles(
+      uniqueKeys.map((roleKey) => ({
+        roleKey,
+        roleName: roleDisplayCatalog.get(roleKey)?.defaultLabel || defaultLabelForRoleKey(roleKey) || roleKey,
+      })),
+      roleDisplayCatalog,
+    );
+  }, [allUsers, decoratedCreatableRoles, roleDisplayCatalog]);
 
   const countryOptions = useMemo(
     () => getCountryScopeOptions(scopedCountries(scopeUser, state)),
@@ -160,12 +219,7 @@ export function UsersPage() {
         [u.firstName, u.lastName, u.identifier, u.publicId, formatBusinessProfileKind(u), formatAccessRolesDisplay(u), u.schoolCode, u.email].some((v) =>
           normalize(v).includes(q),
         );
-      const matchesRole =
-        !roleFilter ||
-        formatAccessRolesDisplay(u) === roleFilter ||
-        formatBusinessProfileKind(u) === roleFilter ||
-        (u.roles ?? []).includes(roleFilter) ||
-        u.role === roleFilter;
+      const matchesRole = !roleFilter || userHasAccessRoleKey(u, roleFilter);
       const matchesStatus = !statusFilter || String(u.status ?? "Actif") === statusFilter;
       const matchesPending =
         !pendingOnly || isPendingValidationStatus(u.validationStatus ?? u.status);
@@ -235,8 +289,11 @@ export function UsersPage() {
               if (created.temporaryPassword) {
                 showToast(`Mot de passe temporaire : ${created.temporaryPassword}`, "success");
               }
-              if (!shouldProvision && syncedUser.role && created?.id) {
-                await clientsApi.grantUserRole(String(created.id), syncedUser.role);
+              if (!shouldProvision && created?.id) {
+                const identity = grantIdentityForRoleKey(syncedUser.roleKey) || canonicalAccessRoleKey(syncedUser.role);
+                if (identity) {
+                  await clientsApi.grantUserRole(String(created.id), identity);
+                }
               }
             }
           } catch (error) {
@@ -328,7 +385,11 @@ export function UsersPage() {
     event.preventDefault();
     if (!editing || !session) return;
 
-    const error = validateUserAccount(editing, state.users, creatableRoles, {
+    const creatableRoleAllowlist = [
+      ...creatableRoles,
+      ...decoratedCreatableRoles.map((role) => role.roleName),
+    ];
+    const error = validateUserAccount(editing, state.users, creatableRoleAllowlist, {
       creator: session.user,
       allowedSchoolCodes,
       teachers: state.teachers,
@@ -367,17 +428,26 @@ export function UsersPage() {
     if (areStudentRolesLocked(user)) return;
     setAssigning(user);
     setDetail(null);
-    setSelectedRoles(user.roles?.length ? [...user.roles] : user.role && user.role !== "Sans affectation" ? [user.role] : []);
+    setSelectedRoles(currentAssignedRoleKeys(user));
     try {
       const response = await clientsApi.listAssignableRoles();
       const roles = Array.isArray(response?.roles) ? response.roles : [];
-      setAssignableRoles(roles.filter(isCanonicalAssignableRole).filter(isAdministrableAssignableRole));
+      const fromApi = roles.filter(isCanonicalAssignableRole).filter(isAdministrableAssignableRole);
+      setApiAssignableRoles(fromApi);
+      setAssignableApiAvailable(true);
+      setAssignableRoles(decorateAssignableRoles(fromApi, roleDisplayCatalog));
     } catch {
+      setAssignableApiAvailable(false);
       setAssignableRoles(
-        creatableRoles.filter(isCanonicalRoleLabel).filter(isAdministrableRoleLabel).map((roleName) => ({
-          roleKey: roleName,
-          roleName,
-        })),
+        decorateAssignableRoles(
+          resolveCreatableRolesFromApi({
+            apiRoles: [],
+            allowlistLabels: creatableRoles,
+            apiAvailable: false,
+            platformOnly: isSuperadminView || isCountryAdminView,
+          }).filter(isAdministrableAssignableRole),
+          roleDisplayCatalog,
+        ),
       );
     }
   }
@@ -388,22 +458,26 @@ export function UsersPage() {
       showToast(STUDENT_ROLE_LOCKED_MESSAGE, "error");
       return;
     }
-    const current = new Set(assigning.roles?.length ? assigning.roles : assigning.role && assigning.role !== "Sans affectation" ? [assigning.role] : []);
+    const current = new Set(currentAssignedRoleKeys(assigning));
     const next = new Set(selectedRoles);
     setBusy(true);
     try {
-      for (const role of next) {
-        if (!current.has(role)) {
-          if (!canAssignRoleToUserAccount(assigning, role)) {
+      for (const roleKey of next) {
+        if (!current.has(roleKey)) {
+          const identity = grantIdentityForRoleKey(roleKey);
+          if (!identity) continue;
+          if (!canAssignRoleToUserAccount(assigning, identity)) {
             showToast(STUDENT_TEACHER_ROLE_CONFLICT_MESSAGE, "error");
             return;
           }
-          await clientsApi.grantUserRole(String(assigning.id), role);
+          await clientsApi.grantUserRole(String(assigning.id), identity);
         }
       }
-      for (const role of current) {
-        if (!next.has(role)) {
-          await clientsApi.revokeUserRole(String(assigning.id), role);
+      for (const roleKey of current) {
+        if (!next.has(roleKey)) {
+          const identity = grantIdentityForRoleKey(roleKey);
+          if (!identity) continue;
+          await clientsApi.revokeUserRole(String(assigning.id), identity);
         }
       }
       await refresh(["users"]);
@@ -635,9 +709,10 @@ export function UsersPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
           <Select
+            aria-label="Filtrer par rôle"
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            options={[{ value: "", label: "Tous les rôles" }, ...roleOptions.map((r) => ({ value: r, label: r }))]}
+            options={[{ value: "", label: "Tous les rôles" }, ...roleOptions.map((r) => ({ value: r.roleKey, label: r.optionLabel }))]}
           />
           <Select
             value={statusFilter}
@@ -877,7 +952,7 @@ export function UsersPage() {
                   <Input value={formatBusinessProfileKind(editing)} readOnly />
                 </Field>
                 <Field label="Rôle d'accès">
-                  <Input value={STUDENT_ACCESS_ROLE_LABEL} readOnly />
+                  <Input value={formatAccessRolesDisplay(editing)} readOnly />
                 </Field>
                 <Field label="Rôles" hint={STUDENT_ROLE_LOCKED_MESSAGE}>
                   <Input value={STUDENT_ROLES_LOCKED_LABEL} readOnly />
@@ -897,10 +972,18 @@ export function UsersPage() {
                 required={isSuperadminView || isCountryAdminView}
               >
                 <Select
-                  value={editing.role ?? ""}
+                  value={editing.roleKey || canonicalAccessRoleKey(editing.role) || ""}
                   onChange={(e) => {
                     if (!session) return;
-                    setEditing(applyRoleChangeToUser(editing, e.target.value, session, state));
+                    const selected = decoratedCreatableRoles.find((role) => role.roleKey === e.target.value);
+                    if (!selected) {
+                      setEditing(applyRoleChangeToUser(editing, "", session, state));
+                      return;
+                    }
+                    setEditing({
+                      ...applyRoleChangeToUser(editing, selected.roleName, session, state),
+                      roleKey: selected.roleKey,
+                    });
                   }}
                   options={[
                     {
@@ -910,7 +993,7 @@ export function UsersPage() {
                           ? "Choisir un rôle..."
                           : "Sans affectation (plus tard)",
                     },
-                    ...creatableRoles.map((role) => ({ value: role, label: role })),
+                    ...decoratedCreatableRoles.map((role) => ({ value: role.roleKey, label: role.optionLabel })),
                   ]}
                 />
               </Field>
@@ -1114,18 +1197,19 @@ export function UsersPage() {
               <label key={role.roleKey} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={selectedRoles.includes(role.roleName)}
+                  value={role.roleKey}
+                  checked={selectedRoles.includes(role.roleKey)}
                   disabled={incompatible}
                   onChange={(event) => {
                     if (incompatible) return;
                     setSelectedRoles((current) =>
                       event.target.checked
-                        ? [...current, role.roleName]
-                        : current.filter((item) => item !== role.roleName),
+                        ? [...current, role.roleKey]
+                        : current.filter((item) => item !== role.roleKey),
                     );
                   }}
                 />
-                {role.roleName}
+                {role.optionLabel}
                 {incompatible && isTeacherRoleLabel(role.roleName) ? (
                   <span className="text-xs text-muted">incompatible avec un profil élève</span>
                 ) : null}
@@ -1204,10 +1288,6 @@ export function UsersPage() {
   );
 }
 
-function isCanonicalRoleLabel(role: string | undefined | null): role is string {
-  return typeof role === "string" && role.trim().length > 0 && role !== "Sans affectation";
-}
-
 function isAdministrableRoleLabel(role: string): boolean {
   return role !== "Parent" && role !== "Élève / Étudiant";
 }
@@ -1215,11 +1295,24 @@ function isAdministrableRoleLabel(role: string): boolean {
 function isCanonicalAssignableRole(
   role: { roleKey?: string; roleName?: string },
 ): role is { roleKey: string; roleName: string } {
-  return Boolean(role.roleKey?.trim() && role.roleName?.trim());
+  return Boolean(role.roleKey && role.roleName?.trim() && grantIdentityForRoleKey(role.roleKey));
 }
 
-function isAdministrableAssignableRole(role: { roleName: string }): boolean {
+function isAdministrableAssignableRole(role: { roleKey: string; roleName: string }): boolean {
+  const roleKey = String(role.roleKey ?? "").trim().toUpperCase();
+  if (roleKey === "PARENT" || roleKey === "STUDENT") return false;
   return isAdministrableRoleLabel(role.roleName);
+}
+
+function currentAssignedRoleKeys(user: UserAccount): string[] {
+  const keys = (user.roleKeys ?? []).map((key) => String(key ?? "").trim().toUpperCase()).filter(Boolean);
+  if (keys.length) return [...new Set(keys)];
+  const primary = grantIdentityForRoleKey(user.roleKey) || canonicalAccessRoleKey(user.role);
+  if (primary) return [primary];
+  return (user.roles ?? [])
+    .map((label) => canonicalAccessRoleKey(label))
+    .filter(Boolean)
+    .filter((key, index, all) => all.indexOf(key) === index);
 }
 
 function Row({ label, value }: { label: string; value?: string }) {

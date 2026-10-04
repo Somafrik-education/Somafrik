@@ -102,7 +102,7 @@ describe("P1-03 Web Messages school switch", () => {
     );
 
     await waitFor(() => expect(screen.getByText("Fil A")).toBeInTheDocument());
-    expect(screen.getByText("Dest A")).toBeInTheDocument();
+    expect(screen.getByText(/Dest A/)).toBeInTheDocument();
 
     schoolState.activeSchoolCode = "SCH-B";
     view.rerender(
@@ -112,12 +112,12 @@ describe("P1-03 Web Messages school switch", () => {
     );
 
     expect(screen.queryByText("Fil A")).not.toBeInTheDocument();
-    expect(screen.queryByText("Dest A")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Dest A/)).not.toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByText("Fil B")).toBeInTheDocument());
-    expect(screen.getByText("Dest B")).toBeInTheDocument();
+    expect(screen.getByText(/Dest B/)).toBeInTheDocument();
     expect(screen.queryByText("Fil A")).not.toBeInTheDocument();
-    expect(screen.queryByText("Dest A")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Dest A/)).not.toBeInTheDocument();
   });
 
   it("réponse tardive A après sélection B est ignorée", async () => {

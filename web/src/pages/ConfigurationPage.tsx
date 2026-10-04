@@ -39,7 +39,7 @@ import { buildSchoolSelectOptions } from "../lib/superadminCrudPath";
 import { canAccessSchoolBackOffice, canManageEstablishmentSettings } from "../lib/permissions";
 import { useFeaturePermissions, usePermissionContext } from "../lib/usePermissionContext";
 import { useActiveSchool } from "../context/ActiveSchoolContext";
-import { displayRoleName, normalize } from "../lib/format";
+import { normalize } from "../lib/format";
 import { establishmentRolesApi, type EstablishmentRole } from "../lib/establishmentRolesApi";
 
 type SavingSection = "year" | "periods" | "evaluations" | "levels" | "tracks" | null;
@@ -493,14 +493,14 @@ export function ConfigurationPage({ section }: { section?: ConfigurationSection 
                   onChange={(e) => setSelectedCatalogueRoleId(e.target.value)}
                   options={assignableRoles.map((role) => ({
                     value: role.id,
-                    label: displayRoleName(role.effectiveLabel || role.roleName),
+                    label: role.effectiveLabel || role.roleName,
                   }))}
                 />
               </FormField>
               {selectedCatalogueRole ? (
                 <div className="rounded-xl border border-line bg-slate-50/60 p-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-bold text-ink">{displayRoleName(selectedCatalogueRole.effectiveLabel || selectedCatalogueRole.roleName)}</p>
+                    <p className="text-sm font-bold text-ink">{selectedCatalogueRole.effectiveLabel || selectedCatalogueRole.roleName}</p>
                     <Badge tone="neutral">{selectedCatalogueRole.roleCode}</Badge>
                   </div>
                   <p className="mt-2 text-xs text-muted">
