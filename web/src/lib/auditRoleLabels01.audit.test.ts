@@ -11,10 +11,10 @@ function read(rel: string) {
 }
 
 describe("AUDIT-ROLE-LABELS-01 Web", () => {
-  it("RL-17 Topbar : visibleRoleLabel puis remap displayRoleName (PARTIEL)", () => {
+  it("RL-17 Topbar : visibleRoleLabel sans remap displayRoleName", () => {
     const topbar = read("src/components/layout/Topbar.tsx");
     expect(topbar).toContain("visibleRoleLabel");
-    expect(topbar).toContain("displayRoleName(visibleRoleLabel(user)");
+    expect(topbar).not.toContain("displayRoleName(visibleRoleLabel");
     expect(visibleRoleLabel({ role: "Admin School", effectiveRoleLabel: "Directeur" })).toBe("Directeur");
   });
 
@@ -26,11 +26,12 @@ describe("AUDIT-ROLE-LABELS-01 Web", () => {
     expect(page).toContain("role.roleName");
   });
 
-  it("RL-19 sélecteurs Users / création / attribution non branchés effectiveLabel", () => {
+  it("RL-19 sélecteurs Users / création / attribution branchés roleKey + effectiveLabel", () => {
     const page = read("src/pages/UsersPage.tsx");
-    expect(page).toContain("creatableRoles.map((role) => ({ value: role, label: role }))");
-    expect(page).toContain("{role.roleName}");
-    expect(page).not.toContain("listRoleDisplayLabels");
+    expect(page).toContain("listRoleDisplayLabels");
+    expect(page).toContain("value: r.roleKey");
+    expect(page).toContain("role.optionLabel");
+    expect(page).not.toContain("creatableRoles.map((role) => ({ value: role, label: role }))");
   });
 
   it("RL-20 PermissionsPage contrat 4 colonnes + reset", () => {
@@ -44,10 +45,11 @@ describe("AUDIT-ROLE-LABELS-01 Web", () => {
     expect(page).toContain("resetRoleDisplayLabel");
   });
 
-  it("SecuritySettings affiche user.role brut (écart P1)", () => {
+  it("SecuritySettings affiche visibleRoleLabel / formatVisibleRoleLabels", () => {
     const page = read("src/pages/parametres/SecuritySettingsPage.tsx");
-    expect(page).toContain('label="Rôle" value={user?.role}');
-    expect(page).not.toContain("visibleRoleLabel");
+    expect(page).toContain("visibleRoleLabel");
+    expect(page).toContain("formatVisibleRoleLabels");
+    expect(page).not.toContain('label="Rôle" value={user?.role}');
   });
 
   it("preuve visuelle SCHOOL_ADMIN / STUDENT / TEACHER sans mutation", () => {
@@ -56,10 +58,9 @@ describe("AUDIT-ROLE-LABELS-01 Web", () => {
     expect(resolveEffectiveRoleLabel({ defaultLabel: "Enseignant", displayLabel: "Professeur" })).toBe("Professeur");
   });
 
-  it("listRoleDisplayLabels API définie mais non consommée", () => {
+  it("listRoleDisplayLabels consommée par les sélecteurs Utilisateurs", () => {
     const api = read("src/lib/rbacApi.ts");
     expect(api).toContain("listRoleDisplayLabels");
-    const src = read("src/pages/UsersPage.tsx") + read("src/pages/PermissionsPage.tsx") + read("src/components/layout/Topbar.tsx");
-    expect(src).not.toContain("listRoleDisplayLabels(");
+    expect(read("src/pages/UsersPage.tsx")).toContain("listRoleDisplayLabels(");
   });
 });

@@ -18,6 +18,7 @@ import {
   SUPER_ADMIN_ROLE,
 } from "./orgHierarchy";
 import { resolveEffectivePermissions } from "./permissions";
+import { canonicalAccessRoleKey, formatVisibleRoleLabels } from "./roleDisplayLabels";
 import { api } from "../api/client";
 import { findDuplicateLoginIdentifier } from "./userAccountRules";
 import {
@@ -319,20 +320,31 @@ export function formatBusinessProfileKind(
 
 /** Rôles d'accès uniquement. Distinct du type métier. */
 export function formatAccessRolesDisplay(
-  user: Pick<UserAccount, "role" | "roles" | "roleKeys" | "assignmentStatus" | "accountKind" | "linkedStudent" | "effectiveRoleLabel">,
+  user: Pick<
+    UserAccount,
+    | "role"
+    | "roles"
+    | "roleKey"
+    | "roleKeys"
+    | "assignmentStatus"
+    | "accountKind"
+    | "linkedStudent"
+    | "effectiveRoleLabel"
+    | "effectiveRoleLabels"
+  >,
 ): string {
-  if (isStudentLinkedAccount(user)) return STUDENT_ACCESS_ROLE_LABEL;
-  const visual = String(user.effectiveRoleLabel ?? "").trim();
+  const visual = formatVisibleRoleLabels(user);
   if (visual) return visual;
+  if (isStudentLinkedAccount(user)) return STUDENT_ACCESS_ROLE_LABEL;
   const keys = accessRoleKeysOf(user);
   if (keys.length) {
     if (!isEmptyAccessLabel(user.assignmentStatus)) return String(user.assignmentStatus).trim();
-    if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(", ");
+    if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(" · ");
     if (!isEmptyAccessLabel(user.role)) return String(user.role).trim();
-    return keys.join(", ");
+    return keys.join(" · ");
   }
   if (!isEmptyAccessLabel(user.assignmentStatus)) return String(user.assignmentStatus).trim();
-  if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(", ");
+  if (Array.isArray(user.roles) && user.roles.length) return user.roles.join(" · ");
   if (!isEmptyAccessLabel(user.role)) return String(user.role).trim();
   return ACCESS_ROLES_NONE_LABEL;
 }
@@ -371,7 +383,11 @@ export function canAssignRoleToUserAccount(
   roleName: string,
 ): boolean {
   if (areStudentRolesLocked(user)) return false;
-  if ((user.linkedTeacher || user.accountKind === "teacher" || user.accountKind === "conflict") && normalize(roleName) === "eleve / etudiant") {
+  const roleKey = canonicalAccessRoleKey(roleName);
+  if (
+    (user.linkedTeacher || user.accountKind === "teacher" || user.accountKind === "conflict") &&
+    (roleKey === "STUDENT" || normalize(roleName) === "eleve / etudiant")
+  ) {
     return false;
   }
   return true;

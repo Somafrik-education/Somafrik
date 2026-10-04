@@ -288,6 +288,13 @@ export interface UserAccount {
   roleKey?: string;
   /** Libellé visuel résolu (display_label ou role). Hors RBAC. */
   effectiveRoleLabel?: string;
+  /** Contrats d'affichage multi-rôle (#872). Hors RBAC. */
+  effectiveRoleLabels?: Array<{
+    roleKey: string;
+    defaultLabel: string;
+    displayLabel?: string | null;
+    effectiveLabel: string;
+  }>;
   /** Libellés des rôles d'accès. */
   roles?: string[];
   /** Clés canoniques des rôles d'accès (TEACHER, SECRETARY, …). */

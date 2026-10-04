@@ -22,6 +22,12 @@ import { CommunicationChrome, useCommunicationListQuery } from "../components/co
 import { EmptyState, LoadingState } from "@/design-system";
 import { CommunicationHttpErrorState } from "../components/communications/CommunicationHttpErrorState";
 import { notifyMessagesUnreadChanged } from "../lib/messagesRead";
+import {
+  formatMessageRoleLabel,
+  hasStudentParticipant,
+  isStudentMessageTarget,
+  isTeacherMessagingSession,
+} from "../lib/messagesRoleIdentity";
 
 function mergeConversationsById(
   current: ConversationSummary[],
@@ -36,44 +42,12 @@ const formatDisplayDate = formatDateTimeForDisplay;
 function counterpartName(conversation: ConversationSummary, selfId?: string) {
   const others = (conversation.participants ?? []).filter((row) => row.userId !== selfId);
   if (!others.length) return conversation.subject || "Conversation";
-  return others.map((row) => row.name || row.userId).join(", ");
-}
-
-function normalizeMessagingRole(value: unknown): string {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toUpperCase();
-}
-
-function isTeacherMessagingSession(session: ReturnType<typeof useAuth>["session"]): boolean {
-  const roles = [
-    session?.user?.role,
-    ...(session?.user?.roles ?? []),
-    ...(session?.user?.roleKeys ?? []),
-  ];
-  return roles.some((value) => {
-    const normalized = normalizeMessagingRole(value);
-    return normalized === "TEACHER" || normalized === "ENSEIGNANT";
-  });
-}
-
-function isStudentMessageTarget(value?: { kind?: string; roleLabel?: string }): boolean {
-  const kind = normalizeMessagingRole(value?.kind);
-  const role = normalizeMessagingRole(value?.roleLabel);
-  return (
-    kind === "STUDENT" ||
-    role === "STUDENT" ||
-    role.includes("ELEVE") ||
-    role.includes("ETUDIANT")
-  );
-}
-
-function hasStudentParticipant(
-  participants?: Array<{ roleLabel?: string }>,
-): boolean {
-  return (participants ?? []).some((participant) => isStudentMessageTarget(participant));
+  return others
+    .map((row) => {
+      const roleLabel = formatMessageRoleLabel(row);
+      return [row.name || row.userId, roleLabel].filter(Boolean).join(" · ");
+    })
+    .join(", ");
 }
 
 export function MessagesConversationsPage() {
@@ -82,7 +56,7 @@ export function MessagesConversationsPage() {
   const { canRead, canCreate, canUpdate } = useFeaturePermissions("Messages");
   const { showToast } = useToast();
   const selfId = String(session?.user?.id ?? "");
-  const teacherSession = isTeacherMessagingSession(session);
+  const teacherSession = isTeacherMessagingSession(session?.user);
   const schoolScope = hasCommunicationSchoolScope(activeSchoolCode) ? activeSchoolCode : undefined;
   const scopeReady = !requiresSelection || Boolean(schoolScope);
   const schoolEpochRef = useRef(0);
@@ -415,7 +389,7 @@ export function MessagesConversationsPage() {
           {messages.map((row) => (
             <div key={row.id} className={`max-w-[80%] rounded-2xl px-3 py-2 ${row.senderUserId === selfId ? "ml-auto bg-slate-900 text-white" : "bg-slate-100 text-ink"}`}>
               <p className="text-xs opacity-80">
-                {row.senderName || row.senderUserId} · {formatDisplayDate(row.sentAt)}
+                {[row.senderName || row.senderUserId, formatMessageRoleLabel({ roleLabel: row.senderRoleLabel })].filter(Boolean).join(" · ")} · {formatDisplayDate(row.sentAt)}
               </p>
               <p className="whitespace-pre-wrap text-sm">{row.body || row.message || row.content}</p>
               {(row.attachments ?? []).map((file) => (
@@ -459,7 +433,7 @@ export function MessagesConversationsPage() {
                     .filter((user) => user.userId !== selfId)
                     .map((user) => (
                       <option key={user.userId} value={user.userId}>
-                        {user.displayName || user.roleLabel || user.userId}
+                        {[user.displayName || user.userId, formatMessageRoleLabel(user)].filter(Boolean).join(" · ")}
                       </option>
                     ))}
                 </select>

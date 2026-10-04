@@ -21,7 +21,9 @@ function scopedPayload(payload: Record<string, unknown>, schoolCode?: string) {
 export type ConversationParticipant = {
   userId: string;
   name: string;
+  roleKey?: string;
   roleLabel?: string;
+  kind?: string;
   status?: string;
 };
 
@@ -41,6 +43,7 @@ export type ConversationMessage = {
   content?: string;
   senderUserId: string;
   senderName: string;
+  senderRoleLabel?: string;
   sentAt: string;
   createdAt?: string;
   readAt?: string;
@@ -71,6 +74,7 @@ export type ConversationSummary = {
 export type MessageRecipient = {
   userId: string;
   displayName: string;
+  roleKey?: string;
   roleLabel?: string;
   kind?: string;
   studentId?: string;

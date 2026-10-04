@@ -271,8 +271,8 @@ describe("Lot C — Messages Web unread + pagination", () => {
     renderPage();
 
     const recipientSelect = await screen.findByRole("combobox");
-    expect(within(recipientSelect).queryByRole("option", { name: "Élève A" })).toBeNull();
-    expect(within(recipientSelect).getByRole("option", { name: "Parent A" })).toBeInTheDocument();
+    expect(within(recipientSelect).queryByRole("option", { name: /Élève A/ })).toBeNull();
+    expect(within(recipientSelect).getByRole("option", { name: /Parent A/ })).toBeInTheDocument();
   });
 
   it("V24 — enseignant : aucune réponse possible dans un fil contenant un élève", async () => {
@@ -286,8 +286,8 @@ describe("Lot C — Messages Web unread + pagination", () => {
           id: "conv-student",
           subject: "Fil élève",
           participants: [
-            { userId: "teacher-1", name: "Teacher A", roleLabel: "Enseignant" },
-            { userId: "student-1", name: "Élève A", roleLabel: "Élève / Étudiant" },
+            { userId: "teacher-1", name: "Teacher A", roleKey: "TEACHER", roleLabel: "Enseignant" },
+            { userId: "student-1", name: "Élève A", roleKey: "STUDENT", kind: "student", roleLabel: "Élève / Étudiant" },
           ],
           unreadCount: 0,
           updatedAt: "2026-09-22T08:00:00.000Z",

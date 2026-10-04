@@ -4,7 +4,7 @@ import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw, Settings2 } from "lucid
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
-import { displayRoleName, getInitials } from "../../lib/format";
+import { getInitials } from "../../lib/format";
 import { visibleRoleLabel } from "../../lib/roleDisplayLabels";
 import { scopedNotifications } from "../../lib/scope";
 import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
@@ -155,7 +155,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
             <p className="text-sm font-semibold leading-tight text-ink">
               {user?.firstName} {user?.lastName}
             </p>
-            <p className="text-xs text-muted">{displayRoleName(visibleRoleLabel(user) || user?.role)}</p>
+            <p className="text-xs text-muted">{visibleRoleLabel(user)}</p>
           </div>
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-sm font-bold text-brand">
             {getInitials(user?.firstName, user?.lastName)}

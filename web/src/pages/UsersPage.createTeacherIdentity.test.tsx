@@ -121,7 +121,7 @@ describe("UsersPage — création Enseignant canonique (PARITY-028)", () => {
     openCreateForm();
     fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Awa" } });
     fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Ndiaye" } });
-    fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "Enseignant" } });
+    fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "TEACHER" } });
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
 
     await waitFor(() => expect(clientsApi.createTeacherIdentity).toHaveBeenCalledTimes(1));
@@ -150,7 +150,7 @@ describe("UsersPage — création Enseignant canonique (PARITY-028)", () => {
     openCreateForm();
     fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Jean" } });
     fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Kimwemwe" } });
-    fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "Préfet des études" } });
+    fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "PREFET_ETUDES" } });
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
 
     await waitFor(() => expect(clientsApi.createUser).toHaveBeenCalledTimes(1));

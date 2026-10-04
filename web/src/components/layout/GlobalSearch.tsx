@@ -7,7 +7,7 @@ import { usePermissionContext } from "../../lib/usePermissionContext";
 import { canReadView } from "../../lib/permissions";
 import { scopedSchools, scopedUsers } from "../../lib/scope";
 import { scopedStudents } from "../../lib/establishment";
-import { displayRoleName, normalize } from "../../lib/format";
+import { normalize } from "../../lib/format";
 import { visibleRoleLabel } from "../../lib/roleDisplayLabels";
 
 interface SearchHit {
@@ -69,7 +69,7 @@ export function GlobalSearch() {
     if (canUsers) {
       (scopedUsers(user, state) as unknown as Record<string, unknown>[])
         .filter((u) =>
-          [u.firstName, u.lastName, u.identifier, u.email, u.phone].some((v) =>
+          [u.firstName, u.lastName, u.identifier, u.email, u.phone, visibleRoleLabel(u)].some((v) =>
             normalize(String(v ?? "")).includes(q),
           ),
         )
@@ -81,7 +81,7 @@ export function GlobalSearch() {
             label:
               `${String(u.firstName ?? "")} ${String(u.lastName ?? "")}`.trim() ||
               String(u.identifier ?? ""),
-            sub: [String(u.identifier ?? ""), displayRoleName(visibleRoleLabel(u) || String(u.role ?? ""))].filter(Boolean).join(" · "),
+            sub: [String(u.identifier ?? ""), visibleRoleLabel(u)].filter(Boolean).join(" · "),
             to: "/etablissement/comptes-utilisateurs",
           }),
         );

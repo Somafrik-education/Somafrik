@@ -1,6 +1,7 @@
 import { api } from "../api/client";
 import { readStoredSchoolCode } from "./activeSchool";
 import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
+import { uniqueRolesByRoleKey } from "./roleDisplayLabels";
 import {
   readActiveCommunicationSchoolScope,
   withCommunicationSchoolPayload,
@@ -34,19 +35,12 @@ interface AssignableRole {
   roleName: string;
 }
 
-function withPlatformAssignableRoles(roles: AssignableRole[]): AssignableRole[] {
-  const merged = [
+export function withPlatformAssignableRoles(roles: AssignableRole[]): AssignableRole[] {
+  return uniqueRolesByRoleKey([
     ...roles,
     { roleKey: "COUNTRY_ADMIN", roleName: COUNTRY_ADMIN_ROLE },
     { roleKey: "SCHOOL_ADMIN", roleName: SCHOOL_ADMIN_ROLE },
-  ];
-  const seen = new Set<string>();
-  return merged.filter((entry) => {
-    const key = String(entry.roleName ?? "").trim().toLocaleLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  ]);
 }
 
 export const clientsApi = {
