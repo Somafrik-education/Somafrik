@@ -1,0 +1,49 @@
+{
+  "lot": "ROLE-LABELS-FINAL",
+  "status": "DRAFT_HOLD",
+  "verdict": "ROLE_LABELS_CLOSED",
+  "base": "f95c3f3864d7841fd0ee9a6ec2ea30a251528dbf",
+  "baseLabel": "develop@f95c3f38 — merge #874",
+  "doNotOpenProductPr": true,
+  "leftoverAdministrative": [
+    {
+      "pr": "#856",
+      "title": "audit(authz): P1-13 replay P0/P1 closure after #855",
+      "recommendation": "CLOSE_WITHOUT_MERGE",
+      "reason": "Reliquat de l’ancien replay sécurité P0/P1, hors chantier ROLE-LABELS et hors prochaine carte élève"
+    }
+  ],
+  "chain": [
+    { "lot": "AUDIT-ROLE-LABELS-01", "pr": "#871", "sha": "2da77d96", "status": "MERGED" },
+    { "lot": "ROLE-LABELS-API-01", "pr": "#872", "sha": "4fbbd2b9", "status": "MERGED" },
+    { "lot": "ROLE-LABELS-WEB-01", "pr": "#873", "sha": "eb862377", "status": "MERGED" },
+    { "lot": "ROLE-LABELS-MOBILE-01", "pr": "#874", "sha": "f95c3f38", "status": "MERGED" }
+  ],
+  "proofs": {
+    "SCHOOL_ADMIN": { "defaultLabel": "Admin School", "displayLabel": "Directeur", "effectiveLabel": "Directeur", "roleKey": "SCHOOL_ADMIN" },
+    "TEACHER": { "defaultLabel": "Enseignant", "displayLabel": "Professeur", "effectiveLabel": "Professeur", "roleKey": "TEACHER" },
+    "STUDENT": { "defaultLabel": "Élève / Étudiant", "displayLabel": "Étudiant", "effectiveLabel": "Étudiant", "roleKey": "STUDENT" },
+    "RESP_PED": { "defaultLabel": "Coordinateur pédagogique", "displayLabel": "Responsable académique", "effectiveLabel": "Responsable académique", "roleKey": "RESP_PED" }
+  },
+  "invariants": [
+    "DISPLAY_ONLY",
+    "SUPERADMIN_ONLY_EDIT",
+    "ROLE_KEY_IMMUTABLE",
+    "LABEL_COLLISIONS_ALLOWED",
+    "CUSTOM_ROLES_BY_ROLE_KEY",
+    "ASSIGNABLE_FAIL_CLOSED",
+    "MESSAGES_ROLEKEY_OR_KIND"
+  ],
+  "replay": {
+    "auditRoleLabels01": "pass",
+    "roleLabelsApi01": "pass",
+    "roleLabelsWeb01": "pass",
+    "roleLabelsMobile01": "pass",
+    "admin02b": "pass"
+  },
+  "nextChantier": {
+    "id": "AUDIT-CARTE-01",
+    "pr": "#857",
+    "action": "REPLAY_AGAINST_CURRENT_DEVELOP_BEFORE_CARTE_PR0"
+  }
+}
