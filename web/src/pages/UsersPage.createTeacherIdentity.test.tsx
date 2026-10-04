@@ -91,6 +91,12 @@ vi.mock("../lib/clientsApi", () => ({
   buildCreateUserPayload: (payload: Record<string, unknown>) => payload,
 }));
 
+vi.mock("../lib/rbacApi", () => ({
+  rbacApi: {
+    listRoleDisplayLabels: vi.fn().mockResolvedValue({ items: [] }),
+  },
+}));
+
 describe("UsersPage — création Enseignant canonique (PARITY-028)", () => {
   beforeEach(() => {
     permissions.canRead = true;
@@ -104,6 +110,12 @@ describe("UsersPage — création Enseignant canonique (PARITY-028)", () => {
     vi.mocked(clientsApi.createTeacherIdentity).mockResolvedValue({
       user: { id: "usr-ens-1", roleKeys: ["TEACHER"] },
       credentials: { login: "USR-2026-00099", temporarySecret: "TempPass12" },
+    });
+    vi.mocked(clientsApi.listAssignableRoles).mockResolvedValue({
+      roles: [
+        { roleKey: "TEACHER", roleName: "Enseignant" },
+        { roleKey: "PREFET_ETUDES", roleName: "Préfet des études" },
+      ],
     });
     sessionStorage.setItem("somafrik.activeSchoolCode", "CD-2026-0001");
   });
@@ -154,7 +166,7 @@ describe("UsersPage — création Enseignant canonique (PARITY-028)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
 
     await waitFor(() => expect(clientsApi.createUser).toHaveBeenCalledTimes(1));
-    expect(clientsApi.grantUserRole).toHaveBeenCalledWith("usr-prefet-1", "Préfet des études");
+    expect(clientsApi.grantUserRole).toHaveBeenCalledWith("usr-prefet-1", "PREFET_ETUDES");
     expect(clientsApi.createTeacherIdentity).not.toHaveBeenCalled();
   });
 });

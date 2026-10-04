@@ -4,10 +4,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { withPlatformAssignableRoles } from "./clientsApi";
 import {
+  CANONICAL_SYSTEM_ROLE_KEYS,
   canonicalAccessRoleKey,
   decorateAssignableRoles,
   defaultLabelForRoleKey,
   formatVisibleRoleLabels,
+  grantIdentityForRoleKey,
+  resolveCreatableRolesFromApi,
   uniqueRolesByRoleKey,
   userHasAccessRoleKey,
   visibleRoleLabel,
@@ -178,23 +181,10 @@ describe("WEB-RL-01→28 ROLE-LABELS-WEB-01", () => {
     const page = read("pages/UsersPage.tsx");
     expect(page).toContain("grantIdentityForRoleKey");
     expect(page).toContain("grantUserRole(String(assigning.id), identity)");
-    const options = decorateAssignableRoles(
-      [{ roleKey: "SCHOOL_ADMIN", roleName: "Admin School" }],
-      new Map([
-        [
-          "SCHOOL_ADMIN",
-          {
-            roleKey: "SCHOOL_ADMIN",
-            defaultLabel: "Admin School",
-            displayLabel: "Directeur",
-            effectiveLabel: "Directeur",
-          },
-        ],
-      ]),
-    );
-    expect(options[0].roleName).toBe("Admin School");
-    expect(options[0].roleName).not.toBe("Directeur");
-    expect(options[0].effectiveLabel).toBe("Directeur");
+    expect(grantIdentityForRoleKey("SCHOOL_ADMIN")).toBe("SCHOOL_ADMIN");
+    expect(grantIdentityForRoleKey("Directeur")).toBe("");
+    expect(grantIdentityForRoleKey("Professeur")).toBe("");
+    expect(grantIdentityForRoleKey("Responsable académique")).toBe("");
   });
 
   it("WEB-RL-17 collision SCHOOL_ADMIN/PRINCIPAL ne fusionne pas les options", () => {
@@ -318,5 +308,129 @@ describe("WEB-RL-01→28 ROLE-LABELS-WEB-01", () => {
     expect(canonicalAccessRoleKey("Admin School")).toBe("SCHOOL_ADMIN");
     expect(canonicalAccessRoleKey("Enseignant")).toBe("TEACHER");
     expect(canonicalAccessRoleKey("Élève / Étudiant")).toBe("STUDENT");
+  });
+
+  it("WEB-RL-29 custom role RESP_PED value RESP_PED", () => {
+    const page = read("pages/UsersPage.tsx");
+    expect(page).toContain("resolveCreatableRolesFromApi");
+    expect(page).not.toContain("canonicalAccessRoleKey(roleName) || roleName");
+    const options = decorateAssignableRoles(
+      resolveCreatableRolesFromApi({
+        apiRoles: [{ roleKey: "RESP_PED", roleName: "Coordinateur pédagogique" }],
+        allowlistLabels: ["Coordinateur pédagogique", "Enseignant"],
+        apiAvailable: true,
+      }),
+      new Map(),
+    );
+    expect(options[0]?.roleKey).toBe("RESP_PED");
+    expect(options.some((row) => row.roleKey === "COORDINATEUR PÉDAGOGIQUE")).toBe(false);
+  });
+
+  it("WEB-RL-30 display custom Responsable académique", () => {
+    const options = decorateAssignableRoles(
+      [{ roleKey: "RESP_PED", roleName: "Coordinateur pédagogique" }],
+      new Map([
+        [
+          "RESP_PED",
+          {
+            roleKey: "RESP_PED",
+            defaultLabel: "Coordinateur pédagogique",
+            displayLabel: "Responsable académique",
+            effectiveLabel: "Responsable académique",
+          },
+        ],
+      ]),
+    );
+    expect(options[0]).toMatchObject({ roleKey: "RESP_PED", optionLabel: "Responsable académique" });
+  });
+
+  it("WEB-RL-31 display change ne change pas RESP_PED", () => {
+    const before = grantIdentityForRoleKey("RESP_PED");
+    const after = grantIdentityForRoleKey("RESP_PED");
+    expect(before).toBe("RESP_PED");
+    expect(after).toBe("RESP_PED");
+    expect(canonicalAccessRoleKey("Responsable académique")).toBe("");
+  });
+
+  it("WEB-RL-32 grant custom envoie RESP_PED", () => {
+    expect(grantIdentityForRoleKey("RESP_PED")).toBe("RESP_PED");
+    expect(grantIdentityForRoleKey("Responsable académique")).toBe("");
+  });
+
+  it("WEB-RL-33 revoke custom envoie RESP_PED", () => {
+    const page = read("pages/UsersPage.tsx");
+    expect(page).toContain("revokeUserRole(String(assigning.id), identity)");
+    expect(grantIdentityForRoleKey("RESP_PED")).toBe("RESP_PED");
+  });
+
+  it("WEB-RL-34 rôle custom dont roleCode diffère du roleName", () => {
+    const options = resolveCreatableRolesFromApi({
+      apiRoles: [
+        { roleKey: "RESPONSABLE_VIE_SCOLAIRE", roleName: "Responsable vie scolaire" },
+      ],
+      allowlistLabels: ["Responsable vie scolaire"],
+      apiAvailable: true,
+    });
+    expect(options).toEqual([
+      { roleKey: "RESPONSABLE_VIE_SCOLAIRE", roleName: "Responsable vie scolaire" },
+    ]);
+    const decorated = decorateAssignableRoles(options, new Map([
+      [
+        "RESPONSABLE_VIE_SCOLAIRE",
+        {
+          roleKey: "RESPONSABLE_VIE_SCOLAIRE",
+          defaultLabel: "Responsable vie scolaire",
+          displayLabel: "Coordinateur",
+          effectiveLabel: "Coordinateur",
+        },
+      ],
+    ]));
+    expect(decorated[0]).toMatchObject({
+      roleKey: "RESPONSABLE_VIE_SCOLAIRE",
+      optionLabel: "Coordinateur",
+    });
+  });
+
+  it("WEB-RL-35 roleName avec espaces/accents ne fabrique jamais roleKey", () => {
+    expect(canonicalAccessRoleKey("Coordinateur pédagogique")).toBe("");
+    expect(canonicalAccessRoleKey("Responsable académique")).toBe("");
+    expect(grantIdentityForRoleKey("Coordinateur pédagogique")).toBe("");
+    expect(
+      resolveCreatableRolesFromApi({
+        apiRoles: [{ roleKey: "Coordinateur pédagogique", roleName: "Coordinateur pédagogique" }],
+        allowlistLabels: ["Coordinateur pédagogique"],
+        apiAvailable: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it("WEB-RL-36 échec API : aucun faux roleKey custom créé", () => {
+    const fallback = resolveCreatableRolesFromApi({
+      apiRoles: [],
+      allowlistLabels: ["Enseignant", "Coordinateur pédagogique", "Responsable académique"],
+      apiAvailable: false,
+    });
+    expect(fallback.map((row) => row.roleKey)).toEqual(["TEACHER"]);
+    expect(fallback.some((row) => /COORDINATEUR|RESPONSABLE/.test(row.roleKey))).toBe(false);
+  });
+
+  it("WEB-RL-37 catalogue local ne contient aucun rôle custom non canonique", () => {
+    const helpers = read("lib/roleDisplayLabels.ts");
+    expect(helpers).not.toContain("RESPONSABLE_PEDAGOGIQUE");
+    expect([...CANONICAL_SYSTEM_ROLE_KEYS]).toEqual([
+      "SUPER_ADMIN",
+      "COUNTRY_ADMIN",
+      "SCHOOL_ADMIN",
+      "PROVISEUR",
+      "PREFET_ETUDES",
+      "PRINCIPAL",
+      "SECRETARY",
+      "TEACHER",
+      "PARENT",
+      "STUDENT",
+      "ACCOUNTANT",
+      "SUPERVISOR",
+    ]);
+    expect(defaultLabelForRoleKey("RESPONSABLE_PEDAGOGIQUE")).toBe("");
   });
 });

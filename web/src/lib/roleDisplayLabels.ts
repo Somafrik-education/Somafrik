@@ -7,6 +7,22 @@ export type RoleDisplayContract = {
   effectiveLabel: string;
 };
 
+/** 12 rôles seed ADMIN-02B. Jamais un rôle custom inventé. */
+export const CANONICAL_SYSTEM_ROLE_KEYS = [
+  "SUPER_ADMIN",
+  "COUNTRY_ADMIN",
+  "SCHOOL_ADMIN",
+  "PROVISEUR",
+  "PREFET_ETUDES",
+  "PRINCIPAL",
+  "SECRETARY",
+  "TEACHER",
+  "PARENT",
+  "STUDENT",
+  "ACCOUNTANT",
+  "SUPERVISOR",
+] as const;
+
 const DEFAULT_LABEL_BY_ROLE_KEY: Record<string, string> = {
   SUPER_ADMIN: "Super Administrateur Somafrik",
   COUNTRY_ADMIN: "Admin Pays",
@@ -20,7 +36,6 @@ const DEFAULT_LABEL_BY_ROLE_KEY: Record<string, string> = {
   SECRETARY: "Secrétaire",
   SUPERVISOR: "Surveillant",
   PROVISEUR: "Proviseur",
-  RESPONSABLE_PEDAGOGIQUE: "Responsable pédagogique",
 };
 
 const ROLE_KEY_BY_DEFAULT_LABEL: Record<string, string> = Object.fromEntries(
@@ -37,6 +52,16 @@ function normalizeIdentity(value: unknown): string {
 
 function asRoleKey(value: unknown): string {
   return String(value ?? "").trim().toUpperCase();
+}
+
+export function isCanonicalSystemRoleKey(roleKey?: string | null): boolean {
+  return (CANONICAL_SYSTEM_ROLE_KEYS as readonly string[]).includes(asRoleKey(roleKey));
+}
+
+/** roleKey serveur (RESP_PED). Rejette un libellé (Directeur, Coordinateur pédagogique). */
+export function isServerProvidedRoleKey(roleKey?: string | null): boolean {
+  const raw = String(roleKey ?? "").trim();
+  return /^[A-Z][A-Z0-9_]*$/.test(raw);
 }
 
 export function defaultLabelForRoleKey(roleKey?: string | null): string {
@@ -225,4 +250,53 @@ export function decorateAssignableRoles(
     ...row,
     optionLabel: (counts.get(row.effectiveLabel) ?? 0) > 1 ? `${row.effectiveLabel} — ${row.defaultLabel}` : row.effectiveLabel,
   }));
+}
+
+export function grantIdentityForRoleKey(roleKey?: string | null): string {
+  if (!isServerProvidedRoleKey(roleKey)) return "";
+  return asRoleKey(roleKey);
+}
+
+/**
+ * Création / attribution : roleKey API uniquement.
+ * Fail-closed pour un libellé custom sans identité serveur.
+ */
+export function resolveCreatableRolesFromApi(input: {
+  apiRoles?: Array<{ roleKey?: string | null; roleName?: string | null }> | null;
+  allowlistLabels?: string[] | null;
+  apiAvailable: boolean;
+  platformOnly?: boolean;
+}): Array<{ roleKey: string; roleName: string }> {
+  const allowlist = (input.allowlistLabels ?? []).filter(
+    (label) => typeof label === "string" && label.trim() && label !== "Sans affectation",
+  );
+  const systemFromAllowlist = uniqueRolesByRoleKey(
+    allowlist
+      .map((label) => {
+        const roleKey = canonicalAccessRoleKey(label);
+        if (!roleKey || !isCanonicalSystemRoleKey(roleKey)) return null;
+        return { roleKey, roleName: defaultLabelForRoleKey(roleKey) || label };
+      })
+      .filter((row): row is { roleKey: string; roleName: string } => Boolean(row)),
+  );
+  const fromApi = uniqueRolesByRoleKey(
+    (input.apiRoles ?? [])
+      .filter(
+        (role): role is { roleKey: string; roleName: string } =>
+          isServerProvidedRoleKey(role.roleKey) && Boolean(String(role.roleName ?? "").trim()),
+      )
+      .map((role) => ({
+        roleKey: asRoleKey(role.roleKey),
+        roleName: String(role.roleName).trim(),
+      }))
+      .filter((role) => role.roleKey !== "PARENT" && role.roleKey !== "STUDENT"),
+  );
+  if (input.apiAvailable && fromApi.length) {
+    if (input.platformOnly) {
+      const allowed = new Set(systemFromAllowlist.map((row) => row.roleKey));
+      return fromApi.filter((role) => allowed.has(role.roleKey));
+    }
+    return fromApi;
+  }
+  return systemFromAllowlist;
 }

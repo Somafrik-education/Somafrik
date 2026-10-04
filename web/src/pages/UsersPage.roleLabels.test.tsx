@@ -115,6 +115,18 @@ const catalog = {
     { roleKey: "STUDENT", defaultLabel: "Élève / Étudiant", displayLabel: "Étudiant", effectiveLabel: "Étudiant" },
     { roleKey: "PRINCIPAL", defaultLabel: "Directeur", displayLabel: "Directeur", effectiveLabel: "Directeur" },
     { roleKey: "PREFET_ETUDES", defaultLabel: "Préfet des études", displayLabel: null, effectiveLabel: "Préfet des études" },
+    {
+      roleKey: "RESP_PED",
+      defaultLabel: "Coordinateur pédagogique",
+      displayLabel: "Responsable académique",
+      effectiveLabel: "Responsable académique",
+    },
+    {
+      roleKey: "RESPONSABLE_VIE_SCOLAIRE",
+      defaultLabel: "Responsable vie scolaire",
+      displayLabel: "Coordinateur",
+      effectiveLabel: "Coordinateur",
+    },
   ],
 };
 
@@ -174,6 +186,8 @@ describe("UsersPage ROLE-LABELS-WEB-01", () => {
         { roleKey: "TEACHER", roleName: "Enseignant" },
         { roleKey: "SCHOOL_ADMIN", roleName: "Admin School" },
         { roleKey: "PRINCIPAL", roleName: "Directeur" },
+        { roleKey: "RESP_PED", roleName: "Coordinateur pédagogique" },
+        { roleKey: "RESPONSABLE_VIE_SCOLAIRE", roleName: "Responsable vie scolaire" },
       ],
     });
     vi.mocked(clientsApi.grantUserRole).mockReset();
@@ -200,7 +214,10 @@ describe("UsersPage ROLE-LABELS-WEB-01", () => {
     expect(screen.getAllByText("Étudiant").length).toBeGreaterThan(0);
 
     const roleFilter = await screen.findByLabelText("Filtrer par rôle");
-    await waitFor(() => expect(within(roleFilter).getByRole("option", { name: "Directeur" })).toHaveValue("SCHOOL_ADMIN"));
+    await waitFor(() =>
+      expect(within(roleFilter).getByRole("option", { name: "Directeur — Admin School" })).toHaveValue("SCHOOL_ADMIN"),
+    );
+    expect(within(roleFilter).getByRole("option", { name: "Directeur — Directeur" })).toHaveValue("PRINCIPAL");
     fireEvent.change(roleFilter, { target: { value: "SCHOOL_ADMIN" } });
     expect(screen.getByText(/Grace/)).toBeInTheDocument();
     expect(screen.queryByText(/Awa/)).not.toBeInTheDocument();
@@ -234,7 +251,68 @@ describe("UsersPage ROLE-LABELS-WEB-01", () => {
     fireEvent.click(schoolAdminBox!);
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
     await waitFor(() => expect(clientsApi.grantUserRole).toHaveBeenCalled());
-    expect(clientsApi.grantUserRole).toHaveBeenCalledWith("usr-teacher", "Admin School");
+    expect(clientsApi.grantUserRole).toHaveBeenCalledWith("usr-teacher", "SCHOOL_ADMIN");
     expect(clientsApi.grantUserRole).not.toHaveBeenCalledWith("usr-teacher", "Directeur");
+    expect(clientsApi.grantUserRole).not.toHaveBeenCalledWith("usr-teacher", "Admin School");
+  });
+
+  it("création custom RESP_PED affiche Responsable académique et grant envoie RESP_PED", async () => {
+    vi.mocked(clientsApi.createUser).mockResolvedValue({ id: "usr-custom-1" });
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Nouvel utilisateur" }));
+    const roleSelect = await screen.findByLabelText(/^Rôle/i);
+    await waitFor(() =>
+      expect(within(roleSelect).getByRole("option", { name: "Responsable académique" })).toHaveValue("RESP_PED"),
+    );
+    expect(within(roleSelect).getByRole("option", { name: "Coordinateur" })).toHaveValue("RESPONSABLE_VIE_SCOLAIRE");
+    fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Lina" } });
+    fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Kabila" } });
+    fireEvent.change(roleSelect, { target: { value: "RESP_PED" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(clientsApi.createUser).toHaveBeenCalledTimes(1));
+    expect(clientsApi.grantUserRole).toHaveBeenCalledWith("usr-custom-1", "RESP_PED");
+    expect(clientsApi.grantUserRole).not.toHaveBeenCalledWith("usr-custom-1", "Responsable académique");
+    expect(clientsApi.grantUserRole).not.toHaveBeenCalledWith("usr-custom-1", "Coordinateur pédagogique");
+  });
+
+  it("échec API : aucun faux roleKey custom dans le sélecteur de création", async () => {
+    vi.mocked(clientsApi.listAssignableRoles).mockRejectedValue(new Error("assignable-roles unavailable"));
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Nouvel utilisateur" }));
+    const roleSelect = await screen.findByLabelText(/^Rôle/i);
+    await waitFor(() => expect(within(roleSelect).getByRole("option", { name: "Professeur" })).toHaveValue("TEACHER"));
+    expect(within(roleSelect).queryByRole("option", { name: "Responsable académique" })).not.toBeInTheDocument();
+    const values = [...roleSelect.querySelectorAll("option")].map((option) => (option as HTMLOptionElement).value);
+    expect(values).not.toContain("RESP_PED");
+    expect(values.some((value) => /COORDINATEUR|RESPONSABLE/.test(value))).toBe(false);
+  });
+
+  it("attribution custom grant/revoke envoie RESP_PED", async () => {
+    dataState.users = [
+      {
+        id: "usr-custom",
+        firstName: "Lina",
+        lastName: "Kabila",
+        publicId: "USR-C",
+        role: "Coordinateur pédagogique",
+        roleKey: "RESP_PED",
+        roleKeys: ["RESP_PED"],
+        effectiveRoleLabel: "Responsable académique",
+        status: "Actif",
+        schoolCode: "CD-2026-0001",
+        schoolPublicCode: "CD-IN-26-001",
+        schoolId: "school-nuru",
+      },
+    ];
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Attribuer" }));
+    const boxes = await screen.findAllByRole("checkbox");
+    const custom = boxes.find((box) => (box as HTMLInputElement).value === "RESP_PED");
+    expect(custom).toBeTruthy();
+    expect(custom).toBeChecked();
+    fireEvent.click(custom!);
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(clientsApi.revokeUserRole).toHaveBeenCalledWith("usr-custom", "RESP_PED"));
+    expect(clientsApi.revokeUserRole).not.toHaveBeenCalledWith("usr-custom", "Responsable académique");
   });
 });
