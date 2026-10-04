@@ -485,6 +485,32 @@ class FallbackRepository {
     });
   }
 
+  async listSchoolAuditSummaries({ schoolCode, action, entityType, from, to, limit = 50, offset = 0 } = {}) {
+    const jwtSchool = String(schoolCode ?? "").trim().toUpperCase();
+    if (!jwtSchool || jwtSchool === "*") return [];
+    const start = Math.max(0, Number(offset) || 0);
+    const capped = Math.min(Math.max(Number(limit) || 50, 1), 100);
+    return this.auditLogs
+      .filter((row) => String(row.schoolCode ?? "").toUpperCase() === jwtSchool)
+      .filter((row) => !action || row.action === action)
+      .filter((row) => !entityType || row.entityType === entityType)
+      .filter((row) => !from || String(row.createdAt ?? "") >= String(from))
+      .filter((row) => !to || String(row.createdAt ?? "") <= String(to))
+      .slice()
+      .sort((left, right) => String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")))
+      .slice(start, start + capped)
+      .map((row) => ({
+        id: row.id,
+        action: row.action,
+        entityType: row.entityType,
+        entityId: row.entityId ?? null,
+        actor:
+          [row.actorFirstName, row.actorLastName, row.first_name, row.last_name].filter(Boolean).join(" ") ||
+          "Système",
+        createdAt: row.createdAt,
+      }));
+  }
+
   async getAuditLogs({ schoolCode, userId, action, actions, limit = 100, offset = 0 } = {}) {
     const capped = Math.min(Number(limit) || 100, 500);
     const start = Math.max(0, Number(offset) || 0);

@@ -2,8 +2,9 @@
 
 /**
  * ADMIN-06A — caractérisation Conformité (autorité, périmètre, workflows).
- * Aucune correction. Les assertions décrivent l'état réel, y compris
- * GET /api/audit inaccessible à tous les profils typiques.
+ * ADMIN-06C a réparé GET /api/audit en journal school-only :
+ * SUPER/COUNTRY restent 403 guard ; SCHOOL_ADMIN sans Audit:READ = 403 RBAC ;
+ * rôle non-SCHOOL_ADMIN + Audit:READ = 403 service.
  */
 
 const { test } = require("node:test");
@@ -23,6 +24,7 @@ const {
   executeErasureRequest,
   executeSelfErasure,
 } = require("./privacyErasure");
+const { assertSchoolAuditRead, AUDIT_ERROR } = require("./schoolAudit");
 const {
   assertDataExportRead,
   resolveExportSchoolCode,
@@ -89,10 +91,12 @@ function expectedAuditHttp(principal) {
   if (!rbac.canAccess(principal, "GET /api/audit")) {
     return { status: 403, code: "PERMISSION_DENIED", layer: "requirePermission" };
   }
-  if (principal.role !== "Super Administrateur Somafrik" && principal.role !== "Admin Pays") {
-    return { status: 403, code: "HANDLER_PLATFORM_ONLY", layer: "handler" };
+  try {
+    assertSchoolAuditRead(principal);
+    return { status: 200, code: null, layer: "listSchoolAuditSummaries" };
+  } catch (error) {
+    return { status: 403, code: error.code || AUDIT_ERROR.FORBIDDEN, layer: "service" };
   }
-  return { status: 200, code: null, layer: "repository.getAuditLogs" };
 }
 
 test("C06A-01 ReportsPage school = A2 ; Superadmin = A1 (ADMIN-06B2)", () => {
@@ -109,9 +113,12 @@ test("C06A-AUD-01 SUPER_ADMIN GET /api/audit → 403 guard", () => {
   assert.equal(SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM.includes("GET /api/audit"), true);
   assert.equal(isPlatformPersonalDataForbiddenHttp(SUPER, "GET", "/api/audit"), true);
   assert.equal(isPlatformPersonalDataForbidden(SUPER, "GET /api/audit"), true);
-  assert.deepEqual(routePermissions["GET /api/audit"], ["Audit:READ", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"]);
+  assert.deepEqual(routePermissions["GET /api/audit"], ["Audit:READ"]);
+  assert.equal(routePermissions["GET /api/audit"].includes("ALL_PRIVILEGES"), false);
+  assert.equal(routePermissions["GET /api/audit"].includes("COUNTRY_PRIVILEGES"), false);
   assert.equal(rbac.canAccess(SUPER, "GET /api/audit"), false);
-  assert.match(auditHandler, /isSuperAdminPrincipal\(req\.principal\)/);
+  assert.match(auditHandler, /listSchoolAuditSummaries\(repository, req\.principal/);
+  assert.doesNotMatch(auditHandler, /isSuperAdminPrincipal|req\.query\.schoolCode/);
   const result = expectedAuditHttp(SUPER);
   assert.equal(result.status, 403);
   assert.equal(result.code, PLATFORM_PERSONAL_DATA_DENY);
@@ -136,21 +143,22 @@ test("C06A-AUD-03 SCHOOL_ADMIN GET /api/audit → 403 RBAC", () => {
   assert.equal(result.layer, "requirePermission");
 });
 
-test("C06A-AUD-04 rôle établissement Audit:READ GET /api/audit → 403 handler", () => {
+test("C06A-AUD-04 rôle établissement Audit:READ GET /api/audit → 403 service", () => {
   assert.equal(isPlatformPersonalDataForbiddenHttp(SCHOOL_AUDIT_READ, "GET", "/api/audit"), false);
   assert.equal(rbac.canAccess(SCHOOL_AUDIT_READ, "GET /api/audit"), true);
-  assert.match(auditHandler, /Seuls les administrateurs habilités peuvent consulter l'audit/);
+  assert.match(auditHandler, /listSchoolAuditSummaries/);
   const result = expectedAuditHttp(SCHOOL_AUDIT_READ);
   assert.equal(result.status, 403);
-  assert.equal(result.code, "HANDLER_PLATFORM_ONLY");
-  assert.equal(result.layer, "handler");
+  assert.equal(result.code, AUDIT_ERROR.FORBIDDEN);
+  assert.equal(result.layer, "service");
 });
 
-test("C06A-05 / C06A-06 / C06A-07 GET /api/audit résultat réel = 403 partout", () => {
+test("C06A-05 / C06A-06 / C06A-07 GET /api/audit 403 hors SCHOOL_ADMIN+Audit:READ", () => {
   for (const principal of [SUPER, COUNTRY, SCHOOL_ADMIN, SCHOOL_AUDIT_READ]) {
     assert.equal(expectedAuditHttp(principal).status, 403, principal.role);
   }
-  assert.match(auditHandler, /n'est pas un journal plateforme/);
+  assert.match(auditHandler, /listSchoolAuditSummaries\(repository, req\.principal/);
+  assert.doesNotMatch(auditHandler, /n'est pas un journal plateforme|Seuls les administrateurs habilités/);
 });
 
 test("C06A-08 audit_logs peut contenir des données établissement", () => {

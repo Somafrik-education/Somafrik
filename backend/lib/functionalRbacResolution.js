@@ -200,6 +200,9 @@ function resolveEffectivePermissionSet(roleKeys, grants, scope = {}) {
 }
 
 function moduleMatchesNormalized(module, normalized) {
+  if (module.moduleKey === "audit") {
+    return normalized === "audit" || normalized.startsWith("audit ");
+  }
   const moduleNorm = module.moduleName
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")

@@ -4011,23 +4011,15 @@ app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(as
 }));
 
 app.get("/api/audit", requireAuth, requirePermission("GET /api/audit"), asyncHandler(async (req, res) => {
-  // P0-2 : Superadmin / Admin Pays sont déjà 403 dans requireAuth (données perso établissement).
-  // Ce filtre refuse les autres profils : GET /api/audit n'est pas un journal plateforme.
-  if (!isSuperAdminPrincipal(req.principal) && req.principal.role !== "Admin Pays") {
-    throw new BusinessError(403, "Seuls les administrateurs habilités peuvent consulter l'audit.");
-  }
-  if (req.query.schoolCode) {
-    tenantScopeService.assertSchoolAccess(req.principal, req.query.schoolCode);
-  }
-  const rows = await repository.getAuditLogs({
-    schoolCode: req.query.schoolCode,
-    userId: req.query.userId,
+  const { listSchoolAuditSummaries } = require("./lib/schoolAudit");
+  res.json(await listSchoolAuditSummaries(repository, req.principal, {
     action: req.query.action,
+    entityType: req.query.entityType,
     from: req.query.from,
     to: req.query.to,
     limit: req.query.limit,
-  });
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["actor", "action", "entityType", "entityId", "schoolCode"]);
+    offset: req.query.offset,
+  }));
 }));
 
 app.get("/api/v2/subjects", requireAuth, requirePermission("GET /api/v2/subjects"), asyncHandler(async (req, res) => {
