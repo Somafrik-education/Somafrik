@@ -1415,7 +1415,14 @@ class PostgresRepository {
       LEFT JOIN countries c ON c.id = s.country_id
     `);
     const schoolByCode = new Map(schoolRows.map((school) => [school.school_code, school]));
-    return rows.map((row) => this.mapUser(row, schoolByCode, teacherLoginByUserId, rolesByUser.get(String(row.id)) ?? []));
+    const { decorateUserWithRoleDisplay, loadRoleDisplayIndexFromRepo } = require("../lib/roleDisplayLabels");
+    const displayIndex = await loadRoleDisplayIndexFromRepo(this);
+    return rows.map((row) =>
+      decorateUserWithRoleDisplay(
+        this.mapUser(row, schoolByCode, teacherLoginByUserId, rolesByUser.get(String(row.id)) ?? []),
+        displayIndex,
+      ),
+    );
   }
 
   createClientsUser(payload, principal, auditMeta) {

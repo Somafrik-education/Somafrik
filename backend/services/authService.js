@@ -317,7 +317,7 @@ class AuthService {
     this.assignments = assignments;
   }
 
-  identify({ schoolCode, identifier }) {
+  identify({ schoolCode, identifier }, displayIndex) {
     this.assertRequiredFields({ identifier }, "Champs manquants");
     const requestedSchool = String(schoolCode ?? "").trim();
     if (!requestedSchool) {
@@ -330,7 +330,7 @@ class AuthService {
       if (!managedMobileRole || !this.isPlatformMobileRole(managedMobileRole.role)) {
         throw new BusinessError(400, "Champs manquants");
       }
-      return managedMobileRole;
+      return this.decorateIdentifiedRole(managedMobileRole, platformUser, displayIndex);
     }
 
     const schoolContext = this.assertSchoolCanConnect(requestedSchool);
@@ -354,7 +354,12 @@ class AuthService {
       );
     }
 
-    return managedMobileRole;
+    return this.decorateIdentifiedRole(managedMobileRole, managedUser, displayIndex);
+  }
+
+  decorateIdentifiedRole(managedMobileRole, user, displayIndex) {
+    const { decorateIdentifyRole } = require("../lib/roleDisplayLabels");
+    return decorateIdentifyRole(managedMobileRole, user, displayIndex);
   }
 
   resolveLoginSecret({ role, password, pin } = {}) {
@@ -631,6 +636,7 @@ class AuthService {
       roleKey: user.roleKey,
       roleKeys: user.roleKeys,
       effectiveRoleLabel: user.effectiveRoleLabel,
+      effectiveRoleLabels: user.effectiveRoleLabels,
       scopeLevel: user.scopeLevel,
       countryScope: user.countryScope,
       countryCode: user.countryCode,
@@ -666,6 +672,7 @@ class AuthService {
           roleKey: user.roleKey,
           roleKeys: user.roleKeys,
           effectiveRoleLabel: user.effectiveRoleLabel,
+          effectiveRoleLabels: user.effectiveRoleLabels,
           assignments,
           assignedClasses,
           courses,

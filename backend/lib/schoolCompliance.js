@@ -32,9 +32,11 @@ function resolveSchoolComplianceScope(principal) {
 
 async function listSchoolPrivacyRequests(repository, principal) {
   const schoolCode = resolveSchoolComplianceScope(principal);
+  const { loadRoleDisplayIndexFromRepo } = require("./roleDisplayLabels");
+  const displayIndex = await loadRoleDisplayIndexFromRepo(repository);
   const rows = await repository.listPrivacyRequests({ schoolCode });
   return (Array.isArray(rows) ? rows : [])
-    .map(sanitizePrivacyRequest)
+    .map((row) => sanitizePrivacyRequest(row, displayIndex))
     .filter(Boolean)
     .sort((left, right) => String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")));
 }
