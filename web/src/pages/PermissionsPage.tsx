@@ -335,6 +335,12 @@ export function PermissionsPage() {
 
   async function resetOverride(moduleKey: string) {
     if (!canManage || !selectedRoleKey || !pathComplete) return;
+    const preservedDirtyDrafts = dirtyModuleKeys.reduce<Record<string, RbacCrudFlags>>((acc, dirtyModuleKey) => {
+      if (dirtyModuleKey !== moduleKey && draftByModule[dirtyModuleKey]) {
+        acc[dirtyModuleKey] = draftByModule[dirtyModuleKey];
+      }
+      return acc;
+    }, {});
     setBusy(true);
     try {
       const next = await rbacApi.resetOverride({
@@ -349,6 +355,11 @@ export function PermissionsPage() {
       for (const module of next.modules ?? []) {
         const mandatory = mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, module.moduleKey);
         nextDraft[module.moduleKey] = applyMandatoryOverlay(toCrudFlags(module), mandatory);
+      }
+      for (const [dirtyModuleKey, preservedDraft] of Object.entries(preservedDirtyDrafts)) {
+        if (!nextDraft[dirtyModuleKey]) continue;
+        const mandatory = mandatoryFlagsForModule(catalog?.mandatoryByRole, selectedRoleKey, dirtyModuleKey);
+        nextDraft[dirtyModuleKey] = applyMandatoryOverlay(toCrudFlags(preservedDraft), mandatory);
       }
       setDraftByModule(nextDraft);
       showToast("Override établissement retiré. L'héritage pays/global s'applique à nouveau.", "success");
