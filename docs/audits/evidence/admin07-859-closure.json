@@ -5,7 +5,7 @@
   "recommendation": "CLOSE_WITHOUT_MERGE",
   "reason": "audit ADMIN-03A superseded par #860 et les replays ADMIN-07",
   "baseAtAudit": "2ba3c7d75d20d2d2c0df9c0f50e9b91df124165d",
-  "proofBase": "ff36704986e07f78b4556d4715e346bda73041c6",
+  "proofBase": "62334bacf346ad1f6efb9af96b52ebfe0ef2bb8f",
   "doNotMerge": true,
   "findings": [
     {"id": "META-02", "correctivePr": 860, "currentTest": "A07-01 A07-02 admin03b audit web", "status": "CLOSED"},

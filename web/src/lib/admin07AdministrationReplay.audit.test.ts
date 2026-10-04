@@ -1,8 +1,13 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { SessionUser } from "../types";
 import { canReadView, type PermissionContext } from "./permissions";
 import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE, SUPER_ADMIN_ROLE } from "./orgHierarchy";
 import { isSuperAdminAllowedFeature, isSuperAdminAllowedView } from "./superAdminAccess";
+
+const ROOT = dirname(fileURLToPath(import.meta.url));
 
 function ctx(user: Partial<SessionUser>): PermissionContext {
   return {
@@ -94,5 +99,22 @@ describe("ADMIN-07 — autorité Web replay", () => {
     } as SessionUser;
     expect(canReadView(ctx(teacher), "relations")).toBe(false);
     expect(canReadView(ctx(teacher), "dataExport")).toBe(false);
+  });
+
+  it("A07-31→36 PermissionsPage = matrice complète ADMIN-02C, pas l'ancien sélecteur module", () => {
+    const page = readFileSync(join(ROOT, "../pages/PermissionsPage.tsx"), "utf8");
+    const catalog = readFileSync(join(ROOT, "../../../backend/lib/functionalModulesCatalog.js"), "utf8");
+    expect(page).not.toContain("Module fonctionnel");
+    expect(page).not.toContain("rbac-module");
+    expect(page).not.toContain("selectedModuleKey");
+    expect(page).toContain('id="rbac-country"');
+    expect(page).toContain('id="rbac-school"');
+    expect(page).toContain('id="rbac-role"');
+    expect(page).toContain('data-testid="rbac-permissions-matrix"');
+    expect(page).toContain("const grants = dirtyModuleKeys.map");
+    expect(page).toContain("preservedDirtyDrafts");
+    expect(page).toContain("expectedUpdatedAt: matrix?.updatedAt ?? null");
+    expect(page).toContain("setMatrix(next)");
+    expect((catalog.match(/moduleKey: "/g) ?? []).length).toBe(31);
   });
 });

@@ -2,7 +2,7 @@
   "lot": "ADMIN-07",
   "status": "DRAFT_HOLD",
   "verdict": "ADMINISTRATION_CLOSED",
-  "base": "ff36704986e07f78b4556d4715e346bda73041c6",
+  "base": "62334bacf346ad1f6efb9af96b52ebfe0ef2bb8f",
   "doNotMerge": ["#851", "#859", "this-pr"],
   "surfaces": [
     {
@@ -46,16 +46,16 @@
     },
     {
       "surface": "Droits",
-      "SUPER_ADMIN": "ALLOW_EFFECTIVE_OVERRIDE_RESET",
+      "SUPER_ADMIN": "ALLOW_CONFIGURATION",
       "COUNTRY_ADMIN": "DENY_RESET",
       "SCHOOL_ADMIN": "DENY_WRITE",
       "otherSchoolRole": "DENY",
       "tenant": "school override isolated",
       "pii": false,
-      "backend": "functionalRbacService",
-      "web": "effective matrix",
+      "backend": "functionalRbacService PATCH grants[] + expectedUpdatedAt",
+      "web": "Pays→Établissement→Rôle→tous modules ; reset par ligne ; dirty multi-module conservé",
       "status": "CLOSED",
-      "proof": ["A07-24", "A07-25", "A07-26"]
+      "proof": ["A07-24", "A07-25", "A07-26", "A07-31", "A07-32", "A07-33", "A07-34", "A07-35", "A07-36"]
     },
     {
       "surface": "Documents",

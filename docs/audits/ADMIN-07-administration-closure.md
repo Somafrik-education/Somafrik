@@ -4,7 +4,7 @@
 
 **Verdict : ADMINISTRATION CLOSED** (sous réserve CI GitHub sur cette PR)
 
-Base obligatoire : `develop@ff36704986e07f78b4556d4715e346bda73041c6` (merge #868)
+Base obligatoire : `develop@62334bacf346ad1f6efb9af96b52ebfe0ef2bb8f` (merge #870)
 
 Lot **AUDIT-ONLY**. Aucune modification fonctionnelle. Aucune migration.
 Aucune correction produit. `#851` et `#859` restent Draft — **ne pas merger**.
@@ -14,7 +14,7 @@ Preuves machine :
 - `docs/audits/evidence/admin07-final-matrix.json`
 - `docs/audits/evidence/admin07-851-closure.json`
 - `docs/audits/evidence/admin07-859-closure.json`
-- `backend/lib/admin07AdministrationReplay.test.js` (A07-01 → A07-30)
+- `backend/lib/admin07AdministrationReplay.test.js` (A07-01 → A07-36)
 - `web/src/lib/admin07AdministrationReplay.audit.test.ts`
 
 ---
@@ -26,6 +26,7 @@ Preuves machine :
 | ADMIN-01 | #853 | `2a1df064` | Droits effectifs, pas de DENY fantôme, reset override |
 | ADMIN-02 | #858 | `2ba3c7d7` | Édition rôles + historique RBAC |
 | ADMIN-02B | #861 | `46a91bfa` | `display_label` visuel only |
+| ADMIN-02C | #870 | `62334bac` | Rôles et droits — matrice complète tous modules sur une seule page |
 | ADMIN-03B | #860 | `6752b539` | Relations school-only persist update/archive |
 | ADMIN-04 | #862 | `841362e2` | Utilisateurs clôture |
 | ADMIN-05A | #863 | `4fdc842e` | Documents metadata school-only |
@@ -53,7 +54,7 @@ Légende : **ALLOW** opérationnel · **DENY** interdit · **A1** projection pla
 | Relations | DENY | DENY | SCHOOL | READ si token Relations | JWT école | nominatif | `platformPersonalDataGuard` + `assertSchoolScope` / `filterRows` | `canReadView("relations")` false plateforme | **CLOSED** A07-01→04, 27 |
 | Utilisateurs | catalogue plateforme (admins) | pays (admins) | SCHOOL | selon Utilisateurs:READ | JWT / `users.school_id` | comptes | `resolveUsersSchoolScope` | `canReadView("users")` | **CLOSED** A07-28 · U04 |
 | Rôles | ALLOW (sauf clés système) | DENY rename/archive système | DENY mutation catalogue | DENY | n/a | non | `establishmentRolesService` | PermissionsPage | **CLOSED** A02 / DL |
-| Droits | ALLOW effectif + override + reset | DENY reset | DENY écriture matrice | DENY | override école isolé | non | `functionalRbacService` | GET effective branché | **CLOSED** A07-24→26 |
+| Droits | ALLOW configuration. UX : Pays → Établissement → Rôle → tous les modules. Backend : PATCH batch `grants[]`. Concurrence : `expectedUpdatedAt`. Reset : par module. Dirty : multi-module conservé. | DENY reset | DENY écriture matrice | DENY | override école isolé | non | `functionalRbacService` PATCH `grants[]` | matrice unique `#870` | **CLOSED** A07-24→26 + A07-31→36 |
 | Documents | DENY | DENY | SCHOOL metadata | CRUD si Documents:* | JWT école | titre / élève | `listSchoolDocuments` + guard | onglet masqué plateforme | **CLOSED** A07-05/06/29 |
 | Conformité A1 | A1 non-PII | DENY | DENY | DENY | global compteurs | **aucun** | `assertPlatformComplianceRead` | `reports` Superadmin → A1 | **CLOSED** A07-20/21 |
 | Privacy requests | DENY | DENY | SCHOOL | Utilisateurs:READ | JWT école | identifiant / email | `listSchoolPrivacyRequests` | SchoolComplianceDashboard | **CLOSED** A07-07→09 |
@@ -70,18 +71,18 @@ Aucun contournement par `ALL_PRIVILEGES`, `COUNTRY_PRIVILEGES`, `schoolCode="*"`
 
 ## 2. Mapping #851 → PR correctrices
 
-Aucun constat **CLOSED** sans preuve actuelle sur `develop@ff367049`.
+Aucun constat **CLOSED** sans preuve actuelle sur `develop@62334bacf346ad1f6efb9af96b52ebfe0ef2bb8f`. Aucune preuve Droits ne porte sur l’ancien écran module-par-module.
 
 | Constat initial #851 | PR correctrice | Test actuel | Statut |
 |---|---|---|---|
-| ROOT-1 / RED-01 GET configured ≠ effective | #853 ADMIN-01 | `functionalRbacAdmin01` GET configured · A07-24 | **CLOSED** |
-| ROOT-2 / RED-01 UI page n’appelle pas `/effective` | #853 | `permissions.effective.test.ts` + ADMIN-01 | **CLOSED** |
-| ROOT-3 / RED-01b / RED-02 / RED-04 PATCH substitutif / perte U/D | #853 | ADMIN-01 PATCH CREATE / inchangé | **CLOSED** |
-| ROOT-4 cadenas vs matrice vide | #853 | ADMIN-01 hydratation + locks | **CLOSED** |
-| RED-ADM-DROITS-RESET pas d’API reset | #853 | ADMIN-01 reset · A07-25 | **CLOSED** |
-| CAP-SA-1/2/3 Superadmin ne paramètre pas sans écraser | #853 | ADMIN-01 | **CLOSED** |
-| DROITS-HERITAGE UI D | #853 | ADMIN-01 source/inherited | **CLOSED** |
-| RISK-DENY Enregistrer → DENY fantôme | #853 | ADMIN-01 PATCH inchangé | **CLOSED** |
+| ROOT-1 / RED-01 GET configured ≠ effective | #853 + #870 | `functionalRbacAdmin01` GET configured · A07-24 · A07-32 | **CLOSED** |
+| ROOT-2 / RED-01 UI page n’appelle pas `/effective` | #853 + #870 | `permissions.effective.test.ts` + ADMIN-01 + matrice unique | **CLOSED** |
+| ROOT-3 / RED-01b / RED-02 / RED-04 PATCH substitutif / perte U/D | #853 + #870 | ADMIN-01 PATCH CREATE / inchangé · A07-34 grants[] | **CLOSED** |
+| ROOT-4 cadenas vs matrice vide | #853 + #870 | ADMIN-01 hydratation + locks · A07-32/33 | **CLOSED** |
+| RED-ADM-DROITS-RESET pas d’API reset | #853 + #870 | ADMIN-01 reset · A07-25 · A07-35/36 | **CLOSED** |
+| CAP-SA-1/2/3 Superadmin ne paramètre pas sans écraser | #853 + #870 | ADMIN-01 · A07-31→36 | **CLOSED** |
+| DROITS-HERITAGE UI D | #853 + #870 | ADMIN-01 source/inherited · A07-32 | **CLOSED** |
+| RISK-DENY Enregistrer → DENY fantôme | #853 + #870 | ADMIN-01 PATCH inchangé · A07-34 | **CLOSED** |
 | ROLES-LABEL-UI pas de formulaire libellé | #858 + #861 | A02-01 · DL-06 · A07-22/23 | **CLOSED** |
 | GAP-SYS-ROLES verrou CRUD COUNTRY/SCHOOL (PR-2 optionnel) | — | A02-02→05 archive/rename protégés | **OUT-OF-SCOPE** (PR-2 jamais mandaté) |
 | DROITS-AUDIT-UI pas d’écran journal | #858 historique RBAC + #868 journal école | A02-07→15 · C06C · A07-13→17 | **CLOSED** |
@@ -133,7 +134,7 @@ Sécurité déjà GREEN dans #851 (RED-05→10, invariants SUPER_ADMIN, isolatio
 
 - Relations / Documents / privacy list+execute / export / `GET /api/audit` / advanced reports → **403** (guard avant `some()`, service refuse aussi `schoolCode` spoof).
 - A1 uniquement : `getPlatformCompliance` scope `platform`, payload sans identifiant / email / schoolCode.
-- Console droits : hydratation effective + reset (#853). Rôles : rename métier + `display_label` visuel (#858/#861). Utilisateurs : catalogue plateforme, pas les dossiers élèves.
+- Console droits : hydratation effective + reset (#853) puis matrice complète tous modules (#870). Pays → Établissement → Rôle → 31 modules. Un PATCH `grants[]`. Reset par ligne, drafts dirty des autres modules conservés, `expectedUpdatedAt` rafraîchi. Rôles : rename métier + `display_label` visuel (#858/#861). Utilisateurs : catalogue plateforme, pas les dossiers élèves.
 
 ### Country
 
@@ -158,7 +159,7 @@ Sécurité déjà GREEN dans #851 (RED-05→10, invariants SUPER_ADMIN, isolatio
 
 ---
 
-## 5. Replay A07-01 → A07-30
+## 5. Replay A07-01 → A07-36
 
 | ID | Preuve | coveredBy |
 |---|---|---|
@@ -192,6 +193,12 @@ Sécurité déjà GREEN dans #851 (RED-05→10, invariants SUPER_ADMIN, isolatio
 | A07-28 | utilisateurs cross-school denied | U04-02/14 |
 | A07-29 | documents cross-school denied | D05-12 |
 | A07-30 | ALL_PRIVILEGES ne contourne pas | P0-2 |
+| A07-31 | plus de sélecteur Module fonctionnel | ADMIN-02C MATRIX-01 |
+| A07-32 | Pays + établissement + rôle → matrice complète | ADMIN-02C MATRIX-02 |
+| A07-33 | 31 modules du catalogue dans une seule table | ADMIN-02C MATRIX-03/04 |
+| A07-34 | plusieurs modules dirty → un PATCH grants[] | ADMIN-02C MATRIX-06/07 |
+| A07-35 | reset d’une ligne conserve les drafts dirty tiers | ADMIN-02C MATRIX-17A/17B |
+| A07-36 | reset met à jour expectedUpdatedAt pour le PATCH suivant | ADMIN-02C MATRIX-18B |
 
 PG replay (établissements A / B) — **réutilise** les suites existantes, pas de nouveau scénario :
 
@@ -212,6 +219,6 @@ Si ADMIN-07 PASS (cette PR Draft + CI) :
 
 ## 7. Non-régression obligatoire
 
-`verify:functional-rbac` (ADMIN-01 → 06C + A07 + `platformPersonalDataGuard`) · PG correspondants · Web typecheck · Web build.
+`verify:functional-rbac` (ADMIN-01 → 02C → 06C + A07-01→36 + `platformPersonalDataGuard`) · MATRIX-01→24 + 17A/17B + 18A/18B/18C · PG correspondants · Web lint · Web typecheck · Web build.
 
 Aucune migration. Aucun fichier produit hors `docs/audits/`, tests de replay, `package.json`.

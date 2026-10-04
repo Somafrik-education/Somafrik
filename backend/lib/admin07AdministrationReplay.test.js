@@ -1,13 +1,16 @@
 "use strict";
 
 /**
- * ADMIN-07 — replay final A07-01 → A07-30.
- * AUDIT-ONLY. Appelle les fonctions produit déjà mergées (ADMIN-01 → ADMIN-06C).
+ * ADMIN-07 — replay final A07-01 → A07-36.
+ * AUDIT-ONLY. Appelle les fonctions produit déjà mergées (ADMIN-01 → ADMIN-02C → ADMIN-06C).
  * Preuves profondes : fichiers ADMIN-* existants (coveredBy dans chaque titre).
  */
 
+const fs = require("node:fs");
+const path = require("node:path");
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const { listFunctionalModules } = require("./functionalModulesCatalog");
 const { FallbackRepository } = require("../db/fallbackRepository");
 const { createClientsMemoryStore } = require("../db/clientsMemoryStore");
 const { createDocumentsExamsMemoryStore } = require("../db/documentsExamsMemoryStore");
@@ -815,4 +818,56 @@ test("A07-30 aucun ALL_PRIVILEGES ne contourne les protections école (P0-2)", (
   );
   assert.throws(() => assertDataExportRead(allPrivSchool), (error) => forbidden(error, DATA_EXPORT_ERROR.FORBIDDEN));
   assert.throws(() => resolveSchoolComplianceScope(allPrivSchool), (error) => forbidden(error, PRIVACY_ERROR.FORBIDDEN));
+});
+
+function readUtf8(relativePath) {
+  return fs.readFileSync(path.join(__dirname, relativePath), "utf8");
+}
+
+test("A07-31 PermissionsPage n'a plus de sélecteur Module fonctionnel (ADMIN-02C / MATRIX-01)", () => {
+  const page = readUtf8("../../web/src/pages/PermissionsPage.tsx");
+  assert.doesNotMatch(page, /id="rbac-module"|Module fonctionnel|selectedModuleKey/);
+  assert.match(page, /id="rbac-country"/);
+  assert.match(page, /id="rbac-school"/);
+  assert.match(page, /id="rbac-role"/);
+});
+
+test("A07-32 Pays + Établissement + Rôle → matrice complète (ADMIN-02C / MATRIX-02)", () => {
+  const page = readUtf8("../../web/src/pages/PermissionsPage.tsx");
+  assert.match(page, /const pathComplete = Boolean\(countryCode && schoolCode && selectedRoleKey\)/);
+  assert.match(page, /data-testid="rbac-permissions-matrix"/);
+  assert.match(page, /rbacApi\.getConfigured\(\{ roleKey: selectedRoleKey, countryCode, schoolCode \}\)/);
+});
+
+test("A07-33 31 modules du catalogue visibles dans une seule matrice (ADMIN-02C / MATRIX-03/04)", () => {
+  const modules = listFunctionalModules();
+  assert.equal(modules.length, 31);
+  assert.ok(modules.some((row) => row.moduleKey === "users"));
+  assert.ok(modules.some((row) => row.moduleKey === "students"));
+  assert.ok(modules.some((row) => row.moduleKey === "classes"));
+  assert.ok(modules.some((row) => row.moduleKey === "audit"));
+  const page = readUtf8("../../web/src/pages/PermissionsPage.tsx");
+  assert.match(page, /matrixModules\.map/);
+  assert.match(page, /sortModules\(matrix\?\.modules \?\? \[\], catalog\?\.modules \?\? \[\]\)/);
+});
+
+test("A07-34 édition de plusieurs modules → un seul PATCH grants[] (ADMIN-02C / MATRIX-06/07)", () => {
+  const page = readUtf8("../../web/src/pages/PermissionsPage.tsx");
+  assert.match(page, /const grants = dirtyModuleKeys\.map/);
+  assert.match(page, /rbacApi\.patchPermissions\(\{[\s\S]*grants,/);
+  assert.doesNotMatch(page, /for \(const moduleKey of dirtyModuleKeys\) \{\s*await rbacApi\.patchPermissions/);
+});
+
+test("A07-35 reset d'une ligne ne détruit pas les drafts dirty des autres modules (ADMIN-02C / MATRIX-17A/17B)", () => {
+  const page = readUtf8("../../web/src/pages/PermissionsPage.tsx");
+  assert.match(page, /const preservedDirtyDrafts = dirtyModuleKeys\.reduce/);
+  assert.match(page, /if \(dirtyModuleKey !== moduleKey && draftByModule\[dirtyModuleKey\]\)/);
+  assert.match(page, /for \(const \[dirtyModuleKey, preservedDraft\] of Object\.entries\(preservedDirtyDrafts\)\)/);
+});
+
+test("A07-36 reset met à jour expectedUpdatedAt pour le PATCH suivant (ADMIN-02C / MATRIX-18B)", () => {
+  const page = readUtf8("../../web/src/pages/PermissionsPage.tsx");
+  assert.match(page, /expectedUpdatedAt: matrix\?\.updatedAt \?\? null/);
+  assert.match(page, /const next = await rbacApi\.resetOverride/);
+  assert.match(page, /setMatrix\(next\)/);
 });
