@@ -70,6 +70,11 @@ export function resolveEffectiveRoleLabel(input: {
   return normalizeDisplayLabel(input.displayLabel) || fallback;
 }
 
+function isEmptyAccessLabel(value?: string | null): boolean {
+  const status = String(value ?? "").trim().toLowerCase();
+  return !status || status === "sans affectation";
+}
+
 export function visibleRoleLabel(user?: {
   effectiveRoleLabel?: string | null;
   defaultLabel?: string | null;
@@ -78,8 +83,11 @@ export function visibleRoleLabel(user?: {
   displayLabel?: string | null;
 } | null): string {
   if (!user) return "";
+  const fallback = [user.defaultLabel, user.role, defaultLabelForRoleKey(user.roleKey)].find(
+    (value) => !isEmptyAccessLabel(value),
+  );
   return resolveEffectiveRoleLabel({
-    defaultLabel: user.defaultLabel || user.role || defaultLabelForRoleKey(user.roleKey),
+    defaultLabel: fallback,
     displayLabel: user.effectiveRoleLabel || user.displayLabel,
   });
 }

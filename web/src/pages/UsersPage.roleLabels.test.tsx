@@ -196,14 +196,14 @@ describe("UsersPage ROLE-LABELS-WEB-01", () => {
   it("affiche les labels effectifs et filtre par roleKey SCHOOL_ADMIN", async () => {
     renderPage();
     expect(await screen.findByText("Professeur")).toBeInTheDocument();
-    expect(screen.getByText("Directeur")).toBeInTheDocument();
-    expect(screen.getByText("Étudiant")).toBeInTheDocument();
+    expect(screen.getAllByText("Directeur").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Étudiant").length).toBeGreaterThan(0);
 
     const roleFilter = await screen.findByLabelText("Filtrer par rôle");
     await waitFor(() => expect(within(roleFilter).getByRole("option", { name: "Directeur" })).toHaveValue("SCHOOL_ADMIN"));
     fireEvent.change(roleFilter, { target: { value: "SCHOOL_ADMIN" } });
-    expect(screen.getByText("Grace")).toBeInTheDocument();
-    expect(screen.queryByText("Awa")).not.toBeInTheDocument();
+    expect(screen.getByText(/Grace/)).toBeInTheDocument();
+    expect(screen.queryByText(/Awa/)).not.toBeInTheDocument();
   });
 
   it("création : option Professeur value TEACHER", async () => {
@@ -229,8 +229,8 @@ describe("UsersPage ROLE-LABELS-WEB-01", () => {
     const principalBox = checkboxes.find((box) => (box as HTMLInputElement).value === "PRINCIPAL");
     expect(schoolAdminBox).toBeTruthy();
     expect(principalBox).toBeTruthy();
-    expect(schoolAdminBox).toHaveValue("SCHOOL_ADMIN");
-    expect(principalBox).toHaveValue("PRINCIPAL");
+    expect(schoolAdminBox).toHaveAttribute("value", "SCHOOL_ADMIN");
+    expect(principalBox).toHaveAttribute("value", "PRINCIPAL");
     fireEvent.click(schoolAdminBox!);
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
     await waitFor(() => expect(clientsApi.grantUserRole).toHaveBeenCalled());

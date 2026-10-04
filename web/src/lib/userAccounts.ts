@@ -334,7 +334,7 @@ export function formatAccessRolesDisplay(
   >,
 ): string {
   const visual = formatVisibleRoleLabels(user);
-  if (visual) return visual;
+  if (visual && !isEmptyAccessLabel(visual)) return visual;
   if (isStudentLinkedAccount(user)) return STUDENT_ACCESS_ROLE_LABEL;
   const keys = accessRoleKeysOf(user);
   if (keys.length) {

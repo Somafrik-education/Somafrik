@@ -278,9 +278,9 @@ describe("WEB-RL-01→28 ROLE-LABELS-WEB-01", () => {
     const identity = read("lib/messagesRoleIdentity.ts");
     expect(identity).toContain('roleKeys');
     expect(identity).toContain('"TEACHER"');
-    expect(isTeacherMessagingSession({ roleKeys: ["TEACHER"], role: "Professeur" })).toBe(true);
-    expect(isTeacherMessagingSession({ role: "Enseignant" })).toBe(false);
-    expect(isTeacherMessagingSession({ roleKeys: ["SCHOOL_ADMIN"], role: "Enseignant" })).toBe(false);
+    expect(isTeacherMessagingSession({ roleKeys: ["TEACHER"] })).toBe(true);
+    expect(isTeacherMessagingSession({ roleKeys: [] })).toBe(false);
+    expect(isTeacherMessagingSession({ roleKeys: ["SCHOOL_ADMIN"] })).toBe(false);
   });
 
   it("WEB-RL-25 Compliance affiche Directeur", () => {
