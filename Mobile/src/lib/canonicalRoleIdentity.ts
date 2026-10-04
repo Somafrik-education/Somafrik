@@ -220,13 +220,15 @@ export function resolveCanonicalRoleIdentity(session: any): CanonicalRoleIdentit
     session?.user?.effectiveRoleLabels ?? session?.effectiveRoleLabels,
   );
   const primaryContract = contracts.find((row) => row.roleKey === roleKey);
+  // DISPLAY ONLY — effectiveRoleLabel / displayLabel never determine roleKey.
   const roleLabel =
     visibleRoleLabel({
       role: session?.user?.role,
       roleKey,
       effectiveRoleLabel: session?.user?.effectiveRoleLabel ?? session?.effectiveRoleLabel,
+      effectiveRoleLabels: contracts,
       defaultLabel: primaryContract?.defaultLabel,
-      displayLabel: primaryContract?.displayLabel,
+      displayLabel: primaryContract?.effectiveLabel ?? primaryContract?.displayLabel,
     }) ||
     primaryContract?.effectiveLabel ||
     String(session?.roleLabel ?? "").trim() ||

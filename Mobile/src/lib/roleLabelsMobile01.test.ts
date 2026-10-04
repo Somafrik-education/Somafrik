@@ -23,6 +23,8 @@ import {
 import {
   alignRolesToCatalogue,
   applyUserRoleAssignment,
+  canCommitAssignableRoles,
+  loadAssignableRolesForMutation,
   visibleAssignableRoles,
 } from "./userRoleAssignment";
 
@@ -308,7 +310,7 @@ describe("MOBILE-RL-01→38 ROLE-LABELS-MOBILE-01", () => {
   it("MOBILE-RL-24 grant custom envoie RESP_PED", async () => {
     const grants: string[] = [];
     await applyUserRoleAssignment({
-      user: { id: "u", roleKeys: [] },
+      user: { roleKeys: [] },
       userId: "u",
       currentRoles: [],
       selectedRoles: ["RESP_PED"],
@@ -324,7 +326,7 @@ describe("MOBILE-RL-01→38 ROLE-LABELS-MOBILE-01", () => {
   it("MOBILE-RL-25 revoke custom envoie RESP_PED", async () => {
     const revokes: string[] = [];
     await applyUserRoleAssignment({
-      user: { id: "u", roleKeys: ["RESP_PED"] },
+      user: { roleKeys: ["RESP_PED"] },
       userId: "u",
       currentRoles: ["RESP_PED"],
       selectedRoles: [],
@@ -371,6 +373,52 @@ describe("MOBILE-RL-01→38 ROLE-LABELS-MOBILE-01", () => {
 
   it("MOBILE-RL-29 API assignable 200 [] → aucune option", () => {
     assert.deepEqual(visibleAssignableRoles([]), []);
+  });
+
+  it("erreur HTTP catalogue assignable → 0 grant / 0 revoke", async () => {
+    const grants: string[] = [];
+    const revokes: string[] = [];
+    const loaded = await loadAssignableRolesForMutation({
+      currentRoleKeys: ["SCHOOL_ADMIN", "TEACHER"],
+      loadAssignable: async () => {
+        throw new Error("HTTP 503");
+      },
+    });
+    assert.equal(loaded.catalogReady, false);
+    assert.deepEqual(loaded.selectedRoles, []);
+    assert.deepEqual(loaded.baselineRoles, []);
+    assert.equal(canCommitAssignableRoles(loaded), false);
+    assert.match(read("../components/UserMutationControls.tsx"), /loadAssignableRolesForMutation/);
+    assert.match(read("../components/UserMutationControls.tsx"), /canCommitAssignableRoles/);
+    assert.doesNotMatch(read("../components/UserMutationControls.tsx"), /setCatalogReady\(true\)/);
+    if (canCommitAssignableRoles(loaded)) {
+      await applyUserRoleAssignment({
+        user: { roleKeys: ["SCHOOL_ADMIN", "TEACHER"] },
+        userId: "u",
+        currentRoles: loaded.baselineRoles,
+        selectedRoles: loaded.selectedRoles,
+        grant: async (_id, role) => {
+          grants.push(role);
+        },
+        revoke: async (_id, role) => {
+          revokes.push(role);
+        },
+      });
+    }
+    await applyUserRoleAssignment({
+      user: { roleKeys: ["SCHOOL_ADMIN", "TEACHER"] },
+      userId: "u",
+      currentRoles: loaded.baselineRoles,
+      selectedRoles: loaded.selectedRoles,
+      grant: async (_id, role) => {
+        grants.push(role);
+      },
+      revoke: async (_id, role) => {
+        revokes.push(role);
+      },
+    });
+    assert.deepEqual(grants, []);
+    assert.deepEqual(revokes, []);
   });
 
   it("MOBILE-RL-30 API malformed → aucun faux roleKey", () => {
@@ -438,6 +486,7 @@ describe("MOBILE-RL-01→38 ROLE-LABELS-MOBILE-01", () => {
   it("MOBILE-RL-37 multi-rôle roleKeys inchangés", () => {
     const session = attachCanonicalRoleIdentity({
       role: "teacher",
+      roleKey: "TEACHER",
       roleKeys: ["TEACHER", "SCHOOL_ADMIN"],
       user: {
         role: "Enseignant",
@@ -452,6 +501,32 @@ describe("MOBILE-RL-01→38 ROLE-LABELS-MOBILE-01", () => {
     });
     assert.deepEqual(session?.roleKeys, ["SCHOOL_ADMIN", "TEACHER"]);
     assert.deepEqual(session?.user?.roleKeys, ["SCHOOL_ADMIN", "TEACHER"]);
+    assert.equal(session?.roleKey, "SCHOOL_ADMIN");
+    const identity = resolveCanonicalRoleIdentity(session);
+    assert.equal(identity.roleKey, "SCHOOL_ADMIN");
+    assert.equal(identity.roleLabel, "Directeur");
+    assert.equal(visibleRoleLabel(session?.user), "Directeur");
+  });
+
+  it("multi-rôle primaire SCHOOL_ADMIN affiche Directeur, pas Professeur", () => {
+    const identity = resolveCanonicalRoleIdentity({
+      role: "teacher",
+      roleKeys: ["TEACHER", "SCHOOL_ADMIN"],
+      user: {
+        role: "Enseignant",
+        roleKey: "TEACHER",
+        roleKeys: ["TEACHER", "SCHOOL_ADMIN"],
+        effectiveRoleLabel: "Professeur",
+        effectiveRoleLabels: [
+          { roleKey: "TEACHER", defaultLabel: "Enseignant", displayLabel: "Professeur", effectiveLabel: "Professeur" },
+          { roleKey: "SCHOOL_ADMIN", defaultLabel: "Admin School", displayLabel: "Directeur", effectiveLabel: "Directeur" },
+        ],
+      },
+    });
+    assert.equal(identity.roleKey, "SCHOOL_ADMIN");
+    assert.equal(identity.roleLabel, "Directeur");
+    assert.notEqual(identity.roleLabel, "Professeur");
+    assert.deepEqual(identity.roleKeys, ["SCHOOL_ADMIN", "TEACHER"]);
   });
 
   it("MOBILE-RL-38 ADJOINT reste legacy, pas catalogue ADMIN-02B", () => {

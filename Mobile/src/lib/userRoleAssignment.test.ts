@@ -367,7 +367,8 @@ describe("contrat de parité — pas de gestion limitée au rôle Enseignant", (
     assert.match(controls, /Gérer les rôles/);
     assert.match(controls, /Sélectionnez les rôles d'accès de cet utilisateur\./);
     assert.match(controls, /listAssignableEstablishmentRoles/);
-    assert.match(controls, /visibleAssignableRoles/);
+    assert.match(controls, /loadAssignableRolesForMutation/);
+    assert.match(controls, /canCommitAssignableRoles/);
     assert.match(controls, /saveUserRoleChanges/);
     assert.match(controls, /createSingleFlight/);
     assert.match(controls, /grantClientsUserRole/);

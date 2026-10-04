@@ -20,14 +20,13 @@ import {
 import { canGrantUserRole, resolveEntityCrudAccess } from "../lib/mobileCrudParity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
-  alignRolesToCatalogue,
+  canCommitAssignableRoles,
   createSingleFlight,
   currentAccessRoleKeys,
+  loadAssignableRolesForMutation,
   saveUserRoleChanges,
-  visibleAssignableRoles,
   type AssignableRoleChoice,
 } from "../lib/userRoleAssignment";
-import { indexRoleDisplayCatalog } from "../lib/roleDisplayLabels";
 import { createClientsUser, grantClientsUserRole, revokeClientsUserRole, updateClientsUser } from "../services/api";
 import { listAssignableEstablishmentRoles, listRoleDisplayLabels } from "../services/schoolSettingsApi";
 
@@ -191,24 +190,16 @@ export default function UserMutationControls({
     setRolesOpen(true);
     setRolesLoading(true);
     try {
-      const [payload, display] = await Promise.all([
-        listAssignableEstablishmentRoles(),
-        listRoleDisplayLabels().catch(() => ({ items: [] })),
-      ]);
-      const catalog = indexRoleDisplayCatalog(Array.isArray(display?.items) ? display.items : []);
-      const roles = Array.isArray(payload?.roles) ? payload.roles : [];
-      const choices = visibleAssignableRoles(roles, catalog);
-      const aligned = alignRolesToCatalogue(currentAccessRoleKeys(row), choices);
-      setRoleChoices(choices);
-      setSelectedRoles(aligned);
-      setBaselineRoles(aligned);
-      setCatalogReady(true);
-    } catch (err) {
-      setRoleChoices([]);
-      setSelectedRoles([]);
-      setBaselineRoles(currentAccessRoleKeys(row));
-      setRolesError(err instanceof Error ? err.message : "Impossible de charger les rôles.");
-      setCatalogReady(true);
+      const loaded = await loadAssignableRolesForMutation({
+        currentRoleKeys: currentAccessRoleKeys(row),
+        loadAssignable: listAssignableEstablishmentRoles,
+        loadDisplay: listRoleDisplayLabels,
+      });
+      setRoleChoices(loaded.roleChoices);
+      setSelectedRoles(loaded.selectedRoles);
+      setBaselineRoles(loaded.baselineRoles);
+      setCatalogReady(loaded.catalogReady);
+      setRolesError(loaded.error);
     } finally {
       setRolesLoading(false);
     }
@@ -223,7 +214,7 @@ export default function UserMutationControls({
   };
 
   const submitRoles = () => {
-    if (!row) return;
+    if (!row || !canCommitAssignableRoles({ catalogReady, rolesLoading, rolesSaving })) return;
     void rolesFlight.current.run(async () => {
       if (isStudentLinkedAccount(row)) {
         setRolesError(STUDENT_ROLE_LOCKED_MESSAGE);
@@ -354,7 +345,7 @@ export default function UserMutationControls({
       title="Gérer les rôles"
       error={rolesError}
       saving={rolesSaving}
-      submitDisabled={rolesSaving || rolesLoading || !catalogReady}
+      submitDisabled={!canCommitAssignableRoles({ catalogReady, rolesLoading, rolesSaving })}
       onClose={closeRoles}
       onSubmit={submitRoles}
     >

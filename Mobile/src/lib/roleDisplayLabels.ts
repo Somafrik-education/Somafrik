@@ -86,12 +86,21 @@ function isEmptyAccessLabel(value?: string | null): boolean {
 
 export function visibleRoleLabel(user?: {
   effectiveRoleLabel?: string | null;
+  effectiveRoleLabels?: RoleDisplayContract[] | null;
   defaultLabel?: string | null;
   role?: string | null;
   roleKey?: string | null;
   displayLabel?: string | null;
 } | null): string {
   if (!user) return "";
+  const roleKey = asRoleKey(user.roleKey);
+  const contracts = Array.isArray(user.effectiveRoleLabels) ? user.effectiveRoleLabels : [];
+  if (roleKey && contracts.length) {
+    const matched = contracts.find((row) => asRoleKey(row.roleKey) === roleKey);
+    if (matched) {
+      return matched.effectiveLabel || matched.defaultLabel || "";
+    }
+  }
   const fallback = [user.defaultLabel, user.role, defaultLabelForRoleKey(user.roleKey)].find(
     (value) => !isEmptyAccessLabel(value),
   );

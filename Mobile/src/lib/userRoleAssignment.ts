@@ -14,6 +14,7 @@ import { normalize } from "./format";
 import {
   decorateAssignableRoles,
   grantIdentityForRoleKey,
+  indexRoleDisplayCatalog,
   isServerProvidedRoleKey,
   type DecoratedAssignableRole,
   type RoleDisplayContract,
@@ -134,6 +135,61 @@ export function currentAccessRoleLabels(user: RoleBearingUser): string[] {
  * Aligne les rôles actifs sur le catalogue par roleKey.
  * Un rôle actif absent du catalogue est conservé (fail-closed, pas de révocation silencieuse).
  */
+export type AssignableRolesLoadState = {
+  catalogReady: boolean;
+  roleChoices: AssignableRoleChoice[];
+  selectedRoles: string[];
+  baselineRoles: string[];
+  error: string;
+};
+
+export function failClosedAssignableRolesLoad(error?: unknown): AssignableRolesLoadState {
+  return {
+    catalogReady: false,
+    roleChoices: [],
+    selectedRoles: [],
+    baselineRoles: [],
+    error:
+      error instanceof Error && error.message.trim()
+        ? error.message
+        : "Impossible de charger les rôles.",
+  };
+}
+
+export function canCommitAssignableRoles(state: {
+  catalogReady?: boolean;
+  rolesLoading?: boolean;
+  rolesSaving?: boolean;
+}): boolean {
+  return Boolean(state.catalogReady) && !state.rolesLoading && !state.rolesSaving;
+}
+
+export async function loadAssignableRolesForMutation(input: {
+  currentRoleKeys: string[];
+  loadAssignable: () => Promise<{ roles?: EstablishmentRoleCatalogueEntry[] } | null | undefined>;
+  loadDisplay?: () => Promise<{ items?: RoleDisplayContract[] } | null | undefined>;
+}): Promise<AssignableRolesLoadState> {
+  try {
+    const [payload, display] = await Promise.all([
+      input.loadAssignable(),
+      (input.loadDisplay ?? (async () => ({ items: [] })))().catch(() => ({ items: [] })),
+    ]);
+    const catalog = indexRoleDisplayCatalog(Array.isArray(display?.items) ? display.items : []);
+    const roles = Array.isArray(payload?.roles) ? payload.roles : [];
+    const choices = visibleAssignableRoles(roles, catalog);
+    const aligned = alignRolesToCatalogue(input.currentRoleKeys, choices);
+    return {
+      catalogReady: true,
+      roleChoices: choices,
+      selectedRoles: aligned,
+      baselineRoles: aligned,
+      error: "",
+    };
+  } catch (error) {
+    return failClosedAssignableRolesLoad(error);
+  }
+}
+
 export function alignRolesToCatalogue(currentKeys: string[], catalog: AssignableRoleChoice[]): string[] {
   const selected: string[] = [];
   const seen = new Set<string>();

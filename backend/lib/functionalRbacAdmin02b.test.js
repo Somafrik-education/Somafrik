@@ -257,8 +257,13 @@ test("DL-17 surfaces Mobile visuelles consomment effectiveLabel", () => {
   const profile = readUtf8("../../Mobile/src/lib/businessProfile.ts");
   assert.match(profile, /effectiveRoleLabel/);
   const identity = readUtf8("../../Mobile/src/lib/canonicalRoleIdentity.ts");
-  assert.doesNotMatch(identity, /effectiveRoleLabel/);
-  assert.doesNotMatch(identity, /displayLabel/);
+  assert.match(identity, /effectiveRoleLabel/);
+  assert.match(identity, /displayLabel/);
+  assert.match(identity, /DISPLAY ONLY/);
+  assert.match(identity, /const roleKey = roleKeys\[0\]/);
+  assert.doesNotMatch(identity, /canonicalizeRoleKey\([^)]*effectiveRoleLabel/);
+  assert.doesNotMatch(identity, /canonicalizeRoleKey\([^)]*displayLabel/);
+  assert.doesNotMatch(identity, /canonicalizeRoleKey\(session\?\.roleLabel\)/);
 });
 
 test("DL-18 collision SCHOOL_ADMIN/PRINCIPAL acceptée ; toRoleKey n'ingère pas display_label", async () => {
