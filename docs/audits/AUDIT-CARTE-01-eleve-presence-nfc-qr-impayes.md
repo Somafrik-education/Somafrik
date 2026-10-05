@@ -107,7 +107,7 @@ Somafrik **peut** porter une carte physique élève **sans recréer** Élèves, 
 | Faut-il écrire `IMPAYÉ=true` sur la puce ? | **Non — interdit.** La situation change ; elle doit rester calculée serveur. |
 | NTAG + QR statique suffisent-ils pour un contrôle d’accès fort ? | **Non.** Suffisant pour une **identification scolaire** (qui prétend être cet élève). Insuffisant pour une **authentification anti-clonage**. |
 
-**Orientation architecture : validée CTO. Fermeture d’audit : non. Implémentation : non.**
+**Orientation architecture : validée CTO. Fermeture d’audit : oui / CLOSED. Implémentation : non.**
 
 1. NFC = canal principal, QR = secours. Les deux transportent le **même** capability opaque.  
 2. Scan **authentifié staff**, jamais public.  
@@ -743,5 +743,5 @@ Le plus petit écart sûr **après le merge de #876** :
 
 colonnes `school_settings` (défaut false) + 1 table `student_access_cards` + 6 routes cycle de vie/scan + 0 copie des référentiels + 0 bit financier sur la puce + 0 régression d’appel manuel.
 
-**Prochaine action :** dernier diff GitHub indépendant de **#876** @ base `8cb187d7`. **CARTE-PR0 reste non ouverte jusqu’au merge de #876.**  
+**Prochaine action après merge de #876 :** CARTE-PR0 peut être ouverte sous mandat CTO. Jusqu’à ce merge, **CARTE-PR0 reste non ouverte.**  
 #857 est **CLOSED WITHOUT MERGE** — ne plus la relire comme cible de review.
