@@ -4,7 +4,10 @@
   "verdict": "ARCHITECTURE_VALID_AUDIT_OPEN",
   "stalePr": "#857",
   "staleBase": "2a1df06455d538013b2362376a2ac360f8d3360d",
-  "replayBase": "f95c3f3864d7841fd0ee9a6ec2ea30a251528dbf",
+  "previousReplayBase": "f95c3f3864d7841fd0ee9a6ec2ea30a251528dbf",
+  "replayBase": "8cb187d7eb49fbb366cf7ecaba9bbf87bfae8306",
+  "closedWithoutMerge": ["#856", "#857"],
+  "roleLabelsClosed": "#875",
   "doNotMerge857": true,
   "pr0Open": false,
   "implementationForbidden": true,
@@ -15,6 +18,7 @@
     "noCardQrScanner": true,
     "manualAttendanceIntact": true,
     "financeDoesNotGatePresence": true,
-    "cartePr0StillSettingsOnly": true
+    "cartePr0StillSettingsOnly": true,
+    "roleLabelsClosureAddsNoCardProduct": true
   }
 }

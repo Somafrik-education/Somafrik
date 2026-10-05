@@ -2,23 +2,23 @@
 
 **Type :** audit d’architecture (caractérisation) — **aucune implémentation**  
 **Statut :** Audit **OUVERT / HOLD / NO MERGE** — orientation architecture **validée CTO**, fermeture d’audit **refusée**, **aucune implémentation**, **aucune PR0**  
-**PR historique :** [#857](https://github.com/Somafrik-education/Somafrik/pull/857) — Draft, **base stale** `develop@2a1df064`  
-**Replay :** cette branche `cursor/audit-carte-01-94fc` sur `develop@f95c3f38`  
+**PR historique :** [#857](https://github.com/Somafrik-education/Somafrik/pull/857) — **CLOSED WITHOUT MERGE**  
+**Replay :** [#876](https://github.com/Somafrik-education/Somafrik/pull/876) — branche `cursor/audit-carte-01-94fc`  
 **Date initiale :** 2026-10-01  
 **Complément CTO :** 2026-10-01 — paramétrage, non-régression Présences, gates Stores, contrat D1/D2/D7/D8  
-**Replay develop actuel :** 2026-10-04 — ROLE-LABELS / ADMIN-07 mergés ; **aucune carte élève n’a été ajoutée**  
-**Contraintes honorées :** aucun DDL request-time, aucune migration exécutée, aucun merge, aucun code métier, aucun manifeste Android/iOS, aucune dépendance QR/NFC.
+**Replay `f95c3f38` :** 2026-10-04 — ROLE-LABELS produit mergé ; aucune carte  
+**Resync `8cb187d7` :** 2026-10-05 — merge #875 (clôture admin ROLE-LABELS) ; #856/#857 closed without merge  
+**Contraintes honorées :** aucun DDL request-time, aucune migration exécutée, aucun code métier, aucun manifeste Android/iOS, aucune dépendance QR/NFC. **CARTE-PR0 non ouverte.**
 
 ### Traçabilité des SHA (ne pas confondre)
 
 | Référence | SHA | Signification |
 |-----------|-----|----------------|
 | Caractérisation initiale | `develop` @ `ae9fa504` (`#855`) | SHA **lu** lors du premier dépôt d’audit. |
-| Base historique de #857 | `develop` @ `2a1df064` (`#853`) | Base **alors** de la PR. **Ne plus l’utiliser.** |
-| Replay obligatoire CTO | `develop` @ `f95c3f3864d7841fd0ee9a6ec2ea30a251528dbf` | Merge #874 ROLE-LABELS-MOBILE-01. **Base live de ce replay.** |
-| Branche de replay | `cursor/audit-carte-01-94fc` | Un seul fichier : ce document. |
-
-#857 reste un reliquat de base ancienne : **ne pas merger #857**. Le replay ci-dessous remplace sa base Git.
+| Base historique de #857 | `develop` @ `2a1df064` (`#853`) | **CLOSED WITHOUT MERGE.** |
+| Replay #876 (premier) | `develop` @ `f95c3f3864d7841fd0ee9a6ec2ea30a251528dbf` | Merge #874. Base **alors** du premier replay. |
+| Base live obligatoire | `develop` @ `8cb187d7eb49fbb366cf7ecaba9bbf87bfae8306` | Merge #875. **Base live de ce resync.** |
+| Branche de replay | `cursor/audit-carte-01-94fc` | Audit-only. |
 
 ---
 
@@ -43,6 +43,28 @@ Cartographie rejouée. **Aucun constat d’architecture invalidé.** CARTE-PR0 *
 **CARTE-PR0 (après clôture d’audit, pas maintenant) :** étendre uniquement `school_settings` + `PATCH /api/school-settings` avec `student_card_enabled` et sous-options QR/NFC/contrôle financier, **toutes `false`**. Aucun QR/NFC. Aucun changement Présences.
 
 D1 / D2 / D7 / D8 / invariant Présences restent **figés**.
+
+---
+
+## 0.ter Resync `develop@8cb187d7` (2026-10-05)
+
+Après merge #875, #876 était **ahead 1 / behind 2**. Rebase sur `origin/develop@8cb187d7`. Cartographie relancée.
+
+| Lot administratif | Statut |
+|---|---|
+| #875 ROLE-LABELS clôture | **MERGED** `8cb187d7` — docs/tests only |
+| #856 replay sécurité P0/P1 | **CLOSED WITHOUT MERGE** |
+| #857 AUDIT-CARTE-01 stale | **CLOSED WITHOUT MERGE** |
+| ROLE-LABELS produit | **fermé** |
+
+| # | Constat | Live @ `8cb187d7` | Verdict |
+|---|---------|-------------------|---------|
+| 1 | Pas de carte élève / `cardToken` | Aucun `student_card*` dans `backend/` | **INCHANGÉ** |
+| 2 | `school_settings` 3 scalaires | `period_mode` / `default_scale` / `report_card_mode` | **INCHANGÉ** |
+| 3 | NFC Android bloqué | `android.permission.NFC` toujours blocked | **INCHANGÉ** |
+| 4–11 | Présences manuelles, UNIQUE jour, impayés hors gate, pas de flags carte | Identiques à §0.bis | **INCHANGÉ** |
+
+#875 n’ajoute **aucun** produit carte (replay ROLE-LABELS + preuves machine uniquement). **CARTE-PR0 reste non ouverte.**
 
 ---
 
