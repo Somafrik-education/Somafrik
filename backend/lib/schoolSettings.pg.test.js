@@ -240,13 +240,21 @@ async function testSchoolInsertCreatesSettingsRow(pool) {
     [country.rows[0].id],
   );
   const row = await pool.query(
-    `SELECT period_mode, default_scale, report_card_mode FROM school_settings WHERE school_id = $1`,
+    `SELECT period_mode, default_scale, report_card_mode,
+            student_card_enabled, student_card_qr_enabled, student_card_nfc_enabled,
+            student_card_attendance_enabled, student_card_finance_check_enabled
+     FROM school_settings WHERE school_id = $1`,
     [created.rows[0].id],
   );
   assert.equal(row.rowCount, 1);
   assert.equal(row.rows[0].period_mode, "trimestre");
   assert.equal(Number(row.rows[0].default_scale), 20);
   assert.equal(row.rows[0].report_card_mode, "period");
+  assert.equal(row.rows[0].student_card_enabled, false);
+  assert.equal(row.rows[0].student_card_qr_enabled, false);
+  assert.equal(row.rows[0].student_card_nfc_enabled, false);
+  assert.equal(row.rows[0].student_card_attendance_enabled, false);
+  assert.equal(row.rows[0].student_card_finance_check_enabled, false);
 }
 
 async function testGetMaterializesMissingSettingsRow(pool) {
@@ -267,6 +275,11 @@ async function testGetMaterializesMissingSettingsRow(pool) {
   assert.equal(settings.periodMode, "trimestre");
   assert.equal(settings.defaultScale, 20);
   assert.equal(settings.reportCardMode, "period");
+  assert.equal(settings.studentCardEnabled, false);
+  assert.equal(settings.studentCardQrEnabled, false);
+  assert.equal(settings.studentCardNfcEnabled, false);
+  assert.equal(settings.studentCardAttendanceEnabled, false);
+  assert.equal(settings.studentCardFinanceCheckEnabled, false);
   const restored = await pool.query(`SELECT period_mode FROM school_settings WHERE school_id = $1`, [fixture.schoolAId]);
   assert.equal(restored.rowCount, 1, "GET matérialise school_settings en PostgreSQL");
 }
@@ -344,6 +357,11 @@ async function main() {
     assert.equal(created.schoolCode, "CD-2026-0001");
     assert.equal(created.periodMode, "trimestre");
     assert.equal(created.defaultScale, 20);
+    assert.equal(created.studentCardEnabled, false);
+    assert.equal(created.studentCardQrEnabled, false);
+    assert.equal(created.studentCardNfcEnabled, false);
+    assert.equal(created.studentCardAttendanceEnabled, false);
+    assert.equal(created.studentCardFinanceCheckEnabled, false);
 
     const patched = await repo.patchSchoolSettings(
       { periodMode: "semestre", defaultScale: 10, schoolId: fixture.schoolBId, schoolCode: "BI-2026-0002" },
@@ -358,6 +376,26 @@ async function main() {
     const stillB = await repo.getSchoolSettings(adminB, "BI-2026-0002");
     assert.equal(stillB.periodMode, "trimestre");
     assert.equal(stillB.defaultScale, 20);
+    assert.equal(stillB.studentCardEnabled, false);
+
+    const cardPatched = await repo.patchSchoolSettings(
+      { studentCardEnabled: true, studentCardFinanceCheckEnabled: true },
+      adminA,
+      auditMeta,
+      "CD-2026-0001",
+    );
+    assert.equal(cardPatched.studentCardEnabled, true);
+    assert.equal(cardPatched.studentCardFinanceCheckEnabled, true);
+    assert.equal(cardPatched.studentCardQrEnabled, false);
+    assert.equal(cardPatched.periodMode, "semestre");
+    const stillBAfterCard = await repo.getSchoolSettings(adminB, "BI-2026-0002");
+    assert.equal(stillBAfterCard.studentCardEnabled, false);
+    assert.equal(stillBAfterCard.studentCardFinanceCheckEnabled, false);
+
+    await assert.rejects(
+      () => repo.patchSchoolSettings({ studentCardNfcEnabled: "yes" }, adminA, auditMeta, "CD-2026-0001"),
+      (error) => error.statusCode === 400 && error.code === SCHOOL_SETTINGS_ERROR.INVALID_STUDENT_CARD_FLAG,
+    );
 
     await assert.rejects(
       () => repo.patchSchoolSettings({ periodMode: "periode" }, teacher, auditMeta, "CD-2026-0001"),

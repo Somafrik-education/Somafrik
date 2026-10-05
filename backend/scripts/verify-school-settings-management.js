@@ -7,7 +7,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
 const { hashSecret } = require("../services/credentialService");
-const { SCHOOL_SETTINGS_ERROR } = require("../lib/schoolSettingsManagement");
+const { SCHOOL_SETTINGS_ERROR, STUDENT_CARD_FLAG_API_KEYS } = require("../lib/schoolSettingsManagement");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const { SCHOOL_SETTINGS_SCHEMA_SQL } = require("../db/schoolSettingsSchema");
 
@@ -132,6 +132,9 @@ async function runMemorySuite() {
     assert.equal(list.status, 200, JSON.stringify(list.data));
     assert.equal(list.data.schoolCode, "CD-2026-0001");
     assert.ok(list.data.periodMode);
+    for (const key of STUDENT_CARD_FLAG_API_KEYS) {
+      assert.equal(list.data[key], false, `défaut ${key}`);
+    }
 
     const patched = await request(MEMORY_PORT, "/school-settings", {
       method: "PATCH",
@@ -142,6 +145,29 @@ async function runMemorySuite() {
     assert.equal(patched.data.periodMode, "semestre");
     assert.equal(patched.data.defaultScale, 10);
     assert.equal(patched.data.schoolCode, "CD-2026-0001");
+    for (const key of STUDENT_CARD_FLAG_API_KEYS) {
+      assert.equal(patched.data[key], false, `PATCH académique ne doit pas activer ${key}`);
+    }
+
+    const invalidCard = await request(MEMORY_PORT, "/school-settings", {
+      method: "PATCH",
+      token: adminToken,
+      body: { studentCardEnabled: "true" },
+    });
+    assert.equal(invalidCard.status, 400, JSON.stringify(invalidCard.data));
+    assert.equal(invalidCard.data?.code, SCHOOL_SETTINGS_ERROR.INVALID_STUDENT_CARD_FLAG);
+
+    const cardPatch = await request(MEMORY_PORT, "/school-settings", {
+      method: "PATCH",
+      token: adminToken,
+      body: { studentCardQrEnabled: true, studentCardAttendanceEnabled: true },
+    });
+    assert.equal(cardPatch.status, 200, JSON.stringify(cardPatch.data));
+    assert.equal(cardPatch.data.studentCardQrEnabled, true);
+    assert.equal(cardPatch.data.studentCardAttendanceEnabled, true);
+    assert.equal(cardPatch.data.studentCardEnabled, false);
+    assert.equal(cardPatch.data.studentCardNfcEnabled, false);
+    assert.equal(cardPatch.data.periodMode, "semestre");
 
     const invalid = await request(MEMORY_PORT, "/school-settings", {
       method: "PATCH",
@@ -161,6 +187,9 @@ async function runMemorySuite() {
     assert.equal(biSettings.status, 200, JSON.stringify(biSettings.data));
     assert.equal(biSettings.data.schoolCode, "BI-2026-0002");
     assert.notEqual(biSettings.data.periodMode, "semestre");
+    for (const key of STUDENT_CARD_FLAG_API_KEYS) {
+      assert.equal(biSettings.data[key], false, `isolation BI ${key}`);
+    }
 
     const periods = await request(MEMORY_PORT, "/academic-periods", {
       method: "PUT",
@@ -335,6 +364,19 @@ async function runPgSuite(databaseUrl) {
     assert.equal(patched.data.periodMode, "semestre");
     assert.equal(patched.data.defaultScale, 15);
     assert.equal(patched.data.schoolCode, "CD-2026-0001");
+    for (const key of STUDENT_CARD_FLAG_API_KEYS) {
+      assert.equal(patched.data[key], false, `PG HTTP défaut ${key}`);
+    }
+
+    const cardPatch = await request(PG_PORT, "/school-settings", {
+      method: "PATCH",
+      token: adminToken,
+      body: { studentCardEnabled: true, studentCardNfcEnabled: true },
+    });
+    assert.equal(cardPatch.status, 200, JSON.stringify(cardPatch.data));
+    assert.equal(cardPatch.data.studentCardEnabled, true);
+    assert.equal(cardPatch.data.studentCardNfcEnabled, true);
+    assert.equal(cardPatch.data.studentCardQrEnabled, false);
 
     const teacherWrite = await request(PG_PORT, "/school-settings", {
       method: "PATCH",
@@ -346,6 +388,9 @@ async function runPgSuite(databaseUrl) {
     const biSettings = await request(PG_PORT, "/school-settings", { token: adminBi });
     assert.equal(biSettings.status, 200, JSON.stringify(biSettings.data));
     assert.equal(biSettings.data.periodMode, "trimestre");
+    for (const key of STUDENT_CARD_FLAG_API_KEYS) {
+      assert.equal(biSettings.data[key], false, `PG isolation BI ${key}`);
+    }
 
     const projection = await request(PG_PORT, "/academic-config", { token: adminToken });
     assert.equal(projection.status, 200, JSON.stringify(projection.data));

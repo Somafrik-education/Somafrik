@@ -14,6 +14,11 @@ export type SchoolSettings = {
   periodMode: "trimestre" | "semestre" | "periode" | string;
   defaultScale: number;
   reportCardMode: "period" | "annual" | "custom" | string;
+  studentCardEnabled?: boolean;
+  studentCardQrEnabled?: boolean;
+  studentCardNfcEnabled?: boolean;
+  studentCardAttendanceEnabled?: boolean;
+  studentCardFinanceCheckEnabled?: boolean;
   schoolYear?: string;
   periods?: Array<Record<string, unknown>>;
 };

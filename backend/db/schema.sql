@@ -342,17 +342,30 @@ CREATE INDEX IF NOT EXISTS idx_evaluation_types_school_status
   ON evaluation_types (school_id, status, display_order);
 
 -- LOT 4 : paramètres établissement scalaires (périodes = terms)
+-- CARTE-PR0 : flags carte élève, tous FALSE par défaut (fail-closed)
 CREATE TABLE IF NOT EXISTS school_settings (
   school_id UUID PRIMARY KEY REFERENCES schools(id) ON DELETE CASCADE,
   period_mode TEXT NOT NULL DEFAULT 'trimestre',
   default_scale NUMERIC(6,2) NOT NULL DEFAULT 20,
   report_card_mode TEXT NOT NULL DEFAULT 'period',
+  student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_qr_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_nfc_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT school_settings_period_mode_check CHECK (period_mode IN ('trimestre', 'semestre', 'periode')),
   CONSTRAINT school_settings_report_card_mode_check CHECK (report_card_mode IN ('period', 'annual', 'custom')),
   CONSTRAINT school_settings_default_scale_check CHECK (default_scale > 0 AND default_scale <= 100)
 );
+
+ALTER TABLE school_settings
+  ADD COLUMN IF NOT EXISTS student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_qr_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_nfc_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE OR REPLACE FUNCTION ensure_school_settings_for_school()
 RETURNS trigger

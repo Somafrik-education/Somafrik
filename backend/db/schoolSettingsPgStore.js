@@ -16,6 +16,7 @@ const {
   classifyLegacySchoolSettings,
   extractValidatedSchoolSettingsScalars,
   settingsPatchFromCaptured,
+  resolveStudentCardFlags,
 } = require("../lib/schoolSettingsManagement");
 
 function toIsoDate(value) {
@@ -125,16 +126,37 @@ function createSchoolSettingsPgStore(repo) {
     const periodMode = patch.periodMode ?? current?.period_mode ?? "trimestre";
     const defaultScale = patch.defaultScale ?? Number(current?.default_scale ?? 20);
     const reportCardMode = patch.reportCardMode ?? current?.report_card_mode ?? "period";
+    const flags = resolveStudentCardFlags(patch, current);
     const row = await one(
-      `INSERT INTO school_settings (school_id, period_mode, default_scale, report_card_mode, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO school_settings (
+         school_id, period_mode, default_scale, report_card_mode,
+         student_card_enabled, student_card_qr_enabled, student_card_nfc_enabled,
+         student_card_attendance_enabled, student_card_finance_check_enabled,
+         updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
        ON CONFLICT (school_id) DO UPDATE SET
          period_mode = EXCLUDED.period_mode,
          default_scale = EXCLUDED.default_scale,
          report_card_mode = EXCLUDED.report_card_mode,
+         student_card_enabled = EXCLUDED.student_card_enabled,
+         student_card_qr_enabled = EXCLUDED.student_card_qr_enabled,
+         student_card_nfc_enabled = EXCLUDED.student_card_nfc_enabled,
+         student_card_attendance_enabled = EXCLUDED.student_card_attendance_enabled,
+         student_card_finance_check_enabled = EXCLUDED.student_card_finance_check_enabled,
          updated_at = NOW()
        RETURNING *`,
-      [schoolId, periodMode, defaultScale, reportCardMode],
+      [
+        schoolId,
+        periodMode,
+        defaultScale,
+        reportCardMode,
+        flags.studentCardEnabled,
+        flags.studentCardQrEnabled,
+        flags.studentCardNfcEnabled,
+        flags.studentCardAttendanceEnabled,
+        flags.studentCardFinanceCheckEnabled,
+      ],
     );
     return row;
   }
