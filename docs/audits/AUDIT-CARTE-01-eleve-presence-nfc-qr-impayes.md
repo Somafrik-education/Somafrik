@@ -1,14 +1,14 @@
 # AUDIT-CARTE-01 — Carte Élève / Présence NFC-QR / Contrôle Impayés
 
 **Type :** audit d’architecture (caractérisation) — **aucune implémentation**  
-**Statut :** Audit **OUVERT / HOLD / NO MERGE** — orientation architecture **validée CTO**, fermeture d’audit **refusée**, **aucune implémentation**, **aucune PR0**  
+**Statut :** **AUDIT-CARTE-01 CLOSED** — orientation architecture **validée CTO**, clôture documentaire sur **#876** / `develop@8cb187d7`  
+**PR de clôture :** [#876](https://github.com/Somafrik-education/Somafrik/pull/876) — branche `cursor/audit-carte-01-94fc`  
 **PR historique :** [#857](https://github.com/Somafrik-education/Somafrik/pull/857) — **CLOSED WITHOUT MERGE**  
-**Replay :** [#876](https://github.com/Somafrik-education/Somafrik/pull/876) — branche `cursor/audit-carte-01-94fc`  
 **Date initiale :** 2026-10-01  
 **Complément CTO :** 2026-10-01 — paramétrage, non-régression Présences, gates Stores, contrat D1/D2/D7/D8  
 **Replay `f95c3f38` :** 2026-10-04 — ROLE-LABELS produit mergé ; aucune carte  
 **Resync `8cb187d7` :** 2026-10-05 — merge #875 (clôture admin ROLE-LABELS) ; #856/#857 closed without merge  
-**Contraintes honorées :** aucun DDL request-time, aucune migration exécutée, aucun code métier, aucun manifeste Android/iOS, aucune dépendance QR/NFC. **CARTE-PR0 non ouverte.**
+**Contraintes honorées :** aucun DDL request-time, aucune migration exécutée, aucun code métier, aucun manifeste Android/iOS, aucune dépendance QR/NFC. **CARTE-PR0 non ouverte jusqu’au merge de #876.**
 
 ### Traçabilité des SHA (ne pas confondre)
 
@@ -40,7 +40,7 @@ Cartographie rejouée. **Aucun constat d’architecture invalidé.** CARTE-PR0 *
 | 10 | Pas de `FEATURE_RULES` / `VITE_*` carte | Confirmé | **INCHANGÉ** |
 | 11 | Lots mergés après #857 | ADMIN-02C→07, ROLE-LABELS #871–#874 | **Hors carte** — n’ajoutent ni QR/NFC ni flags |
 
-**CARTE-PR0 (après clôture d’audit, pas maintenant) :** étendre uniquement `school_settings` + `PATCH /api/school-settings` avec `student_card_enabled` et sous-options QR/NFC/contrôle financier, **toutes `false`**. Aucun QR/NFC. Aucun changement Présences.
+**CARTE-PR0 (après merge de #876 seulement) :** étendre uniquement `school_settings` + `PATCH /api/school-settings` avec `student_card_enabled` et sous-options QR/NFC/contrôle financier, **toutes `false`**. Aucun QR/NFC. Aucun changement Présences.
 
 D1 / D2 / D7 / D8 / invariant Présences restent **figés**.
 
@@ -64,7 +64,7 @@ Après merge #875, #876 était **ahead 1 / behind 2**. Rebase sur `origin/develo
 | 3 | NFC Android bloqué | `android.permission.NFC` toujours blocked | **INCHANGÉ** |
 | 4–11 | Présences manuelles, UNIQUE jour, impayés hors gate, pas de flags carte | Identiques à §0.bis | **INCHANGÉ** |
 
-#875 n’ajoute **aucun** produit carte (replay ROLE-LABELS + preuves machine uniquement). **CARTE-PR0 reste non ouverte.**
+#875 n’ajoute **aucun** produit carte (replay ROLE-LABELS + preuves machine uniquement). **AUDIT-CARTE-01 CLOSED sur #876.** **CARTE-PR0 non ouverte jusqu’au merge de #876.**
 
 ---
 
@@ -73,12 +73,12 @@ Après merge #875, #876 était **ahead 1 / behind 2**. Rebase sur `origin/develo
 | Champ | Valeur |
 |--------|--------|
 | ID | **AUDIT-CARTE-01** |
-| Nature | **Audit uniquement** |
+| Nature | **Audit uniquement — clôture #876** |
 | Implémentation métier | **INTERDITE** dans ce lot |
 | Migration / DDL | **INTERDIT** |
-| PR Ready / merge | **INTERDIT** |
+| PR d’audit #876 | Clôture documentaire. Merge **après** le dernier diff indépendant de **#876**. |
 | Livrable | Matrice, flux cible, schéma, paramétrage, gates Stores, découpage PR **futur** |
-| PR0 implémentation | **INTERDITE** tant que l’audit n’est pas clos |
+| CARTE-PR0 | **NON OUVERTE jusqu’au merge de #876** |
 
 ### Méthode
 
@@ -134,7 +134,7 @@ Ces décisions sont **normatives pour tout chantier futur**. Elles ne valent pas
 | **D8** | **Une** carte logique `active` par élève et par établissement (médias NFC+QR = la même carte). | **Figé** |
 | **Présences** | Carte désactivée ⇒ comportement **strictement identique à aujourd’hui**. Carte activée ⇒ appels manuels Web/Mobile **conservés**. QR/NFC = canal **en plus**, jamais un remplacement. | **Figé** |
 
-D3, D4, D5, D6, D9, D10 restent ouverts (voir §11). **PR0 n’est pas ouverte.**
+D3, D4, D5, D6, D9, D10 restent ouverts (voir §11). **CARTE-PR0 non ouverte jusqu’au merge de #876.**
 
 ---
 
@@ -642,7 +642,7 @@ Si le produit veut un portique « entrée matin / sortie soir », le modèle act
 
 ## 12. Découpage PR **futur** (non exécuté) et gates Stores
 
-Aucun de ces PR n’est ouvert par cet audit. **PR0 n’est pas ouverte.** Ordre imposé : Draft → CI → review CTO → merge `develop`, **plus** les gates Stores ci-dessous.
+Aucun PR d’implémentation n’est ouvert par cette clôture. **CARTE-PR0 reste non ouverte jusqu’au merge de #876.** Les PR futurs d’implémentation suivent : Draft → CI → review CTO → merge `develop`, **plus** les gates Stores ci-dessous.
 
 ### 12.1 GATE-QR-STORES — bloque PR7
 
@@ -674,7 +674,7 @@ Tant que **GATE-QR-STORES** n’est pas **clos par diff GitHub indépendant CTO*
 
 | PR | Contenu | Dépend | Interdit dans le PR |
 |----|---------|--------|---------------------|
-| **PR0 — Contrat** | ADR + contrat figé (états carte, AAD, DTO scan, D1/D2/D7/D8, paramétrage `school_settings`) | **Audit clos** — **pas maintenant** | Routes, tables, UI. **Ne pas ouvrir.** |
+| **CARTE-PR0 — Paramétrage** | Extension `school_settings` : `student_card_enabled` + sous-options QR/NFC/finance, toutes `false` | **Merge de #876** | QR/NFC, routes carte, tables, UI, changement Présences. **Ne pas ouvrir avant le merge de #876.** |
 | **PR1 — DDL cartes + settings** | Migration `student_access_cards` + colonnes `school_settings` §5.5 (défaut `false`) | PR0 | Handler HTTP métier, DDL request-time |
 | **PR2 — Cycle de vie** | Issue / list / lost / revoke / replace + RBAC + tests tenant ; **respect master off** | PR1 | Présence, finance, Mobile |
 | **PR3 — Scan resolve** | `POST /api/student-cards/scan` ; 404/403 si master off | PR2 | Upsert présence, montants |
@@ -698,7 +698,7 @@ Chaque PR d’implémentation future exigera un **diff GitHub indépendant CTO**
 - Présence par séance / cours.  
 - Paiement au scan.  
 - Application parent qui scanne la carte de l’enfant.  
-- **PR0** et tout code métier.  
+- **CARTE-PR0** et tout code métier — **non ouverts jusqu’au merge de #876**.  
 - **GATE-QR-STORES** / **GATE-NFC-STORES** en tant que revues Stores exécutées (seulement **exigées** ici, pas rédigées comme dossiers Store).
 
 ---
@@ -727,16 +727,21 @@ Chaque PR d’implémentation future exigera un **diff GitHub indépendant CTO**
 
 ---
 
-## 15. Conclusion
+## 15. Conclusion — clôture AUDIT-CARTE-01
 
-**Orientation architecture : validée CTO. Audit : non clos. Implémentation : NO-GO. PR0 : non ouverte.**
+**Verdict : AUDIT-CARTE-01 CLOSED.**  
+**PR de clôture : #876.**  
+**Base canonique : `develop@8cb187d7eb49fbb366cf7ecaba9bbf87bfae8306`.**
+
+Orientation architecture : **PASS**. Produit dans cette PR : **aucun**. Implémentation : **NO-GO jusqu’au merge de #876**. **CARTE-PR0 non ouverte jusqu’au merge de #876.**
 
 Le socle métier (élève, inscription, classe, appel journalier, obligations, RBAC tenant, `school_settings`) **existe et doit être réutilisé**. Ce qui manque reste un **médiateur d’identification révocable**, un **contrat unique** d’inscription active, un **chemin kiosque** éventuel, un **badge finance informatif D2=B**, l’**extension** (pas un clone) de `school_settings`, et — seulement après gates Stores — les **médias** QR puis NFC.
 
 Contrat déjà figé : **D1 informatif**, **D2 = B (impayé/échu)**, **D7 online-only**, **D8 une carte logique**, **Présences manuelles conservées**, master carte **off par défaut**.
 
-Le plus petit écart sûr, **quand** l’audit sera clos :
+Le plus petit écart sûr **après le merge de #876** :
 
 colonnes `school_settings` (défaut false) + 1 table `student_access_cards` + 6 routes cycle de vie/scan + 0 copie des référentiels + 0 bit financier sur la puce + 0 régression d’appel manuel.
 
-**Prochaine action autorisée :** nouveau diff GitHub indépendant de ce complément #857. **Pas** de PR0. **Pas** de Ready. **Pas** de merge.
+**Prochaine action :** dernier diff GitHub indépendant de **#876** @ base `8cb187d7`. **CARTE-PR0 reste non ouverte jusqu’au merge de #876.**  
+#857 est **CLOSED WITHOUT MERGE** — ne plus la relire comme cible de review.
