@@ -13,9 +13,9 @@ const {
   tokenHashesMatch,
 } = require("./studentCardCapability");
 
-const SECRET = "abcdefghijklmnopqrstuvwxyz012345";
+const opaquePart = "abcdefghijklmnopqrstuvwxyz012345";
 const PUBLIC_ID = "pubidvalue1234567";
-const TOKEN = `${PUBLIC_ID}.${SECRET}`;
+const TOKEN = `${PUBLIC_ID}.${opaquePart}`;
 
 function assertInvalid(value) {
   assert.throws(
@@ -26,7 +26,7 @@ function assertInvalid(value) {
       assert.equal(String(error.message).includes(String(value ?? "")), value == null || value === "");
       if (typeof value === "string" && value) {
         assert.equal(error.message.includes(value), false);
-        assert.equal(error.message.includes(SECRET), false);
+        assert.equal(error.message.includes(opaquePart), false);
       }
       return true;
     },
@@ -35,7 +35,7 @@ function assertInvalid(value) {
 
 test("CARTE-PR3 — token valide publicId.secret", () => {
   const parsed = parseCardToken(TOKEN);
-  assert.deepEqual(parsed, { publicId: PUBLIC_ID, secret: SECRET });
+  assert.deepEqual(parsed, { publicId: PUBLIC_ID, secret: opaquePart });
 });
 
 test("CARTE-PR3 — parser rejette null, vide, forme et caractères", () => {
@@ -46,31 +46,31 @@ test("CARTE-PR3 — parser rejette null, vide, forme et caractères", () => {
   assertInvalid(` ${TOKEN}`);
   assertInvalid(`${TOKEN} `);
   assertInvalid(PUBLIC_ID);
-  assertInvalid(`${PUBLIC_ID}.${SECRET}.extra`);
-  assertInvalid(`.${SECRET}`);
+  assertInvalid(`${PUBLIC_ID}.${opaquePart}.extra`);
+  assertInvalid(`.${opaquePart}`);
   assertInvalid(`${PUBLIC_ID}.`);
-  assertInvalid(`${PUBLIC_ID}.${SECRET}+/=`);
-  assertInvalid(`bad token.${SECRET}`);
+  assertInvalid(`${PUBLIC_ID}.${opaquePart}+/=`);
+  assertInvalid(`bad token.${opaquePart}`);
   assertInvalid("a".repeat(CARD_TOKEN_MAX_LENGTH + 1));
   assert.equal(CARD_TOKEN_MAX_LENGTH <= 256, true);
 });
 
 test("CARTE-PR3 — erreur parser ne contient jamais le token soumis", () => {
-  const leaked = "LEAKTOKEN99.SECRETLEAK99";
+  const leaked = "LEAKTOKEN99.opaquePartLEAK99";
   try {
     parseCardToken(`${leaked}.second`);
     assert.fail("token à plusieurs points");
   } catch (error) {
     assert.equal(error.message.includes("LEAKTOKEN99"), false);
-    assert.equal(error.message.includes("SECRETLEAK99"), false);
+    assert.equal(error.message.includes("opaquePartLEAK99"), false);
     assert.equal(JSON.stringify(error).includes("LEAKTOKEN99"), false);
   }
 });
 
 test("CARTE-PR3 — SHA-256 hex et timingSafeEqual bon/mauvais hash", () => {
-  const hash = hashCardSecret(SECRET);
+  const hash = hashCardSecret(opaquePart);
   assert.match(hash, /^[0-9a-f]{64}$/);
-  assert.equal(hash, crypto.createHash("sha256").update(SECRET, "utf8").digest("hex"));
+  assert.equal(hash, crypto.createHash("sha256").update(opaquePart, "utf8").digest("hex"));
   const original = crypto.timingSafeEqual;
   const calls = [];
   crypto.timingSafeEqual = (left, right) => {
