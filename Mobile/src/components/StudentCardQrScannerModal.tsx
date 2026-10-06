@@ -16,11 +16,13 @@ import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
   STUDENT_CARD_SCAN_COPY,
   extractQrCapability,
+  hasValidSelectedClass,
   holdCardToken,
   isQrBarcodeType,
   isStaleScanScope,
   releaseCardToken,
   runStudentCardScanFlow,
+  scanScopeKey,
   type AttendanceAuthorReady,
   type ScanScopeSnapshot,
   type SelectedAttendanceClassRef,
@@ -69,7 +71,12 @@ export default function StudentCardQrScannerModal({
   const tokenRef = useRef<VolatileCardToken>({ current: null });
   const requestedRef = useRef(false);
   const generationRef = useRef(0);
-  const scopeKey = `${resourceScopeKey}|${schoolCode}|${selectedClass.classId ?? ""}|${selectedClass.classCode ?? ""}`;
+  const scopeKey = scanScopeKey({
+    resourceScopeKey,
+    schoolCode,
+    classId: selectedClass.classId,
+    classCode: selectedClass.classCode,
+  });
   const lastScopeRef = useRef(scopeKey);
 
   const scope = useCallback((): ScanScopeSnapshot => {
@@ -133,9 +140,15 @@ export default function StudentCardQrScannerModal({
 
   const runScan = useCallback(
     async (cardToken: string) => {
+      if (!hasValidSelectedClass(selectedClass)) {
+        setError(STUDENT_CARD_SCAN_COPY.classMismatch);
+        setPaused(true);
+        return;
+      }
       const started = scope();
       setBusy(true);
       setError("");
+      const stillCurrent = () => !isStaleScanScope(started, scope());
       try {
         const outcome = await runStudentCardScanFlow({
           cardToken,
@@ -152,7 +165,7 @@ export default function StudentCardQrScannerModal({
           readFinance: readStudentCardFinance,
           createIdempotencyKey,
         });
-        if (outcome.kind === "stale" || isStaleScanScope(started, scope())) return;
+        if (!stillCurrent()) return;
         if (outcome.kind === "offline") {
           setError(STUDENT_CARD_SCAN_COPY.offline);
           return;
@@ -174,12 +187,15 @@ export default function StudentCardQrScannerModal({
           setError(outcome.message);
           return;
         }
+        if (outcome.kind === "stale") return;
         setResult(outcome.view);
         if (outcome.view.attendanceRecorded) onAttendanceRecorded(outcome.view);
       } finally {
         releaseCardToken(tokenRef.current);
-        setBusy(false);
-        setPaused(true);
+        if (stillCurrent()) {
+          setBusy(false);
+          setPaused(true);
+        }
       }
     },
     [

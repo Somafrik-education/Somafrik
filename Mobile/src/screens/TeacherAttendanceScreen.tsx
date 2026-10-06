@@ -12,6 +12,7 @@ import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
 import {
   STUDENT_CARD_SCAN_COPY,
   applyQrConfirmedPresence,
+  hasValidSelectedClass,
   isAttendanceAuthorReady,
   isStudentCardAttendanceScanEnabled,
   isStudentCardScanFinanceEnabled,
@@ -323,7 +324,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const selectedIds = selectedRows.map((student) => student.id);
   const canUpdatePresences = canManagePresences(session);
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
-  const canOpenQrScanner = canUpdatePresences && isStudentCardAttendanceScanEnabled(cardSettings);
+  const canOpenQrScanner =
+    canUpdatePresences &&
+    isStudentCardAttendanceScanEnabled(cardSettings) &&
+    hasValidSelectedClass(selectedClass);
   const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
   const canReadScanFinance = canReadFeeGrids(session) && isStudentCardScanFinanceEnabled(cardSettings);
 

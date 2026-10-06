@@ -38,33 +38,55 @@ function main() {
   const api = read("Mobile/src/services/studentCardScanApi.ts");
   const policy = read("Mobile/src/lib/studentCardScan.ts");
   const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
+  const permissions = read("Mobile/src/domain/security/permissions.ts");
   const outbox = read("Mobile/src/lib/outbox.ts");
 
+  assert.equal(fs.existsSync(path.join(ROOT, "Mobile/src/screens/StudentCardScanScreen.tsx")), false);
   assert.doesNotMatch(navigator, /StudentCardScan/);
+  assert.doesNotMatch(navigator, /Stack\.Screen name="StudentCardScan"/);
+  assert.doesNotMatch(permissions, /StudentCardScan/);
+  assert.doesNotMatch(permissions, /role === ["']student["']/);
   assert.match(modal, /barcodeTypes: \["qr"\]/);
   assert.match(modal, /useCameraPermissions/);
   assert.match(modal, /Linking\.openSettings/);
+  assert.match(modal, /scanScopeKey/);
+  assert.match(modal, /hasValidSelectedClass/);
   assert.doesNotMatch(modal, /Linking\.openURL/);
   assert.doesNotMatch(modal, /console\.log\(/);
   assert.doesNotMatch(modal, /safeLogger/);
   assert.doesNotMatch(modal, /submitProtectedMutation|OUTBOX_ALLOWED_DOMAINS|AsyncStorage|SecureStore|SQLite/);
+  assert.doesNotMatch(modal, /student-card-scan-late|setAttendanceStatus\(["']late["']\)|status:\s*["']late["']/);
+  assert.doesNotMatch(modal, /useState\([^)]*cardToken|setToken\(|navigation\.navigate/);
   assert.match(api, /from "\.\/httpClient"/);
   assert.match(api, /httpRequest<StudentCardScanResponse>\("\/student-cards\/scan"/);
   assert.match(api, /export function resolveStudentCard/);
   assert.match(api, /export function recordStudentCardAttendance/);
   assert.match(api, /export function readStudentCardFinance/);
+  assert.match(api, /status: "present"/);
+  assert.doesNotMatch(api, /status: "late"/);
   assert.doesNotMatch(api, /attendance[\s\S]{0,120}finance:\s*true/);
   assert.match(policy, /isStudentCardAttendanceScanEnabled/);
   assert.match(policy, /cardBelongsToSelectedClass/);
+  assert.match(policy, /hasValidSelectedClass/);
   assert.match(policy, /runStudentCardScanFlow/);
+  assert.match(policy, /status: "present"/);
   assert.match(attendance, /Tout présent/);
   assert.match(attendance, /Enregistrer l'appel/);
   assert.match(attendance, /ATTENDANCE_ACTIONS/);
   assert.match(attendance, /StudentCardQrScannerModal/);
   assert.match(attendance, /isStudentCardAttendanceScanEnabled/);
+  assert.match(attendance, /hasValidSelectedClass/);
+  assert.match(attendance, /selectedClass=\{selectedClass\}/);
   assert.doesNotMatch(attendance, /CameraView/);
+  assert.doesNotMatch(attendance, /navigate\(["']StudentCardScan["']/);
   assert.match(outbox, /OUTBOX_ALLOWED_DOMAINS = \["messages", "presences", "notes"\]/);
   assert.doesNotMatch(outbox, /student-cards\/scan/);
+
+  for (const source of [modal, api, attendance, policy]) {
+    assert.doesNotMatch(source, /console\.(log|info|debug|warn)\([^)]*(scanningResult\.data|cardToken|tokenRef)/);
+    assert.doesNotMatch(source, /safeLogger\([^)]*(scanningResult\.data|cardToken|tokenRef)/);
+    assert.doesNotMatch(source, /AsyncStorage|SecureStore|SQLite/);
+  }
 
   const inventory = read("docs/mobile/PLAY-STORE-DATA-INVENTORY.md");
   assert.match(inventory, /Identifiant carte élève \/ QR/);

@@ -8,6 +8,7 @@ import {
   applyQrConfirmedPresence,
   cardBelongsToSelectedClass,
   extractQrCapability,
+  hasValidSelectedClass,
   holdCardToken,
   hydrateAfterQrConfirm,
   isAttendanceAuthorReady,
@@ -120,6 +121,8 @@ assert.equal(
   false,
   "nom seul insuffisant",
 );
+assert.equal(hasValidSelectedClass({ className: "CM1" }), false);
+assert.equal(hasValidSelectedClass({ classId: "cls-1", classCode: "A", className: "CM1" }), true);
 assert.equal(isInvalidCardStatus("lost"), true);
 assert.equal(isInvalidCardStatus("revoked"), true);
 assert.equal(isInvalidCardStatus("replaced"), true);
@@ -210,6 +213,23 @@ async function runFlowCases() {
   const { outcome, calls } = await flow({ author: { status: "need_selection" } });
   assert.equal(outcome.kind, "teacher_unresolved");
   assert.deepEqual(calls, []);
+}
+
+{
+  const outcome = await runStudentCardScanFlow({
+    cardToken: "synthetic.token",
+    scope: scope(),
+    selectedClass: { className: "CM1" },
+    author: { status: "teacher_session" },
+    attendanceDate: "2026-10-06",
+    financeEnabled: false,
+    isOffline: () => false,
+    currentScope: () => scope(),
+    resolveCard: async () => resolvedSameClass,
+    recordAttendance: async () => resolvedSameClass,
+    createIdempotencyKey: () => "11111111-1111-4111-8111-111111111111",
+  });
+  assert.equal(outcome.kind, "error");
 }
 
 {

@@ -151,16 +151,37 @@ export type SelectedAttendanceClassRef = {
   className?: string;
 };
 
+export function hasValidSelectedClass(
+  selected: SelectedAttendanceClassRef | null | undefined,
+): boolean {
+  if (!selected) return false;
+  return Boolean(String(selected.classId ?? "").trim() || String(selected.classCode ?? "").trim());
+}
+
+export function scanScopeKey(input: {
+  resourceScopeKey?: string;
+  schoolCode?: string;
+  classId?: string;
+  classCode?: string;
+}): string {
+  return [
+    String(input.resourceScopeKey ?? "").trim(),
+    String(input.schoolCode ?? "").trim(),
+    String(input.classId ?? "").trim(),
+    String(input.classCode ?? "").trim(),
+  ].join("|");
+}
+
 export function cardBelongsToSelectedClass(
   cardClass: StudentCardClassRef | null | undefined,
   selected: SelectedAttendanceClassRef | null | undefined,
 ): boolean {
-  if (!cardClass || !selected) return false;
+  if (!cardClass || !hasValidSelectedClass(selected)) return false;
   const cardId = String(cardClass.id ?? cardClass.classId ?? "").trim();
-  const selectedId = String(selected.classId ?? "").trim();
+  const selectedId = String(selected?.classId ?? "").trim();
   if (cardId && selectedId) return cardId === selectedId;
   const cardCode = String(cardClass.classCode ?? "").trim();
-  const selectedCode = String(selected.classCode ?? "").trim();
+  const selectedCode = String(selected?.classCode ?? "").trim();
   if (cardCode && selectedCode) return cardCode === selectedCode;
   return false;
 }
@@ -308,6 +329,9 @@ export async function runStudentCardScanFlow(
   deps: StudentCardScanFlowDeps,
 ): Promise<StudentCardScanOutcome> {
   if (deps.isOffline()) return { kind: "offline" };
+  if (!hasValidSelectedClass(deps.selectedClass)) {
+    return { kind: "error", message: STUDENT_CARD_SCAN_COPY.classMismatch };
+  }
   const author = isAttendanceAuthorReady(deps.author);
   if (!author.ok) return { kind: "teacher_unresolved" };
 
