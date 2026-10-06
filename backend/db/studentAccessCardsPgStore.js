@@ -45,6 +45,55 @@ function createStudentAccessCardsPgStore(repo) {
     );
   }
 
+  async function findByPublicIdInSchool(schoolId, publicId) {
+    const school = asTrimmed(schoolId);
+    const publicRef = asTrimmed(publicId);
+    if (!school || !publicRef) return null;
+    return one(
+      `SELECT id, school_id, student_id, public_id, token_hash, medium, status
+         FROM student_access_cards
+        WHERE school_id = $1
+          AND public_id = $2
+        LIMIT 1`,
+      [school, publicRef],
+    );
+  }
+
+  async function findScanStudent(schoolId, studentId) {
+    if (!asTrimmed(schoolId) || !isUuid(studentId)) return null;
+    return one(
+      `SELECT id, student_code, first_name, last_name, photo_url, status
+         FROM students
+        WHERE school_id = $1
+          AND id = $2
+        LIMIT 1`,
+      [schoolId, studentId],
+    );
+  }
+
+  async function findRosterClass(schoolId, studentId) {
+    if (!asTrimmed(schoolId) || !isUuid(studentId)) return null;
+    const { ROSTER_ENROLLMENT_SQL } = require("../lib/studentEnrollmentC18");
+    return one(
+      `SELECT c.id, c.class_code, c.name
+         FROM enrollments e
+         INNER JOIN academic_years y
+           ON y.id = e.academic_year_id
+          AND y.school_id = e.school_id
+          AND y.is_current IS TRUE
+         INNER JOIN classes c
+           ON c.id = e.class_id
+          AND c.school_id = e.school_id
+          AND c.academic_year_id = e.academic_year_id
+        WHERE e.school_id = $1
+          AND e.student_id = $2
+          AND e.class_id IS NOT NULL
+          AND ${ROSTER_ENROLLMENT_SQL}
+        LIMIT 1`,
+      [schoolId, studentId],
+    );
+  }
+
   async function findActive(schoolId, studentId) {
     if (!asTrimmed(schoolId) || !asTrimmed(studentId)) return null;
     return one(
@@ -237,6 +286,9 @@ function createStudentAccessCardsPgStore(repo) {
 
   return {
     findStudentInSchool,
+    findByPublicIdInSchool,
+    findScanStudent,
+    findRosterClass,
     findActive,
     getById,
     listByStudent,

@@ -124,7 +124,7 @@ test("P0-2 : matching HTTP ignore query/header et paramétrage :id", () => {
     matchForbiddenPersonalDataRouteKey("POST", "/api/student-cards/abc-1/replace"),
     "POST /api/student-cards/:id/replace",
   );
-  assert.equal(matchForbiddenPersonalDataRouteKey("POST", "/api/student-cards/scan"), "");
+  assert.equal(matchForbiddenPersonalDataRouteKey("POST", "/api/student-cards/scan"), "POST /api/student-cards/scan");
   assert.equal(matchForbiddenPersonalDataRouteKey("GET", "/api/payments/pay-1"), "GET /api/payments/:paymentId");
   assert.equal(matchForbiddenPersonalDataRouteKey("POST", "/api/mobile/push-devices/test"), "");
   assert.equal(isPlatformPersonalDataForbiddenHttp(SUPER, "POST", "/api/mobile/push-devices/test"), false);

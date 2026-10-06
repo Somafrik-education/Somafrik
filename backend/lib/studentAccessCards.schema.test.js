@@ -75,7 +75,7 @@ test("CARTE-PR1 — boot PostgreSQL applique le schéma dédié", () => {
   assert.ok(schemaIdx > 0 && cardsIdx > schemaIdx);
 });
 
-test("CARTE-PR2 — routes cycle de vie uniquement, aucune route scan / QR / NFC / présence", () => {
+test("CARTE-PR3 — scan resolve uniquement, aucune écriture présence/finance ni module Cartes", () => {
   const server = read("backend/server.js");
   const demo = read("backend/demoGateway.js");
   const presences = read("backend/lib/presencesAttendanceAuthz.js");
@@ -87,13 +87,22 @@ test("CARTE-PR2 — routes cycle de vie uniquement, aucune route scan / QR / NFC
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/revoke"/);
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/replace"/);
   assert.match(server, /routeKey: `POST \/api\/student-cards\/\$\{req\.params\.id\}\/replace`/);
-  assert.doesNotMatch(server, /\/api\/student-cards\/scan/);
+  assert.match(server, /app\.post\("\/api\/student-cards\/scan"/);
+  const scanRoute = server.slice(
+    server.indexOf('app.post("/api/student-cards/scan"'),
+    server.indexOf('app.post("/api/student-cards/:id/replace"'),
+  );
+  assert.match(scanRoute, /Cache-Control", "no-store"/);
+  assert.doesNotMatch(scanRoute, /upsertAttendance|upsertSchoolAttendanceBatch|listFinanceStudentFees|last_scan_at/);
+  assert.doesNotMatch(server, /app\.get\("\/api\/student-cards\/scan"/);
+  assert.doesNotMatch(server, /\/verify\/student-card|\/api\/public\/student-card/);
   assert.doesNotMatch(demo, /\/api\/student-cards\/scan|student_access_cards/);
   assert.doesNotMatch(presences, /student_access_cards|cardToken/);
   assert.doesNotMatch(catalog, /Carte Élève|student_access_cards|moduleKey: "cards"/);
   assert.match(rbac, /"GET \/api\/students\/:id\/cards": \["Élèves:READ", "Voir élèves"\]/);
   assert.match(rbac, /"POST \/api\/student-cards": \["Élèves:UPDATE", "Gérer élèves"\]/);
-  assert.doesNotMatch(rbac, /Cartes:READ|Cartes:UPDATE|QR:|NFC:/);
+  assert.match(rbac, /"POST \/api\/student-cards\/scan": \["Présences:CREATE", "Présences:UPDATE"\]/);
+  assert.doesNotMatch(rbac, /Cartes:READ|Cartes:UPDATE|Cartes:SCAN|QR:|NFC:/);
   assert.doesNotMatch(read("web/src/lib/schoolSettingsApi.ts"), /student_access_cards|cardToken/);
   assert.doesNotMatch(read("Mobile/src/services/schoolSettingsApi.ts"), /student_access_cards|cardToken/);
 });

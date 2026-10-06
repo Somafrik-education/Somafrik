@@ -2171,6 +2171,15 @@ app.post("/api/student-cards/:id/revoke", requireAuth, requirePermission("POST /
   res.json(card);
 }));
 
+app.post("/api/student-cards/scan", requireAuth, requirePermission("POST /api/student-cards/scan"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { scanStudentCard } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const resolved = await scanStudentCard(repository, { cardToken: req.body?.cardToken }, studentCardsHttpScope(principal));
+  res.json(resolved);
+}));
+
 app.post("/api/student-cards/:id/replace", requireAuth, requirePermission("POST /api/student-cards/:id/replace"), asyncHandler(async (req, res) => {
   requireStudentCardsPg();
   const { replaceStudentCard } = require("./lib/studentAccessCardsManagement");

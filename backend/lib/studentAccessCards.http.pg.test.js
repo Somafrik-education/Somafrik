@@ -439,8 +439,9 @@ async function main() {
     assert.equal(replaceDenied.data?.code, STUDENT_CARD_ERROR.INVALID_STATE);
 
     const scan = await request("/student-cards/scan", { method: "POST", token: tokenA, body: { cardToken: newToken } });
-    assert.notEqual(scan.status, 200);
-    assert.ok(scan.status === 404 || scan.status === 403 || scan.status === 400);
+    assert.equal(scan.status, 409, JSON.stringify(scan.data));
+    assert.equal(scan.data?.code, STUDENT_CARD_ERROR.ENROLLMENT_UNRESOLVED);
+    assert.equal(JSON.stringify(scan.data).includes(newToken), false);
 
     const dbCards = await pool.query(`SELECT token_hash, public_id FROM student_access_cards WHERE school_id=$1`, [schoolAId]);
     for (const row of dbCards.rows) {
@@ -452,6 +453,7 @@ async function main() {
       `SELECT action, new_value::text AS payload FROM audit_logs WHERE action LIKE 'student_card_%'`,
     );
     assert.ok(auditRows.rowCount >= 1);
+    assert.equal(auditRows.rows.some((row) => row.action === "student_card_scanned"), false);
     for (const row of auditRows.rows) {
       assert.equal(String(row.payload ?? "").includes(secret), false, row.action);
       assert.doesNotMatch(String(row.payload ?? ""), /cardToken|token_hash|"secret"/);
