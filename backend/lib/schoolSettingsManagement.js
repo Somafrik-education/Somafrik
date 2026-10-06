@@ -217,6 +217,7 @@ function isStudentCardMasterEnabled(settings) {
 }
 
 function isStudentCardCapabilityEnabled(settings, apiKey) {
+  if (!STUDENT_CARD_FLAG_API_KEYS.includes(apiKey)) return false;
   if (!isStudentCardMasterEnabled(settings)) return false;
   if (apiKey === "studentCardEnabled") return true;
   return coerceFailClosedBoolean(settings?.[apiKey]);

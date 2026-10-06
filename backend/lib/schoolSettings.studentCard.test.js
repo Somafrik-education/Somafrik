@@ -126,6 +126,30 @@ test("CARTE-PR0 — master on n'active une sous-option que si elle est true", ()
   assert.equal(isStudentCardCapabilityEnabled(settings, "studentCardFinanceCheckEnabled"), false);
 });
 
+test("CARTE-PR0 — capacité inconnue / absente / null = fail-closed même si master on", () => {
+  const settings = {
+    studentCardEnabled: true,
+    rogueCapability: true,
+    studentCardQrEnabled: true,
+  };
+  assert.equal(
+    isStudentCardCapabilityEnabled(settings, "rogueCapability"),
+    false,
+  );
+  assert.equal(isStudentCardCapabilityEnabled(settings, "studentCardFinanceCheckEnabled"), false);
+  assert.equal(isStudentCardCapabilityEnabled(settings, null), false);
+  assert.equal(isStudentCardCapabilityEnabled(settings, undefined), false);
+  assert.equal(isStudentCardCapabilityEnabled(settings, ""), false);
+  assert.equal(isStudentCardCapabilityEnabled(settings, "student_card_enabled"), false);
+  assert.equal(
+    isStudentCardCapabilityEnabled(
+      { studentCardEnabled: false, studentCardQrEnabled: true, rogueCapability: true },
+      "studentCardQrEnabled",
+    ),
+    false,
+  );
+});
+
 test("CARTE-PR0 — mémoire : défaut false, isolation établissement, PATCH académique inchangé", async () => {
   const store = createSchoolSettingsMemoryStore({
     schools: [
