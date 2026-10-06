@@ -11,14 +11,22 @@
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
-    "plugins": [
+      "plugins": [
       "expo-font",
       [
         "expo-image-picker",
         {
           "photosPermission": "Somafrik utilise vos photos pour ajouter la photo du compte.",
-          "cameraPermission": "Somafrik utilise l'appareil photo pour prendre la photo du compte.",
+          "cameraPermission": "Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.",
           "microphonePermission": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
       ]
     ],

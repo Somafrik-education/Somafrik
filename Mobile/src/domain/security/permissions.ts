@@ -66,6 +66,7 @@ const PARENT_BLOCKED_VIEWS = new Set([
   "Synchronization",
   "TeacherGrades",
   "TeacherAttendance",
+  "StudentCardScan",
   "TeacherStudents",
   "ClassGradesStats",
   "Classes",
@@ -157,6 +158,7 @@ export const routeFeatureMap: Record<string, string> = {
   Users: "Utilisateurs",
   TeacherStudents: "Élèves",
   TeacherAttendance: "Présences",
+  StudentCardScan: "Présences",
   TeacherGrades: "Notes",
   ClassGradesStats: "Notes",
   Notes: "Notes",
@@ -498,6 +500,10 @@ export function canReadFeeGrids(session: any): boolean {
 
 export function canReadRoute(session: any, routeName?: string) {
   if (routeName === "ParentProfile") return isParentMobileSession(session);
+  if (routeName === "StudentCardScan") {
+    if (isParentMobileSession(session) || session?.role === "student") return false;
+    return canManagePresences(session);
+  }
   if (isParentMobileSession(session)) {
     if (!routeName || !PARENT_ALLOWED_ROUTES.has(routeName)) return false;
   }

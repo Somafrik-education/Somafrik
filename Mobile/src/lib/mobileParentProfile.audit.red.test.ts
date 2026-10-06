@@ -77,6 +77,7 @@ function parentSession(overrides: Record<string, unknown> = {}) {
 const STAFF_ROUTES_FORBIDDEN_FOR_PARENT = [
   "TeacherGrades",
   "TeacherAttendance",
+  "StudentCardScan",
   "ClassGradesStats",
   "Payments",
   "FeeGrids",

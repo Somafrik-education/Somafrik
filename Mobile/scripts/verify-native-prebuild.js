@@ -21,6 +21,9 @@ const { evidenceLogLine, writeAabEvidence } = require("./aabEvidence");
 
 const MOBILE = path.join(__dirname, "..");
 const ANDROID = path.join(MOBILE, "android");
+const IOS = path.join(MOBILE, "ios");
+const CANONICAL_CAMERA_PERMISSION =
+  "Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.";
 
 function read(file) {
   return fs.readFileSync(file, "utf8");
@@ -148,6 +151,66 @@ function inspectGeneratedAndroid(profile) {
   );
   console.log(`OK: prebuild ${profile} — ${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off`);
   return { versionCode };
+}
+
+function findIosInfoPlist() {
+  const found = [];
+  if (!fs.existsSync(IOS)) return found;
+  const stack = [IOS];
+  while (stack.length) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "Pods" || entry.name === "build") continue;
+        stack.push(full);
+      } else if (entry.name === "Info.plist") {
+        found.push(full);
+      }
+    }
+  }
+  return found;
+}
+
+function inspectGeneratedIos() {
+  const plists = findIosInfoPlist();
+  assert.ok(plists.length > 0, "iOS: Info.plist manquant après prebuild");
+  let cameraOk = false;
+  for (const file of plists) {
+    const plist = read(file);
+    if (plist.includes("NSCameraUsageDescription")) {
+      assert.ok(
+        plist.includes(CANONICAL_CAMERA_PERMISSION),
+        `${path.relative(MOBILE, file)}: NSCameraUsageDescription doit être la chaîne duale`,
+      );
+      cameraOk = true;
+    }
+    assert.doesNotMatch(plist, /NFCReaderUsageDescription/, `${path.relative(MOBILE, file)}: NFC iOS interdit`);
+    assert.doesNotMatch(plist, /NSUserTrackingUsageDescription/, `${path.relative(MOBILE, file)}: tracking interdit`);
+    assert.doesNotMatch(
+      plist,
+      /NSMicrophoneUsageDescription/,
+      `${path.relative(MOBILE, file)}: microphone scanner interdit`,
+    );
+  }
+  assert.ok(cameraOk, "iOS: NSCameraUsageDescription absente");
+  console.log("PROOF ios: NSCameraUsageDescription duale ; NFC/tracking/micro absents");
+}
+
+function prebuildIos() {
+  console.log("prebuild ios --clean");
+  run("npx", ["expo", "prebuild", "--platform", "ios", "--clean", "--no-install"], {
+    env: {
+      CI: "1",
+      EXPO_PUBLIC_RELEASE_PROFILE: "production",
+      EAS_BUILD_PROFILE: "production",
+      EXPO_PUBLIC_API_URL: CANONICAL_API_URLS.production,
+      EXPO_PUBLIC_DEMO_MODE: "false",
+      EXPO_PUBLIC_DEMO_PIN: "",
+    },
+  });
+  inspectGeneratedIos();
 }
 
 function collectAndroidManifests(root) {
@@ -302,7 +365,9 @@ function runNativeProof() {
   }
 
   fs.rmSync(ANDROID, { recursive: true, force: true });
-  console.log("OK: android/ régénéré puis supprimé (CNG, non commité)");
+  prebuildIos();
+  fs.rmSync(IOS, { recursive: true, force: true });
+  console.log("OK: android/ et ios/ régénérés puis supprimés (CNG, non commité)");
 }
 
 module.exports = {

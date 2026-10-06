@@ -526,7 +526,7 @@ Pas d’équivalent public `/verify` (contrairement aux bulletins). Un QR photog
 | 34 | Hub Intégrations ComingSoon | INTERDIT comme store | Écran mort « NFC et webhooks » | Parallel UX, zéro persistance |
 | 35 | Appels manuels Web/Mobile | RÉUTILISABLE + **non-régression** | Canal canonique, carte = additif | Retirer/masquer l’appel = **NO-GO** |
 | 36 | `CAMERA` Android actuelle | EXISTANT (photo compte) | `app.json` + verify native | PR7 = **nouvelle finalité** Store, pas un « déjà OK » |
-| 37 | GATE-QR-STORES | DOSSIER RÉDIGÉ, **NON CLOS** | `docs/audits/GATE-QR-STORES-camera-qr.md` — verdict technique **GO PR7**, DRAFT/HOLD | **Bloque encore PR7** jusqu’au merge CTO |
+| 37 | GATE-QR-STORES | **CLOS** #887 `26e42c4c` | `docs/audits/GATE-QR-STORES-camera-qr.md` — GO technique PR7 | CARTE-PR7 = implémentation scanner, DRAFT jusqu’au merge |
 | 38 | GATE-NFC-STORES | MANQUANT | Revue NFC absente ; permission bloquée | **Bloque PR8** |
 
 ---
@@ -644,9 +644,9 @@ Si le produit veut un portique « entrée matin / sortie soir », le modèle act
 
 Aucun PR d’implémentation n’est ouvert par cette clôture. **CARTE-PR0 reste non ouverte jusqu’au merge de #876.** Les PR futurs d’implémentation suivent : Draft → CI → review CTO → merge `develop`, **plus** les gates Stores ci-dessous.
 
-### 12.1 GATE-QR-STORES — bloque PR7
+### 12.1 GATE-QR-STORES — clos
 
-Le dossier documentaire est rédigé : `docs/audits/GATE-QR-STORES-camera-qr.md`. Il retient `expo-camera@~17.0.10` (SDK 54, licence MIT) et conclut **GO PR7** si `recordAudioAndroid: false`, micro iOS désactivé, et la chaîne caméra duale unique. Ce dossier est **DRAFT / HOLD**. Il n’est pas clos. Rejoué sur `develop` après CI-MOB-01 #888. **PR7 n’est pas implémentée** et ne s’ouvre pas avant le merge de ce gate.
+Le dossier documentaire est **clos** : `docs/audits/GATE-QR-STORES-camera-qr.md`, mergé par **#887**. Il retient `expo-camera@~17.0.10` (SDK 54, licence MIT) et conclut **GO PR7** si `recordAudioAndroid: false`, micro iOS désactivé, et la chaîne caméra duale unique. **CARTE-PR7** est le lot d’implémentation. Il reste **DRAFT / HOLD** jusqu’à l’ordre `ready et merge`. CARTE-PR8 / NFC reste bloqué par GATE-NFC-STORES.
 
 La revue contrôle au minimum :
 
@@ -659,7 +659,7 @@ La revue contrôle au minimum :
 | Demande de permission | Caméra aujourd’hui au flux photo compte | **Uniquement au moment du scan** (pas au login, pas au boot). Refus / refus permanent : scan QR **indisponible**, appel manuel **intact** (invariant §10.0) |
 | Déclarations Store | Inventaire Play sans NFC, caméra = photo compte | Questionnaire Play + App Store Privacy : caméra = scan d’identifiant scolaire **en plus** de la photo compte ; pas de tracking |
 
-Tant que **GATE-QR-STORES** n’est pas **clos par diff GitHub indépendant CTO**, PR7 reste **NO-GO**.
+Tant que **CARTE-PR7** n’est pas mergée, le scanner QR n’est pas en production. Le gate Stores, lui, est **clos**.
 
 ### 12.2 GATE-NFC-STORES — bloque PR8
 
@@ -683,8 +683,8 @@ Tant que **GATE-QR-STORES** n’est pas **clos par diff GitHub indépendant CTO*
 | **PR4 — Scan → présence** | Adapter vers `upsertAttendance` existant ; **non-régression appels manuels** | PR3 | Nouvelle table attendance ; retirer UI d’appel |
 | **PR5 — Scan → finance** | Badge D2=B via `listFinanceStudentFees` **si** sous-option finance + RBAC | PR3 | Recalcul client, flag carte, gate bloquant |
 | **PR6 — Web émission** | Impression / PDF ; gated par master | PR2 + photo si D4 | NFC |
-| **GATE-QR-STORES** | Dossier rédigé, **non clos** (`GATE-QR-STORES-camera-qr.md`, GO technique) | — | Code Mobile ; ouvrir PR7 avant le merge du gate |
-| **PR7 — Mobile QR secours** | Dépendance scanner + permission runtime au scan | PR3–PR5 **et GATE-QR-STORES clos** | Débloquer NFC ; commencer sans le gate |
+| **GATE-QR-STORES** | **CLOS** #887 | — | Réouvrir le scanner NFC dans le même lot |
+| **PR7 — Mobile QR secours** | Dépendance scanner + permission runtime au scan | PR3–PR5 **et GATE-QR-STORES clos** | Débloquer NFC ; livrer le défaut micro du plugin |
 | **GATE-NFC-STORES** | Revue Stores NFC (document) | — | Code Mobile |
 | **PR8 — Mobile NFC** | Retirer NFC de la blocklist **uniquement** après le gate | PR7 **et GATE-NFC-STORES clos** | Élargir les autres permissions bloquées |
 
@@ -701,7 +701,7 @@ Chaque PR d’implémentation future exigera un **diff GitHub indépendant CTO**
 - Paiement au scan.  
 - Application parent qui scanne la carte de l’enfant.  
 - **CARTE-PR0** et tout code métier — **non ouverts jusqu’au merge de #876**.  
-- **GATE-QR-STORES** comme gate **clos**. Le dossier `docs/audits/GATE-QR-STORES-camera-qr.md` existe ; il reste ouvert jusqu’au diff CTO et au merge. PR7 reste bloquée.
+- **CARTE-PR8 / NFC** — bloqué par GATE-NFC-STORES. **CARTE-PR7** reste DRAFT jusqu’à `ready et merge`.
 - **GATE-NFC-STORES** en tant que revue Stores exécutée (seulement **exigée** ici, pas rédigée comme dossier Store).
 
 ---
@@ -719,7 +719,7 @@ Chaque PR d’implémentation future exigera un **diff GitHub indépendant CTO**
 | Finance | `backend/lib/financeDomainInvariants.js`, `backend/db/financeSchema.js`, `backend/db/financePgStore.js`, `backend/services/unpaidService.js`, `backend/lib/financeWebMobileWriteContract.js` |
 | QR bulletin | `backend/contracts/reportCard/contract.js`, `backend/contracts/reportCard/verificationSecret.js`, `backend/lib/bulletinTemplate.js` |
 | Mobile NFC block | `Mobile/app.config.js`, `Mobile/plugins/withSomafrikAndroidSecurity.js`, `Mobile/scripts/verify-native-prebuild.js` |
-| GATE-QR-STORES | `docs/audits/GATE-QR-STORES-camera-qr.md` (dossier rédigé, non clos) |
+| GATE-QR-STORES | `docs/audits/GATE-QR-STORES-camera-qr.md` (**CLOS** #887) |
 | Appel mobile | `Mobile/src/screens/TeacherAttendanceScreen.tsx`, `Mobile/src/lib/attendanceOffline.ts` |
 | Documents PHOTO | `web/src/lib/studentDocuments.ts` |
 | Docs présence / sécu | `docs/ux/design-system/AUDIT-D3.5-presences.md`, `docs/project/SECURITY.md`, `docs/project/DATABASE.md` |

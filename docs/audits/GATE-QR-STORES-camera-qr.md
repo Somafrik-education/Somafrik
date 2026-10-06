@@ -1,22 +1,23 @@
 # GATE-QR-STORES — revue caméra et QR Mobile
 
-**Statut de ce dossier : DRAFT / HOLD. Pas clos. Pas un GO de merge.**
+**Statut de ce dossier : CLOSED.** Mergé dans `develop` par **#887** (`26e42c4c7a0e4636072ab328bba6cd0c42f76596`).
 
 **Conclusion technique : GO PR7**, sous les conditions figées ci-dessous.
 
-PR7 (scanner QR Mobile) reste **interdite** tant que ce gate n’est pas clos par diff GitHub indépendant CTO puis mergé dans `develop`. Ce document ne l’implémente pas. CARTE-PR8 / NFC reste hors scope et reste bloqué par GATE-NFC-STORES.
+CARTE-PR7 (scanner QR Mobile) est le lot d’implémentation. Il reste **DRAFT / HOLD** jusqu’à l’ordre `ready et merge`. CARTE-PR8 / NFC reste hors scope et reste bloqué par GATE-NFC-STORES.
 
-Baseline opérationnelle actuelle : `develop@e493a0881843cb3c52396a0d478249d36dc0f77b`.
+Baseline du merge du gate : `develop@26e42c4c7a0e4636072ab328bba6cd0c42f76596`.
+La baseline opérationnelle du replay documentaire était `develop@e493a0881843cb3c52396a0d478249d36dc0f77b`.
 
-Ce replay s’appuie sur :
+Ce replay s’appuyait sur :
 
 - #886, qui a livré CARTE-PR6 ;
 - #888 / CI-MOB-01, qui a corrigé `verify:mobile-release-readiness` ;
-- GATE-QR-STORES désormais rejoué avec ce garde corrigé.
+- GATE-QR-STORES rejoué puis mergé avec ce garde corrigé.
 
 Le premier dépôt du gate était `develop@37dbfc676869c9d91e583cb05987e1e908894faa` (merge CARTE-PR6 #886). Les décisions techniques ci-dessous sont inchangées.
 
-Nature : **documentaire uniquement**. Aucune dépendance installée. Aucun écran scanner. Aucune permission runtime ajoutée. Aucun fichier `Mobile/`, `backend/`, `web/`, migration, RBAC ou `school_settings` modifié.
+Nature du gate : **documentaire**. L’implémentation `expo-camera` et l’écran scanner appartiennent à **CARTE-PR7**.
 
 ## 1. État réel de départ
 
@@ -441,7 +442,7 @@ suppression de l’appel manuel
 
 **Verdict : GO PR7.**
 
-Ce GO est une décision de revue. Il n’ouvre pas PR7. Il ne marque pas ce gate clos. La clôture est le merge après diff CTO indépendant.
+Ce GO de revue a été clos par le merge de #887. L’implémentation scanner est **CARTE-PR7**, distincte, DRAFT jusqu’à `ready et merge`.
 
 ## 20. Sources primaires
 

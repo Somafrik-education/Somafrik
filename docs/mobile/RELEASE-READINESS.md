@@ -101,9 +101,9 @@ eas build:version:sync   # optionnel : recopier le remote vers un prebuild local
 | Permission | Avant | Après | Source | Justification | Runtime | Play Store |
 | ---------- | ----: | ----: | ------ | ------------- | ------: | ---------- |
 | INTERNET | ✅ | ✅ | système | API HTTPS | Non | Standard |
-| CAMERA | ✅ | ✅ | `expo-image-picker` | Photo de compte | Oui | Photos |
-| READ_MEDIA_IMAGES | ✅ | ✅ | `expo-image-picker` | Galerie photos | Oui | Photos |
-| RECORD_AUDIO | ✅ | ❌ | image-picker défaut | Micro non utilisé (`microphonePermission: false`) | — | Retiré |
+| CAMERA | ✅ | ✅ | `expo-image-picker` + `expo-camera` | Photo de compte **et** scan QR des cartes élève. `recordAudioAndroid: false`, `microphonePermission: false`. Chaîne unique : *Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.* | Oui (photo compte **et** ouverture du scanner, jamais au login) | Photos + identifiant carte |
+| READ_MEDIA_IMAGES | ✅ | ✅ | `expo-image-picker` | Galerie photos (compte). Le scan QR n’élargit pas la galerie. | Oui | Photos |
+| RECORD_AUDIO | ✅ | ❌ | image-picker / camera défaut | Micro non utilisé (`microphonePermission: false` sur les deux plugins, `recordAudioAndroid: false` sur `expo-camera`) | — | Retiré |
 | SYSTEM_ALERT_WINDOW | ✅ (main) | debug only | overlay RN | Inutile en release | — | Retiré du main |
 | READ_EXTERNAL_STORAGE | ✅ | ❌ | legacy | Remplacé par READ_MEDIA_IMAGES | — | Retiré |
 | WRITE_EXTERNAL_STORAGE | ✅ | ❌ | legacy | Non utilisé | — | Retiré |
@@ -189,7 +189,18 @@ Si `eas build` échoue sans login / sans credentials Android :
 
 ## Logs
 
-Les parcours auth / API passent par `safeLogger` (redaction JWT / Authorization). Interdit : logger un token, un mot de passe, un payload personnel complet.
+Les parcours auth / API passent par `safeLogger` (redaction JWT / Authorization). Interdit : logger un token, un mot de passe, un payload personnel complet. Le capability QR n’est jamais loggé.
+
+## App Privacy (App Store)
+
+Réévaluation CARTE-PR7 :
+
+- la caméra du scanner reste un traitement **local** (aucune image collectée) ;
+- le capability QR est transmis au serveur HTTPS pour résolution ;
+- l’identité élève reçue est une donnée scolaire déjà couverte par le contrat backend, via un **nouveau chemin** (scan) ;
+- pas de tracking, pas d’ATT, pas de `NSUserTrackingUsageDescription`.
+
+La politique de confidentialité hébergée reste un **P0 Store** distinct (URL encore absente).
 
 ## Gate de publication
 

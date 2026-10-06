@@ -20,9 +20,12 @@ Cette PR **ne soumet pas** l’application sur Google Play.
 | Données scolaires (écoles, classes, élèves, emplois du temps) | API canonique hydratée | Périmètre métier | Mémoire runtime | PostgreSQL | Oui | Disparaît à la fermeture de session |
 | Jetons d’accès / refresh | Login API | Session | SecureStore, `WHEN_UNLOCKED_THIS_DEVICE_ONLY` | JWT côté API | Oui (header Authorization, jamais loggé) | Logout : suppression SecureStore |
 | Photo de compte | Appareil photo / galerie (permission runtime) | Photo utilisateur | Fichier temporaire d’upload, pas de galerie Somafrik persistée | Stockage backend si upload | Oui | Non conservée localement après upload |
+| Identifiant carte élève / QR | Caméra (détection locale du QR) | Identifier l’élève lors du scan autorisé | Aucun — le capability n’est pas persisté | Capability transmis au backend HTTPS pour résolution ; identité scolaire en réponse | Oui | Mémoire volatile uniquement, effacé après l’appel |
 
 ## Hors collecte Mobile
 
 - Pas d’analytics tiers, pas de Sentry, pas de FCM, pas de NFC dans ce lot.
+- Image caméra du scanner : traitement local uniquement. Aucune frame stockée, aucun upload d’image de scan, aucune écriture galerie.
+- QR capability : jamais loggé, jamais mis en outbox / SecureStore / SQLite.
 - Mot de passe et PIN : saisis, jamais persistés. PIN démo uniquement via `EXPO_PUBLIC_DEMO_PIN` en développement.
 - L’outbox ne contient **aucun** `accessToken` / `refreshToken` / `password` / `pin` (LOT 5, `OUTBOX_SECRET_FORBIDDEN`).

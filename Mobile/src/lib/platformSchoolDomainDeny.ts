@@ -40,6 +40,7 @@ const SCHOOL_DOMAIN_VIEWS = new Set([
   "teachers",
   "TeacherStudents",
   "TeacherAttendance",
+  "StudentCardScan",
   "TeacherGrades",
   "ClassGradesStats",
   "Presences",

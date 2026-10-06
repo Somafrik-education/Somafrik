@@ -7,6 +7,12 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canManagePresences, canReadRoute } from "../domain/security/permissions";
+import { getSchoolSettings, type SchoolSettings } from "../services/schoolSettingsApi";
+import {
+  STUDENT_CARD_SCAN_COPY,
+  isStudentCardQrScanEnabled,
+  isoAttendanceDate,
+} from "../lib/studentCardScan";
 import {
   classNameMatches,
   resolveStudentApiId,
@@ -149,6 +155,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [outboxUnavailable, setOutboxUnavailable] = useState(false);
   const [replaySending, setReplaySending] = useState(false);
   const replaySendingRef = useRef(false);
+  const [cardSettings, setCardSettings] = useState<SchoolSettings | null>(null);
 
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
@@ -160,7 +167,15 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       void loadTeachers();
       void loadClasses();
       void loadAssignments();
-    }, [loadStudents, loadPresences, loadTeachers, loadClasses, loadAssignments, resourceScopeKey]),
+      const schoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "").trim();
+      if (schoolCode) {
+        void getSchoolSettings(schoolCode)
+          .then((row) => setCardSettings(row))
+          .catch(() => setCardSettings(null));
+      } else {
+        setCardSettings(null);
+      }
+    }, [loadStudents, loadPresences, loadTeachers, loadClasses, loadAssignments, resourceScopeKey, session]),
   );
 
   useEffect(() => {
@@ -298,6 +313,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const selectedIds = selectedRows.map((student) => student.id);
   const canUpdatePresences = canManagePresences(session);
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
+  const canOpenQrScanner =
+    canUpdatePresences && canReadRoute(session, "StudentCardScan") && isStudentCardQrScanEnabled(cardSettings);
+  const scanTeacherId =
+    authorDecision.status === "auto" || authorDecision.status === "selected" ? authorDecision.teacherId : undefined;
 
   const dailyStats = useMemo(
     () => getRollCallDraftStats(selectedIds, attendance),
@@ -739,6 +758,25 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 </TouchableOpacity>
               </View>
             )}
+            {canOpenQrScanner ? (
+              <TouchableOpacity
+                testID={USABILITY_TEST_IDS.attendanceScanQr}
+                style={styles.scanButton}
+                onPress={() =>
+                  navigation.navigate("StudentCardScan", {
+                    teacherId: scanTeacherId,
+                    attendanceDate: isoAttendanceDate(),
+                  })
+                }
+                disabled={actionsLocked}
+                accessibilityRole="button"
+                accessibilityLabel={STUDENT_CARD_SCAN_COPY.button}
+                accessibilityState={{ disabled: actionsLocked }}
+              >
+                <Ionicons name="qr-code-outline" size={18} color="#0F172A" />
+                <Text style={styles.scanButtonText}>{STUDENT_CARD_SCAN_COPY.button}</Text>
+              </TouchableOpacity>
+            ) : null}
             {outboxUnavailable ? (
               <Text testID="attendance-outbox-unavailable" style={styles.unavailable}>
                 {ROLL_CALL_COPY.outboxUnavailable} — {ROLL_CALL_COPY.outboxUnavailableBody}
@@ -1036,6 +1074,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   saveText: { color: "#FFFFFF", fontWeight: "900" },
+  scanButton: {
+    marginTop: 8,
+    marginBottom: 8,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    padding: 12,
+    minHeight: MIN_TOUCH_TARGET_DP,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  scanButtonText: { color: "#0F172A", fontWeight: "900", marginLeft: 8 },
   studentRow: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,

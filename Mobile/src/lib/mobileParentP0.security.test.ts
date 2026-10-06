@@ -84,6 +84,7 @@ const parentUser = {
 const STAFF_ROUTES = [
   "TeacherGrades",
   "TeacherAttendance",
+  "StudentCardScan",
   "ClassGradesStats",
   "Payments",
   "FeeGrids",
@@ -169,6 +170,7 @@ const cases: { id: string; title: string; run: () => void }[] = [
       const session = parentSession();
       assert.equal(canReadRoute(session, "TeacherGrades"), false);
       assert.equal(canReadRoute(session, "TeacherAttendance"), false);
+      assert.equal(canReadRoute(session, "StudentCardScan"), false);
       assert.equal(canReadRoute(session, "ClassGradesStats"), false);
     },
   },
