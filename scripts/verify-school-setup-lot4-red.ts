@@ -270,15 +270,45 @@ const STUDENT_CARD_PR6_EXACT = new Set([
   "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
 ]);
 
+const STUDENT_CARD_PR7_EXACT = new Set([
+  "scripts/verify-student-card-mobile.js",
+  "scripts/verify-school-setup-lot4-red.ts",
+  "package.json",
+  ".github/workflows/pr-gates.yml",
+  "Mobile/app.json",
+  "Mobile/package.json",
+  "Mobile/package-lock.json",
+  "Mobile/scripts/verify-native-prebuild.js",
+  "Mobile/src/domain/security/permissions.ts",
+  "Mobile/src/lib/mobileParentP0.security.test.ts",
+  "Mobile/src/lib/mobileParentProfile.audit.red.test.ts",
+  "Mobile/src/lib/mobileUsability.ts",
+  "Mobile/src/lib/platformSchoolDomainDeny.ts",
+  "Mobile/src/lib/superadminSchoolDomain.p1-04.test.ts",
+  "Mobile/src/navigation/AppNavigator.tsx",
+  "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+  "docs/audits/AUDIT-CARTE-01-eleve-presence-nfc-qr-impayes.md",
+  "docs/audits/GATE-QR-STORES-camera-qr.md",
+  "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
+  "docs/mobile/RELEASE-READINESS.md",
+]);
+
 function isStudentCardPr6Signal(file: string) {
-  return file === "scripts/verify-student-card-web.js" || /studentCard/i.test(file);
+  return (
+    file === "scripts/verify-student-card-web.js" ||
+    file === "scripts/verify-student-card-mobile.js" ||
+    /studentCard/i.test(file)
+  );
 }
 
 function isStudentCardPr6IntegrationFile(file: string) {
-  if (STUDENT_CARD_PR6_EXACT.has(file)) return true;
+  if (STUDENT_CARD_PR6_EXACT.has(file) || STUDENT_CARD_PR7_EXACT.has(file)) return true;
   if (/^web\/src\/components\/students\/StudentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCardsApi[^/]*$/.test(file)) return true;
+  if (/^Mobile\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
+  if (/^Mobile\/src\/services\/studentCardsApi[^/]*$/.test(file)) return true;
+  if (/^Mobile\/src\/screens\/StudentCard[^/]*$/.test(file)) return true;
   return false;
 }
 
@@ -306,7 +336,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
       return {
         kind: "na",
         message:
-          "L4-09 N/A: chantier Carte élève distinct; périmètre PR6 contrôlé, sans fichier LOT 4 exclusif.",
+          "L4-09 N/A: chantier Carte élève distinct; périmètre PR6/PR7 contrôlé, sans fichier LOT 4 exclusif.",
       };
     }
     const leaked = [...new Set([...outside, ...exclusiveLot4])];
@@ -643,6 +673,37 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         studentCardDistinctChantier.kind,
         "na",
         "L4-09: chantier Carte élève distinct doit être N/A dans le périmètre PR6 contrôlé",
+      );
+
+      const studentCardPr7DistinctChantier = evaluateLot4Scope([
+        "Mobile/src/screens/StudentCardScanScreen.tsx",
+        "Mobile/src/lib/studentCardScan.ts",
+        "Mobile/src/lib/studentCardScan.test.ts",
+        "Mobile/src/services/studentCardsApi.ts",
+        "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+        "Mobile/src/navigation/AppNavigator.tsx",
+        "Mobile/src/domain/security/permissions.ts",
+        "Mobile/app.json",
+        "Mobile/package.json",
+        "scripts/verify-student-card-mobile.js",
+        "docs/audits/GATE-QR-STORES-camera-qr.md",
+        "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
+      ]);
+      assert.equal(
+        studentCardPr7DistinctChantier.kind,
+        "na",
+        "L4-09: chantier Carte élève Mobile (PR7) doit être N/A dans le périmètre contrôlé",
+      );
+
+      const studentCardPr7PlusBackend = evaluateLot4Scope([
+        "Mobile/src/screens/StudentCardScanScreen.tsx",
+        "Mobile/src/lib/studentCardScan.ts",
+        "backend/server.js",
+      ]);
+      assert.equal(
+        studentCardPr7PlusBackend.kind,
+        "fail",
+        "L4-09: Carte élève Mobile + backend/server.js doit rester FAIL",
       );
 
       const studentCardPlusBackend = evaluateLot4Scope([
