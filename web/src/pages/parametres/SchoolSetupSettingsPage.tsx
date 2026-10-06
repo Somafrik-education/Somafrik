@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FormLayout, InlineAlert, LoadingState, SectionHeader } from "@/design-system";
+import { StudentCardSettingsSection } from "../../components/students/StudentCardSettingsSection";
 import { GuidedSchoolSetupWizard } from "../../components/schoolSetup/GuidedSchoolSetupWizard";
 import { SchoolSetupOptionalCompleteness } from "../../components/schoolSetup/SchoolSetupOptionalCompleteness";
 import { SchoolSetupWizard } from "../../components/schoolSetup/SchoolSetupWizard";
@@ -78,6 +79,7 @@ export function SchoolSetupSettingsPage() {
             <SchoolSetupOptionalCompleteness payload={payload} />
           </div>
         ) : null}
+        <StudentCardSettingsSection />
       </FormLayout.Content>
     </FormLayout>
   );

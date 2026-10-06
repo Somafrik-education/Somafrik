@@ -10,6 +10,7 @@ export type StudentWorkspaceModuleId =
   | "health"
   | "discipline"
   | "history"
+  | "card"
   | "access";
 
 export type StudentWorkspacePermission =
@@ -131,6 +132,13 @@ export const STUDENT_WORKSPACE_MODULES = [
     icon: "history",
     enabledByDefault: true,
     requiredPermission: "student.history.read",
+  },
+  {
+    id: "card",
+    title: "Carte élève",
+    icon: "id-card",
+    enabledByDefault: true,
+    requiredPermission: "student.identity.read",
   },
   {
     id: "access",

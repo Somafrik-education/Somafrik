@@ -163,3 +163,8 @@ export function useActiveSchool(): ActiveSchoolContextValue {
   }
   return ctx;
 }
+
+/** Absent hors provider : la carte élève reste fail-closed, sans lever d'exception. */
+export function useOptionalActiveSchool(): ActiveSchoolContextValue | null {
+  return useContext(ActiveSchoolContext);
+}

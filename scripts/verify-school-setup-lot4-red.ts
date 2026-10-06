@@ -254,6 +254,34 @@ function isGuidedDedicatedFile(file: string) {
   return /schoolSetupGuided/i.test(file);
 }
 
+const STUDENT_CARD_PR6_EXACT = new Set([
+  "scripts/verify-student-card-web.js",
+  "scripts/verify-school-setup-lot4-red.ts",
+  "web/package.json",
+  "web/package-lock.json",
+  "package.json",
+  ".github/workflows/pr-gates.yml",
+  "web/scripts/verify-student-workspace-shell.ts",
+  "web/src/components/students/StudentWorkspaceTabs.tsx",
+  "web/src/context/ActiveSchoolContext.tsx",
+  "web/src/index.css",
+  "web/src/lib/studentWorkspace.ts",
+  "web/src/lib/studentWorkspaceNavigation.ts",
+  "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+]);
+
+function isStudentCardPr6Signal(file: string) {
+  return file === "scripts/verify-student-card-web.js" || /studentCard/i.test(file);
+}
+
+function isStudentCardPr6IntegrationFile(file: string) {
+  if (STUDENT_CARD_PR6_EXACT.has(file)) return true;
+  if (/^web\/src\/components\/students\/StudentCard[^/]*$/.test(file)) return true;
+  if (/^web\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
+  if (/^web\/src\/lib\/studentCardsApi[^/]*$/.test(file)) return true;
+  return false;
+}
+
 function isLot4ExclusiveChantierFile(file: string) {
   return (
     isLot4ChantierFile(file) &&
@@ -270,6 +298,21 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
       kind: "na",
       message:
         "L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.",
+    };
+  }
+  if (changed.some(isStudentCardPr6Signal)) {
+    const outside = changed.filter((file) => !isStudentCardPr6IntegrationFile(file));
+    if (outside.length === 0 && exclusiveLot4.length === 0) {
+      return {
+        kind: "na",
+        message:
+          "L4-09 N/A: chantier Carte élève distinct; périmètre PR6 contrôlé, sans fichier LOT 4 exclusif.",
+      };
+    }
+    const leaked = [...new Set([...outside, ...exclusiveLot4])];
+    return {
+      kind: "fail",
+      message: `L4-09: chantier Carte élève hors périmètre contrôlé (backend/migration/RBAC/LOT 4 exclusif): ${leaked.join(", ")}`,
     };
   }
   const chantier = changed.filter(isLot4ChantierFile);
@@ -585,6 +628,69 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "L4-09: chantier guidé distinct (schoolSetupGuided) doit être N/A même s'il orchestre SchoolSetupSettingsPage",
       );
       assert.equal(lot4PlusForeignBackend.kind, "fail", "vrai LOT 4 + backend doit rester FAIL");
+
+      const studentCardDistinctChantier = evaluateLot4Scope([
+        "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+        "web/src/components/students/StudentCardSettingsSection.tsx",
+        "web/src/components/students/StudentCardTab.tsx",
+        "web/src/lib/studentCardPolicy.ts",
+        "web/src/lib/studentCardsApi.ts",
+        "scripts/verify-student-card-web.js",
+        "web/package-lock.json",
+        "web/src/index.css",
+      ]);
+      assert.equal(
+        studentCardDistinctChantier.kind,
+        "na",
+        "L4-09: chantier Carte élève distinct doit être N/A dans le périmètre PR6 contrôlé",
+      );
+
+      const studentCardPlusBackend = evaluateLot4Scope([
+        "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+        "web/src/components/students/StudentCardSettingsSection.tsx",
+        "web/src/components/students/StudentCardTab.tsx",
+        "web/src/lib/studentCardPolicy.ts",
+        "web/src/lib/studentCardsApi.ts",
+        "backend/server.js",
+      ]);
+      assert.equal(
+        studentCardPlusBackend.kind,
+        "fail",
+        "L4-09: Carte élève + backend/server.js doit rester FAIL",
+      );
+
+      const studentCardPlusMigration = evaluateLot4Scope([
+        "web/src/components/students/StudentCardTab.tsx",
+        "web/src/lib/studentCardsApi.ts",
+        "backend/db/migrations/20261006_student_cards.sql",
+      ]);
+      assert.equal(
+        studentCardPlusMigration.kind,
+        "fail",
+        "L4-09: Carte élève + migration SQL doit rester FAIL",
+      );
+
+      const studentCardPlusRbac = evaluateLot4Scope([
+        "web/src/components/students/StudentCardTab.tsx",
+        "web/src/lib/studentCardPolicy.ts",
+        "backend/services/rbacService.js",
+      ]);
+      assert.equal(
+        studentCardPlusRbac.kind,
+        "fail",
+        "L4-09: Carte élève + RBAC doit rester FAIL",
+      );
+
+      const lot4PlusStudentCard = evaluateLot4Scope([
+        "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+        "web/src/components/schoolSetup/SchoolSetupOptionalCompleteness.tsx",
+        "web/src/components/students/StudentCardTab.tsx",
+      ]);
+      assert.equal(
+        lot4PlusStudentCard.kind,
+        "fail",
+        "un vrai chantier LOT 4 exclusif reste FAIL même s'il embarque la Carte élève",
+      );
 
       const live = evaluateLot4Scope(lot4ChangedFiles());
       console.log(live.message);
