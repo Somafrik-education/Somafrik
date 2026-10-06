@@ -2119,26 +2119,19 @@ app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/stud
 }));
 
 app.post("/api/student-cards", requireAuth, requirePermission("POST /api/student-cards"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
   const { issueStudentCard } = require("./lib/studentAccessCardsManagement");
   const principal = await enrollmentHttpPrincipal(req);
   const schoolScope = studentCardsHttpScope(principal);
-  await withIdempotency({
-    req,
-    res,
-    routeKey: "POST /api/student-cards",
+  const card = await issueStudentCard(
+    repository,
+    req.body ?? {},
     principal,
-    handler: async () => {
-      const card = await issueStudentCard(
-        repository,
-        req.body ?? {},
-        principal,
-        auditMetaFromRequest(req),
-        schoolScope,
-      );
-      return { statusCode: 201, body: card };
-    },
-  });
+    auditMetaFromRequest(req),
+    schoolScope,
+  );
+  res.status(201).json(card);
 }));
 
 app.post("/api/student-cards/:id/lost", requireAuth, requirePermission("POST /api/student-cards/:id/lost"), asyncHandler(async (req, res) => {
@@ -2225,26 +2218,19 @@ app.post("/api/student-cards/scan", requireAuth, requirePermission("POST /api/st
 }));
 
 app.post("/api/student-cards/:id/replace", requireAuth, requirePermission("POST /api/student-cards/:id/replace"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
   const { replaceStudentCard } = require("./lib/studentAccessCardsManagement");
   const principal = await enrollmentHttpPrincipal(req);
   const schoolScope = studentCardsHttpScope(principal);
-  await withIdempotency({
-    req,
-    res,
-    routeKey: `POST /api/student-cards/${req.params.id}/replace`,
+  const result = await replaceStudentCard(
+    repository,
+    req.params.id,
     principal,
-    handler: async () => {
-      const result = await replaceStudentCard(
-        repository,
-        req.params.id,
-        principal,
-        auditMetaFromRequest(req),
-        schoolScope,
-      );
-      return { statusCode: 200, body: result };
-    },
-  });
+    auditMetaFromRequest(req),
+    schoolScope,
+  );
+  res.status(200).json(result);
 }));
 
 async function authorizeEnrollmentStudentOr404(req, res, studentId) {
