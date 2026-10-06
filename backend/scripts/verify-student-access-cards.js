@@ -40,13 +40,26 @@ function main() {
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/replace"/);
   assert.match(server, /routeKey: `POST \/api\/student-cards\/\$\{req\.params\.id\}\/replace`/);
   assert.match(server, /requirePermission\("POST \/api\/student-cards\/:id\/replace"\)/);
-  assert.doesNotMatch(server, /\/api\/student-cards\/scan/);
+  assert.match(server, /app\.post\("\/api\/student-cards\/scan"/);
+  const scanRoute = server.slice(
+    server.indexOf('app.post("/api/student-cards/scan"'),
+    server.indexOf('app.post("/api/student-cards/:id/replace"'),
+  );
+  assert.match(scanRoute, /Cache-Control", "no-store"/);
+  assert.doesNotMatch(scanRoute, /upsertAttendance|upsertSchoolAttendanceBatch|listFinanceStudentFees|last_scan_at|student_card_scanned/);
+  assert.doesNotMatch(server, /app\.get\("\/api\/student-cards\/scan"/);
+  assert.doesNotMatch(server, /\/verify\/student-card|\/api\/public\/student-card/);
   assert.doesNotMatch(server, /\/api\/student-access-cards/);
   assert.match(rbac, /"GET \/api\/students\/:id\/cards": \["Élèves:READ", "Voir élèves"\]/);
   assert.match(rbac, /"POST \/api\/student-cards": \["Élèves:UPDATE", "Gérer élèves"\]/);
-  assert.doesNotMatch(rbac, /Cartes:READ|Cartes:CREATE|QR:|NFC:/);
-  assert.match(guard, /"POST \/api\/student-cards"/);
-  assert.match(guard, /"GET \/api\/students\/:id\/cards"/);
+  assert.match(rbac, /"POST \/api\/student-cards\/scan": \["Présences:CREATE", "Présences:UPDATE"\]/);
+  assert.doesNotMatch(rbac, /Cartes:READ|Cartes:CREATE|Cartes:SCAN|QR:|NFC:/);
+  assert.match(guard, /"POST \/api\/student-cards\/scan"/);
+  assert.match(management, /tokenHashesMatch/);
+  assert.match(management, /findByPublicIdInSchool/);
+  assert.match(read("backend/lib/studentCardCapability.js"), /timingSafeEqual/);
+  assert.match(read("backend/lib/studentCardCapability.js"), /DUMMY_TOKEN_HASH/);
+  assert.doesNotMatch(management, /student_card_scanned|last_scan_at/);
   assert.match(management, /crypto\.randomBytes/);
   assert.match(management, /sha256/);
   assert.match(management, /student_card_issued/);

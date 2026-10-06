@@ -5,6 +5,12 @@ const { createHttpError } = require("./classesManagement");
 const { isStudentCardMasterEnabled, mapSettingsRow } = require("./schoolSettingsManagement");
 const { createSchoolSettingsPgStore } = require("../db/schoolSettingsPgStore");
 const { createStudentAccessCardsPgStore } = require("../db/studentAccessCardsPgStore");
+const {
+  parseCardToken,
+  hashCardSecret,
+  tokenHashesMatch,
+  DUMMY_TOKEN_HASH,
+} = require("./studentCardCapability");
 
 const STUDENT_CARD_ERROR = Object.freeze({
   DISABLED: "STUDENT_CARD_DISABLED",
@@ -14,6 +20,8 @@ const STUDENT_CARD_ERROR = Object.freeze({
   INVALID_MEDIUM: "STUDENT_CARD_INVALID_MEDIUM",
   INVALID_STATE: "STUDENT_CARD_INVALID_STATE",
   TENANT_DENIED: "STUDENT_CARD_TENANT_DENIED",
+  TOKEN_INVALID: "STUDENT_CARD_TOKEN_INVALID",
+  ENROLLMENT_UNRESOLVED: "STUDENT_CARD_ENROLLMENT_UNRESOLVED",
 });
 
 const STUDENT_CARD_MEDIA = Object.freeze(["nfc", "qr", "nfc_qr"]);
@@ -427,6 +435,61 @@ async function replaceStudentCard(repo, cardId, principal, auditMeta, schoolScop
   };
 }
 
+function mapScanCard(row) {
+  return {
+    id: row.id,
+    publicId: row.public_id,
+    medium: row.medium,
+    status: row.status,
+  };
+}
+
+async function scanStudentCard(repo, payload, schoolScope) {
+  const schoolId = asId(schoolScope?.schoolId);
+  if (!schoolId) {
+    throw studentCardError(403, "Accès refusé: établissement hors périmètre.", STUDENT_CARD_ERROR.TENANT_DENIED);
+  }
+  await assertStudentCardMasterEnabled(repo, schoolId);
+  const parsed = parseCardToken(payload?.cardToken);
+  const store = cardsStore(repo);
+  const card = await store.findByPublicIdInSchool(schoolId, parsed.publicId);
+  const candidateHash = hashCardSecret(parsed.secret);
+  const matched = tokenHashesMatch(candidateHash, card ? card.token_hash : DUMMY_TOKEN_HASH);
+  if (!card || !matched) {
+    throw notFoundError();
+  }
+  if (card.status !== "active") {
+    throw studentCardError(409, "Carte inutilisable.", STUDENT_CARD_ERROR.INVALID_STATE);
+  }
+  const student = await store.findScanStudent(schoolId, card.student_id);
+  if (!student) {
+    throw studentNotFoundError();
+  }
+  const roster = await store.findRosterClass(schoolId, student.id);
+  if (!roster) {
+    throw studentCardError(
+      409,
+      "Inscription courante introuvable.",
+      STUDENT_CARD_ERROR.ENROLLMENT_UNRESOLVED,
+    );
+  }
+  return {
+    card: mapScanCard(card),
+    student: {
+      id: student.id,
+      studentCode: student.student_code,
+      firstName: student.first_name,
+      lastName: student.last_name,
+      photoUrl: student.photo_url || "",
+    },
+    class: {
+      id: roster.id,
+      classCode: roster.class_code,
+      className: roster.name,
+    },
+  };
+}
+
 module.exports = {
   STUDENT_CARD_ERROR,
   STUDENT_CARD_MEDIA,
@@ -445,5 +508,6 @@ module.exports = {
   markStudentCardLost,
   revokeStudentCard,
   replaceStudentCard,
+  scanStudentCard,
   assertStudentCardMasterEnabled,
 };

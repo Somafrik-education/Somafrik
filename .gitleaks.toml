@@ -10,7 +10,7 @@ useDefault = true
 # Ajouter des allowlists ciblées ici uniquement si un faux positif est confirmé.
 
 [allowlist]
-description = "Preuves d'audit authz notes (paths) + identifiants L1 SQLite non-secrets (regexes). Gitleaks 8.24 [allowlist] ORs paths and regexes. regexes = SecureStore slot somafrik.l1DbKeyV1 and historical error code L1_CIPHER_KEY_INVALID only — generic-api-key remains enabled."
+description = "Preuves d'audit authz notes (paths) + identifiants non secrets (regexes). Gitleaks 8.24 [allowlist] ORs paths and regexes. regexes = SecureStore slot somafrik.l1DbKeyV1, code L1_CIPHER_KEY_INVALID, et le fixture alphabetique CARTE-PR3 (generic-api-key sur l'historique git) — generic-api-key reste actif."
 paths = [
   '''docs/audits/evidence/notes-authz-trace.*\.jsonl''',
   '''docs/audits/evidence/pre-e1-hotfix-02b-results\.json''',
@@ -22,4 +22,5 @@ paths = [
 regexes = [
   '''somafrik\.l1DbKeyV1''',
   '''L1_CIPHER_KEY_INVALID''',
+  '''abcdefghijklmnopqrstuvwxyz012345''',
 ]

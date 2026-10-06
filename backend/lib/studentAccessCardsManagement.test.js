@@ -138,6 +138,7 @@ test("CARTE-PR2 — Superadmin / Admin Pays refusés même avec ALL_PRIVILEGES",
     "POST /api/student-cards/:id/lost",
     "POST /api/student-cards/:id/revoke",
     "POST /api/student-cards/:id/replace",
+    "POST /api/student-cards/scan",
   ];
   const superadmin = {
     role: "Super Administrateur Somafrik",
@@ -160,14 +161,37 @@ test("CARTE-PR2 — Superadmin / Admin Pays refusés même avec ALL_PRIVILEGES",
   }
 });
 
-test("CARTE-PR2 — aucune route scan, aucune permission QR/NFC native, pas de module Cartes", () => {
+test("CARTE-PR3 — scan Présences CREATE/UPDATE, pas de module Cartes ni ALL_PRIVILEGES", () => {
   const server = read("backend/server.js");
   const rbacSrc = read("backend/services/rbacService.js");
   const catalog = read("backend/lib/functionalModulesCatalog.js");
   const presences = read("backend/lib/presencesAttendanceAuthz.js");
   const finance = read("backend/lib/financeRbacRouteMatrix.js");
-  assert.doesNotMatch(server, /\/api\/student-cards\/scan/);
-  assert.doesNotMatch(rbacSrc, /Cartes:|QR:READ|NFC:READ|student-cards\/scan/);
+  const teacher = {
+    role: "Enseignant",
+    roleKeys: ["TEACHER"],
+    permissions: ["Présences:CREATE"],
+    schoolCode: "CD-LAC-26-001",
+  };
+  const parent = {
+    role: "Parent",
+    roleKeys: ["PARENT"],
+    permissions: ["Présences:READ", "Voir présences", "Voir enfant"],
+    schoolCode: "CD-LAC-26-001",
+  };
+  const student = {
+    role: "Élève / Étudiant",
+    roleKeys: ["STUDENT"],
+    permissions: ["Présences:READ", "Voir présences"],
+    schoolCode: "CD-LAC-26-001",
+  };
+  assert.equal(rbac.canAccess(teacher, "POST /api/student-cards/scan"), true);
+  assert.equal(rbac.canAccess({ ...teacher, permissions: ["Présences:UPDATE"] }, "POST /api/student-cards/scan"), true);
+  assert.equal(rbac.canAccess(parent, "POST /api/student-cards/scan"), false);
+  assert.equal(rbac.canAccess(student, "POST /api/student-cards/scan"), false);
+  assert.equal(rbac.canAccess({ ...teacher, permissions: ["Élèves:UPDATE", "ALL_PRIVILEGES"] }, "POST /api/student-cards/scan"), false);
+  assert.match(server, /app\.post\("\/api\/student-cards\/scan"/);
+  assert.doesNotMatch(rbacSrc, /Cartes:|QR:READ|NFC:READ/);
   assert.doesNotMatch(catalog, /Carte Élève|moduleKey: "cards"/);
   assert.doesNotMatch(presences, /student_access_cards|cardToken/);
   assert.doesNotMatch(finance, /student_access_cards|cardToken|student-cards/);

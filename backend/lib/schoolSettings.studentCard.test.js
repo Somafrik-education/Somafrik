@@ -215,7 +215,7 @@ test("CARTE-PR0 — aucune permission scolaire supplémentaire, aucun QR/NFC pro
   assert.doesNotMatch(management, /cardToken/);
   assert.match(android, /android\.permission\.NFC/);
   assert.doesNotMatch(appConfig, /expo-camera|nfc-manager|react-native-nfc/);
-  assert.doesNotMatch(server, /\/api\/student-cards\/scan/);
+  assert.match(server, /app\.post\("\/api\/student-cards\/scan"/);
   assert.doesNotMatch(presences, /student_card|studentCard|cardToken/);
   assert.match(schema, /student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE/);
 });
