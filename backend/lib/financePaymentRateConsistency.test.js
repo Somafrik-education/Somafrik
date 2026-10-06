@@ -161,11 +161,14 @@ async function payExplicit(store, obligationAmounts, { studentId = "CD-2026-0001
 
 function assertSourceGuards() {
   const pgStore = fs.readFileSync(path.join(ROOT, "backend/db/financePgStore.js"), "utf8");
+  const feesStart = pgStore.indexOf("listFinanceStudentFees:");
+  const feesFn = pgStore.slice(feesStart, pgStore.indexOf("getFinanceStudentFee:", feesStart));
   assert.match(pgStore, /projectObligationPaidAmounts/);
-  assert.match(pgStore, /listFinanceStudentFees: async \(principal\)/);
+  assert.match(feesFn, /listFinanceStudentFees: async \(principal, options = \{\}\)/);
+  assert.match(feesFn, /resolveListedStudentKey\(principal, options\)/);
   assert.match(pgStore, /sqlSchoolPredicate/);
   assert.doesNotMatch(
-    pgStore.slice(pgStore.indexOf("listFinanceStudentFees")),
+    feesFn,
     /FROM payments p/,
     "GET student-fees ne doit pas reconstruire le taux depuis les reçus",
   );
