@@ -1065,6 +1065,11 @@ class PostgresRepository {
     return createSchoolSettingsPgStore(this);
   }
 
+  getStudentAccessCardsStore() {
+    const { createStudentAccessCardsPgStore } = require("./studentAccessCardsPgStore");
+    return createStudentAccessCardsPgStore(this);
+  }
+
   getSchoolSettings(principal, schoolCode) {
     const { getSchoolSettings } = require("../lib/schoolSettingsService");
     return getSchoolSettings(this, principal, schoolCode);
