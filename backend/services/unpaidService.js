@@ -304,4 +304,11 @@ class UnpaidService {
   }
 }
 
-module.exports = { UnpaidService, REMINDER_COOLDOWN_DAYS, computeDaysLate, computeUnpaidSeverity };
+module.exports = {
+  UnpaidService,
+  REMINDER_COOLDOWN_DAYS,
+  computeDaysLate,
+  computeUnpaidSeverity,
+  isDueDatePast,
+  isOverdueStudentFee,
+};

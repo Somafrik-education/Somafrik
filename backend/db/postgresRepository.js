@@ -1916,6 +1916,14 @@ class PostgresRepository {
     return this.getFinanceStore().listFinanceStudentFees(principal, options);
   }
 
+  listFinanceStudentPayments(principal, options) {
+    return this.getFinanceStore().listFinanceStudentPayments(principal, options);
+  }
+
+  hasApplicableActiveFeeGrid(principal, options) {
+    return this.getFinanceStore().hasApplicableActiveFeeGrid(principal, options);
+  }
+
   reconcileFinancePaymentAllocations(principal, options, auditMeta) {
     return this.getFinanceStore().reconcileFinancePaymentAllocations(principal, options, auditMeta);
   }
