@@ -3,7 +3,7 @@
 /**
  * LOT 4 — Paramètres établissement canoniques.
  *
- * school_settings = scalaires (period_mode, default_scale, report_card_mode).
+ * school_settings = scalaires académiques + flags carte élève CARTE-PR0 (défaut false).
  * periods = projection de terms ; classNames = classes ; subjects = subjects.
  */
 
@@ -13,12 +13,26 @@ CREATE TABLE IF NOT EXISTS school_settings (
   period_mode TEXT NOT NULL DEFAULT 'trimestre',
   default_scale NUMERIC(6,2) NOT NULL DEFAULT 20,
   report_card_mode TEXT NOT NULL DEFAULT 'period',
+  student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_qr_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_nfc_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT school_settings_period_mode_check CHECK (period_mode IN ('trimestre', 'semestre', 'periode')),
   CONSTRAINT school_settings_report_card_mode_check CHECK (report_card_mode IN ('period', 'annual', 'custom')),
   CONSTRAINT school_settings_default_scale_check CHECK (default_scale > 0 AND default_scale <= 100)
 );
+`;
+
+const SCHOOL_SETTINGS_STUDENT_CARD_COLUMNS_SQL = `
+ALTER TABLE school_settings
+  ADD COLUMN IF NOT EXISTS student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_qr_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_nfc_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 `;
 
 const SCHOOL_SETTINGS_TRIGGER_SQL = `
@@ -50,6 +64,7 @@ ON CONFLICT (school_id) DO NOTHING;
 
 const SCHOOL_SETTINGS_SCHEMA_SQL = `
 ${SCHOOL_SETTINGS_TABLE_SQL}
+${SCHOOL_SETTINGS_STUDENT_CARD_COLUMNS_SQL}
 ${SCHOOL_SETTINGS_TRIGGER_SQL}
 ${SCHOOL_SETTINGS_BACKFILL_SQL}
 `;
@@ -92,6 +107,7 @@ async function assertSchoolSettingsSchemaPreflight(db) {
 
 module.exports = {
   SCHOOL_SETTINGS_TABLE_SQL,
+  SCHOOL_SETTINGS_STUDENT_CARD_COLUMNS_SQL,
   SCHOOL_SETTINGS_TRIGGER_SQL,
   SCHOOL_SETTINGS_BACKFILL_SQL,
   SCHOOL_SETTINGS_SCHEMA_SQL,

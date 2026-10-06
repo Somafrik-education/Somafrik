@@ -11,6 +11,7 @@ const {
   classifyLegacySchoolSettings,
   extractValidatedSchoolSettingsScalars,
   settingsPatchFromCaptured,
+  resolveStudentCardFlags,
 } = require("../lib/schoolSettingsManagement");
 
 function createSchoolSettingsMemoryStore(seed = {}) {
@@ -81,11 +82,17 @@ function createSchoolSettingsMemoryStore(seed = {}) {
     },
     async upsertSettings(schoolId, patch) {
       const current = settings.get(schoolId);
+      const flags = resolveStudentCardFlags(patch, current);
       const row = {
         school_id: schoolId,
         period_mode: patch.periodMode ?? current?.period_mode ?? "trimestre",
         default_scale: patch.defaultScale ?? Number(current?.default_scale ?? 20),
         report_card_mode: patch.reportCardMode ?? current?.report_card_mode ?? "period",
+        student_card_enabled: flags.studentCardEnabled,
+        student_card_qr_enabled: flags.studentCardQrEnabled,
+        student_card_nfc_enabled: flags.studentCardNfcEnabled,
+        student_card_attendance_enabled: flags.studentCardAttendanceEnabled,
+        student_card_finance_check_enabled: flags.studentCardFinanceCheckEnabled,
         created_at: current?.created_at ?? new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };

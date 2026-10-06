@@ -23,10 +23,22 @@ const SCHOOL_SETTINGS_ERROR = Object.freeze({
   LEGACY_SCHOOL_SUBJECTS_AMBIGUOUS: "LEGACY_SCHOOL_SUBJECTS_AMBIGUOUS",
   SCHOOL_SETTINGS_MATERIALIZE_MISMATCH: "SCHOOL_SETTINGS_MATERIALIZE_MISMATCH",
   SCHOOL_SETTINGS_UNAVAILABLE: "SCHOOL_SETTINGS_UNAVAILABLE",
+  INVALID_STUDENT_CARD_FLAG: "INVALID_STUDENT_CARD_FLAG",
 });
 
 const PERIOD_MODES = Object.freeze(["trimestre", "semestre", "periode"]);
 const REPORT_CARD_MODES = Object.freeze(["period", "annual", "custom"]);
+
+/** CARTE-PR0 — flags établissement, tous false par défaut, fail-closed. */
+const STUDENT_CARD_FLAG_FIELDS = Object.freeze([
+  { column: "student_card_enabled", api: "studentCardEnabled" },
+  { column: "student_card_qr_enabled", api: "studentCardQrEnabled" },
+  { column: "student_card_nfc_enabled", api: "studentCardNfcEnabled" },
+  { column: "student_card_attendance_enabled", api: "studentCardAttendanceEnabled" },
+  { column: "student_card_finance_check_enabled", api: "studentCardFinanceCheckEnabled" },
+]);
+
+const STUDENT_CARD_FLAG_API_KEYS = Object.freeze(STUDENT_CARD_FLAG_FIELDS.map((field) => field.api));
 
 const DEFAULT_TRIMESTRE_NAMES = Object.freeze(["Trimestre 1", "Trimestre 2", "Trimestre 3"]);
 const DEFAULT_SEMESTRE_NAMES = Object.freeze(["Semestre 1", "Semestre 2"]);
@@ -175,6 +187,42 @@ function isValidDefaultScale(value) {
   return Number.isFinite(number) && number > 0 && number <= 100;
 }
 
+/** Seul `true` booléen active une capacité. absent / null / invalide → false. */
+function coerceFailClosedBoolean(value) {
+  return value === true;
+}
+
+function mapStudentCardFlags(row = {}) {
+  const mapped = {};
+  for (const field of STUDENT_CARD_FLAG_FIELDS) {
+    mapped[field.api] = coerceFailClosedBoolean(row?.[field.column]);
+  }
+  return mapped;
+}
+
+function resolveStudentCardFlags(patch = {}, current = {}) {
+  const resolved = {};
+  for (const field of STUDENT_CARD_FLAG_FIELDS) {
+    if (hasOwn(patch, field.api)) {
+      resolved[field.api] = coerceFailClosedBoolean(patch[field.api]);
+    } else {
+      resolved[field.api] = coerceFailClosedBoolean(current?.[field.column]);
+    }
+  }
+  return resolved;
+}
+
+function isStudentCardMasterEnabled(settings) {
+  return coerceFailClosedBoolean(settings?.studentCardEnabled);
+}
+
+function isStudentCardCapabilityEnabled(settings, apiKey) {
+  if (!STUDENT_CARD_FLAG_API_KEYS.includes(apiKey)) return false;
+  if (!isStudentCardMasterEnabled(settings)) return false;
+  if (apiKey === "studentCardEnabled") return true;
+  return coerceFailClosedBoolean(settings?.[apiKey]);
+}
+
 function inferPeriodType(name) {
   const label = normalizeLabel(name);
   if (label.includes("semestre")) return "Semestre";
@@ -183,14 +231,16 @@ function inferPeriodType(name) {
 }
 
 function mapSettingsRow(row, schoolCode) {
+  const source = row && typeof row === "object" ? row : {};
   return {
-    schoolId: row.school_id,
-    schoolCode: schoolCode ?? row.school_code ?? "",
-    periodMode: PERIOD_MODES.includes(row.period_mode) ? row.period_mode : "trimestre",
-    defaultScale: Number(row.default_scale ?? 20),
-    reportCardMode: REPORT_CARD_MODES.includes(row.report_card_mode) ? row.report_card_mode : "period",
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    schoolId: source.school_id,
+    schoolCode: schoolCode ?? source.school_code ?? "",
+    periodMode: PERIOD_MODES.includes(source.period_mode) ? source.period_mode : "trimestre",
+    defaultScale: Number(source.default_scale ?? 20),
+    reportCardMode: REPORT_CARD_MODES.includes(source.report_card_mode) ? source.report_card_mode : "period",
+    ...mapStudentCardFlags(source),
+    createdAt: source.created_at,
+    updatedAt: source.updated_at,
   };
 }
 
@@ -409,6 +459,18 @@ function parseSettingsPatch(payload) {
     }
     next.reportCardMode = asTrimmed(patch.reportCardMode);
   }
+  for (const field of STUDENT_CARD_FLAG_FIELDS) {
+    if (!hasOwn(patch, field.api)) continue;
+    if (typeof patch[field.api] !== "boolean") {
+      throw createSchoolSettingsError(
+        400,
+        "Indicateur carte élève invalide (booléen true ou false attendu).",
+        SCHOOL_SETTINGS_ERROR.INVALID_STUDENT_CARD_FLAG,
+        { key: field.api },
+      );
+    }
+    next[field.api] = patch[field.api];
+  }
   return next;
 }
 
@@ -444,4 +506,11 @@ module.exports = {
   isValidPeriodMode,
   isValidReportCardMode,
   isValidDefaultScale,
+  STUDENT_CARD_FLAG_FIELDS,
+  STUDENT_CARD_FLAG_API_KEYS,
+  coerceFailClosedBoolean,
+  mapStudentCardFlags,
+  resolveStudentCardFlags,
+  isStudentCardMasterEnabled,
+  isStudentCardCapabilityEnabled,
 };
