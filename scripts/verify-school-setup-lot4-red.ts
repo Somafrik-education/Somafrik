@@ -254,6 +254,12 @@ function isGuidedDedicatedFile(file: string) {
   return /schoolSetupGuided/i.test(file);
 }
 
+function isStudentCardChantierFile(file: string) {
+  // CARTE-PR6 héberge la section Carte élève dans SchoolSetupSettingsPage.
+  // Ce n'est pas le chantier « complétude optionnelle » LOT 4.
+  return /(?:^|\/)(?:student-card|studentCards?|StudentCard)/i.test(file);
+}
+
 function isLot4ExclusiveChantierFile(file: string) {
   return (
     isLot4ChantierFile(file) &&
@@ -270,6 +276,14 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
       kind: "na",
       message:
         "L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.",
+    };
+  }
+  const studentCard = changed.filter(isStudentCardChantierFile);
+  if (studentCard.length > 0 && exclusiveLot4.length === 0) {
+    return {
+      kind: "na",
+      message:
+        "L4-09 N/A: chantier Carte élève distinct; SchoolSetupSettingsPage peut héberger la section sans activer le périmètre LOT 4.",
     };
   }
   const chantier = changed.filter(isLot4ChantierFile);
@@ -585,6 +599,32 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "L4-09: chantier guidé distinct (schoolSetupGuided) doit être N/A même s'il orchestre SchoolSetupSettingsPage",
       );
       assert.equal(lot4PlusForeignBackend.kind, "fail", "vrai LOT 4 + backend doit rester FAIL");
+
+      const studentCardDistinctChantier = evaluateLot4Scope([
+        "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+        "web/src/components/students/StudentCardTab.tsx",
+        "web/src/lib/studentCardsApi.ts",
+        "web/src/lib/studentCardPolicy.ts",
+        "scripts/verify-student-card-web.js",
+        "web/package-lock.json",
+        "web/src/index.css",
+      ]);
+      assert.equal(
+        studentCardDistinctChantier.kind,
+        "na",
+        "L4-09: chantier Carte élève distinct doit être N/A même s'il héberge une section dans SchoolSetupSettingsPage",
+      );
+
+      const lot4PlusStudentCard = evaluateLot4Scope([
+        "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
+        "web/src/components/schoolSetup/SchoolSetupOptionalCompleteness.tsx",
+        "web/src/components/students/StudentCardTab.tsx",
+      ]);
+      assert.equal(
+        lot4PlusStudentCard.kind,
+        "fail",
+        "un vrai chantier LOT 4 exclusif reste FAIL même s'il embarque la Carte élève",
+      );
 
       const live = evaluateLot4Scope(lot4ChangedFiles());
       console.log(live.message);

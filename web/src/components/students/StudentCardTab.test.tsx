@@ -149,6 +149,7 @@ describe("StudentCardTab", () => {
     expect(document.body.textContent).not.toContain("TOKEN-1");
     expect(screen.queryByRole("button", { name: /réimprimer/i })).toBeNull();
     expect(await screen.findByText(/n’est disponible qu’au moment de l’émission/i)).toBeInTheDocument();
+    expect(screen.getByText("Émise le 06-10-2026")).toBeInTheDocument();
   });
 
   it("rafraîchit la liste sur 409 sans second essai", async () => {

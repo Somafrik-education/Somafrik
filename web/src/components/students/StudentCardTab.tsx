@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, InlineAlert, Modal } from "../../design-system";
 import { ApiError } from "../../api/client";
 import { useOptionalActiveSchool } from "../../context/ActiveSchoolContext";
+import { formatDateForDisplay } from "../../lib/dates";
 import { schoolSettingsApi } from "../../lib/schoolSettingsApi";
 import {
   studentCardsApi,
@@ -63,11 +64,7 @@ const ACTION_COPY: Record<StudentCardAction, { title: string; description: strin
 };
 
 function formatIssuedAt(value: string | null | undefined): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "Date non renseignée";
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return "Date non renseignée";
-  return date.toLocaleDateString("fr-FR");
+  return formatDateForDisplay(value) || "Date non renseignée";
 }
 
 export function StudentCardTab({
