@@ -23,6 +23,83 @@ function read(file) {
   return fs.readFileSync(file, "utf8");
 }
 
+function unquoteYamlScalar(value) {
+  const raw = String(value ?? "").trim();
+  if (
+    (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2)
+    || (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2)
+  ) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+
+/** Extraits des scripts réellement exécutés par les steps GitHub `run:`. */
+function extractYamlRunScripts(source) {
+  const scripts = [];
+  const lines = String(source || "").split(/\r?\n/);
+  let index = 0;
+  while (index < lines.length) {
+    const match = lines[index].match(/^([ \t]*)(?:-\s+)?run:\s*(.*?)\s*$/);
+    if (!match) {
+      index += 1;
+      continue;
+    }
+    const indent = match[1].length;
+    const rest = match[2];
+    if (/^[|>][+-]?(?:\s.*)?$/.test(rest)) {
+      const collected = [];
+      index += 1;
+      while (index < lines.length) {
+        const next = lines[index];
+        if (next.trim() === "") {
+          collected.push("");
+          index += 1;
+          continue;
+        }
+        const leading = next.match(/^[ \t]*/)[0].length;
+        if (leading > indent) {
+          collected.push(next);
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      scripts.push(collected.join("\n"));
+      continue;
+    }
+    scripts.push(unquoteYamlScalar(rest));
+    index += 1;
+  }
+  return scripts;
+}
+
+function stripShellCommentLines(script) {
+  return String(script || "")
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed.length > 0 && !trimmed.startsWith("#");
+    })
+    .join("\n");
+}
+
+const EXECUTABLE_EAS_SUBMIT = /(?:^|[\n;&|`]|&&|\|\||\$\()\s*(?:npx(?:\s+--yes)?\s+)?eas\s+submit\b/;
+
+function workflowHasExecutableEasSubmit(source) {
+  return extractYamlRunScripts(source).some((script) =>
+    EXECUTABLE_EAS_SUBMIT.test(stripShellCommentLines(script)),
+  );
+}
+
+function assertNoExecutableEasSubmit(source, label) {
+  assert.equal(
+    workflowHasExecutableEasSubmit(source),
+    false,
+    `${label}: commande eas submit interdite dans un step run:`,
+  );
+}
+
 function pngInfo(filePath) {
   const buf = fs.readFileSync(filePath);
   const isPng = buf.length >= 24
@@ -257,18 +334,26 @@ function main() {
   assert.match(aabWorkflow, /name: Android AAB/);
   assert.match(aabWorkflow, /SOMAFRIK_REQUIRE_AAB/);
   assert.match(aabWorkflow, /android-actions\/setup-android/);
-  assert.doesNotMatch(aabWorkflow, /eas submit/);
+  assertNoExecutableEasSubmit(aabWorkflow, "mobile-release-build.yml");
   // Security nightly : invariants mobile-security, pas le scan Expo doctor / bundles.
   assert.match(security, /npm run verify:mobile-security/);
-  assert.doesNotMatch(security, /eas submit/);
+  assertNoExecutableEasSubmit(security, "security.yml");
   console.log("OK: nightly CI release-readiness + preview-apk ; AAB Gradle = mobile-release-build.yml");
 
   console.log("verify:mobile-release-readiness OK");
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(error);
-  process.exit(1);
+module.exports = {
+  extractYamlRunScripts,
+  workflowHasExecutableEasSubmit,
+  assertNoExecutableEasSubmit,
+};
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
+  }
 }
