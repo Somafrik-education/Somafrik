@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
 import type { SchoolSettings } from "../../lib/schoolSettingsApi";
@@ -244,5 +244,124 @@ describe("StudentCardTab", () => {
     await user.click(within(active).getByRole("button", { name: "Déclarer perdue" }));
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Déclarer perdue" }));
     expect(api.markLost).toHaveBeenCalledWith("card-1");
+  });
+
+  it("efface le QR dès que l'établissement change", async () => {
+    const user = userEvent.setup();
+    api.issue.mockResolvedValue({
+      id: "card-a",
+      publicId: "CARD-A",
+      cardToken: "CARD-A.TOKEN-A",
+      medium: "qr",
+      status: "active",
+    });
+    const { rerender } = render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-A" />);
+    await user.click(await screen.findByRole("button", { name: "Émettre une carte" }));
+    await user.click(screen.getByRole("button", { name: "Émettre" }));
+    expect(await screen.findByTestId("student-card-qr")).toBeInTheDocument();
+    rerender(<StudentCardTab workspace={workspace} canManage schoolCode="CD-B" />);
+    expect(screen.queryByTestId("student-card-qr")).toBeNull();
+    expect(document.body.textContent).not.toContain("TOKEN-A");
+    expect(document.body.innerHTML).not.toContain("CARD-A.TOKEN-A");
+  });
+
+  it("ignore une émission de l'établissement A résolue après le passage à B", async () => {
+    const user = userEvent.setup();
+    let resolveIssue: (value: unknown) => void = () => undefined;
+    api.issue.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveIssue = resolve;
+        }),
+    );
+    const { rerender } = render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-A" />);
+    await user.click(await screen.findByRole("button", { name: "Émettre une carte" }));
+    await user.click(screen.getByRole("button", { name: "Émettre" }));
+    await waitFor(() => expect(api.issue).toHaveBeenCalledTimes(1));
+    rerender(<StudentCardTab workspace={workspace} canManage schoolCode="CD-B" />);
+    expect(await screen.findByText("Aucune carte élève active.")).toBeInTheDocument();
+    await act(async () => {
+      resolveIssue({
+        id: "card-a",
+        publicId: "CARD-A",
+        cardToken: "CARD-A.TOKEN-A",
+        medium: "qr",
+        status: "active",
+      });
+    });
+    expect(screen.queryByTestId("student-card-qr")).toBeNull();
+    expect(screen.queryByText("ID carte : CARD-A")).toBeNull();
+    expect(document.body.textContent).not.toContain("TOKEN-A");
+    expect(document.body.innerHTML).not.toContain("CARD-A.TOKEN-A");
+    expect(screen.getByText("Aucune carte élève active.")).toBeInTheDocument();
+  });
+
+  it("conserve uniquement les cartes de l'établissement B si la réponse A arrive après", async () => {
+    const pendingLists: Array<(value: { cards: Array<Record<string, string>> }) => void> = [];
+    api.list.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          pendingLists.push(resolve);
+        }),
+    );
+    const { rerender } = render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-A" />);
+    await waitFor(() => expect(pendingLists.length).toBeGreaterThan(0));
+    const schoolAResolvers = pendingLists.slice();
+    rerender(<StudentCardTab workspace={workspace} canManage schoolCode="CD-B" />);
+    await waitFor(() => expect(pendingLists.length).toBeGreaterThan(schoolAResolvers.length));
+    const schoolBResolvers = pendingLists.slice(schoolAResolvers.length);
+    await act(async () => {
+      for (const resolve of schoolBResolvers) {
+        resolve({ cards: [{ id: "card-b", publicId: "CARD-B", medium: "qr", status: "active" }] });
+      }
+    });
+    expect(await screen.findByText("ID carte : CARD-B")).toBeInTheDocument();
+    await act(async () => {
+      for (const resolve of schoolAResolvers) {
+        resolve({ cards: [{ id: "card-a", publicId: "CARD-A", medium: "qr", status: "active" }] });
+      }
+    });
+    expect(screen.queryByText("ID carte : CARD-A")).toBeNull();
+    expect(screen.getByText("ID carte : CARD-B")).toBeInTheDocument();
+  });
+
+  it("ignore un remplacement de l'établissement A résolu après le passage à B", async () => {
+    const user = userEvent.setup();
+    api.list.mockResolvedValue({
+      cards: [{ id: "card-1", publicId: "CARD-A", medium: "qr", status: "active" }],
+    });
+    let resolveReplace: (value: unknown) => void = () => undefined;
+    api.replace.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveReplace = resolve;
+        }),
+    );
+    const { rerender } = render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-A" />);
+    await user.click(await screen.findByRole("button", { name: "Remplacer" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remplacer" }));
+    await waitFor(() => expect(api.replace).toHaveBeenCalledWith("card-1"));
+    api.list.mockResolvedValue({
+      cards: [{ id: "card-b", publicId: "CARD-B", medium: "qr", status: "active" }],
+    });
+    rerender(<StudentCardTab workspace={workspace} canManage schoolCode="CD-B" />);
+    expect(await screen.findByText("ID carte : CARD-B")).toBeInTheDocument();
+    await act(async () => {
+      resolveReplace({
+        previous: { id: "card-1", publicId: "CARD-A", medium: "qr", status: "replaced" },
+        card: {
+          id: "card-2",
+          publicId: "CARD-A2",
+          cardToken: "CARD-A2.TOKEN-A2",
+          medium: "qr",
+          status: "active",
+        },
+      });
+    });
+    expect(screen.queryByTestId("student-card-qr")).toBeNull();
+    expect(screen.queryByText("ID carte : CARD-A2")).toBeNull();
+    expect(screen.getByText("ID carte : CARD-B")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("TOKEN-A2");
+    expect(document.body.innerHTML).not.toContain("CARD-A2.TOKEN-A2");
   });
 });

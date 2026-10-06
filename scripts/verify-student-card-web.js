@@ -47,7 +47,11 @@ function main() {
   assert.match(tab, /formatDateTimeForDisplay/);
   assert.doesNotMatch(tab, /toLocaleDateString/);
   assert.match(tab, /canManage && readyMedium && !hasActiveCard/);
-  assert.match(tab, /STUDENT_CARD_ACTIVE_ALREADY_EXISTS[\s\S]{0,240}setIssueOpen\(false\)/);
+  assert.match(tab, /STUDENT_CARD_ACTIVE_ALREADY_EXISTS[\s\S]{0,400}setIssueOpen\(false\)/);
+  assert.match(tab, /const cardScopeKey = `\$\{resolvedSchoolCode\}:\$\{workspace\.studentId\}`/);
+  assert.match(tab, /currentScopeRef/);
+  assert.match(tab, /if \(currentScopeRef\.current !== requestScope\) return/);
+  assert.match(tab, /if \(!scopeIsCurrent\(requestScope\)\) return/);
   assert.doesNotMatch(product, /localStorage|sessionStorage|indexedDB|Idempotency-Key|withIdempotency/);
   assert.doesNotMatch(product, /NDEFReader|navigator\.nfc|expo-camera|POST \/api\/student-cards\/scan|student-cards\/scan/);
   assert.doesNotMatch(product, /console\.log|navigator\.clipboard|data-card-token|data-token/);

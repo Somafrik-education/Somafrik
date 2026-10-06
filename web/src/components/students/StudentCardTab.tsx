@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, InlineAlert, Modal } from "../../design-system";
 import { ApiError } from "../../api/client";
 import { useOptionalActiveSchool } from "../../context/ActiveSchoolContext";
@@ -86,23 +86,34 @@ export function StudentCardTab({
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const cardScopeKey = `${resolvedSchoolCode}:${workspace.studentId}`;
+  const currentScopeRef = useRef(cardScopeKey);
 
-  const reloadCards = useCallback(async () => {
+  const reloadCards = useCallback(async (requestScope: string) => {
     const listed = await studentCardsApi.list(workspace.studentId);
+    if (currentScopeRef.current !== requestScope) return;
     setCards(Array.isArray(listed.cards) ? listed.cards : []);
   }, [workspace.studentId]);
 
   useEffect(() => {
+    currentScopeRef.current = cardScopeKey;
     setPreview(null);
-  }, [workspace.studentId]);
+    setCards([]);
+    setIssueOpen(false);
+    setPendingAction(null);
+    setPendingIssue(false);
+    setActionBusy(false);
+    setNotice(null);
+    setLoading(true);
+  }, [cardScopeKey]);
 
   useEffect(() => {
+    const requestScope = cardScopeKey;
     let cancelled = false;
     async function load() {
       setLoading(true);
-      setNotice(null);
       if (!resolvedSchoolCode) {
-        if (!cancelled) {
+        if (!cancelled && currentScopeRef.current === requestScope) {
           setGate({ state: "unavailable" });
           setCards([]);
           setLoading(false);
@@ -111,81 +122,96 @@ export function StudentCardTab({
       }
       try {
         const settings = await schoolSettingsApi.get(resolvedSchoolCode);
-        if (cancelled) return;
+        if (cancelled || currentScopeRef.current !== requestScope) return;
         const nextGate = resolveStudentCardSettingsGate(settings);
         setGate(nextGate);
         if (nextGate.state !== "ready") {
           setCards([]);
           return;
         }
-        await reloadCards();
+        await reloadCards(requestScope);
       } catch {
-        if (!cancelled) {
+        if (!cancelled && currentScopeRef.current === requestScope) {
           setGate({ state: "unavailable" });
           setCards([]);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && currentScopeRef.current === requestScope) setLoading(false);
       }
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, [reloadCards, resolvedSchoolCode]);
+  }, [cardScopeKey, reloadCards, resolvedSchoolCode]);
 
   const readyMedium = gate.state === "ready" ? gate.medium : null;
   const hasActiveCard = cards.some((card) => card.status === "active");
 
+  function scopeIsCurrent(requestScope: string) {
+    return currentScopeRef.current === requestScope;
+  }
+
   async function issueCard() {
     if (!readyMedium || pendingIssue) return;
+    const requestScope = cardScopeKey;
     setPendingIssue(true);
     setNotice(null);
     try {
       const issued = await studentCardsApi.issue(workspace.studentId, readyMedium);
+      if (!scopeIsCurrent(requestScope)) return;
       setPreview({ cardToken: issued.cardToken, publicId: issued.publicId });
       setIssueOpen(false);
-      await reloadCards();
+      await reloadCards(requestScope);
     } catch (error) {
+      if (!scopeIsCurrent(requestScope)) return;
       if (error instanceof ApiError && error.code === "STUDENT_CARD_ACTIVE_ALREADY_EXISTS") {
-        await reloadCards().catch(() => undefined);
+        await reloadCards(requestScope).catch(() => undefined);
+        if (!scopeIsCurrent(requestScope)) return;
         setIssueOpen(false);
       }
+      if (!scopeIsCurrent(requestScope)) return;
       setNotice(studentCardErrorMessage(error));
     } finally {
-      setPendingIssue(false);
+      if (scopeIsCurrent(requestScope)) setPendingIssue(false);
     }
   }
 
   async function confirmAction() {
     if (!pendingAction || actionBusy) return;
+    const requestScope = cardScopeKey;
+    const action = pendingAction;
     setActionBusy(true);
     setNotice(null);
     try {
-      if (pendingAction.action === "lost") {
-        await studentCardsApi.markLost(pendingAction.card.id);
-      } else if (pendingAction.action === "revoke") {
-        await studentCardsApi.revoke(pendingAction.card.id);
+      if (action.action === "lost") {
+        await studentCardsApi.markLost(action.card.id);
+      } else if (action.action === "revoke") {
+        await studentCardsApi.revoke(action.card.id);
       } else {
-        const replaced = await studentCardsApi.replace(pendingAction.card.id);
+        const replaced = await studentCardsApi.replace(action.card.id);
+        if (!scopeIsCurrent(requestScope)) return;
         const card: IssuedStudentAccessCard = replaced.card;
         setPreview({ cardToken: card.cardToken, publicId: card.publicId });
       }
+      if (!scopeIsCurrent(requestScope)) return;
       setPendingAction(null);
-      await reloadCards();
+      await reloadCards(requestScope);
     } catch (error) {
+      if (!scopeIsCurrent(requestScope)) return;
       setNotice(studentCardErrorMessage(error));
       if (error instanceof ApiError && error.code === "STUDENT_CARD_INVALID_STATE") {
-        await reloadCards().catch(() => undefined);
+        await reloadCards(requestScope).catch(() => undefined);
       }
     } finally {
-      setActionBusy(false);
+      if (scopeIsCurrent(requestScope)) setActionBusy(false);
     }
   }
 
   function closePreview() {
+    const requestScope = cardScopeKey;
     setPreview(null);
-    void reloadCards().catch(() => undefined);
+    void reloadCards(requestScope).catch(() => undefined);
   }
 
   const printIdentity = preview
