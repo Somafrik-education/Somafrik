@@ -25,6 +25,7 @@ function main() {
   const store = read("backend/db/studentAccessCardsPgStore.js");
   const catalog = read("backend/lib/functionalModulesCatalog.js");
   const presences = read("backend/lib/presencesAttendanceAuthz.js");
+  const cardAttendance = read("backend/lib/studentCardAttendance.js");
 
   assert.match(STUDENT_ACCESS_CARDS_SCHEMA_SQL, /CREATE TABLE IF NOT EXISTS student_access_cards/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS student_access_cards/);
@@ -46,7 +47,14 @@ function main() {
     server.indexOf('app.post("/api/student-cards/:id/replace"'),
   );
   assert.match(scanRoute, /Cache-Control", "no-store"/);
-  assert.doesNotMatch(scanRoute, /upsertAttendance|upsertSchoolAttendanceBatch|listFinanceStudentFees|last_scan_at|student_card_scanned/);
+  assert.match(scanRoute, /hasAttendanceIntent/);
+  assert.match(scanRoute, /write_presence/);
+  assert.doesNotMatch(scanRoute.slice(0, scanRoute.indexOf("hasAttendanceIntent")), /write_presence/);
+  assert.doesNotMatch(scanRoute, /upsertAttendance|upsertSchoolAttendanceBatch|listFinanceStudentFees|last_scan_at|student_card_scanned|INSERT INTO attendance/);
+  assert.match(cardAttendance, /upsertSchoolAttendanceBatch/);
+  assert.match(cardAttendance, /scanStudentCard\(/);
+  assert.match(cardAttendance, /isStudentCardCapabilityEnabled/);
+  assert.doesNotMatch(cardAttendance, /INSERT INTO attendance|listFinanceStudentFees|student_card_scanned|last_scan_at/);
   assert.doesNotMatch(server, /app\.get\("\/api\/student-cards\/scan"/);
   assert.doesNotMatch(server, /\/verify\/student-card|\/api\/public\/student-card/);
   assert.doesNotMatch(server, /\/api\/student-access-cards/);

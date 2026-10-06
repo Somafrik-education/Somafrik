@@ -2175,8 +2175,35 @@ app.post("/api/student-cards/scan", requireAuth, requirePermission("POST /api/st
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
   const { scanStudentCard } = require("./lib/studentAccessCardsManagement");
-  const principal = await enrollmentHttpPrincipal(req);
-  const resolved = await scanStudentCard(repository, { cardToken: req.body?.cardToken }, studentCardsHttpScope(principal));
+  const { hasAttendanceIntent, scanStudentCardHttp } = require("./lib/studentCardAttendance");
+  req.principal = await enrollmentHttpPrincipal(req);
+  if (hasAttendanceIntent(req.body)) {
+    req.principal = await presenceHttpPrincipal(req);
+    const gate = requireSchoolSubscriptionFeature("write_presence");
+    await new Promise((resolve, reject) => {
+      gate(req, res, (error) => (error ? reject(error) : resolve()));
+    });
+    const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+    await withIdempotency({
+      req,
+      res,
+      routeKey: "POST /api/student-cards/scan",
+      principal: req.principal,
+      handler: () => scanStudentCardHttp(
+        repository,
+        req.body,
+        studentCardsHttpScope(req.principal),
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      ),
+    });
+    return;
+  }
+  const resolved = await scanStudentCard(
+    repository,
+    { cardToken: req.body?.cardToken },
+    studentCardsHttpScope(req.principal),
+  );
   res.json(resolved);
 }));
 
