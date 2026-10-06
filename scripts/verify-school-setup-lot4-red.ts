@@ -272,6 +272,7 @@ const STUDENT_CARD_PR6_EXACT = new Set([
 
 const STUDENT_CARD_PR7_EXACT = new Set([
   "scripts/verify-student-card-mobile.js",
+  "Mobile/scripts/verify-student-card-qr.js",
   "scripts/verify-school-setup-lot4-red.ts",
   "package.json",
   ".github/workflows/pr-gates.yml",
@@ -279,6 +280,7 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   "Mobile/package.json",
   "Mobile/package-lock.json",
   "Mobile/scripts/verify-native-prebuild.js",
+  "Mobile/scripts/verify-mobile-security.js",
   "Mobile/src/domain/security/permissions.ts",
   "Mobile/src/lib/mobileParentP0.security.test.ts",
   "Mobile/src/lib/mobileParentProfile.audit.red.test.ts",
@@ -297,6 +299,7 @@ function isStudentCardPr6Signal(file: string) {
   return (
     file === "scripts/verify-student-card-web.js" ||
     file === "scripts/verify-student-card-mobile.js" ||
+    file === "Mobile/scripts/verify-student-card-qr.js" ||
     /studentCard/i.test(file)
   );
 }
@@ -307,8 +310,10 @@ function isStudentCardPr6IntegrationFile(file: string) {
   if (/^web\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCardsApi[^/]*$/.test(file)) return true;
   if (/^Mobile\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
-  if (/^Mobile\/src\/services\/studentCardsApi[^/]*$/.test(file)) return true;
+  if (/^Mobile\/src\/services\/studentCard[^/]*$/.test(file)) return true;
   if (/^Mobile\/src\/screens\/StudentCard[^/]*$/.test(file)) return true;
+  if (/^Mobile\/src\/components\/StudentCard[^/]*$/.test(file)) return true;
+  if (/^Mobile\/scripts\/verify-student-card[^/]*$/.test(file)) return true;
   return false;
 }
 
@@ -676,16 +681,16 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       );
 
       const studentCardPr7DistinctChantier = evaluateLot4Scope([
-        "Mobile/src/screens/StudentCardScanScreen.tsx",
+        "Mobile/src/components/StudentCardQrScannerModal.tsx",
         "Mobile/src/lib/studentCardScan.ts",
         "Mobile/src/lib/studentCardScan.test.ts",
-        "Mobile/src/services/studentCardsApi.ts",
+        "Mobile/src/services/studentCardScanApi.ts",
         "Mobile/src/screens/TeacherAttendanceScreen.tsx",
         "Mobile/src/navigation/AppNavigator.tsx",
         "Mobile/src/domain/security/permissions.ts",
         "Mobile/app.json",
         "Mobile/package.json",
-        "scripts/verify-student-card-mobile.js",
+        "Mobile/scripts/verify-student-card-qr.js",
         "docs/audits/GATE-QR-STORES-camera-qr.md",
         "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
       ]);
@@ -696,7 +701,7 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       );
 
       const studentCardPr7PlusBackend = evaluateLot4Scope([
-        "Mobile/src/screens/StudentCardScanScreen.tsx",
+        "Mobile/src/components/StudentCardQrScannerModal.tsx",
         "Mobile/src/lib/studentCardScan.ts",
         "backend/server.js",
       ]);

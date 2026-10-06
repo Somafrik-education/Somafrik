@@ -451,7 +451,7 @@ jobs:
         run: |
           set -euo pipefail
           npm run verify:mobile-security
-          npm run verify:student-card-mobile
+          npm run verify:student-card-qr
           npm run verify:mobile-data-truth
           npm run verify:mobile-live-permissions-refresh
           npm run verify:mobile-cta-rbac-alignment

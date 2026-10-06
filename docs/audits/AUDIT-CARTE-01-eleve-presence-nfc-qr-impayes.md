@@ -526,7 +526,7 @@ Pas d’équivalent public `/verify` (contrairement aux bulletins). Un QR photog
 | 34 | Hub Intégrations ComingSoon | INTERDIT comme store | Écran mort « NFC et webhooks » | Parallel UX, zéro persistance |
 | 35 | Appels manuels Web/Mobile | RÉUTILISABLE + **non-régression** | Canal canonique, carte = additif | Retirer/masquer l’appel = **NO-GO** |
 | 36 | `CAMERA` Android actuelle | EXISTANT (photo compte) | `app.json` + verify native | PR7 = **nouvelle finalité** Store, pas un « déjà OK » |
-| 37 | GATE-QR-STORES | **CLOS** #887 `26e42c4c` | `docs/audits/GATE-QR-STORES-camera-qr.md` — GO technique PR7 | CARTE-PR7 = implémentation scanner, DRAFT jusqu’au merge |
+| 37 | GATE-QR-STORES | **GATE-QR-STORES CLOSED** #887 `26e42c4c` | `docs/audits/GATE-QR-STORES-camera-qr.md` — GO technique PR7 | **CARTE-PR7 OPEN / DRAFT** #889. CARTE-PR8 toujours bloquée. GATE-NFC-STORES toujours requis. |
 | 38 | GATE-NFC-STORES | MANQUANT | Revue NFC absente ; permission bloquée | **Bloque PR8** |
 
 ---
@@ -646,7 +646,7 @@ Aucun PR d’implémentation n’est ouvert par cette clôture. **CARTE-PR0 rest
 
 ### 12.1 GATE-QR-STORES — clos
 
-Le dossier documentaire est **clos** : `docs/audits/GATE-QR-STORES-camera-qr.md`, mergé par **#887**. Il retient `expo-camera@~17.0.10` (SDK 54, licence MIT) et conclut **GO PR7** si `recordAudioAndroid: false`, micro iOS désactivé, et la chaîne caméra duale unique. **CARTE-PR7** est le lot d’implémentation. Il reste **DRAFT / HOLD** jusqu’à l’ordre `ready et merge`. CARTE-PR8 / NFC reste bloqué par GATE-NFC-STORES.
+**GATE-QR-STORES CLOSED.** Dossier : `docs/audits/GATE-QR-STORES-camera-qr.md`, mergé par **#887** (`26e42c4c`). Il retient `expo-camera@~17.0.10` (SDK 54, licence MIT) et conclut **GO PR7** si `recordAudioAndroid: false`, micro iOS désactivé, et la chaîne caméra duale unique. **CARTE-PR7 OPEN / DRAFT** (#889) : lot d’implémentation scanner QR. Il reste **DRAFT / HOLD** jusqu’à l’ordre `ready et merge`. **CARTE-PR8 toujours bloquée.** **GATE-NFC-STORES toujours requis.**
 
 La revue contrôle au minimum :
 
@@ -684,7 +684,7 @@ Tant que **CARTE-PR7** n’est pas mergée, le scanner QR n’est pas en product
 | **PR5 — Scan → finance** | Badge D2=B via `listFinanceStudentFees` **si** sous-option finance + RBAC | PR3 | Recalcul client, flag carte, gate bloquant |
 | **PR6 — Web émission** | Impression / PDF ; gated par master | PR2 + photo si D4 | NFC |
 | **GATE-QR-STORES** | **CLOS** #887 | — | Réouvrir le scanner NFC dans le même lot |
-| **PR7 — Mobile QR secours** | Dépendance scanner + permission runtime au scan | PR3–PR5 **et GATE-QR-STORES clos** | Débloquer NFC ; livrer le défaut micro du plugin |
+| **PR7 — Mobile QR secours** | **CARTE-PR7 OPEN / DRAFT** #889 — scanner QR Mobile | PR3–PR5 **et GATE-QR-STORES CLOSED** | Débloquer NFC ; livrer le défaut micro du plugin |
 | **GATE-NFC-STORES** | Revue Stores NFC (document) | — | Code Mobile |
 | **PR8 — Mobile NFC** | Retirer NFC de la blocklist **uniquement** après le gate | PR7 **et GATE-NFC-STORES clos** | Élargir les autres permissions bloquées |
 

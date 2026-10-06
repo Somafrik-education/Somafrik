@@ -137,7 +137,6 @@ for (const view of [
   "Messages",
   "InternalNotifications",
           "TeacherAttendance",
-          "StudentCardScan",
           "TeacherGrades",
   "Presences",
   "Notes",

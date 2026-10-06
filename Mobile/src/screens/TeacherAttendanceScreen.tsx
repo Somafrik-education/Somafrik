@@ -6,11 +6,15 @@ import ChoiceChips from "../components/ChoiceChips";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
-import { canManagePresences, canReadRoute } from "../domain/security/permissions";
+import { canManagePresences, canReadFeeGrids, canReadRoute } from "../domain/security/permissions";
 import { getSchoolSettings, type SchoolSettings } from "../services/schoolSettingsApi";
+import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
 import {
   STUDENT_CARD_SCAN_COPY,
-  isStudentCardQrScanEnabled,
+  applyQrConfirmedPresence,
+  isAttendanceAuthorReady,
+  isStudentCardAttendanceScanEnabled,
+  isStudentCardScanFinanceEnabled,
   isoAttendanceDate,
 } from "../lib/studentCardScan";
 import {
@@ -156,6 +160,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [replaySending, setReplaySending] = useState(false);
   const replaySendingRef = useRef(false);
   const [cardSettings, setCardSettings] = useState<SchoolSettings | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
@@ -184,7 +189,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
   useEffect(() => {
     setExpandedStudentId(null);
+    setScannerOpen(false);
   }, [selectedClass]);
+
+  useEffect(() => {
+    setScannerOpen(false);
+  }, [resourceScopeKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,10 +323,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const selectedIds = selectedRows.map((student) => student.id);
   const canUpdatePresences = canManagePresences(session);
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
-  const canOpenQrScanner =
-    canUpdatePresences && canReadRoute(session, "StudentCardScan") && isStudentCardQrScanEnabled(cardSettings);
-  const scanTeacherId =
-    authorDecision.status === "auto" || authorDecision.status === "selected" ? authorDecision.teacherId : undefined;
+  const canOpenQrScanner = canUpdatePresences && isStudentCardAttendanceScanEnabled(cardSettings);
+  const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
+  const canReadScanFinance = canReadFeeGrids(session) && isStudentCardScanFinanceEnabled(cardSettings);
 
   const dailyStats = useMemo(
     () => getRollCallDraftStats(selectedIds, attendance),
@@ -585,6 +594,33 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     }
   };
 
+  const applyQrScanToRollCall = (studentId: string, studentCode: string) => {
+    const rosterId =
+      selectedRows.find((row) => {
+        const keys = [row.id, row.matricule, row.publicId, resolveStudentApiId(row)];
+        return keys.some((key) => {
+          const value = String(key ?? "").trim();
+          return Boolean(value) && (value === studentId || value === studentCode);
+        });
+      })?.id ?? studentId;
+    if (!rosterId) return;
+    setAttendance((current) => applyQrConfirmedPresence(current, rosterId));
+    applyConfirmedPresences([
+      {
+        id: `QR-${rosterId}-${todayLabel}`,
+        publicId: `QR-${rosterId}-${todayLabel}`,
+        studentId: rosterId,
+        date: todayLabel,
+        present: true,
+        status: "Présent",
+        classId: selectedClass?.classId,
+        classCode: selectedClass?.classCode,
+        className: selectedClass?.className,
+      },
+    ]);
+    void loadPresences();
+  };
+
   const selectedClassCourses = selectedClassAssignments.map((assignment) => String(assignment.course ?? ""));
   const selectedCourseLabel = resolveClassCourseLabel(selectedClassCourses);
   const selectedClassStats = selectedClass ? dailyStats : null;
@@ -641,6 +677,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   }
 
   return (
+    <>
     <FlatList
       style={styles.container}
       contentContainerStyle={contentStyle}
@@ -762,12 +799,20 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
               <TouchableOpacity
                 testID={USABILITY_TEST_IDS.attendanceScanQr}
                 style={styles.scanButton}
-                onPress={() =>
-                  navigation.navigate("StudentCardScan", {
-                    teacherId: scanTeacherId,
-                    attendanceDate: isoAttendanceDate(),
-                  })
-                }
+                onPress={() => {
+                  if (!scanAuthorReady.ok) {
+                    Alert.alert(
+                      STUDENT_CARD_SCAN_COPY.button,
+                      authorDecision.status === "need_selection"
+                        ? ATTENDANCE_AUTHOR_COPY.needSelection
+                        : authorDecision.status === "blocked"
+                          ? authorDecision.message
+                          : ATTENDANCE_AUTHOR_COPY.needSelection,
+                    );
+                    return;
+                  }
+                  setScannerOpen(true);
+                }}
                 disabled={actionsLocked}
                 accessibilityRole="button"
                 accessibilityLabel={STUDENT_CARD_SCAN_COPY.button}
@@ -915,6 +960,20 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </View>
       }
     />
+    {selectedClass ? (
+      <StudentCardQrScannerModal
+        visible={scannerOpen}
+        selectedClass={selectedClass}
+        resourceScopeKey={resourceScopeKey}
+        schoolCode={String(session?.school?.code ?? session?.user?.schoolCode ?? "")}
+        author={authorDecision}
+        attendanceDate={isoAttendanceDate()}
+        financeEnabled={canReadScanFinance}
+        onClose={() => setScannerOpen(false)}
+        onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    </>
   );
 }
 

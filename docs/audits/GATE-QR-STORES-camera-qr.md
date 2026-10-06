@@ -4,7 +4,7 @@
 
 **Conclusion technique : GO PR7**, sous les conditions figées ci-dessous.
 
-CARTE-PR7 (scanner QR Mobile) est le lot d’implémentation. Il reste **DRAFT / HOLD** jusqu’à l’ordre `ready et merge`. CARTE-PR8 / NFC reste hors scope et reste bloqué par GATE-NFC-STORES.
+**CARTE-PR7 OPEN / DRAFT** (#889) : lot d’implémentation scanner QR Mobile. Il reste **DRAFT / HOLD** jusqu’à l’ordre `ready et merge`. CARTE-PR8 / NFC reste hors scope et reste bloqué par GATE-NFC-STORES.
 
 Baseline du merge du gate : `develop@26e42c4c7a0e4636072ab328bba6cd0c42f76596`.
 La baseline opérationnelle du replay documentaire était `develop@e493a0881843cb3c52396a0d478249d36dc0f77b`.

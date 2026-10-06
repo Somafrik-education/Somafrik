@@ -235,6 +235,11 @@ function main() {
   assert.ok(!permissions.includes("android.permission.READ_MEDIA_IMAGES"), "READ_MEDIA_IMAGES doit être absent de app.json");
   // Pas de localisation ni galerie large
   assert.ok(!permissions.some((p) => /LOCATION|ACCESS_FINE|ACCESS_COARSE|READ_EXTERNAL|WRITE_EXTERNAL|READ_MEDIA/i.test(p)));
+  const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
+  assert.match(String(pkg.dependencies?.["expo-camera"] || ""), /~17\.0\.10|17\.0\.10/, "expo-camera ~17.0.10 requis");
+  assert.ok(!pkg.dependencies?.["react-native-nfc-manager"], "NFC interdit");
+  assert.ok(!pkg.dependencies?.["expo-nfc"], "NFC interdit");
+  assert.ok(!String(appJson?.expo?.ios?.infoPlist?.NFCReaderUsageDescription || ""), "NFC iOS interdit");
   console.log("OK: permissions minimales (CAMERA uniquement, pas de READ_MEDIA_IMAGES)");
 
   // 9) Variables d'environnement
@@ -256,7 +261,6 @@ function main() {
   console.log("OK: nettoyage déconnexion");
 
   // 12) Package deps
-  const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.ok(pkg.dependencies["expo-secure-store"], "dépendance expo-secure-store");
   assert.ok(pkg.dependencies["expo-notifications"], "dépendance expo-notifications");
   assert.ok(!pkg.dependencies["axios"], "pas d'axios requis (fetch client unique)");

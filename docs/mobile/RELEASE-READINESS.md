@@ -101,14 +101,14 @@ eas build:version:sync   # optionnel : recopier le remote vers un prebuild local
 | Permission | Avant | Après | Source | Justification | Runtime | Play Store |
 | ---------- | ----: | ----: | ------ | ------------- | ------: | ---------- |
 | INTERNET | ✅ | ✅ | système | API HTTPS | Non | Standard |
-| CAMERA | ✅ | ✅ | `expo-image-picker` + `expo-camera` | Photo de compte **et** scan QR des cartes élève. `recordAudioAndroid: false`, `microphonePermission: false`. Chaîne unique : *Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.* | Oui (photo compte **et** ouverture du scanner, jamais au login) | Photos + identifiant carte |
-| READ_MEDIA_IMAGES | ✅ | ✅ | `expo-image-picker` | Galerie photos (compte). Le scan QR n’élargit pas la galerie. | Oui | Photos |
+| CAMERA | ✅ | ✅ | `expo-image-picker` + `expo-camera@~17.0.10` | Photo de compte **et** scan QR Carte Élève. `recordAudioAndroid: false`, `microphonePermission: false`. QR online-only. Chaîne unique : *Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.* | Oui (photo compte **et** ouverture du scanner, jamais au login) | Photos + identifiant carte |
+| READ_MEDIA_IMAGES | ✅ | ❌ | `expo-image-picker` (filtrée) | Absente du manifeste généré (prebuild). Le scan QR n’ajoute aucune galerie. | — | Retiré / filtré |
 | RECORD_AUDIO | ✅ | ❌ | image-picker / camera défaut | Micro non utilisé (`microphonePermission: false` sur les deux plugins, `recordAudioAndroid: false` sur `expo-camera`) | — | Retiré |
 | SYSTEM_ALERT_WINDOW | ✅ (main) | debug only | overlay RN | Inutile en release | — | Retiré du main |
 | READ_EXTERNAL_STORAGE | ✅ | ❌ | legacy | Remplacé par READ_MEDIA_IMAGES | — | Retiré |
 | WRITE_EXTERNAL_STORAGE | ✅ | ❌ | legacy | Non utilisé | — | Retiré |
 | VIBRATE | ✅ | ✅ | `expo-notifications` | Channel push Android N1 | Oui | Notifications |
-| NFC | ❌ | ❌ | — | Hors LOT | — | Non ajouté |
+| NFC | ❌ | ❌ | — | GATE-NFC-STORES / CARTE-PR8 uniquement. Toujours absent. | — | Non ajouté |
 | POST_NOTIFICATIONS | ❌ | ✅ | `expo-notifications` | Push Android N1 | Oui | Notifications |
 | ACCESS_FINE/COARSE_LOCATION | ❌ | ❌ | — | Non utilisé | — | Non |
 | READ_CONTACTS / CALL_PHONE | ❌ | ❌ | — | Non utilisé | — | Non |
@@ -195,6 +195,10 @@ Les parcours auth / API passent par `safeLogger` (redaction JWT / Authorization)
 
 Réévaluation CARTE-PR7 :
 
+- nouvelle finalité CAMERA : scan QR Carte Élève via `expo-camera@~17.0.10` ;
+- `recordAudioAndroid: false`, `microphonePermission: false` ;
+- NFC toujours absent ;
+- QR online-only : aucune outbox, aucun cache, aucun replay de capability ;
 - la caméra du scanner reste un traitement **local** (aucune image collectée) ;
 - le capability QR est transmis au serveur HTTPS pour résolution ;
 - l’identité élève reçue est une donnée scolaire déjà couverte par le contrat backend, via un **nouveau chemin** (scan) ;
@@ -211,7 +215,7 @@ La politique de confidentialité hébergée reste un **P0 Store** distinct (URL 
 | Preprod API | Render HTTPS | `eas.json` + bundles | Oui |
 | Prod API | `https://api.somafrik.app` | `eas.json` + bundles | Oui |
 | HTTPS only | preview/préprod/prod | fail-closed + network security | Oui |
-| Permissions | CAMERA + READ_MEDIA_IMAGES (+ INTERNET système) | matrice ci-dessus | Oui |
+| Permissions | CAMERA seule permission app explicite (+ INTERNET système). NFC / RECORD_AUDIO / READ_MEDIA_IMAGES absents. | matrice ci-dessus + prebuild | Oui |
 | Preview APK | internal APK → API préprod, jamais prod / localhost | `verify:mobile-preview-apk` + [PREVIEW-APK.md](./PREVIEW-APK.md) | Oui (sideload, pas Play) |
 | Bundle préprod | URL préprod, pas prod / localhost | Metro minify | Oui |
 | AAB préprod | prebuild inspecté + Gradle `.aab` si SDK / EAS | `verify-native-prebuild` + job CI isolé | Oui (compilation, pas l’upload) |
