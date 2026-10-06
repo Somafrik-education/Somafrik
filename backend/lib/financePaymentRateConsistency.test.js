@@ -164,8 +164,13 @@ function assertSourceGuards() {
   const feesStart = pgStore.indexOf("listFinanceStudentFees:");
   const feesFn = pgStore.slice(feesStart, pgStore.indexOf("getFinanceStudentFee:", feesStart));
   assert.match(pgStore, /projectObligationPaidAmounts/);
-  assert.match(feesFn, /listFinanceStudentFees: async \(principal, options = \{\}\)/);
-  assert.match(feesFn, /resolveListedStudentKey\(principal, options\)/);
+  assert.match(
+    pgStore,
+    /listFinanceStudentFees:\s*async\s*\(principal,\s*options\s*=\s*\{\}\)/,
+  );
+  assert.match(pgStore, /resolveListedStudentKey\(principal,\s*options\)/);
+  assert.match(pgStore, /options\?\.studentId/);
+  assert.match(pgStore, /options\?\.studentKey/);
   assert.match(pgStore, /sqlSchoolPredicate/);
   assert.doesNotMatch(
     feesFn,
