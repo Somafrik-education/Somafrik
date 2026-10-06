@@ -39,6 +39,7 @@ vi.mock("../../lib/studentCardsApi", () => ({
   },
 }));
 
+import { formatDateTimeForDisplay } from "../../lib/dates";
 import { StudentCardTab } from "./StudentCardTab";
 
 const workspace = {
@@ -149,7 +150,19 @@ describe("StudentCardTab", () => {
     expect(document.body.textContent).not.toContain("TOKEN-1");
     expect(screen.queryByRole("button", { name: /réimprimer/i })).toBeNull();
     expect(await screen.findByText(/n’est disponible qu’au moment de l’émission/i)).toBeInTheDocument();
-    expect(screen.getByText("Émise le 06-10-2026")).toBeInTheDocument();
+    expect(screen.getByText(`Émise le ${formatDateTimeForDisplay("2026-10-06T00:00:00.000Z")}`)).toBeInTheDocument();
+    expect(screen.getByText(/Émise le \d{2}-\d{2}-\d{4} \d{2}:\d{2}/)).toBeInTheDocument();
+  });
+
+  it("n'offre pas une seconde émission lorsqu'une carte active existe", async () => {
+    api.list.mockResolvedValue({
+      cards: [{ id: "card-1", publicId: "CARD-A", medium: "qr", status: "active" }],
+    });
+    render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-1" />);
+    expect(await screen.findByText("ID carte : CARD-A")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Émettre une carte" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Émettre" })).toBeNull();
+    expect(api.issue).not.toHaveBeenCalled();
   });
 
   it("rafraîchit la liste sur 409 sans second essai", async () => {
@@ -162,10 +175,15 @@ describe("StudentCardTab", () => {
       });
     render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-1" />);
     await user.click(await screen.findByRole("button", { name: "Émettre une carte" }));
+    const listsBeforeConfirm = api.list.mock.calls.length;
     await user.click(screen.getByRole("button", { name: "Émettre" }));
     expect(await screen.findByText("Une carte active existe déjà. La liste a été actualisée.")).toBeInTheDocument();
     expect(api.issue).toHaveBeenCalledTimes(1);
+    expect(api.list.mock.calls.length).toBeGreaterThan(listsBeforeConfirm);
     expect(screen.getByText("ID carte : CARD-A")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Émettre" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Émettre une carte" })).toBeNull();
     expect(document.body.textContent).not.toContain("autre dossier");
   });
 

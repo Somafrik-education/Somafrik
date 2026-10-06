@@ -44,6 +44,10 @@ function main() {
   assert.doesNotMatch(settings, /localStorage|sessionStorage|indexedDB|Idempotency-Key/);
 
   assert.match(tab, /studentCardEnabled !== true|resolveStudentCardSettingsGate/);
+  assert.match(tab, /formatDateTimeForDisplay/);
+  assert.doesNotMatch(tab, /toLocaleDateString/);
+  assert.match(tab, /canManage && readyMedium && !hasActiveCard/);
+  assert.match(tab, /STUDENT_CARD_ACTIVE_ALREADY_EXISTS[\s\S]{0,240}setIssueOpen\(false\)/);
   assert.doesNotMatch(product, /localStorage|sessionStorage|indexedDB|Idempotency-Key|withIdempotency/);
   assert.doesNotMatch(product, /NDEFReader|navigator\.nfc|expo-camera|POST \/api\/student-cards\/scan|student-cards\/scan/);
   assert.doesNotMatch(product, /console\.log|navigator\.clipboard|data-card-token|data-token/);
@@ -51,6 +55,9 @@ function main() {
   assert.match(printView, /from "qrcode"/);
   assert.match(printView, /QRCode\.toDataURL\(cardToken/);
   assert.match(printView, /PrintButton/);
+  assert.match(printView, /disabled=\{qrState !== "ready"\}/);
+  assert.match(printView, /Réessayer le QR/);
+  assert.match(printView, /type QrState = "loading" \| "ready" \| "error"/);
   assert.match(printView, /studentCardDocumentTitle/);
   assert.match(printView, /85\.60mm|STUDENT_CARD_CR80/);
   assert.match(css, /85\.6mm 53\.98mm/);

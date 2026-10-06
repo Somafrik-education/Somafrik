@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, InlineAlert, Modal } from "../../design-system";
 import { ApiError } from "../../api/client";
 import { useOptionalActiveSchool } from "../../context/ActiveSchoolContext";
-import { formatDateForDisplay } from "../../lib/dates";
+import { formatDateTimeForDisplay } from "../../lib/dates";
 import { schoolSettingsApi } from "../../lib/schoolSettingsApi";
 import {
   studentCardsApi,
@@ -64,7 +64,7 @@ const ACTION_COPY: Record<StudentCardAction, { title: string; description: strin
 };
 
 function formatIssuedAt(value: string | null | undefined): string {
-  return formatDateForDisplay(value) || "Date non renseignée";
+  return formatDateTimeForDisplay(value) || "Date non renseignée";
 }
 
 export function StudentCardTab({
@@ -149,6 +149,7 @@ export function StudentCardTab({
     } catch (error) {
       if (error instanceof ApiError && error.code === "STUDENT_CARD_ACTIVE_ALREADY_EXISTS") {
         await reloadCards().catch(() => undefined);
+        setIssueOpen(false);
       }
       setNotice(studentCardErrorMessage(error));
     } finally {
@@ -233,7 +234,7 @@ export function StudentCardTab({
             <p className="text-sm text-ink">Aucune émission n’est possible sans activer le QR.</p>
           ) : null}
           {!hasActiveCard ? <p className="text-sm font-medium text-ink">Aucune carte élève active.</p> : null}
-          {canManage && readyMedium ? (
+          {canManage && readyMedium && !hasActiveCard ? (
             <Button type="button" onClick={() => setIssueOpen(true)}>
               Émettre une carte
             </Button>
@@ -275,7 +276,7 @@ export function StudentCardTab({
               );
             })}
           </ul>
-          {readyMedium ? (
+          {readyMedium && !hasActiveCard ? (
             <StudentCardIssueDialog
               open={issueOpen}
               medium={readyMedium}
