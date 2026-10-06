@@ -2176,7 +2176,14 @@ app.post("/api/student-cards/scan", requireAuth, requirePermission("POST /api/st
   requireStudentCardsPg();
   const { scanStudentCard } = require("./lib/studentAccessCardsManagement");
   const { hasAttendanceIntent, scanStudentCardHttp } = require("./lib/studentCardAttendance");
+  const {
+    hasFinanceIntent,
+    assertStudentCardScanIntents,
+    assertStudentCardFinanceEnabled,
+    scanStudentCardFinance,
+  } = require("./lib/studentCardFinance");
   req.principal = await enrollmentHttpPrincipal(req);
+  assertStudentCardScanIntents(req.body);
   if (hasAttendanceIntent(req.body)) {
     req.principal = await presenceHttpPrincipal(req);
     const gate = requireSchoolSubscriptionFeature("write_presence");
@@ -2204,6 +2211,16 @@ app.post("/api/student-cards/scan", requireAuth, requirePermission("POST /api/st
     { cardToken: req.body?.cardToken },
     studentCardsHttpScope(req.principal),
   );
+  if (hasFinanceIntent(req.body)) {
+    await new Promise((resolve, reject) => {
+      requirePermission("GET /api/finance/student-fees")(req, res, (error) => (error ? reject(error) : resolve()));
+    });
+    await assertStudentCardFinanceEnabled(repository, studentCardsHttpScope(req.principal).schoolId);
+    req.principal = await financeHttpPrincipal(req);
+    const finance = await scanStudentCardFinance(repository, resolved, req.principal);
+    res.json({ ...resolved, finance });
+    return;
+  }
   res.json(resolved);
 }));
 

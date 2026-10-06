@@ -972,10 +972,10 @@ function createFinancePgStore(repo) {
       );
       return rows.map(mapGridRow);
     },
-    listFinanceStudentFees: async (principal) => {
+    listFinanceStudentFees: async (principal, options = {}) => {
       const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
       if (scope.mode === "none") return [];
-      const studentKey = asTrimmed(principal?.financeStudentKey || principal?.financeListOptions?.studentId || principal?.financeListOptions?.studentKey);
+      const studentKey = resolveListedStudentKey(principal, options);
       let studentDbId = null;
       if (studentKey) {
         const student = await bind(repo).findStudent(studentKey, principal);
@@ -1191,16 +1191,89 @@ function createFinancePgStore(repo) {
           feeTypes,
         });
       },
-  };
-
-  const listFinanceStudentFeesBound = api.listFinanceStudentFees;
-  api.listFinanceStudentFees = async (principal, options) => {
-    const studentKey = asTrimmed(options?.studentId || options?.studentKey);
-    if (!studentKey) return listFinanceStudentFeesBound(principal);
-    return listFinanceStudentFeesBound({ ...principal, financeStudentKey: studentKey });
+      async listFinanceStudentPayments(principal, options = {}) {
+        const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
+        if (scope.mode === "none") return [];
+        const studentKey = resolveListedStudentKey(principal, options);
+        if (!studentKey) return [];
+        const student = await bind(repo).findStudent(studentKey, principal);
+        if (!student?.dbId) return [];
+        const params = [student.dbId];
+        const pred = sqlSchoolPredicate("s", scope, params);
+        const rows = await repo.all(
+          `SELECT p.*, s.school_code, s.login_code, st.student_code, ctry.iso_code AS country_iso
+           FROM payments p
+           JOIN schools s ON s.id = p.school_id
+           JOIN countries ctry ON ctry.id = s.country_id
+           JOIN students st ON st.id = p.student_id
+           WHERE p.student_id = $1
+             AND ${pred}
+           ORDER BY p.created_at, p.id`,
+          params,
+        );
+        const paymentIds = rows.map((row) => row.id);
+        const allocationRows = paymentIds.length
+          ? await repo.all(
+            `SELECT id, payment_id, obligation_id, amount, reversed_at
+             FROM payment_allocations
+             WHERE reversed_at IS NULL
+               AND payment_id = ANY($1::uuid[])`,
+            [paymentIds],
+          )
+          : [];
+        return projectPaymentsWithAllocations(
+          rows.map((row) => mapPaymentRow(row)),
+          allocationRows.map((row) => ({
+            id: row.id,
+            paymentId: row.payment_id,
+            obligationId: row.obligation_id,
+            amount: row.amount,
+            reversedAt: row.reversed_at,
+          })),
+        );
+      },
+      async hasApplicableActiveFeeGrid(principal, options = {}) {
+        const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
+        if (scope.mode === "none") return false;
+        const classId = asTrimmed(options.classId);
+        if (!classId) return false;
+        const params = [classId];
+        const pred = sqlSchoolPredicate("s", scope, params);
+        const row = await repo.one(
+          `SELECT 1 AS ok
+           FROM fee_grids g
+           JOIN schools s ON s.id = g.school_id
+           JOIN classes cl ON cl.id = g.class_id AND cl.school_id = g.school_id
+           JOIN academic_years ay ON ay.id = cl.academic_year_id AND ay.school_id = cl.school_id
+           WHERE g.class_id::text = $1
+             AND ${pred}
+             AND lower(btrim(g.status)) = 'active'
+             AND lower(btrim(g.academic_year)) = lower(btrim(ay.name))
+             AND EXISTS (
+               SELECT 1
+               FROM school_fee_items i
+               WHERE i.fee_grid_id = g.id
+                 AND i.school_id = g.school_id
+                 AND lower(btrim(i.status)) = 'actif'
+             )
+           LIMIT 1`,
+          params,
+        );
+        return Boolean(row);
+      },
   };
 
   return api;
+}
+
+function resolveListedStudentKey(principal, options = {}) {
+  const fromOptions = asTrimmed(options?.studentId) || asTrimmed(options?.studentKey);
+  if (fromOptions) return fromOptions;
+  return asTrimmed(
+    principal?.financeStudentKey
+    || principal?.financeListOptions?.studentId
+    || principal?.financeListOptions?.studentKey,
+  );
 }
 
 module.exports = { createFinancePgStore };

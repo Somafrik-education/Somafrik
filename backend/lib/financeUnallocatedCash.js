@@ -129,6 +129,7 @@ module.exports = {
   allocatedAmountFrom,
   unallocatedAmount,
   isUnallocatedStatus,
+  isPendingCashStatus,
   resolvePaymentStatus,
   presentPaymentStatus,
   projectPaymentCash,

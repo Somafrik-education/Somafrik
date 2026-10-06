@@ -26,6 +26,9 @@ function main() {
   const catalog = read("backend/lib/functionalModulesCatalog.js");
   const presences = read("backend/lib/presencesAttendanceAuthz.js");
   const cardAttendance = read("backend/lib/studentCardAttendance.js");
+  const cardFinance = read("backend/lib/studentCardFinance.js");
+  const financeStore = read("backend/db/financePgStore.js");
+  const unpaid = read("backend/services/unpaidService.js");
 
   assert.match(STUDENT_ACCESS_CARDS_SCHEMA_SQL, /CREATE TABLE IF NOT EXISTS student_access_cards/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS student_access_cards/);
@@ -55,6 +58,25 @@ function main() {
   assert.match(cardAttendance, /scanStudentCard\(/);
   assert.match(cardAttendance, /isStudentCardCapabilityEnabled/);
   assert.doesNotMatch(cardAttendance, /INSERT INTO attendance|listFinanceStudentFees|student_card_scanned|last_scan_at/);
+  assert.match(scanRoute, /assertStudentCardScanIntents/);
+  assert.match(scanRoute, /STUDENT_CARD_SCAN_INTENTS_CONFLICT|hasFinanceIntent/);
+  const financeBranch = scanRoute.slice(scanRoute.indexOf("if (hasFinanceIntent(req.body))"));
+  assert.match(financeBranch, /requirePermission\("GET \/api\/finance\/student-fees"\)/);
+  assert.match(financeBranch, /assertStudentCardFinanceEnabled/);
+  assert.match(financeBranch, /scanStudentCardFinance/);
+  assert.doesNotMatch(financeBranch, /withIdempotency|write_presence|upsertSchoolAttendanceBatch|listFinanceProjection/);
+  assert.match(cardFinance, /isStudentCardCapabilityEnabled/);
+  assert.match(cardFinance, /studentCardFinanceCheckEnabled/);
+  assert.match(cardFinance, /isDueDatePast/);
+  assert.match(cardFinance, /isOverdueStudentFee/);
+  assert.match(cardFinance, /listFinanceStudentFees/);
+  assert.match(cardFinance, /listFinanceStudentPayments/);
+  assert.doesNotMatch(cardFinance, /ensureEnrollmentObligations|applyFinanceFeeGrid|reconcileFinancePaymentAllocations|createSchoolPayment|adjustFinanceStudentFee|listFinanceProjection|withIdempotency|last_scan_at|student_card_finance_checked|student_card_scanned/);
+  assert.match(financeStore, /listFinanceStudentFees: async \(principal, options = \{\}\)/);
+  assert.match(financeStore, /resolveListedStudentKey/);
+  assert.match(unpaid, /isDueDatePast/);
+  assert.match(unpaid, /isOverdueStudentFee/);
+  assert.doesNotMatch(server, /write_student_card_finance|card_finance|finance_scan|Cartes:FINANCE|Cartes:SCAN_FINANCE/);
   assert.doesNotMatch(server, /app\.get\("\/api\/student-cards\/scan"/);
   assert.doesNotMatch(server, /\/verify\/student-card|\/api\/public\/student-card/);
   assert.doesNotMatch(server, /\/api\/student-access-cards/);
