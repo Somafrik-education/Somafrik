@@ -59,10 +59,10 @@ function createPermissionCtx(
 
 function testNavigationOrderFromConfig() {
   const modules = getStudentWorkspaceNavigationModules();
-  assertEqual(modules.length, 7, "7 modules navigables attendus");
+  assertEqual(modules.length, 8, "8 modules navigables attendus");
   assertEqual(
     modules.map((module) => module.id).join(","),
-    "overview,identity,enrollments,guardians,health,documents,history",
+    "overview,identity,enrollments,guardians,health,documents,history,card",
     "Ordre issu de la configuration",
   );
   assertEqual(modules[2]?.title, "Inscription", "Titre Inscription");
@@ -111,6 +111,16 @@ function testUrlAsSourceOfTruth() {
     "Slug historique",
   );
   assertEqual(
+    resolveStudentWorkspaceModuleIdFromSection("carte"),
+    "card",
+    "Slug carte élève",
+  );
+  assertEqual(
+    buildStudentWorkspacePath("STU-1", "card"),
+    "/etablissement/eleves/STU-1/carte",
+    "Chemin carte élève",
+  );
+  assertEqual(
     resolveStudentWorkspaceModuleIdFromSection("inconnu"),
     null,
     "Onglet inconnu → null (redirection)",
@@ -153,7 +163,7 @@ function testPermissionsHideAndDeny() {
 
   const fullAccess = createPermissionCtx(["Élèves:READ"]);
   const visibleFull = filterAccessibleStudentWorkspaceModules(modules, fullAccess);
-  assertEqual(visibleFull.length, 7, "Élèves:READ ouvre tous les modules dossier");
+  assertEqual(visibleFull.length, 8, "Élèves:READ ouvre tous les modules dossier");
 
   const granular = createPermissionCtx([
     "Élèves:READ",
@@ -161,12 +171,12 @@ function testPermissionsHideAndDeny() {
     "student.identity.read",
   ]);
   const visibleGranular = filterAccessibleStudentWorkspaceModules(modules, granular);
-  assertEqual(visibleGranular.length, 2, "Masquage des modules non autorisés");
+  assertEqual(visibleGranular.length, 3, "Masquage des modules non autorisés");
   assert(
     visibleGranular.every((module) =>
-      ["overview", "identity"].includes(module.id),
+      ["overview", "identity", "card"].includes(module.id),
     ),
-    "Seuls overview et identity restent visibles",
+    "Overview, identité et carte élève restent visibles",
   );
 
   assert(
@@ -421,6 +431,7 @@ function testGuardiansSummaryAndImplementedFlags() {
     isStudentWorkspaceModuleImplemented("history"),
     "Historique implémenté (C1.6)",
   );
+  assert(isStudentWorkspaceModuleImplemented("card"), "Carte élève implémentée");
 }
 
 function main() {

@@ -19,6 +19,7 @@ export const STUDENT_WORKSPACE_SECTION_SLUGS: Readonly<
   health: "medical",
   documents: "documents",
   history: "historique",
+  card: "carte",
 };
 
 const SLUG_TO_MODULE_ID = new Map<string, StudentWorkspaceModuleId>(
@@ -83,6 +84,7 @@ export function isStudentWorkspaceModuleImplemented(
     moduleId === "guardians" ||
     moduleId === "health" ||
     moduleId === "documents" ||
-    moduleId === "history"
+    moduleId === "history" ||
+    moduleId === "card"
   );
 }

@@ -125,6 +125,36 @@
   }
 }
 
+/* Impression carte élève uniquement. Les autres documents conservent la page par défaut. */
+@page student-card-cr80 {
+  size: 85.6mm 53.98mm;
+  margin: 2mm;
+}
+
+@media print {
+  body.somafrik-print-student-card * {
+    visibility: hidden !important;
+  }
+
+  body.somafrik-print-student-card .student-card-sheet,
+  body.somafrik-print-student-card .student-card-sheet * {
+    visibility: visible !important;
+  }
+
+  body.somafrik-print-student-card .student-card-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 85.6mm;
+    height: 53.98mm;
+    margin: 0;
+    page: student-card-cr80;
+    overflow: hidden;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal {
     opacity: 1 !important;
