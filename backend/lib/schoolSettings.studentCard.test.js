@@ -200,7 +200,7 @@ test("CARTE-PR0 — lecture/écriture school_settings inchangée pour Superadmin
   );
 });
 
-test("CARTE-PR0 — aucune permission scolaire supplémentaire, aucun DDL carte, aucun QR/NFC produit", () => {
+test("CARTE-PR0 — aucune permission scolaire supplémentaire, aucun QR/NFC produit", () => {
   const catalog = readRepo("backend/lib/functionalModulesCatalog.js");
   const roles = readRepo("backend/lib/establishmentRolesManagement.js");
   const schema = readRepo("backend/db/schema.sql");
@@ -212,11 +212,10 @@ test("CARTE-PR0 — aucune permission scolaire supplémentaire, aucun DDL carte,
 
   assert.doesNotMatch(catalog, /student_card|studentCard|carte_eleve|Carte Élève/);
   assert.doesNotMatch(roles, /Carte Élève|student_card|NFC:|QR:/);
-  assert.doesNotMatch(schema, /student_access_cards/);
   assert.doesNotMatch(management, /cardToken/);
   assert.match(android, /android\.permission\.NFC/);
   assert.doesNotMatch(appConfig, /expo-camera|nfc-manager|react-native-nfc/);
-  assert.doesNotMatch(server, /\/api\/student-access-cards|cardToken/);
+  assert.doesNotMatch(server, /\/api\/student-access-cards|\/api\/student-cards|cardToken/);
   assert.doesNotMatch(presences, /student_card|studentCard|cardToken/);
   assert.match(schema, /student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE/);
 });
