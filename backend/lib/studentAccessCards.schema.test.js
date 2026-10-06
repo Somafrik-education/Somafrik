@@ -75,15 +75,25 @@ test("CARTE-PR1 — boot PostgreSQL applique le schéma dédié", () => {
   assert.ok(schemaIdx > 0 && cardsIdx > schemaIdx);
 });
 
-test("CARTE-PR1 — aucune route HTTP, UI, QR, NFC, présence ou finance carte", () => {
+test("CARTE-PR2 — routes cycle de vie uniquement, aucune route scan / QR / NFC / présence", () => {
   const server = read("backend/server.js");
   const demo = read("backend/demoGateway.js");
   const presences = read("backend/lib/presencesAttendanceAuthz.js");
   const catalog = read("backend/lib/functionalModulesCatalog.js");
-  assert.doesNotMatch(server, /\/api\/student-cards|\/api\/student-access-cards|cardToken/);
-  assert.doesNotMatch(demo, /\/api\/student-cards|student_access_cards/);
+  const rbac = read("backend/services/rbacService.js");
+  assert.match(server, /app\.post\("\/api\/student-cards"/);
+  assert.match(server, /app\.get\("\/api\/students\/:id\/cards"/);
+  assert.match(server, /app\.post\("\/api\/student-cards\/:id\/lost"/);
+  assert.match(server, /app\.post\("\/api\/student-cards\/:id\/revoke"/);
+  assert.match(server, /app\.post\("\/api\/student-cards\/:id\/replace"/);
+  assert.match(server, /routeKey: `POST \/api\/student-cards\/\$\{req\.params\.id\}\/replace`/);
+  assert.doesNotMatch(server, /\/api\/student-cards\/scan/);
+  assert.doesNotMatch(demo, /\/api\/student-cards\/scan|student_access_cards/);
   assert.doesNotMatch(presences, /student_access_cards|cardToken/);
-  assert.doesNotMatch(catalog, /Carte Élève|student_access_cards/);
+  assert.doesNotMatch(catalog, /Carte Élève|student_access_cards|moduleKey: "cards"/);
+  assert.match(rbac, /"GET \/api\/students\/:id\/cards": \["Élèves:READ", "Voir élèves"\]/);
+  assert.match(rbac, /"POST \/api\/student-cards": \["Élèves:UPDATE", "Gérer élèves"\]/);
+  assert.doesNotMatch(rbac, /Cartes:READ|Cartes:UPDATE|QR:|NFC:/);
   assert.doesNotMatch(read("web/src/lib/schoolSettingsApi.ts"), /student_access_cards|cardToken/);
   assert.doesNotMatch(read("Mobile/src/services/schoolSettingsApi.ts"), /student_access_cards|cardToken/);
 });

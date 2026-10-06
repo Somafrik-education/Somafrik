@@ -90,6 +90,11 @@ const PERSONAL_DATA_FEATURE_PREFIXES = Object.freeze(
 const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "GET /api/students",
   "GET /api/students/:id",
+  "GET /api/students/:id/cards",
+  "POST /api/student-cards",
+  "POST /api/student-cards/:id/lost",
+  "POST /api/student-cards/:id/revoke",
+  "POST /api/student-cards/:id/replace",
   "GET /api/students/:studentId/enrollments",
   "POST /api/students/:studentId/enrollments/:enrollmentId/validate",
   "POST /api/students/:studentId/enrollments/:enrollmentId/assign-class",

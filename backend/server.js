@@ -2091,6 +2091,109 @@ app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:
   return res.json(enrollmentApiStudent(authorizedPg, schoolCode));
 }));
 
+function requireStudentCardsPg() {
+  if (repository?.engine === "memory" || typeof repository?.one !== "function") {
+    const { createHttpError } = require("./lib/classesManagement");
+    throw createHttpError(501, "Cartes élèves : PostgreSQL canonique requis.");
+  }
+}
+
+function studentCardsHttpScope(principal) {
+  const { resolveEnrollmentSchoolScope } = require("./lib/enrollmentSchoolScope");
+  requireEnrollmentLoginCode(principal);
+  const scope = resolveEnrollmentSchoolScope(principal);
+  if (!scope?.schoolId || scope.mode !== "school") {
+    const { createHttpError } = require("./lib/classesManagement");
+    const { STUDENT_CARD_ERROR } = require("./lib/studentAccessCardsManagement");
+    throw createHttpError(403, "Accès refusé: établissement hors périmètre.", STUDENT_CARD_ERROR.TENANT_DENIED);
+  }
+  return scope;
+}
+
+app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/students/:id/cards"), asyncHandler(async (req, res) => {
+  requireStudentCardsPg();
+  const { listStudentCards } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const cards = await listStudentCards(repository, req.params.id, studentCardsHttpScope(principal));
+  res.json({ cards });
+}));
+
+app.post("/api/student-cards", requireAuth, requirePermission("POST /api/student-cards"), asyncHandler(async (req, res) => {
+  requireStudentCardsPg();
+  const { issueStudentCard } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/student-cards",
+    principal,
+    handler: async () => {
+      const card = await issueStudentCard(
+        repository,
+        req.body ?? {},
+        principal,
+        auditMetaFromRequest(req),
+        schoolScope,
+      );
+      return { statusCode: 201, body: card };
+    },
+  });
+}));
+
+app.post("/api/student-cards/:id/lost", requireAuth, requirePermission("POST /api/student-cards/:id/lost"), asyncHandler(async (req, res) => {
+  requireStudentCardsPg();
+  const { markStudentCardLost } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const card = await markStudentCardLost(
+    repository,
+    req.params.id,
+    principal,
+    auditMetaFromRequest(req),
+    studentCardsHttpScope(principal),
+    req.body?.reason,
+  );
+  res.json(card);
+}));
+
+app.post("/api/student-cards/:id/revoke", requireAuth, requirePermission("POST /api/student-cards/:id/revoke"), asyncHandler(async (req, res) => {
+  requireStudentCardsPg();
+  const { revokeStudentCard } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const card = await revokeStudentCard(
+    repository,
+    req.params.id,
+    principal,
+    auditMetaFromRequest(req),
+    studentCardsHttpScope(principal),
+    req.body?.reason,
+  );
+  res.json(card);
+}));
+
+app.post("/api/student-cards/:id/replace", requireAuth, requirePermission("POST /api/student-cards/:id/replace"), asyncHandler(async (req, res) => {
+  requireStudentCardsPg();
+  const { replaceStudentCard } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  await withIdempotency({
+    req,
+    res,
+    routeKey: `POST /api/student-cards/${req.params.id}/replace`,
+    principal,
+    handler: async () => {
+      const result = await replaceStudentCard(
+        repository,
+        req.params.id,
+        principal,
+        auditMetaFromRequest(req),
+        schoolScope,
+      );
+      return { statusCode: 200, body: result };
+    },
+  });
+}));
+
 async function authorizeEnrollmentStudentOr404(req, res, studentId) {
   const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
   const principal = await enrollmentHttpPrincipal(req);
