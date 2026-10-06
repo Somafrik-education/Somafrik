@@ -241,11 +241,11 @@ async function insertFee(pool, {
 }) {
   const row = await pool.query(
     `INSERT INTO student_fee_obligations (
-       school_id, student_id, class_id, fee_type, label, currency, academic_year,
+       school_id, student_id, class_id, fee_type, label, currency, academic_year, period_label,
        initial_amount, amount_due, amount_paid, exemption, balance, due_date, status, archived_at,
        profile_payload
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$8,0,$9,$8,$10,'À payer',$11,$12::jsonb
+       $1,$2,$3,$4,$5,$6,$7,$5,$8,$8,0,$9,$8,$10,'À payer',$11,$12::jsonb
      ) RETURNING id`,
     [
       schoolId,
@@ -619,7 +619,7 @@ async function main() {
       attendance: { date: "2026-10-06", status: "present" },
     }, tokenTeacher);
     assert.equal(marked.status, 201, JSON.stringify(marked.data));
-    assert.equal(marked.data.attendance?.status, "present");
+    assert.equal(marked.data.attendance?.status, "Présent");
     assert.equal(marked.data.finance, undefined);
     assert.equal(await countTable(pool, "attendance"), 1);
 
