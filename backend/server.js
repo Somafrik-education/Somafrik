@@ -2179,7 +2179,7 @@ app.post("/api/student-cards/:id/replace", requireAuth, requirePermission("POST 
   await withIdempotency({
     req,
     res,
-    routeKey: "POST /api/student-cards/:id/replace",
+    routeKey: `POST /api/student-cards/${req.params.id}/replace`,
     principal,
     handler: async () => {
       const result = await replaceStudentCard(

@@ -86,6 +86,7 @@ test("CARTE-PR2 — routes cycle de vie uniquement, aucune route scan / QR / NFC
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/lost"/);
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/revoke"/);
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/replace"/);
+  assert.match(server, /routeKey: `POST \/api\/student-cards\/\$\{req\.params\.id\}\/replace`/);
   assert.doesNotMatch(server, /\/api\/student-cards\/scan/);
   assert.doesNotMatch(demo, /\/api\/student-cards\/scan|student_access_cards/);
   assert.doesNotMatch(presences, /student_access_cards|cardToken/);

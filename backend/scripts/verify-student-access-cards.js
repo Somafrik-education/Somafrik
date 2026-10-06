@@ -38,7 +38,8 @@ function main() {
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/lost"/);
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/revoke"/);
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/replace"/);
-  assert.match(server, /withIdempotency/);
+  assert.match(server, /routeKey: `POST \/api\/student-cards\/\$\{req\.params\.id\}\/replace`/);
+  assert.match(server, /requirePermission\("POST \/api\/student-cards\/:id\/replace"\)/);
   assert.doesNotMatch(server, /\/api\/student-cards\/scan/);
   assert.doesNotMatch(server, /\/api\/student-access-cards/);
   assert.match(rbac, /"GET \/api\/students\/:id\/cards": \["Élèves:READ", "Voir élèves"\]/);

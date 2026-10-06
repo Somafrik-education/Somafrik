@@ -27,6 +27,8 @@ const USER_ACCOUNTANT = "cccccccc-cccc-4ccc-8ccc-cccccccccc04";
 const USER_SUPER = "cccccccc-cccc-4ccc-8ccc-cccccccccc05";
 const USER_PAYS = "cccccccc-cccc-4ccc-8ccc-cccccccccc06";
 const STUDENT_A = "cccccccc-cccc-4ccc-8ccc-cccccccccc11";
+const STUDENT_A2 = "cccccccc-cccc-4ccc-8ccc-cccccccccc13";
+const STUDENT_A3 = "cccccccc-cccc-4ccc-8ccc-cccccccccc14";
 const STUDENT_B = "cccccccc-cccc-4ccc-8ccc-cccccccccc12";
 
 function withDatabaseName(databaseUrl, databaseName) {
@@ -169,9 +171,11 @@ async function seed(pool) {
   await pool.query(
     `INSERT INTO students (id, school_id, student_code, first_name, last_name, status)
      VALUES
-       ($1, $3, 'STU-A-001', 'Eleve', 'A', 'active'),
-       ($2, $4, 'STU-B-001', 'Eleve', 'B', 'active')`,
-    [STUDENT_A, STUDENT_B, schoolAId, schoolBId],
+       ($1, $5, 'STU-A-001', 'Eleve', 'A', 'active'),
+       ($2, $5, 'STU-A-002', 'Eleve', 'A2', 'active'),
+       ($3, $5, 'STU-A-003', 'Eleve', 'A3', 'active'),
+       ($4, $6, 'STU-B-001', 'Eleve', 'B', 'active')`,
+    [STUDENT_A, STUDENT_A2, STUDENT_A3, STUDENT_B, schoolAId, schoolBId],
   );
   await pool.query(
     `INSERT INTO school_settings (school_id, student_card_enabled)
@@ -368,11 +372,67 @@ async function main() {
     });
     assert.equal(replacedReplay.status, 200, JSON.stringify(replacedReplay.data));
     assert.equal(replacedReplay.data.card.id, replaced.data.card.id);
+    assert.equal(replacedReplay.data.idempotentReplay, true);
     const activeCount = await pool.query(
       `SELECT count(*)::int AS n FROM student_access_cards WHERE school_id=$1 AND student_id=$2 AND status='active'`,
       [schoolAId, STUDENT_A],
     );
     assert.equal(activeCount.rows[0].n, 1);
+
+    const issuedCrossA = await request("/student-cards", {
+      method: "POST",
+      token: tokenA,
+      body: { studentId: STUDENT_A2, medium: "nfc" },
+    });
+    assert.equal(issuedCrossA.status, 201, JSON.stringify(issuedCrossA.data));
+    const cardCrossA = issuedCrossA.data.id;
+    const issuedCrossB = await request("/student-cards", {
+      method: "POST",
+      token: tokenA,
+      body: { studentId: STUDENT_A3, medium: "qr" },
+    });
+    assert.equal(issuedCrossB.status, 201, JSON.stringify(issuedCrossB.data));
+    const cardCrossB = issuedCrossB.data.id;
+    assert.notEqual(cardCrossA, cardCrossB);
+
+    const replacementA = await request(`/student-cards/${cardCrossA}/replace`, {
+      method: "POST",
+      token: tokenA,
+      body: {},
+      headers: { "Idempotency-Key": "cross-card-key" },
+    });
+    assert.equal(replacementA.status, 200, JSON.stringify(replacementA.data));
+    assert.equal(replacementA.data.previous.id, cardCrossA);
+    assert.notEqual(replacementA.data.idempotentReplay, true);
+
+    const replacementB = await request(`/student-cards/${cardCrossB}/replace`, {
+      method: "POST",
+      token: tokenA,
+      body: {},
+      headers: { "Idempotency-Key": "cross-card-key" },
+    });
+    assert.equal(replacementB.status, 200, JSON.stringify(replacementB.data));
+    assert.notEqual(replacementB.data.idempotentReplay, true, JSON.stringify(replacementB.data));
+    assert.notEqual(replacementA.data.card.id, replacementB.data.card.id);
+    assert.equal(replacementB.data.previous.id, cardCrossB);
+    assert.notEqual(replacementB.data.card.id, replacementA.data.card.id);
+    assert.notEqual(replacementB.data.previous.id, cardCrossA);
+
+    const crossStates = await pool.query(
+      `SELECT id, student_id, status, replaced_by_card_id
+         FROM student_access_cards
+        WHERE id = ANY($1::uuid[])`,
+      [[cardCrossA, cardCrossB, replacementA.data.card.id, replacementB.data.card.id]],
+    );
+    const byId = Object.fromEntries(crossStates.rows.map((row) => [row.id, row]));
+    assert.equal(byId[cardCrossA].status, "replaced");
+    assert.equal(byId[cardCrossA].replaced_by_card_id, replacementA.data.card.id);
+    assert.equal(byId[cardCrossB].status, "replaced");
+    assert.equal(byId[cardCrossB].replaced_by_card_id, replacementB.data.card.id);
+    assert.equal(byId[replacementA.data.card.id].status, "active");
+    assert.equal(byId[replacementB.data.card.id].status, "active");
+    assert.equal(byId[replacementA.data.card.id].student_id, STUDENT_A2);
+    assert.equal(byId[replacementB.data.card.id].student_id, STUDENT_A3);
 
     const replaceDenied = await request(`/student-cards/${cardId}/replace`, { method: "POST", token: tokenA });
     assert.equal(replaceDenied.status, 409, JSON.stringify(replaceDenied.data));
