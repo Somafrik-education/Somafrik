@@ -65,7 +65,51 @@ async function request(pathname, { method = "GET", token, body, headers = {} } =
   } catch {
     data = text;
   }
-  return { status: response.status, data };
+  return {
+    status: response.status,
+    data,
+    cacheControl: response.headers.get("cache-control"),
+  };
+}
+
+function cardSecrets(...tokens) {
+  return tokens.filter(Boolean).flatMap((token) => {
+    const value = String(token);
+    const secret = value.includes(".") ? value.split(".").slice(1).join(".") : value;
+    return [value, secret];
+  });
+}
+
+async function assertCardSecretsAbsent(pool, secrets) {
+  const dumped = await pool.query(`
+    SELECT 'idempotency_keys' AS src, coalesce(response_body::text, '') AS payload
+      FROM idempotency_keys
+    UNION ALL
+    SELECT 'student_access_cards', row_to_json(c)::text
+      FROM student_access_cards c
+    UNION ALL
+    SELECT 'audit_logs', coalesce(old_value::text, '') || coalesce(new_value::text, '')
+      FROM audit_logs
+     WHERE action LIKE 'student_card_%'
+  `);
+  let hits = 0;
+  for (const secret of secrets) {
+    for (const row of dumped.rows) {
+      if (String(row.payload).includes(secret)) hits += 1;
+    }
+  }
+  assert.equal(hits, 0, `persisted card secret occurrences=${hits}`);
+  const secretRoutes = await pool.query(`
+    SELECT count(*)::int AS n
+      FROM idempotency_keys
+     WHERE route_key = 'POST /api/student-cards'
+        OR route_key LIKE 'POST /api/student-cards/%/replace'
+  `);
+  assert.equal(secretRoutes.rows[0].n, 0);
+  const bodies = await pool.query(`SELECT coalesce(response_body::text, '') AS payload FROM idempotency_keys`);
+  for (const row of bodies.rows) {
+    assert.doesNotMatch(row.payload, /cardToken|token_hash/);
+  }
 }
 
 async function waitForHealth(child, stderrRef) {
@@ -299,13 +343,28 @@ async function main() {
       method: "POST",
       token: tokenA,
       body: { studentId: STUDENT_A, medium: "nfc_qr" },
+      headers: { "Idempotency-Key": "issue-card-a-1" },
     });
     assert.equal(issued.status, 201, JSON.stringify(issued.data));
+    assert.equal(issued.cacheControl, "no-store");
     assert.equal(issued.data.status, "active");
     assert.ok(issued.data.cardToken && issued.data.cardToken.includes("."));
     assert.equal(issued.data.token_hash, undefined);
+    assert.notEqual(issued.data.idempotentReplay, true);
     const secret = issued.data.cardToken.split(".")[1];
     const cardId = issued.data.id;
+    await assertCardSecretsAbsent(pool, cardSecrets(issued.data.cardToken));
+
+    const issuedAgain = await request("/student-cards", {
+      method: "POST",
+      token: tokenA,
+      body: { studentId: STUDENT_A, medium: "nfc_qr" },
+      headers: { "Idempotency-Key": "issue-card-a-1" },
+    });
+    assert.equal(issuedAgain.status, 409, JSON.stringify(issuedAgain.data));
+    assert.equal(issuedAgain.data?.code, STUDENT_CARD_ERROR.ACTIVE_ALREADY_EXISTS);
+    assert.notEqual(issuedAgain.data?.idempotentReplay, true);
+    assert.equal(issuedAgain.data?.cardToken, undefined);
 
     const listed = await request(`/students/${STUDENT_A}/cards`, { token: tokenA });
     assert.equal(listed.status, 200, JSON.stringify(listed.data));
@@ -359,20 +418,25 @@ async function main() {
       headers: { "Idempotency-Key": "replace-card-a-1" },
     });
     assert.equal(replaced.status, 200, JSON.stringify(replaced.data));
+    assert.equal(replaced.cacheControl, "no-store");
     assert.equal(replaced.data.card.status, "active");
     assert.equal(replaced.data.previous.status, "replaced");
     const newToken = replaced.data.card.cardToken;
     assert.ok(newToken);
     assert.notEqual(newToken, issued.data.cardToken);
+    assert.notEqual(replaced.data.idempotentReplay, true);
+    await assertCardSecretsAbsent(pool, cardSecrets(issued.data.cardToken, newToken));
 
     const replacedReplay = await request(`/student-cards/${cardId}/replace`, {
       method: "POST",
       token: tokenA,
       headers: { "Idempotency-Key": "replace-card-a-1" },
     });
-    assert.equal(replacedReplay.status, 200, JSON.stringify(replacedReplay.data));
-    assert.equal(replacedReplay.data.card.id, replaced.data.card.id);
-    assert.equal(replacedReplay.data.idempotentReplay, true);
+    assert.equal(replacedReplay.status, 409, JSON.stringify(replacedReplay.data));
+    assert.equal(replacedReplay.data?.code, STUDENT_CARD_ERROR.INVALID_STATE);
+    assert.notEqual(replacedReplay.data?.idempotentReplay, true);
+    assert.equal(replacedReplay.data?.cardToken, undefined);
+    assert.equal(replacedReplay.data?.card, undefined);
     const activeCount = await pool.query(
       `SELECT count(*)::int AS n FROM student_access_cards WHERE school_id=$1 AND student_id=$2 AND status='active'`,
       [schoolAId, STUDENT_A],
@@ -443,21 +507,34 @@ async function main() {
     assert.equal(scan.data?.code, STUDENT_CARD_ERROR.ENROLLMENT_UNRESOLVED);
     assert.equal(JSON.stringify(scan.data).includes(newToken), false);
 
-    const dbCards = await pool.query(`SELECT token_hash, public_id FROM student_access_cards WHERE school_id=$1`, [schoolAId]);
+    const dbCards = await pool.query(`SELECT row_to_json(c) AS payload FROM student_access_cards c WHERE school_id=$1`, [schoolAId]);
+    assert.ok(dbCards.rowCount >= 1);
     for (const row of dbCards.rows) {
-      assert.match(row.token_hash, /^[0-9a-f]{64}$/);
-      assert.equal(JSON.stringify(row).includes(secret), false);
-      assert.equal(JSON.stringify(row).includes(newToken), false);
+      assert.match(row.payload.token_hash, /^[0-9a-f]{64}$/);
+      assert.equal(JSON.stringify(row.payload).includes(secret), false);
+      assert.equal(JSON.stringify(row.payload).includes(newToken), false);
     }
     const auditRows = await pool.query(
-      `SELECT action, new_value::text AS payload FROM audit_logs WHERE action LIKE 'student_card_%'`,
+      `SELECT action, coalesce(old_value::text, '') || coalesce(new_value::text, '') AS payload
+         FROM audit_logs WHERE action LIKE 'student_card_%'`,
     );
     assert.ok(auditRows.rowCount >= 1);
+    assert.equal(auditRows.rows.some((row) => row.action === "student_card_issued"), true);
+    assert.equal(auditRows.rows.some((row) => row.action === "student_card_replaced"), true);
     assert.equal(auditRows.rows.some((row) => row.action === "student_card_scanned"), false);
     for (const row of auditRows.rows) {
       assert.equal(String(row.payload ?? "").includes(secret), false, row.action);
+      assert.equal(String(row.payload ?? "").includes(newToken), false, row.action);
       assert.doesNotMatch(String(row.payload ?? ""), /cardToken|token_hash|"secret"/);
     }
+    await assertCardSecretsAbsent(pool, cardSecrets(
+      issued.data.cardToken,
+      newToken,
+      issuedCrossA.data.cardToken,
+      issuedCrossB.data.cardToken,
+      replacementA.data.card.cardToken,
+      replacementB.data.card.cardToken,
+    ));
 
     void schoolBId;
     console.log("studentAccessCards.http.pg.test.js OK");

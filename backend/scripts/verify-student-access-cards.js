@@ -42,14 +42,31 @@ function main() {
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/lost"/);
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/revoke"/);
   assert.match(server, /app\.post\("\/api\/student-cards\/:id\/replace"/);
-  assert.match(server, /routeKey: `POST \/api\/student-cards\/\$\{req\.params\.id\}\/replace`/);
   assert.match(server, /requirePermission\("POST \/api\/student-cards\/:id\/replace"\)/);
+  const issueRoute = server.slice(
+    server.indexOf('app.post("/api/student-cards"'),
+    server.indexOf('app.post("/api/student-cards/:id/lost"'),
+  );
+  assert.match(issueRoute, /issueStudentCard/);
+  assert.match(issueRoute, /Cache-Control", "no-store"/);
+  assert.match(issueRoute, /status\(201\)/);
+  assert.doesNotMatch(issueRoute, /withIdempotency/);
+  const replaceRoute = server.slice(
+    server.indexOf('app.post("/api/student-cards/:id/replace"'),
+    server.indexOf("async function authorizeEnrollmentStudentOr404"),
+  );
+  assert.match(replaceRoute, /replaceStudentCard/);
+  assert.match(replaceRoute, /Cache-Control", "no-store"/);
+  assert.match(replaceRoute, /status\(200\)/);
+  assert.doesNotMatch(replaceRoute, /withIdempotency/);
   assert.match(server, /app\.post\("\/api\/student-cards\/scan"/);
   const scanRoute = server.slice(
     server.indexOf('app.post("/api/student-cards/scan"'),
     server.indexOf('app.post("/api/student-cards/:id/replace"'),
   );
   assert.match(scanRoute, /Cache-Control", "no-store"/);
+  assert.match(scanRoute, /withIdempotency/);
+  assert.match(scanRoute, /routeKey: "POST \/api\/student-cards\/scan"/);
   assert.match(scanRoute, /hasAttendanceIntent/);
   assert.match(scanRoute, /write_presence/);
   assert.doesNotMatch(scanRoute.slice(0, scanRoute.indexOf("hasAttendanceIntent")), /write_presence/);
