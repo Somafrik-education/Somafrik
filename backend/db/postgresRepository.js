@@ -122,6 +122,7 @@ class PostgresRepository {
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.query(schema);
+    await this.ensureStudentAccessCardsCanonicalSchema();
     await this.ensureIdempotencySchema();
     await this.ensureLoginLockoutsCanonicalSchema();
     this.attachLoginLockoutStore();
@@ -265,6 +266,11 @@ class PostgresRepository {
     for (const sql of statements) {
       await this.query(sql);
     }
+  }
+
+  async ensureStudentAccessCardsCanonicalSchema() {
+    const { STUDENT_ACCESS_CARDS_SCHEMA_SQL } = require("./studentAccessCardsSchema");
+    await this.query(STUDENT_ACCESS_CARDS_SCHEMA_SQL);
   }
 
   async ensureLoginLockoutsCanonicalSchema() {

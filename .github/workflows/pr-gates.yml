@@ -295,6 +295,7 @@ jobs:
           npm run verify:students-fiche-consolidation
           npm run verify:presences-roster
           npm run verify:mobile-sync-l1-students
+          npm run verify:student-access-cards
 
       - name: Teachers
         if: needs.scope.outputs.teachers == 'true'
@@ -405,6 +406,7 @@ jobs:
           set -euo pipefail
           npm run verify:platform-management
           npm run verify:school-settings-data
+          npm run verify:student-access-cards
           npm run verify:login-lockout-data
 
       - name: School setup status LOT 0

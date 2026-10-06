@@ -119,6 +119,7 @@ jobs:
           npm run verify:planning-rbac-reconcile
           npm run verify:evaluation-types-data
           npm run verify:school-settings-data
+          npm run verify:student-access-cards
           npm run verify:documents-exams-data
           npm run verify:login-lockout-data
           npm run verify:data-export-safety
