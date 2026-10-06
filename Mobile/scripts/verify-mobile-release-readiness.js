@@ -84,12 +84,60 @@ function stripShellCommentLines(script) {
     .join("\n");
 }
 
-const EXECUTABLE_EAS_SUBMIT = /(?:^|[\n;&|`]|&&|\|\||\$\()\s*(?:npx(?:\s+--yes)?\s+)?eas\s+submit\b/;
+function unquoteShell(value) {
+  const raw = String(value ?? "").trim();
+  if (
+    (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2)
+    || (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2)
+  ) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+
+function splitShellSegments(script) {
+  return String(script || "").split(/\s*(?:&&|\|\||[;\n|&])\s*/);
+}
+
+function looksLikeEasSubmitCommand(segment) {
+  let current = String(segment || "").trim();
+  if (!current || /^(echo|printf)\b/.test(current)) return false;
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const afterEnv = current.replace(
+      /^(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+)+/,
+      "",
+    ).trim();
+    if (afterEnv !== current) {
+      current = afterEnv;
+      continue;
+    }
+    const afterCommand = current.replace(/^command(?:\s+-p)?\s+/, "").trim();
+    if (afterCommand !== current) {
+      current = afterCommand;
+      continue;
+    }
+    const afterNpx = current.replace(/^npx(?:\s+--yes)?\s+/, "").trim();
+    if (afterNpx !== current) {
+      current = afterNpx;
+      continue;
+    }
+    const wrapped = current.match(/^(?:bash|sh|dash|zsh|ksh)\s+-[a-zA-Z]*c[a-zA-Z]*\s+([\s\S]+)$/);
+    if (wrapped) {
+      current = unquoteShell(wrapped[1]).trim();
+      continue;
+    }
+    break;
+  }
+  return /^eas\s+submit\b/.test(current);
+}
+
+function scriptHasExecutableEasSubmit(script) {
+  return splitShellSegments(stripShellCommentLines(script)).some(looksLikeEasSubmitCommand);
+}
 
 function workflowHasExecutableEasSubmit(source) {
-  return extractYamlRunScripts(source).some((script) =>
-    EXECUTABLE_EAS_SUBMIT.test(stripShellCommentLines(script)),
-  );
+  return extractYamlRunScripts(source).some(scriptHasExecutableEasSubmit);
 }
 
 function assertNoExecutableEasSubmit(source, label) {
