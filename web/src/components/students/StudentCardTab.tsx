@@ -31,7 +31,7 @@ interface StudentCardTabProps {
   workspace: StudentWorkspaceViewModel;
   dossier?: SchoolStudent | null;
   canManage: boolean;
-  schoolCode: string;
+  schoolCode?: string;
 }
 
 interface PreviewState {
@@ -77,6 +77,9 @@ export function StudentCardTab({
   schoolCode,
 }: StudentCardTabProps) {
   const activeSchool = useOptionalActiveSchool();
+  const resolvedSchoolCode = String(
+    schoolCode ?? (activeSchool?.activeSchoolCode === "*" ? "" : activeSchool?.activeSchoolCode ?? ""),
+  ).trim();
   const [gate, setGate] = useState<StudentCardSettingsGate>({ state: "unavailable" });
   const [cards, setCards] = useState<StudentAccessCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +104,7 @@ export function StudentCardTab({
     async function load() {
       setLoading(true);
       setNotice(null);
-      if (!schoolCode) {
+      if (!resolvedSchoolCode) {
         if (!cancelled) {
           setGate({ state: "unavailable" });
           setCards([]);
@@ -110,7 +113,7 @@ export function StudentCardTab({
         return;
       }
       try {
-        const settings = await schoolSettingsApi.get(schoolCode);
+        const settings = await schoolSettingsApi.get(resolvedSchoolCode);
         if (cancelled) return;
         const nextGate = resolveStudentCardSettingsGate(settings);
         setGate(nextGate);
@@ -132,7 +135,7 @@ export function StudentCardTab({
     return () => {
       cancelled = true;
     };
-  }, [reloadCards, schoolCode]);
+  }, [reloadCards, resolvedSchoolCode]);
 
   const readyMedium = gate.state === "ready" ? gate.medium : null;
   const hasActiveCard = cards.some((card) => card.status === "active");

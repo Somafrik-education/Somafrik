@@ -7,7 +7,6 @@ import { buildStudentWorkspacePath } from "../../lib/studentWorkspaceNavigation"
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
 import type { SchoolStudent } from "../../lib/studentsApi";
 import { ForbiddenState } from "../../design-system";
-import { useOptionalActiveSchool } from "../../context/ActiveSchoolContext";
 import { canManageStudentCards } from "../../lib/studentCardPolicy";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { StudentCardTab } from "./StudentCardTab";
@@ -36,7 +35,7 @@ function renderActiveTab(
   module: StudentWorkspaceModule | undefined,
   dossier?: SchoolStudent | null,
   onIdentityPersisted?: () => void | Promise<void>,
-  cardContext?: { canManage: boolean; schoolCode: string },
+  cardContext?: { canManage: boolean },
 ) {
   switch (moduleId) {
     case "overview":
@@ -65,7 +64,6 @@ function renderActiveTab(
           workspace={workspace}
           dossier={dossier}
           canManage={cardContext?.canManage === true}
-          schoolCode={cardContext?.schoolCode ?? ""}
         />
       );
     default:
@@ -84,9 +82,7 @@ export function StudentWorkspaceTabs({
   accessDenied = false,
 }: StudentWorkspaceTabsProps) {
   const permissionCtx = usePermissionContext();
-  const activeSchool = useOptionalActiveSchool();
   const activeModule = modules.find((module) => module.id === activeModuleId);
-  const schoolCode = String(activeSchool?.activeSchoolCode ?? "").trim();
 
   return (
     <div className="space-y-6">
@@ -117,7 +113,6 @@ export function StudentWorkspaceTabs({
           onIdentityPersisted,
           {
             canManage: canManageStudentCards(permissionCtx),
-            schoolCode: schoolCode === "*" ? "" : schoolCode,
           },
         )
       )}
