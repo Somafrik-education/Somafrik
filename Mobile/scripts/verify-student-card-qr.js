@@ -37,6 +37,8 @@ function main() {
   const attendance = read("Mobile/src/screens/TeacherAttendanceScreen.tsx");
   const api = read("Mobile/src/services/studentCardScanApi.ts");
   const policy = read("Mobile/src/lib/studentCardScan.ts");
+  const establishment = read("Mobile/src/lib/establishment.ts");
+  const authorIdentity = read("Mobile/src/lib/attendanceClassIdentity.ts");
   const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
   const permissions = read("Mobile/src/domain/security/permissions.ts");
   const outbox = read("Mobile/src/lib/outbox.ts");
@@ -96,6 +98,14 @@ function main() {
   assert.doesNotMatch(attendance, /Paramètres Établissement:READ/);
   assert.match(policy, /hasValidSelectedClass/);
   assert.match(attendance, /selectedClass=\{selectedClass\}/);
+  assert.match(establishment, /resolveCanonicalRoleIdentity/);
+  assert.match(establishment, /canonicalizeRoleKey/);
+  assert.match(establishment, /hasAuthoritativeRoleKeys/);
+  assert.doesNotMatch(establishment, /isTeacherUserRole/);
+  assert.doesNotMatch(establishment, /includes\(["']prof["']\)/);
+  assert.match(authorIdentity, /isTeacherSession/);
+  assert.match(authorIdentity, /teacher_session/);
+  assert.match(authorIdentity, /ne pas forger teacherId/);
   assert.doesNotMatch(attendance, /CameraView/);
   assert.doesNotMatch(attendance, /navigate\(["']StudentCardScan["']/);
   assert.match(outbox, /OUTBOX_ALLOWED_DOMAINS = \["messages", "presences", "notes"\]/);

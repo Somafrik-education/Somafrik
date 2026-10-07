@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import type { SchoolClass, Student, Teacher, TeacherAssignment } from "../data/catalog";
 import { listScopedAttendanceClasses } from "./attendanceClassIdentity";
 import {
+  isTeacherSession,
   listCanonicalTeacherAssignments,
   resolveTeacherAssignmentsForSession,
   scopedClassesForSession,
@@ -453,8 +454,49 @@ function run() {
     "Présences teacher : une seule 6ème A (classe affectée locale)",
   );
 
+  assert.equal(isTeacherSession({ roleKey: "TEACHER" }), true, "AUTHOR-01: roleKey=TEACHER");
+  assert.equal(
+    isTeacherSession({
+      role: "teacher",
+      roleKeys: ["SECRETARY", "TEACHER"],
+      user: { role: "Enseignant", roleKeys: ["SECRETARY", "TEACHER"] },
+    }),
+    true,
+    "AUTHOR-01: roleKeys TEACHER + Enseignant actif",
+  );
+  assert.equal(isTeacherSession({ role: "teacher" }), true, "AUTHOR-01: alias teacher");
+  assert.equal(isTeacherSession({ user: { role: "Enseignant" } }), true, "AUTHOR-01: user.role Enseignant");
+  assert.equal(
+    isTeacherSession({
+      roleKey: "TEACHER",
+      roleKeys: ["TEACHER"],
+      user: { role: "Enseignant", roleKey: "TEACHER", roleKeys: ["TEACHER"], effectiveRoleLabel: "Professeur" },
+    }),
+    true,
+    "AUTHOR-01: Professeur conserve roleKey",
+  );
+  assert.equal(
+    isTeacherSession({ role: "school_admin", user: { role: "Admin School" }, roleKeys: ["SCHOOL_ADMIN"] }),
+    false,
+    "AUTHOR-01: Admin n'est pas une session enseignant",
+  );
+  assert.equal(
+    isTeacherSession({ role: "Professeur", user: { role: "Professeur" } }),
+    false,
+    "AUTHOR-01: libellé visuel seul refusé",
+  );
+  assert.equal(
+    isTeacherSession({ roleKeys: [], user: { role: "Enseignant", roleKeys: [] } }),
+    false,
+    "AUTHOR-01: roleKeys vides fail-closed",
+  );
+
   const here = path.dirname(fileURLToPath(import.meta.url));
   const establishmentSrc = fs.readFileSync(path.join(here, "establishment.ts"), "utf8");
+  assert.match(establishmentSrc, /resolveCanonicalRoleIdentity/);
+  assert.match(establishmentSrc, /canonicalizeRoleKey/);
+  assert.doesNotMatch(establishmentSrc, /isTeacherUserRole/);
+  assert.doesNotMatch(establishmentSrc, /includes\(["']prof["']\)/);
   assert.match(establishmentSrc, /teacherUserId/);
   assert.match(establishmentSrc, /teacher_user_id/);
   const scopedFn = establishmentSrc.match(

@@ -532,6 +532,19 @@ async function runFlowCases() {
 }
 
 {
+  let postedTeacherId: string | undefined = "sentinel";
+  const { outcome } = await flow({
+    author: { status: "teacher_session" },
+    recordAttendance: async (_token, attendance) => {
+      postedTeacherId = attendance.teacherId;
+      return { ...resolvedSameClass, attendance: { status: "present", date: attendance.date } };
+    },
+  });
+  assert.equal(outcome.kind, "success");
+  assert.equal(postedTeacherId, undefined, "AUTHOR-01.7 teacher_session : aucun teacherId injecté");
+}
+
+{
   const { outcome, calls } = await flow({ financeEnabled: true });
   assert.equal(outcome.kind, "success");
   if (outcome.kind === "success") {
