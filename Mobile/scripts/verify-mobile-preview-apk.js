@@ -26,6 +26,7 @@ const EXPO_PROJECT_ID = "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5";
 const PREVIEW_API = CANONICAL_API_URLS.preview;
 const FORBIDDEN_PREVIEW_NEEDLES = [
   "api.somafrik.app",
+  "somafrik-api-preprod.onrender.com",
   "localhost",
   "127.0.0.1",
   "10.0.2.2",
@@ -80,10 +81,8 @@ function parseExpoConfigJson(stdout) {
 
 function scanPreviewBundle(bundle) {
   assert.ok(bundle.length > 1000, "preview: bundle vide");
-  assert.ok(
-    bundle.includes(PREVIEW_API) || bundle.includes("somafrik-api-preprod.onrender.com"),
-    `preview: API préprod absente (${PREVIEW_API})`,
-  );
+  assert.ok(bundle.includes(PREVIEW_API), `preview: API préprod absente (${PREVIEW_API})`);
+  assert.ok(!bundle.includes("somafrik-api-preprod.onrender.com"), "preview: URL Render native interdite");
   assert.ok(!bundle.includes("api.somafrik.app"), "preview: API production présente");
   assert.doesNotMatch(bundle, /http:\/\/localhost/);
   assert.doesNotMatch(bundle, /http:\/\/127\.0\.0\.1/);
@@ -190,7 +189,8 @@ function main() {
     throw new Error("verify-mobile-preview-apk.test.js failed");
   }
 
-  assert.equal(PREVIEW_API, "https://somafrik-api-preprod.onrender.com");
+  assert.equal(PREVIEW_API, CANONICAL_API_URLS.preview);
+  assert.equal(CANONICAL_API_URLS.preview, "https://api-preprod.somafrik.app");
   assert.equal(DISPLAY_NAMES.preview, "Somafrik");
   assert.equal(ANDROID_PACKAGE, "com.somafrik.app");
   assert.equal(APP_SLUG, "somafrik");
@@ -278,7 +278,8 @@ function main() {
   assert.match(docs, /Nom affiché \| \*\*Somafrik\*\*/);
   assert.match(docs, /Badge \| \*\*Preview QA\*\*/);
   assert.doesNotMatch(docs, /lanceur doit afficher \*\*Somafrik QA\*\*/);
-  assert.match(docs, /somafrik-api-preprod\.onrender\.com/);
+  assert.match(docs, /https:\/\/api-preprod\.somafrik\.app/);
+  assert.doesNotMatch(docs, /somafrik-api-preprod\.onrender\.com/);
   assert.match(docs, /ne constitue pas un service Render/);
   assert.match(docs, /BLOCKED_EAS_AUTH|eas login/);
   assert.match(docs, /SOMAFRIK_REQUIRE_EAS_AUTH/);
@@ -287,7 +288,8 @@ function main() {
   assert.match(l10, /NO-GO/);
   assert.match(l10, /Admin School/);
   assert.match(l10, /Enseignant/);
-  assert.match(l10, /somafrik-api-preprod\.onrender\.com/);
+  assert.match(l10, /https:\/\/api-preprod\.somafrik\.app/);
+  assert.doesNotMatch(l10, /somafrik-api-preprod\.onrender\.com/);
   assert.match(l10, /GRANT/);
   assert.match(l10, /outbox/);
   assert.match(l10, /BLOCKED_EAS_AUTH/);

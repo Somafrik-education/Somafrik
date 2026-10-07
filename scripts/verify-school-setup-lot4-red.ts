@@ -293,6 +293,11 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   "docs/audits/GATE-QR-STORES-camera-qr.md",
   "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
   "docs/mobile/RELEASE-READINESS.md",
+  "docs/mobile/PREVIEW-APK.md",
+  "docs/mobile/L10-APK-RC1-SMOKE.md",
+  "Mobile/scripts/verify-mobile-preview-apk.js",
+  "Mobile/scripts/verify-mobile-preview-apk.test.js",
+  "Mobile/config/releaseEnvironments.test.js",
 ]);
 
 function isStudentCardPr6Signal(file: string) {

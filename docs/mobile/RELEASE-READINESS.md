@@ -22,8 +22,8 @@ Package Android **stable** : `com.somafrik.app` (identique préprod / prod). Mê
 | Profil | API | Package | Nom affiché | Distribution | Artefact | Google Play |
 | ------ | --- | ------- | ----------- | ------------ | -------- | ----------- |
 | development | `EXPO_PUBLIC_API_URL` / LAN (HTTP local autorisé) | `com.somafrik.app` | Somafrik + badge Développement | internal | APK / dev client | Non |
-| preview | `https://somafrik-api-preprod.onrender.com` | `com.somafrik.app` | Somafrik + badge Preview QA | internal | APK | Non — voir [PREVIEW-APK.md](./PREVIEW-APK.md) |
-| **preproduction** | **`https://somafrik-api-preprod.onrender.com`** (Render, déjà dans `docs/preproduction.md`) | `com.somafrik.app` | Somafrik + badge Préproduction | store | **AAB** | **Internal testing** |
+| preview | `https://api-preprod.somafrik.app` | `com.somafrik.app` | Somafrik + badge Preview QA | internal | APK | Non — voir [PREVIEW-APK.md](./PREVIEW-APK.md) |
+| **preproduction** | **`https://api-preprod.somafrik.app`** (Render, déjà dans `docs/preproduction.md`) | `com.somafrik.app` | Somafrik + badge Préproduction | store | **AAB** | **Internal testing** |
 | production | `https://api.somafrik.app` | `com.somafrik.app` | Somafrik | store | AAB | Production |
 
 Preview et préproduction partagent l’API Render préprod : **aucune URL QA distincte n’existe dans le dépôt**. La séparation Play vs APK interne reste obligatoire. `preproduction ≠ production`.
@@ -32,7 +32,7 @@ Render héberge l’API et le Web. Le Mobile Preview est distribué via Expo/EAS
 
 `EXPO_PUBLIC_DEMO_PIN` est omis de tous les profils `eas.json` : EAS CLI 22 refuse une valeur d’environnement vide (`""`). Le PIN démo reste interdit en preview / préprod / prod.
 
-Fail-closed : preview / préprod / prod refusent URL absente, HTTP, localhost, `10.0.2.2`, `192.168.*`. Aucun `API_URL \|\| "http://localhost:5000"` sur ces profils. Le profil `preview` doit cibler **exactement** `https://somafrik-api-preprod.onrender.com`.
+Fail-closed : preview / préprod / prod refusent URL absente, HTTP, localhost, `10.0.2.2`, `192.168.*`. Aucun `API_URL \|\| "http://localhost:5000"` sur ces profils. Le profil `preview` doit cibler **exactement** `https://api-preprod.somafrik.app`.
 
 Variables publiques (URLs seulement, jamais un secret) :
 

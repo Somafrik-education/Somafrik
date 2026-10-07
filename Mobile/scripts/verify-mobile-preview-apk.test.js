@@ -12,7 +12,20 @@ const {
   interpretEasProjectInfo,
 } = require("./verify-mobile-preview-apk");
 
+const { CANONICAL_API_URLS } = require("../config/releaseEnvironments");
 const SRC = fs.readFileSync(path.join(__dirname, "verify-mobile-preview-apk.js"), "utf8");
+const EAS = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "..", "eas.json"), "utf8").replace(/^\uFEFF/, ""),
+);
+
+assert.equal(CANONICAL_API_URLS.preview, "https://api-preprod.somafrik.app");
+assert.equal(EAS.build.preview.env.EXPO_PUBLIC_API_URL, CANONICAL_API_URLS.preview);
+assert.equal(EAS.build.preview.env.EXPO_PUBLIC_API_URL_PREVIEW, CANONICAL_API_URLS.preview);
+assert.doesNotMatch(
+  SRC,
+  /bundle\.includes\(PREVIEW_API\)\s*\|\|\s*bundle\.includes\("somafrik-api-preprod\.onrender\.com"\)/,
+);
+assert.match(SRC, /CANONICAL_API_URLS\.preview/);
 
 assert.equal(EXPO_PROJECT_ID, "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5");
 assert.doesNotMatch(
