@@ -25,10 +25,14 @@ export type TeacherSessionLike = {
   role?: string | null;
   roleKey?: string | null;
   roleKeys?: Array<string | null | undefined> | null;
+  /** Affichage uniquement — ne pilote jamais isTeacherSession. */
+  roleLabel?: string | null;
   user?: {
     role?: string | null;
     roleKey?: string | null;
     roleKeys?: Array<string | null | undefined> | null;
+    /** Affichage uniquement — ne pilote jamais isTeacherSession. */
+    effectiveRoleLabel?: string | null;
   } | null;
 } | null | undefined;
 
