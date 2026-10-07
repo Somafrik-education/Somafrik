@@ -38,16 +38,22 @@ function read(file) {
   return fs.readFileSync(file, "utf8");
 }
 
-function resolveExecutable(command, platform = process.platform) {
+function resolveSpawn(command, args = [], platform = process.platform, env = process.env) {
   if (platform === "win32" && (command === "npx" || command === "npm")) {
-    return `${command}.cmd`;
+    return {
+      command: env.ComSpec || env.COMSPEC || "cmd.exe",
+      args: ["/d", "/c", `${command}.cmd`, ...args],
+    };
   }
-  return command;
+  return {
+    command,
+    args,
+  };
 }
 
 function run(command, args, options = {}) {
-  const executable = resolveExecutable(command);
-  const result = spawnSync(executable, args, {
+  const resolved = resolveSpawn(command, args);
+  const result = spawnSync(resolved.command, resolved.args, {
     encoding: "utf8",
     cwd: options.cwd || MOBILE,
     env: { ...process.env, ...(options.env || {}) },
@@ -55,7 +61,8 @@ function run(command, args, options = {}) {
   });
   if (result.status !== 0) {
     throw new Error(
-      `${command} ${args.join(" ")} failed:\n${result.stderr || result.stdout || result.error}`,
+      `${command} ${args.join(" ")} failed:\n`
+      + `${result.stderr || result.stdout || result.error}`,
     );
   }
   return result;
@@ -170,7 +177,8 @@ function logBlockedEasAuth() {
 }
 
 function probeEasAuth() {
-  const result = spawnSync(resolveExecutable("npx"), ["eas-cli", "project:info"], {
+  const resolved = resolveSpawn("npx", ["eas-cli", "project:info"]);
+  const result = spawnSync(resolved.command, resolved.args, {
     encoding: "utf8",
     cwd: MOBILE,
     env: process.env,
@@ -337,7 +345,7 @@ module.exports = {
   isEasAuthMissing,
   interpretEasProjectInfo,
   probeEasAuth,
-  resolveExecutable,
+  resolveSpawn,
 };
 
 if (require.main === module) {

@@ -18,6 +18,7 @@ const {
   DISPLAY_NAMES,
 } = require("../config/releaseEnvironments");
 const { evidenceLogLine, writeAabEvidence } = require("./aabEvidence");
+const { resolveSpawn } = require("./verify-mobile-preview-apk");
 
 const MOBILE = path.join(__dirname, "..");
 const ANDROID = path.join(MOBILE, "android");
@@ -35,7 +36,8 @@ function resolveAndroidSdk() {
 }
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const resolved = resolveSpawn(command, args);
+  const result = spawnSync(resolved.command, resolved.args, {
     encoding: "utf8",
     cwd: options.cwd || MOBILE,
     env: { ...process.env, ...(options.env || {}) },

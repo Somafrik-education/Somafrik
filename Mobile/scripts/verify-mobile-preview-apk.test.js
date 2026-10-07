@@ -10,7 +10,7 @@ const {
   EXPO_PROJECT_ID,
   isEasAuthMissing,
   interpretEasProjectInfo,
-  resolveExecutable,
+  resolveSpawn,
 } = require("./verify-mobile-preview-apk");
 
 const { CANONICAL_API_URLS } = require("../config/releaseEnvironments");
@@ -28,11 +28,48 @@ assert.doesNotMatch(
 );
 assert.match(SRC, /CANONICAL_API_URLS\.preview/);
 
-assert.equal(resolveExecutable("npx", "win32"), "npx.cmd");
-assert.equal(resolveExecutable("npm", "win32"), "npm.cmd");
-assert.equal(resolveExecutable("npx", "linux"), "npx");
-assert.equal(resolveExecutable("npm", "linux"), "npm");
-assert.equal(resolveExecutable("node", "win32"), "node");
+assert.deepStrictEqual(
+  resolveSpawn("npx", ["expo", "config"], "win32", { ComSpec: "C:\\Windows\\System32\\cmd.exe" }),
+  {
+    command: "C:\\Windows\\System32\\cmd.exe",
+    args: ["/d", "/c", "npx.cmd", "expo", "config"],
+  },
+);
+assert.deepStrictEqual(
+  resolveSpawn("npm", ["run", "test"], "win32", { ComSpec: "cmd.exe" }),
+  {
+    command: "cmd.exe",
+    args: ["/d", "/c", "npm.cmd", "run", "test"],
+  },
+);
+assert.deepStrictEqual(
+  resolveSpawn("npx", ["expo", "config"], "linux", {}),
+  {
+    command: "npx",
+    args: ["expo", "config"],
+  },
+);
+assert.deepStrictEqual(
+  resolveSpawn("node", ["-v"], "win32", { ComSpec: "cmd.exe" }),
+  {
+    command: "node",
+    args: ["-v"],
+  },
+);
+assert.doesNotMatch(SRC, /shell:\s*true/);
+assert.doesNotMatch(SRC, /spawnSync\(\s*["']npx(?:\.cmd)?["']/);
+assert.match(SRC, /resolveSpawn/);
+const nativeSrc = fs.readFileSync(path.join(__dirname, "verify-native-prebuild.js"), "utf8");
+assert.match(nativeSrc, /resolveSpawn/);
+assert.doesNotMatch(nativeSrc, /shell:\s*true/);
+const winWf = fs.readFileSync(
+  path.join(__dirname, "..", "..", ".github", "workflows", "mobile-preview-windows.yml"),
+  "utf8",
+);
+assert.match(winWf, /windows-latest/);
+assert.match(winWf, /verify-mobile-preview-apk\.test\.js/);
+assert.match(winWf, /npx expo config --type public --json/);
+assert.match(winWf, /verify:mobile-preview-apk/);
 
 assert.equal(EXPO_PROJECT_ID, "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5");
 assert.doesNotMatch(

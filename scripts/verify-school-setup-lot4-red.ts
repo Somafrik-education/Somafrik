@@ -298,6 +298,7 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   "Mobile/scripts/verify-mobile-preview-apk.js",
   "Mobile/scripts/verify-mobile-preview-apk.test.js",
   "Mobile/config/releaseEnvironments.test.js",
+  ".github/workflows/mobile-preview-windows.yml",
 ]);
 
 function isStudentCardPr6Signal(file: string) {
