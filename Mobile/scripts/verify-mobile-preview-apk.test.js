@@ -77,6 +77,7 @@ assert.equal(isCoreMode(["node", "scripts/verify-mobile-preview-apk.js"], { SOMA
 assert.equal(isCoreMode(["node", "scripts/verify-mobile-preview-apk.js"], {}), false);
 assert.match(SRC, /if \(core\)/);
 assert.match(SRC, /probeEasAuth\(\)/);
+require("./verify-native-prebuild.test.js");
 
 assert.equal(EXPO_PROJECT_ID, "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5");
 assert.doesNotMatch(

@@ -70,7 +70,7 @@
     "verify:mobile-preview-apk": "node scripts/verify-mobile-preview-apk.js",
     "preverify:mobile-preview-apk:core": "node scripts/verify-mobile-branding.js",
     "verify:mobile-preview-apk:core": "node scripts/verify-mobile-preview-apk.js --core",
-    "test:preview-apk-eas-auth": "node scripts/verify-mobile-preview-apk.test.js",
+    "test:preview-apk-eas-auth": "node scripts/verify-mobile-preview-apk.test.js && node scripts/verify-native-prebuild.test.js",
     "verify:mobile-native-aab": "node scripts/verify-native-prebuild.js",
     "verify:student-card-mobile": "npm run verify:student-card-qr",
     "verify:student-card-qr": "npx --yes tsx src/lib/studentCardScan.test.ts && node scripts/verify-student-card-qr.js",

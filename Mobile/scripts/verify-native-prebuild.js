@@ -26,6 +26,34 @@ const IOS = path.join(MOBILE, "ios");
 const CANONICAL_CAMERA_PERMISSION =
   "Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.";
 
+const PROFILE_API_ENV_KEYS = {
+  development: "EXPO_PUBLIC_API_URL_DEV",
+  preview: "EXPO_PUBLIC_API_URL_PREVIEW",
+  preproduction: "EXPO_PUBLIC_API_URL_PREPRODUCTION",
+  production: "EXPO_PUBLIC_API_URL_PRODUCTION",
+};
+
+function prebuildEnvForProfile(profile) {
+  const apiUrl = CANONICAL_API_URLS[profile];
+  const profileApiKey = PROFILE_API_ENV_KEYS[profile];
+  const env = {
+    CI: "1",
+    EXPO_PUBLIC_RELEASE_PROFILE: profile,
+    EAS_BUILD_PROFILE: profile,
+    EXPO_PUBLIC_API_URL: apiUrl,
+    EXPO_PUBLIC_DEMO_MODE: "false",
+    EXPO_PUBLIC_DEMO_PIN: "",
+  };
+  if (profileApiKey && apiUrl) {
+    env[profileApiKey] = apiUrl;
+  }
+  return env;
+}
+
+function mergeSpawnEnv(overlay, parentEnv = process.env) {
+  return { ...parentEnv, ...(overlay || {}) };
+}
+
 function read(file) {
   return fs.readFileSync(file, "utf8");
 }
@@ -40,7 +68,7 @@ function run(command, args, options = {}) {
   const result = spawnSync(resolved.command, resolved.args, {
     encoding: "utf8",
     cwd: options.cwd || MOBILE,
-    env: { ...process.env, ...(options.env || {}) },
+    env: mergeSpawnEnv(options.env, process.env),
     maxBuffer: 20 * 1024 * 1024,
   });
   if (result.status !== 0) {
@@ -203,14 +231,7 @@ function inspectGeneratedIos() {
 function prebuildIos() {
   console.log("prebuild ios --clean");
   run("npx", ["expo", "prebuild", "--platform", "ios", "--clean", "--no-install"], {
-    env: {
-      CI: "1",
-      EXPO_PUBLIC_RELEASE_PROFILE: "production",
-      EAS_BUILD_PROFILE: "production",
-      EXPO_PUBLIC_API_URL: CANONICAL_API_URLS.production,
-      EXPO_PUBLIC_DEMO_MODE: "false",
-      EXPO_PUBLIC_DEMO_PIN: "",
-    },
+    env: prebuildEnvForProfile("production"),
   });
   inspectGeneratedIos();
 }
@@ -237,17 +258,18 @@ function collectAndroidManifests(root) {
 
 function prebuildProfile(profile) {
   const apiUrl = CANONICAL_API_URLS[profile];
+  const profileApiKey = PROFILE_API_ENV_KEYS[profile];
   console.log(`prebuild android --clean (${profile})`);
-  run("npx", ["expo", "prebuild", "--platform", "android", "--clean", "--no-install"], {
-    env: {
-      CI: "1",
-      EXPO_PUBLIC_RELEASE_PROFILE: profile,
-      EAS_BUILD_PROFILE: profile,
-      EXPO_PUBLIC_API_URL: apiUrl,
-      EXPO_PUBLIC_DEMO_MODE: "false",
-      EXPO_PUBLIC_DEMO_PIN: "",
-    },
-  });
+  const env = prebuildEnvForProfile(profile);
+  if (profileApiKey && apiUrl) {
+    assert.equal(env[profileApiKey], apiUrl);
+  }
+  assert.equal(env.EXPO_PUBLIC_API_URL, apiUrl);
+  run(
+    "npx",
+    ["expo", "prebuild", "--platform", "android", "--clean", "--no-install"],
+    { env },
+  );
   return inspectGeneratedAndroid(profile);
 }
 
@@ -376,6 +398,9 @@ module.exports = {
   runNativeProof,
   inspectGeneratedAndroid,
   prebuildProfile,
+  PROFILE_API_ENV_KEYS,
+  prebuildEnvForProfile,
+  mergeSpawnEnv,
 };
 
 if (require.main === module) {
