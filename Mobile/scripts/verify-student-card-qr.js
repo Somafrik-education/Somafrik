@@ -59,6 +59,9 @@ function main() {
   assert.doesNotMatch(modal, /useState\([^)]*cardToken|setToken\(|navigation\.navigate/);
   assert.match(api, /from "\.\/httpClient"/);
   assert.match(api, /httpRequest<StudentCardScanResponse>\("\/student-cards\/scan"/);
+  assert.match(api, /httpRequest<StudentCardCapabilities>\("\/student-cards\/capabilities"/);
+  assert.match(api, /export function getStudentCardCapabilities/);
+  assert.doesNotMatch(api, /schoolCode/);
   assert.match(api, /export function resolveStudentCard/);
   assert.match(api, /export function recordStudentCardAttendance/);
   assert.match(api, /export function readStudentCardFinance/);
@@ -74,8 +77,12 @@ function main() {
   assert.match(attendance, /Enregistrer l'appel/);
   assert.match(attendance, /ATTENDANCE_ACTIONS/);
   assert.match(attendance, /StudentCardQrScannerModal/);
-  assert.match(attendance, /isStudentCardAttendanceScanEnabled/);
-  assert.match(attendance, /hasValidSelectedClass/);
+  assert.match(attendance, /isStudentCardQrScannerVisible/);
+  assert.match(attendance, /getStudentCardCapabilities/);
+  assert.match(attendance, /sanitizeStudentCardCapabilities/);
+  assert.doesNotMatch(attendance, /getSchoolSettings\(/);
+  assert.doesNotMatch(attendance, /Paramètres Établissement:READ/);
+  assert.match(policy, /hasValidSelectedClass/);
   assert.match(attendance, /selectedClass=\{selectedClass\}/);
   assert.doesNotMatch(attendance, /CameraView/);
   assert.doesNotMatch(attendance, /navigate\(["']StudentCardScan["']/);

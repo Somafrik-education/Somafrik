@@ -300,6 +300,11 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   "Mobile/config/releaseEnvironments.test.js",
   ".github/workflows/mobile-preview-windows.yml",
   "Mobile/scripts/verify-native-prebuild.test.js",
+  "backend/server.js",
+  "backend/services/rbacService.js",
+  "backend/lib/platformPersonalDataGuard.js",
+  "backend/lib/platformPersonalDataGuard.test.js",
+  "backend/scripts/verify-student-access-cards.js",
 ]);
 
 function isStudentCardPr6Signal(file: string) {
@@ -321,6 +326,8 @@ function isStudentCardPr6IntegrationFile(file: string) {
   if (/^Mobile\/src\/screens\/StudentCard[^/]*$/.test(file)) return true;
   if (/^Mobile\/src\/components\/StudentCard[^/]*$/.test(file)) return true;
   if (/^Mobile\/scripts\/verify-student-card[^/]*$/.test(file)) return true;
+  if (/^backend\/lib\/studentCard[^/]*$/.test(file)) return true;
+  if (/^backend\/lib\/studentAccessCards[^/]*$/.test(file)) return true;
   return false;
 }
 
@@ -710,12 +717,30 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       const studentCardPr7PlusBackend = evaluateLot4Scope([
         "Mobile/src/components/StudentCardQrScannerModal.tsx",
         "Mobile/src/lib/studentCardScan.ts",
-        "backend/server.js",
+        "backend/lib/educationSchoolCatalogScope.js",
       ]);
       assert.equal(
         studentCardPr7PlusBackend.kind,
         "fail",
-        "L4-09: Carte élève Mobile + backend/server.js doit rester FAIL",
+        "L4-09: Carte élève Mobile + backend hors allowlist doit rester FAIL",
+      );
+
+      const studentCardPr7Capabilities = evaluateLot4Scope([
+        "Mobile/src/components/StudentCardQrScannerModal.tsx",
+        "Mobile/src/lib/studentCardScan.ts",
+        "Mobile/src/services/studentCardScanApi.ts",
+        "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+        "backend/lib/studentCardCapabilities.js",
+        "backend/lib/studentCardCapabilities.test.js",
+        "backend/server.js",
+        "backend/services/rbacService.js",
+        "backend/lib/platformPersonalDataGuard.js",
+        "backend/scripts/verify-student-access-cards.js",
+      ]);
+      assert.equal(
+        studentCardPr7Capabilities.kind,
+        "na",
+        "L4-09: capabilities Carte élève (Présences) autorisées dans le périmètre PR7",
       );
 
       const studentCardPlusBackend = evaluateLot4Scope([
@@ -724,12 +749,12 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "web/src/components/students/StudentCardTab.tsx",
         "web/src/lib/studentCardPolicy.ts",
         "web/src/lib/studentCardsApi.ts",
-        "backend/server.js",
+        "backend/lib/educationSchoolCatalogScope.js",
       ]);
       assert.equal(
         studentCardPlusBackend.kind,
         "fail",
-        "L4-09: Carte élève + backend/server.js doit rester FAIL",
+        "L4-09: Carte élève + backend hors allowlist doit rester FAIL",
       );
 
       const studentCardPlusMigration = evaluateLot4Scope([
@@ -746,12 +771,12 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       const studentCardPlusRbac = evaluateLot4Scope([
         "web/src/components/students/StudentCardTab.tsx",
         "web/src/lib/studentCardPolicy.ts",
-        "backend/services/rbacService.js",
+        "backend/lib/functionalModulesCatalog.js",
       ]);
       assert.equal(
         studentCardPlusRbac.kind,
         "fail",
-        "L4-09: Carte élève + RBAC doit rester FAIL",
+        "L4-09: Carte élève + catalogue hors allowlist doit rester FAIL",
       );
 
       const lot4PlusStudentCard = evaluateLot4Scope([

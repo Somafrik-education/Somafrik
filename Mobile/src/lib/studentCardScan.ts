@@ -86,6 +86,31 @@ export function isStudentCardScanFinanceEnabled(
   return isStudentCardQrScanEnabled(settings) && settings?.studentCardFinanceCheckEnabled === true;
 }
 
+export function sanitizeStudentCardCapabilities(
+  row: unknown,
+): StudentCardScanSettings | null {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const source = row as Record<string, unknown>;
+  return {
+    studentCardEnabled: source.studentCardEnabled === true,
+    studentCardQrEnabled: source.studentCardQrEnabled === true,
+    studentCardAttendanceEnabled: source.studentCardAttendanceEnabled === true,
+    studentCardFinanceCheckEnabled: source.studentCardFinanceCheckEnabled === true,
+  };
+}
+
+export function isStudentCardQrScannerVisible(args: {
+  canUpdatePresences: boolean;
+  settings: StudentCardScanSettings | null | undefined;
+  selectedClass: SelectedAttendanceClassRef | null | undefined;
+}): boolean {
+  return (
+    args.canUpdatePresences === true &&
+    isStudentCardAttendanceScanEnabled(args.settings) &&
+    hasValidSelectedClass(args.selectedClass)
+  );
+}
+
 export function studentCardScanErrorCode(error: unknown): string {
   if (error && typeof error === "object" && "code" in error) {
     return String((error as { code?: unknown }).code ?? "").trim();

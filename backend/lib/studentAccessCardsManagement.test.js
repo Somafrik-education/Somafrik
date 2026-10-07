@@ -139,6 +139,7 @@ test("CARTE-PR2 — Superadmin / Admin Pays refusés même avec ALL_PRIVILEGES",
     "POST /api/student-cards/:id/revoke",
     "POST /api/student-cards/:id/replace",
     "POST /api/student-cards/scan",
+    "GET /api/student-cards/capabilities",
   ];
   const superadmin = {
     role: "Super Administrateur Somafrik",
@@ -190,6 +191,11 @@ test("CARTE-PR3 — scan Présences CREATE/UPDATE, pas de module Cartes ni ALL_P
   assert.equal(rbac.canAccess(parent, "POST /api/student-cards/scan"), false);
   assert.equal(rbac.canAccess(student, "POST /api/student-cards/scan"), false);
   assert.equal(rbac.canAccess({ ...teacher, permissions: ["Élèves:UPDATE", "ALL_PRIVILEGES"] }, "POST /api/student-cards/scan"), false);
+  assert.equal(rbac.canAccess(teacher, "GET /api/student-cards/capabilities"), true);
+  assert.equal(rbac.canAccess({ ...teacher, permissions: ["Présences:UPDATE"] }, "GET /api/student-cards/capabilities"), true);
+  assert.equal(rbac.canAccess(parent, "GET /api/student-cards/capabilities"), false);
+  assert.equal(rbac.canAccess(student, "GET /api/student-cards/capabilities"), false);
+  assert.equal(rbac.canAccess({ ...teacher, permissions: ["Paramètres Établissement:READ"] }, "GET /api/student-cards/capabilities"), false);
   assert.match(server, /app\.post\("\/api\/student-cards\/scan"/);
   assert.doesNotMatch(rbacSrc, /Cartes:|QR:READ|NFC:READ/);
   assert.doesNotMatch(catalog, /Carte Élève|moduleKey: "cards"/);

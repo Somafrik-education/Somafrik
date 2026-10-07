@@ -17,7 +17,9 @@ import {
   isStaleScanScope,
   isStudentCardAttendanceScanEnabled,
   isStudentCardQrScanEnabled,
+  isStudentCardQrScannerVisible,
   isStudentCardScanFinanceEnabled,
+  sanitizeStudentCardCapabilities,
   isoAttendanceDate,
   releaseCardToken,
   runStudentCardScanFlow,
@@ -62,6 +64,98 @@ assert.equal(
     studentCardAttendanceEnabled: true,
   }),
   true,
+);
+
+const validClass = { classId: "cls-1", classCode: "5A" };
+assert.equal(
+  isStudentCardQrScannerVisible({
+    canUpdatePresences: true,
+    settings: {
+      studentCardEnabled: true,
+      studentCardQrEnabled: true,
+      studentCardAttendanceEnabled: true,
+    },
+    selectedClass: validClass,
+  }),
+  true,
+  "MOB-CAP-02",
+);
+assert.equal(
+  isStudentCardQrScannerVisible({
+    canUpdatePresences: true,
+    settings: {
+      studentCardEnabled: false,
+      studentCardQrEnabled: true,
+      studentCardAttendanceEnabled: true,
+    },
+    selectedClass: validClass,
+  }),
+  false,
+  "MOB-CAP-03 master",
+);
+assert.equal(
+  isStudentCardQrScannerVisible({
+    canUpdatePresences: true,
+    settings: {
+      studentCardEnabled: true,
+      studentCardQrEnabled: false,
+      studentCardAttendanceEnabled: true,
+    },
+    selectedClass: validClass,
+  }),
+  false,
+  "MOB-CAP-04 QR",
+);
+assert.equal(
+  isStudentCardQrScannerVisible({
+    canUpdatePresences: true,
+    settings: {
+      studentCardEnabled: true,
+      studentCardQrEnabled: true,
+      studentCardAttendanceEnabled: false,
+    },
+    selectedClass: validClass,
+  }),
+  false,
+  "MOB-CAP-05 attendance",
+);
+assert.equal(
+  isStudentCardQrScannerVisible({
+    canUpdatePresences: true,
+    settings: null,
+    selectedClass: validClass,
+  }),
+  false,
+  "MOB-CAP-06 erreur/null",
+);
+assert.equal(
+  isStudentCardQrScannerVisible({
+    canUpdatePresences: false,
+    settings: {
+      studentCardEnabled: true,
+      studentCardQrEnabled: true,
+      studentCardAttendanceEnabled: true,
+    },
+    selectedClass: validClass,
+  }),
+  false,
+  "MOB-CAP-02 sans Présences CREATE/UPDATE",
+);
+assert.equal(sanitizeStudentCardCapabilities(undefined), null);
+assert.equal(sanitizeStudentCardCapabilities("oui"), null);
+assert.deepEqual(
+  sanitizeStudentCardCapabilities({
+    studentCardEnabled: true,
+    studentCardQrEnabled: "true",
+    studentCardAttendanceEnabled: 1,
+    schoolName: "Secret",
+  }),
+  {
+    studentCardEnabled: true,
+    studentCardQrEnabled: false,
+    studentCardAttendanceEnabled: false,
+    studentCardFinanceCheckEnabled: false,
+  },
 );
 assert.equal(
   isStudentCardScanFinanceEnabled({
@@ -389,7 +483,10 @@ assert.doesNotMatch(modal, /AsyncStorage|SecureStore|SQLite|submitProtectedMutat
 assert.doesNotMatch(modal, /react-native-nfc-manager|expo-nfc|NDEFReader/);
 assert.doesNotMatch(modal, /status:\s*"late"|setAttendanceStatus/);
 assert.match(api, /\/student-cards\/scan/);
+assert.match(api, /httpRequest<StudentCardCapabilities>\("\/student-cards\/capabilities"/);
+assert.doesNotMatch(api, /schoolCode/);
 assert.match(api, /httpRequest/);
+assert.match(api, /export function getStudentCardCapabilities/);
 assert.match(api, /export function resolveStudentCard/);
 assert.match(api, /export function recordStudentCardAttendance/);
 assert.match(api, /export function readStudentCardFinance/);
@@ -403,7 +500,11 @@ assert.match(attendance, /Tout présent/);
 assert.match(attendance, /Enregistrer l'appel/);
 assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
 assert.match(attendance, /StudentCardQrScannerModal/);
-assert.match(attendance, /isStudentCardAttendanceScanEnabled/);
+assert.match(attendance, /isStudentCardQrScannerVisible/);
+assert.match(attendance, /getStudentCardCapabilities/);
+assert.match(attendance, /sanitizeStudentCardCapabilities/);
+assert.doesNotMatch(attendance, /getSchoolSettings\(/);
+assert.doesNotMatch(attendance, /Paramètres Établissement:READ/);
 assert.doesNotMatch(attendance, /navigate\("StudentCardScan"/);
 assert.doesNotMatch(attendance, /useCameraPermissions|requestCameraPermissionsAsync/);
 assert.doesNotMatch(attendance, /CameraView/);

@@ -255,9 +255,16 @@ async function main() {
       [schoolA.id, STUDENT_A, classA.id, yearA.id, schoolB.id, STUDENT_B, classB.id, yearB.id],
     );
     await pool.query(
-      `INSERT INTO school_settings (school_id, student_card_enabled)
-       VALUES ($1, TRUE), ($2, TRUE)
-       ON CONFLICT (school_id) DO UPDATE SET student_card_enabled = EXCLUDED.student_card_enabled`,
+      `INSERT INTO school_settings (
+         school_id, student_card_enabled, student_card_qr_enabled,
+         student_card_attendance_enabled, student_card_finance_check_enabled
+       )
+       VALUES ($1, TRUE, TRUE, TRUE, FALSE), ($2, FALSE, FALSE, FALSE, FALSE)
+       ON CONFLICT (school_id) DO UPDATE SET
+         student_card_enabled = EXCLUDED.student_card_enabled,
+         student_card_qr_enabled = EXCLUDED.student_card_qr_enabled,
+         student_card_attendance_enabled = EXCLUDED.student_card_attendance_enabled,
+         student_card_finance_check_enabled = EXCLUDED.student_card_finance_check_enabled`,
       [schoolA.id, schoolB.id],
     );
 
@@ -338,6 +345,75 @@ async function main() {
       schoolCode: LEFTOVER_B,
       permissions: ["Élèves:UPDATE", "Gérer élèves", "Présences:CREATE"],
     });
+
+    const tokenTeacherUpdate = mint({
+      sub: USER_TEACHER,
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      schoolCode: LEFTOVER_A,
+      permissions: ["Présences:UPDATE"],
+    });
+    const tokenTeacherCreate = mint({
+      sub: USER_TEACHER,
+      role: "Enseignant",
+      roleKeys: ["TEACHER"],
+      schoolCode: LEFTOVER_A,
+      permissions: ["Présences:CREATE"],
+    });
+
+    const capAnon = await request("/student-cards/capabilities");
+    assert.equal(capAnon.status, 401);
+    const capUpdate = await request("/student-cards/capabilities", { token: tokenTeacherUpdate });
+    assert.equal(capUpdate.status, 200, JSON.stringify(capUpdate.data));
+    assert.deepEqual(Object.keys(capUpdate.data).sort(), [
+      "studentCardAttendanceEnabled",
+      "studentCardEnabled",
+      "studentCardFinanceCheckEnabled",
+      "studentCardQrEnabled",
+    ]);
+    assert.equal(capUpdate.data.studentCardEnabled, true);
+    assert.equal(capUpdate.data.studentCardQrEnabled, true);
+    assert.equal(capUpdate.data.studentCardAttendanceEnabled, true);
+    assert.equal(capUpdate.data.studentCardFinanceCheckEnabled, false);
+    assert.equal(JSON.stringify(capUpdate.data).includes(LOGIN_A), false);
+    assert.equal(JSON.stringify(capUpdate.data).includes("Lycée"), false);
+    const capCreate = await request("/student-cards/capabilities", { token: tokenTeacherCreate });
+    assert.equal(capCreate.status, 200, JSON.stringify(capCreate.data));
+    const capAccountant = await request("/student-cards/capabilities", { token: tokenAccountant });
+    assert.equal(capAccountant.status, 403);
+    const capParent = await request("/student-cards/capabilities", { token: tokenParent });
+    assert.equal(capParent.status, 403);
+    const capStudent = await request("/student-cards/capabilities", { token: tokenStudent });
+    assert.equal(capStudent.status, 403);
+    const capSuper = await request("/student-cards/capabilities", {
+      token: tokenSuper,
+      headers: { "X-Somafrik-School-Code": LOGIN_A },
+    });
+    assert.equal(capSuper.status, 403);
+    assert.equal(capSuper.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
+    const capPays = await request("/student-cards/capabilities", { token: tokenPays });
+    assert.equal(capPays.status, 403);
+    assert.equal(capPays.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
+    const capSpoof = await request(
+      `/student-cards/capabilities?schoolCode=${encodeURIComponent(LEFTOVER_B)}`,
+      {
+        token: tokenTeacher,
+        headers: { "X-Somafrik-School-Code": LOGIN_B },
+      },
+    );
+    assert.equal(capSpoof.status, 200, JSON.stringify(capSpoof.data));
+    assert.equal(capSpoof.data.studentCardEnabled, true, "scope JWT A, pas l'établissement B");
+    const capTeacherB = await request("/student-cards/capabilities", {
+      token: mint({
+        sub: USER_TEACHER_B,
+        role: "Enseignant",
+        roleKeys: ["TEACHER"],
+        schoolCode: LEFTOVER_B,
+        permissions: ["Présences:CREATE"],
+      }),
+    });
+    assert.equal(capTeacherB.status, 200, JSON.stringify(capTeacherB.data));
+    assert.equal(capTeacherB.data.studentCardEnabled, false);
 
     const anonymous = await request("/student-cards/scan", { method: "POST", body: { cardToken: "abc.def" } });
     assert.equal(anonymous.status, 401);

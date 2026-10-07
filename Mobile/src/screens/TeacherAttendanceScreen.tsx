@@ -7,16 +7,17 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canManagePresences, canReadFeeGrids, canReadRoute } from "../domain/security/permissions";
-import { getSchoolSettings, type SchoolSettings } from "../services/schoolSettingsApi";
 import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
+import { getStudentCardCapabilities } from "../services/studentCardScanApi";
 import {
   STUDENT_CARD_SCAN_COPY,
   applyQrConfirmedPresence,
-  hasValidSelectedClass,
   isAttendanceAuthorReady,
-  isStudentCardAttendanceScanEnabled,
+  isStudentCardQrScannerVisible,
   isStudentCardScanFinanceEnabled,
   isoAttendanceDate,
+  sanitizeStudentCardCapabilities,
+  type StudentCardScanSettings,
 } from "../lib/studentCardScan";
 import {
   classNameMatches,
@@ -160,7 +161,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [outboxUnavailable, setOutboxUnavailable] = useState(false);
   const [replaySending, setReplaySending] = useState(false);
   const replaySendingRef = useRef(false);
-  const [cardSettings, setCardSettings] = useState<SchoolSettings | null>(null);
+  const [cardSettings, setCardSettings] = useState<StudentCardScanSettings | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
 
   const todayLabel = formatAttendanceDate(new Date());
@@ -173,14 +174,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       void loadTeachers();
       void loadClasses();
       void loadAssignments();
-      const schoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "").trim();
-      if (schoolCode) {
-        void getSchoolSettings(schoolCode)
-          .then((row) => setCardSettings(row))
-          .catch(() => setCardSettings(null));
-      } else {
-        setCardSettings(null);
-      }
+      void getStudentCardCapabilities()
+        .then((row) => setCardSettings(sanitizeStudentCardCapabilities(row)))
+        .catch(() => setCardSettings(null));
     }, [loadStudents, loadPresences, loadTeachers, loadClasses, loadAssignments, resourceScopeKey, session]),
   );
 
@@ -324,10 +320,11 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const selectedIds = selectedRows.map((student) => student.id);
   const canUpdatePresences = canManagePresences(session);
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
-  const canOpenQrScanner =
-    canUpdatePresences &&
-    isStudentCardAttendanceScanEnabled(cardSettings) &&
-    hasValidSelectedClass(selectedClass);
+  const canOpenQrScanner = isStudentCardQrScannerVisible({
+    canUpdatePresences,
+    settings: cardSettings,
+    selectedClass,
+  });
   const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
   const canReadScanFinance = canReadFeeGrids(session) && isStudentCardScanFinanceEnabled(cardSettings);
 

@@ -4,6 +4,17 @@
  */
 import { httpRequest } from "./httpClient";
 
+export type StudentCardCapabilities = {
+  studentCardEnabled: boolean;
+  studentCardQrEnabled: boolean;
+  studentCardAttendanceEnabled: boolean;
+  studentCardFinanceCheckEnabled: boolean;
+};
+
+export function getStudentCardCapabilities() {
+  return httpRequest<StudentCardCapabilities>("/student-cards/capabilities");
+}
+
 export type StudentCardScanStudent = {
   id: string;
   studentCode: string;

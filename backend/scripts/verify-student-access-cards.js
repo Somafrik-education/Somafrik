@@ -59,6 +59,7 @@ function main() {
   assert.match(replaceRoute, /Cache-Control", "no-store"/);
   assert.match(replaceRoute, /status\(200\)/);
   assert.doesNotMatch(replaceRoute, /withIdempotency/);
+  assert.match(server, /app\.get\("\/api\/student-cards\/capabilities"/);
   assert.match(server, /app\.post\("\/api\/student-cards\/scan"/);
   const scanRoute = server.slice(
     server.indexOf('app.post("/api/student-cards/scan"'),
@@ -100,6 +101,8 @@ function main() {
   assert.match(rbac, /"GET \/api\/students\/:id\/cards": \["Élèves:READ", "Voir élèves"\]/);
   assert.match(rbac, /"POST \/api\/student-cards": \["Élèves:UPDATE", "Gérer élèves"\]/);
   assert.match(rbac, /"POST \/api\/student-cards\/scan": \["Présences:CREATE", "Présences:UPDATE"\]/);
+  assert.match(rbac, /"GET \/api\/student-cards\/capabilities": \["Présences:CREATE", "Présences:UPDATE"\]/);
+  assert.match(guard, /"GET \/api\/student-cards\/capabilities"/);
   assert.doesNotMatch(rbac, /Cartes:READ|Cartes:CREATE|Cartes:SCAN|QR:|NFC:/);
   assert.match(guard, /"POST \/api\/student-cards\/scan"/);
   assert.match(management, /tokenHashesMatch/);

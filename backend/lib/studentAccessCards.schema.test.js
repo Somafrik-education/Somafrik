@@ -117,6 +117,7 @@ test("CARTE-PR3 — scan resolve uniquement, aucune écriture présence/finance 
   assert.match(rbac, /"GET \/api\/students\/:id\/cards": \["Élèves:READ", "Voir élèves"\]/);
   assert.match(rbac, /"POST \/api\/student-cards": \["Élèves:UPDATE", "Gérer élèves"\]/);
   assert.match(rbac, /"POST \/api\/student-cards\/scan": \["Présences:CREATE", "Présences:UPDATE"\]/);
+  assert.match(rbac, /"GET \/api\/student-cards\/capabilities": \["Présences:CREATE", "Présences:UPDATE"\]/);
   assert.doesNotMatch(rbac, /Cartes:READ|Cartes:UPDATE|Cartes:SCAN|QR:|NFC:/);
   assert.doesNotMatch(read("web/src/lib/schoolSettingsApi.ts"), /student_access_cards|cardToken/);
   assert.doesNotMatch(read("Mobile/src/services/schoolSettingsApi.ts"), /student_access_cards|cardToken/);
