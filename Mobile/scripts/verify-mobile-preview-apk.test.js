@@ -11,6 +11,7 @@ const {
   isEasAuthMissing,
   interpretEasProjectInfo,
   resolveSpawn,
+  isCoreMode,
 } = require("./verify-mobile-preview-apk");
 
 const { CANONICAL_API_URLS } = require("../config/releaseEnvironments");
@@ -69,7 +70,13 @@ const winWf = fs.readFileSync(
 assert.match(winWf, /windows-latest/);
 assert.match(winWf, /verify-mobile-preview-apk\.test\.js/);
 assert.match(winWf, /npx expo config --type public --json/);
-assert.match(winWf, /verify:mobile-preview-apk/);
+assert.match(winWf, /verify:mobile-preview-apk:core/);
+assert.doesNotMatch(winWf, /npm run verify:mobile-preview-apk(?!:core)/);
+assert.equal(isCoreMode(["node", "scripts/verify-mobile-preview-apk.js", "--core"], {}), true);
+assert.equal(isCoreMode(["node", "scripts/verify-mobile-preview-apk.js"], { SOMAFRIK_PREVIEW_APK_CORE: "1" }), true);
+assert.equal(isCoreMode(["node", "scripts/verify-mobile-preview-apk.js"], {}), false);
+assert.match(SRC, /if \(core\)/);
+assert.match(SRC, /probeEasAuth\(\)/);
 
 assert.equal(EXPO_PROJECT_ID, "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5");
 assert.doesNotMatch(

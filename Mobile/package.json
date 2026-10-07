@@ -68,6 +68,8 @@
     "verify:mobile-branding": "node scripts/verify-mobile-branding.js",
     "preverify:mobile-preview-apk": "node scripts/verify-mobile-branding.js",
     "verify:mobile-preview-apk": "node scripts/verify-mobile-preview-apk.js",
+    "preverify:mobile-preview-apk:core": "node scripts/verify-mobile-branding.js",
+    "verify:mobile-preview-apk:core": "node scripts/verify-mobile-preview-apk.js --core",
     "test:preview-apk-eas-auth": "node scripts/verify-mobile-preview-apk.test.js",
     "verify:mobile-native-aab": "node scripts/verify-native-prebuild.js",
     "verify:student-card-mobile": "npm run verify:student-card-qr",

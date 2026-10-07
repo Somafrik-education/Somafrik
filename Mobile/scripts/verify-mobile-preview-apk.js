@@ -176,6 +176,10 @@ function logBlockedEasAuth() {
   console.log("Validation release (auth obligatoire) : SOMAFRIK_REQUIRE_EAS_AUTH=1");
 }
 
+function isCoreMode(argv = process.argv, env = process.env) {
+  return argv.includes("--core") || env.SOMAFRIK_PREVIEW_APK_CORE === "1";
+}
+
 function probeEasAuth() {
   const resolved = resolveSpawn("npx", ["eas-cli", "project:info"]);
   const result = spawnSync(resolved.command, resolved.args, {
@@ -194,7 +198,8 @@ function probeEasAuth() {
   return outcome;
 }
 
-function main() {
+function main(options = {}) {
+  const core = options.core === true;
   const unit = spawnSync(process.execPath, ["scripts/verify-mobile-preview-apk.test.js"], {
     encoding: "utf8",
     cwd: MOBILE,
@@ -278,6 +283,10 @@ function main() {
   const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.equal(pkg.scripts["build:preview"], "eas build --platform android --profile preview");
   assert.equal(pkg.scripts["verify:mobile-preview-apk"], "node scripts/verify-mobile-preview-apk.js");
+  assert.equal(
+    pkg.scripts["verify:mobile-preview-apk:core"],
+    "node scripts/verify-mobile-preview-apk.js --core",
+  );
 
   const gitignore = read(path.join(MOBILE, ".gitignore"));
   assert.match(gitignore, /^\*\.apk$/m);
@@ -335,6 +344,11 @@ function main() {
   fs.rmSync(path.join(MOBILE, "android"), { recursive: true, force: true });
   console.log("OK: prebuild Android preview inspecté puis supprimé (CNG, non commité)");
 
+  if (core) {
+    console.log("OK: verify:mobile-preview-apk:core — sans probe EAS");
+    return;
+  }
+
   const easAuth = probeEasAuth();
   console.log(`EAS project info: ${easAuth}`);
   console.log("verify:mobile-preview-apk OK");
@@ -346,11 +360,12 @@ module.exports = {
   interpretEasProjectInfo,
   probeEasAuth,
   resolveSpawn,
+  isCoreMode,
 };
 
 if (require.main === module) {
   try {
-    main();
+    main({ core: isCoreMode() });
   } catch (error) {
     console.error(error);
     process.exit(1);

@@ -42,6 +42,6 @@ jobs:
           EXPO_PUBLIC_API_URL_PREVIEW: https://api-preprod.somafrik.app
           EXPO_PUBLIC_DEMO_MODE: "false"
         run: npx expo config --type public --json
-      - name: verify:mobile-preview-apk
+      - name: verify:mobile-preview-apk:core
         working-directory: Mobile
-        run: npm run verify:mobile-preview-apk
+        run: npm run verify:mobile-preview-apk:core
