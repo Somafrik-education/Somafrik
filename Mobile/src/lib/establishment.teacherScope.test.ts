@@ -470,6 +470,7 @@ function run() {
     isTeacherSession({
       roleKey: "TEACHER",
       roleKeys: ["TEACHER"],
+      effectiveRoleLabel: "Professeur",
       user: { role: "Enseignant", roleKey: "TEACHER", roleKeys: ["TEACHER"], effectiveRoleLabel: "Professeur" },
     }),
     true,
@@ -497,6 +498,15 @@ function run() {
   assert.match(establishmentSrc, /canonicalizeRoleKey/);
   assert.doesNotMatch(establishmentSrc, /isTeacherUserRole/);
   assert.doesNotMatch(establishmentSrc, /includes\(["']prof["']\)/);
+  const teacherSessionFn = establishmentSrc.match(
+    /export function isTeacherSession\([\s\S]*?\nexport function classNameMatches/,
+  );
+  assert.ok(teacherSessionFn, "isTeacherSession introuvable");
+  assert.doesNotMatch(
+    teacherSessionFn[0],
+    /effectiveRoleLabel|roleLabel/,
+    "AUTHOR-01: libellés d'affichage exclus de isTeacherSession",
+  );
   assert.match(establishmentSrc, /teacherUserId/);
   assert.match(establishmentSrc, /teacher_user_id/);
   const scopedFn = establishmentSrc.match(

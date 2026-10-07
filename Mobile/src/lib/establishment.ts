@@ -27,10 +27,14 @@ export type TeacherSessionLike = {
   roleKeys?: Array<string | null | undefined> | null;
   /** Affichage uniquement — ne pilote jamais isTeacherSession. */
   roleLabel?: string | null;
+  /** Affichage uniquement — forme LoginResponse ; jamais une autorité RBAC. */
+  effectiveRoleLabel?: string | null;
   user?: {
     role?: string | null;
     roleKey?: string | null;
     roleKeys?: Array<string | null | undefined> | null;
+    /** Affichage uniquement — ne pilote jamais isTeacherSession. */
+    roleLabel?: string | null;
     /** Affichage uniquement — ne pilote jamais isTeacherSession. */
     effectiveRoleLabel?: string | null;
   } | null;
