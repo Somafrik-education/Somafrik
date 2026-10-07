@@ -197,6 +197,236 @@ export function scanScopeKey(input: {
   ].join("|");
 }
 
+export function attendanceClassScopeKey(
+  selected: SelectedAttendanceClassRef | null | undefined,
+): string {
+  return [
+    String(selected?.classId ?? "").trim(),
+    String(selected?.classCode ?? "").trim(),
+  ].join("|");
+}
+
+export function shouldCloseQrScannerForClassChange(previousKey: string, nextKey: string): boolean {
+  return String(previousKey ?? "") !== String(nextKey ?? "");
+}
+
+export function shouldCloseQrScannerForTenantChange(previousKey: string, nextKey: string): boolean {
+  return String(previousKey ?? "").trim() !== String(nextKey ?? "").trim();
+}
+
+export type CameraPermissionLike = {
+  granted?: boolean;
+  canAskAgain?: boolean;
+} | null | undefined;
+
+export type CameraPermissionPromptDecision = "idle" | "wait" | "granted" | "request" | "blocked";
+
+export function decideCameraPermissionPrompt(input: {
+  visible: boolean;
+  permission: CameraPermissionLike;
+  alreadyRequested: boolean;
+}): CameraPermissionPromptDecision {
+  if (!input.visible) return "idle";
+  if (input.permission == null) return "wait";
+  if (input.permission.granted === true) return "granted";
+  if (input.permission.canAskAgain === false) return "blocked";
+  if (input.alreadyRequested) return "idle";
+  return "request";
+}
+
+export type QrScannerForegroundDecision = {
+  appActive: boolean;
+  pauseCamera: boolean;
+  rearmCamera: boolean;
+  releaseToken: boolean;
+  clearResult: boolean;
+  closeModal: false;
+};
+
+export function decideQrScannerForeground(input: {
+  nextAppState: string;
+  visible: boolean;
+  permissionGranted: boolean;
+  busy: boolean;
+  hasResult: boolean;
+}): QrScannerForegroundDecision {
+  if (input.nextAppState !== "active") {
+    return {
+      appActive: false,
+      pauseCamera: true,
+      rearmCamera: false,
+      releaseToken: true,
+      clearResult: true,
+      closeModal: false,
+    };
+  }
+  const rearmCamera =
+    input.visible === true &&
+    input.permissionGranted === true &&
+    input.busy !== true &&
+    input.hasResult !== true;
+  return {
+    appActive: true,
+    pauseCamera: !rearmCamera,
+    rearmCamera,
+    releaseToken: false,
+    clearResult: false,
+    closeModal: false,
+  };
+}
+
+export function isQrScannerCameraLive(input: {
+  visible: boolean;
+  appActive: boolean;
+  permissionGranted: boolean;
+  paused: boolean;
+  hasResult: boolean;
+  busy: boolean;
+}): boolean {
+  return Boolean(
+    input.visible &&
+      input.appActive &&
+      input.permissionGranted &&
+      !input.paused &&
+      !input.hasResult &&
+      !input.busy,
+  );
+}
+
+export type QrScannerUiState = {
+  visible: boolean;
+  permission: CameraPermissionLike;
+  alreadyRequested: boolean;
+  lastPrompt: CameraPermissionPromptDecision;
+  appActive: boolean;
+  paused: boolean;
+  busy: boolean;
+  hasResult: boolean;
+  tokenHeld: boolean;
+  modalClosed: boolean;
+};
+
+export type QrScannerUiEvent =
+  | { type: "setVisible"; visible: boolean }
+  | { type: "setPermission"; permission: CameraPermissionLike }
+  | { type: "appState"; next: string }
+  | { type: "setBusy"; busy: boolean }
+  | { type: "setResult"; hasResult: boolean }
+  | { type: "holdToken" }
+  | { type: "classScope"; previous: string; next: string }
+  | { type: "tenantScope"; previous: string; next: string };
+
+export function initialQrScannerUiState(
+  overrides: Partial<QrScannerUiState> = {},
+): QrScannerUiState {
+  return {
+    visible: false,
+    permission: null,
+    alreadyRequested: false,
+    lastPrompt: "idle",
+    appActive: true,
+    paused: false,
+    busy: false,
+    hasResult: false,
+    tokenHeld: false,
+    modalClosed: false,
+    ...overrides,
+  };
+}
+
+function applyPermissionPrompt(state: QrScannerUiState): QrScannerUiState {
+  const lastPrompt = decideCameraPermissionPrompt({
+    visible: state.visible,
+    permission: state.permission,
+    alreadyRequested: state.alreadyRequested,
+  });
+  const alreadyRequested =
+    lastPrompt === "granted" || lastPrompt === "request" || lastPrompt === "blocked"
+      ? true
+      : state.alreadyRequested;
+  return {
+    ...state,
+    lastPrompt,
+    alreadyRequested,
+    paused: lastPrompt === "granted" ? false : state.paused,
+  };
+}
+
+export function reduceQrScannerUi(state: QrScannerUiState, event: QrScannerUiEvent): QrScannerUiState {
+  if (event.type === "classScope") {
+    if (!shouldCloseQrScannerForClassChange(event.previous, event.next)) return state;
+    return {
+      ...state,
+      visible: false,
+      modalClosed: true,
+      tokenHeld: false,
+      paused: true,
+      lastPrompt: "idle",
+      alreadyRequested: false,
+    };
+  }
+  if (event.type === "tenantScope") {
+    if (!shouldCloseQrScannerForTenantChange(event.previous, event.next)) return state;
+    return {
+      ...state,
+      visible: false,
+      modalClosed: true,
+      tokenHeld: false,
+      paused: true,
+      lastPrompt: "idle",
+      alreadyRequested: false,
+    };
+  }
+  if (event.type === "holdToken") {
+    return { ...state, tokenHeld: true };
+  }
+  if (event.type === "setBusy") {
+    return { ...state, busy: event.busy, paused: event.busy ? true : state.paused };
+  }
+  if (event.type === "setResult") {
+    return { ...state, hasResult: event.hasResult, paused: event.hasResult ? true : state.paused };
+  }
+  if (event.type === "setVisible") {
+    if (!event.visible) {
+      return {
+        ...state,
+        visible: false,
+        alreadyRequested: false,
+        lastPrompt: "idle",
+        tokenHeld: false,
+        hasResult: false,
+        busy: false,
+        paused: false,
+        modalClosed: true,
+      };
+    }
+    return applyPermissionPrompt({
+      ...state,
+      visible: true,
+      modalClosed: false,
+      paused: false,
+    });
+  }
+  if (event.type === "setPermission") {
+    return applyPermissionPrompt({ ...state, permission: event.permission });
+  }
+  const decision = decideQrScannerForeground({
+    nextAppState: event.next,
+    visible: state.visible,
+    permissionGranted: state.permission?.granted === true,
+    busy: state.busy,
+    hasResult: state.hasResult,
+  });
+  return {
+    ...state,
+    appActive: decision.appActive,
+    paused: decision.rearmCamera ? false : decision.pauseCamera ? true : state.paused,
+    tokenHeld: decision.releaseToken ? false : state.tokenHeld,
+    hasResult: decision.clearResult ? false : state.hasResult,
+    modalClosed: state.modalClosed,
+  };
+}
+
 export function cardBelongsToSelectedClass(
   cardClass: StudentCardClassRef | null | undefined,
   selected: SelectedAttendanceClassRef | null | undefined,

@@ -12,6 +12,7 @@ import { getStudentCardCapabilities } from "../services/studentCardScanApi";
 import {
   STUDENT_CARD_SCAN_COPY,
   applyQrConfirmedPresence,
+  attendanceClassScopeKey,
   isAttendanceAuthorReady,
   isStudentCardQrScannerVisible,
   isStudentCardScanFinanceEnabled,
@@ -163,6 +164,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const replaySendingRef = useRef(false);
   const [cardSettings, setCardSettings] = useState<StudentCardScanSettings | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const selectedClassScopeKey = attendanceClassScopeKey(selectedClass);
 
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
@@ -187,7 +189,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   useEffect(() => {
     setExpandedStudentId(null);
     setScannerOpen(false);
-  }, [selectedClass]);
+  }, [selectedClassScopeKey]);
 
   useEffect(() => {
     setScannerOpen(false);

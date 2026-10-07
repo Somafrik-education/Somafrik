@@ -15,10 +15,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
   STUDENT_CARD_SCAN_COPY,
+  decideCameraPermissionPrompt,
+  decideQrScannerForeground,
   extractQrCapability,
   hasValidSelectedClass,
   holdCardToken,
   isQrBarcodeType,
+  isQrScannerCameraLive,
   isStaleScanScope,
   releaseCardToken,
   runStudentCardScanFlow,
@@ -71,6 +74,14 @@ export default function StudentCardQrScannerModal({
   const tokenRef = useRef<VolatileCardToken>({ current: null });
   const requestedRef = useRef(false);
   const generationRef = useRef(0);
+  const visibleRef = useRef(visible);
+  const permissionGrantedRef = useRef(Boolean(permission?.granted));
+  const busyRef = useRef(busy);
+  const resultRef = useRef(result);
+  visibleRef.current = visible;
+  permissionGrantedRef.current = Boolean(permission?.granted);
+  busyRef.current = busy;
+  resultRef.current = result;
   const scopeKey = scanScopeKey({
     resourceScopeKey,
     schoolCode,
@@ -91,14 +102,23 @@ export default function StudentCardQrScannerModal({
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
-      setAppActive(next === "active");
-      if (next !== "active") {
-        releaseCardToken(tokenRef.current);
-        setResult(null);
-        setPaused(true);
-      }
+      const decision = decideQrScannerForeground({
+        nextAppState: next,
+        visible: visibleRef.current,
+        permissionGranted: permissionGrantedRef.current,
+        busy: busyRef.current,
+        hasResult: resultRef.current != null,
+      });
+      setAppActive(decision.appActive);
+      if (decision.releaseToken) releaseCardToken(tokenRef.current);
+      if (decision.clearResult) setResult(null);
+      if (decision.rearmCamera) setPaused(false);
+      else if (decision.pauseCamera) setPaused(true);
     });
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      releaseCardToken(tokenRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -113,11 +133,30 @@ export default function StudentCardQrScannerModal({
     }
     generationRef.current += 1;
     setPaused(false);
-    if (!requestedRef.current) {
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const decision = decideCameraPermissionPrompt({
+      visible: true,
+      permission,
+      alreadyRequested: requestedRef.current,
+    });
+    if (decision === "wait") return;
+    if (decision === "granted") {
+      requestedRef.current = true;
+      if (!busyRef.current && resultRef.current == null) setPaused(false);
+      return;
+    }
+    if (decision === "blocked") {
+      requestedRef.current = true;
+      return;
+    }
+    if (decision === "request") {
       requestedRef.current = true;
       void requestPermission();
     }
-  }, [visible, requestPermission]);
+  }, [visible, permission, requestPermission]);
 
   useEffect(() => {
     if (!visible) {
@@ -134,9 +173,14 @@ export default function StudentCardQrScannerModal({
     onClose();
   }, [onClose, scopeKey, visible]);
 
-  const cameraLive = Boolean(
-    visible && appActive && permission?.granted && !paused && !result && !busy,
-  );
+  const cameraLive = isQrScannerCameraLive({
+    visible,
+    appActive,
+    permissionGranted: Boolean(permission?.granted),
+    paused,
+    hasResult: result != null,
+    busy,
+  });
 
   const runScan = useCallback(
     async (cardToken: string) => {

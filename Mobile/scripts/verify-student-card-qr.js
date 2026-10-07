@@ -51,6 +51,11 @@ function main() {
   assert.match(modal, /Linking\.openSettings/);
   assert.match(modal, /scanScopeKey/);
   assert.match(modal, /hasValidSelectedClass/);
+  assert.match(modal, /decideCameraPermissionPrompt/);
+  assert.match(modal, /decideQrScannerForeground/);
+  assert.match(modal, /isQrScannerCameraLive/);
+  assert.match(modal, /visibleRef/);
+  assert.doesNotMatch(modal, /AppState\.addEventListener\([\s\S]{0,800}onClose\(/);
   assert.doesNotMatch(modal, /Linking\.openURL/);
   assert.doesNotMatch(modal, /console\.log\(/);
   assert.doesNotMatch(modal, /safeLogger/);
@@ -72,6 +77,10 @@ function main() {
   assert.match(policy, /cardBelongsToSelectedClass/);
   assert.match(policy, /hasValidSelectedClass/);
   assert.match(policy, /runStudentCardScanFlow/);
+  assert.match(policy, /decideCameraPermissionPrompt/);
+  assert.match(policy, /decideQrScannerForeground/);
+  assert.match(policy, /attendanceClassScopeKey/);
+  assert.match(policy, /reduceQrScannerUi/);
   assert.match(policy, /status: "present"/);
   assert.match(attendance, /Tout présent/);
   assert.match(attendance, /Enregistrer l'appel/);
@@ -80,6 +89,9 @@ function main() {
   assert.match(attendance, /isStudentCardQrScannerVisible/);
   assert.match(attendance, /getStudentCardCapabilities/);
   assert.match(attendance, /sanitizeStudentCardCapabilities/);
+  assert.match(attendance, /attendanceClassScopeKey/);
+  assert.match(attendance, /selectedClassScopeKey/);
+  assert.doesNotMatch(attendance, /setScannerOpen\(false\);\s*\}, \[selectedClass\]\)/);
   assert.doesNotMatch(attendance, /getSchoolSettings\(/);
   assert.doesNotMatch(attendance, /Paramètres Établissement:READ/);
   assert.match(policy, /hasValidSelectedClass/);

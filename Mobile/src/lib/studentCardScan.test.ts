@@ -6,23 +6,31 @@ import {
   CANONICAL_CAMERA_PERMISSION,
   STUDENT_CARD_SCAN_COPY,
   applyQrConfirmedPresence,
+  attendanceClassScopeKey,
   cardBelongsToSelectedClass,
+  decideCameraPermissionPrompt,
+  decideQrScannerForeground,
   extractQrCapability,
   hasValidSelectedClass,
   holdCardToken,
   hydrateAfterQrConfirm,
+  initialQrScannerUiState,
   isAttendanceAuthorReady,
   isInvalidCardStatus,
   isQrBarcodeType,
+  isQrScannerCameraLive,
   isStaleScanScope,
   isStudentCardAttendanceScanEnabled,
   isStudentCardQrScanEnabled,
   isStudentCardQrScannerVisible,
   isStudentCardScanFinanceEnabled,
+  reduceQrScannerUi,
   sanitizeStudentCardCapabilities,
   isoAttendanceDate,
   releaseCardToken,
   runStudentCardScanFlow,
+  shouldCloseQrScannerForClassChange,
+  shouldCloseQrScannerForTenantChange,
   studentCardScanErrorMessage,
   type StudentCardScanResolved,
   type VolatileCardToken,
@@ -141,6 +149,168 @@ assert.equal(
   false,
   "MOB-CAP-02 sans Présences CREATE/UPDATE",
 );
+
+assert.equal(
+  decideCameraPermissionPrompt({
+    visible: true,
+    permission: { granted: true, canAskAgain: true },
+    alreadyRequested: false,
+  }),
+  "granted",
+  "QR-LIFE-01 granted → pas de requestPermission",
+);
+assert.equal(
+  decideCameraPermissionPrompt({ visible: true, permission: null, alreadyRequested: false }),
+  "wait",
+  "QR-LIFE-02 permission inconnue",
+);
+assert.equal(
+  decideCameraPermissionPrompt({
+    visible: true,
+    permission: { granted: false, canAskAgain: true },
+    alreadyRequested: false,
+  }),
+  "request",
+  "QR-LIFE-03 ouverture explicite → une demande",
+);
+assert.equal(
+  decideCameraPermissionPrompt({
+    visible: true,
+    permission: { granted: false, canAskAgain: true },
+    alreadyRequested: true,
+  }),
+  "idle",
+  "QR-LIFE-03 pas de boucle",
+);
+assert.equal(
+  decideCameraPermissionPrompt({
+    visible: true,
+    permission: { granted: false, canAskAgain: false },
+    alreadyRequested: false,
+  }),
+  "blocked",
+  "QR-LIFE-04 canAskAgain=false",
+);
+
+const inactive = decideQrScannerForeground({
+  nextAppState: "inactive",
+  visible: true,
+  permissionGranted: true,
+  busy: false,
+  hasResult: false,
+});
+assert.equal(inactive.releaseToken, true, "QR-LIFE-05 token libéré");
+assert.equal(inactive.pauseCamera, true, "QR-LIFE-05 paused");
+assert.equal(inactive.closeModal, false);
+const rearm = decideQrScannerForeground({
+  nextAppState: "active",
+  visible: true,
+  permissionGranted: true,
+  busy: false,
+  hasResult: false,
+});
+assert.equal(rearm.rearmCamera, true, "QR-LIFE-06 réarmement");
+assert.equal(rearm.closeModal, false);
+assert.equal(
+  decideQrScannerForeground({
+    nextAppState: "active",
+    visible: true,
+    permissionGranted: true,
+    busy: true,
+    hasResult: false,
+  }).rearmCamera,
+  false,
+  "QR-LIFE-07 busy",
+);
+assert.equal(
+  decideQrScannerForeground({
+    nextAppState: "active",
+    visible: true,
+    permissionGranted: true,
+    busy: false,
+    hasResult: true,
+  }).rearmCamera,
+  false,
+  "QR-LIFE-08 résultat présent",
+);
+
+const classA = { classId: "cls-1", classCode: "5A", className: "5ème A" };
+const classAAlias = { classId: "cls-1", classCode: "5A", className: "5ème A (alias)" };
+const classB = { classId: "cls-2", classCode: "5B", className: "5ème B" };
+assert.equal(attendanceClassScopeKey(classA), attendanceClassScopeKey(classAAlias));
+assert.equal(
+  shouldCloseQrScannerForClassChange(attendanceClassScopeKey(classA), attendanceClassScopeKey(classB)),
+  true,
+  "QR-LIFE-09 classe réelle",
+);
+assert.equal(
+  shouldCloseQrScannerForClassChange(attendanceClassScopeKey(classA), attendanceClassScopeKey(classAAlias)),
+  false,
+  "QR-LIFE-10 même classe, nouvelle référence",
+);
+assert.equal(shouldCloseQrScannerForTenantChange("user|CD-LAC-26-001", "user|CD-LAC-26-001"), false);
+assert.equal(
+  shouldCloseQrScannerForTenantChange("user|CD-LAC-26-001", "user|BI-BUJ-26-001"),
+  true,
+  "QR-LIFE-11 tenant réel",
+);
+
+let life = initialQrScannerUiState({ permission: { granted: true } });
+life = reduceQrScannerUi(life, { type: "setVisible", visible: true });
+assert.equal(life.lastPrompt, "granted", "QR-LIFE-01 reducer");
+life = reduceQrScannerUi(life, { type: "holdToken" });
+life = reduceQrScannerUi(life, { type: "appState", next: "inactive" });
+assert.equal(life.tokenHeld, false, "QR-LIFE-05/12 token libéré");
+assert.equal(life.paused, true);
+assert.equal(life.modalClosed, false, "AppState ne ferme pas le modal");
+life = reduceQrScannerUi(life, { type: "appState", next: "active" });
+assert.equal(life.paused, false, "QR-LIFE-06 caméra réarmée");
+assert.equal(life.visible, true);
+assert.equal(
+  isQrScannerCameraLive({
+    visible: life.visible,
+    appActive: life.appActive,
+    permissionGranted: true,
+    paused: life.paused,
+    hasResult: life.hasResult,
+    busy: life.busy,
+  }),
+  true,
+  "CameraView redevient active",
+);
+life = reduceQrScannerUi(life, {
+  type: "classScope",
+  previous: attendanceClassScopeKey(classA),
+  next: attendanceClassScopeKey(classAAlias),
+});
+assert.equal(life.visible, true, "QR-LIFE-10 reducer");
+life = reduceQrScannerUi(life, {
+  type: "classScope",
+  previous: attendanceClassScopeKey(classA),
+  next: attendanceClassScopeKey(classB),
+});
+assert.equal(life.visible, false, "QR-LIFE-09 reducer");
+assert.equal(life.modalClosed, true);
+life = reduceQrScannerUi(initialQrScannerUiState({ visible: true, permission: { granted: true } }), {
+  type: "tenantScope",
+  previous: "user|A",
+  next: "user|A",
+});
+assert.equal(life.visible, true, "même resourceScopeKey → pas de fermeture");
+life = reduceQrScannerUi(life, { type: "tenantScope", previous: "user|A", next: "user|B" });
+assert.equal(life.tokenHeld, false, "QR-LIFE-11 token libéré");
+assert.equal(life.modalClosed, true);
+
+const remount = reduceQrScannerUi(
+  reduceQrScannerUi(
+    initialQrScannerUiState({ visible: true, permission: { granted: true }, tokenHeld: true }),
+    { type: "setVisible", visible: false },
+  ),
+  { type: "setVisible", visible: true },
+);
+assert.equal(remount.tokenHeld, false, "QR-LIFE-12 pas de fuite token après remount");
+assert.equal(remount.lastPrompt, "granted");
+assert.equal(remount.visible, true);
 assert.equal(sanitizeStudentCardCapabilities(undefined), null);
 assert.equal(sanitizeStudentCardCapabilities("oui"), null);
 assert.deepEqual(
@@ -475,6 +645,14 @@ assert.match(modal, /CameraView/);
 assert.match(modal, /barcodeTypes:\s*\["qr"\]/);
 assert.match(modal, /useCameraPermissions/);
 assert.match(modal, /Linking\.openSettings/);
+assert.match(modal, /decideCameraPermissionPrompt/);
+assert.match(modal, /decideQrScannerForeground/);
+assert.match(modal, /isQrScannerCameraLive/);
+assert.match(modal, /visibleRef/);
+assert.match(modal, /permissionGrantedRef/);
+assert.match(modal, /busyRef/);
+assert.match(modal, /resultRef/);
+assert.doesNotMatch(modal, /AppState\.addEventListener\([\s\S]{0,800}onClose\(/);
 assert.doesNotMatch(modal, /Linking\.openURL/);
 assert.doesNotMatch(modal, /scanFromURLAsync/);
 assert.doesNotMatch(modal, /console\.log/);
@@ -503,6 +681,9 @@ assert.match(attendance, /StudentCardQrScannerModal/);
 assert.match(attendance, /isStudentCardQrScannerVisible/);
 assert.match(attendance, /getStudentCardCapabilities/);
 assert.match(attendance, /sanitizeStudentCardCapabilities/);
+assert.match(attendance, /attendanceClassScopeKey/);
+assert.match(attendance, /selectedClassScopeKey/);
+assert.doesNotMatch(attendance, /setScannerOpen\(false\);\s*\}, \[selectedClass\]\)/);
 assert.doesNotMatch(attendance, /getSchoolSettings\(/);
 assert.doesNotMatch(attendance, /Paramètres Établissement:READ/);
 assert.doesNotMatch(attendance, /navigate\("StudentCardScan"/);
