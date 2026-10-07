@@ -270,15 +270,69 @@ const STUDENT_CARD_PR6_EXACT = new Set([
   "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
 ]);
 
+const STUDENT_CARD_PR7_EXACT = new Set([
+  "scripts/verify-student-card-mobile.js",
+  "Mobile/scripts/verify-student-card-qr.js",
+  "scripts/verify-school-setup-lot4-red.ts",
+  "package.json",
+  ".github/workflows/pr-gates.yml",
+  "Mobile/app.json",
+  "Mobile/package.json",
+  "Mobile/package-lock.json",
+  "Mobile/scripts/verify-native-prebuild.js",
+  "Mobile/scripts/verify-mobile-security.js",
+  "Mobile/src/domain/security/permissions.ts",
+  "Mobile/src/lib/mobileParentP0.security.test.ts",
+  "Mobile/src/lib/mobileParentProfile.audit.red.test.ts",
+  "Mobile/src/lib/mobileUsability.ts",
+  "Mobile/src/lib/platformSchoolDomainDeny.ts",
+  "Mobile/src/lib/superadminSchoolDomain.p1-04.test.ts",
+  "Mobile/src/navigation/AppNavigator.tsx",
+  "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+  "Mobile/src/lib/establishment.ts",
+  "Mobile/src/lib/establishment.teacherScope.test.ts",
+  "Mobile/src/lib/attendanceClassIdentity.ts",
+  "Mobile/src/lib/attendanceClassIdentity.test.ts",
+  "Mobile/src/lib/canonicalRoleIdentity.ts",
+  "docs/audits/AUDIT-CARTE-01-eleve-presence-nfc-qr-impayes.md",
+  "docs/audits/GATE-QR-STORES-camera-qr.md",
+  "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
+  "docs/mobile/RELEASE-READINESS.md",
+  "docs/mobile/PREVIEW-APK.md",
+  "docs/mobile/L10-APK-RC1-SMOKE.md",
+  "Mobile/scripts/verify-mobile-preview-apk.js",
+  "Mobile/scripts/verify-mobile-preview-apk.test.js",
+  "Mobile/config/releaseEnvironments.test.js",
+  ".github/workflows/mobile-preview-windows.yml",
+  "Mobile/scripts/verify-native-prebuild.test.js",
+  "backend/server.js",
+  "backend/services/rbacService.js",
+  "backend/lib/platformPersonalDataGuard.js",
+  "backend/lib/platformPersonalDataGuard.test.js",
+  "backend/scripts/verify-student-access-cards.js",
+]);
+
 function isStudentCardPr6Signal(file: string) {
-  return file === "scripts/verify-student-card-web.js" || /studentCard/i.test(file);
+  return (
+    file === "scripts/verify-student-card-web.js" ||
+    file === "scripts/verify-student-card-mobile.js" ||
+    file === "Mobile/scripts/verify-student-card-qr.js" ||
+    /studentCard/i.test(file)
+  );
 }
 
 function isStudentCardPr6IntegrationFile(file: string) {
-  if (STUDENT_CARD_PR6_EXACT.has(file)) return true;
+  if (STUDENT_CARD_PR6_EXACT.has(file) || STUDENT_CARD_PR7_EXACT.has(file)) return true;
   if (/^web\/src\/components\/students\/StudentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCardsApi[^/]*$/.test(file)) return true;
+  if (/^Mobile\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
+  if (/^Mobile\/src\/services\/studentCard[^/]*$/.test(file)) return true;
+  if (/^Mobile\/src\/screens\/StudentCard[^/]*$/.test(file)) return true;
+  if (/^Mobile\/src\/components\/StudentCard[^/]*$/.test(file)) return true;
+  if (/^Mobile\/scripts\/verify-student-card[^/]*$/.test(file)) return true;
+  if (/^backend\/lib\/studentCard[^/]*$/.test(file)) return true;
+  if (/^backend\/lib\/studentAccessCards[^/]*$/.test(file)) return true;
   return false;
 }
 
@@ -306,7 +360,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
       return {
         kind: "na",
         message:
-          "L4-09 N/A: chantier Carte élève distinct; périmètre PR6 contrôlé, sans fichier LOT 4 exclusif.",
+          "L4-09 N/A: chantier Carte élève distinct; périmètre PR6/PR7 contrôlé, sans fichier LOT 4 exclusif.",
       };
     }
     const leaked = [...new Set([...outside, ...exclusiveLot4])];
@@ -645,18 +699,71 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "L4-09: chantier Carte élève distinct doit être N/A dans le périmètre PR6 contrôlé",
       );
 
+      const studentCardPr7DistinctChantier = evaluateLot4Scope([
+        "Mobile/src/components/StudentCardQrScannerModal.tsx",
+        "Mobile/src/lib/studentCardScan.ts",
+        "Mobile/src/lib/studentCardScan.test.ts",
+        "Mobile/src/services/studentCardScanApi.ts",
+        "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+        "Mobile/src/lib/establishment.ts",
+        "Mobile/src/lib/attendanceClassIdentity.ts",
+        "Mobile/src/navigation/AppNavigator.tsx",
+        "Mobile/src/domain/security/permissions.ts",
+        "Mobile/app.json",
+        "Mobile/package.json",
+        "Mobile/scripts/verify-student-card-qr.js",
+        "docs/audits/GATE-QR-STORES-camera-qr.md",
+        "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
+      ]);
+      assert.equal(
+        studentCardPr7DistinctChantier.kind,
+        "na",
+        "L4-09: chantier Carte élève Mobile (PR7) doit être N/A dans le périmètre contrôlé",
+      );
+
+      const studentCardPr7PlusBackend = evaluateLot4Scope([
+        "Mobile/src/components/StudentCardQrScannerModal.tsx",
+        "Mobile/src/lib/studentCardScan.ts",
+        "backend/lib/educationSchoolCatalogScope.js",
+      ]);
+      assert.equal(
+        studentCardPr7PlusBackend.kind,
+        "fail",
+        "L4-09: Carte élève Mobile + backend hors allowlist doit rester FAIL",
+      );
+
+      const studentCardPr7Capabilities = evaluateLot4Scope([
+        "Mobile/src/components/StudentCardQrScannerModal.tsx",
+        "Mobile/src/lib/studentCardScan.ts",
+        "Mobile/src/services/studentCardScanApi.ts",
+        "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+        "Mobile/src/lib/establishment.ts",
+        "Mobile/src/lib/attendanceClassIdentity.ts",
+        "backend/lib/studentCardCapabilities.js",
+        "backend/lib/studentCardCapabilities.test.js",
+        "backend/server.js",
+        "backend/services/rbacService.js",
+        "backend/lib/platformPersonalDataGuard.js",
+        "backend/scripts/verify-student-access-cards.js",
+      ]);
+      assert.equal(
+        studentCardPr7Capabilities.kind,
+        "na",
+        "L4-09: capabilities Carte élève (Présences) autorisées dans le périmètre PR7",
+      );
+
       const studentCardPlusBackend = evaluateLot4Scope([
         "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
         "web/src/components/students/StudentCardSettingsSection.tsx",
         "web/src/components/students/StudentCardTab.tsx",
         "web/src/lib/studentCardPolicy.ts",
         "web/src/lib/studentCardsApi.ts",
-        "backend/server.js",
+        "backend/lib/educationSchoolCatalogScope.js",
       ]);
       assert.equal(
         studentCardPlusBackend.kind,
         "fail",
-        "L4-09: Carte élève + backend/server.js doit rester FAIL",
+        "L4-09: Carte élève + backend hors allowlist doit rester FAIL",
       );
 
       const studentCardPlusMigration = evaluateLot4Scope([
@@ -673,12 +780,12 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       const studentCardPlusRbac = evaluateLot4Scope([
         "web/src/components/students/StudentCardTab.tsx",
         "web/src/lib/studentCardPolicy.ts",
-        "backend/services/rbacService.js",
+        "backend/lib/functionalModulesCatalog.js",
       ]);
       assert.equal(
         studentCardPlusRbac.kind,
         "fail",
-        "L4-09: Carte élève + RBAC doit rester FAIL",
+        "L4-09: Carte élève + catalogue hors allowlist doit rester FAIL",
       );
 
       const lot4PlusStudentCard = evaluateLot4Scope([

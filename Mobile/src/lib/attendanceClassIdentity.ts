@@ -12,6 +12,7 @@ import {
   scopedStudentsForSession,
   teacherScopedClassNames,
   type TeacherScopeState,
+  type TeacherSessionLike,
 } from "./establishment";
 
 export type AttendanceClassIdentity = {
@@ -329,7 +330,7 @@ export type AttendanceAuthorDecision =
  * Admin/direction : 0 → blocage ; 1 → auto ; 2+ → sélection explicite (jamais le premier).
  */
 export function resolveAttendanceAuthor(opts: {
-  session: { role?: string; user?: { role?: string } } | null;
+  session: TeacherSessionLike;
   assignmentsForClass: AttendanceAssignmentAuthor[];
   selectedTeacherId?: string;
   sessionSchoolCode?: string;
@@ -367,7 +368,7 @@ export function resolveAttendanceAuthor(opts: {
 }
 
 export function resolveExplicitAttendanceTeacherKey(opts: {
-  session: { role?: string; user?: { role?: string } } | null;
+  session: TeacherSessionLike;
   assignmentsForClass: AttendanceAssignmentAuthor[];
   selectedTeacherId?: string;
   sessionSchoolCode?: string;

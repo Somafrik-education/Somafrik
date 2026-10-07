@@ -22,6 +22,8 @@ import {
   resolveStudentClassIdentity,
   uniqueActiveAssignmentTeacherKey,
 } from "./attendanceClassIdentity";
+import { canonicalizeRoleKey } from "./canonicalRoleIdentity";
+import { isTeacherSession } from "./establishment";
 import type { SchoolClass, Student } from "../data/catalog";
 
 function student(partial: Partial<Student> & { id: string }): Student {
@@ -389,6 +391,82 @@ function run() {
     { status: "teacher_session" },
     "session teacher → principal.sub, aucun teacherId forgé",
   );
+
+  const twoTeachersForAuthor = twoTeachers;
+  const roleKeyOnly = { roleKey: "TEACHER" as const };
+  assert.equal(isTeacherSession(roleKeyOnly), true, "AUTHOR-01: roleKey=TEACHER");
+  assert.deepEqual(
+    resolveAttendanceAuthor({ session: roleKeyOnly, assignmentsForClass: twoTeachersForAuthor }),
+    { status: "teacher_session" },
+    "AUTHOR-01.1 roleKey=TEACHER → teacher_session",
+  );
+
+  const multiRoleActiveTeacher = {
+    role: "teacher",
+    roleKeys: ["SECRETARY", "TEACHER"],
+    user: { role: "Enseignant", roleKeys: ["SECRETARY", "TEACHER"] },
+  };
+  assert.equal(isTeacherSession(multiRoleActiveTeacher), true, "AUTHOR-01: roleKeys TEACHER + Enseignant actif");
+  assert.deepEqual(
+    resolveAttendanceAuthor({
+      session: multiRoleActiveTeacher,
+      assignmentsForClass: twoTeachersForAuthor,
+      selectedTeacherId: "T1",
+    }),
+    { status: "teacher_session" },
+    "AUTHOR-01.2 roleKeys contenant TEACHER + rôle Enseignant actif → teacher_session",
+  );
+
+  const aliasTeacher = { role: "teacher" as const };
+  assert.equal(isTeacherSession(aliasTeacher), true, "AUTHOR-01: alias session role=teacher");
+  assert.deepEqual(
+    resolveAttendanceAuthor({ session: aliasTeacher, assignmentsForClass: twoTeachersForAuthor }),
+    { status: "teacher_session" },
+    "AUTHOR-01.3 alias session role=teacher → teacher_session",
+  );
+
+  const userRoleEnseignant = { user: { role: "Enseignant" } };
+  assert.equal(isTeacherSession(userRoleEnseignant), true, "AUTHOR-01: user.role=Enseignant");
+  assert.deepEqual(
+    resolveAttendanceAuthor({ session: userRoleEnseignant, assignmentsForClass: twoTeachersForAuthor }),
+    { status: "teacher_session" },
+    "AUTHOR-01.4 user.role=Enseignant → teacher_session",
+  );
+
+  const customLabelKeepsRoleKey = {
+    role: "teacher",
+    roleKey: "TEACHER",
+    roleKeys: ["TEACHER"],
+    roleLabel: "Professeur",
+    user: {
+      role: "Enseignant",
+      roleKey: "TEACHER",
+      roleKeys: ["TEACHER"],
+      effectiveRoleLabel: "Professeur",
+    },
+  };
+  assert.equal(canonicalizeRoleKey("Professeur"), "PROFESSEUR");
+  assert.notEqual(canonicalizeRoleKey("Professeur"), "TEACHER", "libellé visuel ne canonise pas TEACHER");
+  assert.equal(isTeacherSession(customLabelKeepsRoleKey), true, "AUTHOR-01: Professeur conserve roleKey TEACHER");
+  assert.deepEqual(
+    resolveAttendanceAuthor({ session: customLabelKeepsRoleKey, assignmentsForClass: twoTeachersForAuthor }),
+    { status: "teacher_session" },
+    "AUTHOR-01.5 display label Professeur sans perte du roleKey → teacher_session",
+  );
+  assert.equal(
+    isTeacherSession({ role: "Professeur", user: { role: "Professeur" } }),
+    false,
+    "AUTHOR-01: libellé Professeur seul ne pilote pas l'autorisation",
+  );
+
+  const adminNeedSelection = resolveAttendanceAuthor({
+    session: adminSession,
+    assignmentsForClass: twoTeachersForAuthor,
+  });
+  assert.equal(adminNeedSelection.status, "need_selection", "AUTHOR-01.6 Admin + 2 enseignants → need_selection");
+  assert.notEqual(adminNeedSelection.status, "auto");
+  assert.notEqual(adminNeedSelection.status, "teacher_session");
+  assert.equal(isTeacherSession(adminSession), false);
   assert.deepEqual(
     resolveExplicitAttendanceTeacherKey({
       session: teacherSession,
@@ -406,6 +484,23 @@ function run() {
     "teacherId" in teacherKey ? teacherKey.teacherId : undefined,
   );
   assert.equal("teacherId" in teacherPayload, false, "session teacher : aucun teacherId forgé dans le POST");
+  assert.deepEqual(
+    resolveExplicitAttendanceTeacherKey({
+      session: roleKeyOnly,
+      assignmentsForClass: twoTeachersForAuthor,
+    }),
+    {},
+    "AUTHOR-01.7 roleKey=TEACHER : aucun teacherId injecté",
+  );
+  assert.deepEqual(
+    resolveExplicitAttendanceTeacherKey({
+      session: customLabelKeepsRoleKey,
+      assignmentsForClass: twoTeachersForAuthor,
+      selectedTeacherId: "T1",
+    }),
+    {},
+    "AUTHOR-01.7 Professeur+roleKey : aucun teacherId injecté",
+  );
 
   const intentionId = presenceIntentionId("uuid-a", "25-08-2026");
   const stored = persistAttendanceAuthorSelection({}, intentionId, "T2");
@@ -438,6 +533,8 @@ function run() {
     "utf8",
   );
   assert.match(identitySrc, /scopedClassesForSession/);
+  assert.match(identitySrc, /TeacherSessionLike/);
+  assert.match(identitySrc, /isTeacherSession/);
   assert.match(
     identitySrc,
     /Liste Appel \/ Présences : même source canonique que Classes/,
