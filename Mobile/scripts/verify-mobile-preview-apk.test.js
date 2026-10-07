@@ -10,6 +10,7 @@ const {
   EXPO_PROJECT_ID,
   isEasAuthMissing,
   interpretEasProjectInfo,
+  resolveExecutable,
 } = require("./verify-mobile-preview-apk");
 
 const { CANONICAL_API_URLS } = require("../config/releaseEnvironments");
@@ -26,6 +27,12 @@ assert.doesNotMatch(
   /bundle\.includes\(PREVIEW_API\)\s*\|\|\s*bundle\.includes\("somafrik-api-preprod\.onrender\.com"\)/,
 );
 assert.match(SRC, /CANONICAL_API_URLS\.preview/);
+
+assert.equal(resolveExecutable("npx", "win32"), "npx.cmd");
+assert.equal(resolveExecutable("npm", "win32"), "npm.cmd");
+assert.equal(resolveExecutable("npx", "linux"), "npx");
+assert.equal(resolveExecutable("npm", "linux"), "npm");
+assert.equal(resolveExecutable("node", "win32"), "node");
 
 assert.equal(EXPO_PROJECT_ID, "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5");
 assert.doesNotMatch(

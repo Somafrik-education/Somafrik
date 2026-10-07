@@ -38,8 +38,16 @@ function read(file) {
   return fs.readFileSync(file, "utf8");
 }
 
+function resolveExecutable(command, platform = process.platform) {
+  if (platform === "win32" && (command === "npx" || command === "npm")) {
+    return `${command}.cmd`;
+  }
+  return command;
+}
+
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const executable = resolveExecutable(command);
+  const result = spawnSync(executable, args, {
     encoding: "utf8",
     cwd: options.cwd || MOBILE,
     env: { ...process.env, ...(options.env || {}) },
@@ -162,7 +170,7 @@ function logBlockedEasAuth() {
 }
 
 function probeEasAuth() {
-  const result = spawnSync("npx", ["eas-cli", "project:info"], {
+  const result = spawnSync(resolveExecutable("npx"), ["eas-cli", "project:info"], {
     encoding: "utf8",
     cwd: MOBILE,
     env: process.env,
@@ -329,6 +337,7 @@ module.exports = {
   isEasAuthMissing,
   interpretEasProjectInfo,
   probeEasAuth,
+  resolveExecutable,
 };
 
 if (require.main === module) {
