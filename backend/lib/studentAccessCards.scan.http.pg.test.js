@@ -394,15 +394,18 @@ async function main() {
     const capPays = await request("/student-cards/capabilities", { token: tokenPays });
     assert.equal(capPays.status, 403);
     assert.equal(capPays.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
-    const capSpoof = await request(
+    const capQuerySpoof = await request(
       `/student-cards/capabilities?schoolCode=${encodeURIComponent(LEFTOVER_B)}`,
-      {
-        token: tokenTeacher,
-        headers: { "X-Somafrik-School-Code": LOGIN_B },
-      },
+      { token: tokenTeacher },
     );
-    assert.equal(capSpoof.status, 200, JSON.stringify(capSpoof.data));
-    assert.equal(capSpoof.data.studentCardEnabled, true, "scope JWT A, pas l'établissement B");
+    assert.equal(capQuerySpoof.status, 200, JSON.stringify(capQuerySpoof.data));
+    assert.equal(capQuerySpoof.data.studentCardEnabled, true, "query schoolCode ignoré, scope membership A");
+    const capHeaderSpoof = await request("/student-cards/capabilities", {
+      token: tokenTeacher,
+      headers: { "X-Somafrik-School-Code": LOGIN_B },
+    });
+    assert.equal(capHeaderSpoof.status, 403, JSON.stringify(capHeaderSpoof.data));
+    assert.equal(capHeaderSpoof.data?.code, "SCHOOL_SCOPE_OVERRIDE_FORBIDDEN");
     const capTeacherB = await request("/student-cards/capabilities", {
       token: mint({
         sub: USER_TEACHER_B,
