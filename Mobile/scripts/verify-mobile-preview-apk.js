@@ -297,14 +297,13 @@ function main() {
   console.log("OK: protocole L10 smoke RC1 présent");
 
   const ci = read(path.join(ROOT, ".github", "workflows", "ci.yml"));
-  const security = read(path.join(ROOT, ".github", "workflows", "security.yml"));
   const rootPkg = read(path.join(ROOT, "package.json"));
-  assert.match(ci, /name: verify:mobile-preview-apk/);
+  // Nightly CI Full : commande dans le bloc Full domain regression (pas un step nommé).
+  // Security nightly : invariants mobile-security, pas le scan Expo / bundle Preview.
   assert.match(ci, /npm run verify:mobile-preview-apk/);
-  assert.match(security, /name: verify:mobile-preview-apk/);
-  assert.match(security, /npm run verify:mobile-preview-apk/);
+  assert.match(rootPkg, /"ci:security":/);
   assert.match(rootPkg, /verify:mobile-preview-apk/);
-  console.log("OK: CI + Security branchent verify:mobile-preview-apk");
+  console.log("OK: nightly CI branche verify:mobile-preview-apk");
 
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "somafrik-preview-apk-"));
   const exported = run(process.execPath, ["scripts/export-release-bundle.js", "preview"], {
