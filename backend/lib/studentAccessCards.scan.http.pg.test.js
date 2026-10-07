@@ -259,7 +259,7 @@ async function main() {
          school_id, student_card_enabled, student_card_qr_enabled,
          student_card_attendance_enabled, student_card_finance_check_enabled
        )
-       VALUES ($1, TRUE, TRUE, TRUE, FALSE), ($2, FALSE, FALSE, FALSE, FALSE)
+       VALUES ($1, TRUE, TRUE, TRUE, FALSE), ($2, TRUE, TRUE, FALSE, FALSE)
        ON CONFLICT (school_id) DO UPDATE SET
          student_card_enabled = EXCLUDED.student_card_enabled,
          student_card_qr_enabled = EXCLUDED.student_card_qr_enabled,
@@ -416,7 +416,8 @@ async function main() {
       }),
     });
     assert.equal(capTeacherB.status, 200, JSON.stringify(capTeacherB.data));
-    assert.equal(capTeacherB.data.studentCardEnabled, false);
+    assert.equal(capTeacherB.data.studentCardEnabled, true);
+    assert.equal(capTeacherB.data.studentCardAttendanceEnabled, false, "scope B, pas les flags A");
 
     const anonymous = await request("/student-cards/scan", { method: "POST", body: { cardToken: "abc.def" } });
     assert.equal(anonymous.status, 401);
