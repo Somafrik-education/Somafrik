@@ -1,6 +1,7 @@
 /**
  * CARTE-PR8 — transport NFC NDEF. Le métier reste runStudentCardScanFlow.
- * Le capability reste volatil. Aucun UID, aucun log, aucun stockage.
+ * Le capability reste volatil. L’UID constate un tag, jamais un secret.
+ * Aucun log, aucun stockage.
  */
 
 export const CANONICAL_NFC_PERMISSION =
@@ -16,7 +17,7 @@ export const STUDENT_CARD_NFC_COPY = {
   unsupported: "NFC indisponible sur cet appareil.",
   disabled: "NFC désactivé sur cet appareil.",
   empty: "Carte illisible.",
-  notNdef: "Cette carte n’est pas lisible en NFC.",
+  notNdef: "Cette carte n’est pas une carte élève Somafrik.",
   uidOnly: "Cette carte n’est pas une carte élève Somafrik.",
   invalidPrefix: "Cette carte n’est pas une carte élève Somafrik.",
   invalidToken: "Cette carte n’est pas une carte élève Somafrik.",
@@ -49,15 +50,31 @@ export type NfcHardware = {
   start(): Promise<void>;
   isSupported(): Promise<boolean>;
   isEnabled(): Promise<boolean>;
-  requestNdef(): Promise<void>;
-  getTag(): Promise<{ ndefMessage?: unknown; id?: unknown } | null>;
+  requestTag(): Promise<void>;
+  getTag(): Promise<{ ndefMessage?: unknown; id?: unknown; techTypes?: unknown } | null>;
   cancel(): Promise<void>;
 };
 
 export type NfcTagLike = {
   ndefMessage?: unknown;
   id?: unknown;
+  techTypes?: unknown;
 } | null | undefined;
+
+export type NfcScannerReadDecision = {
+  keepOpen: true;
+  callOnClose: false;
+  navigateHome: false;
+  runAttendance: boolean;
+  token: string | null;
+  refusal: NfcReadFailure | null;
+  message: string;
+};
+
+function tagHasDiscoveryHint(tag: Exclude<NfcTagLike, null | undefined>): boolean {
+  if (tag.id) return true;
+  return Array.isArray(tag.techTypes) && tag.techTypes.length > 0;
+}
 
 function bytesToString(bytes: number[] | Uint8Array | string): string {
   if (typeof bytes === "string") return bytes;
@@ -145,7 +162,7 @@ export function extractNfcCardTokenFromTag(tag: NfcTagLike): NfcReadResult {
   if (!tag) return { ok: false, reason: "empty" };
   const records = tag.ndefMessage;
   if (records == null) {
-    return { ok: false, reason: tag.id ? "uid_only" : "not_ndef" };
+    return { ok: false, reason: tagHasDiscoveryHint(tag) ? "uid_only" : "not_ndef" };
   }
   if (!Array.isArray(records) || records.length === 0) return { ok: false, reason: "empty" };
 
@@ -164,8 +181,7 @@ export function nfcFailureMessage(reason: NfcReadFailure): string {
   if (reason === "unsupported") return STUDENT_CARD_NFC_COPY.unsupported;
   if (reason === "disabled") return STUDENT_CARD_NFC_COPY.disabled;
   if (reason === "empty") return STUDENT_CARD_NFC_COPY.empty;
-  if (reason === "not_ndef") return STUDENT_CARD_NFC_COPY.notNdef;
-  if (reason === "uid_only") return STUDENT_CARD_NFC_COPY.uidOnly;
+  if (reason === "not_ndef" || reason === "uid_only") return STUDENT_CARD_NFC_COPY.uidOnly;
   if (reason === "invalid_prefix" || reason === "invalid_token") {
     return STUDENT_CARD_NFC_COPY.invalidPrefix;
   }
@@ -189,6 +205,29 @@ export function decideOpenQrFromNfcFallback(input: {
   authorReady: boolean;
 }): boolean {
   return input.canOpenQrScanner === true && input.authorReady === true;
+}
+
+export function decideNfcScannerRead(read: NfcReadResult): NfcScannerReadDecision {
+  if (read.ok) {
+    return {
+      keepOpen: true,
+      callOnClose: false,
+      navigateHome: false,
+      runAttendance: true,
+      token: read.token,
+      refusal: null,
+      message: "",
+    };
+  }
+  return {
+    keepOpen: true,
+    callOnClose: false,
+    navigateHome: false,
+    runAttendance: false,
+    token: null,
+    refusal: read.reason,
+    message: nfcFailureMessage(read.reason),
+  };
 }
 
 export async function probeNfc(
@@ -218,7 +257,7 @@ export async function scanNfcCardToken(hardware: NfcHardware): Promise<NfcReadRe
     if (probe.status === "unsupported") return { ok: false, reason: "unsupported" };
     if (probe.status === "disabled") return { ok: false, reason: "disabled" };
     if (probe.status !== "ready") return { ok: false, reason: "error" };
-    await hardware.requestNdef();
+    await hardware.requestTag();
     const tag = await hardware.getTag();
     return extractNfcCardTokenFromTag(tag);
   } catch (error) {

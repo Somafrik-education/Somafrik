@@ -13,6 +13,7 @@ import {
   probeNfc,
   scanNfcCardToken,
   decideOpenQrFromNfcFallback,
+  decideNfcScannerRead,
   shouldShowNfcQrFallback,
   type NfcHardware,
 } from "./studentCardNfc";
@@ -61,8 +62,8 @@ function fakeHardware(overrides: Partial<NfcHardware> & { tag?: unknown } = {}):
       calls.push("isEnabled");
       return true;
     },
-    async requestNdef() {
-      calls.push("requestNdef");
+    async requestTag() {
+      calls.push("requestTag");
     },
     async getTag() {
       calls.push("getTag");
@@ -225,7 +226,23 @@ assert.deepEqual(
 assert.equal(failReason(extractNfcCardTokenFromTag({ ndefMessage: [] })), "empty", "NFC-04");
 assert.equal(failReason(extractNfcCardTokenFromTag(null)), "empty");
 assert.equal(failReason(extractNfcCardTokenFromTag({ id: "04AABBCC" })), "uid_only", "NFC-16");
+assert.equal(
+  failReason(extractNfcCardTokenFromTag({
+    id: "AABBCCDD",
+    techTypes: ["android.nfc.tech.IsoDep", "android.nfc.tech.NfcB"],
+  })),
+  "uid_only",
+  "NFC-FIX-02 Navigo / IsoDep sans NDEF",
+);
 assert.equal(failReason(extractNfcCardTokenFromTag({})), "not_ndef", "NFC-05");
+assert.equal(
+  nfcFailureMessage("uid_only"),
+  "Cette carte n’est pas une carte élève Somafrik.",
+);
+assert.equal(
+  nfcFailureMessage("not_ndef"),
+  "Cette carte n’est pas une carte élève Somafrik.",
+);
 assert.equal(
   failReason(extractNfcCardTokenFromTag({ ndefMessage: [uriRecord("https://example.test")] })),
   "invalid_prefix",
@@ -252,13 +269,13 @@ async function runNfcCases() {
   const probe = await probeNfc(hw);
   assert.equal(probe.status, "unsupported", "NFC-01");
   assert.equal(hw.calls.includes("start"), false, "NFC-01 start non appelé");
-  assert.equal(hw.calls.includes("requestNdef"), false, "NFC-01 requestNdef non appelé");
+  assert.equal(hw.calls.includes("requestTag"), false, "NFC-01 requestTag non appelé");
   assert.equal(nfcFailureMessage("unsupported"), "NFC indisponible sur cet appareil.");
   const scan = await scanNfcCardToken(hw);
   assert.equal(scan.ok, false);
   if (!scan.ok) assert.equal(scan.reason, "unsupported");
   assert.equal(hw.calls.includes("start"), false, "NFC-01 scan sans start");
-  assert.equal(hw.calls.includes("requestNdef"), false);
+  assert.equal(hw.calls.includes("requestTag"), false);
   assert.equal(hw.calls.includes("cancel"), true);
 }
 
@@ -276,7 +293,7 @@ async function runNfcCases() {
   const scan = await scanNfcCardToken(hw);
   assert.equal(scan.ok, false);
   if (!scan.ok) assert.equal(scan.reason, "error");
-  assert.equal(hw.calls.includes("requestNdef"), false);
+  assert.equal(hw.calls.includes("requestTag"), false);
 }
 
 {
@@ -290,15 +307,54 @@ async function runNfcCases() {
   assert.equal(scan.ok, false);
   if (!scan.ok) assert.equal(scan.reason, "disabled", "NFC-02");
   assert.equal(nfcFailureMessage("disabled"), "NFC désactivé sur cet appareil.");
-  assert.equal(hw.calls.includes("requestNdef"), false);
+  assert.equal(hw.calls.includes("requestTag"), false);
 }
 
 {
   const hw = fakeHardware({ tag: { ndefMessage: [uriRecord(VALID)] } });
   const scan = await scanNfcCardToken(hw);
   assert.deepEqual(scan, { ok: true, token: "synthetic.token" }, "NFC-03");
-  assert.equal(hw.calls.includes("requestNdef"), true);
+  assert.equal(hw.calls.includes("requestTag"), true);
   assert.equal(hw.calls.at(-1), "cancel");
+}
+
+{
+  const hw = fakeHardware({
+    tag: { id: "AABBCCDD", techTypes: ["android.nfc.tech.IsoDep", "android.nfc.tech.NfcB"] },
+  });
+  const scan = await scanNfcCardToken(hw);
+  assert.equal(scan.ok, false, "NFC-FIX-02");
+  if (!scan.ok) assert.equal(scan.reason, "uid_only");
+  assert.equal("token" in scan && scan.ok, false, "NFC-FIX-02 UID jamais token");
+
+  let onClose = 0;
+  let navigateHome = 0;
+  let attendance = 0;
+  let stored: string | null = null;
+  const decision = decideNfcScannerRead(scan);
+  if (decision.callOnClose) onClose += 1;
+  if (decision.navigateHome) navigateHome += 1;
+  if (decision.runAttendance && decision.token) {
+    attendance += 1;
+    stored = decision.token;
+  }
+  assert.equal(onClose, 0, "NFC-FIX-02 tag physique non-NDEF: pas onClose()");
+  assert.equal(navigateHome, 0, "NFC-FIX-02 tag physique non-NDEF: pas navigation Accueil");
+  assert.equal(attendance, 0, "NFC-FIX-02 pas présence");
+  assert.equal(stored, null, "NFC-FIX-02 pas de stockage de token");
+  assert.equal(decision.keepOpen, true);
+  assert.equal(decision.message, "Cette carte n’est pas une carte élève Somafrik.");
+  assert.notEqual(decision.token, "AABBCCDD");
+  assert.equal(hw.calls.includes("requestTag"), true);
+}
+
+{
+  const somafrik = decideNfcScannerRead({ ok: true, token: "synthetic.token" });
+  assert.equal(somafrik.runAttendance, true, "NFC-FIX-02 NTAG213 valide");
+  assert.equal(somafrik.callOnClose, false);
+  assert.equal(somafrik.navigateHome, false);
+  assert.equal(somafrik.keepOpen, true);
+  assert.equal(somafrik.token, "synthetic.token");
 }
 
 {
@@ -444,12 +500,23 @@ const scan = read("lib/studentCardScan.ts");
 
 assert.match(native, /react-native-nfc-manager/);
 assert.match(native, /NfcTech\.Ndef/);
-assert.doesNotMatch(native, /IsoDep|Felica|HCE|NfcTech\.NfcA/);
+assert.match(native, /NfcTech\.NfcB/);
+assert.match(native, /NfcTech\.IsoDep/);
+assert.match(native, /requestTag/);
+assert.match(native, /FLAG_READER_NFC_B/);
+assert.match(native, /isReaderModeEnabled:\s*true/);
+assert.doesNotMatch(native, /NfcTech\.Felica|FelicaIOS|transceive\s*\(|selectIdentifiers|systemCodes/);
+const listenForTag = modal.match(/const listenForTag[\s\S]*?\}, \[runScan\]\);/);
+assert.ok(listenForTag, "NFC-FIX-02 listenForTag");
+assert.match(listenForTag[0], /decideNfcScannerRead/);
+assert.doesNotMatch(listenForTag[0], /\bonClose\(/, "NFC-FIX-02 listenForTag sans onClose()");
+assert.doesNotMatch(listenForTag[0], /navigate\(|Accueil/, "NFC-FIX-02 listenForTag sans navigation");
 assert.doesNotMatch(nfcLib, /react-native-nfc-manager/);
 assert.match(modal, /runStudentCardScanFlow/);
 assert.match(modal, /scanNfcCardToken/);
 assert.match(modal, /releaseNfcSession/);
 assert.match(modal, /decideNfcScannerForeground/);
+assert.match(modal, /decideNfcScannerRead/);
 assert.match(modal, /onFallbackQr/);
 assert.match(modal, /qrFallbackEnabled/);
 assert.match(modal, /shouldShowNfcQrFallback/);

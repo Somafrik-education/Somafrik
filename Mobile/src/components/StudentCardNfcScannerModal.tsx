@@ -28,7 +28,7 @@ import {
 import {
   STUDENT_CARD_NFC_COPY,
   decideNfcScannerForeground,
-  nfcFailureMessage,
+  decideNfcScannerRead,
   releaseNfcSession,
   scanNfcCardToken,
   shouldShowNfcQrFallback,
@@ -210,13 +210,15 @@ export default function StudentCardNfcScannerModal({
     try {
       const read = await scanNfcCardToken(hardwareRef.current);
       if (!visibleRef.current) return;
-      if (!read.ok) {
-        setFailure(read.reason);
-        setError(nfcFailureMessage(read.reason));
+      const decision = decideNfcScannerRead(read);
+      if (decision.callOnClose || decision.navigateHome) return;
+      if (!decision.runAttendance || !decision.token) {
+        setFailure(decision.refusal ?? "error");
+        setError(decision.message);
         return;
       }
-      if (!holdCardToken(tokenRef.current, read.token)) return;
-      await runScan(read.token);
+      if (!holdCardToken(tokenRef.current, decision.token)) return;
+      await runScan(decision.token);
     } finally {
       scanLockRef.current = false;
       if (visibleRef.current) setScanning(false);

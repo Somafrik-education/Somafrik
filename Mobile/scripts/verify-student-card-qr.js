@@ -127,6 +127,16 @@ function main() {
   assert.match(attendance, /decideOpenQrFromNfcFallback/);
   assert.match(attendance, /qrFallbackEnabled=\{canOpenQrScanner\}/);
   assert.match(nfcNative, /NfcTech\.Ndef/);
+  assert.match(nfcNative, /NfcTech\.NfcB/);
+  assert.match(nfcNative, /NfcTech\.IsoDep/);
+  assert.match(nfcNative, /FLAG_READER_NFC_B/);
+  assert.match(nfcNative, /isReaderModeEnabled:\s*true/);
+  assert.doesNotMatch(nfcNative, /transceive|selectIdentifiers|systemCodes|Felica|HCE/);
+  assert.match(nfcModal, /decideNfcScannerRead/);
+  const listenForTag = nfcModal.match(/const listenForTag[\s\S]*?\}, \[runScan\]\);/);
+  assert.ok(listenForTag, "NFC-FIX-02 listenForTag");
+  assert.doesNotMatch(listenForTag[0], /\bonClose\(/);
+  assert.doesNotMatch(listenForTag[0], /navigate\(/);
   assert.match(nfcPolicy, /somafrik:card:/);
   assert.doesNotMatch(nfcPolicy, /react-native-nfc-manager/);
   assert.doesNotMatch(modal, /react-native-nfc-manager/);
