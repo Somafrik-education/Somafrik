@@ -58,6 +58,7 @@ const SCAN_ERROR_MESSAGES: Record<string, string> = {
 export type StudentCardScanSettings = {
   studentCardEnabled?: boolean;
   studentCardQrEnabled?: boolean;
+  studentCardNfcEnabled?: boolean;
   studentCardAttendanceEnabled?: boolean;
   studentCardFinanceCheckEnabled?: boolean;
 };
@@ -86,6 +87,24 @@ export function isStudentCardScanFinanceEnabled(
   return isStudentCardQrScanEnabled(settings) && settings?.studentCardFinanceCheckEnabled === true;
 }
 
+export function isStudentCardNfcScanEnabled(
+  settings: StudentCardScanSettings | null | undefined,
+): boolean {
+  return settings?.studentCardEnabled === true && settings?.studentCardNfcEnabled === true;
+}
+
+export function isStudentCardNfcAttendanceScanEnabled(
+  settings: StudentCardScanSettings | null | undefined,
+): boolean {
+  return isStudentCardNfcScanEnabled(settings) && settings?.studentCardAttendanceEnabled === true;
+}
+
+export function isStudentCardNfcFinanceEnabled(
+  settings: StudentCardScanSettings | null | undefined,
+): boolean {
+  return isStudentCardNfcScanEnabled(settings) && settings?.studentCardFinanceCheckEnabled === true;
+}
+
 export function sanitizeStudentCardCapabilities(
   row: unknown,
 ): StudentCardScanSettings | null {
@@ -94,6 +113,7 @@ export function sanitizeStudentCardCapabilities(
   return {
     studentCardEnabled: source.studentCardEnabled === true,
     studentCardQrEnabled: source.studentCardQrEnabled === true,
+    studentCardNfcEnabled: source.studentCardNfcEnabled === true,
     studentCardAttendanceEnabled: source.studentCardAttendanceEnabled === true,
     studentCardFinanceCheckEnabled: source.studentCardFinanceCheckEnabled === true,
   };
@@ -107,6 +127,18 @@ export function isStudentCardQrScannerVisible(args: {
   return (
     args.canUpdatePresences === true &&
     isStudentCardAttendanceScanEnabled(args.settings) &&
+    hasValidSelectedClass(args.selectedClass)
+  );
+}
+
+export function isStudentCardNfcScannerVisible(args: {
+  canUpdatePresences: boolean;
+  settings: StudentCardScanSettings | null | undefined;
+  selectedClass: SelectedAttendanceClassRef | null | undefined;
+}): boolean {
+  return (
+    args.canUpdatePresences === true &&
+    isStudentCardNfcAttendanceScanEnabled(args.settings) &&
     hasValidSelectedClass(args.selectedClass)
   );
 }

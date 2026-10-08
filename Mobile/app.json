@@ -28,6 +28,13 @@
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
+      ],
+      [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "Somafrik utilise la puce NFC pour lire la carte élève de l’établissement.",
+          "includeNdefEntitlement": true
+        }
       ]
     ],
     "android": {

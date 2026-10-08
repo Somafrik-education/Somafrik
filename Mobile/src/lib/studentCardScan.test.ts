@@ -323,6 +323,7 @@ assert.deepEqual(
   {
     studentCardEnabled: true,
     studentCardQrEnabled: false,
+    studentCardNfcEnabled: false,
     studentCardAttendanceEnabled: false,
     studentCardFinanceCheckEnabled: false,
   },

@@ -369,10 +369,12 @@ async function main() {
       "studentCardAttendanceEnabled",
       "studentCardEnabled",
       "studentCardFinanceCheckEnabled",
+      "studentCardNfcEnabled",
       "studentCardQrEnabled",
     ]);
     assert.equal(capUpdate.data.studentCardEnabled, true);
     assert.equal(capUpdate.data.studentCardQrEnabled, true);
+    assert.equal(capUpdate.data.studentCardNfcEnabled, false);
     assert.equal(capUpdate.data.studentCardAttendanceEnabled, true);
     assert.equal(capUpdate.data.studentCardFinanceCheckEnabled, false);
     assert.equal(JSON.stringify(capUpdate.data).includes(LOGIN_A), false);

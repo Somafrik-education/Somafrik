@@ -24,6 +24,7 @@ export const USABILITY_TEST_IDS = {
   attendanceMarkAllPresent: "attendance-mark-all-present",
   attendanceSave: "attendance-save",
   attendanceScanQr: "attendance-scan-qr",
+  attendanceScanNfc: "attendance-scan-nfc",
   attendanceAuthorPicker: "attendance-author-picker",
   attendancePresentCount: "attendance-present-count",
   attendanceAbsentCount: "attendance-absent-count",
