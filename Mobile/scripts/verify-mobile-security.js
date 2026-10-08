@@ -241,7 +241,7 @@ function main() {
   assert.ok(!pkg.dependencies?.["expo-nfc"], "expo-nfc interdit");
   assert.ok(!String(appJson?.expo?.ios?.infoPlist?.NFCReaderUsageDescription || ""), "NFC iOS via plugin, pas infoPlist brut");
   assert.match(JSON.stringify(appJson), /react-native-nfc-manager/);
-  assert.match(JSON.stringify(appJson), /includeNdefEntitlement": true/);
+  assert.match(JSON.stringify(appJson), /includeNdefEntitlement":\s*true/);
   assert.match(
     JSON.stringify(appJson),
     /Somafrik utilise la puce NFC pour lire la carte élève de l’établissement\./,

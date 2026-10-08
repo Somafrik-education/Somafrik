@@ -211,7 +211,7 @@ function inspectGeneratedAndroid(profile) {
 
   console.log(
     `PROOF ${profile}: CAMERA granted ; NFC granted ; hardware.nfc required=false ; `
-      + `compileSdk=${sdk.compileSdk} minSdk=${sdk.minSdk} ; READ_MEDIA_IMAGES not granted ; `
+      + `compileSdk=${sdk.compileSdk} minSdk=${sdk.minSdk} source=${sdk.source} ; READ_MEDIA_IMAGES not granted ; `
       + `READ/WRITE_EXTERNAL_STORAGE tools:node=remove`
       + ` (${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off)`,
   );
@@ -220,26 +220,30 @@ function inspectGeneratedAndroid(profile) {
 }
 
 function readAndroidSdkVersions() {
+  const appGradle = read(path.join(ANDROID, "app", "build.gradle"));
+  assert.match(appGradle, /compileSdk rootProject\.ext\.compileSdkVersion/);
+  assert.match(appGradle, /minSdkVersion rootProject\.ext\.minSdkVersion/);
+  assert.doesNotMatch(appGradle, /minSdkVersion\s+31\b/, "STOP: minSdk literal 31 dans app/build.gradle");
+
   const props = fs.existsSync(path.join(ANDROID, "gradle.properties"))
     ? read(path.join(ANDROID, "gradle.properties"))
     : "";
-  const rootGradle = fs.existsSync(path.join(ANDROID, "build.gradle"))
-    ? read(path.join(ANDROID, "build.gradle"))
-    : "";
-  const appGradle = read(path.join(ANDROID, "app", "build.gradle"));
-  const minSdk = Number(
-    (props.match(/android\.minSdkVersion\s*=\s*(\d+)/) || [])[1]
-    || (rootGradle.match(/minSdkVersion[^\n]*?:\s*'(\d+)'/) || [])[1]
-    || (appGradle.match(/minSdk(?:Version)?\s+(\d+)/) || [])[1]
-    || NaN,
-  );
-  const compileSdk = Number(
-    (props.match(/android\.compileSdkVersion\s*=\s*(\d+)/) || [])[1]
-    || (rootGradle.match(/compileSdkVersion[^\n]*?:\s*'(\d+)'/) || [])[1]
-    || (appGradle.match(/compileSdk(?:Version)?\s+(\d+)/) || [])[1]
-    || NaN,
-  );
-  return { minSdk, compileSdk };
+  const propMin = (props.match(/^\s*android\.minSdkVersion\s*=\s*(\d+)/m) || [])[1];
+  const propCompile = (props.match(/^\s*android\.compileSdkVersion\s*=\s*(\d+)/m) || [])[1];
+  if (propMin) {
+    assert.ok(Number(propMin) < 31, `STOP: gradle.properties android.minSdkVersion=${propMin}`);
+  }
+
+  const catalogPath = path.join(MOBILE, "node_modules", "react-native", "gradle", "libs.versions.toml");
+  assert.ok(fs.existsSync(catalogPath), "catalogue SDK React Native manquant");
+  const catalog = read(catalogPath);
+  const catalogMin = Number((catalog.match(/^minSdk\s*=\s*"(\d+)"/m) || [])[1] || NaN);
+  const catalogCompile = Number((catalog.match(/^compileSdk\s*=\s*"(\d+)"/m) || [])[1] || NaN);
+  return {
+    minSdk: propMin ? Number(propMin) : catalogMin,
+    compileSdk: propCompile ? Number(propCompile) : catalogCompile,
+    source: propMin || propCompile ? "gradle.properties" : "react-native/gradle/libs.versions.toml",
+  };
 }
 
 function findIosInfoPlist() {
