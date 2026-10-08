@@ -190,7 +190,7 @@ Somafrik est déjà hors Expo Go (SQLCipher, camera, notifications). NFC n’ajo
 
 La contrainte upstream observée (wiki Expo-Go, exemples `minSdkVersion=23` + `compileSdkVersion=34`) est **`compileSdkVersion >= 31`**. Ce n’est **pas** `minSdkVersion = 31`. Des builds fonctionnent avec un minSdk 23 tout en compilant contre SDK 34.
 
-Somafrik Expo 54 compile déjà `compileSdk` / `targetSdk` **36** (preuve `Mobile/scripts/aabEvidence.js` : fallback `compileSdkVersion=36`, `minSdkVersion=24`). Le `compileSdk` actuel est déjà **supérieur** à 31.
+La contrainte NFC est `compileSdkVersion >= 31`. PR8 devra confirmer la valeur réellement générée lors du prebuild. Aucun relèvement du minSdk n’est requis ni autorisé opportunistement.
 
 **Aucun changement minSdk n’est requis par ce gate.** PR8 ne doit **pas** relever `minSdkVersion` à 31, ni l’augmenter opportunistement. Relever le minSdk exclurait des appareils Android encore dans le parc. `compileSdk` et `minSdk` sont des leviers distincts : satisfaire `compileSdkVersion >= 31` ne justifie pas de toucher au minSdk.
 
@@ -322,7 +322,7 @@ config plugin Expo + CNG
 Expo Go : non supporté — APK / development build
 Android : retirer NFC de la blocklist uniquement
 Android : uses-feature nfc required=false
-Android : compileSdkVersion >= 31 déjà satisfait ; ne pas relever minSdk
+Android : compileSdkVersion >= 31 à confirmer au prebuild ; ne pas relever minSdk
 iOS : NFCReaderUsageDescription figée + entitlement NDEF
 session NFC au scan seulement
 QR fallback obligatoire
@@ -360,7 +360,7 @@ Ce GO est une **autorisation de revue**, pas un Ready, pas un merge de code NFC,
 | --- | --- |
 | Bibliothèque | `react-native-nfc-manager` |
 | Version | `4.0.0-beta.10` (New Architecture Somafrik) |
-| Android | retirer `android.permission.NFC` de la blocklist uniquement ; `uses-feature` `android.hardware.nfc` `required=false` ; **aucun bump minSdk** (`compileSdkVersion >= 31` déjà vrai, `minSdk` inchangé) |
+| Android | retirer `android.permission.NFC` de la blocklist uniquement ; `uses-feature` `android.hardware.nfc` `required=false` ; **aucun bump minSdk** (`compileSdkVersion >= 31` à confirmer au prebuild, `minSdk` inchangé) |
 | iOS | entitlement NDEF + `NFCReaderUsageDescription` figée |
 | Fallback | QR obligatoire ; appel manuel intact |
 | Format NFC V1 | NDEF `somafrik:card:` + `publicId.secret` (même capability QR) |
