@@ -43,7 +43,7 @@ Version cible, **non installée ici** :
 
 ```text
 New Architecture (cas Somafrik) : 4.0.0-beta.10
-Old Architecture seulement     : 3.17.5
+Old Architecture seulement     : ligne v3 stable / old architecture
 ```
 
 Somafrik est sur **New Architecture** : Expo 54 l’active par défaut ; `react-native-reanimated@~4.1.1` l’exige ; `app.json` ne pose pas `newArchEnabled: false`.
@@ -56,7 +56,7 @@ Commande future PR8, **non exécutée dans ce gate** :
 npm --prefix Mobile install react-native-nfc-manager@4.0.0-beta.10
 ```
 
-Ne pas installer le dist-tag `latest` : au moment de cette revue, `latest` pointe la ligne **v3** (`3.17.5`), old-arch only.
+Ne pas installer le dist-tag `latest` : il pointe la **ligne v3 stable / old architecture**, pas la v4 New Architecture.
 
 ### Comparaison
 
@@ -68,7 +68,7 @@ Ne pas installer le dist-tag `latest` : au moment de cette revue, `latest` point
 | Expo Go | **Non** — native module | Non | — | — |
 | Development build / APK | **Obligatoire** | — | — | Déjà le modèle Somafrik |
 | Licence | MIT | n/a | — | — |
-| Maintenance 2026 | Active (v3.17.5 + v4 beta, RN 0.81) | Morte depuis 2022 | — | — |
+| Maintenance 2026 | Active (ligne v3 stable + v4 beta, RN 0.81) | Morte depuis 2022 | — | — |
 | New Architecture | **v4 beta uniquement** | — | — | — |
 
 Aucune autre librairie NDEF React Native n’est maintenue au même niveau pour Expo CNG. Un module natif maison est hors minimum V1.
@@ -82,7 +82,7 @@ Sources primaires, pas une affirmation générique.
 | Paquet | `react-native-nfc-manager` | [npm](https://www.npmjs.com/package/react-native-nfc-manager) |
 | Licence | **MIT** | registre npm, `package.json` upstream |
 | Dépôt | `https://github.com/revtel/react-native-nfc-manager` | homepage npm |
-| v3 latest | `3.17.5` (2026-10-03) — **legacy architecture** | GitHub Releases |
+| v3 stable visible | `3.17.4` — **legacy / old architecture** | [GitHub Releases](https://github.com/revtel/react-native-nfc-manager/releases) |
 | v4 lue | `4.0.0-beta.10` (2026-10-03) — **New Architecture** | GitHub Releases |
 | Plugin Expo | wiki [Expo Go](https://github.com/revtel/react-native-nfc-manager/wiki/Expo-Go) — « cannot be used in Expo Go » | wiki officiel |
 | Peer `@expo/config-plugins` | `*` depuis `3.17.1` (PR #796) | compatible SDK 54 |
@@ -188,7 +188,11 @@ Apple exige une explication réelle ([NFCReaderUsageDescription](https://develop
 
 Somafrik est déjà hors Expo Go (SQLCipher, camera, notifications). NFC n’ajoute pas un nouveau modèle de distribution.
 
-Le plugin documente `minSdk` Android 31. Expo 54 compile déjà `compileSdk` / `targetSdk` 36 : pas d’abaissement.
+La contrainte upstream observée (wiki Expo-Go, exemples `minSdkVersion=23` + `compileSdkVersion=34`) est **`compileSdkVersion >= 31`**. Ce n’est **pas** `minSdkVersion = 31`. Des builds fonctionnent avec un minSdk 23 tout en compilant contre SDK 34.
+
+Somafrik Expo 54 compile déjà `compileSdk` / `targetSdk` **36** (preuve `Mobile/scripts/aabEvidence.js` : fallback `compileSdkVersion=36`, `minSdkVersion=24`). Le `compileSdk` actuel est déjà **supérieur** à 31.
+
+**Aucun changement minSdk n’est requis par ce gate.** PR8 ne doit **pas** relever `minSdkVersion` à 31, ni l’augmenter opportunistement. Relever le minSdk exclurait des appareils Android encore dans le parc. `compileSdk` et `minSdk` sont des leviers distincts : satisfaire `compileSdkVersion >= 31` ne justifie pas de toucher au minSdk.
 
 ## 8. QR = secours obligatoire
 
@@ -318,6 +322,7 @@ config plugin Expo + CNG
 Expo Go : non supporté — APK / development build
 Android : retirer NFC de la blocklist uniquement
 Android : uses-feature nfc required=false
+Android : compileSdkVersion >= 31 déjà satisfait ; ne pas relever minSdk
 iOS : NFCReaderUsageDescription figée + entitlement NDEF
 session NFC au scan seulement
 QR fallback obligatoire
@@ -336,6 +341,7 @@ prebuild Android + iOS verts
 expo-nfc stub
 react-native-nfc-manager@latest (v3) sur New Architecture
 android.hardware.nfc required=true
+relever minSdkVersion à 31 (ou tout bump minSdk opportuniste)
 élargir RECORD_AUDIO / LOCATION / CONTACTS / CALL_PHONE / galerie
 auth par UID
 écriture finance / PII sur le tag
@@ -354,7 +360,7 @@ Ce GO est une **autorisation de revue**, pas un Ready, pas un merge de code NFC,
 | --- | --- |
 | Bibliothèque | `react-native-nfc-manager` |
 | Version | `4.0.0-beta.10` (New Architecture Somafrik) |
-| Android | retirer `android.permission.NFC` de la blocklist uniquement ; `uses-feature` `android.hardware.nfc` `required=false` |
+| Android | retirer `android.permission.NFC` de la blocklist uniquement ; `uses-feature` `android.hardware.nfc` `required=false` ; **aucun bump minSdk** (`compileSdkVersion >= 31` déjà vrai, `minSdk` inchangé) |
 | iOS | entitlement NDEF + `NFCReaderUsageDescription` figée |
 | Fallback | QR obligatoire ; appel manuel intact |
 | Format NFC V1 | NDEF `somafrik:card:` + `publicId.secret` (même capability QR) |
@@ -364,8 +370,8 @@ Ce GO est une **autorisation de revue**, pas un Ready, pas un merge de code NFC,
 
 ## 17. Sources primaires
 
-- npm `react-native-nfc-manager` (licence MIT, v3.17.5 latest, peer `@expo/config-plugins` `*`).
-- GitHub Releases : `3.17.5`, `4.0.0-beta.10` (2026-10-03) ; notes New Architecture vs legacy.
+- npm `react-native-nfc-manager` (licence MIT, ligne v3 stable / old architecture, peer `@expo/config-plugins` `*`).
+- GitHub Releases vérifiées : `4.0.0-beta.10` (2026-10-03, New Architecture) ; dernière stable v3 visible `3.17.4` (old architecture). Ne pas affirmer `3.17.5` sans tag GitHub.
 - Wiki [Expo](https://github.com/revtel/react-native-nfc-manager/wiki/Expo-Go) — Expo Go unsupported, config plugin, `nfcPermission`, `includeNdefEntitlement`.
 - [Expo SDK 54 package list](https://docs.expo.dev/versions/v54.0.0/) — aucun module NFC officiel.
 - npm `expo-nfc@0.0.0` — stub rejeté.
