@@ -273,6 +273,7 @@ const STUDENT_CARD_PR6_EXACT = new Set([
 const STUDENT_CARD_PR8_EXACT = new Set([
   "Mobile/app.config.js",
   "Mobile/plugins/withSomafrikAndroidSecurity.js",
+  "backend/lib/schoolSettings.studentCard.test.js",
   "docs/audits/GATE-NFC-STORES.md",
 ]);
 

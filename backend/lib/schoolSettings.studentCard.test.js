@@ -200,7 +200,7 @@ test("CARTE-PR0 — lecture/écriture school_settings inchangée pour Superadmin
   );
 });
 
-test("CARTE-PR0 — aucune permission scolaire supplémentaire, aucun QR/NFC produit", () => {
+test("CARTE-PR0 — aucune permission scolaire supplémentaire ; NFC Android débloqué par PR8", () => {
   const catalog = readRepo("backend/lib/functionalModulesCatalog.js");
   const roles = readRepo("backend/lib/establishmentRolesManagement.js");
   const schema = readRepo("backend/db/schema.sql");
@@ -213,7 +213,25 @@ test("CARTE-PR0 — aucune permission scolaire supplémentaire, aucun QR/NFC pro
   assert.doesNotMatch(catalog, /student_card|studentCard|carte_eleve|Carte Élève/);
   assert.doesNotMatch(roles, /Carte Élève|student_card|NFC:|QR:/);
   assert.doesNotMatch(management, /cardToken/);
-  assert.match(android, /android\.permission\.NFC/);
+  assert.doesNotMatch(android, /android\.permission\.NFC/);
+  assert.match(android, /android\.hardware\.nfc/);
+  assert.match(android, /android:required": "false"/);
+  for (const blocked of [
+    "android.permission.RECORD_AUDIO",
+    "android.permission.SYSTEM_ALERT_WINDOW",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.READ_MEDIA_IMAGES",
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.READ_CONTACTS",
+    "android.permission.CALL_PHONE",
+  ]) {
+    const pattern = new RegExp(blocked.replace(/\./g, "\\."));
+    assert.match(android, pattern);
+    assert.match(appConfig, pattern);
+  }
+  assert.doesNotMatch(appConfig, /android\.permission\.NFC/);
   assert.doesNotMatch(appConfig, /expo-camera|nfc-manager|react-native-nfc/);
   assert.match(server, /app\.post\("\/api\/student-cards\/scan"/);
   assert.doesNotMatch(presences, /student_card|studentCard|cardToken/);
