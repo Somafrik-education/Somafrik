@@ -173,12 +173,30 @@ export function nfcFailureMessage(reason: NfcReadFailure): string {
   return STUDENT_CARD_NFC_COPY.error;
 }
 
+export function shouldShowNfcQrFallback(input: {
+  qrFallbackEnabled: boolean;
+  failure?: NfcReadFailure | "";
+  hasError?: boolean;
+}): boolean {
+  if (input.qrFallbackEnabled !== true) return false;
+  return input.failure === "unsupported"
+    || input.failure === "disabled"
+    || input.hasError === true;
+}
+
+export function decideOpenQrFromNfcFallback(input: {
+  canOpenQrScanner: boolean;
+  authorReady: boolean;
+}): boolean {
+  return input.canOpenQrScanner === true && input.authorReady === true;
+}
+
 export async function probeNfc(
   hardware: NfcHardware,
 ): Promise<{ status: "ready" | "unsupported" | "disabled" | "error" }> {
   try {
-    await hardware.start();
     if ((await hardware.isSupported()) !== true) return { status: "unsupported" };
+    await hardware.start();
     if ((await hardware.isEnabled()) !== true) return { status: "disabled" };
     return { status: "ready" };
   } catch {

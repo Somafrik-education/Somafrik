@@ -12,6 +12,8 @@ import {
   parseSomafrikCardToken,
   probeNfc,
   scanNfcCardToken,
+  decideOpenQrFromNfcFallback,
+  shouldShowNfcQrFallback,
   type NfcHardware,
 } from "./studentCardNfc";
 import {
@@ -104,6 +106,45 @@ assert.equal(
   }),
   false,
   "NFC on ne force pas QR",
+);
+assert.equal(
+  shouldShowNfcQrFallback({
+    qrFallbackEnabled: false,
+    failure: "unsupported",
+    hasError: true,
+  }),
+  false,
+  "NFC-19 unsupported + QR off",
+);
+assert.equal(
+  shouldShowNfcQrFallback({
+    qrFallbackEnabled: false,
+    failure: "disabled",
+    hasError: true,
+  }),
+  false,
+  "NFC-19 disabled + QR off",
+);
+assert.equal(
+  decideOpenQrFromNfcFallback({ canOpenQrScanner: false, authorReady: true }),
+  false,
+  "NFC-19 aucun contournement flag QR",
+);
+assert.equal(
+  decideOpenQrFromNfcFallback({ canOpenQrScanner: true, authorReady: false }),
+  false,
+  "NFC-19 auteur non prêt",
+);
+assert.equal(
+  shouldShowNfcQrFallback({
+    qrFallbackEnabled: true,
+    failure: "unsupported",
+  }),
+  true,
+);
+assert.equal(
+  decideOpenQrFromNfcFallback({ canOpenQrScanner: true, authorReady: true }),
+  true,
 );
 
 assert.equal(
@@ -203,14 +244,39 @@ async function runNfcCases() {
       hw.calls.push("isSupported");
       return false;
     },
+    async start() {
+      hw.calls.push("start");
+      throw new Error("ERR_NO_NFC_SUPPORT");
+    },
   });
   const probe = await probeNfc(hw);
   assert.equal(probe.status, "unsupported", "NFC-01");
+  assert.equal(hw.calls.includes("start"), false, "NFC-01 start non appelé");
+  assert.equal(hw.calls.includes("requestNdef"), false, "NFC-01 requestNdef non appelé");
+  assert.equal(nfcFailureMessage("unsupported"), "NFC indisponible sur cet appareil.");
   const scan = await scanNfcCardToken(hw);
   assert.equal(scan.ok, false);
   if (!scan.ok) assert.equal(scan.reason, "unsupported");
+  assert.equal(hw.calls.includes("start"), false, "NFC-01 scan sans start");
   assert.equal(hw.calls.includes("requestNdef"), false);
   assert.equal(hw.calls.includes("cancel"), true);
+}
+
+{
+  const hw = fakeHardware({
+    async start() {
+      hw.calls.push("start");
+      throw new Error("ERR_NO_NFC_SUPPORT");
+    },
+  });
+  const probe = await probeNfc(hw);
+  assert.equal(probe.status, "error", "start throw après isSupported=true");
+  assert.equal(hw.calls.includes("isSupported"), true);
+  assert.equal(hw.calls.includes("start"), true);
+  const scan = await scanNfcCardToken(hw);
+  assert.equal(scan.ok, false);
+  if (!scan.ok) assert.equal(scan.reason, "error");
+  assert.equal(hw.calls.includes("requestNdef"), false);
 }
 
 {
@@ -385,6 +451,8 @@ assert.match(modal, /scanNfcCardToken/);
 assert.match(modal, /releaseNfcSession/);
 assert.match(modal, /decideNfcScannerForeground/);
 assert.match(modal, /onFallbackQr/);
+assert.match(modal, /qrFallbackEnabled/);
+assert.match(modal, /shouldShowNfcQrFallback/);
 assert.match(modal, /holdCardToken/);
 assert.match(modal, /releaseCardToken/);
 assert.doesNotMatch(nfcLib + native + modal, /console\.(log|info|debug|warn)/, "NFC-17");
@@ -396,6 +464,16 @@ assert.match(attendance, /StudentCardNfcScannerModal/);
 assert.match(attendance, /isStudentCardNfcScannerVisible/);
 assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanNfc/);
 assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
+assert.match(attendance, /qrFallbackEnabled=\{canOpenQrScanner\}/);
+assert.match(attendance, /decideOpenQrFromNfcFallback/);
+assert.match(attendance, /selectedClass && canOpenQrScanner/);
+assert.doesNotMatch(
+  attendance,
+  /onFallbackQr=\{\(\) => \{\s*setNfcScannerOpen\(false\);\s*setScannerOpen\(true\);/,
+  "NFC-19 pas de bypass QR",
+);
+assert.match(nfcLib, /await hardware\.isSupported\(\)[\s\S]*await hardware\.start\(\)/);
+assert.doesNotMatch(nfcLib, /await hardware\.start\(\);\s*if \(\(await hardware\.isSupported/);
 assert.doesNotMatch(attendance, /getSchoolSettings\(/);
 assert.match(api, /studentCardNfcEnabled/);
 assert.match(scan, /studentCardNfcEnabled/);

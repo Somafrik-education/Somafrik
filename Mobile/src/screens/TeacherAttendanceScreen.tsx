@@ -23,7 +23,7 @@ import {
   sanitizeStudentCardCapabilities,
   type StudentCardScanSettings,
 } from "../lib/studentCardScan";
-import { STUDENT_CARD_NFC_COPY } from "../lib/studentCardNfc";
+import { STUDENT_CARD_NFC_COPY, decideOpenQrFromNfcFallback } from "../lib/studentCardNfc";
 import {
   classNameMatches,
   resolveStudentApiId,
@@ -342,6 +342,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
   const canReadScanFinance = canReadFeeGrids(session) && isStudentCardScanFinanceEnabled(cardSettings);
   const canReadNfcScanFinance = canReadFeeGrids(session) && isStudentCardNfcFinanceEnabled(cardSettings);
+
+  useEffect(() => {
+    if (!canOpenQrScanner) setScannerOpen(false);
+  }, [canOpenQrScanner]);
 
   const dailyStats = useMemo(
     () => getRollCallDraftStats(selectedIds, attendance),
@@ -1005,7 +1009,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </View>
       }
     />
-    {selectedClass ? (
+    {selectedClass && canOpenQrScanner ? (
       <StudentCardQrScannerModal
         visible={scannerOpen}
         selectedClass={selectedClass}
@@ -1027,10 +1031,18 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         author={authorDecision}
         attendanceDate={isoAttendanceDate()}
         financeEnabled={canReadNfcScanFinance}
+        qrFallbackEnabled={canOpenQrScanner}
         onClose={() => setNfcScannerOpen(false)}
         onFallbackQr={() => {
           setNfcScannerOpen(false);
-          setScannerOpen(true);
+          if (
+            decideOpenQrFromNfcFallback({
+              canOpenQrScanner,
+              authorReady: scanAuthorReady.ok,
+            })
+          ) {
+            setScannerOpen(true);
+          }
         }}
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
       />

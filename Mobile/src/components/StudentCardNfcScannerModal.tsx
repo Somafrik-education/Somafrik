@@ -31,6 +31,7 @@ import {
   nfcFailureMessage,
   releaseNfcSession,
   scanNfcCardToken,
+  shouldShowNfcQrFallback,
   type NfcHardware,
   type NfcReadFailure,
 } from "../lib/studentCardNfc";
@@ -53,6 +54,7 @@ type Props = {
   financeEnabled: boolean;
   isOffline?: () => boolean;
   hardware?: NfcHardware;
+  qrFallbackEnabled: boolean;
   onClose: () => void;
   onFallbackQr: () => void;
   onAttendanceRecorded: (view: StudentCardScanView) => void;
@@ -68,6 +70,7 @@ export default function StudentCardNfcScannerModal({
   financeEnabled,
   isOffline = isOfflineContext,
   hardware,
+  qrFallbackEnabled,
   onClose,
   onFallbackQr,
   onAttendanceRecorded,
@@ -262,8 +265,9 @@ export default function StudentCardNfcScannerModal({
     setResult(null);
     setError("");
     setFailure("");
+    if (qrFallbackEnabled !== true) return;
     onFallbackQr();
-  }, [onFallbackQr, stopSession]);
+  }, [onFallbackQr, qrFallbackEnabled, stopSession]);
 
   const retry = useCallback(() => {
     releaseCardToken(tokenRef.current);
@@ -271,7 +275,11 @@ export default function StudentCardNfcScannerModal({
     void listenForTag();
   }, [listenForTag]);
 
-  const showQrFallback = failure === "unsupported" || failure === "disabled" || Boolean(error);
+  const showQrFallback = shouldShowNfcQrFallback({
+    qrFallbackEnabled,
+    failure,
+    hasError: Boolean(error),
+  });
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={close} accessibilityViewIsModal>

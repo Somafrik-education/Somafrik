@@ -122,6 +122,10 @@ function main() {
 
   assert.match(nfcModal, /runStudentCardScanFlow/);
   assert.match(nfcModal, /scanNfcCardToken/);
+  assert.match(nfcModal, /qrFallbackEnabled/);
+  assert.match(nfcModal, /shouldShowNfcQrFallback/);
+  assert.match(attendance, /decideOpenQrFromNfcFallback/);
+  assert.match(attendance, /qrFallbackEnabled=\{canOpenQrScanner\}/);
   assert.match(nfcNative, /NfcTech\.Ndef/);
   assert.match(nfcPolicy, /somafrik:card:/);
   assert.doesNotMatch(nfcPolicy, /react-native-nfc-manager/);
