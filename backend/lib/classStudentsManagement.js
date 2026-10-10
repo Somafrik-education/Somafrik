@@ -98,6 +98,65 @@ function optionalStringField(value, field, maxLength) {
  * @param {unknown} value
  * @returns {string | null}
  */
+/**
+ * Droit d'administrer les notes internes. Un simple Élèves:READ, Voir élèves
+ * ou Voir enfant ne suffit pas. ALL_PRIVILEGES n'ouvre pas ce champ.
+ */
+const ADMINISTRATIVE_NOTES_ADMIN_PERMISSIONS = new Set(["Élèves:UPDATE", "Gérer élèves"]);
+
+function principalMayReadAdministrativeNotes(principal) {
+  const permissions = principal?.permissions;
+  if (!Array.isArray(permissions)) return false;
+  return permissions.some((token) =>
+    ADMINISTRATIVE_NOTES_ADMIN_PERMISSIONS.has(String(token ?? "").trim()),
+  );
+}
+
+/**
+ * Retire le texte des notes si le principal ne peut pas les administrer.
+ * Les autres champs de la fiche restent inchangés.
+ * @param {object | null | undefined} student
+ * @param {object | null | undefined} principal
+ */
+function redactAdministrativeNotesForPrincipal(student, principal) {
+  if (!student || typeof student !== "object" || Array.isArray(student)) return student;
+  if (principalMayReadAdministrativeNotes(principal)) return student;
+  if (!Object.prototype.hasOwnProperty.call(student, "administrativeNotes")) return student;
+  const copy = { ...student };
+  delete copy.administrativeNotes;
+  return copy;
+}
+
+/**
+ * Texte brut : conserve les sauts de ligne et les paragraphes.
+ * Réduit les espaces horizontaux, retire les lignes vides de bord.
+ * @param {string} value
+ * @returns {string | null}
+ */
+function normalizeAdministrativeNotesText(value) {
+  const lines = String(value)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[^\S\n]+/g, " ").trim());
+  let start = 0;
+  let end = lines.length;
+  while (start < end && lines[start] === "") start += 1;
+  while (end > start && lines[end - 1] === "") end -= 1;
+  const collapsed = [];
+  let previousBlank = false;
+  for (const line of lines.slice(start, end)) {
+    if (line === "") {
+      if (!previousBlank) collapsed.push("");
+      previousBlank = true;
+      continue;
+    }
+    previousBlank = false;
+    collapsed.push(line);
+  }
+  return collapsed.join("\n") || null;
+}
+
 function optionalAdministrativeNotes(value) {
   if (value === undefined || value === null) {
     return null;
@@ -105,7 +164,7 @@ function optionalAdministrativeNotes(value) {
   if (typeof value !== "string") {
     throw createHttpError(400, "administrativeNotes doit être une chaîne.");
   }
-  const collapsed = value.trim().replace(/\s+/g, " ");
+  const collapsed = normalizeAdministrativeNotesText(value);
   if (!collapsed) {
     return null;
   }
@@ -419,6 +478,9 @@ module.exports = {
   FORBIDDEN_BODY_KEYS,
   FORBIDDEN_UPDATE_BODY_KEYS,
   MAX_ADMINISTRATIVE_NOTES,
+  normalizeAdministrativeNotesText,
+  principalMayReadAdministrativeNotes,
+  redactAdministrativeNotesForPrincipal,
   validateEnrollStudentInput,
   validateUpdateStudentInput,
   assertEnrollmentScopeImmutable,

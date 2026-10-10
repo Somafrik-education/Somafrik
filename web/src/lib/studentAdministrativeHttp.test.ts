@@ -25,6 +25,8 @@ vi.mock("./studentsApi", async (importOriginal) => {
   };
 });
 
+import { normalizeOptionalText } from "./studentEditingChangeSet";
+import { validateStudentWorkspaceCommand } from "./studentEditingValidation";
 import {
   buildAdministrativeNotesPatchPayload,
   wrapRepositoryWithHttpAdministrative,
@@ -152,6 +154,48 @@ describe("studentAdministrativeHttp — payload", () => {
     expect(built.ok).toBe(false);
   });
 
+  it("préserve trois lignes, les paragraphes, les espaces et l'Unicode", () => {
+    expect(normalizeOptionalText("a\nb")).toBe("a b");
+    const built = buildAdministrativeNotesPatchPayload(
+      {
+        type: "UPDATE_STUDENT_ADMINISTRATIVE_DETAILS",
+        studentId: "ctx-student-1",
+        expectedVersion: 2,
+        changes: {
+          administrativeNotes: "  Ligne un   \n\n  Ligne  deux — élève  \nLigne trois",
+        },
+      },
+      details(),
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.payload.administrativeNotes).toBe("Ligne un\n\nLigne deux — élève\nLigne trois");
+  });
+
+  it("accepte 2000 caractères, refuse 2001 et le HTML, et efface le texte vide", () => {
+    const current = details();
+    const command = (administrativeNotes: string) =>
+      ({
+        type: "UPDATE_STUDENT_ADMINISTRATIVE_DETAILS",
+        studentId: "ctx-student-1",
+        expectedVersion: 2,
+        changes: { administrativeNotes },
+      }) as const;
+    const max = `${"é".repeat(1998)}\nX`;
+    expect(max).toHaveLength(2000);
+    expect(validateStudentWorkspaceCommand(command(max), { administrative: current }).valid).toBe(true);
+    const over = validateStudentWorkspaceCommand(command(`${"é".repeat(1999)}\nX`), {
+      administrative: current,
+    });
+    expect(over.valid).toBe(false);
+    expect(over.errors.some((error) => error.code === "MAX_LENGTH")).toBe(true);
+    const html = validateStudentWorkspaceCommand(command("<b>secret</b>"), { administrative: current });
+    expect(html.valid).toBe(false);
+    expect(html.errors.some((error) => error.code === "HTML_FORBIDDEN")).toBe(true);
+    const cleared = validateStudentWorkspaceCommand(command(" \n \n "), { administrative: current });
+    expect(cleared.valid).toBe(true);
+  });
+
   it("efface une note vide", () => {
     const built = buildAdministrativeNotesPatchPayload(
       {
@@ -198,6 +242,31 @@ describe("studentAdministrativeHttp — persistance", () => {
     if (result.success) {
       expect(result.updatedAggregate.administrativeNotes).toBe("NOTE-FIXTURE-BETA");
     }
+  });
+
+  it("confirme une note multiligne renvoyée après enregistrement", async () => {
+    const notes = "Ligne un\n\nLigne deux — élève";
+    updateMock.mockResolvedValue(dossier({ administrativeNotes: notes }));
+    const onPersisted = vi.fn(async () => undefined);
+    const repo = wrapRepositoryWithHttpAdministrative(stubBase(details()), {
+      studentCode: STUDENT_CODE,
+      onPersisted,
+    });
+    const result = await repo.updateAdministrativeDetails(
+      {
+        type: "UPDATE_STUDENT_ADMINISTRATIVE_DETAILS",
+        studentId: "ctx-student-1",
+        expectedVersion: 2,
+        changes: { administrativeNotes: "  Ligne un  \n\n  Ligne deux — élève  " },
+      },
+      actor,
+    );
+    expect(updateMock).toHaveBeenCalledWith(STUDENT_CODE, {
+      expectedUpdatedAt: UPDATED_AT,
+      administrativeNotes: notes,
+    });
+    expect(result.success).toBe(true);
+    expect(onPersisted).toHaveBeenCalledOnce();
   });
 
   it("ne réussit pas si la réponse ne confirme pas la note", async () => {

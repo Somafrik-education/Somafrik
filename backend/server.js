@@ -1013,6 +1013,18 @@ function enrollmentApiStudents(rows, loginCode) {
   );
 }
 
+function presentEnrollmentStudent(row, loginCode, principal) {
+  const { redactAdministrativeNotesForPrincipal } = require("./lib/classStudentsManagement");
+  return redactAdministrativeNotesForPrincipal(enrollmentApiStudent(row, loginCode), principal);
+}
+
+function presentEnrollmentStudents(rows, loginCode, principal) {
+  const { redactAdministrativeNotesForPrincipal } = require("./lib/classStudentsManagement");
+  return enrollmentApiStudents(rows, loginCode).map((row) =>
+    redactAdministrativeNotesForPrincipal(row, principal),
+  );
+}
+
 app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
   const principal = await enrollmentHttpPrincipal(req);
   const schoolCode = requireEnrollmentLoginCode(principal);
@@ -1036,7 +1048,7 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
     rows,
     resolveAuthorizedStudentForPrincipal,
   );
-  res.json(enrollmentApiStudents(scoped, schoolCode));
+  res.json(presentEnrollmentStudents(scoped, schoolCode, req.principal));
 }));
 
 app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POST /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
@@ -2058,7 +2070,7 @@ app.get("/api/students", requireAuth, requirePermission("GET /api/students"), as
     filtered,
     resolveAuthorizedStudentForPrincipal,
   );
-  const result = enrollmentApiStudents(scoped, schoolCode);
+  const result = presentEnrollmentStudents(scoped, schoolCode, req.principal);
   sendList(res, result, req.query, ["name", "matricule", "studentCode", "className", "parentPhone"]);
 }));
 
@@ -2088,7 +2100,7 @@ app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:
   if (!authorizedPg) {
     return res.status(404).json({ message: "Eleve introuvable" });
   }
-  return res.json(enrollmentApiStudent(authorizedPg, schoolCode));
+  return res.json(presentEnrollmentStudent(authorizedPg, schoolCode, req.principal));
 }));
 
 function requireStudentCardsPg() {
@@ -2388,7 +2400,7 @@ app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/studen
   await auditService.record(req, "update_student", "student", updated.studentCode, {
     studentCode: updated.studentCode,
   }, { schoolCode });
-  res.json(enrollmentApiStudent(updated, schoolCode));
+  res.json(presentEnrollmentStudent(updated, schoolCode, req.principal));
 }));
 
 app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/students/:id"), asyncHandler(async (req, res) => {
@@ -2418,7 +2430,7 @@ app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/stud
     await auditService.record(req, "archive_student", "student", archived.studentCode || req.params.id, {
       studentCode: archived.studentCode || req.params.id,
     }, { schoolCode });
-    return res.json(enrollmentApiStudent(archived, schoolCode));
+    return res.json(presentEnrollmentStudent(archived, schoolCode, req.principal));
   }
   res.status(204).end();
 }));

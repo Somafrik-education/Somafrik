@@ -1263,6 +1263,20 @@ async function main() {
     );
     assert.equal(afterPgFailure.rows[0].administrative_notes, "Sans toucher le prénom");
 
+    const beforeLines = await studentsRepo.getByStudentCode(noted.student.studentCode, "CD-2026-0001");
+    const multiline = await studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+      administrativeNotes: "  Ligne un  \n\n  Ligne  deux  \nLigne trois",
+      expectedUpdatedAt: pgToken(beforeLines.updatedAt),
+    });
+    assert.equal(multiline.administrativeNotes, "Ligne un\n\nLigne deux\nLigne trois");
+    const multilineSql = await pool.query(
+      `SELECT administrative_notes FROM students WHERE student_code = $1`,
+      [noted.student.studentCode],
+    );
+    assert.equal(multilineSql.rows[0].administrative_notes, "Ligne un\n\nLigne deux\nLigne trois");
+    const reloadedLines = await studentsRepo.getByStudentCode(noted.student.studentCode, "CD-2026-0001");
+    assert.equal(reloadedLines.administrativeNotes, "Ligne un\n\nLigne deux\nLigne trois");
+
     console.log("classStudentsRepository.pg.test.js: OK");
   } finally {
     await pool.end();

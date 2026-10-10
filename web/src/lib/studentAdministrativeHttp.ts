@@ -5,7 +5,7 @@ import type {
   StudentCommandFailure,
   StudentCommandResult,
 } from "./studentEditing";
-import { buildChangeSetForCommand, normalizeOptionalText } from "./studentEditingChangeSet";
+import { buildChangeSetForCommand, normalizeAdministrativeNotes } from "./studentEditingChangeSet";
 import type { UpdateStudentAdministrativeDetailsCommand } from "./studentEditingCommands";
 import type { StudentWorkspaceCommandRepository } from "./studentEditingRepository";
 import { toEditableAdministrativeDetails } from "./studentEditingAdapters";
@@ -67,7 +67,7 @@ export function buildAdministrativeNotesPatchPayload(
     ok: true,
     payload: {
       expectedUpdatedAt,
-      administrativeNotes: normalizeOptionalText(changes.administrativeNotes),
+      administrativeNotes: normalizeAdministrativeNotes(changes.administrativeNotes),
     },
   };
 }
@@ -113,7 +113,7 @@ function httpFailure(error: unknown): StudentCommandFailure {
 }
 
 function notesMatch(expected: string | null, received: string | null | undefined): boolean {
-  return normalizeOptionalText(expected) === normalizeOptionalText(received ?? null);
+  return normalizeAdministrativeNotes(expected) === normalizeAdministrativeNotes(received ?? null);
 }
 
 export function wrapRepositoryWithHttpAdministrative(

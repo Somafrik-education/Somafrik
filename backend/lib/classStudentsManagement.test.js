@@ -6,6 +6,7 @@ const {
   validateUpdateStudentInput,
   assertEnrollmentScopeImmutable,
   parseAndValidateBirthDate,
+  redactAdministrativeNotesForPrincipal,
 } = require("./classStudentsManagement");
 
 function testForbiddenKeysAlwaysRejected() {
@@ -225,6 +226,65 @@ function testAdministrativeNotesValidation() {
     expectedUpdatedAt: token,
   });
   assert.equal(identityOnly.administrativeNotes, undefined);
+
+  const threeLines = validateUpdateStudentInput({
+    administrativeNotes: "  Ligne un   \nLigne  deux\n  Ligne trois  ",
+    expectedUpdatedAt: token,
+  });
+  assert.equal(threeLines.administrativeNotes, "Ligne un\nLigne deux\nLigne trois");
+
+  const paragraphs = validateUpdateStudentInput({
+    administrativeNotes: "Para un\n\n\nPara deux",
+    expectedUpdatedAt: token,
+  });
+  assert.equal(paragraphs.administrativeNotes, "Para un\n\nPara deux");
+
+  const unicode = validateUpdateStudentInput({
+    administrativeNotes: "  Élève — année  \n  deuxième  ",
+    expectedUpdatedAt: token,
+  });
+  assert.equal(unicode.administrativeNotes, "Élève — année\ndeuxième");
+
+  const max = `${"é".repeat(1998)}\nX`;
+  assert.equal(max.length, 2000);
+  assert.equal(
+    validateUpdateStudentInput({ administrativeNotes: max, expectedUpdatedAt: token }).administrativeNotes,
+    max,
+  );
+  assert.throws(
+    () =>
+      validateUpdateStudentInput({
+        administrativeNotes: `${"é".repeat(1999)}\nX`,
+        expectedUpdatedAt: token,
+      }),
+    (error) => error.statusCode === 400,
+  );
+
+  const blankLines = validateUpdateStudentInput({
+    administrativeNotes: " \n \n ",
+    expectedUpdatedAt: token,
+  });
+  assert.equal(blankLines.administrativeNotes, null);
+
+  const dossier = { firstName: "Awa", administrativeNotes: "secret interne" };
+  const hidden = redactAdministrativeNotesForPrincipal(dossier, {
+    permissions: ["Élèves:READ", "Voir élèves", "Voir enfant"],
+  });
+  assert.equal(hidden.firstName, "Awa");
+  assert.equal(Object.hasOwn(hidden, "administrativeNotes"), false);
+  assert.equal(dossier.administrativeNotes, "secret interne");
+  const shown = redactAdministrativeNotesForPrincipal(dossier, {
+    permissions: ["Élèves:READ", "Élèves:UPDATE"],
+  });
+  assert.equal(shown.administrativeNotes, "secret interne");
+  const legacy = redactAdministrativeNotesForPrincipal(dossier, {
+    permissions: ["Gérer élèves"],
+  });
+  assert.equal(legacy.administrativeNotes, "secret interne");
+  const allPrivileges = redactAdministrativeNotesForPrincipal(dossier, {
+    permissions: ["ALL_PRIVILEGES", "Élèves:READ"],
+  });
+  assert.equal(Object.hasOwn(allPrivileges, "administrativeNotes"), false);
 }
 
 function main() {
