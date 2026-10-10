@@ -168,6 +168,14 @@ function createClassStudentsRepository(db) {
       schoolCode: row.school_code,
       parentPhone: row.parent_phone ?? "",
       parentEmail: row.parent_email ?? "",
+      ...(Object.prototype.hasOwnProperty.call(row, "administrative_notes")
+        ? {
+            administrativeNotes:
+              row.administrative_notes == null || String(row.administrative_notes).trim() === ""
+                ? null
+                : String(row.administrative_notes),
+          }
+        : {}),
       status: row.status ?? "active",
       enrollmentId: row.enrollment_id ?? null,
       enrollmentDate: row.enrollment_date ? formatDate(row.enrollment_date) : "",
@@ -799,6 +807,7 @@ function createClassStudentsRepository(db) {
       const school = await requireSchool(schoolCode);
       const row = await db.one(
         `SELECT ${STUDENT_SELECT_COLUMNS},
+                st.administrative_notes,
                 cl.id AS class_id,
                 cl.class_code,
                 cl.name AS class_name,
@@ -933,6 +942,7 @@ function createClassStudentsRepository(db) {
         patch.parentPhone !== undefined ? patch.parentPhone : current.parent_phone;
       const nextParentEmail =
         patch.parentEmail !== undefined ? patch.parentEmail : current.parent_email;
+      const notesProvided = Object.prototype.hasOwnProperty.call(patch, "administrativeNotes");
 
       const updated = await db.one(
         `UPDATE students
@@ -943,6 +953,7 @@ function createClassStudentsRepository(db) {
              birth_place = $5,
              parent_phone = $6,
              parent_email = $7,
+             administrative_notes = CASE WHEN $11::boolean THEN $12 ELSE administrative_notes END,
              updated_at = GREATEST(
                date_trunc('milliseconds', clock_timestamp()),
                date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond'
@@ -962,6 +973,8 @@ function createClassStudentsRepository(db) {
           current.id,
           school.id,
           expected,
+          notesProvided,
+          notesProvided ? patch.administrativeNotes : null,
         ],
       );
 

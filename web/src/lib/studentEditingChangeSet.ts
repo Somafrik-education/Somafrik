@@ -59,6 +59,35 @@ export function normalizeOptionalText(value: unknown): string | null {
   return text || null;
 }
 
+/**
+ * Notes administratives : conserve les retours à la ligne et les paragraphes.
+ * Les espaces horizontaux superflus sont réduits. Le HTML reste interdit en aval.
+ */
+export function normalizeAdministrativeNotes(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const lines = String(value)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[^\S\n]+/g, " ").trim());
+  let start = 0;
+  let end = lines.length;
+  while (start < end && lines[start] === "") start += 1;
+  while (end > start && lines[end - 1] === "") end -= 1;
+  const collapsed: string[] = [];
+  let previousBlank = false;
+  for (const line of lines.slice(start, end)) {
+    if (line === "") {
+      if (!previousBlank) collapsed.push("");
+      previousBlank = true;
+      continue;
+    }
+    previousBlank = false;
+    collapsed.push(line);
+  }
+  return collapsed.join("\n") || null;
+}
+
 export function normalizeRequiredText(value: unknown): string {
   return String(value ?? "").trim().replace(/\s+/g, " ");
 }
@@ -210,8 +239,7 @@ export function normalizeAdministrativeChanges(
 ): UpdateStudentAdministrativeDetailsCommand["changes"] {
   const normalized: UpdateStudentAdministrativeDetailsCommand["changes"] = {};
   if ("administrativeNotes" in changes) {
-    const text = normalizeOptionalText(changes.administrativeNotes);
-    normalized.administrativeNotes = text;
+    normalized.administrativeNotes = normalizeAdministrativeNotes(changes.administrativeNotes);
   }
   if ("preferredContactChannel" in changes) {
     normalized.preferredContactChannel = normalizePreferredChannel(

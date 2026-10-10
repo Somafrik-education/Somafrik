@@ -5,6 +5,8 @@ const { optionalParentPhone } = require("./parentPhone");
 
 const MAX_NAME_LENGTH = 120;
 const MAX_EMAIL_LENGTH = 200;
+const MAX_ADMINISTRATIVE_NOTES = 2000;
+const ADMINISTRATIVE_NOTES_HTML_RE = /<\/?[a-z][\s\S]*>/i;
 const VALID_GENDERS = new Set(["Masculin", "Féminin", "Autre", ""]);
 
 const FORBIDDEN_BODY_KEYS = Object.freeze([
@@ -91,9 +93,90 @@ function optionalStringField(value, field, maxLength) {
 }
 
 /**
+ * Notes internes d'établissement. null / vide → effacement.
+ * undefined n'est pas accepté ici : l'appelant n'invoque la fonction que si la clé est présente.
  * @param {unknown} value
  * @returns {string | null}
  */
+/**
+ * Droit d'administrer les notes internes. Un simple Élèves:READ, Voir élèves
+ * ou Voir enfant ne suffit pas. ALL_PRIVILEGES n'ouvre pas ce champ.
+ */
+const ADMINISTRATIVE_NOTES_ADMIN_PERMISSIONS = new Set(["Élèves:UPDATE", "Gérer élèves"]);
+
+function principalMayReadAdministrativeNotes(principal) {
+  const permissions = principal?.permissions;
+  if (!Array.isArray(permissions)) return false;
+  return permissions.some((token) =>
+    ADMINISTRATIVE_NOTES_ADMIN_PERMISSIONS.has(String(token ?? "").trim()),
+  );
+}
+
+/**
+ * Retire le texte des notes si le principal ne peut pas les administrer.
+ * Les autres champs de la fiche restent inchangés.
+ * @param {object | null | undefined} student
+ * @param {object | null | undefined} principal
+ */
+function redactAdministrativeNotesForPrincipal(student, principal) {
+  if (!student || typeof student !== "object" || Array.isArray(student)) return student;
+  if (principalMayReadAdministrativeNotes(principal)) return student;
+  if (!Object.prototype.hasOwnProperty.call(student, "administrativeNotes")) return student;
+  const copy = { ...student };
+  delete copy.administrativeNotes;
+  return copy;
+}
+
+/**
+ * Texte brut : conserve les sauts de ligne et les paragraphes.
+ * Réduit les espaces horizontaux, retire les lignes vides de bord.
+ * @param {string} value
+ * @returns {string | null}
+ */
+function normalizeAdministrativeNotesText(value) {
+  const lines = String(value)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[^\S\n]+/g, " ").trim());
+  let start = 0;
+  let end = lines.length;
+  while (start < end && lines[start] === "") start += 1;
+  while (end > start && lines[end - 1] === "") end -= 1;
+  const collapsed = [];
+  let previousBlank = false;
+  for (const line of lines.slice(start, end)) {
+    if (line === "") {
+      if (!previousBlank) collapsed.push("");
+      previousBlank = true;
+      continue;
+    }
+    previousBlank = false;
+    collapsed.push(line);
+  }
+  return collapsed.join("\n") || null;
+}
+
+function optionalAdministrativeNotes(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw createHttpError(400, "administrativeNotes doit être une chaîne.");
+  }
+  const collapsed = normalizeAdministrativeNotesText(value);
+  if (!collapsed) {
+    return null;
+  }
+  if (collapsed.length > MAX_ADMINISTRATIVE_NOTES) {
+    throw createHttpError(400, `administrativeNotes trop long (max ${MAX_ADMINISTRATIVE_NOTES}).`);
+  }
+  if (ADMINISTRATIVE_NOTES_HTML_RE.test(collapsed)) {
+    throw createHttpError(400, "administrativeNotes doit être du texte brut (HTML interdit).");
+  }
+  return collapsed;
+}
+
 function optionalGender(value) {
   if (value === undefined || value === null || value === "") {
     return null;
@@ -281,12 +364,23 @@ const FORBIDDEN_UPDATE_BODY_KEYS = Object.freeze([
  *   birthPlace: string | null | undefined,
  *   parentPhone: string | null | undefined,
  *   parentEmail: string | null | undefined,
+ *   administrativeNotes: string | null | undefined,
  *   expectedUpdatedAt: string,
  * }}
  */
 function validateUpdateStudentInput(body) {
   if (!isPlainObject(body)) {
     throw createHttpError(400, "Corps de requête invalide.");
+  }
+
+  if (
+    Object.hasOwn(body, "preferredContactChannel") ||
+    Object.hasOwn(body, "preferred_contact_channel")
+  ) {
+    throw createHttpError(
+      400,
+      "preferredContactChannel n'est pas persisté : aucune colonne canonique ne porte le canal de contact préféré.",
+    );
   }
 
   for (const key of FORBIDDEN_UPDATE_BODY_KEYS) {
@@ -320,7 +414,10 @@ function validateUpdateStudentInput(body) {
     Object.hasOwn(body, "parentEmail") ||
     Object.hasOwn(body, "parent_email");
 
-  if (!hasIdentityPatch) {
+  const hasAdministrativeNotes =
+    Object.hasOwn(body, "administrativeNotes") || Object.hasOwn(body, "administrative_notes");
+
+  if (!hasIdentityPatch && !hasAdministrativeNotes) {
     throw createHttpError(400, "Aucun champ modifiable fourni.");
   }
 
@@ -367,6 +464,12 @@ function validateUpdateStudentInput(body) {
       MAX_EMAIL_LENGTH,
     );
   }
+  if (hasAdministrativeNotes) {
+    const rawNotes = Object.hasOwn(body, "administrativeNotes")
+      ? body.administrativeNotes
+      : body.administrative_notes;
+    patch.administrativeNotes = optionalAdministrativeNotes(rawNotes);
+  }
 
   return patch;
 }
@@ -374,6 +477,10 @@ function validateUpdateStudentInput(body) {
 module.exports = {
   FORBIDDEN_BODY_KEYS,
   FORBIDDEN_UPDATE_BODY_KEYS,
+  MAX_ADMINISTRATIVE_NOTES,
+  normalizeAdministrativeNotesText,
+  principalMayReadAdministrativeNotes,
+  redactAdministrativeNotesForPrincipal,
   validateEnrollStudentInput,
   validateUpdateStudentInput,
   assertEnrollmentScopeImmutable,

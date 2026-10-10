@@ -25,6 +25,7 @@ import {
   shouldUseHttpC18Repository,
   wrapRepositoryWithHttpC18,
 } from "../lib/studentEnrollmentHttpRepository";
+import { wrapRepositoryWithHttpAdministrative } from "../lib/studentAdministrativeHttp";
 import {
   shouldUseHttpStudentIdentityRepository,
   wrapRepositoryWithHttpIdentity,
@@ -275,6 +276,17 @@ export function useStudentEditingContext(
         identityKey,
         toEditableStudentIdentityFromDossier(dossier),
       );
+      const adminKey = student?.id ?? identityKey;
+      store.administrative.set(
+        adminKey,
+        toEditableAdministrativeDetails({
+          studentId: adminKey,
+          schoolCode: String(dossier.schoolCode ?? schoolCode).trim(),
+          administrativeNotes: dossier.administrativeNotes ?? null,
+          preferredContactChannel: null,
+          updatedAt: dossier.updatedAt ?? dossier.createdAt ?? null,
+        }),
+      );
     }
 
     const aggregateId = student?.id ?? identityKey;
@@ -294,6 +306,13 @@ export function useStudentEditingContext(
       repository = wrapRepositoryWithHttpIdentity(repository, {
         onUpdated: (identity) => {
           store.identities.set(identity.studentId, identity);
+        },
+        onPersisted: onIdentityPersisted,
+      });
+      repository = wrapRepositoryWithHttpAdministrative(repository, {
+        studentCode: String(dossier?.studentCode ?? "").trim(),
+        onUpdated: (details) => {
+          store.administrative.set(details.studentId, details);
         },
         onPersisted: onIdentityPersisted,
       });
