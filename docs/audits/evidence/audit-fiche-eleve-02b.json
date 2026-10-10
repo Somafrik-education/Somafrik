@@ -8,6 +8,11 @@
     "preprodLogin": "unavailable — no test account in this environment",
     "localReplay": "audited source, isolated PostgreSQL, Express HTTP, Vite, headless Chrome",
     "secretsStored": false,
+    "gitleaksFalsePositive": {
+      "rule": "generic-api-key",
+      "value": "public git revision of the preproduction API health payload, kept in preprodBackendRevision",
+      "securityConfigChanged": false
+    },
     "ctoClosure": {
       "recordedOnHead": "e429caef30056904c9d33401951b1136fef502a0",
       "githubDiff": "approved",

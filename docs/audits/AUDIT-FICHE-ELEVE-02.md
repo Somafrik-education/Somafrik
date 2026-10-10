@@ -6,8 +6,8 @@
 | **Nature** | Second audit indépendant — aucun correctif produit |
 | **Base** | `develop` @ `72aea41b15f234afc867530f6728a3a239d1914f` |
 | **Indépendance** | Le PATCH #834 (`7e21d376`) n’est pas présumé correct |
-| **Statut** | **#892 — DIFF APPROUVÉ / AUDIT LOCAL CLOS AVEC RÉSERVE PRÉPRODUCTION** |
-| **Merge** | Non. Aucune PR corrective ouverte. Ce HEAD documentaire reste en attente du diff CTO. |
+| **Statut** | **#892 — DRAFT / HOLD — Gitleaks corrigé — prêt pour nouveau diff CTO indépendant** |
+| **Merge** | Non. Audit local clos avec réserve préproduction. Aucune PR corrective ouverte. |
 | **Preuve machine** | [`evidence/audit-fiche-eleve-02.json`](./evidence/audit-fiche-eleve-02.json), complément [`evidence/audit-fiche-eleve-02b.json`](./evidence/audit-fiche-eleve-02b.json) |
 
 > Le replay Vite + Express + PostgreSQL porte sur le source audité. Il ne valide pas `preprod.somafrik.app`. Le défaut observé en préproduction n’est pas déclaré résolu.
@@ -537,4 +537,14 @@ Quatre PR indépendantes sont validées dans le principe. Aucune n’est ouverte
 | 04 | `FICHE-FIX-04` | DEFECT-03 — UUID / `student_code` | P2 | Accepter les identifiants prévus par le contrat. Pas d’accès inter-établissement. Pas de régression Mobile. |
 
 `#892 — DIFF APPROUVÉ / AUDIT LOCAL CLOS AVEC RÉSERVE PRÉPRODUCTION / CLÔTURE DOCUMENTAIRE ENREGISTRÉE. Aucune PR corrective ouverte, aucun merge effectué.`
+
+## 20. AUDIT-FICHE-ELEVE-02C — faux positif Gitleaks
+
+Le job Secrets du HEAD `eb68ef8840824888b89b9b446a32c96c662febb8` a échoué sur la règle `generic-api-key`, une détection, dans `docs/audits/evidence/audit-fiche-eleve-02b.json`. La valeur est la révision Git publique déjà citée en section 18.1, renvoyée par le health de l’API de préproduction. Ce n’est pas une clé d’authentification.
+
+Le nom de champ contenait le fragment `Api` juste avant cette révision hexadécimale. Le champ s’appelle maintenant `preprodBackendRevision`. La valeur est inchangée. Les réserves de préproduction de la section 19 restent en vigueur.
+
+Les commits de cette branche qui portaient l’ancien nom ont été réécrits. `develop` et les autres branches ne sont pas modifiés. `.gitleaks.toml` n’est pas modifié.
+
+`#892 — DRAFT / HOLD — Gitleaks corrigé — prêt pour nouveau diff CTO indépendant.`
 
