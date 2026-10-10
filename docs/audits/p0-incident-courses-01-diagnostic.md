@@ -243,3 +243,53 @@ Après une éventuelle Option A validée CTO : relancer l’inventaire live puis
 - **n’autorise aucune écriture production**.
 
 Diff CTO indépendant requis avant tout Ready.
+
+---
+
+## 11. Verdict CTO 2026-10-10 — Render lecture seule + CI
+
+**Merge #894 toujours interdit.** Repair SQL #531 **non autorisé** tant que
+l’inventaire live n’a pas départagé `null_teacher_repairable` / `other_teacher`
+/ doublons.
+
+### Render workspace `somafrik` — lecture seule : OUI
+
+Autorisé maintenant :
+
+- lister les services Production / Préproduction et leurs bases attachées ;
+- lire déploiements, logs de boot, noms de variables (pas les valeurs) ;
+- ouvrir PostgreSQL en `BEGIN READ ONLY` / `npm run inventory:school-course-ambiguity` ;
+- coller uniquement le bloc `summary` (compteurs, `schoolCodes`, kinds) hors PII.
+
+Interdit à cette étape : redéploiement, restart « pour voir », changement d’env,
+SQL d’écriture, repair #531, DELETE / UPDATE / TRUNCATE, collage de
+`DATABASE_URL`, mots de passe, UUID élèves, noms ou e-mails dans GitHub.
+
+L’agent Cursor de #894 **n’a pas** le connecteur Render dans son catalogue
+d’outils. L’inventaire live doit être exécuté depuis le connecteur CTO / ops.
+
+Ordre : confirmer services → inventaire prod **puis** préprod (séparés) →
+lire `nullTeacherRepairableCount`, `other_teacher`, doublons, dépendances →
+choisir A1 / A2 / A3. Pas de procédure avant ces chiffres.
+
+### Isolation CI #894 (run `38095972585`) — hors diff incident
+
+Aucun de ces échecs ne vient du fail-closed ni de l’inventaire ajouté.
+Ne pas désactiver les gates. Ne pas merger. Corriger **ailleurs** que sur
+cette PR HOLD.
+
+| Job | Premier échec exact | Attribuable à #894 ? |
+| --- | --- | --- |
+| Secrets | `gitleaks detect --source .` (historique, `fetch-depth: 0`) trouve `generic-api-key` dans `e304aaa7:backend/lib/studentCardCapability.test.js:16` | **Non.** `e304aaa7` n’est pas ancêtre de `d668fe2a`. Fixture de test `const SECRET = "abcdefghijklmnopqrstuvwxyz012345"` (alphabet+chiffres, pas une clé live). Déjà retiré sur develop par `e2e3aeff` (`opaquePart`). |
+| Risk-targeted | Premier stop : `verify:planning-v2-weekly` login mémoire `403 !== 200` — abonnement démo `endDate=31-08-2026` expiré au 10-10-2026. **Pas** de `23P01` / contrainte d’exclusion dans ce run | **Non.** Dette seed/horloge déjà sur `main@ef8bc951`. Le chemin `*course*` active le lot Planning. |
+| Core tests | `verify:jwt-header` : même 403 abonnement expiré | **Non.** |
+| LOT 1 parity | `educationSchoolCatalog.http.test.js` PARITY-037 : même 403 | **Non.** |
+| Required | Agrège les quatre échecs ci-dessus | **Non.** |
+
+La contrainte d’exclusion `course_schedule_weekly_slots` **n’apparaît pas**
+dans les logs failed de ce run : le job Planning s’arrête avant, sur le login.
+Ne pas lui attribuer #894.
+
+Correctifs CI à ouvrir **séparément** (pas sur #894) : (1) allowlist / rewrite
+historique gitleaks du fixture carte, déjà fait sur develop ; (2) dates
+d’abonnement des seeds mémoire au-delà du calendrier CI.
