@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
+import type { SchoolStudent } from "../../lib/studentsApi";
 import { StudentIdentityTab } from "./StudentIdentityTab";
 
 vi.mock("../../hooks/useStudentEditingContext", () => ({
@@ -47,11 +48,26 @@ describe("StudentIdentityTab — notes administratives", () => {
       <StudentIdentityTab
         workspace={workspace}
         dossier={{
+          id: "CD-LAC-EL-26-901",
+          publicId: "CD-LAC-EL-26-901",
           studentCode: "CD-LAC-EL-26-901",
+          matricule: "CD-LAC-EL-26-901",
           firstName: "Élève",
           lastName: "Fixture",
+          name: "Élève Fixture",
+          gender: "",
+          birthDate: "",
+          className: "",
+          classCode: "",
+          schoolCode: "CD-LAC-26-001",
+          parentPhone: "",
+          parentEmail: "",
           administrativeNotes: notes,
-        }}
+          status: "active",
+          enrollmentId: null,
+          enrollmentDate: "",
+          academicYearName: "",
+        } satisfies SchoolStudent}
       />,
     );
     const node = screen.getByTestId("student-administrative-notes");

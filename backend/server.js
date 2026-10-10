@@ -2070,7 +2070,10 @@ app.get("/api/students", requireAuth, requirePermission("GET /api/students"), as
     filtered,
     resolveAuthorizedStudentForPrincipal,
   );
-  const result = presentEnrollmentStudents(scoped, schoolCode, req.principal);
+  const { redactAdministrativeNotesForPrincipal } = require("./lib/classStudentsManagement");
+  const result = enrollmentApiStudents(scoped, schoolCode).map((student) =>
+    redactAdministrativeNotesForPrincipal(student, req.principal),
+  );
   sendList(res, result, req.query, ["name", "matricule", "studentCode", "className", "parentPhone"]);
 }));
 
