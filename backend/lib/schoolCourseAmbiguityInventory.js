@@ -231,14 +231,239 @@ WHERE ta.status = 'active'
 ORDER BY s.school_code NULLS LAST, ta.created_at, ta.id
 `;
 
+const CHECK_DEPENDENCY_TABLES_SQL = `
+SELECT
+  to_regclass('public.course_schedule_weekly_slots') IS NOT NULL AS weekly_present,
+  to_regclass('public.course_schedule_slots') IS NOT NULL AS dated_slots_present,
+  to_regclass('public.evaluations') IS NOT NULL AS evaluations_present,
+  to_regclass('public.grades') IS NOT NULL AS grades_present,
+  to_regclass('public.report_cards') IS NOT NULL AS report_cards_present
+`;
+
+/**
+ * Dry-run SELECT du repair #531 : cours actif teacher_id NULL + exactement
+ * une teacher_assignment active canonique. Aucun UPDATE.
+ */
+const SELECT_NULL_TEACHER_REPAIRABLE_SQL = `
+SELECT
+  sc.id AS school_course_id,
+  sc.school_id,
+  s.school_code,
+  sc.class_id,
+  c.class_code,
+  sc.subject_id,
+  sub.subject_code,
+  sc.course_code,
+  ta.id AS assignment_id,
+  ta.teacher_id AS proposed_teacher_id,
+  t.teacher_code AS proposed_teacher_code
+FROM school_courses sc
+JOIN schools s ON s.id = sc.school_id
+JOIN teacher_assignments ta
+  ON ta.school_id = sc.school_id
+ AND ta.class_id = sc.class_id
+ AND ta.subject_id = sc.subject_id
+ AND ta.status = 'active'
+JOIN teachers t
+  ON t.id = ta.teacher_id
+ AND t.school_id = ta.school_id
+JOIN classes c
+  ON c.id = ta.class_id
+ AND c.school_id = ta.school_id
+ AND c.academic_year_id = ta.academic_year_id
+JOIN subjects sub
+  ON sub.id = ta.subject_id
+ AND sub.school_id = ta.school_id
+JOIN academic_years ay
+  ON ay.id = ta.academic_year_id
+ AND ay.school_id = ta.school_id
+WHERE sc.status = 'active'
+  AND sc.teacher_id IS NULL
+  AND lower(COALESCE(t.status, 'active')) NOT IN ('deleted', 'archived')
+  AND (
+    SELECT COUNT(*)::int
+    FROM teacher_assignments ta2
+    JOIN teachers t2
+      ON t2.id = ta2.teacher_id
+     AND t2.school_id = ta2.school_id
+    JOIN classes c2
+      ON c2.id = ta2.class_id
+     AND c2.school_id = ta2.school_id
+     AND c2.academic_year_id = ta2.academic_year_id
+    JOIN subjects sub2
+      ON sub2.id = ta2.subject_id
+     AND sub2.school_id = ta2.school_id
+    JOIN academic_years ay2
+      ON ay2.id = ta2.academic_year_id
+     AND ay2.school_id = ta2.school_id
+    WHERE ta2.school_id = sc.school_id
+      AND ta2.class_id = sc.class_id
+      AND ta2.subject_id = sc.subject_id
+      AND ta2.status = 'active'
+      AND lower(COALESCE(t2.status, 'active')) NOT IN ('deleted', 'archived')
+  ) = 1
+ORDER BY s.school_code, c.class_code, sub.subject_code, sc.id
+`;
+
+const SELECT_COLLISION_DEPENDENCY_COUNTS_SQL = `
+SELECT
+  sc.id AS school_course_id,
+  sc.school_id,
+  s.school_code,
+  sc.class_id,
+  c.class_code,
+  sc.subject_id,
+  sub.subject_code,
+  sc.course_code,
+  sc.teacher_id IS NULL AS teacher_id_null,
+  0::int AS weekly_slot_count,
+  0::int AS dated_slot_count,
+  (
+    SELECT COUNT(*)::int
+    FROM teacher_assignments ta
+    WHERE ta.school_id = sc.school_id
+      AND ta.class_id = sc.class_id
+      AND ta.subject_id = sc.subject_id
+      AND ta.status = 'active'
+  ) AS active_assignment_count,
+  0::int AS evaluation_count,
+  0::int AS grade_count,
+  0::int AS report_card_count
+FROM school_courses sc
+JOIN schools s ON s.id = sc.school_id
+JOIN classes c ON c.id = sc.class_id
+JOIN subjects sub ON sub.id = sc.subject_id
+WHERE sc.status = 'active'
+  AND (
+    (sc.school_id, sc.class_id, sc.subject_id) IN (
+      SELECT school_id, class_id, subject_id
+      FROM school_courses
+      WHERE status = 'active'
+      GROUP BY school_id, class_id, subject_id
+      HAVING COUNT(*) > 1
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM teacher_assignments ta
+      WHERE ta.status = 'active'
+        AND ta.school_id = sc.school_id
+        AND ta.class_id = sc.class_id
+        AND ta.subject_id = sc.subject_id
+        AND (
+          sc.teacher_id IS DISTINCT FROM ta.teacher_id
+          OR (
+            SELECT COUNT(*)::int
+            FROM school_courses sc2
+            WHERE sc2.school_id = ta.school_id
+              AND sc2.class_id = ta.class_id
+              AND sc2.subject_id = ta.subject_id
+              AND sc2.status = 'active'
+          ) > 1
+        )
+    )
+  )
+ORDER BY s.school_code, c.class_code, sub.subject_code, sc.id
+`;
+
+const SELECT_COLLISION_DEPENDENCY_COUNTS_FULL_SQL = `
+SELECT
+  sc.id AS school_course_id,
+  sc.school_id,
+  s.school_code,
+  sc.class_id,
+  c.class_code,
+  sc.subject_id,
+  sub.subject_code,
+  sc.course_code,
+  sc.teacher_id IS NULL AS teacher_id_null,
+  CASE WHEN $1::bool THEN (
+    SELECT COUNT(*)::int
+    FROM course_schedule_weekly_slots w
+    WHERE w.school_course_id = sc.id
+  ) ELSE 0 END AS weekly_slot_count,
+  CASE WHEN $2::bool THEN (
+    SELECT COUNT(*)::int
+    FROM course_schedule_slots d
+    WHERE d.school_id = sc.school_id
+      AND d.class_id = sc.class_id
+      AND d.subject_name = sub.name
+  ) ELSE 0 END AS dated_slot_count,
+  (
+    SELECT COUNT(*)::int
+    FROM teacher_assignments ta
+    WHERE ta.school_id = sc.school_id
+      AND ta.class_id = sc.class_id
+      AND ta.subject_id = sc.subject_id
+      AND ta.status = 'active'
+  ) AS active_assignment_count,
+  CASE WHEN $3::bool THEN (
+    SELECT COUNT(*)::int
+    FROM evaluations e
+    WHERE e.school_id = sc.school_id
+      AND e.class_id = sc.class_id
+      AND e.subject_id = sc.subject_id
+  ) ELSE 0 END AS evaluation_count,
+  CASE WHEN $4::bool THEN (
+    SELECT COUNT(*)::int
+    FROM grades g
+    WHERE g.school_id = sc.school_id
+      AND g.class_id = sc.class_id
+      AND g.subject_id = sc.subject_id
+  ) ELSE 0 END AS grade_count,
+  CASE WHEN $5::bool THEN (
+    SELECT COUNT(*)::int
+    FROM report_cards rc
+    WHERE rc.school_id = sc.school_id
+      AND rc.class_id = sc.class_id
+  ) ELSE 0 END AS report_card_count
+FROM school_courses sc
+JOIN schools s ON s.id = sc.school_id
+JOIN classes c ON c.id = sc.class_id
+JOIN subjects sub ON sub.id = sc.subject_id
+WHERE sc.status = 'active'
+  AND (
+    (sc.school_id, sc.class_id, sc.subject_id) IN (
+      SELECT school_id, class_id, subject_id
+      FROM school_courses
+      WHERE status = 'active'
+      GROUP BY school_id, class_id, subject_id
+      HAVING COUNT(*) > 1
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM teacher_assignments ta
+      WHERE ta.status = 'active'
+        AND ta.school_id = sc.school_id
+        AND ta.class_id = sc.class_id
+        AND ta.subject_id = sc.subject_id
+        AND (
+          sc.teacher_id IS DISTINCT FROM ta.teacher_id
+          OR (
+            SELECT COUNT(*)::int
+            FROM school_courses sc2
+            WHERE sc2.school_id = ta.school_id
+              AND sc2.class_id = ta.class_id
+              AND sc2.subject_id = ta.subject_id
+              AND sc2.status = 'active'
+          ) > 1
+        )
+    )
+  )
+ORDER BY s.school_code, c.class_code, sub.subject_code, sc.id
+`;
+
 const ALL_INVENTORY_SQL = Object.freeze([
   CHECK_UNIQUE_INDEX_SQL,
   CHECK_WEEKLY_TABLE_SQL,
+  CHECK_DEPENDENCY_TABLES_SQL,
   SELECT_DUPLICATE_ACTIVE_GROUPS_SQL,
   SELECT_DUPLICATE_ACTIVE_ROWS_SQL,
   SELECT_DUPLICATE_ACTIVE_ROWS_WITH_WEEKLY_SQL,
   SELECT_ASSIGNMENT_CLASS_SUBJECT_COLLISIONS_SQL,
   SELECT_NON_CANONICAL_ASSIGNMENTS_SQL,
+  SELECT_NULL_TEACHER_REPAIRABLE_SQL,
+  SELECT_COLLISION_DEPENDENCY_COUNTS_SQL,
+  SELECT_COLLISION_DEPENDENCY_COUNTS_FULL_SQL,
 ]);
 
 function asTrimmed(value) {
@@ -364,6 +589,20 @@ function proposeDuplicateGroupRepair(groupRows, matchingAssignmentTeacherIds = [
   };
 }
 
+function classifyAssignmentCollision(row, repairableCourseIds = new Set()) {
+  const courseTeacher = row.course_teacher_id;
+  if (courseTeacher == null || String(courseTeacher).trim() === "") {
+    if (repairableCourseIds.has(String(row.school_course_id))) {
+      return "null_teacher_repairable";
+    }
+    return "null_teacher_ambiguous";
+  }
+  if (String(courseTeacher) !== String(row.assignment_teacher_id ?? "")) {
+    return "other_teacher";
+  }
+  return "duplicate_active";
+}
+
 function proposeRepair(inventory) {
   const assignmentTeachersByKey = new Map();
   for (const row of inventory.assignmentCollisions ?? []) {
@@ -373,6 +612,10 @@ function proposeRepair(inventory) {
       assignmentTeachersByKey.get(key).add(String(row.assignment_teacher_id));
     }
   }
+
+  const repairableCourseIds = new Set(
+    (inventory.nullTeacherRepairable ?? []).map((row) => String(row.school_course_id)),
+  );
 
   const duplicateProposals = (inventory.duplicateGroups ?? []).map((group) => {
     const proposal = proposeDuplicateGroupRepair(
@@ -389,9 +632,28 @@ function proposeRepair(inventory) {
     };
   });
 
-  const assignmentOtherTeacher = (inventory.assignmentCollisions ?? []).filter((row) => {
+  const assignmentCollisions = inventory.assignmentCollisions ?? [];
+  const nullTeacherProposals = assignmentCollisions
+    .filter((row) => classifyAssignmentCollision(row, repairableCourseIds) === "null_teacher_repairable")
+    .map((row) => ({
+      key: groupKey(row),
+      assignmentId: row.assignment_id,
+      schoolCourseId: row.school_course_id,
+      schoolCode: row.school_code,
+      classCode: row.class_code,
+      subjectCode: row.subject_code,
+      action: "repairable_bind_teacher",
+      confidence: "unique_canonical_assignment",
+      keepId: row.school_course_id,
+      archiveIds: [],
+      reason:
+        "school_course actif teacher_id NULL + une seule teacher_assignment canonique — dry-run #531, aucun bind automatique",
+    }));
+
+  const assignmentOtherTeacher = assignmentCollisions.filter((row) => {
+    const kind = classifyAssignmentCollision(row, repairableCourseIds);
     const duplicate = (inventory.duplicateGroups ?? []).some((group) => group.key === groupKey(row));
-    return !duplicate && String(row.course_teacher_id ?? "") !== String(row.assignment_teacher_id ?? "");
+    return !duplicate && kind !== "null_teacher_repairable" && kind !== "duplicate_active";
   });
 
   const assignmentProposals = assignmentOtherTeacher.map((row) => ({
@@ -400,12 +662,15 @@ function proposeRepair(inventory) {
     schoolCode: row.school_code,
     classCode: row.class_code,
     subjectCode: row.subject_code,
+    collisionKind: classifyAssignmentCollision(row, repairableCourseIds),
     action: "needs_human",
     confidence: "conflict",
     keepId: null,
     archiveIds: [],
     reason:
-      "affectation active vs school_course actif d'un autre enseignant — isolation métier, aucun choix silencieux",
+      classifyAssignmentCollision(row, repairableCourseIds) === "null_teacher_ambiguous"
+        ? "school_course teacher_id NULL sans unique affectation canonique — aucun choix silencieux"
+        : "affectation active vs school_course actif d'un autre enseignant — isolation métier, aucun choix silencieux",
   }));
 
   const nonCanonicalProposals = (inventory.nonCanonicalAssignments ?? []).map((row) => ({
@@ -429,8 +694,10 @@ function proposeRepair(inventory) {
   return {
     duplicateProposals,
     assignmentProposals,
+    nullTeacherProposals,
     nonCanonicalProposals,
     autoArchiveIds,
+    repairableBindTeacher: nullTeacherProposals.length > 0,
     needsHuman:
       duplicateProposals.some((item) => item.action === "needs_human") ||
       assignmentProposals.length > 0 ||
@@ -444,6 +711,8 @@ function buildInventoryReport({
   duplicateRows = [],
   assignmentCollisions = [],
   nonCanonicalAssignments = [],
+  nullTeacherRepairable = [],
+  dependencyCounts = [],
 } = {}) {
   const rowsByKey = new Map();
   for (const row of duplicateRows) {
@@ -470,6 +739,14 @@ function buildInventoryReport({
     };
   });
 
+  const repairableCourseIds = new Set(
+    (nullTeacherRepairable ?? []).map((row) => String(row.school_course_id)),
+  );
+  const classifiedCollisions = (assignmentCollisions ?? []).map((row) => ({
+    ...row,
+    collisionKind: classifyAssignmentCollision(row, repairableCourseIds),
+  }));
+
   const inventory = {
     uniqueIndex: {
       name: UNIQUE_INDEX_NAME,
@@ -478,20 +755,61 @@ function buildInventoryReport({
     },
     duplicateGroups: groups,
     duplicateRows,
-    assignmentCollisions,
+    assignmentCollisions: classifiedCollisions,
     nonCanonicalAssignments,
+    nullTeacherRepairable,
+    dependencyCounts,
   };
   inventory.proposal = proposeRepair(inventory);
+  inventory.summary = summarizeInventory(inventory);
 
   const blocking =
     groups.length > 0 ||
-    assignmentCollisions.length > 0 ||
+    classifiedCollisions.length > 0 ||
     nonCanonicalAssignments.length > 0;
 
   inventory.code = blocking ? CANONICAL_SCHOOL_COURSE_AMBIGUOUS : SCHOOL_COURSE_AMBIGUITY_OK;
   inventory.blocksBoot = blocking;
   inventory.diagnostic = formatDiagnostic(inventory);
   return inventory;
+}
+
+function summarizeInventory(inventory) {
+  const collisions = inventory.assignmentCollisions ?? [];
+  const byKind = {
+    null_teacher_repairable: collisions.filter((row) => row.collisionKind === "null_teacher_repairable").length,
+    null_teacher_ambiguous: collisions.filter((row) => row.collisionKind === "null_teacher_ambiguous").length,
+    other_teacher: collisions.filter((row) => row.collisionKind === "other_teacher").length,
+    duplicate_active: collisions.filter((row) => row.collisionKind === "duplicate_active").length,
+  };
+  const schools = new Set(
+    [
+      ...(inventory.duplicateGroups ?? []).map((group) => group.school_code),
+      ...collisions.map((row) => row.school_code),
+      ...(inventory.nonCanonicalAssignments ?? []).map((row) => row.school_code),
+      ...(inventory.nullTeacherRepairable ?? []).map((row) => row.school_code),
+    ].filter(Boolean),
+  );
+  const deps = inventory.dependencyCounts ?? [];
+  const sum = (key) => deps.reduce((total, row) => total + Number(row[key] ?? 0), 0);
+  return {
+    schoolCount: schools.size,
+    schoolCodes: [...schools].sort(),
+    duplicateGroupCount: inventory.duplicateGroups?.length ?? 0,
+    assignmentCollisionCount: collisions.length,
+    nonCanonicalAssignmentCount: inventory.nonCanonicalAssignments?.length ?? 0,
+    nullTeacherRepairableCount: inventory.nullTeacherRepairable?.length ?? 0,
+    collisionKindCounts: byKind,
+    dependencyTotals: {
+      collidingCourseCount: deps.length,
+      weeklySlots: sum("weekly_slot_count"),
+      datedSlots: sum("dated_slot_count"),
+      activeAssignments: sum("active_assignment_count"),
+      evaluations: sum("evaluation_count"),
+      grades: sum("grade_count"),
+      reportCards: sum("report_card_count"),
+    },
+  };
 }
 
 function formatDiagnostic(inventory) {
@@ -519,10 +837,14 @@ function formatDiagnostic(inventory) {
         `${row.school_code}/${row.class_code}+${row.subject_code} assignment=${row.assignment_teacher_code} course=${row.course_teacher_code}`,
     )
     .join("; ");
+  const kinds = inventory.summary?.collisionKindCounts ?? {};
+  const nullRepairable = inventory.summary?.nullTeacherRepairableCount ?? 0;
   return (
     `CANONICAL_SCHOOL_COURSE_AMBIGUOUS — index ${UNIQUE_INDEX_NAME}=${index} ; ` +
     `doublons actifs=${dup}${samples ? ` [${samples}]` : ""} ; ` +
     `collisions affectation/cours=${assign}${assignmentSamples ? ` [${assignmentSamples}]` : ""} ; ` +
+    `teacher_id NULL réparables=${nullRepairable} ; ` +
+    `autre enseignant=${kinds.other_teacher ?? 0} ; ` +
     `affectations non canoniques=${refs}. ` +
     `Fail-closed : aucun choix silencieux. Inventaire read-only.`
   );
@@ -532,18 +854,29 @@ async function inventorySchoolCourseAmbiguity(db) {
   const indexRow = await db.one(CHECK_UNIQUE_INDEX_SQL, [UNIQUE_INDEX_NAME]);
   const weeklyRow = await db.one(CHECK_WEEKLY_TABLE_SQL);
   const weeklyPresent = Boolean(weeklyRow?.present);
+  const tables = (await db.one(CHECK_DEPENDENCY_TABLES_SQL)) ?? {};
   const duplicateGroups = await db.all(SELECT_DUPLICATE_ACTIVE_GROUPS_SQL);
   const duplicateRows = await db.all(
     weeklyPresent ? SELECT_DUPLICATE_ACTIVE_ROWS_WITH_WEEKLY_SQL : SELECT_DUPLICATE_ACTIVE_ROWS_SQL,
   );
   const assignmentCollisions = await db.all(SELECT_ASSIGNMENT_CLASS_SUBJECT_COLLISIONS_SQL);
   const nonCanonicalAssignments = await db.all(SELECT_NON_CANONICAL_ASSIGNMENTS_SQL);
+  const nullTeacherRepairable = await db.all(SELECT_NULL_TEACHER_REPAIRABLE_SQL);
+  const dependencyCounts = await db.all(SELECT_COLLISION_DEPENDENCY_COUNTS_FULL_SQL, [
+    Boolean(tables.weekly_present),
+    Boolean(tables.dated_slots_present),
+    Boolean(tables.evaluations_present),
+    Boolean(tables.grades_present),
+    Boolean(tables.report_cards_present),
+  ]);
   return buildInventoryReport({
     uniqueIndex: indexRow,
     duplicateGroups,
     duplicateRows,
     assignmentCollisions,
     nonCanonicalAssignments,
+    nullTeacherRepairable,
+    dependencyCounts,
   });
 }
 
@@ -555,18 +888,24 @@ module.exports = {
   ALL_INVENTORY_SQL,
   CHECK_UNIQUE_INDEX_SQL,
   CHECK_WEEKLY_TABLE_SQL,
+  CHECK_DEPENDENCY_TABLES_SQL,
   SELECT_DUPLICATE_ACTIVE_GROUPS_SQL,
   SELECT_DUPLICATE_ACTIVE_ROWS_SQL,
   SELECT_DUPLICATE_ACTIVE_ROWS_WITH_WEEKLY_SQL,
   SELECT_ASSIGNMENT_CLASS_SUBJECT_COLLISIONS_SQL,
   SELECT_NON_CANONICAL_ASSIGNMENTS_SQL,
+  SELECT_NULL_TEACHER_REPAIRABLE_SQL,
+  SELECT_COLLISION_DEPENDENCY_COUNTS_SQL,
+  SELECT_COLLISION_DEPENDENCY_COUNTS_FULL_SQL,
   assertSelectOnlySql,
   assertInventorySqlIsSelectOnly,
   assertNoWriteFlags,
   groupKey,
+  classifyAssignmentCollision,
   proposeDuplicateGroupRepair,
   proposeRepair,
   buildInventoryReport,
+  summarizeInventory,
   formatDiagnostic,
   inventorySchoolCourseAmbiguity,
 };

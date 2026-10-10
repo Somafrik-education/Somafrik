@@ -13,6 +13,7 @@ const {
   assertSelectOnlySql,
   assertInventorySqlIsSelectOnly,
   assertNoWriteFlags,
+  classifyAssignmentCollision,
   proposeDuplicateGroupRepair,
   buildInventoryReport,
 } = require("./schoolCourseAmbiguityInventory");
@@ -37,6 +38,9 @@ test("tous les SQL d'inventaire sont SELECT-only", () => {
   assert.doesNotThrow(() => assertSelectOnlySql(standalone));
   assert.match(standalone, /HAVING COUNT\(\*\) > 1/);
   assert.match(standalone, /teacher_id IS DISTINCT FROM ta.teacher_id/);
+  assert.match(standalone, /sc.teacher_id IS NULL/);
+  assert.match(standalone, /evaluation_count/);
+  assert.match(standalone, /report_card_count/);
 });
 
 test("assertSelectOnlySql refuse un UPDATE", () => {
@@ -151,7 +155,87 @@ test("rapport : 0 collision → OK ; affectation vs autre enseignant → bloque 
   assert.equal(blocking.blocksBoot, true);
   assert.equal(blocking.proposal.assignmentProposals[0].action, "needs_human");
   assert.equal(blocking.proposal.needsHuman, true);
+  assert.equal(blocking.assignmentCollisions[0].collisionKind, "other_teacher");
   assert.match(blocking.diagnostic, /CANONICAL_SCHOOL_COURSE_AMBIGUOUS/);
+  assert.match(blocking.diagnostic, /autre enseignant=1/);
+});
+
+test("teacher_id NULL + unique affectation → dry-run réparable, pas de bind auto", () => {
+  assert.equal(
+    classifyAssignmentCollision(
+      { school_course_id: "sc-null", course_teacher_id: null, assignment_teacher_id: "T1" },
+      new Set(["sc-null"]),
+    ),
+    "null_teacher_repairable",
+  );
+  assert.equal(
+    classifyAssignmentCollision(
+      { school_course_id: "sc-null", course_teacher_id: null, assignment_teacher_id: "T1" },
+      new Set(),
+    ),
+    "null_teacher_ambiguous",
+  );
+
+  const repairable = buildInventoryReport({
+    uniqueIndex: { indexname: UNIQUE_INDEX_NAME },
+    duplicateGroups: [],
+    duplicateRows: [],
+    assignmentCollisions: [
+      {
+        assignment_id: "ta1",
+        school_id: "s1",
+        school_code: "CD-2026-0001",
+        class_id: "c1",
+        class_code: "CLS-2A",
+        subject_id: "sub1",
+        subject_code: "SUB-TECH",
+        assignment_teacher_id: "T-ASSIGN",
+        assignment_teacher_code: "CD-2026-0001-ENS-0007",
+        course_teacher_id: null,
+        course_teacher_code: null,
+        school_course_id: "sc-null",
+      },
+    ],
+    nonCanonicalAssignments: [],
+    nullTeacherRepairable: [
+      {
+        school_course_id: "sc-null",
+        school_code: "CD-2026-0001",
+        class_code: "CLS-2A",
+        subject_code: "SUB-TECH",
+      },
+    ],
+    dependencyCounts: [
+      {
+        school_course_id: "sc-null",
+        weekly_slot_count: 0,
+        dated_slot_count: 0,
+        active_assignment_count: 1,
+        evaluation_count: 2,
+        grade_count: 4,
+        report_card_count: 1,
+      },
+    ],
+  });
+  assert.equal(repairable.blocksBoot, true);
+  assert.equal(repairable.assignmentCollisions[0].collisionKind, "null_teacher_repairable");
+  assert.equal(repairable.proposal.nullTeacherProposals[0].action, "repairable_bind_teacher");
+  assert.equal(repairable.proposal.needsHuman, false);
+  assert.equal(repairable.proposal.repairableBindTeacher, true);
+  assert.deepEqual(repairable.proposal.autoArchiveIds, []);
+  assert.equal(repairable.summary.nullTeacherRepairableCount, 1);
+  assert.equal(repairable.summary.schoolCount, 1);
+  assert.equal(repairable.summary.dependencyTotals.grades, 4);
+  assert.match(repairable.diagnostic, /teacher_id NULL réparables=1/);
+  assert.throws(
+    () =>
+      assertProposalSafeToApply({
+        needsHuman: false,
+        autoArchiveIds: [],
+        repairableBindTeacher: true,
+      }),
+    (error) => error.code === "SCHOOL_COURSE_AMBIGUITY_NOTHING_TO_ARCHIVE",
+  );
 });
 
 test("correctif refuse needs_human — pas d'archivage silencieux", () => {

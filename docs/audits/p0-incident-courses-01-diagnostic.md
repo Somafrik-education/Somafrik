@@ -1,0 +1,245 @@
+# P0-INCIDENT-COURSES-01 — Diagnostic / HOLD
+
+**Statut :** DIAGNOSTIC / HOLD — **aucune écriture production**  
+**Date :** 2026-10-10  
+**Cible code :** `main@ef8bc951` (identique pour le fail-closed `school_courses` sur `develop`)  
+**PII :** aucun identifiant élève, nom, e-mail ou UUID live dans ce document.
+
+---
+
+## 1. Cause racine exacte (code)
+
+Le backend refuse de démarrer parce que `PostgresRepository.init()` appelle
+`ensureTeacherCourseCanonicalReconcile()` après le schéma pédagogie. Cette
+réconciliation parcourt **chaque** `teacher_assignment` active et **s’arrête**
+dès qu’un `school_course` actif existe déjà pour la même classe+matière sans
+être déjà lié au même `teacher_id`.
+
+Message observé (branche B, pas les références non canoniques) :
+
+```text
+Échec initialisation PostgreSQL:
+Plusieurs school_courses actifs ou collision classe+matière
+— aucun choix silencieux.
+
+Code domaine: CANONICAL_SCHOOL_COURSE_AMBIGUOUS
+```
+
+| Étape boot | Résultat attendu d’après le contrat |
+| --- | --- |
+| Connexion PostgreSQL | OK (le contrôle lit déjà les tables) |
+| Unicité enseignants / affectations / login | OK (sinon un autre code domaine sortirait avant) |
+| `ensurePedagogyCanonicalSchema()` | OK — sinon l’erreur serait une création d’index, pas `CANONICAL_SCHOOL_COURSE_AMBIGUOUS` |
+| `ensureTeacherCourseCanonicalReconcile()` | **STOP** |
+
+Émetteur exact :
+
+1. `decideSchoolCourseMaterialization()` dans `backend/lib/teacherCourseCanonicalReconcile.js`
+2. levée par `materializeSchoolCoursesFromAssignments()`
+3. journalisée par `backend/db/repositoryFactory.js` (`Échec initialisation PostgreSQL` + `Code domaine`)
+
+Règle canonique (inchangée, volontairement fail-closed) :
+
+| `school_courses` actifs `(school, classe, matière, enseignant)` | `school_courses` actifs `(school, classe, matière)` | Décision |
+| --- | --- | --- |
+| 0 | 0 | `INSERT` d’un cours |
+| 1 | ≥1 (le même) | no-op |
+| >1 | — | **STOP** |
+| 0 | ≥1 (autre `teacher_id` **ou NULL**) | **STOP** |
+
+`NULL IS DISTINCT FROM <uuid>` est vrai : un cours sans enseignant face à une
+affectation est une collision boot, pas un bind silencieux.
+
+---
+
+## 2. Fichiers et commits responsables
+
+| Élément | SHA | Date | Rôle |
+| --- | --- | --- | --- |
+| Introduction du fail-closed boot | `046e6689` / PR **#265** | 2026-08-19 | `ensureTeacherCourseCanonicalReconcile` |
+| Index unique actif classe+matière | `backend/db/migrations/20260813_pedagogy_canonical.sql` + `pedagogySchema.js` | LOT 5 | `uq_school_courses_class_subject_active` |
+| Inventaire SELECT-only + repair SQL | `5273291e` / `020e442a` / PR **#531** | 2026-09-06 | tooling, **pas** de bind au boot |
+| Write-path affectation → `teacher_id` | PR **#733** / #732 | 2026-09-20 | create/update/delete synchronisent le cours ; **« aucun auto-repair au boot »** |
+
+Le fail-closed n’est **pas** un régressif des déploiements dashboard #818–#827.
+Un redéploiement identique relance le même `init()` et reproduira le STOP.
+
+---
+
+## 3. Production vs préproduction
+
+| Contrôle | Production (`main` / `api.somafrik.app`) | Préproduction (`develop` / `somafrik-api-preprod`) |
+| --- | --- | --- |
+| Code fail-closed `teacherCourseCanonicalReconcile.js` | présent | **identique** (diff vide) |
+| Health `GET /api/health` (2026-10-10) | **HTTP 502** Render `dynamic-paid-error` | **HTTP 502** Render `dynamic-paid-error` |
+| Front | `somafrik.app` HTTP 200 | `preprod.somafrik.app` HTTP 200 |
+| Inventaire PG live (cet agent) | **PENDING_LIVE_DB** — `DATABASE_URL` absent | **PENDING_LIVE_DB** — `PREPROD_DATABASE_URL` absent |
+
+Le 502 externe confirme l’indisponibilité des API. Il ne remplace pas les logs
+Render cités dans le mandat. Les deux environnements exécutent la même règle :
+la différence éventuelle est **la donnée**, pas la détection.
+
+Précédents déjà tranchés sur préprod (même code domaine) :
+
+- 2026-08-27 : 1 cours `2ème A / Technologie`, `teacher_id = NULL`, 1 affectation
+  canonique → bind ciblé du `teacher_id` (audit mobile RC2).
+- 2026-09-06 (#531) : 0 doublon actif ; 1 cours `teacher_id = NULL` ; repair SQL.
+- 2026-09-20 (#733) : 2 cours créés sans enseignant puis affectations → même repair.
+
+---
+
+## 4. Collisions live — PENDING_LIVE_DB
+
+Cet agent n’a **aucun** secret PostgreSQL. Aucun SELECT production n’a été
+exécuté. Compteurs ci-dessous = non mesurés.
+
+| Métrique | Valeur publiable |
+| --- | --- |
+| Nombre de collisions | **PENDING_LIVE_DB** |
+| Établissements concernés | **PENDING_LIVE_DB** (codes seulement, jamais de noms de personnes) |
+| Cours / classes / matières | **PENDING_LIVE_DB** |
+| Dépendances (affectations, notes, bulletins, planning) | **PENDING_LIVE_DB** |
+
+Commande obligatoire, **hors dépôt**, transaction read-only :
+
+```bash
+# Production — SELECT only. Interdit : --apply / --write / --fix / --delete
+PROOF_OUT=/tmp/school-course-ambiguity-prod.json \
+DATABASE_URL='<secret ops, jamais git>' \
+npm run inventory:school-course-ambiguity
+
+# Préproduction (comparaison)
+PROOF_OUT=/tmp/school-course-ambiguity-preprod.json \
+PREPROD_DATABASE_URL='<secret ops, jamais git>' \
+npm run inventory:school-course-ambiguity
+```
+
+Le JSON expose désormais un `summary` (compteurs + `collisionKindCounts`)
+sans qu’il soit nécessaire de coller des UUID dans GitHub.
+
+---
+
+## 5. Lecture : donnée réelle, migration incomplète, ou défaut de détection ?
+
+Preuve **code** (pas encore preuve live) :
+
+1. Si le boot a atteint `CANONICAL_SCHOOL_COURSE_AMBIGUOUS`, le schéma pédagogie
+   a réussi. `CREATE UNIQUE INDEX uq_school_courses_class_subject_active` aurait
+   échoué s’il existait déjà deux lignes `status='active'` pour la même
+   classe+matière. Donc le cas « plusieurs cours actifs » est **improbable**
+   tant que l’index est présent.
+2. Le message cité est celui de `matchingByClassSubject.length > 0` alors que
+   `matchingByTeacher.length === 0` : un cours actif classe+matière dont le
+   `teacher_id` n’est **pas** celui de l’affectation (y compris `NULL`).
+3. Ce n’est **pas** un faux positif de libellés : la règle ne matche que des UUID.
+4. Ce n’est **pas** Puppeteer.
+
+Hypothèse **prioritaire** (récidive #531 / #733), à confirmer par l’inventaire :
+
+> `school_courses.teacher_id IS NULL` + exactement une `teacher_assignment`
+> active canonique pour la même classe+matière.
+
+Hypothèses alternatives, même code domaine :
+
+- affectation vs cours déjà lié à **un autre** enseignant → conflit métier,
+  `needs_human` ;
+- affectation aux FK non canoniques → autre message (« références non
+  canoniques ») ; écarté si le log est bien celui cité ;
+- index unique **absent** + vrais doublons actifs → `duplicateGroups > 0`.
+
+**Option B (corriger la détection) : non retenue sans preuve live.**
+Le write-path (#733) bind déjà `NULL → teacher` sur create d’affectation.
+Le boot refuse volontairement ce bind (« aucun auto-repair au boot »).
+Assouplir le boot serait un choix silencieux, interdit par le contrat.
+
+---
+
+## 6. Risques pour les données scolaires
+
+| Action | Risque |
+| --- | --- |
+| DELETE / TRUNCATE / purge | Perte notes, bulletins, planning, affectations |
+| Désactiver le fail-closed | Sélection arbitraire d’un cours au prochain boot |
+| Fusionner deux `school_course` | Recâblage silencieux des FK planning |
+| Bind `teacher_id` si 0 ou >1 affectation | Attribution incorrecte d’un cours |
+| Bind `teacher_id` si un autre enseignant est déjà porté | Écrasement métier |
+| Archivage d’un doublon avec créneaux / notes | Planning ou historique orphelin |
+
+Les notes (`grades` / `evaluations`) et bulletins (`report_cards`) ne portent
+**pas** de FK `school_course_id` : ils s’alignent sur `(classe, matière[, enseignant])`.
+Un mauvais `teacher_id` sur le cours ne les efface pas, mais fausse Planning et
+le sélecteur de cours.
+
+---
+
+## 7. Solutions (applicables seulement après inventaire)
+
+### Option A — Correction contrôlée des données (recommandée *si* l’inventaire colle)
+
+**A1 — `teacher_id NULL` + 1 affectation canonique** (`summary.nullTeacherRepairableCount` > 0,
+`other_teacher = 0`, `duplicateGroupCount = 0`) :
+
+1. Sauvegarde PostgreSQL production **vérifiée** (restore test).
+2. `BEGIN;` puis le SQL déjà versionné
+   `backend/db/repair_school_course_teacher_from_assignment.sql`.
+3. Contrôle du `RETURNING` (nombre = inventaire dry-run).
+4. Relancer l’inventaire : `blocksBoot=false`.
+5. `COMMIT;` uniquement après validation CTO. Sinon `ROLLBACK;`.
+6. Redémarrer `Somafrik-api-prod` **sans** nouveau merge.
+
+Réversible : `UPDATE school_courses SET teacher_id = NULL WHERE id IN (…)`.
+
+**A2 — Vrais doublons actifs, gagnant unique démontré**
+(`proposal.autoArchiveIds`, `needsHuman=false`) : archivage réversible
+`schoolCourseAmbiguityRepair` — pas un DELETE.
+
+**A3 — Autre enseignant / refs non canoniques** : `needs_human`. Aucun SQL
+automatique. Décision métier établissement par établissement.
+
+### Option B — Correction de la détection
+
+Uniquement si l’inventaire prouve que des collisions **valides** sont
+signalées à tort (ex. deux enseignants légitimes pour la même classe+matière
+alors que le contrat métier les autorise). **Aucune preuve à ce jour.**
+Interdit : relâcher le fail-closed pour « débloquer » le boot.
+
+---
+
+## 8. Plan de restauration
+
+1. **Freeze** déploiements production (déjà recommandé).
+2. Ops : inventaire SELECT-only prod **et** préprod (`PROOF_OUT` hors git).
+3. Diff CTO des `summary` (kinds + compteurs de dépendances).
+4. Si A1 : backup → repair SQL #531 sous transaction → inventaire post → reboot.
+5. Si A3 : pas de reboot tant que le conflit métier n’est pas tranché.
+6. Pas de merge, pas de Ready, pas de reset de base.
+
+---
+
+## 9. Tests nécessaires
+
+```bash
+npm run verify:school-course-ambiguity-inventory
+npm run verify:teacher-course-canonical-reconcile
+```
+
+Non-régression obligatoire : collision classe+matière → toujours STOP au boot.
+Le repair `teacher_id NULL` reste **hors** `init()`.
+
+Après une éventuelle Option A validée CTO : relancer l’inventaire live puis
+`GET /api/health` → `database=postgresql`.
+
+---
+
+## 10. PR
+
+**Oui — DRAFT / HOLD uniquement.** Cette PR :
+
+- documente le diagnostic ;
+- étend l’inventaire SELECT-only (kinds `teacher_id NULL`, compteurs notes /
+  bulletins / planning) ;
+- **ne change pas** `decideSchoolCourseMaterialization` ;
+- **n’exécute pas** le repair au boot ;
+- **n’autorise aucune écriture production**.
+
+Diff CTO indépendant requis avant tout Ready.
