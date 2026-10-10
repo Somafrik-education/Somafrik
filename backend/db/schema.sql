@@ -258,6 +258,15 @@ CREATE TABLE IF NOT EXISTS students (
 CREATE UNIQUE INDEX IF NOT EXISTS students_school_id_id_uidx
   ON students (school_id, id);
 
+-- FICHE-FIX-01 — notes administratives internes à l'établissement.
+-- Aucune colonne canonique existante : student.observations est un champ UI,
+-- enrollments.close_notes / transfer_notes et les observations de bulletin
+-- appartiennent à d'autres domaines. Texte brut, 2000 caractères maximum.
+ALTER TABLE students ADD COLUMN IF NOT EXISTS administrative_notes TEXT;
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_administrative_notes_len_check;
+ALTER TABLE students ADD CONSTRAINT students_administrative_notes_len_check
+  CHECK (administrative_notes IS NULL OR char_length(administrative_notes) <= 2000);
+
 -- CARTE-PR1 — médiateur d'identification révocable. Secret plaintext interdit.
 CREATE TABLE IF NOT EXISTS student_access_cards (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

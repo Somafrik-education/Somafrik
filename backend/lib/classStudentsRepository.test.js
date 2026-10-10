@@ -174,6 +174,9 @@ function createMemoryDb() {
         student.birth_place = params[4];
         student.parent_phone = params[5];
         student.parent_email = params[6];
+        if (params[10] === true) {
+          student.administrative_notes = params[11] ?? null;
+        }
         student.updated_at = new Date(Math.max(Date.now(), storedMs + 1)).toISOString();
         return { id: student.id };
       }
@@ -426,10 +429,60 @@ async function main() {
     expectedUpdatedAt: fetched.updatedAt,
   });
   assert.equal(updated.parentPhone, "+243800000001");
+  assert.equal(updated.administrativeNotes, undefined);
   assert.ok(
     new Date(updated.updatedAt).getTime() > new Date(fetched.updatedAt).getTime(),
     "updated_at mémoire avance d'au moins 1 ms",
   );
+
+  const noted = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    administrativeNotes: "  Note   interne  ",
+    expectedUpdatedAt: updated.updatedAt,
+  });
+  assert.equal(noted.administrativeNotes, "Note interne");
+  assert.equal(noted.firstName, "Awa");
+  assert.equal(noted.parentPhone, "+243800000001");
+
+  const renamed = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    firstName: "Awa",
+    expectedUpdatedAt: noted.updatedAt,
+  });
+  assert.equal(renamed.administrativeNotes, "Note interne");
+
+  const notesOnly = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    administrativeNotes: "Seconde",
+    expectedUpdatedAt: renamed.updatedAt,
+  });
+  assert.equal(notesOnly.firstName, "Awa");
+  assert.equal(notesOnly.administrativeNotes, "Seconde");
+
+  const clearedNotes = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    administrativeNotes: " ",
+    expectedUpdatedAt: notesOnly.updatedAt,
+  });
+  assert.equal(clearedNotes.administrativeNotes, null);
+
+  const notesPreviousOne = db.one.bind(db);
+  db.one = async (sql, params = []) => {
+    const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+    if (text.startsWith("UPDATE STUDENTS")) {
+      const error = new Error("simulated postgres write failure");
+      error.code = "57014";
+      throw error;
+    }
+    return notesPreviousOne(sql, params);
+  };
+  await assert.rejects(
+    () =>
+      repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+        administrativeNotes: "ne doit pas passer",
+        expectedUpdatedAt: clearedNotes.updatedAt,
+      }),
+    (error) => error.code === "57014",
+  );
+  db.one = notesPreviousOne;
+  const afterWriteFailure = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+  assert.equal(afterWriteFailure.administrativeNotes, null);
 
   await assert.rejects(
     () =>

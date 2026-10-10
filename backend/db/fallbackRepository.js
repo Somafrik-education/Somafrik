@@ -1771,6 +1771,9 @@ class FallbackRepository {
             student.birth_place = params[4];
             student.parent_phone = params[5];
             student.parent_email = params[6];
+            if (params[10] === true) {
+              student.administrative_notes = params[11] ?? null;
+            }
         student.updated_at = new Date(Date.now() + 1).toISOString();
         return { id: student.id };
       }
