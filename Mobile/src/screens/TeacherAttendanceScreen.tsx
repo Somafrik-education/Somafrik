@@ -8,18 +8,22 @@ import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canManagePresences, canReadFeeGrids, canReadRoute } from "../domain/security/permissions";
 import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
+import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal";
 import { getStudentCardCapabilities } from "../services/studentCardScanApi";
 import {
   STUDENT_CARD_SCAN_COPY,
   applyQrConfirmedPresence,
   attendanceClassScopeKey,
   isAttendanceAuthorReady,
+  isStudentCardNfcFinanceEnabled,
+  isStudentCardNfcScannerVisible,
   isStudentCardQrScannerVisible,
   isStudentCardScanFinanceEnabled,
   isoAttendanceDate,
   sanitizeStudentCardCapabilities,
   type StudentCardScanSettings,
 } from "../lib/studentCardScan";
+import { STUDENT_CARD_NFC_COPY, decideOpenQrFromNfcFallback } from "../lib/studentCardNfc";
 import {
   classNameMatches,
   resolveStudentApiId,
@@ -164,6 +168,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const replaySendingRef = useRef(false);
   const [cardSettings, setCardSettings] = useState<StudentCardScanSettings | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [nfcScannerOpen, setNfcScannerOpen] = useState(false);
   const selectedClassScopeKey = attendanceClassScopeKey(selectedClass);
 
   const todayLabel = formatAttendanceDate(new Date());
@@ -189,10 +194,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   useEffect(() => {
     setExpandedStudentId(null);
     setScannerOpen(false);
+    setNfcScannerOpen(false);
   }, [selectedClassScopeKey]);
 
   useEffect(() => {
     setScannerOpen(false);
+    setNfcScannerOpen(false);
   }, [resourceScopeKey]);
 
   useEffect(() => {
@@ -327,8 +334,18 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     settings: cardSettings,
     selectedClass,
   });
+  const canOpenNfcScanner = isStudentCardNfcScannerVisible({
+    canUpdatePresences,
+    settings: cardSettings,
+    selectedClass,
+  });
   const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
   const canReadScanFinance = canReadFeeGrids(session) && isStudentCardScanFinanceEnabled(cardSettings);
+  const canReadNfcScanFinance = canReadFeeGrids(session) && isStudentCardNfcFinanceEnabled(cardSettings);
+
+  useEffect(() => {
+    if (!canOpenQrScanner) setScannerOpen(false);
+  }, [canOpenQrScanner]);
 
   const dailyStats = useMemo(
     () => getRollCallDraftStats(selectedIds, attendance),
@@ -798,6 +815,34 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 </TouchableOpacity>
               </View>
             )}
+            {canOpenNfcScanner ? (
+              <TouchableOpacity
+                testID={USABILITY_TEST_IDS.attendanceScanNfc}
+                style={styles.scanButton}
+                onPress={() => {
+                  if (!scanAuthorReady.ok) {
+                    Alert.alert(
+                      STUDENT_CARD_NFC_COPY.button,
+                      authorDecision.status === "need_selection"
+                        ? ATTENDANCE_AUTHOR_COPY.needSelection
+                        : authorDecision.status === "blocked"
+                          ? authorDecision.message
+                          : ATTENDANCE_AUTHOR_COPY.needSelection,
+                    );
+                    return;
+                  }
+                  setScannerOpen(false);
+                  setNfcScannerOpen(true);
+                }}
+                disabled={actionsLocked}
+                accessibilityRole="button"
+                accessibilityLabel={STUDENT_CARD_NFC_COPY.button}
+                accessibilityState={{ disabled: actionsLocked }}
+              >
+                <Ionicons name="radio-outline" size={18} color="#0F172A" />
+                <Text style={styles.scanButtonText}>{STUDENT_CARD_NFC_COPY.button}</Text>
+              </TouchableOpacity>
+            ) : null}
             {canOpenQrScanner ? (
               <TouchableOpacity
                 testID={USABILITY_TEST_IDS.attendanceScanQr}
@@ -814,6 +859,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                     );
                     return;
                   }
+                  setNfcScannerOpen(false);
                   setScannerOpen(true);
                 }}
                 disabled={actionsLocked}
@@ -963,7 +1009,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </View>
       }
     />
-    {selectedClass ? (
+    {selectedClass && canOpenQrScanner ? (
       <StudentCardQrScannerModal
         visible={scannerOpen}
         selectedClass={selectedClass}
@@ -973,6 +1019,31 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         attendanceDate={isoAttendanceDate()}
         financeEnabled={canReadScanFinance}
         onClose={() => setScannerOpen(false)}
+        onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    {selectedClass ? (
+      <StudentCardNfcScannerModal
+        visible={nfcScannerOpen}
+        selectedClass={selectedClass}
+        resourceScopeKey={resourceScopeKey}
+        schoolCode={String(session?.school?.code ?? session?.user?.schoolCode ?? "")}
+        author={authorDecision}
+        attendanceDate={isoAttendanceDate()}
+        financeEnabled={canReadNfcScanFinance}
+        qrFallbackEnabled={canOpenQrScanner}
+        onClose={() => setNfcScannerOpen(false)}
+        onFallbackQr={() => {
+          setNfcScannerOpen(false);
+          if (
+            decideOpenQrFromNfcFallback({
+              canOpenQrScanner,
+              authorReady: scanAuthorReady.ok,
+            })
+          ) {
+            setScannerOpen(true);
+          }
+        }}
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
       />
     ) : null}

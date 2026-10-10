@@ -93,7 +93,6 @@ module.exports = ({ config }) => {
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.NFC",
         "android.permission.READ_CONTACTS",
         "android.permission.CALL_PHONE",
       ],

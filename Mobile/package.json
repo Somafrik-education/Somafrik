@@ -73,7 +73,7 @@
     "test:preview-apk-eas-auth": "node scripts/verify-mobile-preview-apk.test.js && node scripts/verify-native-prebuild.test.js",
     "verify:mobile-native-aab": "node scripts/verify-native-prebuild.js",
     "verify:student-card-mobile": "npm run verify:student-card-qr",
-    "verify:student-card-qr": "npx --yes tsx src/lib/studentCardScan.test.ts && node scripts/verify-student-card-qr.js",
+    "verify:student-card-qr": "npx --yes tsx src/lib/studentCardScan.test.ts && npx --yes tsx src/lib/studentCardNfc.test.ts && node scripts/verify-student-card-qr.js",
     "test:release-environments": "node config/releaseEnvironments.test.js",
     "test:network-resilience": "npx --yes tsx src/lib/networkResilience.test.ts && npx --yes tsx src/lib/mutationGuard.test.ts && npx --yes tsx src/lib/outbox.test.ts && npx --yes tsx src/lib/connectivity.test.ts && npx --yes tsx src/lib/attendanceClassIdentity.test.ts && npx --yes tsx src/lib/attendanceOffline.test.ts && npx --yes tsx src/lib/offlineClassification.test.ts",
     "test:l1-sqlite-cache": "npx --yes tsx src/offline/l1/l1SqliteCache.test.ts",
@@ -126,6 +126,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-nfc-manager": "4.0.0-beta.10",
     "react-native-paper": "^5.15.3",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
@@ -152,5 +153,12 @@
     "postcss": "^8.5.10",
     "uuid": "^11.1.1",
     "tar": "^7.5.19"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": ["react-native-nfc-manager"]
+      }
+    }
   }
 }

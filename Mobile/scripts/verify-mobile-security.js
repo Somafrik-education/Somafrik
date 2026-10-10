@@ -237,10 +237,16 @@ function main() {
   assert.ok(!permissions.some((p) => /LOCATION|ACCESS_FINE|ACCESS_COARSE|READ_EXTERNAL|WRITE_EXTERNAL|READ_MEDIA/i.test(p)));
   const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.match(String(pkg.dependencies?.["expo-camera"] || ""), /~17\.0\.10|17\.0\.10/, "expo-camera ~17.0.10 requis");
-  assert.ok(!pkg.dependencies?.["react-native-nfc-manager"], "NFC interdit");
-  assert.ok(!pkg.dependencies?.["expo-nfc"], "NFC interdit");
-  assert.ok(!String(appJson?.expo?.ios?.infoPlist?.NFCReaderUsageDescription || ""), "NFC iOS interdit");
-  console.log("OK: permissions minimales (CAMERA uniquement, pas de READ_MEDIA_IMAGES)");
+  assert.equal(pkg.dependencies?.["react-native-nfc-manager"], "4.0.0-beta.10", "NFC 4.0.0-beta.10 requis");
+  assert.ok(!pkg.dependencies?.["expo-nfc"], "expo-nfc interdit");
+  assert.ok(!String(appJson?.expo?.ios?.infoPlist?.NFCReaderUsageDescription || ""), "NFC iOS via plugin, pas infoPlist brut");
+  assert.match(JSON.stringify(appJson), /react-native-nfc-manager/);
+  assert.match(JSON.stringify(appJson), /includeNdefEntitlement":\s*true/);
+  assert.match(
+    JSON.stringify(appJson),
+    /Somafrik utilise la puce NFC pour lire la carte élève de l’établissement\./,
+  );
+  console.log("OK: permissions minimales (CAMERA + NFC plugin, pas de READ_MEDIA_IMAGES)");
 
   // 9) Variables d'environnement
   assert.ok(env.includes("EXPO_PUBLIC_API_URL"), "EXPO_PUBLIC_API_URL utilisé");

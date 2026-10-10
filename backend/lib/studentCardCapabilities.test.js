@@ -28,10 +28,11 @@ function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-test("CAP-09/10/12 — projection HTTP = 4 booléens fail-closed, sans PII", () => {
+test("CAP-09/10/12 — projection HTTP = 5 booléens fail-closed, sans PII", () => {
   assert.deepEqual([...STUDENT_CARD_CAPABILITY_HTTP_KEYS], [
     "studentCardEnabled",
     "studentCardQrEnabled",
+    "studentCardNfcEnabled",
     "studentCardAttendanceEnabled",
     "studentCardFinanceCheckEnabled",
   ]);
@@ -39,12 +40,14 @@ test("CAP-09/10/12 — projection HTTP = 4 booléens fail-closed, sans PII", () 
   assert.deepEqual(empty, {
     studentCardEnabled: false,
     studentCardQrEnabled: false,
+    studentCardNfcEnabled: false,
     studentCardAttendanceEnabled: false,
     studentCardFinanceCheckEnabled: false,
   });
   const invalid = projectStudentCardCapabilitiesHttp({
     student_card_enabled: "true",
     student_card_qr_enabled: 1,
+    student_card_nfc_enabled: "yes",
     student_card_attendance_enabled: null,
     student_card_finance_check_enabled: undefined,
     school_code: "CD-LAC-26-001",
@@ -59,20 +62,38 @@ test("CAP-09/10/12 — projection HTTP = 4 booléens fail-closed, sans PII", () 
   assert.equal(serialized.includes("Lycée"), false);
   assert.equal(serialized.includes("secret"), false);
   assert.equal(serialized.includes("15000"), false);
-  assert.equal(serialized.includes("nfc"), false);
+  assert.equal(invalid.studentCardNfcEnabled, false);
 });
 
 test("CAP-11 — master false + sous-flags true : DTO brut, Mobile fail-closed", () => {
   const dto = projectStudentCardCapabilitiesHttp({
     student_card_enabled: false,
     student_card_qr_enabled: true,
+    student_card_nfc_enabled: true,
     student_card_attendance_enabled: true,
     student_card_finance_check_enabled: true,
   });
   assert.equal(dto.studentCardEnabled, false);
   assert.equal(dto.studentCardQrEnabled, true);
+  assert.equal(dto.studentCardNfcEnabled, true);
   assert.equal(dto.studentCardAttendanceEnabled, true);
   assert.equal(mobileAttendanceScanEnabled(dto), false);
+});
+
+test("CAP-NFC — NFC projeté indépendamment du QR, fail-closed", () => {
+  const on = projectStudentCardCapabilitiesHttp({
+    student_card_enabled: true,
+    student_card_qr_enabled: false,
+    student_card_nfc_enabled: true,
+    student_card_attendance_enabled: true,
+  });
+  assert.equal(on.studentCardNfcEnabled, true);
+  assert.equal(on.studentCardQrEnabled, false);
+  const off = projectStudentCardCapabilitiesHttp({
+    student_card_enabled: true,
+    student_card_nfc_enabled: 1,
+  });
+  assert.equal(off.studentCardNfcEnabled, false);
 });
 
 test("CAP-01/02/03/04/05 — RBAC Présences CREATE/UPDATE, pas Paramètres", () => {

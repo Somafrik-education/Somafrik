@@ -25,6 +25,8 @@ const ANDROID = path.join(MOBILE, "android");
 const IOS = path.join(MOBILE, "ios");
 const CANONICAL_CAMERA_PERMISSION =
   "Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.";
+const CANONICAL_NFC_PERMISSION =
+  "Somafrik utilise la puce NFC pour lire la carte élève de l’établissement.";
 
 const PROFILE_API_ENV_KEYS = {
   development: "EXPO_PUBLIC_API_URL_DEV",
@@ -124,6 +126,39 @@ function inspectGeneratedAndroid(profile) {
   const granted = permissions.filter((attr) => !isRemovedPermission(attr)).map(permissionName);
   assert.ok(names.includes("android.permission.INTERNET") || granted.includes("android.permission.INTERNET"), `${profile}: INTERNET manquant`);
   assert.ok(granted.includes("android.permission.CAMERA"), `${profile}: CAMERA manquant`);
+  assert.ok(granted.includes("android.permission.NFC"), `${profile}: NFC manquant`);
+  const nfcPermissionAttrs = permissions.filter((attr) => permissionName(attr) === "android.permission.NFC");
+  assert.ok(
+    nfcPermissionAttrs.every((attr) => !isRemovedPermission(attr)),
+    `${profile}: NFC a tools:node=remove`,
+  );
+
+  const featureBlocks = [...manifest.matchAll(/<uses-feature\b([^>]*)\/?>/g)].map((match) => match[1] || "");
+  const nfcFeatures = featureBlocks.filter((block) => /android:name="android\.hardware\.nfc"/.test(block));
+  assert.ok(nfcFeatures.length > 0, `${profile}: uses-feature android.hardware.nfc manquant`);
+  assert.ok(
+    nfcFeatures.every((block) => /android:required="false"/.test(block)),
+    `${profile}: android.hardware.nfc required doit être false`,
+  );
+  assert.ok(
+    nfcFeatures.every((block) => !/android:required="true"/.test(block)),
+    `${profile}: android.hardware.nfc required=true interdit`,
+  );
+
+  const sdk = readAndroidSdkVersions();
+  assert.ok(Number.isInteger(sdk.compileSdk) && sdk.compileSdk >= 31, `${profile}: compileSdk ${sdk.compileSdk} < 31`);
+  assert.ok(
+    Number.isInteger(sdk.minSdk) && sdk.minSdk < 31,
+    `${profile}: STOP — minSdk relevé à ${sdk.minSdk} (interdit ; contrainte NFC = compileSdk >= 31)`,
+  );
+  for (const blocked of [
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.READ_CONTACTS",
+    "android.permission.CALL_PHONE",
+  ]) {
+    assert.ok(!granted.includes(blocked), `${profile}: ${blocked} accordé (interdit)`);
+  }
 
   const mustRemove = [
     "android.permission.READ_MEDIA_IMAGES",
@@ -156,7 +191,7 @@ function inspectGeneratedAndroid(profile) {
     if (name === "android.permission.POST_NOTIFICATIONS" || name === "android.permission.VIBRATE") {
       continue;
     }
-    assert.notEqual(name, "android.permission.NFC", `${profile}: NFC présent`);
+    if (name === "android.permission.NFC") continue;
     assert.notEqual(name, "android.permission.ACCESS_FINE_LOCATION", `${profile}: localisation présente`);
   }
 
@@ -175,12 +210,40 @@ function inspectGeneratedAndroid(profile) {
   }
 
   console.log(
-    `PROOF ${profile}: CAMERA granted ; READ_MEDIA_IMAGES not granted ; `
+    `PROOF ${profile}: CAMERA granted ; NFC granted ; hardware.nfc required=false ; `
+      + `compileSdk=${sdk.compileSdk} minSdk=${sdk.minSdk} source=${sdk.source} ; READ_MEDIA_IMAGES not granted ; `
       + `READ/WRITE_EXTERNAL_STORAGE tools:node=remove`
       + ` (${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off)`,
   );
   console.log(`OK: prebuild ${profile} — ${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off`);
-  return { versionCode };
+  return { versionCode, compileSdk: sdk.compileSdk, minSdk: sdk.minSdk };
+}
+
+function readAndroidSdkVersions() {
+  const appGradle = read(path.join(ANDROID, "app", "build.gradle"));
+  assert.match(appGradle, /compileSdk rootProject\.ext\.compileSdkVersion/);
+  assert.match(appGradle, /minSdkVersion rootProject\.ext\.minSdkVersion/);
+  assert.doesNotMatch(appGradle, /minSdkVersion\s+31\b/, "STOP: minSdk literal 31 dans app/build.gradle");
+
+  const props = fs.existsSync(path.join(ANDROID, "gradle.properties"))
+    ? read(path.join(ANDROID, "gradle.properties"))
+    : "";
+  const propMin = (props.match(/^\s*android\.minSdkVersion\s*=\s*(\d+)/m) || [])[1];
+  const propCompile = (props.match(/^\s*android\.compileSdkVersion\s*=\s*(\d+)/m) || [])[1];
+  if (propMin) {
+    assert.ok(Number(propMin) < 31, `STOP: gradle.properties android.minSdkVersion=${propMin}`);
+  }
+
+  const catalogPath = path.join(MOBILE, "node_modules", "react-native", "gradle", "libs.versions.toml");
+  assert.ok(fs.existsSync(catalogPath), "catalogue SDK React Native manquant");
+  const catalog = read(catalogPath);
+  const catalogMin = Number((catalog.match(/^minSdk\s*=\s*"(\d+)"/m) || [])[1] || NaN);
+  const catalogCompile = Number((catalog.match(/^compileSdk\s*=\s*"(\d+)"/m) || [])[1] || NaN);
+  return {
+    minSdk: propMin ? Number(propMin) : catalogMin,
+    compileSdk: propCompile ? Number(propCompile) : catalogCompile,
+    source: propMin || propCompile ? "gradle.properties" : "react-native/gradle/libs.versions.toml",
+  };
 }
 
 function findIosInfoPlist() {
@@ -203,10 +266,31 @@ function findIosInfoPlist() {
   return found;
 }
 
+function findIosEntitlements() {
+  const found = [];
+  if (!fs.existsSync(IOS)) return found;
+  const stack = [IOS];
+  while (stack.length) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "Pods" || entry.name === "build") continue;
+        stack.push(full);
+      } else if (entry.name.endsWith(".entitlements")) {
+        found.push(full);
+      }
+    }
+  }
+  return found;
+}
+
 function inspectGeneratedIos() {
   const plists = findIosInfoPlist();
   assert.ok(plists.length > 0, "iOS: Info.plist manquant après prebuild");
   let cameraOk = false;
+  let nfcOk = false;
   for (const file of plists) {
     const plist = read(file);
     if (plist.includes("NSCameraUsageDescription")) {
@@ -216,16 +300,39 @@ function inspectGeneratedIos() {
       );
       cameraOk = true;
     }
-    assert.doesNotMatch(plist, /NFCReaderUsageDescription/, `${path.relative(MOBILE, file)}: NFC iOS interdit`);
+    if (plist.includes("NFCReaderUsageDescription")) {
+      assert.ok(
+        plist.includes(CANONICAL_NFC_PERMISSION),
+        `${path.relative(MOBILE, file)}: NFCReaderUsageDescription doit être la chaîne figée`,
+      );
+      nfcOk = true;
+    }
     assert.doesNotMatch(plist, /NSUserTrackingUsageDescription/, `${path.relative(MOBILE, file)}: tracking interdit`);
     assert.doesNotMatch(
       plist,
       /NSMicrophoneUsageDescription/,
       `${path.relative(MOBILE, file)}: microphone scanner interdit`,
     );
+    assert.doesNotMatch(plist, /iso7816/i, `${path.relative(MOBILE, file)}: ISO7816 interdit`);
+    assert.doesNotMatch(plist, /felica/i, `${path.relative(MOBILE, file)}: FeliCa interdit`);
   }
   assert.ok(cameraOk, "iOS: NSCameraUsageDescription absente");
-  console.log("PROOF ios: NSCameraUsageDescription duale ; NFC/tracking/micro absents");
+  assert.ok(nfcOk, "iOS: NFCReaderUsageDescription absente");
+
+  const entitlements = findIosEntitlements();
+  assert.ok(entitlements.length > 0, "iOS: fichier entitlements manquant après prebuild");
+  let ndefOk = false;
+  for (const file of entitlements) {
+    const content = read(file);
+    if (content.includes("com.apple.developer.nfc.readersession.formats")) {
+      assert.match(content, /NDEF/, `${path.relative(MOBILE, file)}: entitlement NDEF manquant`);
+      assert.doesNotMatch(content, /iso7816/i, `${path.relative(MOBILE, file)}: ISO7816 interdit`);
+      assert.doesNotMatch(content, /felica/i, `${path.relative(MOBILE, file)}: FeliCa interdit`);
+      ndefOk = true;
+    }
+  }
+  assert.ok(ndefOk, "iOS: entitlement NFC NDEF manquant");
+  console.log("PROOF ios: NSCameraUsageDescription duale ; NFCReaderUsageDescription ; entitlement NDEF ; pas de tracking");
 }
 
 function prebuildIos() {

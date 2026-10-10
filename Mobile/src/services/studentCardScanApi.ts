@@ -7,6 +7,7 @@ import { httpRequest } from "./httpClient";
 export type StudentCardCapabilities = {
   studentCardEnabled: boolean;
   studentCardQrEnabled: boolean;
+  studentCardNfcEnabled: boolean;
   studentCardAttendanceEnabled: boolean;
   studentCardFinanceCheckEnabled: boolean;
 };
