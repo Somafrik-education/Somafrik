@@ -69,13 +69,24 @@ export function StudentIdentityTab({
           <div className="sm:col-span-2 xl:col-span-3">
             <IdentityField label="Adresse" value={workspace.addressLabel} />
           </div>
+          <div className="sm:col-span-2 xl:col-span-3">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Notes administratives
+            </dt>
+            <dd
+              className="mt-1 whitespace-pre-wrap break-words text-sm font-medium text-ink"
+              data-testid="student-administrative-notes"
+            >
+              {dossier?.administrativeNotes?.trim() || "—"}
+            </dd>
+          </div>
         </dl>
       </Card>
 
       <Card className="p-6">
         <SectionHeader
           title="Édition contrôlée"
-          description="Les champs persistés (prénom, nom, sexe, naissance, lieu, téléphone, e-mail) sont enregistrés en PostgreSQL. Nationalité, adresse et nom d'usage restent hors contrat PATCH."
+          description="Les champs persistés (prénom, nom, sexe, naissance, lieu, téléphone, e-mail) et les notes administratives sont enregistrés en PostgreSQL. Nationalité, adresse, nom d'usage et canal de contact préféré restent hors contrat."
         />
         <div className="mt-6">
           <StudentEditingPanel

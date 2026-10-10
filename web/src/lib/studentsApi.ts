@@ -71,6 +71,8 @@ export interface SchoolStudent {
   schoolPublicCode?: string;
   parentPhone: string;
   parentEmail: string;
+  /** Notes internes d'établissement. null = effacées. Absent des listes qui ne sélectionnent pas la colonne. */
+  administrativeNotes?: string | null;
   status: string;
   enrollmentId: string | null;
   enrollmentDate: string;
@@ -99,6 +101,8 @@ export interface UpdateSchoolStudentPayload {
   birthPlace?: string | null;
   parentPhone?: string | null;
   parentEmail?: string | null;
+  /** null ou chaîne vide : effacement. Absent : la colonne n'est pas modifiée. */
+  administrativeNotes?: string | null;
   expectedUpdatedAt: string;
 }
 

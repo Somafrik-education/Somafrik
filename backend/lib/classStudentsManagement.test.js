@@ -152,12 +152,88 @@ function testParentPhoneValidation() {
   );
 }
 
+function testAdministrativeNotesValidation() {
+  const token = "2026-01-01T00:00:00.000Z";
+  const notesOnly = validateUpdateStudentInput({
+    administrativeNotes: "  Note   interne  ",
+    expectedUpdatedAt: token,
+  });
+  assert.equal(notesOnly.administrativeNotes, "Note interne");
+  assert.equal(notesOnly.firstName, undefined);
+
+  const cleared = validateUpdateStudentInput({
+    administrativeNotes: "   ",
+    expectedUpdatedAt: token,
+  });
+  assert.equal(cleared.administrativeNotes, null);
+
+  const nulled = validateUpdateStudentInput({
+    administrative_notes: null,
+    expectedUpdatedAt: token,
+  });
+  assert.equal(nulled.administrativeNotes, null);
+
+  assert.throws(
+    () => validateUpdateStudentInput({ expectedUpdatedAt: token }),
+    (error) => error.statusCode === 400,
+  );
+  assert.throws(
+    () =>
+      validateUpdateStudentInput({
+        administrativeNotes: "x".repeat(2001),
+        expectedUpdatedAt: token,
+      }),
+    (error) => error.statusCode === 400,
+  );
+  assert.throws(
+    () =>
+      validateUpdateStudentInput({
+        administrativeNotes: "<b>secret</b>",
+        expectedUpdatedAt: token,
+      }),
+    (error) => error.statusCode === 400,
+  );
+  assert.throws(
+    () =>
+      validateUpdateStudentInput({
+        administrativeNotes: "ok",
+        preferredContactChannel: "PHONE",
+        expectedUpdatedAt: token,
+      }),
+    (error) => error.statusCode === 400,
+  );
+  assert.throws(
+    () =>
+      validateUpdateStudentInput({
+        firstName: "Awa",
+        administrativeNotes: 12,
+        expectedUpdatedAt: token,
+      }),
+    (error) => error.statusCode === 400,
+  );
+
+  const combined = validateUpdateStudentInput({
+    firstName: "Awa",
+    administrativeNotes: "combiné",
+    expectedUpdatedAt: token,
+  });
+  assert.equal(combined.firstName, "Awa");
+  assert.equal(combined.administrativeNotes, "combiné");
+
+  const identityOnly = validateUpdateStudentInput({
+    firstName: "Awa",
+    expectedUpdatedAt: token,
+  });
+  assert.equal(identityOnly.administrativeNotes, undefined);
+}
+
 function main() {
   testForbiddenKeysAlwaysRejected();
   testValidInput();
   testPersonNameValidation();
   testBirthDateValidation();
   testUpdateRejectsScopeAndRequiresConflictToken();
+  testAdministrativeNotesValidation();
   testParentPhoneValidation();
   assert.throws(
     () => validateEnrollStudentInput({ lastName: "Diop" }, "SCH-A", "CLS-A"),
