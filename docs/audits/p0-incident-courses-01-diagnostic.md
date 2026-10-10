@@ -293,3 +293,38 @@ Ne pas lui attribuer #894.
 Correctifs CI à ouvrir **séparément** (pas sur #894) : (1) allowlist / rewrite
 historique gitleaks du fixture carte, déjà fait sur develop ; (2) dates
 d’abonnement des seeds mémoire au-delà du calendrier CI.
+
+---
+
+## 12. Audit Render 2026-10-10 — où est PostgreSQL production ?
+
+Relevé CTO (lecture seule, aucun secret) : `Somafrik-api-prod` / `main@ef8bc951`
+échoue au boot (`CANONICAL_SCHOOL_COURSE_AMBIGUOUS`, 10 oct. 23:44 UTC).
+`somafrik-api-preprod` / `develop@7a294471` a démarré (`Base active: postgresql`).
+Render ne liste qu’une instance PG gérée : `somafrik-demo-db`.
+
+**Réponse documentée (pas un secret) :** la base métier de production n’est
+**pas** Render Postgres. Elle est sur **Supabase**.
+
+| Environnement | Hébergeur PG documenté | Preuve git | Ce que Render montre |
+| --- | --- | --- | --- |
+| Production | **Supabase** projet `Somafrik-prod` (`loyubruyrxcaeshonkwp`), AWS **eu-west-1** (Irlande), Postgres 17.6.1 | `docs/compliance/preuves-transferts-2026-09-05.md` (5 sept. 2026, `ACTIVE_HEALTHY`) | API seulement (`Somafrik-api-prod`). Pas d’instance PG gérée prod. |
+| Préproduction | Supabase Session pooler **ou** Postgres externe via `DATABASE_URL` du service | `.env.preproduction.example` (hôte `aws-0-REGION.pooler.supabase.com`) | API `somafrik-api-preprod`. Pas d’instance PG gérée préprod. |
+| Démo | Render Postgres `somafrik-demo-db` / base `somafrik_demo` | `docs/demo/ENVIRONMENT-1-DATABASE.md` | **Seule** instance PG gérée visible — hors prod/préprod. |
+
+`somafrik-demo-db` est l’environnement Démo (#661). L’interroger pour cet
+incident serait une cible fausse (et un risque de reset démo, hors mandat).
+
+Confirmation live **sans coller l’URL** : dans le dashboard Render du service
+`Somafrik-api-prod`, relever **uniquement** le hostname de `DATABASE_URL`
+(`new URL(DATABASE_URL).hostname`). Attendu si inchangé depuis le 5 sept. :
+
+- `aws-0-eu-west-1.pooler.supabase.com` (pooler), ou
+- `db.loyubruyrxcaeshonkwp.supabase.co` (direct)
+
+Puis inventaire depuis le SQL editor **Supabase** `Somafrik-prod` (rôle
+lecture seule, `BEGIN READ ONLY`), pas depuis les instances Render Postgres.
+
+Préprod a booté le 10 oct. : collision actuelle = **donnée production**, pas
+un défaut de détection présent aussi sur `develop`. Repair #531 toujours
+interdit tant que les compteurs live prod ne sont pas mesurés.
