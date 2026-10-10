@@ -6,10 +6,11 @@
 | **Nature** | Second audit indépendant — aucun correctif produit |
 | **Base** | `develop` @ `72aea41b15f234afc867530f6728a3a239d1914f` |
 | **Indépendance** | Le PATCH #834 (`7e21d376`) n’est pas présumé correct |
-| **Statut** | **DRAFT / HOLD — PAS READY — PAS MERGE** |
+| **Statut** | **#892 — DIFF APPROUVÉ / AUDIT LOCAL CLOS AVEC RÉSERVE PRÉPRODUCTION** |
+| **Merge** | Non. Aucune PR corrective ouverte. Ce HEAD documentaire reste en attente du diff CTO. |
 | **Preuve machine** | [`evidence/audit-fiche-eleve-02.json`](./evidence/audit-fiche-eleve-02.json), complément [`evidence/audit-fiche-eleve-02b.json`](./evidence/audit-fiche-eleve-02b.json) |
 
-> Rapport d’audit pour revue CTO. Il ne valide pas un correctif et n’autorise pas un merge.
+> Le replay Vite + Express + PostgreSQL porte sur le source audité. Il ne valide pas `preprod.somafrik.app`. Le défaut observé en préproduction n’est pas déclaré résolu.
 
 ---
 
@@ -26,6 +27,8 @@ La perte encore prouvée sur cette fiche est ailleurs :
 Le complément **AUDIT-FICHE-ELEVE-02B** (section 18) a rejoué le parcours navigateur et le HTTP Express avec JWT sur le SHA audité. Le téléphone, le prénom, le sexe et l’e-mail saisis dans la fiche survivent au PATCH, au SQL, au GET, au rechargement complet et à la réouverture. La date de naissance est stockée au bon jour. Quand l’API la renvoie en `JJ-MM-AAAA`, `parseCivilDate` la relit avec `new Date(...)` : `12-04-2012` s’affiche « 04 décembre 2012 », et `15-03-2015` reste la chaîne brute « 15-03-2015 ».
 
 `AUDIT-FICHE-ELEVE-02B — DRAFT / HOLD — prêt pour nouveau diff CTO indépendant.`
+
+La section 19 enregistre le verdict CTO sur le HEAD `e429caef`. Ce verdict clôt l’audit local et maintient la réserve préproduction.
 
 ---
 
@@ -481,18 +484,16 @@ Non reproduites sur ce SHA, avec preuve UI → PATCH → SQL → GET → reload 
 
 La perte « la fiche revient en arrière » n’est pas reproduite pour les champs déjà persistables. Le décalage visible concerne le libellé de la date, pas la ligne PostgreSQL.
 
-### 18.8 Plan minimal et nombre de PR
+### 18.8 Plan minimal proposé avant le verdict
 
-Ne pas figer l’ordre avant validation CTO. Quatre PR ciblées suffisent, chacune sans mélange :
+Estimation déposée avec le replay, avant la décision CTO. L’ordre retenu est celui de la section 19.
 
-1. **DEFECT-04** — parser civil `JJ-MM-AAAA` dans `web/src/lib/studentWorkspaceDates.ts`, avec un test sur `12-04-2012` → 12 avril 2012 et `15-03-2015` → 15 mars 2015. C’est le correctif qui explique le symptôme de date.
+1. **DEFECT-04** — parser civil `JJ-MM-AAAA` dans `web/src/lib/studentWorkspaceDates.ts`, avec un test sur `12-04-2012` → 12 avril 2012 et `15-03-2015` → 15 mars 2015.
 2. **DEFECT-03** — `backend/db/classStudentsRepository.js`, même clé de lecture et d’écriture.
 3. **DEFECT-02** — `useStudentEditingContext.ts` et le mock administratif : plus de succès sans `UPDATE`.
-4. **DEFECT-01** — décision de modèle personne, pas une colonne `students` ajoutée par défaut. Fichiers de fiche déjà listés en section 16.
+4. **DEFECT-01** — modèle personne, pas une colonne `students` ajoutée par défaut. Fichiers de fiche déjà listés en section 16.
 
-Un test de non-régression HTTP PostgreSQL (login, PATCH, `SELECT`, GET, second PATCH, 409, 404 UUID, 403 enseignant) reste à écrire dans une de ces PR, pas dans l’audit.
-
-Ce découpage est une estimation après le replay Web et HTTP. Aucune de ces PR n’est ouverte.
+Un test de non-régression HTTP PostgreSQL (login, PATCH, `SELECT`, GET, second PATCH, 409, 404 UUID, 403 enseignant) reste à écrire dans une PR corrective, pas dans l’audit.
 
 ### 18.9 Réponses 02B aux cinq questions
 
@@ -503,4 +504,37 @@ Ce découpage est une estimation après le replay Web et HTTP. Aucune de ces PR 
 5. **Pourquoi certaines valeurs semblent anciennes ?** Le téléphone, le prénom, le sexe et l’e-mail ne reviennent pas en arrière sur ce SHA. La date du 12 avril 2012 s’affiche « 04 décembre 2012 » à cause de `parseCivilDate`. Nationalité et adresse restent « Non renseigné » parce qu’elles ne sont pas dans le contrat d’écriture. Les notes administratives affichent un succès sans PATCH.
 
 `AUDIT-FICHE-ELEVE-02B — DRAFT / HOLD — prêt pour nouveau diff CTO indépendant.`
+
+## 19. Verdict CTO — clôture documentaire
+
+Décision enregistrée après le diff GitHub indépendant du HEAD `e429caef30056904c9d33401951b1136fef502a0`.
+
+| Contrôle | Résultat vérifié par le CTO |
+|----------|------------------------------|
+| Base | `72aea41b15f234afc867530f6728a3a239d1914f` |
+| HEAD contrôlé | `e429caef30056904c9d33401951b1136fef502a0` |
+| Merge-base | identique à la base |
+| Ahead / behind | 2 / 0 |
+| Diff global | 3 fichiers, +1498 / −0 |
+| Diff depuis `f269a80105af181b084847e16410f2199449fb32` | 3 fichiers, +926 / −19 |
+| Fichiers produit | 0 |
+| Migration SQL | aucune |
+| Modification API | aucune |
+
+Le périmètre GitHub de ce HEAD est approuvé. L’audit local est clos. La préproduction n’est pas validée.
+
+Le replay Vite + Express + PostgreSQL montre que le prénom, le téléphone, le sexe, la date de naissance et l’e-mail sont conservés après PATCH, GET et rechargement de l’interface locale. Ce constat porte sur le source audité. Il ne décrit pas un parcours authentifié sur `https://preprod.somafrik.app`. Aucun compte de préproduction n’a été utilisé. La disparition du défaut sur cet environnement n’est pas promise. Un smoke authentifié reste nécessaire avant toute affirmation de résolution.
+
+### 19.1 Ordre des PR correctives
+
+Quatre PR indépendantes sont validées dans le principe. Aucune n’est ouverte par cette clôture. Avant chaque merge, un diff GitHub indépendant du HEAD exact, les tests, le périmètre et les protections de branche restent exigés.
+
+| Ordre | Identifiant | Défaut | Priorité | Périmètre |
+|-------|-------------|--------|----------|-----------|
+| 01 | `FICHE-FIX-01` | DEFECT-02 — notes administratives | P0 | Supprimer le faux succès. Écriture PostgreSQL réelle après validation du contrat de données et des permissions. Aucun stockage temporaire présenté comme sauvegardé. |
+| 02 | `FICHE-FIX-02` | DEFECT-04 — dates civiles | P1 | Parser et afficher `JJ-MM-AAAA`, y compris `12-04-2012`. Conserver la date civile, sans décalage de fuseau. |
+| 03 | `FICHE-FIX-03` | DEFECT-01 — identité complémentaire | P1 | Clarifier les champs éditables. Rattacher adresse, nationalité et nom d’usage au modèle canonique existant. Tests de persistance et de non-régression. |
+| 04 | `FICHE-FIX-04` | DEFECT-03 — UUID / `student_code` | P2 | Accepter les identifiants prévus par le contrat. Pas d’accès inter-établissement. Pas de régression Mobile. |
+
+`#892 — DIFF APPROUVÉ / AUDIT LOCAL CLOS AVEC RÉSERVE PRÉPRODUCTION / CLÔTURE DOCUMENTAIRE ENREGISTRÉE. Aucune PR corrective ouverte, aucun merge effectué.`
 

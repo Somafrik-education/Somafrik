@@ -8,6 +8,14 @@
     "preprodLogin": "unavailable — no test account in this environment",
     "localReplay": "audited source, isolated PostgreSQL, Express HTTP, Vite, headless Chrome",
     "secretsStored": false,
+    "ctoClosure": {
+      "recordedOnHead": "e429caef30056904c9d33401951b1136fef502a0",
+      "githubDiff": "approved",
+      "localAudit": "closed",
+      "preproduction": "not validated — no authenticated replay on preprod.somafrik.app",
+      "correctivePullRequestsOpened": false,
+      "correctiveOrder": ["FICHE-FIX-01", "FICHE-FIX-02", "FICHE-FIX-03", "FICHE-FIX-04"]
+    },
     "studentCode": "QX-AUD-EL-26-001",
     "studentUuidPrefix": "323d385b",
     "loginCodeEqualsStudentCode": true,
