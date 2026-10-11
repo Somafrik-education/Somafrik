@@ -268,8 +268,8 @@ export default function StudentDetailScreen({
     try {
       const linked = await linkParent({
         studentId: String(student.studentCode ?? student.id ?? studentId),
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+        ...(firstName.trim() ? { firstName: firstName.trim() } : {}),
+        ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
         phone: phone.trim(),
       });
       setFirstName("");
