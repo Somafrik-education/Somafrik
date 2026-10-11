@@ -1062,6 +1062,65 @@ async function main() {
       new Date(microUpdated.updatedAt).getTime() > new Date(jsonToken).getTime(),
       "updated_at est strictement supérieur à la milliseconde JSON du token",
     );
+    const pgTokenForUuid = (value) =>
+      value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+
+    // FICHE-FIX-04 : GET et PATCH acceptent exactement les mêmes identifiants
+    // sous school_id canonique ; l'UPDATE reste indexé par id + OCC.
+    const studentUuidRows = await pool.query(
+      "SELECT id FROM students WHERE student_code = $1",
+      [micro.student.studentCode],
+    );
+    assert.equal(studentUuidRows.rowCount, 1);
+    const studentUuid = String(studentUuidRows.rows[0].id);
+    const uuidRead = await studentsRepo.getByStudentCode(studentUuid, "CD-2026-0001");
+    assert.equal(uuidRead.studentCode, micro.student.studentCode);
+    const uuidUpdated = await studentsRepo.updateByStudentCode(studentUuid, "CD-2026-0001", {
+      birthPlace: "Bujumbura",
+      expectedUpdatedAt: pgTokenForUuid(uuidRead.updatedAt),
+    });
+    assert.equal(uuidUpdated.studentCode, micro.student.studentCode);
+    assert.equal(uuidUpdated.birthPlace, "Bujumbura");
+    const sqlByUuid = await pool.query(
+      "SELECT student_code, birth_place FROM students WHERE id = $1",
+      [studentUuid],
+    );
+    assert.equal(sqlByUuid.rows[0].student_code, micro.student.studentCode);
+    assert.equal(sqlByUuid.rows[0].birth_place, "Bujumbura");
+    const uuidReload = await studentsRepo.getByStudentCode(studentUuid, "CD-2026-0001");
+    assert.equal(uuidReload.birthPlace, "Bujumbura");
+    const codeUpdatedAfterUuid = await studentsRepo.updateByStudentCode(
+      micro.student.studentCode, "CD-2026-0001", {
+        birthPlace: "Gitega",
+        expectedUpdatedAt: pgTokenForUuid(uuidReload.updatedAt),
+      },
+    );
+    assert.equal(codeUpdatedAfterUuid.studentCode, micro.student.studentCode);
+    assert.equal((await studentsRepo.getByStudentCode(studentUuid, "CD-2026-0001")).birthPlace, "Gitega");
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(studentUuid, "CD-2026-0001", {
+        birthPlace: "stale",
+        expectedUpdatedAt: pgTokenForUuid(uuidRead.updatedAt),
+      }),
+      (error) => error.statusCode === 409,
+      "PATCH UUID avec ancien jeton OCC doit rester refusé",
+    );
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(studentUuid, "BI-2026-0001", {
+        birthPlace: "interdit",
+        expectedUpdatedAt: pgTokenForUuid(codeUpdatedAfterUuid.updatedAt),
+      }),
+      (error) => error.statusCode === 404,
+      "UUID d'un autre établissement ne donne aucun accès",
+    );
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode("00000000-0000-4000-8000-000000000000", "CD-2026-0001", {
+        birthPlace: "interdit",
+        expectedUpdatedAt: pgTokenForUuid(codeUpdatedAfterUuid.updatedAt),
+      }),
+      (error) => error.statusCode === 404,
+    );
+    assert.equal((await studentsRepo.getByStudentCode(studentUuid, "CD-2026-0001")).birthPlace, "Gitega");
 
     const occRace = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
       firstName: "Occ",
