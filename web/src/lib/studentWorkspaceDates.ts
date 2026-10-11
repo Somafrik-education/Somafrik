@@ -105,7 +105,7 @@ function isValidIsoClock(
     return false;
   }
   if (
-    offsetHour === MAX_POSITIVE_OFFSET_HOURS &&
+    offsetHour === maxHours &&
     (offsetMinute !== 0 || (offsetSecond != null && offsetSecond !== 0))
   ) {
     return false;
