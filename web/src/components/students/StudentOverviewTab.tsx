@@ -1,6 +1,5 @@
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
 import { buildStudentWorkspacePath } from "../../lib/studentWorkspaceNavigation";
-import { StudentWorkspaceAlert } from "./StudentWorkspaceAlert";
 import { StudentWorkspaceMetric } from "./StudentWorkspaceMetric";
 
 interface StudentOverviewTabProps {
@@ -10,18 +9,6 @@ interface StudentOverviewTabProps {
 export function StudentOverviewTab({ workspace }: StudentOverviewTabProps) {
   return (
     <div className="space-y-6">
-      {workspace.alerts.length > 0 ? (
-        <section aria-label="Alertes du dossier" className="space-y-3">
-          {workspace.alerts.map((alert) => (
-            <StudentWorkspaceAlert
-              key={alert.id}
-              alert={alert}
-              studentId={workspace.studentId}
-            />
-          ))}
-        </section>
-      ) : null}
-
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
         <StudentWorkspaceMetric
           title="Identité"
