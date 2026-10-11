@@ -1,9 +1,9 @@
 # P0-INCIDENT-COURSES-01 — Diagnostic / HOLD
 
-**Statut :** DIAGNOSTIC / HOLD — **aucune écriture production**  
-**Date :** 2026-10-10  
+**Statut :** diagnostic live confirmé / réparation A1 **candidate** / #531 **interdit** jusqu’à autorisation CTO / #894 DRAFT-HOLD  
+**Date :** 2026-10-11  
 **Cible code :** `main@ef8bc951` (identique pour le fail-closed `school_courses` sur `develop`)  
-**PII :** aucun identifiant élève, nom, e-mail ou UUID live dans ce document.
+**PII :** aucun identifiant élève, nom, e-mail ou UUID live dans ce document. Code établissement seulement.
 
 ---
 
@@ -326,5 +326,89 @@ Puis inventaire depuis le SQL editor **Supabase** `Somafrik-prod` (rôle
 lecture seule, `BEGIN READ ONLY`), pas depuis les instances Render Postgres.
 
 Préprod a booté le 10 oct. : collision actuelle = **donnée production**, pas
-un défaut de détection présent aussi sur `develop`. Repair #531 toujours
-interdit tant que les compteurs live prod ne sont pas mesurés.
+un défaut de détection présent aussi sur `develop`.
+
+---
+
+## 13. Inventaire live CTO 2026-10-11 — A1 candidate, #531 encore interdit
+
+Supabase `ACTIVE_HEALTHY` des deux côtés. L’incident est l’init API, pas une
+panne plateforme. Requêtes CTO en `BEGIN READ ONLY`. Aucune écriture.
+
+```json
+{
+  "environment": "production",
+  "project": "Somafrik-prod",
+  "summary": {
+    "schoolCount": 1,
+    "schoolCodes": ["SCH-A3A33AC861644EE5A967"],
+    "collisionKinds": {
+      "null_teacher_repairable": 2,
+      "other_teacher": 0,
+      "duplicate_active": 0
+    },
+    "candidateGroups": 2,
+    "dependencyTotals": {
+      "weeklyPlanning": 0,
+      "datedPlanning": 0,
+      "evaluations": 0,
+      "grades": 0,
+      "reportCards": 0
+    }
+  },
+  "preproduction": { "detectedCollisions": 0 },
+  "repairExecuted": false
+}
+```
+
+Deux combinaisons classe+matière distinctes, chacune : 1 cours actif,
+`teacher_id NULL`, 1 affectation active, 1 enseignant. Option B écartée
+(détection conforme). Option A1 = candidate privilégiée.
+
+### Préconditions #531 encore à dry-runer (SELECT)
+
+Le premier inventaire ciblé ne remplace pas le CTE exact du repair.
+Fichier : `backend/db/dry_run_repair_school_course_teacher_from_assignment.sql`
+
+`BEGIN READ ONLY` sur `Somafrik-prod` puis `ROLLBACK`. Attendu : **2 lignes**,
+`current_teacher_id` NULL, `proposed_teacher_id` non NULL, 2 `class_id` /
+`subject_id` distincts. Préprod : **0 ligne**.
+
+Le CTE exige en plus (à confirmer par ce dry-run, pas seulement par COUNT) :
+
+- `teachers.status` hors `deleted` / `archived`
+- `teachers.school_id` = affectation
+- `classes.academic_year_id` = `teacher_assignments.academic_year_id`
+- `subjects` / `academic_years` même `school_id`
+- `COUNT(*) OVER (PARTITION BY sc.id) = 1` (fenêtre du repair, pas un COUNT
+  métier approximatif)
+
+Si le dry-run renvoie ≠ 2, **ne pas** appliquer le UPDATE.
+
+### Plan A1 — uniquement après autorisation CTO explicite
+
+1. Sauvegarde Supabase `Somafrik-prod` **vérifiée** (restore test ou PITR
+   point noté).
+2. Dry-run ci-dessus = 2.
+3. `BEGIN;` + `repair_school_course_teacher_from_assignment.sql`.
+4. `RETURNING` : 2 lignes, `teacher_id` non NULL, mêmes `id` que le dry-run.
+5. Relancer l’inventaire / dry-run : 0 collision, 0 repairable.
+6. Validation CTO de la transaction → `COMMIT;` sinon `ROLLBACK;`.
+7. Restart **uniquement** du process `Somafrik-api-prod` (même SHA
+   `ef8bc951`, pas de nouveau merge). Health `database=postgresql`.
+
+Retour arrière (après COMMIT, IDs issus du `RETURNING`, jamais inventés) :
+
+```sql
+BEGIN;
+UPDATE school_courses
+   SET teacher_id = NULL, updated_at = NOW()
+ WHERE id = ANY($1::uuid[])
+   AND status = 'active'
+   AND teacher_id IS NOT NULL
+RETURNING id, teacher_id, status;
+-- COMMIT ou ROLLBACK après contrôle
+```
+
+**#531 UPDATE toujours interdit** jusqu’à autorisation écrite. #894 reste
+DRAFT / HOLD. Aucun merge, aucun redéploiement, aucun changement d’env.

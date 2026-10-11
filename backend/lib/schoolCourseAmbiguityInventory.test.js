@@ -282,3 +282,27 @@ test("repair SQL teacher_id NULL : UUID-safe, idempotent et fail-closed", () => 
     env: process.env,
   });
 });
+
+test("dry-run #531 : SELECT-only et CTE identique au repair", () => {
+  const repair = fs.readFileSync(
+    path.join(__dirname, "../db/repair_school_course_teacher_from_assignment.sql"),
+    "utf8",
+  );
+  const dryRun = fs.readFileSync(
+    path.join(__dirname, "../db/dry_run_repair_school_course_teacher_from_assignment.sql"),
+    "utf8",
+  );
+  assert.doesNotThrow(() => assertSelectOnlySql(dryRun));
+  assert.match(dryRun, /BEGIN READ ONLY/);
+  const dryRunBody = dryRun.replace(/--[^\n]*/g, " ");
+  assert.doesNotMatch(dryRunBody, /\bUPDATE\b/i);
+  assert.match(repair, /\bUPDATE\s+school_courses\b/i);
+
+  function extractCte(sql) {
+    const start = sql.indexOf("WITH candidates AS");
+    const end = sql.indexOf("SELECT school_course_id, teacher_id");
+    assert.ok(start >= 0 && end > start, "CTE candidates introuvable");
+    return sql.slice(start, end).replace(/\s+/g, " ").trim();
+  }
+  assert.equal(extractCte(dryRun), extractCte(repair));
+});
