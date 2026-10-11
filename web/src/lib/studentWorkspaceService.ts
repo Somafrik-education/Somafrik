@@ -57,6 +57,8 @@ export interface BuildStudentWorkspaceInput {
   academicYear: string;
   data: StudentWorkspaceDataSource;
   referenceDate?: Date;
+  /** Interdire le fallback parent héritée dans les dossiers canoniques PostgreSQL. */
+  allowLegacyGuardians?: boolean;
 }
 
 export function buildStudentWorkspace({
@@ -64,6 +66,7 @@ export function buildStudentWorkspace({
   academicYear,
   data,
   referenceDate,
+  allowLegacyGuardians = true,
 }: BuildStudentWorkspaceInput): StudentWorkspace | null {
   const normalizedStudentId = studentId.trim();
   const normalizedAcademicYear = academicYear.trim();
@@ -114,6 +117,7 @@ export function buildStudentWorkspace({
     guardianRelations: data.guardianRelations,
     persons: data.persons,
     referenceDate,
+    allowLegacyFallback: allowLegacyGuardians,
   });
 
   const history = collectStudentHistoryRecord({
