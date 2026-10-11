@@ -122,18 +122,29 @@ describe("FICHE-FIX-02 — consommateurs fiche élève", () => {
     expect(toApiDate(editable.birthDate)).toBe("2012-04-12");
     expect(toApiDate("12-04-2012")).toBe(toApiDate("2012-04-12"));
 
+    const sameDate = buildIdentityPatchPayload(
+      {
+        type: "UPDATE_STUDENT_IDENTITY",
+        studentId: editable.studentId,
+        expectedVersion: editable.version,
+        changes: { birthDate: "12-04-2012" },
+      },
+      editable,
+    );
+    expect(sameDate.ok).toBe(false);
+
     const built = buildIdentityPatchPayload(
       {
         type: "UPDATE_STUDENT_IDENTITY",
         studentId: editable.studentId,
         expectedVersion: editable.version,
-        changes: { birthDate: editable.birthDate },
+        changes: { birthDate: "13-04-2012" },
       },
       editable,
     );
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    expect(built.payload.birthDate).toBe("2012-04-12");
+    expect(built.payload.birthDate).toBe("2012-04-13");
 
     const afterGet = toEditableStudentIdentityFromDossier(
       dossier({ birthDate: "12-04-2012" }),
@@ -149,7 +160,7 @@ describe("FICHE-FIX-02 — consommateurs fiche élève", () => {
         type: "UPDATE_STUDENT_IDENTITY",
         studentId: current.studentId,
         expectedVersion: current.version,
-        changes: { firstName: current.firstName },
+        changes: { firstName: "Awa" },
       },
       current,
     );
