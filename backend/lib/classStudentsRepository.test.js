@@ -501,6 +501,32 @@ async function main() {
   assert.equal(extrasCleared.address, null);
   assert.equal(extrasCleared.nationality, "CD");
 
+  // FICHE-FIX-04 : la sonde mémoire accepte l'ID technique comme le GET.
+  const uuidRead = await repo.getByStudentCode(storedStudent.id, "CD-2026-0001");
+  assert.equal(uuidRead.studentCode, enrolled.student.studentCode);
+  const uuidUpdated = await repo.updateByStudentCode(storedStudent.id, "CD-2026-0001", {
+    birthPlace: "Bujumbura", expectedUpdatedAt: uuidRead.updatedAt,
+  });
+  assert.equal(uuidUpdated.studentCode, enrolled.student.studentCode);
+  assert.equal(uuidUpdated.birthPlace, "Bujumbura");
+  assert.equal(
+    (await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001")).birthPlace,
+    "Bujumbura",
+    "une écriture par UUID est immédiatement lisible par student_code",
+  );
+  await assert.rejects(
+    () => repo.updateByStudentCode(storedStudent.id, "CD-2026-0001", {
+      birthPlace: "stale", expectedUpdatedAt: uuidRead.updatedAt,
+    }),
+    (error) => error.statusCode === 409,
+  );
+  await assert.rejects(
+    () => repo.updateByStudentCode(storedStudent.id, "BI-2026-0001", {
+      birthPlace: "interdit", expectedUpdatedAt: uuidUpdated.updatedAt,
+    }),
+    (error) => error.statusCode === 404,
+  );
+
   await assert.rejects(
     () =>
       repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
