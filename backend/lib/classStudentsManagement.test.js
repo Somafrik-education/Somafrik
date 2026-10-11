@@ -287,6 +287,34 @@ function testAdministrativeNotesValidation() {
   assert.equal(Object.hasOwn(allPrivileges, "administrativeNotes"), false);
 }
 
+function testSupplementaryIdentity() {
+  const token = "2026-10-11T12:00:00.000Z";
+  const row = validateUpdateStudentInput({
+    preferredName: " Nana ", nationality: " CD ", address: " Avenue Test ",
+    expectedUpdatedAt: token,
+  });
+  assert.equal(row.preferredName, "Nana");
+  assert.equal(row.nationality, "CD");
+  assert.equal(row.address, "Avenue Test");
+  const clear = validateUpdateStudentInput({
+    preferredName: null, nationality: "", address: " ", expectedUpdatedAt: token,
+  });
+  assert.equal(clear.preferredName, null);
+  assert.equal(clear.nationality, null);
+  assert.equal(clear.address, null);
+  const partial = validateUpdateStudentInput({ address: "Rue 7", expectedUpdatedAt: token });
+  assert.equal(partial.preferredName, undefined);
+  for (const [field, value] of [
+    ["preferredName", "x".repeat(121)], ["nationality", "x".repeat(121)],
+    ["address", "x".repeat(501)], ["address", 42],
+  ]) {
+    assert.throws(
+      () => validateUpdateStudentInput({ [field]: value, expectedUpdatedAt: token }),
+      (error) => error.statusCode === 400,
+    );
+  }
+}
+
 function main() {
   testForbiddenKeysAlwaysRejected();
   testValidInput();
@@ -294,6 +322,7 @@ function main() {
   testBirthDateValidation();
   testUpdateRejectsScopeAndRequiresConflictToken();
   testAdministrativeNotesValidation();
+  testSupplementaryIdentity();
   testParentPhoneValidation();
   assert.throws(
     () => validateEnrollStudentInput({ lastName: "Diop" }, "SCH-A", "CLS-A"),
