@@ -27,6 +27,7 @@ vi.mock("./studentsApi", async (importOriginal) => {
 
 import {
   buildIdentityPatchPayload,
+  isPersistedIdentityPatchConfirmed,
   isPersistableIdentityPatchField,
   toSchoolStudentApiGender,
   wrapRepositoryWithHttpIdentity,
@@ -162,7 +163,7 @@ describe("studentIdentityHttp — PATCH PostgreSQL", () => {
     expect(built.ok).toBe(true);
     if (!built.ok) return;
     expect(built.payload.birthDate).toBe("2011-05-05");
-    expect(built.payload.gender).toBe("Féminin");
+    expect(built.payload).not.toHaveProperty("gender"); // valeur F déjà enregistrée
   });
 
   it("persiste les champs complémentaires dans le PATCH", () => {
@@ -184,12 +185,97 @@ describe("studentIdentityHttp — PATCH PostgreSQL", () => {
     const cleared = buildIdentityPatchPayload({
       type: "UPDATE_STUDENT_IDENTITY", studentId: "CD-ITR-AS-26-00004",
       expectedVersion: 4, changes: { address: null },
-    }, identity());
+    }, identity({ address: "Av. 1" }));
     expect(cleared.ok).toBe(true);
     if (cleared.ok) {
       expect(cleared.payload.address).toBeNull();
       expect(cleared.payload).not.toHaveProperty("nationality");
     }
+    const alreadyEmpty = buildIdentityPatchPayload({
+      type: "UPDATE_STUDENT_IDENTITY", studentId: "CD-ITR-AS-26-00004",
+      expectedVersion: 4, changes: { address: null },
+    }, identity());
+    expect(alreadyEmpty.ok).toBe(false);
+  });
+
+  it("ne renvoie que les champs vraiment modifiés même si le draft contient toute l'identité", () => {
+    const current = identity();
+    const changes = {
+      firstName: current.firstName,
+      lastName: current.lastName,
+      gender: current.gender,
+      birthDate: current.birthDate,
+      birthPlace: current.birthPlace,
+      preferredName: current.preferredName,
+      nationality: "CD",
+      address: current.address,
+      phone: current.phone,
+      email: current.email,
+    };
+    const built = buildIdentityPatchPayload({
+      type: "UPDATE_STUDENT_IDENTITY",
+      studentId: current.studentId,
+      expectedVersion: current.version,
+      changes,
+    }, current);
+    expect(built).toEqual({
+      ok: true,
+      payload: { expectedUpdatedAt: UPDATED_AT, nationality: "CD" },
+    });
+  });
+
+  it("refuse un faux succès lorsque le PATCH ne reflète pas date et nationalité", async () => {
+    const current = identity();
+    updateMock.mockResolvedValueOnce(dossier({
+      birthDate: "01-01-2014",
+      nationality: null,
+      updatedAt: "2026-10-11T20:52:25.147Z",
+    }));
+    const onPersisted = vi.fn();
+    const onUpdated = vi.fn();
+    const repo = wrapRepositoryWithHttpIdentity(stubBase(current), { onPersisted, onUpdated });
+    const result = await repo.updateStudentIdentity({
+      type: "UPDATE_STUDENT_IDENTITY",
+      studentId: current.studentId,
+      expectedVersion: current.version,
+      changes: { birthDate: "2015-10-06", nationality: "CD" },
+    }, {
+      userId: "u-1", role: "Directeur",
+      schoolCode: current.schoolCode, permissions: ["Élèves:UPDATE"],
+    });
+    expect(updateMock).toHaveBeenCalledWith(current.studentId, {
+      expectedUpdatedAt: UPDATED_AT,
+      birthDate: "2015-10-06", nationality: "CD",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.errors[0]?.code).toBe("IDENTITY_PERSISTENCE_MISMATCH");
+    expect(onPersisted).not.toHaveBeenCalled();
+    expect(onUpdated).not.toHaveBeenCalled();
+  });
+
+  it("valide la réponse GET canonique quand les champs correspondent", async () => {
+    const current = identity();
+    const onPersisted = vi.fn();
+    updateMock.mockResolvedValueOnce(dossier({
+      birthDate: "06-10-2015", nationality: "CD",
+      updatedAt: "2026-10-11T20:53:00.000Z",
+    }));
+    const repo = wrapRepositoryWithHttpIdentity(stubBase(current), { onPersisted });
+    const result = await repo.updateStudentIdentity({
+      type: "UPDATE_STUDENT_IDENTITY", studentId: current.studentId,
+      expectedVersion: current.version,
+      changes: { birthDate: "2015-10-06", nationality: "CD" },
+    }, {
+      userId: "u-1", role: "Directeur",
+      schoolCode: current.schoolCode, permissions: ["Élèves:UPDATE"],
+    });
+    expect(result.success).toBe(true);
+    expect(onPersisted).toHaveBeenCalledOnce();
+    expect(isPersistedIdentityPatchConfirmed({
+      expectedUpdatedAt: UPDATED_AT,
+      nationality: "CD",
+      birthDate: "2015-10-06",
+    }, dossier({ nationality: null, birthDate: "06-10-2015" }))).toBe(false);
   });
 
   it("refuse un updatedAt vide (jeton occupancy)", () => {
