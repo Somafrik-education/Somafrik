@@ -5,6 +5,7 @@ const { optionalParentPhone } = require("./parentPhone");
 
 const MAX_NAME_LENGTH = 120;
 const MAX_EMAIL_LENGTH = 200;
+const MAX_ADDRESS_LENGTH = 500;
 const MAX_ADMINISTRATIVE_NOTES = 2000;
 const ADMINISTRATIVE_NOTES_HTML_RE = /<\/?[a-z][\s\S]*>/i;
 const VALID_GENDERS = new Set(["Masculin", "Féminin", "Autre", ""]);
@@ -362,6 +363,9 @@ const FORBIDDEN_UPDATE_BODY_KEYS = Object.freeze([
  *   gender: string | null | undefined,
  *   birthDate: string | null | undefined,
  *   birthPlace: string | null | undefined,
+ *   preferredName: string | null | undefined,
+ *   nationality: string | null | undefined,
+ *   address: string | null | undefined,
  *   parentPhone: string | null | undefined,
  *   parentEmail: string | null | undefined,
  *   administrativeNotes: string | null | undefined,
@@ -409,6 +413,10 @@ function validateUpdateStudentInput(body) {
     Object.hasOwn(body, "birth_date") ||
     Object.hasOwn(body, "birthPlace") ||
     Object.hasOwn(body, "birth_place") ||
+    Object.hasOwn(body, "preferredName") ||
+    Object.hasOwn(body, "preferred_name") ||
+    Object.hasOwn(body, "nationality") ||
+    Object.hasOwn(body, "address") ||
     Object.hasOwn(body, "parentPhone") ||
     Object.hasOwn(body, "parent_phone") ||
     Object.hasOwn(body, "parentEmail") ||
@@ -450,6 +458,19 @@ function validateUpdateStudentInput(body) {
       "birthPlace",
       MAX_NAME_LENGTH,
     );
+  }
+  if (Object.hasOwn(body, "preferredName") || Object.hasOwn(body, "preferred_name")) {
+    patch.preferredName = optionalStringField(
+      body.preferredName ?? body.preferred_name,
+      "preferredName",
+      MAX_NAME_LENGTH,
+    );
+  }
+  if (Object.hasOwn(body, "nationality")) {
+    patch.nationality = optionalStringField(body.nationality, "nationality", MAX_NAME_LENGTH);
+  }
+  if (Object.hasOwn(body, "address")) {
+    patch.address = optionalStringField(body.address, "address", MAX_ADDRESS_LENGTH);
   }
   if (Object.hasOwn(body, "parentPhone") || Object.hasOwn(body, "parent_phone")) {
     patch.parentPhone = optionalParentPhone(

@@ -68,8 +68,7 @@ export function StudentIdentityEditForm({
         label="Nom d'usage"
         value={merged.preferredName ?? ""}
         error={fieldError(errors, "preferredName")}
-        disabled
-        hint="Non persisté (hors contrat PATCH PostgreSQL)."
+        disabled={disabled}
         onChange={(next) => set("preferredName", next)}
       />
       <div>
@@ -122,8 +121,7 @@ export function StudentIdentityEditForm({
         label="Nationalité"
         value={merged.nationality ?? ""}
         error={fieldError(errors, "nationality")}
-        disabled
-        hint="Non persisté (hors contrat PATCH PostgreSQL)."
+        disabled={disabled}
         onChange={(next) => set("nationality", next)}
       />
       <Field
@@ -151,8 +149,7 @@ export function StudentIdentityEditForm({
           label="Adresse"
           value={merged.address ?? ""}
           error={fieldError(errors, "address")}
-          disabled
-          hint="Non persisté (hors contrat PATCH PostgreSQL)."
+          disabled={disabled}
           onChange={(next) => set("address", next)}
         />
       </div>

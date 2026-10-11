@@ -177,6 +177,9 @@ function createMemoryDb() {
         if (params[10] === true) {
           student.administrative_notes = params[11] ?? null;
         }
+        if (params[12] === true) student.preferred_name = params[13] ?? null;
+        if (params[14] === true) student.nationality = params[15] ?? null;
+        if (params[16] === true) student.address = params[17] ?? null;
         student.updated_at = new Date(Math.max(Date.now(), storedMs + 1)).toISOString();
         return { id: student.id };
       }
@@ -483,6 +486,20 @@ async function main() {
   db.one = notesPreviousOne;
   const afterWriteFailure = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
   assert.equal(afterWriteFailure.administrativeNotes, null);
+  const extrasBefore = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+  const extrasSaved = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    preferredName: "Nana", nationality: "CD", address: "Avenue Test",
+    expectedUpdatedAt: extrasBefore.updatedAt,
+  });
+  assert.equal(extrasSaved.preferredName, "Nana");
+  assert.equal(extrasSaved.nationality, "CD");
+  assert.equal(extrasSaved.address, "Avenue Test");
+  assert.equal(extrasSaved.lastName, extrasBefore.lastName, "le nom légal reste inchangé");
+  const extrasCleared = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    address: null, expectedUpdatedAt: extrasSaved.updatedAt,
+  });
+  assert.equal(extrasCleared.address, null);
+  assert.equal(extrasCleared.nationality, "CD");
 
   await assert.rejects(
     () =>

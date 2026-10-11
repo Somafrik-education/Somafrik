@@ -62,6 +62,9 @@ export interface SchoolStudent {
   gender: string;
   birthDate: string;
   birthPlace?: string;
+  preferredName?: string | null;
+  nationality?: string | null;
+  address?: string | null;
   photoUrl?: string;
   classId?: string | null;
   className: string;
@@ -99,6 +102,9 @@ export interface UpdateSchoolStudentPayload {
   gender?: string | null;
   birthDate?: string | null;
   birthPlace?: string | null;
+  preferredName?: string | null;
+  nationality?: string | null;
+  address?: string | null;
   parentPhone?: string | null;
   parentEmail?: string | null;
   /** null ou chaîne vide : effacement. Absent : la colonne n'est pas modifiée. */

@@ -165,7 +165,7 @@ describe("studentIdentityHttp — PATCH PostgreSQL", () => {
     expect(built.payload.gender).toBe("Féminin");
   });
 
-  it("refuse un ChangeSet uniquement hors contrat PATCH", () => {
+  it("persiste les champs complémentaires dans le PATCH", () => {
     const built = buildIdentityPatchPayload(
       {
         type: "UPDATE_STUDENT_IDENTITY",
@@ -175,7 +175,21 @@ describe("studentIdentityHttp — PATCH PostgreSQL", () => {
       },
       identity(),
     );
-    expect(built.ok).toBe(false);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.payload).toEqual({
+      expectedUpdatedAt: UPDATED_AT,
+      nationality: "CD", address: "Av. 1", preferredName: "Ami",
+    });
+    const cleared = buildIdentityPatchPayload({
+      type: "UPDATE_STUDENT_IDENTITY", studentId: "CD-ITR-AS-26-00004",
+      expectedVersion: 4, changes: { address: null },
+    }, identity());
+    expect(cleared.ok).toBe(true);
+    if (cleared.ok) {
+      expect(cleared.payload.address).toBeNull();
+      expect(cleared.payload).not.toHaveProperty("nationality");
+    }
   });
 
   it("refuse un updatedAt vide (jeton occupancy)", () => {
@@ -278,6 +292,12 @@ describe("seed identité depuis GET dossier", () => {
     expect(editable.updatedAt).toBe(UPDATED_AT);
     expect(editable.birthDate).toBe("2014-01-01");
     expect(editable.gender).toBe("F");
+    const extra = toEditableStudentIdentityFromDossier(dossier({
+      preferredName: "Nana", nationality: "CD", address: "Av. Test",
+    }));
+    expect(extra.preferredName).toBe("Nana");
+    expect(extra.nationality).toBe("CD");
+    expect(extra.address).toBe("Av. Test");
   });
 
   it("toEditableStudentIdentity lit parentPhone si phone est absent", () => {
@@ -304,7 +324,9 @@ describe("garde source — studentsApi.update branché", () => {
     const source = readFileSync(join(here, "studentIdentityHttp.ts"), "utf8");
     expect(source).toMatch(/studentsApi\.update\(/);
     expect(isPersistableIdentityPatchField("phone")).toBe(true);
-    expect(isPersistableIdentityPatchField("nationality")).toBe(false);
+    expect(isPersistableIdentityPatchField("nationality")).toBe(true);
+    expect(isPersistableIdentityPatchField("preferredName")).toBe(true);
+    expect(isPersistableIdentityPatchField("address")).toBe(true);
   });
 
   it("le contexte d'édition enveloppe le repository identité", () => {

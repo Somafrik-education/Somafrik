@@ -23,6 +23,9 @@ export const PERSISTABLE_IDENTITY_PATCH_FIELDS = [
   "gender",
   "birthDate",
   "birthPlace",
+  "preferredName",
+  "nationality",
+  "address",
   "phone",
   "email",
 ] as const;
@@ -86,6 +89,18 @@ export function buildIdentityPatchPayload(
     payload.birthPlace = String(changes.birthPlace ?? "").trim() || null;
     hasPatch = true;
   }
+  if (Object.prototype.hasOwnProperty.call(changes, "preferredName")) {
+    payload.preferredName = String(changes.preferredName ?? "").trim() || null;
+    hasPatch = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, "nationality")) {
+    payload.nationality = String(changes.nationality ?? "").trim() || null;
+    hasPatch = true;
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, "address")) {
+    payload.address = String(changes.address ?? "").trim() || null;
+    hasPatch = true;
+  }
   if (Object.prototype.hasOwnProperty.call(changes, "phone")) {
     payload.parentPhone = changes.phone ?? null;
     hasPatch = true;
@@ -99,7 +114,7 @@ export function buildIdentityPatchPayload(
     return {
       ok: false,
       message:
-        "Aucun champ persistable : nationalité, adresse et nom d'usage ne sont pas encore enregistrés côté PostgreSQL.",
+        "Aucun champ persistable fourni pour la mise à jour de l'identité.",
     };
   }
 

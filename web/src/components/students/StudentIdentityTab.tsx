@@ -49,6 +49,7 @@ export function StudentIdentityTab({
 
         <dl className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           <IdentityField label="Sexe" value={workspace.genderLabel} />
+          <IdentityField label="Nom d'usage" value={dossier?.preferredName?.trim() || "—"} />
           <IdentityField
             label="Date de naissance"
             value={workspace.birthDateLabel}
@@ -86,7 +87,7 @@ export function StudentIdentityTab({
       <Card className="p-6">
         <SectionHeader
           title="Édition contrôlée"
-          description="Les champs persistés (prénom, nom, sexe, naissance, lieu, téléphone, e-mail) et les notes administratives sont enregistrés en PostgreSQL. Nationalité, adresse, nom d'usage et canal de contact préféré restent hors contrat."
+          description="Les champs d’identité, le nom d’usage, la nationalité, l’adresse et les notes administratives sont enregistrés en PostgreSQL. Le canal de contact préféré reste hors contrat."
         />
         <div className="mt-6">
           <StudentEditingPanel
