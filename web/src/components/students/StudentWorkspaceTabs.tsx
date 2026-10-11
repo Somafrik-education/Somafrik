@@ -51,7 +51,9 @@ function renderActiveTab(
     case "enrollments":
       return <StudentEnrollmentTab workspace={workspace} />;
     case "guardians":
-      return <StudentGuardiansTab workspace={workspace} />;
+      // Remonter le formulaire lors du changement d’élève : un secret temporaire
+      // affiché pour un parent ne doit pas persister dans une autre fiche.
+      return <StudentGuardiansTab key={workspace.studentId} workspace={workspace} />;
     case "health":
       return <StudentMedicalTab workspace={workspace} />;
     case "documents":

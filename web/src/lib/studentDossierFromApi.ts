@@ -206,6 +206,8 @@ export function buildStudentWorkspaceFromDossier(
   return buildStudentWorkspace({
     studentId: student.id,
     academicYear,
+    // Le GET PostgreSQL est canonique : 0 relation = 0 responsable officiel.
+    allowLegacyGuardians: false,
     data: {
       students: [student],
       persons,
