@@ -1,7 +1,7 @@
 # P0-INCIDENT-COURSES-01 — Diagnostic / HOLD
 
-**Statut :** dry-run #531 **conforme** / A1 prête sous autorisation / UPDATE **interdit** / #894 DRAFT-HOLD  
-**Date :** 2026-10-11  
+**Statut :** incident **opérationnel résolu** (A1 déjà COMMIT) / **ne pas relancer #531** / #894 DRAFT-HOLD — clôture administrative  
+**Date :** 2026-10-11 (actualisation documentaire post-réparation)  
 **Cible code :** `main@ef8bc951` (identique pour le fail-closed `school_courses` sur `develop`)  
 **PII :** aucun identifiant élève, nom, e-mail ou UUID live dans ce document. Code établissement seulement.
 
@@ -88,17 +88,19 @@ Précédents déjà tranchés sur préprod (même code domaine) :
 
 ---
 
-## 4. Collisions live — PENDING_LIVE_DB
+## 4. Collisions live — relevé agent (ensuite complété §13–15)
 
-Cet agent n’a **aucun** secret PostgreSQL. Aucun SELECT production n’a été
-exécuté. Compteurs ci-dessous = non mesurés.
+Cet agent n’avait **aucun** secret PostgreSQL au premier passage. Les
+compteurs ci-dessous étaient alors non mesurés. **Supersédé** par
+l’inventaire CTO et la réparation A1 du 11 octobre 2026 (§13–15) :
+2 collisions corrigées, 0 restante.
 
 | Métrique | Valeur publiable |
 | --- | --- |
-| Nombre de collisions | **PENDING_LIVE_DB** |
-| Établissements concernés | **PENDING_LIVE_DB** (codes seulement, jamais de noms de personnes) |
-| Cours / classes / matières | **PENDING_LIVE_DB** |
-| Dépendances (affectations, notes, bulletins, planning) | **PENDING_LIVE_DB** |
+| Nombre de collisions | **2 puis 0** (après A1, §15) |
+| Établissements concernés | `SCH-A3A33AC861644EE5A967` |
+| Cours / classes / matières | 2 couples distincts, `teacher_id` NULL puis lié |
+| Dépendances (affectations, notes, bulletins, planning) | planning/notes/bulletins = 0 ; 1 affectation / cours |
 
 Commande obligatoire, **hors dépôt**, transaction read-only :
 
@@ -207,12 +209,16 @@ Interdit : relâcher le fail-closed pour « débloquer » le boot.
 
 ## 8. Plan de restauration
 
-1. **Freeze** déploiements production (déjà recommandé).
-2. Ops : inventaire SELECT-only prod **et** préprod (`PROOF_OUT` hors git).
-3. Diff CTO des `summary` (kinds + compteurs de dépendances).
-4. Si A1 : backup → repair SQL #531 sous transaction → inventaire post → reboot.
-5. Si A3 : pas de reboot tant que le conflit métier n’est pas tranché.
-6. Pas de merge, pas de Ready, pas de reset de base.
+Exécuté le 11 octobre 2026 selon A1 (§15). Ne pas rejouer.
+
+1. Freeze déploiements — tenu pendant l’incident.
+2. Inventaire SELECT-only prod et préprod — fait (CTO).
+3. Diff CTO des `summary` — 2 `null_teacher_repairable` / 0 autre.
+4. A1 : sauvegardes `COMPLETED` (restore non testé) → repair #531 →
+   inventaire post 0 → restart même SHA.
+5. A3 : non applicable.
+6. Pas de merge, pas de Ready, pas de reset de base — toujours en vigueur
+   pour #894 (HOLD administratif).
 
 ---
 
@@ -248,9 +254,9 @@ Diff CTO indépendant requis avant tout Ready.
 
 ## 11. Verdict CTO 2026-10-10 — Render lecture seule + CI
 
-**Merge #894 toujours interdit.** Repair SQL #531 **non autorisé** tant que
-l’inventaire live n’a pas départagé `null_teacher_repairable` / `other_teacher`
-/ doublons.
+**Merge #894 toujours interdit** (HOLD administratif, pas un correctif boot
+en attente). Le repair #531 a été exécuté une fois sous feu vert CTO (§15) :
+**ne pas le relancer.**
 
 ### Render workspace `somafrik` — lecture seule : OUI
 
@@ -330,7 +336,7 @@ un défaut de détection présent aussi sur `develop`.
 
 ---
 
-## 13. Inventaire live CTO 2026-10-11 — A1 candidate, #531 encore interdit
+## 13. Inventaire live CTO 2026-10-11 — A1 ensuite exécutée (voir §15)
 
 Supabase `ACTIVE_HEALTHY` des deux côtés. L’incident est l’init API, pas une
 panne plateforme. Requêtes CTO en `BEGIN READ ONLY`. Aucune écriture.
@@ -363,7 +369,7 @@ panne plateforme. Requêtes CTO en `BEGIN READ ONLY`. Aucune écriture.
 
 Deux combinaisons classe+matière distinctes, chacune : 1 cours actif,
 `teacher_id NULL`, 1 affectation active, 1 enseignant. Option B écartée
-(détection conforme). Option A1 = candidate privilégiée.
+(détection conforme). Option A1 a ensuite été appliquée (§15).
 
 ### Préconditions #531 — dry-run exact terminé (conforme)
 
@@ -382,7 +388,7 @@ Fichier : `backend/db/dry_run_repair_school_course_teacher_from_assignment.sql`
 Jointures enseignant / classe / année / matière et exclusion
 `deleted`/`archived` : passées. Les deux lignes sont éligibles A1.
 
-### Plan A1 — uniquement après autorisation CTO explicite
+### Plan A1 — exécuté le 11 octobre 2026 (ne pas rejouer)
 
 1. Sauvegarde Supabase `Somafrik-prod` **vérifiée** (restore test ou PITR
    point noté).
@@ -407,17 +413,56 @@ RETURNING id, teacher_id, status;
 -- COMMIT ou ROLLBACK après contrôle
 ```
 
-**#531 UPDATE toujours interdit** jusqu’à autorisation écrite distincte
-(sauvegarde vérifiée + go CTO). Le dry-run conforme **n’est pas** une
-autorisation d’écriture. #894 reste DRAFT / HOLD. Aucun merge, aucun
-redéploiement, aucun changement d’env.
+Les portes 1–7 ont été franchies le 11 octobre 2026 (voir §15). **Ne pas
+relancer** le UPDATE #531 : les deux cours sont déjà corrigés.
 
 ---
 
-## 14. Dry-run exact #531 — 2026-10-11
+## 14. Dry-run exact #531 — 2026-10-11 (avant écriture)
 
-Révision exécutée : `9352cf13`. Résultat = attendu. Prochaine porte :
-sauvegarde Supabase `Somafrik-prod` vérifiée, puis autorisation CTO
-explicite pour `BEGIN;` + `repair_school_course_teacher_from_assignment.sql`.
-Si `RETURNING` ≠ 2 ou IDs ≠ dry-run → `ROLLBACK`. Sinon `COMMIT` puis
-restart `Somafrik-api-prod` sur `ef8bc951` uniquement.
+Révision exécutée : `9352cf13`. `BEGIN READ ONLY` + `ROLLBACK`. Résultat =
+attendu (prod 2 / préprod 0). Cette étape **précédait** l’écriture A1.
+
+---
+
+## 15. Résolution opérationnelle — 11 octobre 2026
+
+Actualisation documentaire uniquement. Aucun SQL d’écriture depuis cet
+agent. Aucun repair relancé. Aucun redéploiement. Aucun merge.
+
+### Preuves techniques (ops / CTO, hors cet agent)
+
+| Étape | Résultat | Nature |
+| --- | --- | --- |
+| Dry-run exact #531 (`9352cf13`) | 2 lignes conformes (prod) ; 0 (préprod) | Technique |
+| Sauvegardes Supabase `Somafrik-prod` | Statut **`COMPLETED` constaté** | Technique — **restaurabilité non testée** |
+| Autorisation CTO | Feu vert reçu | Gouvernance |
+| Repair A1 | `COMMIT` réussi ; **2/2** cours | Technique |
+| Inventaire post-réparation | **0** collision | Technique |
+| Restart `Somafrik-api-prod` | Processus fonctionnel, même SHA `ef8bc951` | Technique |
+
+**Ne pas** présenter les sauvegardes comme « vérifiées par restore ». Seul
+l’état `COMPLETED` a été observé.
+
+### Validation utilisateur (hors preuves techniques)
+
+| Contrôle | Résultat | Nature |
+| --- | --- | --- |
+| Connexion Somafrik Production | PASS | Validation utilisateur, confirmée CTO |
+| Smoke Production | PASS | Validation utilisateur, confirmée CTO |
+
+Cet agent n’a pas rejoué login ni smoke. Ces PASS ne sont pas des preuves
+automatisées de #894.
+
+### Interdits post-résolution
+
+- Relancer `repair_school_course_teacher_from_assignment.sql` (idempotent
+  attendu 0, mais hors mandat une fois A1 commitée).
+- Nouveau déploiement, merge de #894, Ready, changement d’env.
+- DELETE / TRUNCATE / désactivation du fail-closed.
+
+### Clôture
+
+#894 reste **DRAFT / HOLD** jusqu’à clôture **administrative** (pas un
+merge de correctif boot). Travaux suivants : **FICHE-FIX-02**, hors cet
+incident.
