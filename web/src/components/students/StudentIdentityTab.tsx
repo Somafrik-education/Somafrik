@@ -49,7 +49,7 @@ export function StudentIdentityTab({
 
         <dl className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           <IdentityField label="Sexe" value={workspace.genderLabel} />
-          <IdentityField label="Nom d\u0027usage" value={dossier?.preferredName?.trim() || "—"} />
+          <IdentityField label="Nom d'usage" value={dossier?.preferredName?.trim() || "—"} />
           <IdentityField
             label="Date de naissance"
             value={workspace.birthDateLabel}
