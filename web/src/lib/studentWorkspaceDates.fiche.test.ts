@@ -160,12 +160,13 @@ describe("FICHE-FIX-02 — consommateurs fiche élève", () => {
         type: "UPDATE_STUDENT_IDENTITY",
         studentId: current.studentId,
         expectedVersion: current.version,
-        changes: { firstName: "Awa" },
+        changes: { firstName: "Amina" },
       },
       current,
     );
     expect(unchanged.ok).toBe(true);
     if (!unchanged.ok) return;
+    expect(unchanged.payload.firstName).toBe("Amina");
     expect(unchanged.payload).not.toHaveProperty("birthDate");
   });
 
