@@ -918,7 +918,7 @@ function createClassStudentsRepository(db) {
                 st.birth_date, st.birth_place, st.parent_phone, st.parent_email,
                 st.preferred_name, st.nationality, st.address, st.updated_at
          FROM students st
-         WHERE st.student_code = $1 AND st.school_id = $2
+         WHERE (st.student_code = $1 OR st.id::text = $1) AND st.school_id = $2
          LIMIT 1`,
         [studentCode, school.id],
       );
