@@ -494,7 +494,7 @@ async function main() {
   assert.equal(extrasSaved.preferredName, "Nana");
   assert.equal(extrasSaved.nationality, "CD");
   assert.equal(extrasSaved.address, "Avenue Test");
-  assert.equal(extrasSaved.lastName, "Diallo");
+  assert.equal(extrasSaved.lastName, extrasBefore.lastName, "le nom légal reste inchangé");
   const extrasCleared = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
     address: null, expectedUpdatedAt: extrasSaved.updatedAt,
   });
