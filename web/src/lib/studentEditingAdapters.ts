@@ -49,15 +49,15 @@ export function toEditableStudentIdentity(input: {
     updatedAt,
     firstName,
     lastName,
-    preferredName: person?.middleName?.trim() || null,
+    preferredName: person?.middleName?.trim() || String(student.preferredName ?? "").trim() || null,
     gender: normalizeGender(person?.gender ?? student.gender),
     birthDate: toApiDate(person?.birthDate ?? student.birthDate) || null,
     birthPlace:
       person?.birthPlace?.trim() ||
       String(student.birthPlace ?? "").trim() ||
       null,
-    nationality: person?.nationality?.trim() || null,
-    address: person?.address?.trim() || null,
+    nationality: person?.nationality?.trim() || String(student.nationality ?? "").trim() || null,
+    address: person?.address?.trim() || String(student.address ?? "").trim() || null,
     phone: normalizePhone(
       person?.phone ?? student.phone ?? String(student.parentPhone ?? ""),
     ),
@@ -79,6 +79,9 @@ export function toEditableStudentIdentityFromDossier(
     gender?: string;
     birthDate?: string;
     birthPlace?: string;
+    preferredName?: string | null;
+    nationality?: string | null;
+    address?: string | null;
     parentPhone?: string;
     parentEmail?: string;
     updatedAt?: string;
@@ -99,12 +102,12 @@ export function toEditableStudentIdentityFromDossier(
     updatedAt,
     firstName: String(dossier.firstName ?? "").trim(),
     lastName: String(dossier.lastName ?? "").trim(),
-    preferredName: null,
+    preferredName: String(dossier.preferredName ?? "").trim() || null,
     gender: normalizeGender(dossier.gender),
     birthDate: toApiDate(dossier.birthDate) || null,
     birthPlace: String(dossier.birthPlace ?? "").trim() || null,
-    nationality: null,
-    address: null,
+    nationality: String(dossier.nationality ?? "").trim() || null,
+    address: String(dossier.address ?? "").trim() || null,
     phone: normalizePhone(dossier.parentPhone),
     email: normalizeEmail(dossier.parentEmail),
   };
