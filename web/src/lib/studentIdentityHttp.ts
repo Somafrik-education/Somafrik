@@ -64,48 +64,53 @@ export function buildIdentityPatchPayload(
     };
   }
 
+  // Le formulaire possède le snapshot complet : ne persister que le ChangeSet réel.
+  // Un champ facultatif absent ne doit jamais être effacé par un PATCH voisin.
   const changes = command.changes;
+  const changedFields = new Set(
+    buildChangeSetForCommand(command, current).changes.map((change) => change.field),
+  );
   const payload: UpdateSchoolStudentPayload = { expectedUpdatedAt };
   let hasPatch = false;
 
-  if (Object.prototype.hasOwnProperty.call(changes, "firstName")) {
+  if (changedFields.has("firstName")) {
     payload.firstName = String(changes.firstName ?? "").trim();
     hasPatch = true;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, "lastName")) {
+  if (changedFields.has("lastName")) {
     payload.lastName = String(changes.lastName ?? "").trim();
     hasPatch = true;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, "gender")) {
+  if (changedFields.has("gender")) {
     payload.gender = toSchoolStudentApiGender(changes.gender ?? null);
     hasPatch = true;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, "birthDate")) {
+  if (changedFields.has("birthDate")) {
     const apiDate = toApiDate(changes.birthDate ?? null);
     payload.birthDate = apiDate || null;
     hasPatch = true;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, "birthPlace")) {
+  if (changedFields.has("birthPlace")) {
     payload.birthPlace = String(changes.birthPlace ?? "").trim() || null;
     hasPatch = true;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, "preferredName")) {
+  if (changedFields.has("preferredName")) {
     payload.preferredName = String(changes.preferredName ?? "").trim() || null;
     hasPatch = true;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, "nationality")) {
+  if (changedFields.has("nationality")) {
     payload.nationality = String(changes.nationality ?? "").trim() || null;
     hasPatch = true;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, "address")) {
+  if (changedFields.has("address")) {
     payload.address = String(changes.address ?? "").trim() || null;
     hasPatch = true;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, "phone")) {
+  if (changedFields.has("phone")) {
     payload.parentPhone = changes.phone ?? null;
     hasPatch = true;
   }
-  if (Object.prototype.hasOwnProperty.call(changes, "email")) {
+  if (changedFields.has("email")) {
     payload.parentEmail = changes.email ?? null;
     hasPatch = true;
   }
@@ -119,6 +124,39 @@ export function buildIdentityPatchPayload(
   }
 
   return { ok: true, payload };
+}
+
+/**
+ * Le PATCH Backend renvoie le GET PostgreSQL après écriture.
+ * Refuser tout faux succès si au moins une valeur demandée n'y figure pas.
+ */
+export function isPersistedIdentityPatchConfirmed(
+  payload: UpdateSchoolStudentPayload,
+  dossier: SchoolStudent,
+): boolean {
+  const normalized = (value: unknown): string => String(value ?? "").trim();
+  const expectedFields = [
+    ["firstName", dossier.firstName],
+    ["lastName", dossier.lastName],
+    ["gender", dossier.gender],
+    ["birthPlace", dossier.birthPlace],
+    ["preferredName", dossier.preferredName],
+    ["nationality", dossier.nationality],
+    ["address", dossier.address],
+    ["parentPhone", dossier.parentPhone],
+    ["parentEmail", dossier.parentEmail],
+  ] as const;
+  for (const [key, value] of expectedFields) {
+    if (Object.prototype.hasOwnProperty.call(payload, key) &&
+        normalized(payload[key]) !== normalized(value)) {
+      return false;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "birthDate") &&
+      toApiDate(payload.birthDate) !== toApiDate(dossier.birthDate)) {
+    return false;
+  }
+  return true;
 }
 
 function deriveVersion(updatedAt: string | null | undefined): number {
@@ -221,6 +259,17 @@ export function wrapRepositoryWithHttpIdentity(
 
       try {
         const dossier = await studentsApi.update(command.studentId, built.payload);
+        if (!isPersistedIdentityPatchConfirmed(built.payload, dossier)) {
+          return {
+            success: false,
+            code: "VALIDATION_ERROR",
+            errors: [{
+              field: null,
+              code: "IDENTITY_PERSISTENCE_MISMATCH",
+              message: "L'enregistrement n'a pas été confirmé par les données PostgreSQL. Rechargez la fiche avant de réessayer.",
+            }],
+          };
+        }
         const result = successFromDossier(dossier, command, current, context);
         if (result.success) {
           options.onUpdated?.(result.updatedAggregate, dossier);
