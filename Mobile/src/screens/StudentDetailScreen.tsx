@@ -55,6 +55,7 @@ import {
 } from "../lib/studentEnrollmentC18Access";
 import {
   classifyGuardiansLoad,
+  filterActiveParentRelations,
   guardiansCardSubtitle,
   type GuardiansLoadState,
 } from "../lib/studentFicheGuardians";
@@ -167,9 +168,7 @@ export default function StudentDetailScreen({
       }
       try {
         const relations = await getParentRelations(canonicalId);
-        const active = (relations as GuardianRow[]).filter(
-          (item) => String(item.status ?? "active").toLowerCase() !== "archived",
-        );
+        const active = filterActiveParentRelations(relations as GuardianRow[]);
         setGuardians(active);
         setGuardiansState(classifyGuardiansLoad({ loading: false, error: null, items: active }));
       } catch (error) {
