@@ -152,6 +152,18 @@ async function setupFixture(pool) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS user_id UUID;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS administrative_notes TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS preferred_name TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS nationality TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE students DROP CONSTRAINT IF EXISTS students_preferred_name_len_check;
+    ALTER TABLE students ADD CONSTRAINT students_preferred_name_len_check
+      CHECK (preferred_name IS NULL OR char_length(preferred_name) <= 120);
+    ALTER TABLE students DROP CONSTRAINT IF EXISTS students_nationality_len_check;
+    ALTER TABLE students ADD CONSTRAINT students_nationality_len_check
+      CHECK (nationality IS NULL OR char_length(nationality) <= 120);
+    ALTER TABLE students DROP CONSTRAINT IF EXISTS students_address_len_check;
+    ALTER TABLE students ADD CONSTRAINT students_address_len_check
+      CHECK (address IS NULL OR char_length(address) <= 500);
     ALTER TABLE students DROP CONSTRAINT IF EXISTS students_administrative_notes_len_check;
     ALTER TABLE students ADD CONSTRAINT students_administrative_notes_len_check
       CHECK (administrative_notes IS NULL OR char_length(administrative_notes) <= 2000);
@@ -1116,6 +1128,63 @@ async function main() {
 
     const pgToken = (value) =>
       value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+    // FICHE03 — cycle d'écriture, GET, concurrence, contraintes et tenant isolé.
+    const extraEnrollment = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+      firstName: "Extra", lastName: "Student",
+    });
+    const extraCode = extraEnrollment.student.studentCode;
+    const extraBefore = await studentsRepo.getByStudentCode(extraCode, "CD-2026-0001");
+    assert.equal(extraBefore.preferredName, null);
+    assert.equal(extraBefore.nationality, null);
+    assert.equal(extraBefore.address, null);
+    const extraSaved = await studentsRepo.updateByStudentCode(extraCode, "CD-2026-0001", {
+      preferredName: "Nana", nationality: "CD", address: "Avenue de la Paix",
+      expectedUpdatedAt: pgToken(extraBefore.updatedAt),
+    });
+    assert.deepEqual(
+      [extraSaved.preferredName, extraSaved.nationality, extraSaved.address, extraSaved.lastName],
+      ["Nana", "CD", "Avenue de la Paix", "Student"],
+    );
+    const extraSql = await pool.query(
+      "SELECT preferred_name, nationality, address FROM students WHERE student_code = $1",
+      [extraCode],
+    );
+    assert.deepEqual(
+      [extraSql.rows[0].preferred_name, extraSql.rows[0].nationality, extraSql.rows[0].address],
+      ["Nana", "CD", "Avenue de la Paix"],
+    );
+    const extraReload = await studentsRepo.getByStudentCode(extraCode, "CD-2026-0001");
+    assert.equal(extraReload.preferredName, "Nana");
+    const extraCleared = await studentsRepo.updateByStudentCode(extraCode, "CD-2026-0001", {
+      address: null, expectedUpdatedAt: pgToken(extraReload.updatedAt),
+    });
+    assert.equal(extraCleared.address, null);
+    assert.equal(extraCleared.nationality, "CD");
+    assert.equal(extraCleared.preferredName, "Nana");
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(extraCode, "CD-2026-0001", {
+        nationality: "BI", expectedUpdatedAt: pgToken(extraReload.updatedAt),
+      }), (error) => error.statusCode === 409,
+    );
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(extraCode, "BI-2026-0001", {
+        address: "interdit", expectedUpdatedAt: pgToken(extraCleared.updatedAt),
+      }), (error) => error.statusCode === 404,
+    );
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(extraCode, "CD-2026-0001", {
+        nationality: "x".repeat(121), expectedUpdatedAt: pgToken(extraCleared.updatedAt),
+      }), (error) => error.statusCode === 400,
+    );
+    await assert.rejects(
+      () => pool.query("UPDATE students SET address = $1 WHERE student_code = $2",
+        ["x".repeat(501), extraCode]),
+      (error) => error.code === "23514",
+    );
+    const extraAfterErrors = await studentsRepo.getByStudentCode(extraCode, "CD-2026-0001");
+    assert.equal(extraAfterErrors.nationality, "CD");
+    assert.equal(extraAfterErrors.address, null);
+
     const noted = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
       firstName: "Note",
       lastName: "Fixture",
