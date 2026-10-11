@@ -61,6 +61,7 @@ import {
 import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import { OFFLINE_COPY } from "../lib/offlineModeSpec";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { parentLinkSuccessFeedback } from "../lib/parentLinkingPresentation";
 import { DISPLAY_DATE_HINT, toApiDate } from "../lib/dates";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentDetail">;
@@ -266,7 +267,7 @@ export default function StudentDetailScreen({
     }
     setLinkError("");
     try {
-      await linkParent({
+      const linked = await linkParent({
         studentId: String(student.studentCode ?? student.id ?? studentId),
         firstName: firstName.trim(),
         lastName: lastName.trim(),
@@ -276,6 +277,8 @@ export default function StudentDetailScreen({
       setLastName("");
       setPhone("");
       await loadFiche();
+      const feedback = parentLinkSuccessFeedback(linked);
+      Alert.alert(feedback.title, feedback.message);
     } catch (error) {
       setLinkError(error instanceof Error ? error.message : "Liaison impossible.");
     }
@@ -474,9 +477,12 @@ export default function StudentDetailScreen({
           : null}
         {canLink ? (
           <View>
-            <TextInput style={styles.input} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
-            <TextInput style={styles.input} placeholder="Nom" value={lastName} onChangeText={setLastName} />
-            <TextInput style={styles.input} placeholder="Téléphone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+            <Text style={styles.fieldLabel}>Prénom du parent</Text>
+            <TextInput style={styles.input} accessibilityLabel="Prénom du parent" placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
+            <Text style={styles.fieldLabel}>Nom du parent</Text>
+            <TextInput style={styles.input} accessibilityLabel="Nom du parent" placeholder="Nom" value={lastName} onChangeText={setLastName} />
+            <Text style={styles.fieldLabel}>Téléphone du parent</Text>
+            <TextInput style={styles.input} accessibilityLabel="Téléphone du parent" placeholder="Téléphone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             {linkError ? <Text style={styles.error}>{linkError}</Text> : null}
             <TouchableOpacity
               style={styles.create}
@@ -488,7 +494,11 @@ export default function StudentDetailScreen({
               <Text style={styles.createText}>Lier un responsable</Text>
             </TouchableOpacity>
           </View>
-        ) : null}
+        ) : (
+          <Text style={styles.info}>
+            Liaison parent indisponible pour ce profil : droit Relations:CREATE ou Gérer utilisateurs requis.
+          </Text>
+        )}
       </ExpandableEntityCard>
 
       <ExpandableEntityCard
@@ -640,6 +650,12 @@ const styles = StyleSheet.create({
   archive: {
     color: "#B91C1C",
     fontWeight: "800",
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 4,
   },
   input: {
     minHeight: MIN_TOUCH_TARGET_DP,
