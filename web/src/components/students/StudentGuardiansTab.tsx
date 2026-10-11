@@ -74,8 +74,8 @@ export function StudentGuardiansTab({ workspace }: StudentGuardiansTabProps) {
     try {
       const result = await parentsApi.linkParent({
         studentId: workspace.studentId,
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
+        ...(form.firstName.trim() ? { firstName: form.firstName.trim() } : {}),
+        ...(form.lastName.trim() ? { lastName: form.lastName.trim() } : {}),
         phone,
         email,
       });
