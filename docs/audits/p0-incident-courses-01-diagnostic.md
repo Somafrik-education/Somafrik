@@ -1,6 +1,6 @@
 # P0-INCIDENT-COURSES-01 — Diagnostic / HOLD
 
-**Statut :** diagnostic live confirmé / réparation A1 **candidate** / #531 **interdit** jusqu’à autorisation CTO / #894 DRAFT-HOLD  
+**Statut :** dry-run #531 **conforme** / A1 prête sous autorisation / UPDATE **interdit** / #894 DRAFT-HOLD  
 **Date :** 2026-10-11  
 **Cible code :** `main@ef8bc951` (identique pour le fail-closed `school_courses` sur `develop`)  
 **PII :** aucun identifiant élève, nom, e-mail ou UUID live dans ce document. Code établissement seulement.
@@ -365,25 +365,22 @@ Deux combinaisons classe+matière distinctes, chacune : 1 cours actif,
 `teacher_id NULL`, 1 affectation active, 1 enseignant. Option B écartée
 (détection conforme). Option A1 = candidate privilégiée.
 
-### Préconditions #531 encore à dry-runer (SELECT)
+### Préconditions #531 — dry-run exact terminé (conforme)
 
-Le premier inventaire ciblé ne remplace pas le CTE exact du repair.
 Fichier : `backend/db/dry_run_repair_school_course_teacher_from_assignment.sql`
+à `9352cf13`. CTO : `BEGIN READ ONLY` + `ROLLBACK` sur les deux projets.
 
-`BEGIN READ ONLY` sur `Somafrik-prod` puis `ROLLBACK`. Attendu : **2 lignes**,
-`current_teacher_id` NULL, `proposed_teacher_id` non NULL, 2 `class_id` /
-`subject_id` distincts. Préprod : **0 ligne**.
+| Contrôle | Production | Préproduction |
+| --- | --- | --- |
+| Lignes retournées | **2** | **0** |
+| `current_teacher_id IS NULL` | 2/2 | — |
+| `proposed_teacher_id` renseigné | 2/2 | — |
+| Cours distincts | 2 | 0 |
+| Couples classe + matière distincts | 2 | 0 |
+| Affectation canonique unique (CTE) | 2/2 | — |
 
-Le CTE exige en plus (à confirmer par ce dry-run, pas seulement par COUNT) :
-
-- `teachers.status` hors `deleted` / `archived`
-- `teachers.school_id` = affectation
-- `classes.academic_year_id` = `teacher_assignments.academic_year_id`
-- `subjects` / `academic_years` même `school_id`
-- `COUNT(*) OVER (PARTITION BY sc.id) = 1` (fenêtre du repair, pas un COUNT
-  métier approximatif)
-
-Si le dry-run renvoie ≠ 2, **ne pas** appliquer le UPDATE.
+Jointures enseignant / classe / année / matière et exclusion
+`deleted`/`archived` : passées. Les deux lignes sont éligibles A1.
 
 ### Plan A1 — uniquement après autorisation CTO explicite
 
@@ -410,5 +407,17 @@ RETURNING id, teacher_id, status;
 -- COMMIT ou ROLLBACK après contrôle
 ```
 
-**#531 UPDATE toujours interdit** jusqu’à autorisation écrite. #894 reste
-DRAFT / HOLD. Aucun merge, aucun redéploiement, aucun changement d’env.
+**#531 UPDATE toujours interdit** jusqu’à autorisation écrite distincte
+(sauvegarde vérifiée + go CTO). Le dry-run conforme **n’est pas** une
+autorisation d’écriture. #894 reste DRAFT / HOLD. Aucun merge, aucun
+redéploiement, aucun changement d’env.
+
+---
+
+## 14. Dry-run exact #531 — 2026-10-11
+
+Révision exécutée : `9352cf13`. Résultat = attendu. Prochaine porte :
+sauvegarde Supabase `Somafrik-prod` vérifiée, puis autorisation CTO
+explicite pour `BEGIN;` + `repair_school_course_teacher_from_assignment.sql`.
+Si `RETURNING` ≠ 2 ou IDs ≠ dry-run → `ROLLBACK`. Sinon `COMMIT` puis
+restart `Somafrik-api-prod` sur `ef8bc951` uniquement.
