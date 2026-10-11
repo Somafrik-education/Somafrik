@@ -133,6 +133,98 @@ describe("FICHE-FIX-02 — dates civiles élève", () => {
     expect(formatCivilDateLabel("not-a-date")).toBe("not-a-date");
   });
 
+  it("DATE-ISO : horodatages ISO valides uniquement, jamais un préfixe T arbitraire", () => {
+    expect(parseCivilDateParts("2012-04-12T00:00:00.000Z")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+    expect(parseCivilDateParts("2012-04-12T00:00:00Z")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+    expect(parseCivilDateParts("2012-04-12T23:30")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+    expect(parseCivilDateParts("2012-04-12T23:30:00+01:00")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+    expect(toCanonicalCivilDate("2012-04-12T00:00:00.000Z")).toBe("2012-04-12");
+    expect(formatCivilDateLabel("2012-04-12T00:00:00.000Z")).toBe("12 avril 2012");
+
+    expect(parseCivilDateParts("2012-04-12TexteInvalide")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12Txx:xx:xx")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T25:00:00Z")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00:60:00Z")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00:00:00.000Zextra")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00:00:00+0100")).toBeNull();
+    expect(formatCivilDateLabel("2012-04-12TexteInvalide")).toBe(
+      "2012-04-12TexteInvalide",
+    );
+  });
+
+  it("DATE-YEAR : années 0001–0099 sans mapping 19xx de Date.UTC / Date", () => {
+    expect(parseCivilDateParts("0001-01-01")).toEqual({
+      year: 1,
+      month: 1,
+      day: 1,
+    });
+    expect(parseCivilDateParts("0099-12-31")).toEqual({
+      year: 99,
+      month: 12,
+      day: 31,
+    });
+    expect(parseCivilDateParts("01-01-0001")).toEqual({
+      year: 1,
+      month: 1,
+      day: 1,
+    });
+    expect(toCanonicalCivilDate("0001-01-01")).toBe("0001-01-01");
+    expect(toCanonicalCivilDate("0099-12-31")).toBe("0099-12-31");
+
+    const yearOne = parseCivilDate("0001-01-01");
+    expect(yearOne?.getFullYear()).toBe(1);
+    expect(yearOne?.getMonth()).toBe(0);
+    expect(yearOne?.getDate()).toBe(1);
+
+    const yearNinetyNine = parseCivilDate("0099-12-31");
+    expect(yearNinetyNine?.getFullYear()).toBe(99);
+    expect(yearNinetyNine?.getMonth()).toBe(11);
+    expect(yearNinetyNine?.getDate()).toBe(31);
+
+    expect(formatCivilDateLabel("0001-01-01")).toMatch(/janvier/i);
+    expect(formatCivilDateLabel("0001-01-01")).not.toMatch(/1901/);
+    expect(formatCivilDateLabel("0099-12-31")).toMatch(/décembre/i);
+    expect(formatCivilDateLabel("0099-12-31")).not.toMatch(/1999/);
+
+    expect(parseCivilDateParts("0000-01-01")).toBeNull();
+    expect(parseCivilDateParts("0004-02-29")).toEqual({
+      year: 4,
+      month: 2,
+      day: 29,
+    });
+    expect(parseCivilDateParts("0001-02-29")).toBeNull();
+    expect(parseCivilDateParts("0100-02-29")).toBeNull();
+    expect(parseCivilDateParts("0400-02-29")).toEqual({
+      year: 400,
+      month: 2,
+      day: 29,
+    });
+    expect(parseCivilDateParts("1900-02-29")).toBeNull();
+    expect(parseCivilDateParts("2000-02-29")).toEqual({
+      year: 2000,
+      month: 2,
+      day: 29,
+    });
+  });
+
   it("calcule l'âge depuis les parties civiles, pas depuis un timestamp UTC", () => {
     const reference = new Date(2026, 3, 11);
     expect(computeAgeFromCivilDate("12-04-2012", reference)).toBe(13);

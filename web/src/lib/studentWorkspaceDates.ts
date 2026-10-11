@@ -2,11 +2,17 @@
  * Dates civiles de la fiche élève.
  *
  * Formats reconnus, ordre explicite jour/mois/année :
- * - YYYY-MM-DD (éventuellement préfixe ISO `T…`)
+ * - YYYY-MM-DD
  * - DD-MM-YYYY
+ * - horodatage ISO 8601 complet, validé (pas un préfixe `T` arbitraire) :
+ *   `YYYY-MM-DDTHH:mm[:ss[.fraction]][Z|±HH:mm[:ss]]`
  *
  * Une date civile n'est jamais déduite via `new Date(texte_non_ISO)`.
  * Les dates invalides restent invalides : aucun débordement silencieux.
+ *
+ * La validité calendaire n'utilise pas `Date.UTC(year, …)` : pour 0001–0099
+ * ce constructeur mappe l'année vers 19xx. On utilise le calendrier grégorien
+ * et `setUTCFullYear` / `setFullYear`.
  */
 
 export type CivilDate = {
@@ -17,6 +23,25 @@ export type CivilDate = {
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
+const CIVIL_ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
+const CIVIL_DMY = /^(\d{2})-(\d{2})-(\d{4})$/;
+const ISO_TIMESTAMP =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(?:Z|([+-])(\d{2}):(\d{2})(?::(\d{2}))?)?$/;
+
+function isGregorianLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    return isGregorianLeapYear(year) ? 29 : 28;
+  }
+  if (month === 4 || month === 6 || month === 9 || month === 11) {
+    return 30;
+  }
+  return 31;
+}
+
 function isCalendarDate(parts: CivilDate): boolean {
   if (
     !Number.isInteger(parts.year) ||
@@ -25,21 +50,63 @@ function isCalendarDate(parts: CivilDate): boolean {
   ) {
     return false;
   }
+  if (parts.year < 1 || parts.year > 9999) {
+    return false;
+  }
+  if (parts.month < 1 || parts.month > 12) {
+    return false;
+  }
+  if (parts.day < 1 || parts.day > daysInMonth(parts.year, parts.month)) {
+    return false;
+  }
+  return true;
+}
+
+function isValidIsoClock(
+  hour: number,
+  minute: number,
+  second: number | null,
+  offsetSign: string | undefined,
+  offsetHour: number | null,
+  offsetMinute: number | null,
+  offsetSecond: number | null,
+): boolean {
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return false;
+  }
+  if (second != null && (second < 0 || second > 60)) {
+    return false;
+  }
+  if (!offsetSign) {
+    return true;
+  }
   if (
-    parts.year < 1 ||
-    parts.month < 1 ||
-    parts.month > 12 ||
-    parts.day < 1 ||
-    parts.day > 31
+    offsetHour == null ||
+    offsetHour < 0 ||
+    offsetHour > 23 ||
+    offsetMinute == null ||
+    offsetMinute < 0 ||
+    offsetMinute > 59
   ) {
     return false;
   }
-  const candidate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
-  return (
-    candidate.getUTCFullYear() === parts.year &&
-    candidate.getUTCMonth() === parts.month - 1 &&
-    candidate.getUTCDate() === parts.day
-  );
+  if (offsetSecond != null && (offsetSecond < 0 || offsetSecond > 59)) {
+    return false;
+  }
+  return true;
+}
+
+function partsFromMatch(
+  year: string,
+  month: string,
+  day: string,
+): CivilDate | null {
+  const parts = {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+  };
+  return isCalendarDate(parts) ? parts : null;
 }
 
 /** Parse déterministe vers {jour, mois, année}. Null si format ou calendrier invalide. */
@@ -54,24 +121,37 @@ export function parseCivilDateParts(
     return null;
   }
 
-  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(normalized);
+  const iso = CIVIL_ISO.exec(normalized);
   if (iso) {
-    const parts = {
-      year: Number(iso[1]),
-      month: Number(iso[2]),
-      day: Number(iso[3]),
-    };
-    return isCalendarDate(parts) ? parts : null;
+    return partsFromMatch(iso[1], iso[2], iso[3]);
   }
 
-  const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(normalized);
+  const timestamp = ISO_TIMESTAMP.exec(normalized);
+  if (timestamp) {
+    const second = timestamp[6] == null ? null : Number(timestamp[6]);
+    const offsetSign = timestamp[8];
+    const offsetHour = timestamp[9] == null ? null : Number(timestamp[9]);
+    const offsetMinute = timestamp[10] == null ? null : Number(timestamp[10]);
+    const offsetSecond = timestamp[11] == null ? null : Number(timestamp[11]);
+    if (
+      !isValidIsoClock(
+        Number(timestamp[4]),
+        Number(timestamp[5]),
+        second,
+        offsetSign,
+        offsetHour,
+        offsetMinute,
+        offsetSecond,
+      )
+    ) {
+      return null;
+    }
+    return partsFromMatch(timestamp[1], timestamp[2], timestamp[3]);
+  }
+
+  const dmy = CIVIL_DMY.exec(normalized);
   if (dmy) {
-    const parts = {
-      year: Number(dmy[3]),
-      month: Number(dmy[2]),
-      day: Number(dmy[1]),
-    };
-    return isCalendarDate(parts) ? parts : null;
+    return partsFromMatch(dmy[3], dmy[2], dmy[1]);
   }
 
   return null;
@@ -88,8 +168,20 @@ export function toCanonicalCivilDate(
   return `${String(parts.year).padStart(4, "0")}-${pad2(parts.month)}-${pad2(parts.day)}`;
 }
 
+/** Minuit local civil. `setFullYear` évite le mapping 0001–0099 → 19xx. */
 function civilDateToLocalDate(parts: CivilDate): Date {
-  return new Date(parts.year, parts.month - 1, parts.day);
+  const date = new Date(0);
+  date.setFullYear(parts.year, parts.month - 1, parts.day);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+/** Minuit UTC civil. `setUTCFullYear` évite le mapping 0001–0099 → 19xx. */
+function civilDateToUtcDate(parts: CivilDate): Date {
+  const date = new Date(0);
+  date.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  date.setUTCHours(0, 0, 0, 0);
+  return date;
 }
 
 /**
@@ -120,7 +212,7 @@ export function formatCivilDateLabel(
     month: "long",
     year: "numeric",
     timeZone: "UTC",
-  }).format(new Date(Date.UTC(parts.year, parts.month - 1, parts.day)));
+  }).format(civilDateToUtcDate(parts));
 }
 
 export function computeAgeFromCivilDate(

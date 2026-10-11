@@ -175,7 +175,7 @@ describe("FICHE-FIX-02 — consommateurs fiche élève", () => {
       enrollment({
         requestedAt: "2026-09-01",
         validatedAt: "2026-09-10",
-        enrolledAt: "2026-09-15",
+        enrolledAt: "2026-09-15T08:00:00.000Z",
         endedAt: "2027-06-30",
       }),
     );
