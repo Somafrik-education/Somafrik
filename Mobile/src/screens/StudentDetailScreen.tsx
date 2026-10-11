@@ -496,7 +496,7 @@ export default function StudentDetailScreen({
           </View>
         ) : (
           <Text style={styles.info}>
-            Liaison parent indisponible pour ce profil : droit Relations:CREATE ou Gérer utilisateurs requis.
+            Vous n'avez pas l'autorisation de lier un parent. Demandez à l'administration de vérifier vos droits.
           </Text>
         )}
       </ExpandableEntityCard>
