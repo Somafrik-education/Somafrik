@@ -170,6 +170,53 @@ describe("FICHE-FIX-02 — dates civiles élève", () => {
     );
   });
 
+  it("DATE-ISO-LIMITES : secondes 00–59 et offsets −12:00 à +14:00", () => {
+    expect(parseCivilDateParts("2012-04-12T00:00:59Z")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+    expect(parseCivilDateParts("2012-04-12T00:00:60Z")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00:00:60.000Z")).toBeNull();
+
+    expect(parseCivilDateParts("2012-04-12T00:00:00+00:00")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+    expect(parseCivilDateParts("2012-04-12T00:00:00+01:00")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+    expect(parseCivilDateParts("2012-04-12T00:00:00+12:45")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+    expect(parseCivilDateParts("2012-04-12T00:00:00+14:00")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+    expect(parseCivilDateParts("2012-04-12T00:00:00-12:00")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+
+    expect(parseCivilDateParts("2012-04-12T00:00:00+23:00")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00:00:00-23:00")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00:00:00+14:01")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00:00:00+15:00")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00:00:00-13:00")).toBeNull();
+    expect(parseCivilDateParts("2012-04-12T00:00:00-12:00:01")).toEqual({
+      year: 2012,
+      month: 4,
+      day: 12,
+    });
+  });
+
   it("DATE-YEAR : années 0001–0099 sans mapping 19xx de Date.UTC / Date", () => {
     expect(parseCivilDateParts("0001-01-01")).toEqual({
       year: 1,

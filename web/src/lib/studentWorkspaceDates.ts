@@ -6,6 +6,8 @@
  * - DD-MM-YYYY
  * - horodatage ISO 8601 complet, validé (pas un préfixe `T` arbitraire) :
  *   `YYYY-MM-DDTHH:mm[:ss[.fraction]][Z|±HH:mm[:ss]]`
+ *   secondes `00`–`59` (pas de seconde intercalaire) ;
+ *   décalage civil `−12:00` à `+14:00` (rejet de `±23:00`).
  *
  * Une date civile n'est jamais déduite via `new Date(texte_non_ISO)`.
  * Les dates invalides restent invalides : aucun débordement silencieux.
@@ -62,6 +64,9 @@ function isCalendarDate(parts: CivilDate): boolean {
   return true;
 }
 
+const MAX_NEGATIVE_OFFSET_HOURS = 12;
+const MAX_POSITIVE_OFFSET_HOURS = 14;
+
 function isValidIsoClock(
   hour: number,
   minute: number,
@@ -74,7 +79,7 @@ function isValidIsoClock(
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
     return false;
   }
-  if (second != null && (second < 0 || second > 60)) {
+  if (second != null && (second < 0 || second > 59)) {
     return false;
   }
   if (!offsetSign) {
@@ -83,7 +88,6 @@ function isValidIsoClock(
   if (
     offsetHour == null ||
     offsetHour < 0 ||
-    offsetHour > 23 ||
     offsetMinute == null ||
     offsetMinute < 0 ||
     offsetMinute > 59
@@ -91,6 +95,19 @@ function isValidIsoClock(
     return false;
   }
   if (offsetSecond != null && (offsetSecond < 0 || offsetSecond > 59)) {
+    return false;
+  }
+  const maxHours =
+    offsetSign === "-"
+      ? MAX_NEGATIVE_OFFSET_HOURS
+      : MAX_POSITIVE_OFFSET_HOURS;
+  if (offsetHour > maxHours) {
+    return false;
+  }
+  if (
+    offsetHour === MAX_POSITIVE_OFFSET_HOURS &&
+    (offsetMinute !== 0 || (offsetSecond != null && offsetSecond !== 0))
+  ) {
     return false;
   }
   return true;
