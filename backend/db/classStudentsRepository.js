@@ -23,6 +23,9 @@ const STUDENT_SELECT_COLUMNS = `
   st.gender,
   st.birth_date,
   st.birth_place,
+  st.preferred_name,
+  st.nationality,
+  st.address,
   st.photo_url,
   st.parent_phone,
   st.parent_email,
@@ -160,6 +163,9 @@ function createClassStudentsRepository(db) {
       gender: row.gender ?? "",
       birthDate: row.birth_date ? formatDate(row.birth_date) : "",
       birthPlace: row.birth_place ?? "",
+      preferredName: row.preferred_name ?? null,
+      nationality: row.nationality ?? null,
+      address: row.address ?? null,
       photoUrl: row.photo_url ?? "",
       classId: row.class_id ?? row.classId ?? null,
       className: row.class_name ?? "",
@@ -912,7 +918,7 @@ function createClassStudentsRepository(db) {
       const current = await db.one(
         `SELECT st.id, st.student_code, st.first_name, st.last_name, st.gender,
                 st.birth_date, st.birth_place, st.parent_phone, st.parent_email,
-                st.updated_at
+                st.preferred_name, st.nationality, st.address, st.updated_at
          FROM students st
          WHERE st.student_code = $1 AND st.school_id = $2
          LIMIT 1`,
@@ -943,6 +949,9 @@ function createClassStudentsRepository(db) {
       const nextParentEmail =
         patch.parentEmail !== undefined ? patch.parentEmail : current.parent_email;
       const notesProvided = Object.prototype.hasOwnProperty.call(patch, "administrativeNotes");
+      const preferredNameProvided = Object.prototype.hasOwnProperty.call(patch, "preferredName");
+      const nationalityProvided = Object.prototype.hasOwnProperty.call(patch, "nationality");
+      const addressProvided = Object.prototype.hasOwnProperty.call(patch, "address");
 
       const updated = await db.one(
         `UPDATE students
@@ -954,6 +963,9 @@ function createClassStudentsRepository(db) {
              parent_phone = $6,
              parent_email = $7,
              administrative_notes = CASE WHEN $11::boolean THEN $12 ELSE administrative_notes END,
+             preferred_name = CASE WHEN $13::boolean THEN $14 ELSE preferred_name END,
+             nationality = CASE WHEN $15::boolean THEN $16 ELSE nationality END,
+             address = CASE WHEN $17::boolean THEN $18 ELSE address END,
              updated_at = GREATEST(
                date_trunc('milliseconds', clock_timestamp()),
                date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond'
@@ -975,6 +987,12 @@ function createClassStudentsRepository(db) {
           expected,
           notesProvided,
           notesProvided ? patch.administrativeNotes : null,
+          preferredNameProvided,
+          preferredNameProvided ? patch.preferredName : null,
+          nationalityProvided,
+          nationalityProvided ? patch.nationality : null,
+          addressProvided,
+          addressProvided ? patch.address : null,
         ],
       );
 
