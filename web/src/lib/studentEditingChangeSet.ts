@@ -30,7 +30,7 @@ import {
   nextStatusAfterTransfer,
   nextStatusAfterValidate,
 } from "./studentEnrollmentTransitions";
-import { parseCivilDate } from "./studentWorkspaceDates";
+import { toCanonicalCivilDate } from "./studentWorkspaceDates";
 
 export interface StudentChange {
   field: string;
@@ -115,15 +115,7 @@ export function normalizePhone(value: unknown): string | null {
 export function normalizeCivilDate(value: unknown): string | null {
   const text = normalizeOptionalText(value);
   if (!text) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text) && parseCivilDate(text)) {
-    return text;
-  }
-  const parsed = parseCivilDate(text.slice(0, 10));
-  if (!parsed) return text;
-  const y = parsed.getFullYear();
-  const m = String(parsed.getMonth() + 1).padStart(2, "0");
-  const d = String(parsed.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return toCanonicalCivilDate(text) ?? text;
 }
 
 export function normalizeGender(value: unknown): StudentGender | null {
