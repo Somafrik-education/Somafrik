@@ -185,12 +185,17 @@ describe("studentIdentityHttp — PATCH PostgreSQL", () => {
     const cleared = buildIdentityPatchPayload({
       type: "UPDATE_STUDENT_IDENTITY", studentId: "CD-ITR-AS-26-00004",
       expectedVersion: 4, changes: { address: null },
-    }, identity());
+    }, identity({ address: "Av. 1" }));
     expect(cleared.ok).toBe(true);
     if (cleared.ok) {
       expect(cleared.payload.address).toBeNull();
       expect(cleared.payload).not.toHaveProperty("nationality");
     }
+    const alreadyEmpty = buildIdentityPatchPayload({
+      type: "UPDATE_STUDENT_IDENTITY", studentId: "CD-ITR-AS-26-00004",
+      expectedVersion: 4, changes: { address: null },
+    }, identity());
+    expect(alreadyEmpty.ok).toBe(false);
   });
 
   it("ne renvoie que les champs vraiment modifiés même si le draft contient toute l'identité", () => {
