@@ -282,10 +282,10 @@ export function buildStudentWorkspaceOverview({
     birthPlace: normalizeOptionalValue(
       person?.birthPlace ?? String(student.birthPlace ?? ""),
     ),
-    nationality: normalizeOptionalValue(person?.nationality),
+    nationality: normalizeOptionalValue(person?.nationality ?? student.nationality),
     phone: normalizeOptionalValue(person?.phone ?? student.phone),
     email: normalizeOptionalValue(person?.email ?? student.email),
-    address: normalizeOptionalValue(person?.address),
+    address: normalizeOptionalValue(person?.address ?? student.address),
     enrollmentStatus: currentEnrollment?.status ?? null,
     enrollmentDate: normalizeOptionalValue(
       currentEnrollment?.enrolledAt ??
