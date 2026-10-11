@@ -390,8 +390,8 @@ Jointures enseignant / classe / année / matière et exclusion
 
 ### Plan A1 — exécuté le 11 octobre 2026 (ne pas rejouer)
 
-1. Sauvegarde Supabase `Somafrik-prod` **vérifiée** (restore test ou PITR
-   point noté).
+1. Sauvegardes Supabase `Somafrik-prod` au statut **`COMPLETED`**
+   (restaurabilité **non** testée).
 2. Dry-run ci-dessus = 2.
 3. `BEGIN;` + `repair_school_course_teacher_from_assignment.sql`.
 4. `RETURNING` : 2 lignes, `teacher_id` non NULL, mêmes `id` que le dry-run.
