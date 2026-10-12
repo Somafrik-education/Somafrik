@@ -96,7 +96,9 @@ async function requireStudent(repo, studentRef, schoolCode) {
     "SELECT st.id, st.school_id FROM students st " +
     "JOIN schools sc ON sc.id = st.school_id " +
     "WHERE (st.student_code = $1 OR st.id::text = $1) " +
-    "AND sc.school_code = $2 LIMIT 1",
+    // Côté Enrollment, schoolCode est TOUJOURS schools.login_code (membership UUID),
+    // jamais l'ancien schools.school_code. Pas de fallback inter-tenant.
+    "AND upper(btrim(sc.login_code)) = $2 LIMIT 1",
     [String(studentRef || "").trim(), String(schoolCode || "").trim().toUpperCase()],
   );
   if (!row) throw error(404, "Élève introuvable.", "STUDENT_DOC_NOT_FOUND");
