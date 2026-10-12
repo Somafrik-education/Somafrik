@@ -2077,6 +2077,106 @@ app.get("/api/students", requireAuth, requirePermission("GET /api/students"), as
   sendList(res, result, req.query, ["name", "matricule", "studentCode", "className", "parentPhone"]);
 }));
 
+
+/**
+ * FICHE-DOC-01 : stockage privé des pièces administratives élève.
+ * Gate de lecture Élèves existant + permission Documents explicite ;
+ * aucune route n'accepte une portée pays ou plateforme.
+ */
+function studentDocumentsHttpService() {
+  const { createStudentDocumentsService } = require("./lib/studentAdministrativeDocuments");
+  return createStudentDocumentsService(repository);
+}
+
+app.get("/api/students/:studentId/documents", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const documents = await studentDocumentsHttpService().list({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+  });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ documents });
+}));
+
+app.post(
+  "/api/students/:studentId/documents",
+  requireAuth,
+  requirePermission("GET /api/students/:id"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+    if (!scope) return;
+    const result = await studentDocumentsHttpService().upload({
+      studentRef: req.params.studentId,
+      schoolCode: scope.schoolCode,
+      principal: scope.principal,
+      documentType: req.get("x-document-type"),
+      buffer: Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []),
+      fileName: req.get("x-filename") || req.get("x-file-name") || "",
+      mimeType: req.get("content-type") || "",
+    });
+    await auditService.record(req, "upload_student_document", "student_document", result.id, {
+      studentCode: scope.student.studentCode,
+      documentId: result.id,
+      documentType: result.documentType,
+    }, { schoolCode: scope.schoolCode });
+    res.setHeader("Cache-Control", "no-store");
+    res.status(201).json(result);
+  }),
+);
+
+app.post("/api/students/:studentId/documents/:documentId/verify", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const result = await studentDocumentsHttpService().verify({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+    documentId: req.params.documentId,
+  });
+  await auditService.record(req, "verify_student_document", "student_document", result.id, {
+    studentCode: scope.student.studentCode,
+    documentId: result.id,
+  }, { schoolCode: scope.schoolCode });
+  res.setHeader("Cache-Control", "no-store");
+  res.json(result);
+}));
+
+app.post("/api/students/:studentId/documents/:documentId/archive", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const result = await studentDocumentsHttpService().archive({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+    documentId: req.params.documentId,
+  });
+  await auditService.record(req, "archive_student_document", "student_document", result.id, {
+    studentCode: scope.student.studentCode,
+    documentId: result.id,
+  }, { schoolCode: scope.schoolCode });
+  res.setHeader("Cache-Control", "no-store");
+  res.json(result);
+}));
+
+app.get("/api/students/:studentId/documents/:documentId/file", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const file = await studentDocumentsHttpService().download({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+    documentId: req.params.documentId,
+  });
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Type", file.mimeType);
+  res.setHeader("Content-Disposition", 'attachment; filename="' + String(file.fileName).replace(/["\\\r\n]/g, "_") + '"');
+  res.send(file.bytes);
+}));
+
 app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
   const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
   const principal = await enrollmentHttpPrincipal(req);
