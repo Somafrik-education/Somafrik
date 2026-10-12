@@ -15,7 +15,6 @@ const BLOCKED_PERMISSIONS = new Set([
   "android.permission.READ_MEDIA_IMAGES",
   "android.permission.ACCESS_FINE_LOCATION",
   "android.permission.ACCESS_COARSE_LOCATION",
-  "android.permission.NFC",
   "android.permission.READ_CONTACTS",
   "android.permission.CALL_PHONE",
 ]);
@@ -100,6 +99,20 @@ function rewritePermissionList(list) {
  * expo-file-system's AAR re-inject READ/WRITE_EXTERNAL_STORAGE into the
  * final merged AAB.
  */
+function ensureOptionalNfcFeature(manifestDoc) {
+  const man = manifestDoc.manifest;
+  const current = man["uses-feature"];
+  const list = Array.isArray(current) ? current : current ? [current] : [];
+  const rest = list.filter((entry) => entry?.$?.["android:name"] !== "android.hardware.nfc");
+  rest.push({
+    $: {
+      "android:name": "android.hardware.nfc",
+      "android:required": "false",
+    },
+  });
+  man["uses-feature"] = rest;
+}
+
 function ensureBlockedPermissionsRemoved(manifestDoc) {
   const root = manifestDoc.manifest.$ || (manifestDoc.manifest.$ = {});
   if (!root["xmlns:tools"]) {
@@ -141,6 +154,7 @@ function withSomafrikAndroidSecurity(config) {
 
   config = withAndroidManifest(config, (cfg) => {
     ensureBlockedPermissionsRemoved(cfg.modResults);
+    ensureOptionalNfcFeature(cfg.modResults);
     const app = AndroidConfig.Manifest.getMainApplicationOrThrow(cfg.modResults);
     app.$["android:allowBackup"] = "false";
     app.$["android:fullBackupContent"] = "@xml/backup_rules";
