@@ -301,6 +301,7 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   ".github/workflows/nfc-encoding-preprod.yml",
   "scripts/verify-android-release-readiness.js",
   "backend/db/studentCardsNfcSchema.js",
+  "backend/lib/schoolSettings.studentCard.test.js",
   "backend/db/migrations/20261012_student_cards_nfc_encoding.sql",
   "Mobile/src/lib/establishment.ts",
   "Mobile/src/lib/establishment.teacherScope.test.ts",
