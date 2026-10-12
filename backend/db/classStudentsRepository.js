@@ -857,6 +857,7 @@ function createClassStudentsRepository(db) {
                   storage_key, generated_at, created_at, updated_at
            FROM student_documents
            WHERE student_id = $1 AND school_id = $2
+             AND COALESCE(metadata->>'source', '') <> 'administrative_upload'
            ORDER BY generated_at DESC NULLS LAST, created_at DESC NULLS LAST`,
           [row.student_uuid, school.id],
         );
