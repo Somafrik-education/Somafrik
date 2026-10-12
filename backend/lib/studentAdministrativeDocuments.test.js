@@ -13,7 +13,8 @@ const {
 
 const schoolId = "11111111-1111-4111-8111-111111111111";
 const studentId = "22222222-2222-4222-8222-222222222222";
-const schoolCode = "CD-2026-0001";
+const schoolCode = "CD-IN-26-001"; // schools.login_code (canonique)
+const legacySchoolCode = "CD-2026-0001"; // schools.school_code (legacy, divergent)
 const studentCode = "CD-TEST-001";
 const perms = ["Documents:READ", "Documents:CREATE", "Documents:UPDATE"];
 const principal = { schoolCode, role: "SCHOOL_ADMIN", permissions: perms };
@@ -25,6 +26,9 @@ function createFakeRepo() {
     engine: "postgresql",
     async one(sql, params) {
       if (sql.startsWith("SELECT st.id")) {
+        // Vérifie le vrai SQL, pas seulement le comportement du faux repository.
+        assert.match(sql, /upper\(btrim\(sc\.login_code\)\) = \$2/);
+        assert.doesNotMatch(sql, /sc\.school_code/);
         return (params[0] === studentCode || params[0] === studentId) &&
           params[1] === schoolCode ? { id: studentId, school_id: schoolId } : null;
       }
@@ -100,6 +104,13 @@ test("FICHE-DOC-01 : upload PostgreSQL, téléchargement, vérification unique e
   try {
     const repo = createFakeRepo();
     const svc = createStudentDocumentsService(repo);
+    // Un code établissement de l'ancien champ ne donne jamais accès au dossier.
+    await assert.rejects(
+      svc.list({ studentRef: studentCode, schoolCode: legacySchoolCode, principal }),
+      (e) => e.statusCode === 404,
+    );
+    assert.deepEqual(await svc.list({ studentRef: studentCode, schoolCode, principal }), []);
+    assert.deepEqual(await svc.list({ studentRef: studentId, schoolCode, principal }), []);
     await assert.rejects(
       svc.list({ studentRef: studentCode, schoolCode: "BI-2026-0001", principal }),
       (e) => e.statusCode === 404,
