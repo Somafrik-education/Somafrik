@@ -33,8 +33,8 @@ function createFakeRepo() {
         const row = {
           id, student_id: params[1], school_id: params[0],
           document_type: params[3], title: params[4], status: "submitted",
-          storage_key: params[7],
-          metadata: JSON.parse(params[8]),
+          storage_key: params[6],
+          metadata: JSON.parse(params[7]),
           created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
         };
         docs.set(id, row);
