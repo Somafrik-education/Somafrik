@@ -59,7 +59,8 @@ export const studentAdministrativeDocumentsApi = {
       method: "POST",
       headers: {
         "Content-Type": file.type,
-        "X-Filename": file.name,
+        // HTTP Headers sont ByteString : accents et contrôles sont neutralisés.
+        "X-Filename": file.name.replace(/[^\x20-\x7E]/g, "_"),
         "X-Document-Type": type,
       },
       body: file,
