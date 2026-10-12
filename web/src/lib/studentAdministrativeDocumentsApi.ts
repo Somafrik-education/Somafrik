@@ -52,7 +52,7 @@ export function validateStudentFile(file: File, type: StudentFileType): string |
 export const studentAdministrativeDocumentsApi = {
   list: (studentId: string) =>
     request<{ documents: StudentStoredDocument[] }>(prefix(studentId)),
-  upload: (studentId: string, type: StudentFileType, file: File) => {
+  upload: async (studentId: string, type: StudentFileType, file: File) => {
     const failure = validateStudentFile(file, type);
     if (failure) throw new Error(failure);
     return request<StudentStoredDocument>(prefix(studentId), {
