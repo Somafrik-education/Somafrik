@@ -67,3 +67,11 @@ Préserver au moins une carte inscriptible avant de tester le verrouillage irré
 ## Suite
 
 Le lecteur métier, le multi-scan et la validation de l'appel, les impayés, le bus scolaire et iPhone sont hors de cette PR. Réconcilier les fichiers natifs/guards avec #891 avant un éventuel merge de cette PR existante ; aucun merge automatique de #891.
+
+## Lot de 100 NTAG216 — allocation des cartes de test
+
+Réserver cinq NTAG216 identifiées T216-01 à T216-05. Les 95 autres restent vierges. T216-01 : premier encodage et association élève, sans verrouillage. T216-02 : carte changée entre phases et doublon UID. T216-03 : perte réseau/reprise avant et après écriture. T216-04 : révocation et cas négatifs. T216-05 : seule carte dédiée au premier verrouillage irréversible, en dernier. Une NTAG213 séparée permet la vérification du deuxième modèle ; sans cette carte, noter NOT_RUN, jamais PASS.
+
+Chaque essai conserve : APK SHA256, HEAD Mobile et backend préproduction, Android/modèle téléphone, UID, modèle GET_VERSION, élève/établissement de test, étapes et résultat. Avant lock de T216-05 : encodage, retrait réel du champ NFC, nouvelle présentation, lecture, confirmation backend, puis annulation du premier dialogue (doit rester inscriptible). Nouvelle action explicite seulement ensuite pour verrouiller, retirer/représenter, relire, vérifier l'état lecture seule et la persistance après recharge.
+
+Prérequis backend : l'APK seul ne déploie pas les endpoints #908. Vérifier que le backend préproduction utilise le même candidat et possède sa migration, avec les flags établissement activés pour l'école de test. Les endpoints nfc-confirm/nfc-retry ne sont pas disponibles sur develop tant que le code n'y a pas été intégré. Aucun smoke positif ne peut être déclaré contre un backend non équipé.
