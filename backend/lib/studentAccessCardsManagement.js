@@ -104,6 +104,7 @@ function mapCardListItem(row) {
     replacedByCardId: row.replaced_by_card_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    nfc: row.nfc_uid ? { uid: row.nfc_uid, tagType: row.nfc_tag_type, state: row.nfc_encoding_state, encodedAt: row.nfc_encoded_at, lockedAt: row.nfc_locked_at } : null,
   };
 }
 
@@ -115,6 +116,7 @@ function mapIssuedCard(row, cardToken) {
     medium: row.medium,
     status: row.status,
     issuedAt: row.issued_at,
+    nfc: row.nfc_uid ? { uid: row.nfc_uid, tagType: row.nfc_tag_type, state: row.nfc_encoding_state } : null,
   };
 }
 
@@ -228,6 +230,9 @@ async function insertWithPublicIdRetry(store, row) {
 }
 
 function mapUniqueActiveError(error) {
+  if (error?.code === "23505" && String(error.constraint || "").includes("nfc_uid")) {
+    return studentCardError(409, "Cette carte physique est déjà affectée.", "STUDENT_CARD_NFC_UID_EXISTS");
+  }
   if (error?.code === "23505" && /one_active_per_student|active/i.test(String(error.constraint || error.message))) {
     return studentCardError(
       409,
@@ -245,6 +250,13 @@ async function issueStudentCard(repo, payload, principal, auditMeta, schoolScope
   }
   await assertStudentCardMasterEnabled(repo, schoolId);
   const medium = normalizeMedium(payload?.medium);
+  let nfc = null;
+  if (payload?.nfc !== undefined) {
+    const { normalizeNfcIdentity, assertNfcEnabled } = require("./studentCardsNfcEncoding");
+    nfc = normalizeNfcIdentity(payload.nfc);
+    if (medium === "qr") throw studentCardError(400, "Support NFC requis.", "STUDENT_CARD_NFC_INVALID");
+    await assertNfcEnabled(repo, schoolId);
+  }
   const store = cardsStore(repo);
   const student = await requireStudentInSchool(store, schoolId, payload?.studentId);
   const existingActive = await store.findActive(schoolId, student.id);
@@ -262,6 +274,7 @@ async function issueStudentCard(repo, payload, principal, auditMeta, schoolScope
       student_id: student.id,
       medium,
       status: "active",
+      ...(nfc ? { nfc_uid: nfc.uid, nfc_tag_type: nfc.tagType, nfc_encoding_state: "pending" } : {}),
       created_by_user_id: asId(principal?.sub) || null,
     });
   } catch (error) {
@@ -458,8 +471,8 @@ async function scanStudentCard(repo, payload, schoolScope) {
   if (!card || !matched) {
     throw notFoundError();
   }
-  if (card.status !== "active") {
-    throw studentCardError(409, "Carte inutilisable.", STUDENT_CARD_ERROR.INVALID_STATE);
+  if (card.status !== "active" || card.nfc_encoding_state === "pending") {
+    throw studentCardError(409, "Carte inutilisable : encodage non confirmé ou carte inactive.", STUDENT_CARD_ERROR.INVALID_STATE);
   }
   const student = await store.findScanStudent(schoolId, card.student_id);
   if (!student) {

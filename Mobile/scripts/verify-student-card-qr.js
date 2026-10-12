@@ -13,6 +13,8 @@ function read(rel) {
 }
 
 function main() {
+  const { execFileSync } = require("node:child_process");
+  execFileSync(process.execPath, ["--test", "backend/lib/studentCardsNfcEncoding.test.js"], { cwd: ROOT, stdio: "inherit" });
   const appJson = JSON.parse(read("Mobile/app.json"));
   const plugins = appJson.expo.plugins;
   const imagePicker = plugins.find((item) => Array.isArray(item) && item[0] === "expo-image-picker");
@@ -24,12 +26,12 @@ function main() {
   assert.equal(imagePicker[1].microphonePermission, false);
   assert.equal(camera[1].microphonePermission, false);
   assert.equal(camera[1].recordAudioAndroid, false);
-  assert.deepEqual(appJson.expo.android.permissions, ["CAMERA"]);
+  assert.deepEqual(appJson.expo.android.permissions, ["CAMERA", "android.permission.NFC"]);
 
   const pkg = JSON.parse(read("Mobile/package.json"));
   assert.match(String(pkg.dependencies["expo-camera"] || ""), /~17\.0\.10|17\.0\.10/);
   assert.ok(!pkg.dependencies["react-native-vision-camera"]);
-  assert.ok(!pkg.dependencies["react-native-nfc-manager"]);
+  assert.equal(pkg.dependencies["react-native-nfc-manager"], "4.0.0-beta.10");
   assert.ok(!pkg.dependencies["expo-nfc"]);
   assert.ok(!pkg.dependencies["expo-barcode-scanner"]);
 

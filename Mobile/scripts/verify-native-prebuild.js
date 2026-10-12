@@ -124,6 +124,8 @@ function inspectGeneratedAndroid(profile) {
   const granted = permissions.filter((attr) => !isRemovedPermission(attr)).map(permissionName);
   assert.ok(names.includes("android.permission.INTERNET") || granted.includes("android.permission.INTERNET"), `${profile}: INTERNET manquant`);
   assert.ok(granted.includes("android.permission.CAMERA"), `${profile}: CAMERA manquant`);
+  assert.ok(granted.includes("android.permission.NFC"), `${profile}: NFC manquant`);
+  assert.match(manifest, /<uses-feature[^>]*android:name="android.hardware.nfc"[^>]*android:required="false"/);
 
   const mustRemove = [
     "android.permission.READ_MEDIA_IMAGES",
@@ -156,7 +158,7 @@ function inspectGeneratedAndroid(profile) {
     if (name === "android.permission.POST_NOTIFICATIONS" || name === "android.permission.VIBRATE") {
       continue;
     }
-    assert.notEqual(name, "android.permission.NFC", `${profile}: NFC présent`);
+
     assert.notEqual(name, "android.permission.ACCESS_FINE_LOCATION", `${profile}: localisation présente`);
   }
 

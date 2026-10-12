@@ -15,6 +15,8 @@ import { RootStackParamList } from "../navigation/AppNavigator";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentSwitcher from "../components/StudentSwitcher";
+import { StudentCardNfcEnrollmentPanel } from "../components/StudentCardNfcEnrollmentPanel";
+import { studentCardEnrollmentAccess } from "../lib/studentCardEnrollmentAccess";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import { StudentDocumentsPanel } from "../components/StudentDocumentsPanel";
 import { studentDocumentsAccess } from "../lib/studentDocumentsAccess";
@@ -129,6 +131,7 @@ export default function StudentDetailScreen({
   const canLink = canLinkParentMobile(session);
   const canArchive = canArchiveParentRelationMobile(session);
   const documentPermissions = studentDocumentsAccess(session);
+  const cardPermissions = studentCardEnrollmentAccess(session);
   const mutationsBlocked = shouldBlockUnsupportedMutations({
     source: "network",
     permissionsBootstrap,
@@ -502,6 +505,11 @@ export default function StudentDetailScreen({
           </Text>
         )}
       </ExpandableEntityCard>
+
+      {cardPermissions.canRead ? <ExpandableEntityCard title="Carte élève NFC" subtitle="Encodage et affectation" badge="" testID="student-fiche-nfc-card">
+        <StudentCardNfcEnrollmentPanel key={`${resourceScopeKey}:${canonicalStudentId}`} studentId={canonicalStudentId}
+          canRead={cardPermissions.canRead} canUpdate={cardPermissions.canUpdate} mutationsBlocked={mutationsBlocked} />
+      </ExpandableEntityCard> : null}
 
       <ExpandableEntityCard
         title="Documents"

@@ -50,7 +50,7 @@ function createStudentAccessCardsPgStore(repo) {
     const publicRef = asTrimmed(publicId);
     if (!school || !publicRef) return null;
     return one(
-      `SELECT id, school_id, student_id, public_id, token_hash, medium, status
+      `SELECT id, school_id, student_id, public_id, token_hash, medium, status, nfc_encoding_state
          FROM student_access_cards
         WHERE school_id = $1
           AND public_id = $2
@@ -124,6 +124,7 @@ function createStudentAccessCardsPgStore(repo) {
     return all(
       `SELECT id, school_id, student_id, public_id, medium, status,
               issued_at, revoked_at, revoke_reason, replaced_by_card_id,
+              nfc_uid, nfc_tag_type, nfc_encoding_state, nfc_encoded_at, nfc_locked_at,
               created_at, updated_at
          FROM student_access_cards
         WHERE school_id = $1
@@ -137,8 +138,8 @@ function createStudentAccessCardsPgStore(repo) {
     return one(
       `INSERT INTO student_access_cards (
          school_id, student_id, public_id, token_hash, medium, status,
-         created_by_user_id
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         created_by_user_id, nfc_uid, nfc_tag_type, nfc_encoding_state
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         row.school_id,
@@ -148,6 +149,7 @@ function createStudentAccessCardsPgStore(repo) {
         row.medium,
         row.status || "active",
         isUuid(row.created_by_user_id) ? row.created_by_user_id : null,
+        row.nfc_uid || null, row.nfc_tag_type || null, row.nfc_encoding_state || null,
       ],
     );
   }
@@ -284,7 +286,33 @@ function createStudentAccessCardsPgStore(repo) {
     return exec(repo);
   }
 
+  async function rotatePendingNfc(schoolId, cardId, uid, tagType, previousHash, nextHash) {
+    return one(
+      `UPDATE student_access_cards SET token_hash = $6, updated_at = NOW()
+       WHERE id = $1 AND school_id = $2 AND nfc_uid = $3 AND nfc_tag_type = $4
+         AND token_hash = $5 AND status = 'active' AND nfc_encoding_state = 'pending'
+       RETURNING *`,
+      [cardId, schoolId, uid, tagType, previousHash, nextHash],
+    );
+  }
+
+  async function confirmNfc(schoolId, cardId, uid, tagType, locked, expectedHash) {
+    return one(
+      `UPDATE student_access_cards
+          SET nfc_encoding_state = CASE WHEN $5 OR nfc_encoding_state = 'locked' THEN 'locked' ELSE 'encoded' END,
+              nfc_encoded_at = COALESCE(nfc_encoded_at, NOW()),
+              nfc_locked_at = CASE WHEN $5 THEN COALESCE(nfc_locked_at, NOW()) ELSE nfc_locked_at END,
+              updated_at = NOW()
+        WHERE id = $1 AND school_id = $2 AND nfc_uid = $3 AND nfc_tag_type = $4
+          AND status = 'active' AND token_hash = $6 AND nfc_encoding_state IN ('pending', 'encoded', 'locked')
+        RETURNING *`,
+      [cardId, schoolId, uid, tagType, locked, expectedHash],
+    );
+  }
+
   return {
+    rotatePendingNfc,
+    confirmNfc,
     findStudentInSchool,
     findByPublicIdInSchool,
     findScanStudent,

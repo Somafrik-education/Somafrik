@@ -11,7 +11,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#FFFFFF"
     },
-      "plugins": [
+    "plugins": [
       "expo-font",
       [
         "expo-image-picker",
@@ -28,13 +28,15 @@
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "./plugins/withSomafrikNfcAndroid"
     ],
     "android": {
       "package": "com.somafrik.app",
       "versionCode": 13,
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "android.permission.NFC"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/somafrik-android-adaptive-foreground.png",
