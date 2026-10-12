@@ -17,7 +17,8 @@ export function studentDocumentsAccess(session: SessionLike) {
   const normalizedRole = normalize(role);
   const forbidden = !session || isSuperAdminRole(role) || role === COUNTRY_ADMIN_ROLE ||
     normalizedRole.includes("parent") || normalizedRole.includes("eleve") ||
-    normalizedRole.includes("etudiant") || normalizedRole.includes("admin pays") ||
+    normalizedRole.includes("etudiant") || normalizedRole === "student" ||
+    normalizedRole.includes("admin pays") ||
     normalizedRole.includes("country admin");
   if (forbidden) return { canRead: false, canCreate: false, canUpdate: false };
 
