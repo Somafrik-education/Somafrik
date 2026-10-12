@@ -14,13 +14,18 @@ function hasRight(tokens: readonly string[], permission: string) {
 
 /** Les pièces administratives sont réservées au personnel explicitement habilité. */
 export function studentDocumentsAccess(session: SessionLike) {
-  const role = String(session?.user?.role ?? session?.role ?? "");
-  const normalizedRole = normalize(role);
-  const forbidden = !session || isSuperAdminRole(role) || role === COUNTRY_ADMIN_ROLE ||
-    normalizedRole.includes("parent") || normalizedRole.includes("eleve") ||
-    normalizedRole.includes("etudiant") || normalizedRole === "student" ||
-    normalizedRole.includes("admin pays") ||
-    normalizedRole.includes("country admin");
+  const roles = [
+    session?.user?.roleKey, session?.roleKey,
+    session?.user?.role, session?.role,
+  ].filter(Boolean).map((value) => String(value));
+  const forbidden = !session || roles.some((role) => {
+    const normalizedRole = normalize(role);
+    return isSuperAdminRole(role) || role === COUNTRY_ADMIN_ROLE ||
+      normalizedRole.includes("parent") || normalizedRole.includes("eleve") ||
+      normalizedRole.includes("etudiant") || normalizedRole === "student" ||
+      normalizedRole.includes("admin pays") ||
+      normalizedRole.includes("country admin");
+  });
   if (forbidden) return { canRead: false, canCreate: false, canUpdate: false };
 
   const tokens = [
