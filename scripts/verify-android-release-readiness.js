@@ -215,7 +215,12 @@ async function main() {
   assert.equal(APP_SCHEME, "somafrik");
   assert.ok(!appJson.expo.android.intentFilters, "pas d'intentFilters HTTPS App Links versionnés (scheme custom seulement)");
   const permissions = [...(appJson.expo.android.permissions || [])].sort();
-  assert.deepEqual(permissions, ["CAMERA"]);
+  assert.deepEqual(permissions, ["CAMERA", "android.permission.NFC"]);
+  assert.equal(pkg.dependencies["react-native-nfc-manager"], "4.0.0-beta.10");
+  assert.ok(appJson.expo.plugins.includes("./plugins/withSomafrikNfcAndroid"), "NFC Android via plugin canonique seulement");
+  assert.match(plugin, /ensureOptionalNfcFeature/);
+  assert.match(plugin, /"android:required": "false"/);
+  assert.ok(!appJson.expo.ios?.infoPlist?.NFCReaderUsageDescription, "iPhone NFC hors scope");
   assert.ok(!permissions.includes("READ_MEDIA_IMAGES"), "AR-PERMS: READ_MEDIA_IMAGES interdit dans app.json");
   assert.equal(appJson.expo.extra?.demoMode, false);
   assert.doesNotMatch(JSON.stringify(appJson), /usesCleartextTraffic/);
@@ -261,7 +266,7 @@ async function main() {
   assert.match(plugin, /ensureBlockedPermissionsRemoved/);
   assert.ok(!permissions.includes("READ_EXTERNAL_STORAGE"));
   assert.ok(!permissions.includes("WRITE_EXTERNAL_STORAGE"));
-  console.log("PASS AR-PERMS CAMERA only ; READ_MEDIA_IMAGES + READ/WRITE_EXTERNAL_STORAGE tools:node=remove ; RECORD_AUDIO bloqué ; backup off");
+  console.log("PASS AR-PERMS CAMERA + optional NFC Android ; READ_MEDIA_IMAGES + READ/WRITE_EXTERNAL_STORAGE tools:node=remove ; RECORD_AUDIO bloqué ; backup off");
 
   const icon = pngInfo(path.join(MOBILE, "assets", "somafrik-app-icon.png"));
   const androidForeground = pngInfo(path.join(MOBILE, "assets", "somafrik-android-adaptive-foreground.png"));
