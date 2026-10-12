@@ -16,6 +16,8 @@ import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentSwitcher from "../components/StudentSwitcher";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
+import { StudentDocumentsPanel } from "../components/StudentDocumentsPanel";
+import { studentDocumentsAccess } from "../lib/studentDocumentsAccess";
 import { canReadRoute } from "../domain/security/permissions";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
@@ -126,6 +128,7 @@ export default function StudentDetailScreen({
   const canSeePayments = canReadRoute(session, "StudentPayments");
   const canLink = canLinkParentMobile(session);
   const canArchive = canArchiveParentRelationMobile(session);
+  const documentPermissions = studentDocumentsAccess(session);
   const mutationsBlocked = shouldBlockUnsupportedMutations({
     source: "network",
     permissionsBootstrap,
@@ -498,6 +501,21 @@ export default function StudentDetailScreen({
             Vous n'avez pas l'autorisation de lier un parent. Demandez à l'administration de vérifier vos droits.
           </Text>
         )}
+      </ExpandableEntityCard>
+
+      <ExpandableEntityCard
+        title="Documents"
+        subtitle="Pièces administratives"
+        badge=""
+        testID="student-fiche-documents-card"
+      >
+        <StudentDocumentsPanel
+          studentId={canonicalStudentId}
+          canRead={documentPermissions.canRead}
+          canCreate={documentPermissions.canCreate}
+          canUpdate={documentPermissions.canUpdate}
+          mutationsBlocked={mutationsBlocked}
+        />
       </ExpandableEntityCard>
 
       <ExpandableEntityCard
