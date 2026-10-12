@@ -76,6 +76,7 @@ export const studentAdministrativeDocumentsApi = {
     validateStudentDocUpload(mimeType, blob.size, type);
     return httpRequest<StudentDocRecord>(studentDocsPath(studentId), {
       method: "POST",
+      timeoutMs: 60_000,
       body: blob,
       headers: {
         "Content-Type": mimeType,
