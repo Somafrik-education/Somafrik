@@ -23,6 +23,10 @@ test("DOC-03 : seules les permissions établissement explicites ouvrent les opé
     { canRead: false, canCreate: false, canUpdate: false },
   );
   assert.deepEqual(
+    studentDocumentsAccess({ role: "Directeur", roleKey: "PARENT", permissions: ["Documents:READ", "Documents:CREATE"] }),
+    { canRead: false, canCreate: false, canUpdate: false },
+  );
+  assert.deepEqual(
     studentDocumentsAccess({ role: "Super Administrateur Somafrik", permissions: ["Documents:READ", "Documents:CREATE"] }),
     { canRead: false, canCreate: false, canUpdate: false },
   );
