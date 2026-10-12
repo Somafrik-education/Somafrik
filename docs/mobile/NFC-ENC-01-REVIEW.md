@@ -8,6 +8,8 @@ DRAFT / HOLD — NO READY — NO MERGE — NO PRODUCTION. Référence auditée :
 2. PR Gates / Risk-targeted, run 38297210255 / job 114971150535 : `backend/lib/studentAccessCards.pg.test.js:212` liste `nfc_uid` parmi les colonnes interdites. L'UID physique est maintenant une métadonnée autorisée ; retrait de cette seule colonne de la liste. Identités élève, dette, JWT, token/secret clair restent interdits. Les nouveaux tests SQL vérifient type/format/uniqueness/tenant/rotation/confirmation atomique.
 3. Mobile Preview Windows SUCCESS ne prouve aucun APK : ses étapes sont npm ci, tests spawn, expo config et vérification core. Aucun assembleRelease ni artifact APK.
 
+4. Première tentative APK, run 38298820129 / job 114976725617 : setup-android@v3 demande par défaut le paquet obsolète `tools`, désormais absent du dépôt Android. Le build n’a pas commencé. Correction : liste explicite `platform-tools platforms;android-36 build-tools;36.0.0`. Le job PostgreSQL 16 de ce même run est SUCCESS (9/9, aucun SKIP).
+
 ## Interaction #891 (HEAD b2aaa6151468b9398b1644299f4bdc081ccb050c)
 
 Simulation locale `git merge-tree --write-tree 95e5b48c b2aaa615` sans merge effectif : trois conflits.
