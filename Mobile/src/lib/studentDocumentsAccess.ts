@@ -3,8 +3,9 @@ import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 
 type SessionLike = {
   role?: string;
+  roleKey?: string;
   permissions?: unknown[];
-  user?: { role?: string; permissions?: unknown[] };
+  user?: { role?: string; roleKey?: string; permissions?: unknown[] };
 } | null;
 
 function hasRight(tokens: readonly string[], permission: string) {
