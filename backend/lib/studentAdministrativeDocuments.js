@@ -8,6 +8,7 @@
  */
 const { randomUUID } = require("node:crypto");
 const { isSuperAdminPrincipal } = require("./superadminPrincipal");
+const { isParentOrStudentRole } = require("./classStudentsAuthz");
 const {
   validateUploadBuffer,
   persistAttachmentBytes,
@@ -40,7 +41,8 @@ function assertDocumentRight(principal, action) {
   const rights = Array.isArray(principal?.permissions) ? principal.permissions : [];
   const role = String(principal?.role ?? principal?.roleKey ?? "").trim().toUpperCase();
   if (isSuperAdminPrincipal(principal) ||
-      ["COUNTRY_ADMIN", "ADMIN_PAYS", "SUPER_ADMIN"].includes(role) ||
+      ["COUNTRY_ADMIN", "ADMIN_PAYS", "ADMIN PAYS", "SUPER_ADMIN"].includes(role) ||
+      isParentOrStudentRole(role) ||
       !principal?.schoolCode || principal.schoolCode === "*") {
     throw error(403, "Accès aux pièces d'élève refusé.", "STUDENT_DOC_DENIED");
   }
