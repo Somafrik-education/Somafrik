@@ -80,6 +80,9 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
       - name: Validate Mobile security and types
         run: npm --prefix Mobile run verify:mobile-security && npm --prefix Mobile run typecheck && python3 Mobile/scripts/verify-student-card-nfc-apk_test.py
       - name: Generate Android from candidate sources (preview only)
