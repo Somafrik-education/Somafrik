@@ -42,7 +42,7 @@ function assertDocumentRight(principal, action) {
   const role = String(principal?.role ?? principal?.roleKey ?? "").trim().toUpperCase();
   if (isSuperAdminPrincipal(principal) ||
       ["COUNTRY_ADMIN", "ADMIN_PAYS", "ADMIN PAYS", "SUPER_ADMIN"].includes(role) ||
-      isParentOrStudentRole(role) ||
+      (role === "STUDENT" || role === "STUDENT_USER" || isParentOrStudentRole(role)) ||
       !principal?.schoolCode || principal.schoolCode === "*") {
     throw error(403, "Accès aux pièces d'élève refusé.", "STUDENT_DOC_DENIED");
   }
