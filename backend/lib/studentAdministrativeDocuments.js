@@ -39,10 +39,13 @@ function error(statusCode, message, code) {
 
 function assertDocumentRight(principal, action) {
   const rights = Array.isArray(principal?.permissions) ? principal.permissions : [];
-  const role = String(principal?.role ?? principal?.roleKey ?? "").trim().toUpperCase();
-  if (isSuperAdminPrincipal(principal) ||
-      ["COUNTRY_ADMIN", "ADMIN_PAYS", "ADMIN PAYS", "SUPER_ADMIN"].includes(role) ||
-      (role === "STUDENT" || role === "STUDENT_USER" || isParentOrStudentRole(role)) ||
+  const roles = [principal?.roleKey, principal?.role, principal?.primaryRoleKey]
+    .filter(Boolean).map((role) => String(role).trim().toUpperCase());
+  const forbiddenRole = roles.some((role) =>
+    ["COUNTRY_ADMIN", "ADMIN_PAYS", "ADMIN PAYS", "SUPER_ADMIN", "STUDENT", "STUDENT_USER"].includes(role) ||
+    isParentOrStudentRole(role),
+  );
+  if (isSuperAdminPrincipal(principal) || forbiddenRole ||
       !principal?.schoolCode || principal.schoolCode === "*") {
     throw error(403, "Accès aux pièces d'élève refusé.", "STUDENT_DOC_DENIED");
   }
