@@ -74,6 +74,10 @@ test("FICHE-DOC-01 : la lecture et l'écriture refusent plateforme et permission
     (e) => e.statusCode === 403,
   );
   assert.throws(
+    () => assertDocumentRight({ role: "Directeur", roleKey: "PARENT", schoolCode, permissions: perms }, "read"),
+    (e) => e.statusCode === 403,
+  );
+  assert.throws(
     () => assertDocumentRight({ schoolCode, permissions: ["Documents:READ"] }, "create"),
     (e) => e.statusCode === 403,
   );
