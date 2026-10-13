@@ -99,6 +99,8 @@ const routePermissions = {
   "PATCH /api/students/:id": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/students/:id/cards": ["Élèves:READ", "Voir élèves"],
   "POST /api/student-cards": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/student-cards/:id/nfc-confirm": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/student-cards/:id/nfc-retry": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/lost": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/revoke": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/replace": ["Élèves:UPDATE", "Gérer élèves"],
