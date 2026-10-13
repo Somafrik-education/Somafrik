@@ -652,7 +652,7 @@ L’audit initial prenait la NTAG213 comme carte de recette. Le stock physique a
 | Prise en charge Somafrik sur `develop` | Absente | Absente |
 | Lecture / encodage / révocation / multiscan à concevoir | Oui, même parcours | Oui, même parcours |
 | Tests physiques | Obligatoires en premier | À programmer après la série NTAG216 |
-| Présences, finance, bus | Cible prioritaire de la recette | Même règles, dès que le stock existe |
+| Présences et finance | Cible prioritaire de la recette ; bus scolaire hors périmètre | Même règles, dès que le stock existe |
 | Dépendance fonctionnelle aux 888 octets | Interdite | Le NDEF doit tenir dans 144 octets |
 
 Révocation, remplacement, présence et consultation finance portent sur le secret serveur, pas sur la taille de la puce. Une NTAG216 et une NTAG213 encodées avec le même `cardToken` sont le même capability. Révoquer l’une révoque le token, donc les deux supports s’ils portaient ce secret.
