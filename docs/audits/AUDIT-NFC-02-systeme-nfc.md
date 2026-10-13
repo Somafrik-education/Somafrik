@@ -1,6 +1,6 @@
 # AUDIT-NFC-02 — Système NFC Somafrik V2
 
-**Statut :** `AUDIT-NFC-02 — VALIDATION DOCUMENTAIRE CONFORME — DRAFT / HOLD — AUCUN MERGE — PAS DE READY.`
+**Statut :** `AUDIT-NFC-02 — RÉFÉRENTIEL NTAG216 P0 — DRAFT / HOLD — AUCUN READY — AUCUN MERGE.`
 
 Le diff structurel de [#918](https://github.com/Somafrik-education/Somafrik/pull/918) a été confirmé par le CTO (base `1bdd302e`, HEAD alors `29ec1a93`, 1 fichier, +551). La section H confronte ensuite les conclusions critiques aux sources. Elle ne passe pas la PR en Ready.
 
@@ -217,7 +217,7 @@ Sur `develop` : aucune. `Mobile/package.json` ne contient pas `react-native-nfc-
 | Enforcement pointage et finance | Implémenté, fail-closed | `studentCardAttendance.js`, `studentCardFinance.js` |
 | Émission logique + QR Web | Implémenté si master et QR | `StudentCardTab`, `StudentCardPrintView` |
 | Émission NFC seule depuis le Web | Désactivée volontairement | `STUDENT_CARD_NFC_ONLY_NOTICE` |
-| Programmation physique NTAG213/216 | **Absente** | pas de code NDEF ; permission NFC retirée |
+| Programmation physique NTAG216 (P0) et NTAG213 (P1) | **Absente pour les deux** | pas de code NDEF ; permission NFC retirée. La compatibilité téléphone ne vaut pas une prise en charge Somafrik |
 | Lecture physique NFC | **Absente** | idem |
 | Lecture QR dans l’appel | Implémentée, en ligne seulement, une carte puis réarmement manuel | `StudentCardQrScannerModal` |
 | Appel classe par scans successifs sans quitter l’écran, compteur de session | **Absent** | pas de session NFC ; le QR se met en pause après chaque lecture |
@@ -271,16 +271,16 @@ Matrice d’états **attendue si le flag NFC ne devait gouverner que l’encodag
 
 ## D. Anomalies
 
-### NFC-02-01 — P0 — Aucune prise en charge NTAG213 sur `develop`
+### NFC-02-01 — P0 — Aucune prise en charge NTAG216 ni NTAG213 sur `develop`
 
-- **Observé :** pas de lecture, d’écriture, de verrouillage, de détection de tag vierge ou déjà programmé. La permission NFC est retirée.
-- **Attendu :** programmer et relire une NTAG213 PVC (NFC Forum Type 2) sans fichier d’identifiants fournisseur.
-- **Cause :** le matériel a été volontairement tenu hors des lots mergés (gate #890, PR8 #891 encore draft).
+- **Observé :** pas de lecture, d’écriture, de verrouillage, de détection de tag vierge ou déjà programmé, pour aucun des deux types. La permission NFC est retirée.
+- **Attendu :** le matériel de recette est la **NTAG216** (P0, cartes physiques disponibles). La **NTAG213** reste une compatibilité P1. Les deux sont NFC Forum Type 2. L’application doit les programmer et les relire sans fichier d’identifiants fournisseur. Le contenu NDEF doit tenir dans les 144 octets utilisateur de la NTAG213. Les 888 octets de la NTAG216 ne deviennent pas une dépendance fonctionnelle.
+- **Cause :** le matériel a été volontairement tenu hors des lots mergés (gate #890, PR8 #891 encore draft). L’audit initial citait la NTAG213 comme carte de référence. L’addendum CTO du 13 octobre 2026 inverse cette priorité. Cela ne crée pas de code.
 - **Fichiers :** `Mobile/app.config.js`, `Mobile/plugins/withSomafrikAndroidSecurity.js`, `Mobile/package.json`.
 - **Preuve :** `verify-student-card-qr.js` PASS (le script **exige** l’absence de `react-native-nfc-manager`).
-- **Reproduction :** build Android de `develop`, présenter une NTAG213. Aucun écran ne l’écoute.
-- **Risque :** une carte « Active » en base n’a aucun lien prouvé avec une puce.
-- **Correction :** ne pas l’improviser ici. Trancher d’abord le chevauchement #891 / #908–#917, puis un mandat d’implémentation.
+- **Reproduction :** build Android de `develop`, présenter une NTAG216. Aucun écran ne l’écoute. Le même constat vaut pour une NTAG213 le jour où ce stock existera.
+- **Risque :** une carte « Active » en base n’a aucun lien prouvé avec une puce, NTAG216 comprise.
+- **Correction :** ne pas l’improviser ici. Trancher d’abord le chevauchement #891 / #908–#917, puis un mandat d’implémentation commun aux deux types.
 
 ### NFC-02-02 — P0 — L’appel par scans successifs n’existe pas
 
@@ -417,21 +417,21 @@ Aucune de ces PR ne doit être ouverte sans mandat CTO. L’ordre tient compte d
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 0 | Trancher les drafts | Un seul fil NFC | Décision, pas de code | #891 (rebase), #908–#917 | Cet audit | Diff GitHub indépendant | Merger les drafts en l’état mélange lecteur, encodeur et minSdk | Une base = `develop` courant, un objectif par PR |
 | 1 | Contrat flag | Dire ce que NFC off interdit | Doc + tests de caractérisation | settings, scan, issue | Décision CTO sur NFC-02-03 | Unitaires déjà verts + HTTP PG | Changer le sens du flag casse les écoles qui l’ont coché sans encodeur | Matrice de la section C.1 implémentée et testée |
-| 2 | Encodeur Android NTAG213/216 | Écrire, relire, puis activer | Mobile + routes déjà esquissées dans #912/#913 | hors `develop` | 0 et 1, smoke physique | Tests PG du cycle réservation ; **pas** de PASS mocké pour la puce | Écriture OK / base KO | Aucune carte `active` sans confirmation de relecture |
+| 2 | Encodeur Android NTAG216 puis NTAG213 | Écrire, relire, puis activer les deux types. Charge utile bornée à la NTAG213 | Mobile + routes déjà esquissées dans #912/#913 | hors `develop` | 0 et 1, smoke NTAG216 d’abord | Tests PG du cycle réservation ; recette Android NTAG216 ; **pas** de PASS mocké | Écriture OK / base KO, ou payload qui ne tient plus sur NTAG213 | Aucune carte `active` sans relecture. Le même NDEF passe sur les deux types |
 | 3 | Lecteur d’appel continu | Session, doublons, compteur, fin d’appel | Mobile appel + éventuelle session serveur | `TeacherAttendanceScreen`, scanner | 2 si le canal est NFC ; le QR peut précéder | Scénarios 1/5/10/30, dont doublons et cartes invalides, sur appareil | Perte réseau en milieu de classe | Le compteur = élèves distincts valides, pas événements |
 | 4 | Filtre dossier sur la liste | NFC-02-09 | Backend | route `GET .../cards` | aucun | HTTP PG parent / élève / enseignant | Régression secrétaire | Parent : seulement son enfant |
 | 5 | Droit finance du scan | NFC-02-06 | RBAC | `rbacService.js` | décision métier | Tests de rôle | Ouvrir la finance trop largement | Comptable consulte ; enseignant ne voit pas les montants ; aucune exclusion |
 | 6 | Journal de scan | NFC-02-08 | Backend | audit, pas le secret | 1 | Test « secret absent de l’audit » | Fuite du token dans les logs | `last_scan_at` ou événement sans `cardToken` |
 | — | Transport | **Ne pas créer** | — | — | produit inexistant | — | Décision dangereuse sur un enfant si on improvise | Hors mandat |
 
-Le périmètre prioritaire (présence multiscan, impayé selon RBAC, bus, NTAG213) n’est pas terminable par une seule PR. Bus : pas de PR tant que le module n’est pas demandé. Minimum après autorisation, si l’on exclut le bus : les lignes 0 à 3, plus 5 si le contrôle impayé doit servir au comptable. Soit **quatre PR de produit** après la décision de consolidation, **plus** une PR RBAC finance si elle est retenue. Cet audit n’en est pas une.
+Le périmètre prioritaire (présence multiscan, impayé selon RBAC, bus, NTAG216) n’est pas terminable par une seule PR. Bus : pas de PR tant que le module n’est pas demandé. Minimum après autorisation, si l’on exclut le bus : les lignes 0 à 3, plus 5 si le contrôle impayé doit servir au comptable. Soit **quatre PR de produit** après la décision de consolidation, **plus** une PR RBAC finance si elle est retenue. Cet audit n’en est pas une.
 
 ---
 
 ## G. Conclusion
 
 1. **Le système NFC actuel est-il utilisable ?** Non. Sur `develop`, il n’y a pas de système NFC matériel. Il y a une carte logique et un scan QR/HTTP.
-2. **Les NTAG213 sont-elles compatibles ?** Non prouvé, et non implémenté. La compatibilité NFC d’un téléphone ne vaut pas prise en charge NTAG213. Aucun téléphone n’a été utilisé.
+2. **Les NTAG216 et les NTAG213 sont-elles prises en charge ?** Ni l’une ni l’autre. `develop` ne lit ni n’encode aucun Type 2. La NTAG216 est le matériel de recette P0, cartes physiques disponibles. La NTAG213 est la compatibilité P1, stock non confirmé. Un téléphone compatible NFC ne prouve pas que Somafrik sait les traiter. Aucun téléphone n’a été utilisé.
 3. **Peut-on programmer une carte aujourd’hui ?** Non, sur le code mergé. Les écrans qui disent « Programmer une carte NFC » sont dans des PR draft.
 4. **Pourquoi la programmation apparaît-elle désactivée ?** Parce qu’un APK de brouillon (#913 et suivantes) affiche cette phrase quand `studentCardEnabled && studentCardNfcEnabled` n’est pas vrai, **indépendamment** du statut `active` de la carte. Sur `develop`, cette phrase n’existe pas. Le flag NFC naît à `false` et n’est pas relié à un encodeur.
 5. **Les cartes actives peuvent-elles être lues ?** En QR ou par API, oui, si master, token, statut `active` et droits de présence. En NFC, non.
@@ -440,7 +440,7 @@ Le périmètre prioritaire (présence multiscan, impayé selon RBAC, bus, NTAG21
 8. **Le contrôle des impayés existe-t-il réellement ?** Un badge informatif existe. Il ne bloque rien. Il est invisible pour un comptable qui n’a pas le droit de pointer, et pour un enseignant qui n’a pas le droit finance. Aucune donnée financière n’est écrite sur une carte, puisqu’aucune carte n’est écrite.
 9. **Le bus scolaire a-t-il une implémentation ?** Non. « Responsable transport » est un libellé de catalogue, pas un module. Aucune montée, descente, ligne, ni file hors ligne.
 10. **Quelles fonctions peut-on exploiter immédiatement ?** Émission et impression QR, révocation, remplacement, scan QR unitaire vers une présence, badge finance pour les rôles qui ont à la fois présence et finance, paramétrage des cinq flags. Tout cela suppose les flags master (et QR, pointage) activés pour l’établissement, ce qui est **faux par défaut**.
-11. **Qu’est-ce qui bloque une mise en production NFC ?** Absence de lecteur et d’encodeur sur `develop`, flags NFC/QR non enforceés côté API, pas de confirmation d’écriture, pas de multiscan, pas de recette physique, PR draft concurrentes dont une base périmée (#891), tests PostgreSQL non rejoués dans cet environnement.
+11. **Qu’est-ce qui bloque une mise en production NFC ?** Absence de lecteur et d’encodeur sur `develop` pour la NTAG216 comme pour la NTAG213, flags NFC/QR non enforceés côté API, pas de confirmation d’écriture, pas de multiscan, pas de recette physique NTAG216, PR draft concurrentes dont une base périmée (#891), tests PostgreSQL non rejoués dans cet environnement.
 12. **Combien de PR pour le périmètre prioritaire ?** Zéro dans ce chantier. Après autorisation : une décision de consolidation des drafts, puis quatre PR produit (contrat de flags, encodeur, appel continu, journal ou filtre selon la priorité retenue) et une PR RBAC si le comptable doit scanner. Le bus n’entre pas dans ce compte.
 
 ---
@@ -450,7 +450,7 @@ Le périmètre prioritaire (présence multiscan, impayé selon RBAC, bus, NTAG21
 | Domaine | Vérification attendue | Statut | Preuve |
 | --- | --- | --- | --- |
 | Paramétrage | Flags cohérents et fail-closed | **Partiel** | Master, pointage, finance : fail-closed. NFC et QR : stockés fail-closed à la lecture, non appliqués au scan. `schoolSettings.studentCard.test.js` 12/12 PASS |
-| Encodage | NTAG213 prise en charge | **Absent** | Pas de code. Scripts qui **interdisent** la dépendance NFC : PASS |
+| Encodage | NTAG216 P0 et NTAG213 P1 | **Absent pour les deux** | Pas de code sur `develop`. Scripts qui **interdisent** la dépendance NFC : PASS. Matrice section I |
 | Affectation | Une carte active liée | **Implémenté, PG non rejoué** | Index unique + FK. Tests HTTP PG BLOCKED |
 | Révocation | Ancienne carte inutilisable | **Implémenté en base, puce non concernée** | `scanStudentCard` refuse `status !== active`. Puce : n/a |
 | Lecture | Identification serveur fiable | **QR/API seulement** | Hash + tenant + statut. NFC : absent |
@@ -489,9 +489,14 @@ Environnement : Node v22.14.0, sans `node_modules`, sans `DATABASE_URL`, sans Po
 | `lifecycle.pg`, `resolve.pg`, `http.pg`, `scan.http.pg`, `attendance.pg`, `finance.pg`, `schoolSettings.pg` | idem | **BLOCKED** | 0 | même cause. Un SKIP silencieux n’est pas un PASS |
 | Web `StudentCardTab.test.tsx` et settings | vitest | **NOT RUN** | — | `web/node_modules` absent |
 | NFC simulé Android | — | **NOT IMPLEMENTED** sur `develop` | — | des tests existent seulement dans les PR draft, non exécutés |
-| NFC physique NTAG213, 1/5/10/30 cartes, doublons, réseau coupé | — | **NOT RUN** | — | téléphone et cartes absents. Un mock ne serait pas un PASS |
+| NFC physique NTAG216, 1/5/10/30 cartes, doublons, réseau coupé | — | **NOT RUN** | — | téléphone absent de cet audit. Cartes NTAG216 déclarées disponibles par le CTO, non présentées ici. Un mock ne serait pas un PASS |
+| NFC physique NTAG213 | — | **NOT RUN** | — | stock non confirmé. À programmer après la recette NTAG216, pour prouver que le même NDEF tient encore |
 
-Tests physiques obligatoires avant tout PASS matériel : NTAG213 vierge, NTAG213 déjà écrite, NTAG216, tag non NXP, tag illisible, retrait entre deux cartes, 30 cartes dont doublons, NFC Android coupé, téléphone sans NFC, avion / API injoignable, session expirée, iPhone en lecture seule si le mandat l’ajoute.
+Tests physiques obligatoires, dans cet ordre :
+
+1. **NTAG216 d’abord** (P0) : vierge, déjà écrite, illisible, tag non NXP, retrait entre deux cartes, 1 puis 5, 10 et 30 cartes, 30 avec doublons, 30 dont certaines invalides, 30 avec coupure réseau, NFC Android coupé, téléphone sans NFC, session expirée.
+2. **NTAG213 ensuite** (P1), quand le stock sera confirmé : les mêmes cas, plus la preuve que le NDEF produit pour la NTAG216 tient dans 144 octets utilisateur.
+3. iPhone en lecture seule seulement si un mandat ultérieur l’ajoute. Aucun PASS iPhone n’est déduit de la compatibilité matérielle.
 
 ---
 
@@ -521,11 +526,12 @@ Le personnel de transport n’a pas de rôle RBAC. Le libellé « Responsable tr
 
 | Scénario | `develop` | Preuve requise pour un futur PASS |
 | --- | --- | --- |
-| 1 carte | QR unitaire seulement | téléphone |
-| 5, 10, 30 cartes | non | téléphone, session continue |
-| 30 avec doublons | non | le doublon QR actuel réécrit la présence du jour après réarmement |
-| 30 dont invalides | non | le QR invalide affiche une erreur et exige un réarmement |
-| 30 avec coupure réseau | non | le scan carte ne queue pas |
+| 1 carte NTAG216 | QR unitaire seulement | téléphone Android + NTAG216 physique |
+| 5, 10, 30 cartes NTAG216 | non | même téléphone, session continue, cartes NTAG216 |
+| 30 NTAG216 avec doublons | non | le doublon QR actuel réécrit la présence du jour après réarmement |
+| 30 NTAG216 dont invalides | non | le QR invalide affiche une erreur et exige un réarmement |
+| 30 NTAG216 avec coupure réseau | non | le scan carte ne queue pas |
+| Même série en NTAG213 | non | après la série NTAG216, et seulement si le stock P1 est confirmé |
 
 Performance : non mesurable. Pas de boucle reader mode à chronométrer.
 
@@ -533,7 +539,7 @@ Performance : non mesurable. Pas de boucle reader mode à chronométrer.
 
 ## 12. QR et NFC
 
-Même capability, mêmes règles **prévues**. Seul le QR est livré. La révocation casse les deux canaux d’un coup, puisqu’il n’y a qu’un hash. Copier le QR suffit à rejouer le token. Cloner une NTAG213 copierait le même secret le jour où l’écriture existera. Ni l’UID ni le NDEF ne prouvent l’authenticité.
+Même capability, mêmes règles **prévues**. Seul le QR est livré. La révocation casse les deux canaux d’un coup, puisqu’il n’y a qu’un hash. Copier le QR suffit à rejouer le token. Cloner une NTAG216 ou une NTAG213 copierait le même secret le jour où l’écriture existera. Ni l’UID ni le NDEF ne prouvent l’authenticité. Le choix de puce ne change pas cette limite.
 
 ---
 
@@ -614,7 +620,7 @@ Aucune de ces cinq PR n’introduit, dans `StudentCardNfcScannerModal.tsx`, `stu
 | --- | --- |
 | 1. Consolidation #913–#917 | Confirmé. Une pointe, pas cinq merges. #891 reste à part, base périmée `72aea41b` |
 | 2. Contrat de flags | Confirmé. Le trou est l’absence d’enforcement NFC/QR sur l’API de `develop`, pas l’absence des colonnes |
-| 3. Encodage et lecture NTAG213 | Confirmé absent de `develop`. Le brouillon ne devient pas une recette |
+| 3. Encodage et lecture, recette NTAG216 puis compatibilité NTAG213 | Les deux sont absents de `develop`. Le brouillon ne devient pas une recette. La première carte physique est la NTAG216 |
 | 4. Multiscan avec compteur de classe | Le compteur d’appel existe déjà (`TeacherAttendanceScreen.tsx` lignes 333-336 et 748-749, `attendanceTruth.ts` `getRollCallDraftStats` lignes 154-179 : élèves uniques). À construire : la session continue et le décompte des restants dans cette session |
 | 5. Intégration finance | Le badge existe. À trancher : quel rôle consulte sans pouvoir pointer, toujours sans exclusion automatique |
 | 6. Tests PostgreSQL et recette physique | Toujours **BLOCKED** / **NOT RUN**. Indispensables avant un PASS de mise en production |
@@ -626,6 +632,61 @@ Les 551 lignes initiales ne sont pas contredites par les sources relues. La seul
 
 #918 reste **Draft / HOLD**. Cette section n’autorise ni Ready ni merge. Le passage Ready reste un acte CTO distinct, après lecture de cet addendum.
 
+## I. Addendum CTO — NTAG216 référence, NTAG213 compatibilité
+
+**Date :** 13 octobre 2026.  
+**Effet :** correction du référentiel matériel. Aucun code produit. #918 reste Draft / HOLD.
+
+L’audit initial prenait la NTAG213 comme carte de recette. Le stock physique annoncé pour Somafrik est la **NTAG216**. La compatibilité matérielle d’un téléphone Android ou d’un iPhone ne signifie pas que l’application sait déjà lire ou encoder ces puces. Sur `develop`, les deux types sont absents.
+
+### I.1 Matrice de référence
+
+| Caractéristique | NTAG216 | NTAG213 |
+| --- | --- | --- |
+| Priorité Somafrik | P0 — matériel principal | P1 — compatibilité à conserver |
+| Cartes physiques | Disponibles pour les tests | Stock non confirmé |
+| Mémoire utilisateur | 888 octets | 144 octets |
+| Technologie | NFC Forum Type 2 | NFC Forum Type 2 |
+| Android, au sens radio | Compatible | Compatible |
+| iPhone, au sens radio | Compatible | Compatible |
+| Prise en charge Somafrik sur `develop` | Absente | Absente |
+| Lecture / encodage / révocation / multiscan à concevoir | Oui, même parcours | Oui, même parcours |
+| Tests physiques | Obligatoires en premier | À programmer après la série NTAG216 |
+| Présences, finance, bus | Cible prioritaire de la recette | Même règles, dès que le stock existe |
+| Dépendance fonctionnelle aux 888 octets | Interdite | Le NDEF doit tenir dans 144 octets |
+
+Révocation, remplacement, présence et consultation finance portent sur le secret serveur, pas sur la taille de la puce. Une NTAG216 et une NTAG213 encodées avec le même `cardToken` sont le même capability. Révoquer l’une révoque le token, donc les deux supports s’ils portaient ce secret.
+
+### I.2 Règle de capacité
+
+Le message NDEF fonctionnel est borné par la NTAG213 : 144 octets utilisateur. La mémoire libre de la NTAG216 ne sert pas à ajouter le nom, la finance, la classe ou un second secret. Aucun parcours présence, finance ou transport ne peut exiger un payload qui ne tiendrait pas sur une NTAG213.
+
+Les brouillons #913 à #917 nomment déjà les deux types (`NTAG213` et `NTAG216`) dans du code non mergé. Ce nommage n’est pas une preuve de lecture réelle, et il n’est pas sur `develop`. Il ne dispense pas de la recette NTAG216.
+
+### I.3 Plan de recette Android
+
+Ordre obligatoire le jour où un mandat autorisera le téléphone. Tout PASS mocké reste interdit.
+
+1. NTAG216 vierge : écriture, relecture, puis seulement activation serveur.
+2. NTAG216 déjà programmée pour un autre élève : refus, pas de deuxième affectation.
+3. NTAG216 révoquée ou remplacée : la puce ne rouvre pas l’élève.
+4. Sessions continues NTAG216 : 1, 5, 10, 30 cartes ; 30 avec doublons ; 30 dont certaines invalides ; 30 avec coupure réseau.
+5. Erreurs : tag illisible, tag non NXP, NFC coupé, téléphone sans NFC, session expirée, retrait de la carte entre deux lectures.
+6. NTAG213, quand le stock sera confirmé : rejouer 1 à 5 avec le **même** binaire et le **même** NDEF, pour prouver qu’aucune fonction ne dépend des 888 octets.
+7. iPhone : non inclus dans cette première recette Android. La compatibilité radio ne crée pas un PASS.
+
+Présences et finance se vérifient sur la série NTAG216. Le bus n’entre pas dans cette recette : le module n’existe pas.
+
+### I.4 Conclusions révisées
+
+| Question | Réponse après addendum |
+| --- | --- |
+| Le NFC de `develop` sait-il traiter la NTAG216 ? | Non. |
+| Sait-il traiter la NTAG213 ? | Non. L’inversion de priorité ne laisse pas la NTAG213 « déjà prévue dans le produit ». |
+| Quelle carte pour le premier test réel ? | NTAG216. |
+| Que doit garantir l’architecture pour la NTAG213 ? | Le même encodage, la même lecture, la même révocation, le même multiscan, avec un NDEF qui tient dans 144 octets. |
+| Les autres conclusions (QR, flags, finance, bus, drafts) changent-elles ? | Non. |
+
 ## Critères de clôture
 
 | Critère | Tenue |
@@ -635,7 +696,7 @@ Les 551 lignes initiales ne sont pas contredites par les sources relues. La seul
 | Anomalies classées | NFC-02-01 à 11 |
 | Risques sécurité | section E |
 | Tests exécutés distincts des non exécutés | section 17 |
-| Écarts métier | présence continue, finance par rôle, bus |
+| Écarts métier | présence continue, finance par rôle, bus, NTAG216 P0 / NTAG213 P1 |
 | Plan ordonné, PR non ouvertes | section F |
 | Références et preuves | ce fichier |
 | Diff GitHub indépendant possible | PR documentaire draft |
