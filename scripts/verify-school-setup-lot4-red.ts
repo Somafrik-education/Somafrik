@@ -270,6 +270,16 @@ const STUDENT_CARD_PR6_EXACT = new Set([
   "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
 ]);
 
+const STUDENT_CARD_PR8_EXACT = new Set([
+  "Mobile/src/lib/nfcSession.ts",
+  "Mobile/src/lib/nfcSessionNative.ts",
+  "Mobile/src/lib/nfcSession.test.ts",
+  "Mobile/app.config.js",
+  "Mobile/plugins/withSomafrikAndroidSecurity.js",
+  "backend/lib/schoolSettings.studentCard.test.js",
+  "docs/audits/GATE-NFC-STORES.md",
+]);
+
 const STUDENT_CARD_PR7_EXACT = new Set([
   "scripts/verify-student-card-mobile.js",
   "Mobile/scripts/verify-student-card-qr.js",
@@ -289,6 +299,31 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   "Mobile/src/lib/superadminSchoolDomain.p1-04.test.ts",
   "Mobile/src/navigation/AppNavigator.tsx",
   "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+  "Mobile/src/screens/StudentDetailScreen.tsx",
+  "Mobile/plugins/withSomafrikNfcAndroid.js",
+  "Mobile/plugins/withSomafrikAndroidSecurity.js",
+  "Mobile/app.config.js",
+  "backend/db/studentAccessCardsPgStore.js",
+  "backend/db/studentAccessCardsSchema.js",
+  "backend/db/schema.sql",
+  "docs/mobile/NFC-ENCODING-SMOKE.md",
+  "docs/mobile/NFC-ENC-01-REVIEW.md",
+  "docs/mobile/NFC-RECON-02-REVIEW.md",
+  ".github/workflows/nfc-encoding-preprod.yml",
+  "scripts/verify-android-release-readiness.js",
+  "backend/db/studentCardsNfcSchema.js",
+  "backend/db/studentCardsNfcReservationsSchema.js",
+  "backend/db/migrations/20261013_student_cards_nfc_reservations.sql",
+  "docs/mobile/NFC-PROG-02-REVIEW.md",
+  "docs/mobile/NFC-PROG-03-REVIEW.md",
+  "docs/mobile/NFC-PROG-03-UUID-REVIEW.md",
+  "docs/mobile/NFC-PROG-04-REVIEW.md",
+  "docs/mobile/NFC-PROG-05-REVIEW.md",
+  "docs/mobile/NFC-PROG-05-PHYSICAL-RECIPE.md",
+  "Mobile/src/services/safeLogger.ts",
+  "Mobile/src/screens/ClassesScreen.tsx",
+  "backend/lib/schoolSettings.studentCard.test.js",
+  "backend/db/migrations/20261012_student_cards_nfc_encoding.sql",
   "Mobile/src/lib/establishment.ts",
   "Mobile/src/lib/establishment.teacherScope.test.ts",
   "Mobile/src/lib/attendanceClassIdentity.ts",
@@ -321,8 +356,44 @@ function isStudentCardPr6Signal(file: string) {
   );
 }
 
+// The two historical apksigner fixture findings on the NFC verifier PR are
+// public certificate/key digests, not credentials. Permit *only* the exact
+// two fingerprint additions to .gitleaksignore, with the original file intact.
+// This must not turn the Carte eleve scope gate into a blanket exception for
+// changes to secret-scanner controls.
+const NFC_APKSIGNER_TEST_FIXTURE_FINGERPRINTS = new Set([
+  "73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88",
+  "73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90",
+]);
+
+function isApprovedNfcFixtureGitleaksIgnore(file: string) {
+  if (file !== ".gitleaksignore") return false;
+  try {
+    const baseline = execFileSync("git", ["show", "origin/develop:.gitleaksignore"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    }).replace(/\s+$/, "");
+    const current = read(path.join(repoRoot, file)).replace(/\s+$/, "");
+    // develop's ignore file ends with a blank line; the NFC addition follows
+    // the last fingerprint directly. Compare the shared prefix, not the bytes
+    // of that trailing newline.
+    if (current !== baseline && !current.startsWith(`${baseline}\n`)) return false;
+    const added = current
+      .slice(baseline.length)
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"));
+    return added.length === NFC_APKSIGNER_TEST_FIXTURE_FINGERPRINTS.size
+      && added.every((line) => NFC_APKSIGNER_TEST_FIXTURE_FINGERPRINTS.has(line))
+      && new Set(added).size === added.length;
+  } catch {
+    return false; // No git base or unrecognized history => fail closed.
+  }
+}
+
 function isStudentCardPr6IntegrationFile(file: string) {
-  if (STUDENT_CARD_PR6_EXACT.has(file) || STUDENT_CARD_PR7_EXACT.has(file)) return true;
+  if (file === ".gitleaksignore") return isApprovedNfcFixtureGitleaksIgnore(file);
+  if (STUDENT_CARD_PR6_EXACT.has(file) || STUDENT_CARD_PR7_EXACT.has(file) || STUDENT_CARD_PR8_EXACT.has(file)) return true;
   if (/^web\/src\/components\/students\/StudentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCardsApi[^/]*$/.test(file)) return true;
@@ -699,6 +770,41 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "L4-09: chantier Carte élève distinct doit être N/A dans le périmètre PR6 contrôlé",
       );
 
+      const studentCardPr8DistinctChantier = evaluateLot4Scope([
+        "Mobile/src/components/StudentCardNfcScannerModal.tsx",
+        "Mobile/src/lib/studentCardNfc.ts",
+        "Mobile/src/lib/studentCardNfc.test.ts",
+        "Mobile/src/lib/studentCardNfcNative.ts",
+        "Mobile/src/lib/nfcSession.ts",
+        "Mobile/src/lib/nfcSessionNative.ts",
+        "Mobile/src/lib/nfcSession.test.ts",
+        "Mobile/src/lib/studentCardScan.ts",
+        "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+        "Mobile/app.json",
+        "Mobile/app.config.js",
+        "Mobile/plugins/withSomafrikAndroidSecurity.js",
+        "Mobile/package.json",
+        "backend/lib/studentCardCapabilities.js",
+        "backend/lib/studentCardsNfcLifecycle.js",
+        "backend/db/studentCardsNfcReservationsSchema.js",
+        "backend/db/migrations/20261013_student_cards_nfc_reservations.sql",
+        "docs/mobile/NFC-PROG-02-REVIEW.md",
+        "docs/mobile/NFC-PROG-03-REVIEW.md",
+        "docs/mobile/NFC-PROG-03-UUID-REVIEW.md",
+        "docs/mobile/NFC-PROG-04-REVIEW.md",
+        "docs/mobile/NFC-PROG-05-REVIEW.md",
+        "docs/mobile/NFC-PROG-05-PHYSICAL-RECIPE.md",
+        "Mobile/src/services/safeLogger.ts",
+        "Mobile/src/screens/ClassesScreen.tsx",
+        "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
+        "docs/audits/GATE-NFC-STORES.md",
+      ]);
+      assert.equal(
+        studentCardPr8DistinctChantier.kind,
+        "na",
+        "L4-09: chantier Carte élève Mobile (PR8 NFC) doit être N/A dans le périmètre contrôlé",
+      );
+
       const studentCardPr7DistinctChantier = evaluateLot4Scope([
         "Mobile/src/components/StudentCardQrScannerModal.tsx",
         "Mobile/src/lib/studentCardScan.ts",
@@ -719,6 +825,17 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         studentCardPr7DistinctChantier.kind,
         "na",
         "L4-09: chantier Carte élève Mobile (PR7) doit être N/A dans le périmètre contrôlé",
+      );
+
+      const studentCardGitleaksFingerprint = evaluateLot4Scope([
+        "Mobile/scripts/verify-student-card-nfc-apk_test.py",
+        ".github/workflows/nfc-encoding-preprod.yml",
+        ".gitleaksignore",
+      ]);
+      assert.equal(
+        studentCardGitleaksFingerprint.kind,
+        "na",
+        "L4-09: seules les deux empreintes historiques du vérificateur APK sont admises dans .gitleaksignore",
       );
 
       const studentCardPr7PlusBackend = evaluateLot4Scope([
