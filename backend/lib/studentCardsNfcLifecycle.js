@@ -122,12 +122,25 @@ async function confirmStudentCardNfc(repo, cardId, payload, principal, meta, sco
   authorize(principal, scope, "POST /api/student-cards/:id/nfc-confirm");
   const identity = normalizeNfcIdentity(payload);
   if (typeof payload.locked !== "boolean") throw error("STUDENT_CARD_NFC_INVALID", "Observation NFC invalide.", 400);
+  const key = payload.operationId == null ? null
+    : operationId(typeof payload.operationId === "string" ? payload.operationId.trim() : null);
   const parsed = parseCardToken(payload.cardToken);
   return transaction(repo, principal, meta, scope, async ({ store, audit, expire, cardForUpdate }) => {
     const card = await cardForUpdate(cardId);
     if (card.public_id !== parsed.publicId || !tokenHashesMatch(hashCardSecret(parsed.secret), card.token_hash)) throw notFound();
     if (card.nfc_uid !== identity.uid || card.nfc_tag_type !== identity.tagType
       || (payload.studentId && payload.studentId !== card.student_id)) throw error("STUDENT_CARD_NFC_MISMATCH", "La carte ne correspond pas à cette affectation.");
+    // Bind initial confirmation and every replay to the stored reservation UUID,
+    // never to a retry/rotation UUID. Validate before expiry, activation or audits.
+    if (card.nfc_operation_id) {
+      if (!key) throw error("STUDENT_CARD_NFC_OPERATION_REQUIRED", "Un identifiant d’opération NFC UUID est requis.", 400);
+      if (key !== card.nfc_operation_id) throw error("STUDENT_CARD_NFC_OPERATION_MISMATCH", "La confirmation ne correspond pas à l’opération réservée.");
+    } else {
+      // Pre-reservation cards can be re-observed only when already active/encoded.
+      // No caller may assign an arbitrary UUID or activate a legacy pending card.
+      if (key) throw error("STUDENT_CARD_NFC_OPERATION_MISMATCH", "La confirmation ne correspond pas à l’opération réservée.");
+      if (card.status !== "active" || !["encoded", "locked"].includes(card.nfc_encoding_state)) throw error("STUDENT_CARD_INVALID_STATE", "Carte inactive ou réservation non disponible.");
+    }
     if (card.status === "revoked" && card.revoke_reason === "nfc_reservation_expired") return { error: expired() };
     if (card.status === "issued" && card.reservation_expired) { await expire(card.student_id); return { error: expired() }; }
     if (card.status === "active" && ["encoded", "locked"].includes(card.nfc_encoding_state)) {
