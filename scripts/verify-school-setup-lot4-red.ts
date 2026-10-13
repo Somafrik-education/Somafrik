@@ -270,6 +270,16 @@ const STUDENT_CARD_PR6_EXACT = new Set([
   "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
 ]);
 
+const STUDENT_CARD_PR8_EXACT = new Set([
+  "Mobile/src/lib/nfcSession.ts",
+  "Mobile/src/lib/nfcSessionNative.ts",
+  "Mobile/src/lib/nfcSession.test.ts",
+  "Mobile/app.config.js",
+  "Mobile/plugins/withSomafrikAndroidSecurity.js",
+  "backend/lib/schoolSettings.studentCard.test.js",
+  "docs/audits/GATE-NFC-STORES.md",
+]);
+
 const STUDENT_CARD_PR7_EXACT = new Set([
   "scripts/verify-student-card-mobile.js",
   "Mobile/scripts/verify-student-card-qr.js",
@@ -289,6 +299,26 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   "Mobile/src/lib/superadminSchoolDomain.p1-04.test.ts",
   "Mobile/src/navigation/AppNavigator.tsx",
   "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+  "Mobile/src/screens/StudentDetailScreen.tsx",
+  "Mobile/plugins/withSomafrikNfcAndroid.js",
+  "Mobile/plugins/withSomafrikAndroidSecurity.js",
+  "Mobile/app.config.js",
+  "backend/db/studentAccessCardsPgStore.js",
+  "backend/db/studentAccessCardsSchema.js",
+  "backend/db/schema.sql",
+  "docs/mobile/NFC-ENCODING-SMOKE.md",
+  "docs/mobile/NFC-ENC-01-REVIEW.md",
+  "docs/mobile/NFC-RECON-02-REVIEW.md",
+  ".github/workflows/nfc-encoding-preprod.yml",
+  "scripts/verify-android-release-readiness.js",
+  "backend/db/studentCardsNfcSchema.js",
+  "backend/db/studentCardsNfcReservationsSchema.js",
+  "backend/db/migrations/20261013_student_cards_nfc_reservations.sql",
+  "docs/mobile/NFC-PROG-02-REVIEW.md",
+  "docs/mobile/NFC-PROG-03-REVIEW.md",
+  "docs/mobile/NFC-PROG-03-UUID-REVIEW.md",
+  "backend/lib/schoolSettings.studentCard.test.js",
+  "backend/db/migrations/20261012_student_cards_nfc_encoding.sql",
   "Mobile/src/lib/establishment.ts",
   "Mobile/src/lib/establishment.teacherScope.test.ts",
   "Mobile/src/lib/attendanceClassIdentity.ts",
@@ -322,7 +352,7 @@ function isStudentCardPr6Signal(file: string) {
 }
 
 function isStudentCardPr6IntegrationFile(file: string) {
-  if (STUDENT_CARD_PR6_EXACT.has(file) || STUDENT_CARD_PR7_EXACT.has(file)) return true;
+  if (STUDENT_CARD_PR6_EXACT.has(file) || STUDENT_CARD_PR7_EXACT.has(file) || STUDENT_CARD_PR8_EXACT.has(file)) return true;
   if (/^web\/src\/components\/students\/StudentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCardsApi[^/]*$/.test(file)) return true;
@@ -697,6 +727,36 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         studentCardDistinctChantier.kind,
         "na",
         "L4-09: chantier Carte élève distinct doit être N/A dans le périmètre PR6 contrôlé",
+      );
+
+      const studentCardPr8DistinctChantier = evaluateLot4Scope([
+        "Mobile/src/components/StudentCardNfcScannerModal.tsx",
+        "Mobile/src/lib/studentCardNfc.ts",
+        "Mobile/src/lib/studentCardNfc.test.ts",
+        "Mobile/src/lib/studentCardNfcNative.ts",
+        "Mobile/src/lib/nfcSession.ts",
+        "Mobile/src/lib/nfcSessionNative.ts",
+        "Mobile/src/lib/nfcSession.test.ts",
+        "Mobile/src/lib/studentCardScan.ts",
+        "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+        "Mobile/app.json",
+        "Mobile/app.config.js",
+        "Mobile/plugins/withSomafrikAndroidSecurity.js",
+        "Mobile/package.json",
+        "backend/lib/studentCardCapabilities.js",
+        "backend/lib/studentCardsNfcLifecycle.js",
+        "backend/db/studentCardsNfcReservationsSchema.js",
+        "backend/db/migrations/20261013_student_cards_nfc_reservations.sql",
+        "docs/mobile/NFC-PROG-02-REVIEW.md",
+        "docs/mobile/NFC-PROG-03-REVIEW.md",
+        "docs/mobile/NFC-PROG-03-UUID-REVIEW.md",
+        "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
+        "docs/audits/GATE-NFC-STORES.md",
+      ]);
+      assert.equal(
+        studentCardPr8DistinctChantier.kind,
+        "na",
+        "L4-09: chantier Carte élève Mobile (PR8 NFC) doit être N/A dans le périmètre contrôlé",
       );
 
       const studentCardPr7DistinctChantier = evaluateLot4Scope([

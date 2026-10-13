@@ -96,6 +96,8 @@ ${STUDENT_ACCESS_CARDS_STUDENTS_UNIQUE_SQL}
 ${STUDENT_ACCESS_CARDS_TABLE_SQL}
 ${STUDENT_ACCESS_CARDS_INDEXES_SQL}
 ${STUDENT_ACCESS_CARDS_CONSTRAINTS_SQL}
+${require("./studentCardsNfcSchema").STUDENT_CARDS_NFC_SCHEMA_SQL}
+${require("./studentCardsNfcReservationsSchema").STUDENT_CARDS_NFC_RESERVATIONS_SCHEMA_SQL}
 `;
 
 async function assertStudentAccessCardsSchemaPreflight(db) {
