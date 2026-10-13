@@ -30,3 +30,7 @@ Cette PR **ne soumet pas** l’application sur Google Play.
 - QR capability : jamais loggé, jamais mis en outbox / SecureStore / SQLite.
 - Mot de passe et PIN : saisis, jamais persistés. PIN démo uniquement via `EXPO_PUBLIC_DEMO_PIN` en développement.
 - L’outbox ne contient **aucun** `accessToken` / `refreshToken` / `password` / `pin` (LOT 5, `OUTBOX_SECRET_FORBIDDEN`).
+
+## NFC-ENC-01 (brouillon, Android uniquement)
+
+Le parcours d'encodage NTAG213/216 lit l'UID usine pour associer la carte physique à l'élève dans l'établissement. L'UID et l'état d'encodage/verrouillage sont conservés côté PostgreSQL canonique. La puce contient uniquement une capability révocable ; aucune identité, donnée financière ou session applicative. Le token reste en mémoire volatile Mobile. Aucun appel présence/finance n'est déclenché par l'encodage. NFC Android facultatif ; aucun entitlement NFC iOS. Smoke matériel obligatoire avant release : voir `NFC-ENCODING-SMOKE.md`.

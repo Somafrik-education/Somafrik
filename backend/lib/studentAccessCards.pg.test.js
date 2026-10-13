@@ -204,7 +204,7 @@ async function main() {
        WHERE table_schema = 'public'
          AND table_name = 'student_access_cards'
          AND column_name IN (
-           'token','secret','raw_token','qr_payload','nfc_uid',
+           'token','secret','raw_token','qr_payload',
            'first_name','last_name','parent_phone','parent_email',
            'birth_date','class_id','balance','debt','jwt'
          )

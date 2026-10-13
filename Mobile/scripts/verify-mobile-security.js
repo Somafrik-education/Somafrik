@@ -228,7 +228,7 @@ function main() {
   // 8) Permissions minimales
   const appJson = JSON.parse(read(path.join(MOBILE, "app.json")));
   const permissions = appJson?.expo?.android?.permissions ?? [];
-  const allowed = new Set(["CAMERA"]);
+  const allowed = new Set(["CAMERA", "android.permission.NFC"]);
   const unexpected = permissions.filter((p) => !allowed.has(p));
   assert.deepStrictEqual(unexpected, [], `permissions inattendues: ${unexpected.join(", ")}`);
   assert.ok(!permissions.includes("READ_MEDIA_IMAGES"), "READ_MEDIA_IMAGES doit être absent de app.json");
@@ -237,10 +237,11 @@ function main() {
   assert.ok(!permissions.some((p) => /LOCATION|ACCESS_FINE|ACCESS_COARSE|READ_EXTERNAL|WRITE_EXTERNAL|READ_MEDIA/i.test(p)));
   const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.match(String(pkg.dependencies?.["expo-camera"] || ""), /~17\.0\.10|17\.0\.10/, "expo-camera ~17.0.10 requis");
-  assert.ok(!pkg.dependencies?.["react-native-nfc-manager"], "NFC interdit");
+  assert.equal(pkg.dependencies?.["react-native-nfc-manager"], "4.0.0-beta.10", "NFC version auditée");
+  assert.match(JSON.stringify(appJson.expo.plugins), /withSomafrikNfcAndroid/);
   assert.ok(!pkg.dependencies?.["expo-nfc"], "NFC interdit");
   assert.ok(!String(appJson?.expo?.ios?.infoPlist?.NFCReaderUsageDescription || ""), "NFC iOS interdit");
-  console.log("OK: permissions minimales (CAMERA uniquement, pas de READ_MEDIA_IMAGES)");
+  console.log("OK: permissions minimales (CAMERA + NFC Android facultatif, pas de READ_MEDIA_IMAGES)");
 
   // 9) Variables d'environnement
   assert.ok(env.includes("EXPO_PUBLIC_API_URL"), "EXPO_PUBLIC_API_URL utilisé");
