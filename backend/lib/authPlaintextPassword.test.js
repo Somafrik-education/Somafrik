@@ -65,6 +65,23 @@ test("verifyUserSecret refuse un compte qui n'a que le secret en clair", () => {
   assert.equal(service.verifyUserSecret({ password: "Somafrik26!" }, "Somafrik26!"), false);
 });
 
+test("le constructeur ne promeut pas un passwordHash/pinHash resté en clair", async () => {
+  const user = schoolAdmin({ password: "", pin: "", passwordHash: "1234", pinHash: "1234" });
+  const service = createAuth([user]);
+  assert.equal(user.passwordHash, "1234");
+  assert.equal(service.verifyUserSecret(user, "1234"), false);
+  await assert.rejects(
+    () =>
+      service.login({
+        role: "school_admin",
+        schoolCode: "CD-IN-26-001",
+        identifier: "admin",
+        pin: "1234",
+      }),
+    (error) => error instanceof BusinessError && error.statusCode === 401,
+  );
+});
+
 test("verifyUserSecret refuse le clair même si un hash différent est présent", () => {
   const service = createAuth([]);
   const user = {
