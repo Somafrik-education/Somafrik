@@ -19,6 +19,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  nfc-verifier:
+    name: NFC APK verifier unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Verifier unit tests before any APK compilation
+        run: python3 Mobile/scripts/verify-student-card-nfc-apk_test.py
+
   nfc-postgres:
     name: NFC PostgreSQL 16 isolated
     runs-on: ubuntu-latest
@@ -92,7 +103,7 @@ jobs:
 
   nfc-apk:
     name: NFC APK preview exact HEAD
-    needs: [nfc-postgres, nfc-mobile]
+    needs: [nfc-verifier, nfc-postgres, nfc-mobile]
     runs-on: ubuntu-latest
     timeout-minutes: 75
     env:
@@ -108,6 +119,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 1
+      - name: Re-run verifier unit tests before the Android SDK and Gradle
+        run: python3 Mobile/scripts/verify-student-card-nfc-apk_test.py
       - uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"
@@ -126,7 +139,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools platforms;android-36 build-tools;36.0.0
       - name: Validate Mobile security and types
-        run: npm --prefix Mobile run verify:mobile-security && npm --prefix Mobile run typecheck && python3 Mobile/scripts/verify-student-card-nfc-apk_test.py
+        run: npm --prefix Mobile run verify:mobile-security && npm --prefix Mobile run typecheck
       - name: Generate Android from candidate sources (preview only)
         working-directory: Mobile
         run: npx expo prebuild --platform android --clean --no-install
@@ -135,6 +148,14 @@ jobs:
         run: ./gradlew :app:assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a
       - name: Verify packaged API, native permissions, signature and secret patterns
         run: python3 Mobile/scripts/verify-student-card-nfc-apk.py Mobile/android/app/build/outputs/apk/release/app-release.apk --output Mobile/dist/nfc-evidence
+      - name: Upload sanitized signature diagnostic when verification fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfc-apk-diagnostic-${{ github.event.pull_request.head.sha || github.sha }}
+          path: Mobile/dist/nfc-evidence/signature-diagnostic.txt
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload verified preview APK and evidence
         uses: actions/upload-artifact@v4
         with:

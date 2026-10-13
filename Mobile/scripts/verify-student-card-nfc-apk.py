@@ -17,16 +17,26 @@ def run(*args):
     return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT)
 
 
+def _build_tools_sort_key(path):
+    numbers = []
+    for part in path.parent.name.split("."):
+        match = re.match(r"(\d+)", part)
+        numbers.append(int(match.group(1)) if match else -1)
+    return numbers
+
+
 def tool(name):
     sdk = Path(os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or "")
-    candidates = sorted(sdk.glob(f"build-tools/*/{name}"), reverse=True) if str(sdk) != "." else []
-    candidate = next((p for p in candidates if p.is_file()), None)
-    if candidate is None:
-        installed = shutil.which(name)
-        if installed:
-            return installed
-        raise RuntimeError(f"Android tool missing: {name}")
-    return str(candidate)
+    candidates = [path for path in sdk.glob(f"build-tools/*/{name}") if path.is_file()] if str(sdk) != "." else []
+    if candidates:
+        # GitHub-hosted runners preinstall several build-tools side by side.
+        # Lexicographic order already preferred 37.0.0 over the 36.0.0 package
+        # requested by the workflow; select by numeric version and record it.
+        return str(max(candidates, key=_build_tools_sort_key))
+    installed = shutil.which(name)
+    if installed:
+        return installed
+    raise RuntimeError(f"Android tool missing: {name}")
 
 
 def verify_archive(archive):
@@ -70,6 +80,128 @@ def verify_badging(badging, config):
     return {"versionName": package[3], "versionCode": int(package[2]), "minSdk": int(minimum[1]), "targetSdk": int(target[1])}
 
 
+class ApkSignatureVerificationError(Exception):
+    """APK signature evidence is missing, invalid, or ambiguous."""
+
+
+_SCHEME_VERIFIED = re.compile(
+    r"^Verified using (?P<scheme>v[\d.]+) scheme \([^)]+\):\s*(?P<state>true|false)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Horizontal whitespace only: \s includes newlines and would attach the next
+# signer line to an empty digest.
+_CERT_DN = re.compile(r"^(?P<label>.*?)[ \t]+certificate DN:[ \t]*(?P<dn>\S.*?)[ \t]*$", re.MULTILINE)
+_CERT_SHA256 = re.compile(
+    r"^(?P<label>.*?)[ \t]+certificate SHA-256 digest:[ \t]*(?P<raw>.*?)[ \t]*$",
+    re.MULTILINE,
+)
+_ANDROID_DEBUG_CN = re.compile(r"(?:^|[/,])\s*CN=Android Debug\s*(?:,|/|$)")
+_PRIVATE_KEY_BLOCK = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
+    re.IGNORECASE,
+)
+_SECRET_LINE = re.compile(r"storepass|keypass|(?:password|passwd)\s*[:=]", re.IGNORECASE)
+
+
+def normalize_certificate_sha256(raw):
+    """Accept 64 hex digits, or 32 bytes separated only by ':' or whitespace."""
+    text = (raw or "").strip()
+    if not text:
+        raise ApkSignatureVerificationError("Certificate SHA-256 digest is empty")
+    if re.fullmatch(r"[0-9a-fA-F]{64}", text):
+        return text.lower()
+    parts = re.split(r"[:\s]+", text)
+    if len(parts) == 32 and all(re.fullmatch(r"[0-9a-fA-F]{2}", part) for part in parts):
+        return "".join(parts).lower()
+    raise ApkSignatureVerificationError(
+        "Certificate SHA-256 digest is truncated or contains characters other than hexadecimal digits and ':' or whitespace separators"
+    )
+
+
+def verify_apk_signature(signature_output: str, apksigner_exit_code: int = 0) -> str:
+    """Validate APK signature evidence.
+
+    Returns:
+        Normalized SHA-256 certificate fingerprint.
+
+    Raises:
+        ApkSignatureVerificationError: evidence is missing, invalid, or ambiguous.
+
+    Build-tools 37 prints ``V2 Signer: certificate SHA-256 digest: <hex>`` for a
+    single signer and ``V2 Signer #1: certificate SHA-256 digest:`` when several
+    signers exist. Build-tools 36.1 and earlier print ``Signer #1 certificate
+    SHA-256 digest:``. Repeated schemes that name one certificate are one
+    certificate. Distinct certificates are rejected. No fingerprint is invented.
+    """
+    if apksigner_exit_code != 0:
+        raise ApkSignatureVerificationError(
+            f"apksigner exited {apksigner_exit_code}; APK is unsigned or the signature is invalid"
+        )
+    text = signature_output or ""
+    if "DOES NOT VERIFY" in text:
+        raise ApkSignatureVerificationError("apksigner reported that the APK signature does not verify")
+    schemes = [(match.group("scheme"), match.group("state").lower()) for match in _SCHEME_VERIFIED.finditer(text)]
+    if not schemes or not any(state == "true" for _scheme, state in schemes):
+        raise ApkSignatureVerificationError(
+            "apksigner did not report a verified signature scheme; signer labels: "
+            + repr(_certificate_labels(text))
+        )
+    sha256_lines = list(_CERT_SHA256.finditer(text))
+    if not sha256_lines:
+        raise ApkSignatureVerificationError(
+            "Certificate SHA-256 digest is missing; signer labels: " + repr(_certificate_labels(text))
+        )
+    fingerprints = []
+    labels = []
+    for match in sha256_lines:
+        labels.append(match.group("label"))
+        try:
+            fingerprints.append(normalize_certificate_sha256(match.group("raw")))
+        except ApkSignatureVerificationError as error:
+            raise ApkSignatureVerificationError(f"{error}; signer label: {match.group('label')!r}") from None
+    distinct = sorted(set(fingerprints))
+    if len(distinct) != 1:
+        raise ApkSignatureVerificationError(
+            "Multiple distinct signer certificates are not allowed for this test APK; "
+            f"count={len(distinct)}; signer labels: {labels!r}"
+        )
+    dn_lines = list(_CERT_DN.finditer(text))
+    if len(dn_lines) != len(sha256_lines):
+        raise ApkSignatureVerificationError(
+            "Certificate identity lines do not match certificate SHA-256 lines; "
+            f"dn={len(dn_lines)} sha256={len(sha256_lines)}; signer labels: {labels!r}"
+        )
+    for match in dn_lines:
+        if not _ANDROID_DEBUG_CN.search(match.group("dn")):
+            raise ApkSignatureVerificationError(
+                "Signer certificate is not the Android test certificate (CN=Android Debug); "
+                f"signer label: {match.group('label')!r}"
+            )
+    return distinct[0]
+
+
+def _certificate_labels(text):
+    labels = []
+    for line in text.splitlines():
+        if "certificate" not in line.lower():
+            continue
+        label, separator, _rest = line.partition(" certificate")
+        labels.append(label if separator else line)
+    return labels
+
+
+def sanitized_signature_diagnostic(signature_output, apksigner_exit_code, tool_path):
+    text = _PRIVATE_KEY_BLOCK.sub("[redacted private key]", signature_output or "")
+    lines = ["[redacted secret]" if _SECRET_LINE.search(line) else line for line in text.splitlines()]
+    return (
+        f"apksigner_exit_code: {apksigner_exit_code}\n"
+        f"apksigner_tool: {tool_path}\n"
+        f"signer_labels: {_certificate_labels(text)!r}\n"
+        + "\n".join(lines)
+        + "\n"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("apk", type=Path)
@@ -90,18 +222,28 @@ def main():
     assert re.search(r"android:allowBackup.*(?:0x0|false)", manifest), "Backup must be disabled"
     assert not re.search(r"android:debuggable.*(?:0xffffffff|true)", manifest), "Preview release must not depend on Metro debugging"
     assert re.search(r"android:usesCleartextTraffic.*(?:0x0|false)", manifest), "Cleartext traffic must be disabled"
-    signature = run(tool("apksigner"), "verify", "--verbose", "--print-certs", str(args.apk))
-    assert "Verified" in signature, "APK signature verification failed"
-    assert "CN=Android Debug" in signature, "This workflow must use the test certificate, never the production certificate"
-    certificate = re.search(r"^(?:V[123] )?Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F: ]+)\s*$", signature, re.IGNORECASE | re.MULTILINE)
-    fingerprint = re.sub(r"[:\s]", "", certificate[1]) if certificate else ""
-    assert re.fullmatch(r"[0-9a-fA-F]{64}", fingerprint), ("Test certificate SHA-256 fingerprint missing or malformed; certificate output labels: " + repr([line.partition(":")[0] for line in signature.splitlines() if "certificate" in line.lower()]))
+    signer = tool("apksigner")
+    build_tools = Path(signer).parent.name
+    completed = subprocess.run(
+        [signer, "verify", "--verbose", "--print-certs", str(args.apk)],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+    )
+    signature = completed.stdout or ""
+    try:
+        fingerprint = verify_apk_signature(signature, apksigner_exit_code=completed.returncode)
+    except ApkSignatureVerificationError:
+        args.output.mkdir(parents=True, exist_ok=True)
+        (args.output / "signature-diagnostic.txt").write_text(
+            sanitized_signature_diagnostic(signature, completed.returncode, f"{signer} (build-tools {build_tools})")
+        )
+        raise
     sha = run("git", "rev-parse", "HEAD").strip()
     assert re.fullmatch(r"[0-9a-f]{40}", sha), "Candidate SHA missing"
     evidence = {"candidateSha": sha, "apkSha256": hashlib.sha256(args.apk.read_bytes()).hexdigest(),
                 "bytes": args.apk.stat().st_size, "package": PACKAGE, "apiUrl": PREPROD_API,
                 "releaseProfile": "preview", "abi": "arm64-v8a", "signing": "Android Debug (test only)",
-                **versions, "certificateSha256": fingerprint.lower(), "productionApiUrlAbsent": True,
+                **versions, "certificateSha256": fingerprint.lower(), "apksignerBuildTools": build_tools,
+                "productionApiUrlAbsent": True,
                 "embeddedConfigChecked": True, "embeddedBundleChecked": True, "secretPatternEntriesChecked": scanned,
                 "nativeManifestChecked": True, "physicalSmoke": "NOT_RUN", "status": "DRAFT/HOLD"}
     args.output.mkdir(parents=True, exist_ok=True)
