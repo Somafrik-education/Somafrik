@@ -1,4 +1,5 @@
 "use strict";
+const { randomUUID } = require("node:crypto");
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { STUDENT_ACCESS_CARDS_SCHEMA_SQL } = require("../db/studentAccessCardsSchema");
@@ -19,7 +20,7 @@ async function runNfcSqlChecks(db) {
   await db.query(STUDENT_ACCESS_CARDS_SCHEMA_SQL); // migrations idempotent
   const repo = { query: db.query.bind(db), one: async (sql, params) => (await db.query(sql, params)).rows[0] || null, all: async (sql, params) => (await db.query(sql, params)).rows };
   const store = createStudentAccessCardsPgStore(repo);
-  const row = (overrides = {}) => { const g = generateCardSecrets(); return { school_id: schoolA, student_id: studentA, public_id: g.publicId, token_hash: g.tokenHash, medium: "nfc", status: "active", nfc_uid: "04112233445566", nfc_tag_type: "NTAG213", nfc_encoding_state: "pending", ...overrides }; };
+  const row = (overrides = {}) => { const g = generateCardSecrets(); return { school_id: schoolA, student_id: studentA, public_id: g.publicId, token_hash: g.tokenHash, medium: "nfc", status: "issued", nfc_operation_id: randomUUID(), nfc_reservation_expires_at: new Date(Date.now()+1800000), nfc_uid: "04112233445566", nfc_tag_type: "NTAG213", nfc_encoding_state: "pending", ...overrides }; };
   for (const bad of [{ nfc_tag_type: null }, { nfc_tag_type: "NTAG215" }, { nfc_uid: "1234" }, { medium: "qr" }, { nfc_encoding_state: "locked" }]) {
     await assert.rejects(store.insert(row(bad)), (error) => error.code === "23514");
   }
@@ -29,12 +30,12 @@ async function runNfcSqlChecks(db) {
   assert.equal(await store.confirmNfc(schoolB, first.id, first.nfc_uid, first.nfc_tag_type, false, first.token_hash), null);
   assert.equal(await store.confirmNfc(schoolA, first.id, "04778899001122", first.nfc_tag_type, false, first.token_hash), null);
   const rotatedHash = generateCardSecrets().tokenHash;
-  const rotated = await store.rotatePendingNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, first.token_hash, rotatedHash);
+  const rotated = await store.rotatePendingNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, first.token_hash, rotatedHash, randomUUID());
   assert.equal(rotated.token_hash, rotatedHash);
-  assert.equal(await store.rotatePendingNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, first.token_hash, generateCardSecrets().tokenHash), null);
+  assert.equal(await store.rotatePendingNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, first.token_hash, generateCardSecrets().tokenHash, randomUUID()), null);
   assert.equal(await store.confirmNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, false, first.token_hash), null);
   const encoded = await store.confirmNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, false, rotatedHash);
-  assert.equal(await store.rotatePendingNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, rotatedHash, generateCardSecrets().tokenHash), null);
+  assert.equal(await store.rotatePendingNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, rotatedHash, generateCardSecrets().tokenHash, randomUUID()), null);
   assert.equal(encoded.nfc_encoding_state, "encoded"); assert.ok(encoded.nfc_encoded_at); assert.equal(encoded.nfc_locked_at, null);
   const locked = await store.confirmNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, true, rotatedHash);
   assert.equal(locked.nfc_encoding_state, "locked"); assert.ok(locked.nfc_locked_at);
@@ -44,7 +45,7 @@ async function runNfcSqlChecks(db) {
   await store.markRevoked(schoolA, first.id, "test");
   assert.equal(await store.confirmNfc(schoolA, first.id, first.nfc_uid, first.nfc_tag_type, true, rotatedHash), null);
   await assert.rejects(store.insert(row({ school_id: schoolB, student_id: studentB })), (error) => error.code === "23505");
-  const qr = await store.insert(row({ nfc_uid: null, nfc_tag_type: null, nfc_encoding_state: null, medium: "qr" }));
+  const qr = await store.insert(row({ nfc_uid: null, nfc_tag_type: null, nfc_encoding_state: null, nfc_operation_id: null, nfc_reservation_expires_at: null, medium: "qr", status: "active" }));
   assert.equal(qr.nfc_uid, null);
 }
 const url = process.env.SOMAFRIK_NFC_TEST_DATABASE_URL;

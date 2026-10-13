@@ -7,6 +7,7 @@ on:
       - "Mobile/**"
       - "backend/**student*Card*"
       - "backend/db/migrations/20261012_student_cards_nfc_encoding.sql"
+      - "backend/db/migrations/20261013_student_cards_nfc_reservations.sql"
       - ".github/workflows/nfc-encoding-preprod.yml"
   workflow_dispatch:
 
@@ -43,10 +44,20 @@ jobs:
           node-version: "22.12.0"
       - name: Install backend dependencies without browser downloads
         run: npm ci --prefix backend --ignore-scripts
-      - name: NFC SQL against disposable PostgreSQL (no application DATABASE_URL)
+      - name: NFC lifecycle, HTTP and regressions against disposable PostgreSQL
         env:
           SOMAFRIK_NFC_TEST_DATABASE_URL: postgresql://nfc_test:nfc_test_ci_only@localhost:5432/nfc_encoding_test
-        run: node --test backend/lib/studentCardsNfcEncoding.sql.test.js backend/lib/studentCardsNfcEncoding.test.js
+          DATABASE_URL: postgresql://nfc_test:nfc_test_ci_only@localhost:5432/nfc_encoding_test
+        run: |
+          test -n "$SOMAFRIK_NFC_TEST_DATABASE_URL"
+          node --test backend/lib/studentCardsNfcEncoding.sql.test.js backend/lib/studentCardsNfcEncoding.test.js backend/lib/studentCardsNfcLifecycle.pg.test.js
+          node backend/lib/studentAccessCards.pg.test.js
+          node backend/lib/studentAccessCards.lifecycle.pg.test.js
+          node backend/lib/studentAccessCards.resolve.pg.test.js
+          node backend/lib/studentAccessCards.attendance.pg.test.js
+          node backend/lib/studentAccessCards.finance.pg.test.js
+          node backend/lib/studentAccessCards.http.pg.test.js
+          node backend/lib/studentAccessCards.scan.http.pg.test.js
 
   nfc-apk:
     name: NFC APK preview exact HEAD

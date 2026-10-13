@@ -2371,6 +2371,10 @@ app.post("/api/student-cards/:id/replace", requireAuth, requirePermission("POST 
     principal,
     auditMetaFromRequest(req),
     schoolScope,
+    req.body?.nfc !== undefined ? {
+      nfc: req.body.nfc, operationId: req.body.operationId,
+      studentId: req.body.studentId, medium: req.body.medium,
+    } : {},
   );
   res.status(200).json(result);
 }));
