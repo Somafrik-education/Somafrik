@@ -36,4 +36,11 @@
 #    Firebase requis pour initialiser le SDK. Exception STRICTEMENT limitée au finding
 #    historique introduit sur develop@f4fdd6f0. Toute nouvelle valeur/ligne/commit reste scannée.
 f4fdd6f05966b149eba0ddd494862b15f9b686d5:Mobile/google-services.json:gcp-api-key:18
+#
+# 7) Fixture de test APK, PR #917 non mergée (73da7fe2). Sortie capturée
+#    d'`apksigner` pour le certificat public CN=Android Debug. generic-api-key
+#    prend les condensés SHA-256 et MD5 de la clé publique pour des secrets.
+#    Ce ne sont pas des clés API. Toute autre ligne ou tout autre commit reste scanné.
+73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88
+73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90
 
