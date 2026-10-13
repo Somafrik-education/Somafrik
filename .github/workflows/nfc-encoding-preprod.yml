@@ -60,7 +60,7 @@ jobs:
           node backend/lib/studentAccessCards.scan.http.pg.test.js
 
   nfc-mobile:
-    name: NFC Android individual contracts
+    name: NFC Android individual and batch contracts
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -75,6 +75,7 @@ jobs:
       - name: Verify individual programming, shared native session, QR and types
         run: |
           npm --prefix Mobile run test:student-card-nfc-encoding
+          npm --prefix Mobile run test:student-card-nfc-batch
           npm --prefix Mobile run verify:student-card-qr
           npm --prefix Mobile run typecheck
           npm --prefix Mobile run verify:mobile-security
