@@ -125,7 +125,38 @@ function inspectGeneratedAndroid(profile) {
   assert.ok(names.includes("android.permission.INTERNET") || granted.includes("android.permission.INTERNET"), `${profile}: INTERNET manquant`);
   assert.ok(granted.includes("android.permission.CAMERA"), `${profile}: CAMERA manquant`);
   assert.ok(granted.includes("android.permission.NFC"), `${profile}: NFC manquant`);
-  assert.match(manifest, /<uses-feature[^>]*android:name="android.hardware.nfc"[^>]*android:required="false"/);
+  const nfcPermissionAttrs = permissions.filter((attr) => permissionName(attr) === "android.permission.NFC");
+  assert.ok(
+    nfcPermissionAttrs.every((attr) => !isRemovedPermission(attr)),
+    `${profile}: NFC a tools:node=remove`,
+  );
+
+  const featureBlocks = [...manifest.matchAll(/<uses-feature\b([^>]*)\/?>/g)].map((match) => match[1] || "");
+  const nfcFeatures = featureBlocks.filter((block) => /android:name="android\.hardware\.nfc"/.test(block));
+  assert.ok(nfcFeatures.length > 0, `${profile}: uses-feature android.hardware.nfc manquant`);
+  assert.ok(
+    nfcFeatures.every((block) => /android:required="false"/.test(block)),
+    `${profile}: android.hardware.nfc required doit être false`,
+  );
+  assert.ok(
+    nfcFeatures.every((block) => !/android:required="true"/.test(block)),
+    `${profile}: android.hardware.nfc required=true interdit`,
+  );
+
+  const sdk = readAndroidSdkVersions();
+  assert.ok(Number.isInteger(sdk.compileSdk) && sdk.compileSdk >= 31, `${profile}: compileSdk ${sdk.compileSdk} < 31`);
+  assert.ok(
+    Number.isInteger(sdk.minSdk) && sdk.minSdk < 31,
+    `${profile}: STOP — minSdk relevé à ${sdk.minSdk} (interdit ; contrainte NFC = compileSdk >= 31)`,
+  );
+  for (const blocked of [
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.READ_CONTACTS",
+    "android.permission.CALL_PHONE",
+  ]) {
+    assert.ok(!granted.includes(blocked), `${profile}: ${blocked} accordé (interdit)`);
+  }
 
   const mustRemove = [
     "android.permission.READ_MEDIA_IMAGES",
@@ -158,7 +189,7 @@ function inspectGeneratedAndroid(profile) {
     if (name === "android.permission.POST_NOTIFICATIONS" || name === "android.permission.VIBRATE") {
       continue;
     }
-
+    if (name === "android.permission.NFC") continue;
     assert.notEqual(name, "android.permission.ACCESS_FINE_LOCATION", `${profile}: localisation présente`);
   }
 
@@ -177,12 +208,40 @@ function inspectGeneratedAndroid(profile) {
   }
 
   console.log(
-    `PROOF ${profile}: CAMERA granted ; READ_MEDIA_IMAGES not granted ; `
+    `PROOF ${profile}: CAMERA granted ; NFC granted ; hardware.nfc required=false ; `
+      + `compileSdk=${sdk.compileSdk} minSdk=${sdk.minSdk} source=${sdk.source} ; READ_MEDIA_IMAGES not granted ; `
       + `READ/WRITE_EXTERNAL_STORAGE tools:node=remove`
       + ` (${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off)`,
   );
   console.log(`OK: prebuild ${profile} — ${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off`);
-  return { versionCode };
+  return { versionCode, compileSdk: sdk.compileSdk, minSdk: sdk.minSdk };
+}
+
+function readAndroidSdkVersions() {
+  const appGradle = read(path.join(ANDROID, "app", "build.gradle"));
+  assert.match(appGradle, /compileSdk rootProject\.ext\.compileSdkVersion/);
+  assert.match(appGradle, /minSdkVersion rootProject\.ext\.minSdkVersion/);
+  assert.doesNotMatch(appGradle, /minSdkVersion\s+31\b/, "STOP: minSdk literal 31 dans app/build.gradle");
+
+  const props = fs.existsSync(path.join(ANDROID, "gradle.properties"))
+    ? read(path.join(ANDROID, "gradle.properties"))
+    : "";
+  const propMin = (props.match(/^\s*android\.minSdkVersion\s*=\s*(\d+)/m) || [])[1];
+  const propCompile = (props.match(/^\s*android\.compileSdkVersion\s*=\s*(\d+)/m) || [])[1];
+  if (propMin) {
+    assert.ok(Number(propMin) < 31, `STOP: gradle.properties android.minSdkVersion=${propMin}`);
+  }
+
+  const catalogPath = path.join(MOBILE, "node_modules", "react-native", "gradle", "libs.versions.toml");
+  assert.ok(fs.existsSync(catalogPath), "catalogue SDK React Native manquant");
+  const catalog = read(catalogPath);
+  const catalogMin = Number((catalog.match(/^minSdk\s*=\s*"(\d+)"/m) || [])[1] || NaN);
+  const catalogCompile = Number((catalog.match(/^compileSdk\s*=\s*"(\d+)"/m) || [])[1] || NaN);
+  return {
+    minSdk: propMin ? Number(propMin) : catalogMin,
+    compileSdk: propCompile ? Number(propCompile) : catalogCompile,
+    source: propMin || propCompile ? "gradle.properties" : "react-native/gradle/libs.versions.toml",
+  };
 }
 
 function findIosInfoPlist() {
@@ -198,6 +257,26 @@ function findIosInfoPlist() {
         if (entry.name === "Pods" || entry.name === "build") continue;
         stack.push(full);
       } else if (entry.name === "Info.plist") {
+        found.push(full);
+      }
+    }
+  }
+  return found;
+}
+
+function findIosEntitlements() {
+  const found = [];
+  if (!fs.existsSync(IOS)) return found;
+  const stack = [IOS];
+  while (stack.length) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "Pods" || entry.name === "build") continue;
+        stack.push(full);
+      } else if (entry.name.endsWith(".entitlements")) {
         found.push(full);
       }
     }
@@ -227,6 +306,9 @@ function inspectGeneratedIos() {
     );
   }
   assert.ok(cameraOk, "iOS: NSCameraUsageDescription absente");
+  for (const file of findIosEntitlements()) {
+    assert.doesNotMatch(read(file), /com\.apple\.developer\.nfc|iso7816|felica/i, `${path.relative(MOBILE, file)}: entitlement NFC iOS interdit`);
+  }
   console.log("PROOF ios: NSCameraUsageDescription duale ; NFC/tracking/micro absents");
 }
 

@@ -216,6 +216,25 @@ test("CARTE-PR0 / NFC-ENC-01 — droits scolaires inchangés, NFC Android facult
   assert.match(android, /ensureOptionalNfcFeature/);
   assert.match(android, /"android:required": "false"/);
   assert.match(readRepo("Mobile/plugins/withSomafrikNfcAndroid.js"), /android\.permission\.NFC/);
+  assert.doesNotMatch(android, /android\.permission\.NFC/);
+  assert.match(android, /android\.hardware\.nfc/);
+  assert.match(android, /android:required": "false"/);
+  for (const blocked of [
+    "android.permission.RECORD_AUDIO",
+    "android.permission.SYSTEM_ALERT_WINDOW",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.READ_MEDIA_IMAGES",
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.READ_CONTACTS",
+    "android.permission.CALL_PHONE",
+  ]) {
+    const pattern = new RegExp(blocked.replace(/\./g, "\\."));
+    assert.match(android, pattern);
+    assert.match(appConfig, pattern);
+  }
+  assert.doesNotMatch(appConfig, /android\.permission\.NFC/);
   assert.doesNotMatch(appConfig, /expo-camera|nfc-manager|react-native-nfc/);
   assert.match(server, /app\.post\("\/api\/student-cards\/scan"/);
   assert.doesNotMatch(presences, /student_card|studentCard|cardToken/);
