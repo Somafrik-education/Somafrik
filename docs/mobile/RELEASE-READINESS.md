@@ -108,7 +108,7 @@ eas build:version:sync   # optionnel : recopier le remote vers un prebuild local
 | READ_EXTERNAL_STORAGE | ✅ | ❌ | legacy | Remplacé par READ_MEDIA_IMAGES | — | Retiré |
 | WRITE_EXTERNAL_STORAGE | ✅ | ❌ | legacy | Non utilisé | — | Retiré |
 | VIBRATE | ✅ | ✅ | `expo-notifications` | Channel push Android N1 | Oui | Notifications |
-| NFC | ❌ | ❌ | — | GATE-NFC-STORES / CARTE-PR8 uniquement. Toujours absent. | — | Non ajouté |
+| NFC | ❌ | ✅ | `react-native-nfc-manager@4.0.0-beta.10` | Identification scolaire / Carte Élève (NDEF). `uses-feature android.hardware.nfc required=false`. Session au scan seulement. QR fallback. Pas de paiement, pas d’UID secret, pas de tracking. | Non (permission normale Android) | Identification scolaire |
 | POST_NOTIFICATIONS | ❌ | ✅ | `expo-notifications` | Push Android N1 | Oui | Notifications |
 | ACCESS_FINE/COARSE_LOCATION | ❌ | ❌ | — | Non utilisé | — | Non |
 | READ_CONTACTS / CALL_PHONE | ❌ | ❌ | — | Non utilisé | — | Non |
@@ -193,12 +193,12 @@ Les parcours auth / API passent par `safeLogger` (redaction JWT / Authorization)
 
 ## App Privacy (App Store)
 
-Réévaluation CARTE-PR7 :
+Réévaluation CARTE-PR8 :
 
 - nouvelle finalité CAMERA : scan QR Carte Élève via `expo-camera@~17.0.10` ;
 - `recordAudioAndroid: false`, `microphonePermission: false` ;
-- NFC toujours absent ;
-- QR online-only : aucune outbox, aucun cache, aucun replay de capability ;
+- NFC : identification scolaire / Carte Élève via `react-native-nfc-manager@4.0.0-beta.10` (NDEF, session au scan, pas de paiement, pas d’UID secret) ;
+- QR et NFC online-only : aucune outbox, aucun cache, aucun replay de capability ;
 - la caméra du scanner reste un traitement **local** (aucune image collectée) ;
 - le capability QR est transmis au serveur HTTPS pour résolution ;
 - l’identité élève reçue est une donnée scolaire déjà couverte par le contrat backend, via un **nouveau chemin** (scan) ;
@@ -215,7 +215,7 @@ La politique de confidentialité hébergée reste un **P0 Store** distinct (URL 
 | Preprod API | Render HTTPS | `eas.json` + bundles | Oui |
 | Prod API | `https://api.somafrik.app` | `eas.json` + bundles | Oui |
 | HTTPS only | preview/préprod/prod | fail-closed + network security | Oui |
-| Permissions | CAMERA seule permission app explicite (+ INTERNET système). NFC / RECORD_AUDIO / READ_MEDIA_IMAGES absents. | matrice ci-dessus + prebuild | Oui |
+| Permissions | CAMERA (app.json) + NFC (plugin). RECORD_AUDIO / READ_MEDIA_IMAGES / LOCATION / CONTACTS absents. `android.hardware.nfc required=false`. | matrice ci-dessus + prebuild | Oui |
 | Preview APK | internal APK → API préprod, jamais prod / localhost | `verify:mobile-preview-apk` + [PREVIEW-APK.md](./PREVIEW-APK.md) | Oui (sideload, pas Play) |
 | Bundle préprod | URL préprod, pas prod / localhost | Metro minify | Oui |
 | AAB préprod | prebuild inspecté + Gradle `.aab` si SDK / EAS | `verify-native-prebuild` + job CI isolé | Oui (compilation, pas l’upload) |

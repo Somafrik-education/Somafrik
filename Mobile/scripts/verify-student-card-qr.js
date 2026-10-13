@@ -29,11 +29,14 @@ function main() {
   const pkg = JSON.parse(read("Mobile/package.json"));
   assert.match(String(pkg.dependencies["expo-camera"] || ""), /~17\.0\.10|17\.0\.10/);
   assert.ok(!pkg.dependencies["react-native-vision-camera"]);
-  assert.ok(!pkg.dependencies["react-native-nfc-manager"]);
+  assert.equal(pkg.dependencies["react-native-nfc-manager"], "4.0.0-beta.10");
   assert.ok(!pkg.dependencies["expo-nfc"]);
   assert.ok(!pkg.dependencies["expo-barcode-scanner"]);
 
   const modal = read("Mobile/src/components/StudentCardQrScannerModal.tsx");
+  const nfcModal = read("Mobile/src/components/StudentCardNfcScannerModal.tsx");
+  const nfcNative = read("Mobile/src/lib/studentCardNfcNative.ts");
+  const nfcPolicy = read("Mobile/src/lib/studentCardNfc.ts");
   const attendance = read("Mobile/src/screens/TeacherAttendanceScreen.tsx");
   const api = read("Mobile/src/services/studentCardScanApi.ts");
   const policy = read("Mobile/src/lib/studentCardScan.ts");
@@ -111,16 +114,50 @@ function main() {
   assert.match(outbox, /OUTBOX_ALLOWED_DOMAINS = \["messages", "presences", "notes"\]/);
   assert.doesNotMatch(outbox, /student-cards\/scan/);
 
-  for (const source of [modal, api, attendance, policy]) {
-    assert.doesNotMatch(source, /console\.(log|info|debug|warn)\([^)]*(scanningResult\.data|cardToken|tokenRef)/);
-    assert.doesNotMatch(source, /safeLogger\([^)]*(scanningResult\.data|cardToken|tokenRef)/);
+  for (const source of [modal, nfcModal, nfcPolicy, nfcNative, api, attendance, policy]) {
+    assert.doesNotMatch(source, /console\.(log|info|debug|warn)\([^)]*(scanningResult\.data|cardToken|tokenRef|ndefMessage)/);
+    assert.doesNotMatch(source, /safeLogger\([^)]*(scanningResult\.data|cardToken|tokenRef|ndefMessage)/);
     assert.doesNotMatch(source, /AsyncStorage|SecureStore|SQLite/);
   }
+
+  assert.match(nfcModal, /runStudentCardScanFlow/);
+  assert.match(nfcModal, /scanNfcCardToken/);
+  assert.match(nfcModal, /qrFallbackEnabled/);
+  assert.match(nfcModal, /shouldShowNfcQrFallback/);
+  assert.match(attendance, /decideOpenQrFromNfcFallback/);
+  assert.match(attendance, /qrFallbackEnabled=\{canOpenQrScanner\}/);
+  assert.match(nfcNative, /NfcTech\.Ndef/);
+  assert.match(nfcNative, /NfcTech\.NfcB/);
+  assert.match(nfcNative, /NfcTech\.IsoDep/);
+  assert.match(nfcNative, /FLAG_READER_NFC_B/);
+  assert.match(nfcNative, /isReaderModeEnabled:\s*true/);
+  assert.doesNotMatch(nfcNative, /transceive|selectIdentifiers|systemCodes|Felica|HCE/);
+  assert.match(nfcModal, /decideNfcScannerRead/);
+  const listenForTag = nfcModal.match(/const listenForTag[\s\S]*?\}, \[runScan\]\);/);
+  assert.ok(listenForTag, "NFC-FIX-02 listenForTag");
+  assert.doesNotMatch(listenForTag[0], /\bonClose\(/);
+  assert.doesNotMatch(listenForTag[0], /navigate\(/);
+  assert.match(nfcPolicy, /somafrik:card:/);
+  assert.doesNotMatch(nfcPolicy, /react-native-nfc-manager/);
+  assert.doesNotMatch(modal, /react-native-nfc-manager/);
+  assert.match(attendance, /StudentCardNfcScannerModal/);
+  assert.match(attendance, /isStudentCardNfcScannerVisible/);
+  const nfcPlugin = appJson.expo.plugins.find((item) => Array.isArray(item) && item[0] === "react-native-nfc-manager");
+  assert.ok(nfcPlugin, "plugin react-native-nfc-manager");
+  assert.equal(
+    nfcPlugin[1].nfcPermission,
+    "Somafrik utilise la puce NFC pour lire la carte élève de l’établissement.",
+  );
+  assert.equal(nfcPlugin[1].includeNdefEntitlement, true);
+  assert.equal(nfcPlugin[1].selectIdentifiers, undefined);
+  assert.equal(nfcPlugin[1].systemCodes, undefined);
 
   const inventory = read("docs/mobile/PLAY-STORE-DATA-INVENTORY.md");
   assert.match(inventory, /Identifiant carte élève \/ QR/);
   assert.match(inventory, /flux caméra/i);
-  assert.match(inventory, /pas de NFC dans ce lot/i);
+  assert.match(inventory, /QR ou NFC/i);
+  assert.match(inventory, /Identification scolaire/i);
+  assert.doesNotMatch(inventory, /pas de NFC dans ce lot/i);
 
   const readiness = read("docs/mobile/RELEASE-READINESS.md");
   assert.match(readiness, /expo-camera/);

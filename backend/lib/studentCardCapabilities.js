@@ -9,6 +9,7 @@ const { createSchoolSettingsPgStore } = require("../db/schoolSettingsPgStore");
 const STUDENT_CARD_CAPABILITY_HTTP_KEYS = Object.freeze([
   "studentCardEnabled",
   "studentCardQrEnabled",
+  "studentCardNfcEnabled",
   "studentCardAttendanceEnabled",
   "studentCardFinanceCheckEnabled",
 ]);
@@ -18,6 +19,7 @@ function projectStudentCardCapabilitiesHttp(row) {
   return {
     studentCardEnabled: coerceFailClosedBoolean(flags.studentCardEnabled),
     studentCardQrEnabled: coerceFailClosedBoolean(flags.studentCardQrEnabled),
+    studentCardNfcEnabled: coerceFailClosedBoolean(flags.studentCardNfcEnabled),
     studentCardAttendanceEnabled: coerceFailClosedBoolean(flags.studentCardAttendanceEnabled),
     studentCardFinanceCheckEnabled: coerceFailClosedBoolean(flags.studentCardFinanceCheckEnabled),
   };

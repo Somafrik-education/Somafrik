@@ -270,6 +270,13 @@ const STUDENT_CARD_PR6_EXACT = new Set([
   "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
 ]);
 
+const STUDENT_CARD_PR8_EXACT = new Set([
+  "Mobile/app.config.js",
+  "Mobile/plugins/withSomafrikAndroidSecurity.js",
+  "backend/lib/schoolSettings.studentCard.test.js",
+  "docs/audits/GATE-NFC-STORES.md",
+]);
+
 const STUDENT_CARD_PR7_EXACT = new Set([
   "scripts/verify-student-card-mobile.js",
   "Mobile/scripts/verify-student-card-qr.js",
@@ -322,7 +329,7 @@ function isStudentCardPr6Signal(file: string) {
 }
 
 function isStudentCardPr6IntegrationFile(file: string) {
-  if (STUDENT_CARD_PR6_EXACT.has(file) || STUDENT_CARD_PR7_EXACT.has(file)) return true;
+  if (STUDENT_CARD_PR6_EXACT.has(file) || STUDENT_CARD_PR7_EXACT.has(file) || STUDENT_CARD_PR8_EXACT.has(file)) return true;
   if (/^web\/src\/components\/students\/StudentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCardsApi[^/]*$/.test(file)) return true;
@@ -697,6 +704,27 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         studentCardDistinctChantier.kind,
         "na",
         "L4-09: chantier Carte élève distinct doit être N/A dans le périmètre PR6 contrôlé",
+      );
+
+      const studentCardPr8DistinctChantier = evaluateLot4Scope([
+        "Mobile/src/components/StudentCardNfcScannerModal.tsx",
+        "Mobile/src/lib/studentCardNfc.ts",
+        "Mobile/src/lib/studentCardNfc.test.ts",
+        "Mobile/src/lib/studentCardNfcNative.ts",
+        "Mobile/src/lib/studentCardScan.ts",
+        "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+        "Mobile/app.json",
+        "Mobile/app.config.js",
+        "Mobile/plugins/withSomafrikAndroidSecurity.js",
+        "Mobile/package.json",
+        "backend/lib/studentCardCapabilities.js",
+        "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
+        "docs/audits/GATE-NFC-STORES.md",
+      ]);
+      assert.equal(
+        studentCardPr8DistinctChantier.kind,
+        "na",
+        "L4-09: chantier Carte élève Mobile (PR8 NFC) doit être N/A dans le périmètre contrôlé",
       );
 
       const studentCardPr7DistinctChantier = evaluateLot4Scope([
