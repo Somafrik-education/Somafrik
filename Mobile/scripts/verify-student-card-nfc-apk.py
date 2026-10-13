@@ -61,7 +61,7 @@ def verify_badging(badging, config):
     assert package and package[1] == PACKAGE, "Compiled application ID mismatch"
     assert package[3] == config.get("version"), "Compiled version name differs from embedded Expo config"
     assert int(package[2]) == config.get("android", {}).get("versionCode"), "Compiled version code differs from embedded Expo config"
-    minimum = re.search(r"sdkVersion:'(\d+)'", badging)
+    minimum = re.search(r"(?:^|\n)(?:minSdkVersion|sdkVersion):'(\d+)'", badging)
     target = re.search(r"targetSdkVersion:'(\d+)'", badging)
     assert minimum, f"Compiled minimum SDK missing from aapt2 badging: {badging[:600]!r}"
     assert 24 <= int(minimum[1]) < 31, (f"Compiled minSdkVersion={minimum[1]} (expected 24..30); "
