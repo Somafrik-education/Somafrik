@@ -37,11 +37,13 @@
 #    historique introduit sur develop@f4fdd6f0. Toute nouvelle valeur/ligne/commit reste scannée.
 f4fdd6f05966b149eba0ddd494862b15f9b686d5:Mobile/google-services.json:gcp-api-key:18
 #
-# 7) Fixture apksigner build-tools 37, commit 73da7fe2 seulement.
-#    Empreintes publiques SHA-256 et MD5 de la clé publique d'un certificat
-#    debug jetable (CN=Android Debug). Le mot « key » déclenche generic-api-key.
-#    Le fichier courant construit cette ligne à l'exécution.
+# 7) Fixture apksigner build-tools 37. Empreintes publiques SHA-256 et MD5 de la
+#    clé publique d'un certificat debug jetable (CN=Android Debug). Le mot « key »
+#    déclenche generic-api-key. Le fichier courant construit cette ligne à
+#    l'exécution. Deux commits seulement : l'original de #917 et sa copie rebasée.
 #    Toute autre ligne ou tout autre commit reste scanné.
 73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88
 73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90
+766fe2156312eef613875afe5c3e4dea3b2942eb:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88
+766fe2156312eef613875afe5c3e4dea3b2942eb:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90
 
