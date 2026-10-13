@@ -377,7 +377,7 @@ function isApprovedNfcFixtureGitleaksIgnore(file: string) {
     if (!current.startsWith(baseline)) return false;
     const added = current
       .slice(baseline.length)
-      .split(/\\r?\\n/)
+      .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith("#"));
     return added.length === NFC_APKSIGNER_TEST_FIXTURE_FINGERPRINTS.size
