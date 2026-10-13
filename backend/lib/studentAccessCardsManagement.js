@@ -104,7 +104,8 @@ function mapCardListItem(row) {
     replacedByCardId: row.replaced_by_card_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    nfc: row.nfc_uid ? { uid: row.nfc_uid, tagType: row.nfc_tag_type, state: row.nfc_encoding_state, encodedAt: row.nfc_encoded_at, lockedAt: row.nfc_locked_at } : null,
+    nfc: row.nfc_uid ? { uid: row.nfc_uid, tagType: row.nfc_tag_type, state: row.nfc_encoding_state, encodedAt: row.nfc_encoded_at, lockedAt: row.nfc_locked_at,
+      operationId: row.nfc_operation_id, expiresAt: row.nfc_reservation_expires_at, replacesCardId: row.nfc_replaces_card_id } : null,
   };
 }
 
@@ -116,7 +117,8 @@ function mapIssuedCard(row, cardToken) {
     medium: row.medium,
     status: row.status,
     issuedAt: row.issued_at,
-    nfc: row.nfc_uid ? { uid: row.nfc_uid, tagType: row.nfc_tag_type, state: row.nfc_encoding_state } : null,
+    nfc: row.nfc_uid ? { uid: row.nfc_uid, tagType: row.nfc_tag_type, state: row.nfc_encoding_state,
+      operationId: row.nfc_operation_id, expiresAt: row.nfc_reservation_expires_at, replacesCardId: row.nfc_replaces_card_id } : null,
   };
 }
 
@@ -250,12 +252,9 @@ async function issueStudentCard(repo, payload, principal, auditMeta, schoolScope
   }
   await assertStudentCardMasterEnabled(repo, schoolId);
   const medium = normalizeMedium(payload?.medium);
-  let nfc = null;
-  if (payload?.nfc !== undefined) {
-    const { normalizeNfcIdentity, assertNfcEnabled } = require("./studentCardsNfcEncoding");
-    nfc = normalizeNfcIdentity(payload.nfc);
-    if (medium === "qr") throw studentCardError(400, "Support NFC requis.", "STUDENT_CARD_NFC_INVALID");
-    await assertNfcEnabled(repo, schoolId);
+  if (payload?.nfc !== undefined || medium === "nfc") {
+    const { reserveStudentCardNfc } = require("./studentCardsNfcLifecycle");
+    return reserveStudentCardNfc(repo, { ...payload, medium }, principal, auditMeta, schoolScope);
   }
   const store = cardsStore(repo);
   const student = await requireStudentInSchool(store, schoolId, payload?.studentId);
@@ -274,7 +273,6 @@ async function issueStudentCard(repo, payload, principal, auditMeta, schoolScope
       student_id: student.id,
       medium,
       status: "active",
-      ...(nfc ? { nfc_uid: nfc.uid, nfc_tag_type: nfc.tagType, nfc_encoding_state: "pending" } : {}),
       created_by_user_id: asId(principal?.sub) || null,
     });
   } catch (error) {
@@ -316,6 +314,9 @@ async function markStudentCardLost(repo, cardId, principal, auditMeta, schoolSco
   await assertStudentCardMasterEnabled(repo, schoolId);
   const store = cardsStore(repo);
   const card = await requireCardInSchool(store, schoolId, cardId);
+  if (card.nfc_uid) {
+    return require("./studentCardsNfcLifecycle").transitionStudentCardNfc(repo, cardId, principal, auditMeta, schoolScope, "lost", reason || "lost");
+  }
   if (card.status === "lost") {
     return mapCardListItem(card);
   }
@@ -355,6 +356,9 @@ async function revokeStudentCard(repo, cardId, principal, auditMeta, schoolScope
   await assertStudentCardMasterEnabled(repo, schoolId);
   const store = cardsStore(repo);
   const card = await requireCardInSchool(store, schoolId, cardId);
+  if (card.nfc_uid) {
+    return require("./studentCardsNfcLifecycle").transitionStudentCardNfc(repo, cardId, principal, auditMeta, schoolScope, "revoked", reason || "revoked");
+  }
   if (card.status === "revoked") {
     return mapCardListItem(card);
   }
@@ -387,6 +391,9 @@ async function revokeStudentCard(repo, cardId, principal, auditMeta, schoolScope
 }
 
 async function replaceStudentCard(repo, cardId, principal, auditMeta, schoolScope, options = {}) {
+  if (options.nfc !== undefined) {
+    return require("./studentCardsNfcLifecycle").reserveStudentCardNfc(repo, options, principal, auditMeta, schoolScope, cardId);
+  }
   const schoolId = asId(schoolScope.schoolId);
   if (!schoolId) {
     throw studentCardError(403, "Accès refusé: établissement hors périmètre.", STUDENT_CARD_ERROR.TENANT_DENIED);
@@ -396,6 +403,9 @@ async function replaceStudentCard(repo, cardId, principal, auditMeta, schoolScop
   const card = await requireCardInSchool(store, schoolId, cardId);
   if (card.status !== "active" && card.status !== "lost") {
     throw studentCardError(409, "Remplacement impossible dans cet état.", STUDENT_CARD_ERROR.INVALID_STATE);
+  }
+  if (card.nfc_uid) {
+    throw studentCardError(409, "Le remplacement NFC nécessite une nouvelle carte et une réservation explicite.", "STUDENT_CARD_NFC_REPLACEMENT_REQUIRED");
   }
   let generated = generateCardSecrets();
   assertSecretEntropy(generated);

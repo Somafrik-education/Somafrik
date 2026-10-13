@@ -7,6 +7,7 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { STUDENT_CARD_ERROR } = require("./studentAccessCardsManagement");
+const { randomUUID } = require("node:crypto");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_STUDENT_CARDS_HTTP_IT_DATABASE ?? "somafrik_student_cards_http_it")
@@ -446,7 +447,7 @@ async function main() {
     const issuedCrossA = await request("/student-cards", {
       method: "POST",
       token: tokenA,
-      body: { studentId: STUDENT_A2, medium: "nfc" },
+      body: { studentId: STUDENT_A2, medium: "nfc_qr" },
     });
     assert.equal(issuedCrossA.status, 201, JSON.stringify(issuedCrossA.data));
     const cardCrossA = issuedCrossA.data.id;
@@ -536,6 +537,49 @@ async function main() {
       replacementB.data.card.cardToken,
     ));
 
+    // NFC-PROG-02: real HTTP routes, live RBAC and PostgreSQL audit/associations.
+    const nfcStudent = randomUUID();
+    await pool.query("INSERT INTO students(id,school_id,first_name,last_name,status) VALUES($1,$2,'NFC','Fixture','active')",[nfcStudent,schoolAId]);
+    await pool.query("UPDATE school_settings SET student_card_nfc_enabled=TRUE WHERE school_id=ANY($1::uuid[])",[[schoolAId,schoolBId]]);
+    const nfcBody={studentId:nfcStudent,medium:"nfc",nfc:{uid:"04112233445566",tagType:"NTAG216"},operationId:randomUUID()};
+    // Lose an actual HTTP response body after the server commits. Replaying the
+    // operation must recover its reference without a second reservation or token cache.
+    const lostResponse=await fetch(`http://127.0.0.1:${HTTP_PORT}/api/student-cards`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${tokenA}`},body:JSON.stringify(nfcBody)});
+    assert.equal(lostResponse.status,201);await lostResponse.body.cancel();
+    const nfcIssue=await request('/student-cards',{method:'POST',token:tokenA,body:nfcBody});
+    assert.equal(nfcIssue.status,201);assert.equal(nfcIssue.cacheControl,'no-store');assert.equal(nfcIssue.data.status,'issued');
+    assert.equal(nfcIssue.data.cardToken,undefined);
+    const retry=await request(`/student-cards/${nfcIssue.data.id}/nfc-retry`,{method:'POST',token:tokenA,body:{...nfcBody.nfc,operationId:randomUUID()}});
+    assert.equal(retry.status,200);const nfcToken=retry.data.cardToken;assert.ok(nfcToken);
+    const recovered=await request('/student-cards',{method:'POST',token:tokenA,body:nfcBody});
+    assert.equal(recovered.data.id,nfcIssue.data.id);assert.equal(recovered.data.cardToken,undefined);assert.equal(recovered.data.idempotentReplay,true);
+    const confirmBody={...nfcBody.nfc,cardToken:nfcToken,locked:false};
+    const confirmPath=`/student-cards/${nfcIssue.data.id}/nfc-confirm`;
+    const denied=await request(confirmPath,{method:'POST',token:tokenTeacher,body:confirmBody});assert.equal(denied.status,403);
+    const platform=await request(confirmPath,{method:'POST',token:tokenSuper,body:confirmBody});assert.equal(platform.status,403);
+    const wrongTenant=await request(confirmPath,{method:'POST',token:tokenB,body:confirmBody});assert.equal(wrongTenant.status,404);assert.equal(wrongTenant.data.code,'STUDENT_CARD_NOT_FOUND');
+    const pendingScan=await request('/student-cards/scan',{method:'POST',token:tokenA,body:{cardToken:nfcToken}});assert.equal(pendingScan.status,409);assert.equal(pendingScan.data.code,'STUDENT_CARD_INVALID_STATE');
+    await pool.query(`CREATE FUNCTION nfc_http_reject_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+      IF NEW.action='student_card_nfc_encoded' THEN RAISE EXCEPTION 'NFC HTTP audit failure injected'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER nfc_http_reject_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION nfc_http_reject_audit();`);
+    const auditFailed=await request(confirmPath,{method:'POST',token:tokenA,body:confirmBody});assert.equal(auditFailed.status,500);
+    assert.equal((await pool.query('SELECT status FROM student_access_cards WHERE id=$1',[nfcIssue.data.id])).rows[0].status,'issued');
+    await pool.query('DROP TRIGGER nfc_http_reject_audit ON audit_logs; DROP FUNCTION nfc_http_reject_audit()');
+    const confirmedResponse=await fetch(`http://127.0.0.1:${HTTP_PORT}/api${confirmPath}`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${tokenA}`},body:JSON.stringify(confirmBody)});
+    assert.equal(confirmedResponse.status,200);await confirmedResponse.body.cancel();
+    const confirmedAgain=await request(confirmPath,{method:'POST',token:tokenA,body:confirmBody});assert.equal(confirmedAgain.status,200);assert.equal(confirmedAgain.data.status,'active');
+    const auditCount=await pool.query("SELECT count(*)::int AS n FROM audit_logs WHERE entity_id=$1 AND action='student_card_nfc_encoded'",[nfcIssue.data.id]);assert.equal(auditCount.rows[0].n,1);
+    const replacementBody={nfc:{uid:'04778899001122',tagType:'NTAG216'},operationId:randomUUID()};
+    const replacementPath=`/student-cards/${nfcIssue.data.id}/replace`;
+    const preparedNfc=await request(replacementPath,{method:'POST',token:tokenA,body:replacementBody});assert.equal(preparedNfc.status,200);assert.equal(preparedNfc.data.status,'issued');
+    assert.equal((await pool.query('SELECT status FROM student_access_cards WHERE id=$1',[nfcIssue.data.id])).rows[0].status,'active');
+    const newConfirm=await request(`/student-cards/${preparedNfc.data.id}/nfc-confirm`,{method:'POST',token:tokenA,body:{...replacementBody.nfc,cardToken:preparedNfc.data.cardToken,locked:false}});assert.equal(newConfirm.status,200);
+    assert.equal((await pool.query('SELECT status FROM student_access_cards WHERE id=$1',[nfcIssue.data.id])).rows[0].status,'replaced');
+    const replacementReplay=await request(replacementPath,{method:'POST',token:tokenA,body:replacementBody});assert.equal(replacementReplay.status,200);assert.equal(replacementReplay.data.id,preparedNfc.data.id);assert.equal(replacementReplay.data.cardToken,undefined);
+    await assertCardSecretsAbsent(pool,cardSecrets(preparedNfc.data.cardToken));
+    await pool.query('UPDATE school_settings SET student_card_nfc_enabled=FALSE WHERE school_id=$1',[schoolAId]);
+    const flagsDenied=await request(confirmPath,{method:'POST',token:tokenA,body:confirmBody});assert.equal(flagsDenied.status,404);
+    await assertCardSecretsAbsent(pool,cardSecrets(nfcToken));
     void schoolBId;
     console.log("studentAccessCards.http.pg.test.js OK");
   } finally {
