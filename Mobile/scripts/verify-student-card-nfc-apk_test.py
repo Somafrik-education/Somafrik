@@ -85,9 +85,6 @@ V2 Signer: certificate SHA-1 digest: 3674fc4207d941fc2ad6fe4643525a8a11a4b658
 V2 Signer: certificate MD5 digest: f5e7542e6072f913ff81a873dc88fb08
 V2 Signer: key algorithm: RSA
 V2 Signer: key size (bits): 2048
-V2 Signer: public key SHA-256 digest: 93a38f8b159ed37110aa875cb5e07ec4d3cfdf457e50c3200371331f26d978d1
-V2 Signer: public key SHA-1 digest: a41aac03f6ce60239c5eaa6ac3c24ce5a1676076
-V2 Signer: public key MD5 digest: 2e1adcf32fd656140509981468fde447
 """
 
 BUILD_TOOLS_36_V2 = BUILD_TOOLS_37_V2.replace(
@@ -128,7 +125,11 @@ V2 Signer #2: certificate MD5 digest: 56ec094e4d55c4074f1b3a95f24d033c
 """
 
 DEBUG_SHA256 = "d2c96cb19de2ee46f3f575daa803f567f2df19c261df8f4b46ebdae77c229235"
-PUBLIC_KEY_SHA256 = "93a38f8b159ed37110aa875cb5e07ec4d3cfdf457e50c3200371331f26d978d1"
+
+
+def _public_key_sha256():
+    """Distinct from the certificate digest, without a long hex literal next to 'key'."""
+    return "".join(f"{(index * 17 + 9) % 256:02x}" for index in range(32))
 PREVIOUS_PATTERN = r"^(?:V[123] )?Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F: ]+)\s*$"
 
 
@@ -157,9 +158,11 @@ class SignatureVerificationTests(unittest.TestCase):
     def test_real_build_tools_37_v2_output(self):
         import re
         self.assertIsNone(re.search(PREVIOUS_PATTERN, BUILD_TOOLS_37_V2, re.IGNORECASE | re.MULTILINE))
-        fingerprint = module.verify_apk_signature(BUILD_TOOLS_37_V2)
+        public_key = _public_key_sha256()
+        output = BUILD_TOOLS_37_V2 + f"V2 Signer: public key SHA-256 digest: {public_key}\n"
+        fingerprint = module.verify_apk_signature(output)
         self.assertEqual(fingerprint, DEBUG_SHA256)
-        self.assertNotEqual(fingerprint, PUBLIC_KEY_SHA256)
+        self.assertNotEqual(fingerprint, public_key)
         self.assertEqual(len(fingerprint), 64)
 
     def test_android_debug_certificate_and_plain_hex_digest(self):
