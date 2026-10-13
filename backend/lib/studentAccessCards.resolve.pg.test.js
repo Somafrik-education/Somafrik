@@ -318,7 +318,7 @@ async function main() {
       409,
       STUDENT_CARD_ERROR.INVALID_STATE,
     );
-    const revokedCard = await issueFor(studentRevoked.id, "nfc");
+    const revokedCard = await issueFor(studentRevoked.id, "nfc_qr");
     await pool.query(
       `UPDATE student_access_cards SET status='revoked', revoked_at=NOW(), revoke_reason='revoked' WHERE id=$1`,
       [revokedCard.id],

@@ -1,0 +1,133 @@
+name: NFC encoding preproduction evidence
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "Mobile/**"
+      - "backend/**student*Card*"
+      - "backend/db/migrations/20261012_student_cards_nfc_encoding.sql"
+      - "backend/db/migrations/20261013_student_cards_nfc_reservations.sql"
+      - ".github/workflows/nfc-encoding-preprod.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nfc-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nfc-postgres:
+    name: NFC PostgreSQL 16 isolated
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: nfc_encoding_test
+          POSTGRES_USER: nfc_test
+          POSTGRES_PASSWORD: nfc_test_ci_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nfc_test -d nfc_encoding_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Install backend dependencies without browser downloads
+        run: npm ci --prefix backend --ignore-scripts
+      - name: NFC lifecycle, HTTP and regressions against disposable PostgreSQL
+        env:
+          SOMAFRIK_NFC_TEST_DATABASE_URL: postgresql://nfc_test:nfc_test_ci_only@localhost:5432/nfc_encoding_test
+          DATABASE_URL: postgresql://nfc_test:nfc_test_ci_only@localhost:5432/nfc_encoding_test
+        run: |
+          test -n "$SOMAFRIK_NFC_TEST_DATABASE_URL"
+          node --test backend/lib/studentCardsNfcEncoding.sql.test.js backend/lib/studentCardsNfcEncoding.test.js backend/lib/studentCardsNfcLifecycle.pg.test.js
+          node backend/lib/studentAccessCards.pg.test.js
+          node backend/lib/studentAccessCards.lifecycle.pg.test.js
+          node backend/lib/studentAccessCards.resolve.pg.test.js
+          node backend/lib/studentAccessCards.attendance.pg.test.js
+          node backend/lib/studentAccessCards.finance.pg.test.js
+          node backend/lib/studentAccessCards.http.pg.test.js
+          node backend/lib/studentAccessCards.scan.http.pg.test.js
+
+  nfc-mobile:
+    name: NFC Android individual contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Install workspace and Mobile
+        run: npm ci && npm ci --prefix Mobile
+      - name: Verify individual programming, shared native session, QR and types
+        run: |
+          npm --prefix Mobile run test:student-card-nfc-encoding
+          npm --prefix Mobile run verify:student-card-qr
+          npm --prefix Mobile run typecheck
+          npm --prefix Mobile run verify:mobile-security
+
+  nfc-apk:
+    name: NFC APK preview exact HEAD
+    needs: [nfc-postgres, nfc-mobile]
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      EXPO_PUBLIC_RELEASE_PROFILE: preview
+      EAS_BUILD_PROFILE: preview
+      EXPO_PUBLIC_API_URL: https://api-preprod.somafrik.app
+      EXPO_PUBLIC_API_URL_PREVIEW: https://api-preprod.somafrik.app
+      EXPO_PUBLIC_DEMO_MODE: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Mobile/package-lock.json
+      - name: Install workspace and Mobile
+        run: npm ci && npm ci --prefix Mobile
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - name: Validate Mobile security and types
+        run: npm --prefix Mobile run verify:mobile-security && npm --prefix Mobile run typecheck && python3 Mobile/scripts/verify-student-card-nfc-apk_test.py
+      - name: Generate Android from candidate sources (preview only)
+        working-directory: Mobile
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Compile self-contained APK for ARM64 smoke (test signature only)
+        working-directory: Mobile/android
+        run: ./gradlew :app:assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a
+      - name: Verify packaged API, native permissions, signature and secret patterns
+        run: python3 Mobile/scripts/verify-student-card-nfc-apk.py Mobile/android/app/build/outputs/apk/release/app-release.apk --output Mobile/dist/nfc-evidence
+      - name: Upload verified preview APK and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfc-preview-${{ github.event.pull_request.head.sha || github.sha }}
+          path: Mobile/dist/nfc-evidence/*
+          if-no-files-found: error
+          retention-days: 14

@@ -2230,7 +2230,8 @@ app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/stud
   const { listStudentCards } = require("./lib/studentAccessCardsManagement");
   const principal = await enrollmentHttpPrincipal(req);
   const cards = await listStudentCards(repository, req.params.id, studentCardsHttpScope(principal));
-  res.json({ cards });
+  const { readNfcEnabled } = require("./lib/studentCardsNfcEncoding");
+  res.json({ cards, nfcEnabled: await readNfcEnabled(repository, studentCardsHttpScope(principal).schoolId) });
 }));
 
 app.post("/api/student-cards", requireAuth, requirePermission("POST /api/student-cards"), asyncHandler(async (req, res) => {
@@ -2247,6 +2248,23 @@ app.post("/api/student-cards", requireAuth, requirePermission("POST /api/student
     schoolScope,
   );
   res.status(201).json(card);
+}));
+
+app.post("/api/student-cards/:id/nfc-retry", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-retry"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { retryStudentCardNfc } = require("./lib/studentCardsNfcEncoding");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await retryStudentCardNfc(repository, req.params.id, req.body ?? {}, principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+app.post("/api/student-cards/:id/nfc-confirm", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-confirm"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { confirmStudentCardNfc } = require("./lib/studentCardsNfcEncoding");
+  const principal = await enrollmentHttpPrincipal(req);
+  const card = await confirmStudentCardNfc(repository, req.params.id, req.body ?? {}, principal, auditMetaFromRequest(req), studentCardsHttpScope(principal));
+  res.json(card);
 }));
 
 app.post("/api/student-cards/:id/lost", requireAuth, requirePermission("POST /api/student-cards/:id/lost"), asyncHandler(async (req, res) => {
@@ -2353,6 +2371,10 @@ app.post("/api/student-cards/:id/replace", requireAuth, requirePermission("POST 
     principal,
     auditMetaFromRequest(req),
     schoolScope,
+    req.body?.nfc !== undefined ? {
+      nfc: req.body.nfc, operationId: req.body.operationId,
+      studentId: req.body.studentId, medium: req.body.medium,
+    } : {},
   );
   res.status(200).json(result);
 }));

@@ -340,7 +340,7 @@ async function main() {
 
     const revokedCard = await issueStudentCard(
       repo,
-      { studentId: studentA2.id, medium: "nfc" },
+      { studentId: studentA2.id, medium: "nfc_qr" },
       principalA,
       auditMeta,
       scopeA,
@@ -386,7 +386,7 @@ async function main() {
     ).rows[0];
     const concResults = await Promise.allSettled([
       issueStudentCard(repo, { studentId: concStudent.id, medium: "qr" }, principalA, auditMeta, scopeA),
-      issueStudentCard(repo, { studentId: concStudent.id, medium: "nfc" }, principalA, auditMeta, scopeA),
+      issueStudentCard(repo, { studentId: concStudent.id, medium: "nfc_qr" }, principalA, auditMeta, scopeA),
     ]);
     const fulfilled = concResults.filter((row) => row.status === "fulfilled");
     const rejected = concResults.filter((row) => row.status === "rejected");
