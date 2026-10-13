@@ -246,10 +246,10 @@ export function createIndividualNfcFlow(input: {
   };
 }
 
-export function createNfcEnrollmentApi(request: <T>(path: string, options?: { method: string; body: string }) => Promise<T>): NfcEnrollmentApi {
+export function createNfcEnrollmentApi(request: <T>(path: string, options?: { method?: string; body?: string; cache?: "no-store" }) => Promise<T>): NfcEnrollmentApi {
   const post = <T>(path: string, body: unknown) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
   return {
-    list(studentId) { return request(`/students/${encodeURIComponent(studentId)}/cards`); },
+    list(studentId) { return request(`/students/${encodeURIComponent(studentId)}/cards`, { cache: "no-store" }); },
     issue(studentId, identity, operationId) { return post("/student-cards", { studentId, medium: "nfc", nfc: identity, operationId }); },
     replace(previous, studentId, identity, operationId) { return post(`/student-cards/${encodeURIComponent(previous.id)}/replace`, { studentId, medium: "nfc", nfc: identity, operationId }); },
     retry(card, identity, operationId) { return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-retry`, { ...identity, operationId }); },

@@ -210,8 +210,8 @@ test("failure messages never interpolate secret, raw native payload, or backend 
 });
 test("actual API adapter sends UUIDs, canonical student identity and exact established routes; no card IDs/secrets generated", async () => {
   const f = fixture(); const calls: { path: string; body?: Record<string, unknown> }[] = [];
-  const api = createNfcEnrollmentApi(async <T>(path: string, options?: { body: string }) => {
-    calls.push({ path, body: options ? JSON.parse(options.body) : undefined }); return f.card as T;
+  const api = createNfcEnrollmentApi(async <T>(path: string, options?: { body?: string }) => {
+    calls.push({ path, body: options?.body ? JSON.parse(options.body) : undefined }); return f.card as T;
   });
   await api.list("s1"); await api.issue("s1", identity, OP); await api.replace({ ...f.card, id: "old" }, "s1", identity, OP);
   await api.retry(f.card, identity, OP); await api.confirm(f.card, TOKEN, false, "s1");
