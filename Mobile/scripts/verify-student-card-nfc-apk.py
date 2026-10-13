@@ -93,8 +93,8 @@ def main():
     signature = run(tool("apksigner"), "verify", "--verbose", "--print-certs", str(args.apk))
     assert "Verified" in signature, "APK signature verification failed"
     assert "CN=Android Debug" in signature, "This workflow must use the test certificate, never the production certificate"
-    certificate = re.search(r"Signer #1 certificate SHA-256 digest:\\s*([0-9a-fA-F: ]+)", signature, re.IGNORECASE)
-    fingerprint = re.sub(r"[:\\s]", "", certificate[1]) if certificate else ""
+    certificate = re.search(r"Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F: ]+)", signature, re.IGNORECASE)
+    fingerprint = re.sub(r"[:\s]", "", certificate[1]) if certificate else ""
     assert re.fullmatch(r"[0-9a-fA-F]{64}", fingerprint), "Test certificate SHA-256 fingerprint missing or malformed"
     sha = run("git", "rev-parse", "HEAD").strip()
     assert re.fullmatch(r"[0-9a-f]{40}", sha), "Candidate SHA missing"
