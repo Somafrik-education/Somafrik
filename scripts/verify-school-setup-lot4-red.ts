@@ -356,7 +356,40 @@ function isStudentCardPr6Signal(file: string) {
   );
 }
 
+// The two historical apksigner fixture findings on the NFC verifier PR are
+// public certificate/key digests, not credentials. Permit *only* the exact
+// two fingerprint additions to .gitleaksignore, with the original file intact.
+// This must not turn the Carte eleve scope gate into a blanket exception for
+// changes to secret-scanner controls.
+const NFC_APKSIGNER_TEST_FIXTURE_FINGERPRINTS = new Set([
+  "73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88",
+  "73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90",
+]);
+
+function isApprovedNfcFixtureGitleaksIgnore(file: string) {
+  if (file !== ".gitleaksignore") return false;
+  try {
+    const baseline = execFileSync("git", ["show", "origin/develop:.gitleaksignore"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    const current = read(path.join(repoRoot, file));
+    if (!current.startsWith(baseline)) return false;
+    const added = current
+      .slice(baseline.length)
+      .split(/\\r?\\n/)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"));
+    return added.length === NFC_APKSIGNER_TEST_FIXTURE_FINGERPRINTS.size
+      && added.every((line) => NFC_APKSIGNER_TEST_FIXTURE_FINGERPRINTS.has(line))
+      && new Set(added).size === added.length;
+  } catch {
+    return false; // No git base or unrecognized history => fail closed.
+  }
+}
+
 function isStudentCardPr6IntegrationFile(file: string) {
+  if (file === ".gitleaksignore") return isApprovedNfcFixtureGitleaksIgnore(file);
   if (STUDENT_CARD_PR6_EXACT.has(file) || STUDENT_CARD_PR7_EXACT.has(file) || STUDENT_CARD_PR8_EXACT.has(file)) return true;
   if (/^web\/src\/components\/students\/StudentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
