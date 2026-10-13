@@ -63,6 +63,11 @@ export function nfcFailure(code: string): Error & { code: string } {
 export function nfcErrorCopy(error: unknown): string {
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
   const copies: Record<string, string> = {
+    STUDENT_CARD_DISABLED: "La fonctionnalité carte élève est désactivée pour cet établissement.",
+    STUDENT_CARD_NFC_DISABLED: "La programmation NFC est désactivée pour cet établissement.",
+    STUDENT_CARD_TENANT_DENIED: "Les droits ou l’établissement ne permettent pas cette opération.",
+    STUDENT_CARD_NFC_OPERATION_REQUIRED: "Identifiant de réservation manquant ou invalide. Relisez l’état Backend.",
+    STUDENT_CARD_NFC_OPERATION_MISMATCH: "La confirmation ne correspond pas à la réservation. Relisez l’état Backend.",
     STUDENT_CARD_NFC_EXPIRED: NFC_PHASE_COPY.expired,
     STUDENT_CARD_INVALID_STATE: "Carte révoquée, remplacée ou réservation indisponible. Actualisez les cartes.",
     NFC_CANCELLED: "Opération annulée. Relisez l’état de la carte avant de reprendre.",
@@ -83,6 +88,7 @@ export function nfcErrorCopy(error: unknown): string {
     STUDENT_CARD_NFC_UID_EXISTS: "Cette carte physique est déjà affectée. Son UID reste dans l’historique.",
     NFC_RESPONSE_INVALID: "Réponse serveur incohérente. Relisez l’état de l’opération.",
   };
+  if (error && typeof error === "object" && (("status" in error && error.status === 403) || ("statusCode" in error && error.statusCode === 403))) return copies.STUDENT_CARD_TENANT_DENIED;
   return copies[code] ?? "Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante.";
 }
 function requireIdentity(card: EnrollmentCard): NtagIdentity {

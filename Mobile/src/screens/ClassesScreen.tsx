@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
+import StudentCardNfcBatchControl from "../components/StudentCardNfcBatchControl";
 import { canReadRoute } from "../domain/security/permissions";
 import {
   scopedClassesForSession,
@@ -380,6 +381,7 @@ export default function ClassesScreen({ navigation }: any) {
                   <Text style={styles.openButtonText}>{SCOLARITE_COPY.openClassStudents}</Text>
                 </TouchableOpacity>
               ) : null}
+              <StudentCardNfcBatchControl key={`${resourceScopeKey}:${item.id}`} schoolClass={item} mutationsBlocked={mutationsBlocked} />
               <ClassMutationControls
                 row={item}
                 networkRequired={mutationsBlocked}

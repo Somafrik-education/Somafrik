@@ -317,6 +317,8 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   "docs/mobile/NFC-PROG-02-REVIEW.md",
   "docs/mobile/NFC-PROG-03-REVIEW.md",
   "docs/mobile/NFC-PROG-03-UUID-REVIEW.md",
+  "docs/mobile/NFC-PROG-04-REVIEW.md",
+  "Mobile/src/screens/ClassesScreen.tsx",
   "backend/lib/schoolSettings.studentCard.test.js",
   "backend/db/migrations/20261012_student_cards_nfc_encoding.sql",
   "Mobile/src/lib/establishment.ts",
@@ -750,6 +752,8 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "docs/mobile/NFC-PROG-02-REVIEW.md",
         "docs/mobile/NFC-PROG-03-REVIEW.md",
         "docs/mobile/NFC-PROG-03-UUID-REVIEW.md",
+        "docs/mobile/NFC-PROG-04-REVIEW.md",
+        "Mobile/src/screens/ClassesScreen.tsx",
         "docs/mobile/PLAY-STORE-DATA-INVENTORY.md",
         "docs/audits/GATE-NFC-STORES.md",
       ]);
