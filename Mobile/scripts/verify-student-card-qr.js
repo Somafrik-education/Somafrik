@@ -143,7 +143,17 @@ function main() {
   assert.doesNotMatch(nfcPolicy, /react-native-nfc-manager/);
   assert.doesNotMatch(modal, /react-native-nfc-manager/);
   assert.match(attendance, /StudentCardNfcScannerModal/);
-  assert.match(attendance, /isStudentCardNfcScannerVisible/);
+  assert.match(policy, /export function isStudentCardNfcScannerVisible/);
+  assert.match(policy, /export function resolveStudentCardNfcAttendanceControl/);
+  assert.match(policy, /canUpdatePresences !== true\) return "permission_denied"/);
+  assert.match(policy, /isStudentCardNfcAttendanceScanEnabled\(args\.settings\)\) return "feature_disabled"/);
+  assert.match(policy, /hasValidSelectedClass\(args\.selectedClass\)\) return "class_required"/);
+  assert.match(attendance, /resolveStudentCardNfcAttendanceControl/);
+  assert.match(attendance, /nfcControl === "ready"/);
+  assert.match(attendance, /selectedClass && nfcControl === "ready"/);
+  assert.match(attendance, /if \(nfcControl !== "ready"\) setNfcScannerOpen\(false\)/);
+  assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
+  assert.match(attendance, /STUDENT_CARD_SCAN_COPY\.button/);
   assert.ok(appJson.expo.plugins.includes("./plugins/withSomafrikNfcAndroid"), "plugin NFC Android canonique");
   assert.ok(!appJson.expo.plugins.some((item) => Array.isArray(item) && item[0] === "react-native-nfc-manager"), "pas de plugin NFC iOS générique");
   assert.doesNotMatch(JSON.stringify(appJson.expo.ios), /NFCReaderUsageDescription|com\.apple\.developer\.nfc/);
