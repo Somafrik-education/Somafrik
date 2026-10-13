@@ -1,0 +1,71 @@
+{
+  "issue": 832,
+  "title": "AUDIT — Fiche élève : modifications non appliquées/persistées",
+  "auditedAt": "2026-09-30",
+  "gitSha": "30deaacc6f61c5c584edbc59d93215ef49ec924d",
+  "baseBranch": "develop",
+  "governance": "AUDIT ONLY / HOLD — no product fix in this revision",
+  "runtime": {
+    "liveHttpDbReproduction": false,
+    "exampleStudentPath": "/etablissement/eleves/CD-ITR-AS-26-00004",
+    "reason": "Cloud agent workspace has no .env, DATABASE_URL, Docker, or running API/Postgres. Live PATCH/GET/SQL/F5 on the cited student was not executed. Chain proof is static call-graph plus existing backend HTTP/PG tests that already exercise PATCH when it is actually invoked."
+  },
+  "rootCause": {
+    "id": "C1.7_MOCK_WRITE_VS_PG_READ",
+    "summary": "Web student workspace reads PostgreSQL via GET /api/students/:studentCode but identity/guardian/administrative Save confirms into an in-memory mock Map. studentsApi.update (PATCH) is defined and the backend UPDATE students path works, but the fiche never calls it. Display fields stay on the GET dossier, so confirmation looks successful while values do not change; F5 restores the unchanged row.",
+    "files": [
+      "web/src/hooks/useStudentEditingContext.ts",
+      "web/src/lib/studentEditingRepository.mock.ts",
+      "web/src/lib/studentsApi.ts",
+      "web/src/hooks/useStudentWorkspace.ts",
+      "web/src/components/students/StudentIdentityTab.tsx",
+      "backend/db/classStudentsRepository.js"
+    ]
+  },
+  "proofs": {
+    "studentsApiUpdateCallSites": {
+      "pattern": "studentsApi.update",
+      "webCallSites": 0,
+      "repoCallSites": 0,
+      "classification": "request absente"
+    },
+    "mockRepositoryNetworkImports": {
+      "file": "web/src/lib/studentEditingRepository.mock.ts",
+      "fetchOrApiImports": 0,
+      "classification": "UI-only / in-memory Map"
+    },
+    "c18EnrollmentListNeverUsedToSeedEditor": {
+      "pattern": "studentEnrollmentC18Api.list",
+      "webCallSites": 0
+    },
+    "workspaceRefreshAfterEdit": {
+      "studentTabsCallUseStudentWorkspaceRefresh": false,
+      "identityOnSuccess": "editing.refreshFromStore",
+      "guardiansOnSuccess": "editing.refreshFromStore",
+      "enrollmentOnSuccess": "editing.refreshFromStore"
+    },
+    "backendPatchExistsAndWorksWhenCalled": {
+      "route": "PATCH /api/students/:id",
+      "handler": "backend/server.js:2208",
+      "sql": "backend/db/classStudentsRepository.js:updateByStudentCode",
+      "existingTests": [
+        "backend/scripts/verify-students-legacy-cleanup.js (PATCH parentPhone then GET list)",
+        "backend/lib/classStudentsRepository.pg.test.js (UPDATE students + 409 occupancy)"
+      ]
+    },
+    "mobileAsymmetry": {
+      "mobileCallsPatch": true,
+      "file": "Mobile/src/components/StudentMutationControls.tsx:140",
+      "payload": ["firstName", "lastName", "parentPhone", "expectedUpdatedAt"]
+    }
+  },
+  "classificationByTab": {
+    "overview": "read-only / another (no Save)",
+    "identity": "request absente + UI-only + payload mapping mismatch if PATCH were wired",
+    "enrollments": "payload incorrect (synthetic MIGRATION enrollment id) / request may 404 / overlay discarded",
+    "guardians": "request absente + editor not seeded from GET dossier guardians",
+    "medical": "UPDATE absent + GET stub emptyMedicalProfile",
+    "documents": "write UI disabled; GET student_documents when table exists",
+    "history": "derived projection only; write UI disabled"
+  }
+}
