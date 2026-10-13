@@ -93,14 +93,15 @@ def main():
     signature = run(tool("apksigner"), "verify", "--verbose", "--print-certs", str(args.apk))
     assert "Verified" in signature, "APK signature verification failed"
     assert "CN=Android Debug" in signature, "This workflow must use the test certificate, never the production certificate"
-    certificate = re.search(r"Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+)", signature)
-    assert certificate and len(certificate[1]) == 64, "Test certificate fingerprint missing"
+    certificate = re.search(r"Signer #1 certificate SHA-256 digest:\\s*([0-9a-fA-F: ]+)", signature, re.IGNORECASE)
+    fingerprint = re.sub(r"[:\\s]", "", certificate[1]) if certificate else ""
+    assert re.fullmatch(r"[0-9a-fA-F]{64}", fingerprint), "Test certificate SHA-256 fingerprint missing or malformed"
     sha = run("git", "rev-parse", "HEAD").strip()
     assert re.fullmatch(r"[0-9a-f]{40}", sha), "Candidate SHA missing"
     evidence = {"candidateSha": sha, "apkSha256": hashlib.sha256(args.apk.read_bytes()).hexdigest(),
                 "bytes": args.apk.stat().st_size, "package": PACKAGE, "apiUrl": PREPROD_API,
                 "releaseProfile": "preview", "abi": "arm64-v8a", "signing": "Android Debug (test only)",
-                **versions, "certificateSha256": certificate[1].lower(), "productionApiUrlAbsent": True,
+                **versions, "certificateSha256": fingerprint.lower(), "productionApiUrlAbsent": True,
                 "embeddedConfigChecked": True, "embeddedBundleChecked": True, "secretPatternEntriesChecked": scanned,
                 "nativeManifestChecked": True, "physicalSmoke": "NOT_RUN", "status": "DRAFT/HOLD"}
     args.output.mkdir(parents=True, exist_ok=True)
