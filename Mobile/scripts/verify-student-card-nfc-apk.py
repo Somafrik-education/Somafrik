@@ -63,7 +63,9 @@ def verify_badging(badging, config):
     assert int(package[2]) == config.get("android", {}).get("versionCode"), "Compiled version code differs from embedded Expo config"
     minimum = re.search(r"sdkVersion:'(\d+)'", badging)
     target = re.search(r"targetSdkVersion:'(\d+)'", badging)
-    assert minimum and 24 <= int(minimum[1]) < 31, "Minimum SDK must preserve existing pre-Android-12 support"
+    assert minimum, f"Compiled minimum SDK missing from aapt2 badging: {badging[:600]!r}"
+    assert 24 <= int(minimum[1]) < 31, (f"Compiled minSdkVersion={minimum[1]} (expected 24..30); "
+                                                f"compiled targetSdkVersion={target[1] if target else 'missing'}")
     assert target and int(target[1]) >= 31, "Android target SDK incompatible with NFC bridge requirements"
     return {"versionName": package[3], "versionCode": int(package[2]), "minSdk": int(minimum[1]), "targetSdk": int(target[1])}
 
