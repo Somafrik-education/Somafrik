@@ -372,9 +372,12 @@ function isApprovedNfcFixtureGitleaksIgnore(file: string) {
     const baseline = execFileSync("git", ["show", "origin/develop:.gitleaksignore"], {
       cwd: repoRoot,
       encoding: "utf8",
-    });
-    const current = read(path.join(repoRoot, file));
-    if (!current.startsWith(baseline)) return false;
+    }).replace(/\s+$/, "");
+    const current = read(path.join(repoRoot, file)).replace(/\s+$/, "");
+    // develop's ignore file ends with a blank line; the NFC addition follows
+    // the last fingerprint directly. Compare the shared prefix, not the bytes
+    // of that trailing newline.
+    if (current !== baseline && !current.startsWith(`${baseline}\n`)) return false;
     const added = current
       .slice(baseline.length)
       .split(/\r?\n/)
@@ -822,6 +825,17 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         studentCardPr7DistinctChantier.kind,
         "na",
         "L4-09: chantier Carte élève Mobile (PR7) doit être N/A dans le périmètre contrôlé",
+      );
+
+      const studentCardGitleaksFingerprint = evaluateLot4Scope([
+        "Mobile/scripts/verify-student-card-nfc-apk_test.py",
+        ".github/workflows/nfc-encoding-preprod.yml",
+        ".gitleaksignore",
+      ]);
+      assert.equal(
+        studentCardGitleaksFingerprint.kind,
+        "na",
+        "L4-09: seules les deux empreintes historiques du vérificateur APK sont admises dans .gitleaksignore",
       );
 
       const studentCardPr7PlusBackend = evaluateLot4Scope([
