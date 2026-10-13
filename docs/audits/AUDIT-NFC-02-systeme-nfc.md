@@ -1,6 +1,8 @@
 # AUDIT-NFC-02 — Système NFC Somafrik V2
 
-**Statut :** `AUDIT-NFC-02 — DRAFT / HOLD — AUCUN MERGE — EN ATTENTE DU DIFF CTO INDÉPENDANT.`
+**Statut :** `AUDIT-NFC-02 — VALIDATION DOCUMENTAIRE CONFORME — DRAFT / HOLD — AUCUN MERGE — PAS DE READY.`
+
+Le diff structurel de [#918](https://github.com/Somafrik-education/Somafrik/pull/918) a été confirmé par le CTO (base `1bdd302e`, HEAD alors `29ec1a93`, 1 fichier, +551). La section H confronte ensuite les conclusions critiques aux sources. Elle ne passe pas la PR en Ready.
 
 **Nature :** audit technique, fonctionnel et sécurité. Documentation uniquement.  
 **Date de lecture :** 13 octobre 2026 (mandat daté 14 octobre 2026).  
@@ -218,7 +220,8 @@ Sur `develop` : aucune. `Mobile/package.json` ne contient pas `react-native-nfc-
 | Programmation physique NTAG213/216 | **Absente** | pas de code NDEF ; permission NFC retirée |
 | Lecture physique NFC | **Absente** | idem |
 | Lecture QR dans l’appel | Implémentée, en ligne seulement, une carte puis réarmement manuel | `StudentCardQrScannerModal` |
-| Appel classe par scans successifs sans quitter l’écran, compteur restant | **Absent** | pas de session NFC ; le QR se met en pause après chaque lecture |
+| Appel classe par scans successifs sans quitter l’écran, compteur de session | **Absent** | pas de session NFC ; le QR se met en pause après chaque lecture |
+| Compteur d’appel (présents / effectif de la classe) | Implémenté, hors session NFC | `TeacherAttendanceScreen.tsx` affiche `attended/effectif` via `getRollCallDraftStats`, qui compte des élèves uniques |
 | Présence canonique depuis un token | Implémentée (présent ou retard), pas depuis une puce | `scanStudentCardHttp` → `upsertAttendance` |
 | Badge impayé informatif | Implémenté, ne bloque pas la présence | `classifyStudentCardFinance` |
 | Exclusion automatique cours ou bus pour impayé | **Absente** (conforme au mandat) | aucun lien carte → exclusion |
@@ -533,6 +536,95 @@ Performance : non mesurable. Pas de boucle reader mode à chronométrer.
 Même capability, mêmes règles **prévues**. Seul le QR est livré. La révocation casse les deux canaux d’un coup, puisqu’il n’y a qu’un hash. Copier le QR suffit à rejouer le token. Cloner une NTAG213 copierait le même secret le jour où l’écriture existera. Ni l’UID ni le NDEF ne prouvent l’authenticité.
 
 ---
+
+## H. Validation documentaire finale
+
+**Date :** 13 octobre 2026.  
+**Périmètre :** flags de scan, autorisations financières, routes et schéma PostgreSQL, PR #913 à #917.  
+**Méthode :** relecture des fichiers sur `develop` @ `1bdd302e8ab228d6aaf0bfea3078d9b8361efe1f`, et des HEAD GitHub des PR concurrentes. Aucun test PostgreSQL nouveau : `DATABASE_URL` et le module `pg` restent absents. Aucun fichier produit modifié.
+
+Verdict : les conclusions critiques du rapport sont **conformes aux sources**. Une précision corrige la lecture « compteur de présence absent ». Le tableau CTO peut garder « partiel » pour la finance et « absent » pour le NFC matériel. Il ne doit pas traiter le compteur d’appel de classe comme inexistant.
+
+### H.1 Flags de scan
+
+| Affirmation | Verdict | Source |
+| --- | --- | --- |
+| L’émission ne consulte que le master, puis accepte `nfc`, `qr` ou `nfc_qr`, et insère `status = 'active'` | Conforme | `studentAccessCardsManagement.js` : `assertStudentCardMasterEnabled` ligne 246, `normalizeMedium` ligne 247, `status: "active"` ligne 264. Aucune occurrence de `studentCardNfc` ni `studentCardQr` dans ce fichier |
+| Le scan HTTP ne lit ni le flag NFC ni le flag QR | Conforme | `server.js` lignes 2291-2341 : master via `scanStudentCard`, pointage seulement si `attendance`, finance seulement si `finance === true` |
+| Le flag pointage est fail-closed et limité à l’intention présence | Conforme | `studentCardAttendance.js` lignes 38-47, appelé depuis `scanStudentCardHttp` après `hasAttendanceIntent` |
+| Le flag finance est fail-closed et limité à `finance: true` | Conforme | `studentCardFinance.js` lignes 39-44 et 74-82 ; conflit avec `attendance` lignes 58-63 |
+| Le bouton QR Mobile exige master + QR + pointage | Conforme | `studentCardScan.ts` lignes 65-74, utilisé par `isStudentCardQrScannerVisible` |
+| Capabilities omet le flag NFC | Conforme | `studentCardCapabilities.js` lignes 9-14 : quatre clés, pas `studentCardNfcEnabled` |
+| La branche présence exige aussi l’abonnement `write_presence` | Précision ajoutée, pas une contradiction | `server.js` lignes 2304-2309. Le rapport de routes ne le citait pas |
+
+### H.2 Autorisations financières
+
+`canAccess` compare le jeton du principal à la liste exacte de la route (`rbacService.js` lignes 602-629). « Modifier présences » ne vaut pas `Présences:CREATE`.
+
+| Contrôle | Liste exacte | Conséquence vérifiée |
+| --- | --- | --- |
+| `POST /api/student-cards/scan` | `Présences:CREATE` ou `Présences:UPDATE` (`rbacService.js` ligne 106) | Porte d’entrée unique, y compris pour le badge finance |
+| Deuxième porte finance | `requirePermission("GET /api/finance/student-fees")` puis `assertStudentCardFinanceEnabled` (`server.js` lignes 2331-2337) | `Impayés:READ`, `Paiements:READ` ou `Frais & tarifs:READ` (`rbacService.js` ligne 143) |
+| Comptable | `Impayés:READ`, `Paiements:READ`, `Frais & tarifs:READ` (migration `20260903` lignes 817-822). Aucune ligne `Présences:CREATE` | Ne franchit pas la première porte. Le badge existe, le rôle finance ne l’atteint pas par la carte |
+| Enseignant | `Présences:CREATE` et `UPDATE` (migration lignes 767-771). Pas de jeton Paiements, Impayés ou Frais | Peut pointer. Ne reçoit pas le badge |
+| Admin School | `Présences:READ` seulement (migration ligne 366). Aucune migration ultérieure ne lui ajoute CREATE ou UPDATE | Peut émettre (`Élèves:UPDATE`). Ne peut pas scanner |
+| Plateforme | Routes carte dans `platformPersonalDataGuard.js` lignes 93-99, deny avant la liste | Superadmin et Admin Pays restent exclus |
+| Effet métier du badge | `classifyStudentCardFinance` renvoie un code. Le scan présence et le scan finance sont exclusifs | Aucune exclusion de cours ou de transport |
+
+Le contrôle financier est donc **partiel** : calcul serveur réel, consultation réservée aux rôles qui ont à la fois le droit de pointer et un droit de lecture finance (secrétaire, direction). Ce n’est pas un module à créer de zéro. La PR de l’étape 5 doit ouvrir la consultation au rôle finance sans donner le pointage à tout le monde, et sans bloquer une présence.
+
+### H.3 PostgreSQL et routes
+
+| Affirmation | Verdict | Source |
+| --- | --- | --- |
+| Cinq flags, défaut false | Conforme | `20261005_school_settings_student_card_flags.sql` |
+| `token_hash` SHA-256 unique, une carte `active` par élève et par école | Conforme | `20261006_student_access_cards.sql` lignes 24-26 et 47-49 |
+| `last_scan_at` présent et non écrit par le resolve | Conforme | colonne ligne 20 ; `studentAccessCardsPgStore.js` n’a pas d’`UPDATE` de cette colonne ; les tests de resolve exigent `null` |
+| Pas de RLS sur `student_access_cards` | Conforme | aucune instruction `ENABLE ROW LEVEL SECURITY` dans la migration ni dans `schema.sql` pour cette table |
+| Présence du jour unique, second scan = mise à jour | Conforme | `postgresRepository.js` lignes 5367-5375, index `uq_attendance_school_student_date` dans `attendanceUniqueness.js` lignes 42-45 |
+| Les routes carte refusent le moteur mémoire | Conforme | `requireStudentCardsPg` dans `server.js` lignes 2209-2213 |
+| Idempotence limitée à la branche présence | Conforme | `withIdempotency` uniquement dans le `if (hasAttendanceIntent)` lignes 2311-2324 |
+| `GET /api/students/:id/cards` ne filtre pas parent / élève | Conforme | `server.js` lignes 2228-2233 : école + élève de l’école, pas `authorizeStudentReadForPrincipal` |
+
+Ces constats de schéma sont des lectures de SQL et de store. Ils ne rejouent pas les suites `*.pg.test.js`, qui restent **BLOCKED**.
+
+### H.4 PR #913 à #917
+
+Relecture GitHub au moment de cette validation. Toutes sont **OPEN**, **draft**, **MERGEABLE**, base `1bdd302e8ab228d6aaf0bfea3078d9b8361efe1f`. Les HEAD n’ont pas bougé depuis le rapport initial.
+
+| PR | HEAD | Phrase QA |
+| --- | --- | --- |
+| #913 | `db6ca7ec48817dc52740fb64d3bf52229d01ec6a` | `StudentCardNfcEnrollmentPanel.tsx` |
+| #914 | `01d2ebc95c84c68d2c23ba03490ff1f77c634fc0` | même fichier |
+| #915 | `051751e6c7412d78546ec33596ca7dec774e925c` | panneau + lot + `studentCardNfcEncoding.ts` |
+| #916 | `6734ff816317163830a5b3df2edd4b4e6d5b2e7b` | idem |
+| #917 | `5f2aa2522f89675dc99809955feef41e486e4b51` | idem |
+
+`git grep` de la phrase sur `develop` : **absente**.
+
+Sur #917, le panneau affiche `statusLabels.active = "Active"` et, séparément, la phrase si `cards && !enabled`, avec `enabled = response.nfcEnabled === true`. `readNfcEnabled` vaut `studentCardEnabled === true && studentCardNfcEnabled === true`. `assertNfcEnabled` lève `STUDENT_CARD_NFC_DISABLED` pour l’encodage. La capture QA est donc expliquée par ce brouillon, pas par une incohérence de `develop`.
+
+Les listes de fichiers sont emboîtées : #914 reprend #913, #915 ajoute le lot, #916 ajoute l’intégration, #917 ajoute `.gitleaksignore`. Elles modifient les mêmes fichiers produit (`backend/server.js`, `schema.sql`, `TeacherAttendanceScreen.tsx`, manifeste Android). Ce n’est pas la preuve que le contenu commun est identique octet pour octet. C’est la preuve qu’on ne peut pas les merger comme cinq chantiers parallèles. La consolidation doit choisir une pointe et écarter les autres, après diff de contenu. Aucune de ces branches n’est sur `develop`. Leur code NFC n’est pas opérationnel.
+
+Aucune de ces cinq PR n’introduit, dans `StudentCardNfcScannerModal.tsx`, `studentCardNfc.ts` ou `TeacherAttendanceScreen.tsx`, les mots « restant », « remaining » ou « compteur ». Le compteur de session reste à spécifier même si une pointe draft est retenue.
+
+### H.5 Lecture de l’ordre de développement proposé
+
+| Étape CTO | Ce que la source impose |
+| --- | --- |
+| 1. Consolidation #913–#917 | Confirmé. Une pointe, pas cinq merges. #891 reste à part, base périmée `72aea41b` |
+| 2. Contrat de flags | Confirmé. Le trou est l’absence d’enforcement NFC/QR sur l’API de `develop`, pas l’absence des colonnes |
+| 3. Encodage et lecture NTAG213 | Confirmé absent de `develop`. Le brouillon ne devient pas une recette |
+| 4. Multiscan avec compteur de classe | Le compteur d’appel existe déjà (`TeacherAttendanceScreen.tsx` lignes 333-336 et 748-749, `attendanceTruth.ts` `getRollCallDraftStats` lignes 154-179 : élèves uniques). À construire : la session continue et le décompte des restants dans cette session |
+| 5. Intégration finance | Le badge existe. À trancher : quel rôle consulte sans pouvoir pointer, toujours sans exclusion automatique |
+| 6. Tests PostgreSQL et recette physique | Toujours **BLOCKED** / **NOT RUN**. Indispensables avant un PASS de mise en production |
+| Bus | Confirmé absent. Chantier distinct |
+
+### H.6 Décision de cette validation
+
+Les 551 lignes initiales ne sont pas contredites par les sources relues. La seule correction de lecture est le compteur d’appel, déjà nuance dans la section C et désormais explicite ici.
+
+#918 reste **Draft / HOLD**. Cette section n’autorise ni Ready ni merge. Le passage Ready reste un acte CTO distinct, après lecture de cet addendum.
 
 ## Critères de clôture
 
