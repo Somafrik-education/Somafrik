@@ -117,7 +117,9 @@ function main() {
   assert.match(store, /BEGIN|withTransaction/);
   assert.doesNotMatch(catalog, /Carte Élève|moduleKey: "cards"/);
   assert.doesNotMatch(presences, /student_access_cards|cardToken/);
-  assert.doesNotMatch(schema, /\bnfc_uid\b|\bqr_payload\b|\braw_token\b/);
+  assert.doesNotMatch(schema, /\bqr_payload\b|\braw_token\b/);
+  assert.match(schema, /student_access_cards_nfc_uid_unique/);
+  assert.match(schema, /student_access_cards_nfc_check/);
   assert.doesNotMatch(migration, /CREATE TABLE student_debts|CREATE TABLE student_invoices/);
   console.log("verify-student-access-cards (statique): SUCCESS");
 }

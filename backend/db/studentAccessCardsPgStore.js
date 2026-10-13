@@ -50,7 +50,7 @@ function createStudentAccessCardsPgStore(repo) {
     const publicRef = asTrimmed(publicId);
     if (!school || !publicRef) return null;
     return one(
-      `SELECT id, school_id, student_id, public_id, token_hash, medium, status
+      `SELECT id, school_id, student_id, public_id, token_hash, medium, status, nfc_encoding_state
          FROM student_access_cards
         WHERE school_id = $1
           AND public_id = $2
@@ -124,6 +124,8 @@ function createStudentAccessCardsPgStore(repo) {
     return all(
       `SELECT id, school_id, student_id, public_id, medium, status,
               issued_at, revoked_at, revoke_reason, replaced_by_card_id,
+              nfc_uid, nfc_tag_type, nfc_encoding_state, nfc_encoded_at, nfc_locked_at,
+              nfc_operation_id, nfc_reservation_expires_at, nfc_replaces_card_id,
               created_at, updated_at
          FROM student_access_cards
         WHERE school_id = $1
@@ -137,8 +139,9 @@ function createStudentAccessCardsPgStore(repo) {
     return one(
       `INSERT INTO student_access_cards (
          school_id, student_id, public_id, token_hash, medium, status,
-         created_by_user_id
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+         created_by_user_id, nfc_uid, nfc_tag_type, nfc_encoding_state,
+         nfc_operation_id, nfc_reservation_expires_at, nfc_replaces_card_id, issued_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, NOW()))
        RETURNING *`,
       [
         row.school_id,
@@ -148,6 +151,9 @@ function createStudentAccessCardsPgStore(repo) {
         row.medium,
         row.status || "active",
         isUuid(row.created_by_user_id) ? row.created_by_user_id : null,
+        row.nfc_uid || null, row.nfc_tag_type || null, row.nfc_encoding_state || null,
+        row.nfc_operation_id || null, row.nfc_reservation_expires_at || null, row.nfc_replaces_card_id || null,
+        row.issued_at || null,
       ],
     );
   }
@@ -178,7 +184,7 @@ function createStudentAccessCardsPgStore(repo) {
               updated_at = NOW()
         WHERE id = $1
           AND school_id = $2
-          AND status = 'active'
+          AND status IN ('active', 'issued')
         RETURNING *`,
       [cardId, schoolId, asTrimmed(reason) || "revoked"],
     );
@@ -284,7 +290,73 @@ function createStudentAccessCardsPgStore(repo) {
     return exec(repo);
   }
 
+  async function rotatePendingNfc(schoolId, cardId, uid, tagType, previousHash, nextHash, operationId) {
+    return one(
+      `UPDATE student_access_cards SET token_hash = $6, updated_at = NOW(),
+              nfc_retry_operation_ids = array_append(nfc_retry_operation_ids, $7::uuid)
+       WHERE id = $1 AND school_id = $2 AND nfc_uid = $3 AND nfc_tag_type = $4
+         AND token_hash = $5 AND status = 'issued' AND nfc_encoding_state = 'pending'
+         AND nfc_reservation_expires_at > clock_timestamp()
+         AND NOT ($7::uuid = ANY(nfc_retry_operation_ids))
+       RETURNING *`,
+      [cardId, schoolId, uid, tagType, previousHash, nextHash, operationId],
+    );
+  }
+
+  async function confirmNfc(schoolId, cardId, uid, tagType, locked, expectedHash) {
+    return one(
+      `UPDATE student_access_cards
+          SET status = 'active',
+              nfc_encoding_state = CASE WHEN $5 OR nfc_encoding_state = 'locked' THEN 'locked' ELSE 'encoded' END,
+              nfc_encoded_at = COALESCE(nfc_encoded_at, NOW()),
+              nfc_locked_at = CASE WHEN $5 THEN COALESCE(nfc_locked_at, NOW()) ELSE nfc_locked_at END,
+              updated_at = NOW()
+        WHERE id = $1 AND school_id = $2 AND nfc_uid = $3 AND nfc_tag_type = $4
+          AND token_hash = $6
+          AND ((status = 'issued' AND nfc_encoding_state = 'pending'
+                AND nfc_reservation_expires_at > clock_timestamp())
+            OR (status = 'active' AND nfc_encoding_state IN ('encoded', 'locked')))
+        RETURNING *`,
+      [cardId, schoolId, uid, tagType, locked, expectedHash],
+    );
+  }
+
+  async function lockStudent(schoolId, studentId) {
+    return one("SELECT id FROM students WHERE school_id = $1 AND id = $2 FOR NO KEY UPDATE", [schoolId, studentId]);
+  }
+
+  async function lockCard(schoolId, cardId) {
+    if (!isUuid(cardId)) return null;
+    return one(`SELECT *, nfc_reservation_expires_at <= clock_timestamp() AS reservation_expired
+      FROM student_access_cards WHERE school_id = $1 AND id = $2 FOR UPDATE`, [schoolId, cardId]);
+  }
+
+  async function findNfcOperation(schoolId, operationId) {
+    return one("SELECT * FROM student_access_cards WHERE school_id = $1 AND nfc_operation_id = $2", [schoolId, operationId]);
+  }
+
+  async function findPendingNfc(schoolId, studentId) {
+    return one(`SELECT * FROM student_access_cards WHERE school_id = $1 AND student_id = $2
+      AND status = 'issued' AND nfc_encoding_state = 'pending'`, [schoolId, studentId]);
+  }
+
+  async function expirePendingNfc(schoolId, studentId) {
+    return all(`UPDATE student_access_cards SET status = 'revoked', revoked_at = clock_timestamp(),
+      revoke_reason = 'nfc_reservation_expired', updated_at = clock_timestamp()
+      WHERE school_id = $1 AND student_id = $2 AND status = 'issued' AND nfc_encoding_state = 'pending'
+        AND nfc_reservation_expires_at <= clock_timestamp() RETURNING *`, [schoolId, studentId]);
+  }
+
+  async function queryReplacementPrevious(schoolId, oldCardId, newCardId) {
+    return one(`UPDATE student_access_cards SET status = 'replaced', revoked_at = COALESCE(revoked_at, NOW()),
+      revoke_reason = 'replaced', replaced_by_card_id = $3, updated_at = NOW()
+      WHERE school_id = $1 AND id = $2 AND status IN ('active', 'lost') RETURNING *`, [schoolId, oldCardId, newCardId]);
+  }
+
   return {
+    lockStudent, lockCard, findNfcOperation, findPendingNfc, expirePendingNfc, queryReplacementPrevious,
+    rotatePendingNfc,
+    confirmNfc,
     findStudentInSchool,
     findByPublicIdInSchool,
     findScanStudent,

@@ -20,13 +20,18 @@ Cette PR **ne soumet pas** l’application sur Google Play.
 | Données scolaires (écoles, classes, élèves, emplois du temps) | API canonique hydratée | Périmètre métier | Mémoire runtime | PostgreSQL | Oui | Disparaît à la fermeture de session |
 | Jetons d’accès / refresh | Login API | Session | SecureStore, `WHEN_UNLOCKED_THIS_DEVICE_ONLY` | JWT côté API | Oui (header Authorization, jamais loggé) | Logout : suppression SecureStore |
 | Photo de compte | Appareil photo / galerie (permission runtime) | Photo utilisateur | Fichier temporaire d’upload, pas de galerie Somafrik persistée | Stockage backend si upload | Oui | Non conservée localement après upload |
-| Identifiant carte élève / QR capability | Flux caméra (détection locale du QR) | Identification élève / présence autorisée | Aucun — stockage local capability : aucun | Capability transmis au backend Somafrik en HTTPS ; aucune image caméra uploadée | Oui | Mémoire volatile uniquement, effacé après l’appel. Tracking : aucun |
+| Identifiant carte élève / QR ou NFC capability | Flux caméra (QR) ou lecture NDEF (NFC) | Identification scolaire / Carte Élève / présence autorisée | Aucun — stockage local capability : aucun. Pas de persistance UID. | Capability transmis au backend Somafrik en HTTPS ; aucune image caméra uploadée ; pas de paiement NFC | Oui | Mémoire volatile uniquement, effacé après l’appel. Tracking : aucun |
 
 ## Hors collecte Mobile
 
-- Pas d’analytics tiers, pas de Sentry, pas de FCM, pas de NFC dans ce lot.
+- Pas d’analytics tiers, pas de Sentry, pas de FCM. Pas de tracking.
 - Image caméra : traitée localement, non stockée, non uploadée.
-- Capability QR : transmis au backend Somafrik en HTTPS. Stockage local capability : aucun. Tracking : aucun.
-- QR capability : jamais loggé, jamais mis en outbox / SecureStore / SQLite.
+- Capability carte élève (QR ou NFC) : transmis au backend Somafrik en HTTPS. Stockage local capability : aucun. Tracking : aucun. Pas de persistance UID. Pas de paiement NFC.
+- QR / NFC capability : jamais loggé, jamais mis en outbox / SecureStore / SQLite.
+- NFC : identification scolaire / Carte Élève uniquement. Permission Android NFC + lecture NDEF via le plugin Android dédié ; sessions lecture/encodage exclusives, aucune activation NFC iOS. Aucune nouvelle catégorie de données.
 - Mot de passe et PIN : saisis, jamais persistés. PIN démo uniquement via `EXPO_PUBLIC_DEMO_PIN` en développement.
 - L’outbox ne contient **aucun** `accessToken` / `refreshToken` / `password` / `pin` (LOT 5, `OUTBOX_SECRET_FORBIDDEN`).
+
+## NFC-ENC-01 (brouillon, Android uniquement)
+
+Le parcours d'encodage NTAG213/216 lit l'UID usine pour associer la carte physique à l'élève dans l'établissement. L'UID et l'état d'encodage/verrouillage sont conservés côté PostgreSQL canonique. La puce contient uniquement une capability révocable ; aucune identité, donnée financière ou session applicative. Le token reste en mémoire volatile Mobile. Aucun appel présence/finance n'est déclenché par l'encodage. NFC Android facultatif ; aucun entitlement NFC iOS. Smoke matériel obligatoire avant release : voir `NFC-ENCODING-SMOKE.md`.
