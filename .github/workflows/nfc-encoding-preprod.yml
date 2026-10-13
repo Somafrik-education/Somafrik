@@ -59,9 +59,29 @@ jobs:
           node backend/lib/studentAccessCards.http.pg.test.js
           node backend/lib/studentAccessCards.scan.http.pg.test.js
 
+  nfc-mobile:
+    name: NFC Android individual contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Install workspace and Mobile
+        run: npm ci && npm ci --prefix Mobile
+      - name: Verify individual programming, shared native session, QR and types
+        run: |
+          npm --prefix Mobile run test:student-card-nfc-encoding
+          npm --prefix Mobile run verify:student-card-qr
+          npm --prefix Mobile run typecheck
+          npm --prefix Mobile run verify:mobile-security
+
   nfc-apk:
     name: NFC APK preview exact HEAD
-    needs: nfc-postgres
+    needs: [nfc-postgres, nfc-mobile]
     runs-on: ubuntu-latest
     timeout-minutes: 75
     env:

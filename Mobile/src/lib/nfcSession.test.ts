@@ -159,7 +159,7 @@ test("startup failure is retryable and cancellation during startup blocks stale 
 });
 
 // Exercise the actual native facades with a mocked RN bridge, not a second implementation.
-test("native reader and encoder share a lease and fail closed on isEnabled errors", async () => {
+test("native reader and encoder share a lease and fail closed on isEnabled errors", async (t) => {
   const require = createRequire(import.meta.url);
   const loader = Module as unknown as { _load: (...args: unknown[]) => unknown };
   const original = loader._load;
@@ -167,18 +167,27 @@ test("native reader and encoder share a lease and fail closed on isEnabled error
   let requests = 0;
   let cancels = 0;
   const discovery = deferred<string>();
+  const ndef = require("react-native-nfc-manager/dist/ndef-lib");
+  let capacity = 144; let nativeStatus = 1; let writes = 0; let storage = 15; let observedUid = "04112233445566";
+  let encoded: number[] = []; let cached: unknown[] = [];
   const native = {
+    nfcAHandler: { transceive: async () => [0, 4, 4, 2, 1, 0, storage, 3] },
+    ndefHandler: {
+      getNdefStatus: async () => ({ status: nativeStatus, capacity }),
+      getNdefMessage: async () => ({ ndefMessage: cached }),
+      writeNdefMessage: async (bytes: number[]) => { writes++; encoded = bytes; },
+    },
     start: async () => {}, isSupported: async () => true,
     isEnabled: async () => { if (enabledFails) throw new Error("native enabled check failed"); return true; },
-    requestTechnology: async () => { requests++; return discovery.promise; },
+    requestTechnology: async (..._args: unknown[]) => { requests++; return discovery.promise; },
     cancelTechnologyRequest: async () => { cancels++; discovery.reject(new Error("cancelled")); },
-    getTag: async () => ({ id: "04112233445566" }),
+    getTag: async () => ({ id: observedUid }),
   };
   loader._load = function (request, parent, isMain) {
     if (request === "react-native") return { Platform: { OS: "android" } };
     if (request === "react-native-nfc-manager") return {
       __esModule: true, default: native, NfcAdapter: {},
-      NfcTech: { Ndef: "Ndef", NfcA: "NfcA", NfcB: "NfcB", IsoDep: "IsoDep" }, Ndef: {}, NdefStatus: {},
+      NfcTech: { Ndef: "Ndef", NfcA: "NfcA", NfcB: "NfcB", IsoDep: "IsoDep" }, Ndef: ndef, NdefStatus: { ReadWrite: 1, ReadOnly: 2, NotSupported: 3 },
     };
     return original.call(this, request, parent, isMain);
   };
@@ -203,6 +212,42 @@ test("native reader and encoder share a lease and fail closed on isEnabled error
     await reader.cancel();
     await rejected;
     assert.equal(cancels, 1);
+    native.requestTechnology = async (...args: unknown[]) => {
+      cached = encoded.length ? ndef.decodeMessage(encoded).map((record: { type: string }) => ({ ...record, type: Array.from(record.type, (c) => c.charCodeAt(0)) })) : [];
+      return (args[0] as string[])[0];
+    };
+    const token = `${"A".repeat(22)}.${"B".repeat(43)}`;
+    for (const [modelStorage, modelCapacity] of [[15, 144], [19, 888]]) await t.test(`native write checks capacity and freshly discovers NTAG storage ${modelStorage}`, async () => {
+      storage = modelStorage; capacity = modelCapacity; encoded = []; cached = [];
+      const device = createNfcEncoderHardware();
+      await device.availability(); await device.inspect(); await device.openNdef(observedUid);
+      assert.equal(await device.readText(), "");
+      const before = writes; await device.writeText(ndefForCard(token));
+      assert.equal(writes, before + 1);
+      assert.equal(await device.readText(), ndefForCard(token)); // Cached blank was replaced by fresh discovery.
+      assert.ok(!("makeReadOnly" in device)); await device.close();
+    });
+    await t.test("native insufficient capacity refuses before invoking writeNdefMessage", async () => {
+      capacity = 80; const device = createNfcEncoderHardware(); await device.inspect(); await device.openNdef(observedUid);
+      const before = writes; await assert.rejects(device.writeText(ndefForCard(token)), { code: "NFC_CAPACITY" });
+      assert.equal(writes, before); await device.close();
+    });
+    await t.test("missing capacity and unknown write/read status fail closed", async () => {
+      const device = createNfcEncoderHardware(); await device.inspect(); await device.openNdef(observedUid);
+      const before = writes;
+      capacity = Number.NaN; await assert.rejects(device.writeText(ndefForCard(token)), { code: "NFC_CAPACITY" });
+      capacity = 888; nativeStatus = 99;
+      await assert.rejects(device.writeText(ndefForCard(token)), { code: "NFC_CAPACITY" });
+      await assert.rejects(device.isReadOnly(), { code: "NFC_STATE" }); assert.equal(writes, before);
+      nativeStatus = 1; await device.close();
+    });
+    await t.test("different UID on rediscovery cannot be accepted as read-back", async () => {
+      capacity = 888; const device = createNfcEncoderHardware(); await device.inspect(); await device.openNdef(observedUid);
+      const write = native.ndefHandler.writeNdefMessage;
+      native.ndefHandler.writeNdefMessage = async (bytes: number[]) => { await write(bytes); observedUid = "04778899001122"; };
+      await assert.rejects(device.writeText(ndefForCard(token)), { code: "NFC_SAME_CARD" });
+      await device.close(); observedUid = "04112233445566"; native.ndefHandler.writeNdefMessage = write;
+    });
   } finally {
     loader._load = original;
   }
