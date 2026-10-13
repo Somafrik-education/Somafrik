@@ -48,6 +48,7 @@ jobs:
         env:
           SOMAFRIK_NFC_TEST_DATABASE_URL: postgresql://nfc_test:nfc_test_ci_only@localhost:5432/nfc_encoding_test
           DATABASE_URL: postgresql://nfc_test:nfc_test_ci_only@localhost:5432/nfc_encoding_test
+          SOMAFRIK_NFC_EVIDENCE_DIR: ${{ runner.temp }}/nfc-integration-evidence
         run: |
           test -n "$SOMAFRIK_NFC_TEST_DATABASE_URL"
           node --test backend/lib/studentCardsNfcEncoding.sql.test.js backend/lib/studentCardsNfcEncoding.test.js backend/lib/studentCardsNfcLifecycle.pg.test.js
@@ -58,6 +59,14 @@ jobs:
           node backend/lib/studentAccessCards.finance.pg.test.js
           node backend/lib/studentAccessCards.http.pg.test.js
           node backend/lib/studentAccessCards.scan.http.pg.test.js
+          npm --prefix Mobile run test:student-card-nfc-integration
+      - name: Upload sanitized integration performance measurements
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfc-integration-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/nfc-integration-evidence/orchestration.json
+          if-no-files-found: error
+          retention-days: 14
 
   nfc-mobile:
     name: NFC Android individual and batch contracts
@@ -76,6 +85,7 @@ jobs:
         run: |
           npm --prefix Mobile run test:student-card-nfc-encoding
           npm --prefix Mobile run test:student-card-nfc-batch
+          npm --prefix Mobile run test:student-card-nfc-security
           npm --prefix Mobile run verify:student-card-qr
           npm --prefix Mobile run typecheck
           npm --prefix Mobile run verify:mobile-security

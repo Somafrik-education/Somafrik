@@ -2226,6 +2226,7 @@ function studentCardsHttpScope(principal) {
 }
 
 app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/students/:id/cards"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
   const { listStudentCards } = require("./lib/studentAccessCardsManagement");
   const principal = await enrollmentHttpPrincipal(req);

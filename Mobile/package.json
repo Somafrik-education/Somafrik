@@ -104,7 +104,9 @@
     "test:role-selection-layout": "npx --yes tsx src/lib/roleSelectionLayout.test.ts",
     "test:role-labels-mobile-01": "npx --yes tsx --test src/lib/roleLabelsMobile01.test.ts src/lib/roleDisplayLabels.test.ts src/lib/auditRoleLabels01.audit.test.ts src/lib/canonicalResourceNormalize.test.ts src/lib/mobileCanonicalRoleIdentity.test.ts src/lib/userRoleAssignment.test.ts src/lib/businessProfile.test.ts",
     "test:student-card-nfc-encoding": "npx --yes tsx --test src/lib/studentCardNfcEncoding.test.ts",
-    "test:student-card-nfc-batch": "npx --yes tsx --test src/lib/studentCardNfcBatch.test.ts"
+    "test:student-card-nfc-batch": "npx --yes tsx --test src/lib/studentCardNfcBatch.test.ts",
+    "test:student-card-nfc-integration": "npx --yes tsx --test src/lib/studentCardNfcIntegration.pg.test.ts",
+    "test:student-card-nfc-security": "npx --yes tsx --test src/lib/studentCardNfcSecurity.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
