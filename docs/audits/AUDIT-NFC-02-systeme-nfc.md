@@ -60,7 +60,17 @@ Ces branches se recouvrent. Les merger en parallèle produirait des conflits. #8
 
 ### A.4 Cette PR
 
-Renseignée après push. À la création : documentation seule, draft, base `develop`, aucun changement produit. CI : voir la PR ; ce dépôt n’exécute pas la CI dans l’audit.
+| Élément | Valeur |
+| --- | --- |
+| URL | https://github.com/Somafrik-education/Somafrik/pull/918 |
+| Statut | Draft / HOLD. Ne pas passer en Ready. Ne pas merger. |
+| Base | `develop` @ `1bdd302e8ab228d6aaf0bfea3078d9b8361efe1f` |
+| HEAD initial du rapport | `5b41de3a0432f74c1d20468af67d0dd6fcdc2a9c` |
+| Merge-base | `1bdd302e8ab228d6aaf0bfea3078d9b8361efe1f` |
+| Ahead / behind au premier push | 1 / 0 |
+| Fichiers | `docs/audits/AUDIT-NFC-02-systeme-nfc.md` uniquement |
+| Diff produit | aucun |
+| CI | non déclarée PASS dans cet audit. Lire l’onglet Checks de #918. |
 
 ---
 
