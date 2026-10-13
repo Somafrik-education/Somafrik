@@ -22,11 +22,14 @@ import {
   isAttendanceAuthorReady,
   isStudentCardNfcAttendanceScanEnabled,
   isStudentCardNfcFinanceEnabled,
+  classifyStudentCardCapabilitiesFailure,
   isStudentCardNfcScannerVisible,
   isStudentCardQrScannerVisible,
   releaseCardToken,
+  resolveStudentCardNfcAttendanceControl,
   runStudentCardScanFlow,
   sanitizeStudentCardCapabilities,
+  studentCardNfcAttendanceStatusMessage,
   type VolatileCardToken,
 } from "./studentCardScan";
 
@@ -80,7 +83,7 @@ assert.equal(
   CANONICAL_NFC_PERMISSION,
   "Somafrik utilise la puce NFC pour lire la carte élève de l’établissement.",
 );
-assert.equal(STUDENT_CARD_NFC_COPY.button, "Scanner NFC");
+assert.equal(STUDENT_CARD_NFC_COPY.button, "Carte NFC");
 assert.equal(STUDENT_CARD_NFC_COPY.disabled, "NFC désactivé sur cet appareil.");
 assert.equal(STUDENT_CARD_NFC_COPY.useQr, "Utiliser QR");
 
@@ -189,6 +192,103 @@ assert.equal(
     studentCardNfcEnabled: true,
     studentCardFinanceCheckEnabled: false,
   }),
+  false,
+);
+
+const nfcReady = {
+  canUpdatePresences: true,
+  settings: nfcOn,
+  selectedClass: validClass,
+  capabilitiesStatus: "ready" as const,
+  platformOs: "android",
+};
+assert.equal(resolveStudentCardNfcAttendanceControl(nfcReady), "ready");
+assert.equal(studentCardNfcAttendanceStatusMessage("ready"), null);
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({ ...nfcReady, canUpdatePresences: false }),
+  "permission_denied",
+);
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({
+    ...nfcReady,
+    capabilitiesStatus: "error",
+    capabilitiesFailure: "permission",
+  }),
+  "permission_denied",
+);
+assert.equal(
+  studentCardNfcAttendanceStatusMessage("permission_denied"),
+  STUDENT_CARD_NFC_COPY.permissionDenied,
+);
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({
+    ...nfcReady,
+    settings: { ...nfcOn, studentCardNfcEnabled: false },
+  }),
+  "feature_disabled",
+);
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({
+    ...nfcReady,
+    settings: { ...nfcOn, studentCardEnabled: false },
+  }),
+  "feature_disabled",
+);
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({
+    ...nfcReady,
+    settings: { ...nfcOn, studentCardAttendanceEnabled: false },
+  }),
+  "feature_disabled",
+);
+assert.equal(
+  studentCardNfcAttendanceStatusMessage("feature_disabled"),
+  STUDENT_CARD_NFC_COPY.featureDisabled,
+);
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({ ...nfcReady, selectedClass: null }),
+  "class_required",
+);
+assert.equal(
+  studentCardNfcAttendanceStatusMessage("class_required"),
+  STUDENT_CARD_NFC_COPY.classRequired,
+);
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({ ...nfcReady, platformOs: "ios" }),
+  "device_unsupported",
+);
+assert.equal(
+  studentCardNfcAttendanceStatusMessage("device_unsupported"),
+  STUDENT_CARD_NFC_COPY.unsupported,
+);
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({ ...nfcReady, capabilitiesStatus: "loading", settings: nfcOn }),
+  "loading",
+  "changement d'établissement : pas de lecteur tant que les flags ne sont pas relus",
+);
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({
+    ...nfcReady,
+    capabilitiesStatus: "error",
+    capabilitiesFailure: "technical",
+  }),
+  "capabilities_error",
+);
+assert.equal(
+  studentCardNfcAttendanceStatusMessage("capabilities_error"),
+  STUDENT_CARD_NFC_COPY.capabilitiesError,
+);
+assert.equal(classifyStudentCardCapabilitiesFailure({ status: 403 }), "permission");
+assert.equal(classifyStudentCardCapabilitiesFailure({ status: 401 }), "permission");
+assert.equal(classifyStudentCardCapabilitiesFailure({ status: 500 }), "technical");
+assert.equal(classifyStudentCardCapabilitiesFailure(new Error("network")), "technical");
+assert.equal(
+  resolveStudentCardNfcAttendanceControl({
+    ...nfcReady,
+    canUpdatePresences: false,
+    settings: nfcOn,
+    capabilitiesStatus: "ready",
+  }) === "ready",
   false,
 );
 
@@ -528,8 +628,13 @@ assert.doesNotMatch(modal, /AsyncStorage|SecureStore|SQLite|submitProtectedMutat
 assert.doesNotMatch(modal, /NfcTech\.IsoDep|systemCodes|selectIdentifiers/);
 assert.doesNotMatch(qrModal, /react-native-nfc-manager|createReactNativeNfcAdapter/);
 assert.match(attendance, /StudentCardNfcScannerModal/);
-assert.match(attendance, /isStudentCardNfcScannerVisible/);
+assert.match(attendance, /resolveStudentCardNfcAttendanceControl/);
+assert.match(attendance, /nfcControl === "ready"/);
+assert.match(attendance, /selectedClass && nfcControl === "ready"/);
+assert.match(attendance, /setNfcScannerOpen\(true\)/);
 assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanNfc/);
+assert.match(attendance, /USABILITY_TEST_IDS\.attendanceMarkAllPresent/);
+assert.match(attendance, /USABILITY_TEST_IDS\.attendanceSave/);
 assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
 assert.match(attendance, /qrFallbackEnabled=\{canOpenQrScanner\}/);
 assert.match(attendance, /decideOpenQrFromNfcFallback/);

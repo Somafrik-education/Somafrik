@@ -2,6 +2,7 @@
  * CARTE-PR7 — politique scanner QR Mobile.
  * Le capability reste en mémoire volatile. Aucun stockage, aucun log du token.
  */
+import { STUDENT_CARD_NFC_COPY } from "./studentCardNfc";
 
 export const CANONICAL_CAMERA_PERMISSION =
   "Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.";
@@ -141,6 +142,62 @@ export function isStudentCardNfcScannerVisible(args: {
     isStudentCardNfcAttendanceScanEnabled(args.settings) &&
     hasValidSelectedClass(args.selectedClass)
   );
+}
+
+export type StudentCardNfcAttendanceControlState =
+  | "loading"
+  | "ready"
+  | "feature_disabled"
+  | "permission_denied"
+  | "class_required"
+  | "device_unsupported"
+  | "capabilities_error";
+
+export function classifyStudentCardCapabilitiesFailure(
+  error: unknown,
+): "permission" | "technical" {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = Number((error as { status?: unknown }).status);
+    if (status === 401 || status === 403) return "permission";
+  }
+  return "technical";
+}
+
+export function resolveStudentCardNfcAttendanceControl(args: {
+  canUpdatePresences: boolean;
+  settings: StudentCardScanSettings | null | undefined;
+  selectedClass: SelectedAttendanceClassRef | null | undefined;
+  capabilitiesStatus: "loading" | "ready" | "error";
+  capabilitiesFailure?: "permission" | "technical" | null;
+  platformOs: string;
+}): StudentCardNfcAttendanceControlState {
+  if (args.canUpdatePresences !== true) return "permission_denied";
+  if (args.capabilitiesFailure === "permission") return "permission_denied";
+  if (args.capabilitiesStatus === "loading") return "loading";
+  if (args.capabilitiesStatus === "error") return "capabilities_error";
+  if (!isStudentCardNfcAttendanceScanEnabled(args.settings)) return "feature_disabled";
+  if (args.platformOs !== "android") return "device_unsupported";
+  if (!hasValidSelectedClass(args.selectedClass)) return "class_required";
+  return "ready";
+}
+
+export function studentCardNfcAttendanceStatusMessage(
+  state: StudentCardNfcAttendanceControlState,
+): string | null {
+  switch (state) {
+    case "feature_disabled":
+      return STUDENT_CARD_NFC_COPY.featureDisabled;
+    case "permission_denied":
+      return STUDENT_CARD_NFC_COPY.permissionDenied;
+    case "class_required":
+      return STUDENT_CARD_NFC_COPY.classRequired;
+    case "device_unsupported":
+      return STUDENT_CARD_NFC_COPY.unsupported;
+    case "capabilities_error":
+      return STUDENT_CARD_NFC_COPY.capabilitiesError;
+    default:
+      return null;
+  }
 }
 
 export function studentCardScanErrorCode(error: unknown): string {

@@ -11,11 +11,15 @@ export const NFC_V1_PREFIX = "somafrik:card:";
 export const MAX_NFC_RECORD_LENGTH = 256;
 
 export const STUDENT_CARD_NFC_COPY = {
-  button: "Scanner NFC",
+  button: "Carte NFC",
   title: "Scanner une carte élève",
   subtitle: "Présentez la carte NFC près du téléphone.",
   unsupported: "NFC indisponible sur cet appareil.",
   disabled: "NFC désactivé sur cet appareil.",
+  featureDisabled: "Les cartes NFC sont désactivées pour cet établissement.",
+  permissionDenied: "Votre rôle ne permet pas de lire une carte NFC.",
+  classRequired: "Sélectionnez une classe pour utiliser la carte NFC.",
+  capabilitiesError: "Impossible de vérifier les cartes NFC. Réessayez.",
   empty: "Carte illisible.",
   notNdef: "Cette carte n’est pas une carte élève Somafrik.",
   uidOnly: "Cette carte n’est pas une carte élève Somafrik.",
