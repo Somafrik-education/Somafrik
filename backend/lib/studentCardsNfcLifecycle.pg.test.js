@@ -55,7 +55,7 @@ async function fixture(run, legacy = false) {
     await pool.query(legacy ? "CREATE UNIQUE INDEX ON students(school_id,id);" + STUDENT_ACCESS_CARDS_TABLE_SQL + STUDENT_ACCESS_CARDS_INDEXES_SQL + STUDENT_CARDS_NFC_SCHEMA_SQL : STUDENT_ACCESS_CARDS_SCHEMA_SQL);
     const identity = {uid:"04112233445566",tagType:"NTAG216"};
     const issue = (overrides = {}) => issueStudentCard(repo, {studentId:students[0],medium:"nfc",nfc:identity,operationId:randomUUID(),...overrides}, principal, {}, scope);
-    const confirm = (card, overrides = {}) => confirmStudentCardNfc(repo,card.id,{...identity,cardToken:card.cardToken,locked:false,...overrides},principal,{},scope);
+    const confirm = (card, overrides = {}) => confirmStudentCardNfc(repo,card.id,{...identity,cardToken:card.cardToken,locked:false,operationId:card.nfc.operationId,...overrides},principal,{},scope);
     const row = (id) => repo.one("SELECT * FROM student_access_cards WHERE id=$1",[id]);
     const countAudit = async (action) => (await repo.one("SELECT count(*)::int AS n FROM audit_logs WHERE action=$1",[action])).n;
     const expire = (id) => pool.query("UPDATE student_access_cards SET issued_at=clock_timestamp()-INTERVAL '31 minutes',nfc_reservation_expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1",[id]);
@@ -179,13 +179,13 @@ pg("revocation and lost observations are idempotent and transactional",async f=>
 pg("wrong tenant, UID, model, student and secret are rejected without activation",async f=>{
   const card=await f.issue();
   for(const change of [{uid:'04778899001122'},{tagType:'NTAG213'},{studentId:f.students[1]},{cardToken:generateCardSecrets().cardToken}]) await assert.rejects(f.confirm(card,change));
-  await assert.rejects(confirmStudentCardNfc(f.repo,card.id,{...f.identity,cardToken:card.cardToken,locked:false},{...f.principal,enrollmentSchoolId:f.b},{},{...f.scope,schoolId:f.b}),{code:'STUDENT_CARD_NOT_FOUND'});
+  await assert.rejects(confirmStudentCardNfc(f.repo,card.id,{...f.identity,cardToken:card.cardToken,locked:false,operationId:card.nfc.operationId},{...f.principal,enrollmentSchoolId:f.b},{},{...f.scope,schoolId:f.b}),{code:'STUDENT_CARD_NOT_FOUND'});
   assert.equal((await f.row(card.id)).status,'issued');assert.equal(await f.countAudit('student_card_nfc_encoded'),0);
 });
 pg("insufficient UPDATE and platform privileges cannot reserve/confirm",async f=>{
   const card=await f.issue();
   for(const principal of [{...f.principal,permissions:['Élèves:READ']},{...f.principal,roleKeys:['SUPER_ADMIN'],permissions:['ALL_PRIVILEGES','Élèves:UPDATE']},{...f.principal,roleKeys:['COUNTRY_ADMIN'],permissions:['ALL_PRIVILEGES','Élèves:UPDATE']}]) {
-    await assert.rejects(confirmStudentCardNfc(f.repo,card.id,{...f.identity,cardToken:card.cardToken,locked:false},principal,{},f.scope),{statusCode:403});
+    await assert.rejects(confirmStudentCardNfc(f.repo,card.id,{...f.identity,cardToken:card.cardToken,locked:false,operationId:card.nfc.operationId},principal,{},f.scope),{statusCode:403});
   }
 });
 pg("flags false/null/absent fail closed at reserve and confirmation including replay",async f=>{
@@ -256,4 +256,81 @@ pg("valid new reservation lazily expires the old one without recycling its UID",
   const old=await f.issue();await f.expire(old.id);
   const next=await f.issue({nfc:{...f.identity,uid:'04778899001122'}});
   assert.equal(next.status,'issued');assert.equal((await f.row(old.id)).status,'revoked');assert.equal(await f.countAudit('student_card_nfc_reservation_expired'),1);
+});
+
+pg("confirmation binds the reservation UUID even with the correct capability and UID", async f => {
+  const card = await f.issue();
+  await assert.rejects(f.confirm(card, {operationId: randomUUID()}), {code: "STUDENT_CARD_NFC_OPERATION_MISMATCH", statusCode: 409});
+  assert.equal((await f.row(card.id)).status, "issued");
+  assert.equal(await f.countAudit("student_card_nfc_encoded"), 0);
+});
+
+pg("confirmation rejects missing, null, malformed and non-string UUIDs without any mutation", async f => {
+  const card = await f.issue(); const before = await f.row(card.id);
+  for (const operationId of [undefined, null, "", " ", "not-a-uuid", 42, true, [card.nfc.operationId], {operationId:card.nfc.operationId}]) {
+    await assert.rejects(f.confirm(card, {operationId}), {code:"STUDENT_CARD_NFC_OPERATION_REQUIRED", statusCode:400});
+  }
+  assert.deepEqual(await f.row(card.id), before);
+  assert.equal(await f.countAudit("student_card_nfc_encoded"), 0);
+});
+pg("canonical UUID casing confirms once; incorrect or missing UUID cannot replay or upgrade lock metadata", async f => {
+  const card = await f.issue();
+  assert.equal((await f.confirm(card, {operationId:` ${card.nfc.operationId.toUpperCase()} `})).status, "active");
+  const before = await f.row(card.id);
+  await assert.rejects(f.confirm(card, {operationId:randomUUID(), locked:true}), {code:"STUDENT_CARD_NFC_OPERATION_MISMATCH"});
+  await assert.rejects(f.confirm(card, {operationId:undefined}), {code:"STUDENT_CARD_NFC_OPERATION_REQUIRED"});
+  assert.deepEqual(await f.row(card.id), before);
+  assert.equal((await f.confirm(card)).idempotentReplay, true);
+  assert.equal(await f.countAudit("student_card_nfc_encoded"), 1);
+  assert.equal(await f.countAudit("student_card_nfc_locked"), 0);
+});
+pg("another reservation or secret-rotation UUID cannot confirm this reservation", async f => {
+  const card = await f.issue();
+  const other = await f.issue({studentId:f.students[1], nfc:{...f.identity,uid:"04778899001122"}});
+  await assert.rejects(f.confirm(card, {operationId:other.nfc.operationId}), {code:"STUDENT_CARD_NFC_OPERATION_MISMATCH"});
+  const retryId = randomUUID();
+  const rotated = await retryStudentCardNfc(f.repo,card.id,{...f.identity,operationId:retryId},f.principal,{},f.scope);
+  assert.equal(rotated.nfc.operationId,card.nfc.operationId);
+  await assert.rejects(f.confirm(rotated, {operationId:retryId}), {code:"STUDENT_CARD_NFC_OPERATION_MISMATCH"});
+  assert.equal((await f.row(card.id)).status,"issued");
+  assert.equal((await f.confirm(rotated)).status,"active");
+});
+pg("incorrect UUID cannot switch replacement, link history or emit audits", async f => {
+  const old = await issueStudentCard(f.repo,{studentId:f.students[0],medium:"qr"},f.principal,{},f.scope);
+  const next = await replaceStudentCard(f.repo,old.id,f.principal,{},f.scope,{nfc:f.identity,operationId:randomUUID()});
+  const beforeOld = await f.row(old.id), beforeNext = await f.row(next.id);
+  await assert.rejects(f.confirm(next,{operationId:randomUUID()}),{code:"STUDENT_CARD_NFC_OPERATION_MISMATCH"});
+  assert.deepEqual(await f.row(old.id),beforeOld);assert.deepEqual(await f.row(next.id),beforeNext);
+  assert.equal(await f.countAudit("student_card_replaced"),0);assert.equal(await f.countAudit("student_card_nfc_encoded"),0);
+  await f.confirm(next);assert.equal((await f.row(old.id)).status,"replaced");assert.equal((await f.row(next.id)).status,"active");
+});
+pg("concurrent correct and divergent confirmations yield one activation and one audit", async f => {
+  const card = await f.issue();
+  const results = await Promise.allSettled([f.confirm(card),f.confirm(card,{operationId:randomUUID()})]);
+  assert.equal(results.filter(r=>r.status==="fulfilled").length,1);
+  assert.equal(results.find(r=>r.status==="rejected").reason.code,"STUDENT_CARD_NFC_OPERATION_MISMATCH");
+  assert.equal((await f.row(card.id)).status,"active");assert.equal(await f.countAudit("student_card_nfc_encoded"),1);
+});
+pg("wrong UUID cannot trigger expiry mutation; matching expired operation still revokes and audits once", async f => {
+  const card = await f.issue();await f.expire(card.id);
+  await assert.rejects(f.confirm(card,{operationId:randomUUID()}),{code:"STUDENT_CARD_NFC_OPERATION_MISMATCH"});
+  assert.equal((await f.row(card.id)).status,"issued");assert.equal(await f.countAudit("student_card_nfc_reservation_expired"),0);
+  await assert.rejects(f.confirm(card),{code:"STUDENT_CARD_NFC_EXPIRED"});
+  await assert.rejects(f.confirm(card),{code:"STUDENT_CARD_NFC_EXPIRED"});
+  assert.equal((await f.row(card.id)).status,"revoked");assert.equal(await f.countAudit("student_card_nfc_reservation_expired"),1);
+});
+pg("legacy active encoded cards accept absent/null UUID only; no UUID allocation or inactive-card bypass", async f => {
+  const generated = generateCardSecrets();
+  const result = await f.pool.query(`INSERT INTO student_access_cards(school_id,student_id,public_id,token_hash,medium,status,nfc_uid,nfc_tag_type,nfc_encoding_state,nfc_encoded_at)
+    VALUES($1,$2,$3,$4,'nfc','active',$5,'NTAG216','encoded',clock_timestamp()) RETURNING id`,[f.a,f.students[0],generated.publicId,generated.tokenHash,f.identity.uid]);
+  const card = {id:result.rows[0].id,cardToken:generated.cardToken,nfc:{operationId:null}};
+  const before = await f.row(card.id);
+  assert.equal((await f.confirm(card,{operationId:undefined})).idempotentReplay,true);
+  assert.equal((await f.confirm(card,{operationId:null})).idempotentReplay,true);
+  await assert.rejects(f.confirm(card,{operationId:randomUUID(),locked:true}),{code:"STUDENT_CARD_NFC_OPERATION_MISMATCH"});
+  assert.deepEqual(await f.row(card.id),before);
+  await f.confirm(card,{locked:true});assert.equal((await f.row(card.id)).nfc_operation_id,null);
+  assert.equal(await f.countAudit("student_card_nfc_locked"),1);
+  await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,"lost");
+  await assert.rejects(f.confirm(card),{code:"STUDENT_CARD_INVALID_STATE"});assert.equal((await f.row(card.id)).status,"lost");
 });
