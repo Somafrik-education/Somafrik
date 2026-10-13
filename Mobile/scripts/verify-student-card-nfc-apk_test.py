@@ -53,6 +53,22 @@ class PackagedConfigTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 module.verify_archive(archive)
 
+    def test_apksigner_v2_sha256_digest_format(self):
+        import re
+        signature = ("Verifies\n"
+                     "V2 Signer #1 certificate DN: CN=Android Debug\n"
+                     "V2 Signer #1 certificate SHA-256 digest: " + "a1" * 32 + "\n")
+        digest = re.search(
+            r"^(?:V[123] )?Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F: ]+)\s*$",
+            signature, re.IGNORECASE | re.MULTILINE,
+        )
+        self.assertIsNotNone(digest)
+        self.assertEqual(digest[1], "a1" * 32)
+        self.assertIsNone(re.search(
+            r"^(?:V[123] )?Signer #1 certificate SHA-256 digest:\s*([0-9a-fA-F: ]+)\s*$",
+            signature.replace("SHA-256", "SHA-1"), re.IGNORECASE | re.MULTILINE,
+        ))
+
     def test_compiled_versions_and_android_compatibility(self):
         config = {"version": "1.2.1", "android": {"versionCode": 13}}
         badging = f"package: name='{module.PACKAGE}' versionCode='13' versionName='1.2.1'\nsdkVersion:'24'\ntargetSdkVersion:'36'"
