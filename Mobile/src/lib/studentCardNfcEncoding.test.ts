@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { URL } from "node:url";
 import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcErrorCopy, nfcFailure,
-  acceptNfcCardListResult, nfcEnrollmentPrimaryAction, nfcReservationFailureClearsAttempt, nfcServerResumeVisible, resolveNfcCardListLoad, NFC_INTERRUPTED_RESERVATION_LABEL,
-  NFC_PHASE_COPY, NFC_SERVER_RESUME_LABEL,
+  acceptNfcCardListResult, nfcEnrollmentPrimaryAction, nfcListSensitiveActionsAllowed, nfcReservationFailureClearsAttempt, nfcServerResumeVisible, resolveNfcCardListLoad, NFC_INTERRUPTED_RESERVATION_LABEL,
+  NFC_LIST_STALE_COPY, NFC_PHASE_COPY, NFC_SERVER_RESUME_LABEL,
   type EnrollmentCard, type IssuedNfcCard, type NfcDisplayedCardList, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcPhase } from "./studentCardNfcEncoding";
 import { studentCardEnrollmentAccess } from "./studentCardEnrollmentAccess";
 const UID = "04112233445566";
@@ -317,12 +317,29 @@ test("NFC-05 a failed refresh keeps the last valid card list", () => {
   assert.equal(resolved.malformed, false);
   assert.equal(resolved.list, previous);
   assert.equal(resolved.list?.cards[0].status, "active");
+  assert.equal(resolved.stale, true);
+});
+test("a failed refresh of an active list stays marked stale and blocks programming, replacement and confirmation", () => {
+  const active = { ...fixture().card, status: "active" as const };
+  const previous = listed([active]);
+  const failed = resolveNfcCardListLoad(previous, SCOPE_A, STUDENT, { ok: false });
+  assert.equal(failed.list?.cards[0].status, "active");
+  assert.equal(failed.stale, true);
+  assert.equal(nfcListSensitiveActionsAllowed({ stale: failed.stale, hasList: failed.list !== null }), false);
+  assert.match(NFC_LIST_STALE_COPY, /obsolète/);
+  const restored = resolveNfcCardListLoad(failed.list, SCOPE_A, STUDENT, { ok: true, body: { cards: [active], nfcEnabled: true } });
+  assert.equal(restored.stale, false);
+  assert.equal(restored.list?.cards[0].id, active.id);
+  assert.equal(nfcListSensitiveActionsAllowed({ stale: restored.stale, hasList: restored.list !== null }), true);
 });
 test("NFC-06 a valid HTTP 200 empty array replaces the displayed list", () => {
   const previous = listed([{ ...fixture().card, status: "active" }]);
   const resolved = resolveNfcCardListLoad(previous, SCOPE_A, STUDENT, { ok: true, body: { cards: [], nfcEnabled: true } });
   assert.deepEqual(resolved.list?.cards, []);
+  assert.equal(resolved.stale, false);
+  assert.notEqual(resolved.list, previous);
   assert.equal(nfcEnrollmentPrimaryAction({ uncertain: false, hasPending: false, hasActive: false }), "program");
+  assert.equal(nfcListSensitiveActionsAllowed({ stale: resolved.stale, hasList: resolved.list !== null }), true);
 });
 test("NFC-07 a malformed list body does not replace a valid list with an empty one", () => {
   const previous = listed([{ ...fixture().card, status: "active" }]);
@@ -330,12 +347,15 @@ test("NFC-07 a malformed list body does not replace a valid list with an empty o
     const resolved = resolveNfcCardListLoad(previous, SCOPE_A, STUDENT, { ok: true, body });
     assert.equal(resolved.malformed, true);
     assert.equal(resolved.list, previous);
+    assert.equal(resolved.stale, true);
+    assert.equal(nfcListSensitiveActionsAllowed({ stale: resolved.stale, hasList: true }), false);
   }
 });
 test("NFC-08 a student change drops the previous list and a late result is refused", () => {
   const previous = listed([{ ...fixture().card, status: "active" }], SCOPE_A, "student-a");
   const failed = resolveNfcCardListLoad(previous, SCOPE_A, STUDENT, { ok: false });
   assert.equal(failed.list, null);
+  assert.equal(failed.stale, false);
   const other = resolveNfcCardListLoad(previous, SCOPE_A, STUDENT, { ok: true, body: { cards: [], nfcEnabled: true } });
   assert.deepEqual(other.list?.cards, []);
   assert.equal(other.list?.studentId, STUDENT);
@@ -345,6 +365,7 @@ test("NFC-09 an establishment or session change drops the previous list", () => 
   const previous = listed([{ ...fixture().card, status: "active" }], SCOPE_A, STUDENT);
   const resolved = resolveNfcCardListLoad(previous, SCOPE_B, STUDENT, { ok: false });
   assert.equal(resolved.list, null);
+  assert.equal(resolved.stale, false);
   assert.equal(acceptNfcCardListResult({ scopeKey: SCOPE_A, studentId: STUDENT }, { scopeKey: SCOPE_B, studentId: STUDENT }), false);
 });
 test("NFC-10 an emission refusal writes nothing and does not confirm", async () => {
@@ -379,5 +400,9 @@ test("fiche remount key separates student and session, and unmount drops the RAM
   assert.match(screen, /StudentCardNfcEnrollmentPanel key=\{`\$\{resourceScopeKey\}:\$\{canonicalStudentId\}`\}/);
   assert.match(panel, /flow\.current = null/);
   assert.match(panel, /beginNfcCardListLoad/);
+  assert.match(panel, /listStale && cards/);
+  assert.match(panel, /if \(listStaleRef\.current\) return/);
+  assert.match(panel, /nfcListSensitiveActionsAllowed/);
+  assert.doesNotMatch(panel, /\{refreshing && cards \? <Text>\{NFC_LIST_STALE_COPY\}<\/Text> : null\}/);
   assert.doesNotMatch(panel, /setCards\(null\); setEnabled\(false\); setAvailable\(false\);\s*if \(canRead && studentId\)/);
 });

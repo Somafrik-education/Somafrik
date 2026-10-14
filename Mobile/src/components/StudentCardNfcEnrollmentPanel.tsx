@@ -4,8 +4,8 @@ import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollme
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
   acceptNfcCardListResult, applyNfcCardListResponse, beginNfcCardListLoad, createIndividualNfcFlow,
-  NFC_INTERRUPTED_RESERVATION_LABEL, NFC_LIST_STALE_COPY, NFC_PHASE_COPY, NFC_REPLACE_ACTIVE_LABEL,
-  NFC_SERVER_RESUME_LABEL, nfcEnrollmentPrimaryAction, nfcErrorCopy, nfcFailure, nfcServerResumeVisible,
+  NFC_INTERRUPTED_RESERVATION_LABEL, NFC_LIST_REFRESHING_COPY, NFC_LIST_STALE_COPY, NFC_PHASE_COPY, NFC_REPLACE_ACTIVE_LABEL,
+  NFC_SERVER_RESUME_LABEL, nfcEnrollmentPrimaryAction, nfcErrorCopy, nfcFailure, nfcListSensitiveActionsAllowed, nfcServerResumeVisible,
   type EnrollmentCard, type NfcDisplayedCardList, type NfcEncoderHardware, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
@@ -18,6 +18,8 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   const [enabled, setEnabled] = useState(false);
   const [available, setAvailable] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [listStale, setListStale] = useState(false);
+  const listStaleRef = useRef(false);
   const [working, setWorking] = useState(false);
   const [phase, setPhase] = useState<NfcPhase>("initial");
   const [message, setMessage] = useState("");
@@ -56,23 +58,26 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   useEffect(() => {
     let current = true;
     const request = { scopeKey, studentId };
+    const markStale = (stale: boolean) => { listStaleRef.current = stale; setListStale(stale); };
     if (!canRead || !studentId) {
-      listSnapshot.current = null; setCards(null); setEnabled(false); setAvailable(false); setRefreshing(false);
+      listSnapshot.current = null; markStale(false); setCards(null); setEnabled(false); setAvailable(false); setRefreshing(false);
       return () => { current = false; };
     }
     const started = beginNfcCardListLoad(listSnapshot.current, scopeKey, studentId);
     if (!started.retain) {
-      listSnapshot.current = null; setCards(null); setEnabled(false); setAvailable(false);
+      listSnapshot.current = null; markStale(false); setCards(null); setEnabled(false); setAvailable(false);
     }
     setRefreshing(started.retain);
     const retained = started.retain ? listSnapshot.current : null;
     void (async () => {
+      let listApplied = false;
       try {
         const response = await api.list(studentId);
         if (!current || !acceptNfcCardListResult(request, ownerRef.current)) return;
         const applied = applyNfcCardListResponse(retained, scopeKey, studentId, response);
-        if (applied.malformed) { setMessage(nfcErrorCopy(nfcFailure("NFC_RESPONSE_INVALID"))); return; }
-        listSnapshot.current = applied.list; setCards(applied.list?.cards ?? []);
+        if (applied.malformed) { setMessage(nfcErrorCopy(nfcFailure("NFC_RESPONSE_INVALID"))); markStale(retained !== null); return; }
+        listApplied = true;
+        listSnapshot.current = applied.list; setCards(applied.list?.cards ?? []); markStale(false);
         const nfcEnabled = Boolean(response && typeof response === "object" && "nfcEnabled" in response && response.nfcEnabled === true);
         setEnabled(nfcEnabled);
         if (nfcEnabled && Platform.OS === "android") {
@@ -83,7 +88,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
           if (current && acceptNfcCardListResult(request, ownerRef.current)) setAvailable(true);
         } else if (current) setAvailable(false);
       } catch (error: unknown) {
-        if (current) setMessage(nfcErrorCopy(error));
+        if (current) { setMessage(nfcErrorCopy(error)); if (!listApplied) markStale(retained !== null); }
       } finally {
         if (current) setRefreshing(false);
       }
@@ -106,6 +111,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     return flow.current;
   }
   async function run(action: (controller: Awaited<ReturnType<typeof getFlow>>) => Promise<unknown>) {
+    if (listStaleRef.current) return;
     if (!live.current || busy.current || !foreground.current || !permitted.current || !enabled || !available || Platform.OS !== "android") return;
     busy.current = true; setWorking(true);
     const captured = ++generation.current;
@@ -138,7 +144,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   const active = cards?.find((card) => card.status === "active");
   const pending = cards?.some((card) => card.status === "issued" && card.nfc?.state === "pending");
   const primary = nfcEnrollmentPrimaryAction({ uncertain: Boolean(flow.current?.hasUncertainReservation()), hasPending: Boolean(pending), hasActive: Boolean(active) });
-  const canProgram = permitted.current && enabled && available && !!cards;
+  const canProgram = permitted.current && enabled && available && nfcListSensitiveActionsAllowed({ stale: listStale, hasList: cards !== null });
   const button = (title: string, onPress: () => void) => <TouchableOpacity accessibilityRole="button" accessibilityLabel={title} disabled={working || !canProgram} onPress={onPress} style={{ padding: 12, marginVertical: 4, backgroundColor: "#E8F4F1", borderRadius: 8, opacity: working || !canProgram ? 0.5 : 1 }}><Text>{title}</Text></TouchableOpacity>;
   return <View testID="student-card-nfc-enrollment-panel">
     <Text>Cartes NFC NTAG213 / NTAG216</Text>
@@ -147,7 +153,8 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
       generation.current++; closeHardware(); setPhase("resume"); setMessage("Opération interrompue. Aucune activation locale n’est confirmée. Reprenez l’opération existante.");
     }} style={{ padding: 12 }}><Text>Annuler l’opération NFC</Text></TouchableOpacity> : null}
     {!cards ? <Text>Chargement ou service indisponible.</Text> : null}
-    {refreshing && cards ? <Text>{NFC_LIST_STALE_COPY}</Text> : null}
+    {refreshing && cards ? <Text>{NFC_LIST_REFRESHING_COPY}</Text> : null}
+    {listStale && cards ? <Text>{NFC_LIST_STALE_COPY}</Text> : null}
     {cards?.map((card) => <View key={card.id} style={{ paddingVertical: 10 }}>
       <Text>Carte {card.publicId} — {statusLabels[card.status] || "État inconnu"}</Text>
       {card.nfc ? <Text>{card.nfc.tagType} · {stateLabels[card.nfc.state]}</Text> : null}

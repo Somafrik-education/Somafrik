@@ -94,7 +94,8 @@ export function nfcErrorCopy(error: unknown): string {
 export const NFC_INTERRUPTED_RESERVATION_LABEL = "Reprendre la réservation interrompue";
 export const NFC_REPLACE_ACTIVE_LABEL = "Remplacer la carte active";
 export const NFC_SERVER_RESUME_LABEL = "Reprendre l’opération — relire et confirmer";
-export const NFC_LIST_STALE_COPY = "Actualisation en cours. Les cartes affichées peuvent dater de la lecture précédente.";
+export const NFC_LIST_REFRESHING_COPY = "Actualisation en cours. Les cartes affichées peuvent dater de la lecture précédente.";
+export const NFC_LIST_STALE_COPY = "Dernière liste conservée. Elle n’a pas pu être actualisée et peut être obsolète.";
 /** A committed refusal proves no new reservation exists. Uncertain transport does not. */
 export function nfcReservationFailureClearsAttempt(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "STUDENT_CARD_NFC_UID_EXISTS");
@@ -109,11 +110,16 @@ export function applyNfcCardListResponse(retained: NfcDisplayedCardList | null, 
   if (!Array.isArray(cards)) return { list: retained, malformed: true };
   return { list: { scopeKey, studentId, cards }, malformed: false };
 }
-export function resolveNfcCardListLoad(previous: NfcDisplayedCardList | null, scopeKey: string, studentId: string, outcome: { ok: true; body: unknown } | { ok: false }): { list: NfcDisplayedCardList | null; malformed: boolean } {
+export function resolveNfcCardListLoad(previous: NfcDisplayedCardList | null, scopeKey: string, studentId: string, outcome: { ok: true; body: unknown } | { ok: false }): { list: NfcDisplayedCardList | null; malformed: boolean; stale: boolean } {
   const started = beginNfcCardListLoad(previous, scopeKey, studentId);
   const retained = started.retain ? previous : null;
-  if (!outcome.ok) return { list: retained, malformed: false };
-  return applyNfcCardListResponse(retained, scopeKey, studentId, outcome.body);
+  if (!outcome.ok) return { list: retained, malformed: false, stale: retained !== null };
+  const applied = applyNfcCardListResponse(retained, scopeKey, studentId, outcome.body);
+  if (applied.malformed) return { ...applied, stale: applied.list !== null };
+  return { ...applied, stale: false };
+}
+export function nfcListSensitiveActionsAllowed(input: { stale: boolean; hasList: boolean }): boolean {
+  return input.hasList && !input.stale;
 }
 export function acceptNfcCardListResult(request: { scopeKey: string; studentId: string }, current: { scopeKey: string; studentId: string }): boolean {
   return request.scopeKey === current.scopeKey && request.studentId === current.studentId;
