@@ -3,6 +3,7 @@
 **Statut : AUDIT / HOLD / NO MERGE**
 **Priorité : P1**
 **Correctif : non appliqué. Aucun merge, aucun Ready, aucune reprogrammation, aucune écriture PostgreSQL.**
+**Vérification du 14 octobre 2026 : le code confirme le conflit d'UID et le drapeau RAM. La ligne Preview QA qui porte l'UID reste non lue.**
 
 Base mesurée : `develop` `5478f8ea80e0da237e55ece5e594bf453c810f40`.
 Recette Preview QA V2.0 : commit `36bb96249af79abf5119348939761b6c7f700ced`, APK `c74d3a8c`, arbre `d57f185b0ec9ac39463619351e68240152c4e1f1`.
@@ -104,17 +105,25 @@ Une confirmation n'est pas définitive avant cet enregistrement. Le refus `STUDE
 
 Le rafraîchissement commence par `setCards(null)`. Une réponse suivante valide remplace la liste affichée. Une réponse malformée (`cards` non tableau) lève `NFC_RESPONSE_INVALID` après cet effacement d'affichage : l'utilisateur voit « Chargement ou service indisponible. », pas le bouton Programmer, et la ligne précédemment affichée n'est plus à l'écran tant qu'une liste valide ne revient pas. PostgreSQL n'est pas modifié. Ce chemin est le sujet de NFC-05 et NFC-08. Il n'explique pas les deux captures : 05:23 est un refus d'émission, pas une ligne active, et 05:24 exige une liste réussie.
 
-## 6. PostgreSQL
+## 6. PostgreSQL Preview QA
 
-Cet agent n'a pas ouvert PostgreSQL Preview QA, préproduction ni production. Aucun comptage n'est donc rapporté. Aucune réservation n'a été supprimée, aucune affectation réécrite, aucun UID modifié, aucune purge exécutée.
+L'APK Preview QA appelle `https://api-preprod.somafrik.app`. La documentation `docs/mobile/PREVIEW-APK.md` relie cette API au PostgreSQL de préproduction. Le dépôt ne décrit pas une seconde base nommée Preview QA.
 
-Ce que le schéma et le code garantissent sans lecture de la base Preview :
+Le 14 octobre 2026, `GET /api/health` sur cette API a répondu 200 à 09:53:34 UTC : `status=ok`, `database=postgresql`, `gitSha=36bb96249af79abf5119348939761b6c7f700ced`. Ce SHA est la recette Preview QA V2.0. L'API en service correspond au code audité. `GET /api/students/CD-IN-BB-26-00020/cards` sans JWT a répondu 401, message « Authentification JWT requise », sans corps de carte.
+
+Les variables `DATABASE_URL` et `SOMAFRIK_NFC_TEST_DATABASE_URL` de cet environnement pointent toutes deux vers `127.0.0.1:5432/nfc_encoding_test`. C'est la base jetable des tests NFC. `.env.preproduction` est absent. Aucun accès Render ni Supabase n'est disponible. Les lignes Preview QA n'ont donc pas été lues. Aucune suppression, réécriture d'UID ni purge n'a été faite.
+
+Reste non déterminé pour l'UID déjà enregistré : autre élève ou non, autre établissement ou non, statut `active`, `revoked` ou `issued`/`pending`.
+
+Le schéma et le code, vérifiés sans ces lignes, disent :
 
 - une carte n'est active qu'après `nfc-confirm` ;
 - `markRevoked` change `status`, `revoked_at`, `revoke_reason` et `updated_at` ; il ne change pas `nfc_encoding_state` ;
 - un UID déjà présent, y compris sur une ligne `revoked` avec `revoke_reason = nfc_abandoned`, bloque une nouvelle émission par `STUDENT_CARD_NFC_UID_EXISTS` ;
 - l'index `student_access_cards_one_pending_nfc_per_student` empêche deux réservations `issued`/`pending` pour le même élève dans le même établissement ;
-- l'index UID est global : la liste de cet élève peut être vide alors que le puce est déjà lié à un autre élève ou à un autre établissement.
+- l'index UID est global, sans `school_id` : la liste de cet élève peut être vide alors que la puce est déjà liée à un autre élève ou à un autre établissement. L'index n'est pas à supprimer.
+
+Un contrôle local, distinct de Preview QA, a été exécuté : le test `revoked reservation and retry replay cannot resurrect or reuse its UID` de `backend/lib/studentCardsNfcLifecycle.pg.test.js` a réussi en 120 ms. Il crée un schéma jetable `nfc_prog_*` sur `nfc_encoding_test`, révoque une réservation fictive avec `nfc_abandoned`, puis constate `STUDENT_CARD_NFC_UID_EXISTS`. Cela confirme le chemin de code. Cela n'identifie pas la ligne Preview QA.
 
 Lecture seule proposée pour un opérateur humain, plus tard, sur la base Preview QA uniquement. Ne pas sélectionner `token_hash`, `first_name`, `last_name`, ni `nfc_uid`. Ne pas coller le résultat s'il contient un UID.
 
@@ -135,7 +144,23 @@ SELECT c.status,
  ORDER BY c.created_at DESC;
 ```
 
-Pour savoir si un UID est réservé hors de cette liste, sans l'imprimer : comparer le nombre de lignes `uid_bound` de cet élève au refus déjà observé. Si la liste de l'élève est vide et que le téléphone a reçu `STUDENT_CARD_NFC_UID_EXISTS`, la ligne en conflit est hors de cette liste d'établissement. L'identifier demande une requête séparée, toujours sans projeter `nfc_uid` dans un ticket ou un journal.
+Pour retrouver la ligne en conflit, un opérateur qui détient l'UID hors de Git fournit le paramètre localement. La projection ne contient ni UID, ni nom, ni hash.
+
+```sql
+SELECT s.student_code,
+       sch.school_code,
+       c.status,
+       c.nfc_encoding_state,
+       c.revoke_reason,
+       c.nfc_tag_type,
+       (s.student_code = 'CD-IN-BB-26-00020') AS same_student
+  FROM student_access_cards c
+  JOIN students s ON s.id = c.student_id AND s.school_id = c.school_id
+  JOIN schools sch ON sch.id = c.school_id
+ WHERE c.nfc_uid = :uid;
+```
+
+`same_student` faux signifie un autre élève. Un `school_code` différent de l'établissement de la session signifie un autre établissement. `status` et `nfc_encoding_state` disent si l'enregistrement est actif, révoqué ou en attente. Cette requête n'a pas été exécutée ici : l'UID et la connexion Preview QA sont absents de cet environnement.
 
 ## 7. Séparation des établissements
 
@@ -163,6 +188,24 @@ Aucun fichier produit n'est modifié par cette PR. Le correctif suivant attend u
 | NFC-07 | La liste ne contient pas un autre établissement. Le même UID y reste refusé. | Couvert par les tests HTTP de périmètre et par l'index global. |
 | NFC-08 | Un corps sans tableau `cards` n'efface pas la dernière liste valide. | Non couvert. Le panneau actuel cache la liste précédente derrière « Chargement ou service indisponible. ». |
 
-## 10. Décision
+## 10. Vérification indépendante
 
-HOLD. Pas de correctif dans cette branche. Pas de merge de #922 ni de #925 au titre de cet audit. Pas de reprogrammation de la carte déjà présentée. Pas d'écriture en base. La prochaine action produit est une PR séparée, après accord CTO, limitée au diff de la section 8 et aux tests NFC-01 à NFC-08 qui manquent.
+Contrôle du 14 octobre 2026, sur les fichiers de `develop` `5478f8ea`, identiques à la recette `36bb9624` pour le parcours NFC cité. Le diff GitHub de #926, HEAD `b3d1af4b6a3744ce65aa709b3cb3f7dfd6d54001`, ne contient que `docs/audits/NFC-PERSIST-01-audit.md`. Merge-base exacte avec `develop`. La PR est Draft. Required, Scope et Secrets sont verts ; les jobs de code sont ignorés parce qu'aucun fichier produit ne change.
+
+Sonde Node 22 sur `createIndividualNfcFlow`, API factice, sans réseau et sans UID réel :
+
+- `program()` lève `STUDENT_CARD_NFC_UID_EXISTS` ;
+- `hasUncertainReservation()` reste vrai ;
+- les phases observées sont `waiting`, `reservation` ;
+- aucun `write`, aucun `confirm`, la phase `success` est absente ;
+- la copie affichée est « Cette carte physique est déjà affectée. Son UID reste dans l’historique. » ;
+- la copie de succès « Carte NFC programmée et activée avec succès. » n'est pas atteinte ;
+- `resume()` rappelle `issue` une seconde fois et reçoit le même code. Le bouton « Reprendre la réservation interrompue » ne rouvre pas une affectation confirmée : il renvoie le même refus.
+
+`postgresRepository.withTransaction` fait `ROLLBACK` si l'insertion lève l'unicité. `conflict()` transforme ensuite la contrainte dont le nom contient `nfc_uid` en `STUDENT_CARD_NFC_UID_EXISTS`. La tentative refusée ne laisse pas de ligne.
+
+Le démontage du panneau, ligne 42 de `StudentCardNfcEnrollmentPanel.tsx`, met `flow.current = null`. Le rafraîchissement, ligne 49, appelle `setCards(null)` avant la réponse. Ces deux lectures confirment le défaut Mobile décrit en section 2. Le bouton correspondant n'a pas de test de composant.
+
+## 11. Décision
+
+HOLD maintenu sur #926 et #925. Pas de Ready, pas de merge. L'index unique global reste en place. Pas de reprogrammation de la carte déjà présentée. Pas de PR corrective Mobile dans cette étape : la ligne UID Preview QA n'est pas encore identifiée. La prochaine action est la requête en lecture seule de la section 6, exécutée par un opérateur qui a la connexion préproduction et l'UID hors du ticket. Ensuite seulement, une PR distincte limitée à la section 8, puis NFC-01 à NFC-08.
