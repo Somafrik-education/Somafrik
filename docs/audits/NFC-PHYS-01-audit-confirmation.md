@@ -151,7 +151,7 @@ Invariants du code, désormais confrontés à l’état final rapporté par le C
 
 ## Correctif minimal
 
-Pas de patch dans cette branche. Le correctif est [#925](https://github.com/Somafrik-education/Somafrik/pull/925), Draft/HOLD, HEAD `5e74a5659e246f967361fa1a18a5b029391c70c0`. Il arme le mode lecteur avant l’invite de re-présentation, conserve le premier diagnostic d’interruption après `writing`, `verification` ou `confirmation`, et vérifie le refus d’une carte `revoked` / `nfc_abandoned`. Le message dit que le contenu NFC peut déjà être présent, sans affirmer que l’écriture est terminée. Le `reset()` après écriture reste. SMOKE-NFC-01 reste FAIL. Le téléphone n’a pas rejoué le parcours.
+Pas de patch dans cette branche. Le correctif est [#925](https://github.com/Somafrik-education/Somafrik/pull/925), Draft/HOLD, HEAD `efb8c9c2664649e0e56f4395396e356d34676f51`. Il arme le mode lecteur avant l’invite de re-présentation, conserve le premier diagnostic d’interruption après `writing`, `verification` ou `confirmation`, et vérifie le refus d’une carte `revoked` / `nfc_abandoned`. Le message dit que le contenu NFC peut déjà être présent, sans affirmer que l’écriture est terminée. Le `reset()` après écriture reste. SMOKE-NFC-01 reste FAIL. Le téléphone n’a pas rejoué le parcours.
 
 ## Jeton exposé
 
