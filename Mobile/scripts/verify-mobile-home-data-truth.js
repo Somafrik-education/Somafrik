@@ -220,10 +220,21 @@ function main() {
   assert.match(students, /formatPaymentRateKpi/);
   assert.match(students, /loadStudentFees/);
   const paymentsScreen = read(path.join("screens", "PaymentsScreen.tsx"));
-  assert.match(paymentsScreen, /getPaymentRateKpi/);
-  assert.match(paymentsScreen, /getPaymentCashKpi/);
+  // FIN-SIMPLE-02: the payments summary now has only three KPIs.
+  // The rate metric still has its own guards above (Home/Students); it is
+  // intentionally absent from the Payments presentation.
+  assert.match(paymentsScreen, /formatPaymentOverviewAmounts/);
+  assert.match(paymentsScreen, /formatPaymentCashAmounts/);
   assert.match(paymentsScreen, /loadStudentFees/);
-  assert.match(paymentsScreen, /Non imputé/);
+  assert.match(paymentsScreen, /paymentAmountOverview\.expectedLabel/);
+  assert.match(paymentsScreen, /paymentAmountOverview\.remainingLabel/);
+  assert.match(paymentsScreen, /cashOverview\.collectedLabel/);
+  assert.doesNotMatch(paymentsScreen, /paymentRateKpi\.value|paymentStats\.rate/);
+  // Preserve the explicit non-allocated cash path, without restoring an old KPI.
+  assert.match(paymentsScreen, /PaymentMutationControls/);
+  const paymentMutation = read(path.join("components", "PaymentMutationControls.tsx"));
+  assert.match(paymentMutation, /UNALLOCATED_TARGET/);
+  assert.match(paymentMutation, /label: "Non imputé"/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
   assert.doesNotMatch(paymentsScreen, /des paiements réglés/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.paidAmount/);
