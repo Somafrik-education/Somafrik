@@ -85,11 +85,47 @@ export function nfcErrorCopy(error: unknown): string {
     NFC_SESSION_BUSY: "Une lecture ou une programmation NFC est déjà en cours. Terminez-la avant de réessayer.",
     NFC_SESSION_CANCELLED: "Session NFC interrompue. Reprenez l’opération existante.",
     NFC_BUSY: "Une opération NFC est déjà en cours.",
-    STUDENT_CARD_NFC_UID_EXISTS: "Cette carte physique est déjà affectée. Son UID reste dans l’historique.",
+    STUDENT_CARD_NFC_UID_EXISTS: "Cette carte NFC est déjà enregistrée. Vérifiez son affectation avant de poursuivre.",
     NFC_RESPONSE_INVALID: "Réponse serveur incohérente. Relisez l’état de l’opération.",
   };
   if (error && typeof error === "object" && (("status" in error && error.status === 403) || ("statusCode" in error && error.statusCode === 403))) return copies.STUDENT_CARD_TENANT_DENIED;
   return copies[code] ?? "Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante.";
+}
+export const NFC_INTERRUPTED_RESERVATION_LABEL = "Reprendre la réservation interrompue";
+export const NFC_REPLACE_ACTIVE_LABEL = "Remplacer la carte active";
+export const NFC_SERVER_RESUME_LABEL = "Reprendre l’opération — relire et confirmer";
+export const NFC_LIST_STALE_COPY = "Actualisation en cours. Les cartes affichées peuvent dater de la lecture précédente.";
+/** A committed refusal proves no new reservation exists. Uncertain transport does not. */
+export function nfcReservationFailureClearsAttempt(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "STUDENT_CARD_NFC_UID_EXISTS");
+}
+export type NfcDisplayedCardList = { scopeKey: string; studentId: string; cards: EnrollmentCard[] };
+export function beginNfcCardListLoad(current: NfcDisplayedCardList | null, scopeKey: string, studentId: string): { retain: boolean; cards: EnrollmentCard[] | null } {
+  if (current && current.scopeKey === scopeKey && current.studentId === studentId) return { retain: true, cards: current.cards };
+  return { retain: false, cards: null };
+}
+export function applyNfcCardListResponse(retained: NfcDisplayedCardList | null, scopeKey: string, studentId: string, response: unknown): { list: NfcDisplayedCardList | null; malformed: boolean } {
+  const cards = response && typeof response === "object" && "cards" in response ? response.cards : undefined;
+  if (!Array.isArray(cards)) return { list: retained, malformed: true };
+  return { list: { scopeKey, studentId, cards }, malformed: false };
+}
+export function resolveNfcCardListLoad(previous: NfcDisplayedCardList | null, scopeKey: string, studentId: string, outcome: { ok: true; body: unknown } | { ok: false }): { list: NfcDisplayedCardList | null; malformed: boolean } {
+  const started = beginNfcCardListLoad(previous, scopeKey, studentId);
+  const retained = started.retain ? previous : null;
+  if (!outcome.ok) return { list: retained, malformed: false };
+  return applyNfcCardListResponse(retained, scopeKey, studentId, outcome.body);
+}
+export function acceptNfcCardListResult(request: { scopeKey: string; studentId: string }, current: { scopeKey: string; studentId: string }): boolean {
+  return request.scopeKey === current.scopeKey && request.studentId === current.studentId;
+}
+export function nfcServerResumeVisible(card: { status: string; nfc?: unknown }): boolean {
+  return card.status === "issued" && Boolean(card.nfc);
+}
+export function nfcEnrollmentPrimaryAction(input: { uncertain: boolean; hasPending: boolean; hasActive: boolean }): "server-pending" | "interrupted" | "replace" | "program" {
+  if (input.hasPending) return "server-pending";
+  if (input.uncertain) return "interrupted";
+  if (input.hasActive) return "replace";
+  return "program";
 }
 function requireIdentity(card: EnrollmentCard): NtagIdentity {
   if (card.status === "revoked" && card.revokeReason === "nfc_reservation_expired") throw nfcFailure("STUDENT_CARD_NFC_EXPIRED");
@@ -180,9 +216,15 @@ export function createIndividualNfcFlow(input: {
     if (!attempt) throw nfcFailure("NFC_RESPONSE_INVALID");
     const intent = attempt;
     control.phase("reservation");
-    const card = await checked(control, () => intent.previous
-      ? input.api.replace(intent.previous!, input.studentId, intent.identity, intent.operationId)
-      : input.api.issue(input.studentId, intent.identity, intent.operationId));
+    let card: IssuedNfcCard;
+    try {
+      card = await checked(control, () => intent.previous
+        ? input.api.replace(intent.previous!, input.studentId, intent.identity, intent.operationId)
+        : input.api.issue(input.studentId, intent.identity, intent.operationId));
+    } catch (error) {
+      if (nfcReservationFailureClearsAttempt(error)) attempt = null;
+      throw error;
+    }
     if (card.nfc?.operationId !== intent.operationId || card.nfc.uid !== intent.identity.uid || card.nfc.tagType !== intent.identity.tagType
       || card.nfc.replacesCardId !== (intent.previous?.id ?? null)) throw nfcFailure("NFC_RESPONSE_INVALID");
     if (!card.cardToken || card.tokenAvailable === false) return verifyNfcCard(input.hardware, input.api, card, control);
