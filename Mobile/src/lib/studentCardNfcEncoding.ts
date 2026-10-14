@@ -1,3 +1,4 @@
+import { safeLogger } from "../services/safeLogger";
 /** NFC enrollment only; no attendance/finance calls, no persisted capability. */
 export type NtagIdentity = { uid: string; tagType: "NTAG213" | "NTAG216" };
 export type EnrollmentCard = {
@@ -61,6 +62,8 @@ export function nfcFailure(code: string): Error & { code: string } {
 }
 // Never display native/backend error text: it may contain the physical capability.
 export function nfcErrorCopy(error: unknown): string {
+  const diagnostic = readNfcConfirmDiagnostic(error);
+  if (diagnostic) return formatNfcConfirmFailure(diagnostic);
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
   const copies: Record<string, string> = {
     STUDENT_CARD_DISABLED: "La fonctionnalité carte élève est désactivée pour cet établissement.",
@@ -86,6 +89,12 @@ export function nfcErrorCopy(error: unknown): string {
     NFC_SESSION_CANCELLED: "Session NFC interrompue. Reprenez l’opération existante.",
     NFC_BUSY: "Une opération NFC est déjà en cours.",
     STUDENT_CARD_NFC_UID_EXISTS: "Cette carte NFC est déjà enregistrée. Vérifiez son affectation avant de poursuivre.",
+    STUDENT_CARD_NFC_INVALID: "Observation NFC refusée. Relisez la carte avant de confirmer.",
+    STUDENT_CARD_NFC_MISMATCH: "La carte présentée ne correspond pas à la réservation. Aucune activation effectuée.",
+    STUDENT_CARD_NOT_FOUND: "Confirmation refusée. Relisez l’état de la carte.",
+    STUDENT_CARD_ACTIVE_ALREADY_EXISTS: "Une autre carte active existe déjà. Aucune activation effectuée.",
+    STUDENT_CARD_NFC_POSTGRES_REQUIRED: "La confirmation ne peut pas être enregistrée pour le moment. Relisez l’état plus tard.",
+    STUDENT_CARD_NFC_CONFLICT: "Une opération concurrente existe déjà. Relisez les cartes de l’élève.",
     NFC_RESPONSE_INVALID: "Réponse serveur incohérente. Relisez l’état de l’opération.",
   };
   if (error && typeof error === "object" && (("status" in error && error.status === 403) || ("statusCode" in error && error.statusCode === 403))) return copies.STUDENT_CARD_TENANT_DENIED;
@@ -132,6 +141,83 @@ export function nfcEnrollmentPrimaryAction(input: { uncertain: boolean; hasPendi
   if (input.uncertain) return "interrupted";
   if (input.hasActive) return "replace";
   return "program";
+}
+
+const NFC_CONFIRM_TRANSPORT_CODES = ["TIMEOUT", "NETWORK_UNAVAILABLE", "BACKEND_UNREACHABLE"] as const;
+const NFC_CONFIRM_BUSINESS_CODES = [
+  "STUDENT_CARD_DISABLED", "STUDENT_CARD_NFC_DISABLED", "STUDENT_CARD_TENANT_DENIED",
+  "STUDENT_CARD_NFC_OPERATION_REQUIRED", "STUDENT_CARD_NFC_OPERATION_MISMATCH", "STUDENT_CARD_NFC_EXPIRED",
+  "STUDENT_CARD_INVALID_STATE", "STUDENT_CARD_NFC_UID_EXISTS", "STUDENT_CARD_NFC_INVALID", "STUDENT_CARD_NFC_MISMATCH",
+  "STUDENT_CARD_NOT_FOUND", "STUDENT_CARD_ACTIVE_ALREADY_EXISTS", "STUDENT_CARD_NFC_POSTGRES_REQUIRED", "STUDENT_CARD_NFC_CONFLICT",
+] as const;
+/** Inbound code rejected: an HTTP status arrived with a code outside the catalog. */
+export const NFC_CONFIRM_HTTP_REJECTED = "NFC_CONFIRM_HTTP_REJECTED";
+/** HTTP body missing or not a trusted JSON error. */
+export const NFC_CONFIRM_UNREADABLE = "NFC_CONFIRM_UNREADABLE";
+/** No HTTP status and no trusted transport code. */
+export const NFC_CONFIRM_UNCLASSIFIED = "NFC_CONFIRM_UNCLASSIFIED";
+export const NFC_CONFIRM_LOG_PATH = "/student-cards/:id/nfc-confirm";
+export const NFC_CONFIRM_FAILURE_EVENT = "nfc_confirm_failure";
+const NFC_CONFIRM_TRANSPORT = new Set<string>(NFC_CONFIRM_TRANSPORT_CODES);
+const NFC_CONFIRM_BUSINESS = new Set<string>(NFC_CONFIRM_BUSINESS_CODES);
+const NFC_CONFIRM_DIAGNOSTIC_CODES = new Set<string>([
+  ...NFC_CONFIRM_TRANSPORT_CODES, ...NFC_CONFIRM_BUSINESS_CODES,
+  NFC_CONFIRM_HTTP_REJECTED, NFC_CONFIRM_UNREADABLE, NFC_CONFIRM_UNCLASSIFIED,
+]);
+export type NfcConfirmDiagnostic = { code: string; status: number | null };
+const NFC_CONFIRM_DIAGNOSTIC = Symbol("nfcConfirmDiagnostic");
+
+function confirmHttpStatus(error: unknown): number | null {
+  if (!error || typeof error !== "object") return null;
+  const value = "status" in error ? error.status : "statusCode" in error ? error.statusCode : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+function confirmRawCode(error: unknown): string {
+  if (!error || typeof error !== "object" || !("code" in error) || typeof error.code !== "string") return "";
+  return error.code;
+}
+/** Accept transport codes only without an HTTP response, and business codes only from a numeric HTTP status. */
+export function classifyNfcConfirmFailure(error: unknown): NfcConfirmDiagnostic {
+  const status = confirmHttpStatus(error);
+  const raw = confirmRawCode(error);
+  const http = status !== null && status !== 0;
+  if (!http && NFC_CONFIRM_TRANSPORT.has(raw)) return { code: raw, status };
+  if (http && NFC_CONFIRM_BUSINESS.has(raw)) return { code: raw, status };
+  if (http && raw === "") return { code: NFC_CONFIRM_UNREADABLE, status };
+  if (http) return { code: NFC_CONFIRM_HTTP_REJECTED, status };
+  if (raw === "") return { code: NFC_CONFIRM_UNREADABLE, status: null };
+  return { code: NFC_CONFIRM_UNCLASSIFIED, status: null };
+}
+export function readNfcConfirmDiagnostic(error: unknown): NfcConfirmDiagnostic | null {
+  if (!error || typeof error !== "object" || !(NFC_CONFIRM_DIAGNOSTIC in error)) return null;
+  const value = (error as { [NFC_CONFIRM_DIAGNOSTIC]?: NfcConfirmDiagnostic })[NFC_CONFIRM_DIAGNOSTIC];
+  if (!value || typeof value.code !== "string" || !NFC_CONFIRM_DIAGNOSTIC_CODES.has(value.code)) return null;
+  const status = typeof value.status === "number" && Number.isFinite(value.status) ? value.status : null;
+  return { code: value.code, status };
+}
+export function isNfcConfirmFailure(error: unknown): boolean {
+  return readNfcConfirmDiagnostic(error) !== null;
+}
+function formatNfcConfirmFailure(diagnostic: NfcConfirmDiagnostic): string {
+  const phrase = nfcErrorCopy({ code: diagnostic.code, status: diagnostic.code === "STUDENT_CARD_TENANT_DENIED" ? 403 : undefined });
+  return `${phrase} (Code : ${diagnostic.code})`;
+}
+export function nfcConfirmFailureCopy(error: unknown): string {
+  return formatNfcConfirmFailure(readNfcConfirmDiagnostic(error) ?? { code: NFC_CONFIRM_UNCLASSIFIED, status: null });
+}
+function asNfcConfirmFailure(error: unknown): Error & { code: string; status: number | null } {
+  const diagnostic = classifyNfcConfirmFailure(error);
+  safeLogger.warn(NFC_CONFIRM_FAILURE_EVENT, {
+    method: "POST",
+    path: NFC_CONFIRM_LOG_PATH,
+    status: diagnostic.status,
+    code: diagnostic.code,
+  });
+  const failure = nfcFailure(diagnostic.code) as Error & { code: string; status: number | null };
+  Object.defineProperty(failure, NFC_CONFIRM_DIAGNOSTIC, { value: diagnostic });
+  failure.status = diagnostic.status;
+  failure.message = formatNfcConfirmFailure(diagnostic);
+  return failure;
 }
 function requireIdentity(card: EnrollmentCard): NtagIdentity {
   if (card.status === "revoked" && card.revokeReason === "nfc_reservation_expired") throw nfcFailure("STUDENT_CARD_NFC_EXPIRED");
@@ -301,9 +387,13 @@ export function createNfcEnrollmentApi(request: <T>(path: string, options?: { me
     issue(studentId, identity, operationId) { return post("/student-cards", { studentId, medium: "nfc", nfc: identity, operationId }); },
     replace(previous, studentId, identity, operationId) { return post(`/student-cards/${encodeURIComponent(previous.id)}/replace`, { studentId, medium: "nfc", nfc: identity, operationId }); },
     retry(card, identity, operationId) { return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-retry`, { ...identity, operationId }); },
-    confirm(card, cardToken, locked, studentId) {
+    async confirm(card, cardToken, locked, studentId) {
       if (!card.nfc) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
-      return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-confirm`, { uid: card.nfc.uid, tagType: card.nfc.tagType, cardToken, locked, studentId, operationId: card.nfc.operationId });
+      try {
+        return await post(`/student-cards/${encodeURIComponent(card.id)}/nfc-confirm`, { uid: card.nfc.uid, tagType: card.nfc.tagType, cardToken, locked, studentId, operationId: card.nfc.operationId });
+      } catch (error) {
+        throw asNfcConfirmFailure(error);
+      }
     },
   };
 }

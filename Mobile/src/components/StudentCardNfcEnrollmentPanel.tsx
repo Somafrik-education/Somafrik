@@ -4,8 +4,8 @@ import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollme
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
   acceptNfcCardListResult, applyNfcCardListResponse, beginNfcCardListLoad, createIndividualNfcFlow,
-  NFC_INTERRUPTED_RESERVATION_LABEL, NFC_LIST_REFRESHING_COPY, NFC_LIST_STALE_COPY, NFC_PHASE_COPY, NFC_REPLACE_ACTIVE_LABEL,
-  NFC_SERVER_RESUME_LABEL, nfcEnrollmentPrimaryAction, nfcErrorCopy, nfcFailure, nfcListSensitiveActionsAllowed, nfcServerResumeVisible,
+  isNfcConfirmFailure, NFC_INTERRUPTED_RESERVATION_LABEL, NFC_LIST_REFRESHING_COPY, NFC_LIST_STALE_COPY, NFC_PHASE_COPY, NFC_REPLACE_ACTIVE_LABEL,
+  NFC_SERVER_RESUME_LABEL, nfcConfirmFailureCopy, nfcEnrollmentPrimaryAction, nfcErrorCopy, nfcFailure, nfcListSensitiveActionsAllowed, nfcServerResumeVisible,
   type EnrollmentCard, type NfcDisplayedCardList, type NfcEncoderHardware, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
@@ -121,7 +121,8 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     catch (error) {
       if (valid()) {
         const code = error && typeof error === "object" && "code" in error ? error.code : "";
-        setPhase(code === "STUDENT_CARD_NFC_EXPIRED" ? "expired" : "error"); setMessage(nfcErrorCopy(error));
+        setPhase(code === "STUDENT_CARD_NFC_EXPIRED" ? "expired" : "error");
+        setMessage(isNfcConfirmFailure(error) ? nfcConfirmFailureCopy(error) : nfcErrorCopy(error));
       }
     } finally {
       busy.current = false;
