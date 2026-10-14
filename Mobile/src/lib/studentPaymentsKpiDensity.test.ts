@@ -2,6 +2,7 @@
  * Densité KPI écran Paiements élève — layout only.
  *   npx tsx Mobile/src/lib/studentPaymentsKpiDensity.test.ts
  */
+import "./finSimplePresentation.test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
