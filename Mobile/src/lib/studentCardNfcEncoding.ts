@@ -79,7 +79,7 @@ export function nfcErrorCopy(error: unknown): string {
     NFC_NDEF: "Carte sans format NDEF compatible. Aucune écriture effectuée.",
     NFC_STATE: "État NFC indisponible. Relisez la carte avant de confirmer.",
     NFC_READBACK: "Vérification de l’encodage échouée. Aucune activation confirmée.",
-    NFC_READBACK_INTERRUPTED: "Session interrompue après l’écriture. Aucune activation serveur. Reprenez par Relire et confirmer, sans programmer une nouvelle carte.",
+    NFC_READBACK_INTERRUPTED: "Session interrompue. Le contenu NFC peut déjà être présent sur la carte. Aucune activation serveur n’est confirmée. Reprenez par Relire et confirmer, sans programmer une nouvelle carte.",
     NFC_REWRITE_REQUIRED: "Relisez d’abord la carte. Une réécriture nécessite votre confirmation explicite.",
     NFC_PENDING: "Une réservation existe déjà. Reprenez cette opération.",
     NFC_REPLACE_REQUIRED: "Une carte active existe. Confirmez explicitement son remplacement.",
@@ -93,16 +93,29 @@ export function nfcErrorCopy(error: unknown): string {
   return copies[code] ?? "Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante.";
 }
 const NFC_POST_WRITE_PHASES = new Set<NfcPhase>(["writing", "verification", "confirmation"]);
-/** Foreground loss during enrollment. Idle and a return to active produce no code. */
-export function nfcEnrollmentInterruption(input: { nextAppState: string; phase: NfcPhase; working: boolean }): {
-  closeHardware: boolean; invalidate: boolean; code: "NFC_READBACK_INTERRUPTED" | "NFC_CANCELLED" | null;
-} {
+export type NfcInterruptionCode = "NFC_READBACK_INTERRUPTED" | "NFC_CANCELLED";
+export type NfcEnrollmentInterruptSnapshot = { phase: NfcPhase; working: boolean; lockedCode: NfcInterruptionCode | null };
+/** Foreground loss during enrollment. Idle and a return to active produce no new code. */
+export function nfcEnrollmentInterruption(input: {
+  nextAppState: string; phase: NfcPhase; working: boolean; lockedCode?: NfcInterruptionCode | null;
+}): { closeHardware: boolean; invalidate: boolean; code: NfcInterruptionCode | null } {
   if (input.nextAppState === "active") return { closeHardware: false, invalidate: false, code: null };
-  return {
-    closeHardware: true,
-    invalidate: true,
-    code: input.working ? (NFC_POST_WRITE_PHASES.has(input.phase) ? "NFC_READBACK_INTERRUPTED" : "NFC_CANCELLED") : null,
-  };
+  const fresh: NfcInterruptionCode | null = input.working
+    ? (NFC_POST_WRITE_PHASES.has(input.phase) ? "NFC_READBACK_INTERRUPTED" : "NFC_CANCELLED")
+    : null;
+  const locked = input.lockedCode ?? null;
+  const code = locked === "NFC_READBACK_INTERRUPTED" || fresh === "NFC_READBACK_INTERRUPTED" ? "NFC_READBACK_INTERRUPTED" : locked ?? fresh;
+  return { closeHardware: true, invalidate: true, code };
+}
+/** One operation, several AppState events. The first post-write diagnosis stays locked. */
+export function stepNfcEnrollmentInterruption(snapshot: NfcEnrollmentInterruptSnapshot, nextAppState: string): NfcEnrollmentInterruptSnapshot & {
+  closeHardware: boolean; invalidate: boolean; code: NfcInterruptionCode | null;
+} {
+  if (nextAppState === "active") {
+    return { ...snapshot, closeHardware: false, invalidate: false, code: null };
+  }
+  const decision = nfcEnrollmentInterruption({ ...snapshot, nextAppState });
+  return { phase: snapshot.phase, working: snapshot.working, lockedCode: decision.code ?? snapshot.lockedCode, ...decision };
 }
 function requireIdentity(card: EnrollmentCard): NtagIdentity {
   if (card.status === "revoked" && card.revokeReason === "nfc_reservation_expired") throw nfcFailure("STUDENT_CARD_NFC_EXPIRED");
