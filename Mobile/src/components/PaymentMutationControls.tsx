@@ -66,6 +66,7 @@ export default function PaymentMutationControls({
   const intentionsRef = useRef(createIntentionStore());
   const sessionGenRef = useRef(0);
   const selectionGenRef = useRef(0);
+  const manualFeeSelectionRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [scopedFees, setScopedFees] = useState<PaymentFeeRow[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -155,7 +156,7 @@ export default function PaymentMutationControls({
       });
       if (!accepted) return;
       setScopedFees(accepted.fees);
-      applyDraftLines(identity, accepted.fees);
+      if (!manualFeeSelectionRef.current) applyDraftLines(identity, accepted.fees);
     } catch {
       if (
         !isFreshPaymentFeeResponse({
@@ -171,6 +172,7 @@ export default function PaymentMutationControls({
   };
 
   const applyStudent = (nextStudentId: string) => {
+    manualFeeSelectionRef.current = false;
     const responseSelection = ++selectionGenRef.current;
     const responseSession = sessionGenRef.current;
     setStudentId(nextStudentId);
@@ -195,6 +197,7 @@ export default function PaymentMutationControls({
     intentionsRef.current.rotate(PAYMENT_DRAFT_INTENTION);
     sessionGenRef.current += 1;
     selectionGenRef.current = 0;
+    manualFeeSelectionRef.current = false;
     setScopedFees(null);
     setError("");
     setConfirmation("");
@@ -411,7 +414,10 @@ export default function PaymentMutationControls({
               required
               options={obligationChips}
               selectedId={line.obligationId}
-              onSelect={(id) => updateLine(line.id, { obligationId: id })}
+              onSelect={(id) => {
+                manualFeeSelectionRef.current = true;
+                updateLine(line.id, { obligationId: id });
+              }}
               disabled={saving || !studentId}
               error={fieldErrors.obligationId || fieldErrors[`obligationId-${index}`]}
             />
