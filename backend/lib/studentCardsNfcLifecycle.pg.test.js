@@ -176,6 +176,53 @@ pg("revocation and lost observations are idempotent and transactional",async f=>
   await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,'lost');assert.equal(await f.countAudit('student_card_lost'),1);
   await assert.rejects(f.confirm(card),{code:'STUDENT_CARD_INVALID_STATE'});
 });
+pg("nfc-confirm resolves a school code to the same student and still refuses every other identity", async f => {
+  const foreign = randomUUID();
+  const expiredStudent = randomUUID();
+  const qrStudent = randomUUID();
+  await f.pool.query("INSERT INTO students(id,school_id,student_code,status) VALUES($1,$2,'OTHER-SCHOOL','active'),($3,$4,'TEST-EXP','active'),($5,$4,'TEST-QR','active')", [foreign, f.b, expiredStudent, f.a, qrStudent]);
+  const byCode = await f.issue({ nfc: { ...f.identity, uid: "04AABBCCDDEE01" } });
+  const activated = await f.confirm(byCode, { studentId: "TEST-0", uid: "04AABBCCDDEE01" });
+  assert.equal(activated.status, "active");
+  assert.equal((await f.row(byCode.id)).student_id, f.students[0]);
+  const byUuid = await f.issue({ studentId: f.students[1], nfc: { ...f.identity, uid: "04AABBCCDDEE02" } });
+  assert.equal((await f.confirm(byUuid, { studentId: f.students[1], uid: "04AABBCCDDEE02" })).status, "active");
+  const pending = await f.issue({ studentId: f.students[2], nfc: { ...f.identity, uid: "04AABBCCDDEE03" } });
+  const mismatch = { code: "STUDENT_CARD_NFC_MISMATCH", statusCode: 409 };
+  for (const studentId of [f.students[1], "TEST-1", "OTHER-SCHOOL", foreign, "ABSENT-CODE"]) {
+    const refusal = await f.confirm(pending, { studentId, uid: "04AABBCCDDEE03" }).then(() => null, (error) => error);
+    assert.equal(refusal?.code, mismatch.code);
+    assert.equal(refusal?.statusCode, mismatch.statusCode);
+    const rendered = JSON.stringify({ message: refusal?.message, code: refusal?.code, details: refusal?.details });
+    assert.equal(rendered.includes(studentId), false);
+    assert.equal(rendered.includes(pending.cardToken), false);
+    assert.equal(rendered.includes("04AABBCCDDEE03"), false);
+  }
+  await assert.rejects(f.confirm(pending, { studentId: "TEST-2", uid: "04778899001122" }), mismatch);
+  await assert.rejects(f.confirm(pending, { studentId: "TEST-2", uid: "04AABBCCDDEE03", cardToken: generateCardSecrets().cardToken }), { code: "STUDENT_CARD_NOT_FOUND" });
+  const expired = await f.issue({ studentId: "TEST-EXP", nfc: { ...f.identity, uid: "04AABBCCDDEE04" } });
+  await f.expire(expired.id);
+  await assert.rejects(f.confirm(expired, { studentId: "TEST-EXP", uid: "04AABBCCDDEE04" }), { code: "STUDENT_CARD_NFC_EXPIRED" });
+  const qr = await issueStudentCard(f.repo, { studentId: "TEST-QR", medium: "qr" }, f.principal, {}, f.scope);
+  const year = randomUUID();
+  const room = randomUUID();
+  await f.pool.query("INSERT INTO academic_years VALUES($1,$2,TRUE)", [year, f.a]);
+  await f.pool.query("INSERT INTO classes VALUES($1,$2,$3,'CL-QR','Class QR')", [room, f.a, year]);
+  await f.pool.query("INSERT INTO enrollments VALUES($1,$2,$3,$4,'active')", [f.a, qrStudent, year, room]);
+  const scanned = await scanStudentCard(f.repo, { cardToken: qr.cardToken }, f.scope);
+  assert.equal(scanned.student.id, qrStudent);
+  assert.equal(scanned.card.medium, "qr");
+  assert.equal(qr.nfc, null);
+  assert.equal((await f.row(pending.id)).status, "issued");
+  assert.equal(await f.countAudit("student_card_nfc_encoded"), 2);
+  const rendered = JSON.stringify(await f.repo.all("SELECT old_value,new_value FROM audit_logs"));
+  assert.equal(rendered.includes(byCode.cardToken.split(".")[1]), false);
+  for (const uid of ["04112233445566", "04AABBCCDDEE01", "04AABBCCDDEE02", "04AABBCCDDEE03", "04AABBCCDDEE04"]) {
+    assert.equal(rendered.includes(uid), false);
+  }
+  assert.equal(rendered.includes("OTHER-SCHOOL"), false);
+  assert.equal(rendered.includes("ABSENT-CODE"), false);
+});
 pg("wrong tenant, UID, model, student and secret are rejected without activation",async f=>{
   const card=await f.issue();
   for(const change of [{uid:'04778899001122'},{tagType:'NTAG213'},{studentId:f.students[1]},{cardToken:generateCardSecrets().cardToken}]) await assert.rejects(f.confirm(card,change));
