@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcEnrollmentInterruption, nfcErrorCopy, nfcFailure, stepNfcEnrollmentInterruption,
-  type EnrollmentCard, type IssuedNfcCard, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcPhase } from "./studentCardNfcEncoding";
+  type EnrollmentCard, type IssuedNfcCard, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcEnrollmentInterruptSnapshot, type NfcPhase } from "./studentCardNfcEncoding";
 import { studentCardEnrollmentAccess } from "./studentCardEnrollmentAccess";
 const UID = "04112233445566";
 const OP = "11111111-1111-4111-8111-111111111111";
@@ -233,7 +233,7 @@ test("foreground loss after writing keeps a read-back code and never a capabilit
 });
 test("inactive then background keeps the first post-write diagnosis, including Cancel during writing", () => {
   for (const phase of ["writing", "verification", "confirmation"] as const) {
-    let snapshot = { phase, working: true, lockedCode: null as "NFC_READBACK_INTERRUPTED" | "NFC_CANCELLED" | null };
+    let snapshot: NfcEnrollmentInterruptSnapshot = { phase, working: true, lockedCode: null };
     const codes: string[] = [];
     for (const state of ["inactive", "background"]) {
       const next = stepNfcEnrollmentInterruption(snapshot, state);
@@ -254,7 +254,7 @@ test("inactive then background keeps the first post-write diagnosis, including C
   }
   const cancel = nfcEnrollmentInterruption({ nextAppState: "inactive", phase: "writing", working: true });
   assert.equal(cancel.code, "NFC_READBACK_INTERRUPTED");
-  let beforeWrite = { phase: "waiting" as const, working: true, lockedCode: null as "NFC_READBACK_INTERRUPTED" | "NFC_CANCELLED" | null };
+  let beforeWrite: NfcEnrollmentInterruptSnapshot = { phase: "waiting", working: true, lockedCode: null };
   for (const state of ["inactive", "background"]) {
     beforeWrite = stepNfcEnrollmentInterruption(beforeWrite, state);
     assert.equal(beforeWrite.lockedCode, "NFC_CANCELLED");
