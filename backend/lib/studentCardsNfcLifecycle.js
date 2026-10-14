@@ -118,6 +118,16 @@ async function reserveStudentCardNfc(repo, payload, principal, meta, scope, repl
   });
 }
 
+async function assertConfirmStudent(store, scope, card, studentRef) {
+  if (studentRef == null) return;
+  const ref = String(studentRef).trim();
+  if (!ref) return;
+  const student = await store.findStudentInSchool(scope.schoolId, ref);
+  if (!student || student.school_id !== scope.schoolId || student.id !== card.student_id) {
+    throw error("STUDENT_CARD_NFC_MISMATCH", "La carte ne correspond pas à cette affectation.");
+  }
+}
+
 async function confirmStudentCardNfc(repo, cardId, payload, principal, meta, scope) {
   authorize(principal, scope, "POST /api/student-cards/:id/nfc-confirm");
   const identity = normalizeNfcIdentity(payload);
@@ -128,8 +138,8 @@ async function confirmStudentCardNfc(repo, cardId, payload, principal, meta, sco
   return transaction(repo, principal, meta, scope, async ({ store, audit, expire, cardForUpdate }) => {
     const card = await cardForUpdate(cardId);
     if (card.public_id !== parsed.publicId || !tokenHashesMatch(hashCardSecret(parsed.secret), card.token_hash)) throw notFound();
-    if (card.nfc_uid !== identity.uid || card.nfc_tag_type !== identity.tagType
-      || (payload.studentId && payload.studentId !== card.student_id)) throw error("STUDENT_CARD_NFC_MISMATCH", "La carte ne correspond pas à cette affectation.");
+    if (card.nfc_uid !== identity.uid || card.nfc_tag_type !== identity.tagType) throw error("STUDENT_CARD_NFC_MISMATCH", "La carte ne correspond pas à cette affectation.");
+    await assertConfirmStudent(store, scope, card, payload.studentId);
     // Bind initial confirmation and every replay to the stored reservation UUID,
     // never to a retry/rotation UUID. Validate before expiry, activation or audits.
     if (card.nfc_operation_id) {
