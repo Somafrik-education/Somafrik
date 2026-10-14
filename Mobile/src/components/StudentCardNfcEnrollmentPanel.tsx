@@ -3,7 +3,7 @@ import { Alert, AppState, Platform, Text, TouchableOpacity, View } from "react-n
 import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollmentApi";
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
-  createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure,
+  createIndividualNfcFlow, isNfcConfirmFailure, NFC_PHASE_COPY, nfcConfirmFailureCopy, nfcErrorCopy, nfcFailure,
   type EnrollmentCard, type NfcEncoderHardware, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
@@ -87,7 +87,8 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     catch (error) {
       if (valid()) {
         const code = error && typeof error === "object" && "code" in error ? error.code : "";
-        setPhase(code === "STUDENT_CARD_NFC_EXPIRED" ? "expired" : "error"); setMessage(nfcErrorCopy(error));
+        setPhase(code === "STUDENT_CARD_NFC_EXPIRED" ? "expired" : "error");
+        setMessage(isNfcConfirmFailure(error) ? nfcConfirmFailureCopy(error) : nfcErrorCopy(error));
       }
     } finally {
       busy.current = false;
