@@ -11,7 +11,8 @@
 | **merge-base code** | `36bb96249af79abf5119348939761b6c7f700ced` |
 | **Branche de cette PR** | `cursor/fin-simple-01-audit-9c1f` |
 | **Périmètre du diff** | Ce fichier uniquement |
-| **Statut** | **FIN-SIMPLE-01 — AUDIT TERMINÉ / DRAFT / HOLD — EN ATTENTE DU DIFF CTO INDÉPENDANT.** |
+| **Statut** | **DRAFT / HOLD. Corrections documentaires A, B et C appliquées sur le HEAD `71466d76`. En attente du re-diff CTO.** |
+| **Revue** | Périmètre Git de #923 approuvé au HEAD `71466d7626f52b7aa051171bff397818cdcb06f4`. Cette révision ne change que les trois imprécisions relevées. |
 | **Merge** | Non. Pas de Ready. Pas d'implémentation avant décision CTO. |
 | **Production / `main` / données** | Non touchés. Aucune requête d'écriture PostgreSQL. RBAC et périmètres établissements inchangés. |
 
@@ -29,9 +30,9 @@ Les trois montants demandés existent déjà, et ils ne sont pas calculés par `
 |---|---|---|
 | **Obligation** | `formatPaymentOverviewAmounts().expectedLabel` | Σ `max(0, amountDue − exemption)` des obligations non annulées et non archivées, par devise |
 | **Encaissé** | `formatPaymentCashAmounts().collectedLabel` | Σ des paiements réellement comptés, par devise |
-| **Reste à payer** | `formatPaymentOverviewAmounts().remainingLabel` | Σ `max(0, amountDue − amountPaid − exemption)`, plafonné à zéro, par devise |
+| **Reste à payer** | `formatPaymentOverviewAmounts().remainingLabel` | Par devise : `max(0, Σ max(0, amountDue − exemption) − Σ max(0, amountPaid))`. Ce n'est pas une lecture de la colonne `balance`. |
 
-`amountPaid` et `balance` sont une projection PostgreSQL de `payment_allocations`. Le Backend reste l'autorité. Le cash non affecté et le surplus restent dans le paiement et dans `unallocatedAmount`. Ils ne réduisent pas la dette.
+`amountPaid` est alimenté par la projection PostgreSQL des allocations (`student_fee_obligations.amount_paid`). La colonne `balance` est la même projection, stockée à côté : `GREATEST(0, amount_due − amount_paid − exemption)`. L'affichage recalcule le reste à partir de `amountDue`, `exemption` et `amountPaid`. Il est équivalent à la somme des `balance` lorsque les invariants tiennent, en particulier l'absence de surallocation. Le Backend reste l'autorité. Le cash non affecté et le surplus restent dans le paiement et dans `unallocatedAmount`. Ils ne réduisent pas la dette. Une allocation ne dépasse pas l'obligation.
 
 Ce qui manque est un contrat d'affichage, pas un nouveau moteur de calcul.
 
@@ -107,15 +108,15 @@ Décision par famille :
 | `web/src/pages/EntityPage.tsx` | 1037 | Toast si création générique d'un paiement | « sinon il reste non imputé » | Contrat d'écriture | HOLD. Le toast décrit le contrat d'encaissement, pas un KPI. |
 | `web/src/pages/finances/ParentFinancePage.tsx` | 176-180 | Finances parent Web | Quatre cartes : Montant attendu, Montant imputé, Reste à payer, Paiements reçus | `buildParentFinanceModel` | Trois cartes : Obligation = `expectedLabel`, Encaissé = `collectedLabel` (cash), Reste = `remainingLabel`. Retirer « Montant imputé ». |
 | `web/src/pages/ParentDashboardPage.tsx` | 262-266 | Tuile parent « Reste à payer » | Détail `Attendu … · imputé …` | `paidLabel` = `amountPaid` des obligations, pas le cash | Remplacer le détail par Obligation et Encaissé, sans le mot « imputé ». Le montant « Reste à payer » reste `remainingLabel`. |
-| `web/src/lib/paymentAmountBreakdown.ts` | 53-137 | Calcul Web des seaux obligation / reste | `collectedAmount` du seau obligation est `amountPaid`, pas le cash | PostgreSQL `amount_paid` / `balance` | Conserver les fonctions. Le nom interne `collectedAmount` est un piège de lecture : la PR corrective ne le rebaptise que si les tests de parité sont mis à jour dans le commit GREEN, sans changer la formule. |
-| `web/src/lib/paymentCashKpi.ts` | 51-127 | Cash Web par devise | Encaissé / alloué / non alloué. `unallocatedAmount` absent → `—`, jamais un zéro fabriqué | Champs API `allocatedAmount`, `unallocatedAmount` | Conserver. Le bandeau ne lit plus `allocatedLabel` ni `unallocatedLabel`. |
+| `web/src/lib/paymentAmountBreakdown.ts` | 53-137 | Calcul Web des seaux obligation / reste | `remainingAmount` = `max(0, expectedAmount − collectedAmount)` par devise. Ici `collectedAmount` est Σ `max(0, amountPaid)`, pas le cash et pas la colonne `balance`. | `amountPaid` vient de la projection des allocations | Conserver les fonctions. Le nom interne `collectedAmount` est un piège de lecture : la PR corrective ne le rebaptise que si les tests de parité sont mis à jour dans le commit GREEN, sans changer la formule. |
+| `web/src/lib/paymentCashKpi.ts` | 51-127 | Cash Web par devise | `collectedLabel` est le total encaissé comptabilisé. `unallocatedLabel` vaut `—` seulement lorsque `unallocatedAmount` est absent ou invalide. Cette absence ne rend pas `collectedLabel` indisponible, et elle ne fabrique pas un zéro de non-affecté. | Champs API `amount`, `allocatedAmount`, `unallocatedAmount` | Conserver. Le bandeau ne lit plus `allocatedLabel` ni `unallocatedLabel`. |
 | `web/src/lib/parentFinance.ts` | 47-58 | Modèle parent | `allocatedLabel` = montant payé des obligations. `collectedLabel` = cash | Même séparation | Conserver le modèle. L'UI cesse d'afficher `allocatedLabel`. |
 | `web/src/lib/parentDashboard.ts` | 134-161 | Tuile accueil parent | `paidLabel` = `amountPaid`. `paymentLabel` = cash | Idem | Idem. |
 | `Mobile/src/screens/PaymentsScreen.tsx` | 133-164 | Paiements Mobile, vue d'ensemble | Montant attendu, Reste à payer, taux, Montant encaissé, ligne « Imputé · Non imputé », compteurs Payés / Non imputés / Impayés | `formatPaymentOverviewAmounts` + `formatPaymentCashAmounts` + `getPaymentStats` | Bandeau : Obligation, Encaissé, Reste à payer. Retirer la ligne Imputé / Non imputé et le compteur Non imputés. Le lien Impayés peut rester hors du bandeau KPI : c'est une navigation vers les dettes, pas un statut d'imputation. |
 | `Mobile/src/screens/StudentPaymentsScreen.tsx` | 161-194 | Fiche paiements élève | Hero « Montant attendu », puis Imputé, Reste à payer, Encaissé, Non imputé | `imputedLabel` = `amountPaid` des obligations. `collectedLabel` = cash. | Même bandeau de trois indicateurs. `Imputé` et `Non imputé` sortent. |
 | `Mobile/src/screens/HomeScreen.tsx` | 168-169, 455-462 | Accueil Mobile | « À percevoir » = reste des obligations. « Encaissé » = cash. « Impayés » = compteur du ledger. | `formatPaymentOverviewAmounts` / `formatPaymentCashAmounts` | Hors tête du module Finances. Les montants sont déjà les bons. Aligner le libellé « À percevoir » sur « Reste à payer » dans la PR corrective pour que Web et Mobile disent la même chose. Ne pas y ajouter un troisième calcul. |
 | `Mobile/src/lib/paymentAmountBreakdown.ts` | miroir Web | Calcul Mobile | Même formule que le Web, fichier dupliqué | Parité L3 | Ne pas créer une troisième formule. |
-| `Mobile/src/lib/paymentCashKpi.ts` | 52-143 | Cash Mobile | `formatPaymentCashAmounts` aligne le Web, fail-closed si `unallocatedAmount` absent. `getPaymentCashKpi` (l. 62-76) fait encore `unallocatedAmount ?? 0`. | API | Le bandeau doit continuer à lire `formatPaymentCashAmounts`. Ne pas promouvoir `getPaymentCashKpi` : son `?? 0` masque un champ absent. Les écrans le calculent encore (`PaymentsScreen` l. 59, `StudentPaymentsScreen` l. 107) sans l'afficher comme libellé principal. |
+| `Mobile/src/lib/paymentCashKpi.ts` | 52-143 | Cash Mobile | `formatPaymentCashAmounts` aligne le Web : `unallocatedLabel` vaut `—` si `unallocatedAmount` est absent, tandis que `collectedLabel` reste le total encaissé. `getPaymentCashKpi` (l. 62-76) fait encore `unallocatedAmount ?? 0`. | API | Le bandeau doit continuer à lire `formatPaymentCashAmounts` pour l'encaissé. Ne pas promouvoir `getPaymentCashKpi` : son `?? 0` masque un non-affecté absent. Les écrans le calculent encore (`PaymentsScreen` l. 59, `StudentPaymentsScreen` l. 107) sans l'afficher comme libellé principal. |
 | `Mobile/src/domain/metrics/schoolMetrics.ts` | 105-125 | Compteurs Payés / Non imputés | Un reçu « Non imputé » n'est ni Payé ni Impayé | Statut API | Le compteur « Non imputés » quitte le bandeau. La fonction de métrique reste : d'autres tests de vérité des données en dépendent. |
 | `Mobile/src/lib/studentSubScreensSpec.ts` | 54 | Commentaire de layout | Fige les quatre libellés Imputé / Reste / Encaissé / Non imputé | Test de densité | Le commentaire et `studentPaymentsKpiDensity.test.ts` suivent le nouveau bandeau dans le commit GREEN. |
 
@@ -167,7 +168,7 @@ Le risque d'un encaissement sans obligation est donc réel, assumé, et tracé. 
 | `backend/lib/financeManagement.js` | 70-78, 195-198 | `isPaymentCounted` exclut annulé, refusé, échoué. Pending est exclu plus haut, dans `cashBucketsFromPayments` et dans les clients. | Conserver. |
 | `backend/lib/financeRepository.pg.test.js` | 5, 241-507, 655, 862 | Intégration PostgreSQL : multi-lignes non affectées, surplus, élève sans dette | Conserver. Ne pas exécuter ces tests comme une migration. |
 | `backend/db/migrations/20260813_finance_canonical.sql` | 81+ | Table `payment_allocations` | Ne pas modifier. |
-| `backend/db/migrations/20260828_finance_f4_allocation_balance.sql` | 1-169 | Trigger `payment_allocations_assert_canonical` (tenant, élève, devise, capacité, paiement `paid`). Trigger `student_fee_obligations_project_allocations` : `amount_paid`, `balance = GREATEST(0, dû − alloué − exonération)`, statuts Payé / Partiellement payé / À payer / En retard / Exonéré / Annulé. | Ne pas modifier. Le « Reste à payer » affiché doit lire cette projection (`balance` / `amountPaid`), pas le cash. |
+| `backend/db/migrations/20260828_finance_f4_allocation_balance.sql` | 1-169 | Trigger `payment_allocations_assert_canonical` (tenant, élève, devise, capacité, paiement `paid`, refus de surallocation). Trigger `student_fee_obligations_project_allocations` : `amount_paid`, `balance = GREATEST(0, dû − alloué − exonération)`, statuts Payé / Partiellement payé / À payer / En retard / Exonéré / Annulé. | Ne pas modifier. L'UI ne lit pas la colonne `balance` : elle recalcule depuis `amountDue`, `exemption` et `amountPaid`. L'équivalence avec Σ `balance` suppose ces invariants. Le reste affiché ne se calcule pas depuis le cash. |
 | `backend/db/schema.sql` | 900 | Schéma courant de `payment_allocations` | Ne pas modifier. |
 | `backend/db/financePgStore.js` | 595-613, 1004+ | Insert, reverse, sommes d'allocations | Ne pas modifier. |
 | `backend/lib/studentCardFinance.js` | 95-103 | Badge carte : cash non affecté ou en attente → situation à vérifier | Hors bandeau Finances. Ne pas le vider : un paiement non affecté ne doit pas apparaître comme une échéance impayée (AUDIT-CARTE-01). |
@@ -210,14 +211,14 @@ Mobile tests : `paymentCashKpi.test.ts` (18), `paymentEnrollment.test.ts` (17), 
 |---|---|---|---|
 | Obligation | `formatPaymentOverviewAmounts` sur frais scopés | Même fonction, copie `Mobile/src/lib/paymentAmountBreakdown.ts` | `student_fee_obligations.amount_due` et `exemption`. Annulé / archivé exclus. |
 | Encaissé | `formatPaymentCashAmounts` sur paiements scopés | Même fonction, copie `paymentCashKpi.ts` | `payments.amount` des paiements comptés. Pending, annulé, refusé, échoué, brouillon exclus côté client. Le Backend exclut annulé / refusé / échoué dans `isPaymentCounted`, et pending dans `cashBucketsFromPayments`. |
-| Reste à payer | `remainingLabel`, jamais négatif | Idem. Home l'appelle aujourd'hui « À percevoir ». Impayés Mobile l'appelle « Reste dû ». | `balance = GREATEST(0, amount_due − Σ allocations actives − exemption)` |
+| Reste à payer | `remainingLabel` = `max(0, Σ max(0, amountDue − exemption) − Σ max(0, amountPaid))` par devise. Pas une lecture de `balance`. | Même copie. Home l'appelle aujourd'hui « À percevoir ». Impayés Mobile l'appelle « Reste dû ». | `amount_paid` = Σ allocations actives. `balance = GREATEST(0, amount_due − amount_paid − exemption)`. Équivalent au reste affiché s'il n'y a pas de surallocation. |
 | Imputé affiché | Carte « Montant imputé aux obligations » = Σ `amountPaid` | Fiche élève : Σ `amountPaid`. Liste Paiements : Σ `allocatedAmount` du cash. Deux sources qui coïncident si la projection est saine, et qui peuvent diverger si un payload est incomplet. | Σ `payment_allocations.amount` actives |
 | Non imputé affiché | Reçu + prévisualisation du modal | Bandeau, compteur, reçu, puce de formulaire | `max(0, paiement − alloué)`, statut si rien n'est alloué |
 | Trop-perçu | Libellé de statut, pas une carte KPI | Libellé de statut | `presentPaymentStatus` quand `0 < leftover < amount` |
 | Partiellement imputé | Libellé UI de `Partiel` | Même fichier miroir | Le statut stocké reste `Partiel` |
 | Périmètre | `scopedStudentFees` / `scopedPayments` | `filterRowsByStudentScope` + école active | Trigger `FINANCE_ALLOCATION_TENANT_MISMATCH` |
 | Devise | Seaux séparés. Pas de somme CDF+USD. `FC` → `CDF` à l'écriture. | Idem | Trigger `FINANCE_CURRENCY_MISMATCH` |
-| Erreur API | Le bandeau n'est pas une donnée inventée | `—` ou état `QueryStateView`. `unallocated` absent → `—` dans `formatPaymentCashAmounts`. | Les erreurs HTTP restent des erreurs |
+| Erreur API | Le bandeau n'est pas une donnée inventée | `QueryStateView` ou `—` selon l'écran. Si `unallocatedAmount` manque, seul `unallocatedLabel` vaut `—`. `collectedLabel` reste le total encaissé comptabilisé. | Les erreurs HTTP restent des erreurs |
 | Écriture | `financePaymentWrite.ts` | `paymentEnrollment.ts` | `financeWebMobileWriteContract.js` puis `financeService.js` |
 | Autorité du solde | Lecture | Lecture | PostgreSQL |
 
@@ -238,8 +239,16 @@ Le contrat d'affichage. Les règles de stockage ne changent pas.
 
 1. **Obligation** = somme des obligations applicables au périmètre consulté (élève, établissement, devise, période déjà portée par les lignes). Une obligation annulée ou archivée ne compte pas. L'exonération est déduite du dû avant la somme. Une obligation sans `amountDue` numérique ne devient pas zéro : le seau suit la règle fail-closed déjà écrite dans `getPaymentRateKpi` et `getPaymentAmountBreakdown` (ligne ignorée seulement si le parse échoue dans le breakdown ; le taux, lui, passe à `—`). La PR corrective ne doit pas élargir le silence.
 2. **Encaissé** = somme des paiements reçus et comptabilisés du même périmètre et de la même devise. Entrée : statut compté, non annulé, non en attente, non refusé, non échoué, non brouillon. Le cash non affecté entre dans Encaissé. Il n'entre pas dans le règlement de la dette.
-3. **Reste à payer** = somme des `balance` canoniques des obligations du même périmètre. Plancher à 0, déjà garanti par `GREATEST` PostgreSQL et par `Math.max(0, …)` côté lecture. Un surplus ne s'affiche pas comme un reste négatif.
-4. Interdit dans le bandeau : `Obligation − Encaissé`. Contre-exemple FIN-04 / FIN-07 : obligation 100, encaissé 120 dont 20 non affectés → Reste 100, pas −20 et pas 0. Obligation 100, encaissé 120 entièrement affecté au-delà du solde → Reste 0, surplus 20 conservé sur le paiement.
+3. **Reste à payer** = `formatPaymentOverviewAmounts().remainingLabel`. Par devise, `getPaymentAmountBreakdown` fait `remainingAmount = max(0, Σ max(0, amountDue − exemption) − Σ max(0, amountPaid))`. Les obligations annulées ou archivées sont exclues. Une ligne sans `amountDue` ou `amountPaid` numérique est ignorée par ce breakdown. Ce calcul ne lit pas la colonne PostgreSQL `balance`. `amountPaid` est la projection des allocations actives. Le solde canonique d'une obligation reste `balance = GREATEST(0, amount_due − amount_paid − exemption)`. La somme de ces `balance`, pour le même périmètre et la même devise, est équivalente au `remainingAmount` affiché lorsque les invariants existants tiennent, en particulier l'absence de surallocation : le trigger `FINANCE_OBLIGATION_OVERALLOCATED` refuse une allocation active supérieure à `GREATEST(0, amount_due − exemption)`. Cette PR ne modifie aucune formule.
+4. Interdit dans le bandeau : `Obligation − Encaissé`. Le reste suit le montant affecté. Une allocation ne dépasse pas l'obligation. Les trois cas de référence sont :
+
+| Obligation | Encaissé | Affecté | Non affecté | Reste |
+|---|---:|---:|---:|---:|
+| 100 | 120 | 100 | 20 | 0 |
+| 100 | 120 | 0 | 120 | 100 |
+| 100 | 40 | 40 | 0 | 60 |
+
+Le premier est FIN-04 : le surplus de 20 reste sur le paiement, le reste affiché est 0. Le deuxième est FIN-07 : les 120 sont encaissés et non affectés, le reste affiché est 100. Le troisième est FIN-02. Aucun de ces cas n'autorise une allocation supérieure à l'obligation.
 5. Pas de double comptage. Encaissé ne s'ajoute pas à Obligation. Le montant affecté n'est plus une quatrième carte. Une allocation n'est comptée qu'une fois dans `amount_paid`.
 6. Même périmètre sur les trois montants : même élève ou même établissement, mêmes devises affichées séparément, mêmes lignes de période déjà sélectionnées par les requêtes existantes. Pas de nouveau filtre.
 7. Chargement, vide et erreur restent explicites. `—` ou l'état d'erreur existant. Une erreur de `GET /payments` ou `GET /finance/student-fees` ne s'affiche pas `0 FC`.
@@ -260,13 +269,13 @@ Lecture de l'état au SHA audité. « Montant » = la règle métier est déjà 
 | FIN-01 | Obligation 100, encaissé 0 | Reste 100. Scénario B des invariants (30 000 / 10 000) et taux sans paiement. | Le bandeau dit « Montant attendu », pas « Obligation ». | Obligation 100, Encaissé 0, Reste 100. |
 | FIN-02 | Obligation 100, affecté 40 | Reste 60. Convergence F5 cas 2 : dû 100 / allocation 40 / balance 60. | Le 40 apparaît aussi comme « Imputé ». | Obligation 100, Encaissé 40, Reste 60. Le 40 n'a plus de carte propre. |
 | FIN-03 | Obligation 100, affecté 100 | Reste 0, statut obligation Payé. Convergence F5 cas 3. | Cartes d'imputation encore visibles. | Obligation 100, Encaissé 100, Reste 0. |
-| FIN-04 | Obligation 100, encaissé 120 | Reste 0 si 100 sont alloués. Surplus 20 en `unallocatedAmount`. Statut paiement « Trop-perçu ». Scénario C : dette 30 000, paiement 50 000, balance 0, unallocated 20 000. | Le reçu et le statut disent Trop-perçu / Montant non imputé. | Bandeau : Reste 0. Le surplus reste en base et sur le reçu. Le bandeau n'affiche pas −20. |
+| FIN-04 | Obligation 100, encaissé 120, affecté 100, non affecté 20 | Reste 0. Le surplus 20 reste en `unallocatedAmount`. Les allocations ne dépassent pas l'obligation. Statut paiement « Trop-perçu ». Scénario C : dette 30 000, paiement 50 000, balance 0, unallocated 20 000. | Le reçu et le statut disent Trop-perçu / Montant non imputé. | Bandeau : Reste 0. Le surplus reste en base et sur le reçu. Le bandeau n'affiche pas −20. |
 | FIN-05 | Paiement annulé | Allocations reversées, `amount_paid` revient à 0, dette restaurée, paiement conservé et inactif. Scénario E. `isPaymentCounted` l'exclut de l'encaissé. | Historique « Annulé ». | Encaissé et Reste recalculés. La ligne d'historique reste. |
 | FIN-06 | Paiement en attente | Exclu de l'encaissé client et de `cashBucketsFromPayments`. Convergence F5 cas 8 : dette inchangée. | Statut « En attente ». | Non ajouté à Encaissé. Reste inchangé. |
-| FIN-07 | Encaissement non affecté | Dette inchangée. Convergence F5 cas 5 : allocated 0, unallocated = montant. | Le bandeau montre « Non imputé ». C'est exact, et c'est le mot à retirer du bandeau. | Encaissé augmente. Reste inchangé tant que le cash n'est pas alloué. Le mot quitte le bandeau. L'option de saisie reste. |
+| FIN-07 | Obligation 100, encaissé 120, affecté 0, non affecté 120 | Reste 100. La dette ne change pas. Convergence F5 cas 5 : allocated 0, unallocated = montant. | Le bandeau montre « Non imputé ». C'est exact, et c'est le mot à retirer du bandeau. | Encaissé 120, Reste 100. Le mot quitte le bandeau. L'option de saisie reste. |
 | FIN-08 | Plusieurs obligations | Une somme d'allocations, pas une somme de paiements dupliqués. Scénario D : un paiement 50 000, deux allocations, unallocated 0. | Compteur « Obligations élèves » en plus des montants. | Agrégation par devise, sans doublon. Le compteur sort du bandeau KPI. |
 | FIN-09 | Plusieurs établissements | `scopedStudentFees` / `scopedPayments`. Convergence cas 11. Trigger tenant. Test `financePaymentsOverview.scope.test.ts`. | Déjà isolé. | Aucun changement de périmètre. |
-| FIN-10 | Web et Mobile | Mêmes fonctions de seaux, fichiers dupliqués, libellés différents (§ 3). | Échec de parité des mots. | Mêmes trois libellés, mêmes montants, même devise, même règle de `—`. |
+| FIN-10 | Web et Mobile | Mêmes fonctions de seaux, fichiers dupliqués, libellés différents (§ 3). | Échec de parité des mots. | Mêmes trois libellés, mêmes montants, même devise. `—` signale un chargement, une erreur ou un `unallocatedLabel` indisponible. Il ne remplace pas `collectedLabel` lorsque l'encaissé est connu. |
 | FIN-11 | Reçu et historique | Lignes d'allocation, référence, code de vérification, annulation auditable. | Les mots techniques sont la trace lisible du surplus. | Aucune ligne financière supprimée. Le reçu continue d'exposer le montant reçu et le reliquat, même si le lexique du reliquat est HOLD. |
 | FIN-12 | Navigation | Six cartes Web. Quatre KPI Mobile + compteur Non imputés. | Échec. | Tête du module : seulement Obligation, Encaissé, Reste à payer. Encaissement, recherche, reçu, historique, consultation des obligations restent. |
 
@@ -379,7 +388,7 @@ Les tests PostgreSQL (`*.pg.test.js`) restent dans la CI habituelle. Cet audit n
 | Supprimer `payment_allocations` ou les statuts « Non imputé » / « Trop-perçu » / « Partiel » | Perte de traçabilité, triggers F4 cassés, reçus historiques illisibles. | Aucun fichier `backend/db` ni `financeUnallocatedCash.js` dans la PR corrective. |
 | Remplacer « Partiellement imputé » par « Partiellement payé » | Réouvre Oscar (#542) : l'utilisateur lit une créance partielle alors que l'obligation ciblée est soldée et que le reste est un surplus. | Ne pas toucher `financePaymentStatusLabel` dans la PR des trois KPI. |
 | Retirer la puce « Non imputé » | Élève sans dette : encaissement impossible, ou retour de la conversion silencieuse `obligationId` manquant → Non imputé, interdite par F5. Cas Esther inversé si la préselection retombe sur la puce alors qu'une dette existe. | La puce reste. Les tests Esther et IMP-FAST restent verts. |
-| Afficher `getPaymentCashKpi` | `unallocatedAmount ?? 0` transforme un champ absent en zéro. | Continuer `formatPaymentCashAmounts`, qui rend `—`. |
+| Afficher `getPaymentCashKpi` | `unallocatedAmount ?? 0` transforme un non-affecté absent en zéro. | Continuer `formatPaymentCashAmounts`. `unallocatedLabel` vaut `—` si ce champ manque. `collectedLabel` reste le total encaissé comptabilisé. |
 | Additionner CDF et USD | Interdit par FIN-L3. | Ne pas remplacer les seaux par un scalaire. |
 | Afficher une erreur comme 0 | Le mandat l'interdit. Les écrans Mobile utilisent déjà `—` et `QueryStateView`. | Le test FIN-12 couvre l'état d'erreur, pas seulement le rendu nominal. |
 | Confondre « Montant alloué aux impayés ouverts » avec Encaissé | Le premier est `amountPaid`. Le second est le cash. | Le détail Impayés ne change pas de source. |
@@ -466,4 +475,6 @@ Non exécuté, et non requis pour cet audit documentaire : tests `*.pg.test.js`,
 | PR 2 | Trois indicateurs Web et Mobile, tests RED puis GREEN | Après diff CTO de cette PR. Aucun Backend. |
 | PR 3 | Seulement si le CTO valide un lexique de reçu, d'historique et d'option d'encaissement | Non ouverte. Non recommandée tant que le contrat d'encaissement n'est pas écrit. |
 
-FIN-SIMPLE-01 — AUDIT TERMINÉ / DRAFT / HOLD — EN ATTENTE DU DIFF CTO INDÉPENDANT.
+FIN-SIMPLE-01 — CORRECTIONS DOCUMENTAIRES TERMINÉES — EN ATTENTE DU RE-DIFF CTO.
+
+DRAFT / HOLD. Pas de Ready. Pas de merge.
