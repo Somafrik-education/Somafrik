@@ -37,7 +37,7 @@ assert.match(unpaidScreen, /ExpandableFinanceCard/);
 assert.match(unpaidScreen, /Montant attendu/);
 assert.match(unpaidScreen, /Montant alloué aux impayés ouverts/);
 assert.doesNotMatch(unpaidScreen, />Montant payé</);
-assert.match(unpaidScreen, /Reste dû/);
+assert.match(unpaidScreen, /Reste à payer/);
 assert.match(unpaidScreen, /Échéance/);
 
 const studentPayments = read("screens/StudentPaymentsScreen.tsx");
