@@ -356,14 +356,14 @@ function isStudentCardPr6Signal(file: string) {
   );
 }
 
-// The two historical apksigner fixture findings on the NFC verifier PR are
-// public certificate/key digests, not credentials. Permit *only* the exact
-// two fingerprint additions to .gitleaksignore, with the original file intact.
-// This must not turn the Carte eleve scope gate into a blanket exception for
-// changes to secret-scanner controls.
+// develop already records the historical apksigner fixture fingerprints
+// (73da7fe2). The rebase copied that public-cert false positive onto
+// 766fe215. Permit *only* those two exact additions after the untouched
+// develop file. This must not turn the Carte eleve scope gate into a blanket
+// exception for changes to secret-scanner controls.
 const NFC_APKSIGNER_TEST_FIXTURE_FINGERPRINTS = new Set([
-  "73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88",
-  "73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90",
+  "766fe2156312eef613875afe5c3e4dea3b2942eb:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88",
+  "766fe2156312eef613875afe5c3e4dea3b2942eb:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90",
 ]);
 
 function isApprovedNfcFixtureGitleaksIgnore(file: string) {
@@ -835,7 +835,7 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       assert.equal(
         studentCardGitleaksFingerprint.kind,
         "na",
-        "L4-09: seules les deux empreintes historiques du vérificateur APK sont admises dans .gitleaksignore",
+        "L4-09: seules les deux empreintes rebasées du vérificateur APK sont admises après le fichier develop",
       );
 
       const studentCardPr7PlusBackend = evaluateLot4Scope([
