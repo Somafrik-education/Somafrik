@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcErrorCopy, nfcFailure,
+import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcEnrollmentInterruption, nfcErrorCopy, nfcFailure,
   type EnrollmentCard, type IssuedNfcCard, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcPhase } from "./studentCardNfcEncoding";
 import { studentCardEnrollmentAccess } from "./studentCardEnrollmentAccess";
 const UID = "04112233445566";
@@ -207,6 +207,27 @@ test("school READ + UPDATE only; platform ALL_PRIVILEGES never grants enrollment
 test("failure messages never interpolate secret, raw native payload, or backend details", () => {
   for (const error of [new Error(TOKEN), { code: TOKEN, message: TOKEN }, { code: "TIMEOUT", message: TOKEN }]) assert.ok(!nfcErrorCopy(error).includes(TOKEN));
   assert.match(nfcErrorCopy({ code: "STUDENT_CARD_NFC_EXPIRED" }), /expirée/);
+});
+test("foreground loss after writing keeps a read-back code and never a capability", () => {
+  for (const phase of ["writing", "verification", "confirmation"] as const) {
+    const decision = nfcEnrollmentInterruption({ nextAppState: "background", phase, working: true });
+    assert.deepEqual(decision, { closeHardware: true, invalidate: true, code: "NFC_READBACK_INTERRUPTED" });
+    const copy = nfcErrorCopy(Object.assign(new Error(TOKEN), { code: decision.code }));
+    assert.equal(copy.includes(TOKEN), false);
+    assert.match(copy, /après l’écriture/);
+    assert.match(copy, /Relire et confirmer/);
+  }
+  for (const phase of ["initial", "reservation", "waiting", "resume"] as const) {
+    const decision = nfcEnrollmentInterruption({ nextAppState: "inactive", phase, working: true });
+    assert.equal(decision.code, "NFC_CANCELLED");
+    const copy = nfcErrorCopy(nfcFailure(decision.code!));
+    assert.equal(copy.includes(TOKEN), false);
+    assert.doesNotMatch(copy, /après l’écriture/);
+  }
+  const idle = nfcEnrollmentInterruption({ nextAppState: "background", phase: "confirmation", working: false });
+  assert.equal(idle.code, null);
+  assert.equal(idle.closeHardware, true);
+  assert.deepEqual(nfcEnrollmentInterruption({ nextAppState: "active", phase: "writing", working: true }), { closeHardware: false, invalidate: false, code: null });
 });
 test("actual API adapter sends UUIDs, canonical student identity and exact established routes; no card IDs/secrets generated", async () => {
   const f = fixture(); const calls: { path: string; body?: Record<string, unknown> }[] = [];

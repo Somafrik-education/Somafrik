@@ -16,11 +16,13 @@ export function createNfcEncoderHardware(onPrompt?: (message: string) => void): 
     await session.start();
     if (!(await session.run(() => NfcManager.isEnabled()))) throw nfcFailure("NFC_DISABLED");
   }
-  async function openNdef(expectedUid: string, prompt?: string) {
+  async function openNdef(expectedUid: string, prompt?: string, armReaderBeforePrompt = false) {
       await ready();
       if (!supportedIdentity || supportedIdentity.uid !== normalizeNtagUid(expectedUid)) throw nfcFailure("NFC_SAME_CARD");
+      const discover = () => session.request(() => NfcManager.requestTechnology([NfcTech.Ndef, NfcTech.NfcA, NfcTech.NfcB, NfcTech.IsoDep], { isReaderModeEnabled: true, readerModeFlags: NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B }));
+      const armed = armReaderBeforePrompt ? discover() : null;
       onPrompt?.(prompt || "Retirez la carte puis présentez la même carte pour l’encodage ou la relecture.");
-      const tech = await session.request(() => NfcManager.requestTechnology([NfcTech.Ndef, NfcTech.NfcA, NfcTech.NfcB, NfcTech.IsoDep], { isReaderModeEnabled: true, readerModeFlags: NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B }));
+      const tech = await (armed ?? discover());
       if (tech !== NfcTech.Ndef) throw nfcFailure("NFC_NDEF");
       const tag = await session.run(() => NfcManager.getTag());
       if (normalizeNtagUid(tag?.id) !== expectedUid) throw nfcFailure("NFC_SAME_CARD");
@@ -68,7 +70,9 @@ export function createNfcEncoderHardware(onPrompt?: (message: string) => void): 
       const expectedUid = supportedIdentity?.uid;
       await session.reset();
       if (!expectedUid) throw nfcFailure("NFC_READBACK");
-      await openNdef(expectedUid, "Écriture effectuée. Retirez puis présentez la même carte pour vérifier son contenu.");
+      // reset() stays: beta.10 serves cached NDEF until a new discovery. Arm
+      // reader mode before the prompt so Android does not dispatch the tag elsewhere.
+      await openNdef(expectedUid, "Écriture effectuée. Retirez puis présentez la même carte pour vérifier son contenu.", true);
     },
     async isReadOnly() {
       const status = await session.run(() => NfcManager.ndefHandler.getNdefStatus());

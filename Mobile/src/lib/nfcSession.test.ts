@@ -241,6 +241,31 @@ test("native reader and encoder share a lease and fail closed on isEnabled error
       await assert.rejects(device.isReadOnly(), { code: "NFC_STATE" }); assert.equal(writes, before);
       nativeStatus = 1; await device.close();
     });
+    await t.test("read-back arms reader mode before the re-present prompt", async () => {
+      capacity = 888; nativeStatus = 1; storage = 19;
+      const order: string[] = [];
+      const previous = native.requestTechnology;
+      native.requestTechnology = async (...args: unknown[]) => {
+        order.push("request");
+        return previous(...args);
+      };
+      const readback = "Écriture effectuée. Retirez puis présentez la même carte pour vérifier son contenu.";
+      const device = createNfcEncoderHardware((message: string) => order.push(message));
+      try {
+        await device.inspect();
+        order.length = 0;
+        await device.openNdef(observedUid);
+        assert.equal(order[0], "Retirez la carte puis présentez la même carte pour l’encodage ou la relecture.");
+        assert.ok(order.indexOf("request") > 0);
+        order.length = 0;
+        await device.writeText(ndefForCard(token));
+        assert.deepEqual(order, ["request", readback]);
+        assert.equal(await device.readText(), ndefForCard(token));
+        await device.close();
+      } finally {
+        native.requestTechnology = previous;
+      }
+    });
     await t.test("different UID on rediscovery cannot be accepted as read-back", async () => {
       capacity = 888; const device = createNfcEncoderHardware(); await device.inspect(); await device.openNdef(observedUid);
       const write = native.ndefHandler.writeNdefMessage;

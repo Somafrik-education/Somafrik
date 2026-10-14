@@ -236,11 +236,17 @@ pg("two replacement preparations serialize, preserving one active old card",asyn
 });
 
 pg("revoked reservation and retry replay cannot resurrect or reuse its UID",async f=>{
-  const card=await f.issue();const operationId=randomUUID();await retryStudentCardNfc(f.repo,card.id,{...f.identity,operationId},f.principal,{},f.scope);
+  const card=await f.issue();const operationId=randomUUID();
+  const rotated=await retryStudentCardNfc(f.repo,card.id,{...f.identity,operationId},f.principal,{},f.scope);
   await revokeStudentCard(f.repo,card.id,f.principal,{},f.scope,'nfc_abandoned');
   await revokeStudentCard(f.repo,card.id,f.principal,{},f.scope,'nfc_abandoned');assert.equal(await f.countAudit('student_card_revoked'),1);
   await assert.rejects(retryStudentCardNfc(f.repo,card.id,{...f.identity,operationId},f.principal,{},f.scope),{code:'STUDENT_CARD_INVALID_STATE'});
   await assert.rejects(f.issue(),{code:'STUDENT_CARD_NFC_UID_EXISTS'});
+  await assert.rejects(f.confirm(rotated),{code:"STUDENT_CARD_INVALID_STATE"});
+  const row=await f.row(card.id);
+  assert.equal(row.status,"revoked");
+  assert.equal(row.nfc_encoding_state,"pending");
+  assert.equal(row.revoke_reason,"nfc_abandoned");
 });
 
 pg("older retry operation replays after a newer rotation without another write",async f=>{
