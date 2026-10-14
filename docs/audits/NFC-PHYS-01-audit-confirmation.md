@@ -27,9 +27,10 @@ L’APK preview et le squash #920 portent le même arbre. L’écart à explique
 | `AppState` pendant l’encodage individuel | **FAIL de conception prouvé** : quitter `active` annule l’opération et peut effacer le code d’erreur |
 | `writeText` → `reset` → `openNdef` | **Mécanisme prouvé dans le code**, essai téléphone **NOT RUN** |
 | `/nfc-confirm` : jeton, UID, élève, UUID, 30 minutes, RBAC | **Contrats prouvés dans le code et les tests existants**. Réponse HTTP réelle de la recette : **NOT RUN** |
-| Corrélation préproduction carte–élève–établissement | **NOT RUN**, revérifié le 14 octobre 2026. L’API préproduction est joignable sur le SHA fusionné ; la lecture des cartes répond 401 sans JWT. Aucun `DATABASE_URL` préproduction n’est disponible ici |
+| Corrélation préproduction carte–élève–établissement | **FAITE** par le CTO dans Somafrik-preprod, second contrôle PostgreSQL indépendant. Preuves assainies ci-dessous. Cet agent n’a pas relu les lignes |
 | NTAG213, présence, QR | **NOT RUN** |
-| Révocation du jeton exposé | **NON EXÉCUTÉE** |
+| Révocation du jeton exposé | **FAITE** en préproduction. Motif `nfc_abandoned`. NDEF physique non modifié. Production non touchée |
+| SMOKE-NFC-01 | **FAIL** |
 | NFC-INT-02 | suspendu |
 
 ## Chronologie que le code exécute
@@ -110,59 +111,55 @@ Le hash et le jeton ne sont pas recopiés dans le message d’erreur. Le test HT
 
 Une confirmation réussie met `status=active` et `nfc_encoding_state` à `encoded`, ou `locked` si le téléphone a **observé** une puce déjà en lecture seule. Aucune commande de verrouillage n’est envoyée.
 
-## Identifiants : ce que le code garantit, et ce qui n’a pas été lu
+## Preuves assainies de préproduction
 
-La corrélation préproduction reste **NOT RUN** après une seconde tentative, le 14 octobre 2026.
+Le CTO a corrélé la carte et révoqué la réservation dans Somafrik-preprod. La transaction SQL a réussi. Un second contrôle PostgreSQL, fait par le CTO, confirme l’état ci-dessous. Cet agent n’a pas exécuté la requête et n’a pas reçu le jeton, le hash, l’UID ni le `publicId`.
 
 | Contrôle | Résultat |
 | --- | --- |
-| `GET https://api-preprod.somafrik.app/api/health` | HTTP 200, `database=postgresql`, `gitSha=36bb96249af79abf5119348939761b6c7f700ced` |
-| `GET /api/students/:id/cards` sans JWT | HTTP 401, message d’authentification uniquement |
-| Base locale de cet agent | `nfc_encoding_test` sur localhost, ce n’est pas la préproduction |
-| Fichier `.env.preproduction` | absent. Seul `.env.preproduction.example` est dans le dépôt |
-| `publicId` photographié et UID physique | absents de l’issue #921 et de cet espace de travail |
+| Environnement | Somafrik-preprod |
+| Établissement | Institut Nuruyetu |
+| Carte | NTAG216, alias `NFC-TEST-01`, classe de test 2ème A |
+| Ancien statut | `issued` / `pending` |
+| Nouveau statut métier | `revoked` |
+| `nfc_encoding_state` | reste `pending` : état d’encodage historique, pas une activation |
+| Motif | `nfc_abandoned` |
+| Réservations révoquées | 1 |
+| Événement d’audit | 1 |
+| Réservations NFC encore `issued` / `pending` pour cet élève | 0 |
+| Cartes `active` pour cet élève | 0 |
+| Élève, inscription, classe | conservés |
+| NDEF physique | non modifié |
+| Somafrik-prod | aucune opération |
 
-Aucune association carte–élève–établissement n’est affirmée. Le jeton et son hash n’ont pas été lus. Les étapes suivantes du mandat — code d’erreur Android, appel réel de `/nfc-confirm`, révocation contrôlée, correctif — restent bloquées par cette corrélation.
+Le jeton de cette réservation ne peut plus activer la carte : une confirmation sur un statut `revoked` est refusée. Le NDEF peut encore être lu sur la puce. SMOKE-NFC-01 reste FAIL.
 
-Invariants du code sur `develop@36bb9624`, à vérifier plus tard dans le canal sécurisé, en lecture seule :
+La sonde précédente de cet agent reste vraie et insuffisante : `GET /api/health` était HTTP 200 sur `36bb9624`, et la lecture des cartes sans JWT était HTTP 401.
 
-- Une écriture acceptée par `encodeNfcCard` utilise un jeton dont le préfixe public est égal au `publicId` de la réponse d’émission. Un NDEF dont le préfixe public ne correspond à aucune des deux réservations vues à l’écran ne peut pas être le jeton de ces deux lignes, sauf erreur de lecture du texte (préfixe de langue NDEF pris pour l’identifiant, ou comparaison avec un autre champ).
-- `student_access_cards_one_pending_nfc_per_student` interdit deux lignes `issued` + `pending` pour le même couple établissement–élève. Deux réservations encore simultanément `pending` pour `NFC-TEST-01` indiqueraient que cette migration n’est pas en place en préproduction, ou que les deux lignes n’ont pas le même `student_id`.
-- L’index unique sur `nfc_uid` interdit une seconde réservation vivante pour le même UID. Une deuxième émission pour la même puce échoue avec `STUDENT_CARD_NFC_UID_EXISTS` ou `STUDENT_CARD_NFC_RESERVATION_EXISTS` tant que la première est `pending` et non expirée.
-- Un renouvellement (`nfc-retry`) conserve `publicId` et remplace le secret. Il peut expliquer un NDEF ancien refusé à la confirmation (404, hash différent). Il n’explique pas un préfixe public différent.
-- Une nouvelle émission, possible seulement après expiration et révocation paresseuse de la précédente, crée un nouveau `publicId`. La puce peut encore porter l’ancien texte. La reprise compare le préfixe lu au `publicId` de la réservation **courante** et répond `NFC_FOREIGN` s’ils diffèrent. L’ancienne capability n’est alors pas activée, et elle n’est pas non plus invalidée.
+## Identifiants : ce que le code garantit
 
-Reprise prévue, toujours sans écrire ces valeurs dans GitHub : dans le tenant de test, compter les lignes de `NFC-TEST-01` par `status` et `nfc_encoding_state`, noter la présence d’un UUID d’opération et l’échéance, et comparer hors dépôt le préfixe du record Text au `public_id`. Ne pas sélectionner `token_hash`.
+Invariants du code, désormais confrontés à l’état final rapporté par le CTO :
 
-## Correctif minimal proposé, non appliqué
+- Après révocation, il ne reste aucune réservation `issued` / `pending` et aucune carte `active` pour `NFC-TEST-01`. Cela est compatible avec l’index `student_access_cards_one_pending_nfc_per_student`.
+- `nfc_encoding_state=pending` avec `status=revoked` est l’historique d’encodage, pas une carte activée. `markRevoked` ne change pas cet état.
+- Une confirmation de cette ligne doit échouer avec `STUDENT_CARD_INVALID_STATE`. Le motif `nfc_abandoned` n’est pas le motif d’expiration, donc le code n’est pas `STUDENT_CARD_NFC_EXPIRED`.
+- L’index unique sur `nfc_uid` continue d’interdire une nouvelle émission pour la même puce tant que la ligne révoquée conserve l’UID.
+- Le NDEF physique n’a pas été effacé. Une reprise qui lirait ce texte et tenterait de confirmer la réservation révoquée doit être refusée, sans réécriture.
 
-Pas de patch dans cette branche. Le correctif n’est pas autorisé tant que le CTO n’a pas clos cet audit.
+## Correctif minimal
 
-Changement d’interface seulement, sans assouplir `/nfc-confirm` :
-
-1. Extraire la décision `AppState` du panneau d’encodage. Hors de `active`, après que la phase a atteint `writing`, `verification` ou `confirmation`, conserver un code fixe `NFC_SESSION_CANCELLED` et l’afficher au retour, même si `valid()` est devenu faux. Le rafraîchissement de la liste ne doit pas effacer ce code.
-2. Si l’annulation intervient avant `writing`, conserver le comportement actuel : rien n’a été envoyé à la puce, aucune nouvelle réservation ne doit être créée.
-3. Remplacer la phrase du bouton Annuler, une fois l’écriture commencée, par une phrase qui distingue « activation serveur non faite » et « la puce peut déjà contenir un NDEF ; la seule suite est Relire et confirmer ».
-4. Ne pas créer de seconde réservation depuis cet écran tant qu’une ligne `pending` non expirée existe. C’est déjà le cas côté serveur et côté `program()`.
-5. Ne pas modifier le mode lecteur dans ce premier correctif. Supprimer le `reset` entre écriture et relecture changerait le contournement documenté du cache beta.10. Cet essai reste un test téléphone séparé, après GO.
-
-Tests de régression à ajouter avec ce correctif, pas dans cette PR :
-
-- Décision pure : `AppState` non `active` en phase `writing` produit annulation, fermeture, et un message conservé au retour. Aucun appel `nfc-confirm`.
-- La même interruption en phase `initial` ou `reservation` n’affirme pas qu’un NDEF a pu être écrit.
-- `encodeNfcCard` : `writeText` réussit, la redécouverte lève `NFC_SESSION_CANCELLED`, `confirm` n’est pas appelé, la réservation reste `issued` / `pending`.
-- Reprise : texte relu égal à la réservation courante, confirmation appelée une fois.
-- Reprise : préfixe public différent de la réservation courante, code `NFC_FOREIGN`, confirmation non appelée.
-- Les tests déjà présents de `/nfc-confirm` (UUID, expiration 30 minutes, hash, UID, absence du secret dans la réponse) restent la borne de non-régression serveur.
+Pas de patch dans cette branche. Le CTO a autorisé une PR Draft/HOLD séparée pour trois points : armer le mode lecteur avant l’invite de re-présentation, conserver le code d’interruption après `writing`, et refuser la confirmation d’une carte `revoked` / `nfc_abandoned`. Le `reset` après écriture reste nécessaire à cause du cache NDEF de `react-native-nfc-manager@4.0.0-beta.10`. SMOKE-NFC-01 reste FAIL.
 
 ## Jeton exposé
 
-La capture contient une capability complète. Elle n’est pas reproduite ici. Aucune révocation n’a été exécutée.
+La capture contient une capability complète. Elle n’est pas reproduite ici. La réservation correspondante a été révoquée en préproduction avec le motif `nfc_abandoned`. Le contenu NDEF de la puce n’a pas été modifié. Aucune opération de production n’a été faite.
 
-Avant toute nouvelle programmation de cette NTAG216 : corrélation en lecture seule, puis révocation contrôlée de la ligne dont le `public_id` correspond au record Text, par le parcours de révocation déjà existant, avec accord CTO. Ne pas réécrire la puce avant cette révocation. Ne pas lancer NFC-INT-02.
+Ne pas reprogrammer cette NTAG216 tant qu’un smoke physique n’a pas réussi sur une autre carte de test. Ne pas lancer NFC-INT-02.
+
+## Correctif
+
+Cette PR reste documentaire. Le correctif de redécouverte, de conservation du code d’erreur et de refus de confirmation d’une carte `revoked` est isolé dans une autre PR Draft/HOLD. SMOKE-NFC-01 reste FAIL tant qu’un téléphone n’a pas rejoué le parcours.
 
 ## Décision
 
-**HOLD BLOQUANT.** La conformité documentaire ne clôt pas NFC-PHYS-01. La première zone de code à investiguer reste l’intervalle écriture, fermeture de la requête NFC, nouvelle présentation, confirmation. Elle n’est pas la cause prouvée de la réservation `NFC-TEST-01`.
-
-Ordre restant, non exécuté ici : corrélation lecture seule en préproduction, puis phase NFC et code d’erreur assaini, puis révocation contrôlée du jeton photographié, puis seulement un correctif isolé dans une autre PR Draft/HOLD. Pas de troisième programmation. Pas de changement de message d’erreur dans cette branche. NFC-INT-02 reste suspendu. Aucune autorisation de production.
+**HOLD BLOQUANT.** #922 n’est pas prête pour merge. La corrélation et la révocation préproduction sont enregistrées. La cause Android de la recette physique n’est pas close. NFC-INT-02 reste suspendu. Aucune autorisation de production.
