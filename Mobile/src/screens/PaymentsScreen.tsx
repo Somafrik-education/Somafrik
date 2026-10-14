@@ -7,12 +7,10 @@ import PaymentMutationControls from "../components/PaymentMutationControls";
 import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { useAuth } from "../context/AuthContext";
-import { getPaymentStats } from "../domain/metrics/schoolMetrics";
 import { canReadRoute, hasSecurityPermission } from "../domain/security/permissions";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
-import { getPaymentCashKpi, formatPaymentCashAmounts } from "../lib/paymentCashKpi";
+import { formatPaymentCashAmounts } from "../lib/paymentCashKpi";
 import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
-import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
 import { resolveFinanceCurrency } from "../lib/financeCurrency";
@@ -53,10 +51,7 @@ export default function PaymentsScreen({ navigation }: any) {
     () => filterRowsByStudentScope(studentFeesData, studentScope),
     [studentFeesData, studentScope],
   );
-  const paymentStats = getPaymentStats(scopedPayments);
-  const paymentRateKpi = getPaymentRateKpi(scopedFees);
   const paymentAmountOverview = formatPaymentOverviewAmounts(scopedFees);
-  const cashKpi = getPaymentCashKpi(scopedPayments);
   const cashOverview = formatPaymentCashAmounts(scopedPayments);
   const canReadUnpaid = hasSecurityPermission(session, "Impayés", "READ");
   const requestedSchoolCode = activeSchoolCode || session?.school?.code || session?.user?.schoolCode;
@@ -97,7 +92,6 @@ export default function PaymentsScreen({ navigation }: any) {
   const showQueryState = paymentsSnapshot.status !== "success";
   const expectedLabel = feesReady ? paymentAmountOverview.expectedLabel : "—";
   const remainingLabel = feesReady ? paymentAmountOverview.remainingLabel : "—";
-  const rateLabel = feesReady ? paymentRateKpi.value : "—";
   const stackedSummary = financeSummaryColumns(viewportWidth) === 1;
 
   return (
@@ -132,38 +126,29 @@ export default function PaymentsScreen({ navigation }: any) {
               />
               <View style={[styles.financeHero, stackedSummary && styles.financeHeroStacked]}>
                 <View style={styles.summaryCard}>
-                  <Text style={styles.summaryLabel}>Montant attendu</Text>
+                  <Text style={styles.summaryLabel}>Obligation</Text>
                   <Text style={styles.summaryAmount} numberOfLines={3} adjustsFontSizeToFit>
                     {expectedLabel}
                   </Text>
-                  <Text style={styles.summarySub}>Reste à payer : {remainingLabel}</Text>
-                  <Text style={styles.summarySub}>{rateLabel}</Text>
                 </View>
 
                 <View style={styles.summaryCardSecondary}>
-                  <Text style={styles.summaryLabelDark}>Montant encaissé</Text>
+                  <Text style={styles.summaryLabelDark}>Encaissé</Text>
                   <Text style={styles.summaryAmountDark} numberOfLines={3} adjustsFontSizeToFit>
                     {paymentsReady ? cashOverview.collectedLabel : "—"}
                   </Text>
-                  <Text style={styles.summarySubDark}>
-                    Imputé {paymentsReady ? cashOverview.allocatedLabel : "—"} · Non imputé{" "}
-                    {paymentsReady ? cashOverview.unallocatedLabel : "—"}
+                </View>
+
+                <View style={styles.summaryCardSecondary}>
+                  <Text style={styles.summaryLabelDark}>Reste à payer</Text>
+                  <Text style={styles.summaryAmountDark} numberOfLines={3} adjustsFontSizeToFit>
+                    {remainingLabel}
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.row}>
-                <View style={styles.smallCard}>
-                  <Text style={styles.smallNumber}>{paymentStats.paid}</Text>
-                  <Text style={styles.smallLabel}>Payés</Text>
-                </View>
-
-                <View style={styles.smallCard}>
-                  <Text style={styles.smallNumber}>{paymentStats.unallocated}</Text>
-                  <Text style={styles.smallLabel}>Non imputés</Text>
-                </View>
-
-                {canReadUnpaid ? (
+              {canReadUnpaid ? (
+                <View style={styles.row}>
                   <TouchableOpacity
                     style={styles.smallCard}
                     onPress={() => navigation.navigate("Unpaid")}
@@ -173,8 +158,8 @@ export default function PaymentsScreen({ navigation }: any) {
                     <Text style={styles.smallNumber}>{unpaidLedgerMetricValue(unpaidLedger)}</Text>
                     <Text style={styles.smallLabel}>Impayés</Text>
                   </TouchableOpacity>
-                ) : null}
-              </View>
+                </View>
+              ) : null}
 
               {unpaidStateMessage ? (
                 <Text style={styles.unpaidError} accessibilityRole="alert">
@@ -221,10 +206,11 @@ const styles = StyleSheet.create({
   content: { padding: 16 },
   title: { fontSize: 28, fontWeight: "800", color: "#111827" },
   subtitle: { color: "#64748B", fontSize: 14, fontWeight: "600", marginTop: 3, marginBottom: 14 },
-  financeHero: { flexDirection: "row", gap: 12, marginBottom: 12 },
+  financeHero: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 12 },
   financeHeroStacked: { flexDirection: "column" },
   summaryCard: {
     flex: 1,
+    minWidth: 155,
     backgroundColor: "#2563EB",
     borderRadius: 18,
     padding: 16,
@@ -236,6 +222,7 @@ const styles = StyleSheet.create({
   summarySub: { color: "#E5E7EB", marginTop: 8 },
   summaryCardSecondary: {
     flex: 1,
+    minWidth: 155,
     backgroundColor: "#FFFFFF",
     borderRadius: 18,
     padding: 16,
