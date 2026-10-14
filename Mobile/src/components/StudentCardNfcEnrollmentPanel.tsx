@@ -3,8 +3,8 @@ import { Alert, AppState, Platform, Text, TouchableOpacity, View } from "react-n
 import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollmentApi";
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
-  createIndividualNfcFlow, isNfcConfirmFailure, NFC_PHASE_COPY, nfcConfirmFailureCopy, nfcErrorCopy, nfcFailure,
-  type EnrollmentCard, type NfcEncoderHardware, type NfcPhase,
+  clearNfcRefreshNotice, createIndividualNfcFlow, keepNfcTerminalNotice, NFC_PHASE_COPY, nfcFailure, noteNfcRefreshFailure, setNfcTerminalNotice,
+  type EnrollmentCard, type NfcEncoderHardware, type NfcNoticeBoard, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
 type Props = { studentId: string; canRead: boolean; canUpdate: boolean; mutationsBlocked: boolean };
@@ -17,7 +17,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   const [available, setAvailable] = useState(false);
   const [working, setWorking] = useState(false);
   const [phase, setPhase] = useState<NfcPhase>("initial");
-  const [message, setMessage] = useState("");
+  const [notices, setNotices] = useState<NfcNoticeBoard>({ terminal: "", refresh: "" });
   const [refresh, setRefresh] = useState(0);
   const hardware = useRef<NfcEncoderHardware | null>(null);
   const flow = useRef<ReturnType<typeof createIndividualNfcFlow> | null>(null);
@@ -51,7 +51,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
       const response = await api.list(studentId);
       if (!current) return;
       if (!Array.isArray(response.cards)) throw nfcFailure("NFC_RESPONSE_INVALID");
-      setCards(response.cards); setEnabled(response.nfcEnabled === true);
+      setCards(response.cards); setEnabled(response.nfcEnabled === true); setNotices(clearNfcRefreshNotice);
       if (response.nfcEnabled === true && Platform.OS === "android") {
         // A separate facade owns only its probe lease, never the programming lease.
         const { createNfcEncoderHardware } = await import("../lib/studentCardNfcEncoderNative");
@@ -59,7 +59,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
         await createNfcEncoderHardware().availability();
         if (current) setAvailable(true);
       }
-    })().catch((error: unknown) => { if (current) setMessage(nfcErrorCopy(error)); });
+    })().catch((error: unknown) => { if (current) setNotices((board) => noteNfcRefreshFailure(board, error)); });
     return () => { current = false; };
   }, [canRead, studentId, refresh]);
 
@@ -67,12 +67,12 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     if (!hardware.current) {
       const { createNfcEncoderHardware } = await import("../lib/studentCardNfcEncoderNative");
       if (!operationValid.current()) throw nfcFailure("NFC_CANCELLED");
-      hardware.current = createNfcEncoderHardware((prompt) => { if (operationValid.current()) setMessage(prompt); });
+      hardware.current = createNfcEncoderHardware((prompt) => { if (operationValid.current()) setNotices((board) => setNfcTerminalNotice(board, prompt)); });
     }
     if (!flow.current) flow.current = createIndividualNfcFlow({
       studentId, api, hardware: hardware.current, uuid: createIdempotencyKey,
       valid: () => operationValid.current(), phase: (next) => {
-        if (operationValid.current()) { setPhase(next); setMessage(NFC_PHASE_COPY[next]); }
+        if (operationValid.current()) { setPhase(next); setNotices((board) => setNfcTerminalNotice(board, NFC_PHASE_COPY[next])); }
       },
     });
     return flow.current;
@@ -88,7 +88,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
       if (valid()) {
         const code = error && typeof error === "object" && "code" in error ? error.code : "";
         setPhase(code === "STUDENT_CARD_NFC_EXPIRED" ? "expired" : "error");
-        setMessage(isNfcConfirmFailure(error) ? nfcConfirmFailureCopy(error) : nfcErrorCopy(error));
+        setNotices((board) => keepNfcTerminalNotice(board, error));
       }
     } finally {
       busy.current = false;
@@ -114,9 +114,10 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   const button = (title: string, onPress: () => void) => <TouchableOpacity accessibilityRole="button" accessibilityLabel={title} disabled={working || !canProgram} onPress={onPress} style={{ padding: 12, marginVertical: 4, backgroundColor: "#E8F4F1", borderRadius: 8, opacity: working || !canProgram ? 0.5 : 1 }}><Text>{title}</Text></TouchableOpacity>;
   return <View testID="student-card-nfc-enrollment-panel">
     <Text>Cartes NFC NTAG213 / NTAG216</Text>
-    <Text accessibilityLiveRegion="polite">{message || NFC_PHASE_COPY[phase]}</Text>
+    <Text accessibilityLiveRegion="polite">{notices.terminal || NFC_PHASE_COPY[phase]}</Text>
+    {notices.refresh ? <Text>{notices.refresh}</Text> : null}
     {working ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Annuler l’opération NFC" onPress={() => {
-      generation.current++; closeHardware(); setPhase("resume"); setMessage("Opération interrompue. Aucune activation locale n’est confirmée. Reprenez l’opération existante.");
+      generation.current++; closeHardware(); setPhase("resume"); setNotices((board) => setNfcTerminalNotice(board, "Opération interrompue. Aucune activation locale n’est confirmée. Reprenez l’opération existante."));
     }} style={{ padding: 12 }}><Text>Annuler l’opération NFC</Text></TouchableOpacity> : null}
     {!cards ? <Text>Chargement ou service indisponible.</Text> : null}
     {cards?.map((card) => <View key={card.id} style={{ paddingVertical: 10 }}>
@@ -130,7 +131,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
           {button("Renouveler et réécrire avec confirmation", () => rewrite(card))}
         </> : null}
       </> : null}
-      {canProgram && card.status === "active" && card.nfc ? button("Relire et vérifier la carte active", () => void run(async (controller) => { await controller.resume(card); if (operationValid.current()) setMessage("Carte active relue et vérifiée."); })) : null}
+      {canProgram && card.status === "active" && card.nfc ? button("Relire et vérifier la carte active", () => void run(async (controller) => { await controller.resume(card); if (operationValid.current()) setNotices((board) => setNfcTerminalNotice(board, "Carte active relue et vérifiée.")); })) : null}
     </View>)}
     {Platform.OS !== "android" ? <Text>La programmation NFC est disponible sur Android uniquement.</Text> : null}
     {cards && !enabled ? <Text>La programmation NFC est désactivée pour cet établissement.</Text> : null}

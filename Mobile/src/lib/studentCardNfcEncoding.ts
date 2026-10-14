@@ -163,6 +163,26 @@ function formatNfcConfirmFailure(diagnostic: NfcConfirmDiagnostic): string {
 export function nfcConfirmFailureCopy(error: unknown): string {
   return formatNfcConfirmFailure(readNfcConfirmDiagnostic(error) ?? { code: NFC_CONFIRM_UNCLASSIFIED, status: null });
 }
+export type NfcNoticeBoard = { terminal: string; refresh: string };
+export function nfcTerminalNotice(error: unknown): string {
+  return isNfcConfirmFailure(error) ? nfcConfirmFailureCopy(error) : nfcErrorCopy(error);
+}
+/** NFC outcome and list refresh never share a channel. */
+export function keepNfcTerminalNotice(board: NfcNoticeBoard, error: unknown): NfcNoticeBoard {
+  return { terminal: nfcTerminalNotice(error), refresh: board.refresh };
+}
+export function noteNfcRefreshFailure(board: NfcNoticeBoard, error: unknown): NfcNoticeBoard {
+  return { terminal: board.terminal, refresh: nfcErrorCopy(error) };
+}
+export function clearNfcRefreshNotice(board: NfcNoticeBoard): NfcNoticeBoard {
+  return { terminal: board.terminal, refresh: "" };
+}
+export function setNfcTerminalNotice(board: NfcNoticeBoard, terminal: string): NfcNoticeBoard {
+  return { terminal, refresh: board.refresh };
+}
+export function nfcNoticeText(board: NfcNoticeBoard): string {
+  return [board.terminal, board.refresh].filter(Boolean).join("\n");
+}
 function asNfcConfirmFailure(error: unknown): Error & { code: string; status: number | null } {
   const diagnostic = classifyNfcConfirmFailure(error);
   safeLogger.warn(NFC_CONFIRM_FAILURE_EVENT, {
