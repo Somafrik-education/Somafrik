@@ -10,12 +10,14 @@ Issue de suivi : [#921](https://github.com/Somafrik-education/Somafrik/issues/92
 
 | Référence | Valeur |
 | --- | --- |
-| `develop` | `36bb96249af79abf5119348939761b6c7f700ced` |
+| `develop` | `7acfbe595fd0f3abfbfee17a332e4ed66f51bbc6` |
+| Commit NFC de la recette | `36bb96249af79abf5119348939761b6c7f700ced` |
 | APK de recette | `c74d3a8cc18fd5eb6e1e569bd74ea3b67d8f55bd` |
-| Arbre Git des deux commits | identique (`d57f185b0ec9ac39463619351e68240152c4e1f1`) |
-| Environnement de cet audit | lecture du code uniquement |
+| Arbre Git de l’APK et du squash #920 | identique (`d57f185b0ec9ac39463619351e68240152c4e1f1`) |
+| Écart `develop` depuis ce squash | un document finance, `docs/audits/FIN-SIMPLE-01-AUDIT.md` |
+| Environnement de cet audit | lecture du code, plus les preuves assainies rapportées par le CTO |
 
-L’APK preview et le squash #920 portent le même arbre. L’écart à expliquer n’est pas une différence de source entre l’APK et `develop`.
+L’APK preview et le squash #920 portent le même arbre NFC. Le commit finance ajouté ensuite sur `develop` ne change pas ce code. L’écart à expliquer n’est pas une différence de source entre l’APK et le NFC de la recette.
 
 ## Verdicts
 
@@ -23,7 +25,8 @@ L’APK preview et le squash #920 portent le même arbre. L’écart à explique
 | --- | --- |
 | Détection NTAG216 et création de réservations `issued` / `pending` | Observé en recette physique, hors de cet agent |
 | Confirmation `active` / `encoded` | Absente en recette. Dans le code, seul `POST /api/student-cards/:id/nfc-confirm` réussi fait cette transition |
-| Écriture NDEF puis relecture puis confirmation, pour la puce photographiée | **Hypothèse, non prouvée.** Le code peut s’arrêter après `writeNdefMessage` et avant `/nfc-confirm`. Sans lien entre le préfixe public de cette puce et une réservation de `NFC-TEST-01`, ce n’est pas la cause de cette recette |
+| Association PostgreSQL carte–réservation `NFC-TEST-01` | **Confirmée** par le CTO en préproduction. Une réservation `issued` / `pending` a été identifiée, puis révoquée |
+| Cause Android de l’arrêt avant `/nfc-confirm` | **Non démontrée.** Le code peut s’arrêter après `writeNdefMessage`. Le journal du téléphone reste absent |
 | `AppState` pendant l’encodage individuel | **FAIL de conception prouvé** : quitter `active` annule l’opération et peut effacer le code d’erreur |
 | `writeText` → `reset` → `openNdef` | **Mécanisme prouvé dans le code**, essai téléphone **NOT RUN** |
 | `/nfc-confirm` : jeton, UID, élève, UUID, 30 minutes, RBAC | **Contrats prouvés dans le code et les tests existants**. Réponse HTTP réelle de la recette : **NOT RUN** |
@@ -46,13 +49,13 @@ Programmation individuelle, `createIndividualNfcFlow` dans `Mobile/src/lib/stude
 7. `isReadOnly` observe le verrou. Le code n’appelle pas `makeReadOnly()`.
 8. `POST /api/student-cards/:id/nfc-confirm` active la carte seulement si toutes les vérifications passent.
 
-Un lecteur externe qui affiche `somafrik:card:` prouve qu’une écriture a été conservée sur la puce. Il ne prouve ni la relecture par Somafrik, ni l’appel de confirmation, ni l’appartenance à `NFC-TEST-01`.
+Un lecteur externe qui affiche `somafrik:card:` prouve qu’une écriture a été conservée sur la puce. Il ne prouve ni la relecture par Somafrik ni l’appel de confirmation. L’appartenance de la réservation à `NFC-TEST-01` vient de la corrélation PostgreSQL du CTO.
 
 ## Où la chaîne peut s’arrêter
 
-Pour la puce photographiée et les deux réservations déjà vues, « rupture après écriture et avant confirmation » est une **hypothèse de diagnostic**, pas une causalité démontrée. Une écriture NDEF Somafrik a été observée sur une carte. Rien ne prouve encore que ce NDEF est celui d’une réservation de `NFC-TEST-01`, ni que l’échec de cette réservation vient de la session Android plutôt que du backend.
+La corrélation PostgreSQL confirme la réservation de `NFC-TEST-01` : elle était `issued` / `pending`, puis elle a été révoquée. « Rupture après écriture et avant confirmation » reste une **hypothèse sur la cause Android**, pas une causalité démontrée. Le journal du téléphone n’a pas été fourni. L’arrêt peut encore venir de la session Android ou d’un refus backend non journalisé.
 
-Trois issues restent compatibles avec « NDEF présent quelque part, réservations affichées non passées à `active` / `encoded` ». Aucune n’est la cause de cette recette.
+Trois chemins restent compatibles avec « NDEF présent sur la puce, réservation non passée à `active` / `encoded` ». Aucun n’est démontré comme la cause de cette recette.
 
 1. **Prouvée comme chemin possible.** Après l’écriture, `studentCardNfcEncoderNative.ts` appelle `session.reset()`, qui exécute `NfcManager.cancelTechnologyRequest()`, puis `openNdef` redemande le tag. Pendant cet intervalle le mode lecteur est relâché. Android peut remettre le tag à une autre application. C’est le moment où un lecteur externe peut s’ouvrir et afficher le NDEF.
 2. **Prouvée comme effet d’interface.** Si Somafrik passe à `inactive` ou `background`, le panneau d’encodage incrémente `generation`, ferme le matériel, et `valid()` devient faux. L’erreur `NFC_CANCELLED` ou `NFC_SESSION_CANCELLED` est alors ignorée par le `catch`, parce qu’il n’affiche le message que si `valid()` est encore vrai. La confirmation n’est pas appelée.
@@ -148,7 +151,7 @@ Invariants du code, désormais confrontés à l’état final rapporté par le C
 
 ## Correctif minimal
 
-Pas de patch dans cette branche. Le CTO a autorisé une PR Draft/HOLD séparée pour trois points : armer le mode lecteur avant l’invite de re-présentation, conserver le code d’interruption après `writing`, et refuser la confirmation d’une carte `revoked` / `nfc_abandoned`. Le `reset` après écriture reste nécessaire à cause du cache NDEF de `react-native-nfc-manager@4.0.0-beta.10`. SMOKE-NFC-01 reste FAIL.
+Pas de patch dans cette branche. Le correctif est [#925](https://github.com/Somafrik-education/Somafrik/pull/925), Draft/HOLD, HEAD `5e74a5659e246f967361fa1a18a5b029391c70c0`. Il arme le mode lecteur avant l’invite de re-présentation, conserve le premier diagnostic d’interruption après `writing`, `verification` ou `confirmation`, et vérifie le refus d’une carte `revoked` / `nfc_abandoned`. Le message dit que le contenu NFC peut déjà être présent, sans affirmer que l’écriture est terminée. Le `reset()` après écriture reste. SMOKE-NFC-01 reste FAIL. Le téléphone n’a pas rejoué le parcours.
 
 ## Jeton exposé
 
@@ -158,8 +161,8 @@ Ne pas reprogrammer cette NTAG216 tant qu’un smoke physique n’a pas réussi 
 
 ## Correctif
 
-Cette PR reste documentaire. Le correctif de redécouverte, de conservation du code d’erreur et de refus de confirmation d’une carte `revoked` est isolé dans une autre PR Draft/HOLD. SMOKE-NFC-01 reste FAIL tant qu’un téléphone n’a pas rejoué le parcours.
+Cette PR reste documentaire. Le correctif est isolé dans #925. SMOKE-NFC-01 reste FAIL tant qu’un téléphone n’a pas rejoué le parcours sur une autre NTAG216 de test.
 
 ## Décision
 
-**HOLD BLOQUANT.** #922 n’est pas prête pour merge. La corrélation et la révocation préproduction sont enregistrées. La cause Android de la recette physique n’est pas close. NFC-INT-02 reste suspendu. Aucune autorisation de production.
+**HOLD BLOQUANT.** #922 n’est pas prête pour merge. La corrélation PostgreSQL et la révocation préproduction sont confirmées. La cause Android de la recette physique n’est pas démontrée. NFC-INT-02 reste suspendu. Aucune autorisation de production.
