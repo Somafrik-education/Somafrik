@@ -23,11 +23,11 @@ L’APK preview et le squash #920 portent le même arbre. L’écart à explique
 | --- | --- |
 | Détection NTAG216 et création de réservations `issued` / `pending` | Observé en recette physique, hors de cet agent |
 | Confirmation `active` / `encoded` | Absente en recette. Dans le code, seul `POST /api/student-cards/:id/nfc-confirm` réussi fait cette transition |
-| Écriture NDEF puis relecture native puis confirmation | La rupture est **après** `writeNdefMessage` et **avant** le commit de confirmation. L’étape exacte sur le téléphone reste **NOT RUN** |
+| Écriture NDEF puis relecture puis confirmation, pour la puce photographiée | **Hypothèse, non prouvée.** Le code peut s’arrêter après `writeNdefMessage` et avant `/nfc-confirm`. Sans lien entre le préfixe public de cette puce et une réservation de `NFC-TEST-01`, ce n’est pas la cause de cette recette |
 | `AppState` pendant l’encodage individuel | **FAIL de conception prouvé** : quitter `active` annule l’opération et peut effacer le code d’erreur |
 | `writeText` → `reset` → `openNdef` | **Mécanisme prouvé dans le code**, essai téléphone **NOT RUN** |
 | `/nfc-confirm` : jeton, UID, élève, UUID, 30 minutes, RBAC | **Contrats prouvés dans le code et les tests existants**. Réponse HTTP réelle de la recette : **NOT RUN** |
-| Corrélation préproduction carte–élève–établissement | **NOT RUN** |
+| Corrélation préproduction carte–élève–établissement | **NOT RUN**, revérifié le 14 octobre 2026. L’API préproduction est joignable sur le SHA fusionné ; la lecture des cartes répond 401 sans JWT. Aucun `DATABASE_URL` préproduction n’est disponible ici |
 | NTAG213, présence, QR | **NOT RUN** |
 | Révocation du jeton exposé | **NON EXÉCUTÉE** |
 | NFC-INT-02 | suspendu |
@@ -47,9 +47,11 @@ Programmation individuelle, `createIndividualNfcFlow` dans `Mobile/src/lib/stude
 
 Un lecteur externe qui affiche `somafrik:card:` prouve qu’une écriture a été conservée sur la puce. Il ne prouve ni la relecture par Somafrik, ni l’appel de confirmation, ni l’appartenance à `NFC-TEST-01`.
 
-## Où la chaîne s’arrête
+## Où la chaîne peut s’arrêter
 
-Trois issues sont compatibles avec « NDEF présent, statut resté `issued` / `pending` ». Aucune n’est déclarée cause unique.
+Pour la puce photographiée et les deux réservations déjà vues, « rupture après écriture et avant confirmation » est une **hypothèse de diagnostic**, pas une causalité démontrée. Une écriture NDEF Somafrik a été observée sur une carte. Rien ne prouve encore que ce NDEF est celui d’une réservation de `NFC-TEST-01`, ni que l’échec de cette réservation vient de la session Android plutôt que du backend.
+
+Trois issues restent compatibles avec « NDEF présent quelque part, réservations affichées non passées à `active` / `encoded` ». Aucune n’est la cause de cette recette.
 
 1. **Prouvée comme chemin possible.** Après l’écriture, `studentCardNfcEncoderNative.ts` appelle `session.reset()`, qui exécute `NfcManager.cancelTechnologyRequest()`, puis `openNdef` redemande le tag. Pendant cet intervalle le mode lecteur est relâché. Android peut remettre le tag à une autre application. C’est le moment où un lecteur externe peut s’ouvrir et afficher le NDEF.
 2. **Prouvée comme effet d’interface.** Si Somafrik passe à `inactive` ou `background`, le panneau d’encodage incrémente `generation`, ferme le matériel, et `valid()` devient faux. L’erreur `NFC_CANCELLED` ou `NFC_SESSION_CANCELLED` est alors ignorée par le `catch`, parce qu’il n’affiche le message que si `valid()` est encore vrai. La confirmation n’est pas appelée.
@@ -110,7 +112,17 @@ Une confirmation réussie met `status=active` et `nfc_encoding_state` à `encode
 
 ## Identifiants : ce que le code garantit, et ce qui n’a pas été lu
 
-La corrélation préproduction est **NOT RUN**. Cet environnement n’a qu’une base locale de test, `nfc_encoding_test` sur localhost. Le `publicId` photographié et l’UID physique n’ont pas été transmis ici, ce qui est conforme à l’interdiction de les mettre dans GitHub. Aucune association carte–élève–établissement n’est affirmée.
+La corrélation préproduction reste **NOT RUN** après une seconde tentative, le 14 octobre 2026.
+
+| Contrôle | Résultat |
+| --- | --- |
+| `GET https://api-preprod.somafrik.app/api/health` | HTTP 200, `database=postgresql`, `gitSha=36bb96249af79abf5119348939761b6c7f700ced` |
+| `GET /api/students/:id/cards` sans JWT | HTTP 401, message d’authentification uniquement |
+| Base locale de cet agent | `nfc_encoding_test` sur localhost, ce n’est pas la préproduction |
+| Fichier `.env.preproduction` | absent. Seul `.env.preproduction.example` est dans le dépôt |
+| `publicId` photographié et UID physique | absents de l’issue #921 et de cet espace de travail |
+
+Aucune association carte–élève–établissement n’est affirmée. Le jeton et son hash n’ont pas été lus. Les étapes suivantes du mandat — code d’erreur Android, appel réel de `/nfc-confirm`, révocation contrôlée, correctif — restent bloquées par cette corrélation.
 
 Invariants du code sur `develop@36bb9624`, à vérifier plus tard dans le canal sécurisé, en lecture seule :
 
@@ -151,4 +163,6 @@ Avant toute nouvelle programmation de cette NTAG216 : corrélation en lecture se
 
 ## Décision
 
-**HOLD BLOQUANT.** La cause définitive sur le téléphone n’est pas tranchée. Le mécanisme le plus cohérent avec le NDEF vu par un lecteur externe et l’absence de confirmation est l’intervalle `reset` / nouvelle découverte, aggravé par un `AppState` qui avale le code d’erreur. La corrélation `NFC-TEST-01` et l’essai téléphone restent à faire hors de GitHub.
+**HOLD BLOQUANT.** La conformité documentaire ne clôt pas NFC-PHYS-01. La première zone de code à investiguer reste l’intervalle écriture, fermeture de la requête NFC, nouvelle présentation, confirmation. Elle n’est pas la cause prouvée de la réservation `NFC-TEST-01`.
+
+Ordre restant, non exécuté ici : corrélation lecture seule en préproduction, puis phase NFC et code d’erreur assaini, puis révocation contrôlée du jeton photographié, puis seulement un correctif isolé dans une autre PR Draft/HOLD. Pas de troisième programmation. Pas de changement de message d’erreur dans cette branche. NFC-INT-02 reste suspendu. Aucune autorisation de production.
