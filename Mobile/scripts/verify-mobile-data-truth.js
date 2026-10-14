@@ -199,19 +199,36 @@ async function main() {
   assert.match(api, /["']\/payments["']/);
   assert.match(paymentsScreen, /loadPayments/);
   assert.match(paymentsScreen, /loadStudentFees/);
-  assert.match(paymentsScreen, /getPaymentRateKpi/);
-  assert.match(paymentsScreen, /getPaymentCashKpi/);
+  // FIN-SIMPLE-02 : présentation à trois indicateurs, moteurs financiers inchangés.
+  // Obligation / Reste suivent les allocations ; Encaissé lit le cash comptabilisé.
+  assert.match(paymentsScreen, /formatPaymentOverviewAmounts/);
+  assert.match(paymentsScreen, /formatPaymentCashAmounts/);
+  assert.match(paymentsScreen, /paymentAmountOverview\.expectedLabel/);
+  assert.match(paymentsScreen, /paymentAmountOverview\.remainingLabel/);
+  assert.match(paymentsScreen, /cashOverview\.collectedLabel/);
+  assert.match(paymentsScreen, />Obligation<\/Text>/);
+  assert.match(paymentsScreen, />Encaissé<\/Text>/);
+  assert.match(paymentsScreen, />Reste à payer<\/Text>/);
+  assert.doesNotMatch(paymentsScreen, /getPaymentRateKpi|getPaymentCashKpi|paymentStats\.rate/);
   assert.match(paymentsScreen, /PaymentReceiptCard/);
   assert.match(studentPayments, /showItems/);
   assert.match(studentPayments, /loadStudentFees/);
-  assert.match(studentPayments, /getPaymentRateKpi/);
-  assert.match(studentPayments, /getPaymentCashKpi/);
+  assert.match(studentPayments, /formatPaymentOverviewAmounts/);
+  assert.match(studentPayments, /formatPaymentCashAmounts/);
+  assert.match(studentPayments, /paymentAmountOverview\.remainingLabel/);
+  assert.match(studentPayments, /cashOverview\.collectedLabel/);
   assert.match(studentPayments, /ListHeaderComponent/);
-  assert.match(studentPayments, /Frais scolaires attendus/);
-  assert.match(studentPayments, /Imputé/);
-  assert.match(studentPayments, /Reste à payer/);
-  assert.match(studentPayments, /Encaissé/);
-  assert.match(studentPayments, /Non imputé/);
+  assert.match(studentPayments, /<Text style=\{localStyles\.heroLabel\}>Obligation<\/Text>/);
+  assert.match(studentPayments, /label="Reste à payer"/);
+  assert.match(studentPayments, /label="Encaissé"/);
+  assert.doesNotMatch(studentPayments, /label="Imputé"|label="Non imputé"/);
+  // Le paiement sans obligation et la traçabilité des reçus restent disponibles.
+  const paymentMutation = read(path.join(SRC, "components", "PaymentMutationControls.tsx"));
+  const paymentReceipt = read(path.join(SRC, "components", "PaymentReceiptCard.tsx"));
+  assert.match(studentPayments, /PaymentMutationControls/);
+  assert.match(paymentMutation, /UNALLOCATED_TARGET/);
+  assert.match(paymentMutation, /label: "Non imputé"/);
+  assert.match(paymentReceipt, /Non imputé/);
   assert.match(studentPayments, /paymentsHistoryTitle|Historique détaillé/);
   assert.doesNotMatch(studentPayments, /styles\.summaryCard/);
   assert.doesNotMatch(studentPayments, /styles\.summaryValue/);
