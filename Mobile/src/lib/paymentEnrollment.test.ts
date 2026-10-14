@@ -523,3 +523,17 @@ void (async () => {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });
+
+// FINANCE-MOBILE-01: latest dated open obligation wins, independent of input order.
+const latestFeeRows: PaymentFeeRow[] = [
+  { id: "nov", studentId: awa.id, balance: 140000, dueDate: "2026-11-15", status: "Impayé" },
+  { id: "sep", studentId: awa.id, balance: 40000, dueDate: "2026-09-15", status: "Impayé" },
+  { id: "oct", studentId: awa.id, balance: 0, dueDate: "2026-10-15", status: "Payé" },
+];
+assert.equal(preselectPaymentObligationId(awa.id, latestFeeRows), "nov");
+assert.equal(preselectPaymentObligationId(awa.id, [...latestFeeRows].reverse()), "nov");
+assert.equal(preselectPaymentObligationId(awa.id, []), UNALLOCATED_TARGET);
+assert.equal(preselectPaymentObligationId(awa.id, [latestFeeRows[1]]), "sep");
+assert.equal(preselectPaymentObligationId(awa.id, [
+  { ...latestFeeRows[0], dueDate: "" }, { ...latestFeeRows[1], dueDate: "" },
+]), UNALLOCATED_TARGET);
