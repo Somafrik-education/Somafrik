@@ -50,8 +50,8 @@ export const PAYMENT_ROW_TEST_ID = (paymentId: string) =>
 export const MIN_LIST_ROW_GAP = 10;
 
 /**
- * Densité KPI — écran Paiements élève (Option A : hero compact + mini-cards 2×2).
- * Layout uniquement : ne change pas Imputé / Reste à payer / Encaissé / Non imputé.
+ * Densité KPI — écran Paiements élève (FIN-SIMPLE-02 : hero Obligation + 2 mini-cards).
+ * Layout uniquement : les valeurs restent issues des projections financières existantes.
  */
 export const STUDENT_PAYMENTS_KPI_DENSITY = {
   heroPaddingVertical: 8,
@@ -69,7 +69,7 @@ export const STUDENT_PAYMENTS_KPI_DENSITY = {
   kpiBlockMarginBottom: 8,
 } as const;
 
-/** Hauteur estimée du bloc KPI (hero + grille 2×2), hors header / CTA. */
+/** Hauteur estimée du bloc KPI (hero + une rangée de deux mini-cards), hors header / CTA. */
 export function estimateStudentPaymentsKpiStackHeight(
   density: {
     heroPaddingVertical: number;
@@ -96,6 +96,6 @@ export function estimateStudentPaymentsKpiStackHeight(
     density.kpiLabelFontSize +
     density.kpiValueMarginTop +
     density.kpiValueFontSize;
-  const grid = kpiCard * 2 + density.kpiGap + density.kpiBlockMarginBottom;
+  const grid = kpiCard + density.kpiGap + density.kpiBlockMarginBottom;
   return hero + grid;
 }

@@ -12,9 +12,8 @@ import PaymentMutationControls from "../components/PaymentMutationControls";
 import PaymentCancelControls from "../components/PaymentCancelControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { DATA_TRUTH_COPY, DATA_TRUTH_TEST_IDS, paymentPaidAt } from "../lib/dataTruth";
-import { getPaymentCashKpi, formatPaymentCashAmounts } from "../lib/paymentCashKpi";
+import { formatPaymentCashAmounts } from "../lib/paymentCashKpi";
 import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
-import { getPaymentRateKpi } from "../lib/paymentRateKpi";
 import { paymentStudentsFromOptions, type PaymentStudent } from "../lib/paymentEnrollment";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { getFinanceCatalog, getPaymentStudentOptions } from "../services/api";
@@ -102,9 +101,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
     (left, right) => parsePaymentDate(paymentPaidAt(right) || right.date) - parsePaymentDate(paymentPaidAt(left) || left.date),
   );
   const studentFees = studentFeesData.filter((fee) => aliasKeySet.has(normalizeId(fee.studentId)));
-  const paymentRateKpi = getPaymentRateKpi(studentFees);
   const paymentAmountOverview = formatPaymentOverviewAmounts(studentFees);
-  const cashKpi = getPaymentCashKpi(paiementsEleve);
   const cashOverview = formatPaymentCashAmounts(paiementsEleve);
   const feesReady =
     studentFeesSnapshot.status === "success" || studentFeesSnapshot.status === "empty";
@@ -112,14 +109,8 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
   const isParent = session?.role === "parent_student";
   const parentUnlinked = isParent && countLinkedParentChildren(session?.user) === 0;
   const expectedLabel = parentUnlinked || !feesReady ? PARENT_UNLINKED_KPI : paymentAmountOverview.expectedLabel;
-  const imputedLabel = parentUnlinked || !feesReady ? PARENT_UNLINKED_KPI : paymentAmountOverview.collectedLabel;
-  const remaining = Math.max(0, paymentRateKpi.expectedAmount - paymentRateKpi.collectedAmount);
-  const remainingLabel =
-    parentUnlinked || !feesReady || !Number.isFinite(remaining)
-      ? PARENT_UNLINKED_KPI
-      : paymentAmountOverview.remainingLabel;
+  const remainingLabel = parentUnlinked || !feesReady ? PARENT_UNLINKED_KPI : paymentAmountOverview.remainingLabel;
   const collectedLabel = parentUnlinked || !paymentsReady ? PARENT_UNLINKED_KPI : cashOverview.collectedLabel;
-  const unallocatedLabel = parentUnlinked || !paymentsReady ? PARENT_UNLINKED_KPI : cashOverview.unallocatedLabel;
   const paymentIdentity = isParent
     ? parentHomeIdentityName({
         childName: parentChildNameFromSession({
@@ -164,9 +155,9 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
             style={localStyles.heroCard}
             testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsKpiHero}
             accessibilityRole="summary"
-            accessibilityLabel={`Frais scolaires attendus ${expectedLabel}`}
+            accessibilityLabel={`Obligation ${expectedLabel}`}
           >
-            <Text style={localStyles.heroLabel}>Montant attendu</Text>
+            <Text style={localStyles.heroLabel}>Obligation</Text>
             <Text style={localStyles.heroValue} selectable>
               {expectedLabel}
             </Text>
@@ -174,21 +165,12 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
 
           <View style={localStyles.kpiGrid} testID={STUDENT_SUB_SCREENS_TEST_IDS.paymentsKpiGrid}>
             <View style={localStyles.kpiRow}>
-              <KpiMiniCard label="Imputé" value={imputedLabel} valueColor="#16A34A" />
+              <KpiMiniCard label="Encaissé" value={collectedLabel} valueColor="#16A34A" />
               <KpiMiniCard
                 label="Reste à payer"
                 value={remainingLabel}
                 valueColor="#EA580C"
                 backgroundColor="#FFF7ED"
-              />
-            </View>
-            <View style={localStyles.kpiRow}>
-              <KpiMiniCard label="Encaissé" value={collectedLabel} valueColor="#16A34A" />
-              <KpiMiniCard
-                label="Non imputé"
-                value={unallocatedLabel}
-                valueColor="#1D4ED8"
-                backgroundColor="#EFF6FF"
               />
             </View>
           </View>

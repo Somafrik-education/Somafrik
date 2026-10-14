@@ -2,6 +2,7 @@
  * Densité KPI écran Paiements élève — layout only.
  *   npx tsx Mobile/src/lib/studentPaymentsKpiDensity.test.ts
  */
+import "./finSimplePresentation.test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -67,18 +68,17 @@ function run() {
   }
 
   const screen = readStudentPaymentsScreen();
-  assert.match(screen, /getPaymentRateKpi\(studentFees\)/);
-  assert.match(screen, /getPaymentCashKpi\(paiementsEleve\)/);
+  assert.match(screen, /formatPaymentOverviewAmounts\(studentFees\)/);
+  assert.match(screen, /formatPaymentCashAmounts\(paiementsEleve\)/);
   assert.match(screen, /ListHeaderComponent=\{financeHeader\}/);
-  assert.match(screen, /Frais scolaires attendus/);
-  assert.match(screen, /label="Imputé"/);
+  assert.match(screen, /<Text style=\{localStyles\.heroLabel\}>Obligation<\/Text>/);
   assert.match(screen, /label="Reste à payer"/);
   assert.match(screen, /label="Encaissé"/);
-  assert.match(screen, /label="Non imputé"/);
+  assert.doesNotMatch(screen, /label="Imputé"|label="Non imputé"/);
   assert.match(screen, /STUDENT_SUB_SCREENS_COPY\.paymentsSectionTitle/);
   assert.doesNotMatch(screen, /styles\.summaryCard/);
   assert.doesNotMatch(screen, /styles\.summaryValue/);
-  assert.match(screen, /Math\.max\(0, paymentRateKpi\.expectedAmount - paymentRateKpi\.collectedAmount\)/);
+  assert.match(screen, /paymentAmountOverview\.remainingLabel/);
 
   console.log(`OK: KPI ${previous}px → ${next}px (gain ${previous - next}px)`);
 }

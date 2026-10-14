@@ -453,7 +453,7 @@ export default function HomeScreen({ navigation }: any) {
         )
       : null,
     pendingPayments: canReadEntity(session, "payments")
-      ? kpi("pendingPayments", "time-outline", receivableLabel, "À percevoir", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
+      ? kpi("pendingPayments", "time-outline", receivableLabel, "Reste à payer", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
       : null,
     paidPayments: canReadEntity(session, "payments")
       ? kpi("paidPayments", "checkmark-circle-outline", collectedLabel, "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))
