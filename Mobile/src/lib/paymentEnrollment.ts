@@ -322,6 +322,12 @@ export function preselectPaymentObligationId(
   fees: PaymentFeeRow[],
 ): string {
   const options = collectOpenPaymentFees(studentId, fees);
+  const dated = options.filter((option) => /^\d{4}-\d{2}-\d{2}(?:$|T)/.test(option.dueDate || "") && !Number.isNaN(Date.parse(option.dueDate!)));
+  if (dated.length) {
+    return dated.reduce((latest, option) =>
+      Date.parse(option.dueDate!) > Date.parse(latest.dueDate!) ? option : latest,
+    ).obligationId;
+  }
   if (options.length === 1) return options[0].obligationId;
   return UNALLOCATED_TARGET;
 }
@@ -351,7 +357,7 @@ export function isFreshPaymentFeeResponse(input: {
 
 /**
  * Applique un GET scoped seulement s'il correspond à l'élève courant.
- * Recalcule la préselection (1 obligation ouverte → son id, sinon Non imputé).
+ * Recalcule la préselection (échéance datée la plus récente, sinon règle de repli).
  */
 export function applyScopedPaymentFeeDraft(input: {
   session: number;
