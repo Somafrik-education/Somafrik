@@ -20,7 +20,7 @@
     "mobile:android": "npm --prefix Mobile run android",
     "mobile:ios": "npm --prefix Mobile run ios",
     "check": "node -c backend/server.js && node -c backend/db/postgresRepository.js && node --check BackOffice/app.js && cd Mobile && npx tsc --noEmit",
-    "ci:install": "npm ci && npm ci --prefix backend && npm ci --prefix web && npm ci --prefix Mobile",
+    "ci:install": "npm ci && bash -c 'attempt=1; while true; do log=$(mktemp); if npm ci --prefix backend >\"$log\" 2>&1; then cat \"$log\"; rm -f \"$log\"; break; fi; cat \"$log\"; if ! grep -q -E \"Failed to set up chrome|End-of-central-directory signature not found|All providers failed for chrome\" \"$log\"; then rm -f \"$log\"; exit 1; fi; rm -f \"$log\"; if [ \"$attempt\" -ge 3 ]; then echo \"Puppeteer Chrome archive remained invalid after 3 attempts\"; exit 1; fi; echo \"Incomplete Puppeteer Chrome archive; removing the cache and retrying\"; rm -rf \"$HOME/.cache/puppeteer/chrome\"; attempt=$((attempt + 1)); done' && npm ci --prefix web && npm ci --prefix Mobile",
     "lint": "npm --prefix web run lint",
     "build": "npm --prefix web run build",
     "typecheck": "npm run typecheck:backend && npm run typecheck:web && npm run typecheck:mobile",

@@ -1,4 +1,4 @@
-import { Alert, ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -8,18 +8,24 @@ import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canManagePresences, canReadFeeGrids, canReadRoute } from "../domain/security/permissions";
 import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
+import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal";
 import { getStudentCardCapabilities } from "../services/studentCardScanApi";
 import {
   STUDENT_CARD_SCAN_COPY,
   applyQrConfirmedPresence,
   attendanceClassScopeKey,
   isAttendanceAuthorReady,
+  classifyStudentCardCapabilitiesFailure,
+  isStudentCardNfcFinanceEnabled,
   isStudentCardQrScannerVisible,
   isStudentCardScanFinanceEnabled,
   isoAttendanceDate,
+  resolveStudentCardNfcAttendanceControl,
   sanitizeStudentCardCapabilities,
+  studentCardNfcAttendanceStatusMessage,
   type StudentCardScanSettings,
 } from "../lib/studentCardScan";
+import { STUDENT_CARD_NFC_COPY, decideOpenQrFromNfcFallback } from "../lib/studentCardNfc";
 import {
   classNameMatches,
   resolveStudentApiId,
@@ -163,7 +169,31 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [replaySending, setReplaySending] = useState(false);
   const replaySendingRef = useRef(false);
   const [cardSettings, setCardSettings] = useState<StudentCardScanSettings | null>(null);
+  const [cardCapabilitiesStatus, setCardCapabilitiesStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [cardCapabilitiesFailure, setCardCapabilitiesFailure] = useState<"permission" | "technical" | null>(null);
+  const [capabilitiesReload, setCapabilitiesReload] = useState(0);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [nfcScannerOpen, setNfcScannerOpen] = useState(false);
+  const capabilitiesScopeKey = [
+    resourceScopeKey,
+    String(session?.user?.id ?? ""),
+    String(session?.role ?? ""),
+    String(session?.school?.id ?? session?.school?.code ?? ""),
+    String(capabilitiesReload),
+  ].join("\0");
+  const [appliedCapabilitiesScope, setAppliedCapabilitiesScope] = useState(capabilitiesScopeKey);
+  if (appliedCapabilitiesScope !== capabilitiesScopeKey) {
+    setAppliedCapabilitiesScope(capabilitiesScopeKey);
+    setCardSettings(null);
+    setCardCapabilitiesFailure(null);
+    setCardCapabilitiesStatus(canManagePresences(session) ? "loading" : "ready");
+  }
+  const capabilitiesFresh = appliedCapabilitiesScope === capabilitiesScopeKey;
+  const visibleCardSettings = capabilitiesFresh ? cardSettings : null;
+  const visibleCapabilitiesStatus = capabilitiesFresh
+    ? cardCapabilitiesStatus
+    : canManagePresences(session) ? "loading" : "ready";
+  const visibleCapabilitiesFailure = capabilitiesFresh ? cardCapabilitiesFailure : null;
   const selectedClassScopeKey = attendanceClassScopeKey(selectedClass);
 
   const todayLabel = formatAttendanceDate(new Date());
@@ -176,10 +206,40 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       void loadTeachers();
       void loadClasses();
       void loadAssignments();
+      let cancelled = false;
+      setCardSettings(null);
+      setCardCapabilitiesFailure(null);
+      if (!canManagePresences(session)) {
+        setCardCapabilitiesStatus("ready");
+        return () => {
+          cancelled = true;
+        };
+      }
+      setCardCapabilitiesStatus("loading");
       void getStudentCardCapabilities()
-        .then((row) => setCardSettings(sanitizeStudentCardCapabilities(row)))
-        .catch(() => setCardSettings(null));
-    }, [loadStudents, loadPresences, loadTeachers, loadClasses, loadAssignments, resourceScopeKey, session]),
+        .then((row) => {
+          if (cancelled) return;
+          const sanitized = sanitizeStudentCardCapabilities(row);
+          if (!sanitized) {
+            setCardSettings(null);
+            setCardCapabilitiesFailure("technical");
+            setCardCapabilitiesStatus("error");
+            return;
+          }
+          setCardSettings(sanitized);
+          setCardCapabilitiesFailure(null);
+          setCardCapabilitiesStatus("ready");
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setCardSettings(null);
+          setCardCapabilitiesFailure(classifyStudentCardCapabilitiesFailure(error));
+          setCardCapabilitiesStatus("error");
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [loadStudents, loadPresences, loadTeachers, loadClasses, loadAssignments, resourceScopeKey, session, capabilitiesReload]),
   );
 
   useEffect(() => {
@@ -189,10 +249,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   useEffect(() => {
     setExpandedStudentId(null);
     setScannerOpen(false);
+    setNfcScannerOpen(false);
   }, [selectedClassScopeKey]);
 
   useEffect(() => {
     setScannerOpen(false);
+    setNfcScannerOpen(false);
   }, [resourceScopeKey]);
 
   useEffect(() => {
@@ -324,11 +386,28 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
   const canOpenQrScanner = isStudentCardQrScannerVisible({
     canUpdatePresences,
-    settings: cardSettings,
+    settings: visibleCardSettings,
     selectedClass,
   });
+  const nfcControl = resolveStudentCardNfcAttendanceControl({
+    canUpdatePresences,
+    settings: visibleCardSettings,
+    selectedClass,
+    capabilitiesStatus: visibleCapabilitiesStatus,
+    capabilitiesFailure: visibleCapabilitiesFailure,
+    platformOs: Platform.OS,
+  });
   const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
-  const canReadScanFinance = canReadFeeGrids(session) && isStudentCardScanFinanceEnabled(cardSettings);
+  const canReadScanFinance = canReadFeeGrids(session) && isStudentCardScanFinanceEnabled(visibleCardSettings);
+  const canReadNfcScanFinance = canReadFeeGrids(session) && isStudentCardNfcFinanceEnabled(visibleCardSettings);
+
+  useEffect(() => {
+    if (!canOpenQrScanner) setScannerOpen(false);
+  }, [canOpenQrScanner]);
+
+  useEffect(() => {
+    if (nfcControl !== "ready") setNfcScannerOpen(false);
+  }, [nfcControl]);
 
   const dailyStats = useMemo(
     () => getRollCallDraftStats(selectedIds, attendance),
@@ -633,12 +712,32 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     studentsData,
   );
 
+  const nfcStatusMessage = studentCardNfcAttendanceStatusMessage(nfcControl);
+  const nfcStatus = nfcStatusMessage ? (
+    nfcControl === "capabilities_error" ? (
+      <TouchableOpacity
+        testID="attendance-nfc-status"
+        accessibilityRole="button"
+        accessibilityLabel={nfcStatusMessage}
+        onPress={() => setCapabilitiesReload((value) => value + 1)}
+        style={styles.scanButton}
+      >
+        <Text style={styles.scanButtonText}>{nfcStatusMessage}</Text>
+      </TouchableOpacity>
+    ) : (
+      <Text testID="attendance-nfc-status" style={styles.unavailable}>
+        {nfcStatusMessage}
+      </Text>
+    )
+  ) : null;
+
   if (!selectedClass) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
         <StudentsScopeAlert />
         <Text style={styles.title}>Présences</Text>
         <Text style={styles.subtitle}>Sélectionnez une classe • {todayLabel} à {currentHour}</Text>
+        {nfcStatus}
         <Text style={styles.sectionTitle}>Mes classes</Text>
         <View testID="attendance-class-list" style={isTablet ? styles.classGridTablet : undefined}>
           {assignedClasses.length === 0 ? (
@@ -798,6 +897,34 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 </TouchableOpacity>
               </View>
             )}
+            {nfcControl === "ready" ? (
+              <TouchableOpacity
+                testID={USABILITY_TEST_IDS.attendanceScanNfc}
+                style={styles.scanButton}
+                onPress={() => {
+                  if (!scanAuthorReady.ok) {
+                    Alert.alert(
+                      STUDENT_CARD_NFC_COPY.button,
+                      authorDecision.status === "need_selection"
+                        ? ATTENDANCE_AUTHOR_COPY.needSelection
+                        : authorDecision.status === "blocked"
+                          ? authorDecision.message
+                          : ATTENDANCE_AUTHOR_COPY.needSelection,
+                    );
+                    return;
+                  }
+                  setScannerOpen(false);
+                  setNfcScannerOpen(true);
+                }}
+                disabled={actionsLocked}
+                accessibilityRole="button"
+                accessibilityLabel={STUDENT_CARD_NFC_COPY.button}
+                accessibilityState={{ disabled: actionsLocked }}
+              >
+                <Ionicons name="radio-outline" size={18} color="#0F172A" />
+                <Text style={styles.scanButtonText}>{STUDENT_CARD_NFC_COPY.button}</Text>
+              </TouchableOpacity>
+            ) : nfcStatus}
             {canOpenQrScanner ? (
               <TouchableOpacity
                 testID={USABILITY_TEST_IDS.attendanceScanQr}
@@ -814,6 +941,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                     );
                     return;
                   }
+                  setNfcScannerOpen(false);
                   setScannerOpen(true);
                 }}
                 disabled={actionsLocked}
@@ -963,7 +1091,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </View>
       }
     />
-    {selectedClass ? (
+    {selectedClass && canOpenQrScanner ? (
       <StudentCardQrScannerModal
         visible={scannerOpen}
         selectedClass={selectedClass}
@@ -973,6 +1101,31 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         attendanceDate={isoAttendanceDate()}
         financeEnabled={canReadScanFinance}
         onClose={() => setScannerOpen(false)}
+        onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    {selectedClass && nfcControl === "ready" ? (
+      <StudentCardNfcScannerModal
+        visible={nfcScannerOpen}
+        selectedClass={selectedClass}
+        resourceScopeKey={resourceScopeKey}
+        schoolCode={String(session?.school?.code ?? session?.user?.schoolCode ?? "")}
+        author={authorDecision}
+        attendanceDate={isoAttendanceDate()}
+        financeEnabled={canReadNfcScanFinance}
+        qrFallbackEnabled={canOpenQrScanner}
+        onClose={() => setNfcScannerOpen(false)}
+        onFallbackQr={() => {
+          setNfcScannerOpen(false);
+          if (
+            decideOpenQrFromNfcFallback({
+              canOpenQrScanner,
+              authorReady: scanAuthorReady.ok,
+            })
+          ) {
+            setScannerOpen(true);
+          }
+        }}
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
       />
     ) : null}

@@ -44,3 +44,9 @@ f4fdd6f05966b149eba0ddd494862b15f9b686d5:Mobile/google-services.json:gcp-api-key
 73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88
 73da7fe2b18cf7b327416a64a3e63ad43ecc761b:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90
 
+# 8) Copie rebasée de la fixture apksigner, commit 766fe215 seulement.
+#    Mêmes empreintes publiques SHA-256 et MD5 du certificat debug jetable
+#    (CN=Android Debug). Le rebase change le SHA du commit, donc gitleaks
+#    voit un finding distinct. Toute autre ligne ou tout autre commit reste scanné.
+766fe2156312eef613875afe5c3e4dea3b2942eb:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88
+766fe2156312eef613875afe5c3e4dea3b2942eb:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90
