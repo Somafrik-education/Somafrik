@@ -38,7 +38,11 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   const operationValid = useRef<() => boolean>(() => false);
   const refreshAllowed = useRef(false);
   refreshAllowed.current = canRead;
-  const closeHardware = () => { void hardware.current?.close().catch(() => { /* quarantined shared manager refuses further use */ }); };
+  // Fermeture, arrière-plan ou perte de droits : libération complète, Reader Mode compris (RC-6).
+  const closeHardware = () => {
+    const current = hardware.current;
+    void (current?.end ? current.end() : current?.close())?.catch(() => { /* quarantined shared manager refuses further use */ });
+  };
 
   useEffect(() => {
     live.current = true;

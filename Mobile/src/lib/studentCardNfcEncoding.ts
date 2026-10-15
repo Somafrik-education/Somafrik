@@ -41,6 +41,8 @@ export interface NfcEncoderHardware {
   writeText(value: string): Promise<void>;
   isReadOnly(): Promise<boolean>;
   close(): Promise<void>;
+  /** Libération complète (Reader Mode compris) à la fermeture de l'écran d'encodage. */
+  end?(): Promise<void>;
 }
 export interface NfcEnrollmentApi {
   list(studentId: string): Promise<{ cards: EnrollmentCard[]; nfcEnabled: boolean }>;
