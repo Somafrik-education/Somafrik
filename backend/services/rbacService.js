@@ -106,6 +106,8 @@ const routePermissions = {
   "POST /api/student-cards/:id/replace": ["Élèves:UPDATE", "Gérer élèves"],
   "GET /api/student-cards/capabilities": ["Présences:CREATE", "Présences:UPDATE"],
   "POST /api/student-cards/scan": ["Présences:CREATE", "Présences:UPDATE"],
+  "POST /api/student-cards/roll-call/scan": ["Présences:CREATE", "Présences:UPDATE"],
+  "POST /api/student-cards/roll-call/validate": ["Présences:CREATE", "Présences:UPDATE"],
   "GET /api/audit": ["Audit:READ"],
   "GET /api/privacy/erasure-requests": ["Utilisateurs:READ", "Gérer utilisateurs"],
   "POST /api/privacy/erasure-requests/:requestId/execute": ["Utilisateurs:UPDATE", "Gérer utilisateurs"],

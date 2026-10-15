@@ -2408,6 +2408,62 @@ async function authorizeEnrollmentStudentOr404(req, res, studentId) {
   return { principal, schoolCode, student: authorizedPg };
 }
 
+// CARTE-PR1 — appel collectif : scans brouillon sans écriture, puis validation unique.
+let studentCardRollCallKeys = null;
+function rollCallKeys() {
+  const { deriveRollCallKeys } = require("./lib/studentCardRollCall");
+  studentCardRollCallKeys ??= deriveRollCallKeys(tokenService.secret);
+  return studentCardRollCallKeys;
+}
+
+async function rollCallHttpPrincipal(req) {
+  req.principal = await enrollmentHttpPrincipal(req);
+  req.principal = await presenceHttpPrincipal(req);
+  const gate = requireSchoolSubscriptionFeature("write_presence");
+  await new Promise((resolve, reject) => {
+    gate(req, {}, (error) => (error ? reject(error) : resolve()));
+  });
+  return req.principal;
+}
+
+app.post("/api/student-cards/roll-call/scan", requireAuth, requirePermission("POST /api/student-cards/roll-call/scan"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { scanRollCallDraft } = require("./lib/studentCardRollCall");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await scanRollCallDraft(
+    repository,
+    req.body ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    rollCallKeys(),
+  ));
+}));
+
+app.post("/api/student-cards/roll-call/validate", requireAuth, requirePermission("POST /api/student-cards/roll-call/validate"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { readContext, assertOperationKey, validateRollCall } = require("./lib/studentCardRollCall");
+  const principal = await rollCallHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  assertOperationKey(req.get("Idempotency-Key"), readContext(req.body ?? {}).sessionId);
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/student-cards/roll-call/validate",
+    principal,
+    handler: () => validateRollCall(
+      repository,
+      req.body ?? {},
+      schoolScope,
+      principal,
+      rollCallKeys(),
+      pedagogyAuditMetaFromRequest(req),
+    ),
+  });
+}));
+
 app.get("/api/students/:studentId/enrollments", requireAuth, requirePermission("GET /api/students/:studentId/enrollments"), asyncHandler(async (req, res) => {
   const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
   if (!scoped) return;

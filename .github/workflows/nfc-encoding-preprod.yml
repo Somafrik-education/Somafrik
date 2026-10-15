@@ -70,6 +70,8 @@ jobs:
           node backend/lib/studentAccessCards.finance.pg.test.js
           node backend/lib/studentAccessCards.http.pg.test.js
           node backend/lib/studentAccessCards.scan.http.pg.test.js
+          node --test backend/lib/studentCardRollCall.test.js
+          node backend/lib/studentCardRollCall.http.pg.test.js
           npm --prefix Mobile run test:student-card-nfc-integration
       - name: Upload sanitized integration performance measurements
         uses: actions/upload-artifact@v4
