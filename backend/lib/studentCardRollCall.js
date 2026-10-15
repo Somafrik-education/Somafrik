@@ -152,6 +152,9 @@ function readReceipts(payload, keys, context, scope, userId, now) {
   const receipts = payload?.receipts;
   if (!Array.isArray(receipts) || receipts.length === 0) throw inputError("Aucun scan à valider.");
   if (receipts.length > MAX_RECEIPTS) throw inputError("Trop de scans pour un seul appel.");
+  // Chaque carte distincte est vérifiée, y compris si plusieurs cartes visent le même élève.
+  // La déduplication par élève n'intervient qu'au moment d'écrire les présences.
+  const byCard = new Map();
   const byStudent = new Map();
   for (const [index, receipt] of receipts.entries()) {
     const claims = openReceipt(keys, receipt);
@@ -166,11 +169,15 @@ function readReceipts(payload, keys, context, scope, userId, now) {
       || claims.usr !== userId || claims.ses !== context.sessionId) {
       throw createHttpError(409, "Reçu de scan hors du contexte de cet appel.", ROLL_CALL_ERROR.CONTEXT_MISMATCH);
     }
-    const entry = byStudent.get(claims.stu) ?? { studentId: claims.stu, cardId: claims.crd, indexes: [] };
-    entry.indexes.push(index);
-    byStudent.set(claims.stu, entry);
+    const cardKey = `${claims.stu}|${claims.crd}`;
+    const cardEntry = byCard.get(cardKey) ?? { studentId: claims.stu, cardId: claims.crd, indexes: [] };
+    cardEntry.indexes.push(index);
+    byCard.set(cardKey, cardEntry);
+    if (!byStudent.has(claims.stu)) {
+      byStudent.set(claims.stu, { studentId: claims.stu });
+    }
   }
-  return { entries: [...byStudent.values()], total: receipts.length };
+  return { entries: [...byStudent.values()], cardEntries: [...byCard.values()], total: receipts.length };
 }
 
 async function assertCardsStillValid(repo, schoolId, entries) {
@@ -213,10 +220,10 @@ async function validateRollCall(repo, payload, scope, principal, keys, auditMeta
   const context = readContext(payload);
   const userId = principalUserId(principal);
   if (!userId) throw createHttpError(401, "Session invalide.");
-  const { entries, total } = readReceipts(payload, keys, context, scope, userId, now);
+  const { entries, cardEntries, total } = readReceipts(payload, keys, context, scope, userId, now);
   await assertRollCallEnabled(repo, scope.schoolId);
   await assertRollCallClass(repo, scope, principal, context.classId);
-  await assertCardsStillValid(repo, scope.schoolId, entries);
+  await assertCardsStillValid(repo, scope.schoolId, cardEntries);
   const teacherId = typeof payload?.teacherId === "string" ? payload.teacherId.trim() : "";
   const items = entries.map((entry) => ({
     studentId: entry.studentId,
@@ -248,6 +255,8 @@ module.exports = {
   openReceipt,
   dedupKeyFor,
   readContext,
+  readReceipts,
+  assertCardsStillValid,
   assertOperationKey,
   scanRollCallDraft,
   validateRollCall,
