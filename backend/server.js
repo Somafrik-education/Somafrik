@@ -2225,6 +2225,30 @@ function studentCardsHttpScope(principal) {
   return scope;
 }
 
+// CARTE-PR2 — vérification de carte : sections filtrées par permissions effectives avant envoi.
+app.post("/api/student-cards/verify", requireAuth, requirePermission("POST /api/student-cards/verify"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { verifyStudentCard } = require("./lib/studentCardVerification");
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = req.principal;
+  // Même résolution que requirePermission : permissions Finance relues à part pour leurs routes.
+  const can = async (routeKey) => {
+    if (isFinanceLiveRbacRouteKey(routeKey) && typeof repository.resolveFinanceLivePermissions === "function") {
+      const live = await repository.resolveFinanceLivePermissions(principal);
+      return rbacService.canAccess({ ...principal, permissions: Array.isArray(live?.permissions) ? live.permissions : [] }, routeKey);
+    }
+    return rbacService.canAccess(principal, routeKey);
+  };
+  res.status(200).json(await verifyStudentCard(
+    repository,
+    req.body ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    can,
+  ));
+}));
+
 app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/students/:id/cards"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();

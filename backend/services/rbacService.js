@@ -98,6 +98,8 @@ const routePermissions = {
   "GET /api/students/:id/payments": ["Paiements:READ", "Gérer paiements", "Voir paiements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/students/:id": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/students/:id/cards": ["Élèves:READ", "Voir élèves"],
+  // CARTE-PR2 : la route ne donne accès qu'à la validité ; chaque section est filtrée en aval.
+  "POST /api/student-cards/verify": ["Élèves:READ", "Voir élèves", "Gérer élèves", "Présences:CREATE", "Présences:UPDATE"],
   "POST /api/student-cards": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/nfc-confirm": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/nfc-retry": ["Élèves:UPDATE", "Gérer élèves"],

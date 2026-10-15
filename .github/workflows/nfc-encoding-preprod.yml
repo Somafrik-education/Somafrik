@@ -68,6 +68,8 @@ jobs:
           node backend/lib/studentAccessCards.resolve.pg.test.js
           node backend/lib/studentAccessCards.attendance.pg.test.js
           node backend/lib/studentAccessCards.finance.pg.test.js
+          node --test backend/lib/studentCardVerification.test.js
+          node backend/lib/studentCardVerification.http.pg.test.js
           node backend/lib/studentAccessCards.http.pg.test.js
           node backend/lib/studentAccessCards.scan.http.pg.test.js
           npm --prefix Mobile run test:student-card-nfc-integration
