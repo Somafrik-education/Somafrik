@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -16,6 +17,8 @@ import {
   COLLECTIVE_ROLL_CALL_COPY,
   addRollCallScan,
   createRollCallNfcLoop,
+  normalizeRollCallJustification,
+  rollCallCanSubmit,
   rollCallProgress,
   rollCallScanFailure,
   undoLastRollCallScan,
@@ -36,13 +39,12 @@ type Props = {
   draft: RollCallDraft;
   className: string;
   rosterSize: number;
-  teacherId?: string;
   hardware?: NfcHardware;
   onDraftChange: (draft: RollCallDraft) => void;
   onClose: () => void;
   onAbandon: () => void;
   onExpired: () => void;
-  onValidated: (recorded: number) => void;
+  onValidated: (recorded: number, message: string) => void;
 };
 
 /** Fermeture complète du lecteur ; end() (Reader Mode RC-5) est utilisé dès qu'il est disponible. */
@@ -61,7 +63,6 @@ export default function StudentCardRollCallModal({
   draft,
   className,
   rosterSize,
-  teacherId,
   hardware,
   onDraftChange,
   onClose,
@@ -72,6 +73,12 @@ export default function StudentCardRollCallModal({
   const [feedback, setFeedback] = useState<RollCallFeedback | null>(null);
   const [listening, setListening] = useState(false);
   const [validating, setValidating] = useState(false);
+  // CARTE-UX-ROLE-01 : justification de l'appel exceptionnel, propre à la session en cours.
+  const [justification, setJustification] = useState("");
+  const isDirection = draft.mode === "direction";
+  useEffect(() => {
+    setJustification("");
+  }, [draft.sessionId]);
   const [permission, requestPermission] = useCameraPermissions();
   const hardwareRef = useRef<NfcHardware | null>(hardware ?? null);
   const draftRef = useRef(draft);
@@ -95,6 +102,7 @@ export default function StudentCardRollCallModal({
         sessionId: current.sessionId,
         classId: current.classId,
         date: current.date,
+        mode: current.mode ?? "teacher",
         cardToken,
       });
       // Session changée ou validée pendant la requête : ce scan n'appartient plus au brouillon.
@@ -187,9 +195,9 @@ export default function StudentCardRollCallModal({
     setValidating(true);
     await stopNfc();
     try {
-      const outcome = await validateRollCallDraft(draftRef.current, { teacherId, validate: validateRollCall });
+      const outcome = await validateRollCallDraft(draftRef.current, { justification, validate: validateRollCall });
       if (outcome.kind === "validated") {
-        onValidated(outcome.recorded);
+        onValidated(outcome.recorded, outcome.message);
         return;
       }
       if (outcome.kind === "expired") {
@@ -207,7 +215,7 @@ export default function StudentCardRollCallModal({
       setValidating(false);
       if (visibleRef.current && source === "nfc") void startNfc();
     }
-  }, [onDraftChange, onExpired, onValidated, source, startNfc, stopNfc, teacherId]);
+  }, [justification, onDraftChange, onExpired, onValidated, source, startNfc, stopNfc]);
 
   const close = useCallback(() => {
     if (validatingRef.current) return;
@@ -231,6 +239,7 @@ export default function StudentCardRollCallModal({
   }, [onAbandon, stopNfc]);
 
   const progress = rollCallProgress(draft, rosterSize);
+  const canSubmit = !validating && rollCallCanSubmit(draft, justification);
   const feedbackStyle = feedback?.kind === "accepted"
     ? styles.feedbackAccepted
     : feedback?.kind === "duplicate" || feedback?.kind === "info"
@@ -241,7 +250,27 @@ export default function StudentCardRollCallModal({
     <Modal visible={visible} animationType="slide" onRequestClose={close} accessibilityViewIsModal>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <Text style={styles.className}>{className}</Text>
-        <Text style={styles.title}>{COLLECTIVE_ROLL_CALL_COPY.title}</Text>
+        <Text style={styles.title}>{isDirection ? COLLECTIVE_ROLL_CALL_COPY.directionTitle : COLLECTIVE_ROLL_CALL_COPY.title}</Text>
+        {isDirection ? (
+          <View style={styles.directionCard} testID="roll-call-direction-notice">
+            <Text style={styles.directionText}>{COLLECTIVE_ROLL_CALL_COPY.directionNotice}</Text>
+            <Text style={styles.label}>{COLLECTIVE_ROLL_CALL_COPY.justificationLabel}</Text>
+            <TextInput
+              testID="roll-call-justification"
+              style={styles.input}
+              value={justification}
+              onChangeText={setJustification}
+              editable={!validating}
+              multiline
+              maxLength={600}
+              placeholder={COLLECTIVE_ROLL_CALL_COPY.justificationPlaceholder}
+              accessibilityLabel={COLLECTIVE_ROLL_CALL_COPY.justificationLabel}
+            />
+            <Text style={styles.meta}>
+              {COLLECTIVE_ROLL_CALL_COPY.justificationHint(normalizeRollCallJustification(justification).length)}
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.counterCard} testID="roll-call-counter">
           <Text style={styles.counter} accessibilityLiveRegion="polite">
@@ -319,11 +348,11 @@ export default function StudentCardRollCallModal({
         </TouchableOpacity>
         <TouchableOpacity
           testID="roll-call-validate"
-          style={[styles.primaryButton, (validating || progress.count === 0) && styles.disabled]}
+          style={[styles.primaryButton, !canSubmit && styles.disabled]}
           onPress={() => void validate()}
-          disabled={validating || progress.count === 0}
+          disabled={!canSubmit}
           accessibilityRole="button"
-          accessibilityState={{ disabled: validating || progress.count === 0, busy: validating }}
+          accessibilityState={{ disabled: !canSubmit, busy: validating }}
         >
           {validating ? <ActivityIndicator color="#FFFFFF" /> : null}
           <Text style={styles.primaryText}>
@@ -389,4 +418,11 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", padding: 12, borderWidth: 1, borderColor: "#FCA5A5",
   },
   dangerText: { color: "#B91C1C", fontWeight: "900" },
+  directionCard: { marginTop: 12, backgroundColor: "#FFF7ED", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#FDBA74" },
+  directionText: { color: "#9A3412", fontWeight: "800" },
+  label: { marginTop: 10, color: "#0F172A", fontWeight: "900" },
+  input: {
+    marginTop: 6, minHeight: 72, borderRadius: 12, borderWidth: 1, borderColor: "#CBD5E1", backgroundColor: "#FFFFFF",
+    padding: 10, color: "#0F172A", textAlignVertical: "top",
+  },
 });
