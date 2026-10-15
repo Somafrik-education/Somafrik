@@ -105,7 +105,9 @@ function mapCardListItem(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     nfc: row.nfc_uid ? { uid: row.nfc_uid, tagType: row.nfc_tag_type, state: row.nfc_encoding_state, encodedAt: row.nfc_encoded_at, lockedAt: row.nfc_locked_at,
-      operationId: row.nfc_operation_id, expiresAt: row.nfc_reservation_expires_at, replacesCardId: row.nfc_replaces_card_id } : null,
+      operationId: row.nfc_operation_id, expiresAt: row.nfc_reservation_expires_at, replacesCardId: row.nfc_replaces_card_id,
+      // Server clock: expiry is applied lazily, so a past reservation may still read issued/pending.
+      ...(typeof row.nfc_reservation_expired === "boolean" ? { expired: row.nfc_reservation_expired } : {}) } : null,
   };
 }
 

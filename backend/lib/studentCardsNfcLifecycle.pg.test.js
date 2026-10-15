@@ -7,7 +7,7 @@ const { STUDENT_ACCESS_CARDS_SCHEMA_SQL, STUDENT_ACCESS_CARDS_TABLE_SQL, STUDENT
 const { STUDENT_CARDS_NFC_SCHEMA_SQL } = require("../db/studentCardsNfcSchema");
 const { STUDENT_CARDS_NFC_RESERVATIONS_SCHEMA_SQL } = require("../db/studentCardsNfcReservationsSchema");
 const { createStudentAccessCardsPgStore } = require("../db/studentAccessCardsPgStore");
-const { issueStudentCard, revokeStudentCard, markStudentCardLost, replaceStudentCard, scanStudentCard, generateCardSecrets } = require("./studentAccessCardsManagement");
+const { issueStudentCard, revokeStudentCard, markStudentCardLost, replaceStudentCard, scanStudentCard, generateCardSecrets, listStudentCards } = require("./studentAccessCardsManagement");
 const { confirmStudentCardNfc, retryStudentCardNfc } = require("./studentCardsNfcEncoding");
 
 const url = process.env.SOMAFRIK_NFC_TEST_DATABASE_URL;
@@ -380,4 +380,20 @@ pg("legacy active encoded cards accept absent/null UUID only; no UUID allocation
   assert.equal(await f.countAudit("student_card_nfc_locked"),1);
   await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,"lost");
   await assert.rejects(f.confirm(card),{code:"STUDENT_CARD_INVALID_STATE"});assert.equal((await f.row(card.id)).status,"lost");
+});
+pg("CARTE-NFC-BATCH-01 list flags a lazily expired reservation; the next reservation releases it with audit and keeps its UID",async f=>{
+  const list=async()=>(await listStudentCards(f.repo,f.students[0],f.scope)).map(c=>({id:c.id,status:c.status,expired:c.nfc.expired,uid:c.nfc.uid}));
+  const card=await f.issue();
+  assert.deepEqual(await list(),[{id:card.id,status:"issued",expired:false,uid:f.identity.uid}]);
+  await f.expire(card.id);
+  assert.deepEqual(await list(),[{id:card.id,status:"issued",expired:true,uid:f.identity.uid}]);
+  assert.equal(await f.countAudit("student_card_nfc_reservation_expired"),0);
+  await assert.rejects(f.issue(),{code:"STUDENT_CARD_NFC_UID_EXISTS"});
+  const next=await f.issue({nfc:{uid:"04AABBCCDDEE01",tagType:"NTAG213"}});
+  const rows=await list();
+  assert.deepEqual(rows.find(r=>r.id===card.id),{id:card.id,status:"revoked",expired:false,uid:f.identity.uid});
+  assert.deepEqual(rows.find(r=>r.id===next.id),{id:next.id,status:"issued",expired:false,uid:"04AABBCCDDEE01"});
+  assert.equal(await f.countAudit("student_card_nfc_reservation_expired"),1);
+  assert.equal((await f.confirm(next,{uid:"04AABBCCDDEE01",tagType:"NTAG213"})).status,"active");
+  await assert.rejects(listStudentCards(f.repo,f.students[0],{...f.scope,schoolId:f.b}),(e)=>["STUDENT_CARD_STUDENT_NOT_FOUND","STUDENT_CARD_TENANT_DENIED"].includes(e.code)||e.statusCode===404);
 });

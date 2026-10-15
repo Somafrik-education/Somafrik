@@ -2,7 +2,7 @@
 export type NtagIdentity = { uid: string; tagType: "NTAG213" | "NTAG216" };
 export type EnrollmentCard = {
   id: string; publicId: string; medium: string; status: string; revokeReason?: string | null;
-  nfc: (NtagIdentity & { state: "pending" | "encoded" | "locked"; operationId: string | null; expiresAt: string | null; replacesCardId?: string | null }) | null;
+  nfc: (NtagIdentity & { state: "pending" | "encoded" | "locked"; operationId: string | null; expiresAt: string | null; replacesCardId?: string | null; expired?: boolean }) | null;
 };
 export type IssuedNfcCard = EnrollmentCard & { cardToken?: string; tokenAvailable?: boolean; idempotentReplay?: boolean; reissued?: boolean };
 export const NFC_FOREIGN_CARD = "Cette carte n’est pas une carte NTAG213 ou NTAG216 prise en charge par Somafrik.";
@@ -91,8 +91,23 @@ export function nfcErrorCopy(error: unknown): string {
   if (error && typeof error === "object" && (("status" in error && error.status === 403) || ("statusCode" in error && error.statusCode === 403))) return copies.STUDENT_CARD_TENANT_DENIED;
   return copies[code] ?? "Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante.";
 }
+/** The server expires reservations lazily: a past reservation can still read `issued/pending`.
+ * Its own `expired` flag decides; without it (older Backend) the device clock does. The server
+ * still refuses a new reservation while it considers the old one valid (fail-closed). */
+export function nfcReservationExpired(card: EnrollmentCard, now = Date.now()): boolean {
+  if (card.status !== "issued" || card.nfc?.state !== "pending") return false;
+  if (typeof card.nfc.expired === "boolean") return card.nfc.expired;
+  const expiresAt = Date.parse(card.nfc.expiresAt ?? "");
+  return Number.isFinite(expiresAt) && expiresAt <= now;
+}
+/** A reservation that can still be resumed: pending and not past its expiry. */
+export function nfcLiveReservation(card: EnrollmentCard, now = Date.now()): boolean {
+  return card.status === "issued" && card.nfc?.state === "pending" && !nfcReservationExpired(card, now);
+}
 function requireIdentity(card: EnrollmentCard): NtagIdentity {
   if (card.status === "revoked" && card.revokeReason === "nfc_reservation_expired") throw nfcFailure("STUDENT_CARD_NFC_EXPIRED");
+  // Only the server flag: a fresh reservation must never be refused because of a skewed device clock.
+  if (card.status === "issued" && card.nfc?.expired === true) throw nfcFailure("STUDENT_CARD_NFC_EXPIRED");
   if (!card.nfc || !["issued", "active"].includes(card.status)) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
   if (card.status === "issued" && (card.nfc.state !== "pending" || !card.nfc.operationId || !card.nfc.expiresAt || !Number.isFinite(Date.parse(card.nfc.expiresAt)))) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
   if (card.status === "active" && !["encoded", "locked"].includes(card.nfc.state)) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
@@ -192,7 +207,7 @@ export function createIndividualNfcFlow(input: {
     hasUncertainReservation() { return attempt !== null; },
     program(previous?: EnrollmentCard) { return run(async () => {
       const cards = await list();
-      if (attempt || cards.some((c) => c.status === "issued" && c.nfc?.state === "pending")) throw nfcFailure("NFC_PENDING");
+      if (attempt || cards.some((c) => nfcLiveReservation(c))) throw nfcFailure("NFC_PENDING");
       const active = cards.find((c) => c.status === "active");
       if (active && active.id !== previous?.id) throw nfcFailure("NFC_REPLACE_REQUIRED");
       if (previous && (!active || active.id !== previous.id)) throw nfcFailure("STUDENT_CARD_INVALID_STATE");

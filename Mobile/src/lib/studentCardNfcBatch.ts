@@ -3,6 +3,7 @@ import {
   createIndividualNfcFlow,
   nfcFailure,
   nfcErrorCopy,
+  nfcLiveReservation,
   type EnrollmentCard,
   type NfcEnrollmentApi,
   type NfcEncoderHardware,
@@ -67,6 +68,7 @@ export function batchCardMetadata(card: EnrollmentCard): EnrollmentCard {
           operationId: card.nfc.operationId,
           expiresAt: card.nfc.expiresAt,
           replacesCardId: card.nfc.replacesCardId,
+          expired: card.nfc.expired,
         }
       : null,
   };
@@ -87,11 +89,8 @@ export function batchCounters(entries: BatchEntry[]) {
 export function eligibleForNewCard(entry: BatchEntry) {
   return (
     entry.member &&
-    !entry.cards.some(
-      (c) =>
-        c.status === "active" ||
-        (c.status === "issued" && c.nfc?.state === "pending"),
-    )
+    // An expired reservation is released by the server when the next one is created.
+    !entry.cards.some((c) => c.status === "active" || nfcLiveReservation(c))
   );
 }
 export function createNfcBatch(input: {
@@ -378,9 +377,7 @@ export function createNfcBatch(input: {
       throw nfcFailure("NFC_RESPONSE_INVALID");
     entry.cards = response.cards.map(batchCardMetadata);
     emit();
-    const pending = entry.cards.find(
-      (c) => c.status === "issued" && c.nfc?.state === "pending",
-    );
+    const pending = entry.cards.find((c) => nfcLiveReservation(c));
     const target = entry.cards.find((c) => c.id === entry.targetId);
     if (rewrite) {
       if (!pending) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
@@ -541,8 +538,7 @@ export function createNfcBatch(input: {
         !entry.cards.some(
           (c) =>
             c.id === targetId &&
-            ((c.status === "issued" && c.nfc?.state === "pending") ||
-              (c.status === "active" && !!c.nfc)),
+            (nfcLiveReservation(c) || (c.status === "active" && !!c.nfc)),
         )
       )
         throw nfcFailure("STUDENT_CARD_INVALID_STATE");
