@@ -2488,6 +2488,16 @@ app.post("/api/student-cards/roll-call/validate", requireAuth, requirePermission
   });
 }));
 
+// CARTE-UX-ROLE-01 — supervision des appels par la direction : effectifs et compteurs par classe.
+app.get("/api/student-cards/roll-call/overview", requireAuth, requirePermission("GET /api/student-cards/roll-call/overview"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { rollCallOverview } = require("./lib/studentCardRollCall");
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = await presenceHttpPrincipal(req);
+  res.status(200).json(await rollCallOverview(repository, req.query ?? {}, studentCardsHttpScope(principal), principal));
+}));
+
 app.get("/api/students/:studentId/enrollments", requireAuth, requirePermission("GET /api/students/:studentId/enrollments"), asyncHandler(async (req, res) => {
   const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
   if (!scoped) return;

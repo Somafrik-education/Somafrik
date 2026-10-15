@@ -11,6 +11,8 @@ const {
   readReceipts,
   assertCardsStillValid,
   assertOperationKey,
+  authorizeRollCallActor,
+  readJustification,
   ROLL_CALL_ERROR,
 } = require("./studentCardRollCall");
 
@@ -121,4 +123,45 @@ test("deux reçus de la même carte restent un seul contrôle et une seule prés
   await assertCardsStillValid({ all: async () => [{
     id: CARD_A, student_id: STUDENT, status: "active", nfc_encoding_state: null,
   }] }, SCOPE.schoolId, parsed.cardEntries);
+});
+
+test("CARTE-UX-ROLE-01 : parcours décidés sur les clés canoniques et la permission effective, jamais sur le libellé", () => {
+  const allowed = (principal, mode) => { try { authorizeRollCallActor(principal, mode); return true; } catch (error) {
+    assert.equal(error.code, ROLL_CALL_ERROR.ROLE_FORBIDDEN); assert.equal(error.statusCode, 403); return false; } };
+  const update = ["Présences:CREATE", "Présences:UPDATE"];
+  assert.equal(allowed({ roleKeys: ["TEACHER"] }, "teacher"), true);
+  assert.equal(allowed({ roleKeys: ["PRINCIPAL", "TEACHER"], role: "Directeur" }, "teacher"), true, "multi-rôle : parcours enseignant possible");
+  for (const key of ["PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SCHOOL_ADMIN"]) {
+    assert.equal(allowed({ roleKeys: [key], permissions: update }, "direction"), true, key);
+    assert.equal(allowed({ roleKeys: [key], permissions: update }, "teacher"), false, `${key} ne pointe jamais comme enseignant`);
+    assert.equal(allowed({ roleKeys: [key], permissions: ["Présences:CREATE"] }, "direction"), false, `${key} sans UPDATE effective`);
+  }
+  for (const key of ["SUPERVISOR", "SECRETARY", "ACCOUNTANT", "PARENT", "STUDENT"]) {
+    assert.equal(allowed({ roleKeys: [key], permissions: update }, "direction"), false, key);
+    assert.equal(allowed({ roleKeys: [key], permissions: update }, "teacher"), false, key);
+  }
+  assert.equal(allowed({ role: "Enseignant", permissions: update }, "teacher"), false, "libellé seul refusé");
+  assert.equal(allowed({ role: "Directeur", permissions: update }, "direction"), false, "libellé seul refusé");
+  assert.equal(allowed({ roleKeys: ["DIRECTEUR_CUSTOM"], permissions: update }, "direction"), false, "clé inconnue refusée");
+  assert.equal(allowed({ roleKeys: ["TEACHER", "SUPER_ADMIN"] }, "teacher"), false, "rôle plateforme exclu");
+  assert.equal(allowed({ roleKeys: ["PRINCIPAL", "COUNTRY_ADMIN"], permissions: update }, "direction"), false);
+});
+
+test("CARTE-UX-ROLE-01 : justification obligatoire, normalisée et bornée", () => {
+  for (const bad of [undefined, "", "   ", "court", "x".repeat(501), "Absence de l'enseignant\u0007 ce jour"]) {
+    assert.throws(() => readJustification({ justification: bad }), { code: ROLL_CALL_ERROR.JUSTIFICATION_REQUIRED });
+  }
+  assert.equal(readJustification({ justification: "  Enseignant   absent,\n appel direction " }), "Enseignant absent, appel direction");
+  assert.equal(readJustification({ justification: "x".repeat(500) }).length, 500);
+});
+
+test("CARTE-UX-ROLE-01 : un reçu ne sert que dans son parcours", () => {
+  const live = { ...claims, exp: Date.now() + 60_000 };
+  const teacherReceipt = sealReceipt(keys, { ...live, mod: "teacher" });
+  const directionReceipt = sealReceipt(keys, { ...live, mod: "direction" });
+  const read = (receipt, mode) => readReceipts({ receipts: [receipt] }, keys, CONTEXT, SCOPE, claims.usr, Date.now(), mode);
+  assert.equal(read(teacherReceipt, "teacher").entries.length, 1);
+  assert.equal(read(directionReceipt, "direction").entries.length, 1);
+  assert.throws(() => read(teacherReceipt, "direction"), { code: ROLL_CALL_ERROR.CONTEXT_MISMATCH });
+  assert.throws(() => read(directionReceipt, "teacher"), { code: ROLL_CALL_ERROR.CONTEXT_MISMATCH });
 });
