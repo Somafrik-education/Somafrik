@@ -1,6 +1,9 @@
 /**
  * HOTFIX-RBAC-ADMIN-01 — Création enseignants sans auditLog client.
  * Classes : plus d'écriture via /api/backoffice/state (clôture /api/classes).
+ * RBAC-HTTP-MAINT-01 : enseignants et affectations ne s'écrivent plus via l'état BackOffice
+ * (a26008ed) et GET/PUT /api/backoffice/state sont supprimés (410, LOT 8). L'identité
+ * enseignant part de Comptes utilisateurs ; POST /api/teachers reste refusé.
  *
  * Usage:
  *   node backend/scripts/verify-rbac-admin-01.js
@@ -9,7 +12,11 @@
 const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("assert");
 const path = require("path");
-const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
+const {
+  assertBackOfficeStateWriteRemoved,
+  assertBackOfficeStateReadRemoved,
+} = require("../lib/backofficeStatePutExpectation");
+const { probeLiveApi } = require("./liveApiProbe");
 
 const {
   ADMIN_SCHOOL_WRITABLE_ENTITIES,
@@ -27,8 +34,9 @@ function runUnitTests() {
   const superadmin = { role: "Super Administrateur Somafrik", schoolCode: "*" };
 
   assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("classes"));
-  assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("teachers"));
+  assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("teachers"), "teachers fermé (a26008ed)");
   assert.ok(!ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("auditLog"));
+  assert.ok(ADMIN_SCHOOL_WRITABLE_ENTITIES.includes("exams"));
 
   assert.strictEqual(
     evaluateBackOfficeWriteAccess(schoolAdmin, ["classes"]).ok,
@@ -37,11 +45,16 @@ function runUnitTests() {
   );
   assert.strictEqual(
     evaluateBackOfficeWriteAccess(schoolAdmin, ["teachers"]).ok,
-    true,
-    "Admin School + teachers",
+    false,
+    "Admin School + teachers → refusé (identité via Comptes utilisateurs)",
   );
   assert.strictEqual(
-    evaluateBackOfficeWriteAccess(schoolAdmin, ["teachers", "auditLog"]).ok,
+    evaluateBackOfficeWriteAccess(schoolAdmin, ["exams"]).ok,
+    true,
+    "Admin School + exams (entité encore listée)",
+  );
+  assert.strictEqual(
+    evaluateBackOfficeWriteAccess(schoolAdmin, ["exams", "auditLog"]).ok,
     false,
     "Admin School + auditLog client → refusé",
   );
@@ -73,31 +86,16 @@ function runUnitTests() {
     "teachers",
     "auditLog",
   ]);
-  // Superadmin matrice théorique peut encore lister la clé, mais le serveur
-  // strip/rejette toute écriture classes via state (voir HTTP ci-dessous).
-  assert.ok(superWritable.includes("teachers"));
+  // Matrice théorique seulement : toute écriture d'état est de toute façon refusée (410, HTTP ci-dessous).
+  assert.ok(!superWritable.includes("teachers"), "teachers fermé aussi pour le Super Admin");
   assert.ok(!superWritable.includes("auditLog"), "Superadmin ne peut pas écrire auditLog client");
 
-  console.log("OK unit: HOTFIX-RBAC-ADMIN-01 matrice teachers/auditLog (+ classes legacy fermé)");
+  console.log("OK unit: HOTFIX-RBAC-ADMIN-01 matrice teachers/auditLog fermés (+ classes legacy fermé)");
 }
 
 async function runHttpTestsIfAvailable() {
   const base = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
-  let healthy = false;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2000);
-    const health = await fetch(`${base.replace(/\/api\/?$/, "")}/api/health`, {
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
-    healthy = health.ok;
-  } catch {
-    healthy = false;
-  }
-  if (!healthy) {
-    console.log("SKIP http: API non joignable");
-    return;
-  }
+  if (!(await probeLiveApi(base, "verify-rbac-admin-01"))) return;
 
   const { request, loginFull } = require(path.join(__dirname, "..", "..", "scripts", "e2e-api-helpers.js"));
   const STRONG_PASSWORD = "SomaTest1";
@@ -142,104 +140,59 @@ async function runHttpTestsIfAvailable() {
     teacherToken = changeTeacher.data.accessToken;
   }
 
-  const stateRes = await request("/backoffice/state", { token: schoolAdmin.accessToken });
-  assert.strictEqual(stateRes.status, 200);
-  const state = stateRes.data;
+  assertBackOfficeStateReadRemoved(
+    await request("/backoffice/state", { token: schoolAdmin.accessToken }),
+    "GET state Admin School",
+  );
   const stamp = Date.now().toString(36);
   const schoolCode = "CD-2026-0001";
-
-  const classId = `CLS-RBAC-ADMIN-01-${stamp}`;
-  const classRow = {
-    id: classId,
-    name: `2ème A ${stamp}`,
-    schoolCode,
-    level: "2ème",
-    capacity: 40,
-  };
-
-  // A1 — Admin établissement + classes seul → 400 legacy fermé
-  const classForbidden = await request("/backoffice/state", {
-    method: "PUT",
-    token: schoolAdmin.accessToken,
-    body: {
-      classes: [...(state.classes ?? []).filter((row) => row.id !== classId), classRow],
-    },
-  });
-  assert.strictEqual(classForbidden.status, 400, `Admin classes legacy: ${classForbidden.status}`);
-  assert.strictEqual(
-    classForbidden.data?.code,
-    "LEGACY_CLASSES_STATE_WRITE_FORBIDDEN",
-    "code legacy classes",
-  );
-
-  // A2 — Admin établissement + enseignants (sans auditLog) → 200
-  const teacherId = `TCH-RBAC-ADMIN-01-${stamp}`;
+  const classRow = { id: `CLS-RBAC-ADMIN-01-${stamp}`, name: `2ème A ${stamp}`, schoolCode, level: "2ème", capacity: 40 };
   const teacherRow = {
-    id: teacherId,
+    id: `TCH-RBAC-ADMIN-01-${stamp}`,
     publicId: `ENS-RBAC-${stamp}`,
     name: "Test",
     firstName: "RBAC",
     schoolCode,
     status: "Actif",
   };
-  const teacherOk = await request("/backoffice/state", {
-    method: "PUT",
-    token: schoolAdmin.accessToken,
-    body: {
-      teachers: [...(state.teachers ?? []).filter((row) => row.id !== teacherId), teacherRow],
-    },
-  });
-  assert.ok(teacherOk.status >= 200 && teacherOk.status < 300, `Admin teachers: ${teacherOk.status}`);
 
-  // A3 — Admin + auditLog client → 403 explicite
-  const auditForbidden = await request("/backoffice/state", {
-    method: "PUT",
-    token: schoolAdmin.accessToken,
-    body: {
-      teachers: teacherOk.data.teachers ?? [teacherRow],
-      auditLog: [{ id: "AUD-TAMPER", action: "teachers.create" }],
-    },
-  });
-  assert.strictEqual(auditForbidden.status, 403, "Admin + auditLog client doit être 403");
-  assert.match(
-    String(auditForbidden.data?.message ?? ""),
-    /Permission insuffisante/i,
-  );
-
-  // A4 — Enseignant + teachers → 403 ; classes → 400 ou 403
-  for (const [label, body] of [
-    ["classes", { classes: [classRow] }],
-    ["teachers", { teachers: [teacherRow] }],
+  // A1–A5 — Classes, enseignants et auditLog client via l'état BackOffice : 410 pour
+  // l'Admin School, l'enseignant et le Super Admin (plus aucune écriture partielle).
+  for (const [label, token] of [
+    ["Admin School", schoolAdmin.accessToken],
+    ["Enseignant", teacherToken],
+    ["Super Admin", superadmin.accessToken],
   ]) {
-    const forbidden = await request("/backoffice/state", {
-      method: "PUT",
-      token: teacherToken,
-      body,
-    });
-    if (label === "classes") {
-      assert.ok(
-        forbidden.status === 400 || forbidden.status === 403,
-        `Enseignant + classes doit être 400/403 (reçu ${forbidden.status})`,
+    for (const [domain, body] of [
+      ["classes", { classes: [classRow] }],
+      ["teachers", { teachers: [teacherRow] }],
+      ["teachers + auditLog", { teachers: [teacherRow], auditLog: [{ id: "AUD-TAMPER", action: "teachers.create" }] }],
+    ]) {
+      assertBackOfficeStateWriteRemoved(
+        await request("/backoffice/state", { method: "PUT", token, body }),
+        `PUT state ${label} ${domain}`,
       );
-    } else {
-      assert.strictEqual(forbidden.status, 403, `Enseignant + ${label} doit être 403`);
     }
   }
 
-  // A5 — Superadmin + classes seul → 400 legacy fermé
-  const superForbidden = await request("/backoffice/state", {
-    method: "PUT",
-    token: superadmin.accessToken,
-    body: {
-      classes: [
-        ...(state.classes ?? []),
-        { id: `CLS-SUPER-${stamp}`, name: `Super ${stamp}`, schoolCode },
-      ],
-    },
+  // A6 — Création d'enseignant par le module Enseignants : refusée pour l'Admin School
+  // (identité via Comptes utilisateurs) et refusée par le RBAC pour un enseignant.
+  const adminCreate = await request("/teachers", {
+    method: "POST",
+    token: schoolAdmin.accessToken,
+    body: { firstName: "RBAC", lastName: stamp },
   });
-  assert.strictEqual(superForbidden.status, 400, `Superadmin classes legacy: ${superForbidden.status}`);
+  assert.strictEqual(adminCreate.status, 403, `Admin POST /teachers: ${adminCreate.status}`);
+  assert.strictEqual(adminCreate.data?.code, "TEACHER_IDENTITY_MUST_COME_FROM_USERS");
+  const teacherCreate = await request("/teachers", {
+    method: "POST",
+    token: teacherToken,
+    body: { firstName: "RBAC", lastName: stamp },
+  });
+  assert.strictEqual(teacherCreate.status, 403, `Enseignant POST /teachers: ${teacherCreate.status}`);
+  assert.notStrictEqual(teacherCreate.data?.code, "TEACHER_IDENTITY_MUST_COME_FROM_USERS", "refus RBAC en amont");
 
-  console.log("OK http: HOTFIX-RBAC-ADMIN-01 teachers/auditLog + classes legacy fermé");
+  console.log("OK http: HOTFIX-RBAC-ADMIN-01 état BackOffice 410 + création enseignant refusée hors Comptes utilisateurs");
 }
 
 async function main() {
