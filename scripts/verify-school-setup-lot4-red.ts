@@ -398,6 +398,8 @@ function isStudentCardPr6IntegrationFile(file: string) {
   if (/^web\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
   if (/^web\/src\/lib\/studentCardsApi[^/]*$/.test(file)) return true;
   if (/^Mobile\/src\/lib\/studentCard[^/]*$/.test(file)) return true;
+  // NFC ONE-TAP: Type 2 NTAG memory decoder belongs to Carte Élève, not school setup LOT 4.
+  if (file === "Mobile/src/lib/ntagMemory.ts" || file === "Mobile/src/lib/ntagMemory.test.ts") return true;
   if (/^Mobile\/src\/services\/studentCard[^/]*$/.test(file)) return true;
   if (/^Mobile\/src\/screens\/StudentCard[^/]*$/.test(file)) return true;
   if (/^Mobile\/src\/components\/StudentCard[^/]*$/.test(file)) return true;
