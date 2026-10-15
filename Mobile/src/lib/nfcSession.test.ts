@@ -252,3 +252,30 @@ test("native reader and encoder share a lease and fail closed on isEnabled error
     loader._load = original;
   }
 });
+
+test("NFC-RECETTE-05 timeout cancels native discovery and frees the hardware for the next reader", async () => {
+  let cancels = 0;
+  let discovery = deferred<void>();
+  const manager = createNfcSessionManager({
+    start: async () => {},
+    cancel: async () => { cancels++; discovery.reject(new Error("cancelled")); },
+  });
+  const reader = () => {
+    let lease: ReturnType<typeof manager.acquire> | null = null;
+    const current = () => (lease ??= manager.acquire());
+    return {
+      start: () => current().start(),
+      isSupported: async () => true,
+      isEnabled: () => current().run(async () => true),
+      requestTag: () => current().request(() => discovery.promise),
+      getTag: () => current().run(async () => null),
+      async cancel() { const owned = lease; if (!owned) return; await owned.close(); if (lease === owned) lease = null; },
+    };
+  };
+  const first = await scanNfcCardToken(reader(), { timeoutMs: 20 });
+  assert.deepEqual(first, { ok: false, reason: "timeout" });
+  assert.equal(cancels, 1, "cancelTechnologyRequest must run exactly once");
+  discovery = deferred<void>();
+  const next = manager.acquire();
+  await next.close();
+});

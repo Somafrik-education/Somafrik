@@ -54,6 +54,7 @@ type Props = {
   financeEnabled: boolean;
   isOffline?: () => boolean;
   hardware?: NfcHardware;
+  nfcTimeoutMs?: number;
   qrFallbackEnabled: boolean;
   onClose: () => void;
   onFallbackQr: () => void;
@@ -70,6 +71,7 @@ export default function StudentCardNfcScannerModal({
   financeEnabled,
   isOffline = isOfflineContext,
   hardware,
+  nfcTimeoutMs,
   qrFallbackEnabled,
   onClose,
   onFallbackQr,
@@ -84,7 +86,9 @@ export default function StudentCardNfcScannerModal({
   const hardwareRef = useRef<NfcHardware>(hardware ?? createReactNativeNfcAdapter());
   const generationRef = useRef(0);
   const visibleRef = useRef(visible);
-  const scanLockRef = useRef(false);
+  // Génération propriétaire de la lecture en cours : une lecture périmée ne bloque pas la suivante.
+  const scanOwnerRef = useRef<number | null>(null);
+  const busyOwnerRef = useRef(0);
   visibleRef.current = visible;
   if (hardware) hardwareRef.current = hardware;
   const scopeKey = scanScopeKey({
@@ -105,8 +109,32 @@ export default function StudentCardNfcScannerModal({
     };
   }, [resourceScopeKey, schoolCode, selectedClass.classCode, selectedClass.classId]);
 
+  // Le parent passe des callbacks inline : leur identité change à chaque rendu.
+  // Le scan lit les valeurs courantes ici, sans relancer la session NFC.
+  const latestRef = useRef({
+    selectedClass,
+    author,
+    attendanceDate,
+    financeEnabled,
+    isOffline,
+    onAttendanceRecorded,
+    nfcTimeoutMs,
+    scope,
+  });
+  latestRef.current = {
+    selectedClass,
+    author,
+    attendanceDate,
+    financeEnabled,
+    isOffline,
+    onAttendanceRecorded,
+    nfcTimeoutMs,
+    scope,
+  };
+
   const stopSession = useCallback(async () => {
     generationRef.current += 1;
+    busyOwnerRef.current += 1;
     setScanning(false);
     setBusy(false);
     releaseCardToken(tokenRef.current);
@@ -121,6 +149,7 @@ export default function StudentCardNfcScannerModal({
       });
       if (decision.cancelSession) {
         generationRef.current += 1;
+        busyOwnerRef.current += 1;
         setScanning(false);
         setBusy(false);
         void releaseNfcSession(hardwareRef.current);
@@ -138,14 +167,26 @@ export default function StudentCardNfcScannerModal({
 
   const runScan = useCallback(
     async (cardToken: string) => {
+      const {
+        selectedClass,
+        author,
+        attendanceDate,
+        financeEnabled,
+        isOffline,
+        onAttendanceRecorded,
+        scope,
+      } = latestRef.current;
       if (!hasValidSelectedClass(selectedClass)) {
         setError(STUDENT_CARD_SCAN_COPY.classMismatch);
         return;
       }
       const started = scope();
+      const currentScope = () => latestRef.current.scope();
+      busyOwnerRef.current += 1;
+      const busyOwner = busyOwnerRef.current;
       setBusy(true);
       setError("");
-      const stillCurrent = () => !isStaleScanScope(started, scope());
+      const stillCurrent = () => !isStaleScanScope(started, currentScope());
       try {
         const outcome = await runStudentCardScanFlow({
           cardToken,
@@ -155,7 +196,7 @@ export default function StudentCardNfcScannerModal({
           attendanceDate,
           financeEnabled,
           isOffline,
-          currentScope: scope,
+          currentScope,
           resolveCard: resolveStudentCard,
           recordAttendance: (token, attendance, idempotencyKey) =>
             recordStudentCardAttendance(token, attendance, { idempotencyKey }),
@@ -189,30 +230,25 @@ export default function StudentCardNfcScannerModal({
         if (outcome.view.attendanceRecorded) onAttendanceRecorded(outcome.view);
       } finally {
         releaseCardToken(tokenRef.current);
-        if (stillCurrent()) setBusy(false);
+        // Libération garantie : seul un scan plus récent ou une fermeture reprend `busy`.
+        if (busyOwnerRef.current === busyOwner) setBusy(false);
       }
     },
-    [
-      attendanceDate,
-      author,
-      financeEnabled,
-      isOffline,
-      onAttendanceRecorded,
-      scope,
-      selectedClass,
-    ],
+    [],
   );
 
   const listenForTag = useCallback(async () => {
-    if (!visibleRef.current || scanLockRef.current) return;
-    scanLockRef.current = true;
     const startedGeneration = generationRef.current;
+    if (!visibleRef.current || scanOwnerRef.current === startedGeneration) return;
+    scanOwnerRef.current = startedGeneration;
     setScanning(true);
     setError("");
     setFailure("");
     setResult(null);
     try {
-      const read = await scanNfcCardToken(hardwareRef.current);
+      const read = await scanNfcCardToken(hardwareRef.current, {
+        timeoutMs: latestRef.current.nfcTimeoutMs,
+      });
       if (!visibleRef.current || startedGeneration !== generationRef.current) return;
       const decision = decideNfcScannerRead(read);
       if (decision.callOnClose || decision.navigateHome) return;
@@ -224,11 +260,16 @@ export default function StudentCardNfcScannerModal({
       if (!holdCardToken(tokenRef.current, decision.token)) return;
       await runScan(decision.token);
     } finally {
-      scanLockRef.current = false;
-      if (visibleRef.current) setScanning(false);
+      if (scanOwnerRef.current === startedGeneration) {
+        scanOwnerRef.current = null;
+        if (visibleRef.current && startedGeneration === generationRef.current) setScanning(false);
+      }
     }
   }, [runScan]);
+  const listenForTagRef = useRef(listenForTag);
+  listenForTagRef.current = listenForTag;
 
+  // Seule l'ouverture/fermeture réelle démarre ou annule une session NFC.
   useEffect(() => {
     if (!visible) {
       generationRef.current += 1;
@@ -240,8 +281,8 @@ export default function StudentCardNfcScannerModal({
       return;
     }
     generationRef.current += 1;
-    void listenForTag();
-  }, [listenForTag, stopSession, visible]);
+    void listenForTagRef.current();
+  }, [stopSession, visible]);
 
   useEffect(() => {
     if (!visible) {
