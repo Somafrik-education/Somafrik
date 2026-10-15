@@ -16,6 +16,7 @@ const { scanStudentCard, listStudentCards } = require("./studentAccessCardsManag
 const { scanStudentCardFinance } = require("./studentCardFinance");
 const { isStudentCardCapabilityEnabled, mapSettingsRow } = require("./schoolSettingsManagement");
 const { createSchoolSettingsPgStore } = require("../db/schoolSettingsPgStore");
+const { ROLE_PRIVILEGE_ORDER, isKnownRoleKey } = require("./userRoleLifecycle");
 
 const VERIFY_ROUTE_KEY = "POST /api/student-cards/verify";
 
@@ -38,25 +39,25 @@ function principalRoleKeys(principal) {
   return keys;
 }
 
-const NON_STAFF_ROLE_KEYS = Object.freeze(new Set(["PARENT", "STUDENT"]));
-const NON_STAFF_ROLE_LABELS = Object.freeze(new Set(["Parent", "Élève / Étudiant"]));
+// Liste positive dérivée du catalogue canonique. Aucun libellé ne peut conférer un droit.
+const STAFF_ROLE_KEYS = new Set(ROLE_PRIVILEGE_ORDER.filter(
+  (key) => !["SUPER_ADMIN", "COUNTRY_ADMIN", "PARENT", "STUDENT"].includes(key),
+));
 
-/**
- * Parents et élèves disposent d'Élèves:READ / Présences:READ pour leurs propres données :
- * la vérification de carte est réservée au personnel (au moins un roleKey non parent/élève).
- */
 function assertStaffPrincipal(principal) {
   const keys = principalRoleKeys(principal);
-  const staff = keys.size > 0
-    ? [...keys].some((key) => key && !NON_STAFF_ROLE_KEYS.has(key))
-    : !NON_STAFF_ROLE_LABELS.has(String(principal?.role ?? ""));
-  if (!staff) {
+  // L'absence de roleKey ou la présence d'une clé inconnue est refusée fail-closed.
+  // Même avec un rôle secondaire valide, un rôle plateforme ne donne aucun accès scolaire.
+  const authorized = keys.size > 0
+    && [...keys].every((key) => isKnownRoleKey(key) && !["SUPER_ADMIN", "COUNTRY_ADMIN"].includes(key))
+    && [...keys].some((key) => STAFF_ROLE_KEYS.has(key));
+  if (!authorized) {
     throw createHttpError(403, "Vérification de carte réservée au personnel de l'établissement.", "CARD_VERIFY_FORBIDDEN");
   }
 }
 
 function isClassRestricted(principal) {
-  return principalRoleKeys(principal).has("TEACHER") || principal?.role === "Enseignant";
+  return principalRoleKeys(principal).has("TEACHER");
 }
 
 function hasAnyPermission(principal, permissions) {
