@@ -33,6 +33,11 @@ const USER_PARENT = U(4);
 const USER_SUPER = U(5);
 const USER_PAYS = U(6);
 const USER_ADMIN_B = U(7);
+// CARTE-UX-ROLE-01
+const USER_DIRECTOR = U(8);
+const USER_PROVISEUR_NO_UPDATE = U(9);
+const USER_SUPERVISOR = U(10);
+const USER_DIRECTOR_TEACHER = U(11);
 const S = Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((n) => [`S${n}`, U(100 + n)]));
 const STUDENT_B = U(199);
 
@@ -210,6 +215,14 @@ async function main() {
          ($7,$9,'ADM-B','Binta','B','binta@rc.test','Admin School','active', FALSE)`,
       [USER_ADMIN, USER_TEACHER, USER_TEACHER_FREE, USER_PARENT, USER_SUPER, USER_PAYS, USER_ADMIN_B, schoolA.id, schoolB.id],
     );
+    await pool.query(
+      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES ($1,$5,'DIR-A','Dora','D','dora@rc.test','Directeur','active', FALSE),
+              ($2,$5,'PRV-A','Paul','V','paul@rc.test','Proviseur','active', FALSE),
+              ($3,$5,'SUR-A','Sami','S','sami@rc.test','Surveillant','active', FALSE),
+              ($4,$5,'DIT-A','Dina','T','dina@rc.test','Directeur','active', FALSE)`,
+      [USER_DIRECTOR, USER_PROVISEUR_NO_UPDATE, USER_SUPERVISOR, USER_DIRECTOR_TEACHER, schoolA.id],
+    );
     await pool.query(`ALTER TABLE users ENABLE TRIGGER users_permanent_identity_insert`);
     await pool.query(
       `INSERT INTO user_roles (user_id, school_id, role_key, status)
@@ -218,6 +231,15 @@ async function main() {
               ($7,$9,'SCHOOL_ADMIN','active')`,
       [USER_ADMIN, USER_TEACHER, USER_TEACHER_FREE, USER_PARENT, USER_SUPER, USER_PAYS, USER_ADMIN_B, schoolA.id, schoolB.id],
     );
+    await pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       VALUES ($1,$5,'PRINCIPAL','active'), ($2,$5,'PROVISEUR','active'), ($3,$5,'SUPERVISOR','active'),
+              ($4,$5,'PRINCIPAL','active'), ($4,$5,'TEACHER','active')`,
+      [USER_DIRECTOR, USER_PROVISEUR_NO_UPDATE, USER_SUPERVISOR, USER_DIRECTOR_TEACHER, schoolA.id],
+    );
+    await setRoleModuleGrant(pool, "PRINCIPAL", "attendance", { create: true, read: true, update: true });
+    await setRoleModuleGrant(pool, "PROVISEUR", "attendance", { create: true, read: true, update: false });
+    await setRoleModuleGrant(pool, "SUPERVISOR", "attendance", { create: true, read: true, update: true });
     await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: true, read: true, update: true });
     await pool.query(
       `INSERT INTO students (id, school_id, student_code, first_name, last_name, status)
@@ -271,10 +293,24 @@ async function main() {
       `INSERT INTO teachers (school_id, user_id, teacher_code, status) VALUES ($1,$2,'TCH-F','active')`,
       [schoolA.id, USER_TEACHER_FREE],
     );
+    // Compte multi-rôle (libellé « Directeur », clés PRINCIPAL + TEACHER) affecté à la seule classe A1.
+    const directorTeacher = (await pool.query(
+      `INSERT INTO teachers (school_id, user_id, teacher_code, status) VALUES ($1,$2,'TCH-D','active') RETURNING id`,
+      [schoolA.id, USER_DIRECTOR_TEACHER],
+    )).rows[0];
     await pool.query(
       `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
        VALUES ($1,$2,$3,$4,$5,'active')`,
       [schoolA.id, teacher.id, classA1.id, subject.id, yearA.id],
+    );
+    const subjectPhys = (await pool.query(
+      `INSERT INTO subjects (school_id, subject_code, name, status) VALUES ($1,'PHYS','Physique','active') RETURNING id`,
+      [schoolA.id],
+    )).rows[0];
+    await pool.query(
+      `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+       VALUES ($1,$2,$3,$4,$5,'active')`,
+      [schoolA.id, directorTeacher.id, classA1.id, subjectPhys.id, yearA.id],
     );
     await pool.query(
       `INSERT INTO school_settings (school_id, student_card_enabled, student_card_qr_enabled, student_card_attendance_enabled)
@@ -318,6 +354,17 @@ async function main() {
       countryCode: "CD", permissions: ["COUNTRY_PRIVILEGES", "Présences:UPDATE"] });
     const tokenAdminB = mint({ sub: USER_ADMIN_B, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_B,
       permissions: ["Élèves:UPDATE", "Gérer élèves", "Présences:CREATE", "Présences:UPDATE"] });
+    const tokenDirector = mint({ sub: USER_DIRECTOR, role: "Directeur", roleKeys: ["PRINCIPAL"], schoolCode: LEFTOVER_A,
+      permissions: ["Présences:CREATE", "Présences:UPDATE"] });
+    const tokenProviseurNoUpdate = mint({ sub: USER_PROVISEUR_NO_UPDATE, role: "Proviseur", roleKeys: ["PROVISEUR"],
+      schoolCode: LEFTOVER_A, permissions: ["Présences:CREATE", "Présences:UPDATE"] });
+    const tokenSupervisor = mint({ sub: USER_SUPERVISOR, role: "Surveillant", roleKeys: ["SUPERVISOR"], schoolCode: LEFTOVER_A,
+      permissions: ["Présences:CREATE", "Présences:UPDATE"] });
+    const tokenDirectorTeacher = mint({ sub: USER_DIRECTOR_TEACHER, role: "Directeur", roleKeys: ["PRINCIPAL", "TEACHER"],
+      schoolCode: LEFTOVER_A, permissions: ["Présences:CREATE", "Présences:UPDATE"] });
+    // Jeton signé mais périmé : les clés du JWT (PRINCIPAL) ne correspondent plus aux rôles actifs en base (TEACHER seul).
+    const tokenStaleDirector = mint({ sub: USER_TEACHER_FREE, role: "Directeur", roleKeys: ["PRINCIPAL"], schoolCode: LEFTOVER_A,
+      permissions: ["Présences:READ", "Présences:CREATE", "Présences:UPDATE"] });
 
     const issue = async (studentId, medium = "qr", token = tokenAdmin) => {
       const issued = await request("/student-cards", { method: "POST", token, body: { studentId, medium } });
@@ -452,7 +499,7 @@ async function main() {
       ROLL_CALL_ERROR.CONTEXT_MISMATCH, "autre classe");
     assert.equal((await validate(tokenTeacherFree, bodyX)).data?.code, ROLL_CALL_ERROR.CONTEXT_MISMATCH, "autre utilisateur");
     const crossSchool = await validate(tokenAdminB, bodyX);
-    assert.equal(crossSchool.data?.code, ROLL_CALL_ERROR.CONTEXT_MISMATCH, "autre établissement");
+    assert.equal(crossSchool.data?.code, ROLL_CALL_ERROR.ROLE_FORBIDDEN, "autre établissement, sans clé TEACHER");
     assert.deepEqual(await attendanceOn(pool, ctxX.date), [], "aucun refus n'a écrit de présence");
 
     // ---------- Validation réussie, doublons, rejeu ----------
@@ -528,17 +575,176 @@ async function main() {
     assert.deepEqual(overlapping.map((r) => r.status), [201, 201]);
     assert.equal((await attendanceOn(pool, D1.date)).length, 1, "deux sessions concurrentes, une seule présence");
 
-    // ---------- Direction : auteur explicite requis, comme le pointage existant ----------
+    // ---------- CARTE-UX-ROLE-01 : parcours enseignant (clés canoniques, affectation stricte) ----------
     const A = { sessionId: session(), classId: classA1.id, date: "2026-10-15" };
-    const a1 = await scan(tokenAdmin, { ...A, cardToken: cards.S2.cardToken });
-    assert.equal(a1.status, 200, JSON.stringify(a1.data));
-    const adminNoAuthor = await validate(tokenAdmin, { ...A, receipts: [a1.data.receipt] });
-    assert.equal(adminNoAuthor.status, 409, JSON.stringify(adminNoAuthor.data));
+    // La direction ne peut plus pointer « au nom » d'un enseignant : ni sans auteur, ni avec teacherId.
+    for (const token of [tokenAdmin, tokenDirector]) {
+      const asTeacher = await scan(token, { ...A, cardToken: cards.S2.cardToken });
+      assert.equal(asTeacher.status, 403, JSON.stringify(asTeacher.data));
+      assert.equal(asTeacher.data?.code, ROLL_CALL_ERROR.ROLE_FORBIDDEN);
+      const sealedForDirector = sealReceipt(keys, {
+        sch: schoolA.id, cls: classA1.id, dt: A.date, usr: USER_DIRECTOR, ses: A.sessionId, crd: cards.S2.id, stu: S.S2,
+        mod: "teacher", exp: Date.now() + 60_000,
+      });
+      const attributed = await validate(token, { ...A, teacherId: "TCH-A", receipts: [sealedForDirector] });
+      assert.equal(attributed.status, 403, JSON.stringify(attributed.data));
+      assert.equal(attributed.data?.code, ROLL_CALL_ERROR.ROLE_FORBIDDEN);
+    }
+    // Rôle secondaire sans clé TEACHER ni rôle de direction : aucun des deux parcours.
+    assert.equal((await scan(tokenSupervisor, { ...A, cardToken: cards.S2.cardToken })).data?.code, ROLL_CALL_ERROR.ROLE_FORBIDDEN);
+    assert.equal((await scan(tokenSupervisor, { ...A, mode: "direction", cardToken: cards.S2.cardToken })).data?.code,
+      ROLL_CALL_ERROR.ROLE_FORBIDDEN);
     assert.deepEqual(await attendanceOn(pool, A.date), []);
-    const A2 = { ...A, sessionId: session() };
-    const a2 = await scan(tokenAdmin, { ...A2, cardToken: cards.S2.cardToken });
-    const adminOk = await validate(tokenAdmin, { ...A2, teacherId: "TCH-A", receipts: [a2.data.receipt] });
-    assert.equal(adminOk.status, 201, JSON.stringify(adminOk.data));
+    // Multi-rôle : la clé TEACHER impose l'affectation, même avec un libellé « Directeur ».
+    const multiOther = await scan(tokenDirectorTeacher, { ...A, classId: classA2.id, cardToken: cards.S4.cardToken });
+    assert.equal(multiOther.status, 403, JSON.stringify(multiOther.data));
+    assert.equal(multiOther.data?.code, ROLL_CALL_ERROR.CLASS_FORBIDDEN);
+    const m1 = await scan(tokenDirectorTeacher, { ...A, cardToken: cards.S2.cardToken });
+    assert.equal(m1.status, 200, JSON.stringify(m1.data));
+    const multiOk = await validate(tokenDirectorTeacher, { ...A, teacherId: "TCH-A", receipts: [m1.data.receipt] });
+    assert.equal(multiOk.status, 201, JSON.stringify(multiOk.data));
+    const multiRow = (await pool.query(`SELECT teacher_id FROM attendance WHERE attendance_date = $1 AND student_id = $2`, [A.date, S.S2])).rows[0];
+    assert.equal(String(multiRow.teacher_id), String(directorTeacher.id), "présence attribuée à l'enseignant authentifié, jamais au teacherId client");
+
+    // ---------- CARTE-UX-ROLE-01 : appel exceptionnel de la direction ----------
+    const E = { sessionId: session(), classId: classA1.id, date: "2026-10-17", mode: "direction" };
+    const justification = "Enseignant absent ce matin, appel réalisé par la direction.";
+    assert.equal((await scan(tokenProviseurNoUpdate, { ...E, cardToken: cards.S1.cardToken })).data?.code,
+      ROLL_CALL_ERROR.ROLE_FORBIDDEN, "direction sans Présences:UPDATE effective");
+    assert.equal((await scan(tokenTeacher, { ...E, cardToken: cards.S1.cardToken })).data?.code,
+      ROLL_CALL_ERROR.ROLE_FORBIDDEN, "un enseignant n'utilise pas l'appel exceptionnel");
+    assert.equal((await scan(tokenAdminB, { ...E, cardToken: cards.S1.cardToken })).status, 403, "classe d'un autre établissement");
+    for (const [token, headers] of [[tokenSuper, { "X-Somafrik-School-Code": LOGIN_A }], [tokenPays, {}]]) {
+      const denied = await scan(token, { ...E, cardToken: cards.S1.cardToken }, headers);
+      assert.equal(denied.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
+    }
+    assert.equal((await scan(tokenParent, { ...E, cardToken: cards.S1.cardToken })).status, 403);
+    assert.equal((await scan(tokenStaleDirector, { ...E, cardToken: cards.S1.cardToken })).data?.code,
+      ROLL_CALL_ERROR.ROLE_FORBIDDEN, "rôles relus en base : une clé PRINCIPAL du seul JWT ne suffit pas");
+    assert.equal((await scan(tokenDirector, { ...E, mode: "inconnu", cardToken: cards.S1.cardToken })).data?.code,
+      ROLL_CALL_ERROR.INPUT_INVALID);
+    const e1 = await scan(tokenDirector, { ...E, cardToken: cards.S1.cardToken });
+    assert.equal(e1.status, 200, JSON.stringify(e1.data));
+    assert.deepEqual(identityLeaks(e1.data), []);
+    const e2 = await scan(tokenDirector, { ...E, cardToken: cards.S2.cardToken });
+    const eTeacherReceipt = await scan(tokenDirectorTeacher, { ...E, mode: undefined, cardToken: cards.S2.cardToken });
+    assert.equal(eTeacherReceipt.status, 200);
+    const e3 = await scan(tokenDirector, { ...E, cardToken: cards.S8.cardToken });
+    assert.equal(e3.status, 200, JSON.stringify(e3.data));
+    const bodyE = { ...E, justification, receipts: [e1.data.receipt, e2.data.receipt, e3.data.receipt] };
+    const foreignReceipt = sealReceipt(keys, { ...openReceipt(keys, e1.data.receipt), sch: String(schoolB.id) });
+    assert.equal((await validate(tokenDirector, { ...bodyE, receipts: [foreignReceipt] })).data?.code,
+      ROLL_CALL_ERROR.CONTEXT_MISMATCH, "reçu d'un autre établissement refusé");
+    assert.equal((await validate(tokenDirector, { ...bodyE, justification: "  court " })).data?.code,
+      ROLL_CALL_ERROR.JUSTIFICATION_REQUIRED, "justification obligatoire");
+    assert.equal((await validate(tokenDirector, { ...bodyE, justification: undefined })).data?.code,
+      ROLL_CALL_ERROR.JUSTIFICATION_REQUIRED);
+    assert.equal((await validate(tokenDirector, { ...bodyE, mode: undefined })).data?.code,
+      ROLL_CALL_ERROR.ROLE_FORBIDDEN, "reçus de direction refusés hors parcours direction");
+    const forgedMode = sealReceipt(keys, { ...openReceipt(keys, e1.data.receipt), mod: "teacher" });
+    assert.equal((await validate(tokenDirector, { ...bodyE, receipts: [forgedMode] })).data?.code,
+      ROLL_CALL_ERROR.CONTEXT_MISMATCH, "un reçu enseignant n'est jamais accepté par le parcours direction");
+    assert.equal((await validate(tokenDirectorTeacher, { ...E, mode: undefined, receipts: [e1.data.receipt] })).data?.code,
+      ROLL_CALL_ERROR.CONTEXT_MISMATCH);
+    const expiredE = sealReceipt(keys, { ...openReceipt(keys, e1.data.receipt), exp: Date.now() - 1000 });
+    assert.equal((await validate(tokenDirector, { ...bodyE, receipts: [expiredE] })).data?.code, ROLL_CALL_ERROR.RECEIPT_EXPIRED);
+    assert.deepEqual(await attendanceOn(pool, E.date), [], "aucun refus n'écrit de présence");
+    // S2 déjà pointé présent par son enseignant : la direction ne modifie ni le statut ni l'auteur.
+    const teacherFirst = { sessionId: session(), classId: classA1.id, date: E.date };
+    const tf = await scan(tokenTeacher, { ...teacherFirst, cardToken: cards.S2.cardToken });
+    assert.equal((await validate(tokenTeacher, { ...teacherFirst, receipts: [tf.data.receipt] })).status, 201);
+    // S8 déjà noté absent (avec motif) par son enseignant ; présence d'un autre établissement à la même date.
+    await pool.query(
+      `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
+       VALUES ($1,$2,$3,$4,$5::date,'absent','Malade'), ($6,$7,$8,NULL,$5::date,'absent','B')`,
+      [schoolA.id, S.S8, classA1.id, teacher.id, E.date, schoolB.id, STUDENT_B, classB1.id],
+    );
+    const snapshot = async () => (await pool.query(
+      `SELECT school_id, student_id, status, reason, teacher_id, class_id, updated_at FROM attendance
+        WHERE attendance_date = $1 AND (student_id IN ($2, $3) OR school_id = $4) ORDER BY student_id`,
+      [E.date, S.S2, S.S8, schoolB.id])).rows.map((r) => JSON.stringify(r));
+    const before = await snapshot();
+    const okE = await validate(tokenDirector, bodyE);
+    assert.equal(okE.status, 201, JSON.stringify(okE.data));
+    assert.deepEqual(okE.data, { mode: "direction", recorded: 1, alreadyRecorded: 2, duplicatesIgnored: 0, classId: classA1.id, date: E.date });
+    assert.deepEqual(await snapshot(), before, "présences déjà enregistrées (présent, absent avec motif) et autre établissement inchangés");
+    const rowsE = (await pool.query(
+      `SELECT student_id, status, teacher_id FROM attendance WHERE attendance_date = $1 AND school_id = $2 ORDER BY student_id`,
+      [E.date, schoolA.id])).rows;
+    assert.deepEqual(rowsE.map((r) => [r.student_id, r.status, r.teacher_id === null ? null : String(r.teacher_id)]),
+      [[S.S1, "present", null], [S.S2, "present", String(teacher.id)], [S.S8, "absent", String(teacher.id)]],
+      "aucun enseignant fictif ; auteur existant conservé");
+    const auditE = (await pool.query(
+      `SELECT user_id, school_id, entity_id, new_value FROM audit_logs WHERE action = 'student_card_roll_call_direction'`)).rows;
+    assert.equal(auditE.length, 1);
+    assert.equal(String(auditE[0].user_id), USER_DIRECTOR, "auteur réel tracé");
+    assert.equal(String(auditE[0].school_id), String(schoolA.id));
+    assert.equal(auditE[0].entity_id, E.sessionId);
+    assert.equal(auditE[0].new_value.justification, justification);
+    assert.deepEqual(auditE[0].new_value.authorRoleKeys, ["PRINCIPAL"]);
+    assert.equal(auditE[0].new_value.recorded, 1);
+    assert.equal(auditE[0].new_value.alreadyRecorded, 2);
+    // Rejeu idempotent et double soumission.
+    const replayE = await validate(tokenDirector, bodyE);
+    assert.equal(replayE.status, 201);
+    assert.equal(replayE.data.idempotentReplay, true);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'student_card_roll_call_direction'`)).rows[0].n, 1);
+    assert.equal((await validate(tokenDirector, { ...bodyE, receipts: [e1.data.receipt] })).status, 409, "même opération, autre contenu");
+    // Carte devenue invalide entre scan et validation : lot entier refusé.
+    const F = { sessionId: session(), classId: classA1.id, date: "2026-10-18", mode: "direction" };
+    const f8 = await scan(tokenDirector, { ...F, cardToken: cards.S8.cardToken });
+    const f1 = await scan(tokenDirector, { ...F, cardToken: cards.S1.cardToken });
+    assert.equal((await request(`/student-cards/${cards.S8.id}/lost`, { method: "POST", token: tokenAdmin, body: {} })).status, 200);
+    const lostE = await validate(tokenDirector, { ...F, justification, receipts: [f1.data.receipt, f8.data.receipt] });
+    assert.equal(lostE.data?.code, ROLL_CALL_ERROR.CARD_INVALID, JSON.stringify(lostE.data));
+    assert.deepEqual(await attendanceOn(pool, F.date), []);
+
+    // ---------- CARTE-UX-ROLE-01 : supervision de direction ----------
+    const overview = (token, date = E.date, headers = {}) =>
+      request(`/student-cards/roll-call/overview?date=${date}`, { token, headers });
+    // Statut d'inscription historique « active » (seed de démo, données préexistantes) : même
+    // sémantique qu'« ENROLLED » pour l'effectif, comme partout ailleurs (ROSTER_ENROLLMENT_SQL).
+    await pool.query(
+      `UPDATE enrollments SET status = 'active' WHERE school_id = $1 AND class_id = $2 AND student_id = $3`,
+      [schoolA.id, classA1.id, S.S7],
+    );
+    const ov = await overview(tokenDirector);
+    assert.equal(ov.status, 200, JSON.stringify(ov.data));
+    assert.equal(ov.cacheControl, "no-store");
+    assert.equal(ov.data.date, E.date);
+    const ovA1 = ov.data.classes.find((c) => c.classId === classA1.id);
+    assert.deepEqual(
+      { enrolled: ovA1.enrolled, present: ovA1.present, recorded: ovA1.recorded, notRecorded: ovA1.notRecorded, status: ovA1.status },
+      { enrolled: 7, present: 2, recorded: 3, notRecorded: 4, status: "partial" },
+    );
+    assert.equal(ov.data.classes.find((c) => c.classId === classA2.id).status, "not_started");
+    assert.equal(ov.data.classes.some((c) => c.classId === classB1.id), false, "aucune classe d'un autre établissement");
+    const studentLeaks = [...Object.values(S), "RC-S1", "Amina", "Kabila", "Bao", ...Object.values(cards).map((c) => c.cardToken)]
+      .filter((value) => JSON.stringify(ov.data).includes(value));
+    assert.deepEqual(studentLeaks, [], "supervision sans aucune donnée d'élève");
+    assert.equal((await overview(tokenProviseurNoUpdate)).status, 200, "consultation : lecture seule suffit");
+    for (const token of [tokenTeacher, tokenSupervisor, tokenParent]) {
+      assert.equal((await overview(token)).status, 403);
+    }
+    assert.equal((await overview(tokenSuper, E.date, { "X-Somafrik-School-Code": LOGIN_A })).data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
+    const ovB = await overview(tokenAdminB);
+    assert.equal(ovB.status, 200, JSON.stringify(ovB.data));
+    assert.deepEqual(ovB.data.classes.map((c) => c.classId), [classB1.id]);
+    assert.equal((await overview(tokenDirector, "2026-13-40")).data?.code, ROLL_CALL_ERROR.INPUT_INVALID);
+    assert.equal((await overview(tokenStaleDirector)).status, 403, "supervision : rôles relus en base");
+
+    // ---------- Révocation du rôle de direction : effet immédiat, sans attendre l'expiration du jeton ----------
+    await pool.query(
+      `UPDATE user_roles SET status = 'revoked', revoked_at = NOW() WHERE user_id = $1 AND role_key = 'PRINCIPAL'`,
+      [USER_DIRECTOR],
+    );
+    const G = { sessionId: session(), classId: classA1.id, date: "2026-10-19", mode: "direction" };
+    assert.equal((await scan(tokenDirector, { ...G, cardToken: cards.S1.cardToken })).data?.code, ROLL_CALL_ERROR.ROLE_FORBIDDEN,
+      "rôle PRINCIPAL révoqué : appel exceptionnel refusé malgré un jeton encore valide");
+    const g1 = sealReceipt(keys, { ...openReceipt(keys, f1.data.receipt), dt: G.date, ses: G.sessionId, exp: Date.now() + 60_000 });
+    assert.equal((await validate(tokenDirector, { ...G, justification, receipts: [g1] })).data?.code, ROLL_CALL_ERROR.ROLE_FORBIDDEN);
+    assert.equal((await overview(tokenDirector)).status, 403);
+    assert.deepEqual(await attendanceOn(pool, G.date), []);
 
     // ---------- Aucun secret dans l'audit ----------
     const audit = JSON.stringify((await pool.query(`SELECT old_value, new_value FROM audit_logs`)).rows);

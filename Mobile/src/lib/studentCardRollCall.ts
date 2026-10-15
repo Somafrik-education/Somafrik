@@ -3,8 +3,16 @@
  *
  * Le brouillon ne contient que des reçus opaques et des clés de déduplication
  * renvoyés par le serveur : aucune identité d'élève, aucun jeton de carte.
- * Il vit uniquement en mémoire ; rien n'est pointé avant « Valider l'appel ».
+ * Il vit uniquement en mémoire ; rien n'est pointé avant « Enregistrer l'appel ».
+ *
+ * CARTE-UX-ROLE-01 : deux parcours. « teacher » : l'enseignant affecté, à qui la présence est
+ * attribuée par le serveur (le client n'envoie jamais d'identifiant d'enseignant). « direction » :
+ * appel exceptionnel avec justification obligatoire, enregistré au nom de son auteur réel.
  */
+
+export const ROLL_CALL_JUSTIFICATION_MIN = 10;
+export const ROLL_CALL_JUSTIFICATION_MAX = 500;
+export type RollCallMode = "teacher" | "direction";
 
 export const COLLECTIVE_ROLL_CALL_COPY = {
   startNfc: "Appel collectif NFC",
@@ -18,7 +26,7 @@ export const COLLECTIVE_ROLL_CALL_COPY = {
   remaining: (count: number) => `${count} élève(s) non scanné(s)`,
   draft: "Brouillon — rien n'est enregistré avant validation.",
   undoLast: "Annuler le dernier",
-  validate: (count: number) => `Valider l'appel (${count})`,
+  validate: (count: number) => `Enregistrer l'appel (${count})`,
   validating: "Validation en cours…",
   close: "Fermer (garder le brouillon)",
   abandon: "Abandonner l'appel",
@@ -42,14 +50,29 @@ export const COLLECTIVE_ROLL_CALL_COPY = {
     `${count} scan(s) retiré(s) : carte devenue invalide. Vérifiez le compteur puis validez à nouveau.`,
   expired: "Les scans ont expiré : recommencez l'appel.",
   validateFailed: "L'appel n'a pas été enregistré. Réessayez.",
-  emptyDraft: "Scannez au moins une carte avant de valider.",
+  emptyDraft: "Scannez au moins une carte avant d'enregistrer.",
+  startDirectionNfc: "Appel exceptionnel NFC (direction)",
+  startDirectionQr: "Appel exceptionnel QR (direction)",
+  directionTitle: "Appel exceptionnel — direction",
+  directionNotice:
+    "Réservé à un cas exceptionnel (enseignant absent, remplacement). L'appel est enregistré à votre nom, sans être attribué à un enseignant.",
+  justificationLabel: "Justification (obligatoire)",
+  justificationPlaceholder: "Ex. : enseignant absent ce matin, appel réalisé par la direction",
+  justificationHint: (length: number) => `${length} / ${ROLL_CALL_JUSTIFICATION_MAX} caractères — minimum ${ROLL_CALL_JUSTIFICATION_MIN}.`,
+  justificationRequired: `Indiquez une justification de ${ROLL_CALL_JUSTIFICATION_MIN} à ${ROLL_CALL_JUSTIFICATION_MAX} caractères.`,
+  roleForbidden: "Votre rôle ne permet pas ce type d'appel pour cette classe.",
+  validatedDirection: (recorded: number, alreadyRecorded: number) =>
+    `Appel exceptionnel enregistré : ${recorded} présence(s) ajoutée(s)` +
+    (alreadyRecorded > 0 ? `, ${alreadyRecorded} présence(s) déjà enregistrée(s) conservée(s) sans modification.` : "."),
 } as const;
+
 
 export type RollCallContext = {
   scopeKey: string;
   sessionId: string;
   classId: string;
   date: string;
+  mode?: RollCallMode;
 };
 
 export type RollCallEntry = { dedupKey: string; receipt: string };
@@ -68,14 +91,30 @@ export function rollCallScopeKey(input: {
   schoolCode?: string;
   classId?: string;
   date?: string;
+  mode?: RollCallMode;
 }): string {
-  return [input.resourceScopeKey, input.schoolCode, input.classId, input.date]
+  return [input.resourceScopeKey, input.schoolCode, input.classId, input.date, input.mode ?? "teacher"]
     .map((part) => String(part ?? "").trim())
     .join("|");
 }
 
 export function createRollCallDraft(context: RollCallContext): RollCallDraft {
-  return { ...context, entries: [] };
+  return { ...context, mode: context.mode ?? "teacher", entries: [] };
+}
+
+export function normalizeRollCallJustification(value: string | null | undefined): string {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function justificationValid(value: string | null | undefined): boolean {
+  const text = normalizeRollCallJustification(value);
+  return text.length >= ROLL_CALL_JUSTIFICATION_MIN && text.length <= ROLL_CALL_JUSTIFICATION_MAX;
+}
+
+/** « Enregistrer l'appel » : au moins un scan accepté, et une justification valide pour la direction. */
+export function rollCallCanSubmit(draft: RollCallDraft | null, justification?: string | null): boolean {
+  if (!draft || draft.entries.length === 0) return false;
+  return draft.mode !== "direction" || justificationValid(justification);
 }
 
 /** Le compteur suit les élèves distincts : rescanner la même carte ne le fait pas avancer. */
@@ -109,13 +148,15 @@ export function rollCallProgress(draft: RollCallDraft | null, rosterSize: number
   return { count, total, percent, remaining: Math.max(0, total - count) };
 }
 
-export function rollCallValidateBody(draft: RollCallDraft, teacherId?: string) {
+export function rollCallValidateBody(draft: RollCallDraft, justification?: string | null) {
+  const mode: RollCallMode = draft.mode ?? "teacher";
   return {
     sessionId: draft.sessionId,
     classId: draft.classId,
     date: draft.date,
+    mode,
     receipts: draft.entries.map((entry) => entry.receipt),
-    ...(teacherId ? { teacherId } : {}),
+    ...(mode === "direction" ? { justification: normalizeRollCallJustification(justification) } : {}),
   };
 }
 
@@ -130,6 +171,9 @@ export function rollCallScanFailure(error: unknown): { feedback: RollCallFeedbac
   const { status, code } = asApiError(error);
   if (code === "ROLL_CALL_CLASS_MISMATCH") {
     return { feedback: { kind: "refused", message: COLLECTIVE_ROLL_CALL_COPY.refusedClass }, stop: false };
+  }
+  if (code === "ROLL_CALL_ROLE_FORBIDDEN") {
+    return { feedback: { kind: "error", message: COLLECTIVE_ROLL_CALL_COPY.roleForbidden }, stop: true };
   }
   if (code === "ROLL_CALL_CLASS_FORBIDDEN" || status === 401 || status === 403) {
     return { feedback: { kind: "error", message: COLLECTIVE_ROLL_CALL_COPY.forbidden }, stop: true };
@@ -158,24 +202,36 @@ export type RollCallValidationOutcome =
 export async function validateRollCallDraft(
   draft: RollCallDraft,
   deps: {
-    teacherId?: string;
+    justification?: string | null;
     validate: (
       body: ReturnType<typeof rollCallValidateBody>,
       options: { idempotencyKey: string },
-    ) => Promise<{ recorded?: number }>;
+    ) => Promise<{ recorded?: number; alreadyRecorded?: number }>;
   },
 ): Promise<RollCallValidationOutcome> {
   if (draft.entries.length === 0) return { kind: "error", message: COLLECTIVE_ROLL_CALL_COPY.emptyDraft };
+  if (draft.mode === "direction" && !justificationValid(deps.justification)) {
+    return { kind: "error", message: COLLECTIVE_ROLL_CALL_COPY.justificationRequired };
+  }
   try {
     // Identifiant d'opération stable : la session. Un nouvel essai après coupure réseau
     // rejoue la même opération côté serveur, sans doublon.
-    const result = await deps.validate(rollCallValidateBody(draft, deps.teacherId), {
+    const result = await deps.validate(rollCallValidateBody(draft, deps.justification), {
       idempotencyKey: draft.sessionId,
     });
     const recorded = Number(result?.recorded ?? draft.entries.length);
-    return { kind: "validated", recorded, message: COLLECTIVE_ROLL_CALL_COPY.validated(recorded) };
+    const message = draft.mode === "direction"
+      ? COLLECTIVE_ROLL_CALL_COPY.validatedDirection(recorded, Number(result?.alreadyRecorded ?? 0))
+      : COLLECTIVE_ROLL_CALL_COPY.validated(recorded);
+    return { kind: "validated", recorded, message };
   } catch (error) {
     const { code, details } = asApiError(error);
+    if (code === "ROLL_CALL_JUSTIFICATION_REQUIRED") {
+      return { kind: "error", message: COLLECTIVE_ROLL_CALL_COPY.justificationRequired };
+    }
+    if (code === "ROLL_CALL_ROLE_FORBIDDEN") {
+      return { kind: "error", message: COLLECTIVE_ROLL_CALL_COPY.roleForbidden };
+    }
     if (code === "ROLL_CALL_CARD_INVALID") {
       const indexes = (details as { invalidReceiptIndexes?: unknown })?.invalidReceiptIndexes;
       const valid = Array.isArray(indexes) ? indexes.filter((value): value is number => Number.isInteger(value)) : [];

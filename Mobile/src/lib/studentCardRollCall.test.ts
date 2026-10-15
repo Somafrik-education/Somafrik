@@ -62,9 +62,10 @@ test("progression bornée et effectif nul sans division par zéro", () => {
 test("le corps de validation ne contient que des reçus opaques, et l'opération est la session", async () => {
   let draft = createRollCallDraft(context);
   for (const n of [1, 2]) draft = addRollCallScan(draft, scanOf(n)).draft;
-  assert.deepEqual(rollCallValidateBody(draft, "TCH-A"), {
-    sessionId: context.sessionId, classId: "class-1", date: "2026-10-15",
-    receipts: ["rc1.receipt-1", "rc1.receipt-2"], teacherId: "TCH-A",
+  // CARTE-UX-ROLE-01 : aucun identifiant d'enseignant n'est envoyé ; le serveur attribue la présence.
+  assert.deepEqual(rollCallValidateBody(draft), {
+    sessionId: context.sessionId, classId: "class-1", date: "2026-10-15", mode: "teacher",
+    receipts: ["rc1.receipt-1", "rc1.receipt-2"],
   });
   const calls: { body: unknown; key: string }[] = [];
   const outcome = await validateRollCallDraft(draft, {

@@ -13,12 +13,20 @@ export type RollCallScanResponse = {
 
 export type RollCallValidateResponse = {
   recorded: number;
+  alreadyRecorded?: number;
+  mode?: "direction";
   duplicatesIgnored: number;
   classId: string;
   date: string;
 };
 
-export function scanRollCallCard(input: { sessionId: string; classId: string; date: string; cardToken: string }) {
+export function scanRollCallCard(input: {
+  sessionId: string;
+  classId: string;
+  date: string;
+  mode: "teacher" | "direction";
+  cardToken: string;
+}) {
   return httpRequest<RollCallScanResponse>("/student-cards/roll-call/scan", {
     method: "POST",
     body: JSON.stringify(input),
@@ -26,7 +34,14 @@ export function scanRollCallCard(input: { sessionId: string; classId: string; da
 }
 
 export function validateRollCall(
-  body: { sessionId: string; classId: string; date: string; receipts: string[]; teacherId?: string },
+  body: {
+    sessionId: string;
+    classId: string;
+    date: string;
+    mode: "teacher" | "direction";
+    receipts: string[];
+    justification?: string;
+  },
   options: { idempotencyKey: string },
 ) {
   return httpRequest<RollCallValidateResponse>("/student-cards/roll-call/validate", {
@@ -34,4 +49,9 @@ export function validateRollCall(
     body: JSON.stringify(body),
     idempotencyKey: options.idempotencyKey,
   });
+}
+
+/** CARTE-UX-ROLE-01 — supervision de direction : compteurs par classe, aucune donnée d'élève. */
+export function getRollCallOverview(date: string) {
+  return httpRequest<unknown>(`/student-cards/roll-call/overview?date=${encodeURIComponent(date)}`, { method: "GET" });
 }
