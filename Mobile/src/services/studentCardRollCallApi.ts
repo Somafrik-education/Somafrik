@@ -13,7 +13,7 @@ export type RollCallScanResponse = {
 
 export type RollCallValidateResponse = {
   recorded: number;
-  alreadyPresent?: number;
+  alreadyRecorded?: number;
   mode?: "direction";
   duplicatesIgnored: number;
   classId: string;

@@ -19,6 +19,8 @@
  *    Présences:UPDATE), justification obligatoire, auteur réel tracé dans l'audit, aucune
  *    attribution à un enseignant, écriture atomique.
  * Le mode est scellé dans chaque reçu : un reçu d'un parcours n'est jamais accepté par l'autre.
+ * Les clés de rôle sont relues en base pour l'établissement à chaque requête (le JWT n'est
+ * qu'une identité) ; les permissions sont celles revalidées par requirePermission.
  */
 
 const crypto = require("node:crypto");
@@ -157,6 +159,25 @@ function authorizeRollCallActor(principal, mode) {
   }
 }
 
+/**
+ * Rôles actifs relus en base pour l'établissement de la session : le JWT ne sert que d'identité.
+ * Un rôle révoqué ou une clé présente dans le seul jeton ne donne donc aucun parcours.
+ * Fail-closed : sans primitive de lecture des rôles, aucune clé n'est retenue.
+ */
+async function liveRollCallActor(repo, principal, schoolId) {
+  let roleKeys = [];
+  let userId = principalUserId(principal);
+  if (userId && schoolId && typeof repo.listActiveUserRoleKeysForSchool === "function") {
+    if (typeof repo.resolveCanonicalUserIdForSchool === "function") {
+      const canonical = await repo.resolveCanonicalUserIdForSchool(userId, schoolId);
+      if (canonical) userId = String(canonical).trim();
+    }
+    const loaded = await repo.listActiveUserRoleKeysForSchool(userId, schoolId);
+    if (Array.isArray(loaded)) roleKeys = loaded;
+  }
+  return { ...principal, roleKeys, roleKey: undefined };
+}
+
 /** Affectation exigée dès que la clé TEACHER est utilisée, quel que soit le libellé du compte. */
 async function teacherAssignedToClass(repo, principal, classId, schoolId) {
   if (typeof repo.resolveTeacherPgIdForPrincipal !== "function") return null;
@@ -205,7 +226,7 @@ async function scanRollCallDraft(repo, payload, scope, principal, keys, now = Da
   const mode = readMode(payload);
   const userId = principalUserId(principal);
   if (!userId) throw createHttpError(401, "Session invalide.");
-  authorizeRollCallActor(principal, mode);
+  authorizeRollCallActor(await liveRollCallActor(repo, principal, scope.schoolId), mode);
   await assertRollCallEnabled(repo, scope.schoolId);
   await assertRollCallClass(repo, scope, principal, context.classId, mode);
   // Mêmes refus que le pointage individuel : inconnue, remplacée, perdue, révoquée, non encodée.
@@ -306,14 +327,15 @@ async function validateRollCall(repo, payload, scope, principal, keys, auditMeta
   const mode = readMode(payload);
   const userId = principalUserId(principal);
   if (!userId) throw createHttpError(401, "Session invalide.");
-  authorizeRollCallActor(principal, mode);
+  const actor = await liveRollCallActor(repo, principal, scope.schoolId);
+  authorizeRollCallActor(actor, mode);
   const justification = mode === "direction" ? readJustification(payload) : null;
   const { entries, cardEntries, total } = readReceipts(payload, keys, context, scope, userId, now, mode);
   await assertRollCallEnabled(repo, scope.schoolId);
   const target = await assertRollCallClass(repo, scope, principal, context.classId, mode);
   await assertCardsStillValid(repo, scope.schoolId, cardEntries);
   if (mode === "direction") {
-    return writeDirectionRollCall(repo, { scope, principal, userId, context, entries, total, justification, target, auditMeta });
+    return writeDirectionRollCall(repo, { scope, principal, actor, userId, context, entries, total, justification, target, auditMeta });
   }
   // Parcours enseignant : la présence est attribuée à l'enseignant authentifié lui-même ;
   // aucun identifiant d'enseignant envoyé par le client n'est jamais pris en compte.
@@ -342,11 +364,12 @@ async function validateRollCall(repo, payload, scope, principal, keys, auditMeta
 /**
  * Appel exceptionnel de la direction, dans la transaction de withIdempotency : inscription
  * revérifiée pour chaque élève, présence écrite sans enseignant, audit avec l'auteur réel et la
- * justification. Une présence déjà « présent » n'est pas modifiée (son auteur est conservé).
+ * justification. Une présence déjà enregistrée, quel que soit son statut, n'est jamais modifiée :
+ * statut, motif et auteur sont conservés (correction éventuelle par le pointage individuel).
  */
-async function writeDirectionRollCall(repo, { scope, principal, userId, context, entries, total, justification, target, auditMeta }) {
+async function writeDirectionRollCall(repo, { scope, principal, actor, userId, context, entries, total, justification, target, auditMeta }) {
   const attendanceIds = [];
-  let alreadyPresent = 0;
+  let alreadyRecorded = 0;
   for (const entry of entries) {
     const student = await repo.resolveStudentForAttendance(
       { studentId: entry.studentId, classId: context.classId },
@@ -363,14 +386,12 @@ async function writeDirectionRollCall(repo, { scope, principal, userId, context,
     const row = await repo.one(
       `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
        VALUES ($1, $2, $3, NULL, $4::date, 'present', NULL)
-       ON CONFLICT (school_id, student_id, attendance_date)
-       DO UPDATE SET status = 'present', reason = NULL, class_id = EXCLUDED.class_id, teacher_id = NULL, updated_at = NOW()
-       WHERE attendance.status IS DISTINCT FROM 'present'
+       ON CONFLICT (school_id, student_id, attendance_date) DO NOTHING
        RETURNING id`,
       [scope.schoolId, entry.studentId, context.classId, context.date],
     );
     if (row?.id) attendanceIds.push(String(row.id));
-    else alreadyPresent += 1;
+    else alreadyRecorded += 1;
   }
   await repo.recordAudit({
     schoolCode: principal?.presenceLoginCode || principal?.schoolCode,
@@ -383,9 +404,9 @@ async function writeDirectionRollCall(repo, { scope, principal, userId, context,
       classId: context.classId,
       date: context.date,
       justification,
-      authorRoleKeys: [...principalRoleKeys(principal)].sort(),
+      authorRoleKeys: [...principalRoleKeys(actor)].sort(),
       recorded: attendanceIds.length,
-      alreadyPresent,
+      alreadyRecorded,
       attendanceIds,
     },
     ipAddress: auditMeta?.ipAddress,
@@ -396,7 +417,7 @@ async function writeDirectionRollCall(repo, { scope, principal, userId, context,
     body: {
       mode: "direction",
       recorded: attendanceIds.length,
-      alreadyPresent,
+      alreadyRecorded,
       duplicatesIgnored: total - entries.length,
       classId: context.classId,
       date: context.date,
@@ -415,7 +436,7 @@ function readOverviewDate(query) {
 
 /** Supervision de direction : effectifs et état des appels par classe, sans aucune donnée d'élève. */
 async function rollCallOverview(repo, query, scope, principal) {
-  const keys = principalRoleKeys(principal);
+  const keys = principalRoleKeys(await liveRollCallActor(repo, principal, scope.schoolId));
   if (keys.size === 0 || [...keys].some((key) => !isKnownRoleKey(key) || PLATFORM_ROLE_KEYS.has(key))
     || ![...keys].some((key) => DIRECTION_ROLE_KEYS.has(key))) {
     throw roleForbidden("Supervision des appels réservée à la direction.");

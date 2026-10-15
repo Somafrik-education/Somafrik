@@ -61,9 +61,9 @@ export const COLLECTIVE_ROLL_CALL_COPY = {
   justificationHint: (length: number) => `${length} / ${ROLL_CALL_JUSTIFICATION_MAX} caractères — minimum ${ROLL_CALL_JUSTIFICATION_MIN}.`,
   justificationRequired: `Indiquez une justification de ${ROLL_CALL_JUSTIFICATION_MIN} à ${ROLL_CALL_JUSTIFICATION_MAX} caractères.`,
   roleForbidden: "Votre rôle ne permet pas ce type d'appel pour cette classe.",
-  validatedDirection: (recorded: number, alreadyPresent: number) =>
+  validatedDirection: (recorded: number, alreadyRecorded: number) =>
     `Appel exceptionnel enregistré : ${recorded} présence(s) ajoutée(s)` +
-    (alreadyPresent > 0 ? `, ${alreadyPresent} déjà présente(s) conservée(s).` : "."),
+    (alreadyRecorded > 0 ? `, ${alreadyRecorded} présence(s) déjà enregistrée(s) conservée(s) sans modification.` : "."),
 } as const;
 
 
@@ -206,7 +206,7 @@ export async function validateRollCallDraft(
     validate: (
       body: ReturnType<typeof rollCallValidateBody>,
       options: { idempotencyKey: string },
-    ) => Promise<{ recorded?: number; alreadyPresent?: number }>;
+    ) => Promise<{ recorded?: number; alreadyRecorded?: number }>;
   },
 ): Promise<RollCallValidationOutcome> {
   if (draft.entries.length === 0) return { kind: "error", message: COLLECTIVE_ROLL_CALL_COPY.emptyDraft };
@@ -221,7 +221,7 @@ export async function validateRollCallDraft(
     });
     const recorded = Number(result?.recorded ?? draft.entries.length);
     const message = draft.mode === "direction"
-      ? COLLECTIVE_ROLL_CALL_COPY.validatedDirection(recorded, Number(result?.alreadyPresent ?? 0))
+      ? COLLECTIVE_ROLL_CALL_COPY.validatedDirection(recorded, Number(result?.alreadyRecorded ?? 0))
       : COLLECTIVE_ROLL_CALL_COPY.validated(recorded);
     return { kind: "validated", recorded, message };
   } catch (error) {

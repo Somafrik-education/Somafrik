@@ -83,7 +83,7 @@ test("brouillons séparés par parcours et refus de rôle compris", async () => 
     validate: async (body, options) => {
       assert.equal(options.idempotencyKey, SESSION);
       assert.equal((body as { mode?: string }).mode, "direction");
-      return { recorded: 1, alreadyPresent: 1 };
+      return { recorded: 1, alreadyRecorded: 1 };
     },
   });
   assert.deepEqual(ok, { kind: "validated", recorded: 1, message: COLLECTIVE_ROLL_CALL_COPY.validatedDirection(1, 1) });
