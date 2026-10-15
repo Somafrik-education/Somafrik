@@ -8,6 +8,8 @@ const {
   openReceipt,
   dedupKeyFor,
   readContext,
+  readReceipts,
+  assertCardsStillValid,
   assertOperationKey,
   ROLL_CALL_ERROR,
 } = require("./studentCardRollCall");
@@ -73,4 +75,50 @@ test("l'identifiant d'opération stable est la session d'appel", () => {
   for (const key of [undefined, "", SESSION_B, "random"]) {
     assert.throws(() => assertOperationKey(key, SESSION_A), { code: ROLL_CALL_ERROR.OPERATION_KEY_REQUIRED });
   }
+});
+
+const CARD_A = claims.crd;
+const CARD_B = "88888888-8888-4888-8888-888888888888";
+const SCOPE = { schoolId: claims.sch };
+const CONTEXT = { sessionId: SESSION_A, classId: claims.cls, date: claims.dt };
+
+test("revalide chaque carte distincte du même élève avant déduplication, dans les deux ordres", async () => {
+  const valid = sealReceipt(keys, claims);
+  const revoked = sealReceipt(keys, { ...claims, crd: CARD_B });
+  for (const [order, invalidIndex] of [
+    [[valid, revoked], 1],
+    [[revoked, valid], 0],
+  ]) {
+    const parsed = readReceipts({ receipts: order }, keys, CONTEXT, SCOPE, claims.usr, 1_800_000_000_000);
+    assert.equal(parsed.entries.length, 1, "une seule écriture de présence prévue");
+    assert.equal(parsed.cardEntries.length, 2, "les deux cartes doivent être revérifiées");
+    let writes = 0;
+    const repo = {
+      all: async (_query, args) => {
+        assert.equal(args[1].length, 2, "aucune carte ignorée");
+        return [
+          { id: CARD_A, student_id: STUDENT, status: "active", nfc_encoding_state: null },
+          { id: CARD_B, student_id: STUDENT, status: "revoked", nfc_encoding_state: null },
+        ];
+      },
+      upsertSchoolAttendanceBatch: async () => { writes += 1; },
+    };
+    await assert.rejects(assertCardsStillValid(repo, SCOPE.schoolId, parsed.cardEntries), (error) => {
+      assert.equal(error.code, ROLL_CALL_ERROR.CARD_INVALID);
+      assert.deepEqual(error.details.invalidReceiptIndexes, [invalidIndex]);
+      return true;
+    });
+    assert.equal(writes, 0, "aucune présence écrite sur échec de revérification");
+  }
+});
+
+test("deux reçus de la même carte restent un seul contrôle et une seule présence", async () => {
+  const receipts = [sealReceipt(keys, claims), sealReceipt(keys, claims)];
+  const parsed = readReceipts({ receipts }, keys, CONTEXT, SCOPE, claims.usr, 1_800_000_000_000);
+  assert.equal(parsed.entries.length, 1);
+  assert.equal(parsed.cardEntries.length, 1);
+  assert.deepEqual(parsed.cardEntries[0].indexes, [0, 1]);
+  await assertCardsStillValid({ all: async () => [{
+    id: CARD_A, student_id: STUDENT, status: "active", nfc_encoding_state: null,
+  }] }, SCOPE.schoolId, parsed.cardEntries);
 });
