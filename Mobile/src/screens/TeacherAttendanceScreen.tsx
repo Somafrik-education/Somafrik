@@ -9,6 +9,13 @@ import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { canManagePresences, canReadFeeGrids, canReadRoute } from "../domain/security/permissions";
 import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
 import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal";
+import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
+import {
+  COLLECTIVE_ROLL_CALL_COPY,
+  rollCallScopeKey,
+  type RollCallDraft,
+} from "../lib/studentCardRollCall";
+import { startRollCallSession } from "../lib/studentCardRollCallSession";
 import { getStudentCardCapabilities } from "../services/studentCardScanApi";
 import {
   STUDENT_CARD_SCAN_COPY,
@@ -174,6 +181,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [capabilitiesReload, setCapabilitiesReload] = useState(0);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [nfcScannerOpen, setNfcScannerOpen] = useState(false);
+  // CARTE-PR1 : brouillons d'appel collectif en mémoire seulement, un par établissement / classe / date.
+  const [rollCallDrafts, setRollCallDrafts] = useState<Record<string, { draft: RollCallDraft; source: "nfc" | "qr" }>>({});
+  const [rollCallOpen, setRollCallOpen] = useState(false);
   const capabilitiesScopeKey = [
     resourceScopeKey,
     String(session?.user?.id ?? ""),
@@ -398,6 +408,48 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     platformOs: Platform.OS,
   });
   const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
+  const rollCallSchoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "");
+  const rollCallKey = selectedClass
+    ? rollCallScopeKey({
+        resourceScopeKey,
+        schoolCode: rollCallSchoolCode,
+        classId: selectedClass.classId,
+        date: isoAttendanceDate(),
+      })
+    : "";
+  const rollCall = rollCallKey ? rollCallDrafts[rollCallKey] : undefined;
+  const rollCallTeacherId = scanAuthorReady.ok ? scanAuthorReady.teacherId : undefined;
+  const setRollCallDraft = (key: string, next: { draft: RollCallDraft; source: "nfc" | "qr" } | null) => {
+    setRollCallDrafts((current) => {
+      const copy = { ...current };
+      if (next) copy[key] = next;
+      else delete copy[key];
+      return copy;
+    });
+  };
+  const openRollCall = (source: "nfc" | "qr") => {
+    if (!selectedClass?.classId || !rollCallKey) return;
+    if (!scanAuthorReady.ok) {
+      Alert.alert(
+        source === "nfc" ? COLLECTIVE_ROLL_CALL_COPY.startNfc : COLLECTIVE_ROLL_CALL_COPY.startQr,
+        authorDecision.status === "blocked" ? authorDecision.message : ATTENDANCE_AUTHOR_COPY.needSelection,
+      );
+      return;
+    }
+    if (!rollCallDrafts[rollCallKey]) {
+      setRollCallDraft(rollCallKey, {
+        source,
+        draft: startRollCallSession({
+          scopeKey: rollCallKey,
+          classId: String(selectedClass.classId),
+          date: isoAttendanceDate(),
+        }),
+      });
+    }
+    setScannerOpen(false);
+    setNfcScannerOpen(false);
+    setRollCallOpen(true);
+  };
   const canReadScanFinance = canReadFeeGrids(session) && isStudentCardScanFinanceEnabled(visibleCardSettings);
   const canReadNfcScanFinance = canReadFeeGrids(session) && isStudentCardNfcFinanceEnabled(visibleCardSettings);
 
@@ -953,6 +1005,50 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 <Text style={styles.scanButtonText}>{STUDENT_CARD_SCAN_COPY.button}</Text>
               </TouchableOpacity>
             ) : null}
+            {rollCall ? (
+              <TouchableOpacity
+                testID="attendance-roll-call-resume"
+                style={styles.scanButton}
+                onPress={() => openRollCall(rollCall.source)}
+                disabled={actionsLocked}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: actionsLocked }}
+              >
+                <Ionicons name="people-outline" size={18} color="#0F172A" />
+                <Text style={styles.scanButtonText}>
+                  {COLLECTIVE_ROLL_CALL_COPY.resume} ({rollCall.draft.entries.length})
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <>
+                {nfcControl === "ready" ? (
+                  <TouchableOpacity
+                    testID="attendance-roll-call-nfc"
+                    style={styles.scanButton}
+                    onPress={() => openRollCall("nfc")}
+                    disabled={actionsLocked}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: actionsLocked }}
+                  >
+                    <Ionicons name="people-outline" size={18} color="#0F172A" />
+                    <Text style={styles.scanButtonText}>{COLLECTIVE_ROLL_CALL_COPY.startNfc}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {canOpenQrScanner ? (
+                  <TouchableOpacity
+                    testID="attendance-roll-call-qr"
+                    style={styles.scanButton}
+                    onPress={() => openRollCall("qr")}
+                    disabled={actionsLocked}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: actionsLocked }}
+                  >
+                    <Ionicons name="people-outline" size={18} color="#0F172A" />
+                    <Text style={styles.scanButtonText}>{COLLECTIVE_ROLL_CALL_COPY.startQr}</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </>
+            )}
             {outboxUnavailable ? (
               <Text testID="attendance-outbox-unavailable" style={styles.unavailable}>
                 {ROLL_CALL_COPY.outboxUnavailable} — {ROLL_CALL_COPY.outboxUnavailableBody}
@@ -1102,6 +1198,34 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         financeEnabled={canReadScanFinance}
         onClose={() => setScannerOpen(false)}
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    {selectedClass && rollCall ? (
+      <StudentCardRollCallModal
+        visible={rollCallOpen}
+        source={rollCall.source}
+        draft={rollCall.draft}
+        className={String(selectedClass.className ?? selectedClass.classCode ?? "")}
+        rosterSize={selectedRows.length}
+        teacherId={rollCallTeacherId}
+        onDraftChange={(draft) => setRollCallDraft(rollCall.draft.scopeKey, { source: rollCall.source, draft })}
+        onClose={() => setRollCallOpen(false)}
+        onAbandon={() => {
+          setRollCallOpen(false);
+          setRollCallDraft(rollCall.draft.scopeKey, null);
+        }}
+        onExpired={() =>
+          setRollCallDraft(rollCall.draft.scopeKey, {
+            source: rollCall.source,
+            draft: startRollCallSession(rollCall.draft),
+          })
+        }
+        onValidated={(recorded) => {
+          setRollCallOpen(false);
+          setRollCallDraft(rollCall.draft.scopeKey, null);
+          setSaveHint(COLLECTIVE_ROLL_CALL_COPY.validated(recorded));
+          void loadPresences();
+        }}
       />
     ) : null}
     {selectedClass && nfcControl === "ready" ? (

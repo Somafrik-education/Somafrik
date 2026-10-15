@@ -99,6 +99,8 @@ const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "POST /api/student-cards/:id/replace",
   "GET /api/student-cards/capabilities",
   "POST /api/student-cards/scan",
+  "POST /api/student-cards/roll-call/scan",
+  "POST /api/student-cards/roll-call/validate",
   "GET /api/students/:studentId/enrollments",
   "POST /api/students/:studentId/enrollments/:enrollmentId/validate",
   "POST /api/students/:studentId/enrollments/:enrollmentId/assign-class",
