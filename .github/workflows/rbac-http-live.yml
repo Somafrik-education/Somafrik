@@ -1,0 +1,95 @@
+name: RBAC HTTP live
+
+# RBAC-HTTP-MAINT-01 — exécute les vérifications HTTP RBAC contre une API réellement démarrée
+# (PostgreSQL éphémère, seed de démo fictif). SOMAFRIK_HTTP_REQUIRED=true : une API absente
+# fait échouer le job au lieu de sauter la partie HTTP. Aucun secret ni service partagé.
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "backend/**"
+      - "scripts/e2e-api-helpers.js"
+      - "package.json"
+      - ".github/workflows/rbac-http-live.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rbac-http-live-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rbac-http-live:
+    name: RBAC HTTP live API
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rbac_http_live
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/rbac_http_live
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+      SOMAFRIK_DB_REQUIRED: "true"
+      SOMAFRIK_API_ONLY: "true"
+      PORT: "5055"
+      SOMAFRIK_API_URL: http://127.0.0.1:5055/api
+      SOMAFRIK_HTTP_REQUIRED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix backend
+      - name: Start test API (demo seed, disposable PostgreSQL)
+        run: |
+          node backend/server.js > "$RUNNER_TEMP/api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/api.pid"
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:5055/api/health > /dev/null; then
+              echo "API up after ${i} attempt(s)"
+              exit 0
+            fi
+            if ! kill -0 "$(cat "$RUNNER_TEMP/api.pid")" 2>/dev/null; then
+              echo "API exited before becoming healthy"
+              tail -n 80 "$RUNNER_TEMP/api.log"
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "API not healthy after 120 s"
+          tail -n 80 "$RUNNER_TEMP/api.log"
+          exit 1
+      - name: verify-rbac-s1-4 (live)
+        run: node backend/scripts/verify-rbac-s1-4.js
+      - name: verify-sanitize-user-responses (live)
+        run: node backend/scripts/verify-sanitize-user-responses.js
+      - name: verify-rbac-admin-01 (live)
+        run: node backend/scripts/verify-rbac-admin-01.js
+      - name: API log on failure
+        if: failure()
+        run: tail -n 120 "$RUNNER_TEMP/api.log" || true
+      - name: Stop test API
+        if: always()
+        run: kill "$(cat "$RUNNER_TEMP/api.pid")" 2>/dev/null || true
