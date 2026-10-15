@@ -83,6 +83,7 @@ export function nfcErrorCopy(error: unknown): string {
     NFC_READBACK: "Vérification de l’encodage échouée. Aucune activation confirmée.",
     NFC_REWRITE_REQUIRED: "Relisez d’abord la carte. Une réécriture nécessite votre confirmation explicite.",
     NFC_PENDING: "Une réservation existe déjà. Reprenez cette opération.",
+    NFC_TAG_LOST: "Carte retirée pendant l’opération. Reprenez l’opération et maintenez la carte contre le téléphone jusqu’à la confirmation.",
     NFC_REPLACE_REQUIRED: "Une carte active existe. Confirmez explicitement son remplacement.",
     NFC_SESSION_BUSY: "Une lecture ou une programmation NFC est déjà en cours. Terminez-la avant de réessayer.",
     NFC_SESSION_CANCELLED: "Session NFC interrompue. Reprenez l’opération existante.",
@@ -201,10 +202,9 @@ export function createIndividualNfcFlow(input: {
       // #912 requires UID/model before reservation; preflight also refuses foreign NDEF.
       control.phase("waiting");
       const identity = await checked(control, () => input.hardware.inspect());
-      try {
-        await checked(control, () => input.hardware.openNdef(identity.uid));
-        if (await checked(control, () => input.hardware.readText()) || await checked(control, () => input.hardware.isReadOnly())) throw nfcFailure("NFC_FOREIGN");
-      } finally { await input.hardware.close(); }
+      // One tap: the chip stays held through the reservation and the write; run() releases it on failure.
+      await checked(control, () => input.hardware.openNdef(identity.uid));
+      if (await checked(control, () => input.hardware.readText()) || await checked(control, () => input.hardware.isReadOnly())) throw nfcFailure("NFC_FOREIGN");
       control.check(); attempt = { operationId: input.uuid(), identity, previous };
       return reserve();
     }); },
@@ -231,11 +231,9 @@ export function createIndividualNfcFlow(input: {
       control.phase("waiting");
       const observed = await checked(control, () => input.hardware.inspect());
       if (observed.uid !== identity.uid || observed.tagType !== identity.tagType) throw nfcFailure("NFC_FOREIGN");
-      try {
-        await checked(control, () => input.hardware.openNdef(identity.uid));
-        const previous = await checked(control, () => input.hardware.readText());
-        if ((previous && cardTokenFromNdef(previous).split(".")[0] !== current.publicId) || await checked(control, () => input.hardware.isReadOnly())) throw nfcFailure("NFC_FOREIGN");
-      } finally { await input.hardware.close(); }
+      await checked(control, () => input.hardware.openNdef(identity.uid));
+      const previous = await checked(control, () => input.hardware.readText());
+      if ((previous && cardTokenFromNdef(previous).split(".")[0] !== current.publicId) || await checked(control, () => input.hardware.isReadOnly())) throw nfcFailure("NFC_FOREIGN");
       control.phase("reservation");
       // Explicit user intent creates a retry UUID. A lost retry response leads back
       // to read/confirm; another rotation requires another explicit confirmation.
