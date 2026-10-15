@@ -279,3 +279,38 @@ test("NFC-RECETTE-05 timeout cancels native discovery and frees the hardware for
   const next = manager.acquire();
   await next.close();
 });
+
+test("NFC-RECETTE-05 timeout returns control even if native discovery never settles after cancel; hardware stays quarantined, then recovers", async () => {
+  let cancels = 0;
+  let hung = deferred<void>(); // ne se résout pas après cancelTechnologyRequest
+  const manager = createNfcSessionManager({ start: async () => {}, cancel: async () => { cancels++; } });
+  let lease: ReturnType<typeof manager.acquire> | null = null;
+  const current = () => (lease ??= manager.acquire());
+  const hardware = {
+    start: () => current().start(),
+    isSupported: async () => true,
+    isEnabled: () => current().run(async () => true),
+    requestTag: () => current().request(() => hung.promise),
+    getTag: () => current().run(async () => null),
+    async cancel() { const owned = lease; if (!owned) return; await owned.close(); if (lease === owned) lease = null; },
+  };
+  const bounded = <T,>(work: Promise<T>, label: string) => Promise.race([
+    work,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${label} still pending: reader blocked`)), 500)),
+  ]);
+
+  assert.deepEqual(await bounded(scanNfcCardToken(hardware, { timeoutMs: 20 }), "first scan"), { ok: false, reason: "timeout" });
+  assert.equal(cancels, 1, "cancelTechnologyRequest requested once");
+  // Fail closed: a native call still in flight keeps ownership; no second discovery is started.
+  assert.throws(() => manager.acquire(), { code: "NFC_SESSION_BUSY" });
+  const retry = await bounded(scanNfcCardToken(hardware, { timeoutMs: 20 }), "retry while quarantined");
+  assert.equal(retry.ok, false);
+  assert.equal(cancels, 1, "no new native request while quarantined");
+
+  // Native finally settles (late rejection): the hardware is released and the next reader works.
+  hung.reject(new Error("cancelled"));
+  hung = deferred<void>();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const next = manager.acquire();
+  await next.close();
+});

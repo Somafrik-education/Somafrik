@@ -94,7 +94,7 @@ function ndefTag(token: string) {
   };
 }
 
-function fakeHardware() {
+function fakeHardware(options: { hangOnCancel?: boolean } = {}) {
   let discovery: Deferred<void> | null = null;
   let tag: unknown = null;
   const counts = { requestTag: 0, cancel: 0 };
@@ -115,6 +115,7 @@ function fakeHardware() {
         counts.cancel += 1;
         const pending = discovery;
         discovery = null;
+        if (options.hangOnCancel) return; // pont natif défaillant : requestTechnology ne se termine jamais
         pending?.reject(Object.assign(new Error("cancelled"), { code: "NFC_SESSION_CANCELLED" }));
       },
     },
@@ -152,8 +153,7 @@ async function waitUntil(predicate: () => boolean, label: string) {
   assert.fail(`condition jamais atteinte : ${label}`);
 }
 
-function mount(overrides: Record<string, unknown> = {}) {
-  const device = fakeHardware();
+function mount(overrides: Record<string, unknown> = {}, device = fakeHardware()) {
   const recorded: unknown[] = [];
   let closes = 0;
   const base: Record<string, unknown> = {
@@ -313,6 +313,19 @@ test("RC-2 : l'attente NFC expire, annule la session matérielle et autorise Ré
   assert.equal(view.device.counts.requestTag, 2);
   await act(async () => { view.device.present(ndefTag(TOKEN_A)); });
   await waitUntil(() => pending("resolve").length === 1, "résolution après réessai");
+  view.unmount();
+});
+
+test("RC-2 : si le natif reste pendant après annulation, l'écran rend quand même la main", async () => {
+  const device = fakeHardware({ hangOnCancel: true });
+  const view = mount({ nfcTimeoutMs: 40 }, device);
+  await waitUntil(() => device.waiting, "session NFC ouverte");
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 80)); });
+  await flush();
+  assert.ok(device.counts.cancel >= 1, "annulation native demandée");
+  assert.match(view.error(), /Aucune carte détectée/);
+  assert.doesNotMatch(view.status(), /Identification en cours/);
+  assert.equal(view.retry().props.disabled, false, "Réessayer reste disponible");
   view.unmount();
 });
 
