@@ -24,6 +24,7 @@
  */
 
 const crypto = require("node:crypto");
+const { ROSTER_ENROLLMENT_SQL } = require("./studentEnrollmentC18");
 const { createHttpError } = require("./classesManagement");
 const { scanStudentCard, assertStudentCardMasterEnabled } = require("./studentAccessCardsManagement");
 const { assertStudentCardAttendanceEnabled } = require("./studentCardAttendance");
@@ -445,7 +446,7 @@ async function rollCallOverview(repo, query, scope, principal) {
   const rows = await repo.all(
     `SELECT c.id, c.class_code, c.name,
             (SELECT count(*)::int FROM enrollments e
-              WHERE e.school_id = c.school_id AND e.class_id = c.id AND upper(coalesce(e.status, '')) = 'ENROLLED') AS enrolled,
+              WHERE e.school_id = c.school_id AND e.class_id = c.id AND ${ROSTER_ENROLLMENT_SQL}) AS enrolled,
             count(a.id) FILTER (WHERE a.status = 'present')::int AS present,
             count(a.id) FILTER (WHERE a.status = 'absent')::int AS absent,
             count(a.id) FILTER (WHERE a.status = 'late')::int AS late,

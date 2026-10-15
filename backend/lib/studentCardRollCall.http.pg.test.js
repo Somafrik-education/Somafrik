@@ -702,6 +702,12 @@ async function main() {
     // ---------- CARTE-UX-ROLE-01 : supervision de direction ----------
     const overview = (token, date = E.date, headers = {}) =>
       request(`/student-cards/roll-call/overview?date=${date}`, { token, headers });
+    // Statut d'inscription historique « active » (seed de démo, données préexistantes) : même
+    // sémantique qu'« ENROLLED » pour l'effectif, comme partout ailleurs (ROSTER_ENROLLMENT_SQL).
+    await pool.query(
+      `UPDATE enrollments SET status = 'active' WHERE school_id = $1 AND class_id = $2 AND student_id = $3`,
+      [schoolA.id, classA1.id, S.S7],
+    );
     const ov = await overview(tokenDirector);
     assert.equal(ov.status, 200, JSON.stringify(ov.data));
     assert.equal(ov.cacheControl, "no-store");
