@@ -178,6 +178,7 @@ test("native reader and encoder share a lease and fail closed on isEnabled error
       writeNdefMessage: async (bytes: number[]) => { writes++; encoded = bytes; },
     },
     start: async () => {}, isSupported: async () => true,
+    registerTagEvent: async () => {}, unregisterTagEvent: async () => {},
     isEnabled: async () => { if (enabledFails) throw new Error("native enabled check failed"); return true; },
     requestTechnology: async (..._args: unknown[]) => { requests++; return discovery.promise; },
     cancelTechnologyRequest: async () => { cancels++; discovery.reject(new Error("cancelled")); },

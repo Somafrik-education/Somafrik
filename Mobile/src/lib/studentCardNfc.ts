@@ -60,7 +60,10 @@ export type NfcHardware = {
   isEnabled(): Promise<boolean>;
   requestTag(): Promise<void>;
   getTag(): Promise<{ ndefMessage?: unknown; id?: unknown; techTypes?: unknown } | null>;
+  /** Annule la lecture en cours ; le Reader Mode du scanner reste actif. */
   cancel(): Promise<void>;
+  /** Fermeture du scanner : annule la lecture puis rend le Reader Mode à Android. */
+  end?(): Promise<void>;
 };
 
 export type NfcTagLike = {
@@ -257,6 +260,16 @@ export async function releaseNfcSession(hardware: NfcHardware): Promise<void> {
     await hardware.cancel();
   } catch {
     // already closed
+  }
+}
+
+/** Fermeture, changement de périmètre ou arrière-plan : libération complète du matériel. */
+export async function endNfcReader(hardware: NfcHardware): Promise<void> {
+  await releaseNfcSession(hardware);
+  try {
+    await hardware.end?.();
+  } catch {
+    // already released
   }
 }
 

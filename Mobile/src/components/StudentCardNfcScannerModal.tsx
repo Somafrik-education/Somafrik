@@ -29,7 +29,7 @@ import {
   STUDENT_CARD_NFC_COPY,
   decideNfcScannerForeground,
   decideNfcScannerRead,
-  releaseNfcSession,
+  endNfcReader,
   scanNfcCardToken,
   shouldShowNfcQrFallback,
   type NfcHardware,
@@ -138,7 +138,7 @@ export default function StudentCardNfcScannerModal({
     setScanning(false);
     setBusy(false);
     releaseCardToken(tokenRef.current);
-    await releaseNfcSession(hardwareRef.current);
+    await endNfcReader(hardwareRef.current);
   }, []);
 
   useEffect(() => {
@@ -152,7 +152,7 @@ export default function StudentCardNfcScannerModal({
         busyOwnerRef.current += 1;
         setScanning(false);
         setBusy(false);
-        void releaseNfcSession(hardwareRef.current);
+        void endNfcReader(hardwareRef.current);
       }
       if (decision.releaseToken) releaseCardToken(tokenRef.current);
       if (decision.clearResult) setResult(null);
@@ -161,7 +161,7 @@ export default function StudentCardNfcScannerModal({
       generationRef.current += 1;
       sub.remove();
       releaseCardToken(tokenRef.current);
-      void releaseNfcSession(hardwareRef.current);
+      void endNfcReader(hardwareRef.current);
     };
   }, []);
 

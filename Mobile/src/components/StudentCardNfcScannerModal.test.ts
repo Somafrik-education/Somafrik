@@ -97,7 +97,7 @@ function ndefTag(token: string) {
 function fakeHardware(options: { hangOnCancel?: boolean } = {}) {
   let discovery: Deferred<void> | null = null;
   let tag: unknown = null;
-  const counts = { requestTag: 0, cancel: 0 };
+  const counts = { requestTag: 0, cancel: 0, end: 0 };
   return {
     counts,
     get waiting() { return discovery !== null; },
@@ -111,6 +111,7 @@ function fakeHardware(options: { hangOnCancel?: boolean } = {}) {
         return discovery.promise;
       },
       async getTag() { return tag; },
+      async end() { counts.end += 1; },
       async cancel() {
         counts.cancel += 1;
         const pending = discovery;
@@ -251,6 +252,8 @@ test("fermeture pendant l'identification : annulation, aucun pointage, aucun ré
   await waitUntil(() => pending("resolve").length === 1, "résolution envoyée");
   view.press("student-card-nfc-close");
   assert.equal(view.closes, 1);
+  await flush();
+  assert.ok(view.device.counts.end >= 1, "fermeture : Reader Mode rendu à Android");
   view.rerender({ visible: false });
   await act(async () => { pending("resolve")[0].gate.resolve(resolved(TOKEN_A)); });
   await flush();
@@ -289,6 +292,8 @@ test("changement de classe pendant l'identification : résultat ignoré et lecte
   await waitUntil(() => pending("resolve").length === 1, "résolution envoyée");
   view.rerender({ selectedClass: { classId: "class-2", classCode: "CL-2" } });
   assert.equal(view.closes, 1, "le changement de périmètre ferme le lecteur");
+  await flush();
+  assert.ok(view.device.counts.end >= 1, "changement de périmètre : Reader Mode rendu à Android");
   await act(async () => { pending("resolve")[0].gate.resolve(resolved(TOKEN_A)); });
   await flush();
   assert.equal(pending("record").length, 0);
@@ -350,7 +355,10 @@ test("lectures successives : un seul pointage par lecture, clés d'idempotence d
   const keys = pending("record").map((call) => call.idempotencyKey);
   assert.equal(new Set(keys).size, 2);
   assert.equal(view.device.counts.requestTag, 3);
+  assert.equal(view.device.counts.end, 0, "le Reader Mode reste tenu entre deux lectures");
   view.unmount();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.ok(view.device.counts.end >= 1, "démontage : Reader Mode rendu à Android");
 });
 
 test("passage en arrière-plan : session NFC annulée, Réessayer disponible au retour", async () => {
@@ -359,6 +367,7 @@ test("passage en arrière-plan : session NFC annulée, Réessayer disponible au 
   act(() => { for (const listener of appStateListeners) listener("background"); });
   await flush();
   assert.equal(view.device.waiting, false);
+  assert.ok(view.device.counts.end >= 1, "arrière-plan : Reader Mode rendu à Android");
   act(() => { for (const listener of appStateListeners) listener("active"); });
   await flush();
   assert.equal(view.retry().props.disabled, false);
