@@ -2,6 +2,8 @@
  * S1.3 — Vérifie la sanitization centralisée des réponses utilisateur.
  * 1) Tests unitaires du sanitizer
  * 2) Tests HTTP contre une API locale (SOMAFRIK_API_URL) si joignable
+ *    (obligatoires avec SOMAFRIK_HTTP_REQUIRED=true). RBAC-HTTP-MAINT-01 : la lecture globale
+ *    /api/backoffice/state est supprimée (410) ; les réponses contrôlées sont celles des API métier.
  *
  * Usage:
  *   node backend/scripts/verify-sanitize-user-responses.js
@@ -9,6 +11,8 @@
  */
 const assert = require("assert");
 const path = require("path");
+const { assertBackOfficeStateReadRemoved } = require("../lib/backofficeStatePutExpectation");
+const { probeLiveApi } = require("./liveApiProbe");
 const { superadminLoginPassword, applySuperadminSeedSecrets } = require("../lib/superadminSeedSecret");
 
 const {
@@ -175,21 +179,7 @@ function runUnitTests() {
 
 async function runHttpTestsIfAvailable() {
   const base = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
-  let health;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2000);
-    health = await fetch(`${base.replace(/\/api\/?$/, "")}/api/health`, {
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
-  } catch {
-    console.log("SKIP http: API non joignable (lancez le backend pour la vérif HTTP)");
-    return;
-  }
-  if (!health.ok) {
-    console.log("SKIP http: /api/health non OK");
-    return;
-  }
+  if (!(await probeLiveApi(base, "verify-sanitize-user-responses"))) return;
 
   const helpersPath = path.join(__dirname, "..", "..", "scripts", "e2e-api-helpers.js");
   const { request, loginFull, extractApiList } = require(helpersPath);
@@ -212,8 +202,10 @@ async function runHttpTestsIfAvailable() {
   );
 
   const token = login.accessToken;
+  // Lecture globale supprimée (LOT 8) : plus aucune réponse d'état à contrôler, refus 410 stable.
+  assertBackOfficeStateReadRemoved(await request("/backoffice/state", { token }), "GET state Super Admin");
+
   const endpoints = [
-    { path: "/backoffice/state", pick: (body) => body },
     { path: "/users", pick: (body) => extractApiList({ body }) },
     { path: "/students", pick: (body) => extractApiList({ body }) },
     { path: "/teachers", pick: (body) => extractApiList({ body }) },
@@ -221,15 +213,24 @@ async function runHttpTestsIfAvailable() {
     { path: "/mvp/dashboard", pick: (body) => body },
   ];
 
-  for (const endpoint of endpoints) {
-    const res = await request(endpoint.path, { token });
-    if (res.status === 403 || res.status === 404) {
-      console.log(`SKIP http ${endpoint.path}: status ${res.status}`);
-      continue;
+  // Le Super Admin est exclu des données personnelles d'établissement : les listes sont
+  // aussi contrôlées avec un Admin School, pour couvrir des réponses réellement peuplées.
+  const schoolAdmin = await loginFull("admin", "1234", "CD-2026-0001");
+  assert.ok(schoolAdmin?.accessToken, "login Admin School attendu");
+  let checked = 0;
+  for (const [label, sessionToken] of [["Super Admin", token], ["Admin School", schoolAdmin.accessToken]]) {
+    for (const endpoint of endpoints) {
+      const res = await request(endpoint.path, { token: sessionToken });
+      if (res.status === 403 || res.status === 404) {
+        console.log(`SKIP http ${label} ${endpoint.path}: status ${res.status}`);
+        continue;
+      }
+      assert.strictEqual(res.status, 200, `${label} ${endpoint.path} status`);
+      assertNoSensitiveFields(endpoint.pick(res.body ?? res.data), `HTTP ${label} ${endpoint.path}`);
+      checked += 1;
     }
-    assert.strictEqual(res.status, 200, `${endpoint.path} status`);
-    assertNoSensitiveFields(endpoint.pick(res.body ?? res.data), `HTTP ${endpoint.path}`);
   }
+  assert.ok(checked >= endpoints.length, `au moins ${endpoints.length} réponses métier contrôlées (reçu ${checked})`);
 
   const schools = extractApiList(await request("/backoffice/establishments", { token }));
   const schoolCode = schools[0]?.code;

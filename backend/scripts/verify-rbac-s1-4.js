@@ -1,5 +1,7 @@
 /**
- * S1.4 — Tests RBAC : PUT /api/backoffice/state + routes MVP.
+ * S1.4 — Tests RBAC : BackOffice State supprimé (410) + routes MVP.
+ * RBAC-HTTP-MAINT-01 : GET/PUT /api/backoffice/state sont supprimés (LOT 8) ; la partie
+ * HTTP vérifie désormais leurs refus 410 pour chaque rôle et l'isolation via les API métier.
  *
  * Usage:
  *   node backend/scripts/verify-rbac-s1-4.js
@@ -25,7 +27,11 @@ const {
   scopeMvpDatasetForPrincipal,
 } = require("../lib/mvpAccess");
 const { TenantScopeService } = require("../services/tenantScopeService");
-const { assertBackOfficeStateWriteRemoved } = require("../lib/backofficeStatePutExpectation");
+const {
+  assertBackOfficeStateWriteRemoved,
+  assertBackOfficeStateReadRemoved,
+} = require("../lib/backofficeStatePutExpectation");
+const { probeLiveApi } = require("./liveApiProbe");
 
 function runMatrixUnitTests() {
   const admin = { role: "Admin School", schoolCode: "CD-2026-0001" };
@@ -177,23 +183,9 @@ function runMatrixUnitTests() {
 
 async function runHttpTestsIfAvailable() {
   const base = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
-  let healthy = false;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2000);
-    const health = await fetch(`${base.replace(/\/api\/?$/, "")}/api/health`, {
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timer));
-    healthy = health.ok;
-  } catch {
-    healthy = false;
-  }
-  if (!healthy) {
-    console.log("SKIP http: API non joignable");
-    return;
-  }
+  if (!(await probeLiveApi(base, "verify-rbac-s1-4"))) return;
 
-  const { request, loginFull } = require(path.join(__dirname, "..", "..", "scripts", "e2e-api-helpers.js"));
+  const { request, loginFull, extractApiList } = require(path.join(__dirname, "..", "..", "scripts", "e2e-api-helpers.js"));
   const STRONG_PASSWORD = "SomaTest1";
 
   async function login(identifier, password, schoolCode) {
@@ -257,24 +249,24 @@ async function runHttpTestsIfAvailable() {
     parentToken = changeParent.data.accessToken;
   }
 
-  // Provision Comptable via Admin School PUT (domaine autorisé)
-  const stateRes = await request("/backoffice/state", { token: schoolAdmin.accessToken });
-  assert.strictEqual(stateRes.status, 200);
-  const state = stateRes.data;
+  // Lecture globale supprimée (LOT 8) : 410 pour tous les rôles, plateforme comprise.
+  for (const [label, token] of [
+    ["Admin School", schoolAdmin.accessToken],
+    ["Secrétaire", secretary.accessToken],
+    ["Super Admin", superadmin.accessToken],
+  ]) {
+    assertBackOfficeStateReadRemoved(await request("/backoffice/state", { token }), `GET state ${label}`);
+  }
+
+  // Provision Comptable via les API Comptes utilisateurs (domaine autorisé à Admin School).
   const comptableUser = {
-    id: "USER-COMPTABLE-S14",
-    publicId: "USR-COMPTABLE-S14",
     firstName: "Compte",
     lastName: "Able",
     role: "Comptable",
-    schoolCode: "CD-2026-0001",
-    identifier: "comptable-s14",
-    email: "comptable-s14@somafrik.app",
+    // Adresse unique par exécution : le script reste rejouable sur la même base.
+    email: `comptable-s14-${Date.now().toString(36)}@somafrik.app`,
     status: "Actif",
-    accessChannel: "Application",
     temporaryPassword: "Soma1234",
-    mustChangePassword: false,
-    permissions: ["Gérer paiements", "Voir rapports financiers", "Paiements:CREATE", "Paiements:UPDATE"],
   };
   const createComptable = await request("/backoffice/users", {
     method: "POST",
@@ -297,76 +289,8 @@ async function runHttpTestsIfAvailable() {
 
   const accountant = await login(comptableUser.email, "Soma1234", "CD-2026-0001");
 
-  // A1/A2 — LOT 2 : toute présence de students est refusée avant la matrice RBAC.
-  for (const [label, token] of [
-    ["Admin School", schoolAdmin.accessToken],
-    ["Secrétaire", secretary.accessToken],
-  ]) {
-    const legacyStudentsPut = await request("/backoffice/state", {
-      method: "PUT",
-      token,
-      body: {
-        students: state.students ?? [],
-      },
-    });
-    assert.strictEqual(legacyStudentsPut.status, 400, `${label} students legacy doit être 400`);
-    assert.strictEqual(
-      legacyStudentsPut.data?.code,
-      "LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN",
-      `${label} students legacy code stable`,
-    );
-  }
-
-  // A3 — Secrétaire : notes via PUT state fail-closed (LOT 5)
-  const secForbidden = await request("/backoffice/state", {
-    method: "PUT",
-    token: secretary.accessToken,
-    body: {
-      notes: [{ id: "NOTE-FORBIDDEN", studentId: "1", value: 10, schoolCode: "CD-2026-0001" }],
-    },
-  });
-  assert.strictEqual(secForbidden.status, 400, "Secrétaire notes legacy doit être 400");
-  assert.strictEqual(secForbidden.data?.code, "LEGACY_PEDAGOGY_STATE_WRITE_FORBIDDEN");
-
-  // A4 — Comptable : paiements via PUT state désormais fail-closed (LOT 4)
-  const accOk = await request("/backoffice/state", {
-    method: "PUT",
-    token: accountant.accessToken,
-    body: {
-      payments: state.payments ?? [],
-    },
-  });
-  assert.strictEqual(accOk.status, 400, `Comptable payments write: ${accOk.status}`);
-  assert.strictEqual(accOk.data?.code, "LEGACY_FINANCE_STATE_WRITE_FORBIDDEN");
-
-  // A5 — Comptable : users interdit → 400 LEGACY_CLIENTS (LOT 7)
-  const accForbidden = await request("/backoffice/state", {
-    method: "PUT",
-    token: accountant.accessToken,
-    body: {
-      users: state.users ?? [],
-    },
-  });
-  assert.strictEqual(accForbidden.status, 400, "Comptable users doit être 400 LEGACY_CLIENTS");
-  assert.strictEqual(accForbidden.data?.code, "LEGACY_CLIENTS_STATE_WRITE_FORBIDDEN");
-
-  // A5b — auditLog interdit pour les rôles métier
-  for (const [label, token] of [
-    ["Secrétaire", secretary.accessToken],
-    ["Comptable", accountant.accessToken],
-    ["Admin School", schoolAdmin.accessToken],
-  ]) {
-    const auditPut = await request("/backoffice/state", {
-      method: "PUT",
-      token,
-      body: {
-        auditLog: [{ id: "AUD-CLIENT-FORBIDDEN", action: "tamper" }],
-      },
-    });
-    assert.strictEqual(auditPut.status, 403, `${label} auditLog doit être 403`);
-  }
-
-  // A6 — Cross-tenant : la ligne étrangère ne doit JAMAIS être persistée (état autoritatif)
+  // A1–A5 — Écriture globale supprimée : 410 quel que soit le rôle ou le domaine visé
+  // (élèves, notes, paiements, utilisateurs, auditLog client).
   const foreignStudent = {
     id: "ELE-FOREIGN-S14",
     publicId: "ELE-FOREIGN-S14",
@@ -374,46 +298,45 @@ async function runHttpTestsIfAvailable() {
     schoolCode: "BI-2026-0001",
     className: "6ème A",
   };
-  const beforeSuper = await request("/backoffice/state", { token: superadmin.accessToken });
-  assert.strictEqual(beforeSuper.status, 200);
-  const existedBefore = (beforeSuper.data.students ?? []).some((s) => s.id === foreignStudent.id);
+  const legacyWrites = [
+    ["students", { students: [{ id: "1", schoolCode: "CD-2026-0001" }] }],
+    ["notes", { notes: [{ id: "NOTE-FORBIDDEN", studentId: "1", value: 10, schoolCode: "CD-2026-0001" }] }],
+    ["payments", { payments: [{ id: "PAY-FORBIDDEN", studentId: "1", amount: 1 }] }],
+    ["users", { users: [{ id: "USR-FORBIDDEN", role: "Admin School" }] }],
+    ["auditLog", { auditLog: [{ id: "AUD-CLIENT-FORBIDDEN", action: "tamper" }] }],
+    ["students cross-tenant", { students: [foreignStudent] }],
+  ];
+  for (const [label, token] of [
+    ["Admin School", schoolAdmin.accessToken],
+    ["Secrétaire", secretary.accessToken],
+    ["Comptable", accountant.accessToken],
+    ["Super Admin", superadmin.accessToken],
+  ]) {
+    for (const [domain, body] of legacyWrites) {
+      assertBackOfficeStateWriteRemoved(
+        await request("/backoffice/state", { method: "PUT", token, body }),
+        `PUT state ${label} ${domain}`,
+      );
+    }
+  }
 
-  const crossPut = await request("/backoffice/state", {
-    method: "PUT",
-    token: secretary.accessToken,
-    body: {
-      students: [...(state.students ?? []), foreignStudent],
-    },
-  });
-  assert.strictEqual(crossPut.status, 400, "cross put students legacy doit être refusé");
+  // A6 — Cross-tenant : la liste métier de la secrétaire reste limitée à son établissement
+  // et ne contient jamais l'élève étranger proposé par l'écriture refusée.
+  const scopedStudents = await request("/students", { token: secretary.accessToken });
+  assert.strictEqual(scopedStudents.status, 200, `GET /students secrétaire: ${scopedStudents.status}`);
+  const scopedRows = extractApiList({ body: scopedStudents.data });
+  assert.ok(scopedRows.length > 0, "la secrétaire voit les élèves de son établissement");
   assert.strictEqual(
-    crossPut.data?.code,
-    "LEGACY_STUDENTS_STATE_WRITE_FORBIDDEN",
-    "cross put students legacy code stable",
-  );
-
-  // Lecture scoped secrétaire
-  const afterCrossScoped = await request("/backoffice/state", { token: secretary.accessToken });
-  assert.strictEqual(
-    (afterCrossScoped.data.students ?? []).some((s) => s.id === foreignStudent.id),
+    scopedRows.some((row) => row.id === foreignStudent.id || row.publicId === foreignStudent.publicId),
     false,
-    "élève hors établissement ne doit pas être accessible (scoped)",
+    "élève cross-tenant jamais persisté ni visible",
   );
-
-  // Lecture globale Super Admin = état autoritatif
-  const afterCrossGlobal = await request("/backoffice/state", { token: superadmin.accessToken });
-  assert.strictEqual(afterCrossGlobal.status, 200);
-  const persistedGlobally = (afterCrossGlobal.data.students ?? []).some((s) => s.id === foreignStudent.id);
-  assert.strictEqual(
-    persistedGlobally,
-    false,
-    "élève cross-tenant ne doit jamais être persisté dans l'état autoritatif",
-  );
-  assert.strictEqual(
-    existedBefore,
-    false,
-    "précondition: élève foreign absent avant le PUT",
-  );
+  // Même établissement sous ses deux identifiants (code établissement / code de connexion).
+  const ownSchoolCodes = new Set(["CD-2026-0001", "CD-UK-26-001"]);
+  for (const row of scopedRows) {
+    const code = String(row.schoolCode ?? row.school_code ?? "").toUpperCase();
+    if (code) assert.ok(ownSchoolCodes.has(code), `élève hors établissement visible: ${code}`);
+  }
 
   // B — MVP
   for (const route of ["/mvp/readiness", "/mvp/snapshot", "/mvp/dashboard"]) {
@@ -445,7 +368,7 @@ async function runHttpTestsIfAvailable() {
     }
   }
 
-  console.log("OK http: PUT state RBAC + MVP + auditLog + cross-tenant autoritatif");
+  console.log("OK http: BackOffice State 410 (lecture/écriture, tous rôles) + MVP + cross-tenant");
 }
 
 async function main() {
