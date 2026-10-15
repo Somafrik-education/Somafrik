@@ -91,6 +91,7 @@ const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "GET /api/students",
   "GET /api/students/:id",
   "GET /api/students/:id/cards",
+  "POST /api/student-cards/verify",
   "POST /api/student-cards",
   "POST /api/student-cards/:id/nfc-confirm",
   "POST /api/student-cards/:id/nfc-retry",

@@ -10,6 +10,8 @@ import { canManagePresences, canReadFeeGrids, canReadRoute } from "../domain/sec
 import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
 import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal";
 import { getStudentCardCapabilities } from "../services/studentCardScanApi";
+import StudentCardVerifyModal from "../components/StudentCardVerifyModal";
+import { CARD_VERIFY_COPY } from "../lib/studentCardVerify";
 import {
   STUDENT_CARD_SCAN_COPY,
   applyQrConfirmedPresence,
@@ -169,6 +171,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [replaySending, setReplaySending] = useState(false);
   const replaySendingRef = useRef(false);
   const [cardSettings, setCardSettings] = useState<StudentCardScanSettings | null>(null);
+  // CARTE-PR2 : vérification de carte, affichage limité à ce que le serveur autorise.
+  const [cardVerifyOpen, setCardVerifyOpen] = useState(false);
   const [cardCapabilitiesStatus, setCardCapabilitiesStatus] = useState<"loading" | "ready" | "error">("loading");
   const [cardCapabilitiesFailure, setCardCapabilitiesFailure] = useState<"permission" | "technical" | null>(null);
   const [capabilitiesReload, setCapabilitiesReload] = useState(0);
@@ -897,6 +901,24 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 </TouchableOpacity>
               </View>
             )}
+            {nfcControl === "ready" || canOpenQrScanner ? (
+              <TouchableOpacity
+                testID="attendance-card-verify"
+                style={styles.scanButton}
+                onPress={() => {
+                  setScannerOpen(false);
+                  setNfcScannerOpen(false);
+                  setCardVerifyOpen(true);
+                }}
+                disabled={actionsLocked}
+                accessibilityRole="button"
+                accessibilityLabel={CARD_VERIFY_COPY.button}
+                accessibilityState={{ disabled: actionsLocked }}
+              >
+                <Ionicons name="shield-checkmark-outline" size={18} color="#0F172A" />
+                <Text style={styles.scanButtonText}>{CARD_VERIFY_COPY.button}</Text>
+              </TouchableOpacity>
+            ) : null}
             {nfcControl === "ready" ? (
               <TouchableOpacity
                 testID={USABILITY_TEST_IDS.attendanceScanNfc}
@@ -1127,6 +1149,13 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
           }
         }}
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    {nfcControl === "ready" || canOpenQrScanner ? (
+      <StudentCardVerifyModal
+        visible={cardVerifyOpen}
+        source={nfcControl === "ready" ? "nfc" : "qr"}
+        onClose={() => setCardVerifyOpen(false)}
       />
     ) : null}
     </>
