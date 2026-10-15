@@ -404,10 +404,26 @@ async function main() {
     const revoked = await scan(tokenTeacher, { ...ctxX, cardToken: cards.S3.cardToken });
     assert.equal(revoked.status, 409, JSON.stringify(revoked.data));
     assert.deepEqual(identityLeaks(revoked.data), []);
+    // Régression : une ancienne carte du même élève a été scannée AVANT son remplacement.
+    const twoCards = { sessionId: session(), classId: classA1.id, date: "2026-10-12" };
+    const receiptBeforeReplacement = await scan(tokenTeacher, { ...twoCards, cardToken: cards.S5.cardToken });
+    assert.equal(receiptBeforeReplacement.status, 200, JSON.stringify(receiptBeforeReplacement.data));
     const replaced = await request(`/student-cards/${cards.S5.id}/replace`, { method: "POST", token: tokenAdmin, body: {} });
     assert.equal(replaced.status, 200, JSON.stringify(replaced.data));
     assert.equal((await scan(tokenTeacher, { ...ctxX, cardToken: cards.S5.cardToken })).status, 409, "ancienne carte remplacée refusée");
     assert.equal((await scan(tokenTeacher, { ...ctxX, cardToken: replaced.data.card.cardToken })).status, 200, "nouvelle carte acceptée");
+    const receiptAfterReplacement = await scan(tokenTeacher, { ...twoCards, cardToken: replaced.data.card.cardToken });
+    assert.equal(receiptAfterReplacement.status, 200, JSON.stringify(receiptAfterReplacement.data));
+    for (const [receipts, expectedIndex] of [
+      [[receiptBeforeReplacement.data.receipt, receiptAfterReplacement.data.receipt], 0],
+      [[receiptAfterReplacement.data.receipt, receiptBeforeReplacement.data.receipt], 1],
+    ]) {
+      const invalidPair = await validate(tokenTeacher, { ...twoCards, receipts });
+      assert.equal(invalidPair.status, 409, JSON.stringify(invalidPair.data));
+      assert.equal(invalidPair.data?.code, ROLL_CALL_ERROR.CARD_INVALID);
+      assert.deepEqual(invalidPair.data?.details, { invalidReceiptIndexes: [expectedIndex] });
+      assert.deepEqual(await attendanceOn(pool, twoCards.date), [], "aucune présence sur lot partiellement invalide");
+    }
     assert.equal((await scan(tokenTeacher, { ...ctxX, cardToken: cards.S6.cardToken })).status, 409, "réservation non activée refusée");
 
     // ---------- Validation : contrôles avant écriture ----------
