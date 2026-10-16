@@ -32,7 +32,7 @@ const USERS = {
   ADMIN: U(1), DIRECTOR: U(2), SECRETARY: U(3), SUPERVISOR: U(4), TEACHER: U(5), PROVISEUR_NO_GRANT: U(6),
   PARENT: U(7), SUPER: U(8), PAYS: U(9), DIRECTOR_B: U(10), SECRETARY_TEACHER: U(11), STALE: U(12),
 };
-const S = Object.fromEntries([1, 2, 3, 4, 5].map((n) => [`S${n}`, U(100 + n)]));
+const S = Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map((n) => [`S${n}`, U(100 + n)]));
 const STUDENT_B = U(199);
 const ENTRY_ROUTE = "/student-cards/entry-scan";
 
@@ -223,22 +223,22 @@ async function main() {
     }
     await pool.query(`ALTER TABLE users ENABLE TRIGGER users_permanent_identity_insert`);
 
-    // Permission dédiée : accordée explicitement, jamais implicite. Le surveillant et l'enseignant
-    // la reçoivent ici pour prouver que la liste de rôles refuse quand même (aucun élargissement).
+    // Permission dédiée : accordée explicitement, jamais implicite. L'enseignant la reçoit pour prouver
+    // qu'un rôle non admissible reste refusé ; le surveillant et Admin School la reçoivent plus loin.
     const defaults = await pool.query(`SELECT count(*)::int AS n FROM role_module_permissions WHERE module_key = 'entry_control'`);
     assert.equal(defaults.rows[0].n, 0, "aucun droit par défaut sur le module Contrôle d'entrée");
     await setGrant(pool, "PRINCIPAL", "entry_control", { create: true, read: true });
     await setGrant(pool, "SECRETARY", "entry_control", { create: true, read: true });
     await setGrant(pool, "SCHOOL_ADMIN", "entry_control", { create: false, read: true });
-    await setGrant(pool, "SUPERVISOR", "entry_control", { create: true, read: true });
     await setGrant(pool, "TEACHER", "entry_control", { create: true, read: true });
 
     await pool.query(
       `INSERT INTO students (id, school_id, student_code, first_name, last_name, status)
        VALUES ($1,$6,'EN-S1','Amina','Kabila','active'), ($2,$6,'EN-S2','Bao','Lutete','active'),
               ($3,$6,'EN-S3','Cyn','Mbuyi','active'), ($4,$6,'EN-S4','Dan','Ngoy','active'),
-              ($5,$6,'EN-S5','Eli','Ombe','active'), ($7,$8,'EN-SB','Ines','Tshala','active')`,
-      [S.S1, S.S2, S.S3, S.S4, S.S5, schoolA.id, STUDENT_B, schoolB.id],
+              ($5,$6,'EN-S5','Eli','Ombe','active'), ($7,$8,'EN-SB','Ines','Tshala','active'),
+              ($9,$6,'EN-S6','Fey','Pemba','active'), ($10,$6,'EN-S7','Gad','Ruhi','active')`,
+      [S.S1, S.S2, S.S3, S.S4, S.S5, schoolA.id, STUDENT_B, schoolB.id, S.S6, S.S7],
     );
     const yearA = (await pool.query(
       `INSERT INTO academic_years (school_id, name, is_current, status) VALUES ($1,'2026-2027', TRUE, 'open') RETURNING id`,
@@ -264,8 +264,9 @@ async function main() {
     await pool.query(
       `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status)
        VALUES ($1,$2,$6,$7,'ENROLLED'), ($1,$3,$6,$7,'active'), ($1,$4,$6,$7,'ENROLLED'),
-              ($1,$5,$8,$7,'ENROLLED'), ($9,$10,$11,$12,'ENROLLED')`,
-      [schoolA.id, S.S1, S.S2, S.S3, S.S4, classA1.id, yearA.id, classA2.id, schoolB.id, STUDENT_B, classB1.id, yearB.id],
+              ($1,$5,$8,$7,'ENROLLED'), ($9,$10,$11,$12,'ENROLLED'), ($1,$13,$6,$7,'ENROLLED'), ($1,$14,$6,$7,'ENROLLED')`,
+      [schoolA.id, S.S1, S.S2, S.S3, S.S4, classA1.id, yearA.id, classA2.id, schoolB.id, STUDENT_B, classB1.id, yearB.id,
+        S.S6, S.S7],
     );
     await pool.query(
       `INSERT INTO school_settings (school_id, student_card_enabled, student_card_qr_enabled, student_card_attendance_enabled,
@@ -337,7 +338,7 @@ async function main() {
       return { id: issued.data.id, cardToken: issued.data.cardToken };
     };
     const cards = {};
-    for (const key of ["S1", "S2", "S3", "S4", "S5"]) cards[key] = await issue(S[key]);
+    for (const key of ["S1", "S2", "S3", "S4", "S5", "S6", "S7"]) cards[key] = await issue(S[key]);
     const cardB = await issue(STUDENT_B, adminB);
     await pool.query(`UPDATE student_access_cards SET status = 'issued' WHERE id = $1`, [cards.S4.id]);
     assert.equal((await request(`/student-cards/${cards.S5.id}/revoke`, { method: "POST", token: token.admin, body: {} })).status, 200);
@@ -351,17 +352,17 @@ async function main() {
 
     // ---------- Refus de rôle et de permission (aucun événement écrit) ----------
     for (const [label, tok, expected] of [
-      ["surveillant (permission accordée, rôle non autorisé)", token.supervisor, ENTRY_ERROR.ROLE_FORBIDDEN],
-      ["enseignant (permission accordée, rôle non autorisé)", token.teacher, ENTRY_ERROR.ROLE_FORBIDDEN],
+      ["surveillant sans droit accordé (aucun accès implicite)", token.supervisor, null],
+      ["enseignant (permission accordée, rôle non admissible)", token.teacher, ENTRY_ERROR.ROLE_FORBIDDEN],
       ["parent", token.parent, null],
-      ["jeton périmé (PRINCIPAL dans le JWT, TEACHER en base)", token.stale, ENTRY_ERROR.ROLE_FORBIDDEN],
+      ["libellé « Directeur » et clé PRINCIPAL dans le JWT, TEACHER seul en base", token.stale, ENTRY_ERROR.ROLE_FORBIDDEN],
     ]) {
       const denied = await enter(tok, scanBody(cards.S1));
       assert.equal(denied.status, 403, `${label}: ${JSON.stringify(denied.data)}`);
       if (expected) assert.equal(denied.data?.code, expected, label);
     }
     assert.equal((await enter(token.proviseurNoGrant, scanBody(cards.S1))).status, 403, "direction sans permission dédiée");
-    assert.equal((await enter(token.admin, scanBody(cards.S1))).status, 403, "Admin School : consultation seule");
+    assert.equal((await enter(token.admin, scanBody(cards.S1))).status, 403, "Admin School sans droit de saisie");
     for (const [tok, headers] of [[token.superAdmin, { "X-Somafrik-School-Code": LOGIN_A }], [token.pays, {}]]) {
       const denied = await enter(tok, scanBody(cards.S1), undefined, headers);
       assert.equal(denied.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
@@ -404,6 +405,20 @@ async function main() {
     const multiRole = await enter(token.secretaryTeacher, scanBody(cards.S3));
     assert.equal(multiRole.status, 201, "multi-rôle Secrétaire + Enseignant autorisé par la clé SECRETARY");
 
+    // ---------- Surveillant et Admin School : accès seulement sur droit effectif explicite ----------
+    await setGrant(pool, "SUPERVISOR", "entry_control", { create: true, read: true });
+    const bySupervisor = await enter(token.supervisor, scanBody(cards.S6));
+    assert.equal(bySupervisor.status, 201, `surveillant avec droit de saisie : ${JSON.stringify(bySupervisor.data)}`);
+    await setGrant(pool, "SCHOOL_ADMIN", "entry_control", { create: true, read: true });
+    const byAdmin = await enter(token.admin, scanBody(cards.S7));
+    assert.equal(byAdmin.status, 201, `Admin School avec droit de saisie : ${JSON.stringify(byAdmin.data)}`);
+    await setGrant(pool, "SCHOOL_ADMIN", "entry_control", { create: false, read: true });
+    // Révocation du droit : refus dès la requête suivante, sans reconnexion.
+    await setGrant(pool, "SUPERVISOR", "entry_control", { create: false, read: true });
+    const revokedRight = await enter(token.supervisor, scanBody(cards.S1));
+    assert.equal(revokedRight.status, 403, `droit de saisie retiré : ${JSON.stringify(revokedRight.data)}`);
+    assert.equal((await enter(token.admin, scanBody(cards.S1))).status, 403, "Admin School : droit de saisie retiré");
+
     // ---------- Portail ≠ présence en classe ----------
     assert.equal(await attendanceCount(), 0, "aucune ligne attendance créée par le portail");
     const rows = (await pool.query(
@@ -415,12 +430,14 @@ async function main() {
       [S.S1, classA1.id, USERS.DIRECTOR, ["PRINCIPAL"], "qr"],
       [S.S2, classA1.id, USERS.SECRETARY, ["SECRETARY"], "qr"],
       [S.S3, classA1.id, USERS.SECRETARY_TEACHER, ["SECRETARY", "TEACHER"], "qr"],
+      [S.S6, classA1.id, USERS.SUPERVISOR, ["SUPERVISOR"], "qr"],
+      [S.S7, classA1.id, USERS.ADMIN, ["SCHOOL_ADMIN"], "qr"],
     ], "auteur réel et rôles relus en base");
     assert.ok(rows.every((r) => r.same_day), "date locale du fuseau de l'établissement");
     const audits = (await pool.query(
       `SELECT user_id, new_value FROM audit_logs WHERE action = 'student_card_entry' ORDER BY created_at`,
     )).rows;
-    assert.equal(audits.length, 3, "un audit par entrée réelle, aucun pour le doublon ni le rejeu");
+    assert.equal(audits.length, 5, "un audit par entrée réelle, aucun pour le doublon ni le rejeu");
     const auditText = JSON.stringify(audits);
     for (const secret of Object.values(cards).map((c) => c.cardToken.split(".")[1]).filter(Boolean)) {
       assert.equal(auditText.includes(secret), false, "audit sans jeton");
@@ -432,12 +449,16 @@ async function main() {
     assert.equal(ov.status, 200, JSON.stringify(ov.data));
     assert.equal(ov.data.timeZone, "Africa/Kinshasa");
     const a1 = ov.data.classes.find((c) => c.classId === classA1.id);
-    assert.deepEqual([a1.enrolled, a1.entered, a1.notEntered], [3, 3, 0], "inscrits ENROLLED + active");
+    assert.deepEqual([a1.enrolled, a1.entered, a1.notEntered], [5, 5, 0], "inscrits ENROLLED + active");
     const a2 = ov.data.classes.find((c) => c.classId === classA2.id);
     assert.deepEqual([a2.enrolled, a2.entered], [1, 0]);
     assert.equal(ov.data.classes.some((c) => c.classId === classB1.id), false, "aucune classe d'un autre établissement");
     assert.equal(JSON.stringify(ov.data).includes("Amina"), false, "consultation sans donnée d'élève");
-    for (const tok of [token.supervisor, token.teacher, token.parent, token.stale]) {
+    const ovSupervisor = await overview(token.supervisor);
+    assert.equal(ovSupervisor.status, 200, `surveillant avec droit de lecture : ${JSON.stringify(ovSupervisor.data)}`);
+    await setGrant(pool, "SUPERVISOR", "entry_control", { create: false, read: false });
+    assert.equal((await overview(token.supervisor)).status, 403, "droit de lecture retiré : refus immédiat");
+    for (const tok of [token.teacher, token.parent, token.stale]) {
       assert.equal((await overview(tok)).status, 403);
     }
     assert.equal((await overview(token.superAdmin, "", { "X-Somafrik-School-Code": LOGIN_A })).data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
@@ -452,7 +473,7 @@ async function main() {
     // ---------- Révocation du rôle : effet immédiat ----------
     await pool.query(`UPDATE user_roles SET status = 'revoked', revoked_at = NOW() WHERE user_id = $1`, [USERS.DIRECTOR]);
     assert.equal((await enter(token.director, scanBody(cards.S2))).status, 403, "rôle révoqué : refus sans reconnexion");
-    assert.equal(await entryCount(), 3);
+    assert.equal(await entryCount(), 5);
 
     console.log("studentCardEntry.http.pg.test.js OK");
   } finally {

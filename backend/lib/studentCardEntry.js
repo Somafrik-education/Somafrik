@@ -8,10 +8,12 @@
  * par établissement ; un doublon NFC/QR renvoie l'entrée existante sans créer de second
  * événement. L'établissement et la classe sont résolus côté serveur à partir de la carte.
  *
- * Autorisation (fail-closed) :
- *  - permission dédiée `Contrôle d'entrée:CREATE` / `:READ`, revalidée par requirePermission ;
- *  - clés de rôle relues en base pour l'établissement : direction ou secrétariat pour scanner,
- *    plus SCHOOL_ADMIN en consultation ; aucune clé inconnue, plateforme ou familiale.
+ * Autorisation (fail-closed, décision CTO PR3) :
+ *  - aucun droit par défaut : la permission effective dédiée `Contrôle d'entrée:CREATE` (saisie)
+ *    ou `:READ` (consultation), accordée explicitement, est revalidée par requirePermission ;
+ *  - clé de rôle canonique admissible, relue en base pour l'établissement : direction,
+ *    secrétariat, surveillant ou Admin School ; le libellé du compte ne donne aucun droit ;
+ *  - toute clé inconnue, plateforme ou familiale refuse.
  * Les impayés sont une information non bloquante, renvoyée seulement avec la permission finance
  * et l'interrupteur de l'établissement.
  */
@@ -29,10 +31,15 @@ const ENTRY_ERROR = Object.freeze({
   OPERATION_CONFLICT: "ENTRY_OPERATION_CONFLICT",
 });
 
-/** Rôles autorisés à scanner au portail (avec la permission dédiée). */
-const ENTRY_SCAN_ROLE_KEYS = Object.freeze(new Set(["PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY"]));
-/** Rôles autorisés à consulter les entrées (avec la permission dédiée). */
-const ENTRY_READ_ROLE_KEYS = Object.freeze(new Set([...ENTRY_SCAN_ROLE_KEYS, "SCHOOL_ADMIN"]));
+/**
+ * Rôles admissibles au portail : ils n'ouvrent l'accès qu'avec la permission effective
+ * correspondante (saisie ou consultation), jamais seuls.
+ */
+const ENTRY_ADMISSIBLE_ROLE_KEYS = Object.freeze(new Set([
+  "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY", "SUPERVISOR", "SCHOOL_ADMIN",
+]));
+const ENTRY_SCAN_ROLE_KEYS = ENTRY_ADMISSIBLE_ROLE_KEYS;
+const ENTRY_READ_ROLE_KEYS = ENTRY_ADMISSIBLE_ROLE_KEYS;
 /** Rôles du personnel d'établissement : toute autre clé (plateforme, famille, inconnue) refuse. */
 const SCHOOL_STAFF_ROLE_KEYS = Object.freeze(new Set([
   "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SCHOOL_ADMIN", "SECRETARY", "TEACHER", "SUPERVISOR", "ACCOUNTANT",

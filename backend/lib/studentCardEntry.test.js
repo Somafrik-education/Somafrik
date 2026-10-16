@@ -41,19 +41,18 @@ test("Idempotency-Key = identifiant d'opération", () => {
   assert.equal(code(() => assertEntryOperationKey("autre", OP)), ENTRY_ERROR.INPUT_INVALID);
 });
 
-test("rôles : direction et secrétariat scannent ; Admin School consulte ; aucun élargissement", () => {
-  for (const key of ["PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY"]) {
-    assert.equal(code(() => assertEntryActor([key], ENTRY_SCAN_ROLE_KEYS)), null, key);
-  }
-  assert.equal(code(() => assertEntryActor(["SCHOOL_ADMIN"], ENTRY_READ_ROLE_KEYS)), null);
-  for (const keys of [["SCHOOL_ADMIN"], ["SUPERVISOR"], ["TEACHER"], ["ACCOUNTANT"], [], ["PARENT"], ["SUPER_ADMIN"],
-    ["COUNTRY_ADMIN"], ["INVENTE"], ["SECRETARY", "PARENT"], ["PRINCIPAL", "SUPER_ADMIN"]]) {
-    assert.equal(code(() => assertEntryActor(keys, ENTRY_SCAN_ROLE_KEYS)), ENTRY_ERROR.ROLE_FORBIDDEN, keys.join("+"));
+test("rôles admissibles : direction, secrétariat, surveillant, Admin School ; aucun autre", () => {
+  // La permission effective reste exigée en amont (requirePermission) : ce contrôle n'ouvre rien seul.
+  for (const allowed of [ENTRY_SCAN_ROLE_KEYS, ENTRY_READ_ROLE_KEYS]) {
+    for (const key of ["PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY", "SUPERVISOR", "SCHOOL_ADMIN"]) {
+      assert.equal(code(() => assertEntryActor([key], allowed)), null, key);
+    }
+    for (const keys of [["TEACHER"], ["ACCOUNTANT"], [], ["PARENT"], ["STUDENT"], ["SUPER_ADMIN"], ["COUNTRY_ADMIN"],
+      ["INVENTE"], ["SECRETARY", "PARENT"], ["PRINCIPAL", "SUPER_ADMIN"], ["SUPERVISOR", "STUDENT"]]) {
+      assert.equal(code(() => assertEntryActor(keys, allowed)), ENTRY_ERROR.ROLE_FORBIDDEN, keys.join("+"));
+    }
   }
   assert.equal(code(() => assertEntryActor(["SECRETARY", "TEACHER"], ENTRY_SCAN_ROLE_KEYS)), null, "multi-rôle");
-  for (const keys of [["SUPERVISOR"], ["TEACHER"]]) {
-    assert.equal(code(() => assertEntryActor(keys, ENTRY_READ_ROLE_KEYS)), ENTRY_ERROR.ROLE_FORBIDDEN, keys.join("+"));
-  }
 });
 
 test("rôles relus en base : clés du JWT ignorées, fail-closed sans primitive", async () => {
@@ -69,7 +68,7 @@ test("rôles relus en base : clés du JWT ignorées, fail-closed sans primitive"
 test("refus de rôle avant toute lecture de carte ou écriture", async () => {
   let touched = false;
   const repo = {
-    listActiveUserRoleKeysForSchool: async () => ["SUPERVISOR"],
+    listActiveUserRoleKeysForSchool: async () => ["TEACHER"],
     one: async () => {
       touched = true;
       return null;
