@@ -33,6 +33,8 @@ import ReportCardsScreen from "../screens/ReportCardsScreen";
 import ExamsScreen from "../screens/ExamsScreen";
 import ClassGradesStatsScreen from "../screens/ClassGradesStatsScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
+import EntryControlScreen from "../screens/EntryControlScreen";
+import { entryControlActor } from "../lib/studentCardEntryControl";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import {
   MobilePaymentScreen,
@@ -95,6 +97,7 @@ export type RootStackParamList = {
   Users: undefined;
   TeacherStudents: undefined;
   TeacherAttendance: undefined;
+  EntryControl: undefined;
   TeacherGrades: undefined;
   ClassGradesStats: undefined;
   Exams: undefined;
@@ -311,6 +314,8 @@ export default function AppNavigator() {
         {canReadRoute(session, "Students") && <Stack.Screen name="Students" component={StudentsScreen} options={{ title: "Élèves" }} />}
         {canReadRoute(session, "TeacherStudents") && <Stack.Screen name="TeacherStudents" component={StudentsScreen} options={{ title: "Mes élèves" }} />}
         {canReadRoute(session, "TeacherAttendance") && <Stack.Screen name="TeacherAttendance" component={TeacherAttendanceScreen} options={{ title: "Appel" }} />}
+        {/* CARTE-PR3-M1 : clé admissible + permission Contrôle d'entrée:CREATE, indépendant des droits Présences. */}
+        {entryControlActor(session) && <Stack.Screen name="EntryControl" component={EntryControlScreen} options={{ title: "Contrôle d'entrée" }} />}
         {canReadRoute(session, "TeacherGrades") && <Stack.Screen name="TeacherGrades" component={TeacherGradesScreen} options={{ title: "Notes" }} />}
         {canReadRoute(session, "ClassGradesStats") && (
           <Stack.Screen name="ClassGradesStats" component={ClassGradesStatsScreen} options={{ title: "Statistiques de classe" }} />
