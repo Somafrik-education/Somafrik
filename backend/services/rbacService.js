@@ -113,6 +113,9 @@ const routePermissions = {
   // CARTE-PR3-B : liste d'appel nominative, mêmes droits que la saisie de l'appel.
   "GET /api/student-cards/roll-call/roster": ["Présences:CREATE", "Présences:UPDATE"],
   "GET /api/student-cards/roll-call/overview": ["Présences:READ"],
+  // CARTE-PR3-A1 : contrôle d'entrée au portail, permission dédiée (aucun droit implicite).
+  "POST /api/student-cards/entry-scan": ["Contrôle d'entrée:CREATE"],
+  "GET /api/student-cards/entries": ["Contrôle d'entrée:READ"],
   "GET /api/audit": ["Audit:READ"],
   "GET /api/privacy/erasure-requests": ["Utilisateurs:READ", "Gérer utilisateurs"],
   "POST /api/privacy/erasure-requests/:requestId/execute": ["Utilisateurs:UPDATE", "Gérer utilisateurs"],

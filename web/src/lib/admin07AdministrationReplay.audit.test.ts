@@ -115,6 +115,6 @@ describe("ADMIN-07 — autorité Web replay", () => {
     expect(page).toContain("preservedDirtyDrafts");
     expect(page).toContain("expectedUpdatedAt: matrix?.updatedAt ?? null");
     expect(page).toContain("setMatrix(next)");
-    expect((catalog.match(/moduleKey: "/g) ?? []).length).toBe(31);
+    expect((catalog.match(/moduleKey: "/g) ?? []).length).toBe(32);
   });
 });
