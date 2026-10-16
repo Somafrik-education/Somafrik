@@ -18,6 +18,7 @@ const SCHOOL_STAFF_ROLE_KEYS = new Set([...ENTRY_ADMISSIBLE_ROLE_KEYS, "TEACHER"
 
 export const ENTRY_CONTROL_COPY = {
   button: "Contrôle d'entrée",
+  start: "Démarrer le contrôle d'entrée",
   title: "Contrôle d'entrée",
   subtitle: "Scan continu au portail. Aucune présence en classe n'est enregistrée.",
   instructionsNfc: "Approchez les cartes NFC l'une après l'autre.",
