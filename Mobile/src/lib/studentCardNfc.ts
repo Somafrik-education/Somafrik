@@ -57,6 +57,11 @@ export type NfcHardware = {
   requestTag(): Promise<void>;
   getTag(): Promise<{ ndefMessage?: unknown; id?: unknown; techTypes?: unknown } | null>;
   cancel(): Promise<void>;
+  /**
+   * NFC-REG-01 — termine la lecture en cours sans rendre le lecteur : le mode lecteur et
+   * l'exclusivité restent acquis jusqu'à cancel() (fermeture, arrière-plan, déconnexion).
+   */
+  finishRead?(): Promise<void>;
 };
 
 export type NfcTagLike = {
@@ -256,11 +261,13 @@ export async function releaseNfcSession(hardware: NfcHardware): Promise<void> {
 }
 
 export async function scanNfcCardToken(hardware: NfcHardware): Promise<NfcReadResult> {
+  let reading = false;
   try {
     const probe = await probeNfc(hardware);
     if (probe.status === "unsupported") return { ok: false, reason: "unsupported" };
     if (probe.status === "disabled") return { ok: false, reason: "disabled" };
     if (probe.status !== "ready") return { ok: false, reason: "error" };
+    reading = true;
     await hardware.requestTag();
     const tag = await hardware.getTag();
     return extractNfcCardTokenFromTag(tag);
@@ -272,7 +279,10 @@ export async function scanNfcCardToken(hardware: NfcHardware): Promise<NfcReadRe
     if (/cancel/i.test(message)) return { ok: false, reason: "cancelled" };
     return { ok: false, reason: "error" };
   } finally {
-    await releaseNfcSession(hardware);
+    // Lecteur continu : pas de fenêtre où Android reprendrait la carte entre deux lectures.
+    // NFC absent, désactivé ou en erreur avant toute lecture : libération complète.
+    if (reading && typeof hardware.finishRead === "function") await hardware.finishRead();
+    else await releaseNfcSession(hardware);
   }
 }
 

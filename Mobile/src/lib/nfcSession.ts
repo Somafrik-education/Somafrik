@@ -4,7 +4,8 @@ export type NfcSessionLease = {
   run<T>(operation: () => Promise<T>): Promise<T>;
   request<T>(operation: () => Promise<T>): Promise<T>;
   reset(): Promise<void>;
-  close(): Promise<void>;
+  /** Releases the lease; `finalize` runs while ownership is still held (e.g. disable reader mode). */
+  close(finalize?: () => Promise<unknown>): Promise<void>;
 };
 
 function sessionError(code: "NFC_SESSION_BUSY" | "NFC_SESSION_CANCELLED") {
@@ -23,6 +24,7 @@ export function createNfcSessionManager(native: {
     release: boolean;
     pending: Set<Promise<unknown>>;
     closingPromise: Promise<void> | null;
+    finalizers: (() => Promise<unknown>)[];
   };
   let active: State | null = null;
   let startup: Promise<void> | null = null;
@@ -30,7 +32,7 @@ export function createNfcSessionManager(native: {
   return {
     acquire(): NfcSessionLease {
       if (active) throw sessionError("NFC_SESSION_BUSY");
-      const state: State = { closing: false, requested: false, release: false, pending: new Set(), closingPromise: null };
+      const state: State = { closing: false, requested: false, release: false, pending: new Set(), closingPromise: null, finalizers: [] };
       active = state;
 
       function assertOwner() {
@@ -60,6 +62,8 @@ export function createNfcSessionManager(native: {
           await Promise.allSettled([...state.pending]);
           state.requested = false;
           if (state.release) {
+            // Finalizers run before the hand-off: a stale owner never touches the next owner's hardware.
+            await Promise.allSettled(state.finalizers.splice(0).map((finalize) => finalize()));
             if (active === state) active = null;
           } else {
             state.closing = false;
@@ -90,8 +94,39 @@ export function createNfcSessionManager(native: {
           assertOwner();
         },
         // A stale owner's finally/unmount must never cancel the new owner's hardware.
-        close: () => stop(true),
+        close: (finalize) => {
+          if (finalize && active === state) state.finalizers.push(finalize);
+          return stop(true);
+        },
       };
     },
   };
 }
+
+/**
+ * Facade owning at most one lease, acquired lazily. NFC-REG-01: `endRequest` ends the current
+ * technology request but keeps the lease, so a continuous reader keeps exclusivity (and reader
+ * mode) between two cards; it never acquires a lease on its own.
+ */
+export function createNfcLeaseFacade(sessions: { acquire(): NfcSessionLease }) {
+  let lease: NfcSessionLease | null = null;
+  const current = () => (lease ??= sessions.acquire());
+  return {
+    start: () => current().start(),
+    run: <T>(operation: () => Promise<T>) => current().run(operation),
+    request: <T>(operation: () => Promise<T>) => current().request(operation),
+    reset: () => current().reset(),
+    async endRequest() {
+      const owned = lease;
+      if (owned) await owned.reset();
+    },
+    async close(finalize?: () => Promise<unknown>) {
+      const owned = lease;
+      if (!owned) return;
+      await owned.close(finalize);
+      if (lease === owned) lease = null;
+    },
+  };
+}
+
+export type NfcLeaseFacade = ReturnType<typeof createNfcLeaseFacade>;
