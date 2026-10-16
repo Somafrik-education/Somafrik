@@ -43,8 +43,8 @@ test("menu Contrôle d'entrée : jamais sans la permission, jamais pour un rôle
 
 test("navigateur : écran EntryControl enregistré seulement pour un acteur du contrôle d'entrée", () => {
   const navigator = readFileSync(new URL("../navigation/AppNavigator.tsx", import.meta.url), "utf8");
-  const screen = readFileSync(new URL("../screens/EntryControlScreen.tsx", import.meta.url), "utf8");
-  assert.match(navigator, /entryControlActor\(session\) && <Stack\.Screen name="EntryControl" component=\{EntryControlScreen\}/);
+  const screen = readFileSync(new URL("../screens/StudentCardEntryControlScreen.tsx", import.meta.url), "utf8");
+  assert.match(navigator, /entryControlActor\(session\) && <Stack\.Screen name="EntryControl" component=\{StudentCardEntryControlScreen\}/);
   // Écran autonome : aucune lecture de présences, d'élèves ni des capacités de pointage.
   assert.doesNotMatch(screen, /getStudentCardCapabilities|loadPresences|\/presences|submitProtectedMutation/);
   assert.match(screen, /StudentCardEntryControlModal/);
