@@ -4,11 +4,13 @@
 | --- | --- |
 | Projet | SOMAFRIK V2 |
 | Priorité | **P0 — incident critique** |
-| Statut | **DRAFT / HOLD / NO MERGE** — documentation uniquement |
+| Statut | **DRAFT / HOLD / NO MERGE** — documentation uniquement — **révision 2** (complément CTO du 17/10) |
 | Base auditée | `develop` @ `b82ba090ba9c465cb30ac25c57472eb5edf997eb` (fichiers d'encodage identiques à `69419df`) |
 | Bibliothèque NFC | `react-native-nfc-manager` **4.0.0-beta.10** (source Java Android inspectée) |
 | Opérations sur cartes physiques | **Aucune.** Aucune lecture, écriture ou formatage n'a été effectué pendant cet audit. |
 | Modifications PostgreSQL / Supabase | **Aucune.** Tests uniquement sur un PostgreSQL 16 jetable local. |
+
+> **Révision 2 — complément CTO.** Diagnostic principal validé sous réserves. Ajouts : Q7 en liste blanche (§9 SQL), protocole de récupération conservant l'unicité globale des UID (`NFC-P0-RECOVERY-01-protocole-recuperation.md`, qui **remplace** la piste « index partiel » de la PR-1 initiale), provenance des APK (`NFC-P0-RECOVERY-01-provenance-apk.md`), protocole de diagnostic physique (`NFC-P0-RECOVERY-01-protocole-diagnostic-physique.md`). Les sections ci-dessous sont mises à jour en conséquence.
 
 Légende de preuve : **[PROUVÉ-CODE]** lecture du code, **[PROUVÉ-TEST]** test reproductible exécuté, **[HYPOTHÈSE]** à confirmer par diagnostic matériel.
 
@@ -25,7 +27,7 @@ Légende de preuve : **[PROUVÉ-CODE]** lecture du code, **[PROUVÉ-TEST]** test
 3. **Les deux causes se cumulent.** Scénario typique, reproduit par test : écriture réussie → l'utilisateur ne re-présente pas la carte pour la relecture (ou le réseau échoue) → la réservation expire après 30 minutes → la carte est refusée **définitivement** par l'application **et** par la base, alors que la puce est intacte et inscriptible.
 
 4. **Aucune commande de verrouillage irréversible n'existe dans `develop`.** [PROUVÉ-CODE] Le seul octet brut envoyé est `GET_VERSION` (0x60). Il n'y a pas de `makeReadOnly`, d'écriture de page (0xA2), de mot de passe ni de formatage.
-   **Toutefois**, la PR non fusionnée [#908](https://github.com/Somafrik-education/Somafrik/pull/908) contient un bouton « Verrouiller définitivement » (`makeReadOnly`, irréversible), et sa documentation demandait de construire un APK de test depuis cette branche. **Si des cartes ont été manipulées avec un tel APK, certaines peuvent être réellement en lecture seule.** [HYPOTHÈSE — à vérifier carte par carte]
+   **Toutefois**, la CI a réellement construit **trois APK** contenant un bouton « Verrouiller définitivement » (`makeReadOnly`, irréversible) : #908 (`c3db71c`, 12/10), #909 (`91c2af5`, 13/10) et #912 (`c6f5eaa`, 13/10). [PROUVÉ — journaux GitHub Actions] Leur installation sur un téléphone n'est **pas** prouvée. Ces APK sont indiscernables d'un APK sain dans les réglages Android (même paquet, même version, même signature) ; une procédure d'identification par empreinte et par repères d'interface est fournie dans `NFC-P0-RECOVERY-01-provenance-apk.md`.
 
 5. **Le message d'erreur ne permet pas de diagnostiquer.** Le code `NFC_FOREIGN` regroupe au moins **8 situations différentes**. Les erreurs natives Android sont masquées. Aucune carte ne doit donc être classée E ou F sur la base du message applicatif.
 
@@ -167,12 +169,14 @@ Message affiché : « Carte incompatible ou contenant un autre identifiant. Aucu
 | CR-3 | Relecture en deux présentations + fenêtre de 30 minutes non prolongeable + `attempt` conservé en RAM seulement : forte probabilité d'interruption entre écriture et confirmation, puis expiration. | **PROUVÉ** (mécanisme) / fréquence terrain = HYPOTHÈSE | Native l.66-71 ; `reserveStudentCardNfc` l.108-109 ; l.161 ; P-02/P-03/P-04 |
 | CR-4 | Diagnostics masqués : code unique `NFC_FOREIGN`, erreurs natives sans code. | **PROUVÉ** | §4.1 ; `NdefHandler.java` beta.10 |
 | CR-5 | Cartes non formatées NDEF, NTAG215, clones non NXP ou préencodées par le fournisseur : refus systématique sans dommage. | **PROUVÉ** (code) / présence dans le lot = HYPOTHÈSE | F-02, P-07, NFC-09 (a) |
-| CR-6 | Verrouillage irréversible par un APK de test construit depuis #908. | **HYPOTHÈSE** | Code #908 ; à vérifier : CC page 3 octet 3 = `0F` |
+| CR-6 | Verrouillage irréversible par un APK de test (#908, #909 ou #912) sur bouton explicite. | APK construits : **PROUVÉ** ; installation et usage : **HYPOTHÈSE** | Runs 38300236809, 38368481589, 38415265990 ; à vérifier : empreinte APK des téléphones, puis CC page 3, 4e octet = `0F` |
 | CR-7 | Recette physique jamais exécutée avant usage de cartes réelles. | **PROUVÉ** (gouvernance) | `NFC-PROG-05-PHYSICAL-RECIPE.md` |
 
 ---
 
 ## 6. Diagnostic matériel non destructif — mode opératoire
+
+> **Révision 2 :** protocole complet (rôles, interdictions, relevés page par page, chaîne de garde, critères d'arrêt) dans `NFC-P0-RECOVERY-01-protocole-diagnostic-physique.md`. Résumé ci-dessous.
 
 **Autorisé (lecture seule)**, sur un téléphone **sans Somafrik ouvert en encodage** :
 
@@ -189,15 +193,15 @@ Si une page renvoie une erreur de lecture (protection par mot de passe), **noter
 | --- | --- | --- |
 | NDEF `somafrik:card:<publicId>` = carte `active/encoded` en base, rejetée au scan | **A** valide rejetée | Logicielle / réconciliation, **sans réécriture** |
 | NDEF `somafrik:card:<publicId>` = carte `issued/pending` **non expirée** | **A/B** | « Reprendre l'opération — relire et confirmer » (P-03), sans écriture |
-| NDEF `somafrik:card:<publicId>` = carte `revoked` (`nfc_reservation_expired` / `nfc_abandoned`) | **B** lisible rejetée (CR-1 + CR-2) | **Conditionnelle** : après PR-1 + PR-2, réécriture contrôlée |
-| NDEF vide, CC `E1 10 12 00`, UID présent en base `revoked` | **D** bloquée logiquement (CR-1) | Conditionnelle : après PR-1 |
+| NDEF `somafrik:card:<publicId>` = carte `revoked` (`nfc_reservation_expired`) | **B** lisible rejetée (CR-1 + CR-2) | **Conditionnelle** : reprise **R1 sans écriture** de la même ligne (protocole de récupération §3.2), après PR-1 + PR-2 ; `nfc_abandoned` : décision CTO |
+| NDEF vide, CC `E1 10 12 00`, UID présent en base `revoked` (`nfc_reservation_expired`) | **D** bloquée logiquement (CR-1) | Conditionnelle : reprise **R2** de la même ligne avec écriture consentie (protocole §3.3) |
 | NDEF vide, CC R/W, UID absent de la base | **D** vierge | Encodage normal possible ; si rejet → regarder modèle/UID (CR-5) |
 | NDEF partiel / illisible, CC R/W | **C** NDEF invalide | Réparation contrôlée après sauvegarde du dump (PR-2) |
 | URL ou autre contenu fournisseur, CC R/W | **C** | Effacement contrôlé du NDEF sur autorisation CTO |
 | Pas de CC (`00 00 00 00`), technologie `NdefFormatable` | **D** non formatée | Formatage NDEF (non destructif) sur autorisation CTO — PR-6 |
 | NTAG215 / UID non `04` / GET_VERSION ≠ NXP | **Hors spécification** (non « détruite ») | Réutilisable seulement si la politique matérielle évolue |
 | AUTH0 ≠ `FF` et lecture en erreur | **E** protégée | Aucune action sans mot de passe connu et documenté |
-| CC octet 3 = `0F` ou bits de lock posés | **F** verrouillée | Contenu figé. Réutilisable uniquement si son contenu correspond à une carte que la base peut réactiver (décision CTO) ; sinon perdue |
+| CC 4e octet = `0F` ou bits de lock posés | **F** verrouillée | Contenu figé. Réutilisable uniquement si son contenu correspond à une carte que la base peut réactiver (décision CTO) ; sinon perdue |
 | Aucune réponse au champ NFC | **F** défectueuse | Contrôle sur un second téléphone avant conclusion |
 | Résultats contradictoires | **G** | Investigation supplémentaire |
 
@@ -207,11 +211,13 @@ Si une page renvoie une erreur de lecture (protection par mot de passe), **noter
 
 **Aucune opération ne doit être lancée automatiquement. Toute opération modifiant une puce requiert une autorisation CTO écrite, carte par carte.**
 
+> **Révision 2 :** la procédure détaillée, conforme au complément CTO (unicité globale des UID et historique conservés, reprise de réservation expirée pour la même carte, reconnaissance du NDEF Somafrik sans effacement), est dans `NFC-P0-RECOVERY-01-protocole-recuperation.md`. Elle prévaut sur la présente section.
+
 - **Cas A — valide rejetée** : ne pas toucher la puce. Identifier la couche (lecteur, flag établissement, RBAC, carte non active) à partir de Q1 et de l'erreur exacte. Réactivation éventuelle par le parcours `resume` existant si la réservation est vivante.
-- **Cas B — NDEF Somafrik orphelin** : sauvegarder le dump (pages 0-44). Après PR-1/PR-2 : réservation neuve avec **consentement explicite**, réécriture du même NDEF par le nouveau token. L'ancien secret est déjà inutilisable (ligne `revoked`, hash non actif), donc pas de risque d'usurpation.
+- **Cas B — NDEF Somafrik orphelin** : aucune écriture. Si le secret lu correspond au hash de la ligne expirée et que les conditions T-1 à T-10 sont réunies, reprise **R1** : la même ligne redevient active, sans toucher la puce (protocole §3.2).
 - **Cas C — NDEF invalide ou étranger** : dump préalable, puis remplacement du message NDEF uniquement (jamais les pages 0-3 ni 40-44), sur carte de laboratoire d'abord.
-- **Cas C (ancienne attribution)** : vérifier l'historique d'audit (Q7). La réattribution doit passer par une action **auditée** de libération d'UID (PR-1), jamais par une suppression de ligne. Une seule carte active par élève reste garantie par l'invariant existant.
-- **Cas D — vierge / réinscriptible** : réencodage contrôlé après PR-1 si l'UID est bloqué ; sinon parcours normal.
+- **Cas C (ancienne attribution)** : vérifier l'historique d'audit (Q7). La reprise n'est possible **que pour le même titulaire**, dans le même établissement, sans carte active ni réservation vivante (protocole §3.1). Une **réattribution à un autre élève** reste refusée (unicité globale de l'UID) et relève d'un mandat distinct.
+- **Cas D — vierge / réinscriptible** : si l'UID est rattaché à une réservation expirée du même titulaire, reprise **R2** (même ligne, nouveau secret, écriture consentie) ; si l'UID est inconnu, parcours normal.
 - **Cas E — protégée** : documenter, ne rien forcer, ne jamais deviner un mot de passe. Demander l'origine au fournisseur.
 - **Cas F — verrouillée** : documenter objectivement (CC `0F` / bits de lock). Le verrouillage NTAG est **OTP et irréversible**. Aucune récupération en écriture n'est possible.
 
@@ -233,13 +239,15 @@ DETECTED → VALIDATED → WRITE_PENDING → WRITTEN → VERIFIED → ACTIVE
 
 | Exigence | Existant | Proposition |
 | --- | --- | --- |
-| Un échec ne perd pas la carte | Expiration → `revoked` + UID bloqué | `RECOVERY_REQUIRED` : UID libérable par action auditée ; ou ne verrouiller l'UID en unicité que sur `issued` / `active` / `lost` |
+| Un échec ne perd pas la carte | Expiration → `revoked` + UID bloqué | `RECOVERY_REQUIRED` : reprise auditée de **la même ligne** pour le même titulaire (R1/R2/R3) ; index UID global inchangé |
 | Reprise après redémarrage | Ligne `pending` relisible 30 min ; `attempt` en RAM | Conserver ; ajouter la relecture « carte présentée → ligne en base par UID » comme point d'entrée de reprise |
 | Lecture de contrôle fiable | Deux présentations (cache Android) | Relecture brute `READ 0x30` dans la même session (approche de [#939](https://github.com/Somafrik-education/Somafrik/pull/939)) |
 | Diagnostic explicite | `NFC_FOREIGN` unique | Codes distincts : `NFC_MODEL_UNSUPPORTED`, `NFC_NOT_FORMATTED`, `NFC_FOREIGN_CONTENT`, `NFC_SOMAFRIK_ORPHAN`, `NFC_READ_ONLY`, `NFC_UID_BLOCKED` ; code natif journalisé sans donnée sensible |
 | Zéro verrouillage | Vrai dans `develop` | **Garde-fou CI** interdisant `makeReadOnly`, `0xA2`, `0x1B`, `formatNdef` hors module explicitement autorisé |
 
 ### 8.2 PR correctives proposées (aucune ouverte dans ce lot)
+
+> **Révision 2 :** ce tableau est **remplacé** par le §4 de `NFC-P0-RECOVERY-01-protocole-recuperation.md`. PR-1 n'y modifie plus l'index UID : elle ajoute `nfc-inspect` (lecture) et `nfc-recover` (reprise de la même ligne). Le tableau ci-dessous est conservé pour la traçabilité de la révision 1.
 
 | # | Priorité | Périmètre | Dépend de | Contenu |
 | --- | --- | --- | --- | --- |
@@ -266,7 +274,7 @@ Ordre conseillé : PR-0 → PR-1 → PR-2 → PR-3 → PR-4 → PR-5 → PR-6.
 | `backend/lib/studentCardsNfcLifecycle.pg.test.js` sur PostgreSQL 16 jetable | **37/37 verts** — confirment l'unicité d'UID « à vie » (n° 4, 8, 27, 29) |
 | `npm run test:student-card-nfc-encoding` / `-batch` / `-security` | 52/52, 45/45, 13/13 verts |
 | `src/lib/nfcSession.test.ts` | 8/10 : les 2 échecs sont dus à l'absence de `Mobile/node_modules` dans le conteneur d'audit (module natif introuvable). Le même contrôle a été rejoué par F-01 avec la bibliothèque beta.10 extraite : vert. |
-| `evidence/nfc-p0-recovery-01/inventory-readonly.sql` | Exécuté sans erreur sur le schéma réel (schema.sql + migrations NFC), base vide |
+| `evidence/nfc-p0-recovery-01/inventory-readonly.sql` (révision 2 : Q1-Q8, Q7 en liste blanche) | 8/8 requêtes exécutées sans erreur, en `READ ONLY` + `ROLLBACK`, sur un PostgreSQL 16 local jetable ne contenant que le schéma (aucune donnée) |
 
 ### 9.2 Matrice cible (après corrections)
 
@@ -297,13 +305,13 @@ Fusionnées dans `develop` depuis le début de l'incident (consommateurs en **le
 
 | PR | Impact NFC |
 | --- | --- |
-| [#908](https://github.com/Somafrik-education/Somafrik/pull/908) NFC-ENC-01 | **Bloquant** : `makeReadOnly` irréversible derrière un bouton. Ne pas fusionner en l'état. Vérifier si un APK en est issu. |
+| [#908](https://github.com/Somafrik-education/Somafrik/pull/908) NFC-ENC-01, [#909](https://github.com/Somafrik-education/Somafrik/pull/909) NFC-RECON-02, [#912](https://github.com/Somafrik-education/Somafrik/pull/912) NFC-PROG-02 | **Bloquant** : `makeReadOnly` irréversible derrière un bouton, et un APK installable a été construit pour chacune. Ne pas fusionner en l'état. Archiver les artefacts avant le 26-27/10. |
 | [#939](https://github.com/Somafrik-education/Somafrik/pull/939) ONE-TAP | Lecture brute `READ 0x30` seulement (pas de WRITE brut observé) : base utile pour PR-3/PR-4. Audit complet du chemin d'écriture requis. |
 | [#938](https://github.com/Somafrik-education/Somafrik/pull/938) BATCH expired | Débloque le **créneau élève**, **ne libère pas l'UID** : ne résout pas CR-1. Compatible. |
 | [#937](https://github.com/Somafrik-education/Somafrik/pull/937), [#934](https://github.com/Somafrik-education/Somafrik/pull/934), [#949](https://github.com/Somafrik-education/Somafrik/pull/949) Reader Mode | Cycle de vie de la session NFC : à réévaluer avec PR-4 (relecture). Pas de verrouillage observé. |
 | [#925](https://github.com/Somafrik-education/Somafrik/pull/925), [#927](https://github.com/Somafrik-education/Somafrik/pull/927), [#922](https://github.com/Somafrik-education/Somafrik/pull/922), [#926](https://github.com/Somafrik-education/Somafrik/pull/926), [#928](https://github.com/Somafrik-education/Somafrik/pull/928), [#929](https://github.com/Somafrik-education/Somafrik/pull/929) | Redécouverte / confirmation / persistance : traitent CR-3 partiellement ; à consolider après décision sur CR-1. |
 | [#935](https://github.com/Somafrik-education/Somafrik/pull/935), [#936](https://github.com/Somafrik-education/Somafrik/pull/936), [#940](https://github.com/Somafrik-education/Somafrik/pull/940), [#946](https://github.com/Somafrik-education/Somafrik/pull/946), [#947](https://github.com/Somafrik-education/Somafrik/pull/947), QA [#943](https://github.com/Somafrik-education/Somafrik/pull/943) [#948](https://github.com/Somafrik-education/Somafrik/pull/948) | Lecture uniquement : pas de risque matériel, mais inutilisables tant que les cartes ne sont pas récupérées. |
-| #909-#917, #930, #932 | Historique d'intégration ; à fermer ou rebaser après décision. |
+| #910, #913-#917, #930, #932 | Historique d'intégration ; à fermer ou rebaser après décision. |
 
 ---
 
@@ -312,9 +320,9 @@ Fusionnées dans `develop` depuis le début de l'incident (consommateurs en **le
 | Critère | État |
 | --- | --- |
 | Cause des rejets identifiée ou circonscrite | **Identifiée** pour CR-1/CR-2/CR-3 ; CR-5/CR-6 à confirmer par le diagnostic matériel |
-| Diagnostic individuel de chaque carte rejetée | **À faire** (§6, registre fourni) |
-| Procédure de remise en service validée | Proposée (§7), **à valider CTO** |
-| Aucun verrouillage irréversible possible | Vrai sur `develop` ; garde-fou CI à ajouter (PR-0) ; #908 à neutraliser |
+| Diagnostic individuel de chaque carte rejetée | **À faire** — protocole prêt (`…-protocole-diagnostic-physique.md`), non exécuté |
+| Procédure de remise en service validée | Révision 2 (`…-protocole-recuperation.md`), **à valider CTO** |
+| Aucun verrouillage irréversible possible | Vrai sur `develop` ; garde-fou CI à ajouter (PR-0) ; #908/#909/#912 à neutraliser ; téléphones à vérifier (`…-provenance-apk.md`) |
 | Interruptions et réencodages maîtrisés | **Non** tant que PR-1/PR-2 ne sont pas livrées |
 | Cohérence NFC / API / PostgreSQL démontrée | Partielle (SQL Q2-Q6 à exécuter en lecture) |
 | Tests automatisés et physiques validés | Automatisés : oui ; physiques : **non exécutés** |
@@ -322,8 +330,8 @@ Fusionnées dans `develop` depuis le début de l'incident (consommateurs en **le
 
 ## 12. Questions à trancher par le CTO
 
-1. Un APK construit depuis #908 (ou une autre branche contenant `makeReadOnly`) a-t-il été installé sur un téléphone ayant manipulé les cartes ?
-2. Politique UID : réutilisation autorisée après expiration ou abandon (avec audit), ou maintien du « jamais réutilisé » avec une procédure de libération manuelle ?
+1. Un des trois APK à risque (#908, #909, #912) a-t-il été installé sur un téléphone ayant manipulé les cartes ? Procédure : `…-provenance-apk.md` §2.
+2. ~~Politique UID~~ — **tranché** par le complément CTO : unicité globale conservée. Décisions restantes : `…-protocole-recuperation.md` §6.
 3. Autorisation d'exécuter le diagnostic non destructif (§6) et les requêtes en lecture (Q1-Q7) sur l'environnement où les cartes ont été rejetées.
 4. Les cartes livrées sont-elles bien des NTAG213/216 NXP, formatées NDEF, sans contenu fournisseur ? (référence d'achat et fiche fournisseur)
 
