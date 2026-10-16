@@ -11,7 +11,7 @@ import { ENTRY_CONTROL_COPY, entryControlActor, entryControlMedia } from "../lib
  * Contrôle d'entrée (sans aucun droit Présences). Il ne lit ni présences, ni élèves, ni
  * capacités de pointage : le serveur résout tout à partir de la carte et refuse ce qui est interdit.
  */
-export default function EntryControlScreen() {
+export default function StudentCardEntryControlScreen() {
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
   const allowed = entryControlActor(session);
