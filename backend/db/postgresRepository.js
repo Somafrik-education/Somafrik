@@ -3120,14 +3120,18 @@ class PostgresRepository {
       teacherId = sessionTeacherId;
     }
 
+    // Verrou optimiste atomique : la note existante est verrouillée jusqu'à la fin de la
+    // transaction (pedagogyService.upsertGrade) ; un upsert concurrent attend, relit la version
+    // à jour et reçoit 409 au lieu d'écraser silencieusement (perte de mise à jour).
     let existing = await this.one(
       `SELECT * FROM grades
        WHERE school_id = $1 AND evaluation_id = $2 AND student_id = $3
-       LIMIT 1`,
+       LIMIT 1
+       FOR UPDATE`,
       [evaluation.school_id, evaluation.id, student.id],
     );
     if (!existing && isUuid(payload.id)) {
-      existing = await this.one("SELECT * FROM grades WHERE id = $1", [payload.id]);
+      existing = await this.one("SELECT * FROM grades WHERE id = $1 FOR UPDATE", [payload.id]);
     }
 
     assertTeacherGradeMutationPermission(principal, existing);
