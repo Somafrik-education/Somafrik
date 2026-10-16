@@ -53,6 +53,7 @@ const ROLL_CALL_ERROR = Object.freeze({
   MANUAL_FORBIDDEN: "ROLL_CALL_MANUAL_FORBIDDEN",
   STUDENT_NOT_ENROLLED: "ROLL_CALL_STUDENT_NOT_ENROLLED",
   ALREADY_VALIDATED: "ROLL_CALL_ALREADY_VALIDATED",
+  CONCURRENT_UPDATE: "ROLL_CALL_CONCURRENT_UPDATE",
 });
 
 /** Statuts du pointage manuel : « excused » relève de la justification, jamais de l'appel. */
@@ -383,6 +384,17 @@ async function assertManualStudentsEnrolled(repo, schoolId, classId, manual) {
   }
 }
 
+/**
+ * Verrou transactionnel par établissement et date : les appels Enseignant et Direction d'une même
+ * journée sont sérialisés (libéré à la fin de la transaction de withIdempotency).
+ */
+async function lockRollCallDay(repo, schoolId, date) {
+  await repo.one(
+    "SELECT pg_advisory_xact_lock(hashtext('attendance-roll-call'), hashtext($1::text || ':' || $2::text)) AS locked",
+    [schoolId, date],
+  );
+}
+
 /** Journal : une ligne par session validée ; une seconde validation de la session est refusée. */
 async function recordRollCallJournal(repo, row) {
   const inserted = await repo.one(
@@ -455,40 +467,64 @@ async function validateRollCall(repo, payload, scope, principal, keys, auditMeta
  * inscription, affectation et auteur revérifiés).
  */
 async function writeTeacherRollCall(repo, { scope, principal, actor, userId, context, entries, cardEntries, manual, total, target, auditMeta }) {
+  // Ordre déterministe (par élève) : verrous de lignes toujours pris dans le même ordre.
   const wanted = [
     ...entries.map((entry) => ({ studentId: entry.studentId, status: "present", source: "card" })),
     ...manual.map((item) => ({ studentId: item.studentId, status: item.status, source: "manual", index: item.index })),
-  ];
-  const existingRows = await repo.all(
+  ].sort((a, b) => (a.studentId < b.studentId ? -1 : a.studentId > b.studentId ? 1 : 0));
+  await lockRollCallDay(repo, scope.schoolId, context.date);
+  const readExisting = async (studentIds) => new Map((await repo.all(
     `SELECT id, student_id, status FROM attendance
       WHERE school_id = $1::uuid AND attendance_date = $2::date AND student_id = ANY($3::uuid[])
+      ORDER BY student_id
       FOR UPDATE`,
-    [scope.schoolId, context.date, wanted.map((item) => item.studentId)],
-  );
-  const existing = new Map(existingRows.map((row) => [String(row.student_id).toLowerCase(), row]));
+    [scope.schoolId, context.date, studentIds],
+  )).map((row) => [String(row.student_id).toLowerCase(), row]));
   const ownTeacher = principal?.role === "Enseignant" ? {} : { teacherId: target.teacherId };
-  const items = [];
+  const written = [];
   const corrections = [];
   const protectedRows = [];
   let created = 0;
   let unchanged = 0;
-  for (const item of wanted) {
-    const row = existing.get(item.studentId);
-    const transition = attendanceTransition(row?.status ?? null, item.status);
-    if (transition === "unchanged") {
-      unchanged += 1;
-      continue;
+  // Écriture conditionnelle atomique : création seulement si aucune présence n'existe, correction
+  // seulement si la présence est encore `absent`. Un écrivain concurrent (saisie classique,
+  // pointage individuel) qui a écrit entre la lecture et l'écriture fait échouer la garde : la
+  // présence est relue et la règle réappliquée, sans jamais l'écraser.
+  let pending = wanted;
+  for (let attempt = 0; pending.length > 0; attempt += 1) {
+    if (attempt > 2) {
+      throw createHttpError(409, "Présences modifiées pendant l'appel : validez à nouveau.", ROLL_CALL_ERROR.CONCURRENT_UPDATE);
     }
-    if (transition === "protected") {
-      protectedRows.push({ ...item, existingStatus: row.status });
-      continue;
+    const existing = await readExisting(pending.map((item) => item.studentId));
+    const toWrite = [];
+    for (const item of pending) {
+      const row = existing.get(item.studentId);
+      const transition = attendanceTransition(row?.status ?? null, item.status);
+      if (transition === "unchanged") unchanged += 1;
+      else if (transition === "protected") protectedRows.push({ ...item, existingStatus: row.status });
+      else toWrite.push({ item, row, guard: transition === "create" ? "create" : "correct_absent" });
     }
-    if (transition === "create") created += 1;
-    else corrections.push({ attendanceId: String(row.id), studentId: item.studentId, from: row.status, to: item.status });
-    items.push({ studentId: item.studentId, classId: context.classId, date: context.date, status: item.status, ...ownTeacher });
-  }
-  if (items.length > 0) {
-    await repo.upsertSchoolAttendanceBatch({ items }, principal, auditMeta);
+    if (toWrite.length === 0) break;
+    const saved = await repo.upsertSchoolAttendanceBatch(
+      {
+        items: toWrite.map(({ item }) => ({
+          studentId: item.studentId, classId: context.classId, date: context.date, status: item.status, ...ownTeacher,
+        })),
+      },
+      principal,
+      auditMeta,
+      { writeGuards: toWrite.map(({ guard }) => ({ mode: guard })) },
+    );
+    pending = [];
+    toWrite.forEach(({ item, row, guard }, index) => {
+      if (!Array.isArray(saved) || !saved[index]) {
+        pending.push(item);
+        return;
+      }
+      written.push(item);
+      if (guard === "create") created += 1;
+      else corrections.push({ attendanceId: String(row.id), studentId: item.studentId, from: row.status, to: item.status });
+    });
   }
   const authorRoleKeys = [...principalRoleKeys(actor)].sort();
   const journal = await recordRollCallJournal(repo, {
@@ -538,12 +574,12 @@ async function writeTeacherRollCall(repo, { scope, principal, actor, userId, con
       mode: "teacher",
       rollCallId: journal.id,
       validatedAt: journal.validatedAt,
-      recorded: items.length,
+      recorded: written.length,
       created,
       corrected: corrections.length,
       unchanged,
       protected: protectedRows.length,
-      absent: items.filter((item) => item.status === "absent").length,
+      absent: written.filter((item) => item.status === "absent").length,
       manual: manual.length,
       duplicatesIgnored: total - entries.length,
       protectedReceiptIndexes: cardEntries
@@ -566,7 +602,9 @@ async function writeTeacherRollCall(repo, { scope, principal, actor, userId, con
 async function writeDirectionRollCall(repo, { scope, principal, actor, userId, context, entries, total, justification, target, auditMeta }) {
   const attendanceIds = [];
   let alreadyRecorded = 0;
-  for (const entry of entries) {
+  await lockRollCallDay(repo, scope.schoolId, context.date);
+  const ordered = [...entries].sort((a, b) => (a.studentId < b.studentId ? -1 : a.studentId > b.studentId ? 1 : 0));
+  for (const entry of ordered) {
     const student = await repo.resolveStudentForAttendance(
       { studentId: entry.studentId, classId: context.classId },
       principal,

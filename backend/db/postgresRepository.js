@@ -464,16 +464,16 @@ class PostgresRepository {
     throw error;
   }
 
-  /**
-   * D3.5b — Pour bases legacy : compter → dédup déterministe → index unique.
-   * L'index n'est PAS créé dans schema.sql (évite l'échec avant dédup).
-   */
   // CARTE-PR3-B : journal des appels validés (après attendance, classes et teachers).
   async ensureAttendanceRollCallsSchema() {
     const { ATTENDANCE_ROLL_CALLS_SCHEMA_SQL } = require("./attendanceRollCallsSchema");
     await this.query(ATTENDANCE_ROLL_CALLS_SCHEMA_SQL);
   }
 
+  /**
+   * D3.5b — Pour bases legacy : compter → dédup déterministe → index unique.
+   * L'index n'est PAS créé dans schema.sql (évite l'échec avant dédup).
+   */
   async ensureAttendanceCanonicalUniqueness() {
     const {
       COUNT_ATTENDANCE_DUPLICATE_GROUPS_SQL,
@@ -1825,8 +1825,8 @@ class PostgresRepository {
     return this.getPedagogyStore().upsertSchoolGrade(payload, principal, auditMeta);
   }
 
-  upsertSchoolAttendanceBatch(payload, principal, auditMeta) {
-    return this.getPedagogyStore().upsertSchoolAttendanceBatch(payload, principal, auditMeta);
+  upsertSchoolAttendanceBatch(payload, principal, auditMeta, options) {
+    return this.getPedagogyStore().upsertSchoolAttendanceBatch(payload, principal, auditMeta, options);
   }
 
   getFinanceStore() {
@@ -5294,7 +5294,14 @@ class PostgresRepository {
     return saved;
   }
 
-  async upsertAttendance(payload, principal = {}) {
+  /**
+   * `options.writeGuard` (facultatif, interne serveur, jamais lu dans le corps client) rend
+   * l'écriture conditionnelle et atomique pour l'appel en classe (CARTE-PR3-B) :
+   *  - { mode: "create" } : insère seulement si aucune présence n'existe (ON CONFLICT DO NOTHING) ;
+   *  - { mode: "correct_absent" } : ne remplace qu'une présence encore `absent`.
+   * Si la garde empêche l'écriture, retourne null. Sans option : comportement inchangé.
+   */
+  async upsertAttendance(payload, principal = {}, options = {}) {
     const attendanceDate = this.parseDate(payload.date);
     if (!payload.studentId || !attendanceDate) {
       const error = new Error("Présence invalide");
@@ -5370,16 +5377,23 @@ class PostgresRepository {
     // D3.5b : Justifié = absence justifiée (pas de justificatif documentaire)
     const reason =
       payload.reason ?? (status === "excused" ? "Absence justifiée" : null);
-    const row = await this.one(
-      `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (school_id, student_id, attendance_date)
-       DO UPDATE SET
+    const guardMode = options?.writeGuard?.mode;
+    if (guardMode !== undefined && guardMode !== "create" && guardMode !== "correct_absent") {
+      throw new Error("ATTENDANCE_WRITE_GUARD_INVALID");
+    }
+    const conflictClause = guardMode === "create"
+      ? "DO NOTHING"
+      : `DO UPDATE SET
          status = EXCLUDED.status,
          reason = EXCLUDED.reason,
          teacher_id = EXCLUDED.teacher_id,
          class_id = EXCLUDED.class_id,
-         updated_at = NOW()
+         updated_at = NOW()${guardMode === "correct_absent" ? "\n       WHERE attendance.status = 'absent'" : ""}`;
+    const row = await this.one(
+      `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (school_id, student_id, attendance_date)
+       ${conflictClause}
        RETURNING id`,
       [
         student.school_id,
@@ -5392,6 +5406,7 @@ class PostgresRepository {
       ],
     );
 
+    if (!row?.id && guardMode) return null;
     return this.getAttendanceById(row.id);
   }
 

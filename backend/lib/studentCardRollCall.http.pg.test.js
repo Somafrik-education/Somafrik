@@ -880,6 +880,117 @@ async function main() {
     assert.equal(okJ.status, 201, JSON.stringify(okJ.data));
     assert.deepEqual(Object.keys(await rowsOn(J.date)), [S.S1]);
 
+    // ---------- CARTE-PR3-B : concurrence réelle (deux connexions PostgreSQL) ----------
+    // Une seconde connexion écrit sans valider pendant que l'appel s'exécute : l'appel doit attendre
+    // puis respecter l'état validé (jamais d'écrasement silencieux), de façon déterministe.
+    const waitForBlockedBackends = async (count, waitEventType = "Lock", timeoutMs = 8000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const { rows } = await pool.query(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = $1 AND state = 'active'`,
+          [waitEventType],
+        );
+        if (rows[0].n >= count) return true;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return false;
+    };
+    const statusOf = async (studentId, date) => (await pool.query(
+      `SELECT status, reason FROM attendance WHERE school_id = $1 AND student_id = $2 AND attendance_date = $3::date`,
+      [schoolA.id, studentId, date],
+    )).rows;
+
+    // C1 — un justifié validé pendant l'appel n'est jamais écrasé par un scan « présent ».
+    const C1 = { sessionId: session(), classId: classA1.id, date: "2026-10-22" };
+    const c1Scan = await scan(tokenTeacher, { ...C1, cardToken: cards.S1.cardToken });
+    assert.equal(c1Scan.status, 200, JSON.stringify(c1Scan.data));
+    const writerC1 = await pool.connect();
+    let race1;
+    try {
+      await writerC1.query("BEGIN");
+      await writerC1.query(
+        `INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status, reason)
+         VALUES ($1, $2, $3, $4::date, 'excused', 'Malade')`,
+        [schoolA.id, S.S1, classA1.id, C1.date],
+      );
+      const pendingC1 = validate(tokenTeacher, { ...C1, receipts: [c1Scan.data.receipt] });
+      assert.equal(await waitForBlockedBackends(1), true, "l'appel attend l'écriture concurrente");
+      await writerC1.query("COMMIT");
+      race1 = await pendingC1;
+    } finally {
+      writerC1.release();
+    }
+    assert.equal(race1.status, 201, JSON.stringify(race1.data));
+    assert.deepEqual(await statusOf(S.S1, C1.date), [{ status: "excused", reason: "Malade" }],
+      "C1 : justifié concurrent jamais écrasé");
+    assert.deepEqual([race1.data.created, race1.data.corrected, race1.data.protected, race1.data.recorded], [0, 0, 1, 0]);
+    assert.deepEqual(race1.data.protectedReceiptIndexes, [0]);
+    const journalC1 = (await pool.query(
+      `SELECT created_count, protected_count FROM attendance_roll_calls WHERE id = $1`, [race1.data.rollCallId],
+    )).rows[0];
+    assert.deepEqual(journalC1, { created_count: 0, protected_count: 1 }, "C1 : journal conforme à l'écriture réelle");
+
+    // C2 — un présent validé pendant l'appel n'est jamais rétrogradé par un « absent » manuel.
+    const C2 = { sessionId: session(), classId: classA1.id, date: "2026-10-23" };
+    const writerC2 = await pool.connect();
+    let race2;
+    try {
+      await writerC2.query("BEGIN");
+      await writerC2.query(
+        `INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status)
+         VALUES ($1, $2, $3, $4::date, 'present')`,
+        [schoolA.id, S.S3, classA1.id, C2.date],
+      );
+      const pendingC2 = validate(tokenTeacher, { ...C2, manual: [{ studentId: S.S3, status: "absent" }] });
+      assert.equal(await waitForBlockedBackends(1), true, "l'appel attend l'écriture concurrente");
+      await writerC2.query("COMMIT");
+      race2 = await pendingC2;
+    } finally {
+      writerC2.release();
+    }
+    assert.equal(race2.status, 201, JSON.stringify(race2.data));
+    assert.equal((await statusOf(S.S3, C2.date))[0].status, "present", "C2 : présent concurrent jamais rétrogradé");
+    assert.deepEqual([race2.data.created, race2.data.protected, race2.data.absent], [0, 1, 0]);
+    assert.deepEqual(race2.data.protectedManualIndexes, [0]);
+
+    // C3 — appels Enseignant et Direction simultanés sur le même établissement et la même date :
+    // sérialisés par le verrou transactionnel ; une seule présence, compteurs cohérents.
+    const C3 = { sessionId: session(), classId: classA1.id, date: "2026-10-24" };
+    const C3D = { sessionId: session(), classId: classA1.id, date: C3.date, mode: "direction" };
+    const c3Dir = await scan(tokenDirector, { ...C3D, cardToken: cards.S2.cardToken });
+    assert.equal(c3Dir.status, 200, JSON.stringify(c3Dir.data));
+    const lockHolder = await pool.connect();
+    let c3Teacher;
+    let c3Direction;
+    try {
+      await lockHolder.query("BEGIN");
+      await lockHolder.query(
+        `SELECT pg_advisory_xact_lock(hashtext('attendance-roll-call'), hashtext($1::text || ':' || $2::text))`,
+        [schoolA.id, C3.date],
+      );
+      const pendingTeacher = validate(tokenTeacher, { ...C3, manual: [{ studentId: S.S2, status: "present" }] });
+      const pendingDirection = validate(tokenDirector, { ...C3D, justification, receipts: [c3Dir.data.receipt] });
+      const serialized = await waitForBlockedBackends(2, "Lock", 3000);
+      await lockHolder.query("COMMIT");
+      [c3Teacher, c3Direction] = await Promise.all([pendingTeacher, pendingDirection]);
+      assert.equal(serialized, true, "C3 : appels Enseignant et Direction sérialisés par établissement et date");
+    } finally {
+      lockHolder.release();
+    }
+    assert.equal(c3Teacher.status, 201, JSON.stringify(c3Teacher.data));
+    assert.equal(c3Direction.status, 201, JSON.stringify(c3Direction.data));
+    assert.equal((await statusOf(S.S2, C3.date)).length, 1, "C3 : une seule présence");
+    const c3Journals = (await pool.query(
+      `SELECT mode, created_count, unchanged_count, protected_count FROM attendance_roll_calls
+        WHERE session_id = ANY($1::uuid[]) ORDER BY mode`,
+      [[C3.sessionId, C3D.sessionId]],
+    )).rows;
+    assert.equal(c3Journals.length, 2);
+    assert.equal(c3Journals.reduce((sum, row) => sum + row.created_count, 0), 1, "C3 : une seule création comptée");
+    assert.equal(c3Journals.reduce((sum, row) => sum + row.created_count + row.unchanged_count + row.protected_count, 0), 2,
+      "C3 : chaque demande comptée une fois");
+
     // ---------- Non-régression : pointage individuel inchangé ----------
     const individual = await request("/student-cards/scan", {
       method: "POST",

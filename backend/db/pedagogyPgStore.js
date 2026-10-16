@@ -696,8 +696,8 @@ function createPedagogyPgStore(repo) {
       async upsertGrade(payload, principal) {
         return scopedRepo.upsertGrade(payload, principal);
       },
-      async upsertAttendance(payload, principal) {
-        return scopedRepo.upsertAttendance(payload, principal);
+      async upsertAttendance(payload, principal, options) {
+        return scopedRepo.upsertAttendance(payload, principal, options);
       },
       async upsertAttendanceBatch(payload, principal) {
         return scopedRepo.upsertAttendanceBatch(payload, principal);
@@ -1339,8 +1339,8 @@ function createPedagogyPgStore(repo) {
       pedagogyService.updateEvaluation(api, id, patch, principal, auditMeta),
     upsertSchoolGrade: (payload, principal, auditMeta) =>
       pedagogyService.upsertGrade(api, payload, principal, auditMeta),
-    upsertSchoolAttendanceBatch: (payload, principal, auditMeta) =>
-      pedagogyService.upsertAttendanceBatch(api, payload, principal, auditMeta),
+    upsertSchoolAttendanceBatch: (payload, principal, auditMeta, options) =>
+      pedagogyService.upsertAttendanceBatch(api, payload, principal, auditMeta, options),
     listSchoolRooms: (principal, query) => schoolRoomsService.listSchoolRooms(api, principal, query),
     createSchoolRoom: (payload, principal, auditMeta) =>
       schoolRoomsService.createSchoolRoom(api, payload, principal, auditMeta),
