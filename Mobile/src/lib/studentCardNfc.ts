@@ -9,6 +9,8 @@ export const CANONICAL_NFC_PERMISSION =
 
 export const NFC_V1_PREFIX = "somafrik:card:";
 export const MAX_NFC_RECORD_LENGTH = 256;
+/** Attente maximale d'une carte avant annulation réelle de la découverte Android. */
+export const NFC_DISCOVERY_TIMEOUT_MS = 30_000;
 
 export const STUDENT_CARD_NFC_COPY = {
   button: "Carte NFC",
@@ -26,6 +28,7 @@ export const STUDENT_CARD_NFC_COPY = {
   invalidPrefix: "Cette carte n’est pas une carte élève Somafrik.",
   invalidToken: "Cette carte n’est pas une carte élève Somafrik.",
   cancelled: "Lecture NFC annulée.",
+  timeout: "Aucune carte détectée. Appuyez sur Réessayer.",
   error: "La lecture NFC n’a pas abouti.",
   retry: "Réessayer",
   useQr: "Utiliser QR",
@@ -44,6 +47,7 @@ export type NfcReadFailure =
   | "invalid_prefix"
   | "invalid_token"
   | "cancelled"
+  | "timeout"
   | "error";
 
 export type NfcReadResult =
@@ -56,7 +60,10 @@ export type NfcHardware = {
   isEnabled(): Promise<boolean>;
   requestTag(): Promise<void>;
   getTag(): Promise<{ ndefMessage?: unknown; id?: unknown; techTypes?: unknown } | null>;
+  /** Annule la lecture en cours ; le Reader Mode du scanner reste actif. */
   cancel(): Promise<void>;
+  /** Fermeture du scanner : annule la lecture puis rend le Reader Mode à Android. */
+  end?(): Promise<void>;
 };
 
 export type NfcTagLike = {
@@ -190,6 +197,7 @@ export function nfcFailureMessage(reason: NfcReadFailure): string {
     return STUDENT_CARD_NFC_COPY.invalidPrefix;
   }
   if (reason === "cancelled") return STUDENT_CARD_NFC_COPY.cancelled;
+  if (reason === "timeout") return STUDENT_CARD_NFC_COPY.timeout;
   return STUDENT_CARD_NFC_COPY.error;
 }
 
@@ -255,24 +263,66 @@ export async function releaseNfcSession(hardware: NfcHardware): Promise<void> {
   }
 }
 
-export async function scanNfcCardToken(hardware: NfcHardware): Promise<NfcReadResult> {
+/** Fermeture, changement de périmètre ou arrière-plan : libération complète du matériel. */
+export async function endNfcReader(hardware: NfcHardware): Promise<void> {
+  await releaseNfcSession(hardware);
   try {
-    const probe = await probeNfc(hardware);
-    if (probe.status === "unsupported") return { ok: false, reason: "unsupported" };
-    if (probe.status === "disabled") return { ok: false, reason: "disabled" };
-    if (probe.status !== "ready") return { ok: false, reason: "error" };
-    await hardware.requestTag();
-    const tag = await hardware.getTag();
-    return extractNfcCardTokenFromTag(tag);
-  } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "NFC_SESSION_CANCELLED") {
-      return { ok: false, reason: "cancelled" };
+    await hardware.end?.();
+  } catch {
+    // already released
+  }
+}
+
+export async function scanNfcCardToken(
+  hardware: NfcHardware,
+  options: { timeoutMs?: number } = {},
+): Promise<NfcReadResult> {
+  const timeoutMs = options.timeoutMs ?? NFC_DISCOVERY_TIMEOUT_MS;
+  let timedOut = false;
+  let outcome: NfcReadResult | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // L'échéance borne lecture ET libération : elle annule la découverte native
+  // (cancelTechnologyRequest) puis rend la main sans attendre le pont natif. Si
+  // requestTechnology ne se termine jamais, le bail reste en quarantaine (aucune
+  // nouvelle découverte possible) au lieu de bloquer le lecteur.
+  const expired = new Promise<NfcReadResult>((resolve) => {
+    timer = setTimeout(() => {
+      if (!outcome) timedOut = true;
+      void releaseNfcSession(hardware);
+      resolve(outcome ?? { ok: false, reason: "timeout" });
+    }, timeoutMs);
+  });
+  const attempt = async (): Promise<NfcReadResult> => {
+    try {
+      const probe = await probeNfc(hardware);
+      if (timedOut) return { ok: false, reason: "timeout" };
+      if (probe.status === "unsupported") return { ok: false, reason: "unsupported" };
+      if (probe.status === "disabled") return { ok: false, reason: "disabled" };
+      if (probe.status !== "ready") return { ok: false, reason: "error" };
+      await hardware.requestTag();
+      if (timedOut) return { ok: false, reason: "timeout" };
+      const tag = await hardware.getTag();
+      if (timedOut) return { ok: false, reason: "timeout" };
+      return extractNfcCardTokenFromTag(tag);
+    } catch (error) {
+      if (timedOut) return { ok: false, reason: "timeout" };
+      if (error && typeof error === "object" && "code" in error && error.code === "NFC_SESSION_CANCELLED") {
+        return { ok: false, reason: "cancelled" };
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (/cancel/i.test(message)) return { ok: false, reason: "cancelled" };
+      return { ok: false, reason: "error" };
     }
-    const message = error instanceof Error ? error.message : String(error);
-    if (/cancel/i.test(message)) return { ok: false, reason: "cancelled" };
-    return { ok: false, reason: "error" };
-  } finally {
+  };
+  const settled = attempt().then(async (result) => {
+    outcome = result;
     await releaseNfcSession(hardware);
+    return result;
+  });
+  try {
+    return await Promise.race([settled, expired]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

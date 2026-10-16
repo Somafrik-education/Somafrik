@@ -614,7 +614,9 @@ assert.doesNotMatch(listenForTag[0], /navigate\(|Accueil/, "NFC-FIX-02 listenFor
 assert.doesNotMatch(nfcLib, /react-native-nfc-manager/);
 assert.match(modal, /runStudentCardScanFlow/);
 assert.match(modal, /scanNfcCardToken/);
-assert.match(modal, /releaseNfcSession/);
+// RC-5 : fermeture = annulation de la lecture puis restitution du Reader Mode.
+assert.match(modal, /endNfcReader/);
+assert.match(nfcLib, /export async function endNfcReader[\s\S]*?await releaseNfcSession\(hardware\);[\s\S]*?hardware\.end\?\.\(\)/);
 assert.match(modal, /decideNfcScannerForeground/);
 assert.match(modal, /decideNfcScannerRead/);
 assert.match(modal, /onFallbackQr/);
