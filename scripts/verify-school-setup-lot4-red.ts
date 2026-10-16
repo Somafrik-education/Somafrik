@@ -347,6 +347,20 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   "backend/scripts/verify-student-access-cards.js",
 ]);
 
+// CARTE-PR3-A1 (#944, GO CTO) : contrôle d'entrée au portail. Fichiers exacts, admis uniquement
+// lorsque le diff porte aussi le module du chantier (ancre ci-dessous). Aucun dossier, aucune
+// autre migration, aucun autre fichier RBAC : tout le reste demeure FAIL.
+const STUDENT_CARD_PR3_A1_ANCHOR = "backend/lib/studentCardEntry.js";
+const STUDENT_CARD_PR3_A1_EXACT = new Set([
+  "backend/db/migrations/20261016_school_entry_events.sql",
+  "backend/db/schoolEntryEventsSchema.js",
+  "backend/db/postgresRepository.js",
+  "backend/lib/liveSchoolRoleKeys.js",
+  "backend/lib/functionalModulesCatalog.js",
+  "backend/lib/admin07AdministrationReplay.test.js",
+  "web/src/lib/admin07AdministrationReplay.audit.test.ts",
+]);
+
 function isStudentCardPr6Signal(file: string) {
   return (
     file === "scripts/verify-student-card-web.js" ||
@@ -426,7 +440,10 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     };
   }
   if (changed.some(isStudentCardPr6Signal)) {
-    const outside = changed.filter((file) => !isStudentCardPr6IntegrationFile(file));
+    const pr3EntryControl = changed.includes(STUDENT_CARD_PR3_A1_ANCHOR);
+    const outside = changed.filter(
+      (file) => !isStudentCardPr6IntegrationFile(file) && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file)),
+    );
     if (outside.length === 0 && exclusiveLot4.length === 0) {
       return {
         kind: "na",
@@ -904,6 +921,51 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "fail",
         "L4-09: Carte élève + catalogue hors allowlist doit rester FAIL",
       );
+
+      // CARTE-PR3-A1 (#944) : diff exact admis ; tout ajout hors liste nominative reste FAIL.
+      const pr3A1Files = [
+        "backend/lib/studentCardEntry.js",
+        "backend/lib/studentCardEntry.test.js",
+        "backend/lib/studentCardEntry.http.pg.test.js",
+        "backend/db/migrations/20261016_school_entry_events.sql",
+        "backend/db/schoolEntryEventsSchema.js",
+        "backend/db/postgresRepository.js",
+        "backend/lib/liveSchoolRoleKeys.js",
+        "backend/lib/functionalModulesCatalog.js",
+        "backend/lib/admin07AdministrationReplay.test.js",
+        "backend/lib/platformPersonalDataGuard.js",
+        "backend/server.js",
+        "backend/services/rbacService.js",
+        "web/src/lib/admin07AdministrationReplay.audit.test.ts",
+        ".github/workflows/nfc-encoding-preprod.yml",
+        "scripts/verify-school-setup-lot4-red.ts",
+      ];
+      assert.equal(evaluateLot4Scope(pr3A1Files).kind, "na", "L4-09: diff exact CARTE-PR3-A1 admis nominativement");
+      for (const [extra, label] of [
+        ["backend/db/migrations/20261017_other_table.sql", "autre migration"],
+        ["backend/db/migrations/20261016_attendance_roll_calls.sql", "migration d'un autre chantier"],
+        ["backend/lib/financeManagement.js", "autre fichier backend"],
+        ["backend/lib/functionalRbacService.js", "autre fichier RBAC backend"],
+        ["web/src/lib/permissions.ts", "fichier RBAC Web"],
+        ["backend/db/schema.sql.bak/x.sql", "SQL hors liste"],
+      ] as const) {
+        assert.equal(
+          evaluateLot4Scope([...pr3A1Files, extra]).kind,
+          "fail",
+          `L4-09: CARTE-PR3-A1 + ${label} (${extra}) doit rester FAIL`,
+        );
+      }
+      for (const pr3Only of [
+        "backend/db/migrations/20261016_school_entry_events.sql",
+        "backend/db/postgresRepository.js",
+        "backend/lib/functionalModulesCatalog.js",
+      ]) {
+        assert.equal(
+          evaluateLot4Scope(["web/src/components/students/StudentCardTab.tsx", "web/src/lib/studentCardsApi.ts", pr3Only]).kind,
+          "fail",
+          `L4-09: ${pr3Only} sans le module du portail (ancre) doit rester FAIL`,
+        );
+      }
 
       const lot4PlusStudentCard = evaluateLot4Scope([
         "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",

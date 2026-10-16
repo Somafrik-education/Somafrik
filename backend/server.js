@@ -2498,6 +2498,58 @@ app.get("/api/student-cards/roll-call/overview", requireAuth, requirePermission(
   res.status(200).json(await rollCallOverview(repository, req.query ?? {}, studentCardsHttpScope(principal), principal));
 }));
 
+// CARTE-PR3-A1 — contrôle d'entrée au portail : événement distinct des présences en classe.
+app.post("/api/student-cards/entry-scan", requireAuth, requirePermission("POST /api/student-cards/entry-scan"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { readEntryPayload, assertEntryOperationKey, recordEntryScan } = require("./lib/studentCardEntry");
+  const { assertStudentCardFinanceEnabled, scanStudentCardFinance } = require("./lib/studentCardFinance");
+  const principal = await rollCallHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  assertEntryOperationKey(req.get("Idempotency-Key"), readEntryPayload(req.body ?? {}).operationId);
+  // Impayés : information non bloquante, seulement avec la permission finance et l'interrupteur.
+  const finance = async (resolved) => {
+    // Même résolution que requirePermission : permissions Finance relues à part (droits live).
+    const financeRoute = "GET /api/finance/student-fees";
+    const live = typeof repository.resolveFinanceLivePermissions === "function"
+      ? await repository.resolveFinanceLivePermissions(principal)
+      : null;
+    const permissions = Array.isArray(live?.permissions) ? live.permissions : [];
+    if (!rbacService.canAccess({ ...principal, permissions }, financeRoute)) return undefined;
+    try {
+      await assertStudentCardFinanceEnabled(repository, schoolScope.schoolId);
+    } catch {
+      return undefined;
+    }
+    const financePrincipal = await financeHttpPrincipal({ principal });
+    return scanStudentCardFinance(repository, resolved, financePrincipal);
+  };
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/student-cards/entry-scan",
+    principal,
+    handler: () => recordEntryScan(
+      repository,
+      req.body ?? {},
+      schoolScope,
+      principal,
+      pedagogyAuditMetaFromRequest(req),
+      { finance },
+    ),
+  });
+}));
+
+app.get("/api/student-cards/entries", requireAuth, requirePermission("GET /api/student-cards/entries"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { listEntriesOverview } = require("./lib/studentCardEntry");
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = await presenceHttpPrincipal(req);
+  res.status(200).json(await listEntriesOverview(repository, req.query ?? {}, studentCardsHttpScope(principal), principal));
+}));
+
 app.get("/api/students/:studentId/enrollments", requireAuth, requirePermission("GET /api/students/:studentId/enrollments"), asyncHandler(async (req, res) => {
   const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
   if (!scoped) return;

@@ -8,6 +8,9 @@ on:
       - "backend/**student*Card*"
       - "backend/db/migrations/20261012_student_cards_nfc_encoding.sql"
       - "backend/db/migrations/20261013_student_cards_nfc_reservations.sql"
+      - "backend/db/migrations/20261016_school_entry_events.sql"
+      - "backend/db/schoolEntryEventsSchema.js"
+      - "backend/lib/liveSchoolRoleKeys.js"
       - ".github/workflows/nfc-encoding-preprod.yml"
   workflow_dispatch:
 
@@ -74,6 +77,8 @@ jobs:
           node backend/lib/studentAccessCards.scan.http.pg.test.js
           node --test backend/lib/studentCardRollCall.test.js
           node backend/lib/studentCardRollCall.http.pg.test.js
+          node --test backend/lib/studentCardEntry.test.js
+          node backend/lib/studentCardEntry.http.pg.test.js
           npm --prefix Mobile run test:student-card-nfc-integration
       - name: Upload sanitized integration performance measurements
         uses: actions/upload-artifact@v4
