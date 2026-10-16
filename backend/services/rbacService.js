@@ -110,6 +110,8 @@ const routePermissions = {
   "POST /api/student-cards/scan": ["Présences:CREATE", "Présences:UPDATE"],
   "POST /api/student-cards/roll-call/scan": ["Présences:CREATE", "Présences:UPDATE"],
   "POST /api/student-cards/roll-call/validate": ["Présences:CREATE", "Présences:UPDATE"],
+  // CARTE-PR3-B : liste d'appel nominative, mêmes droits que la saisie de l'appel.
+  "GET /api/student-cards/roll-call/roster": ["Présences:CREATE", "Présences:UPDATE"],
   "GET /api/student-cards/roll-call/overview": ["Présences:READ"],
   "GET /api/audit": ["Audit:READ"],
   "GET /api/privacy/erasure-requests": ["Utilisateurs:READ", "Gérer utilisateurs"],

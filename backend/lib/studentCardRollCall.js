@@ -29,6 +29,14 @@
  *    `present` ou `late` (correction tracée dans l'audit) ; `excused` et toute autre
  *    modification sont refusés (statut conservé, signalé dans la réponse) ;
  *  - journal `attendance_roll_calls` : une ligne par session validée, double validation refusée.
+ *
+ * CARTE-PR3-B — absent par défaut (décision CTO) :
+ *  - GET roster : élèves activement inscrits, statut existant, statut provisoire (`absent` sans
+ *    statut) et clé de rapprochement propre à la session (même HMAC que le scan) ; aucune
+ *    écriture ; réservé à l'enseignant affecté ;
+ *  - validation `complete: true` = confirmation explicite de l'appel complet : la liste des
+ *    inscrits est revérifiée sous verrou (409 et aucune écriture si elle diverge) ; les absences
+ *    ne sont acceptées qu'avec cette confirmation et ne remplacent jamais `excused` ni une présence.
  */
 
 const crypto = require("node:crypto");
@@ -54,6 +62,8 @@ const ROLL_CALL_ERROR = Object.freeze({
   STUDENT_NOT_ENROLLED: "ROLL_CALL_STUDENT_NOT_ENROLLED",
   ALREADY_VALIDATED: "ROLL_CALL_ALREADY_VALIDATED",
   CONCURRENT_UPDATE: "ROLL_CALL_CONCURRENT_UPDATE",
+  ROSTER_CHANGED: "ROLL_CALL_ROSTER_CHANGED",
+  CONFIRMATION_REQUIRED: "ROLL_CALL_CONFIRMATION_REQUIRED",
 });
 
 /** Statuts du pointage manuel : « excused » relève de la justification, jamais de l'appel. */
@@ -449,6 +459,18 @@ async function validateRollCall(repo, payload, scope, principal, keys, auditMeta
   if (manual.some((item) => scanned.has(item.studentId))) {
     throw inputError("Un élève ne peut pas être à la fois scanné et pointé manuellement.");
   }
+  const complete = readComplete(payload);
+  if (complete && mode !== "teacher") {
+    throw createHttpError(403, "Appel complet réservé à l'enseignant affecté à la classe.", ROLL_CALL_ERROR.MANUAL_FORBIDDEN);
+  }
+  if (!complete && manual.some((item) => item.status === "absent")) {
+    // Une absence n'est enregistrée qu'après confirmation explicite de l'appel complet.
+    throw createHttpError(
+      400,
+      "Confirmez l'appel complet pour enregistrer des absences.",
+      ROLL_CALL_ERROR.CONFIRMATION_REQUIRED,
+    );
+  }
   await assertRollCallEnabled(repo, scope.schoolId);
   const target = await assertRollCallClass(repo, scope, principal, context.classId, mode);
   await assertCardsStillValid(repo, scope.schoolId, cardEntries);
@@ -456,7 +478,50 @@ async function validateRollCall(repo, payload, scope, principal, keys, auditMeta
     return writeDirectionRollCall(repo, { scope, principal, actor, userId, context, entries, total, justification, target, auditMeta });
   }
   await assertManualStudentsEnrolled(repo, scope.schoolId, context.classId, manual);
-  return writeTeacherRollCall(repo, { scope, principal, actor, userId, context, entries, cardEntries, manual, total, target, auditMeta });
+  return writeTeacherRollCall(repo, { scope, principal, actor, userId, context, entries, cardEntries, manual, total, target, auditMeta, complete });
+}
+
+function readComplete(payload) {
+  if (payload?.complete === undefined || payload?.complete === null || payload?.complete === false) return false;
+  if (payload.complete === true) return true;
+  throw inputError("Indicateur d'appel complet invalide.");
+}
+
+/** Élèves activement inscrits dans la classe, verrouillés en partage jusqu'à la fin de la transaction. */
+async function lockEnrolledRoster(repo, schoolId, classId) {
+  const rows = await repo.all(
+    `SELECT e.student_id::text AS student_id FROM enrollments e
+      WHERE e.school_id = $1::uuid AND e.class_id = $2::uuid AND ${ROSTER_ENROLLMENT_SQL}
+      ORDER BY e.student_id
+      FOR SHARE`,
+    [schoolId, classId],
+  );
+  return new Set(rows.map((row) => String(row.student_id).toLowerCase()));
+}
+
+/** Comptage exact des statuts enregistrés pour les inscrits de la classe à la date de l'appel. */
+async function rollCallCounts(repo, schoolId, classId, date) {
+  const row = await repo.one(
+    `SELECT count(*) FILTER (WHERE a.status = 'present')::int AS present,
+            count(*) FILTER (WHERE a.status = 'absent')::int AS absent,
+            count(*) FILTER (WHERE a.status = 'late')::int AS late,
+            count(*) FILTER (WHERE a.status = 'excused')::int AS excused,
+            count(DISTINCT e.student_id)::int AS enrolled
+       FROM enrollments e
+       LEFT JOIN attendance a
+         ON a.school_id = e.school_id AND a.student_id = e.student_id AND a.attendance_date = $3::date
+      WHERE e.school_id = $1::uuid AND e.class_id = $2::uuid AND ${ROSTER_ENROLLMENT_SQL}`,
+    [schoolId, classId, date],
+  );
+  const counts = {
+    present: Number(row?.present) || 0,
+    absent: Number(row?.absent) || 0,
+    late: Number(row?.late) || 0,
+    excused: Number(row?.excused) || 0,
+    enrolled: Number(row?.enrolled) || 0,
+  };
+  counts.notRecorded = Math.max(0, counts.enrolled - counts.present - counts.absent - counts.late - counts.excused);
+  return counts;
 }
 
 /**
@@ -466,13 +531,38 @@ async function validateRollCall(repo, payload, scope, principal, keys, auditMeta
  * créations et les corrections autorisées sont écrites, via upsertAttendance (établissement,
  * inscription, affectation et auteur revérifiés).
  */
-async function writeTeacherRollCall(repo, { scope, principal, actor, userId, context, entries, cardEntries, manual, total, target, auditMeta }) {
+async function writeTeacherRollCall(repo, { scope, principal, actor, userId, context, entries, cardEntries, manual, total, target, auditMeta, complete = false }) {
   // Ordre déterministe (par élève) : verrous de lignes toujours pris dans le même ordre.
   const wanted = [
     ...entries.map((entry) => ({ studentId: entry.studentId, status: "present", source: "card" })),
     ...manual.map((item) => ({ studentId: item.studentId, status: item.status, source: "manual", index: item.index })),
   ].sort((a, b) => (a.studentId < b.studentId ? -1 : a.studentId > b.studentId ? 1 : 0));
   await lockRollCallDay(repo, scope.schoolId, context.date);
+  if (complete) {
+    // Vérification atomique (sous le verrou du jour, inscriptions verrouillées en partage) :
+    // l'appel doit couvrir exactement les inscrits actuels, sinon aucune écriture.
+    const enrolled = await lockEnrolledRoster(repo, scope.schoolId, context.classId);
+    // Couverts : élèves envoyés (scan ou pointage) et élèves ayant déjà un statut ce jour-là
+    // (conservé tel quel, ex. `excused` qui ne s'envoie pas en pointage manuel).
+    const alreadyRecorded = (await repo.all(
+      `SELECT student_id::text AS student_id FROM attendance
+        WHERE school_id = $1::uuid AND attendance_date = $2::date AND student_id = ANY($3::uuid[])`,
+      [scope.schoolId, context.date, [...enrolled]],
+    )).map((row) => String(row.student_id).toLowerCase());
+    const sent = new Set(wanted.map((item) => item.studentId));
+    const covered = new Set([...sent, ...alreadyRecorded]);
+    const missing = [...enrolled].filter((studentId) => !covered.has(studentId)).length;
+    const unexpected = [...sent].filter((studentId) => !enrolled.has(studentId)).length;
+    if (missing > 0 || unexpected > 0) {
+      const error = createHttpError(
+        409,
+        "La liste de la classe a changé depuis l'ouverture de l'appel : rechargez-la puis validez à nouveau.",
+        ROLL_CALL_ERROR.ROSTER_CHANGED,
+      );
+      error.details = { missing, unexpected, enrolled: enrolled.size };
+      throw error;
+    }
+  }
   const readExisting = async (studentIds) => new Map((await repo.all(
     `SELECT id, student_id, status FROM attendance
       WHERE school_id = $1::uuid AND attendance_date = $2::date AND student_id = ANY($3::uuid[])
@@ -551,6 +641,7 @@ async function writeTeacherRollCall(repo, { scope, principal, actor, userId, con
     entityId: journal.id,
     newValue: {
       mode: "teacher",
+      complete,
       sessionId: context.sessionId,
       classId: context.classId,
       date: context.date,
@@ -587,6 +678,9 @@ async function writeTeacherRollCall(repo, { scope, principal, actor, userId, con
         .flatMap((entry) => entry.indexes)
         .sort((a, b) => a - b),
       protectedManualIndexes: protectedRows.filter((row) => row.source === "manual").map((row) => row.index),
+      complete,
+      // Statuts enregistrés après écriture, dans la même transaction (comptage exact).
+      counts: await rollCallCounts(repo, scope.schoolId, context.classId, context.date),
       classId: context.classId,
       date: context.date,
     },
@@ -679,6 +773,56 @@ async function writeDirectionRollCall(repo, { scope, principal, actor, userId, c
   };
 }
 
+/**
+ * Liste d'appel de l'enseignant affecté : élèves activement inscrits, statut existant du jour,
+ * statut provisoire (`absent` sans statut, jamais enregistré ici) et clé de rapprochement propre à
+ * la session (identique à la `dedupKey` renvoyée par le scan). Lecture seule.
+ */
+async function rollCallRoster(repo, query, scope, principal, keys) {
+  const context = readContext(query);
+  const userId = principalUserId(principal);
+  if (!userId) throw createHttpError(401, "Session invalide.");
+  authorizeRollCallActor(await liveRollCallActor(repo, principal, scope.schoolId), "teacher");
+  await assertRollCallEnabled(repo, scope.schoolId);
+  await assertRollCallClass(repo, scope, principal, context.classId, "teacher");
+  const rows = await repo.all(
+    `SELECT DISTINCT ON (s.id) s.id::text AS student_id, s.student_code, s.first_name, s.last_name, a.status
+       FROM enrollments e
+       JOIN students s ON s.id = e.student_id AND s.school_id = e.school_id
+       LEFT JOIN attendance a
+         ON a.school_id = e.school_id AND a.student_id = s.id AND a.attendance_date = $3::date
+      WHERE e.school_id = $1::uuid AND e.class_id = $2::uuid AND ${ROSTER_ENROLLMENT_SQL}
+      ORDER BY s.id`,
+    [scope.schoolId, context.classId, context.date],
+  );
+  const students = rows
+    .map((row) => {
+      const studentId = String(row.student_id).toLowerCase();
+      const existingStatus = row.status ? String(row.status) : null;
+      return {
+        studentId,
+        studentCode: row.student_code,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        existingStatus,
+        provisionalStatus: existingStatus ?? "absent",
+        matchKey: dedupKeyFor(keys, context.sessionId, studentId),
+      };
+    })
+    .sort((a, b) => `${a.lastName ?? ""} ${a.firstName ?? ""}`.localeCompare(`${b.lastName ?? ""} ${b.firstName ?? ""}`, "fr"));
+  const counts = { present: 0, absent: 0, late: 0, excused: 0 };
+  for (const student of students) {
+    if (counts[student.provisionalStatus] !== undefined) counts[student.provisionalStatus] += 1;
+  }
+  return {
+    sessionId: context.sessionId,
+    classId: context.classId,
+    date: context.date,
+    students,
+    counts: { ...counts, enrolled: students.length },
+  };
+}
+
 function readOverviewDate(query) {
   const date = String(query?.date ?? "").trim() || new Date().toISOString().slice(0, 10);
   if (!ISO_DATE.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))
@@ -757,5 +901,6 @@ module.exports = {
   readJustification,
   scanRollCallDraft,
   validateRollCall,
+  rollCallRoster,
   rollCallOverview,
 };

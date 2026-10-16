@@ -2464,6 +2464,20 @@ app.post("/api/student-cards/roll-call/scan", requireAuth, requirePermission("PO
   ));
 }));
 
+app.get("/api/student-cards/roll-call/roster", requireAuth, requirePermission("GET /api/student-cards/roll-call/roster"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { rollCallRoster } = require("./lib/studentCardRollCall");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await rollCallRoster(
+    repository,
+    req.query ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    rollCallKeys(),
+  ));
+}));
+
 app.post("/api/student-cards/roll-call/validate", requireAuth, requirePermission("POST /api/student-cards/roll-call/validate"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
