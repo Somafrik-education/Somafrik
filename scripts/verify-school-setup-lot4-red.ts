@@ -361,6 +361,21 @@ const STUDENT_CARD_PR3_A1_EXACT = new Set([
   "web/src/lib/admin07AdministrationReplay.audit.test.ts",
 ]);
 
+// CARTE-PR3-B (#945, GO CTO) : appel en classe. Fichiers exacts, admis uniquement lorsque le diff
+// porte aussi les DEUX ancres du chantier. Aucun dossier, aucune autre migration, aucun autre
+// fichier RBAC : tout le reste demeure FAIL.
+const STUDENT_CARD_PR3_B_ANCHORS = Object.freeze([
+  "backend/lib/studentCardRollCall.js",
+  "backend/db/attendanceRollCallsSchema.js",
+]);
+const STUDENT_CARD_PR3_B_EXACT = new Set([
+  "backend/db/migrations/20261016_attendance_roll_calls.sql",
+  "backend/db/attendanceRollCallsSchema.js",
+  "backend/db/postgresRepository.js",
+  "backend/lib/pedagogyService.js",
+  "backend/db/pedagogyPgStore.js",
+]);
+
 function isStudentCardPr6Signal(file: string) {
   return (
     file === "scripts/verify-student-card-web.js" ||
@@ -441,8 +456,11 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
   }
   if (changed.some(isStudentCardPr6Signal)) {
     const pr3EntryControl = changed.includes(STUDENT_CARD_PR3_A1_ANCHOR);
+    const pr3RollCall = STUDENT_CARD_PR3_B_ANCHORS.every((anchor) => changed.includes(anchor));
     const outside = changed.filter(
-      (file) => !isStudentCardPr6IntegrationFile(file) && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file)),
+      (file) => !isStudentCardPr6IntegrationFile(file)
+        && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file))
+        && !(pr3RollCall && STUDENT_CARD_PR3_B_EXACT.has(file)),
     );
     if (outside.length === 0 && exclusiveLot4.length === 0) {
       return {
@@ -964,6 +982,59 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           evaluateLot4Scope(["web/src/components/students/StudentCardTab.tsx", "web/src/lib/studentCardsApi.ts", pr3Only]).kind,
           "fail",
           `L4-09: ${pr3Only} sans le module du portail (ancre) doit rester FAIL`,
+        );
+      }
+
+      // CARTE-PR3-B (#945) : diff exact admis ; tout ajout hors liste nominative reste FAIL.
+      const pr3BFiles = [
+        ".github/workflows/nfc-encoding-preprod.yml",
+        "backend/db/attendanceRollCallsSchema.js",
+        "backend/db/migrations/20261016_attendance_roll_calls.sql",
+        "backend/db/pedagogyPgStore.js",
+        "backend/db/postgresRepository.js",
+        "backend/lib/pedagogyService.js",
+        "backend/lib/platformPersonalDataGuard.js",
+        "backend/lib/studentCardRollCall.http.pg.test.js",
+        "backend/lib/studentCardRollCall.js",
+        "backend/lib/studentCardRollCall.test.js",
+        "backend/server.js",
+        "backend/services/rbacService.js",
+        "scripts/verify-school-setup-lot4-red.ts",
+      ];
+      assert.equal(evaluateLot4Scope(pr3BFiles).kind, "na", "L4-09: diff exact CARTE-PR3-B admis nominativement");
+      for (const [extra, label] of [
+        ["backend/db/migrations/20261017_other_table.sql", "autre migration"],
+        ["backend/db/migrations/20261016_school_entry_events.sql", "migration d'un autre chantier (#944)"],
+        ["backend/lib/financeManagement.js", "autre fichier backend"],
+        ["backend/lib/functionalRbacService.js", "autre fichier RBAC backend"],
+        ["backend/lib/functionalModulesCatalog.js", "catalogue RBAC"],
+        ["web/src/lib/permissions.ts", "fichier RBAC Web"],
+        ["backend/db/schema.sql.bak/x.sql", "SQL hors liste"],
+      ] as const) {
+        assert.equal(
+          evaluateLot4Scope([...pr3BFiles, extra]).kind,
+          "fail",
+          `L4-09: CARTE-PR3-B + ${label} (${extra}) doit rester FAIL`,
+        );
+      }
+      // Les DEUX ancres sont exigées : une seule ancre ne suffit pas.
+      for (const missingAnchor of ["backend/lib/studentCardRollCall.js", "backend/db/attendanceRollCallsSchema.js"]) {
+        assert.equal(
+          evaluateLot4Scope(pr3BFiles.filter((file) => file !== missingAnchor)).kind,
+          "fail",
+          `L4-09: CARTE-PR3-B sans l'ancre ${missingAnchor} doit rester FAIL`,
+        );
+      }
+      for (const pr3BOnly of [
+        "backend/db/migrations/20261016_attendance_roll_calls.sql",
+        "backend/db/postgresRepository.js",
+        "backend/lib/pedagogyService.js",
+        "backend/db/pedagogyPgStore.js",
+      ]) {
+        assert.equal(
+          evaluateLot4Scope(["web/src/components/students/StudentCardTab.tsx", "web/src/lib/studentCardsApi.ts", pr3BOnly]).kind,
+          "fail",
+          `L4-09: ${pr3BOnly} sans les ancres PR3-B doit rester FAIL`,
         );
       }
 

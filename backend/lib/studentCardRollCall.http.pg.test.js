@@ -505,7 +505,16 @@ async function main() {
     // ---------- Validation réussie, doublons, rejeu ----------
     const ok = await validate(tokenTeacher, bodyX);
     assert.equal(ok.status, 201, JSON.stringify(ok.data));
-    assert.deepEqual(ok.data, { recorded: 2, duplicatesIgnored: 1, classId: classA1.id, date: ctxX.date });
+    const { rollCallId: okRollCallId, validatedAt: okValidatedAt, counts: okCounts, complete: okComplete, ...okBody } = ok.data;
+    assert.equal(okComplete, false, "appel par carte sans confirmation d'appel complet");
+    assert.deepEqual(okCounts, { present: 2, absent: 0, late: 0, excused: 0, enrolled: 7, notRecorded: 5 },
+      "sans appel complet, les élèves non scannés restent non enregistrés");
+    assert.deepEqual(okBody, {
+      mode: "teacher", recorded: 2, created: 2, corrected: 0, unchanged: 0, protected: 0, absent: 0, manual: 0,
+      duplicatesIgnored: 1, protectedReceiptIndexes: [], protectedManualIndexes: [], classId: classA1.id, date: ctxX.date,
+    });
+    assert.match(okRollCallId, /^[0-9a-f-]{36}$/);
+    assert.ok(Number.isFinite(Date.parse(okValidatedAt)));
     assert.deepEqual(identityLeaks(ok.data), []);
     assert.deepEqual((await attendanceOn(pool, ctxX.date)).map((row) => [row.student_id, row.status]),
       [[S.S1, "present"], [S.S2, "present"]], "seuls les élèves scannés ; aucun absent automatique");
@@ -666,7 +675,18 @@ async function main() {
     const before = await snapshot();
     const okE = await validate(tokenDirector, bodyE);
     assert.equal(okE.status, 201, JSON.stringify(okE.data));
-    assert.deepEqual(okE.data, { mode: "direction", recorded: 1, alreadyRecorded: 2, duplicatesIgnored: 0, classId: classA1.id, date: E.date });
+    const { rollCallId: okERollCallId, validatedAt: _okEValidatedAt, ...okEBody } = okE.data;
+    assert.deepEqual(okEBody, { mode: "direction", recorded: 1, alreadyRecorded: 2, duplicatesIgnored: 0, classId: classA1.id, date: E.date });
+    const journalE = (await pool.query(
+      `SELECT mode, author_user_id, author_role_keys, teacher_id, justification, scanned_count, created_count, protected_count
+         FROM attendance_roll_calls WHERE id = $1`, [okERollCallId],
+    )).rows[0];
+    assert.deepEqual(
+      [journalE.mode, journalE.author_user_id, journalE.author_role_keys, journalE.teacher_id, journalE.justification,
+        journalE.scanned_count, journalE.created_count, journalE.protected_count],
+      ["direction", USER_DIRECTOR, ["PRINCIPAL"], null, justification, 3, 1, 2],
+      "journal : auteur réel, aucune attribution enseignant, existant protégé",
+    );
     assert.deepEqual(await snapshot(), before, "présences déjà enregistrées (présent, absent avec motif) et autre établissement inchangés");
     const rowsE = (await pool.query(
       `SELECT student_id, status, teacher_id FROM attendance WHERE attendance_date = $1 AND school_id = $2 ORDER BY student_id`,
@@ -751,6 +771,356 @@ async function main() {
     for (const secret of [s1.data.receipt, s1.data.dedupKey, cards.S1.cardToken.split(".")[1], cards.S2.cardToken.split(".")[1]]) {
       assert.equal(audit.includes(secret), false, "audit sans reçu ni jeton");
     }
+
+    // ---------- CARTE-PR3-B : appel en classe (pointage manuel, écrasements, journal) ----------
+    const H = { sessionId: session(), classId: classA1.id, date: "2026-10-20" };
+    const rowsOn = async (date) => Object.fromEntries((await pool.query(
+      `SELECT student_id, status, reason FROM attendance WHERE attendance_date = $1::date AND school_id = $2`, [date, schoolA.id],
+    )).rows.map((row) => [row.student_id, [row.status, row.reason]]));
+    // Existant : S2 justifié (protégé), S5 absent (corrigeable), S8 présent (ne peut pas devenir absent).
+    await pool.query(
+      `INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status, reason)
+       VALUES ($1,$2,$5,$6,'excused','Malade'), ($1,$3,$5,$6,'absent','Non venu'), ($1,$4,$5,$6,'present',NULL)`,
+      [schoolA.id, S.S2, S.S5, S.S8, classA1.id, H.date],
+    );
+    const h1 = await scan(tokenTeacher, { ...H, cardToken: cards.S1.cardToken });
+    const h2 = await scan(tokenTeacher, { ...H, cardToken: cards.S2.cardToken });
+    const h5 = await scan(tokenTeacher, { ...H, cardToken: replaced.data.card.cardToken });
+    for (const scanned of [h1, h2, h5]) assert.equal(scanned.status, 200, JSON.stringify(scanned.data));
+    const manualH = [
+      { studentId: S.S3, status: "absent" }, { studentId: S.S6, status: "present" },
+      { studentId: S.S7, status: "late" }, { studentId: S.S8, status: "absent" },
+    ];
+    const bodyH = { ...H, receipts: [h1.data.receipt, h2.data.receipt, h5.data.receipt], manual: manualH, complete: true };
+    const beforeH = await rowsOn(H.date);
+
+    // Refus du pointage manuel : rien n'est écrit, ni présence ni journal.
+    const journalCount = async () => Number((await pool.query(`SELECT count(*)::int AS n FROM attendance_roll_calls`)).rows[0].n);
+    const journalBefore = await journalCount();
+    for (const [label, body, status, code] of [
+      ["élève d'une autre classe", { ...bodyH, manual: [...manualH, { studentId: S.S4, status: "present" }] }, 403,
+        ROLL_CALL_ERROR.STUDENT_NOT_ENROLLED],
+      ["élève d'un autre établissement", { ...bodyH, manual: [{ studentId: STUDENT_B, status: "present" }] }, 403,
+        ROLL_CALL_ERROR.STUDENT_NOT_ENROLLED],
+      ["statut justifié interdit à l'appel", { ...bodyH, manual: [{ studentId: S.S3, status: "excused" }] }, 400,
+        ROLL_CALL_ERROR.INPUT_INVALID],
+      ["élève en double", { ...bodyH, manual: [manualH[0], manualH[0]] }, 400, ROLL_CALL_ERROR.INPUT_INVALID],
+      ["élève scanné et pointé", { ...bodyH, manual: [{ studentId: S.S1, status: "absent" }] }, 400, ROLL_CALL_ERROR.INPUT_INVALID],
+      ["appel vide", { ...H, receipts: [], manual: [] }, 400, ROLL_CALL_ERROR.INPUT_INVALID],
+    ]) {
+      const refused = await validate(tokenTeacher, body);
+      assert.equal(refused.status, status, `${label}: ${JSON.stringify(refused.data)}`);
+      assert.equal(refused.data?.code, code, label);
+    }
+    const notEnrolled = await validate(tokenTeacher, { ...bodyH, manual: [...manualH, { studentId: S.S4, status: "present" }] });
+    assert.deepEqual(notEnrolled.data?.details, { invalidManualIndexes: [4] }, "seule la position refusée");
+    const freeManual = await validate(tokenTeacherFree, { ...H, manual: [{ studentId: S.S3, status: "present" }] });
+    assert.equal(freeManual.status, 403, "enseignant non affecté : aucun pointage manuel");
+    await pool.query(`UPDATE user_roles SET status = 'active', revoked_at = NULL WHERE user_id = $1 AND role_key = 'PRINCIPAL'`,
+      [USER_DIRECTOR]);
+    const directionManual = await validate(tokenDirector, { ...H, mode: "direction", justification, manual: [manualH[1]] });
+    assert.equal(directionManual.data?.code, ROLL_CALL_ERROR.MANUAL_FORBIDDEN, "aucun pointage nominatif par la direction");
+    assert.deepEqual(await rowsOn(H.date), beforeH, "aucun refus n'a modifié les présences");
+    assert.equal(await journalCount(), journalBefore, "aucun refus n'a écrit le journal");
+
+    // Validation : créations, correction absent → présent, refus des écrasements interdits.
+    const okH = await validate(tokenTeacher, bodyH);
+    assert.equal(okH.status, 201, JSON.stringify(okH.data));
+    const { rollCallId: rollCallH, validatedAt: _validatedH, counts: countsH, complete: completeH, ...okHBody } = okH.data;
+    assert.equal(completeH, true);
+    assert.deepEqual(countsH, { present: 4, absent: 1, late: 1, excused: 1, enrolled: 7, notRecorded: 0 }, "comptage exact");
+    assert.deepEqual(okHBody, {
+      mode: "teacher", recorded: 5, created: 4, corrected: 1, unchanged: 0, protected: 2, absent: 1, manual: 4,
+      duplicatesIgnored: 0, protectedReceiptIndexes: [1], protectedManualIndexes: [3], classId: classA1.id, date: H.date,
+    });
+    assert.deepEqual(identityLeaks({ ...okH.data, protectedManualIndexes: undefined }), []);
+    const afterH = await rowsOn(H.date);
+    assert.deepEqual(afterH[S.S2], ["excused", "Malade"], "justifié jamais écrasé par un scan");
+    assert.deepEqual(afterH[S.S8], ["present", null], "présent jamais rétrogradé en absent par l'appel");
+    assert.equal(afterH[S.S5][0], "present", "absent → présent autorisé");
+    assert.deepEqual([afterH[S.S1][0], afterH[S.S3][0], afterH[S.S6][0], afterH[S.S7][0]], ["present", "absent", "present", "late"]);
+    assert.equal(Object.keys(afterH).length, 7, "aucun absent automatique : seuls les élèves scannés ou pointés");
+    const journalH = (await pool.query(
+      `SELECT mode, author_user_id, author_role_keys, teacher_id, justification, session_id, scanned_count, manual_count,
+              created_count, corrected_count, unchanged_count, protected_count
+         FROM attendance_roll_calls WHERE id = $1`, [rollCallH],
+    )).rows[0];
+    assert.deepEqual(journalH, {
+      mode: "teacher", author_user_id: USER_TEACHER, author_role_keys: ["TEACHER"], teacher_id: teacher.id, justification: null,
+      session_id: H.sessionId, scanned_count: 3, manual_count: 4, created_count: 4, corrected_count: 1, unchanged_count: 0,
+      protected_count: 2,
+    });
+    const auditH = (await pool.query(
+      `SELECT user_id, new_value FROM audit_logs WHERE action = 'student_card_roll_call_teacher' AND entity_id = $1`, [rollCallH],
+    )).rows;
+    assert.equal(auditH.length, 1);
+    assert.equal(String(auditH[0].user_id), USER_TEACHER, "auteur réel");
+    assert.deepEqual(auditH[0].new_value.corrections.map((c) => [c.studentId, c.from, c.to]), [[S.S5, "absent", "present"]],
+      "correction tracée");
+    assert.deepEqual(auditH[0].new_value.protected.map((p) => [p.studentId, p.kept, p.requested]).sort(),
+      [[S.S2, "excused", "present"], [S.S8, "present", "absent"]].sort());
+
+    // Double validation : rejeu idempotent ; sans enregistrement d'idempotence, le journal refuse.
+    const replayH = await validate(tokenTeacher, bodyH);
+    assert.equal(replayH.data.idempotentReplay, true);
+    await pool.query(`DELETE FROM idempotency_keys WHERE route_key = 'POST /api/student-cards/roll-call/validate'`);
+    const twiceH = await validate(tokenTeacher, bodyH);
+    assert.equal(twiceH.status, 409, JSON.stringify(twiceH.data));
+    assert.equal(twiceH.data?.code, ROLL_CALL_ERROR.ALREADY_VALIDATED);
+    assert.deepEqual(await rowsOn(H.date), afterH, "seconde validation refusée sans aucune écriture");
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM attendance_roll_calls WHERE session_id = $1`, [H.sessionId]))
+      .rows[0].n, 1);
+
+    // Nouvelle session, même jour : correction manuelle absent → présent (élève arrivé), le reste inchangé.
+    const K = { ...H, sessionId: session() };
+    const k5 = await scan(tokenTeacher, { ...K, cardToken: replaced.data.card.cardToken });
+    const okK = await validate(tokenTeacher, { ...K, receipts: [k5.data.receipt], manual: [{ studentId: S.S3, status: "late" }] });
+    assert.equal(okK.status, 201, JSON.stringify(okK.data));
+    assert.deepEqual([okK.data.created, okK.data.corrected, okK.data.unchanged, okK.data.protected], [0, 1, 1, 0]);
+    assert.equal((await rowsOn(H.date))[S.S3][0], "late");
+
+    // Appel uniquement manuel : seuls les élèves pointés, aucun absent créé pour les autres.
+    const J = { sessionId: session(), classId: classA1.id, date: "2026-10-21" };
+    const okJ = await validate(tokenTeacher, { ...J, manual: [{ studentId: S.S1, status: "present" }] });
+    assert.equal(okJ.status, 201, JSON.stringify(okJ.data));
+    assert.deepEqual(Object.keys(await rowsOn(J.date)), [S.S1]);
+
+    // ---------- CARTE-PR3-B : concurrence réelle (deux connexions PostgreSQL) ----------
+    // Une seconde connexion écrit sans valider pendant que l'appel s'exécute : l'appel doit attendre
+    // puis respecter l'état validé (jamais d'écrasement silencieux), de façon déterministe.
+    const waitForBlockedBackends = async (count, waitEventType = "Lock", timeoutMs = 8000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const { rows } = await pool.query(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = $1 AND state = 'active'`,
+          [waitEventType],
+        );
+        if (rows[0].n >= count) return true;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return false;
+    };
+    const statusOf = async (studentId, date) => (await pool.query(
+      `SELECT status, reason FROM attendance WHERE school_id = $1 AND student_id = $2 AND attendance_date = $3::date`,
+      [schoolA.id, studentId, date],
+    )).rows;
+
+    // C1 — un justifié validé pendant l'appel n'est jamais écrasé par un scan « présent ».
+    const C1 = { sessionId: session(), classId: classA1.id, date: "2026-10-22" };
+    const c1Scan = await scan(tokenTeacher, { ...C1, cardToken: cards.S1.cardToken });
+    assert.equal(c1Scan.status, 200, JSON.stringify(c1Scan.data));
+    const writerC1 = await pool.connect();
+    let race1;
+    try {
+      await writerC1.query("BEGIN");
+      await writerC1.query(
+        `INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status, reason)
+         VALUES ($1, $2, $3, $4::date, 'excused', 'Malade')`,
+        [schoolA.id, S.S1, classA1.id, C1.date],
+      );
+      const pendingC1 = validate(tokenTeacher, { ...C1, receipts: [c1Scan.data.receipt] });
+      assert.equal(await waitForBlockedBackends(1), true, "l'appel attend l'écriture concurrente");
+      await writerC1.query("COMMIT");
+      race1 = await pendingC1;
+    } finally {
+      writerC1.release();
+    }
+    assert.equal(race1.status, 201, JSON.stringify(race1.data));
+    assert.deepEqual(await statusOf(S.S1, C1.date), [{ status: "excused", reason: "Malade" }],
+      "C1 : justifié concurrent jamais écrasé");
+    assert.deepEqual([race1.data.created, race1.data.corrected, race1.data.protected, race1.data.recorded], [0, 0, 1, 0]);
+    assert.deepEqual(race1.data.protectedReceiptIndexes, [0]);
+    const journalC1 = (await pool.query(
+      `SELECT created_count, protected_count FROM attendance_roll_calls WHERE id = $1`, [race1.data.rollCallId],
+    )).rows[0];
+    assert.deepEqual(journalC1, { created_count: 0, protected_count: 1 }, "C1 : journal conforme à l'écriture réelle");
+
+    // C2 — un présent validé pendant l'appel n'est jamais rétrogradé par un « absent » manuel.
+    const C2 = { sessionId: session(), classId: classA1.id, date: "2026-10-23" };
+    const writerC2 = await pool.connect();
+    let race2;
+    try {
+      await writerC2.query("BEGIN");
+      await writerC2.query(
+        `INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status)
+         VALUES ($1, $2, $3, $4::date, 'present')`,
+        [schoolA.id, S.S3, classA1.id, C2.date],
+      );
+      // Appel complet confirmé : S3 « absent » (provisoire) pendant qu'un « présent » est enregistré.
+      const pendingC2 = validate(tokenTeacher, {
+        ...C2,
+        complete: true,
+        manual: [
+          { studentId: S.S3, status: "absent" },
+          ...[S.S1, S.S2, S.S5, S.S6, S.S7, S.S8].map((studentId) => ({ studentId, status: "present" })),
+        ],
+      });
+      assert.equal(await waitForBlockedBackends(1), true, "l'appel attend l'écriture concurrente");
+      await writerC2.query("COMMIT");
+      race2 = await pendingC2;
+    } finally {
+      writerC2.release();
+    }
+    assert.equal(race2.status, 201, JSON.stringify(race2.data));
+    assert.equal((await statusOf(S.S3, C2.date))[0].status, "present", "C2 : présent concurrent jamais rétrogradé");
+    assert.deepEqual([race2.data.created, race2.data.protected, race2.data.absent], [6, 1, 0]);
+    assert.deepEqual(race2.data.protectedManualIndexes, [0]);
+
+    // C3 — appels Enseignant et Direction simultanés sur le même établissement et la même date :
+    // sérialisés par le verrou transactionnel ; une seule présence, compteurs cohérents.
+    const C3 = { sessionId: session(), classId: classA1.id, date: "2026-10-24" };
+    const C3D = { sessionId: session(), classId: classA1.id, date: C3.date, mode: "direction" };
+    const c3Dir = await scan(tokenDirector, { ...C3D, cardToken: cards.S2.cardToken });
+    assert.equal(c3Dir.status, 200, JSON.stringify(c3Dir.data));
+    const lockHolder = await pool.connect();
+    let c3Teacher;
+    let c3Direction;
+    try {
+      await lockHolder.query("BEGIN");
+      await lockHolder.query(
+        `SELECT pg_advisory_xact_lock(hashtext('attendance-roll-call'), hashtext($1::text || ':' || $2::text))`,
+        [schoolA.id, C3.date],
+      );
+      const pendingTeacher = validate(tokenTeacher, { ...C3, manual: [{ studentId: S.S2, status: "present" }] });
+      const pendingDirection = validate(tokenDirector, { ...C3D, justification, receipts: [c3Dir.data.receipt] });
+      const serialized = await waitForBlockedBackends(2, "Lock", 3000);
+      await lockHolder.query("COMMIT");
+      [c3Teacher, c3Direction] = await Promise.all([pendingTeacher, pendingDirection]);
+      assert.equal(serialized, true, "C3 : appels Enseignant et Direction sérialisés par établissement et date");
+    } finally {
+      lockHolder.release();
+    }
+    assert.equal(c3Teacher.status, 201, JSON.stringify(c3Teacher.data));
+    assert.equal(c3Direction.status, 201, JSON.stringify(c3Direction.data));
+    assert.equal((await statusOf(S.S2, C3.date)).length, 1, "C3 : une seule présence");
+    const c3Journals = (await pool.query(
+      `SELECT mode, created_count, unchanged_count, protected_count FROM attendance_roll_calls
+        WHERE session_id = ANY($1::uuid[]) ORDER BY mode`,
+      [[C3.sessionId, C3D.sessionId]],
+    )).rows;
+    assert.equal(c3Journals.length, 2);
+    assert.equal(c3Journals.reduce((sum, row) => sum + row.created_count, 0), 1, "C3 : une seule création comptée");
+    assert.equal(c3Journals.reduce((sum, row) => sum + row.created_count + row.unchanged_count + row.protected_count, 0), 2,
+      "C3 : chaque demande comptée une fois");
+
+    // ---------- CARTE-PR3-B : absent par défaut (liste d'appel + appel complet confirmé) ----------
+    const roster = (token, query, headers = {}) =>
+      request(`/student-cards/roll-call/roster?${new URLSearchParams(query).toString()}`, { token, headers });
+    const outboxCount = async (eventType, date) => Number((await pool.query(
+      `SELECT count(*)::int AS n FROM communication_event_outbox
+        WHERE event_type = $1 AND school_id = $2 AND payload->>'attendanceDate' = $3`,
+      [eventType, schoolA.id, date],
+    )).rows[0].n);
+    const DAY = { sessionId: session(), classId: classA1.id, date: "2026-10-26" };
+    // Existant avant l'appel : S2 justifié, S5 présent déjà validé.
+    await pool.query(
+      `INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status, reason)
+       VALUES ($1,$2,$4,$5::date,'excused','Malade'), ($1,$3,$4,$5::date,'present',NULL)`,
+      [schoolA.id, S.S2, S.S5, classA1.id, DAY.date],
+    );
+    const attendanceRowsD = async () => (await pool.query(
+      `SELECT count(*)::int AS n FROM attendance WHERE school_id = $1 AND attendance_date = $2::date`, [schoolA.id, DAY.date],
+    )).rows[0].n;
+    const absentBefore = await outboxCount("attendance.student.absent", DAY.date);
+
+    // Liste d'appel : inscrits actifs, statut existant, provisoire « absent », clé de rapprochement de session.
+    const rD = await roster(tokenTeacher, DAY);
+    assert.equal(rD.status, 200, JSON.stringify(rD.data));
+    assert.equal(rD.cacheControl, "no-store");
+    const byStudent = Object.fromEntries(rD.data.students.map((row) => [row.studentId, row]));
+    assert.deepEqual(Object.keys(byStudent).sort(), [S.S1, S.S2, S.S3, S.S5, S.S6, S.S7, S.S8].sort(),
+      "uniquement les élèves activement inscrits de la classe");
+    assert.deepEqual([byStudent[S.S2].existingStatus, byStudent[S.S2].provisionalStatus], ["excused", "excused"]);
+    assert.deepEqual([byStudent[S.S5].existingStatus, byStudent[S.S5].provisionalStatus], ["present", "present"]);
+    assert.deepEqual([byStudent[S.S3].existingStatus, byStudent[S.S3].provisionalStatus], [null, "absent"]);
+    assert.deepEqual(rD.data.counts, { present: 1, absent: 5, late: 0, excused: 1, enrolled: 7 });
+    const scanD1 = await scan(tokenTeacher, { ...DAY, cardToken: cards.S1.cardToken });
+    assert.equal(scanD1.status, 200, JSON.stringify(scanD1.data));
+    assert.equal(scanD1.data.dedupKey, byStudent[S.S1].matchKey, "le scan se rapproche de l'élève de la liste de l'enseignant");
+    assert.deepEqual(identityLeaks(scanD1.data), [], "la réponse du scan reste sans identité");
+    const otherSession = await roster(tokenTeacher, { ...DAY, sessionId: session() });
+    assert.notEqual(otherSession.data.students.find((row) => row.studentId === S.S1).matchKey, byStudent[S.S1].matchKey,
+      "clé de rapprochement limitée à la session");
+    assert.equal(await attendanceRowsD(), 2, "aucune écriture à l'ouverture de la liste ni au scan");
+    assert.equal(await outboxCount("attendance.student.absent", DAY.date), absentBefore, "aucune notification avant validation");
+
+    // RBAC et isolation : uniquement l'enseignant affecté, dans son établissement.
+    for (const [label, token, headers, expected] of [
+      ["enseignant non affecté", tokenTeacherFree, {}, ROLL_CALL_ERROR.CLASS_FORBIDDEN],
+      ["direction", tokenDirector, {}, ROLL_CALL_ERROR.ROLE_FORBIDDEN],
+      ["surveillant", tokenSupervisor, {}, null],
+      ["parent", tokenParent, {}, null],
+      ["jeton périmé", tokenStaleDirector, {}, null],
+      ["autre établissement", tokenAdminB, {}, null],
+      ["Superadmin", tokenSuper, { "X-Somafrik-School-Code": LOGIN_A }, "PLATFORM_PERSONAL_DATA_DENIED"],
+      ["Admin Pays", tokenPays, {}, "PLATFORM_PERSONAL_DATA_DENIED"],
+    ]) {
+      const denied = await roster(token, DAY, headers);
+      assert.equal(denied.status >= 400 && denied.status < 500, true, `${label}: ${denied.status}`);
+      assert.notEqual(denied.status, 200, label);
+      if (expected) assert.equal(denied.data?.code, expected, label);
+      assert.equal(JSON.stringify(denied.data ?? "").includes(S.S3), false, `${label}: aucune donnée d'élève`);
+    }
+    assert.equal((await roster(tokenTeacher, { ...DAY, classId: classB1.id })).data?.code, ROLL_CALL_ERROR.CLASS_FORBIDDEN,
+      "classe d'un autre établissement");
+    assert.equal((await roster(tokenTeacher, { ...DAY, sessionId: "x" })).data?.code, ROLL_CALL_ERROR.INPUT_INVALID);
+
+    // Absences seulement après confirmation explicite de l'appel complet.
+    const fullManual = [
+      { studentId: S.S2, status: "absent" }, // justifié existant : jamais écrasé
+      { studentId: S.S3, status: "absent" },
+      { studentId: S.S6, status: "present" },
+      { studentId: S.S7, status: "late" },
+      { studentId: S.S8, status: "absent" },
+    ]; // S5 (présent existant) couvert par son statut, non renvoyé.
+    const bodyD = { ...DAY, receipts: [scanD1.data.receipt], manual: fullManual, complete: true };
+    const unconfirmed = await validate(tokenTeacher, { ...bodyD, complete: undefined });
+    assert.equal(unconfirmed.data?.code, ROLL_CALL_ERROR.CONFIRMATION_REQUIRED, JSON.stringify(unconfirmed.data));
+    // Effectif modifié : un élève manquant, puis une inscription ajoutée après l'ouverture.
+    const missingOne = await validate(tokenTeacher, { ...bodyD, manual: fullManual.filter((row) => row.studentId !== S.S8) });
+    assert.equal(missingOne.status, 409, JSON.stringify(missingOne.data));
+    assert.equal(missingOne.data?.code, ROLL_CALL_ERROR.ROSTER_CHANGED);
+    assert.deepEqual(missingOne.data?.details, { missing: 1, unexpected: 0, enrolled: 7 });
+    await pool.query(`UPDATE enrollments SET class_id = $1 WHERE student_id = $2`, [classA1.id, S.S4]);
+    const newcomer = await validate(tokenTeacher, bodyD);
+    assert.equal(newcomer.data?.code, ROLL_CALL_ERROR.ROSTER_CHANGED, "inscription ajoutée après l'ouverture : 409");
+    await pool.query(`UPDATE enrollments SET class_id = $1 WHERE student_id = $2`, [classA2.id, S.S4]);
+    assert.equal(await attendanceRowsD(), 2, "aucune écriture sur refus");
+    assert.equal(await outboxCount("attendance.student.absent", DAY.date), absentBefore, "aucune notification sur refus");
+
+    // Validation confirmée : statuts de tout le périmètre, justifié et présent préservés, comptage exact.
+    const okD = await validate(tokenTeacher, bodyD);
+    assert.equal(okD.status, 201, JSON.stringify(okD.data));
+    assert.deepEqual([okD.data.created, okD.data.corrected, okD.data.unchanged, okD.data.protected, okD.data.absent],
+      [5, 0, 0, 1, 2]);
+    assert.deepEqual(okD.data.counts, { present: 3, absent: 2, late: 1, excused: 1, enrolled: 7, notRecorded: 0 });
+    assert.deepEqual(await statusOf(S.S2, DAY.date), [{ status: "excused", reason: "Malade" }], "justifié jamais écrasé");
+    assert.equal((await statusOf(S.S5, DAY.date))[0].status, "present", "présence existante conservée");
+    assert.equal(await outboxCount("attendance.student.absent", DAY.date), absentBefore + 2,
+      "une notification par absence réellement enregistrée (S3, S8), aucune pour le justifié");
+    // Idempotence et double validation : aucune notification supplémentaire.
+    assert.equal((await validate(tokenTeacher, bodyD)).data.idempotentReplay, true);
+    await pool.query(`DELETE FROM idempotency_keys WHERE route_key = 'POST /api/student-cards/roll-call/validate'`);
+    assert.equal((await validate(tokenTeacher, bodyD)).data?.code, ROLL_CALL_ERROR.ALREADY_VALIDATED);
+    assert.equal(await outboxCount("attendance.student.absent", DAY.date), absentBefore + 2, "rejeu et double validation sans notification");
+
+    // Rollback : absences écrites puis transaction annulée (journal déjà occupé) → ni présence ni notification.
+    const ROLLBACK_DAY = { sessionId: session(), classId: classA1.id, date: "2026-10-27" };
+    await pool.query(
+      `INSERT INTO attendance_roll_calls (school_id, class_id, roll_call_date, session_id, mode, author_user_id,
+                                          author_role_keys, teacher_id)
+       VALUES ($1, $2, $3::date, $4, 'teacher', $5, '{TEACHER}', $6)`,
+      [schoolA.id, classA1.id, ROLLBACK_DAY.date, ROLLBACK_DAY.sessionId, USER_TEACHER, teacher.id],
+    );
+    const rolledBackE = await validate(tokenTeacher, {
+      ...ROLLBACK_DAY,
+      complete: true,
+      manual: [S.S1, S.S2, S.S3, S.S5, S.S6, S.S7, S.S8].map((studentId) => ({ studentId, status: "absent" })),
+    });
+    assert.equal(rolledBackE.data?.code, ROLL_CALL_ERROR.ALREADY_VALIDATED, JSON.stringify(rolledBackE.data));
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM attendance WHERE attendance_date = $1::date`, [ROLLBACK_DAY.date])).rows[0].n, 0);
+    assert.equal(await outboxCount("attendance.student.absent", ROLLBACK_DAY.date), 0, "notification annulée avec la transaction");
 
     // ---------- Non-régression : pointage individuel inchangé ----------
     const individual = await request("/student-cards/scan", {

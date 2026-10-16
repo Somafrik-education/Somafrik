@@ -165,3 +165,33 @@ test("CARTE-UX-ROLE-01 : un reçu ne sert que dans son parcours", () => {
   assert.throws(() => read(teacherReceipt, "direction"), { code: ROLL_CALL_ERROR.CONTEXT_MISMATCH });
   assert.throws(() => read(directionReceipt, "teacher"), { code: ROLL_CALL_ERROR.CONTEXT_MISMATCH });
 });
+
+test("CARTE-PR3-B règles d'écrasement : seul absent → présent / retard est une correction", () => {
+  const { attendanceTransition } = require("./studentCardRollCall");
+  assert.equal(attendanceTransition(null, "present"), "create");
+  assert.equal(attendanceTransition(null, "absent"), "create", "absent explicite (pointage manuel) uniquement");
+  assert.equal(attendanceTransition("absent", "present"), "correct");
+  assert.equal(attendanceTransition("absent", "late"), "correct");
+  for (const wanted of ["present", "late", "absent"]) {
+    assert.equal(attendanceTransition("excused", wanted), "protected", `justifié jamais écrasé (${wanted})`);
+  }
+  assert.equal(attendanceTransition("present", "absent"), "protected");
+  assert.equal(attendanceTransition("late", "absent"), "protected");
+  assert.equal(attendanceTransition("present", "late"), "unchanged");
+  assert.equal(attendanceTransition("late", "present"), "unchanged");
+  assert.equal(attendanceTransition("absent", "absent"), "unchanged");
+});
+
+test("CARTE-PR3-B pointage manuel : statuts explicites, aucun justifié, aucun doublon", () => {
+  const { readManual, MANUAL_STATUSES } = require("./studentCardRollCall");
+  const id = "3f0c2a8e-6b1d-4c7e-9a2b-1d2e3f4a5b6c";
+  assert.deepEqual(MANUAL_STATUSES, ["present", "late", "absent"]);
+  assert.deepEqual(readManual({}), []);
+  assert.deepEqual(readManual({ manual: [{ studentId: id.toUpperCase(), status: "ABSENT" }] }), [{ studentId: id, status: "absent", index: 0 }]);
+  for (const manual of [
+    "x", [{ studentId: "1", status: "present" }], [{ studentId: id, status: "excused" }], [{ studentId: id, status: "" }],
+    [{ studentId: id, status: "present" }, { studentId: id, status: "absent" }],
+  ]) {
+    assert.throws(() => readManual({ manual }), { code: ROLL_CALL_ERROR.INPUT_INVALID }, JSON.stringify(manual));
+  }
+});

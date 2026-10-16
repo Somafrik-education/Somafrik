@@ -11,6 +11,8 @@ on:
       - "backend/db/migrations/20261016_school_entry_events.sql"
       - "backend/db/schoolEntryEventsSchema.js"
       - "backend/lib/liveSchoolRoleKeys.js"
+      - "backend/db/migrations/20261016_attendance_roll_calls.sql"
+      - "backend/db/attendanceRollCallsSchema.js"
       - ".github/workflows/nfc-encoding-preprod.yml"
   workflow_dispatch:
 
