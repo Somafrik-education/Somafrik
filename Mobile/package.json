@@ -106,6 +106,7 @@
     "test:student-card-nfc-encoding": "npx --yes tsx --test src/lib/studentCardNfcEncoding.test.ts",
     "test:student-card-nfc-batch": "npx --yes tsx --test src/lib/studentCardNfcBatch.test.ts",
     "test:student-card-nfc-integration": "npx --yes tsx --test src/lib/studentCardNfcIntegration.pg.test.ts",
+    "test:student-card-class-roll-call-integration": "npx --yes tsx --test src/lib/studentCardClassRollCall.integration.pg.test.ts",
     "test:student-card-nfc-security": "npx --yes tsx --test src/lib/studentCardNfcSecurity.test.ts"
   },
   "dependencies": {
