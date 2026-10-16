@@ -2225,6 +2225,30 @@ function studentCardsHttpScope(principal) {
   return scope;
 }
 
+// CARTE-PR2 — vérification de carte : sections filtrées par permissions effectives avant envoi.
+app.post("/api/student-cards/verify", requireAuth, requirePermission("POST /api/student-cards/verify"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { verifyStudentCard } = require("./lib/studentCardVerification");
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = req.principal;
+  // Même résolution que requirePermission : permissions Finance relues à part pour leurs routes.
+  const can = async (routeKey) => {
+    if (isFinanceLiveRbacRouteKey(routeKey) && typeof repository.resolveFinanceLivePermissions === "function") {
+      const live = await repository.resolveFinanceLivePermissions(principal);
+      return rbacService.canAccess({ ...principal, permissions: Array.isArray(live?.permissions) ? live.permissions : [] }, routeKey);
+    }
+    return rbacService.canAccess(principal, routeKey);
+  };
+  res.status(200).json(await verifyStudentCard(
+    repository,
+    req.body ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    can,
+  ));
+}));
+
 app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/students/:id/cards"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
@@ -2407,6 +2431,72 @@ async function authorizeEnrollmentStudentOr404(req, res, studentId) {
   }
   return { principal, schoolCode, student: authorizedPg };
 }
+
+// CARTE-PR1 — appel collectif : scans brouillon sans écriture, puis validation unique.
+let studentCardRollCallKeys = null;
+function rollCallKeys() {
+  const { deriveRollCallKeys } = require("./lib/studentCardRollCall");
+  studentCardRollCallKeys ??= deriveRollCallKeys(tokenService.secret);
+  return studentCardRollCallKeys;
+}
+
+async function rollCallHttpPrincipal(req) {
+  req.principal = await enrollmentHttpPrincipal(req);
+  req.principal = await presenceHttpPrincipal(req);
+  const gate = requireSchoolSubscriptionFeature("write_presence");
+  await new Promise((resolve, reject) => {
+    gate(req, {}, (error) => (error ? reject(error) : resolve()));
+  });
+  return req.principal;
+}
+
+app.post("/api/student-cards/roll-call/scan", requireAuth, requirePermission("POST /api/student-cards/roll-call/scan"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { scanRollCallDraft } = require("./lib/studentCardRollCall");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await scanRollCallDraft(
+    repository,
+    req.body ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    rollCallKeys(),
+  ));
+}));
+
+app.post("/api/student-cards/roll-call/validate", requireAuth, requirePermission("POST /api/student-cards/roll-call/validate"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { readContext, assertOperationKey, validateRollCall } = require("./lib/studentCardRollCall");
+  const principal = await rollCallHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  assertOperationKey(req.get("Idempotency-Key"), readContext(req.body ?? {}).sessionId);
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/student-cards/roll-call/validate",
+    principal,
+    handler: () => validateRollCall(
+      repository,
+      req.body ?? {},
+      schoolScope,
+      principal,
+      rollCallKeys(),
+      pedagogyAuditMetaFromRequest(req),
+    ),
+  });
+}));
+
+// CARTE-UX-ROLE-01 — supervision des appels par la direction : effectifs et compteurs par classe.
+app.get("/api/student-cards/roll-call/overview", requireAuth, requirePermission("GET /api/student-cards/roll-call/overview"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { rollCallOverview } = require("./lib/studentCardRollCall");
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = await presenceHttpPrincipal(req);
+  res.status(200).json(await rollCallOverview(repository, req.query ?? {}, studentCardsHttpScope(principal), principal));
+}));
 
 app.get("/api/students/:studentId/enrollments", requireAuth, requirePermission("GET /api/students/:studentId/enrollments"), asyncHandler(async (req, res) => {
   const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
