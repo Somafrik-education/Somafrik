@@ -128,6 +128,7 @@ class PostgresRepository {
     this.attachLoginLockoutStore();
     await this.ensureSchoolsCanonicalColumns();
     await this.ensureAttendanceCanonicalUniqueness();
+    await this.ensureAttendanceRollCallsSchema();
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
     await this.ensureClassHeadTeachersCanonicalSchema();
@@ -467,6 +468,12 @@ class PostgresRepository {
    * D3.5b — Pour bases legacy : compter → dédup déterministe → index unique.
    * L'index n'est PAS créé dans schema.sql (évite l'échec avant dédup).
    */
+  // CARTE-PR3-B : journal des appels validés (après attendance, classes et teachers).
+  async ensureAttendanceRollCallsSchema() {
+    const { ATTENDANCE_ROLL_CALLS_SCHEMA_SQL } = require("./attendanceRollCallsSchema");
+    await this.query(ATTENDANCE_ROLL_CALLS_SCHEMA_SQL);
+  }
+
   async ensureAttendanceCanonicalUniqueness() {
     const {
       COUNT_ATTENDANCE_DUPLICATE_GROUPS_SQL,
