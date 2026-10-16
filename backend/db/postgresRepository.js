@@ -271,6 +271,9 @@ class PostgresRepository {
   async ensureStudentAccessCardsCanonicalSchema() {
     const { STUDENT_ACCESS_CARDS_SCHEMA_SQL } = require("./studentAccessCardsSchema");
     await this.query(STUDENT_ACCESS_CARDS_SCHEMA_SQL);
+    // CARTE-PR3-A1 : passages au portail, après les cartes (FK carte → élève → établissement).
+    const { SCHOOL_ENTRY_EVENTS_SCHEMA_SQL } = require("./schoolEntryEventsSchema");
+    await this.query(SCHOOL_ENTRY_EVENTS_SCHEMA_SQL);
   }
 
   async ensureLoginLockoutsCanonicalSchema() {

@@ -839,9 +839,9 @@ test("A07-32 Pays + Établissement + Rôle → matrice complète (ADMIN-02C / MA
   assert.match(page, /rbacApi\.getConfigured\(\{ roleKey: selectedRoleKey, countryCode, schoolCode \}\)/);
 });
 
-test("A07-33 31 modules du catalogue visibles dans une seule matrice (ADMIN-02C / MATRIX-03/04)", () => {
+test("A07-33 32 modules du catalogue visibles dans une seule matrice (ADMIN-02C / MATRIX-03/04, CARTE-PR3-A1)", () => {
   const modules = listFunctionalModules();
-  assert.equal(modules.length, 31);
+  assert.equal(modules.length, 32);
   assert.ok(modules.some((row) => row.moduleKey === "users"));
   assert.ok(modules.some((row) => row.moduleKey === "students"));
   assert.ok(modules.some((row) => row.moduleKey === "classes"));
