@@ -36,7 +36,9 @@ function main() {
   assert.ok(!pkg.dependencies["expo-barcode-scanner"]);
 
   const modal = read("Mobile/src/components/StudentCardQrScannerModal.tsx");
-  const nfcModal = read("Mobile/src/components/StudentCardNfcScannerModal.tsx");
+  // NFC-PRESENCE-01: the read flow lives in useNfcAttendanceScanner (modal = UI + wiring).
+  const nfcModal = read("Mobile/src/components/StudentCardNfcScannerModal.tsx")
+    + "\n" + read("Mobile/src/lib/studentCardNfcAttendanceScanner.ts");
   const nfcNative = read("Mobile/src/lib/studentCardNfcNative.ts");
   const nfcPolicy = read("Mobile/src/lib/studentCardNfc.ts");
   const attendance = read("Mobile/src/screens/TeacherAttendanceScreen.tsx");

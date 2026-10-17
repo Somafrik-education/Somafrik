@@ -592,7 +592,9 @@ function read(rel: string) {
 
 const nfcLib = read("lib/studentCardNfc.ts");
 const native = read("lib/studentCardNfcNative.ts");
-const modal = read("components/StudentCardNfcScannerModal.tsx");
+// NFC-PRESENCE-01: the read flow moved into useNfcAttendanceScanner (modal = UI + wiring).
+const nfcScannerHook = read("lib/studentCardNfcAttendanceScanner.ts");
+const modal = read("components/StudentCardNfcScannerModal.tsx") + "\n" + nfcScannerHook;
 const qrModal = read("components/StudentCardQrScannerModal.tsx");
 const attendance = read("screens/TeacherAttendanceScreen.tsx");
 const api = read("services/studentCardScanApi.ts");
@@ -612,6 +614,11 @@ assert.match(listenForTag[0], /decideNfcScannerRead/);
 assert.doesNotMatch(listenForTag[0], /\bonClose\(/, "NFC-FIX-02 listenForTag sans onClose()");
 assert.doesNotMatch(listenForTag[0], /navigate\(|Accueil/, "NFC-FIX-02 listenForTag sans navigation");
 assert.doesNotMatch(nfcLib, /react-native-nfc-manager/);
+assert.match(read("components/StudentCardNfcScannerModal.tsx"), /useNfcAttendanceScanner\(/, "NFC-PRESENCE-01 modal uses the hook");
+// NFC-PRESENCE-01: parent callbacks are read through a ref; they never restart the read.
+assert.match(nfcScannerHook, /\}, \[scope\]\);/, "NFC-PRESENCE-01 runScan deps");
+assert.match(nfcScannerHook, /latestRef\.current\.onAttendanceRecorded\(/, "NFC-PRESENCE-01 callback via ref");
+assert.doesNotMatch(nfcScannerHook, /\[[^\]]*onAttendanceRecorded[^\]]*\]/, "NFC-PRESENCE-01 no callback in hook deps");
 assert.match(modal, /runStudentCardScanFlow/);
 assert.match(modal, /scanNfcCardToken/);
 assert.match(modal, /releaseNfcSession/);
