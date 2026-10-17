@@ -46,8 +46,10 @@ function backend(tagType: NtagIdentity["tagType"] = "NTAG216", uid = "04A1B2C3D4
   const row = { status: "revoked", revokeReason: "nfc_reservation_expired" as string | null, state: "pending" as "pending" | "encoded",
     secret: secret("O"), reopens: 0, confirms: 0, rotations: 0 };
   let seq = 0;
+  // Fixed once: the canonical row keeps one deadline (a per-call Date.now() made R2-22 flaky).
+  const expiresAt = new Date(Date.now() + 1_800_000).toISOString();
   const view = (): EnrollmentCard => ({ id: "c1", publicId: PUB, medium: "nfc", status: row.status, revokeReason: row.revokeReason,
-    nfc: { uid, tagType, state: row.state, operationId: opId, expiresAt: new Date(Date.now() + 1_800_000).toISOString(), replacesCardId: null } });
+    nfc: { uid, tagType, state: row.state, operationId: opId, expiresAt, replacesCardId: null } });
   const issued = (): IssuedNfcCard => ({ ...view(), cardToken: `${PUB}.${row.secret}`, tokenAvailable: true, reissued: true });
   const api: NfcEnrollmentApi = {
     async list() { return { nfcEnabled: true, cards: [view()] }; },
