@@ -63,7 +63,7 @@ export function nfcFailure(code: string): Error & { code: string } {
 }
 // Never display native/backend error text: it may contain the physical capability.
 export function nfcErrorCopy(error: unknown): string {
-  const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+  const code = codeOf(error);
   const copies: Record<string, string> = {
     STUDENT_CARD_DISABLED: "La fonctionnalité carte élève est désactivée pour cet établissement.",
     STUDENT_CARD_NFC_DISABLED: "La programmation NFC est désactivée pour cet établissement.",
@@ -87,7 +87,6 @@ export function nfcErrorCopy(error: unknown): string {
     NFC_SESSION_BUSY: "Une lecture ou une programmation NFC est déjà en cours. Terminez-la avant de réessayer.",
     NFC_SESSION_CANCELLED: "Session NFC interrompue. Reprenez l’opération existante.",
     NFC_BUSY: "Une opération NFC est déjà en cours.",
-    STUDENT_CARD_NFC_UID_EXISTS: "Cette carte physique est déjà affectée. Son UID reste dans l’historique.",
     NFC_RESPONSE_INVALID: "Réponse serveur incohérente. Relisez l’état de l’opération.",
     NFC_RECOVERY_UNSUPPORTED_CHIP: "Diagnostic : puce non reconnue comme NTAG213 ou NTAG216. Aucune écriture effectuée.",
     NFC_RECOVERY_UID_MISMATCH: "Diagnostic : cette puce n’est pas celle réservée pour cet élève (UID différent). Aucune écriture effectuée.",
@@ -96,18 +95,42 @@ export function nfcErrorCopy(error: unknown): string {
     NFC_RECOVERY_FOREIGN_CONTENT: "Diagnostic : la carte contient des données qui ne sont pas Somafrik. Aucune écriture effectuée.",
     NFC_RECOVERY_INVALID_CONTENT: "Diagnostic : contenu Somafrik incomplet ou invalide. Aucune activation, aucune écriture effectuée.",
     NFC_RECOVERY_OTHER_CARD: "Diagnostic : la carte porte l’identifiant d’une autre carte Somafrik. Aucune activation, aucune écriture effectuée.",
+    NFC_BACKEND_UNSUPPORTED: "Le serveur Somafrik ne prend pas en charge cette opération NFC (version du serveur incompatible avec cette application). Aucune réservation ni écriture n’a été effectuée.",
+    NFC_SERVER_ERROR: "Erreur du serveur Somafrik. Rien n’est confirmé : actualisez l’état de la carte avant de reprendre.",
+    TIMEOUT: "Le serveur n’a pas répondu à temps. Rien n’est confirmé : actualisez l’état de la carte avant de reprendre.",
+    NETWORK_UNAVAILABLE: "Pas de connexion réseau. Rien n’est confirmé : reconnectez-vous puis actualisez l’état de la carte.",
+    BACKEND_UNREACHABLE: "Serveur Somafrik injoignable. Rien n’est confirmé : réessayez plus tard puis actualisez l’état de la carte.",
+    STUDENT_CARD_NFC_CONFLICT: "Une opération NFC concurrente existe pour cet élève. Actualisez l’état des cartes.",
+    STUDENT_CARD_NFC_OPERATION_CONFLICT: "Une opération NFC concurrente existe pour cet élève. Actualisez l’état des cartes.",
+    STUDENT_CARD_NFC_RESERVATION_EXISTS: "Une réservation NFC est déjà en cours pour cet élève. Reprenez-la au lieu d’en créer une nouvelle.",
+    STUDENT_CARD_NFC_UID_EXISTS: "Cette carte physique est déjà affectée. Son UID reste dans l’historique.",
+    NFC_WRITE_UNCONFIRMED: "Écriture NFC non confirmée (carte retirée ou session interrompue). Ne considérez pas la carte comme vierge : relisez-la avant toute nouvelle tentative.",
+    NFC_CONFIRM_UNCONFIRMED: "La carte a été écrite et relue, mais l’activation serveur n’est pas confirmée. Ne réécrivez pas : actualisez puis utilisez « Reprendre l’opération — relire et confirmer ».",
     NFC_RECOVERY_USE_R1: "Diagnostic : la carte contient déjà le jeton Somafrik de cette carte. Utilisez « Récupérer cette carte NFC sans la réécrire ». Aucune écriture effectuée.",
     NFC_RECOVERY_READ_ONLY: "Diagnostic : la carte est en lecture seule (verrouillée). Réencodage impossible. Aucune écriture effectuée.",
     STUDENT_CARD_NOT_FOUND: "Le contenu de la carte ne correspond pas à cette réservation. Aucune activation.",
     STUDENT_CARD_NFC_MISMATCH: "La carte ou l’élève ne correspond pas à cette affectation. Aucune activation.",
     STUDENT_CARD_ACTIVE_ALREADY_EXISTS: "Cet élève a déjà une carte active ou une réservation en cours. Aucune activation.",
   };
-  if (error && typeof error === "object" && (("status" in error && error.status === 403) || ("statusCode" in error && error.statusCode === 403))) return copies.STUDENT_CARD_TENANT_DENIED;
-  return copies[code] ?? "Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante.";
+  const status = httpStatusOf(error);
+  if (status === 403) return copies.STUDENT_CARD_TENANT_DENIED;
+  const written = Boolean(error && typeof error === "object" && "nfcWritten" in error && error.nfcWritten === true);
+  if (written && (UNCONFIRMED_TRANSPORT.has(code) || (!code && (status === null || status === 404 || status >= 500)))) return copies.NFC_CONFIRM_UNCONFIRMED;
+  if (copies[code]) return copies[code];
+  // NFC-P0-R2-SMOKE-FIX-01: an HTTP error without business code is never a card verdict.
+  if (!code && status === 404) return copies.NFC_BACKEND_UNSUPPORTED;
+  if (!code && status !== null && status >= 500) return copies.NFC_SERVER_ERROR;
+  return "Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante.";
 }
 function codeOf(error: unknown): string {
-  return error && typeof error === "object" && "code" in error ? String(error.code) : "";
+  return error && typeof error === "object" && "code" in error ? String(error.code ?? "") : "";
 }
+function httpStatusOf(error: unknown): number | null {
+  if (!error || typeof error !== "object") return null;
+  const value = "status" in error ? error.status : "statusCode" in error ? error.statusCode : null;
+  return typeof value === "number" ? value : null;
+}
+const UNCONFIRMED_TRANSPORT = new Set(["TIMEOUT", "NETWORK_UNAVAILABLE", "BACKEND_UNREACHABLE"]);
 /** NFC-P0-RECOVERY-02 — recovery without write is offered only for a reservation the
  * server expired (never lost, replaced, security-revoked or abandoned cards), never
  * for a replacement, and only when the pupil has no active card or live reservation. */
@@ -139,7 +162,15 @@ async function confirmRead(hardware: NfcEncoderHardware, api: NfcEnrollmentApi, 
   if (await checked(control, () => hardware.readText()) !== payload) throw nfcFailure("NFC_READBACK");
   const locked = await checked(control, () => hardware.isReadOnly());
   control.phase("confirmation");
-  return assertActive(await checked(control, () => api.confirm(card, token, locked, control.studentId)), card);
+  let confirmed: EnrollmentCard;
+  try { confirmed = await checked(control, () => api.confirm(card, token, locked, control.studentId)); }
+  catch (error) {
+    // Token written and re-read: keep the original code (contract), only flag the context
+    // so the copy says "written, activation not confirmed" instead of a generic result.
+    if (error && typeof error === "object") Object.assign(error, { nfcWritten: true });
+    throw error;
+  }
+  return assertActive(confirmed, card);
 }
 export async function encodeNfcCard(hardware: NfcEncoderHardware, api: NfcEnrollmentApi, card: IssuedNfcCard, control: FlowControl, allowRewrite = false) {
   try {
@@ -155,7 +186,10 @@ export async function encodeNfcCard(hardware: NfcEncoderHardware, api: NfcEnroll
     if (previous !== expected) {
       if (await checked(control, () => hardware.isReadOnly())) throw nfcFailure("NFC_FOREIGN");
       control.phase("writing");
-      await checked(control, () => hardware.writeText(expected));
+      await checked(control, () => hardware.writeText(expected)).catch((error) => {
+        // Native write failures carry no code: report "not confirmed", never "blank".
+        throw codeOf(error) ? error : nfcFailure("NFC_WRITE_UNCONFIRMED");
+      });
     }
     control.phase("verification");
     if (await checked(control, () => hardware.readText()) !== expected) throw nfcFailure("NFC_READBACK");
