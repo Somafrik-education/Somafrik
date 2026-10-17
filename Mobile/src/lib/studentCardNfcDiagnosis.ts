@@ -42,7 +42,7 @@ export function sanitizeDiagnosisResult(raw: unknown): DiagnosisResult {
       || ![true, false, null].includes(value.sameSchool as boolean | null)
       || value.physicalSource !== "client_declared" || !Array.isArray(value.actions)) throw new Error("Réponse de diagnostic invalide.");
   if (value.sameSchool !== true) return {
-    code: value.code, message: value.message, sameSchool: value.sameSchool,
+    code: value.code, message: value.message, sameSchool: value.sameSchool ?? null,
     physical: String(value.physical || ""), physicalMessage: String(value.physicalMessage || ""),
     physicalSource: "client_declared", recoverable: false,
     actions: value.code === "OTHER_SCHOOL" ? ["contact_owner_school"] : [],
