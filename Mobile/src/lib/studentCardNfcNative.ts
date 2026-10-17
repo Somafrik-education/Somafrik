@@ -12,8 +12,22 @@ const ANDROID_DISCOVERY_TECHS = [
   NfcTech.MifareUltralight,
   NfcTech.NdefFormatable,
 ];
+const READER_MODE_OPTIONS = {
+  isReaderModeEnabled: true,
+  readerModeFlags:
+    NfcAdapter.FLAG_READER_NFC_A
+    | NfcAdapter.FLAG_READER_NFC_B
+    | NfcAdapter.FLAG_READER_NFC_F
+    | NfcAdapter.FLAG_READER_NFC_V,
+};
+
 export function createReactNativeNfcAdapter(): NfcHardware {
   const session = createNativeNfcSession();
+  // RC-5 : le Reader Mode est tenu tant que le scanner est ouvert. Laissé à la charge de
+  // requestTechnology, il était coupé ~1 s après chaque lecture (cancelTechnologyRequest →
+  // unregisterTagEvent) et Android redispatchait la carte encore maintenue
+  // vers com.android.apps.tag. Il n'est rendu qu'à end().
+  let readerModeHeld = false;
   return {
     async start() {
       if (Platform.OS !== "android") throw new Error("La lecture NFC est disponible sur Android uniquement.");
@@ -28,14 +42,11 @@ export function createReactNativeNfcAdapter(): NfcHardware {
     },
     async requestTag() {
       if (Platform.OS === "android") {
-        await session.request(() => NfcManager.requestTechnology(ANDROID_DISCOVERY_TECHS, {
-          isReaderModeEnabled: true,
-          readerModeFlags:
-            NfcAdapter.FLAG_READER_NFC_A
-            | NfcAdapter.FLAG_READER_NFC_B
-            | NfcAdapter.FLAG_READER_NFC_F
-            | NfcAdapter.FLAG_READER_NFC_V,
-        }));
+        if (!readerModeHeld) {
+          readerModeHeld = true; // marqué avant l'appel : end() désinscrit même un enregistrement interrompu
+          await session.run(() => NfcManager.registerTagEvent(READER_MODE_OPTIONS));
+        }
+        await session.request(() => NfcManager.requestTechnology(ANDROID_DISCOVERY_TECHS, READER_MODE_OPTIONS));
         return;
       }
       throw new Error("La lecture NFC est disponible sur Android uniquement.");
@@ -45,6 +56,12 @@ export function createReactNativeNfcAdapter(): NfcHardware {
     },
     async cancel() {
       await session.close();
+    },
+    async end() {
+      await session.close();
+      if (!readerModeHeld) return;
+      readerModeHeld = false;
+      await NfcManager.unregisterTagEvent();
     },
   };
 }

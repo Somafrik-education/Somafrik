@@ -73,7 +73,7 @@
     "test:preview-apk-eas-auth": "node scripts/verify-mobile-preview-apk.test.js && node scripts/verify-native-prebuild.test.js",
     "verify:mobile-native-aab": "node scripts/verify-native-prebuild.js",
     "verify:student-card-mobile": "npm run verify:student-card-qr",
-    "verify:student-card-qr": "npx --yes tsx src/lib/studentCardScan.test.ts && npx --yes tsx src/lib/studentCardNfc.test.ts && npx --yes tsx --test src/lib/nfcSession.test.ts && node scripts/verify-student-card-qr.js",
+    "verify:student-card-qr": "npx --yes tsx src/lib/studentCardScan.test.ts && npx --yes tsx src/lib/studentCardNfc.test.ts && npx --yes tsx --test src/lib/nfcSession.test.ts && npx --yes tsx --test src/components/StudentCardNfcScannerModal.test.ts && npx --yes tsx --test src/lib/studentCardNfcNative.test.ts && node scripts/verify-student-card-qr.js",
     "test:release-environments": "node config/releaseEnvironments.test.js",
     "test:network-resilience": "npx --yes tsx src/lib/networkResilience.test.ts && npx --yes tsx src/lib/mutationGuard.test.ts && npx --yes tsx src/lib/outbox.test.ts && npx --yes tsx src/lib/connectivity.test.ts && npx --yes tsx src/lib/attendanceClassIdentity.test.ts && npx --yes tsx src/lib/attendanceOffline.test.ts && npx --yes tsx src/lib/offlineClassification.test.ts",
     "test:l1-sqlite-cache": "npx --yes tsx src/offline/l1/l1SqliteCache.test.ts",
@@ -106,7 +106,9 @@
     "test:student-card-nfc-encoding": "npx --yes tsx --test src/lib/studentCardNfcEncoding.test.ts",
     "test:student-card-nfc-batch": "npx --yes tsx --test src/lib/studentCardNfcBatch.test.ts",
     "test:student-card-nfc-integration": "npx --yes tsx --test src/lib/studentCardNfcIntegration.pg.test.ts",
-    "test:student-card-nfc-security": "npx --yes tsx --test src/lib/studentCardNfcSecurity.test.ts"
+    "test:student-card-nfc-security": "npx --yes tsx --test src/lib/studentCardNfcSecurity.test.ts",
+    "test:student-card-nfc-scanner": "npx --yes tsx --test src/components/StudentCardNfcScannerModal.test.ts",
+    "test:student-card-nfc-native": "npx --yes tsx --test src/lib/studentCardNfcNative.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -144,6 +146,7 @@
     "@types/react": "~19.1.10",
     "babel-preset-expo": "~54.0.9",
     "prettier-plugin-tailwindcss": "^0.5.11",
+    "react-test-renderer": "19.1.0",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.9.2"
   },
