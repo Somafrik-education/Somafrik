@@ -2,6 +2,8 @@ BEGIN
 ALTER TABLE
 ALTER TABLE
 ALTER TABLE
+CREATE FUNCTION
+CREATE TRIGGER
 CREATE INDEX
 DROP INDEX
      etape     |                  id                  
@@ -32,6 +34,26 @@ DO
 ROLLBACK
 SAVEPOINT
 NOTICE:  P6 OK : contrainte r3_release_check refuse une carte encodée
+DO
+ROLLBACK
+SAVEPOINT
+NOTICE:  P7 OK : révocation de sécurité jamais encodée non libérable (motif vérifié par contrainte)
+DO
+ROLLBACK
+SAVEPOINT
+NOTICE:  P8 OK : motif de révocation figé (requalification refusée)
+DO
+ROLLBACK
+SAVEPOINT
+NOTICE:  P9 OK : nfc_abandoned non libérable
+DO
+ROLLBACK
+SAVEPOINT
+NOTICE:  P10 OK : reprise R2 toujours admise par le garde
+DO
+ROLLBACK
+SAVEPOINT
+NOTICE:  P11 OK : ligne libérée immuable
 DO
 ROLLBACK
 ROLLBACK

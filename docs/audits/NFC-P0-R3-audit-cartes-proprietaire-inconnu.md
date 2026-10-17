@@ -1,14 +1,42 @@
 # NFC-P0-R3 — Audit : récupération des cartes NFC vierges à propriétaire inconnu
 
-**Statut : AUDIT / DRAFT / HOLD — aucune PR d'implémentation, aucun merge.**
+**Statut : AUDIT / DRAFT / HOLD — aucun merge.** Révision 2 : intègre la revue indépendante CTO (§0).
 Base auditée : `develop` @ `2adae00` (R2 inclus). Aucune écriture NFC ni mutation PostgreSQL n'a été réalisée.
 Les preuves SQL ont été exécutées uniquement sur une base PostgreSQL 16 **locale et jetable**, chargée avec `backend/db/schema.sql` et un jeu de données synthétique.
 
 > **Limite de cet audit.** Je n'ai accès ni à la base de préproduction (proxy réseau) ni aux huit cartes physiques.
-> L'inventaire nominatif des huit cartes (livrables 1 et 2) est donc fourni sous forme de **procédure exécutable et de gabarit**, avec une requête de diagnostic **validée sur 14 cas synthétiques**.
+> L'inventaire nominatif des huit cartes (livrables 1 et 2) est donc fourni sous forme de **procédure exécutable et de gabarit**, avec une requête de diagnostic **validée sur 15 cas synthétiques**.
 > Le diagnostic réel de chaque carte s'obtient en exécutant le §6 (environ 30 minutes, lecture seule).
 
 ---
+
+## 0. Revue CTO — décisions et corrections (révision 2)
+
+**Audit accepté sous réserves — HOLD.** Revue faite sur HEAD `e4b8c8f`.
+
+| Décision | Verdict CTO |
+| --- | --- |
+| Q1 — Les 14 diagnostics | Approuvé sous réserves (corrections ci-dessous). Un 15ᵉ cas synthétique a été ajouté : révocation de sécurité d'une réservation jamais encodée |
+| Q2 — Validation d'une réattribution | **Deux approbateurs distincts** pour toute réattribution |
+| Q3 — Index unique partiel | **Non autorisé pour l'instant.** R3-B reste une étude |
+| Q4 — Réécriture d'une carte active effacée | **Exclue** du chantier R3 initial |
+| Q5 — Diagnostic des huit cartes | **Autorisé en lecture seule**, personne habilitée uniquement. Aucun changement d'attribution, aucune écriture NFC, aucune suppression |
+
+**Priorité : retrouver les titulaires d'origine.** Si les huit cartes sont des réservations expirées éligibles, R2 suffit, sans toucher à l'index global.
+
+**Ordre de travail approuvé**
+1. R3-1, diagnostic backend.
+2. R3-2, diagnostic Android.
+3. R3-3, prévention.
+
+R3-4 et R3-5 restent en HOLD jusqu'à l'inventaire réel et une nouvelle validation de l'architecture de réattribution.
+
+**Corrections demandées et apportées**
+
+| # | Demande CTO | Correction | Preuve |
+| --- | --- | --- | --- |
+| C-1 | Séparer explicitement la recherche globale d'UID et l'accès aux détails : plus de `c.*`, plus de lecture du titulaire avant masquage | Requête en deux étapes. **Étape 1** `global_lookup` : seule lecture inter-établissements, limitée à `(nfc_uid, school_id = :school_id)`. **Étape 2** `school_cards` / `school_holders` : colonnes explicites, filtre `school_id` **dans la lecture** de la table et dans chaque sous-requête du titulaire. Aucun `*` dans la requête | `diagnostic-r3-readonly.sql` (rév. 2) : 15/15 conformes. `preuve-cloisonnement.sql` : séparation **imposée par PostgreSQL** (C1 : rôle limité aux colonnes `nfc_uid, school_id`, lecture du statut refusée ; C2 : RLS par établissement, carte d'un autre établissement invisible) |
+| C-2 | La contrainte de libération ne vérifiait pas le motif historique : un SQL fautif pouvait libérer une révocation de sécurité | Contrainte couplée au motif : seuls `nfc_reservation_expired` et `nfc_cancelled` (R3-3) sont libérables, chacun avec son motif de libération ; remplacement exclu. **Trigger** : motif de révocation figé (aucune requalification `revoked` → expiration) et ligne libérée immuable. Les reprises R1/R2 restent admises | `prototype-r3b-liberation.sql` (rév. 2) : P7 sécurité jamais encodée refusée, P8 requalification refusée, P9 `nfc_abandoned` refusé, P10 R2 toujours possible, P11 ligne libérée immuable |
 
 ## 1. Synthèse
 
@@ -51,7 +79,7 @@ réservation (issued/pending, 30 min) ──écriture+relecture+confirm──▶
 
 ### 3.1 Taxonomie validée (requête `evidence/nfc-p0-r3/diagnostic-r3-readonly.sql`)
 
-Les 14 cas ont été validés sur base locale (`diagnostic-r3-fixtures.expected.csv`).
+Les 14 codes (15 cas) ont été validés sur base locale (`diagnostic-r3-fixtures.expected.csv`).
 
 | Code | Condition (ligne PostgreSQL de l'UID) | Motif de refus expliqué | Actions autorisées |
 | --- | --- | --- | --- |
@@ -63,7 +91,7 @@ Les 14 cas ont été validés sur base locale (`diagnostic-r3-fixtures.expected.
 | `EXPIRED_HOLDER_INACTIVE` | Idem, titulaire inactif | Titulaire n'est plus actif | R3-B (libération autorisée) |
 | `EXPIRED_HOLDER_HAS_CARD` | Idem, titulaire déjà équipé ou réservation vivante | Titulaire a déjà une carte | R3-B |
 | `EXPIRED_REPLACEMENT` | Réservation de remplacement expirée | Remplacement non abouti | R3-B (l'ancienne carte du titulaire n'est pas touchée) |
-| `REVOKED_NEVER_ENCODED` | `revoked` (`revoked` / `nfc_abandoned`), jamais encodée | Annulation manuelle **ou** sécurité : indiscernable aujourd'hui | Revue humaine + justification ; R3-B seulement si non sensible |
+| `REVOKED_NEVER_ENCODED` | `revoked` (`revoked` / `nfc_abandoned`), jamais encodée | Annulation manuelle **ou** sécurité : indiscernable aujourd'hui | **Non libérable** (C-2). Revue humaine ; seule une future annulation explicite `nfc_cancelled` (R3-3) serait éligible |
 | `ACTIVE` | `active/encoded` | Carte en service ; puce vierge, donc effacée | Déclarer perdue et remplacer ; ou réécriture même élève (option, §5.3) |
 | `LOST` | `lost` | Déclarée perdue/volée | **Non récupérable** |
 | `REPLACED` | `replaced` | Remplacée | **Non récupérable** |
@@ -87,8 +115,10 @@ Ces codes sont croisés avec l'observation **physique**, faite sans écriture :
 - Entrée : `{ uid, tagType, ndef: { state: "empty" | "somafrik" | "foreign" | "unreadable", publicId? }, readOnly }`.
   - Le **secret NDEF n'est jamais envoyé** : le mobile extrait seulement le `publicId`, qui n'est pas un justificatif.
 - Droits : nouvelle permission dédiée, réservée à la direction et aux administrateurs de l'établissement, au moins équivalente à `POST /api/student-cards/:id/nfc-confirm`. `authorize()` impose le même établissement d'inscription.
-- Requête : la classification du §3.1, en une lecture.
-  - Pour une ligne d'un autre établissement, seul le booléen `same_school = false` est calculé. Aucune autre colonne n'est lue dans le résultat.
+- Requête en **deux accès séparés** (correction C-1) :
+  1. **Recherche globale minimale.** Fonction PostgreSQL dédiée (`SECURITY DEFINER`, propriétaire à droits de colonne limités à `nfc_uid, school_id`). Elle renvoie uniquement `{ exists, sameSchool }`. C'est la seule lecture qui traverse les établissements, imposée par l'unicité globale.
+  2. **Détails.** Lecture bornée à `school_id = établissement de l'utilisateur`, colonnes explicites. La RLS est recommandée en défense en profondeur (preuve C2). Elle ne s'exécute **que** si `sameSchool = true`.
+  - Pour une carte d'un autre établissement, la route s'arrête après l'étape 1. Aucune ligne de cet établissement n'est lue au-delà de `(nfc_uid, school_id)`.
 - Réponse :
   - `{ code, reasons[], actions[] }` ;
   - pour **le même établissement uniquement** : `card { id, status, state, issuedDay }` et `holder { nom affichable, classe, actif }`. L'élève appartient à l'établissement de l'utilisateur, qui a déjà le droit de le voir.
@@ -115,11 +145,17 @@ Les options écartées sont refusées par le mandat ou détruisent l'historique 
 - changer le `student_id` de la ligne ;
 - désactiver l'index.
 
-**Option retenue (prototype validé : `evidence/nfc-p0-r3/prototype-r3b-liberation.sql`)**
+> **HOLD — décision CTO Q3 : index partiel non autorisé pour l'instant.** Cette section décrit l'option étudiée et les garanties qu'elle devrait offrir. Elle n'autorise aucune implémentation.
+
+**Option étudiée (prototype : `evidence/nfc-p0-r3/prototype-r3b-liberation.sql`, rév. 2)**
 
 1. Colonnes additives : `nfc_uid_released_at`, `nfc_uid_release_reason`. L'ancienne ligne garde son UID, son titulaire, ses dates et ses audits.
-2. Contrainte `CHECK` : une ligne libérée est forcément `revoked`, `pending`, jamais encodée et jamais verrouillée.
-   - Une carte active, perdue, remplacée, de sécurité ou verrouillée est donc **non libérable**, même par une requête fautive (preuve P6).
+2. Contrainte `CHECK` (corrigée, C-2) : une ligne libérée est `revoked`, `pending`, jamais encodée, jamais verrouillée, pas un remplacement, **et** son motif historique est non sensible et couplé au motif de libération :
+   - `nfc_reservation_expired` donne `expired_never_encoded` ;
+   - `nfc_cancelled` (R3-3) donne `cancelled_never_encoded`.
+
+   Une carte active, perdue, remplacée, verrouillée, révoquée pour sécurité (même jamais encodée) ou `nfc_abandoned` est **non libérable**, même par un SQL fautif (preuves P6, P7, P9).
+   - **Trigger de garde** : le motif d'une révocation est figé, donc pas de requalification de `revoked` en expiration (P8). Seule sortie admise : la reprise R1/R2 d'une réservation expirée (P10). Une ligne libérée est immuable (P11).
 3. Index unique **partiel** `nfc_uid WHERE nfc_uid IS NOT NULL AND nfc_uid_released_at IS NULL`.
    - Il reste global, tous établissements confondus.
    - Il ne cesse jamais d'exister : il est créé `CONCURRENTLY` **avant** le retrait de l'ancien index.
@@ -142,10 +178,10 @@ La procédure tient en une transaction : libération et nouvelle réservation so
 4. Gardes rejouées sous verrou :
    - code ∈ {`EXPIRED_HOLDER_INACTIVE`, `EXPIRED_HOLDER_HAS_CARD`, `EXPIRED_REPLACEMENT`}, ou `R2_ELIGIBLE` si la direction refuse R2 ;
    - pour `REVOKED_NEVER_ENCODED`, uniquement avec le nouveau motif `nfc_cancelled` (§5).
-5. Autorisation explicite :
+5. Autorisation explicite (décision Q2) :
    - justification texte obligatoire ;
-   - double confirmation à l'écran ;
-   - **option à trancher (§9, Q2)** : second approbateur, c'est-à-dire un principe des quatre yeux.
+   - **deux approbateurs distincts**, l'initiateur et un second membre habilité de la direction, vérifiés côté serveur (identifiants différents, rôles relus en base) ;
+   - les deux identités sont tracées dans l'audit.
 6. `UPDATE … SET nfc_uid_released_at …` avec gardes dans le `WHERE` (preuve P1/P5), puis réservation canonique pour le nouvel élève via le code de `reserveStudentCardNfc`, puis écriture, relecture et confirmation standard.
 7. Audits dans la même transaction, sans aucun secret :
    - `student_card_nfc_uid_released` sur l'ancienne ligne (ancien statut, motif, justification, approbateurs) ;
@@ -212,12 +248,13 @@ Résultat attendu par carte : un et un seul code, un motif de refus, et une list
 | # | Risque | Gravité | Mesure |
 | --- | --- | --- | --- |
 | RR-1 | La carte a été remise physiquement à l'ancien élève, qui la porte encore : après réattribution, son passage identifie un autre élève | Haute | Exiger la **possession physique** par la direction au moment de la réattribution ; NDEF vide constaté dans la même session ; justification tracée |
-| RR-2 | Réattribuer une carte compromise (volée, puis retrouvée par un tiers) | Haute | `LOST` et `REVOKED_SECURITY` non libérables, par contrainte de base et non seulement par l'application |
-| RR-3 | Fuite inter-établissements par le diagnostic | Haute | Booléen `same_school` uniquement ; aucune colonne d'un autre établissement ; test d'isolation |
+| RR-2 | Réattribuer une carte compromise (volée, puis retrouvée par un tiers) | Haute | `LOST`, `REVOKED_SECURITY` et toute révocation de sécurité, même jamais encodée, non libérables par contrainte de base liée au motif (P7) ; motif figé par trigger (P8) |
+| RR-3 | Fuite inter-établissements par le diagnostic | Haute | Recherche globale séparée, limitée à `(nfc_uid, school_id)` ; détails bornés à l'établissement ; défense imposée par PostgreSQL (C1/C2) ; test d'isolation |
+| RR-10 | Requalification d'un motif de révocation pour rendre une carte libérable | Haute | Trigger : motif figé, seule sortie R1/R2 depuis une expiration (P8, P10) |
 | RR-4 | Énumération d'UID pour cartographier les cartes | Moyenne | Permission direction, limitation de débit, audit de chaque diagnostic |
 | RR-5 | Deux réattributions concurrentes du même UID | Moyenne | Index partiel, verrou consultatif et `FOR UPDATE`, test à deux connexions |
 | RR-6 | Ancien jeton encore présent sur une puce (écriture réussie puis confirmation perdue) | Moyenne | NDEF vide obligatoire ; ancienne ligne révoquée, donc jeton rejeté ; si NDEF Somafrik : R1, pas R3 |
-| RR-7 | Abus interne (libérer pour contourner une révocation) | Moyenne | Permission distincte, justification, option quatre yeux, audit non supprimable |
+| RR-7 | Abus interne (libérer pour contourner une révocation) | Moyenne | Permission distincte, justification, **deux approbateurs distincts** (Q2), audit non supprimable |
 | RR-8 | Migration d'index en production (verrou, fenêtre sans unicité) | Moyenne | `CREATE UNIQUE INDEX CONCURRENTLY` d'abord, vérification de l'absence de doublon, retrait de l'ancien ensuite ; plan de retour arrière |
 | RR-9 | Perte d'historique | Faible | Aucune suppression ; l'ancienne ligne garde UID, titulaire et audits (preuve P3) |
 
@@ -225,30 +262,32 @@ Résultat attendu par carte : un et un seul code, un motif de refus, et une list
 
 ## 8. Découpage des PR et complexité
 
-Chaque PR est isolée, Draft/HOLD, avec CI verte, diff indépendant et contrôle de sécurité. **Aucune n'est ouverte avant la validation de cet audit.**
+Chaque PR est isolée, Draft/HOLD, avec CI verte, diff indépendant et contrôle de sécurité. **Approuvées pour préparation : R3-1, R3-2, R3-3. En HOLD : R3-4, R3-5. Exclue : R3-6 (Q4).**
 
 | PR | Contenu | Schéma | Complexité | Dépend de |
 | --- | --- | --- | --- | --- |
-| R3-1 | Backend `nfc-diagnose` en lecture seule : RBAC, limite de débit, audit, isolation | Non (permission RBAC seulement) | M (2–3 j) | — |
+| R3-1 | Backend `nfc-diagnose` en lecture seule : recherche globale séparée (fonction à droits de colonne limités), détails bornés à l'établissement, RBAC strict, limite de débit, audit | Fonction de lecture + permission RBAC | M (2–3 j) | — |
 | R3-2 | Mobile « Diagnostiquer une carte NFC », lecture seule, liens vers R1/R2 | Non | M (2–3 j) | R3-1 |
 | R3-3 | Motif `nfc_cancelled`, champ `nfcRecoverable`, choix du motif Web/Mobile, message `UID_EXISTS` | Additif (valeur de motif) | S–M (1–2 j) | — |
-| R3-4 | Libération et réattribution transactionnelle : migration (colonnes, contrainte, index partiel concurrent), route, double confirmation, audits | **Oui** (migration sensible) | L (4–6 j) | R3-1, R3-3, GO CTO |
-| R3-5 | Mobile, parcours de réattribution : consentement, contrôles physiques, appel R3-4 | Non | M (2–3 j) | R3-4 |
-| (opt.) R3-6 | Réécriture d'une carte active effacée, même élève | Non | M | Décision Q4 |
+| R3-4 (**HOLD**) | Libération et réattribution transactionnelle : migration (colonnes, contrainte liée au motif, trigger, index partiel concurrent), route, deux approbateurs, audits | **Oui** (migration sensible) | L (5–7 j) | Inventaire réel, nouvelle validation CTO (Q3) |
+| R3-5 (**HOLD**) | Mobile, parcours de réattribution : consentement, contrôles physiques, second approbateur, appel R3-4 | Non | M (2–3 j) | R3-4 |
+| ~~R3-6~~ | Réécriture d'une carte active effacée | — | — | **Exclue** (Q4) |
 
-**Ordre conseillé :**
-1. R3-1, R3-2 et R3-3, qui débloquent sans risque les cartes `R2_ELIGIBLE`, probablement la majorité.
-2. R3-4 et R3-5 seulement pour les cartes restantes, après décision CTO.
+**Ordre approuvé :**
+1. R3-1, R3-2 et R3-3, qui retrouvent les titulaires et débloquent par R2 les cartes `R2_ELIGIBLE`.
+2. R3-4 et R3-5 en HOLD, réévaluées après l'inventaire réel des huit cartes.
 
 ---
 
-## 9. Décisions attendues du CTO
+## 9. Décisions CTO (rendues, voir §0)
 
-1. **Q1** — Valider la taxonomie (§3.1) et la réponse minimale pour `OTHER_SCHOOL`, qui n'expose aucun détail.
-2. **Q2** — R3-B : double confirmation seule, ou second approbateur (quatre yeux) ?
-3. **Q3** — Valider le principe de l'index unique **partiel** (unicité de l'attribution courante, historique conservé), en remplacement de l'index permanent.
-4. **Q4** — Inclure ou non la réécriture d'une carte active effacée (§5.3).
-5. **Q5** — Autoriser l'exécution du §6 (lecture physique et SQL `READ ONLY`) sur les huit cartes.
+| Question | Décision |
+| --- | --- |
+| Q1 | Taxonomie approuvée sous réserves (C-1, C-2 corrigées) |
+| Q2 | Deux approbateurs distincts pour toute réattribution |
+| Q3 | Index partiel non autorisé pour l'instant ; R3-B en HOLD |
+| Q4 | Réécriture d'une carte active effacée exclue |
+| Q5 | Diagnostic des huit cartes autorisé en lecture seule |
 
 ---
 
@@ -288,11 +327,12 @@ Pour chacune des huit cartes, séparément :
 
 | Fichier | Contenu |
 | --- | --- |
-| `evidence/nfc-p0-r3/diagnostic-r3-readonly.sql` | Requête de diagnostic des 8 UID (lecture seule, sortie masquée) |
-| `evidence/nfc-p0-r3/diagnostic-r3-fixtures.sql` | Jeu synthétique couvrant les 14 codes (base jetable uniquement) |
-| `evidence/nfc-p0-r3/diagnostic-r3-fixtures.expected.csv` | Résultat obtenu : 14/14 conformes |
-| `evidence/nfc-p0-r3/prototype-r3b-liberation.sql` | Prototype R3-B (non une migration), entièrement annulé par `ROLLBACK` |
-| `evidence/nfc-p0-r3/prototype-r3b-liberation.output.txt` | Sortie : P1–P6, dont P4/P5/P6 « OK » |
+| `evidence/nfc-p0-r3/diagnostic-r3-readonly.sql` | Requête de diagnostic des 8 UID, rév. 2 : deux étapes cloisonnées, lecture seule, sortie masquée |
+| `evidence/nfc-p0-r3/diagnostic-r3-fixtures.sql` | Jeu synthétique couvrant les 14 codes et 15 cas (base jetable uniquement) |
+| `evidence/nfc-p0-r3/diagnostic-r3-fixtures.expected.csv` | Résultat obtenu : 15/15 conformes |
+| `evidence/nfc-p0-r3/preuve-cloisonnement.sql` + `.output.txt` | C1/C2 : séparation recherche globale / détails imposée par droits de colonne et RLS (annulé par `ROLLBACK`) |
+| `evidence/nfc-p0-r3/prototype-r3b-liberation.sql` | Prototype R3-B rév. 2 (étude en HOLD, non une migration), entièrement annulé par `ROLLBACK` |
+| `evidence/nfc-p0-r3/prototype-r3b-liberation.output.txt` | Sortie : P1 à P11, dont P4 à P11 « OK » |
 | `evidence/nfc-p0-r3/inventaire-8-cartes.template.csv` | Gabarit d'inventaire masqué (à remplir hors Git) |
 
 Reproduction locale :
@@ -300,8 +340,9 @@ Reproduction locale :
 createdb r3_audit && psql -d r3_audit -f backend/db/schema.sql
 psql -d r3_audit -f docs/audits/evidence/nfc-p0-r3/diagnostic-r3-fixtures.sql
 psql -d r3_audit -v school_id=00000000-0000-4000-8000-00000000000a \
-  -v uids=04000000000001,…,0400000000000E -f docs/audits/evidence/nfc-p0-r3/diagnostic-r3-readonly.sql
+  -v uids=04000000000001,…,0400000000000E,04000000000016 -f docs/audits/evidence/nfc-p0-r3/diagnostic-r3-readonly.sql
+psql -d r3_audit -f docs/audits/evidence/nfc-p0-r3/preuve-cloisonnement.sql
 psql -d r3_audit -f docs/audits/evidence/nfc-p0-r3/prototype-r3b-liberation.sql
 ```
 
-**NFC-P0-R3 — AUDIT / DRAFT / HOLD — DÉCISION CTO ATTENDUE (Q1–Q5).**
+**NFC-P0-R3 — AUDIT rév. 2 / DRAFT / HOLD — corrections C-1 et C-2 apportées ; R3-1 à R3-3 approuvés pour préparation ; R3-4/R3-5 en HOLD.**

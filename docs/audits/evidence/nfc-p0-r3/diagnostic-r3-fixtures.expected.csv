@@ -13,3 +13,4 @@ carte;uid_masque;same_school;r3_code;status;revoke_reason;tag_type;encoding_stat
 12;04••••••••000C;t;REVOKED_NEVER_ENCODED;revoked;nfc_abandoned;NTAG216;pending;active
 13;04••••••••000D;t;REVOKED_SECURITY;revoked;revoked;NTAG216;encoded;active
 14;04••••••••000E;t;LOCKED_RECORDED;active;;NTAG216;locked;active
+15;04••••••••0016;t;REVOKED_NEVER_ENCODED;revoked;revoked;NTAG216;pending;active

@@ -14,7 +14,7 @@ INSERT INTO students (id, school_id, first_name, last_name, student_code, status
 SELECT ('00000000-0000-4000-8000-0000000001' || lpad(n::text, 2, '0'))::uuid,
        '00000000-0000-4000-8000-00000000000a', 'Synthétique', 'E' || n, 'R3-' || n,
        CASE WHEN n = 9 THEN 'inactive' ELSE 'active' END
-  FROM generate_series(1, 14) n;
+  FROM generate_series(1, 16) n;
 INSERT INTO students (id, school_id, first_name, last_name, student_code)
 VALUES ('00000000-0000-4000-8000-0000000002bb', '00000000-0000-4000-8000-00000000000b', 'Synthétique', 'B', 'R3-B');
 
@@ -32,6 +32,8 @@ INSERT INTO fx VALUES
  (9,  null, null, '04000000000009', 'revoked',  'nfc_reservation_expired', 'pending', false, false, '-3 days', '30 min', null, null, '00000000-0000-4000-8000-00000000c009'),
  (12, null, null, '0400000000000C', 'revoked',  'nfc_abandoned',           'pending', false, false, '-3 days', '30 min', null, null, '00000000-0000-4000-8000-00000000c012'),
  (13, null, null, '0400000000000D', 'revoked',  'revoked',                 'encoded', true,  false, '-3 days', '30 min', null, null, '00000000-0000-4000-8000-00000000c013'),
+ -- 16 : révocation de SÉCURITÉ d'une réservation jamais encodée (motif 'revoked').
+ (16, null, null, '04000000000016', 'revoked',  'revoked',                 'pending', false, false, '-3 days', '30 min', null, null, '00000000-0000-4000-8000-00000000c016'),
  (14, null, null, '0400000000000E', 'active',   null,                      'locked',  true,  true,  '-3 days', '30 min', null, null, '00000000-0000-4000-8000-00000000c014');
 
 -- s10 owns an active card (other UID) + an expired reservation => EXPIRED_HOLDER_HAS_CARD.

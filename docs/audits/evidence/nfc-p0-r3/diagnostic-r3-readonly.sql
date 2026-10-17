@@ -1,81 +1,100 @@
--- NFC-P0-R3 — diagnostic des cartes NFC vierges à propriétaire inconnu.
+-- NFC-P0-R3 — diagnostic des cartes NFC vierges à propriétaire inconnu (révision 2).
 -- STRICTEMENT EN LECTURE : transaction READ ONLY terminée par ROLLBACK.
--- À exécuter uniquement par une personne habilitée, sur autorisation CTO.
+-- À exécuter uniquement par la personne habilitée, sur autorisation CTO (Q5).
 --
 -- Paramètres (psql) :
 --   :'school_id' UUID de l'établissement qui présente les cartes ;
---   :'uids'      liste des UID lus physiquement, dans l'ordre des cartes,
---                séparés par des virgules (normalisés : 04 + 12 hexadécimaux, majuscules).
---   Exemple : psql -v school_id=... -v uids='04A1B2C3D4E5F6,04...' -f diagnostic-r3-readonly.sql
+--   :'uids'      UID lus physiquement, dans l'ordre des cartes, séparés par des virgules
+--                (normalisés : 04 + 12 hexadécimaux, majuscules).
 --
--- Minimisation (mêmes règles que NFC-P0-RECOVERY-01 rév. 2) :
---   * l'UID n'apparaît en sortie que masqué (04 + 8 points + 4 derniers caractères) ;
---   * jamais token_hash, NDEF, secret, nfc_operation_id, identité ni code élève ;
---   * pour une carte d'un AUTRE établissement, seul le booléen same_school=false et le
---     code OTHER_SCHOOL sortent : aucun statut, aucune date, aucun identifiant.
---   * card_id n'est restitué que pour l'établissement présentateur (lien avec Q7 de RECOVERY-01).
+-- Cloisonnement (revue CTO, correction 1) — deux étapes séparées :
+--   ÉTAPE 1 « global_lookup » : seule lecture qui traverse les établissements. Elle ne lit
+--            QUE deux colonnes : nfc_uid (clé de recherche) et le booléen school_id = :'school_id'.
+--            Ni statut, ni dates, ni titulaire, ni identifiant de carte.
+--   ÉTAPE 2 « school_cards » / « school_holders » : détails, avec liste explicite de colonnes
+--            (aucun c.*), filtrés sur school_id = :'school_id' DANS la lecture de la table.
+--            Une ligne d'un autre établissement n'y entre jamais ; les sous-requêtes sur le
+--            titulaire sont elles aussi bornées à :'school_id'.
+-- Minimisation : UID masqué en sortie ; jamais token_hash, NDEF, secret, nfc_operation_id,
+-- identité ni code élève.
 BEGIN TRANSACTION READ ONLY;
 
 WITH input AS (
   SELECT ord, upper(trim(uid)) AS uid
     FROM unnest(string_to_array(:'uids', ',')) WITH ORDINALITY AS t(uid, ord)
-), rows AS (
-  SELECT i.ord, i.uid, c.*,
-         (c.id IS NOT NULL) AS known,
-         (c.school_id = :'school_id'::uuid) AS same_school,
+),
+-- ÉTAPE 1 — recherche globale minimale (unicité UID globale) : existe / même établissement.
+global_lookup AS (
+  SELECT g.nfc_uid AS uid, (g.school_id = :'school_id'::uuid) AS same_school
+    FROM student_access_cards g
+   WHERE g.nfc_uid IN (SELECT uid FROM input)
+),
+-- ÉTAPE 2 — détails autorisés, établissement présentateur uniquement.
+school_cards AS (
+  SELECT c.id, c.student_id, c.nfc_uid AS uid, c.status, c.revoke_reason, c.nfc_tag_type,
+         c.nfc_encoding_state, c.nfc_encoded_at, c.nfc_locked_at, c.nfc_replaces_card_id,
+         c.nfc_recovery_count, c.nfc_retry_operation_ids, c.issued_at, c.revoked_at,
+         (c.nfc_reservation_expires_at <= clock_timestamp()) AS deadline_past
+    FROM student_access_cards c
+   WHERE c.school_id = :'school_id'::uuid
+     AND c.nfc_uid IN (SELECT uid FROM input)
+),
+school_holders AS (
+  SELECT sc.id AS card_id,
          s.status AS holder_status,
          EXISTS (SELECT 1 FROM student_access_cards a
-                  WHERE a.school_id = c.school_id AND a.student_id = c.student_id
-                    AND a.status = 'active' AND a.id <> c.id) AS holder_has_other_active,
+                  WHERE a.school_id = :'school_id'::uuid AND a.student_id = sc.student_id
+                    AND a.status = 'active' AND a.id <> sc.id) AS holder_has_other_active,
          EXISTS (SELECT 1 FROM student_access_cards p
-                  WHERE p.school_id = c.school_id AND p.student_id = c.student_id AND p.id <> c.id
-                    AND p.status = 'issued' AND p.nfc_encoding_state = 'pending'
-                    AND p.nfc_reservation_expires_at > clock_timestamp()) AS holder_has_live_reservation,
-         (c.nfc_reservation_expires_at <= clock_timestamp()) AS deadline_past
-    FROM input i
-    LEFT JOIN student_access_cards c ON c.nfc_uid = i.uid
-    LEFT JOIN students s ON s.id = c.student_id AND s.school_id = c.school_id
-), classified AS (
-  SELECT r.*,
+                  WHERE p.school_id = :'school_id'::uuid AND p.student_id = sc.student_id
+                    AND p.id <> sc.id AND p.status = 'issued' AND p.nfc_encoding_state = 'pending'
+                    AND p.nfc_reservation_expires_at > clock_timestamp()) AS holder_has_live_reservation
+    FROM school_cards sc
+    LEFT JOIN students s ON s.school_id = :'school_id'::uuid AND s.id = sc.student_id
+),
+classified AS (
+  SELECT i.ord, i.uid, gl.same_school, h.holder_status,
+         sc.id, sc.status, sc.revoke_reason, sc.nfc_tag_type, sc.nfc_encoding_state,
+         sc.nfc_encoded_at, sc.nfc_replaces_card_id, sc.nfc_recovery_count,
+         sc.nfc_retry_operation_ids, sc.issued_at, sc.revoked_at,
     CASE
-      WHEN NOT r.known THEN 'UID_UNKNOWN'
-      WHEN NOT r.same_school THEN 'OTHER_SCHOOL'
-      WHEN r.nfc_encoding_state = 'locked' OR r.nfc_locked_at IS NOT NULL THEN 'LOCKED_RECORDED'
-      WHEN r.status = 'active' THEN 'ACTIVE'
-      WHEN r.status = 'lost' THEN 'LOST'
-      WHEN r.status = 'replaced' THEN 'REPLACED'
-      WHEN r.status = 'issued' AND r.nfc_encoding_state = 'pending' AND NOT r.deadline_past THEN 'LIVE_RESERVATION'
-      WHEN r.status = 'issued' AND r.nfc_encoding_state = 'pending' AND r.deadline_past THEN 'EXPIRED_NOT_MATERIALISED'
-      WHEN r.status = 'revoked' AND r.revoke_reason = 'nfc_reservation_expired' AND r.nfc_encoded_at IS NULL THEN
+      WHEN gl.uid IS NULL THEN 'UID_UNKNOWN'
+      WHEN NOT gl.same_school THEN 'OTHER_SCHOOL'
+      WHEN sc.nfc_encoding_state = 'locked' OR sc.nfc_locked_at IS NOT NULL THEN 'LOCKED_RECORDED'
+      WHEN sc.status = 'active' THEN 'ACTIVE'
+      WHEN sc.status = 'lost' THEN 'LOST'
+      WHEN sc.status = 'replaced' THEN 'REPLACED'
+      WHEN sc.status = 'issued' AND sc.nfc_encoding_state = 'pending' AND NOT sc.deadline_past THEN 'LIVE_RESERVATION'
+      WHEN sc.status = 'issued' AND sc.nfc_encoding_state = 'pending' AND sc.deadline_past THEN 'EXPIRED_NOT_MATERIALISED'
+      WHEN sc.status = 'revoked' AND sc.revoke_reason = 'nfc_reservation_expired' AND sc.nfc_encoded_at IS NULL THEN
         CASE
-          WHEN r.nfc_replaces_card_id IS NOT NULL THEN 'EXPIRED_REPLACEMENT'
-          WHEN coalesce(r.holder_status, '-') <> 'active' THEN 'EXPIRED_HOLDER_INACTIVE'
-          WHEN r.holder_has_other_active OR r.holder_has_live_reservation THEN 'EXPIRED_HOLDER_HAS_CARD'
+          WHEN sc.nfc_replaces_card_id IS NOT NULL THEN 'EXPIRED_REPLACEMENT'
+          WHEN coalesce(h.holder_status, '-') <> 'active' THEN 'EXPIRED_HOLDER_INACTIVE'
+          WHEN h.holder_has_other_active OR h.holder_has_live_reservation THEN 'EXPIRED_HOLDER_HAS_CARD'
           ELSE 'R2_ELIGIBLE'
         END
-      WHEN r.status = 'revoked' AND r.nfc_encoded_at IS NULL THEN 'REVOKED_NEVER_ENCODED'
-      WHEN r.status = 'revoked' THEN 'REVOKED_SECURITY'
+      WHEN sc.status = 'revoked' AND sc.nfc_encoded_at IS NULL THEN 'REVOKED_NEVER_ENCODED'
+      WHEN sc.status = 'revoked' THEN 'REVOKED_SECURITY'
       ELSE 'UNCLASSIFIED'
     END AS r3_code
-  FROM rows r
+    FROM input i
+    LEFT JOIN global_lookup gl ON gl.uid = i.uid
+    LEFT JOIN school_cards sc ON sc.uid = i.uid
+    LEFT JOIN school_holders h ON h.card_id = sc.id
 )
 SELECT ord AS carte,
        left(uid, 2) || '••••••••' || right(uid, 4) AS uid_masque,
-       CASE WHEN known THEN same_school END AS same_school,
+       same_school,
        r3_code,
-       -- Les colonnes suivantes ne sortent que pour l'établissement présentateur.
-       CASE WHEN same_school THEN id END AS card_id,
-       CASE WHEN same_school THEN status END AS status,
-       CASE WHEN same_school THEN revoke_reason END AS revoke_reason,
-       CASE WHEN same_school THEN nfc_tag_type END AS tag_type,
-       CASE WHEN same_school THEN nfc_encoding_state END AS encoding_state,
-       CASE WHEN same_school THEN nfc_encoded_at IS NOT NULL END AS ever_encoded,
-       CASE WHEN same_school THEN nfc_replaces_card_id IS NOT NULL END AS is_replacement,
-       CASE WHEN same_school THEN holder_status END AS holder_status,
-       CASE WHEN same_school THEN nfc_recovery_count END AS recovery_count,
-       CASE WHEN same_school THEN cardinality(nfc_retry_operation_ids) END AS secret_rotations,
-       CASE WHEN same_school THEN date_trunc('day', issued_at) END AS issued_day,
-       CASE WHEN same_school THEN date_trunc('day', revoked_at) END AS revoked_day
+       id AS card_id,                         -- NULL hors établissement (étape 2 vide)
+       status, revoke_reason, nfc_tag_type AS tag_type, nfc_encoding_state AS encoding_state,
+       holder_status,
+       nfc_encoded_at IS NOT NULL AS ever_encoded,
+       nfc_replaces_card_id IS NOT NULL AS is_replacement,
+       nfc_recovery_count AS recovery_count,
+       cardinality(nfc_retry_operation_ids) AS secret_rotations,
+       date_trunc('day', issued_at) AS issued_day,
+       date_trunc('day', revoked_at) AS revoked_day
   FROM classified
  ORDER BY ord;
 
