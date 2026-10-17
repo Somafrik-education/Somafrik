@@ -181,6 +181,49 @@ async function confirmStudentCardNfc(repo, cardId, payload, principal, meta, sco
   });
 }
 
+// Reconcile a correctly written tag after its server reservation has expired.
+// Deliberately never writes to the NFC tag, rotates a secret or changes UID ownership.
+async function recoverExpiredStudentCardNfc(repo, cardId, payload, principal, meta, scope) {
+  authorize(principal, scope, "POST /api/student-cards/:id/nfc-confirm");
+  const identity = normalizeNfcIdentity(payload);
+  const parsed = parseCardToken(payload?.cardToken);
+  const key = operationId(payload?.operationId);
+  if (!payload?.studentId) throw error("STUDENT_CARD_NFC_MISMATCH", "Élève requis.", 400);
+  return transaction(repo, principal, meta, scope, async ({ store, audit, cardForUpdate }) => {
+    const card = await cardForUpdate(cardId);
+    // Fail closed on retired, replaced, lost, abandoned and different students.
+    if (card.public_id !== parsed.publicId ||
+        !tokenHashesMatch(hashCardSecret(parsed.secret), card.token_hash)) throw notFound();
+    if (card.nfc_uid !== identity.uid || card.nfc_tag_type !== identity.tagType) {
+      throw error("STUDENT_CARD_NFC_MISMATCH", "UID ou modèle incorrect.");
+    }
+    await assertConfirmStudent(store, scope, card, payload.studentId);
+    const student = await store.findStudentInSchool(scope.schoolId, card.student_id);
+    if (!student || student.status !== "active") {
+      throw error("STUDENT_CARD_INVALID_STATE", "Élève non actif.");
+    }
+    if (card.status === "active" && ["encoded", "locked"].includes(card.nfc_encoding_state)) {
+      return replay(card); // harmless duplicate call, no audit/no second transition
+    }
+    if (card.status !== "revoked" || card.revoke_reason !== "nfc_reservation_expired" ||
+        card.nfc_encoded_at != null || card.nfc_replaces_card_id != null ||
+        card.nfc_encoding_state !== "pending") {
+      throw error("STUDENT_CARD_INVALID_STATE", "Carte non éligible à la récupération.");
+    }
+    if (await store.findActive(scope.schoolId, card.student_id) ||
+        await store.findPendingNfc(scope.schoolId, card.student_id)) {
+      throw error("STUDENT_CARD_ACTIVE_ALREADY_EXISTS", "Une autre carte ou réservation existe.");
+    }
+    const updated = await store.recoverExpiredNfc(scope.schoolId, card.id, identity.uid,
+      identity.tagType, card.token_hash);
+    if (!updated) throw error("STUDENT_CARD_INVALID_STATE", "Récupération concurrente refusée.");
+    await audit("student_card_nfc_reservation_recovered", updated,
+      { status: "revoked", state: card.nfc_encoding_state },
+      { status: "active", state: "encoded", mode: "recognized", tagType: identity.tagType });
+    return mapCardListItem(updated);
+  });
+}
+
 async function retryStudentCardNfc(repo, cardId, payload, principal, meta, scope) {
   authorize(principal, scope, "POST /api/student-cards/:id/nfc-retry");
   const identity = normalizeNfcIdentity(payload); const key = operationId(payload.operationId);
@@ -215,4 +258,4 @@ async function transitionStudentCardNfc(repo, cardId, principal, meta, scope, ta
   }, false);
 }
 
-module.exports = { reserveStudentCardNfc, confirmStudentCardNfc, retryStudentCardNfc, transitionStudentCardNfc };
+module.exports = { reserveStudentCardNfc, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, transitionStudentCardNfc };
