@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcErrorCopy, nfcFailure,
+import { readFileSync } from "node:fs";
+import { URL } from "node:url";
+import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, isNfcConfirmFailure, keepNfcTerminalNotice, nfcConfirmFailureCopy, nfcErrorCopy, nfcFailure, nfcNoticeText, noteNfcRefreshFailure,
+  NFC_CONFIRM_FAILURE_EVENT, NFC_CONFIRM_HTTP_REJECTED, NFC_CONFIRM_LOG_PATH, NFC_CONFIRM_UNCLASSIFIED, NFC_CONFIRM_UNREADABLE, type NfcNoticeBoard,
   type EnrollmentCard, type IssuedNfcCard, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcPhase } from "./studentCardNfcEncoding";
 import { studentCardEnrollmentAccess } from "./studentCardEnrollmentAccess";
 const UID = "04112233445566";
@@ -253,4 +256,174 @@ test("legacy active encoded cards without reservation UUID remain readable witho
   const f = fixture(); const legacy: EnrollmentCard = { ...f.card, status: "active", nfc: { ...f.card.nfc!, state: "encoded", operationId: null, expiresAt: null } };
   f.setCards([legacy]); f.setValue(ndefForCard(TOKEN));
   assert.equal((await f.flow.resume(legacy)).status, "active"); assert.ok(!f.events.includes("retry")); assert.ok(!f.events.includes("write"));
+});
+
+const SERVER_MARKER = "raw-server-marker-9f";
+const CARD_ID = "card-9f3e2a";
+const STUDENT_REF = "student-7c1";
+function planted(status: number | undefined, code: unknown, message = SERVER_MARKER) {
+  return Object.assign(new Error(message), { status, code, details: { uid: UID, cardToken: TOKEN, ndef: ndefForCard(TOKEN), authorization: "Bearer planted" } });
+}
+async function withWarnings<T>(action: () => Promise<T>) {
+  const warnings: unknown[][] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => { warnings.push(args); };
+  try { return { result: await action(), warnings }; }
+  finally { console.warn = original; }
+}
+function confirmApi(fail?: unknown, onPath?: (path: string) => void) {
+  const card = { ...fixture().card, id: CARD_ID };
+  const api = createNfcEnrollmentApi(async <T>(path: string) => {
+    onPath?.(path);
+    if (fail) throw fail;
+    return card as T;
+  });
+  return { api, card };
+}
+function confirmLogs(warnings: unknown[][]) {
+  return warnings.filter((args) => args[0] === NFC_CONFIRM_FAILURE_EVENT);
+}
+function assertNoCardMaterial(value: unknown) {
+  const rendered = JSON.stringify(value);
+  for (const secret of [UID, TOKEN, ndefForCard(TOKEN), CARD_ID, STUDENT_REF, SERVER_MARKER, "Bearer planted", "cardToken"]) {
+    assert.equal(rendered.includes(secret), false, secret);
+  }
+  assert.equal(rendered.includes("/student-cards/" + CARD_ID), false);
+}
+test("TIMEOUT confirmation is identifiable and logs only the normalized route", async () => {
+  const paths: string[] = [];
+  const { api, card } = confirmApi(planted(undefined, "TIMEOUT"), (path) => paths.push(path));
+  const { warnings, result } = await withWarnings(async () => {
+    try { await api.confirm(card, TOKEN, false, STUDENT_REF); return null; }
+    catch (error) { return error; }
+  });
+  const copy = nfcConfirmFailureCopy(result);
+  assert.equal(nfcErrorCopy(result), copy);
+  assert.equal(copy, "Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante. (Code : TIMEOUT)");
+  assert.equal(isNfcConfirmFailure(result), true);
+  const logs = confirmLogs(warnings);
+  assert.equal(logs.length, 1);
+  assert.deepEqual(logs[0][1], { method: "POST", path: NFC_CONFIRM_LOG_PATH, status: null, code: "TIMEOUT" });
+  assert.equal(paths[0], `/student-cards/${CARD_ID}/nfc-confirm`);
+  assertNoCardMaterial(logs);
+});
+test("NETWORK_UNAVAILABLE confirmation keeps status 0 and its catalog code", async () => {
+  const { api, card } = confirmApi(planted(0, "NETWORK_UNAVAILABLE"));
+  const { warnings, result } = await withWarnings(async () => { try { await api.confirm(card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+  assert.match(nfcConfirmFailureCopy(result), /\(Code : NETWORK_UNAVAILABLE\)$/);
+  assert.deepEqual(confirmLogs(warnings)[0][1], { method: "POST", path: NFC_CONFIRM_LOG_PATH, status: 0, code: "NETWORK_UNAVAILABLE" });
+  assertNoCardMaterial(confirmLogs(warnings));
+});
+test("BACKEND_UNREACHABLE confirmation is identifiable without an HTTP status", async () => {
+  const { api, card } = confirmApi(planted(undefined, "BACKEND_UNREACHABLE"));
+  const { warnings, result } = await withWarnings(async () => { try { await api.confirm(card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+  assert.match(nfcConfirmFailureCopy(result), /\(Code : BACKEND_UNREACHABLE\)$/);
+  assert.deepEqual(confirmLogs(warnings)[0][1], { method: "POST", path: NFC_CONFIRM_LOG_PATH, status: null, code: "BACKEND_UNREACHABLE" });
+  assertNoCardMaterial(confirmLogs(warnings));
+});
+test("HTTP 400 confirmation displays an allowed business code and its French sentence", async () => {
+  const { api, card } = confirmApi(planted(400, "STUDENT_CARD_NFC_INVALID"));
+  const { warnings, result } = await withWarnings(async () => { try { await api.confirm(card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+  assert.equal(nfcConfirmFailureCopy(result), "Observation NFC refusée. Relisez la carte avant de confirmer. (Code : STUDENT_CARD_NFC_INVALID)");
+  assert.deepEqual(confirmLogs(warnings)[0][1], { method: "POST", path: NFC_CONFIRM_LOG_PATH, status: 400, code: "STUDENT_CARD_NFC_INVALID" });
+  assert.equal(JSON.stringify(result).includes(SERVER_MARKER), false);
+});
+test("HTTP 403 confirmation never displays the response body", async () => {
+  const trusted = confirmApi(planted(403, "STUDENT_CARD_TENANT_DENIED", `${SERVER_MARKER} ${TOKEN} ${UID}`));
+  const trustedRun = await withWarnings(async () => { try { await trusted.api.confirm(trusted.card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+  assert.match(nfcConfirmFailureCopy(trustedRun.result), /droits ou l’établissement/);
+  assert.match(nfcConfirmFailureCopy(trustedRun.result), /\(Code : STUDENT_CARD_TENANT_DENIED\)$/);
+  assertNoCardMaterial(nfcConfirmFailureCopy(trustedRun.result));
+  assertNoCardMaterial(confirmLogs(trustedRun.warnings));
+  const hostile = confirmApi(planted(403, TOKEN, ndefForCard(TOKEN)));
+  const hostileRun = await withWarnings(async () => { try { await hostile.api.confirm(hostile.card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+  assert.equal(nfcConfirmFailureCopy(hostileRun.result), `Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante. (Code : ${NFC_CONFIRM_HTTP_REJECTED})`);
+  assert.deepEqual(confirmLogs(hostileRun.warnings)[0][1], { method: "POST", path: NFC_CONFIRM_LOG_PATH, status: 403, code: NFC_CONFIRM_HTTP_REJECTED });
+  assertNoCardMaterial(hostileRun.result instanceof Error ? hostileRun.result.message : hostileRun.result);
+  assertNoCardMaterial(confirmLogs(hostileRun.warnings));
+});
+test("HTTP 409 confirmation classifies catalog codes and rejects a spoofed transport code", async () => {
+  for (const code of ["STUDENT_CARD_INVALID_STATE", "STUDENT_CARD_NFC_UID_EXISTS", "STUDENT_CARD_NFC_MISMATCH"]) {
+    const { api, card } = confirmApi(planted(409, code));
+    const { warnings, result } = await withWarnings(async () => { try { await api.confirm(card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+    assert.match(nfcConfirmFailureCopy(result), new RegExp(`\\(Code : ${code}\\)$`));
+    assert.equal((confirmLogs(warnings)[0][1] as { code: string }).code, code);
+    assert.equal((confirmLogs(warnings)[0][1] as { status: number }).status, 409);
+  }
+  const spoofed = confirmApi(planted(409, "TIMEOUT"));
+  const spoofedRun = await withWarnings(async () => { try { await spoofed.api.confirm(spoofed.card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+  assert.match(nfcConfirmFailureCopy(spoofedRun.result), new RegExp(`\\(Code : ${NFC_CONFIRM_HTTP_REJECTED}\\)$`));
+  assert.equal((confirmLogs(spoofedRun.warnings)[0][1] as { code: string }).code, NFC_CONFIRM_HTTP_REJECTED);
+});
+test("non-JSON confirmation response stays a controlled unreadable classification", async () => {
+  const { api, card } = confirmApi(planted(502, undefined, `<html>${ndefForCard(TOKEN)}</html>`));
+  const { warnings, result } = await withWarnings(async () => { try { await api.confirm(card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+  assert.equal(nfcConfirmFailureCopy(result), `Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante. (Code : ${NFC_CONFIRM_UNREADABLE})`);
+  assert.deepEqual(confirmLogs(warnings)[0][1], { method: "POST", path: NFC_CONFIRM_LOG_PATH, status: 502, code: NFC_CONFIRM_UNREADABLE });
+  assertNoCardMaterial(nfcConfirmFailureCopy(result));
+  assertNoCardMaterial(confirmLogs(warnings));
+});
+test("unknown or hostile confirmation codes are never copied into the screen or the release log", async () => {
+  for (const code of [UID, TOKEN, ndefForCard(TOKEN), "Bearer planted", "/student-cards/" + CARD_ID + "/nfc-confirm", "TIMEOUT\n" + UID]) {
+    const { api, card } = confirmApi(planted(400, code));
+    const { warnings, result } = await withWarnings(async () => { try { await api.confirm(card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+    const copy = nfcConfirmFailureCopy(result);
+    assert.match(copy, new RegExp(`\\(Code : ${NFC_CONFIRM_HTTP_REJECTED}\\)$`));
+    assertNoCardMaterial(copy);
+    assert.deepEqual(confirmLogs(warnings)[0][1], { method: "POST", path: NFC_CONFIRM_LOG_PATH, status: 400, code: NFC_CONFIRM_HTTP_REJECTED });
+    assertNoCardMaterial(confirmLogs(warnings));
+    assert.equal(isNfcConfirmFailure({ code, message: code, status: 400 }), false);
+  }
+  const offline = confirmApi(planted(undefined, UID));
+  const offlineRun = await withWarnings(async () => { try { await offline.api.confirm(offline.card, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+  assert.match(nfcConfirmFailureCopy(offlineRun.result), new RegExp(`\\(Code : ${NFC_CONFIRM_UNCLASSIFIED}\\)$`));
+  assertNoCardMaterial(nfcConfirmFailureCopy(offlineRun.result));
+  assert.equal((confirmLogs(offlineRun.warnings)[0][1] as { code: string }).code, NFC_CONFIRM_UNCLASSIFIED);
+});
+test("successful confirmation writes no failure log", async () => {
+  const { api, card } = confirmApi();
+  const { warnings, result } = await withWarnings(() => api.confirm(card, TOKEN, true, STUDENT_REF));
+  assert.equal(result.status, "issued");
+  assert.equal(confirmLogs(warnings).length, 0);
+  assert.equal(isNfcConfirmFailure(result), false);
+});
+test("reservation and retry failures are not confirmation diagnostics", async () => {
+  const card = { ...fixture().card, id: CARD_ID };
+  const api = createNfcEnrollmentApi(async () => { throw planted(undefined, "TIMEOUT", SERVER_MARKER); });
+  const issue = await withWarnings(async () => { try { await api.issue(STUDENT_REF, identity, OP); } catch (error) { return error; } });
+  const retry = await withWarnings(async () => { try { await api.retry(card, identity, OP); } catch (error) { return error; } });
+  assert.equal(confirmLogs(issue.warnings).length, 0);
+  assert.equal(confirmLogs(retry.warnings).length, 0);
+  assert.equal(isNfcConfirmFailure(issue.result), false);
+  const missing = confirmApi();
+  const local = await withWarnings(async () => { try { await missing.api.confirm({ ...card, nfc: null }, TOKEN, false, STUDENT_REF); } catch (error) { return error; } });
+  assert.equal(confirmLogs(local.warnings).length, 0);
+  assert.equal((local.result as { code?: string }).code, "STUDENT_CARD_INVALID_STATE");
+});
+test("nfc-confirm failure remains visible when the following card list request fails", async () => {
+  const paths: string[] = [];
+  const card = { ...fixture().card, id: CARD_ID };
+  const api = createNfcEnrollmentApi(async <T>(path: string) => {
+    paths.push(path);
+    if (path.endsWith("/nfc-confirm")) throw planted(undefined, "TIMEOUT");
+    if (/\/students\/[^/]+\/cards$/.test(path)) throw planted(undefined, "NETWORK_UNAVAILABLE", SERVER_MARKER);
+    throw new Error("unexpected " + path);
+  });
+  let board: NfcNoticeBoard = { terminal: "", refresh: "" };
+  try { await api.confirm(card, TOKEN, false, STUDENT_REF); }
+  catch (error) { board = keepNfcTerminalNotice(board, error); }
+  try { await api.list(STUDENT_REF); }
+  catch (error) { board = noteNfcRefreshFailure(board, error); }
+  assert.deepEqual(paths, [`/student-cards/${CARD_ID}/nfc-confirm`, `/students/${STUDENT_REF}/cards`]);
+  assert.match(board.terminal, /\(Code : TIMEOUT\)$/);
+  assert.match(nfcNoticeText(board), /\(Code : TIMEOUT\)/);
+  assert.equal(board.refresh.includes("TIMEOUT"), false);
+  assert.equal(board.refresh.includes(SERVER_MARKER), false);
+  assert.match(board.refresh, /Résultat non confirmé/);
+  const panel = readFileSync(new URL("../components/StudentCardNfcEnrollmentPanel.tsx", import.meta.url), "utf8");
+  assert.match(panel, /keepNfcTerminalNotice/);
+  assert.match(panel, /noteNfcRefreshFailure/);
+  assert.match(panel, /notices\.terminal/);
+  assert.match(panel, /notices\.refresh/);
+  assert.doesNotMatch(panel, /setMessage\(/);
 });
