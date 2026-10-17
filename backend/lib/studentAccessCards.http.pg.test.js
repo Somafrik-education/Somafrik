@@ -623,6 +623,32 @@ async function main() {
     assert.equal(JSON.stringify(expRecover.data).includes(expToken.split('.')[1]),false);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_logs WHERE entity_id=$1 AND action='student_card_nfc_reservation_recovered'",[expIssue.data.id])).rows[0].n,1);
     await assertCardSecretsAbsent(pool,cardSecrets(expToken));
+    // NFC-P0-R2 — blank card: reopen the same row, write (simulated), confirm, then scan.
+    const r2Student=randomUUID();
+    await pool.query("INSERT INTO students(id,school_id,first_name,last_name,status) VALUES($1,$2,'Blank','Fixture','active')",[r2Student,schoolAId]);
+    const r2Body={studentId:r2Student,medium:'nfc',nfc:{uid:'04B0C1D2E3F405',tagType:'NTAG213'},operationId:randomUUID()};
+    const r2Issue=await request('/student-cards',{method:'POST',token:tokenA,body:r2Body});assert.equal(r2Issue.status,201);
+    await pool.query("UPDATE student_access_cards SET issued_at=clock_timestamp()-INTERVAL '31 minutes',nfc_reservation_expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1",[r2Issue.data.id]);
+    assert.equal(((await request(`/students/${r2Student}/cards`,{token:tokenA})).data.cards)[0].status,'revoked');
+    const r2Path=`/student-cards/${r2Issue.data.id}/nfc-reencode`;
+    const r2Payload={...r2Body.nfc,studentId:r2Student,operationId:randomUUID()};
+    const r2Teacher=await request(r2Path,{method:'POST',token:tokenTeacher,body:r2Payload});assert.equal(r2Teacher.status,403);
+    const r2Cross=await request(r2Path,{method:'POST',token:tokenB,body:r2Payload});assert.ok([403,404].includes(r2Cross.status));
+    assert.equal((await pool.query('SELECT status FROM student_access_cards WHERE id=$1',[r2Issue.data.id])).rows[0].status,'revoked');
+    const r2Reopen=await request(r2Path,{method:'POST',token:tokenA,body:r2Payload});
+    assert.equal(r2Reopen.status,200,JSON.stringify(r2Reopen.data));assert.equal(r2Reopen.cacheControl,'no-store');
+    assert.equal(r2Reopen.data.id,r2Issue.data.id);assert.equal(r2Reopen.data.status,'issued');const r2Token=r2Reopen.data.cardToken;assert.ok(r2Token);
+    const r2Replay=await request(r2Path,{method:'POST',token:tokenA,body:r2Payload});assert.equal(r2Replay.status,200);assert.equal(r2Replay.data.cardToken,undefined);
+    const r2Confirm=await request(`/student-cards/${r2Issue.data.id}/nfc-confirm`,{method:'POST',token:tokenA,
+      body:{...r2Body.nfc,cardToken:r2Token,locked:false,studentId:r2Student,operationId:r2Reopen.data.nfc.operationId}});
+    assert.equal(r2Confirm.status,200,JSON.stringify(r2Confirm.data));assert.equal(r2Confirm.data.status,'active');assert.equal(r2Confirm.data.nfc.state,'encoded');
+    const r2Scan=await request('/student-cards/scan',{method:'POST',token:tokenA,body:{cardToken:r2Token}});
+    // Card accepted by the scan resolver (this fixture has no class enrollment, as line ~506).
+    assert.equal(r2Scan.data?.code,STUDENT_CARD_ERROR.ENROLLMENT_UNRESOLVED,JSON.stringify(r2Scan.data));
+    const r2Stale=await request('/student-cards/scan',{method:'POST',token:tokenA,body:{cardToken:`${r2Token.split('.')[0]}.${'A'.repeat(43)}`}});
+    assert.notEqual(r2Stale.data?.code,STUDENT_CARD_ERROR.ENROLLMENT_UNRESOLVED);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM student_access_cards WHERE nfc_uid='04B0C1D2E3F405'")).rows[0].n,1);
+    await assertCardSecretsAbsent(pool,cardSecrets(r2Token));
     await pool.query('UPDATE school_settings SET student_card_nfc_enabled=FALSE WHERE school_id=$1',[schoolAId]);
     const flagsDenied=await request(confirmPath,{method:'POST',token:tokenA,body:confirmBody});assert.equal(flagsDenied.status,404);
     await assertCardSecretsAbsent(pool,cardSecrets(nfcToken));

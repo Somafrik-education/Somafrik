@@ -127,6 +127,15 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
             "Cette opération lit la carte NFC et demande au serveur de restaurer uniquement son attribution expirée. Aucune donnée ne sera écrite sur la puce.",
             [{text:"Annuler",style:"cancel"},{text:"Lire et récupérer",onPress:() => void run(controller => controller.recover(card))}]);
         }) : null}
+      {canProgram && cards && canRecoverExpiredNfcCard(card, cards)
+        ? button("Réencoder cette carte NFC vierge", () => void run(async (controller) => {
+          await controller.reencode(card, (identity) => new Promise<boolean>((resolve) => Alert.alert(
+            "Confirmer la réécriture",
+            `Carte ${identity.tagType} vierge vérifiée. Un nouveau jeton sera écrit sur cette même carte, relu, puis activé pour cet élève. Aucun verrouillage ne sera appliqué.`,
+            [{ text: "Annuler", style: "cancel", onPress: () => resolve(false) }, { text: "Réécrire et activer", onPress: () => resolve(true) }],
+            { cancelable: true, onDismiss: () => resolve(false) })));
+          if (operationValid.current()) setMessage("Carte récupérée et activée.");
+        })) : null}
       {card.status === "issued" && card.nfc ? <>
         <Text>Réservation non active. Expiration : {card.nfc.expiresAt ? new Date(card.nfc.expiresAt).toLocaleString() : "indisponible"}.</Text>
         {card.nfc.replacesCardId ? <Text>Remplacement préparé : l’ancienne carte reste utilisable jusqu’à confirmation.</Text> : null}

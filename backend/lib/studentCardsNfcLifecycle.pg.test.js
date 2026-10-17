@@ -8,7 +8,7 @@ const { STUDENT_CARDS_NFC_SCHEMA_SQL } = require("../db/studentCardsNfcSchema");
 const { STUDENT_CARDS_NFC_RESERVATIONS_SCHEMA_SQL } = require("../db/studentCardsNfcReservationsSchema");
 const { createStudentAccessCardsPgStore } = require("../db/studentAccessCardsPgStore");
 const { issueStudentCard, revokeStudentCard, markStudentCardLost, replaceStudentCard, scanStudentCard, generateCardSecrets, listStudentCards } = require("./studentAccessCardsManagement");
-const { confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc } = require("./studentCardsNfcEncoding");
+const { confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, reopenExpiredStudentCardNfc } = require("./studentCardsNfcEncoding");
 
 const url = process.env.SOMAFRIK_NFC_TEST_DATABASE_URL;
 async function fixture(run, legacy = false) {
@@ -511,4 +511,147 @@ pg("T12 end-to-end: list expires, then #952 recovery reactivates the same row wi
   assert.equal(recovered.id, card.id); assert.equal(recovered.status, "active"); assert.equal(recovered.nfc.state, "encoded");
   assert.equal(await expiredAudits(f), 1); assert.equal(await f.countAudit("student_card_nfc_reservation_recovered"), 1);
   assert.equal((await list(f))[0].status, "active"); assert.equal(await expiredAudits(f), 1);
+});
+
+// NFC-P0-R2 — blank-card re-encoding reopens the same canonical row.
+const reopen = (f, card, overrides = {}) => reopenExpiredStudentCardNfc(f.repo, card.id,
+  { ...f.identity, studentId: f.students[0], operationId: randomUUID(), ...overrides }, overrides.principal ?? f.principal, {}, overrides.scope ?? f.scope);
+const r2Audits = (f) => f.countAudit("student_card_nfc_reservation_recovered");
+async function expiredBlank(f, overrides = {}) {
+  const card = await f.issue(overrides); await f.expire(card.id); await list(f, { studentId: overrides.studentId });
+  assert.equal((await f.row(card.id)).status, "revoked");
+  return card;
+}
+
+pg("R2-01/R2-07/R2-13 same UID and pupil: same row reopened with a NEW secret, then write+confirm activates once", async f => {
+  const card = await expiredBlank(f); const before = await f.row(card.id);
+  const reopened = await reopen(f, card);
+  assert.equal(reopened.id, card.id); assert.equal(reopened.publicId, card.publicId); assert.equal(reopened.status, "issued");
+  assert.equal(reopened.nfc.uid, f.identity.uid); assert.equal(reopened.nfc.tagType, f.identity.tagType);
+  assert.equal(reopened.nfc.operationId, card.nfc.operationId); assert.equal(reopened.reissued, true);
+  assert.ok(reopened.cardToken); assert.notEqual(reopened.cardToken, card.cardToken);
+  assert.equal(reopened.cardToken.split(".")[0], card.publicId);
+  const row = await f.row(card.id);
+  assert.notEqual(row.token_hash, before.token_hash); assert.equal(row.public_id, before.public_id);
+  assert.equal(row.nfc_uid, before.nfc_uid); assert.equal(row.school_id, before.school_id); assert.equal(row.student_id, before.student_id);
+  assert.equal(row.issued_at.getTime(), before.issued_at.getTime()); assert.equal(row.nfc_recovery_count, 1);
+  assert.equal(row.nfc_last_expired_at.getTime(), before.revoked_at.getTime()); assert.equal(row.revoked_at, null);
+  assert.ok(row.nfc_reservation_expires_at - Date.now() > 25 * 60000 && row.nfc_reservation_expires_at - Date.now() <= 30 * 60000 + 5000);
+  assert.equal(JSON.stringify(row).includes(reopened.cardToken.split(".")[1]), false);
+  // The expired secret can never activate; only the new one, through the canonical confirm.
+  await assert.rejects(f.confirm(card), { code: "STUDENT_CARD_NOT_FOUND" });
+  const active = await f.confirm({ ...card, cardToken: reopened.cardToken });
+  assert.equal(active.status, "active"); assert.equal(active.nfc.state, "encoded"); assert.equal(active.id, card.id);
+  assert.equal(await f.countAudit("student_card_nfc_encoded"), 1); assert.equal(await r2Audits(f), 1);
+  const audit = await f.repo.one("SELECT new_value FROM audit_logs WHERE action='student_card_nfc_reservation_recovered'");
+  assert.deepEqual(audit.new_value, { status: "issued", state: "pending", mode: "reopen", tagType: f.identity.tagType, recoveryCount: 1 });
+  assert.equal((await f.repo.one("SELECT count(*)::int AS n FROM student_access_cards WHERE nfc_uid=$1", [f.identity.uid])).n, 1);
+});
+
+pg("R2-02 other pupil, other UID or other model refused without mutation", async f => {
+  const card = await expiredBlank(f); const before = await f.row(card.id);
+  await assert.rejects(reopen(f, card, { studentId: f.students[1] }), { code: "STUDENT_CARD_NFC_MISMATCH" });
+  await assert.rejects(reopen(f, card, { uid: "04778899001122" }), { code: "STUDENT_CARD_NFC_MISMATCH" });
+  await assert.rejects(reopen(f, card, { tagType: "NTAG213" }), { code: "STUDENT_CARD_NFC_MISMATCH" });
+  assert.deepEqual(await f.row(card.id), before); assert.equal(await r2Audits(f), 0);
+});
+
+pg("R2-03 other school or missing rights refused", async f => {
+  const card = await expiredBlank(f);
+  await assert.rejects(reopen(f, card, { scope: { schoolId: f.b, loginCode: "CD-NFC-26-002" }, principal: { ...f.principal, enrollmentSchoolId: f.b } }), { code: "STUDENT_CARD_NOT_FOUND" });
+  await assert.rejects(reopen(f, card, { principal: { ...f.principal, permissions: ["Élèves:READ"] } }), { code: "STUDENT_CARD_TENANT_DENIED" });
+  await f.pool.query("UPDATE school_settings SET student_card_nfc_enabled=FALSE WHERE school_id=$1", [f.a]);
+  await assert.rejects(reopen(f, card), { code: "STUDENT_CARD_NFC_DISABLED" });
+  assert.equal((await f.row(card.id)).status, "revoked"); assert.equal(await r2Audits(f), 0);
+});
+
+pg("R2-04/R2-05/R2-06 active, lost, replaced, abandoned or security-revoked cards are never reopened", async f => {
+  const active = await f.issue(); await f.confirm(active);
+  await assert.rejects(reopen(f, active), { code: "STUDENT_CARD_INVALID_STATE" });
+  const next = await replaceStudentCard(f.repo, active.id, f.principal, {}, f.scope, { nfc: { uid: "04AABBCCDDEEFF", tagType: "NTAG213" }, operationId: randomUUID() });
+  await confirmStudentCardNfc(f.repo, next.id, { uid: "04AABBCCDDEEFF", tagType: "NTAG213", cardToken: next.cardToken, locked: false, operationId: next.nfc.operationId }, f.principal, {}, f.scope);
+  await assert.rejects(reopen(f, active), { code: "STUDENT_CARD_INVALID_STATE" }); // replaced
+  await markStudentCardLost(f.repo, next.id, f.principal, {}, f.scope, "lost");
+  await assert.rejects(reopen(f, next, { uid: "04AABBCCDDEEFF", tagType: "NTAG213" }), { code: "STUDENT_CARD_INVALID_STATE" }); // lost
+  for (const reason of ["nfc_abandoned", "revoked"]) {
+    const uid = reason === "revoked" ? "04CCDDEEFF0011" : "04CCDDEEFF0022";
+    const card = await f.issue({ studentId: f.students[1], nfc: { uid, tagType: "NTAG216" } });
+    await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, reason);
+    await assert.rejects(reopen(f, card, { uid, tagType: "NTAG216", studentId: f.students[1] }), { code: "STUDENT_CARD_INVALID_STATE" });
+  }
+  assert.equal(await r2Audits(f), 0);
+});
+
+pg("R2-04b replacement reservations and pupils with another live card are refused", async f => {
+  const old = await issueStudentCard(f.repo, { studentId: f.students[0], medium: "qr" }, f.principal, {}, f.scope);
+  const prepared = await replaceStudentCard(f.repo, old.id, f.principal, {}, f.scope, { nfc: f.identity, operationId: randomUUID() });
+  await f.expire(prepared.id); await list(f);
+  assert.equal((await f.row(prepared.id)).status, "revoked");
+  await assert.rejects(reopen(f, prepared), { code: "STUDENT_CARD_INVALID_STATE" }); // nfc_replaces_card_id set
+  const card = await expiredBlank(f, { studentId: f.students[1], nfc: { uid: "04CCDDEEFF0033", tagType: "NTAG216" } });
+  await f.issue({ studentId: f.students[1], nfc: { uid: "04CCDDEEFF0044", tagType: "NTAG216" } }); // live reservation
+  await assert.rejects(reopen(f, card, { uid: "04CCDDEEFF0033", tagType: "NTAG216", studentId: f.students[1] }), { code: "STUDENT_CARD_ACTIVE_ALREADY_EXISTS" });
+  assert.equal(await r2Audits(f), 0);
+});
+
+pg("R2-08 idempotent: same operation replays without secret, no second audit; a new operation cannot reopen twice", async f => {
+  const card = await expiredBlank(f); const operationId = randomUUID();
+  const first = await reopen(f, card, { operationId }); const hash = (await f.row(card.id)).token_hash;
+  const again = await reopen(f, card, { operationId });
+  assert.equal(again.id, card.id); assert.equal(again.idempotentReplay, true); assert.equal(again.cardToken, undefined);
+  assert.equal((await f.row(card.id)).token_hash, hash); assert.equal(await r2Audits(f), 1);
+  await assert.rejects(reopen(f, card), { code: "STUDENT_CARD_INVALID_STATE" });
+  assert.ok(first.cardToken);
+});
+
+pg("R2-09 concurrent reopen with different operations: exactly one reservation and one audit", async f => {
+  const card = await expiredBlank(f);
+  const results = await Promise.allSettled(Array.from({ length: 6 }, () => reopen(f, card)));
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  assert.equal(await r2Audits(f), 1); assert.equal((await f.row(card.id)).nfc_recovery_count, 1);
+  assert.equal((await f.repo.one("SELECT count(*)::int AS n FROM student_access_cards WHERE status='issued'")).n, 1);
+});
+
+pg("R2-10 audit failure rolls the reopening back entirely", async f => {
+  const card = await expiredBlank(f); const before = await f.row(card.id);
+  await f.pool.query(`CREATE FUNCTION reject_r2_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+    IF NEW.action='student_card_nfc_reservation_recovered' THEN RAISE EXCEPTION 'audit failure injected'; END IF; RETURN NEW; END $$;
+    CREATE TRIGGER reject_r2_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_r2_audit();`);
+  await assert.rejects(reopen(f, card));
+  assert.deepEqual(await f.row(card.id), before); assert.equal(await r2Audits(f), 0);
+});
+
+pg("R2-11 reopened reservation that expires again never activates; a later reopening is still possible", async f => {
+  const card = await expiredBlank(f); const reopened = await reopen(f, card);
+  await f.expire(card.id);
+  await assert.rejects(f.confirm({ ...card, cardToken: reopened.cardToken }), { code: "STUDENT_CARD_NFC_EXPIRED" });
+  assert.equal((await f.row(card.id)).status, "revoked");
+  const second = await reopen(f, card);
+  assert.equal((await f.row(card.id)).nfc_recovery_count, 2);
+  assert.equal((await f.confirm({ ...card, cardToken: second.cardToken })).status, "active");
+});
+
+pg("R2-11b stale issued reservation (no list refresh) is expired then reopened in one transaction", async f => {
+  const card = await f.issue(); await f.expire(card.id);
+  const reopened = await reopen(f, card);
+  assert.equal(reopened.status, "issued");
+  assert.equal(await f.countAudit("student_card_nfc_reservation_expired"), 1); assert.equal(await r2Audits(f), 1);
+});
+
+pg("R2-12 confirmation without the new valid token, or with a foreign UUID, is refused", async f => {
+  const card = await expiredBlank(f); const reopened = await reopen(f, card);
+  const forged = reopened.cardToken.slice(0, -1) + (reopened.cardToken.endsWith("Z") ? "A" : "Z");
+  await assert.rejects(f.confirm({ ...card, cardToken: forged }), { code: "STUDENT_CARD_NOT_FOUND" });
+  await assert.rejects(f.confirm({ ...card, cardToken: reopened.cardToken }, { operationId: randomUUID() }), { code: "STUDENT_CARD_NFC_OPERATION_MISMATCH" });
+  assert.equal((await f.row(card.id)).status, "issued"); assert.equal(await f.countAudit("student_card_nfc_encoded"), 0);
+});
+
+pg("R2-14 no conflict with R1: R1 refuses a reopened row; R1 then works on the new token after another expiry", async f => {
+  const card = await expiredBlank(f); const reopened = await reopen(f, card);
+  const r1 = (token) => recoverExpiredStudentCardNfc(f.repo, card.id, { ...f.identity, studentId: f.students[0], cardToken: token, operationId: randomUUID() }, f.principal, {}, f.scope);
+  await assert.rejects(r1(reopened.cardToken), { code: "STUDENT_CARD_INVALID_STATE" }); // issued: R1 not applicable
+  await f.expire(card.id); await list(f);
+  await assert.rejects(r1(card.cardToken), { code: "STUDENT_CARD_NOT_FOUND" }); // old secret rejected
+  const recovered = await r1(reopened.cardToken); // chip written with the new token, confirm lost
+  assert.equal(recovered.status, "active"); assert.equal(recovered.id, card.id);
 });

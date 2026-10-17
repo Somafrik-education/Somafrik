@@ -250,6 +250,57 @@ async function recoverExpiredStudentCardNfc(repo, cardId, payload, principal, me
   });
 }
 
+// NFC-P0-R2 — reopen an expired reservation of a physically blank card for the SAME
+// pupil, same school, same UID and model. Never deletes, recreates or reassigns the row
+// (the global UID index is untouched). A fresh secret is generated; only its hash is
+// stored. The caller then writes, re-reads and confirms with the canonical nfc-confirm.
+async function reopenExpiredStudentCardNfc(repo, cardId, payload, principal, meta, scope) {
+  authorize(principal, scope, "POST /api/student-cards/:id/nfc-retry");
+  const identity = normalizeNfcIdentity(payload);
+  const key = operationId(payload?.operationId);
+  if (!payload?.studentId) throw error("STUDENT_CARD_NFC_MISMATCH", "Élève requis.", 400);
+  return transaction(repo, principal, meta, scope, async ({ store, audit, expire, cardForUpdate }) => {
+    let card = await cardForUpdate(cardId);
+    if (card.nfc_uid !== identity.uid || card.nfc_tag_type !== identity.tagType) {
+      throw error("STUDENT_CARD_NFC_MISMATCH", "UID ou modèle incorrect.");
+    }
+    await assertConfirmStudent(store, scope, card, payload.studentId);
+    // Idempotent replay of this exact reopening: same row, no new secret, no audit.
+    if ((card.nfc_retry_operation_ids || []).includes(key)) {
+      if (["issued", "active"].includes(card.status)) return replay(card);
+      throw error("STUDENT_CARD_INVALID_STATE", "Réservation de récupération inactive.");
+    }
+    const elsewhere = await store.findNfcOperation(scope.schoolId, key);
+    if (elsewhere && elsewhere.id !== card.id) {
+      throw error("STUDENT_CARD_NFC_OPERATION_CONFLICT", "Cet identifiant d’opération est déjà utilisé avec un autre contexte.");
+    }
+    const student = await store.findStudentInSchool(scope.schoolId, card.student_id);
+    if (!student || student.status !== "active") throw error("STUDENT_CARD_INVALID_STATE", "Élève non actif.");
+    // Materialise a deadline that passed without a list refresh, then re-read the row.
+    if (card.status === "issued" && card.reservation_expired) {
+      await expire(card.student_id);
+      card = await store.lockCard(scope.schoolId, card.id);
+    }
+    if (card.status !== "revoked" || card.revoke_reason !== "nfc_reservation_expired" ||
+        card.nfc_encoded_at != null || card.nfc_replaces_card_id != null ||
+        card.nfc_encoding_state !== "pending") {
+      throw error("STUDENT_CARD_INVALID_STATE", "Carte non éligible au réencodage.");
+    }
+    if (await store.findActive(scope.schoolId, card.student_id) ||
+        await store.findPendingNfc(scope.schoolId, card.student_id)) {
+      throw error("STUDENT_CARD_ACTIVE_ALREADY_EXISTS", "Une autre carte ou réservation existe.");
+    }
+    const generated = generateCardSecrets();
+    const updated = await store.reopenExpiredNfc(scope.schoolId, card.id, identity.uid, identity.tagType,
+      card.token_hash, generated.tokenHash, key);
+    if (!updated) throw error("STUDENT_CARD_INVALID_STATE", "Réencodage concurrent refusé. Relisez l’état de la carte.");
+    await audit("student_card_nfc_reservation_recovered", updated,
+      { status: "revoked", state: "pending" },
+      { status: "issued", state: "pending", mode: "reopen", tagType: identity.tagType, recoveryCount: updated.nfc_recovery_count });
+    return { ...mapIssuedCard(updated, `${updated.public_id}.${generated.secret}`), reissued: true, tokenAvailable: true };
+  });
+}
+
 async function retryStudentCardNfc(repo, cardId, payload, principal, meta, scope) {
   authorize(principal, scope, "POST /api/student-cards/:id/nfc-retry");
   const identity = normalizeNfcIdentity(payload); const key = operationId(payload.operationId);
@@ -284,4 +335,4 @@ async function transitionStudentCardNfc(repo, cardId, principal, meta, scope, ta
   }, false);
 }
 
-module.exports = { reserveStudentCardNfc, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, transitionStudentCardNfc, materializeExpiredNfcReservations };
+module.exports = { reserveStudentCardNfc, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, reopenExpiredStudentCardNfc, transitionStudentCardNfc, materializeExpiredNfcReservations };

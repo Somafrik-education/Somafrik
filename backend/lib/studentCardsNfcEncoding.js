@@ -37,4 +37,7 @@ function retryStudentCardNfc(...args) {
 function recoverExpiredStudentCardNfc(...args) {
   return require("./studentCardsNfcLifecycle").recoverExpiredStudentCardNfc(...args);
 }
-module.exports = { normalizeNfcIdentity, readNfcEnabled, assertNfcEnabled, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc };
+function reopenExpiredStudentCardNfc(...args) {
+  return require("./studentCardsNfcLifecycle").reopenExpiredStudentCardNfc(...args);
+}
+module.exports = { normalizeNfcIdentity, readNfcEnabled, assertNfcEnabled, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, reopenExpiredStudentCardNfc };
