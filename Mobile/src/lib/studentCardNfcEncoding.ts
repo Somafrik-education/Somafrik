@@ -47,7 +47,7 @@ export interface NfcEnrollmentApi {
   replace(previous: EnrollmentCard, studentId: string, identity: NtagIdentity, operationId: string): Promise<IssuedNfcCard>;
   retry(card: EnrollmentCard, identity: NtagIdentity, operationId: string): Promise<IssuedNfcCard>;
   confirm(card: EnrollmentCard, token: string, locked: boolean, studentId: string): Promise<EnrollmentCard>;
-  recover(card: EnrollmentCard, token: string, studentId: string, operationId: string): Promise<EnrollmentCard>;
+  recover?(card: EnrollmentCard, token: string, studentId: string, operationId: string): Promise<EnrollmentCard>;
 }
 export type NfcPhase = "initial" | "reservation" | "waiting" | "writing" | "verification" | "confirmation" | "success" | "error" | "expired" | "resume";
 export const NFC_PHASE_COPY: Record<NfcPhase, string> = {
@@ -240,7 +240,8 @@ export function createIndividualNfcFlow(input: {
         const token = cardTokenFromNdef(value);
         if (token.split(".")[0] !== current.publicId) throw nfcFailure("NFC_FOREIGN");
         control.phase("confirmation");
-        const result = await checked(control, () => input.api.recover(current, token, input.studentId, input.uuid()));
+        if (typeof input.api.recover !== "function") throw nfcFailure("NFC_RESPONSE_INVALID");
+        const result = await checked(control, () => input.api.recover!(current, token, input.studentId, input.uuid()));
         if (result.id !== current.id || result.publicId !== current.publicId || result.status !== "active" ||
             result.nfc?.uid !== expected.uid || result.nfc?.tagType !== expected.tagType ||
             !["encoded", "locked"].includes(result.nfc.state)) throw nfcFailure("NFC_RESPONSE_INVALID");
