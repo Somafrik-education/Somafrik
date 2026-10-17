@@ -381,6 +381,13 @@ const STUDENT_CARD_PR3_B_EXACT = new Set([
   "backend/db/pedagogyPgStore.js",
 ]);
 
+// CARTE-PR3-M1 (#947) : exception pour le menu, uniquement avec les deux ancres exactes.
+const STUDENT_CARD_PR3_M1_NAV_FILE = "Mobile/src/navigation/roleDrawerPreferences.ts";
+const STUDENT_CARD_PR3_M1_NAV_ANCHORS = Object.freeze([
+  "Mobile/src/lib/studentCardEntryControl.ts",
+  "Mobile/src/screens/StudentCardEntryControlScreen.tsx",
+]);
+
 function isStudentCardPr6Signal(file: string) {
   return (
     file === "scripts/verify-student-card-web.js" ||
@@ -450,6 +457,12 @@ function isLot4ExclusiveChantierFile(file: string) {
 }
 
 function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
+  // Un changement isolé du menu n'est jamais classé hors périmètre / N/A.
+  const navChanged = changed.includes(STUDENT_CARD_PR3_M1_NAV_FILE);
+  const navAnchored = STUDENT_CARD_PR3_M1_NAV_ANCHORS.every((anchor) => changed.includes(anchor));
+  if (navChanged && !navAnchored) {
+    return { kind: "fail", message: "L4-09: navigation Contrôle d'entrée sans les deux ancres CARTE-PR3-M1" };
+  }
   const guidedDedicated = changed.filter(isGuidedDedicatedFile);
   const exclusiveLot4 = changed.filter(isLot4ExclusiveChantierFile);
   if (guidedDedicated.length > 0 && exclusiveLot4.length === 0) {
@@ -462,10 +475,12 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
   if (changed.some(isStudentCardPr6Signal)) {
     const pr3EntryControl = changed.includes(STUDENT_CARD_PR3_A1_ANCHOR);
     const pr3RollCall = STUDENT_CARD_PR3_B_ANCHORS.every((anchor) => changed.includes(anchor));
+    const pr3MobileNav = navChanged && navAnchored;
     const outside = changed.filter(
       (file) => !isStudentCardPr6IntegrationFile(file)
         && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file))
-        && !(pr3RollCall && STUDENT_CARD_PR3_B_EXACT.has(file)),
+        && !(pr3RollCall && STUDENT_CARD_PR3_B_EXACT.has(file))
+        && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE),
     );
     if (outside.length === 0 && exclusiveLot4.length === 0) {
       return {
@@ -1042,6 +1057,21 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           `L4-09: ${pr3BOnly} sans les ancres PR3-B doit rester FAIL`,
         );
       }
+
+      // CARTE-PR3-M1 : exact menu + DEUX ancres, jamais un catalogue autorisé en bloc.
+      const m1NavFiles = [
+        "Mobile/src/lib/studentCardEntryControl.ts",
+        "Mobile/src/screens/StudentCardEntryControlScreen.tsx",
+        STUDENT_CARD_PR3_M1_NAV_FILE,
+      ];
+      assert.equal(evaluateLot4Scope(m1NavFiles).kind, "na", "M1 navigation + deux ancres autorisés");
+      for (const omitted of STUDENT_CARD_PR3_M1_NAV_ANCHORS) {
+        assert.equal(evaluateLot4Scope(m1NavFiles.filter((f) => f !== omitted)).kind, "fail", `M1 sans ancre ${omitted} FAIL`);
+      }
+      assert.equal(evaluateLot4Scope([STUDENT_CARD_PR3_M1_NAV_FILE]).kind, "fail", "modification isolée du menu FAIL");
+      assert.equal(evaluateLot4Scope([STUDENT_CARD_PR3_M1_NAV_FILE, "Mobile/src/navigation/AppNavigator.tsx"]).kind, "fail", "catalogue sans ancre FAIL");
+      assert.equal(evaluateLot4Scope([...m1NavFiles, "Mobile/src/navigation/rolesUnauthorized.ts"]).kind, "fail", "autre navigation hors liste FAIL");
+      assert.equal(evaluateLot4Scope([...m1NavFiles, "backend/db/migrations/20261017_unrelated.sql"]).kind, "fail", "migration hors liste FAIL");
 
       const lot4PlusStudentCard = evaluateLot4Scope([
         "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",

@@ -228,6 +228,8 @@ async function createIntegrationFixture() {
       extraTokens,
       request,
       cohort,
+      // Jeton signé avec le secret local de la fixture (identités synthétiques uniquement).
+      mint: (claims) => tokens.createAccessToken(claims),
       logs: () => logs,
       close,
     };
