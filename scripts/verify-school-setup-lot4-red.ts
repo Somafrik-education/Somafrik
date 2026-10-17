@@ -388,6 +388,16 @@ const STUDENT_CARD_PR3_M1_NAV_ANCHORS = Object.freeze([
   "Mobile/src/screens/StudentCardEntryControlScreen.tsx",
 ]);
 
+// NFC-P0-R3-2: the administrator drawer can expose diagnostic only alongside
+// these exact mobile-only, read-only implementation anchors (no backend/RBAC/SQL).
+const STUDENT_CARD_R3_DIAG_ANCHORS = Object.freeze([
+  "Mobile/src/lib/studentCardNfcDiagnosis.ts",
+  "Mobile/src/lib/studentCardNfcDiagnosisNative.ts",
+  "Mobile/src/screens/StudentCardNfcDiagnosisScreen.tsx",
+  "Mobile/src/services/studentCardNfcDiagnosisApi.ts",
+]);
+const STUDENT_CARD_R3_DIAG_NAV_FILE = "Mobile/src/navigation/AppNavigator.tsx";
+
 function isStudentCardPr6Signal(file: string) {
   return (
     file === "scripts/verify-student-card-web.js" ||
@@ -460,7 +470,9 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
   // Un changement isolé du menu n'est jamais classé hors périmètre / N/A.
   const navChanged = changed.includes(STUDENT_CARD_PR3_M1_NAV_FILE);
   const navAnchored = STUDENT_CARD_PR3_M1_NAV_ANCHORS.every((anchor) => changed.includes(anchor));
-  if (navChanged && !navAnchored) {
+  const r3DiagnosticAnchored = STUDENT_CARD_R3_DIAG_ANCHORS.every((anchor) => changed.includes(anchor))
+    && changed.includes(STUDENT_CARD_R3_DIAG_NAV_FILE);
+  if (navChanged && !navAnchored && !r3DiagnosticAnchored) {
     return { kind: "fail", message: "L4-09: navigation Contrôle d'entrée sans les deux ancres CARTE-PR3-M1" };
   }
   const guidedDedicated = changed.filter(isGuidedDedicatedFile);
@@ -476,11 +488,13 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     const pr3EntryControl = changed.includes(STUDENT_CARD_PR3_A1_ANCHOR);
     const pr3RollCall = STUDENT_CARD_PR3_B_ANCHORS.every((anchor) => changed.includes(anchor));
     const pr3MobileNav = navChanged && navAnchored;
+    const r3DiagnosticNav = navChanged && r3DiagnosticAnchored;
     const outside = changed.filter(
       (file) => !isStudentCardPr6IntegrationFile(file)
         && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file))
         && !(pr3RollCall && STUDENT_CARD_PR3_B_EXACT.has(file))
-        && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE),
+        && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE)
+        && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE)),
     );
     if (outside.length === 0 && exclusiveLot4.length === 0) {
       return {
@@ -1057,6 +1071,19 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           `L4-09: ${pr3BOnly} sans les ancres PR3-B doit rester FAIL`,
         );
       }
+
+      const r3DiagnosisFiles = [
+        ...STUDENT_CARD_R3_DIAG_ANCHORS,
+        STUDENT_CARD_R3_DIAG_NAV_FILE,
+        STUDENT_CARD_PR3_M1_NAV_FILE,
+        "Mobile/package.json",
+        ".github/workflows/nfc-encoding-preprod.yml",
+      ];
+      assert.equal(evaluateLot4Scope(r3DiagnosisFiles).kind, "na", "R3-2 diagnostic complet autorisé");
+      for (const missing of STUDENT_CARD_R3_DIAG_ANCHORS) {
+        assert.equal(evaluateLot4Scope(r3DiagnosisFiles.filter((f) => f !== missing)).kind, "fail", "R3-2 sans ancre doit rester refusé");
+      }
+      assert.equal(evaluateLot4Scope([...r3DiagnosisFiles, "backend/lib/financeManagement.js"]).kind, "fail", "R3-2 et backend hors périmètre refusé");
 
       // CARTE-PR3-M1 : exact menu + DEUX ancres, jamais un catalogue autorisé en bloc.
       const m1NavFiles = [
