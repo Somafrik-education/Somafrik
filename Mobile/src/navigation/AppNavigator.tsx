@@ -34,6 +34,8 @@ import ExamsScreen from "../screens/ExamsScreen";
 import ClassGradesStatsScreen from "../screens/ClassGradesStatsScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
 import StudentCardEntryControlScreen from "../screens/StudentCardEntryControlScreen";
+import StudentCardNfcDiagnosisScreen from "../screens/StudentCardNfcDiagnosisScreen";
+import { canDiagnoseNfc } from "../lib/studentCardNfcDiagnosis";
 import { entryControlActor } from "../lib/studentCardEntryControl";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import {
@@ -98,6 +100,7 @@ export type RootStackParamList = {
   TeacherStudents: undefined;
   TeacherAttendance: undefined;
   EntryControl: undefined;
+  NfcDiagnosis: undefined;
   TeacherGrades: undefined;
   ClassGradesStats: undefined;
   Exams: undefined;
@@ -316,6 +319,7 @@ export default function AppNavigator() {
         {canReadRoute(session, "TeacherAttendance") && <Stack.Screen name="TeacherAttendance" component={TeacherAttendanceScreen} options={{ title: "Appel" }} />}
         {/* CARTE-PR3-M1 : clé admissible + permission Contrôle d'entrée:CREATE, indépendant des droits Présences. */}
         {entryControlActor(session) && <Stack.Screen name="EntryControl" component={StudentCardEntryControlScreen} options={{ title: "Contrôle d'entrée" }} />}
+        {canDiagnoseNfc(session) && <Stack.Screen name="NfcDiagnosis" component={StudentCardNfcDiagnosisScreen} options={{ title: "Diagnostic NFC" }} />}
         {canReadRoute(session, "TeacherGrades") && <Stack.Screen name="TeacherGrades" component={TeacherGradesScreen} options={{ title: "Notes" }} />}
         {canReadRoute(session, "ClassGradesStats") && (
           <Stack.Screen name="ClassGradesStats" component={ClassGradesStatsScreen} options={{ title: "Statistiques de classe" }} />
