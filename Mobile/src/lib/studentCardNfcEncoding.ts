@@ -48,6 +48,7 @@ export interface NfcEnrollmentApi {
   retry(card: EnrollmentCard, identity: NtagIdentity, operationId: string): Promise<IssuedNfcCard>;
   confirm(card: EnrollmentCard, token: string, locked: boolean, studentId: string): Promise<EnrollmentCard>;
   recover?(card: EnrollmentCard, token: string, studentId: string, operationId: string): Promise<EnrollmentCard>;
+  reencode?(card: EnrollmentCard, identity: NtagIdentity, studentId: string, operationId: string): Promise<IssuedNfcCard>;
 }
 export type NfcPhase = "initial" | "reservation" | "waiting" | "writing" | "verification" | "confirmation" | "success" | "error" | "expired" | "resume";
 export const NFC_PHASE_COPY: Record<NfcPhase, string> = {
@@ -95,6 +96,8 @@ export function nfcErrorCopy(error: unknown): string {
     NFC_RECOVERY_FOREIGN_CONTENT: "Diagnostic : la carte contient des données qui ne sont pas Somafrik. Aucune écriture effectuée.",
     NFC_RECOVERY_INVALID_CONTENT: "Diagnostic : contenu Somafrik incomplet ou invalide. Aucune activation, aucune écriture effectuée.",
     NFC_RECOVERY_OTHER_CARD: "Diagnostic : la carte porte l’identifiant d’une autre carte Somafrik. Aucune activation, aucune écriture effectuée.",
+    NFC_RECOVERY_USE_R1: "Diagnostic : la carte contient déjà le jeton Somafrik de cette carte. Utilisez « Récupérer cette carte NFC sans la réécrire ». Aucune écriture effectuée.",
+    NFC_RECOVERY_READ_ONLY: "Diagnostic : la carte est en lecture seule (verrouillée). Réencodage impossible. Aucune écriture effectuée.",
     STUDENT_CARD_NOT_FOUND: "Le contenu de la carte ne correspond pas à cette réservation. Aucune activation.",
     STUDENT_CARD_NFC_MISMATCH: "La carte ou l’élève ne correspond pas à cette affectation. Aucune activation.",
     STUDENT_CARD_ACTIVE_ALREADY_EXISTS: "Cet élève a déjà une carte active ou une réservation en cours. Aucune activation.",
@@ -275,6 +278,45 @@ export function createIndividualNfcFlow(input: {
         return result;
       } finally { await input.hardware.close(); }
     }); },
+    /** NFC-P0-R2 — re-encode a physically BLANK card whose expired reservation still
+     * holds its UID. Order: read-only diagnosis, explicit consent, server reopening of
+     * the same row (new secret), then the canonical write → re-read → confirm. */
+    reencode(card: EnrollmentCard, consent: (identity: NtagIdentity) => Promise<boolean>) { return run(async () => {
+      control.phase("resume");
+      const cards = await list();
+      const current = cards.find((item) => item.id === card.id);
+      if (!current || current.publicId !== card.publicId || !canRecoverExpiredNfcCard(current, cards)) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
+      const expected: NtagIdentity = { uid: current.nfc!.uid, tagType: current.nfc!.tagType };
+      control.phase("waiting");
+      try {
+        const observed = await checked(control, () => input.hardware.inspect()).catch((error) => {
+          throw codeOf(error) === "NFC_FOREIGN" ? nfcFailure("NFC_RECOVERY_UNSUPPORTED_CHIP") : error;
+        });
+        if (observed.uid !== expected.uid) throw nfcFailure("NFC_RECOVERY_UID_MISMATCH");
+        if (observed.tagType !== expected.tagType) throw nfcFailure("NFC_RECOVERY_MODEL_MISMATCH");
+        await checked(control, () => input.hardware.openNdef(expected.uid));
+        const value = await checked(control, () => input.hardware.readText()).catch((error) => {
+          throw codeOf(error) === "NFC_FOREIGN" ? nfcFailure("NFC_RECOVERY_FOREIGN_CONTENT") : error;
+        });
+        if (value) {
+          // Never erase content automatically: a Somafrik token of this card goes to R1.
+          let token: string;
+          try { token = cardTokenFromNdef(value); } catch { throw nfcFailure("NFC_RECOVERY_INVALID_CONTENT"); }
+          throw nfcFailure(token.split(".")[0] === current.publicId ? "NFC_RECOVERY_USE_R1" : "NFC_RECOVERY_OTHER_CARD");
+        }
+        if (await checked(control, () => input.hardware.isReadOnly())) throw nfcFailure("NFC_RECOVERY_READ_ONLY");
+      } finally { await input.hardware.close(); }
+      if (await consent(expected) !== true) throw nfcFailure("NFC_REWRITE_REQUIRED");
+      control.check();
+      if (typeof input.api.reencode !== "function") throw nfcFailure("NFC_RESPONSE_INVALID");
+      control.phase("reservation");
+      const reopened = await checked(control, () => input.api.reencode!(current, expected, input.studentId, input.uuid()));
+      if (reopened.id !== current.id || reopened.publicId !== current.publicId || reopened.status !== "issued" ||
+          reopened.nfc?.uid !== expected.uid || reopened.nfc?.tagType !== expected.tagType || reopened.nfc.state !== "pending" ||
+          reopened.nfc.replacesCardId || !reopened.cardToken || reopened.tokenAvailable === false) throw nfcFailure("NFC_RESPONSE_INVALID");
+      // Canonical path: same-card check, blank re-check, read-only re-check, write, re-read, confirm.
+      return encodeNfcCard(input.hardware, input.api, reopened, control);
+    }); },
     rewrite(card: EnrollmentCard, consent: boolean) { return run(async () => {
       if (consent !== true) throw nfcFailure("NFC_REWRITE_REQUIRED");
       const current = await fresh(card); const identity = requireIdentity(current);
@@ -306,6 +348,9 @@ export function createNfcEnrollmentApi(request: <T>(path: string, options?: { me
     issue(studentId, identity, operationId) { return post("/student-cards", { studentId, medium: "nfc", nfc: identity, operationId }); },
     replace(previous, studentId, identity, operationId) { return post(`/student-cards/${encodeURIComponent(previous.id)}/replace`, { studentId, medium: "nfc", nfc: identity, operationId }); },
     retry(card, identity, operationId) { return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-retry`, { ...identity, operationId }); },
+    reencode(card, identity, studentId, operationId) {
+      return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-reencode`, { ...identity, studentId, operationId });
+    },
     recover(card, cardToken, studentId, operationId) {
       if (!card.nfc) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
       return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-recover`,
