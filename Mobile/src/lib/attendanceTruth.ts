@@ -1,6 +1,7 @@
 /**
  * Vérité d'appel Mobile.
- * Défaut produit : Présent + changement de statut simple.
+ * Défaut produit : Absent provisoire pour élève sans pointage ;
+ * les présences PostgreSQL déjà confirmées restent inchangées.
  * Justifié = absence justifiée (contrat D3.5b), non présent.
  * Source `unset` = défaut UI, pas une confirmation PostgreSQL.
  */
@@ -81,18 +82,18 @@ export function findTodayPresenceForStudent(
 }
 
 /**
- * Aucune ligne du jour → Présent (workflow cible : défaut Présent + changement de statut simple).
+ * Aucune ligne du jour → Absent provisoire (non confirmé PostgreSQL).
  * Une ligne persistée conserve le statut PostgreSQL. Source `unset` ≠ confirmation serveur.
  */
 export function hydrateRollCallStatus(
   presence?: Pick<PresenceItem, "present" | "status"> | null,
 ): AttendanceStatus | null {
-  if (!presence) return "Présent";
+  if (!presence) return "Absent";
   return normalizePresenceStatus(presence);
 }
 
 export function emptyRollCallEntry(): RollCallEntry {
-  return { status: "Présent", source: "unset" };
+  return { status: "Absent", source: "unset" };
 }
 
 export function rollCallEntryFromPresence(
