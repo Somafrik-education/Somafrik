@@ -113,7 +113,7 @@ export function createNfcBatch(input: {
   let cleanupBlocked = false;
   let epoch = 0,
     task: Promise<void> | null = null;
-  const flows = new Map<string, ReturnType<typeof createIndividualNfcFlow>>();
+  const flows = new Map<string, Pick<ReturnType<typeof createIndividualNfcFlow>, "hasUncertainReservation" | "program" | "resume" | "rewrite">>();
   const snapshot = (): BatchSnapshot => ({
     mode,
     roster: roster

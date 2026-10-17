@@ -601,6 +601,28 @@ async function main() {
     assert.equal((await pool.query('SELECT status FROM student_access_cards WHERE id=$1',[nfcIssue.data.id])).rows[0].status,'replaced');
     const replacementReplay=await request(replacementPath,{method:'POST',token:tokenA,body:replacementBody});assert.equal(replacementReplay.status,200);assert.equal(replacementReplay.data.id,preparedNfc.data.id);assert.equal(replacementReplay.data.cardToken,undefined);
     await assertCardSecretsAbsent(pool,cardSecrets(preparedNfc.data.cardToken));
+    // NFC-P0-RECOVERY-02 — GET /students/:id/cards materialises an expired reservation.
+    const expStudent=randomUUID();
+    await pool.query("INSERT INTO students(id,school_id,first_name,last_name,status) VALUES($1,$2,'Expired','Fixture','active')",[expStudent,schoolAId]);
+    const expBody={studentId:expStudent,medium:'nfc',nfc:{uid:'04A0B1C2D3E4F5',tagType:'NTAG216'},operationId:randomUUID()};
+    const expIssue=await request('/student-cards',{method:'POST',token:tokenA,body:expBody});assert.equal(expIssue.status,201);
+    const expRetry=await request(`/student-cards/${expIssue.data.id}/nfc-retry`,{method:'POST',token:tokenA,body:{...expBody.nfc,operationId:randomUUID()}});
+    assert.equal(expRetry.status,200);const expToken=expRetry.data.cardToken;assert.ok(expToken);
+    await pool.query("UPDATE student_access_cards SET issued_at=clock_timestamp()-INTERVAL '31 minutes',nfc_reservation_expires_at=clock_timestamp()-INTERVAL '1 minute' WHERE id=$1",[expIssue.data.id]);
+    const expAudits=async()=>(await pool.query("SELECT count(*)::int AS n FROM audit_logs WHERE entity_id=$1 AND action='student_card_nfc_reservation_expired'",[expIssue.data.id])).rows[0].n;
+    const readerExp=await request(`/students/${expStudent}/cards`,{token:tokenTeacher});assert.equal(readerExp.status,200);
+    assert.equal((readerExp.data.cards||readerExp.data)[0].status,'issued');assert.equal(await expAudits(),0);
+    const crossExp=await request(`/students/${expStudent}/cards`,{token:tokenB});assert.equal(crossExp.status,404);assert.equal(await expAudits(),0);
+    const listedExp=await request(`/students/${expStudent}/cards`,{token:tokenA});assert.equal(listedExp.status,200);assert.equal(listedExp.cacheControl,'no-store');
+    const expCard=(listedExp.data.cards||listedExp.data)[0];
+    assert.equal(expCard.status,'revoked');assert.equal(expCard.revokeReason,'nfc_reservation_expired');assert.equal(expCard.nfc.state,'pending');
+    assert.equal(expCard.nfc.uid,expBody.nfc.uid);assert.equal(expCard.nfc.tagType,'NTAG216');assert.equal(JSON.stringify(listedExp.data).includes(expToken.split('.')[1]),false);
+    await request(`/students/${expStudent}/cards`,{token:tokenA});assert.equal(await expAudits(),1);
+    const expRecover=await request(`/student-cards/${expIssue.data.id}/nfc-recover`,{method:'POST',token:tokenA,body:{...expBody.nfc,cardToken:expToken,studentId:expStudent,operationId:randomUUID()}});
+    assert.equal(expRecover.status,200,JSON.stringify(expRecover.data));assert.equal(expRecover.data.status,'active');assert.equal(expRecover.data.id,expIssue.data.id);
+    assert.equal(JSON.stringify(expRecover.data).includes(expToken.split('.')[1]),false);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM audit_logs WHERE entity_id=$1 AND action='student_card_nfc_reservation_recovered'",[expIssue.data.id])).rows[0].n,1);
+    await assertCardSecretsAbsent(pool,cardSecrets(expToken));
     await pool.query('UPDATE school_settings SET student_card_nfc_enabled=FALSE WHERE school_id=$1',[schoolAId]);
     const flagsDenied=await request(confirmPath,{method:'POST',token:tokenA,body:confirmBody});assert.equal(flagsDenied.status,404);
     await assertCardSecretsAbsent(pool,cardSecrets(nfcToken));

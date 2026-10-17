@@ -294,7 +294,7 @@ async function issueStudentCard(repo, payload, principal, auditMeta, schoolScope
   return mapIssuedCard(inserted.created, inserted.generated.cardToken);
 }
 
-async function listStudentCards(repo, studentRef, schoolScope) {
+async function listStudentCards(repo, studentRef, schoolScope, principal = null, auditMeta = null) {
   const schoolId = asId(schoolScope.schoolId);
   if (!schoolId) {
     throw studentCardError(403, "Accès refusé: établissement hors périmètre.", STUDENT_CARD_ERROR.TENANT_DENIED);
@@ -302,6 +302,10 @@ async function listStudentCards(repo, studentRef, schoolScope) {
   await assertStudentCardMasterEnabled(repo, schoolId);
   const store = cardsStore(repo);
   const student = await requireStudentInSchool(store, schoolId, studentRef);
+  if (principal) {
+    // NFC-P0-RECOVERY-02: commit lazily-applied NFC expiry before reading.
+    await require("./studentCardsNfcLifecycle").materializeExpiredNfcReservations(repo, student.id, principal, auditMeta, schoolScope);
+  }
   const rows = await store.listByStudent(schoolId, student.id);
   return rows.map(mapCardListItem);
 }
