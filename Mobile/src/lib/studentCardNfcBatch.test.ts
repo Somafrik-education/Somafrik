@@ -122,7 +122,7 @@ function fixture(count = 3) {
           ...identity,
           state: "pending",
           operationId,
-          expiresAt: "2026-10-13T23:30:00Z",
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
           replacesCardId: null,
         },
       };

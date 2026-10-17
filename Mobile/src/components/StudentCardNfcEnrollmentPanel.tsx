@@ -3,7 +3,7 @@ import { Alert, AppState, Platform, Text, TouchableOpacity, View } from "react-n
 import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollmentApi";
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
-  createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure,
+  createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure, nfcLiveReservation,
   type EnrollmentCard, type NfcEncoderHardware, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
@@ -108,7 +108,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   }
   if (!canRead) return null;
   const active = cards?.find((card) => card.status === "active");
-  const pending = cards?.some((card) => card.status === "issued" && card.nfc?.state === "pending");
+  const pending = cards?.some((card) => nfcLiveReservation(card));
   const canProgram = permitted.current && enabled && available && !!cards;
   const button = (title: string, onPress: () => void) => <TouchableOpacity accessibilityRole="button" accessibilityLabel={title} disabled={working || !canProgram} onPress={onPress} style={{ padding: 12, marginVertical: 4, backgroundColor: "#E8F4F1", borderRadius: 8, opacity: working || !canProgram ? 0.5 : 1 }}><Text>{title}</Text></TouchableOpacity>;
   return <View testID="student-card-nfc-enrollment-panel">

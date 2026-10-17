@@ -126,6 +126,8 @@ function createStudentAccessCardsPgStore(repo) {
               issued_at, revoked_at, revoke_reason, replaced_by_card_id,
               nfc_uid, nfc_tag_type, nfc_encoding_state, nfc_encoded_at, nfc_locked_at,
               nfc_operation_id, nfc_reservation_expires_at, nfc_replaces_card_id,
+              (status = 'issued' AND nfc_encoding_state = 'pending'
+                AND nfc_reservation_expires_at <= clock_timestamp()) AS nfc_reservation_expired,
               created_at, updated_at
          FROM student_access_cards
         WHERE school_id = $1

@@ -25,6 +25,8 @@ import {
 import {
   NFC_PHASE_COPY,
   nfcErrorCopy,
+  nfcLiveReservation,
+  nfcReservationExpired,
   type NfcEncoderHardware,
 } from "../lib/studentCardNfcEncoding";
 import type { BatchScope } from "../lib/studentCardNfcBatchRoster";
@@ -260,9 +262,8 @@ function StudentCardNfcBatchSession({
     </TouchableOpacity>
   );
   const row = (entry: BatchEntry) => {
-    const pending = entry.cards.find(
-      (c) => c.status === "issued" && c.nfc?.state === "pending",
-    );
+    const pending = entry.cards.find((c) => nfcLiveReservation(c));
+    const expired = entry.cards.some((c) => nfcReservationExpired(c));
     const active = entry.cards.find((c) => c.status === "active");
     const eligible = eligibleForNewCard(entry);
     const choice = eligible ? "create" : pending ? "resume" : null;
@@ -271,9 +272,11 @@ function StudentCardNfcBatchSession({
         ? "Carte programmée et active"
         : pending
           ? "Réservation en attente — non active"
-          : active
-            ? "Carte active"
-            : "Aucune carte active";
+          : expired && !active
+            ? "Réservation expirée — une nouvelle carte vierge peut être programmée"
+            : active
+              ? "Carte active"
+              : "Aucune carte active";
     return (
       <View
         style={{ padding: 12, borderBottomWidth: 1, borderColor: "#DDE3EA" }}
