@@ -1,0 +1,15 @@
+carte;uid_masque;same_school;r3_code;status;revoke_reason;tag_type;encoding_state;holder_status
+1;04••••••••0001;;UID_UNKNOWN;;;;;
+2;04••••••••0002;f;OTHER_SCHOOL;;;;;
+3;04••••••••0003;t;ACTIVE;active;;NTAG216;encoded;active
+4;04••••••••0004;t;LOST;lost;lost;NTAG216;encoded;active
+5;04••••••••0005;t;REPLACED;replaced;replaced;NTAG216;encoded;active
+6;04••••••••0006;t;LIVE_RESERVATION;issued;;NTAG216;pending;active
+7;04••••••••0007;t;EXPIRED_NOT_MATERIALISED;issued;;NTAG216;pending;active
+8;04••••••••0008;t;R2_ELIGIBLE;revoked;nfc_reservation_expired;NTAG216;pending;active
+9;04••••••••0009;t;EXPIRED_HOLDER_INACTIVE;revoked;nfc_reservation_expired;NTAG216;pending;inactive
+10;04••••••••000A;t;EXPIRED_HOLDER_HAS_CARD;revoked;nfc_reservation_expired;NTAG216;pending;active
+11;04••••••••000B;t;EXPIRED_REPLACEMENT;revoked;nfc_reservation_expired;NTAG216;pending;active
+12;04••••••••000C;t;REVOKED_NEVER_ENCODED;revoked;nfc_abandoned;NTAG216;pending;active
+13;04••••••••000D;t;REVOKED_SECURITY;revoked;revoked;NTAG216;encoded;active
+14;04••••••••000E;t;LOCKED_RECORDED;active;;NTAG216;locked;active

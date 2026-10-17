@@ -1,0 +1,37 @@
+BEGIN
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+CREATE INDEX
+DROP INDEX
+     etape     |                  id                  
+---------------+--------------------------------------
+ P1 libération | <uuid-aléatoire>
+(1 row)
+
+UPDATE 1
+          etape          |                  id                  
+-------------------------+--------------------------------------
+ P2 nouvelle attribution | <uuid-aléatoire>
+(1 row)
+
+INSERT 0 1
+     etape     | status  |      revoke_reason      | released | ancien_titulaire 
+---------------+---------+-------------------------+----------+------------------
+ P3 historique | revoked | nfc_reservation_expired | t        | t
+ P3 historique | issued  |                         | f        | f
+(2 rows)
+
+SAVEPOINT
+NOTICE:  P4 OK : deuxième attribution courante refusée (index partiel)
+DO
+ROLLBACK
+SAVEPOINT
+NOTICE:  P5 OK : cartes sécurité/perdue/remplacée/active/verrouillée non libérables par la requête gardée
+DO
+ROLLBACK
+SAVEPOINT
+NOTICE:  P6 OK : contrainte r3_release_check refuse une carte encodée
+DO
+ROLLBACK
+ROLLBACK
