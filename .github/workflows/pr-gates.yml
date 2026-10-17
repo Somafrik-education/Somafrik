@@ -32,6 +32,7 @@ jobs:
       planning: ${{ steps.detect.outputs.planning }}
       users: ${{ steps.detect.outputs.users }}
       platform: ${{ steps.detect.outputs.platform }}
+      lot4_sensitive: ${{ steps.detect.outputs.lot4_sensitive }}
       web: ${{ steps.detect.outputs.web }}
       mobile: ${{ steps.detect.outputs.mobile }}
       dependencies: ${{ steps.detect.outputs.dependencies }}
@@ -65,6 +66,7 @@ jobs:
           planning=false
           users=false
           platform=false
+          lot4_sensitive=false
           web=false
           mobile=false
           dependencies=false
@@ -107,6 +109,7 @@ jobs:
             if [[ "$lower" =~ (planning|schedule|room|replacement|course) ]]; then planning=true; fi
             if [[ "$lower" =~ (user|client|parent|role|permission|identity) ]]; then users=true; fi
             if [[ "$lower" =~ (platform|school|country|notification|subscription|setting|document|exam|lockout|export) ]]; then platform=true; fi
+            if [ "$lower" = "mobile/src/navigation/roledrawerpreferences.ts" ]; then lot4_sensitive=true; fi
           done <<< "$changed"
 
           targeted=false
@@ -114,7 +117,7 @@ jobs:
             if [ "${!flag}" = "true" ]; then targeted=true; fi
           done
 
-          for flag in code workflows db auth sync classes students teachers finance pedagogy reportcard planning users platform web mobile dependencies targeted; do
+          for flag in code workflows db auth sync classes students teachers finance pedagogy reportcard planning users platform lot4_sensitive web mobile dependencies targeted; do
             printf '%s=%s\n' "$flag" "${!flag}" >> "$GITHUB_OUTPUT"
           done
 
@@ -426,7 +429,7 @@ jobs:
         run: npm run verify:school-setup-lot3-red
 
       - name: School setup optional completeness LOT 4
-        if: needs.scope.outputs.platform == 'true'
+        if: needs.scope.outputs.platform == 'true' || needs.scope.outputs.lot4_sensitive == 'true'
         env:
           GITHUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
