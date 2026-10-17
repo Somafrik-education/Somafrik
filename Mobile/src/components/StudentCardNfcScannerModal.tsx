@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -13,29 +13,24 @@ import { Ionicons } from "@expo/vector-icons";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
   STUDENT_CARD_SCAN_COPY,
-  hasValidSelectedClass,
-  holdCardToken,
-  isStaleScanScope,
-  releaseCardToken,
-  runStudentCardScanFlow,
   scanScopeKey,
   type AttendanceAuthorReady,
-  type ScanScopeSnapshot,
   type SelectedAttendanceClassRef,
   type StudentCardScanView,
-  type VolatileCardToken,
 } from "../lib/studentCardScan";
 import {
   STUDENT_CARD_NFC_COPY,
   decideNfcScannerForeground,
-  decideNfcScannerRead,
-  releaseNfcSession,
-  scanNfcCardToken,
   shouldShowNfcQrFallback,
   type NfcHardware,
-  type NfcReadFailure,
 } from "../lib/studentCardNfc";
 import { createReactNativeNfcAdapter } from "../lib/studentCardNfcNative";
+import {
+  nfcScannerPanelText,
+  nfcScannerRetryLabel,
+  useNfcAttendanceScanner,
+  type NfcAttendanceScannerApi,
+} from "../lib/studentCardNfcAttendanceScanner";
 import {
   readStudentCardFinance,
   recordStudentCardAttendance,
@@ -60,6 +55,19 @@ type Props = {
   onAttendanceRecorded: (view: StudentCardScanView) => void;
 };
 
+const SCAN_API: NfcAttendanceScannerApi = {
+  resolveCard: resolveStudentCard,
+  recordAttendance: (token, attendance, idempotencyKey) =>
+    recordStudentCardAttendance(token, attendance, { idempotencyKey }),
+  readFinance: readStudentCardFinance,
+  createIdempotencyKey,
+};
+
+/**
+ * Read flow (runStudentCardScanFlow, scanNfcCardToken, decideNfcScannerRead, holdCardToken,
+ * releaseCardToken, releaseNfcSession) lives in useNfcAttendanceScanner: the listening effect
+ * depends on `visible` only, so the parent's inline callbacks never restart or wipe a scan.
+ */
 export default function StudentCardNfcScannerModal({
   visible,
   selectedClass,
@@ -75,18 +83,30 @@ export default function StudentCardNfcScannerModal({
   onFallbackQr,
   onAttendanceRecorded,
 }: Props) {
-  const [busy, setBusy] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [error, setError] = useState("");
-  const [failure, setFailure] = useState<NfcReadFailure | "">("");
-  const [result, setResult] = useState<StudentCardScanView | null>(null);
-  const tokenRef = useRef<VolatileCardToken>({ current: null });
   const hardwareRef = useRef<NfcHardware>(hardware ?? createReactNativeNfcAdapter());
-  const generationRef = useRef(0);
-  const visibleRef = useRef(visible);
-  const scanLockRef = useRef(false);
-  visibleRef.current = visible;
   if (hardware) hardwareRef.current = hardware;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const onFallbackQrRef = useRef(onFallbackQr);
+  onFallbackQrRef.current = onFallbackQr;
+
+  const scanner = useNfcAttendanceScanner({
+    visible,
+    hardware: hardwareRef.current,
+    resourceScopeKey,
+    schoolCode,
+    selectedClass,
+    author,
+    attendanceDate,
+    financeEnabled,
+    isOffline,
+    api: SCAN_API,
+    onAttendanceRecorded,
+  });
+  const { busy, scanning, error, failure, result, retry, stop, reset, cancelForBackground } = scanner;
+
   const scopeKey = scanScopeKey({
     resourceScopeKey,
     schoolCode,
@@ -95,153 +115,12 @@ export default function StudentCardNfcScannerModal({
   });
   const lastScopeRef = useRef(scopeKey);
 
-  const scope = useCallback((): ScanScopeSnapshot => {
-    return {
-      generation: generationRef.current,
-      resourceScopeKey,
-      schoolCode,
-      classId: String(selectedClass.classId ?? "").trim(),
-      classCode: String(selectedClass.classCode ?? "").trim(),
-    };
-  }, [resourceScopeKey, schoolCode, selectedClass.classCode, selectedClass.classId]);
-
-  const stopSession = useCallback(async () => {
-    generationRef.current += 1;
-    setScanning(false);
-    setBusy(false);
-    releaseCardToken(tokenRef.current);
-    await releaseNfcSession(hardwareRef.current);
-  }, []);
-
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
-      const decision = decideNfcScannerForeground({
-        nextAppState: next,
-        visible: visibleRef.current,
-      });
-      if (decision.cancelSession) {
-        generationRef.current += 1;
-        setScanning(false);
-        setBusy(false);
-        void releaseNfcSession(hardwareRef.current);
-      }
-      if (decision.releaseToken) releaseCardToken(tokenRef.current);
-      if (decision.clearResult) setResult(null);
+      cancelForBackground(decideNfcScannerForeground({ nextAppState: next, visible: visibleRef.current }));
     });
-    return () => {
-      generationRef.current += 1;
-      sub.remove();
-      releaseCardToken(tokenRef.current);
-      void releaseNfcSession(hardwareRef.current);
-    };
-  }, []);
-
-  const runScan = useCallback(
-    async (cardToken: string) => {
-      if (!hasValidSelectedClass(selectedClass)) {
-        setError(STUDENT_CARD_SCAN_COPY.classMismatch);
-        return;
-      }
-      const started = scope();
-      setBusy(true);
-      setError("");
-      const stillCurrent = () => !isStaleScanScope(started, scope());
-      try {
-        const outcome = await runStudentCardScanFlow({
-          cardToken,
-          scope: started,
-          selectedClass,
-          author,
-          attendanceDate,
-          financeEnabled,
-          isOffline,
-          currentScope: scope,
-          resolveCard: resolveStudentCard,
-          recordAttendance: (token, attendance, idempotencyKey) =>
-            recordStudentCardAttendance(token, attendance, { idempotencyKey }),
-          readFinance: readStudentCardFinance,
-          createIdempotencyKey,
-        });
-        if (!stillCurrent()) return;
-        if (outcome.kind === "offline") {
-          setError(STUDENT_CARD_SCAN_COPY.offline);
-          return;
-        }
-        if (outcome.kind === "teacher_unresolved") {
-          setError("Choisissez l’enseignant auteur de l’appel avant de pointer.");
-          return;
-        }
-        if (outcome.kind === "invalid_card") {
-          setError(STUDENT_CARD_SCAN_COPY.invalidCard);
-          return;
-        }
-        if (outcome.kind === "class_mismatch") {
-          setResult(outcome.view);
-          setError(STUDENT_CARD_SCAN_COPY.classMismatch);
-          return;
-        }
-        if (outcome.kind === "error") {
-          setError(outcome.message);
-          return;
-        }
-        if (outcome.kind === "stale") return;
-        setResult(outcome.view);
-        if (outcome.view.attendanceRecorded) onAttendanceRecorded(outcome.view);
-      } finally {
-        releaseCardToken(tokenRef.current);
-        if (stillCurrent()) setBusy(false);
-      }
-    },
-    [
-      attendanceDate,
-      author,
-      financeEnabled,
-      isOffline,
-      onAttendanceRecorded,
-      scope,
-      selectedClass,
-    ],
-  );
-
-  const listenForTag = useCallback(async () => {
-    if (!visibleRef.current || scanLockRef.current) return;
-    scanLockRef.current = true;
-    const startedGeneration = generationRef.current;
-    setScanning(true);
-    setError("");
-    setFailure("");
-    setResult(null);
-    try {
-      const read = await scanNfcCardToken(hardwareRef.current);
-      if (!visibleRef.current || startedGeneration !== generationRef.current) return;
-      const decision = decideNfcScannerRead(read);
-      if (decision.callOnClose || decision.navigateHome) return;
-      if (!decision.runAttendance || !decision.token) {
-        setFailure(decision.refusal ?? "error");
-        setError(decision.message);
-        return;
-      }
-      if (!holdCardToken(tokenRef.current, decision.token)) return;
-      await runScan(decision.token);
-    } finally {
-      scanLockRef.current = false;
-      if (visibleRef.current) setScanning(false);
-    }
-  }, [runScan]);
-
-  useEffect(() => {
-    if (!visible) {
-      generationRef.current += 1;
-      setResult(null);
-      setError("");
-      setFailure("");
-      setBusy(false);
-      void stopSession();
-      return;
-    }
-    generationRef.current += 1;
-    void listenForTag();
-  }, [listenForTag, stopSession, visible]);
+    return () => sub.remove();
+  }, [cancelForBackground]);
 
   useEffect(() => {
     if (!visible) {
@@ -250,36 +129,23 @@ export default function StudentCardNfcScannerModal({
     }
     if (lastScopeRef.current === scopeKey) return;
     lastScopeRef.current = scopeKey;
-    generationRef.current += 1;
-    releaseCardToken(tokenRef.current);
-    setResult(null);
-    setError("");
-    void stopSession();
-    onClose();
-  }, [onClose, scopeKey, stopSession, visible]);
+    reset();
+    void stop();
+    onCloseRef.current();
+  }, [reset, scopeKey, stop, visible]);
 
   const close = useCallback(() => {
-    void stopSession();
-    setResult(null);
-    setError("");
-    setFailure("");
-    onClose();
-  }, [onClose, stopSession]);
+    void stop();
+    reset();
+    onCloseRef.current();
+  }, [reset, stop]);
 
   const fallbackQr = useCallback(() => {
-    void stopSession();
-    setResult(null);
-    setError("");
-    setFailure("");
+    void stop();
+    reset();
     if (qrFallbackEnabled !== true) return;
-    onFallbackQr();
-  }, [onFallbackQr, qrFallbackEnabled, stopSession]);
-
-  const retry = useCallback(() => {
-    releaseCardToken(tokenRef.current);
-    setResult(null);
-    void listenForTag();
-  }, [listenForTag]);
+    onFallbackQrRef.current();
+  }, [qrFallbackEnabled, reset, stop]);
 
   const showQrFallback = shouldShowNfcQrFallback({
     qrFallbackEnabled,
@@ -296,11 +162,7 @@ export default function StudentCardNfcScannerModal({
         <View style={styles.panel} testID="student-card-nfc-status">
           {busy ? <ActivityIndicator color="#2563EB" /> : null}
           <Text style={styles.panelText}>
-            {busy
-              ? STUDENT_CARD_SCAN_COPY.resolving
-              : scanning
-                ? STUDENT_CARD_NFC_COPY.scanning
-                : error || STUDENT_CARD_NFC_COPY.scanning}
+            {nfcScannerPanelText({ busy, scanning, error, result })}
           </Text>
         </View>
 
@@ -336,10 +198,10 @@ export default function StudentCardNfcScannerModal({
           onPress={retry}
           disabled={busy || scanning}
           accessibilityRole="button"
-          accessibilityLabel={STUDENT_CARD_NFC_COPY.retry}
+          accessibilityLabel={nfcScannerRetryLabel(result)}
           accessibilityState={{ disabled: busy || scanning }}
         >
-          <Text style={styles.secondaryText}>{STUDENT_CARD_NFC_COPY.retry}</Text>
+          <Text style={styles.secondaryText}>{nfcScannerRetryLabel(result)}</Text>
         </TouchableOpacity>
         {showQrFallback ? (
           <TouchableOpacity
