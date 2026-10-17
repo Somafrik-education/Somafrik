@@ -356,6 +356,13 @@ function createStudentAccessCardsPgStore(repo) {
       AND status = 'issued' AND nfc_encoding_state = 'pending'`, [schoolId, studentId]);
   }
 
+  // Read-only probe: avoids opening a write transaction on every card list.
+  async function hasExpiredPendingNfc(schoolId, studentId) {
+    return Boolean(await one(`SELECT 1 AS stale FROM student_access_cards WHERE school_id = $1 AND student_id = $2
+      AND status = 'issued' AND nfc_encoding_state = 'pending'
+      AND nfc_reservation_expires_at <= clock_timestamp() LIMIT 1`, [schoolId, studentId]));
+  }
+
   async function expirePendingNfc(schoolId, studentId) {
     return all(`UPDATE student_access_cards SET status = 'revoked', revoked_at = clock_timestamp(),
       revoke_reason = 'nfc_reservation_expired', updated_at = clock_timestamp()
@@ -370,7 +377,7 @@ function createStudentAccessCardsPgStore(repo) {
   }
 
   return {
-    lockStudent, lockCard, findNfcOperation, findPendingNfc, expirePendingNfc, queryReplacementPrevious,
+    lockStudent, lockCard, findNfcOperation, findPendingNfc, hasExpiredPendingNfc, expirePendingNfc, queryReplacementPrevious,
     rotatePendingNfc,
     confirmNfc,
     recoverExpiredNfc,

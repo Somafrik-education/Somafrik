@@ -2254,7 +2254,7 @@ app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/stud
   requireStudentCardsPg();
   const { listStudentCards } = require("./lib/studentAccessCardsManagement");
   const principal = await enrollmentHttpPrincipal(req);
-  const cards = await listStudentCards(repository, req.params.id, studentCardsHttpScope(principal));
+  const cards = await listStudentCards(repository, req.params.id, studentCardsHttpScope(principal), principal, auditMetaFromRequest(req));
   const { readNfcEnabled } = require("./lib/studentCardsNfcEncoding");
   res.json({ cards, nfcEnabled: await readNfcEnabled(repository, studentCardsHttpScope(principal).schoolId) });
 }));

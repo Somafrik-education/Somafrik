@@ -7,7 +7,7 @@ const { STUDENT_ACCESS_CARDS_SCHEMA_SQL, STUDENT_ACCESS_CARDS_TABLE_SQL, STUDENT
 const { STUDENT_CARDS_NFC_SCHEMA_SQL } = require("../db/studentCardsNfcSchema");
 const { STUDENT_CARDS_NFC_RESERVATIONS_SCHEMA_SQL } = require("../db/studentCardsNfcReservationsSchema");
 const { createStudentAccessCardsPgStore } = require("../db/studentAccessCardsPgStore");
-const { issueStudentCard, revokeStudentCard, markStudentCardLost, replaceStudentCard, scanStudentCard, generateCardSecrets } = require("./studentAccessCardsManagement");
+const { issueStudentCard, revokeStudentCard, markStudentCardLost, replaceStudentCard, scanStudentCard, generateCardSecrets, listStudentCards } = require("./studentAccessCardsManagement");
 const { confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc } = require("./studentCardsNfcEncoding");
 
 const url = process.env.SOMAFRIK_NFC_TEST_DATABASE_URL;
@@ -409,4 +409,106 @@ pg("P0 recovery: wrong secret, student and UID cannot revive expired card", asyn
   await assert.rejects(recoverExpiredStudentCardNfc(f.repo,card.id,{...input,uid:"04778899001122"},f.principal,{},f.scope), {code:"STUDENT_CARD_NFC_MISMATCH"});
   assert.equal((await f.row(card.id)).status,"revoked");
   assert.equal(await f.countAudit("student_card_nfc_reservation_recovered"),0);
+});
+
+// NFC-P0-RECOVERY-02 — expiry is materialised by the authorised card list.
+const list = (f, overrides = {}) => listStudentCards(f.repo, overrides.studentId ?? f.students[0], overrides.scope ?? f.scope,
+  overrides.principal === undefined ? f.principal : overrides.principal, {});
+const expiredAudits = (f) => f.countAudit("student_card_nfc_reservation_expired");
+
+pg("T01 valid reservation: list keeps issued/pending, no expiry audit", async f => {
+  const card = await f.issue();
+  const [listed] = await list(f);
+  assert.equal(listed.id, card.id); assert.equal(listed.status, "issued"); assert.equal(listed.nfc.state, "pending");
+  assert.equal(await expiredAudits(f), 0);
+});
+
+pg("T02 expired reservation: list returns revoked/nfc_reservation_expired, pending state, UID and model kept", async f => {
+  const card = await f.issue(); await f.expire(card.id);
+  const [listed] = await list(f);
+  assert.equal(listed.status, "revoked"); assert.equal(listed.revokeReason, "nfc_reservation_expired");
+  assert.equal(listed.nfc.state, "pending"); assert.equal(listed.nfc.uid, f.identity.uid); assert.equal(listed.nfc.tagType, f.identity.tagType);
+  assert.equal(await expiredAudits(f), 1);
+  const audit = await f.repo.one("SELECT old_value, new_value FROM audit_logs WHERE action='student_card_nfc_reservation_expired'");
+  assert.deepEqual(audit.old_value, { status: "issued" }); assert.deepEqual(audit.new_value, { status: "revoked" });
+});
+
+pg("T03 repeated list: one transition, one audit", async f => {
+  const card = await f.issue(); await f.expire(card.id);
+  await list(f); await list(f); await list(f);
+  assert.equal(await expiredAudits(f), 1); assert.equal((await f.row(card.id)).status, "revoked");
+});
+
+pg("T04 concurrent lists: a single expiry and a single audit", async f => {
+  const card = await f.issue(); await f.expire(card.id);
+  const results = await Promise.all(Array.from({ length: 6 }, () => list(f)));
+  for (const [listed] of results) assert.equal(listed.status, "revoked");
+  assert.equal(await expiredAudits(f), 1);
+});
+
+pg("T05 UID, token hash and public id preserved; UID stays globally unique", async f => {
+  const card = await f.issue(); const before = await f.row(card.id); await f.expire(card.id);
+  await list(f);
+  const after = await f.row(card.id);
+  assert.equal(after.nfc_uid, before.nfc_uid); assert.equal(after.token_hash, before.token_hash);
+  assert.equal(after.public_id, before.public_id); assert.equal(after.nfc_reservation_expires_at.getTime() < Date.now(), true);
+  await assert.rejects(f.issue({ studentId: f.students[1] }), { code: "STUDENT_CARD_NFC_UID_EXISTS" });
+});
+
+pg("T06 active card is not affected by a past reservation deadline", async f => {
+  const card = await f.issue(); await f.confirm(card); await f.expire(card.id);
+  const [listed] = await list(f);
+  assert.equal(listed.status, "active"); assert.equal(listed.nfc.state, "encoded"); assert.equal(await expiredAudits(f), 0);
+});
+
+pg("T07 lost, replaced and administratively revoked cards are not affected", async f => {
+  const lost = await f.issue(); await f.confirm(lost);
+  const next = await replaceStudentCard(f.repo, lost.id, f.principal, {}, f.scope, { nfc: { uid: "04AABBCCDDEEFF", tagType: "NTAG213" }, operationId: randomUUID() });
+  await confirmStudentCardNfc(f.repo, next.id, { uid: "04AABBCCDDEEFF", tagType: "NTAG213", cardToken: next.cardToken, locked: false, operationId: next.nfc.operationId }, f.principal, {}, f.scope);
+  assert.equal((await f.row(lost.id)).status, "replaced");
+  await markStudentCardLost(f.repo, next.id, f.principal, {}, f.scope, "lost");
+  const abandoned = await f.issue({ studentId: f.students[1], nfc: { uid: "04CCDDEEFF0011", tagType: "NTAG216" } });
+  await revokeStudentCard(f.repo, abandoned.id, f.principal, {}, f.scope, "nfc_abandoned");
+  for (const id of [lost.id, next.id, abandoned.id]) await f.expire(id);
+  await list(f); await list(f, { studentId: f.students[1] });
+  assert.equal((await f.row(lost.id)).status, "replaced"); assert.equal((await f.row(next.id)).status, "lost");
+  assert.equal((await f.row(abandoned.id)).revoke_reason, "nfc_abandoned"); assert.equal(await expiredAudits(f), 0);
+});
+
+pg("T08 foreign school scope: refused, no mutation", async f => {
+  const card = await f.issue(); await f.expire(card.id);
+  await assert.rejects(list(f, { scope: { schoolId: f.b, loginCode: "CD-NFC-26-002" } }));
+  const foreignPrincipal = { ...f.principal, enrollmentSchoolId: f.b };
+  await list(f, { principal: foreignPrincipal });
+  assert.equal((await f.row(card.id)).status, "issued"); assert.equal(await expiredAudits(f), 0);
+});
+
+pg("T09 read-only rights, no principal or NFC flag off: stored rows returned, no mutation", async f => {
+  const card = await f.issue(); await f.expire(card.id);
+  const reader = { ...f.principal, permissions: ["Élèves:READ"] };
+  assert.equal((await list(f, { principal: reader }))[0].status, "issued");
+  assert.equal((await list(f, { principal: null }))[0].status, "issued");
+  await f.pool.query("UPDATE school_settings SET student_card_nfc_enabled=FALSE WHERE school_id=$1", [f.a]);
+  assert.equal((await list(f))[0].status, "issued");
+  assert.equal((await f.row(card.id)).status, "issued"); assert.equal(await expiredAudits(f), 0);
+});
+
+pg("T10 audit insertion failure rolls the expiry back", async f => {
+  const card = await f.issue(); await f.expire(card.id);
+  await f.pool.query(`CREATE FUNCTION reject_expiry_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+    IF NEW.action='student_card_nfc_reservation_expired' THEN RAISE EXCEPTION 'audit failure injected'; END IF; RETURN NEW; END $$;
+    CREATE TRIGGER reject_expiry_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_expiry_audit();`);
+  await assert.rejects(list(f));
+  assert.equal((await f.row(card.id)).status, "issued"); assert.equal(await expiredAudits(f), 0);
+});
+
+pg("T12 end-to-end: list expires, then #952 recovery reactivates the same row without write", async f => {
+  const card = await f.issue(); await f.expire(card.id);
+  const [listed] = await list(f);
+  assert.equal(listed.status, "revoked");
+  const recovered = await recoverExpiredStudentCardNfc(f.repo, card.id,
+    { ...f.identity, studentId: f.students[0], cardToken: card.cardToken, operationId: randomUUID() }, f.principal, {}, f.scope);
+  assert.equal(recovered.id, card.id); assert.equal(recovered.status, "active"); assert.equal(recovered.nfc.state, "encoded");
+  assert.equal(await expiredAudits(f), 1); assert.equal(await f.countAudit("student_card_nfc_reservation_recovered"), 1);
+  assert.equal((await list(f))[0].status, "active"); assert.equal(await expiredAudits(f), 1);
 });

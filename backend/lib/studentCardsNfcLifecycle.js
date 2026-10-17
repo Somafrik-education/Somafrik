@@ -54,9 +54,11 @@ async function transaction(repo, principal, meta, scope, callback, nfcGate = tru
         oldValue, newValue, ipAddress: meta?.ipAddress, userAgent: meta?.userAgent,
       }, tx);
       async function expire(studentId) {
-        for (const card of await store.expirePendingNfc(scope.schoolId, studentId)) {
+        const expired = await store.expirePendingNfc(scope.schoolId, studentId);
+        for (const card of expired) {
           await audit("student_card_nfc_reservation_expired", card, { status: "issued" }, { status: "revoked" });
         }
+        return expired.length;
       }
       async function cardForUpdate(cardId) {
         const known = await store.getById(scope.schoolId, cardId);
@@ -72,6 +74,30 @@ async function transaction(repo, principal, meta, scope, callback, nfcGate = tru
   // Expiration is committed with its audit before returning the refusal.
   if (outcome?.error) throw outcome.error;
   return outcome;
+}
+
+// NFC-P0-RECOVERY-02 — a card list must show the state stored in PostgreSQL, so a
+// reservation past its deadline is expired by the canonical transition before the
+// read. Only an NFC manager of the authorised school commits it, NFC flags must be
+// on, and expiry is idempotent (conditional UPDATE under the student lock): a
+// concurrent read finds no row left and writes no audit. Never extends a deadline.
+async function materializeExpiredNfcReservations(repo, studentId, principal, meta, scope) {
+  if (typeof repo.withTransaction !== "function" || typeof repo.recordAudit !== "function" || typeof repo.query !== "function") return 0;
+  if (!principal || !scope?.schoolId || !studentId) return 0;
+  if (!principal.enrollmentSchoolId || principal.enrollmentSchoolId !== scope.schoolId) return 0;
+  if (!rbac.canAccess(principal, "POST /api/student-cards/:id/nfc-confirm")) return 0;
+  const probe = createStudentAccessCardsPgStore(repo);
+  if (!(await probe.hasExpiredPendingNfc(scope.schoolId, studentId))) return 0;
+  try {
+    return await transaction(repo, principal, meta, scope, async ({ store, expire }) => {
+      if (!(await store.lockStudent(scope.schoolId, studentId))) return 0;
+      return expire(studentId);
+    });
+  } catch (cause) {
+    // Flags off (or turned off meanwhile): no mutation, the list shows stored rows.
+    if (["STUDENT_CARD_NFC_DISABLED", "STUDENT_CARD_DISABLED"].includes(cause?.code)) return 0;
+    throw cause;
+  }
 }
 
 function replay(card) { return { ...mapCardListItem(card), idempotentReplay: true, tokenAvailable: false }; }
@@ -258,4 +284,4 @@ async function transitionStudentCardNfc(repo, cardId, principal, meta, scope, ta
   }, false);
 }
 
-module.exports = { reserveStudentCardNfc, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, transitionStudentCardNfc };
+module.exports = { reserveStudentCardNfc, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, transitionStudentCardNfc, materializeExpiredNfcReservations };

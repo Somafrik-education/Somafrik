@@ -3,7 +3,7 @@ import { Alert, AppState, Platform, Text, TouchableOpacity, View } from "react-n
 import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollmentApi";
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
-  createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure,
+  canRecoverExpiredNfcCard, createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure,
   type EnrollmentCard, type NfcEncoderHardware, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
@@ -121,9 +121,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     {cards?.map((card) => <View key={card.id} style={{ paddingVertical: 10 }}>
       <Text>Carte {card.publicId} — {statusLabels[card.status] || "État inconnu"}</Text>
       {card.nfc ? <Text>{card.nfc.tagType} · {stateLabels[card.nfc.state]}</Text> : null}
-      {canProgram && card.status === "revoked" &&
-        card.revokeReason === "nfc_reservation_expired" &&
-        card.nfc && !card.nfc.replacesCardId
+      {canProgram && cards && canRecoverExpiredNfcCard(card, cards)
         ? button("Récupérer cette carte NFC sans la réécrire", () => {
           Alert.alert("Vérifier la carte d’origine",
             "Cette opération lit la carte NFC et demande au serveur de restaurer uniquement son attribution expirée. Aucune donnée ne sera écrite sur la puce.",

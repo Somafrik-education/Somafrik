@@ -88,9 +88,30 @@ export function nfcErrorCopy(error: unknown): string {
     NFC_BUSY: "Une opération NFC est déjà en cours.",
     STUDENT_CARD_NFC_UID_EXISTS: "Cette carte physique est déjà affectée. Son UID reste dans l’historique.",
     NFC_RESPONSE_INVALID: "Réponse serveur incohérente. Relisez l’état de l’opération.",
+    NFC_RECOVERY_UNSUPPORTED_CHIP: "Diagnostic : puce non reconnue comme NTAG213 ou NTAG216. Aucune écriture effectuée.",
+    NFC_RECOVERY_UID_MISMATCH: "Diagnostic : cette puce n’est pas celle réservée pour cet élève (UID différent). Aucune écriture effectuée.",
+    NFC_RECOVERY_MODEL_MISMATCH: "Diagnostic : le modèle de puce lu ne correspond pas à la réservation. Aucune écriture effectuée.",
+    NFC_RECOVERY_EMPTY: "Diagnostic : la carte est vide, l’écriture n’a jamais abouti. Récupération sans écriture impossible. Aucune écriture effectuée.",
+    NFC_RECOVERY_FOREIGN_CONTENT: "Diagnostic : la carte contient des données qui ne sont pas Somafrik. Aucune écriture effectuée.",
+    NFC_RECOVERY_INVALID_CONTENT: "Diagnostic : contenu Somafrik incomplet ou invalide. Aucune activation, aucune écriture effectuée.",
+    NFC_RECOVERY_OTHER_CARD: "Diagnostic : la carte porte l’identifiant d’une autre carte Somafrik. Aucune activation, aucune écriture effectuée.",
+    STUDENT_CARD_NOT_FOUND: "Le contenu de la carte ne correspond pas à cette réservation. Aucune activation.",
+    STUDENT_CARD_NFC_MISMATCH: "La carte ou l’élève ne correspond pas à cette affectation. Aucune activation.",
+    STUDENT_CARD_ACTIVE_ALREADY_EXISTS: "Cet élève a déjà une carte active ou une réservation en cours. Aucune activation.",
   };
   if (error && typeof error === "object" && (("status" in error && error.status === 403) || ("statusCode" in error && error.statusCode === 403))) return copies.STUDENT_CARD_TENANT_DENIED;
   return copies[code] ?? "Résultat non confirmé. Vérifiez la connexion, relisez l’état puis reprenez l’opération existante.";
+}
+function codeOf(error: unknown): string {
+  return error && typeof error === "object" && "code" in error ? String(error.code) : "";
+}
+/** NFC-P0-RECOVERY-02 — recovery without write is offered only for a reservation the
+ * server expired (never lost, replaced, security-revoked or abandoned cards), never
+ * for a replacement, and only when the pupil has no active card or live reservation. */
+export function canRecoverExpiredNfcCard(card: EnrollmentCard, cards: EnrollmentCard[]): boolean {
+  if (card.status !== "revoked" || card.revokeReason !== "nfc_reservation_expired") return false;
+  if (!card.nfc || card.nfc.state !== "pending" || card.nfc.replacesCardId) return false;
+  return !cards.some((other) => other.id !== card.id && (other.status === "active" || (other.status === "issued" && other.nfc?.state === "pending")));
 }
 function requireIdentity(card: EnrollmentCard): NtagIdentity {
   if (card.status === "revoked" && card.revokeReason === "nfc_reservation_expired") throw nfcFailure("STUDENT_CARD_NFC_EXPIRED");
@@ -227,18 +248,24 @@ export function createIndividualNfcFlow(input: {
       control.phase("resume");
       const cards = await list();
       const current = cards.find((item) => item.id === card.id);
-      if (!current || current.publicId !== card.publicId ||
-          current.status !== "revoked" || current.revokeReason !== "nfc_reservation_expired" ||
-          !current.nfc || current.nfc.replacesCardId) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
-      const expected = {uid: current.nfc.uid, tagType: current.nfc.tagType};
+      if (!current || current.publicId !== card.publicId || !canRecoverExpiredNfcCard(current, cards)) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
+      const expected = { uid: current.nfc!.uid, tagType: current.nfc!.tagType };
       control.phase("waiting");
       try {
-        const observed = await checked(control, () => input.hardware.inspect());
-        if (observed.uid !== expected.uid || observed.tagType !== expected.tagType) throw nfcFailure("NFC_SAME_CARD");
+        // Read-only diagnosis: inspect, open and read. No write, format or lock command.
+        const observed = await checked(control, () => input.hardware.inspect()).catch((error) => {
+          throw codeOf(error) === "NFC_FOREIGN" ? nfcFailure("NFC_RECOVERY_UNSUPPORTED_CHIP") : error;
+        });
+        if (observed.uid !== expected.uid) throw nfcFailure("NFC_RECOVERY_UID_MISMATCH");
+        if (observed.tagType !== expected.tagType) throw nfcFailure("NFC_RECOVERY_MODEL_MISMATCH");
         await checked(control, () => input.hardware.openNdef(expected.uid));
-        const value = await checked(control, () => input.hardware.readText());
-        const token = cardTokenFromNdef(value);
-        if (token.split(".")[0] !== current.publicId) throw nfcFailure("NFC_FOREIGN");
+        const value = await checked(control, () => input.hardware.readText()).catch((error) => {
+          throw codeOf(error) === "NFC_FOREIGN" ? nfcFailure("NFC_RECOVERY_FOREIGN_CONTENT") : error;
+        });
+        if (!value) throw nfcFailure("NFC_RECOVERY_EMPTY");
+        let token: string;
+        try { token = cardTokenFromNdef(value); } catch { throw nfcFailure("NFC_RECOVERY_INVALID_CONTENT"); }
+        if (token.split(".")[0] !== current.publicId) throw nfcFailure("NFC_RECOVERY_OTHER_CARD");
         control.phase("confirmation");
         if (typeof input.api.recover !== "function") throw nfcFailure("NFC_RESPONSE_INVALID");
         const result = await checked(control, () => input.api.recover!(current, token, input.studentId, input.uuid()));
