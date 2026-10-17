@@ -13,6 +13,14 @@
 //      column list, and runs only when step 1 answered "same school".
 // The response for another school's card carries no status, date, holder or identifier.
 // No secret, token hash, NDEF content or full UID is read back, returned or audited.
+//
+// Physical observation (CTO review of #960): readOnly, NDEF state, publicId and model are
+// DECLARED BY THE ANDROID CLIENT. They are not hardware evidence verified by the server.
+// They only refine the advice shown to the operator (and can only make it more cautious:
+// a blocking observation removes actions, never adds one). The response and the audit
+// tag them `physicalSource: "client_declared"`. They must never, on their own, authorise
+// a write, a UID release or a reassignment; any future flow that changes an attribution
+// must re-read the card itself and re-check every server-side condition.
 
 const { createHttpError } = require("./classesManagement");
 const { RbacService } = require("../services/rbacService");
@@ -55,6 +63,11 @@ const PHYSICAL_MESSAGES = Object.freeze({
 
 // Physical states that forbid any recovery, whatever the database says.
 const BLOCKING_PHYSICAL = new Set(["SOMAFRIK_OTHER_CARD", "FOREIGN", "UNREADABLE", "READ_ONLY", "MODEL_MISMATCH"]);
+// The physical observation is advisory input from the Android client, never server proof.
+const PHYSICAL_SOURCE = "client_declared";
+// Every action points to an existing, separately authorised flow. None releases or reassigns.
+const ALLOWED_ACTIONS = Object.freeze(["program_new_card", "contact_owner_school", "resume_operation",
+  "open_holder_cards", "recover_without_rewrite", "reencode_for_holder", "declare_lost_and_replace", "cto_review"]);
 
 function error(code, message, status) { return createHttpError(status, message, code); }
 
@@ -252,12 +265,14 @@ async function diagnoseStudentCardNfc(repo, payload, principal, meta, scope) {
     action: "student_card_nfc_diagnosed", entityType: "student_access_card",
     entityId: result.sameSchool === true ? result.card.id : null,
     oldValue: null,
-    newValue: { uid: maskUid(observation.uid), tagType: observation.tagType, code: result.code, physical: result.physical },
+    newValue: { uid: maskUid(observation.uid), tagType: observation.tagType, code: result.code,
+      physical: result.physical, physicalSource: PHYSICAL_SOURCE },
     ipAddress: meta?.ipAddress, userAgent: meta?.userAgent,
   });
 
   return {
     ...result,
+    physicalSource: PHYSICAL_SOURCE,
     message: CODE_MESSAGES[result.code],
     physicalMessage: PHYSICAL_MESSAGES[result.physical],
   };
@@ -267,5 +282,5 @@ module.exports = {
   diagnoseStudentCardNfc,
   // Exported for tests and static isolation checks.
   lookupUidOwnership, readSchoolCard, readSchoolHolder, classify, physicalState, decide, maskUid,
-  CODE_MESSAGES, PHYSICAL_MESSAGES,
+  CODE_MESSAGES, PHYSICAL_MESSAGES, PHYSICAL_SOURCE, ALLOWED_ACTIONS, BLOCKING_PHYSICAL,
 };

@@ -670,7 +670,8 @@ async function main() {
     await pool.query('UPDATE school_settings SET student_card_nfc_enabled=TRUE WHERE school_id=$1',[schoolBId]);
     const cross=await diag(tokenB,{...diagBody,ndef:{state:'empty'}});
     assert.equal(cross.status,200,JSON.stringify(cross.data));
-    assert.deepEqual(Object.keys(cross.data).sort(),['actions','code','message','physical','physicalMessage','recoverable','sameSchool']);
+    assert.deepEqual(Object.keys(cross.data).sort(),['actions','code','message','physical','physicalMessage','physicalSource','recoverable','sameSchool']);
+    assert.equal(own.data.physicalSource,'client_declared');assert.equal(cross.data.physicalSource,'client_declared');
     assert.equal(cross.data.code,'OTHER_SCHOOL');assert.equal(cross.data.sameSchool,false);assert.deepEqual(cross.data.actions,['contact_owner_school']);
     const crossText=JSON.stringify(cross.data);
     for (const leak of [r2Issue.data.id,r2Student,'Blank','Fixture','active','revoked','04B0C1D2E3F405'])

@@ -159,6 +159,7 @@ pg("DIAG-01 every database state yields its code, reason and only existing recov
     assert.equal(result.sameSchool, true, c.label);
     assert.equal(result.physical, "BLANK", c.label);
     assert.ok(result.message && result.physicalMessage, c.label);
+    assert.equal(result.physicalSource, "client_declared", c.label);
     assert.equal(result.card.id, c.card.id, c.label);
   }
   // Unknown UID: not a uniqueness refusal.
@@ -189,7 +190,7 @@ pg("DIAG-03 another school's card: one boolean read, minimal answer, no detail q
   f.sqlLog.length = 0;
   for (const ndef of [{ state: "empty" }, { state: "somafrik", publicId: publicIdB }]) {
     const result = await f.diagnose({ uid: cardB.uid, tagType: cardB.tagType, ndef, readOnly: false });
-    assert.deepEqual(Object.keys(result).sort(), ["actions", "code", "message", "physical", "physicalMessage", "recoverable", "sameSchool"]);
+    assert.deepEqual(Object.keys(result).sort(), ["actions", "code", "message", "physical", "physicalMessage", "physicalSource", "recoverable", "sameSchool"]);
     assert.equal(result.code, "OTHER_SCHOOL"); assert.equal(result.sameSchool, false);
     assert.equal(result.recoverable, false); assert.deepEqual(result.actions, ndef.state === "empty" ? ["contact_owner_school"] : []);
     const text = JSON.stringify(result);
@@ -225,7 +226,8 @@ pg("DIAG-05 strictly read-only: no row, state or deadline changes; only one audi
   assert.deepEqual(await snapshot(), before, "diagnosis never materialises an expiry nor touches a row");
   const audits = await f.pool.query("SELECT action,entity_id,new_value FROM audit_logs WHERE action='student_card_nfc_diagnosed'");
   assert.equal(audits.rowCount, 1);
-  assert.deepEqual(audits.rows[0].new_value, { uid: `04••••••••${stale.uid.slice(-4)}`, tagType: "NTAG216", code: "EXPIRED_NOT_MATERIALISED", physical: "BLANK" });
+  assert.deepEqual(audits.rows[0].new_value, { uid: `04••••••••${stale.uid.slice(-4)}`, tagType: "NTAG216",
+    code: "EXPIRED_NOT_MATERIALISED", physical: "BLANK", physicalSource: "client_declared" });
   assert.equal(f.sqlLog.includes("SET TRANSACTION READ ONLY"), true);
 });
 
@@ -309,4 +311,36 @@ pg("DIAG-11 audit failure fails the request (no unaudited diagnosis)", async (f)
     IF NEW.action='student_card_nfc_diagnosed' THEN RAISE EXCEPTION 'audit failure injected'; END IF; RETURN NEW; END $$;
     CREATE TRIGGER reject_diag_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_diag_audit();`);
   await assert.rejects(f.diagnose(f.blank(card)), /audit failure injected/);
+});
+
+// DIAG-12 — runs without PostgreSQL: the client-declared observation can never authorise a write.
+test("DIAG-12 client-declared observation is advisory: no write SQL, no release/reassign action, blocking only removes", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const diagnosis = require("./studentCardsNfcDiagnosis");
+  const source = fs.readFileSync(path.join(__dirname, "studentCardsNfcDiagnosis.js"), "utf8");
+  // No data-changing SQL anywhere in the module (the audit goes through repo.recordAudit).
+  assert.doesNotMatch(source, /\b(INSERT|UPDATE|DELETE|MERGE|ALTER|DROP|TRUNCATE)\b\s/);
+  assert.doesNotMatch(source, /nfc_uid_released_at/);
+  assert.equal(diagnosis.PHYSICAL_SOURCE, "client_declared");
+  for (const action of diagnosis.ALLOWED_ACTIONS) assert.doesNotMatch(action, /release|reassign|transfer|free/i);
+  const codes = Object.keys(diagnosis.CODE_MESSAGES);
+  const physicals = Object.keys(diagnosis.PHYSICAL_MESSAGES);
+  for (const code of codes) {
+    const baseline = diagnosis.decide(code, "BLANK");
+    for (const physical of physicals) {
+      const outcome = diagnosis.decide(code, physical);
+      for (const action of outcome.actions) {
+        assert.ok(diagnosis.ALLOWED_ACTIONS.includes(action), `${code}/${physical}: ${action}`);
+      }
+      if (diagnosis.BLOCKING_PHYSICAL.has(physical)) {
+        // A declared blocking observation only ever removes actions and recoverability.
+        assert.deepEqual(outcome, { recoverable: false, actions: [] }, `${code}/${physical}`);
+      }
+    }
+    // Non-recoverable database states stay non-recoverable whatever the client declares.
+    if (!baseline.recoverable) {
+      for (const physical of physicals) assert.equal(diagnosis.decide(code, physical).recoverable, false, `${code}/${physical}`);
+    }
+  }
 });
