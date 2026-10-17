@@ -47,6 +47,7 @@ export interface NfcEnrollmentApi {
   replace(previous: EnrollmentCard, studentId: string, identity: NtagIdentity, operationId: string): Promise<IssuedNfcCard>;
   retry(card: EnrollmentCard, identity: NtagIdentity, operationId: string): Promise<IssuedNfcCard>;
   confirm(card: EnrollmentCard, token: string, locked: boolean, studentId: string): Promise<EnrollmentCard>;
+  recover(card: EnrollmentCard, token: string, studentId: string, operationId: string): Promise<EnrollmentCard>;
 }
 export type NfcPhase = "initial" | "reservation" | "waiting" | "writing" | "verification" | "confirmation" | "success" | "error" | "expired" | "resume";
 export const NFC_PHASE_COPY: Record<NfcPhase, string> = {
@@ -222,6 +223,30 @@ export function createIndividualNfcFlow(input: {
       if (observed.uid !== attempt.identity.uid || observed.tagType !== attempt.identity.tagType) throw nfcFailure("NFC_FOREIGN");
       return reserve();
     }); },
+    recover(card: EnrollmentCard) { return run(async () => {
+      control.phase("resume");
+      const cards = await list();
+      const current = cards.find((item) => item.id === card.id);
+      if (!current || current.publicId !== card.publicId ||
+          current.status !== "revoked" || current.revokeReason !== "nfc_reservation_expired" ||
+          !current.nfc || current.nfc.replacesCardId) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
+      const expected = {uid: current.nfc.uid, tagType: current.nfc.tagType};
+      control.phase("waiting");
+      try {
+        const observed = await checked(control, () => input.hardware.inspect());
+        if (observed.uid !== expected.uid || observed.tagType !== expected.tagType) throw nfcFailure("NFC_SAME_CARD");
+        await checked(control, () => input.hardware.openNdef(expected.uid));
+        const value = await checked(control, () => input.hardware.readText());
+        const token = cardTokenFromNdef(value);
+        if (token.split(".")[0] !== current.publicId) throw nfcFailure("NFC_FOREIGN");
+        control.phase("confirmation");
+        const result = await checked(control, () => input.api.recover(current, token, input.studentId, input.uuid()));
+        if (result.id !== current.id || result.publicId !== current.publicId || result.status !== "active" ||
+            result.nfc?.uid !== expected.uid || result.nfc?.tagType !== expected.tagType ||
+            !["encoded", "locked"].includes(result.nfc.state)) throw nfcFailure("NFC_RESPONSE_INVALID");
+        return result;
+      } finally { await input.hardware.close(); }
+    }); },
     rewrite(card: EnrollmentCard, consent: boolean) { return run(async () => {
       if (consent !== true) throw nfcFailure("NFC_REWRITE_REQUIRED");
       const current = await fresh(card); const identity = requireIdentity(current);
@@ -253,6 +278,11 @@ export function createNfcEnrollmentApi(request: <T>(path: string, options?: { me
     issue(studentId, identity, operationId) { return post("/student-cards", { studentId, medium: "nfc", nfc: identity, operationId }); },
     replace(previous, studentId, identity, operationId) { return post(`/student-cards/${encodeURIComponent(previous.id)}/replace`, { studentId, medium: "nfc", nfc: identity, operationId }); },
     retry(card, identity, operationId) { return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-retry`, { ...identity, operationId }); },
+    recover(card, cardToken, studentId, operationId) {
+      if (!card.nfc) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
+      return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-recover`,
+        { uid: card.nfc.uid, tagType: card.nfc.tagType, cardToken, studentId, operationId });
+    },
     confirm(card, cardToken, locked, studentId) {
       if (!card.nfc) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
       return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-confirm`, { uid: card.nfc.uid, tagType: card.nfc.tagType, cardToken, locked, studentId, operationId: card.nfc.operationId });
