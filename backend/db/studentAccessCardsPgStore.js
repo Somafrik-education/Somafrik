@@ -321,6 +321,22 @@ function createStudentAccessCardsPgStore(repo) {
     );
   }
 
+  // Re-activate the SAME UID row only. A lock is held by lifecycle transaction.
+  async function recoverExpiredNfc(schoolId, cardId, uid, tagType, tokenHash) {
+    return one(
+      `UPDATE student_access_cards
+          SET status = 'active', nfc_encoding_state = 'encoded',
+              nfc_encoded_at = clock_timestamp(), revoked_at = NULL,
+              revoke_reason = NULL, updated_at = clock_timestamp()
+        WHERE id = $1 AND school_id = $2 AND nfc_uid = $3
+          AND nfc_tag_type = $4 AND token_hash = $5
+          AND status = 'revoked' AND revoke_reason = 'nfc_reservation_expired'
+          AND nfc_encoded_at IS NULL AND nfc_replaces_card_id IS NULL
+        RETURNING *`,
+      [cardId, schoolId, uid, tagType, tokenHash],
+    );
+  }
+
   async function lockStudent(schoolId, studentId) {
     return one("SELECT id FROM students WHERE school_id = $1 AND id = $2 FOR NO KEY UPDATE", [schoolId, studentId]);
   }
@@ -357,6 +373,7 @@ function createStudentAccessCardsPgStore(repo) {
     lockStudent, lockCard, findNfcOperation, findPendingNfc, expirePendingNfc, queryReplacementPrevious,
     rotatePendingNfc,
     confirmNfc,
+    recoverExpiredNfc,
     findStudentInSchool,
     findByPublicIdInSchool,
     findScanStudent,

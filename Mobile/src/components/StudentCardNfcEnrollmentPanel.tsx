@@ -121,6 +121,14 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     {cards?.map((card) => <View key={card.id} style={{ paddingVertical: 10 }}>
       <Text>Carte {card.publicId} — {statusLabels[card.status] || "État inconnu"}</Text>
       {card.nfc ? <Text>{card.nfc.tagType} · {stateLabels[card.nfc.state]}</Text> : null}
+      {canProgram && card.status === "revoked" &&
+        card.revokeReason === "nfc_reservation_expired" &&
+        card.nfc && !card.nfc.replacesCardId
+        ? button("Récupérer cette carte NFC sans la réécrire", () => {
+          Alert.alert("Vérifier la carte d’origine",
+            "Cette opération lit la carte NFC et demande au serveur de restaurer uniquement son attribution expirée. Aucune donnée ne sera écrite sur la puce.",
+            [{text:"Annuler",style:"cancel"},{text:"Lire et récupérer",onPress:() => void run(controller => controller.recover(card))}]);
+        }) : null}
       {card.status === "issued" && card.nfc ? <>
         <Text>Réservation non active. Expiration : {card.nfc.expiresAt ? new Date(card.nfc.expiresAt).toLocaleString() : "indisponible"}.</Text>
         {card.nfc.replacesCardId ? <Text>Remplacement préparé : l’ancienne carte reste utilisable jusqu’à confirmation.</Text> : null}
