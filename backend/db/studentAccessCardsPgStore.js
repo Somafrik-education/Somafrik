@@ -321,6 +321,22 @@ function createStudentAccessCardsPgStore(repo) {
     );
   }
 
+  // Re-activate the SAME UID row only. A lock is held by lifecycle transaction.
+  async function recoverExpiredNfc(schoolId, cardId, uid, tagType, tokenHash) {
+    return one(
+      `UPDATE student_access_cards
+          SET status = 'active', nfc_encoding_state = 'encoded',
+              nfc_encoded_at = clock_timestamp(), revoked_at = NULL,
+              revoke_reason = NULL, updated_at = clock_timestamp()
+        WHERE id = $1 AND school_id = $2 AND nfc_uid = $3
+          AND nfc_tag_type = $4 AND token_hash = $5
+          AND status = 'revoked' AND revoke_reason = 'nfc_reservation_expired'
+          AND nfc_encoded_at IS NULL AND nfc_replaces_card_id IS NULL
+        RETURNING *`,
+      [cardId, schoolId, uid, tagType, tokenHash],
+    );
+  }
+
   async function lockStudent(schoolId, studentId) {
     return one("SELECT id FROM students WHERE school_id = $1 AND id = $2 FOR NO KEY UPDATE", [schoolId, studentId]);
   }
@@ -340,6 +356,13 @@ function createStudentAccessCardsPgStore(repo) {
       AND status = 'issued' AND nfc_encoding_state = 'pending'`, [schoolId, studentId]);
   }
 
+  // Read-only probe: avoids opening a write transaction on every card list.
+  async function hasExpiredPendingNfc(schoolId, studentId) {
+    return Boolean(await one(`SELECT 1 AS stale FROM student_access_cards WHERE school_id = $1 AND student_id = $2
+      AND status = 'issued' AND nfc_encoding_state = 'pending'
+      AND nfc_reservation_expires_at <= clock_timestamp() LIMIT 1`, [schoolId, studentId]));
+  }
+
   async function expirePendingNfc(schoolId, studentId) {
     return all(`UPDATE student_access_cards SET status = 'revoked', revoked_at = clock_timestamp(),
       revoke_reason = 'nfc_reservation_expired', updated_at = clock_timestamp()
@@ -354,9 +377,10 @@ function createStudentAccessCardsPgStore(repo) {
   }
 
   return {
-    lockStudent, lockCard, findNfcOperation, findPendingNfc, expirePendingNfc, queryReplacementPrevious,
+    lockStudent, lockCard, findNfcOperation, findPendingNfc, hasExpiredPendingNfc, expirePendingNfc, queryReplacementPrevious,
     rotatePendingNfc,
     confirmNfc,
+    recoverExpiredNfc,
     findStudentInSchool,
     findByPublicIdInSchool,
     findScanStudent,

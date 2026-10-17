@@ -2254,7 +2254,7 @@ app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/stud
   requireStudentCardsPg();
   const { listStudentCards } = require("./lib/studentAccessCardsManagement");
   const principal = await enrollmentHttpPrincipal(req);
-  const cards = await listStudentCards(repository, req.params.id, studentCardsHttpScope(principal));
+  const cards = await listStudentCards(repository, req.params.id, studentCardsHttpScope(principal), principal, auditMetaFromRequest(req));
   const { readNfcEnabled } = require("./lib/studentCardsNfcEncoding");
   res.json({ cards, nfcEnabled: await readNfcEnabled(repository, studentCardsHttpScope(principal).schoolId) });
 }));
@@ -2281,6 +2281,16 @@ app.post("/api/student-cards/:id/nfc-retry", requireAuth, requirePermission("POS
   const { retryStudentCardNfc } = require("./lib/studentCardsNfcEncoding");
   const principal = await enrollmentHttpPrincipal(req);
   res.json(await retryStudentCardNfc(repository, req.params.id, req.body ?? {}, principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+// Same permissions as NFC confirmation; never logs or echoes the capability.
+app.post("/api/student-cards/:id/nfc-recover", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-confirm"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { recoverExpiredStudentCardNfc } = require("./lib/studentCardsNfcEncoding");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await recoverExpiredStudentCardNfc(repository, req.params.id, req.body ?? {},
+    principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
 }));
 
 app.post("/api/student-cards/:id/nfc-confirm", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-confirm"), asyncHandler(async (req, res) => {
