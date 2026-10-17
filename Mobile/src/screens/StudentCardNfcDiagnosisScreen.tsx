@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
+import { canReadRoute } from "../domain/security/permissions";
 import { canDiagnoseNfc, visibleDiagnosisHolder, type DiagnosisResult } from "../lib/studentCardNfcDiagnosis";
 import { createNfcDiagnosisReader } from "../lib/studentCardNfcDiagnosisNative";
 import { diagnoseStudentNfcCard } from "../services/studentCardNfcDiagnosisApi";
 
-type Row = { key: number; code: string; message: string; student?: string; klass?: string; physical: string };
+type Row = { key: number; code: string; message: string; student?: string; studentId?: string; klass?: string; physical: string };
 /** R3-2 read-only field inventory: volatile local results, no UID/token storage or sharing. */
-export default function StudentCardNfcDiagnosisScreen() {
+export default function StudentCardNfcDiagnosisScreen({ navigation }: any) {
   const { session } = useAuth();
   const permitted = canDiagnoseNfc(session);
   const readerRef = useRef<ReturnType<typeof createNfcDiagnosisReader> | null>(null);
   const generation = useRef(0);
+  // UID deduplication lives only in volatile memory and is cleared when leaving the screen.
+  const scannedUids = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState("Présentez une carte NTAG213/216. Deux lectures de la même carte seront demandées.");
@@ -31,6 +34,7 @@ export default function StudentCardNfcDiagnosisScreen() {
       subscription.remove();
       void readerRef.current?.close();
       readerRef.current = null;
+      scannedUids.current.clear();
     };
   }, []);
 
@@ -44,15 +48,21 @@ export default function StudentCardNfcDiagnosisScreen() {
     try {
       const physical = await reader.inspect();
       if (current !== generation.current) return;
+      if (scannedUids.current.has(physical.uid)) {
+        setError("Cette carte a déjà été diagnostiquée pendant cette session. Présentez une autre carte.");
+        return;
+      }
       setProgress("Interrogation sécurisée de l’établissement…");
       const result: DiagnosisResult = await diagnoseStudentNfcCard(physical);
       if (current !== generation.current) return;
       const holder = visibleDiagnosisHolder(result);
-      // Intentionally never stores physical.uid, full NDEF, token, or any other school's PII.
+      scannedUids.current.add(physical.uid);
+      // UID deduplication is volatile only; NDEF secrets are never stored.
       setRows(previous => previous.concat([{
         key: previous.length + 1, code: result.code, message: result.message,
         physical: result.physicalMessage,
         student: holder ? [holder.firstName, holder.lastName, holder.studentCode].filter(Boolean).join(" · ") : undefined,
+        studentId: result.code === "R2_ELIGIBLE" && holder ? holder.id : undefined,
         klass: holder?.className || holder?.classCode || undefined,
       }]).slice(0, 8));
       setProgress("Diagnostic terminé. Passez à la carte suivante.");
@@ -82,8 +92,13 @@ export default function StudentCardNfcDiagnosisScreen() {
       <Text>{row.message}</Text><Text>{row.physical}</Text>
       {row.student ? <Text style={styles.owner}>Élève : {row.student}</Text> : null}
       {row.klass ? <Text>Classe : {row.klass}</Text> : null}
+      {row.studentId && canReadRoute(session, "StudentDetail") ? (
+        <TouchableOpacity accessibilityRole="button" onPress={() => navigation.navigate("StudentDetail", { studentId: row.studentId })}>
+          <Text style={styles.reset}>Ouvrir la fiche de cet élève (récupération R2)</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>)}
-    {rows.length ? <TouchableOpacity accessibilityRole="button" onPress={() => { generation.current++; void readerRef.current?.close(); setRows([]); setError(""); setProgress("Inventaire local effacé. Aucun état serveur n’a été modifié."); }}>
+    {rows.length ? <TouchableOpacity accessibilityRole="button" onPress={() => { generation.current++; void readerRef.current?.close(); scannedUids.current.clear(); setRows([]); setError(""); setProgress("Inventaire local effacé. Aucun état serveur n’a été modifié."); }}>
       <Text style={styles.reset}>Effacer les résultats locaux</Text>
     </TouchableOpacity> : null}
   </ScrollView>;
