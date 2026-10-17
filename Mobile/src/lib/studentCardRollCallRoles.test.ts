@@ -113,7 +113,10 @@ test("écran Appel : parcours affichés selon le rôle canonique, sans enseignan
   const screen = readFileSync(new URL("../screens/TeacherAttendanceScreen.tsx", import.meta.url), "utf8");
   const modal = readFileSync(new URL("../components/StudentCardRollCallModal.tsx", import.meta.url), "utf8");
   assert.match(screen, /rollCallActor\(session\)/);
-  assert.match(screen, /actor\.teacher && nfcControl === "ready"/);
+  // CARTE-PR3-M2 : l'enseignant affecté fait l'appel complet nominatif (carte NFC ou QR requise).
+  assert.match(screen, /actor\.teacher && \(nfcControl === "ready" \|\| canOpenQrScanner\)/);
+  assert.match(screen, /attendance-class-roll-call/);
+  assert.match(screen, /StudentCardClassRollCallModal/);
   assert.match(screen, /actor\.direction/);
   assert.match(screen, /attendance-roll-call-direction-nfc/);
   assert.match(screen, /StudentCardRollCallOverview/);
