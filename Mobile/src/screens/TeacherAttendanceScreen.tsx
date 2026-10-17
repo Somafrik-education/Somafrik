@@ -21,6 +21,8 @@ import {
 import { startRollCallSession } from "../lib/studentCardRollCallSession";
 import { getStudentCardCapabilities } from "../services/studentCardScanApi";
 import StudentCardVerifyModal from "../components/StudentCardVerifyModal";
+import StudentCardEntryControlModal from "../components/StudentCardEntryControlModal";
+import { ENTRY_CONTROL_COPY, entryControlActor, entryControlMedia } from "../lib/studentCardEntryControl";
 import { CARD_VERIFY_COPY } from "../lib/studentCardVerify";
 import {
   STUDENT_CARD_SCAN_COPY,
@@ -186,6 +188,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [cardCapabilitiesStatus, setCardCapabilitiesStatus] = useState<"loading" | "ready" | "error">("loading");
   const [cardCapabilitiesFailure, setCardCapabilitiesFailure] = useState<"permission" | "technical" | null>(null);
   const [capabilitiesReload, setCapabilitiesReload] = useState(0);
+  const [entryControlOpen, setEntryControlOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [nfcScannerOpen, setNfcScannerOpen] = useState(false);
   // CARTE-PR1 : brouillons d'appel collectif en mémoire seulement, un par établissement / classe / date.
@@ -418,6 +421,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
   // CARTE-UX-ROLE-01 : parcours selon les clés de rôle canoniques ; le serveur attribue l'auteur.
   const actor = rollCallActor(session);
+  // CARTE-PR3-M1 : contrôle d'entrée au portail, sans choix de classe (clé admissible + permission effective).
+  const entryActor = entryControlActor(session);
+  const entryMedia = entryControlMedia({ settings: visibleCardSettings, platformOs: Platform.OS });
+  const canOpenEntryControl = entryActor && (entryMedia.nfc || entryMedia.qr);
   const rollCallSchoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "");
   const rollCallKeyFor = (mode: RollCallMode) =>
     selectedClass
@@ -809,10 +816,24 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
   if (!selectedClass) {
     return (
+      <>
       <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
         <StudentsScopeAlert />
         <Text style={styles.title}>Présences</Text>
         <Text style={styles.subtitle}>Sélectionnez une classe • {todayLabel} à {currentHour}</Text>
+        {canOpenEntryControl ? (
+          <TouchableOpacity
+            testID="attendance-entry-control"
+            style={styles.scanButton}
+            onPress={() => setEntryControlOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={ENTRY_CONTROL_COPY.button}
+            accessibilityHint={ENTRY_CONTROL_COPY.subtitle}
+          >
+            <Ionicons name="enter-outline" size={18} color="#0F172A" />
+            <Text style={styles.scanButtonText}>{ENTRY_CONTROL_COPY.button}</Text>
+          </TouchableOpacity>
+        ) : null}
         {nfcStatus}
         <Text style={styles.sectionTitle}>Mes classes</Text>
         <View testID="attendance-class-list" style={isTablet ? styles.classGridTablet : undefined}>
@@ -851,6 +872,14 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
           })}
         </View>
       </ScrollView>
+      {canOpenEntryControl ? (
+        <StudentCardEntryControlModal
+          visible={entryControlOpen}
+          media={entryMedia}
+          onClose={() => setEntryControlOpen(false)}
+        />
+      ) : null}
+      </>
     );
   }
 
