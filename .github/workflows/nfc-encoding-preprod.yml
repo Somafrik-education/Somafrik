@@ -88,6 +88,7 @@ jobs:
           node backend/lib/studentCardEntry.http.pg.test.js
           npm --prefix Mobile run test:student-card-nfc-integration
           npm --prefix Mobile run test:student-card-class-roll-call-integration
+          npm --prefix Mobile run test:student-card-entry-control-integration
       - name: Upload sanitized integration performance measurements
         uses: actions/upload-artifact@v4
         with:
@@ -117,6 +118,7 @@ jobs:
           npm --prefix Mobile run verify:student-card-qr
           npm --prefix Mobile run typecheck
           npm --prefix Mobile run verify:mobile-security
+          (cd Mobile && npx --yes tsx --test src/lib/studentCardEntryControl.test.ts src/lib/studentCardEntryControlNavigation.test.ts src/lib/roleNavigationPreferences.test.ts)
           (cd Mobile && npx --yes tsx --test src/lib/studentCardVerify.test.ts src/lib/studentCardRollCall.test.ts src/lib/studentCardRollCallRoles.test.ts src/lib/studentCardClassRollCall.test.ts)
           (cd Mobile && npx --yes tsx --test src/lib/studentCardNfcReaderMode.test.ts src/lib/nfcSession.test.ts)
 
