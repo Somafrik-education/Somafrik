@@ -3,6 +3,7 @@ import type { AdminEntity } from "../context/AdminDataContext";
 import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { entryControlActor } from "../lib/studentCardEntryControl";
+import { canDiagnoseNfc } from "../lib/studentCardNfcDiagnosis";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
 
 export type DrawerSectionId = "quotidien" | "admin" | "outils";
@@ -51,6 +52,7 @@ const I = {
   studentPayments: { label: "Paiements", icon: "card-outline" as const, route: "StudentPayments", view: "StudentPayments" },
   mobilePayment: { label: "Paiements", icon: "phone-portrait-outline" as const, route: "MobilePayment", view: "MobilePayment" },
   attendance: { label: "Présences", icon: "checkbox-outline" as const, route: "TeacherAttendance", view: "TeacherAttendance" },
+  nfcDiagnosis: { label: "Diagnostic NFC", icon: "scan-outline" as const, route: "NfcDiagnosis", view: "NfcDiagnosis" },
   entryControl: { label: "Contrôle d’entrée", icon: "enter-outline" as const, route: "EntryControl", view: "EntryControl" },
   studentNotes: { label: "Notes", icon: "book-outline" as const, route: "StudentNotes", view: "StudentNotes" },
   studentPresences: { label: "Présences", icon: "calendar-outline" as const, route: "StudentPresences", view: "StudentPresences" },
@@ -76,6 +78,7 @@ const platformItems: RoleDrawerItem[] = [
 ];
 
 const schoolAdminItems: RoleDrawerItem[] = [
+  quotidien(I.nfcDiagnosis),
   quotidien(I.schooling),
   quotidien(I.students),
   quotidien(I.classes),
@@ -304,6 +307,7 @@ export function getRoleDrawerCatalog(role?: string): RoleDrawerItem[] {
 
 export function isRoleDrawerItemAllowed(session: any, item: RoleDrawerItem): boolean {
   if (item.route === "EntryControl") return entryControlActor(session);
+  if (item.route === "NfcDiagnosis") return canDiagnoseNfc(session);
   if (item.route === "Messages" || item.view === "Messages") {
     return canAccessMessagesRoute(session);
   }
