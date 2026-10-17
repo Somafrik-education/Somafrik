@@ -404,7 +404,7 @@ pg("P0 recovery: wrong secret, student and UID cannot revive expired card", asyn
   await f.expire(card.id);
   await assert.rejects(f.confirm(card), {code: "STUDENT_CARD_NFC_EXPIRED"});
   const input = {...f.identity, studentId: f.students[0], cardToken: card.cardToken, operationId: randomUUID()};
-  await assert.rejects(recoverExpiredStudentCardNfc(f.repo,card.id,{...input,cardToken:card.cardToken.slice(0,-1)+"Z"},f.principal,{},f.scope), {code:"STUDENT_CARD_NOT_FOUND"});
+  await assert.rejects(recoverExpiredStudentCardNfc(f.repo,card.id,{...input,cardToken:card.cardToken.slice(0,-1)+(card.cardToken.endsWith("Z") ? "A" : "Z")},f.principal,{},f.scope), {code:"STUDENT_CARD_NOT_FOUND"});
   await assert.rejects(recoverExpiredStudentCardNfc(f.repo,card.id,{...input,studentId:f.students[1]},f.principal,{},f.scope), {code:"STUDENT_CARD_NFC_MISMATCH"});
   await assert.rejects(recoverExpiredStudentCardNfc(f.repo,card.id,{...input,uid:"04778899001122"},f.principal,{},f.scope), {code:"STUDENT_CARD_NFC_MISMATCH"});
   assert.equal((await f.row(card.id)).status,"revoked");
