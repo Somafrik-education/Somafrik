@@ -8,6 +8,7 @@ on:
       - "backend/**student*Card*"
       - "backend/db/migrations/20261012_student_cards_nfc_encoding.sql"
       - "backend/db/migrations/20261013_student_cards_nfc_reservations.sql"
+      - "backend/db/migrations/20261017_student_cards_nfc_recovery.sql"
       - "backend/db/migrations/20261016_school_entry_events.sql"
       - "backend/db/schoolEntryEventsSchema.js"
       - "backend/lib/liveSchoolRoleKeys.js"

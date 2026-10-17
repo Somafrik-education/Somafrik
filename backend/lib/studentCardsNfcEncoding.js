@@ -34,4 +34,10 @@ function confirmStudentCardNfc(...args) {
 function retryStudentCardNfc(...args) {
   return require("./studentCardsNfcLifecycle").retryStudentCardNfc(...args);
 }
-module.exports = { normalizeNfcIdentity, readNfcEnabled, assertNfcEnabled, confirmStudentCardNfc, retryStudentCardNfc };
+function recoverExpiredStudentCardNfc(...args) {
+  return require("./studentCardsNfcLifecycle").recoverExpiredStudentCardNfc(...args);
+}
+function reopenExpiredStudentCardNfc(...args) {
+  return require("./studentCardsNfcLifecycle").reopenExpiredStudentCardNfc(...args);
+}
+module.exports = { normalizeNfcIdentity, readNfcEnabled, assertNfcEnabled, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, reopenExpiredStudentCardNfc };

@@ -314,6 +314,11 @@ const STUDENT_CARD_PR7_EXACT = new Set([
   "backend/db/studentCardsNfcSchema.js",
   "backend/db/studentCardsNfcReservationsSchema.js",
   "backend/db/migrations/20261013_student_cards_nfc_reservations.sql",
+  // NFC-P0-R2 — additive recovery metadata (same canonical table) and the NFC lock/write guard.
+  "backend/db/studentCardsNfcRecoverySchema.js",
+  "backend/db/migrations/20261017_student_cards_nfc_recovery.sql",
+  "Mobile/scripts/verify-nfc-no-permanent-lock.py",
+  "Mobile/scripts/verify-nfc-no-permanent-lock_test.py",
   "docs/mobile/NFC-PROG-02-REVIEW.md",
   "docs/mobile/NFC-PROG-03-REVIEW.md",
   "docs/mobile/NFC-PROG-03-UUID-REVIEW.md",
