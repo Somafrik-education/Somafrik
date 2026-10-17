@@ -10,13 +10,14 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGETS = (ROOT / "Mobile" / "src", ROOT / "Mobile" / "plugins")
+ENTRYPOINTS = (ROOT / "Mobile" / "App.tsx",)
 SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".java", ".kt"}
 SKIP = re.compile(r"(?:\.test|\.spec)\.[cm]?[jt]sx?$")
 DENIED = (
     ("irreversible_NDEF_lock", re.compile(r"\bmakeReadOnly\s*\(")),
     ("formatting", re.compile(r"\bformatNdef\s*\(")),
-    ("NFC_A_WRITE_command", re.compile(r"\btransceive\s*\(\s*(?:\[\s*0xA2\b|Uint8Array\.of\s*\(\s*0xA2\b)", re.I)),
-    ("NFC_A_PWD_AUTH_command", re.compile(r"\btransceive\s*\(\s*(?:\[\s*0x1B\b|Uint8Array\.of\s*\(\s*0x1B\b)", re.I)),
+    ("NFC_A_WRITE_command", re.compile(r"\btransceive\s*\(\s*(?:\[\s*(?:0xA2|162)\b|Uint8Array\.of\s*\(\s*(?:0xA2|162)\b)", re.I)),
+    ("NFC_A_PWD_AUTH_command", re.compile(r"\btransceive\s*\(\s*(?:\[\s*(?:0x1B|27)\b|Uint8Array\.of\s*\(\s*(?:0x1B|27)\b)", re.I)),
 )
 def main() -> int:
     paths = []
@@ -25,6 +26,11 @@ def main() -> int:
             print(f"FAIL: NFC guard directory missing: {root}", file=sys.stderr)
             return 2
         paths += [p for p in root.rglob("*") if p.is_file() and p.suffix in SUFFIXES and not SKIP.search(p.name)]
+    for path in ENTRYPOINTS:
+        if not path.is_file():
+            print(f"FAIL: NFC guard entrypoint missing: {path}", file=sys.stderr)
+            return 2
+        paths.append(path)
     if not paths:
         print("FAIL: no Mobile implementation files scanned", file=sys.stderr)
         return 2
