@@ -78,8 +78,8 @@ const platformItems: RoleDrawerItem[] = [
 ];
 
 const schoolAdminItems: RoleDrawerItem[] = [
-  quotidien(I.nfcDiagnosis),
   quotidien(I.schooling),
+  quotidien(I.nfcDiagnosis),
   quotidien(I.students),
   quotidien(I.classes),
   quotidien(I.attendance),
