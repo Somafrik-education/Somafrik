@@ -51,6 +51,41 @@ export function validateRollCall(
   });
 }
 
+/**
+ * CARTE-PR3-M2 — liste d'appel de l'enseignant affecté (lecture seule côté serveur) :
+ * élèves inscrits, statut existant et clé de rapprochement propre à la session.
+ */
+export function getClassRollCallRoster(input: { sessionId: string; classId: string; date: string }) {
+  const query = new URLSearchParams({ sessionId: input.sessionId, classId: input.classId, date: input.date });
+  return httpRequest<unknown>(`/student-cards/roll-call/roster?${query.toString()}`, { method: "GET" });
+}
+
+export type ClassRollCallValidateResponse = {
+  counts?: unknown;
+  protected?: unknown;
+  idempotentReplay?: unknown;
+};
+
+/** CARTE-PR3-M2 — validation de l'appel complet confirmé (`complete: true`), idempotente par session. */
+export function validateCompleteClassRollCall(
+  body: {
+    sessionId: string;
+    classId: string;
+    date: string;
+    mode: "teacher";
+    receipts: string[];
+    manual: { studentId: string; status: "present" | "late" | "absent" }[];
+    complete: true;
+  },
+  options: { idempotencyKey: string },
+) {
+  return httpRequest<ClassRollCallValidateResponse>("/student-cards/roll-call/validate", {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotencyKey: options.idempotencyKey,
+  });
+}
+
 /** CARTE-UX-ROLE-01 — supervision de direction : compteurs par classe, aucune donnée d'élève. */
 export function getRollCallOverview(date: string) {
   return httpRequest<unknown>(`/student-cards/roll-call/overview?date=${encodeURIComponent(date)}`, { method: "GET" });

@@ -10,6 +10,8 @@ import { canManagePresences, canReadFeeGrids, canReadRoute } from "../domain/sec
 import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
 import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal";
 import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
+import StudentCardClassRollCallModal from "../components/StudentCardClassRollCallModal";
+import { CLASS_ROLL_CALL_COPY, type ClassRollCallDraft } from "../lib/studentCardClassRollCall";
 import StudentCardRollCallOverview from "../components/StudentCardRollCallOverview";
 import { rollCallActor } from "../lib/studentCardRollCallRoles";
 import {
@@ -18,9 +20,11 @@ import {
   type RollCallDraft,
   type RollCallMode,
 } from "../lib/studentCardRollCall";
-import { startRollCallSession } from "../lib/studentCardRollCallSession";
+import { startClassRollCallContext, startRollCallSession } from "../lib/studentCardRollCallSession";
 import { getStudentCardCapabilities } from "../services/studentCardScanApi";
 import StudentCardVerifyModal from "../components/StudentCardVerifyModal";
+import StudentCardEntryControlModal from "../components/StudentCardEntryControlModal";
+import { ENTRY_CONTROL_COPY, entryControlActor, entryControlMedia } from "../lib/studentCardEntryControl";
 import { CARD_VERIFY_COPY } from "../lib/studentCardVerify";
 import {
   STUDENT_CARD_SCAN_COPY,
@@ -186,11 +190,17 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [cardCapabilitiesStatus, setCardCapabilitiesStatus] = useState<"loading" | "ready" | "error">("loading");
   const [cardCapabilitiesFailure, setCardCapabilitiesFailure] = useState<"permission" | "technical" | null>(null);
   const [capabilitiesReload, setCapabilitiesReload] = useState(0);
+  const [entryControlOpen, setEntryControlOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [nfcScannerOpen, setNfcScannerOpen] = useState(false);
   // CARTE-PR1 : brouillons d'appel collectif en mémoire seulement, un par établissement / classe / date.
   const [rollCallDrafts, setRollCallDrafts] = useState<Record<string, { draft: RollCallDraft; source: "nfc" | "qr" }>>({});
   const [rollCallOpen, setRollCallOpen] = useState(false);
+  // CARTE-PR3-M2 : appel de classe complet (enseignant), brouillon en mémoire par classe et date.
+  const [classRollCalls, setClassRollCalls] = useState<
+    Record<string, { context: { scopeKey: string; sessionId: string; classId: string; date: string }; draft: ClassRollCallDraft | null }>
+  >({});
+  const [classRollCallKey, setClassRollCallKey] = useState("");
   const [openedRollCallKey, setOpenedRollCallKey] = useState("");
   const capabilitiesScopeKey = [
     resourceScopeKey,
@@ -418,6 +428,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
   // CARTE-UX-ROLE-01 : parcours selon les clés de rôle canoniques ; le serveur attribue l'auteur.
   const actor = rollCallActor(session);
+  // CARTE-PR3-M1 : contrôle d'entrée au portail, sans choix de classe (clé admissible + permission effective).
+  const entryActor = entryControlActor(session);
+  const entryMedia = entryControlMedia({ settings: visibleCardSettings, platformOs: Platform.OS });
+  const canOpenEntryControl = entryActor && (entryMedia.nfc || entryMedia.qr);
   const rollCallSchoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "");
   const rollCallKeyFor = (mode: RollCallMode) =>
     selectedClass
@@ -429,7 +443,27 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
           mode,
         })
       : "";
-  const teacherRollCall = actor.teacher ? rollCallDrafts[rollCallKeyFor("teacher")] : undefined;
+  const classRollCall = actor.teacher ? classRollCalls[rollCallKeyFor("teacher")] : undefined;
+  const openedClassRollCall = classRollCallKey ? classRollCalls[classRollCallKey] : undefined;
+  const openClassRollCall = () => {
+    const key = rollCallKeyFor("teacher");
+    if (!selectedClass?.classId || !key || !actor.teacher) return;
+    if (!classRollCalls[key]) {
+      const context = startClassRollCallContext({ scopeKey: key, classId: String(selectedClass.classId), date: isoAttendanceDate() });
+      setClassRollCalls((current) => ({ ...current, [key]: { context, draft: null } }));
+    }
+    setScannerOpen(false);
+    setNfcScannerOpen(false);
+    setClassRollCallKey(key);
+  };
+  const dropClassRollCall = (key: string) => {
+    setClassRollCallKey("");
+    setClassRollCalls((current) => {
+      const copy = { ...current };
+      delete copy[key];
+      return copy;
+    });
+  };
   const directionRollCall = actor.direction ? rollCallDrafts[rollCallKeyFor("direction")] : undefined;
   const rollCall = openedRollCallKey ? rollCallDrafts[openedRollCallKey] : undefined;
   const setRollCallDraft = (key: string, next: { draft: RollCallDraft; source: "nfc" | "qr" } | null) => {
@@ -809,10 +843,24 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
   if (!selectedClass) {
     return (
+      <>
       <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
         <StudentsScopeAlert />
         <Text style={styles.title}>Présences</Text>
         <Text style={styles.subtitle}>Sélectionnez une classe • {todayLabel} à {currentHour}</Text>
+        {canOpenEntryControl ? (
+          <TouchableOpacity
+            testID="attendance-entry-control"
+            style={styles.scanButton}
+            onPress={() => setEntryControlOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={ENTRY_CONTROL_COPY.button}
+            accessibilityHint={ENTRY_CONTROL_COPY.subtitle}
+          >
+            <Ionicons name="enter-outline" size={18} color="#0F172A" />
+            <Text style={styles.scanButtonText}>{ENTRY_CONTROL_COPY.button}</Text>
+          </TouchableOpacity>
+        ) : null}
         {nfcStatus}
         <Text style={styles.sectionTitle}>Mes classes</Text>
         <View testID="attendance-class-list" style={isTablet ? styles.classGridTablet : undefined}>
@@ -851,6 +899,14 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
           })}
         </View>
       </ScrollView>
+      {canOpenEntryControl ? (
+        <StudentCardEntryControlModal
+          visible={entryControlOpen}
+          media={entryMedia}
+          onClose={() => setEntryControlOpen(false)}
+        />
+      ) : null}
+      </>
     );
   }
 
@@ -1047,18 +1103,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 <Text style={styles.scanButtonText}>{STUDENT_CARD_SCAN_COPY.button}</Text>
               </TouchableOpacity>
             ) : null}
-            {teacherRollCall
+            {actor.teacher && (nfcControl === "ready" || canOpenQrScanner)
               ? rollCallButton(
-                  "attendance-roll-call-resume",
-                  `${COLLECTIVE_ROLL_CALL_COPY.resume} (${teacherRollCall.draft.entries.length})`,
-                  () => openRollCall(teacherRollCall.source, "teacher"),
+                  "attendance-class-roll-call",
+                  classRollCall?.draft ? CLASS_ROLL_CALL_COPY.resume : CLASS_ROLL_CALL_COPY.start,
+                  openClassRollCall,
                 )
-              : null}
-            {!teacherRollCall && actor.teacher && nfcControl === "ready"
-              ? rollCallButton("attendance-roll-call-nfc", COLLECTIVE_ROLL_CALL_COPY.startNfc, () => openRollCall("nfc", "teacher"))
-              : null}
-            {!teacherRollCall && actor.teacher && canOpenQrScanner
-              ? rollCallButton("attendance-roll-call-qr", COLLECTIVE_ROLL_CALL_COPY.startQr, () => openRollCall("qr", "teacher"))
               : null}
             {directionRollCall
               ? rollCallButton(
@@ -1223,6 +1273,29 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         financeEnabled={canReadScanFinance}
         onClose={() => setScannerOpen(false)}
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    {selectedClass && openedClassRollCall ? (
+      <StudentCardClassRollCallModal
+        visible
+        context={openedClassRollCall.context}
+        className={String(selectedClass.className ?? selectedClass.classCode ?? "")}
+        draft={openedClassRollCall.draft}
+        nfcAvailable={nfcControl === "ready"}
+        qrAvailable={canOpenQrScanner}
+        onDraftChange={(draft) =>
+          setClassRollCalls((current) => {
+            const entry = current[draft.scopeKey];
+            return entry ? { ...current, [draft.scopeKey]: { ...entry, draft } } : current;
+          })
+        }
+        onClose={() => setClassRollCallKey("")}
+        onAbandon={() => dropClassRollCall(openedClassRollCall.context.scopeKey)}
+        onValidated={(message) => {
+          dropClassRollCall(openedClassRollCall.context.scopeKey);
+          setSaveHint(message);
+          void loadPresences();
+        }}
       />
     ) : null}
     {selectedClass && rollCall ? (
