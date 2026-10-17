@@ -117,6 +117,7 @@ jobs:
           npm --prefix Mobile run typecheck
           npm --prefix Mobile run verify:mobile-security
           (cd Mobile && npx --yes tsx --test src/lib/studentCardVerify.test.ts src/lib/studentCardRollCall.test.ts src/lib/studentCardRollCallRoles.test.ts)
+          (cd Mobile && npx --yes tsx --test src/lib/studentCardNfcReaderMode.test.ts src/lib/nfcSession.test.ts)
 
   nfc-apk:
     name: NFC APK preview exact HEAD
