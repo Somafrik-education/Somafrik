@@ -80,6 +80,7 @@ test("NFC security: programming error dictionary never propagates native or Back
   for (const code of [
     "NFC_FOREIGN",
     "NFC_READBACK",
+    "NFC_READBACK_INTERRUPTED",
     "STUDENT_CARD_NFC_OPERATION_MISMATCH",
     "UNKNOWN",
   ]) {

@@ -3,8 +3,8 @@ import { Alert, AppState, Platform, Text, TouchableOpacity, View } from "react-n
 import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollmentApi";
 import { createIdempotencyKey } from "../lib/networkResilience";
 import {
-  createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure,
-  type EnrollmentCard, type NfcEncoderHardware, type NfcPhase,
+  createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure, stepNfcEnrollmentInterruption,
+  type EnrollmentCard, type NfcEncoderHardware, type NfcEnrollmentInterruptSnapshot, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
 type Props = { studentId: string; canRead: boolean; canUpdate: boolean; mutationsBlocked: boolean };
@@ -30,14 +30,31 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   const operationValid = useRef<() => boolean>(() => false);
   const refreshAllowed = useRef(false);
   refreshAllowed.current = canRead;
+  const phaseRef = useRef<NfcPhase>(phase);
+  const workingRef = useRef(false);
+  const preservedInterruption = useRef(false);
+  const interrupt = useRef<NfcEnrollmentInterruptSnapshot>({ phase: "initial", working: false, lockedCode: null });
   const closeHardware = () => { void hardware.current?.close().catch(() => { /* quarantined shared manager refuses further use */ }); };
+  function applyInterruption(nextAppState: string) {
+    const decision = stepNfcEnrollmentInterruption({ phase: phaseRef.current, working: workingRef.current, lockedCode: interrupt.current.lockedCode }, nextAppState);
+    interrupt.current = { phase: decision.phase, working: decision.working, lockedCode: decision.lockedCode };
+    phaseRef.current = decision.phase;
+    if (decision.invalidate) generation.current += 1;
+    if (decision.closeHardware) closeHardware();
+    if (decision.code) {
+      preservedInterruption.current = true;
+      setPhase("error");
+      setMessage(nfcErrorCopy(nfcFailure(decision.code)));
+    }
+    return decision;
+  }
 
   useEffect(() => {
     live.current = true;
     const subscription = AppState.addEventListener("change", (state) => {
       foreground.current = state === "active";
-      if (!foreground.current) { generation.current++; closeHardware(); }
-      else setRefresh((value) => value + 1);
+      const decision = applyInterruption(state);
+      if (!decision.code && state === "active") setRefresh((value) => value + 1);
     });
     return () => { live.current = false; generation.current++; flow.current = null; closeHardware(); subscription.remove(); };
   }, []);
@@ -59,7 +76,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
         await createNfcEncoderHardware().availability();
         if (current) setAvailable(true);
       }
-    })().catch((error: unknown) => { if (current) setMessage(nfcErrorCopy(error)); });
+    })().catch((error: unknown) => { if (current && !preservedInterruption.current) setMessage(nfcErrorCopy(error)); });
     return () => { current = false; };
   }, [canRead, studentId, refresh]);
 
@@ -67,11 +84,14 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     if (!hardware.current) {
       const { createNfcEncoderHardware } = await import("../lib/studentCardNfcEncoderNative");
       if (!operationValid.current()) throw nfcFailure("NFC_CANCELLED");
-      hardware.current = createNfcEncoderHardware((prompt) => { if (operationValid.current()) setMessage(prompt); });
+      hardware.current = createNfcEncoderHardware((prompt) => { if (operationValid.current() && !preservedInterruption.current) setMessage(prompt); });
     }
     if (!flow.current) flow.current = createIndividualNfcFlow({
       studentId, api, hardware: hardware.current, uuid: createIdempotencyKey,
       valid: () => operationValid.current(), phase: (next) => {
+        if (preservedInterruption.current) return;
+        phaseRef.current = next;
+        interrupt.current = { ...interrupt.current, phase: next };
         if (operationValid.current()) { setPhase(next); setMessage(NFC_PHASE_COPY[next]); }
       },
     });
@@ -79,18 +99,23 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   }
   async function run(action: (controller: Awaited<ReturnType<typeof getFlow>>) => Promise<unknown>) {
     if (!live.current || busy.current || !foreground.current || !permitted.current || !enabled || !available || Platform.OS !== "android") return;
-    busy.current = true; setWorking(true);
+    busy.current = true; workingRef.current = true; preservedInterruption.current = false;
+    interrupt.current = { phase: phaseRef.current, working: true, lockedCode: null };
+    setWorking(true);
     const captured = ++generation.current;
     const valid = () => live.current && foreground.current && permitted.current && captured === generation.current;
     operationValid.current = valid;
     try { const controller = await getFlow(); if (!valid()) throw nfcFailure("NFC_CANCELLED"); await action(controller); }
     catch (error) {
+      if (preservedInterruption.current) return;
       if (valid()) {
         const code = error && typeof error === "object" && "code" in error ? error.code : "";
-        setPhase(code === "STUDENT_CARD_NFC_EXPIRED" ? "expired" : "error"); setMessage(nfcErrorCopy(error));
+        phaseRef.current = code === "STUDENT_CARD_NFC_EXPIRED" ? "expired" : "error";
+        setPhase(phaseRef.current); setMessage(nfcErrorCopy(error));
       }
     } finally {
-      busy.current = false;
+      busy.current = false; workingRef.current = false;
+      interrupt.current = { ...interrupt.current, working: false };
       if (live.current) { setWorking(false); if (refreshAllowed.current) setRefresh((value) => value + 1); }
     }
   }
@@ -114,9 +139,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   return <View testID="student-card-nfc-enrollment-panel">
     <Text>Cartes NFC NTAG213 / NTAG216</Text>
     <Text accessibilityLiveRegion="polite">{message || NFC_PHASE_COPY[phase]}</Text>
-    {working ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Annuler l’opération NFC" onPress={() => {
-      generation.current++; closeHardware(); setPhase("resume"); setMessage("Opération interrompue. Aucune activation locale n’est confirmée. Reprenez l’opération existante.");
-    }} style={{ padding: 12 }}><Text>Annuler l’opération NFC</Text></TouchableOpacity> : null}
+    {working ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Annuler l’opération NFC" onPress={() => { applyInterruption("inactive"); }} style={{ padding: 12 }}><Text>Annuler l’opération NFC</Text></TouchableOpacity> : null}
     {!cards ? <Text>Chargement ou service indisponible.</Text> : null}
     {cards?.map((card) => <View key={card.id} style={{ paddingVertical: 10 }}>
       <Text>Carte {card.publicId} — {statusLabels[card.status] || "État inconnu"}</Text>

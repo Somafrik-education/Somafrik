@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcErrorCopy, nfcFailure,
-  type EnrollmentCard, type IssuedNfcCard, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcPhase } from "./studentCardNfcEncoding";
+import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcEnrollmentInterruption, nfcErrorCopy, nfcFailure, stepNfcEnrollmentInterruption,
+  type EnrollmentCard, type IssuedNfcCard, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcEnrollmentInterruptSnapshot, type NfcPhase } from "./studentCardNfcEncoding";
 import { studentCardEnrollmentAccess } from "./studentCardEnrollmentAccess";
 const UID = "04112233445566";
 const OP = "11111111-1111-4111-8111-111111111111";
@@ -207,6 +207,59 @@ test("school READ + UPDATE only; platform ALL_PRIVILEGES never grants enrollment
 test("failure messages never interpolate secret, raw native payload, or backend details", () => {
   for (const error of [new Error(TOKEN), { code: TOKEN, message: TOKEN }, { code: "TIMEOUT", message: TOKEN }]) assert.ok(!nfcErrorCopy(error).includes(TOKEN));
   assert.match(nfcErrorCopy({ code: "STUDENT_CARD_NFC_EXPIRED" }), /expirée/);
+});
+test("foreground loss after writing keeps a read-back code and never a capability", () => {
+  for (const phase of ["writing", "verification", "confirmation"] as const) {
+    const decision = nfcEnrollmentInterruption({ nextAppState: "background", phase, working: true });
+    assert.deepEqual(decision, { closeHardware: true, invalidate: true, code: "NFC_READBACK_INTERRUPTED" });
+    const copy = nfcErrorCopy(Object.assign(new Error(TOKEN), { code: decision.code }));
+    assert.equal(copy.includes(TOKEN), false);
+    assert.match(copy, /peut déjà être présent/);
+    assert.match(copy, /Aucune activation serveur n’est confirmée/);
+    assert.doesNotMatch(copy, /après l’écriture|a été écrit/);
+    assert.match(copy, /Relire et confirmer/);
+  }
+  for (const phase of ["initial", "reservation", "waiting", "resume"] as const) {
+    const decision = nfcEnrollmentInterruption({ nextAppState: "inactive", phase, working: true });
+    assert.equal(decision.code, "NFC_CANCELLED");
+    const copy = nfcErrorCopy(nfcFailure(decision.code!));
+    assert.equal(copy.includes(TOKEN), false);
+    assert.doesNotMatch(copy, /peut déjà être présent|après l’écriture/);
+  }
+  const idle = nfcEnrollmentInterruption({ nextAppState: "background", phase: "confirmation", working: false });
+  assert.equal(idle.code, null);
+  assert.equal(idle.closeHardware, true);
+  assert.deepEqual(nfcEnrollmentInterruption({ nextAppState: "active", phase: "writing", working: true }), { closeHardware: false, invalidate: false, code: null });
+});
+test("inactive then background keeps the first post-write diagnosis, including Cancel during writing", () => {
+  for (const phase of ["writing", "verification", "confirmation"] as const) {
+    let snapshot: NfcEnrollmentInterruptSnapshot = { phase, working: true, lockedCode: null };
+    const codes: string[] = [];
+    for (const state of ["inactive", "background"]) {
+      const next = stepNfcEnrollmentInterruption(snapshot, state);
+      assert.equal(next.phase, phase);
+      codes.push(next.code!);
+      snapshot = next;
+      const labeledError = nfcEnrollmentInterruption({ nextAppState: "background", phase: "error", working: true, lockedCode: next.lockedCode });
+      assert.equal(labeledError.code, "NFC_READBACK_INTERRUPTED");
+    }
+    assert.deepEqual(codes, ["NFC_READBACK_INTERRUPTED", "NFC_READBACK_INTERRUPTED"]);
+    const returned = stepNfcEnrollmentInterruption(snapshot, "active");
+    assert.equal(returned.code, null);
+    assert.equal(returned.lockedCode, "NFC_READBACK_INTERRUPTED");
+    assert.equal(stepNfcEnrollmentInterruption(returned, "background").code, "NFC_READBACK_INTERRUPTED");
+    const copy = nfcErrorCopy(nfcFailure("NFC_READBACK_INTERRUPTED"));
+    assert.match(copy, /peut déjà être présent/);
+    assert.equal(copy.includes(TOKEN), false);
+  }
+  const cancel = nfcEnrollmentInterruption({ nextAppState: "inactive", phase: "writing", working: true });
+  assert.equal(cancel.code, "NFC_READBACK_INTERRUPTED");
+  let beforeWrite: NfcEnrollmentInterruptSnapshot = { phase: "waiting", working: true, lockedCode: null };
+  for (const state of ["inactive", "background"]) {
+    beforeWrite = stepNfcEnrollmentInterruption(beforeWrite, state);
+    assert.equal(beforeWrite.lockedCode, "NFC_CANCELLED");
+    assert.doesNotMatch(nfcErrorCopy(nfcFailure("NFC_CANCELLED")), /peut déjà être présent/);
+  }
 });
 test("actual API adapter sends UUIDs, canonical student identity and exact established routes; no card IDs/secrets generated", async () => {
   const f = fixture(); const calls: { path: string; body?: Record<string, unknown> }[] = [];
