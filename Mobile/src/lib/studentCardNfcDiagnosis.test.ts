@@ -6,6 +6,8 @@ test("R3-2 rejects unauthenticated and platform-only sessions", () => {
   assert.equal(canDiagnoseNfc(null), false);
   assert.equal(canDiagnoseNfc({ roleKey: "SUPER_ADMIN", permissions: ["Élèves:UPDATE"] }), false);
   assert.equal(canDiagnoseNfc({ roleKey: "SCHOOL_ADMIN", permissions: [] }), false);
+  assert.equal(canDiagnoseNfc({ roleKey: "SCHOOL_ADMIN", permissions: ["Élèves:UPDATE"] }), true);
+  assert.equal(canDiagnoseNfc({ roleKeys: ["SCHOOL_ADMIN", "PARENT"], permissions: ["Élèves:UPDATE"] }), false);
 });
 test("R3-2 classifies NDEF without leaking the token secret", () => {
   assert.deepEqual(classifyDiagnosisNdef(""), { state: "empty" });
