@@ -273,6 +273,8 @@ async function main() {
         SOMAFRIK_DB_REQUIRED: "true",
         SOMAFRIK_SKIP_DEMO_SEED: "true",
         SOMAFRIK_API_ONLY: "true",
+        // NFC-P0-R3-1: small per-user diagnosis budget so the 429 path is exercised.
+        NFC_DIAGNOSIS_RATE_LIMIT_MAX: "12",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -649,6 +651,47 @@ async function main() {
     assert.notEqual(r2Stale.data?.code,STUDENT_CARD_ERROR.ENROLLMENT_UNRESOLVED);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM student_access_cards WHERE nfc_uid='04B0C1D2E3F405'")).rows[0].n,1);
     await assertCardSecretsAbsent(pool,cardSecrets(r2Token));
+    // NFC-P0-R3-1 — read-only diagnosis by UID: RBAC, school isolation, minimal answer, audit, rate limit.
+    const diag=(token,body)=>request('/student-cards/nfc-diagnose',{method:'POST',token,body});
+    const r2PublicId=r2Token.split('.')[0];
+    const diagBody={...r2Body.nfc,ndef:{state:'somafrik',publicId:r2PublicId},readOnly:false};
+    let diagCallsA=0;
+    const diagA=async(body)=>{diagCallsA+=1;return diag(tokenA,body);};
+    const rowBefore=(await pool.query('SELECT row_to_json(c)::text AS r FROM student_access_cards c WHERE id=$1',[r2Issue.data.id])).rows[0].r;
+    assert.equal((await diag(null,diagBody)).status,401);
+    assert.equal((await diag(tokenTeacher,diagBody)).status,403);
+    assert.equal((await diag(tokenAccountant,diagBody)).status,403);
+    assert.equal((await diag(tokenSuper,diagBody)).status,403);
+    const own=await diagA(diagBody);
+    assert.equal(own.status,200,JSON.stringify(own.data));assert.equal(own.cacheControl,'no-store');
+    assert.equal(own.data.code,'ACTIVE');assert.equal(own.data.physical,'SOMAFRIK_THIS_CARD');assert.equal(own.data.sameSchool,true);
+    assert.equal(own.data.card.id,r2Issue.data.id);assert.equal(own.data.holder.id,r2Student);
+    assert.doesNotMatch(JSON.stringify(own.data),/token_hash|tokenHash|cardToken|public_?id|operation/i);
+    await pool.query('UPDATE school_settings SET student_card_nfc_enabled=TRUE WHERE school_id=$1',[schoolBId]);
+    const cross=await diag(tokenB,{...diagBody,ndef:{state:'empty'}});
+    assert.equal(cross.status,200,JSON.stringify(cross.data));
+    assert.deepEqual(Object.keys(cross.data).sort(),['actions','code','message','physical','physicalMessage','physicalSource','recoverable','sameSchool']);
+    assert.equal(own.data.physicalSource,'client_declared');assert.equal(cross.data.physicalSource,'client_declared');
+    assert.equal(cross.data.code,'OTHER_SCHOOL');assert.equal(cross.data.sameSchool,false);assert.deepEqual(cross.data.actions,['contact_owner_school']);
+    const crossText=JSON.stringify(cross.data);
+    for (const leak of [r2Issue.data.id,r2Student,'Blank','Fixture','active','revoked','04B0C1D2E3F405'])
+      assert.equal(crossText.includes(leak),false,`cross-school leak: ${leak}`);
+    const unknown=await diagA({uid:'04FFEEDDCCBBAA',tagType:'NTAG216',ndef:{state:'empty'},readOnly:false});
+    assert.equal(unknown.status,200);assert.equal(unknown.data.code,'UID_UNKNOWN');assert.deepEqual(unknown.data.actions,['program_new_card']);
+    const badInput=await diagA({...r2Body.nfc,ndef:{state:'somafrik',publicId:r2Token},readOnly:false});
+    assert.equal(badInput.status,400,'a full token is never accepted as publicId');
+    // Read-only: the card row is byte-identical; only diagnosis audits were written.
+    assert.equal((await pool.query('SELECT row_to_json(c)::text AS r FROM student_access_cards c WHERE id=$1',[r2Issue.data.id])).rows[0].r,rowBefore);
+    const diagAudits=(await pool.query("SELECT entity_id,new_value::text AS v FROM audit_logs WHERE action='student_card_nfc_diagnosed' ORDER BY created_at")).rows;
+    assert.equal(diagAudits.length,3);
+    assert.equal(diagAudits[0].entity_id,r2Issue.data.id);assert.equal(diagAudits[1].entity_id,null);
+    for (const a of diagAudits){assert.doesNotMatch(a.v,/04B0C1D2E3F405|04FFEEDDCCBBAA/);assert.equal(a.v.includes(r2PublicId),false);assert.match(a.v,/04••••••••/);}
+    await assertCardSecretsAbsent(pool,cardSecrets(r2Token));
+    // Per-user rate limit (12 per window in this run): A is throttled, B is not.
+    let limited=null;
+    while (diagCallsA<=12) { const res=await diagA(diagBody); if (res.status===429){limited=diagCallsA;break;} }
+    assert.equal(limited,13,'13th diagnosis of the same user is throttled');
+    assert.equal((await diag(tokenB,{...diagBody,ndef:{state:'empty'}})).status,200);
     await pool.query('UPDATE school_settings SET student_card_nfc_enabled=FALSE WHERE school_id=$1',[schoolAId]);
     const flagsDenied=await request(confirmPath,{method:'POST',token:tokenA,body:confirmBody});assert.equal(flagsDenied.status,404);
     await assertCardSecretsAbsent(pool,cardSecrets(nfcToken));

@@ -127,6 +127,13 @@ const pushSelfTestRateLimiter = createRateLimiter({
   keyFn: (req) => `push-selftest:${String(req.principal?.sub || req.ip || "unknown")}`,
   message: "Trop de tests push. Réessayez dans une minute.",
 });
+// NFC-P0-R3-1: bound UID diagnosis per user (enumeration of physical UIDs).
+const nfcDiagnosisRateLimiter = createRateLimiter({
+  windowMs: Number(process.env.NFC_DIAGNOSIS_RATE_LIMIT_WINDOW_MS ?? 600_000),
+  max: Number(process.env.NFC_DIAGNOSIS_RATE_LIMIT_MAX ?? 30),
+  keyFn: (req) => `nfc-diagnosis:${String(req.principal?.sub || req.ip || "unknown")}`,
+  message: "Trop de diagnostics de cartes NFC. Réessayez dans quelques minutes.",
+});
 const trialRequestRateLimiter = createRateLimiter({
   windowMs: Number(process.env.TRIAL_REQUEST_RATE_LIMIT_WINDOW_MS ?? 60_000),
   max: Number(process.env.TRIAL_REQUEST_RATE_LIMIT_MAX ?? 5),
@@ -2302,6 +2309,17 @@ app.post("/api/student-cards/:id/nfc-recover", requireAuth, requirePermission("P
   const principal = await enrollmentHttpPrincipal(req);
   res.json(await recoverExpiredStudentCardNfc(repository, req.params.id, req.body ?? {},
     principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+// NFC-P0-R3-1 — read-only diagnosis of a physical card from its UID (no write, no
+// release, no reassignment). Same permission as NFC programming; school-bound details only.
+app.post("/api/student-cards/nfc-diagnose", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-confirm"), nfcDiagnosisRateLimiter, asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { diagnoseStudentCardNfc } = require("./lib/studentCardsNfcDiagnosis");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await diagnoseStudentCardNfc(repository, req.body ?? {}, principal,
+    auditMetaFromRequest(req), studentCardsHttpScope(principal)));
 }));
 
 app.post("/api/student-cards/:id/nfc-confirm", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-confirm"), asyncHandler(async (req, res) => {
