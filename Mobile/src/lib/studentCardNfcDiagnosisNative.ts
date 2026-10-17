@@ -27,7 +27,14 @@ export function createNfcDiagnosisReader() {
         const version = await session.run(() => NfcManager.nfcAHandler.transceive([0x60])); // GET_VERSION (read only)
         identity = identifyNtag(tag?.id, version);
         await session.endRequest();
-        const ndefTech = await session.request(() => NfcManager.requestTechnology([NfcTech.Ndef], READER_OPTIONS));
+        // An NTAG can be factory-blank and not exposed by Android as NDEF.
+        // Keep its UID diagnostic available, but block any recovery advice.
+        let ndefTech: NfcTech | null = null;
+        try {
+          ndefTech = await session.request(() => NfcManager.requestTechnology([NfcTech.Ndef], READER_OPTIONS));
+        } catch {
+          return { ...identity, ndef: { state: "unreadable" }, readOnly: false };
+        }
         if (ndefTech !== NfcTech.Ndef) {
           return { ...identity, ndef: { state: "unreadable" }, readOnly: false };
         }
