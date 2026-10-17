@@ -8,7 +8,7 @@ const { STUDENT_CARDS_NFC_SCHEMA_SQL } = require("../db/studentCardsNfcSchema");
 const { STUDENT_CARDS_NFC_RESERVATIONS_SCHEMA_SQL } = require("../db/studentCardsNfcReservationsSchema");
 const { createStudentAccessCardsPgStore } = require("../db/studentAccessCardsPgStore");
 const { issueStudentCard, revokeStudentCard, markStudentCardLost, replaceStudentCard, scanStudentCard, generateCardSecrets } = require("./studentAccessCardsManagement");
-const { confirmStudentCardNfc, retryStudentCardNfc } = require("./studentCardsNfcEncoding");
+const { confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc } = require("./studentCardsNfcEncoding");
 
 const url = process.env.SOMAFRIK_NFC_TEST_DATABASE_URL;
 async function fixture(run, legacy = false) {
@@ -380,4 +380,33 @@ pg("legacy active encoded cards accept absent/null UUID only; no UUID allocation
   assert.equal(await f.countAudit("student_card_nfc_locked"),1);
   await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,"lost");
   await assert.rejects(f.confirm(card),{code:"STUDENT_CARD_INVALID_STATE"});assert.equal((await f.row(card.id)).status,"lost");
+});
+
+pg("P0 recovery: expired reservation with matching physical capability reactivates same row without changing UID", async f => {
+  const card = await f.issue();
+  await f.expire(card.id);
+  await assert.rejects(f.confirm(card), {code: "STUDENT_CARD_NFC_EXPIRED"});
+  const input = {...f.identity, studentId: f.students[0], cardToken: card.cardToken, operationId: randomUUID()};
+  const recovered = await recoverExpiredStudentCardNfc(f.repo, card.id, input, f.principal, {}, f.scope);
+  assert.equal(recovered.id, card.id);
+  assert.equal(recovered.status, "active");
+  const db = await f.row(card.id);
+  assert.equal(db.nfc_uid, f.identity.uid);
+  assert.equal(db.revoke_reason, null);
+  assert.equal(await f.countAudit("student_card_nfc_reservation_recovered"), 1);
+  const replay = await recoverExpiredStudentCardNfc(f.repo, card.id, input, f.principal, {}, f.scope);
+  assert.equal(replay.idempotentReplay, true);
+  assert.equal(await f.countAudit("student_card_nfc_reservation_recovered"), 1);
+});
+
+pg("P0 recovery: wrong secret, student and UID cannot revive expired card", async f => {
+  const card = await f.issue();
+  await f.expire(card.id);
+  await assert.rejects(f.confirm(card), {code: "STUDENT_CARD_NFC_EXPIRED"});
+  const input = {...f.identity, studentId: f.students[0], cardToken: card.cardToken, operationId: randomUUID()};
+  await assert.rejects(recoverExpiredStudentCardNfc(f.repo,card.id,{...input,cardToken:card.cardToken.slice(0,-1)+"Z"},f.principal,{},f.scope), {code:"STUDENT_CARD_NOT_FOUND"});
+  await assert.rejects(recoverExpiredStudentCardNfc(f.repo,card.id,{...input,studentId:f.students[1]},f.principal,{},f.scope), {code:"STUDENT_CARD_NFC_MISMATCH"});
+  await assert.rejects(recoverExpiredStudentCardNfc(f.repo,card.id,{...input,uid:"04778899001122"},f.principal,{},f.scope), {code:"STUDENT_CARD_NFC_MISMATCH"});
+  assert.equal((await f.row(card.id)).status,"revoked");
+  assert.equal(await f.countAudit("student_card_nfc_reservation_recovered"),0);
 });
