@@ -6,7 +6,7 @@ const { RbacService } = require("../services/rbacService");
 const { normalizeNfcIdentity, assertNfcEnabled } = require("./studentCardsNfcEncoding");
 const { assertStudentCardMasterEnabled, generateCardSecrets, mapIssuedCard, mapCardListItem } = require("./studentAccessCardsManagement");
 const { parseCardToken, hashCardSecret, tokenHashesMatch } = require("./studentCardCapability");
-const crypto = require("node:crypto");
+const { PROVISION_TTL_MS, resolveNfcProvisionKey, signProvisionChallenge, verifyProvisionChallenge } = require("./studentCardNfcProvisionKey");
 const rbac = new RbacService();
 
 function error(code, message, status = 409) { return createHttpError(status, message, code); }
@@ -347,31 +347,9 @@ async function transitionStudentCardNfc(repo, cardId, principal, meta, scope, ta
 // Le défi empêche une déclaration « NFC encodé » sans session autorisée pour cette puce ; il ne
 // constitue pas une preuve matérielle indépendante de l'écriture (voir la PR).
 const PROVISION_ROUTE = "POST /api/student-cards/:id/nfc-provision";
-const PROVISION_TTL_MS = 10 * 60 * 1000;
-const CHALLENGE_RE = /^(\d{13})\.([A-Za-z0-9_-]{43})$/;
 
-function provisionKey() {
-  const secret = process.env.JWT_SECRET;
-  if (typeof secret !== "string" || secret.length < 32) {
-    throw error("STUDENT_CARD_NFC_PROVISION_UNAVAILABLE", "Provisionnement NFC indisponible.", 503);
-  }
-  return crypto.createHmac("sha256", secret).update("somafrik:student-card:nfc-provision:v1").digest();
-}
-
-function provisionMac(card, identity, key, actorId, expiresAt) {
-  return crypto.createHmac("sha256", provisionKey())
-    .update([card.id, card.token_hash, identity.uid, identity.tagType, key, actorId, String(expiresAt)].join("|"))
-    .digest("base64url");
-}
-
-function challengeValid(value, card, identity, key, actorId, nowMs) {
-  const match = CHALLENGE_RE.exec(typeof value === "string" ? value : "");
-  if (!match) return false;
-  const expiresAt = Number(match[1]);
-  if (!Number.isSafeInteger(expiresAt) || expiresAt <= nowMs || expiresAt > nowMs + PROVISION_TTL_MS) return false;
-  const expected = Buffer.from(provisionMac(card, identity, key, actorId, expiresAt));
-  const given = Buffer.from(match[2]);
-  return expected.length === given.length && crypto.timingSafeEqual(expected, given);
+function challengeFields(card, identity, key, actorId) {
+  return { cardId: card.id, tokenHash: card.token_hash, uid: identity.uid, tagType: identity.tagType, operationId: key, actorId };
 }
 
 function provisionInput(payload) {
@@ -410,7 +388,7 @@ async function beginStudentCardNfcProvision(repo, cardId, payload, principal, me
   authorize(principal, scope, PROVISION_ROUTE);
   const { identity, key, parsed } = provisionInput(payload);
   const actorId = String(principal.sub || principal.id || "");
-  provisionKey(); // fail-closed avant toute lecture
+  const { key: signingKey } = resolveNfcProvisionKey(); // fail-closed avant toute lecture
   return transaction(repo, principal, meta, scope, async (ctx) => {
     const card = await ctx.cardForUpdate(cardId);
     await ctx.expire(card.student_id);
@@ -423,7 +401,7 @@ async function beginStudentCardNfcProvision(repo, cardId, payload, principal, me
     return {
       cardId: card.id,
       alreadyProvisioned: false,
-      challenge: `${expiresAt}.${provisionMac(card, identity, key, actorId, expiresAt)}`,
+      challenge: signProvisionChallenge(challengeFields(card, identity, key, actorId), expiresAt, signingKey),
       expiresAt: new Date(expiresAt).toISOString(),
     };
   });
@@ -436,13 +414,14 @@ async function confirmStudentCardNfcProvision(repo, cardId, payload, principal, 
     throw error("STUDENT_CARD_NFC_PROVISION_CHALLENGE_REQUIRED", "Défi de provisionnement requis.", 400);
   }
   const actorId = String(principal.sub || principal.id || "");
-  provisionKey();
+  const { key: signingKey } = resolveNfcProvisionKey();
   return transaction(repo, principal, meta, scope, async (ctx) => {
     const card = await ctx.cardForUpdate(cardId);
     const state = await assertProvisionable(ctx, scope, card, parsed, identity, payload?.studentId);
     // Même puce déjà enregistrée (rejeu ou confirmation concurrente) : aucun nouvel état ni audit.
     if (state === "provisioned") return replay(card);
-    if (!challengeValid(payload.challenge, card, identity, key, actorId, await serverNowMs(ctx.db))) {
+    const fields = challengeFields(card, identity, key, actorId);
+    if (!verifyProvisionChallenge(payload.challenge, fields, signingKey, await serverNowMs(ctx.db))) {
       throw error("STUDENT_CARD_NFC_PROVISION_CHALLENGE_INVALID", "Preuve de provisionnement invalide ou expirée. Recommencez l’encodage.");
     }
     const updated = await ctx.db.one(

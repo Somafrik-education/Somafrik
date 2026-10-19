@@ -9,6 +9,7 @@ const { after, before, test } = require("node:test");
 const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
 const { createIntegrationFixture } = require("./studentCardsNfcIntegration.fixture");
+const { resolveNfcProvisionKey, signProvisionChallenge } = require("./studentCardNfcProvisionKey");
 
 let fixture;
 before(async () => {
@@ -251,4 +252,55 @@ test("CARD-02 — carte remplacée ou révoquée : anciens supports invalides, a
   assert.equal(again.status, 409);
   const active = (await rows(studentId)).filter((row) => row.status === "active");
   assert.equal(active.length, 0, "aucune carte réactivée");
+});
+
+async function forgeChallenge(card, uid, operationId, actorId, expiresAt) {
+  const { key } = resolveNfcProvisionKey({ JWT_SECRET: fixture.jwtSecret });
+  const tokenHash = (await fixture.pool.query("SELECT token_hash FROM student_access_cards WHERE id=$1", [card.id])).rows[0].token_hash;
+  return signProvisionChallenge({ cardId: card.id, tokenHash, uid, tagType: "NTAG213", operationId, actorId }, expiresAt, key);
+}
+
+async function serverNow() {
+  return Number((await fixture.pool.query("SELECT (extract(epoch FROM clock_timestamp()) * 1000)::bigint AS n")).rows[0].n);
+}
+
+test("DÉFI expiré : refusé ; le même défi signé et non expiré est accepté (contrôle positif)", async () => {
+  const school = fixture.schools[0];
+  const { studentId, card } = await qrCard(school);
+  const uid = nextUid();
+  const operationId = randomUUID();
+  const expired = await forgeChallenge(card, uid, operationId, school.user, (await serverNow()) - 1000);
+  const late = await confirm(card.id, card.cardToken, uid, { operationId, challenge: expired }, school.token);
+  assert.equal(late.status, 409);
+  assert.equal(late.data.code, "STUDENT_CARD_NFC_PROVISION_CHALLENGE_INVALID");
+  assert.equal((await rows(studentId))[0].nfc_uid, null);
+  const fresh = await forgeChallenge(card, uid, operationId, school.user, (await serverNow()) + 60_000);
+  const ok = await confirm(card.id, card.cardToken, uid, { operationId, challenge: fresh }, school.token);
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+});
+
+test("CHANGEMENT D'UTILISATEUR entre les deux étapes : défi refusé, aucun enregistrement", async () => {
+  const school = fixture.schools[0];
+  const second = randomUUID();
+  await fixture.pool.query(
+    "INSERT INTO users(id,school_id,user_code,first_name,last_name,email,role,status,must_change_password) VALUES($1,$2,'NFC-ADM-1B','NFC','Admin2','admin1b@nfc.fixture.test','Admin School','active',FALSE)",
+    [second, school.id],
+  );
+  await fixture.pool.query("INSERT INTO user_roles(user_id,school_id,role_key,status) VALUES($1,$2,'SCHOOL_ADMIN','active')", [second, school.id]);
+  const secondToken = fixture.mint({
+    sub: second, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: school.code, mustChangePassword: false,
+    permissions: ["Élèves:READ", "Élèves:UPDATE", "Classes:READ", "Voir élèves", "Gérer élèves"],
+  });
+  const { studentId, card } = await qrCard(school);
+  const uid = nextUid();
+  const operationId = randomUUID();
+  const started = await begin(card.id, card.cardToken, uid, school.token, { operationId });
+  assert.equal(started.status, 200);
+  const stolen = await confirm(card.id, card.cardToken, uid, { ...started.data, operationId }, secondToken);
+  assert.equal(stolen.status, 409);
+  assert.equal(stolen.data.code, "STUDENT_CARD_NFC_PROVISION_CHALLENGE_INVALID");
+  assert.equal((await rows(studentId))[0].nfc_uid, null);
+  assert.equal((await audits(card.id, "student_card_nfc_provisioned")).length, 0);
+  // Le second utilisateur doit ouvrir sa propre session de provisionnement.
+  assert.equal((await provision(card.id, card.cardToken, uid, secondToken)).done.status, 200);
 });
