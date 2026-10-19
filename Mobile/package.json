@@ -108,6 +108,7 @@
     "test:student-card-nfc-integration": "npx --yes tsx --test src/lib/studentCardNfcIntegration.pg.test.ts",
     "test:student-card-class-roll-call-integration": "npx --yes tsx --test src/lib/studentCardClassRollCall.integration.pg.test.ts",
     "test:student-card-entry-control-integration": "npx --yes tsx --test src/lib/studentCardEntryControl.integration.pg.test.ts",
+    "test:student-card-nfc-performance": "npx --yes tsx --test src/lib/studentCardNfcPerformance.test.ts",
     "test:student-card-nfc-diagnosis": "npx --yes tsx --test src/lib/studentCardNfcDiagnosis.test.ts",
     "test:student-card-nfc-security": "npx --yes tsx --test src/lib/studentCardNfcSecurity.test.ts"
   },
