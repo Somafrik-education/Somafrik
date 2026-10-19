@@ -55,3 +55,25 @@ test("NFC-PERF-01 no finance call on mismatched class", async () => {
   assert.equal(result.kind, "class_mismatch");
   assert.deepEqual(x.calls, []);
 });
+
+test("NFC-PERF-02 one POST: no resolver, class scope provided, confirmed server response only", async () => {
+  let calls = 0;
+  let selected = "";
+  const outcome = await runStudentCardScanFlow({
+    cardToken: "synthetic.token", scope: snapshot(),
+    selectedClass: { classId: "class-1", classCode: "A" },
+    author: { status: "teacher_session" }, attendanceDate: "2026-10-19",
+    financeEnabled: false, singleRequestAttendance: true,
+    isOffline: () => false, currentScope: snapshot,
+    resolveCard: async () => { throw new Error("resolver must be skipped"); },
+    recordAttendance: async (_token, attendance) => {
+      calls += 1;
+      selected = String(attendance.expectedClassId);
+      return response;
+    },
+    createIdempotencyKey: () => "11111111-1111-4111-8111-111111111111",
+  });
+  assert.equal(calls, 1);
+  assert.equal(selected, "class-1");
+  assert.equal(outcome.kind, "success");
+});
