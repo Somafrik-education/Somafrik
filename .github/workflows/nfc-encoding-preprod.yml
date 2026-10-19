@@ -88,6 +88,7 @@ jobs:
           node backend/lib/studentCardEntry.http.pg.test.js
           npm --prefix Mobile run test:student-card-nfc-integration
           npm --prefix Mobile run test:student-card-nfc-diagnosis
+          npm --prefix Mobile run test:student-card-nfc-perf
           npm --prefix Mobile run test:student-card-class-roll-call-integration
           npm --prefix Mobile run test:student-card-entry-control-integration
       - name: Upload sanitized integration performance measurements
