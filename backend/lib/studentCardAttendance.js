@@ -8,6 +8,7 @@ const { scanStudentCard } = require("./studentAccessCardsManagement");
 const STUDENT_CARD_ATTENDANCE_ERROR = Object.freeze({
   DISABLED: "STUDENT_CARD_ATTENDANCE_DISABLED",
   STATUS_INVALID: "STUDENT_CARD_ATTENDANCE_STATUS_INVALID",
+  CLASS_MISMATCH: "STUDENT_CARD_CLASS_MISMATCH",
 });
 
 const CARD_ATTENDANCE_STATUSES = Object.freeze(["present", "late"]);
@@ -88,6 +89,16 @@ async function scanStudentCardHttp(repo, payload, schoolScope, principal, auditM
     return { statusCode: 200, body: resolved };
   }
   await assertStudentCardAttendanceEnabled(repo, schoolScope.schoolId);
+  // NFC-PERF-02: enforce the operator-selected class on the authoritative
+  // server-side roster before *any* attendance write. Never trust a client
+  // supplied studentId/classId for the persisted attendance item.
+  const expectedClassId = payload.attendance?.expectedClassId;
+  if (expectedClassId !== undefined) {
+    if (typeof expectedClassId !== "string" || !expectedClassId.trim()
+      || expectedClassId.trim() !== String(resolved.class?.id ?? "").trim()) {
+      throw createHttpError(409, "La carte n'appartient pas à la classe sélectionnée.", STUDENT_CARD_ATTENDANCE_ERROR.CLASS_MISMATCH);
+    }
+  }
   const item = buildAttendanceItem(resolved, payload.attendance);
   const saved = await repo.upsertSchoolAttendanceBatch({ items: [item] }, principal, auditMeta);
   const attendance = Array.isArray(saved) ? saved[0] : saved;
