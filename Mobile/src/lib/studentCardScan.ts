@@ -691,7 +691,7 @@ export async function runStudentCardScanFlow(
       return { kind: "class_mismatch", view: viewFromResolved(resolved) };
     }
 
-    const attendance: { date: string; status: "present"; teacherId?: string } = {
+    const attendance: { date: string; status: "present"; teacherId?: string; expectedClassId?: string } = {
       date: deps.attendanceDate,
       status: "present",
     };
