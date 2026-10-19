@@ -657,6 +657,8 @@ export type StudentCardScanFlowDeps = {
   author: AttendanceAuthorReady;
   attendanceDate: string;
   financeEnabled: boolean;
+  /** NFC only: finance lookup may overlap attendance, but can never confirm attendance. */
+  parallelFinance?: boolean;
   isOffline: () => boolean;
   currentScope: () => ScanScopeSnapshot;
   resolveCard: (cardToken: string) => Promise<StudentCardScanResolved>;
@@ -694,19 +696,36 @@ export async function runStudentCardScanFlow(
     if (author.teacherId) attendance.teacherId = author.teacherId;
     const idempotencyKey = deps.createIdempotencyKey();
     assertIdempotencyKeySafe(idempotencyKey, deps.cardToken);
+    // NFC-PERF-01: overlap independent finance read with attendance write.
+    // Starts only after class, card state and author were checked. Attach a
+    // rejection handler immediately so a failed finance call never goes unhandled.
+    // Attendance remains the sole authority: no success until its POST commits.
+    const financeResult = deps.parallelFinance && deps.financeEnabled && deps.readFinance
+      ? deps.readFinance(deps.cardToken).then(
+          value => ({ ok: true as const, value }),
+          () => ({ ok: false as const }),
+        )
+      : null;
     const recorded = await deps.recordAttendance(deps.cardToken, attendance, idempotencyKey);
     if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
 
     let financeLabel = "";
     let financeUnavailable = false;
     if (deps.financeEnabled && deps.readFinance) {
-      try {
-        const finance = await deps.readFinance(deps.cardToken);
+      if (financeResult) {
+        const finance = await financeResult;
         if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
-        financeLabel = financeBadgeLabel(finance.finance);
-      } catch {
-        if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
-        financeUnavailable = true;
+        if (finance.ok) financeLabel = financeBadgeLabel(finance.value.finance);
+        else financeUnavailable = true;
+      } else {
+        try {
+          const finance = await deps.readFinance(deps.cardToken);
+          if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
+          financeLabel = financeBadgeLabel(finance.finance);
+        } catch {
+          if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
+          financeUnavailable = true;
+        }
       }
     }
 
