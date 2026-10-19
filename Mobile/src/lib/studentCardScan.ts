@@ -667,6 +667,9 @@ export type StudentCardScanFlowDeps = {
   ) => Promise<StudentCardScanResolved>;
   readFinance?: (cardToken: string) => Promise<StudentCardScanResolved>;
   createIdempotencyKey: () => string;
+  /** Durées par phase, jamais de token, UID, nom, identifiant ou réponse HTTP. */
+  onPhaseTiming?: (phase: "resolve" | "attendance" | "finance" | "total", durationMs: number) => void;
+  now?: () => number;
 };
 
 export async function runStudentCardScanFlow(
@@ -678,9 +681,16 @@ export async function runStudentCardScanFlow(
   }
   const author = isAttendanceAuthorReady(deps.author);
   if (!author.ok) return { kind: "teacher_unresolved" };
+  const now = deps.now ?? (() => Date.now());
+  const startedAt = now();
+  const phase = (name: "resolve" | "attendance" | "finance" | "total", since: number) => {
+    try { deps.onPhaseTiming?.(name, Math.max(0, now() - since)); } catch { /* télémétrie non bloquante */ }
+  };
 
   try {
+    const resolveAt = now();
     const resolved = await deps.resolveCard(deps.cardToken);
+    phase("resolve", resolveAt);
     if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
     if (isInvalidCardStatus(resolved.card?.status)) return { kind: "invalid_card" };
     if (!cardBelongsToSelectedClass(resolved.class, deps.selectedClass)) {
@@ -694,22 +704,28 @@ export async function runStudentCardScanFlow(
     if (author.teacherId) attendance.teacherId = author.teacherId;
     const idempotencyKey = deps.createIdempotencyKey();
     assertIdempotencyKeySafe(idempotencyKey, deps.cardToken);
+    // Finance informational only: start alongside the independent attendance write.
+    // Catch eagerly to avoid unhandled rejections if attendance fails.
+    const financeAt = now();
+    const financePromise = deps.financeEnabled && deps.readFinance
+      ? Promise.resolve().then(() => deps.readFinance!(deps.cardToken))
+          .then(value => ({ ok: true as const, value }), () => ({ ok: false as const }))
+      : null;
+    const attendanceAt = now();
     const recorded = await deps.recordAttendance(deps.cardToken, attendance, idempotencyKey);
+    phase("attendance", attendanceAt);
     if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
 
     let financeLabel = "";
     let financeUnavailable = false;
-    if (deps.financeEnabled && deps.readFinance) {
-      try {
-        const finance = await deps.readFinance(deps.cardToken);
-        if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
-        financeLabel = financeBadgeLabel(finance.finance);
-      } catch {
-        if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
-        financeUnavailable = true;
-      }
+    if (financePromise) {
+      const finance = await financePromise;
+      phase("finance", financeAt);
+      if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
+      if (finance.ok) financeLabel = financeBadgeLabel(finance.value.finance);
+      else financeUnavailable = true;
     }
-
+    phase("total", startedAt);
     return {
       kind: "success",
       view: viewFromResolved(recorded.student ? recorded : resolved, {
