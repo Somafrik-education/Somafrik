@@ -106,6 +106,20 @@ function mapCardListItem(row) {
     updatedAt: row.updated_at,
     nfc: row.nfc_uid ? { uid: row.nfc_uid, tagType: row.nfc_tag_type, state: row.nfc_encoding_state, encodedAt: row.nfc_encoded_at, lockedAt: row.nfc_locked_at,
       operationId: row.nfc_operation_id, expiresAt: row.nfc_reservation_expires_at, replacesCardId: row.nfc_replaces_card_id } : null,
+    supports: cardSupports(row),
+  };
+}
+
+/**
+ * CARTE-FIX-QR-NFC — statuts des supports, distincts du statut global de la carte.
+ * qr : « issued » si la carte porte un QR ; nfc : « not_encoded » tant qu'aucune puce n'est
+ * associée, « reservation » (programmation en cours), « encoded » ou « locked ».
+ */
+function cardSupports(row) {
+  const nfcStates = { pending: "reservation", encoded: "encoded", locked: "locked" };
+  return {
+    qr: row.medium === "qr" || row.medium === "nfc_qr" ? "issued" : "none",
+    nfc: row.nfc_uid ? (nfcStates[row.nfc_encoding_state] ?? "not_encoded") : "not_encoded",
   };
 }
 

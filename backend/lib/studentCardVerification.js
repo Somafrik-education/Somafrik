@@ -114,6 +114,9 @@ async function verifyStudentCard(repo, payload, scope, principal, can) {
     card: { valid: true, medium: resolved.card.medium },
     scope: restricted ? "class" : "school",
   };
+  // CARTE-FIX-QR-NFC — relecture depuis la fiche : la carte lue est-elle celle attendue ?
+  const expectedCardId = typeof payload?.cardId === "string" ? payload.cardId.trim().toLowerCase() : "";
+  if (expectedCardId) body.matchesCard = String(resolved.card.id).toLowerCase() === expectedCardId;
   // Un enseignant voit l'identité de ses classes ; les autres rôles selon Élèves:READ.
   if (restricted || await can(CAPABILITY_ROUTE_KEYS.identity)) {
     body.student = resolved.student;

@@ -230,6 +230,8 @@ async function createIntegrationFixture() {
       cohort,
       // Jeton signé avec le secret local de la fixture (identités synthétiques uniquement).
       mint: (claims) => tokens.createAccessToken(claims),
+      // Secret local de la fixture (jamais un secret d'environnement réel) : signer un défi de test.
+      jwtSecret,
       logs: () => logs,
       close,
     };

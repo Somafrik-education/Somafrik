@@ -103,6 +103,7 @@ const routePermissions = {
   "POST /api/student-cards": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/nfc-confirm": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/nfc-retry": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/student-cards/:id/nfc-provision": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/lost": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/revoke": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/replace": ["Élèves:UPDATE", "Gérer élèves"],
