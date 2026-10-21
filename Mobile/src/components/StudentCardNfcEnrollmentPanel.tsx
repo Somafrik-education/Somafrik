@@ -2,14 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, AppState, Platform, Text, TouchableOpacity, View } from "react-native";
 import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollmentApi";
 import { createIdempotencyKey } from "../lib/networkResilience";
+import { StudentCardQrCaptureModal } from "./StudentCardQrCaptureModal";
 import {
   canRecoverExpiredNfcCard, createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure,
-  type EnrollmentCard, type NfcEncoderHardware, type NfcPhase,
+  type CardRereadInput, type EnrollmentCard, type NfcEncoderHardware, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
 type Props = { studentId: string; canRead: boolean; canUpdate: boolean; mutationsBlocked: boolean };
 const statusLabels: Record<string, string> = { active: "Active", issued: "Réservée — non active", lost: "Perdue", revoked: "Révoquée", replaced: "Remplacée" };
 const stateLabels = { pending: "Écriture à confirmer", encoded: "Encodée", locked: "En lecture seule" };
+const ENCODE_ON_CARD = "Encoder NFC sur cette carte";
+const REREAD_CARD = "Relire la carte";
+type QrCapture = { kind: "provision" | "reread"; card: EnrollmentCard };
 
 export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, mutationsBlocked }: Props) {
   const [cards, setCards] = useState<EnrollmentCard[] | null>(null);
@@ -19,6 +23,9 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   const [phase, setPhase] = useState<NfcPhase>("initial");
   const [message, setMessage] = useState("");
   const [refresh, setRefresh] = useState(0);
+  const [qrCapture, setQrCapture] = useState<QrCapture | null>(null);
+  const qrTarget = useRef<QrCapture | null>(null);
+  const boundStudent = useRef(studentId);
   const hardware = useRef<NfcEncoderHardware | null>(null);
   const flow = useRef<ReturnType<typeof createIndividualNfcFlow> | null>(null);
   const generation = useRef(0);
@@ -44,6 +51,14 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   useEffect(() => {
     if (!canRead || !canUpdate || mutationsBlocked) { generation.current++; closeHardware(); }
   }, [canRead, canUpdate, mutationsBlocked]);
+  // Changement d'élève sur la même instance : toute opération, capture QR et flux liés à l'élève
+  // précédent sont invalidés (aucun appel ni message pour A depuis la fiche B).
+  useEffect(() => {
+    if (boundStudent.current === studentId) return;
+    boundStudent.current = studentId;
+    generation.current++; closeHardware(); hardware.current = null; flow.current = null;
+    qrTarget.current = null; setQrCapture(null); setMessage(""); setPhase("initial");
+  }, [studentId]);
   useEffect(() => {
     let current = true;
     setCards(null); setEnabled(false); setAvailable(false);
@@ -77,11 +92,15 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     });
     return flow.current;
   }
-  async function run(action: (controller: Awaited<ReturnType<typeof getFlow>>) => Promise<unknown>) {
-    if (!live.current || busy.current || !foreground.current || !permitted.current || !enabled || !available || Platform.OS !== "android") return;
+  /** Encodage : Élèves:UPDATE (permitted). Relecture : lecture seule (canRead) ; le NFC n'est exigé que pour une puce. */
+  async function run(action: (controller: Awaited<ReturnType<typeof getFlow>>) => Promise<unknown>, options: { mutation?: boolean; nfc?: boolean } = {}) {
+    const mutation = options.mutation !== false; const nfc = options.nfc !== false;
+    const allowed = () => (mutation ? permitted.current : refreshAllowed.current);
+    if (!live.current || busy.current || !foreground.current || !allowed() || !enabled) return;
+    if (nfc && (!available || Platform.OS !== "android")) return;
     busy.current = true; setWorking(true);
     const captured = ++generation.current;
-    const valid = () => live.current && foreground.current && permitted.current && captured === generation.current;
+    const valid = () => live.current && foreground.current && allowed() && captured === generation.current;
     operationValid.current = valid;
     try { const controller = await getFlow(); if (!valid()) throw nfcFailure("NFC_CANCELLED"); await action(controller); }
     catch (error) {
@@ -106,10 +125,36 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
       { text: "Renouveler et écrire", onPress: () => void run((controller) => controller.rewrite(card, true)) },
     ]);
   }
+  function provision(card: EnrollmentCard, cardToken: string) {
+    void run(async (controller) => {
+      await controller.provision(card, cardToken);
+      if (operationValid.current()) setMessage("Puce NFC encodée, relue et enregistrée sur la carte existante. Le QR imprimé reste valide.");
+    });
+  }
+  function reread(card: EnrollmentCard, read: CardRereadInput) {
+    void run(async (controller) => {
+      const result = await controller.reread(card, read);
+      if (!operationValid.current()) return;
+      setMessage(result.verified
+        ? "Carte relue et vérifiée : elle correspond à cette carte active. Aucune modification effectuée."
+        : "Carte non vérifiée : elle ne correspond pas à cette carte active ou n’est plus valide. Aucune modification effectuée.");
+    }, { mutation: false, nfc: read.medium === "nfc" });
+  }
+  function openCapture(capture: QrCapture) { qrTarget.current = capture; setQrCapture(capture); }
+  function closeCapture() { qrTarget.current = null; setQrCapture(null); }
+  function chooseReread(card: EnrollmentCard) {
+    if (Platform.OS !== "android" || !available) { openCapture({ kind: "reread", card }); return; }
+    Alert.alert(REREAD_CARD, "Relecture sans aucune modification de la carte.", [
+      { text: "Annuler", style: "cancel" },
+      { text: "Scanner le QR code", onPress: () => openCapture({ kind: "reread", card }) },
+      { text: "Lire la puce NFC", onPress: () => reread(card, { medium: "nfc" }) },
+    ]);
+  }
   if (!canRead) return null;
   const active = cards?.find((card) => card.status === "active");
   const pending = cards?.some((card) => card.status === "issued" && card.nfc?.state === "pending");
   const canProgram = permitted.current && enabled && available && !!cards;
+  const canReread = refreshAllowed.current && enabled && !!cards;
   const button = (title: string, onPress: () => void) => <TouchableOpacity accessibilityRole="button" accessibilityLabel={title} disabled={working || !canProgram} onPress={onPress} style={{ padding: 12, marginVertical: 4, backgroundColor: "#E8F4F1", borderRadius: 8, opacity: working || !canProgram ? 0.5 : 1 }}><Text>{title}</Text></TouchableOpacity>;
   return <View testID="student-card-nfc-enrollment-panel">
     <Text>Cartes NFC NTAG213 / NTAG216</Text>
@@ -144,7 +189,8 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
           {button("Renouveler et réécrire avec confirmation", () => rewrite(card))}
         </> : null}
       </> : null}
-      {canProgram && card.status === "active" && card.nfc ? button("Relire et vérifier la carte active", () => void run(async (controller) => { await controller.resume(card); if (operationValid.current()) setMessage("Carte active relue et vérifiée."); })) : null}
+      {canProgram && card.status === "active" && !card.nfc ? button(ENCODE_ON_CARD, () => openCapture({ kind: "provision", card })) : null}
+      {canReread && card.status === "active" ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={REREAD_CARD} disabled={working} onPress={() => chooseReread(card)} style={{ padding: 12, marginVertical: 4, backgroundColor: "#EEF2FF", borderRadius: 8, opacity: working ? 0.5 : 1 }}><Text>{REREAD_CARD}</Text></TouchableOpacity> : null}
     </View>)}
     {Platform.OS !== "android" ? <Text>La programmation NFC est disponible sur Android uniquement.</Text> : null}
     {cards && !enabled ? <Text>La programmation NFC est désactivée pour cet établissement.</Text> : null}
@@ -156,5 +202,15 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
         : active ? button("Remplacer la carte active", () => replace(active))
         : button("Programmer une carte NFC", () => void run((controller) => controller.program()))}
     </> : null}
+    <StudentCardQrCaptureModal visible={qrCapture !== null}
+      title={qrCapture?.kind === "provision" ? ENCODE_ON_CARD : REREAD_CARD}
+      onCancel={closeCapture}
+      onToken={(cardToken) => {
+        // Cible lue dans la ref courante : une capture fermée ou d'un autre élève est ignorée.
+        const target = qrTarget.current; closeCapture();
+        if (!target) return;
+        if (target.kind === "provision") provision(target.card, cardToken);
+        else reread(target.card, { medium: "qr", cardToken });
+      }} />
   </View>;
 }

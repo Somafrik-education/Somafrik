@@ -41,6 +41,12 @@ export interface NfcEncoderHardware {
   isReadOnly(): Promise<boolean>;
   close(): Promise<void>;
 }
+/** CARTE-FIX-QR-NFC (#974) — begin : défi serveur ; rejeu si la même puce est déjà enregistrée. */
+export type NfcProvisionBegin = { cardId: string; alreadyProvisioned: boolean; challenge?: string; expiresAt?: string; card?: EnrollmentCard };
+export type NfcProvisionBody = { cardToken: string; nfc: NtagIdentity; operationId: string };
+export type CardRereadCheck = { card?: { valid?: boolean; medium?: string }; scope?: string; matchesCard?: boolean };
+export type CardRereadInput = { medium: "qr"; cardToken: string } | { medium: "nfc" };
+export type CardRereadResult = { verified: boolean; valid: boolean; matchesCard: boolean; medium: "qr" | "nfc" };
 export interface NfcEnrollmentApi {
   list(studentId: string): Promise<{ cards: EnrollmentCard[]; nfcEnabled: boolean }>;
   issue(studentId: string, identity: NtagIdentity, operationId: string): Promise<IssuedNfcCard>;
@@ -49,6 +55,10 @@ export interface NfcEnrollmentApi {
   confirm(card: EnrollmentCard, token: string, locked: boolean, studentId: string): Promise<EnrollmentCard>;
   recover?(card: EnrollmentCard, token: string, studentId: string, operationId: string): Promise<EnrollmentCard>;
   reencode?(card: EnrollmentCard, identity: NtagIdentity, studentId: string, operationId: string): Promise<IssuedNfcCard>;
+  provision?(card: EnrollmentCard, body: NfcProvisionBody, studentId?: string): Promise<NfcProvisionBegin>;
+  confirmProvision?(card: EnrollmentCard, body: NfcProvisionBody & { challenge: string }, studentId?: string): Promise<EnrollmentCard & { idempotentReplay?: boolean }>;
+  /** Lecture seule : POST /student-cards/verify avec cardId → matchesCard. */
+  verify?(card: EnrollmentCard, cardToken: string): Promise<CardRereadCheck>;
 }
 export type NfcPhase = "initial" | "reservation" | "waiting" | "writing" | "verification" | "confirmation" | "success" | "error" | "expired" | "resume";
 export const NFC_PHASE_COPY: Record<NfcPhase, string> = {
@@ -111,6 +121,13 @@ export function nfcErrorCopy(error: unknown): string {
     STUDENT_CARD_NOT_FOUND: "Le contenu de la carte ne correspond pas à cette réservation. Aucune activation.",
     STUDENT_CARD_NFC_MISMATCH: "La carte ou l’élève ne correspond pas à cette affectation. Aucune activation.",
     STUDENT_CARD_ACTIVE_ALREADY_EXISTS: "Cet élève a déjà une carte active ou une réservation en cours. Aucune activation.",
+    STUDENT_CARD_NFC_ALREADY_PROVISIONED: "Cette carte possède déjà une puce NFC. Utilisez « Relire la carte » ; un changement de puce passe par le remplacement.",
+    STUDENT_CARD_NFC_PROVISION_CHALLENGE_INVALID: "Session d’encodage expirée ou invalide. Recommencez « Encoder NFC sur cette carte ». Aucune activation.",
+    STUDENT_CARD_NFC_PROVISION_CHALLENGE_REQUIRED: "Session d’encodage incomplète. Recommencez « Encoder NFC sur cette carte ». Aucune activation.",
+    STUDENT_CARD_NFC_PROVISION_UNAVAILABLE: "L’encodage NFC de la carte existante est momentanément indisponible sur le serveur. Aucune activation.",
+    NFC_QR_INVALID: "QR code illisible ou incomplet : présentez le QR imprimé de cette carte. Aucune écriture effectuée.",
+    NFC_REREAD_EMPTY: "La puce ne contient aucune carte Somafrik. Aucune modification effectuée.",
+    NFC_PROVISION_UNCONFIRMED: "La puce a été écrite et relue, mais l’enregistrement serveur n’est pas confirmé. Relancez « Encoder NFC sur cette carte » : la puce ne sera pas réécrite.",
   };
   const status = httpStatusOf(error);
   if (status === 403) return copies.STUDENT_CARD_TENANT_DENIED;
@@ -138,6 +155,26 @@ export function canRecoverExpiredNfcCard(card: EnrollmentCard, cards: Enrollment
   if (card.status !== "revoked" || card.revokeReason !== "nfc_reservation_expired") return false;
   if (!card.nfc || card.nfc.state !== "pending" || card.nfc.replacesCardId) return false;
   return !cards.some((other) => other.id !== card.id && (other.status === "active" || (other.status === "issued" && other.nfc?.state === "pending")));
+}
+/** Jeton complet lu sur le QR imprimé (même format que la puce) ; jamais un identifiant public seul. */
+export function cardTokenFromQr(value: unknown): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  try { return cardTokenFromNdef(raw.startsWith(NDEF_PREFIX) ? raw : `${NDEF_PREFIX}${raw}`); }
+  catch { throw nfcFailure("NFC_FOREIGN"); }
+}
+/** Liste blanche : aucune capacité, défi ni champ inattendu ne sort du flux. */
+function publicCard(card: EnrollmentCard): EnrollmentCard {
+  return {
+    id: card.id, publicId: card.publicId, medium: card.medium, status: card.status, revokeReason: card.revokeReason ?? null,
+    nfc: card.nfc ? { uid: card.nfc.uid, tagType: card.nfc.tagType, state: card.nfc.state, operationId: card.nfc.operationId ?? null,
+      expiresAt: card.nfc.expiresAt ?? null, replacesCardId: card.nfc.replacesCardId ?? null } : null,
+  };
+}
+/** Résultat serveur accepté seulement s'il s'agit de la MÊME carte, active, avec CETTE puce encodée. */
+function assertProvisioned(card: EnrollmentCard | undefined, current: EnrollmentCard, identity: NtagIdentity): EnrollmentCard {
+  if (!card || card.id !== current.id || card.publicId !== current.publicId || card.status !== "active" || card.medium !== "nfc_qr"
+    || card.nfc?.uid !== identity.uid || card.nfc?.tagType !== identity.tagType || !["encoded", "locked"].includes(card.nfc.state)) throw nfcFailure("NFC_RESPONSE_INVALID");
+  return publicCard(card);
 }
 function requireIdentity(card: EnrollmentCard): NtagIdentity {
   if (card.status === "revoked" && card.revokeReason === "nfc_reservation_expired") throw nfcFailure("STUDENT_CARD_NFC_EXPIRED");
@@ -219,11 +256,19 @@ export function createIndividualNfcFlow(input: {
   let busy = false;
   let attempt: { operationId: string; identity: NtagIdentity; previous?: EnrollmentCard } | null = null;
   const control: FlowControl = { studentId: input.studentId, phase: input.phase, check() { if (!input.valid()) throw nfcFailure("NFC_CANCELLED"); } };
-  async function run(action: () => Promise<EnrollmentCard>) {
+  async function run<T>(action: () => Promise<T>, needsNfc = true): Promise<T> {
     if (busy) throw nfcFailure("NFC_BUSY");
     busy = true;
-    try { control.check(); await checked(control, () => input.hardware.availability()); const result = await action(); control.check(); input.phase("success"); attempt = null; return result; }
+    try {
+      control.check(); if (needsNfc) await checked(control, () => input.hardware.availability());
+      const result = await action(); control.check(); input.phase("success"); if (needsNfc) attempt = null; return result;
+    }
     finally { try { await input.hardware.close(); } finally { busy = false; } }
+  }
+  async function activeCard(card: EnrollmentCard) {
+    const current = (await list()).find((item) => item.id === card.id);
+    if (!current || current.publicId !== card.publicId) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
+    return current;
   }
   async function list() {
     const result = await checked(control, () => input.api.list(input.studentId));
@@ -249,6 +294,89 @@ export function createIndividualNfcFlow(input: {
   }
   return {
     hasUncertainReservation() { return attempt !== null; },
+    /** CARTE-FIX-QR-NFC — ajoute une puce à la carte ACTIVE existante (même ligne, même jeton) :
+     * QR imprimé (jeton complet) → inspection NTAG → défi serveur → écriture → relecture → confirmation.
+     * Jamais d'émission, de remplacement, de rotation du secret ni de réservation. */
+    provision(card: EnrollmentCard, qrValue: unknown) { return run(async () => {
+      const current = await activeCard(card);
+      if (current.status !== "active") throw nfcFailure("STUDENT_CARD_INVALID_STATE");
+      if (current.nfc) throw nfcFailure("STUDENT_CARD_NFC_ALREADY_PROVISIONED");
+      const token = cardTokenFromQr(qrValue);
+      if (token.split(".")[0] !== current.publicId) throw nfcFailure("NFC_FOREIGN");
+      const api = input.api;
+      if (typeof api.provision !== "function" || typeof api.confirmProvision !== "function") throw nfcFailure("NFC_BACKEND_UNSUPPORTED");
+      const expected = ndefForCard(token);
+      control.phase("waiting");
+      const identity = await checked(control, () => input.hardware.inspect());
+      try {
+        // Préflight en lecture : vierge, ou déjà porteuse de CE jeton (reprise). Rien d'autre n'est écrasé.
+        await checked(control, () => input.hardware.openNdef(identity.uid));
+        const existing = await checked(control, () => input.hardware.readText());
+        if (existing && existing !== expected) throw nfcFailure("NFC_FOREIGN");
+        if (!existing && await checked(control, () => input.hardware.isReadOnly())) throw nfcFailure("NFC_FOREIGN");
+      } finally { await input.hardware.close(); }
+      const operationId = input.uuid();
+      control.phase("reservation");
+      const begin = await checked(control, () => api.provision!(current, { cardToken: token, nfc: identity, operationId }, input.studentId));
+      if (!begin || begin.cardId !== current.id) throw nfcFailure("NFC_RESPONSE_INVALID");
+      const already = begin.alreadyProvisioned === true ? assertProvisioned(begin.card, current, identity) : null;
+      if (!already && (typeof begin.challenge !== "string" || !begin.challenge)) throw nfcFailure("NFC_RESPONSE_INVALID");
+      // Écriture canonique sur la MÊME puce (UID contrôlé à chaque découverte), puis relecture fraîche.
+      await checked(control, () => input.hardware.openNdef(identity.uid));
+      const previous = await checked(control, () => input.hardware.readText());
+      if (previous && previous !== expected) throw nfcFailure("NFC_FOREIGN");
+      if (previous !== expected) {
+        if (await checked(control, () => input.hardware.isReadOnly())) throw nfcFailure("NFC_FOREIGN");
+        control.phase("writing");
+        await checked(control, () => input.hardware.writeText(expected)).catch((error) => {
+          throw codeOf(error) ? error : nfcFailure("NFC_WRITE_UNCONFIRMED");
+        });
+      }
+      control.phase("verification");
+      const readBack = await checked(control, () => input.hardware.readText());
+      if (readBack !== expected) throw nfcFailure("NFC_READBACK");
+      if (already) return already;
+      control.phase("confirmation");
+      try {
+        const confirmed = await checked(control, () => api.confirmProvision!(current,
+          { cardToken: cardTokenFromNdef(readBack), nfc: identity, operationId, challenge: begin.challenge! }, input.studentId));
+        return assertProvisioned(confirmed, current, identity);
+      } catch (error) {
+        // Puce écrite et relue : une erreur de transport n'est jamais un verdict ; on relance le même parcours.
+        const code = codeOf(error);
+        if ((!code && httpStatusOf(error) !== 403) || UNCONFIRMED_TRANSPORT.has(code)) throw nfcFailure("NFC_PROVISION_UNCONFIRMED");
+        throw error;
+      }
+    }); },
+    /** Relecture strictement en lecture seule (QR imprimé ou puce) : aucune écriture puce, aucune mutation serveur.
+     * « Vérifiée » seulement si le serveur reconnaît une carte valide ET qu'il s'agit de cette carte. */
+    reread(card: EnrollmentCard, read: CardRereadInput) { return run<CardRereadResult>(async () => {
+      const current = await activeCard(card);
+      const refused: CardRereadResult = { verified: false, valid: false, matchesCard: false, medium: read.medium };
+      if (current.status !== "active") return refused;
+      if (typeof input.api.verify !== "function") throw nfcFailure("NFC_BACKEND_UNSUPPORTED");
+      let token: string; let sameChip = true;
+      if (read.medium === "qr") token = cardTokenFromQr(read.cardToken);
+      else {
+        control.phase("waiting");
+        const observed = await checked(control, () => input.hardware.inspect());
+        // Confirmation NFC positive seulement pour LA puce associée et encodée : une copie du jeton
+        // sur une puce non associée (ou d'UID/modèle différent) n'est jamais « vérifiée ».
+        const bound = current.nfc && ["encoded", "locked"].includes(current.nfc.state) ? current.nfc : null;
+        if (!bound || observed.uid !== bound.uid || observed.tagType !== bound.tagType) sameChip = false;
+        try {
+          await checked(control, () => input.hardware.openNdef(observed.uid));
+          const payload = await checked(control, () => input.hardware.readText());
+          if (!payload) throw nfcFailure("NFC_REREAD_EMPTY");
+          token = cardTokenFromNdef(payload);
+        } finally { await input.hardware.close(); }
+      }
+      control.phase("verification");
+      const check = await checked(control, () => input.api.verify!(current, token));
+      const valid = check?.card?.valid === true;
+      const matchesCard = valid && check?.matchesCard === true;
+      return { verified: valid && matchesCard && sameChip, valid, matchesCard, medium: read.medium };
+    }, read.medium === "nfc"); },
     program(previous?: EnrollmentCard) { return run(async () => {
       const cards = await list();
       if (attempt || cards.some((c) => c.status === "issued" && c.nfc?.state === "pending")) throw nfcFailure("NFC_PENDING");
@@ -390,6 +518,13 @@ export function createNfcEnrollmentApi(request: <T>(path: string, options?: { me
       return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-recover`,
         { uid: card.nfc.uid, tagType: card.nfc.tagType, cardToken, studentId, operationId });
     },
+    provision(card, body, studentId) {
+      return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-provision`, { ...body, ...(studentId ? { studentId } : {}) });
+    },
+    confirmProvision(card, body, studentId) {
+      return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-provision/confirm`, { ...body, ...(studentId ? { studentId } : {}) });
+    },
+    verify(card, cardToken) { return post("/student-cards/verify", { cardToken, cardId: card.id }); },
     confirm(card, cardToken, locked, studentId) {
       if (!card.nfc) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
       return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-confirm`, { uid: card.nfc.uid, tagType: card.nfc.tagType, cardToken, locked, studentId, operationId: card.nfc.operationId });
