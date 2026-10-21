@@ -70,15 +70,25 @@ const RESOLVED: StudentCardScanResolved = {
   class: { id: "class-2b", classCode: "2B", className: "2ème B" },
 } as StudentCardScanResolved;
 
-type ApiControl = { api: NfcAttendanceScannerApi; calls: string[]; resolveGate?: Promise<void> };
+type ApiControl = {
+  api: NfcAttendanceScannerApi;
+  calls: string[];
+  records: { expectedClassId?: string; idempotencyKey: string }[];
+  resolveGate?: Promise<void>;
+};
 function apiMock(over: Partial<NfcAttendanceScannerApi> = {}, resolveGate?: Promise<void>): ApiControl {
   const calls: string[] = [];
+  const records: { expectedClassId?: string; idempotencyKey: string }[] = [];
   const control: ApiControl = {
     calls,
+    records,
     api: {
       async resolveCard() { calls.push("resolve"); if (resolveGate) await resolveGate; return RESOLVED; },
-      async recordAttendance(_token, attendance) {
+      async recordAttendance(_token, attendance, idempotencyKey) {
+        // NFC-PERF-02 : l'unique requête porte la classe attendue et la clé d'idempotence.
         calls.push(`record:${attendance.status}:${attendance.date}`);
+        records.push({ expectedClassId: attendance.expectedClassId, idempotencyKey });
+        if (resolveGate) await resolveGate;
         return { ...RESOLVED, attendance: { status: "present", date: attendance.date } };
       },
       readFinance: undefined,
@@ -172,7 +182,9 @@ const cases: Array<[string, () => Promise<void>]> = [
     assert.equal(h.scanner().scanning, true);
     const rendersBefore = h.parentRenders();
     await present(hw);
-    assert.deepEqual(control.calls, ["resolve", "record:present:2026-10-17"]);
+    // NFC-PERF-02 : une seule requête — aucune résolution préalable, classe attendue transmise.
+    assert.deepEqual(control.calls, ["record:present:2026-10-17"]);
+    assert.deepEqual(control.records, [{ expectedClassId: "class-2b", idempotencyKey: "idem-0001" }]);
     assert.equal(h.recorded.length, 1, "roll call notified once");
     assert.ok(h.parentRenders() > rendersBefore, "parent re-rendered like TeacherAttendanceScreen");
     const s = h.scanner();
@@ -222,17 +234,55 @@ const cases: Array<[string, () => Promise<void>]> = [
       await h.unmount();
     }
   }],
-  ["PRES-04 card of another class: identified, explicit message, no presence", async () => {
+  ["PRES-04 card of another class: the server refuses before writing (409), explicit message, no presence", async () => {
     const hw = hardware();
+    const attempts: (string | undefined)[] = [];
     const control = apiMock({
-      async resolveCard() { return { ...RESOLVED, class: { id: "class-3a", classCode: "3A", className: "3ème A" } } as StudentCardScanResolved; },
+      async resolveCard() { throw new Error("resolver must be skipped for NFC"); },
+      async recordAttendance(_token, attendance) {
+        attempts.push(attendance.expectedClassId);
+        throw Object.assign(new Error("mismatch"), { status: 409, code: "STUDENT_CARD_CLASS_MISMATCH" });
+      },
     });
     const h = await mount(hw, control);
     await present(hw);
     const s = h.scanner();
+    assert.deepEqual(attempts, ["class-2b"], "la classe sélectionnée est soumise au contrôle serveur");
     assert.equal(s.error, "Cette carte n’appartient pas à la classe actuellement sélectionnée.");
-    assert.equal(s.result?.attendanceRecorded, false); assert.equal(h.recorded.length, 0);
+    assert.notEqual(s.result?.attendanceRecorded, true); assert.equal(h.recorded.length, 0);
+    assert.equal(s.busy, false);
     await h.unmount();
+  }],
+  ["PRES-04b defence in depth: a confirmed response for another class is never shown as a presence", async () => {
+    const hw = hardware();
+    const control = apiMock({
+      async recordAttendance(_token, attendance) {
+        return { ...RESOLVED, class: { id: "class-3a", classCode: "3A", className: "3ème A" }, attendance: { status: "present", date: attendance.date } } as StudentCardScanResolved;
+      },
+    });
+    const h = await mount(hw, control);
+    await present(hw);
+    assert.equal(h.scanner().error, "Cette carte n’appartient pas à la classe actuellement sélectionnée.");
+    assert.equal(h.recorded.length, 0);
+    await h.unmount();
+  }],
+  ["PRES-04c invalid card or other school: refused by the single request, no presence", async () => {
+    for (const [status, code] of [[409, "STUDENT_CARD_INVALID_STATE"], [404, "STUDENT_CARD_NOT_FOUND"]] as const) {
+      const hw = hardware();
+      let attempts = 0;
+      const control = apiMock({
+        async resolveCard() { throw new Error("resolver must be skipped for NFC"); },
+        async recordAttendance() { attempts += 1; throw Object.assign(new Error("refused"), { status, code }); },
+      });
+      const h = await mount(hw, control);
+      await present(hw);
+      const s = h.scanner();
+      assert.notEqual(s.error, "", code);
+      assert.equal(h.recorded.length, 0, code);
+      assert.notEqual(s.result?.attendanceRecorded, true, code);
+      assert.equal(attempts, 1, `${code}: une seule requête, aucune résolution préalable`);
+      await h.unmount();
+    }
   }],
   ["PRES-05 unexpected exception before the API call: explicit error, busy released", async () => {
     const hw = hardware();
@@ -247,7 +297,7 @@ const cases: Array<[string, () => Promise<void>]> = [
     control.api.createIdempotencyKey = originalCreate;
     await h.unmount();
   }],
-  ["PRES-06 closing during identification: no presence written, nothing displayed, busy released", async () => {
+  ["PRES-06 closing while the single request is in flight: nothing displayed, no second request, busy released", async () => {
     const hw = hardware(); const gate = deferred<void>(); const control = apiMock({}, gate.promise);
     const h = await mount(hw, control);
     await present(hw);
@@ -256,18 +306,22 @@ const cases: Array<[string, () => Promise<void>]> = [
     await settle();
     const s = h.scanner();
     assert.equal(s.result, null); assert.equal(s.busy, false);
-    assert.deepEqual(control.calls, ["resolve"], "no attendance request after closing");
+    // NFC-PERF-02 : la requête unique est partie avant la fermeture (le serveur peut l'avoir écrite) ;
+    // aucune autre requête n'est envoyée et rien n'est affiché ni notifié à l'appel.
+    assert.deepEqual(control.calls, ["record:present:2026-10-17"], "exactly the request sent before closing");
     assert.equal(h.recorded.length, 0);
     await h.unmount();
   }],
-  ["PRES-07 class changed during identification: presence not applied to the new class", async () => {
+  ["PRES-07 class changed while the request is in flight: never applied to the new class", async () => {
     const hw = hardware(); const gate = deferred<void>(); const control = apiMock({}, gate.promise);
     const h = await mount(hw, control);
     await present(hw);
     await h.setClass("class-3a", "3A");
     await act(async () => { gate.resolve(); });
     await settle();
-    assert.deepEqual(control.calls, ["resolve"], "no attendance written for the previous class");
+    // La requête porte la classe sélectionnée au moment du scan (vérifiée par le serveur),
+    // jamais la nouvelle classe ; le résultat périmé n'est ni affiché ni notifié.
+    assert.deepEqual(control.records.map((r) => r.expectedClassId), ["class-2b"]);
     assert.equal(h.recorded.length, 0);
     assert.equal(h.scanner().busy, false);
     await h.unmount();

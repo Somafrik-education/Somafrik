@@ -136,6 +136,7 @@ export function useNfcAttendanceScanner(options: NfcAttendanceScannerOptions): N
         attendanceDate: props.attendanceDate,
         financeEnabled: props.financeEnabled,
         parallelFinance: true,
+        singleRequestAttendance: true,
         isOffline: props.isOffline,
         currentScope: scope,
         resolveCard: props.api.resolveCard,

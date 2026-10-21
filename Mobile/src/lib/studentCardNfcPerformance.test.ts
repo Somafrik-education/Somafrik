@@ -55,3 +55,69 @@ test("NFC-PERF-01 no finance call on mismatched class", async () => {
   assert.equal(result.kind, "class_mismatch");
   assert.deepEqual(x.calls, []);
 });
+
+test("NFC-PERF-02 one POST: no resolver, class scope provided, confirmed server response only", async () => {
+  let calls = 0;
+  let selected = "";
+  const outcome = await runStudentCardScanFlow({
+    cardToken: "synthetic.token", scope: snapshot(),
+    selectedClass: { classId: "class-1", classCode: "A" },
+    author: { status: "teacher_session" }, attendanceDate: "2026-10-19",
+    financeEnabled: false, singleRequestAttendance: true,
+    isOffline: () => false, currentScope: snapshot,
+    resolveCard: async () => { throw new Error("resolver must be skipped"); },
+    recordAttendance: async (_token, attendance) => {
+      calls += 1;
+      selected = String(attendance.expectedClassId);
+      return response;
+    },
+    createIdempotencyKey: () => "11111111-1111-4111-8111-111111111111",
+  });
+  assert.equal(calls, 1);
+  assert.equal(selected, "class-1");
+  assert.equal(outcome.kind, "success");
+});
+
+test("NFC-PERF-02 QR unchanged: without the NFC flag, resolve then record, no expectedClassId", async () => {
+  const calls: string[] = [];
+  const sent: Record<string, unknown>[] = [];
+  const outcome = await runStudentCardScanFlow({
+    cardToken: "synthetic.token", scope: snapshot(),
+    selectedClass: { classId: "class-1", classCode: "A" },
+    author: { status: "teacher_session" }, attendanceDate: "2026-10-19",
+    financeEnabled: false,
+    isOffline: () => false, currentScope: snapshot,
+    resolveCard: async () => { calls.push("resolve"); return response; },
+    recordAttendance: async (_token, attendance, idempotencyKey) => {
+      calls.push("record");
+      sent.push({ ...attendance, idempotencyKey });
+      return response;
+    },
+    createIdempotencyKey: () => "11111111-1111-4111-8111-111111111111",
+  });
+  assert.deepEqual(calls, ["resolve", "record"]);
+  assert.equal(Object.hasOwn(sent[0], "expectedClassId"), false);
+  assert.equal(sent[0].idempotencyKey, "11111111-1111-4111-8111-111111111111");
+  assert.equal(outcome.kind, "success");
+});
+
+test("NFC-PERF-02 single request: server class refusal or invalid card → no success, idempotency key kept", async () => {
+  for (const code of ["STUDENT_CARD_CLASS_MISMATCH", "STUDENT_CARD_INVALID_STATE", "STUDENT_CARD_NOT_FOUND"]) {
+    const keys: string[] = [];
+    const outcome = await runStudentCardScanFlow({
+      cardToken: "synthetic.token", scope: snapshot(),
+      selectedClass: { classId: "class-1", classCode: "A" },
+      author: { status: "teacher_session" }, attendanceDate: "2026-10-19",
+      financeEnabled: false, singleRequestAttendance: true,
+      isOffline: () => false, currentScope: snapshot,
+      resolveCard: async () => { throw new Error("resolver must be skipped"); },
+      recordAttendance: async (_token, _attendance, idempotencyKey) => {
+        keys.push(idempotencyKey);
+        throw Object.assign(new Error("refused"), { code });
+      },
+      createIdempotencyKey: () => "11111111-1111-4111-8111-111111111111",
+    });
+    assert.equal(outcome.kind, "error", code);
+    assert.deepEqual(keys, ["11111111-1111-4111-8111-111111111111"], code);
+  }
+});

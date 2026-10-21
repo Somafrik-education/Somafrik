@@ -659,12 +659,14 @@ export type StudentCardScanFlowDeps = {
   financeEnabled: boolean;
   /** NFC only: finance lookup may overlap attendance, but can never confirm attendance. */
   parallelFinance?: boolean;
+  /** NFC-only single authenticated attendance POST with server-side class check. */
+  singleRequestAttendance?: boolean;
   isOffline: () => boolean;
   currentScope: () => ScanScopeSnapshot;
   resolveCard: (cardToken: string) => Promise<StudentCardScanResolved>;
   recordAttendance: (
     cardToken: string,
-    attendance: { date: string; status: "present"; teacherId?: string },
+    attendance: { date: string; status: "present"; teacherId?: string; expectedClassId?: string },
     idempotencyKey: string,
   ) => Promise<StudentCardScanResolved>;
   readFinance?: (cardToken: string) => Promise<StudentCardScanResolved>;
@@ -682,18 +684,19 @@ export async function runStudentCardScanFlow(
   if (!author.ok) return { kind: "teacher_unresolved" };
 
   try {
-    const resolved = await deps.resolveCard(deps.cardToken);
+    const resolved = deps.singleRequestAttendance ? null : await deps.resolveCard(deps.cardToken);
     if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
-    if (isInvalidCardStatus(resolved.card?.status)) return { kind: "invalid_card" };
-    if (!cardBelongsToSelectedClass(resolved.class, deps.selectedClass)) {
+    if (resolved && isInvalidCardStatus(resolved.card?.status)) return { kind: "invalid_card" };
+    if (resolved && !cardBelongsToSelectedClass(resolved.class, deps.selectedClass)) {
       return { kind: "class_mismatch", view: viewFromResolved(resolved) };
     }
 
-    const attendance: { date: string; status: "present"; teacherId?: string } = {
+    const attendance: { date: string; status: "present"; teacherId?: string; expectedClassId?: string } = {
       date: deps.attendanceDate,
       status: "present",
     };
     if (author.teacherId) attendance.teacherId = author.teacherId;
+    if (deps.singleRequestAttendance) attendance.expectedClassId = String(deps.selectedClass.classId ?? "").trim();
     const idempotencyKey = deps.createIdempotencyKey();
     assertIdempotencyKeySafe(idempotencyKey, deps.cardToken);
     // NFC-PERF-01: overlap independent finance read with attendance write.
@@ -708,6 +711,12 @@ export async function runStudentCardScanFlow(
       : null;
     const recorded = await deps.recordAttendance(deps.cardToken, attendance, idempotencyKey);
     if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
+    if (deps.singleRequestAttendance) {
+      if (isInvalidCardStatus(recorded.card?.status)) return { kind: "invalid_card" };
+      if (!cardBelongsToSelectedClass(recorded.class, deps.selectedClass)) {
+        return { kind: "class_mismatch", view: viewFromResolved(recorded) };
+      }
+    }
 
     let financeLabel = "";
     let financeUnavailable = false;
@@ -731,7 +740,7 @@ export async function runStudentCardScanFlow(
 
     return {
       kind: "success",
-      view: viewFromResolved(recorded.student ? recorded : resolved, {
+      view: viewFromResolved(recorded.student ? recorded : resolved!, {
         attendanceRecorded: true,
         financeLabel,
         financeUnavailable,
@@ -739,6 +748,7 @@ export async function runStudentCardScanFlow(
     };
   } catch (error) {
     if (isStaleScanScope(deps.scope, deps.currentScope())) return { kind: "stale" };
+    if (deps.singleRequestAttendance && studentCardScanErrorCode(error) === "STUDENT_CARD_CLASS_MISMATCH") return { kind: "error", message: STUDENT_CARD_SCAN_COPY.classMismatch };
     return { kind: "error", message: studentCardScanErrorMessage(error) };
   }
 }

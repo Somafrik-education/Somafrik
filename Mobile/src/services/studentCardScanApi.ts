@@ -68,7 +68,7 @@ export function resolveStudentCard(cardToken: string) {
 
 export function recordStudentCardAttendance(
   cardToken: string,
-  attendance: { date: string; status: "present"; teacherId?: string },
+  attendance: { date: string; status: "present"; teacherId?: string; expectedClassId?: string },
   options: { idempotencyKey: string },
 ) {
   return postScan({ cardToken, attendance }, { idempotencyKey: options.idempotencyKey });

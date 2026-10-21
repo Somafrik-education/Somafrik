@@ -9,6 +9,7 @@ const {
   hasAttendanceIntent,
   buildAttendanceItem,
   assertStudentCardAttendanceEnabled,
+  assertSelectedAttendanceClass,
 } = require("./studentCardAttendance");
 
 const resolved = {
@@ -93,4 +94,13 @@ test("CARTE-PR4 — l'adaptateur délègue au moteur canonique sans SQL ni finan
   assert.match(scanRoute, /write_presence/);
   assert.doesNotMatch(scanRoute, /upsertSchoolAttendanceBatch|INSERT INTO attendance|listFinanceStudentFees/);
   assert.doesNotMatch(scanRoute.slice(0, scanRoute.indexOf("hasAttendanceIntent")), /write_presence/);
+});
+
+test("NFC-PERF-02: server verifies selected class against authoritative resolved roster", () => {
+  assert.doesNotThrow(() => assertSelectedAttendanceClass(resolved, "class-a"));
+  assert.doesNotThrow(() => assertSelectedAttendanceClass(resolved, undefined));
+  for (const selected of ["class-b", "", " ", null, 42]) {
+    assert.throws(() => assertSelectedAttendanceClass(resolved, selected),
+      (error) => error.statusCode === 409 && error.code === STUDENT_CARD_ATTENDANCE_ERROR.CLASS_MISMATCH);
+  }
 });
