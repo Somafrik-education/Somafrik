@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { URL } from "node:url";
+import Module, { createRequire } from "node:module";
+import React, { act } from "react";
 import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcErrorCopy, nfcFailure,
   type EnrollmentCard, type IssuedNfcCard, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcPhase } from "./studentCardNfcEncoding";
 import { studentCardEnrollmentAccess } from "./studentCardEnrollmentAccess";
@@ -280,7 +280,6 @@ type ProvisionFlow = {
 const QR_CARD: EnrollmentCard = { id: "q1", publicId: "A".repeat(22), medium: "nfc_qr", status: "active", nfc: null };
 const CHALLENGE = "opaque-server-challenge";
 const OTHER_TOKEN = `${"Z".repeat(22)}.${"B".repeat(43)}`;
-const PANEL = readFileSync(new URL("../components/StudentCardNfcEnrollmentPanel.tsx", import.meta.url), "utf8");
 
 function provisionFixture(initial: EnrollmentCard = QR_CARD) {
   let stored: EnrollmentCard[] = [structuredClone(initial)]; let value = ""; let valid = true;
@@ -330,21 +329,112 @@ function rereading(f: ReturnType<typeof provisionFixture>): ProvisionFlow {
   return flow as ProvisionFlow;
 }
 const MUTATIONS = ["write", "issue", "replace", "retry", "confirm", "provision", "confirmProvision"];
-function panelButtonLine(label: string): string {
-  const line = PANEL.split("\n").find((l) => l.includes(`"${label}"`));
-  assert.ok(line, `StudentCardNfcEnrollmentPanel ne propose aucun bouton « ${label} »`);
-  return line;
-}
+// Rendu réel du panneau (React + react-dom sur un hôte minimal, RN et natif simulés) :
+// on observe les boutons effectivement affichés, leur état et l'action déclenchée.
+type PanelButton = { label: string; disabled: boolean; onPress: () => void };
+type PanelProps = { cards: EnrollmentCard[]; canRead: boolean; canUpdate: boolean; mutationsBlocked?: boolean };
+const panelHarness = (() => {
+  const state = { cards: [] as EnrollmentCard[], buttons: [] as PanelButton[], calls: [] as string[], alerts: [] as string[] };
+  const nodeRequire = createRequire(import.meta.url);
+  const loader = Module as unknown as { _load: (...args: unknown[]) => unknown };
+  const passthrough = ({ children }: { children?: React.ReactNode }) => React.createElement(React.Fragment, null, children);
+  const touchable = (props: { accessibilityLabel?: string; disabled?: boolean; onPress?: () => void; children?: React.ReactNode }) => {
+    if (props.accessibilityLabel) state.buttons.push({ label: props.accessibilityLabel, disabled: props.disabled === true, onPress: props.onPress ?? (() => {}) });
+    return null;
+  };
+  const record = (name: string) => async (): Promise<never> => { state.calls.push(name); throw nfcFailure("NFC_CANCELLED"); };
+  const mocks: Record<string, unknown> = {
+    "react-native": {
+      Platform: { OS: "android" }, Text: () => null, TouchableOpacity: touchable,
+      View: (props: { testID?: string; children?: React.ReactNode }) => { if (props.testID === "student-card-nfc-enrollment-panel") state.buttons = []; return passthrough(props); },
+      Alert: { alert: (title: string) => { state.alerts.push(title); } },
+      AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
+    },
+    "../services/studentCardEnrollmentApi": { studentCardEnrollmentApi: {
+      async list() { state.calls.push("list"); return { cards: structuredClone(state.cards), nfcEnabled: true }; },
+      issue: record("issue"), replace: record("replace"), retry: record("retry"), confirm: record("confirm"),
+      provision: record("provision"), confirmProvision: record("confirmProvision"), verify: record("verify"),
+    } },
+    // Pont natif simulé : le vrai encodeur (import() dynamique du panneau) s'exécute ; aucune puce présentée.
+    "react-native-nfc-manager": {
+      __esModule: true, NfcAdapter: {}, Ndef: nodeRequire("react-native-nfc-manager/dist/ndef-lib"),
+      NfcTech: { Ndef: "Ndef", NfcA: "NfcA", NfcB: "NfcB", IsoDep: "IsoDep" }, NdefStatus: { ReadWrite: 1, ReadOnly: 2, NotSupported: 3 },
+      default: {
+        start: async () => {}, isSupported: async () => true, isEnabled: async () => true,
+        registerTagEvent: async () => {}, unregisterTagEvent: async () => {}, cancelTechnologyRequest: async () => {},
+        requestTechnology: async () => { state.calls.push("nfc-request"); throw new Error("aucune puce présentée"); },
+      },
+    },
+  };
+  async function flush() { for (let i = 0; i < 6; i++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); }
+  return {
+    state,
+    async render(props: PanelProps) {
+      const g = globalThis as Record<string, unknown>;
+      const saved = { window: g.window, act: g.IS_REACT_ACT_ENVIRONMENT, react: g.React };
+      g.React = React; // le TSX du panneau est compilé en JSX classique par tsx
+      g.window = { event: undefined, HTMLIFrameElement: class {}, document: { activeElement: null } }; g.IS_REACT_ACT_ENVIRONMENT = true;
+      const original = loader._load;
+      loader._load = function (this: unknown, ...args: unknown[]) { const request = String(args[0]); return request in mocks ? mocks[request] : original.apply(this, args); };
+      Object.assign(state, { cards: props.cards, buttons: [], calls: [], alerts: [] });
+      const node: Record<string, unknown> = { nodeType: 1, nodeName: "DIV", tagName: "DIV", namespaceURI: "http://www.w3.org/1999/xhtml",
+        childNodes: [], textContent: "", addEventListener() {}, removeEventListener() {}, appendChild() {}, removeChild() {} };
+      node.ownerDocument = { addEventListener() {}, removeEventListener() {}, defaultView: null, documentElement: node };
+      const { createRoot } = nodeRequire("react-dom/client") as { createRoot: (c: unknown) => { render(n: React.ReactNode): void; unmount(): void } };
+      const { StudentCardNfcEnrollmentPanel } = nodeRequire("../components/StudentCardNfcEnrollmentPanel") as { StudentCardNfcEnrollmentPanel: React.ComponentType<Record<string, unknown>> };
+      const root = createRoot(node);
+      await act(async () => { root.render(React.createElement(StudentCardNfcEnrollmentPanel, { studentId: "s1", canRead: props.canRead, canUpdate: props.canUpdate, mutationsBlocked: props.mutationsBlocked === true })); });
+      await flush();
+      return {
+        button(label: string) { return state.buttons.find((b) => b.label === label); },
+        async press(label: string) { const b = state.buttons.find((x) => x.label === label); assert.ok(b && !b.disabled); await act(async () => { b.onPress(); }); await flush(); },
+        async unmount() { await act(async () => { root.unmount(); }); loader._load = original; g.window = saved.window; g.IS_REACT_ACT_ENVIRONMENT = saved.act; g.React = saved.react; },
+      };
+    },
+  };
+})();
+const ENCODE = "Encoder NFC sur cette carte";
+const REREAD = "Relire la carte";
+const ENCODED_QR_CARD: EnrollmentCard = { ...QR_CARD, nfc: { ...identity, state: "encoded", operationId: null, expiresAt: null } };
 
-test("RED-01 — carte QR active sans puce + Élèves:UPDATE : le panneau propose « Encoder NFC sur cette carte »", () => {
-  const line = panelButtonLine("Encoder NFC sur cette carte");
-  assert.match(line, /card\.status === "active" && !card\.nfc/, "le bouton doit être lié à une carte active sans puce");
-  assert.doesNotMatch(line, /replace\(/, "encoder ne doit jamais passer par le remplacement");
+test("RED-01/02 contrôle du harnais — BASELINE PASS : le rendu réel affiche « Remplacer la carte active » (comportement actuel)", async () => {
+  const panel = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: true });
+  try {
+    assert.ok(panelHarness.state.calls.includes("list"), "le panneau a chargé les cartes");
+    const replace = panel.button("Remplacer la carte active");
+    assert.ok(replace && !replace.disabled, `boutons affichés : ${panelHarness.state.buttons.map((b) => b.label).join(" | ")} ; appels : ${panelHarness.state.calls.join(",")}`);
+  } finally { await panel.unmount(); }
 });
-test("RED-02 — carte QR active sans puce : le panneau propose « Relire la carte » indépendamment de toute puce", () => {
-  const line = panelButtonLine("Relire la carte");
-  assert.doesNotMatch(line, /card\.nfc(?!\w)/, "la relecture ne doit pas exiger une puce déjà encodée");
-  assert.doesNotMatch(line, /controller\.resume\(/, "la relecture ne doit pas passer par nfc-confirm (resume)");
+test("RED-01 — carte QR active sans puce + Élèves:UPDATE : bouton « Encoder NFC sur cette carte » affiché, sans remplacement", async () => {
+  const panel = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: true });
+  try {
+    const encode = panel.button(ENCODE);
+    assert.ok(encode, `boutons affichés : ${panelHarness.state.buttons.map((b) => b.label).join(" | ")}`);
+    assert.equal(encode.disabled, false);
+    await panel.press(ENCODE);
+    assert.deepEqual(panelHarness.state.alerts.filter((t) => /remplacement/i.test(t)), [], "encoder ne doit jamais demander un remplacement");
+    assert.ok(!["issue", "replace", "retry", "confirm"].some((c) => panelHarness.state.calls.includes(c)), "aucune nouvelle carte ni remplacement");
+  } finally { await panel.unmount(); }
+});
+test("RED-02 — carte QR active sans puce : bouton « Relire la carte » affiché sans puce encodée", async () => {
+  const panel = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: true });
+  try {
+    const reread = panel.button(REREAD);
+    assert.ok(reread, `boutons affichés : ${panelHarness.state.buttons.map((b) => b.label).join(" | ")}`);
+    assert.equal(reread.disabled, false);
+  } finally { await panel.unmount(); }
+});
+test("RED-03 (panneau) — carte active NFC encodée : « Relire la carte » affiché, aucun encodage initial proposé", async () => {
+  const panel = await panelHarness.render({ cards: [ENCODED_QR_CARD], canRead: true, canUpdate: true });
+  try {
+    assert.equal(panel.button(ENCODE), undefined, "pas d'encodage initial sur une carte déjà encodée");
+    assert.ok(panel.button(REREAD), `boutons affichés : ${panelHarness.state.buttons.map((b) => b.label).join(" | ")}`);
+  } finally { await panel.unmount(); }
+});
+for (const status of ["lost", "revoked", "replaced"]) test(`RED-04 (panneau) — BASELINE PASS : carte ${status} seule, ni « Encoder NFC » ni « Relire la carte »`, async () => {
+  const panel = await panelHarness.render({ cards: [{ ...QR_CARD, status }], canRead: true, canUpdate: true });
+  try { assert.equal(panel.button(ENCODE), undefined); assert.equal(panel.button(REREAD), undefined); }
+  finally { await panel.unmount(); }
 });
 test("RED-03 — carte active avec NFC encodé : relecture disponible, aucun encodage initial", async () => {
   const encoded: EnrollmentCard = { ...QR_CARD, nfc: { ...identity, state: "encoded", operationId: null, expiresAt: null } };
@@ -428,10 +518,17 @@ for (const point of ["inspect", "provision", "write", "read"]) test(`RED-10 — 
   await assert.rejects(flow.provision(QR_CARD, TOKEN), { code: "NFC_CANCELLED" });
   assert.ok(!f.events.includes("confirmProvision")); assert.ok(!f.phases.includes("success"));
 });
-test("RED-11 — RBAC : relecture selon Élèves:READ, encodage réservé à Élèves:UPDATE / Gérer élèves", () => {
-  const reread = panelButtonLine("Relire la carte");
-  assert.doesNotMatch(reread, /canProgram|canUpdate|permitted/, "la relecture ne doit pas exiger le droit de modification");
-  assert.match(panelButtonLine("Encoder NFC sur cette carte"), /canProgram/, "l'encodage reste réservé au droit de modification");
+test("RED-11 — RBAC : Élèves:READ seul → relecture sans encodage ; Élèves:UPDATE hors ligne → aucun encodage", async () => {
+  const readOnly = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: false });
+  try {
+    assert.equal(readOnly.button(ENCODE), undefined, "encodage réservé à Élèves:UPDATE / Gérer élèves");
+    assert.equal(readOnly.button("Remplacer la carte active"), undefined);
+    const reread = readOnly.button(REREAD);
+    assert.ok(reread && !reread.disabled, `la relecture doit être offerte avec Élèves:READ ; boutons : ${panelHarness.state.buttons.map((b) => b.label).join(" | ")}`);
+  } finally { await readOnly.unmount(); }
+  const blocked = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: true, mutationsBlocked: true });
+  try { const encode = blocked.button(ENCODE); assert.ok(!encode || encode.disabled, "aucun encodage sans connexion ni droits à jour"); }
+  finally { await blocked.unmount(); }
 });
 test("RED-12 — tentatives concurrentes ou répétées : aucun doublon ni remplacement implicite", async () => {
   const f = provisionFixture(); const flow = provisioning(f); const gate = deferred<void>();
