@@ -334,8 +334,16 @@ const MUTATIONS = ["write", "issue", "replace", "retry", "confirm", "provision",
 type PanelButton = { label: string; disabled: boolean; onPress: () => void };
 type PanelProps = { cards: EnrollmentCard[]; canRead: boolean; canUpdate: boolean; mutationsBlocked?: boolean };
 const panelHarness = (() => {
-  const state = { cards: [] as EnrollmentCard[], buttons: [] as PanelButton[], calls: [] as string[], alerts: [] as string[] };
   const nodeRequire = createRequire(import.meta.url);
+  type QrProps = { visible: boolean; title: string; onToken: (token: string) => void; onCancel: () => void };
+  type AlertButton = { text: string; onPress?: () => void };
+  type Chip = { uid: string; storage: number; encoded: number[]; writes: number; failWrite: boolean };
+  type Server = { provision?: (...a: unknown[]) => Promise<unknown>; confirmProvision?: (...a: unknown[]) => Promise<unknown>; verify?: (...a: unknown[]) => Promise<unknown> };
+  const state = { cards: [] as EnrollmentCard[], buttons: [] as PanelButton[], calls: [] as string[], alerts: [] as string[], qr: null as QrProps | null,
+    texts: [] as string[], alertButtons: [] as AlertButton[], chip: null as Chip | null, server: {} as Server };
+  const ndefLib = nodeRequire("react-native-nfc-manager/dist/ndef-lib");
+  let cached: unknown[] = [];
+  const text = (children: unknown): string => Array.isArray(children) ? children.map(text).join("") : children == null || typeof children === "boolean" ? "" : String(children);
   const loader = Module as unknown as { _load: (...args: unknown[]) => unknown };
   const passthrough = ({ children }: { children?: React.ReactNode }) => React.createElement(React.Fragment, null, children);
   const touchable = (props: { accessibilityLabel?: string; disabled?: boolean; onPress?: () => void; children?: React.ReactNode }) => {
@@ -343,18 +351,24 @@ const panelHarness = (() => {
     return null;
   };
   const record = (name: string) => async (): Promise<never> => { state.calls.push(name); throw nfcFailure("NFC_CANCELLED"); };
+  const server = (name: keyof Server) => async (...args: unknown[]) => {
+    const handler = state.server[name]; if (!handler) return record(name)(); state.calls.push(name); return handler(...args);
+  };
   const mocks: Record<string, unknown> = {
     "react-native": {
-      Platform: { OS: "android" }, Text: () => null, TouchableOpacity: touchable,
-      View: (props: { testID?: string; children?: React.ReactNode }) => { if (props.testID === "student-card-nfc-enrollment-panel") state.buttons = []; return passthrough(props); },
-      Alert: { alert: (title: string) => { state.alerts.push(title); } },
+      Platform: { OS: "android" }, TouchableOpacity: touchable,
+      Text: (props: { children?: unknown }) => { state.texts.push(text(props.children)); return null; },
+      View: (props: { testID?: string; children?: React.ReactNode }) => { if (props.testID === "student-card-nfc-enrollment-panel") { state.buttons = []; state.texts = []; } return passthrough(props); },
+      Alert: { alert: (title: string, _message?: string, buttons?: AlertButton[]) => { state.alerts.push(title); state.alertButtons = buttons ?? []; } },
       AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
     },
     "../services/studentCardEnrollmentApi": { studentCardEnrollmentApi: {
       async list() { state.calls.push("list"); return { cards: structuredClone(state.cards), nfcEnabled: true }; },
       issue: record("issue"), replace: record("replace"), retry: record("retry"), confirm: record("confirm"),
-      provision: record("provision"), confirmProvision: record("confirmProvision"), verify: record("verify"),
+      provision: server("provision"), confirmProvision: server("confirmProvision"), verify: server("verify"),
     } },
+    // Capture QR (caméra) simulée : le test présente le QR imprimé via onToken.
+    "./StudentCardQrCaptureModal": { StudentCardQrCaptureModal: (props: QrProps) => { state.qr = props; return null; } },
     // Pont natif simulé : le vrai encodeur (import() dynamique du panneau) s'exécute ; aucune puce présentée.
     "react-native-nfc-manager": {
       __esModule: true, NfcAdapter: {}, Ndef: nodeRequire("react-native-nfc-manager/dist/ndef-lib"),
@@ -362,13 +376,36 @@ const panelHarness = (() => {
       default: {
         start: async () => {}, isSupported: async () => true, isEnabled: async () => true,
         registerTagEvent: async () => {}, unregisterTagEvent: async () => {}, cancelTechnologyRequest: async () => {},
-        requestTechnology: async () => { state.calls.push("nfc-request"); throw new Error("aucune puce présentée"); },
+        // NTAG213 simulée : chaque découverte relit le contenu réellement écrit (relecture physique).
+        requestTechnology: async (techs: string[]) => {
+          state.calls.push("nfc-request");
+          if (!state.chip) throw new Error("aucune puce présentée");
+          cached = state.chip.encoded.length ? ndefLib.decodeMessage(state.chip.encoded).map((r: { type: string }) => ({ ...r, type: Array.from(r.type, (c) => c.charCodeAt(0)) })) : [];
+          return techs[0];
+        },
+        getTag: async () => ({ id: state.chip?.uid }),
+        nfcAHandler: { transceive: async () => [0, 4, 4, 2, 1, 0, state.chip?.storage ?? 0, 3] },
+        ndefHandler: {
+          getNdefStatus: async () => ({ status: 1, capacity: 137 }),
+          getNdefMessage: async () => ({ ndefMessage: cached }),
+          writeNdefMessage: async (bytes: number[]) => {
+            state.calls.push("nfc-write");
+            if (!state.chip || state.chip.failWrite) throw new Error("tag lost");
+            state.chip.encoded = Array.from(bytes); state.chip.writes++;
+          },
+        },
       },
     },
   };
-  async function flush() { for (let i = 0; i < 6; i++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); }
+  async function flush() { for (let i = 0; i < 25; i++) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); }
   return {
     state,
+    blankChip(): Chip { return { uid: UID, storage: 0x0f, encoded: [], writes: 0, failWrite: false }; },
+    writtenChip(value: string, uid = UID): Chip { return { uid, storage: 0x0f, encoded: Array.from(ndefLib.encodeMessage([ndefLib.textRecord(value, "en")])), writes: 0, failWrite: false }; },
+    chipText(): string {
+      const records = state.chip?.encoded.length ? ndefLib.decodeMessage(state.chip.encoded) : [];
+      return records.length === 1 ? ndefLib.text.decodePayload(new Uint8Array(records[0].payload)) : "";
+    },
     async render(props: PanelProps) {
       const g = globalThis as Record<string, unknown>;
       const saved = { window: g.window, act: g.IS_REACT_ACT_ENVIRONMENT, react: g.React };
@@ -376,7 +413,7 @@ const panelHarness = (() => {
       g.window = { event: undefined, HTMLIFrameElement: class {}, document: { activeElement: null } }; g.IS_REACT_ACT_ENVIRONMENT = true;
       const original = loader._load;
       loader._load = function (this: unknown, ...args: unknown[]) { const request = String(args[0]); return request in mocks ? mocks[request] : original.apply(this, args); };
-      Object.assign(state, { cards: props.cards, buttons: [], calls: [], alerts: [] });
+      Object.assign(state, { cards: props.cards, buttons: [], calls: [], alerts: [], qr: null, texts: [], alertButtons: [], chip: null, server: {} });
       const node: Record<string, unknown> = { nodeType: 1, nodeName: "DIV", tagName: "DIV", namespaceURI: "http://www.w3.org/1999/xhtml",
         childNodes: [], textContent: "", addEventListener() {}, removeEventListener() {}, appendChild() {}, removeChild() {} };
       node.ownerDocument = { addEventListener() {}, removeEventListener() {}, defaultView: null, documentElement: node };
@@ -388,6 +425,8 @@ const panelHarness = (() => {
       return {
         button(label: string) { return state.buttons.find((b) => b.label === label); },
         async press(label: string) { const b = state.buttons.find((x) => x.label === label); assert.ok(b && !b.disabled); await act(async () => { b.onPress(); }); await flush(); },
+        async alertOption(label: string) { const b = state.alertButtons.find((x) => x.text === label); assert.ok(b?.onPress, `option « ${label} » absente`); await act(async () => { b.onPress!(); }); await flush(); },
+        async scanQr(token: string) { assert.ok(state.qr?.visible, "la capture QR doit être ouverte"); const qr = state.qr; await act(async () => { qr.onToken(token); }); await flush(); },
         async unmount() { await act(async () => { root.unmount(); }); loader._load = original; g.window = saved.window; g.IS_REACT_ACT_ENVIRONMENT = saved.act; g.React = saved.react; },
       };
     },
@@ -512,7 +551,7 @@ test("RED-09 — mauvaise puce, contenu étranger, puce déjà affectée ou autr
 for (const point of ["inspect", "provision", "write", "read"]) test(`RED-10 — annulation ou changement de contexte pendant ${point} : aucune confirmation périmée`, async () => {
   const f = provisionFixture(); const flow = provisioning(f);
   if (point === "inspect") { const o = f.hardware.inspect; f.hardware.inspect = async () => { const r = await o(); f.invalidate(); return r; }; }
-  if (point === "provision") { const o = f.api.provision; f.api.provision = async (...a) => { const r = await o(...a); f.invalidate(); return r; }; }
+  if (point === "provision") { const o = f.api.provision; f.api.provision = async (...a: Parameters<ProvisionApi["provision"]>) => { const r = await o(...a); f.invalidate(); return r; }; }
   if (point === "write") { const o = f.hardware.writeText; f.hardware.writeText = async (v) => { await o(v); f.invalidate(); }; }
   if (point === "read") { const o = f.hardware.readText; f.hardware.readText = async () => { const r = await o(); if (f.events.includes("write")) f.invalidate(); return r; }; }
   await assert.rejects(flow.provision(QR_CARD, TOKEN), { code: "NFC_CANCELLED" });
@@ -532,7 +571,7 @@ test("RED-11 — RBAC : Élèves:READ seul → relecture sans encodage ; Élève
 });
 test("RED-12 — tentatives concurrentes ou répétées : aucun doublon ni remplacement implicite", async () => {
   const f = provisionFixture(); const flow = provisioning(f); const gate = deferred<void>();
-  const o = f.api.provision; f.api.provision = async (...a) => { await gate.promise; return o(...a); };
+  const o = f.api.provision; f.api.provision = async (...a: Parameters<ProvisionApi["provision"]>) => { await gate.promise; return o(...a); };
   const first = flow.provision(QR_CARD, TOKEN);
   await assert.rejects(flow.provision(QR_CARD, TOKEN), { code: "NFC_BUSY" });
   gate.resolve(); await first;
@@ -577,4 +616,105 @@ test("RED-16 — BASELINE PASS : le message NDEF somafrik:card tient dans une NT
   const record = 1 + 1 + 1 + 1 + payload; // en-tête court + longueur type + longueur charge + type « T »
   assert.ok(payload < 256, "enregistrement court (SR) attendu");
   assert.ok(record <= 137, `message NDEF de ${record} octets > capacité NTAG213`);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GREEN — parcours complets sur le panneau réel (encodeur natif réel, NTAG213 simulée au pont natif).
+// ─────────────────────────────────────────────────────────────────────────────
+function panelServer() {
+  const log: Record<string, unknown>[] = [];
+  const state = panelHarness.state;
+  state.server = {
+    provision: async (...a: unknown[]) => {
+      const [card, body, studentId] = a as [EnrollmentCard, Record<string, unknown>, string];
+      log.push({ route: "provision", cardId: card.id, studentId, ...body });
+      return { cardId: card.id, alreadyProvisioned: false, challenge: CHALLENGE, expiresAt: "2026-10-21T15:00:00Z" };
+    },
+    confirmProvision: async (...a: unknown[]) => {
+      const [card, body, studentId] = a as [EnrollmentCard, { cardToken: string; nfc: typeof identity; challenge: string }, string];
+      log.push({ route: "confirm", cardId: card.id, studentId, ...body });
+      const done: EnrollmentCard = { ...card, medium: "nfc_qr", status: "active", nfc: { ...body.nfc, state: "encoded", operationId: null, expiresAt: null } };
+      state.cards = state.cards.map((c) => c.id === card.id ? done : c); return done;
+    },
+    verify: async (...a: unknown[]) => {
+      const [card, cardToken] = a as [EnrollmentCard, string];
+      log.push({ route: "verify", cardId: card.id });
+      const current = state.cards.find((c) => c.publicId === cardToken.split(".")[0]);
+      return current?.status === "active" ? { card: { valid: true }, scope: "school", matchesCard: current.id === card.id } : { card: { valid: false }, scope: "none" };
+    },
+  };
+  return log;
+}
+const MUTATING_CALLS = ["issue", "replace", "retry", "confirm", "provision", "confirmProvision"];
+const noSecretShown = () => assert.ok(!panelHarness.state.texts.some((t) => t.includes(TOKEN) || t.includes(CHALLENGE)), "aucun secret affiché");
+
+test("GREEN — panneau : « Encoder NFC sur cette carte » → QR imprimé → NTAG213 écrite, relue, confirmée sur la même carte", async () => {
+  const panel = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: true });
+  try {
+    const log = panelServer(); panelHarness.state.chip = panelHarness.blankChip();
+    await panel.press(ENCODE);
+    assert.equal(panelHarness.state.qr?.title, ENCODE);
+    assert.ok(!panelHarness.state.calls.includes("nfc-request"), "le QR imprimé est lu avant toute session NFC");
+    await panel.scanQr(TOKEN);
+    assert.deepEqual(log.map((l) => l.route), ["provision", "confirm"]);
+    assert.deepEqual(log[0], { route: "provision", cardId: "q1", studentId: "s1", cardToken: TOKEN, nfc: identity, operationId: log[0].operationId });
+    assert.equal(log[1].cardToken, TOKEN, "jeton confirmé = jeton RELU sur la puce"); assert.equal(log[1].challenge, CHALLENGE);
+    assert.equal(log[1].operationId, log[0].operationId);
+    assert.equal(panelHarness.state.chip!.writes, 1); assert.equal(panelHarness.chipText(), ndefForCard(TOKEN), "la puce porte le jeton du QR imprimé");
+    assert.ok(panelHarness.state.calls.lastIndexOf("nfc-request") > panelHarness.state.calls.indexOf("nfc-write"), "relecture après redécouverte de la puce");
+    const card = panelHarness.state.cards[0];
+    assert.deepEqual([card.id, card.publicId, card.medium, card.status, card.nfc?.state], ["q1", QR_CARD.publicId, "nfc_qr", "active", "encoded"]);
+    assert.ok(!["issue", "replace", "retry", "confirm"].some((c) => panelHarness.state.calls.includes(c)), "ni émission, ni remplacement, ni nfc-confirm");
+    assert.ok(panelHarness.state.texts.some((t) => t.includes("Le QR imprimé reste valide")));
+    assert.equal(panel.button(ENCODE), undefined, "plus d'encodage initial une fois la puce enregistrée");
+    assert.ok(panel.button(REREAD)); noSecretShown();
+  } finally { await panel.unmount(); }
+});
+test("GREEN — panneau : puce retirée pendant l'écriture → aucune confirmation, carte inchangée", async () => {
+  const panel = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: true });
+  try {
+    const log = panelServer(); panelHarness.state.chip = { ...panelHarness.blankChip(), failWrite: true };
+    await panel.press(ENCODE); await panel.scanQr(TOKEN);
+    assert.deepEqual(log.map((l) => l.route), ["provision"]);
+    assert.equal(panelHarness.state.cards[0].nfc, null);
+    assert.ok(panelHarness.state.texts.some((t) => t.includes("non confirmée")));
+    assert.ok(!panelHarness.state.texts.some((t) => t.includes("Le QR imprimé reste valide"))); noSecretShown();
+  } finally { await panel.unmount(); }
+});
+test("GREEN — panneau : Élèves:READ seul, « Relire la carte » par QR → vérification en lecture seule de CETTE carte", async () => {
+  const other: EnrollmentCard = { ...QR_CARD, id: "other", publicId: "Z".repeat(22) };
+  const panel = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: false });
+  try {
+    const log = panelServer(); panelHarness.state.cards = [QR_CARD, other];
+    await panel.press(REREAD); await panel.alertOption("Scanner le QR code"); await panel.scanQr(TOKEN);
+    assert.deepEqual(log, [{ route: "verify", cardId: "q1" }]);
+    assert.ok(panelHarness.state.texts.some((t) => t.includes("vérifiée : elle correspond à cette carte active")));
+    await panel.press(REREAD); await panel.alertOption("Scanner le QR code"); await panel.scanQr(OTHER_TOKEN);
+    assert.ok(panelHarness.state.texts.some((t) => t.includes("Carte non vérifiée")), "la carte valide d'un autre élève n'est pas vérifiée");
+    assert.deepEqual(MUTATING_CALLS.filter((c) => panelHarness.state.calls.includes(c)), []);
+    assert.ok(!panelHarness.state.calls.includes("nfc-write")); noSecretShown();
+  } finally { await panel.unmount(); }
+});
+test("GREEN — panneau : « Relire la carte » par NFC → puce relue physiquement, aucune écriture ni mutation", async () => {
+  const panel = await panelHarness.render({ cards: [ENCODED_QR_CARD], canRead: true, canUpdate: true });
+  try {
+    const log = panelServer(); panelHarness.state.chip = panelHarness.writtenChip(ndefForCard(TOKEN));
+    await panel.press(REREAD); await panel.alertOption("Lire la puce NFC");
+    assert.deepEqual(log, [{ route: "verify", cardId: "q1" }]);
+    assert.ok(panelHarness.state.texts.some((t) => t.includes("vérifiée : elle correspond à cette carte active")));
+    panelHarness.state.chip = panelHarness.writtenChip(ndefForCard(TOKEN), "04778899001122");
+    await panel.press(REREAD); await panel.alertOption("Lire la puce NFC");
+    assert.ok(panelHarness.state.texts.some((t) => t.includes("Carte non vérifiée")), "puce d'UID différent : non vérifiée");
+    assert.equal(panelHarness.state.chip.writes, 0); assert.ok(!panelHarness.state.calls.includes("nfc-write"));
+    assert.deepEqual(MUTATING_CALLS.filter((c) => panelHarness.state.calls.includes(c)), []); noSecretShown();
+  } finally { await panel.unmount(); }
+});
+test("GREEN — adaptateur : studentId transmis pour le contrôle serveur du bon élève", async () => {
+  const calls: { path: string; body?: Record<string, unknown> }[] = [];
+  const api = createNfcEnrollmentApi(async <T>(path: string, options?: { body?: string }) => {
+    calls.push({ path, body: options?.body ? JSON.parse(options.body) : undefined }); return {} as T;
+  });
+  await api.provision!(QR_CARD, { cardToken: TOKEN, nfc: identity, operationId: OP }, "s1");
+  await api.confirmProvision!(QR_CARD, { cardToken: TOKEN, nfc: identity, operationId: OP, challenge: CHALLENGE }, "s1");
+  assert.deepEqual(calls.map((c) => c.body?.studentId), ["s1", "s1"]);
 });
