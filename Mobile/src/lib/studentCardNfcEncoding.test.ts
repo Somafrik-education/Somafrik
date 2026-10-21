@@ -332,7 +332,7 @@ const MUTATIONS = ["write", "issue", "replace", "retry", "confirm", "provision",
 // Rendu réel du panneau (React + react-dom sur un hôte minimal, RN et natif simulés) :
 // on observe les boutons effectivement affichés, leur état et l'action déclenchée.
 type PanelButton = { label: string; disabled: boolean; onPress: () => void };
-type PanelProps = { cards: EnrollmentCard[]; canRead: boolean; canUpdate: boolean; mutationsBlocked?: boolean };
+type PanelProps = { cards: EnrollmentCard[]; canRead: boolean; canUpdate: boolean; mutationsBlocked?: boolean; studentId?: string };
 const panelHarness = (() => {
   const nodeRequire = createRequire(import.meta.url);
   type QrProps = { visible: boolean; title: string; onToken: (token: string) => void; onCancel: () => void };
@@ -363,7 +363,7 @@ const panelHarness = (() => {
       AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
     },
     "../services/studentCardEnrollmentApi": { studentCardEnrollmentApi: {
-      async list() { state.calls.push("list"); return { cards: structuredClone(state.cards), nfcEnabled: true }; },
+      async list(studentId: string) { state.calls.push(`list:${studentId}`); state.calls.push("list"); return { cards: structuredClone(state.cards), nfcEnabled: true }; },
       issue: record("issue"), replace: record("replace"), retry: record("retry"), confirm: record("confirm"),
       provision: server("provision"), confirmProvision: server("confirmProvision"), verify: server("verify"),
     } },
@@ -420,11 +420,14 @@ const panelHarness = (() => {
       const { createRoot } = nodeRequire("react-dom/client") as { createRoot: (c: unknown) => { render(n: React.ReactNode): void; unmount(): void } };
       const { StudentCardNfcEnrollmentPanel } = nodeRequire("../components/StudentCardNfcEnrollmentPanel") as { StudentCardNfcEnrollmentPanel: React.ComponentType<Record<string, unknown>> };
       const root = createRoot(node);
-      await act(async () => { root.render(React.createElement(StudentCardNfcEnrollmentPanel, { studentId: "s1", canRead: props.canRead, canUpdate: props.canUpdate, mutationsBlocked: props.mutationsBlocked === true })); });
+      const draw = (p: PanelProps) => React.createElement(StudentCardNfcEnrollmentPanel, { studentId: p.studentId ?? "s1", canRead: p.canRead, canUpdate: p.canUpdate, mutationsBlocked: p.mutationsBlocked === true });
+      await act(async () => { root.render(draw(props)); });
       await flush();
       return {
         button(label: string) { return state.buttons.find((b) => b.label === label); },
         async press(label: string) { const b = state.buttons.find((x) => x.label === label); assert.ok(b && !b.disabled); await act(async () => { b.onPress(); }); await flush(); },
+        /** Même instance montée, autre élève (sans changement de key). */
+        async rerender(next: PanelProps) { await act(async () => { root.render(draw(next)); }); await flush(); },
         async alertOption(label: string) { const b = state.alertButtons.find((x) => x.text === label); assert.ok(b?.onPress, `option « ${label} » absente`); await act(async () => { b.onPress!(); }); await flush(); },
         async scanQr(token: string) { assert.ok(state.qr?.visible, "la capture QR doit être ouverte"); const qr = state.qr; await act(async () => { qr.onToken(token); }); await flush(); },
         async unmount() { await act(async () => { root.unmount(); }); loader._load = original; g.window = saved.window; g.IS_REACT_ACT_ENVIRONMENT = saved.act; g.React = saved.react; },
@@ -717,4 +720,57 @@ test("GREEN — adaptateur : studentId transmis pour le contrôle serveur du bon
   await api.provision!(QR_CARD, { cardToken: TOKEN, nfc: identity, operationId: OP }, "s1");
   await api.confirmProvision!(QR_CARD, { cardToken: TOKEN, nfc: identity, operationId: OP, challenge: CHALLENGE }, "s1");
   assert.deepEqual(calls.map((c) => c.body?.studentId), ["s1", "s1"]);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Revue CTO #976 (HEAD ef690150) — changement d'élève et relecture NFC sans puce associée.
+// ─────────────────────────────────────────────────────────────────────────────
+test("CTO-1 — changement d'élève A→B pendant l'encodage : aucun appel backend pour A depuis la fiche B, aucun message périmé", async () => {
+  const panel = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: true, studentId: "s1" });
+  try {
+    const log = panelServer(); panelHarness.state.chip = panelHarness.blankChip();
+    const gate = deferred<void>(); const provision = panelHarness.state.server.provision!;
+    panelHarness.state.server.provision = async (...a: unknown[]) => { await gate.promise; return provision(...a); };
+    await panel.press(ENCODE); await panel.scanQr(TOKEN);
+    await panel.rerender({ cards: [QR_CARD], canRead: true, canUpdate: true, studentId: "s2" });
+    gate.resolve(); await panel.rerender({ cards: [QR_CARD], canRead: true, canUpdate: true, studentId: "s2" });
+    assert.deepEqual(log.map((l) => l.route), ["provision"], "aucune suite (écriture/confirmation) pour l'élève A");
+    assert.equal(panelHarness.state.chip!.writes, 0, "aucune écriture sur la puce pour A depuis la fiche B");
+    assert.ok(!panelHarness.state.texts.some((t) => t.includes("Le QR imprimé reste valide")), "aucun message de succès périmé");
+    assert.ok(panelHarness.state.calls.includes("list:s2"), "la fiche B recharge ses propres cartes");
+  } finally { await panel.unmount(); }
+});
+test("CTO-1 — capture QR ouverte pour A puis changement d'élève : capture fermée, aucun encodage pour A", async () => {
+  const panel = await panelHarness.render({ cards: [QR_CARD], canRead: true, canUpdate: true, studentId: "s1" });
+  try {
+    const log = panelServer(); panelHarness.state.chip = panelHarness.blankChip();
+    await panel.press(ENCODE); assert.equal(panelHarness.state.qr?.visible, true);
+    const stale = panelHarness.state.qr!;
+    await panel.rerender({ cards: [QR_CARD], canRead: true, canUpdate: true, studentId: "s2" });
+    assert.equal(panelHarness.state.qr?.visible, false, "capture QR fermée au changement d'élève");
+    await act(async () => { stale.onToken(TOKEN); });
+    await panel.rerender({ cards: [QR_CARD], canRead: true, canUpdate: true, studentId: "s2" });
+    assert.deepEqual(log, [], "un QR lu pour A n'est jamais utilisé depuis la fiche B");
+  } finally { await panel.unmount(); }
+});
+test("CTO-2 — carte QR active sans puce associée + puce portant une copie du jeton : relecture NFC jamais « vérifiée », QR vérifiable", async () => {
+  const f = provisionFixture(QR_CARD); f.setValue(ndefForCard(TOKEN)); const flow = rereading(f);
+  assert.equal((await flow.reread(QR_CARD, { medium: "nfc" })).verified, false, "aucune puce n'est associée à cette carte");
+  assert.equal((await flow.reread(QR_CARD, { medium: "qr", cardToken: TOKEN })).verified, true, "le QR imprimé reste vérifiable");
+  assert.deepEqual(MUTATIONS.filter((m) => f.events.includes(m)), []);
+});
+test("CTO-2 — carte NFC associée : UID, modèle ou état non encodé différents → jamais « vérifiée »", async () => {
+  for (const nfc of [
+    { ...identity, uid: "04778899001122", state: "encoded" as const },
+    { ...identity, tagType: "NTAG216" as const, state: "encoded" as const },
+  ]) {
+    const card: EnrollmentCard = { ...QR_CARD, nfc: { ...nfc, operationId: null, expiresAt: null } };
+    const f = provisionFixture(card); f.setValue(ndefForCard(TOKEN));
+    assert.equal((await rereading(f).reread(card, { medium: "nfc" })).verified, false);
+  }
+  const pendingOnActive: EnrollmentCard = { ...QR_CARD, nfc: { ...identity, state: "pending", operationId: OP, expiresAt: null } };
+  const f = provisionFixture(pendingOnActive); f.setValue(ndefForCard(TOKEN));
+  assert.equal((await rereading(f).reread(pendingOnActive, { medium: "nfc" })).verified, false, "état non encodé : pas de confirmation positive");
+  const ok = provisionFixture(ENCODED_QR_CARD); ok.setValue(ndefForCard(TOKEN));
+  assert.equal((await rereading(ok).reread(ENCODED_QR_CARD, { medium: "nfc" })).verified, true, "contrôle positif : même UID, modèle et état encodé");
 });

@@ -24,6 +24,8 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   const [message, setMessage] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [qrCapture, setQrCapture] = useState<QrCapture | null>(null);
+  const qrTarget = useRef<QrCapture | null>(null);
+  const boundStudent = useRef(studentId);
   const hardware = useRef<NfcEncoderHardware | null>(null);
   const flow = useRef<ReturnType<typeof createIndividualNfcFlow> | null>(null);
   const generation = useRef(0);
@@ -49,6 +51,14 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
   useEffect(() => {
     if (!canRead || !canUpdate || mutationsBlocked) { generation.current++; closeHardware(); }
   }, [canRead, canUpdate, mutationsBlocked]);
+  // Changement d'élève sur la même instance : toute opération, capture QR et flux liés à l'élève
+  // précédent sont invalidés (aucun appel ni message pour A depuis la fiche B).
+  useEffect(() => {
+    if (boundStudent.current === studentId) return;
+    boundStudent.current = studentId;
+    generation.current++; closeHardware(); hardware.current = null; flow.current = null;
+    qrTarget.current = null; setQrCapture(null); setMessage(""); setPhase("initial");
+  }, [studentId]);
   useEffect(() => {
     let current = true;
     setCards(null); setEnabled(false); setAvailable(false);
@@ -130,11 +140,13 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
         : "Carte non vérifiée : elle ne correspond pas à cette carte active ou n’est plus valide. Aucune modification effectuée.");
     }, { mutation: false, nfc: read.medium === "nfc" });
   }
+  function openCapture(capture: QrCapture) { qrTarget.current = capture; setQrCapture(capture); }
+  function closeCapture() { qrTarget.current = null; setQrCapture(null); }
   function chooseReread(card: EnrollmentCard) {
-    if (Platform.OS !== "android" || !available) { setQrCapture({ kind: "reread", card }); return; }
+    if (Platform.OS !== "android" || !available) { openCapture({ kind: "reread", card }); return; }
     Alert.alert(REREAD_CARD, "Relecture sans aucune modification de la carte.", [
       { text: "Annuler", style: "cancel" },
-      { text: "Scanner le QR code", onPress: () => setQrCapture({ kind: "reread", card }) },
+      { text: "Scanner le QR code", onPress: () => openCapture({ kind: "reread", card }) },
       { text: "Lire la puce NFC", onPress: () => reread(card, { medium: "nfc" }) },
     ]);
   }
@@ -177,7 +189,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
           {button("Renouveler et réécrire avec confirmation", () => rewrite(card))}
         </> : null}
       </> : null}
-      {canProgram && card.status === "active" && !card.nfc ? button(ENCODE_ON_CARD, () => setQrCapture({ kind: "provision", card })) : null}
+      {canProgram && card.status === "active" && !card.nfc ? button(ENCODE_ON_CARD, () => openCapture({ kind: "provision", card })) : null}
       {canReread && card.status === "active" ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={REREAD_CARD} disabled={working} onPress={() => chooseReread(card)} style={{ padding: 12, marginVertical: 4, backgroundColor: "#EEF2FF", borderRadius: 8, opacity: working ? 0.5 : 1 }}><Text>{REREAD_CARD}</Text></TouchableOpacity> : null}
     </View>)}
     {Platform.OS !== "android" ? <Text>La programmation NFC est disponible sur Android uniquement.</Text> : null}
@@ -192,9 +204,10 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     </> : null}
     <StudentCardQrCaptureModal visible={qrCapture !== null}
       title={qrCapture?.kind === "provision" ? ENCODE_ON_CARD : REREAD_CARD}
-      onCancel={() => setQrCapture(null)}
+      onCancel={closeCapture}
       onToken={(cardToken) => {
-        const target = qrCapture; setQrCapture(null);
+        // Cible lue dans la ref courante : une capture fermée ou d'un autre élève est ignorée.
+        const target = qrTarget.current; closeCapture();
         if (!target) return;
         if (target.kind === "provision") provision(target.card, cardToken);
         else reread(target.card, { medium: "qr", cardToken });

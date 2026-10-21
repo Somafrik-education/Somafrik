@@ -360,7 +360,10 @@ export function createIndividualNfcFlow(input: {
       else {
         control.phase("waiting");
         const observed = await checked(control, () => input.hardware.inspect());
-        if (current.nfc && (observed.uid !== current.nfc.uid || observed.tagType !== current.nfc.tagType)) sameChip = false;
+        // Confirmation NFC positive seulement pour LA puce associée et encodée : une copie du jeton
+        // sur une puce non associée (ou d'UID/modèle différent) n'est jamais « vérifiée ».
+        const bound = current.nfc && ["encoded", "locked"].includes(current.nfc.state) ? current.nfc : null;
+        if (!bound || observed.uid !== bound.uid || observed.tagType !== bound.tagType) sameChip = false;
         try {
           await checked(control, () => input.hardware.openNdef(observed.uid));
           const payload = await checked(control, () => input.hardware.readText());
