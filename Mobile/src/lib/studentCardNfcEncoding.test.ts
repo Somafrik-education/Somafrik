@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { URL } from "node:url";
 import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcErrorCopy, nfcFailure,
   type EnrollmentCard, type IssuedNfcCard, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcPhase } from "./studentCardNfcEncoding";
 import { studentCardEnrollmentAccess } from "./studentCardEnrollmentAccess";
@@ -253,4 +255,229 @@ test("legacy active encoded cards without reservation UUID remain readable witho
   const f = fixture(); const legacy: EnrollmentCard = { ...f.card, status: "active", nfc: { ...f.card.nfc!, state: "encoded", operationId: null, expiresAt: null } };
   f.setCards([legacy]); f.setValue(ndefForCard(TOKEN));
   assert.equal((await f.flow.resume(legacy)).status, "active"); assert.ok(!f.events.includes("retry")); assert.ok(!f.events.includes("write"));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CARTE-FIX-QR-NFC-MOBILE-RED-01 — tests rouges d'abord (aucun code produit modifié).
+// Contrat attendu côté Mobile, adossé aux routes #974 :
+//   POST /student-cards/:id/nfc-provision          { cardToken, nfc, operationId } → { cardId, alreadyProvisioned, challenge, expiresAt }
+//   POST /student-cards/:id/nfc-provision/confirm  { cardToken relu sur la puce, nfc, operationId, challenge } → carte (même id/publicId)
+//   POST /student-cards/verify                     { cardToken, cardId } → { card:{valid}, scope, matchesCard }
+// Le QR imprimé porte le jeton complet ; la puce reçoit le MÊME jeton : aucune nouvelle carte, aucun nouveau secret.
+// ─────────────────────────────────────────────────────────────────────────────
+type ProvisionBegin = { cardId: string; alreadyProvisioned: boolean; challenge?: string; expiresAt?: string; card?: EnrollmentCard };
+type CardCheck = { card: { valid: boolean; medium?: string }; scope: string; matchesCard?: boolean };
+type ProvisionApi = {
+  provision(card: EnrollmentCard, body: { cardToken: string; nfc: typeof identity; operationId: string }): Promise<ProvisionBegin>;
+  confirmProvision(card: EnrollmentCard, body: { cardToken: string; nfc: typeof identity; operationId: string; challenge: string }): Promise<EnrollmentCard & { idempotentReplay?: boolean }>;
+  verify(card: EnrollmentCard, cardToken: string): Promise<CardCheck>;
+};
+type RereadInput = { medium: "qr"; cardToken: string } | { medium: "nfc" };
+type ProvisionFlow = {
+  provision(card: EnrollmentCard, qrToken: string): Promise<EnrollmentCard>;
+  reread(card: EnrollmentCard, read: RereadInput): Promise<{ verified: boolean }>;
+};
+const QR_CARD: EnrollmentCard = { id: "q1", publicId: "A".repeat(22), medium: "nfc_qr", status: "active", nfc: null };
+const CHALLENGE = "opaque-server-challenge";
+const OTHER_TOKEN = `${"Z".repeat(22)}.${"B".repeat(43)}`;
+const PANEL = readFileSync(new URL("../components/StudentCardNfcEnrollmentPanel.tsx", import.meta.url), "utf8");
+
+function provisionFixture(initial: EnrollmentCard = QR_CARD) {
+  let stored: EnrollmentCard[] = [structuredClone(initial)]; let value = ""; let valid = true;
+  const events: string[] = []; const phases: NfcPhase[] = []; const bodies: Record<string, unknown>[] = [];
+  const hardware: NfcEncoderHardware = {
+    async availability() { events.push("availability"); },
+    async inspect() { events.push("inspect"); return identity; },
+    async openNdef(uid) { events.push("open"); assert.equal(uid, UID); },
+    async readText() { events.push("read"); return value; },
+    async writeText(v) { events.push("write"); value = v; },
+    async isReadOnly() { return false; }, async close() { events.push("close"); },
+  };
+  const forbidden = (name: string) => async (): Promise<never> => { events.push(name); throw nfcFailure("NFC_RESPONSE_INVALID"); };
+  const api: NfcEnrollmentApi & ProvisionApi = {
+    async list() { events.push("list"); return { cards: structuredClone(stored), nfcEnabled: true }; },
+    issue: forbidden("issue"), replace: forbidden("replace"), retry: forbidden("retry"), confirm: forbidden("confirm"),
+    async provision(card, body) {
+      events.push("provision"); bodies.push({ route: "provision", ...body });
+      return { cardId: card.id, alreadyProvisioned: false, challenge: CHALLENGE, expiresAt: "2026-10-21T15:00:00Z" };
+    },
+    async confirmProvision(card, body) {
+      events.push("confirmProvision"); bodies.push({ route: "confirm", ...body });
+      assert.equal(ndefForCard(body.cardToken), value, "le jeton confirmé doit être celui relu sur la puce");
+      const done: EnrollmentCard = { ...card, medium: "nfc_qr", status: "active", nfc: { ...body.nfc, state: "encoded", operationId: null, expiresAt: null } };
+      stored = stored.map((c) => c.id === card.id ? done : c); return structuredClone(done);
+    },
+    async verify(card, cardToken) {
+      events.push("verify"); bodies.push({ route: "verify", cardId: card.id });
+      const current = stored.find((c) => c.publicId === cardToken.split(".")[0]);
+      const ok = !!current && current.status === "active";
+      return ok ? { card: { valid: true, medium: current!.medium }, scope: "school", matchesCard: current!.id === card.id } : { card: { valid: false }, scope: "none" };
+    },
+  };
+  const flow = createIndividualNfcFlow({ studentId: "s1", hardware, api, valid: () => valid, uuid: () => OP, phase: (p) => { phases.push(p); } });
+  return { api, hardware, events, phases, bodies, flow,
+    get cards() { return stored; }, get value() { return value; },
+    setCards(c: EnrollmentCard[]) { stored = c; }, setValue(v: string) { value = v; }, invalidate() { valid = false; } };
+}
+function provisioning(f: ReturnType<typeof provisionFixture>): ProvisionFlow {
+  const flow = f.flow as unknown as Partial<ProvisionFlow>;
+  assert.equal(typeof flow.provision, "function", "createIndividualNfcFlow n'expose aucun provisionnement NFC de la carte active existante (flow.provision)");
+  return flow as ProvisionFlow;
+}
+function rereading(f: ReturnType<typeof provisionFixture>): ProvisionFlow {
+  const flow = f.flow as unknown as Partial<ProvisionFlow>;
+  assert.equal(typeof flow.reread, "function", "createIndividualNfcFlow n'expose aucune relecture en lecture seule (flow.reread)");
+  return flow as ProvisionFlow;
+}
+const MUTATIONS = ["write", "issue", "replace", "retry", "confirm", "provision", "confirmProvision"];
+function panelButtonLine(label: string): string {
+  const line = PANEL.split("\n").find((l) => l.includes(`"${label}"`));
+  assert.ok(line, `StudentCardNfcEnrollmentPanel ne propose aucun bouton « ${label} »`);
+  return line;
+}
+
+test("RED-01 — carte QR active sans puce + Élèves:UPDATE : le panneau propose « Encoder NFC sur cette carte »", () => {
+  const line = panelButtonLine("Encoder NFC sur cette carte");
+  assert.match(line, /card\.status === "active" && !card\.nfc/, "le bouton doit être lié à une carte active sans puce");
+  assert.doesNotMatch(line, /replace\(/, "encoder ne doit jamais passer par le remplacement");
+});
+test("RED-02 — carte QR active sans puce : le panneau propose « Relire la carte » indépendamment de toute puce", () => {
+  const line = panelButtonLine("Relire la carte");
+  assert.doesNotMatch(line, /card\.nfc(?!\w)/, "la relecture ne doit pas exiger une puce déjà encodée");
+  assert.doesNotMatch(line, /controller\.resume\(/, "la relecture ne doit pas passer par nfc-confirm (resume)");
+});
+test("RED-03 — carte active avec NFC encodé : relecture disponible, aucun encodage initial", async () => {
+  const encoded: EnrollmentCard = { ...QR_CARD, nfc: { ...identity, state: "encoded", operationId: null, expiresAt: null } };
+  const f = provisionFixture(encoded);
+  await assert.rejects(provisioning(f).provision(encoded, TOKEN), { code: "STUDENT_CARD_NFC_ALREADY_PROVISIONED" });
+  assert.ok(!f.events.includes("inspect") && !f.events.includes("write") && !f.events.includes("provision"));
+  f.setValue(ndefForCard(TOKEN));
+  assert.equal((await rereading(f).reread(encoded, { medium: "nfc" })).verified, true);
+  assert.ok(!MUTATIONS.some((m) => f.events.includes(m)));
+});
+for (const status of ["lost", "revoked", "replaced"]) test(`RED-04 — carte ${status} : ni encodage ni vérification positive`, async () => {
+  const card: EnrollmentCard = { ...QR_CARD, status };
+  const f = provisionFixture(card);
+  await assert.rejects(provisioning(f).provision(card, TOKEN), { code: "STUDENT_CARD_INVALID_STATE" });
+  assert.ok(!f.events.includes("inspect") && !f.events.includes("provision") && !f.events.includes("write"));
+  assert.equal((await rereading(f).reread(card, { medium: "qr", cardToken: TOKEN })).verified, false);
+});
+test("RED-05 — scan QR : jeton complet exigé et identité de la carte affichée vérifiée", async () => {
+  for (const qr of ["A".repeat(22), `${"A".repeat(22)}.`, "https://example.test/x", OTHER_TOKEN]) {
+    const f = provisionFixture();
+    await assert.rejects(provisioning(f).provision(QR_CARD, qr), { code: "NFC_FOREIGN" }, `QR refusé : ${qr.slice(0, 4)}…`);
+    assert.ok(!f.events.includes("inspect") && !f.events.includes("provision"));
+  }
+  const f = provisionFixture(); f.setCards([QR_CARD, { ...QR_CARD, id: "other", publicId: "Z".repeat(22) }]);
+  assert.equal((await rereading(f).reread(QR_CARD, { medium: "qr", cardToken: OTHER_TOKEN })).verified, false, "une carte valide d'un autre élève n'est pas « vérifiée »");
+  const calls: { path: string; body?: Record<string, unknown> }[] = [];
+  const api = createNfcEnrollmentApi(async <T>(path: string, options?: { body?: string }) => {
+    calls.push({ path, body: options?.body ? JSON.parse(options.body) : undefined }); return { card: { valid: true }, scope: "school", matchesCard: true } as T;
+  }) as NfcEnrollmentApi & Partial<ProvisionApi>;
+  assert.equal(typeof api.verify, "function", "l'adaptateur API n'expose pas la relecture /student-cards/verify avec cardId");
+  await api.verify!(QR_CARD, TOKEN);
+  assert.deepEqual(calls[0], { path: "/student-cards/verify", body: { cardToken: TOKEN, cardId: "q1" } });
+});
+test("RED-06 — séquence : scan QR → inspection NTAG213 → défi serveur → écriture → relecture → confirmation", async () => {
+  const f = provisionFixture();
+  await provisioning(f).provision(QR_CARD, TOKEN);
+  const order = f.events.filter((e) => ["list", "inspect", "provision", "write", "read", "confirmProvision"].includes(e));
+  assert.equal(order[0], "list");
+  assert.ok(order.indexOf("inspect") < order.indexOf("provision"));
+  assert.ok(order.indexOf("provision") < order.indexOf("write"));
+  assert.ok(order.lastIndexOf("read") > order.indexOf("write") && order.lastIndexOf("read") < order.indexOf("confirmProvision"));
+  assert.deepEqual(f.bodies[0], { route: "provision", cardToken: TOKEN, nfc: identity, operationId: OP });
+  assert.deepEqual(f.bodies[1], { route: "confirm", cardToken: TOKEN, nfc: identity, operationId: OP, challenge: CHALLENGE });
+  assert.equal(f.phases.at(-1), "success");
+});
+for (const medium of ["nfc_qr", "qr"]) test(`RED-07 — même cardId, même publicId, QR imprimé toujours valide (${medium})`, async () => {
+  const card = { ...QR_CARD, medium }; const f = provisionFixture(card);
+  const result = await provisioning(f).provision(card, TOKEN);
+  assert.equal(result.id, "q1"); assert.equal(result.publicId, card.publicId); assert.equal(result.medium, "nfc_qr");
+  assert.equal(result.nfc?.state, "encoded"); assert.equal(f.value, ndefForCard(TOKEN), "la puce porte le jeton du QR imprimé");
+  assert.ok(!["issue", "replace", "retry", "confirm"].some((m) => f.events.includes(m)), "aucune nouvelle carte ni remplacement");
+  assert.equal(f.cards.filter((c) => c.status === "active").length, 1);
+  assert.equal((await rereading(f).reread(result, { medium: "qr", cardToken: TOKEN })).verified, true);
+});
+for (const mode of ["write", "readback"]) test(`RED-08 — ${mode} échoué(e) : aucune confirmation « encodé »`, async () => {
+  const f = provisionFixture(); const flow = provisioning(f);
+  if (mode === "write") f.hardware.writeText = async () => { throw new Error("tag lost"); };
+  else f.hardware.writeText = async () => { f.setValue(ndefForCard(`${"A".repeat(22)}.${"C".repeat(43)}`)); };
+  await assert.rejects(flow.provision(QR_CARD, TOKEN));
+  assert.ok(!f.events.includes("confirmProvision")); assert.ok(!f.phases.includes("success")); assert.equal(f.cards[0].nfc, null);
+});
+test("RED-09 — mauvaise puce, contenu étranger, puce déjà affectée ou autre élève : refus", async () => {
+  for (const content of ["other-system:private-data", ndefForCard(OTHER_TOKEN)]) {
+    const f = provisionFixture(); const flow = provisioning(f); f.setValue(content);
+    await assert.rejects(flow.provision(QR_CARD, TOKEN), { code: "NFC_FOREIGN" }); assert.ok(!f.events.includes("provision") && !f.events.includes("write"));
+  }
+  for (const code of ["STUDENT_CARD_NFC_UID_EXISTS", "STUDENT_CARD_NOT_FOUND", "STUDENT_CARD_INVALID_STATE"]) {
+    const f = provisionFixture(); const flow = provisioning(f); f.api.provision = async () => { throw nfcFailure(code); };
+    await assert.rejects(flow.provision(QR_CARD, TOKEN), { code }); assert.ok(!f.events.includes("write") && !f.events.includes("confirmProvision"));
+  }
+  const f = provisionFixture(); const flow = provisioning(f);
+  f.hardware.openNdef = async () => { throw nfcFailure("NFC_SAME_CARD"); };
+  await assert.rejects(flow.provision(QR_CARD, TOKEN), { code: "NFC_SAME_CARD" }); assert.ok(!f.events.includes("write"));
+});
+for (const point of ["inspect", "provision", "write", "read"]) test(`RED-10 — annulation ou changement de contexte pendant ${point} : aucune confirmation périmée`, async () => {
+  const f = provisionFixture(); const flow = provisioning(f);
+  if (point === "inspect") { const o = f.hardware.inspect; f.hardware.inspect = async () => { const r = await o(); f.invalidate(); return r; }; }
+  if (point === "provision") { const o = f.api.provision; f.api.provision = async (...a) => { const r = await o(...a); f.invalidate(); return r; }; }
+  if (point === "write") { const o = f.hardware.writeText; f.hardware.writeText = async (v) => { await o(v); f.invalidate(); }; }
+  if (point === "read") { const o = f.hardware.readText; f.hardware.readText = async () => { const r = await o(); if (f.events.includes("write")) f.invalidate(); return r; }; }
+  await assert.rejects(flow.provision(QR_CARD, TOKEN), { code: "NFC_CANCELLED" });
+  assert.ok(!f.events.includes("confirmProvision")); assert.ok(!f.phases.includes("success"));
+});
+test("RED-11 — RBAC : relecture selon Élèves:READ, encodage réservé à Élèves:UPDATE / Gérer élèves", () => {
+  const reread = panelButtonLine("Relire la carte");
+  assert.doesNotMatch(reread, /canProgram|canUpdate|permitted/, "la relecture ne doit pas exiger le droit de modification");
+  assert.match(panelButtonLine("Encoder NFC sur cette carte"), /canProgram/, "l'encodage reste réservé au droit de modification");
+});
+test("RED-12 — tentatives concurrentes ou répétées : aucun doublon ni remplacement implicite", async () => {
+  const f = provisionFixture(); const flow = provisioning(f); const gate = deferred<void>();
+  const o = f.api.provision; f.api.provision = async (...a) => { await gate.promise; return o(...a); };
+  const first = flow.provision(QR_CARD, TOKEN);
+  await assert.rejects(flow.provision(QR_CARD, TOKEN), { code: "NFC_BUSY" });
+  gate.resolve(); await first;
+  assert.equal(f.events.filter((e) => e === "provision").length, 1); assert.equal(f.events.filter((e) => e === "write").length, 1);
+  const replay = provisionFixture(); const replayFlow = provisioning(replay); replay.setValue(ndefForCard(TOKEN));
+  const already: EnrollmentCard = { ...QR_CARD, nfc: { ...identity, state: "encoded", operationId: null, expiresAt: null } };
+  replay.api.provision = async () => { replay.events.push("provision"); return { cardId: "q1", alreadyProvisioned: true, card: already }; };
+  assert.equal((await replayFlow.provision(QR_CARD, TOKEN)).nfc?.state, "encoded");
+  assert.ok(!replay.events.includes("write") && !replay.events.includes("confirmProvision"), "rejeu idempotent : ni réécriture ni seconde confirmation");
+  assert.ok(!["issue", "replace"].some((m) => f.events.includes(m) || replay.events.includes(m)));
+});
+test("RED-13 — relecture strictement en lecture seule (QR et NFC)", async () => {
+  const encoded: EnrollmentCard = { ...QR_CARD, nfc: { ...identity, state: "encoded", operationId: null, expiresAt: null } };
+  const f = provisionFixture(encoded); f.setValue(ndefForCard(TOKEN)); const flow = rereading(f);
+  await flow.reread(encoded, { medium: "qr", cardToken: TOKEN }); await flow.reread(encoded, { medium: "nfc" });
+  assert.deepEqual(MUTATIONS.filter((m) => f.events.includes(m)), [], "aucune écriture puce ni mutation serveur");
+  assert.equal(f.events.filter((e) => e === "verify").length, 2);
+});
+test("RED-14 — aucun secret réaffiché, stocké durablement ou journalisé", async () => {
+  const calls: { path: string; body?: Record<string, unknown> }[] = [];
+  const api = createNfcEnrollmentApi(async <T>(path: string, options?: { body?: string }) => {
+    calls.push({ path, body: options?.body ? JSON.parse(options.body) : undefined }); return {} as T;
+  }) as NfcEnrollmentApi & Partial<ProvisionApi>;
+  assert.equal(typeof api.provision, "function", "l'adaptateur API n'expose pas POST /student-cards/:id/nfc-provision");
+  assert.equal(typeof api.confirmProvision, "function", "l'adaptateur API n'expose pas POST /student-cards/:id/nfc-provision/confirm");
+  await api.provision!(QR_CARD, { cardToken: TOKEN, nfc: identity, operationId: OP });
+  await api.confirmProvision!(QR_CARD, { cardToken: TOKEN, nfc: identity, operationId: OP, challenge: CHALLENGE });
+  assert.deepEqual(calls.map((c) => c.path), ["/student-cards/q1/nfc-provision", "/student-cards/q1/nfc-provision/confirm"]);
+  assert.deepEqual(calls[0].body, { cardToken: TOKEN, nfc: identity, operationId: OP });
+  for (const code of ["STUDENT_CARD_NFC_ALREADY_PROVISIONED", "STUDENT_CARD_NFC_PROVISION_CHALLENGE_INVALID", "STUDENT_CARD_NFC_PROVISION_CHALLENGE_REQUIRED", "STUDENT_CARD_NFC_PROVISION_UNAVAILABLE"]) {
+    const copy = nfcErrorCopy({ code, message: TOKEN });
+    assert.ok(!copy.includes(TOKEN));
+    assert.notEqual(copy, nfcErrorCopy({ code: "UNMAPPED_CODE" }), `${code} doit avoir un message dédié, pas le message générique`);
+  }
+  const f = provisionFixture(); const result = await provisioning(f).provision(QR_CARD, TOKEN);
+  const rendered = JSON.stringify(result);
+  assert.ok(!rendered.includes(TOKEN) && !rendered.includes(CHALLENGE) && !("cardToken" in result));
+});
+test("RED-16 — BASELINE PASS : le message NDEF somafrik:card tient dans une NTAG213 (137 octets NDEF utiles)", () => {
+  const text = ndefForCard(TOKEN);
+  const payload = 1 + "en".length + Buffer.byteLength(text, "utf8"); // statut + langue + texte (enregistrement Text, writeText natif)
+  const record = 1 + 1 + 1 + 1 + payload; // en-tête court + longueur type + longueur charge + type « T »
+  assert.ok(payload < 256, "enregistrement court (SR) attendu");
+  assert.ok(record <= 137, `message NDEF de ${record} octets > capacité NTAG213`);
 });
