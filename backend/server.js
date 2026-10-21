@@ -2259,11 +2259,13 @@ app.post("/api/student-cards/verify", requireAuth, requirePermission("POST /api/
 app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/students/:id/cards"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
-  const { listStudentCards } = require("./lib/studentAccessCardsManagement");
+  const { listStudentCards, readStudentCardHolder } = require("./lib/studentAccessCardsManagement");
   const principal = await enrollmentHttpPrincipal(req);
   const cards = await listStudentCards(repository, req.params.id, studentCardsHttpScope(principal), principal, auditMetaFromRequest(req));
   const { readNfcEnabled } = require("./lib/studentCardsNfcEncoding");
-  res.json({ cards, nfcEnabled: await readNfcEnabled(repository, studentCardsHttpScope(principal).schoolId) });
+  // CARTE-CYCLE-01 : titulaire résolu (élève / étudiant / null) — lecture seule, aucun jeton.
+  const holder = await readStudentCardHolder(repository, req.params.id, studentCardsHttpScope(principal));
+  res.json({ cards, nfcEnabled: await readNfcEnabled(repository, studentCardsHttpScope(principal).schoolId), holder });
 }));
 
 app.post("/api/student-cards", requireAuth, requirePermission("POST /api/student-cards"), asyncHandler(async (req, res) => {

@@ -228,6 +228,8 @@ async function seed(pool) {
      ON CONFLICT (school_id) DO UPDATE SET student_card_enabled = TRUE`,
     [schoolAId, schoolBId],
   );
+  // CARTE-CYCLE-01 : titulaire explicite (élève) pour les établissements de test émetteurs de cartes.
+  await pool.query("UPDATE school_settings SET student_card_holder_kind = 'eleve' WHERE school_id = ANY($1::uuid[])", [[schoolAId, schoolBId]]);
   return { schoolAId, schoolBId };
 }
 

@@ -65,7 +65,7 @@ async function getSchoolSettings(repo, principal, schoolCode) {
       { schoolId: school.id, schoolCode: school.school_code },
     );
   }
-  const mapped = mapSettingsRow(row, school.school_code);
+  const mapped = mapSettingsRow(row, school.school_code, school);
   const config = await store.projectAcademicConfig(scopedSchool);
   return { ...mapped, periods: config.periods, schoolYear: config.schoolYear };
 }
@@ -80,11 +80,12 @@ async function patchSchoolSettings(repo, rawPayload, principal, auditMeta, schoo
   const store = settingsStore(repo);
   const school = await store.requireSchoolByCode(scopedSchool);
   const existing = await store.getSettings(school.id);
+  await assertHolderLevelsActive(store, school.id, patch);
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
     const scopedStore = settingsStore(scope);
     const savedRow = await scopedStore.upsertSettings(school.id, patch);
-    const saved = mapSettingsRow(savedRow, school.school_code);
+    const saved = mapSettingsRow(savedRow, school.school_code, school);
     await writeSchoolSettingsAudit(scope, principal, auditMeta, {
       schoolCode: scopedSchool,
       action: "update_school_settings",
@@ -95,6 +96,28 @@ async function patchSchoolSettings(repo, rawPayload, principal, auditMeta, schoo
     });
     return saved;
   });
+}
+
+/** CARTE-CYCLE-01 — une surcharge ne vise qu'un niveau actif de CET établissement (isolation). */
+async function assertHolderLevelsActive(store, schoolId, patch) {
+  const levels = patch?.studentCardHolderLevels;
+  if (!levels || !Object.keys(levels).length) return;
+  if (typeof store.listActiveSchoolLevelIds !== "function") {
+    throw createSchoolSettingsError(
+      400,
+      "Titulaires par niveau indisponibles pour ce stockage.",
+      SCHOOL_SETTINGS_ERROR.INVALID_STUDENT_CARD_HOLDER_LEVEL,
+    );
+  }
+  const active = new Set(await store.listActiveSchoolLevelIds(schoolId));
+  const unknown = Object.keys(levels).filter((levelId) => !active.has(levelId));
+  if (unknown.length) {
+    throw createSchoolSettingsError(
+      400,
+      "Niveau d'enseignement non activé pour cet établissement.",
+      SCHOOL_SETTINGS_ERROR.INVALID_STUDENT_CARD_HOLDER_LEVEL,
+    );
+  }
 }
 
 async function replaceAcademicPeriods(repo, rawPayload, principal, auditMeta, schoolCode) {

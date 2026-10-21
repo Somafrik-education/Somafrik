@@ -444,6 +444,27 @@ ALTER TABLE school_settings
   ADD COLUMN IF NOT EXISTS student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- CARTE-CYCLE-01 — titulaire de carte (NULL = non configuré) + surcharges par niveau d'enseignement.
+ALTER TABLE school_settings
+  ADD COLUMN IF NOT EXISTS student_card_holder_kind TEXT,
+  ADD COLUMN IF NOT EXISTS student_card_holder_levels JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+DO $$
+BEGIN
+  ALTER TABLE school_settings
+    ADD CONSTRAINT school_settings_student_card_holder_kind_check
+    CHECK (student_card_holder_kind IS NULL OR student_card_holder_kind IN ('eleve', 'etudiant'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE school_settings
+    ADD CONSTRAINT school_settings_student_card_holder_levels_check
+    CHECK (jsonb_typeof(student_card_holder_levels) = 'object');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 CREATE OR REPLACE FUNCTION ensure_school_settings_for_school()
 RETURNS trigger
 LANGUAGE plpgsql

@@ -41,10 +41,12 @@ async function fixture(run, legacy = false) {
     },
   };
   try {
-    await pool.query(`CREATE TABLE schools(id UUID PRIMARY KEY); CREATE TABLE users(id UUID PRIMARY KEY);
+    await pool.query(`CREATE TABLE schools(id UUID PRIMARY KEY,school_type TEXT DEFAULT 'Lycée'); -- CARTE-CYCLE-01 : cycle déterminé (élève)
+      CREATE TABLE users(id UUID PRIMARY KEY);
       CREATE TABLE students(id UUID PRIMARY KEY,school_id UUID NOT NULL REFERENCES schools(id),student_code TEXT,status TEXT,
         first_name TEXT DEFAULT 'Test',last_name TEXT DEFAULT 'Student',photo_url TEXT);
-      CREATE TABLE school_settings(school_id UUID PRIMARY KEY,student_card_enabled BOOLEAN,student_card_nfc_enabled BOOLEAN);
+      CREATE TABLE school_settings(school_id UUID PRIMARY KEY,student_card_enabled BOOLEAN,student_card_nfc_enabled BOOLEAN,
+        student_card_holder_kind TEXT,student_card_holder_levels JSONB NOT NULL DEFAULT '{}'::jsonb);
       CREATE TABLE audit_logs(id UUID DEFAULT gen_random_uuid(),action TEXT,entity_id TEXT,old_value JSONB,new_value JSONB);
       CREATE TABLE academic_years(id UUID PRIMARY KEY,school_id UUID,is_current BOOLEAN);
       CREATE TABLE classes(id UUID PRIMARY KEY,school_id UUID,academic_year_id UUID,class_code TEXT,name TEXT);

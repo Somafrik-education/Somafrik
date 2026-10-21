@@ -143,7 +143,9 @@ async function main() {
         school_code VARCHAR(32) NOT NULL UNIQUE,
         login_code VARCHAR(32),
         name TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'active'
+        status TEXT NOT NULL DEFAULT 'active',
+        -- CARTE-CYCLE-01 : établissement de cycle déterminé par le type exact (titulaire élève).
+        school_type TEXT DEFAULT 'Lycée'
       );
       CREATE TABLE users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -168,7 +170,9 @@ async function main() {
         student_card_qr_enabled BOOLEAN NOT NULL DEFAULT FALSE,
         student_card_nfc_enabled BOOLEAN NOT NULL DEFAULT FALSE,
         student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-        student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE
+        student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        student_card_holder_kind TEXT,
+        student_card_holder_levels JSONB NOT NULL DEFAULT '{}'::jsonb
       );
       CREATE TABLE audit_logs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

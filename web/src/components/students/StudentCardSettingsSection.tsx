@@ -3,9 +3,12 @@ import { Button, Card, InlineAlert, SectionHeader } from "../../design-system";
 import { ApiError } from "../../api/client";
 import { useOptionalActiveSchool } from "../../context/ActiveSchoolContext";
 import { schoolSettingsApi, type SchoolSettings } from "../../lib/schoolSettingsApi";
+import { educationReferenceApi, type EducationLevel } from "../../lib/educationReferenceApi";
 import {
   STUDENT_CARD_FINANCE_NOTICE,
+  STUDENT_CARD_HOLDER_LABELS,
   isStudentCardMasterEnabled,
+  type StudentCardHolderKind,
 } from "../../lib/studentCardPolicy";
 import { hasBackOfficePermission } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
@@ -16,10 +19,28 @@ type CardSettingsDraft = {
   studentCardNfcEnabled: boolean;
   studentCardAttendanceEnabled: boolean;
   studentCardFinanceCheckEnabled: boolean;
+  /** CARTE-CYCLE-01 — "" = automatique (type d'établissement exact). */
+  studentCardHolderKind: StudentCardHolderKind | "";
+  studentCardHolderLevels: Record<string, StudentCardHolderKind>;
+  studentCardHolderFromSchoolType: StudentCardHolderKind | null;
 };
 
+const HOLDER_KINDS: StudentCardHolderKind[] = ["eleve", "etudiant"];
+
+function asHolderKind(value: unknown): StudentCardHolderKind | null {
+  return value === "eleve" || value === "etudiant" ? value : null;
+}
+
 function draftFromSettings(settings: SchoolSettings): CardSettingsDraft {
+  const levels: Record<string, StudentCardHolderKind> = {};
+  for (const [levelId, kind] of Object.entries(settings.studentCardHolderLevels ?? {})) {
+    const normalized = asHolderKind(kind);
+    if (normalized) levels[levelId] = normalized;
+  }
   return {
+    studentCardHolderKind: asHolderKind(settings.studentCardHolderKind) ?? "",
+    studentCardHolderLevels: levels,
+    studentCardHolderFromSchoolType: asHolderKind(settings.studentCardHolderFromSchoolType),
     studentCardEnabled: settings.studentCardEnabled === true,
     studentCardQrEnabled: settings.studentCardQrEnabled === true,
     studentCardNfcEnabled: settings.studentCardNfcEnabled === true,
@@ -42,6 +63,24 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
   const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Niveaux actifs de l'établissement ; null = liste indisponible (surcharges non modifiables). */
+  const [levels, setLevels] = useState<EducationLevel[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLevels(null);
+    void educationReferenceApi
+      .getSchoolCatalog(schoolCode)
+      .then((catalog) => {
+        if (!cancelled) setLevels((catalog.levels ?? []).filter((level) => level.schoolActive === true));
+      })
+      .catch(() => {
+        if (!cancelled) setLevels(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolCode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +113,17 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
           studentCardNfcEnabled: draft.studentCardNfcEnabled,
           studentCardAttendanceEnabled: draft.studentCardAttendanceEnabled,
           studentCardFinanceCheckEnabled: draft.studentCardFinanceCheckEnabled,
+          studentCardHolderKind: draft.studentCardHolderKind || null,
+          // Remplacement complet, limité aux niveaux actifs affichés ; omis si la liste est indisponible.
+          ...(levels
+            ? {
+                studentCardHolderLevels: Object.fromEntries(
+                  levels
+                    .filter((level) => draft.studentCardHolderLevels[level.id])
+                    .map((level) => [level.id, draft.studentCardHolderLevels[level.id]]),
+                ),
+              }
+            : {}),
         },
         schoolCode,
       );
@@ -163,6 +213,73 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
             <p className="text-sm text-muted">Le master désactivé neutralise le QR, le NFC, le pointage et le contrôle financier.</p>
           ) : null}
           <p className="text-sm text-muted">{STUDENT_CARD_FINANCE_NOTICE}</p>
+          <fieldset className="space-y-2 border-t border-line pt-3" aria-describedby="student-card-holder-help">
+            <legend className="text-sm font-semibold text-ink">Titulaire de la carte</legend>
+            <p id="student-card-holder-help" className="text-sm text-muted">
+              Détermine l’en-tête « Carte d’élève » ou « Carte d’étudiant ». Sans titulaire déterminé, aucune carte ne peut être
+              émise ni remplacée. Les cartes existantes ne sont pas modifiées.
+            </p>
+            <label className="block text-sm" htmlFor="student-card-holder-kind">
+              Pour tout l’établissement
+            </label>
+            <select
+              id="student-card-holder-kind"
+              className="rounded-md border border-line px-2 py-1 text-sm"
+              value={draft.studentCardHolderKind}
+              onChange={(event) =>
+                setDraft({ ...draft, studentCardHolderKind: asHolderKind(event.target.value) ?? "" })
+              }
+            >
+              <option value="">
+                {draft.studentCardHolderFromSchoolType
+                  ? `Automatique selon le type d’établissement : ${STUDENT_CARD_HOLDER_LABELS[draft.studentCardHolderFromSchoolType]}`
+                  : "Automatique : type d’établissement non déterminant (à préciser)"}
+              </option>
+              {HOLDER_KINDS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {STUDENT_CARD_HOLDER_LABELS[kind]}
+                </option>
+              ))}
+            </select>
+            {!draft.studentCardHolderKind && !draft.studentCardHolderFromSchoolType ? (
+              <p className="text-sm text-amber" role="status">
+                Titulaire non déterminé : choisissez « Élève » ou « Étudiant », ou configurez chaque niveau ci-dessous.
+              </p>
+            ) : null}
+            {levels === null ? (
+              <p className="text-sm text-muted">Les niveaux d’enseignement n’ont pas pu être lus : le réglage par niveau est indisponible.</p>
+            ) : levels.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-sm text-ink">Établissement mixte : titulaire par niveau d’enseignement</p>
+                {levels.map((level) => (
+                  <div key={level.id} className="flex flex-wrap items-center gap-2 text-sm">
+                    <label htmlFor={`student-card-holder-level-${level.id}`} className="min-w-40">
+                      {level.name}
+                    </label>
+                    <select
+                      id={`student-card-holder-level-${level.id}`}
+                      className="rounded-md border border-line px-2 py-1 text-sm"
+                      value={draft.studentCardHolderLevels[level.id] ?? ""}
+                      onChange={(event) => {
+                        const next = { ...draft.studentCardHolderLevels };
+                        const kind = asHolderKind(event.target.value);
+                        if (kind) next[level.id] = kind;
+                        else delete next[level.id];
+                        setDraft({ ...draft, studentCardHolderLevels: next });
+                      }}
+                    >
+                      <option value="">Comme l’établissement</option>
+                      {HOLDER_KINDS.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {STUDENT_CARD_HOLDER_LABELS[kind]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </fieldset>
           <p className="text-sm text-muted">Le Web ne programme pas la puce NFC et ne lit aucun badge.</p>
         </fieldset>
       ) : null}

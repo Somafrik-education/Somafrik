@@ -3,6 +3,9 @@ import { ApiError } from "../api/client";
 import type { PermissionContext } from "./permissions";
 import {
   STUDENT_CARD_CR80,
+  STUDENT_CARD_HOLDER_LABELS,
+  STUDENT_CARD_HOLDER_UNDETERMINED_NOTICE,
+  isStudentCardHolderDetermined,
   buildStudentCardPrintIdentity,
   canManageStudentCards,
   resolveStudentCardSettingsGate,
@@ -99,5 +102,21 @@ describe("studentCardPolicy", () => {
     expect(studentCardDocumentTitle("CD-001")).toBe("Carte-eleve-CD-001");
     expect(studentCardDocumentTitle("CD 001")).toBe("Carte-eleve-CD-001");
     expect(STUDENT_CARD_CR80).toEqual({ width: "85.60mm", height: "53.98mm" });
+  });
+});
+
+describe("CARTE-CYCLE-01 — titulaire de carte", () => {
+  it("seuls « eleve » et « etudiant » autorisent une émission (absent ou inconnu = non déterminé)", () => {
+    expect(isStudentCardHolderDetermined({ kind: "eleve", source: "school_type" })).toBe(true);
+    expect(isStudentCardHolderDetermined({ kind: "etudiant", source: "level_setting" })).toBe(true);
+    for (const holder of [null, undefined, { kind: null, source: null }, { kind: "Eleve", source: null }] as never[]) {
+      expect(isStudentCardHolderDetermined(holder)).toBe(false);
+    }
+  });
+
+  it("le refus serveur STUDENT_CARD_HOLDER_UNDETERMINED reçoit un message dédié", () => {
+    const message = studentCardErrorMessage(new ApiError("x", 409, "STUDENT_CARD_HOLDER_UNDETERMINED"));
+    expect(message).toBe(STUDENT_CARD_HOLDER_UNDETERMINED_NOTICE);
+    expect(STUDENT_CARD_HOLDER_LABELS).toEqual({ eleve: "Élève", etudiant: "Étudiant" });
   });
 });

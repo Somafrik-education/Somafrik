@@ -439,6 +439,8 @@ async function main() {
              student_card_finance_check_enabled = EXCLUDED.student_card_finance_check_enabled`,
       [schoolA.id, schoolB.id],
     );
+    // CARTE-CYCLE-01 : titulaire explicite (élève) pour les établissements de test émetteurs de cartes.
+    await pool.query("UPDATE school_settings SET student_card_holder_kind = 'eleve' WHERE school_id = ANY($1::uuid[])", [[schoolA.id, schoolB.id]]);
 
     const feeContext = { schoolId: schoolA.id, classId: classA.id, academicYear: "2026-2027" };
     await insertFee(pool, { ...feeContext, studentId: STUDENT_A, label: "Frais A", dueDate: future, amountDue: 10000 });

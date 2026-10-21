@@ -9,6 +9,7 @@ on:
       - "backend/db/migrations/20261012_student_cards_nfc_encoding.sql"
       - "backend/db/migrations/20261013_student_cards_nfc_reservations.sql"
       - "backend/db/migrations/20261017_student_cards_nfc_recovery.sql"
+      - "backend/db/migrations/20261021_school_settings_student_card_holder.sql"
       - "backend/db/migrations/20261016_school_entry_events.sql"
       - "backend/db/schoolEntryEventsSchema.js"
       - "backend/lib/liveSchoolRoleKeys.js"
@@ -72,7 +73,7 @@ jobs:
           SOMAFRIK_NFC_EVIDENCE_DIR: ${{ runner.temp }}/nfc-integration-evidence
         run: |
           test -n "$SOMAFRIK_NFC_TEST_DATABASE_URL"
-          node --test backend/lib/studentCardsNfcEncoding.sql.test.js backend/lib/studentCardsNfcEncoding.test.js backend/lib/studentCardsNfcLifecycle.pg.test.js backend/lib/studentCardsNfcDiagnosis.pg.test.js backend/lib/studentCardsNfcProvision.http.pg.test.js backend/lib/studentCardNfcProvisionKey.test.js
+          node --test backend/lib/studentCardsNfcEncoding.sql.test.js backend/lib/studentCardsNfcEncoding.test.js backend/lib/studentCardsNfcLifecycle.pg.test.js backend/lib/studentCardsNfcDiagnosis.pg.test.js backend/lib/studentCardsNfcProvision.http.pg.test.js backend/lib/studentCardNfcProvisionKey.test.js backend/lib/studentCardHolder.test.js backend/lib/studentCardHolder.http.pg.test.js
           node backend/lib/studentAccessCards.pg.test.js
           node backend/lib/studentAccessCards.lifecycle.pg.test.js
           node backend/lib/studentAccessCards.resolve.pg.test.js
