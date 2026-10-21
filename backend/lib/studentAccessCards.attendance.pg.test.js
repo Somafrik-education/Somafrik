@@ -630,6 +630,45 @@ async function main() {
     assert.equal(cross.data?.code, STUDENT_CARD_ERROR.NOT_FOUND);
     assertNoSecret(cross.data, cardToken);
 
+    // NFC-PERF-02 — une seule requête : la classe sélectionnée est vérifiée côté serveur AVANT
+    // toute écriture, contre la classe issue de l'inscription canonique.
+    const beforeSingle = await attendanceCount(pool, STUDENT_A);
+    for (const expectedClassId of [classForeign.id, "", "   "]) {
+      const wrongClass = await request("/student-cards/scan", {
+        method: "POST",
+        token: tokenTeacher,
+        body: { cardToken, attendance: { date: "2026-10-12", status: "present", expectedClassId } },
+      });
+      assert.equal(wrongClass.status, 409, JSON.stringify(wrongClass.data));
+      assert.equal(wrongClass.data?.code, "STUDENT_CARD_CLASS_MISMATCH");
+      assertNoSecret(wrongClass.data, cardToken);
+      assert.equal(await attendanceCount(pool, STUDENT_A), beforeSingle, "aucune présence pour une autre classe");
+    }
+    const foreignSchool = await request("/student-cards/scan", {
+      method: "POST",
+      token: tokenTeacherB,
+      body: { cardToken, attendance: { date: "2026-10-12", status: "present", expectedClassId: classA.id } },
+    });
+    assert.equal(foreignSchool.status, 404, JSON.stringify(foreignSchool.data));
+    assert.equal(await attendanceCount(pool, STUDENT_A), beforeSingle, "aucune présence depuis un autre établissement");
+    const rightClass = await request("/student-cards/scan", {
+      method: "POST",
+      token: tokenTeacher,
+      headers: { "Idempotency-Key": "scan-single-request-1" },
+      body: { cardToken, attendance: { date: "2026-10-12", status: "present", expectedClassId: classA.id } },
+    });
+    assert.equal(rightClass.status, 201, JSON.stringify(rightClass.data));
+    assert.equal(rightClass.data.class.id, classA.id);
+    assert.equal(await attendanceCount(pool, STUDENT_A), beforeSingle + 1);
+    const replaySingle = await request("/student-cards/scan", {
+      method: "POST",
+      token: tokenTeacher,
+      headers: { "Idempotency-Key": "scan-single-request-1" },
+      body: { cardToken, attendance: { date: "2026-10-12", status: "present", expectedClassId: classA.id } },
+    });
+    assert.ok([200, 201].includes(replaySingle.status), JSON.stringify(replaySingle.data));
+    assert.equal(await attendanceCount(pool, STUDENT_A), beforeSingle + 1, "rejeu idempotent : aucun doublon");
+
     const lostIssued = await request("/student-cards", {
       method: "POST",
       token: tokenAdmin,
@@ -648,6 +687,14 @@ async function main() {
     assert.equal(lostScan.status, 409, JSON.stringify(lostScan.data));
     assert.equal(lostScan.data?.code, STUDENT_CARD_ERROR.INVALID_STATE);
     assert.equal(await attendanceCount(pool, STUDENT_LOST), 0);
+    const lostSingle = await request("/student-cards/scan", {
+      method: "POST",
+      token: tokenTeacher,
+      body: { cardToken: lostIssued.data.cardToken, attendance: { date: "2026-10-06", status: "present", expectedClassId: classA.id } },
+    });
+    assert.equal(lostSingle.status, 409, JSON.stringify(lostSingle.data));
+    assert.equal(lostSingle.data?.code, STUDENT_CARD_ERROR.INVALID_STATE);
+    assert.equal(await attendanceCount(pool, STUDENT_LOST), 0, "carte invalide : aucune présence");
 
     const bareIssued = await request("/student-cards", {
       method: "POST",
