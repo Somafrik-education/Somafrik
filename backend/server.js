@@ -2322,6 +2322,26 @@ app.post("/api/student-cards/nfc-diagnose", requireAuth, requirePermission("POST
     auditMetaFromRequest(req), studentCardsHttpScope(principal)));
 }));
 
+// CARTE-FIX-QR-NFC — puce NFC ajoutée à la carte ACTIVE existante (même carte, même secret).
+// Jamais d'émission ni de remplacement ; aucun secret journalisé ni renvoyé.
+app.post("/api/student-cards/:id/nfc-provision", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-provision"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { beginStudentCardNfcProvision } = require("./lib/studentCardsNfcLifecycle");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await beginStudentCardNfcProvision(repository, req.params.id, req.body ?? {},
+    principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+app.post("/api/student-cards/:id/nfc-provision/confirm", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-provision"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { confirmStudentCardNfcProvision } = require("./lib/studentCardsNfcLifecycle");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await confirmStudentCardNfcProvision(repository, req.params.id, req.body ?? {},
+    principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
 app.post("/api/student-cards/:id/nfc-confirm", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-confirm"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();

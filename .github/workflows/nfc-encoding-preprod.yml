@@ -72,7 +72,7 @@ jobs:
           SOMAFRIK_NFC_EVIDENCE_DIR: ${{ runner.temp }}/nfc-integration-evidence
         run: |
           test -n "$SOMAFRIK_NFC_TEST_DATABASE_URL"
-          node --test backend/lib/studentCardsNfcEncoding.sql.test.js backend/lib/studentCardsNfcEncoding.test.js backend/lib/studentCardsNfcLifecycle.pg.test.js backend/lib/studentCardsNfcDiagnosis.pg.test.js
+          node --test backend/lib/studentCardsNfcEncoding.sql.test.js backend/lib/studentCardsNfcEncoding.test.js backend/lib/studentCardsNfcLifecycle.pg.test.js backend/lib/studentCardsNfcDiagnosis.pg.test.js backend/lib/studentCardsNfcProvision.http.pg.test.js backend/lib/studentCardNfcProvisionKey.test.js
           node backend/lib/studentAccessCards.pg.test.js
           node backend/lib/studentAccessCards.lifecycle.pg.test.js
           node backend/lib/studentAccessCards.resolve.pg.test.js

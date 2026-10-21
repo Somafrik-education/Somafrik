@@ -6,6 +6,7 @@ const { RbacService } = require("../services/rbacService");
 const { normalizeNfcIdentity, assertNfcEnabled } = require("./studentCardsNfcEncoding");
 const { assertStudentCardMasterEnabled, generateCardSecrets, mapIssuedCard, mapCardListItem } = require("./studentAccessCardsManagement");
 const { parseCardToken, hashCardSecret, tokenHashesMatch } = require("./studentCardCapability");
+const { PROVISION_TTL_MS, resolveNfcProvisionKey, signProvisionChallenge, verifyProvisionChallenge } = require("./studentCardNfcProvisionKey");
 const rbac = new RbacService();
 
 function error(code, message, status = 409) { return createHttpError(status, message, code); }
@@ -335,4 +336,108 @@ async function transitionStudentCardNfc(repo, cardId, principal, meta, scope, ta
   }, false);
 }
 
-module.exports = { reserveStudentCardNfc, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, reopenExpiredStudentCardNfc, transitionStudentCardNfc, materializeExpiredNfcReservations };
+// CARTE-FIX-QR-NFC — provisionnement NFC de la carte ACTIVE existante (même ligne, même
+// identité, même secret). Jamais d'émission, de remplacement, de révocation ni de rotation.
+// Le jeton complet (public_id + secret, comparé à son empreinte) prouve la possession de la
+// carte : l'identifiant public seul n'autorise rien. Deux temps :
+//  1. begin  : jeton lu sur le QR imprimé + UID/modèle inspectés → défi serveur signé (HMAC),
+//              lié à la carte, à son empreinte, à la puce, à l'opération et à l'acteur, 10 min ;
+//  2. confirm: jeton RELU sur la puce après écriture + même UID + défi valide → la puce est
+//              enregistrée sous verrou, une seule fois (rejeu idempotent, concurrence sérialisée).
+// Le défi empêche une déclaration « NFC encodé » sans session autorisée pour cette puce ; il ne
+// constitue pas une preuve matérielle indépendante de l'écriture (voir la PR).
+const PROVISION_ROUTE = "POST /api/student-cards/:id/nfc-provision";
+
+function challengeFields(card, identity, key, actorId) {
+  return { cardId: card.id, tokenHash: card.token_hash, uid: identity.uid, tagType: identity.tagType, operationId: key, actorId };
+}
+
+function provisionInput(payload) {
+  const identity = normalizeNfcIdentity(payload?.nfc);
+  const key = operationId(typeof payload?.operationId === "string" ? payload.operationId.trim() : payload?.operationId);
+  const parsed = parseCardToken(payload?.cardToken);
+  return { identity, key, parsed };
+}
+
+/** Contrôles communs, sous verrou : jeton complet, carte active, puce libre, élève attendu. */
+async function assertProvisionable({ db, store }, scope, card, parsed, identity, studentRef) {
+  if (card.public_id !== parsed.publicId || !tokenHashesMatch(hashCardSecret(parsed.secret), card.token_hash)) throw notFound();
+  await assertConfirmStudent(store, scope, card, studentRef);
+  // Révoquée, perdue, remplacée ou réservée : jamais de réactivation implicite.
+  if (card.status !== "active") throw error("STUDENT_CARD_INVALID_STATE", "Seule une carte active peut recevoir une puce NFC.");
+  if (card.nfc_uid) {
+    if (card.nfc_uid === identity.uid && card.nfc_tag_type === identity.tagType
+      && ["encoded", "locked"].includes(card.nfc_encoding_state)) return "provisioned";
+    throw error("STUDENT_CARD_NFC_ALREADY_PROVISIONED", "Cette carte possède déjà une autre puce NFC. Utilisez le remplacement.");
+  }
+  // Une puce n'appartient qu'à une seule carte, tous établissements et historique confondus.
+  const owner = await db.one("SELECT 1 FROM student_access_cards WHERE nfc_uid = $1 AND id <> $2 LIMIT 1", [identity.uid, card.id]);
+  if (owner) throw error("STUDENT_CARD_NFC_UID_EXISTS", "Cette carte physique est déjà affectée.");
+  if (await store.findPendingNfc(scope.schoolId, card.student_id)) {
+    throw error("STUDENT_CARD_NFC_RESERVATION_EXISTS", "Une réservation NFC est déjà en attente pour cet élève.");
+  }
+  return "free";
+}
+
+async function serverNowMs(db) {
+  const row = await db.one("SELECT (extract(epoch FROM clock_timestamp()) * 1000)::bigint AS now_ms");
+  return Number(row.now_ms);
+}
+
+async function beginStudentCardNfcProvision(repo, cardId, payload, principal, meta, scope) {
+  authorize(principal, scope, PROVISION_ROUTE);
+  const { identity, key, parsed } = provisionInput(payload);
+  const actorId = String(principal.sub || principal.id || "");
+  const { key: signingKey } = resolveNfcProvisionKey(); // fail-closed avant toute lecture
+  return transaction(repo, principal, meta, scope, async (ctx) => {
+    const card = await ctx.cardForUpdate(cardId);
+    await ctx.expire(card.student_id);
+    const state = await assertProvisionable(ctx, scope, card, parsed, identity, payload?.studentId);
+    if (state === "provisioned") return { cardId: card.id, alreadyProvisioned: true, card: mapCardListItem(card) };
+    const expiresAt = (await serverNowMs(ctx.db)) + PROVISION_TTL_MS;
+    await ctx.audit("student_card_nfc_provision_started", card, null, {
+      studentId: card.student_id, tagType: identity.tagType, operationId: key, expiresAt: new Date(expiresAt).toISOString(),
+    });
+    return {
+      cardId: card.id,
+      alreadyProvisioned: false,
+      challenge: signProvisionChallenge(challengeFields(card, identity, key, actorId), expiresAt, signingKey),
+      expiresAt: new Date(expiresAt).toISOString(),
+    };
+  });
+}
+
+async function confirmStudentCardNfcProvision(repo, cardId, payload, principal, meta, scope) {
+  authorize(principal, scope, PROVISION_ROUTE);
+  const { identity, key, parsed } = provisionInput(payload);
+  if (typeof payload?.challenge !== "string" || !payload.challenge) {
+    throw error("STUDENT_CARD_NFC_PROVISION_CHALLENGE_REQUIRED", "Défi de provisionnement requis.", 400);
+  }
+  const actorId = String(principal.sub || principal.id || "");
+  const { key: signingKey } = resolveNfcProvisionKey();
+  return transaction(repo, principal, meta, scope, async (ctx) => {
+    const card = await ctx.cardForUpdate(cardId);
+    const state = await assertProvisionable(ctx, scope, card, parsed, identity, payload?.studentId);
+    // Même puce déjà enregistrée (rejeu ou confirmation concurrente) : aucun nouvel état ni audit.
+    if (state === "provisioned") return replay(card);
+    const fields = challengeFields(card, identity, key, actorId);
+    if (!verifyProvisionChallenge(payload.challenge, fields, signingKey, await serverNowMs(ctx.db))) {
+      throw error("STUDENT_CARD_NFC_PROVISION_CHALLENGE_INVALID", "Preuve de provisionnement invalide ou expirée. Recommencez l’encodage.");
+    }
+    const updated = await ctx.db.one(
+      `UPDATE student_access_cards
+          SET medium = 'nfc_qr', nfc_uid = $3, nfc_tag_type = $4, nfc_encoding_state = 'encoded',
+              nfc_encoded_at = clock_timestamp(), updated_at = NOW()
+        WHERE school_id = $1 AND id = $2 AND status = 'active' AND nfc_uid IS NULL AND token_hash = $5
+        RETURNING *`,
+      [scope.schoolId, card.id, identity.uid, identity.tagType, card.token_hash],
+    );
+    if (!updated) throw error("STUDENT_CARD_INVALID_STATE", "Provisionnement refusé. Relisez l’état de la carte.");
+    await ctx.audit("student_card_nfc_provisioned", updated,
+      { medium: card.medium, nfc: null },
+      { medium: "nfc_qr", state: "encoded", tagType: identity.tagType, operationId: key, sameCard: true });
+    return mapCardListItem(updated);
+  });
+}
+
+module.exports = { beginStudentCardNfcProvision, confirmStudentCardNfcProvision, reserveStudentCardNfc, confirmStudentCardNfc, retryStudentCardNfc, recoverExpiredStudentCardNfc, reopenExpiredStudentCardNfc, transitionStudentCardNfc, materializeExpiredNfcReservations };
