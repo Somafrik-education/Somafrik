@@ -381,6 +381,26 @@ const STUDENT_CARD_PR3_B_EXACT = new Set([
   "backend/db/pedagogyPgStore.js",
 ]);
 
+// CARTE-CYCLE-01 (#978, GO CTO du 21-10-2026) : titulaire de carte élève / étudiant. Fichiers exacts,
+// admis uniquement lorsque le diff porte aussi les DEUX ancres : le module du chantier et SA
+// migration datée (une migration fusionnée n'est jamais réécrite : une PR future qui ne fait que
+// modifier studentCardHolder.js ne réactive pas l'exception). Aucun dossier, aucune autre
+// migration, aucun fichier RBAC : tout le reste demeure FAIL.
+const STUDENT_CARD_CYCLE_01_ANCHORS = Object.freeze([
+  "backend/lib/studentCardHolder.js",
+  "backend/db/migrations/20261021_school_settings_student_card_holder.sql",
+]);
+const STUDENT_CARD_CYCLE_01_EXACT = new Set([
+  "backend/db/migrations/20261021_school_settings_student_card_holder.sql",
+  "backend/db/schoolSettingsMemoryStore.js",
+  "backend/db/schoolSettingsPgStore.js",
+  "backend/db/schoolSettingsSchema.js",
+  "backend/lib/schoolSettingsManagement.js",
+  "backend/lib/schoolSettingsService.js",
+  "docs/student-card/CARTE-CYCLE-01-titulaire.md",
+  "web/src/lib/schoolSettingsApi.ts",
+]);
+
 // CARTE-PR3-M1 (#947) : exception pour le menu, uniquement avec les deux ancres exactes.
 const STUDENT_CARD_PR3_M1_NAV_FILE = "Mobile/src/navigation/roleDrawerPreferences.ts";
 const STUDENT_CARD_PR3_M1_NAV_ANCHORS = Object.freeze([
@@ -487,12 +507,14 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
   if (changed.some(isStudentCardPr6Signal)) {
     const pr3EntryControl = changed.includes(STUDENT_CARD_PR3_A1_ANCHOR);
     const pr3RollCall = STUDENT_CARD_PR3_B_ANCHORS.every((anchor) => changed.includes(anchor));
+    const cardCycle01 = STUDENT_CARD_CYCLE_01_ANCHORS.every((anchor) => changed.includes(anchor));
     const pr3MobileNav = navChanged && navAnchored;
     const r3DiagnosticNav = navChanged && r3DiagnosticAnchored;
     const outside = changed.filter(
       (file) => !isStudentCardPr6IntegrationFile(file)
         && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file))
         && !(pr3RollCall && STUDENT_CARD_PR3_B_EXACT.has(file))
+        && !(cardCycle01 && STUDENT_CARD_CYCLE_01_EXACT.has(file))
         && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE)
         && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE)),
     );
@@ -1016,6 +1038,64 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           evaluateLot4Scope(["web/src/components/students/StudentCardTab.tsx", "web/src/lib/studentCardsApi.ts", pr3Only]).kind,
           "fail",
           `L4-09: ${pr3Only} sans le module du portail (ancre) doit rester FAIL`,
+        );
+      }
+
+      // CARTE-CYCLE-01 (#978) : diff exact admis ; tout ajout hors liste reste FAIL, ancres obligatoires.
+      const cycle01Files = [
+        "backend/lib/studentCardHolder.js",
+        "backend/lib/studentCardHolder.test.js",
+        "backend/lib/studentCardHolder.http.pg.test.js",
+        "backend/db/migrations/20261021_school_settings_student_card_holder.sql",
+        "backend/db/schoolSettingsMemoryStore.js",
+        "backend/db/schoolSettingsPgStore.js",
+        "backend/db/schoolSettingsSchema.js",
+        "backend/db/schema.sql",
+        "backend/db/studentAccessCardsPgStore.js",
+        "backend/lib/schoolSettingsManagement.js",
+        "backend/lib/schoolSettingsService.js",
+        "backend/lib/studentAccessCardsManagement.js",
+        "backend/server.js",
+        "docs/student-card/CARTE-CYCLE-01-titulaire.md",
+        "web/src/lib/schoolSettingsApi.ts",
+        "web/src/lib/studentCardsApi.ts",
+        "web/src/components/students/StudentCardTab.tsx",
+        ".github/workflows/nfc-encoding-preprod.yml",
+      ];
+      assert.equal(evaluateLot4Scope(cycle01Files).kind, "na", "L4-09: diff exact CARTE-CYCLE-01 admis nominativement");
+      for (const [extra, label] of [
+        ["backend/db/migrations/20261022_other_table.sql", "autre migration"],
+        ["backend/db/migrations/20261016_school_entry_events.sql", "migration d'un autre chantier"],
+        ["backend/lib/schoolSetupStatus.js", "fichier LOT 4 exclusif"],
+        ["backend/lib/functionalModulesCatalog.js", "fichier RBAC (exception PR3-A1 non ancrée)"],
+        ["backend/lib/financeManagement.js", "autre fichier backend"],
+        ["backend/lib/functionalRbacService.js", "autre fichier RBAC backend"],
+        ["backend/db/schoolSettingsMemoryStore.test.js", "voisin non listé"],
+        ["docs/student-card/CARTE-CYCLE-02.md", "autre document"],
+        ["web/src/lib/schoolSettingsApi.test.ts", "autre fichier Web"],
+      ]) {
+        assert.equal(evaluateLot4Scope([...cycle01Files, extra]).kind, "fail", `L4-09: CARTE-CYCLE-01 + ${label} doit rester FAIL`);
+      }
+      for (const missingAnchor of STUDENT_CARD_CYCLE_01_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(cycle01Files.filter((file) => file !== missingAnchor)).kind,
+          "fail",
+          `L4-09: CARTE-CYCLE-01 sans l'ancre ${missingAnchor} doit rester FAIL`,
+        );
+      }
+      // Réutilisation : un futur chantier qui modifie studentCardHolder.js (sans la migration datée)
+      // et un fichier school-settings reste FAIL.
+      for (const cycle01Only of STUDENT_CARD_CYCLE_01_EXACT) {
+        if (STUDENT_CARD_CYCLE_01_ANCHORS.includes(cycle01Only)) continue;
+        assert.equal(
+          evaluateLot4Scope(["backend/lib/studentCardHolder.js", "web/src/lib/studentCardsApi.ts", cycle01Only]).kind,
+          "fail",
+          `L4-09: ${cycle01Only} sans la migration ancre CARTE-CYCLE-01 doit rester FAIL`,
+        );
+        assert.equal(
+          evaluateLot4Scope(["web/src/components/students/StudentCardTab.tsx", cycle01Only]).kind,
+          "fail",
+          `L4-09: ${cycle01Only} sans les ancres CARTE-CYCLE-01 doit rester FAIL`,
         );
       }
 
