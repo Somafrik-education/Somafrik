@@ -97,7 +97,7 @@ function createStudentAccessCardsPgStore(repo) {
   /**
    * CARTE-CYCLE-01 — contexte du titulaire : type d'établissement et réglages explicites ; le niveau
    * d'enseignement de la classe courante n'est lu que si des surcharges par niveau existent
-   * (même règle d'inscription que findRosterClass).
+   * (même règle d'inscription que findRosterClass), avec son activité dans school_levels.
    */
   async function findCardHolderContext(schoolId, studentId) {
     if (!asTrimmed(schoolId) || !isUuid(studentId)) return null;
@@ -114,8 +114,16 @@ function createStudentAccessCardsPgStore(repo) {
       return { ...context, level_id: null };
     }
     const { ROSTER_ENROLLMENT_SQL } = require("../lib/studentEnrollmentC18");
-    const level = await one(
-      `SELECT c.level_id::text AS level_id
+    // Établissement mixte : niveau de la classe courante + activité du niveau dans CET établissement.
+    // Plusieurs classes courantes de niveaux différents = niveau incertain (aucun choix arbitraire).
+    const rows = await all(
+      `SELECT DISTINCT c.level_id::text AS level_id,
+              EXISTS (
+                SELECT 1 FROM school_levels sl
+                 WHERE sl.school_id = e.school_id
+                   AND sl.level_id = c.level_id
+                   AND sl.status = 'active'
+              ) AS level_active
          FROM enrollments e
          INNER JOIN academic_years y
            ON y.id = e.academic_year_id
@@ -129,10 +137,11 @@ function createStudentAccessCardsPgStore(repo) {
           AND e.student_id = $2
           AND e.class_id IS NOT NULL
           AND ${ROSTER_ENROLLMENT_SQL}
-        LIMIT 1`,
+        LIMIT 2`,
       [schoolId, studentId],
     );
-    return { ...context, level_id: level?.level_id ?? null };
+    if (rows.length !== 1 || !rows[0].level_id) return { ...context, level_id: null, level_active: false };
+    return { ...context, level_id: rows[0].level_id, level_active: rows[0].level_active === true };
   }
 
   async function findActive(schoolId, studentId) {

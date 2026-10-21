@@ -184,3 +184,127 @@ test("cartes existantes intactes : changer le titulaire ne modifie aucune carte 
   const afterRow = (await f.pool.query("SELECT * FROM student_access_cards WHERE id = $1", [issued.data.id])).rows[0];
   assert.deepEqual(afterRow, before);
 });
+
+test("mixte fail-closed : inscription absente, classe sans niveau, niveau désactivé → aucun libellé, aucune carte", async () => {
+  // Global « élève » ET type Lycée présents : ils ne doivent jamais combler un niveau incertain.
+  await setType(A, "Lycée");
+  // Une classe par niveau et par année (uq_classes_structural_offering) : un niveau surchargé par cas.
+  const levelSup = await activeLevel(A, "SUP");
+  const levelSupGone = await activeLevel(A, "SUP-A");
+  const levelSupMoved = await activeLevel(A, "SUP-B");
+  const levelSec = await activeLevel(A, "SEC");
+  const overrides = { [levelSup]: "etudiant", [levelSupGone]: "etudiant", [levelSupMoved]: "etudiant" };
+  assert.equal((await patchSettings({ studentCardHolderKind: "eleve", studentCardHolderLevels: overrides })).status, 200);
+  const blocked = async (student, label) => {
+    const auditsBefore = await issuedAudits();
+    assert.deepEqual(await holderOf(student), { kind: null, source: null }, label);
+    const response = await issue(student);
+    assert.equal(response.status, 409, label);
+    assert.equal(response.data.code, "STUDENT_CARD_HOLDER_UNDETERMINED", label);
+    assert.deepEqual(await cardsOf(student), [], `${label} : aucune carte`);
+    assert.equal(await issuedAudits(), auditsBefore, `${label} : aucun audit d'émission`);
+  };
+
+  const noEnrollment = await f.cohort(1);
+  await f.pool.query("UPDATE classes SET level_id = $2 WHERE id = $1", [noEnrollment.classId, levelSupGone]);
+  await f.pool.query("DELETE FROM enrollments WHERE student_id = $1", [noEnrollment.students[0]]);
+  await blocked(noEnrollment.students[0], "inscription courante absente");
+
+  const withdrawn = await f.cohort(1);
+  await f.pool.query("UPDATE classes SET level_id = $2 WHERE id = $1", [withdrawn.classId, levelSupMoved]);
+  await f.pool.query("UPDATE enrollments SET status = 'TRANSFERRED' WHERE student_id = $1", [withdrawn.students[0]]);
+  await blocked(withdrawn.students[0], "inscription non courante");
+
+  const noLevel = await f.cohort(1);
+  await blocked(noLevel.students[0], "classe sans niveau");
+
+  const sup = await f.cohort(1);
+  const sec = await f.cohort(1);
+  await f.pool.query("UPDATE classes SET level_id = $2 WHERE id = $1", [sup.classId, levelSup]);
+  await f.pool.query("UPDATE classes SET level_id = $2 WHERE id = $1", [sec.classId, levelSec]);
+  assert.deepEqual(await holderOf(sup.students[0]), { kind: "etudiant", source: "level_setting" });
+  assert.deepEqual(await holderOf(sec.students[0]), { kind: "eleve", source: "school_setting" }, "niveau actif sans surcharge : réglage global");
+
+  // Désactivation après configuration : la surcharge obsolète n'a plus d'effet, le global ne la remplace pas.
+  await f.pool.query("UPDATE school_levels SET status = 'archived' WHERE school_id = $1 AND level_id = $2", [A.id, levelSup]);
+  await blocked(sup.students[0], "niveau surchargé archivé");
+  await f.pool.query("DELETE FROM school_levels WHERE school_id = $1 AND level_id = $2", [A.id, levelSec]);
+  await blocked(sec.students[0], "niveau non surchargé retiré du référentiel");
+  // Réactivation : le niveau redevient certain, la surcharge enregistrée s'applique de nouveau.
+  await f.pool.query("UPDATE school_levels SET status = 'active' WHERE school_id = $1 AND level_id = $2", [A.id, levelSup]);
+  assert.deepEqual(await holderOf(sup.students[0]), { kind: "etudiant", source: "level_setting" });
+});
+
+test("mixte : surcharge d'un autre niveau et conflit global / niveau ne produisent jamais un libellé erroné", async () => {
+  await setType(A, "Université");
+  const levelPrepa = await activeLevel(A, "PREPA");
+  const levelLic = await activeLevel(A, "LIC");
+  const levelB = await activeLevel(B, "B-LIC");
+  const prepa = await f.cohort(1);
+  const lic = await f.cohort(1);
+  const foreignLevel = await f.cohort(1);
+  await f.pool.query("UPDATE classes SET level_id = $2 WHERE id = $1", [prepa.classId, levelPrepa]);
+  await f.pool.query("UPDATE classes SET level_id = $2 WHERE id = $1", [lic.classId, levelLic]);
+  // Donnée incohérente : classe de A rattachée à un niveau activé seulement dans B.
+  await f.pool.query("UPDATE classes SET level_id = $2 WHERE id = $1", [foreignLevel.classId, levelB]);
+
+  // Conflit : global « étudiant », surcharge « élève » pour la prépa → la surcharge prime pour la prépa seulement.
+  assert.equal((await patchSettings({ studentCardHolderKind: "etudiant", studentCardHolderLevels: { [levelPrepa]: "eleve" } })).status, 200);
+  assert.deepEqual(await holderOf(prepa.students[0]), { kind: "eleve", source: "level_setting" });
+  assert.deepEqual(await holderOf(lic.students[0]), { kind: "etudiant", source: "school_setting" });
+  assert.deepEqual(await holderOf(foreignLevel.students[0]), { kind: null, source: null }, "niveau non actif dans A");
+
+  // Surcharge écrite directement en base pour un niveau d'un autre établissement : sans effet dans A.
+  await f.pool.query("UPDATE school_settings SET student_card_holder_kind = NULL, student_card_holder_levels = $2::jsonb WHERE school_id = $1",
+    [A.id, JSON.stringify({ [levelB]: "etudiant" })]);
+  assert.deepEqual(await holderOf(foreignLevel.students[0]), { kind: null, source: null }, "surcharge étrangère ignorée");
+  assert.deepEqual(await holderOf(lic.students[0]), { kind: "etudiant", source: "school_type" }, "niveau actif sans surcharge : type exact");
+  assert.equal((await issue(foreignLevel.students[0])).status, 409);
+});
+
+test("cohérence transactionnelle : une désactivation concurrente bloque la sauvegarde jusqu'à son issue", async () => {
+  const levelX = await activeLevel(A, "TX");
+  const levelY = await activeLevel(A, "TY");
+  const settle = (promise) => promise.then((value) => ({ done: true, value }));
+  const pending = (ms) => new Promise((resolve) => setTimeout(() => resolve({ done: false }), ms));
+
+  // 1. Désactivation en cours puis validée : le PATCH attend, puis voit le niveau retiré → 400, rien d'écrit.
+  const deactivator = await f.pool.connect();
+  try {
+    await deactivator.query("BEGIN");
+    await deactivator.query("DELETE FROM school_levels WHERE school_id = $1 AND level_id = $2", [A.id, levelX]);
+    const save = patchSettings({ studentCardHolderLevels: { [levelX]: "etudiant" } });
+    assert.equal((await Promise.race([settle(save), pending(400)])).done, false, "le PATCH attend la transaction concurrente");
+    await deactivator.query("COMMIT");
+    const response = await save;
+    assert.equal(response.status, 400);
+    assert.equal(response.data.code, "INVALID_STUDENT_CARD_HOLDER_LEVEL");
+  } finally {
+    deactivator.release();
+  }
+  let row = (await f.pool.query("SELECT student_card_holder_levels FROM school_settings WHERE school_id = $1", [A.id])).rows[0];
+  assert.deepEqual(row.student_card_holder_levels, {}, "surcharge vers un niveau retiré jamais enregistrée");
+
+  // 2. Désactivation annulée : le PATCH attend puis réussit sur un niveau resté actif.
+  const rollback = await f.pool.connect();
+  try {
+    await rollback.query("BEGIN");
+    await rollback.query("UPDATE school_levels SET status = 'archived' WHERE school_id = $1 AND level_id = $2", [A.id, levelY]);
+    const save = patchSettings({ studentCardHolderLevels: { [levelY]: "eleve" } });
+    assert.equal((await Promise.race([settle(save), pending(400)])).done, false);
+    await rollback.query("ROLLBACK");
+    assert.equal((await save).status, 200);
+  } finally {
+    rollback.release();
+  }
+  row = (await f.pool.query("SELECT student_card_holder_levels FROM school_settings WHERE school_id = $1", [A.id])).rows[0];
+  assert.deepEqual(row.student_card_holder_levels, { [levelY]: "eleve" });
+
+  // 3. Désactivation APRÈS la sauvegarde : elle n'attend pas indéfiniment et la surcharge devient sans effet.
+  const student = await f.cohort(1);
+  await f.pool.query("UPDATE classes SET level_id = $2 WHERE id = $1", [student.classId, levelY]);
+  assert.deepEqual(await holderOf(student.students[0]), { kind: "eleve", source: "level_setting" });
+  await f.pool.query("DELETE FROM school_levels WHERE school_id = $1 AND level_id = $2", [A.id, levelY]);
+  assert.deepEqual(await holderOf(student.students[0]), { kind: null, source: null });
+  assert.equal((await issue(student.students[0])).status, 409);
+});

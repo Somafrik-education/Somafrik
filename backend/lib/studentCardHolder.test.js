@@ -47,11 +47,11 @@ test("égalité exacte après normalisation Unicode NFC et suppression des espac
 test("priorité : niveau de la classe > réglage établissement > type exact > non déterminé", () => {
   const levels = { [LEVEL_SUP]: "etudiant", [LEVEL_SEC]: "eleve" };
   assert.deepEqual(
-    resolveStudentCardHolder({ schoolType: "Lycée", holderKind: "eleve", holderLevels: levels, levelId: LEVEL_SUP }),
+    resolveStudentCardHolder({ schoolType: "Lycée", holderKind: "eleve", holderLevels: levels, levelId: LEVEL_SUP, levelActive: true }),
     { kind: "etudiant", source: STUDENT_CARD_HOLDER_SOURCE.LEVEL },
   );
   assert.deepEqual(
-    resolveStudentCardHolder({ schoolType: "Institut", holderKind: "etudiant", holderLevels: levels, levelId: null }),
+    resolveStudentCardHolder({ schoolType: "Institut", holderKind: "etudiant", holderLevels: {}, levelId: null }),
     { kind: "etudiant", source: STUDENT_CARD_HOLDER_SOURCE.SCHOOL },
   );
   assert.deepEqual(
@@ -64,10 +64,54 @@ test("priorité : niveau de la classe > réglage établissement > type exact > n
 
 test("établissement mixte : un niveau non configuré ne reçoit pas le libellé d'une autre section", () => {
   const mixed = { schoolType: "Institut", holderKind: null, holderLevels: { [LEVEL_SUP]: "etudiant" } };
-  assert.equal(resolveStudentCardHolder({ ...mixed, levelId: LEVEL_SUP }).kind, "etudiant");
-  assert.equal(resolveStudentCardHolder({ ...mixed, levelId: LEVEL_SEC }).kind, null, "section secondaire non configurée");
+  assert.equal(resolveStudentCardHolder({ ...mixed, levelId: LEVEL_SUP, levelActive: true }).kind, "etudiant");
+  assert.equal(resolveStudentCardHolder({ ...mixed, levelId: LEVEL_SEC, levelActive: true }).kind, null, "section secondaire non configurée");
   assert.equal(resolveStudentCardHolder({ ...mixed, levelId: null }).kind, null, "élève sans classe");
-  assert.equal(resolveStudentCardHolder({ ...mixed, levelId: LEVEL_SUP.toUpperCase() }).kind, "etudiant");
+  assert.equal(resolveStudentCardHolder({ ...mixed, levelId: LEVEL_SUP.toUpperCase(), levelActive: true }).kind, "etudiant");
+});
+
+test("établissement mixte fail-closed : sans niveau certain et actif, ni global ni type ne s'appliquent", () => {
+  const NONE = { kind: null, source: null };
+  // Le réglage global et le type exact existent : ils NE DOIVENT PAS combler une incertitude de niveau.
+  const mixed = { schoolType: "Lycée", holderKind: "eleve", holderLevels: { [LEVEL_SUP]: "etudiant" } };
+  const cases = {
+    "inscription courante absente ou ambiguë": { levelId: null, levelActive: false },
+    "classe sans niveau": { levelId: null },
+    "niveau illisible": { levelId: "pas-un-uuid", levelActive: true },
+    "niveau surchargé désactivé depuis la configuration": { levelId: LEVEL_SUP, levelActive: false },
+    "niveau non surchargé désactivé": { levelId: LEVEL_SEC, levelActive: false },
+    "activité du niveau inconnue": { levelId: LEVEL_SUP },
+    "activité non booléenne": { levelId: LEVEL_SUP, levelActive: "true" },
+  };
+  for (const [label, input] of Object.entries(cases)) {
+    assert.deepEqual(resolveStudentCardHolder({ ...mixed, ...input }), NONE, label);
+  }
+  // Niveau certain et actif : surcharge du niveau, sinon réglage global (conflit global / niveau : le niveau prime).
+  assert.deepEqual(resolveStudentCardHolder({ ...mixed, levelId: LEVEL_SUP, levelActive: true }), { kind: "etudiant", source: STUDENT_CARD_HOLDER_SOURCE.LEVEL });
+  assert.deepEqual(resolveStudentCardHolder({ ...mixed, levelId: LEVEL_SEC, levelActive: true }), { kind: "eleve", source: STUDENT_CARD_HOLDER_SOURCE.SCHOOL });
+  assert.deepEqual(
+    resolveStudentCardHolder({ ...mixed, holderKind: "etudiant", holderLevels: { [LEVEL_SEC]: "eleve" }, levelId: LEVEL_SEC, levelActive: true }),
+    { kind: "eleve", source: STUDENT_CARD_HOLDER_SOURCE.LEVEL },
+  );
+  // Surcharge pour un AUTRE niveau : le niveau de l'élève ne reprend jamais cette surcharge.
+  assert.deepEqual(
+    resolveStudentCardHolder({ schoolType: "Institut", holderLevels: { [LEVEL_SUP]: "etudiant" }, levelId: LEVEL_SEC, levelActive: true }),
+    NONE,
+  );
+  // Surcharges toutes corrompues : l'établissement n'est pas réputé mixte, règle simple (global / type).
+  assert.deepEqual(
+    resolveStudentCardHolder({ schoolType: "Lycée", holderLevels: { "pas-un-uuid": "etudiant" }, levelId: null }),
+    { kind: "eleve", source: STUDENT_CARD_HOLDER_SOURCE.SCHOOL_TYPE },
+  );
+  // Contexte lu en base : level_active doit être le booléen true.
+  assert.deepEqual(
+    resolveStudentCardHolderFromContext({ school_type: "Lycée", student_card_holder_kind: "eleve", student_card_holder_levels: { [LEVEL_SUP]: "etudiant" }, level_id: LEVEL_SUP, level_active: false }),
+    NONE,
+  );
+  assert.deepEqual(
+    resolveStudentCardHolderFromContext({ school_type: null, student_card_holder_kind: null, student_card_holder_levels: { [LEVEL_SUP]: "etudiant" }, level_id: LEVEL_SUP, level_active: true }),
+    { kind: "etudiant", source: STUDENT_CARD_HOLDER_SOURCE.LEVEL },
+  );
 });
 
 test("lecture fail-closed : réglages corrompus ignorés, jamais transformés en titulaire", () => {

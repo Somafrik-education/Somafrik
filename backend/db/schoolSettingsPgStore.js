@@ -168,10 +168,14 @@ function createSchoolSettingsPgStore(repo) {
     return row;
   }
 
-  /** CARTE-CYCLE-01 — niveaux actifs de l'établissement (surcharges de titulaire autorisées). */
+  /**
+   * CARTE-CYCLE-01 — niveaux actifs de l'établissement (surcharges de titulaire autorisées).
+   * FOR SHARE : dans la transaction d'écriture des paramètres, les lignes lues ne peuvent être ni
+   * supprimées ni archivées avant le COMMIT (DELETE / UPDATE concurrents en attente).
+   */
   async function listActiveSchoolLevelIds(schoolId) {
     const rows = await all(
-      `SELECT level_id::text AS level_id FROM school_levels WHERE school_id = $1 AND status = 'active'`,
+      `SELECT level_id::text AS level_id FROM school_levels WHERE school_id = $1 AND status = 'active' FOR SHARE`,
       [schoolId],
     );
     return rows.map((row) => String(row.level_id).toLowerCase());

@@ -80,10 +80,12 @@ async function patchSchoolSettings(repo, rawPayload, principal, auditMeta, schoo
   const store = settingsStore(repo);
   const school = await store.requireSchoolByCode(scopedSchool);
   const existing = await store.getSettings(school.id);
-  await assertHolderLevelsActive(store, school.id, patch);
   return repo.withTransaction(async (tx) => {
     const scope = repo.createTxScope(tx);
     const scopedStore = settingsStore(scope);
+    // CARTE-CYCLE-01 — validation DANS la transaction d'écriture : les niveaux actifs sont lus
+    // avec FOR SHARE, donc une désactivation concurrente attend le COMMIT (ou est vue avant).
+    await assertHolderLevelsActive(scopedStore, school.id, patch);
     const savedRow = await scopedStore.upsertSettings(school.id, patch);
     const saved = mapSettingsRow(savedRow, school.school_code, school);
     await writeSchoolSettingsAudit(scope, principal, auditMeta, {
@@ -98,7 +100,11 @@ async function patchSchoolSettings(repo, rawPayload, principal, auditMeta, schoo
   });
 }
 
-/** CARTE-CYCLE-01 — une surcharge ne vise qu'un niveau actif de CET établissement (isolation). */
+/**
+ * CARTE-CYCLE-01 — une surcharge ne vise qu'un niveau actif de CET établissement (isolation).
+ * Appelée avec le store de la transaction d'écriture. Une désactivation postérieure au COMMIT
+ * est neutralisée à la lecture (findCardHolderContext + resolveStudentCardHolder, fail-closed).
+ */
 async function assertHolderLevelsActive(store, schoolId, patch) {
   const levels = patch?.studentCardHolderLevels;
   if (!levels || !Object.keys(levels).length) return;

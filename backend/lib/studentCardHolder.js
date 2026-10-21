@@ -10,6 +10,14 @@
  *  4. sinon (Institut, Centre de formation, valeur libre, type absent) : NON DÉTERMINÉ.
  * Aucune recherche approximative dans un nom : égalité exacte après normalisation Unicode NFC et trim.
  * Un titulaire non déterminé interdit toute émission imprimable, avant toute génération de jeton.
+ *
+ * Établissement mixte (au moins une surcharge par niveau enregistrée) — fail-closed :
+ *  - le niveau de l'élève doit être CERTAIN : une seule classe courante, un level_id, et ce niveau
+ *    toujours ACTIF dans school_levels de l'établissement (levelActive === true) ;
+ *  - sinon (inscription absente ou ambiguë, classe sans niveau, niveau désactivé depuis la
+ *    configuration) : NON DÉTERMINÉ — ni le réglage global ni le type ne s'appliquent ;
+ *  - une surcharge visant un niveau désactivé n'a plus d'effet (l'élève de ce niveau est bloqué) ;
+ *  - un niveau certain sans surcharge reprend le réglage global, puis le type exact.
  */
 
 const STUDENT_CARD_HOLDER_KINDS = Object.freeze(["eleve", "etudiant"]);
@@ -59,17 +67,23 @@ function normalizeHolderLevels(value) {
   return out;
 }
 
-function resolveStudentCardHolder({ schoolType, holderKind, holderLevels, levelId } = {}) {
+const UNDETERMINED = Object.freeze({ kind: null, source: null });
+
+function resolveStudentCardHolder({ schoolType, holderKind, holderLevels, levelId, levelActive } = {}) {
   const levels = normalizeHolderLevels(holderLevels);
-  const level = isHolderLevelId(levelId) ? levelId.toLowerCase() : "";
-  if (level && Object.prototype.hasOwnProperty.call(levels, level)) {
-    return { kind: levels[level], source: STUDENT_CARD_HOLDER_SOURCE.LEVEL };
+  if (Object.keys(levels).length) {
+    const level = isHolderLevelId(levelId) ? levelId.toLowerCase() : "";
+    // Mixte : sans niveau certain et actif, aucun libellé (jamais celui d'une autre section).
+    if (!level || levelActive !== true) return { ...UNDETERMINED };
+    if (Object.prototype.hasOwnProperty.call(levels, level)) {
+      return { kind: levels[level], source: STUDENT_CARD_HOLDER_SOURCE.LEVEL };
+    }
   }
   const explicit = normalizeHolderKind(holderKind);
   if (explicit) return { kind: explicit, source: STUDENT_CARD_HOLDER_SOURCE.SCHOOL };
   const fromType = holderFromSchoolType(schoolType);
   if (fromType) return { kind: fromType, source: STUDENT_CARD_HOLDER_SOURCE.SCHOOL_TYPE };
-  return { kind: null, source: null };
+  return { ...UNDETERMINED };
 }
 
 /** Contexte lu en base (studentAccessCardsPgStore.findCardHolderContext) → titulaire résolu. */
@@ -79,6 +93,7 @@ function resolveStudentCardHolderFromContext(row) {
     holderKind: row?.student_card_holder_kind,
     holderLevels: row?.student_card_holder_levels,
     levelId: row?.level_id,
+    levelActive: row?.level_active === true,
   });
 }
 

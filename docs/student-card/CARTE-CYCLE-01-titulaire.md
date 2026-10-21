@@ -31,11 +31,36 @@ Aucune recherche approximative n'est faite dans un nom ou un libellé. Une valeu
 
 ## Établissements mixtes
 
-- Une surcharge peut être définie **par niveau d'enseignement actif de l'établissement**. Les niveaux viennent de `school_levels`, avec `status = 'active'`.
-- Le niveau d'un élève est celui de sa classe courante (`classes.level_id`), selon la même règle d'inscription que la résolution de scan.
-- Un niveau sans surcharge reprend le réglage de l'établissement, puis le type exact. **Une section non configurée reste non déterminée.** Elle ne reçoit jamais le libellé d'une autre section.
-- La surcharge par niveau prime sur le réglage global.
-- Une surcharge vers un niveau non activé, ou activé seulement dans un autre établissement, est refusée (`400 INVALID_STUDENT_CARD_HOLDER_LEVEL`).
+Un établissement est **mixte** dès qu'au moins une surcharge par niveau est enregistrée (`school_settings.student_card_holder_levels` non vide après lecture fail-closed).
+
+- Une surcharge ne peut viser qu'un **niveau d'enseignement actif de l'établissement** (`school_levels`, `status = 'active'`). Sinon, la requête est refusée (`400 INVALID_STUDENT_CARD_HOLDER_LEVEL`), y compris pour un niveau activé seulement dans un autre établissement.
+- Le niveau d'un élève est celui de sa classe courante (`classes.level_id`). La règle d'inscription est la même que pour la résolution de scan.
+- **Fail-closed.** Dans un établissement mixte, le libellé n'est attribué que si le niveau de l'élève est **certain**. Il faut à la fois :
+  - une seule classe courante ;
+  - une classe qui a un `level_id` ;
+  - un niveau toujours actif dans `school_levels` de cet établissement.
+
+  Sinon, le titulaire est **non déterminé**, et ni le réglage global ni le type ne comblent l'incertitude :
+
+| Situation (établissement mixte) | Résultat |
+|---|---|
+| Inscription courante absente (aucune, transférée, clôturée) | non déterminé, émission bloquée |
+| Plusieurs classes courantes de niveaux différents (défensif : `UNIQUE (student_id, academic_year_id)` l'interdit déjà) | non déterminé |
+| Classe sans niveau | non déterminé |
+| Niveau désactivé ou retiré du référentiel après configuration (surcharge obsolète) | non déterminé : la surcharge n'a plus d'effet |
+| Niveau d'un autre établissement, ou surcharge écrite pour un tel niveau | non déterminé, surcharge ignorée |
+| Niveau actif surchargé | surcharge (`level_setting`) |
+| Niveau actif sans surcharge, alors qu'une surcharge existe pour un autre niveau | réglage global, puis type exact, sinon non déterminé |
+| Conflit entre le réglage global et une surcharge | la surcharge prime, pour ce niveau seulement |
+
+- Une section non configurée ne reçoit jamais le libellé d'une autre section.
+- Une réactivation du niveau rend de nouveau effective la surcharge enregistrée.
+
+## Cohérence transactionnelle
+
+- La validation des niveaux (`assertHolderLevelsActive`) s'exécute **dans la transaction d'écriture** de `school_settings`, avec le store transactionnel.
+- Les niveaux actifs sont lus avec `FOR SHARE` (`listActiveSchoolLevelIds`). Une désactivation concurrente (`DELETE` ou `UPDATE` de `school_levels`) est donc soit vue avant la sauvegarde (refus 400), soit mise en attente jusqu'au `COMMIT`.
+- Une désactivation **postérieure** à la sauvegarde est neutralisée à la lecture : `findCardHolderContext` renvoie `level_active`, et la résolution fail-closed bloque l'élève.
 
 ## Stockage et API
 
@@ -71,8 +96,8 @@ Quand le titulaire n'est pas déterminé :
 
 | Fichier | Contenu |
 |---|---|
-| `backend/lib/studentCardHolder.test.js` | Matrice, normalisation, priorités, établissements mixtes, lecture fail-closed, validation des paramètres |
-| `backend/lib/studentCardHolder.http.pg.test.js` | Routes HTTP de production et PostgreSQL : garde d'émission et de remplacement avant jeton, trois sources, établissement mixte, isolation, RBAC, cartes existantes intactes |
+| `backend/lib/studentCardHolder.test.js` | Matrice, normalisation, priorités, établissements mixtes (fail-closed : niveau absent, désactivé, illisible, surcharge d'un autre niveau, conflit global / niveau), lecture fail-closed, validation des paramètres |
+| `backend/lib/studentCardHolder.http.pg.test.js` | Routes HTTP de production et PostgreSQL : garde d'émission et de remplacement avant jeton, trois sources, établissement mixte (inscription absente ou non courante, classe sans niveau, niveau archivé ou retiré, réactivation, niveau étranger, conflit global / niveau), cohérence transactionnelle avec désactivation concurrente (validée ou annulée), isolation, RBAC, cartes existantes intactes |
 | `web/src/components/students/StudentCardTab.test.tsx` | Émission et remplacement désactivés, refus serveur |
 | `web/src/components/students/StudentCardSettingsSection.test.tsx` | Réglage global, surcharges par niveau, droits |
 | `web/src/lib/studentCardPolicy.test.ts` | Règle d'affichage, message |

@@ -148,6 +148,7 @@ describe("StudentCardSettingsSection", () => {
       await user.selectOptions(await screen.findByLabelText("Supérieur"), "etudiant");
       await user.selectOptions(screen.getByLabelText("Secondaire"), "");
       expect(screen.queryByLabelText("Inactif")).toBeNull();
+      expect(screen.getByText(/l’émission reste bloquée pour un élève sans classe courante/)).toBeTruthy();
       await user.click(screen.getByRole("button", { name: "Enregistrer la carte élève" }));
       await waitFor(() => expect(patchSettings).toHaveBeenCalled());
       expect(patchSettings.mock.calls[0][0]).toMatchObject({

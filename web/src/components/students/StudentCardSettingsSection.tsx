@@ -251,6 +251,10 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
             ) : levels.length > 0 ? (
               <div className="space-y-2">
                 <p className="text-sm text-ink">Établissement mixte : titulaire par niveau d’enseignement</p>
+                <p className="text-xs text-muted">
+                  Dès qu’un niveau est configuré, l’émission reste bloquée pour un élève sans classe courante, dont la classe n’a
+                  pas de niveau ou dont le niveau a été désactivé. Un niveau actif sans choix reprend le réglage ci-dessus.
+                </p>
                 {levels.map((level) => (
                   <div key={level.id} className="flex flex-wrap items-center gap-2 text-sm">
                     <label htmlFor={`student-card-holder-level-${level.id}`} className="min-w-40">
