@@ -7,6 +7,11 @@ import {
   DEFAULT_BULLETIN_BODY_HTML,
   DEFAULT_BULLETIN_CSS,
 } from "../../lib/bulletinGrapesTemplate";
+import {
+  GRAPES_CANVAS_FRAME_CONTENT,
+  GRAPES_SAFE_PARSER_OPTIONS,
+  sanitizeGrapesProjectData,
+} from "../../lib/bulletinPreviewIsolation";
 
 export interface BulletinEditorExport {
   htmlTemplate: string;
@@ -41,8 +46,11 @@ function registerBulletinBlocks(editor: Editor) {
 }
 
 function loadEditorContent(editor: Editor, design: BulletinClassDesign) {
-  if (design.grapesProject && Object.keys(design.grapesProject).length) {
-    editor.loadProjectData(design.grapesProject as Parameters<Editor["loadProjectData"]>[0]);
+  // SEC-XSS-01 : le projet enregistré n'est pas fiable (écrit par l'API) ;
+  // il est assaini avant chargement, sinon on retombe sur le HTML analysé.
+  const project = sanitizeGrapesProjectData(design.grapesProject);
+  if (project && Object.keys(project).length) {
+    editor.loadProjectData(project as Parameters<Editor["loadProjectData"]>[0]);
     return;
   }
   if (design.htmlTemplate?.trim()) {
@@ -69,6 +77,9 @@ export function BulletinGrapesEditor({ designKey, design, onExport }: BulletinGr
       width: "auto",
       storageManager: false,
       fromElement: false,
+      // SEC-XSS-01 : aucun script ni attribut actif du modèle dans le canevas.
+      parser: { optionsHtml: { ...GRAPES_SAFE_PARSER_OPTIONS } },
+      canvas: { frameContent: GRAPES_CANVAS_FRAME_CONTENT },
       deviceManager: {
         devices: [
           { name: "A4", width: "794px" },

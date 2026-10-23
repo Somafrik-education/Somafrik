@@ -4614,8 +4614,9 @@ app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(as
   }
 
   const html = await renderReportCardPreviewHtml(report, school);
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Cache-Control", "no-store");
+  // SEC-XSS-01 : HTML non fiable — CSP sandbox, nosniff, pas de cache.
+  const { applyBulletinPreviewHeaders } = require("./lib/bulletinPreviewHeaders");
+  applyBulletinPreviewHeaders(res);
   res.send(html);
 }));
 
