@@ -1,0 +1,10 @@
+        preuve        |   uid_masque   | same_school 
+----------------------+----------------+-------------
+ C1 recherche globale | 04••••••••0002 | f
+ C1 recherche globale | 04••••••••0008 | t
+(2 rows)
+
+NOTICE:  C1 OK : recherche globale limitée à (nfc_uid, school_id), statut refusé
+ROLLBACK
+NOTICE:  C2 OK : détails limités à l'établissement présentateur (carte de B invisible)
+ROLLBACK
