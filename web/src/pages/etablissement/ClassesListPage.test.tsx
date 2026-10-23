@@ -19,6 +19,24 @@ const permissions = vi.hoisted(() => ({
   canDelete: true,
 }));
 
+const studentPermissions = vi.hoisted(() => ({
+  canRead: true,
+  canCreate: false,
+  canUpdate: false,
+  canDelete: false,
+  canSuspend: false,
+}));
+
+const batchApiMock = vi.hoisted(() => ({
+  preflight: vi.fn(),
+  prepare: vi.fn(),
+  read: vi.fn(),
+  receiptTechnical: vi.fn(),
+  receiptSaved: vi.fn(),
+  activate: vi.fn(),
+  abort: vi.fn(),
+}));
+
 const classesApiMock = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
@@ -75,7 +93,8 @@ vi.mock("../../lib/permissions", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/permissions")>();
   return {
     ...actual,
-    getEntityFeaturePermissions: () => ({ ...permissions }),
+    getEntityFeaturePermissions: (_ctx: unknown, moduleKey?: string) =>
+      moduleKey === "students" ? { ...studentPermissions } : { ...permissions },
   };
 });
 
@@ -91,6 +110,10 @@ vi.mock("../../lib/classesApi", () => ({
   classesApi: classesApiMock,
 }));
 
+vi.mock("../../lib/studentCardBatchApi", () => ({
+  studentCardBatchApi: batchApiMock,
+}));
+
 vi.mock("../../lib/academicYearsApi", () => ({ academicYearsApi: academicYearsApiMock }));
 
 const educationReferenceApiMock = vi.hoisted(() => ({
@@ -104,9 +127,13 @@ vi.mock("../../lib/educationReferenceApi", () => ({
 vi.mock("../../api/client", () => ({
   ApiError: class ApiError extends Error {
     status: number;
-    constructor(message: string, status: number) {
+    code?: string;
+    details?: unknown;
+    constructor(message: string, status: number, code?: string, details?: unknown) {
       super(message);
       this.status = status;
+      this.code = code;
+      this.details = details;
     }
   },
   api: {
@@ -204,6 +231,16 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     permissions.canCreate = true;
     permissions.canUpdate = true;
     permissions.canDelete = true;
+    studentPermissions.canRead = true;
+    studentPermissions.canUpdate = false;
+    batchApiMock.preflight.mockReset();
+    batchApiMock.prepare.mockReset();
+    batchApiMock.preflight.mockResolvedValue({
+      classCode: "CLS-1",
+      className: "6ème A",
+      entries: [],
+      counts: { issueCandidates: 0, alreadyActive: 0, ineligible: 0 },
+    });
     sessionStore.user = {
       id: "u1",
       role: SCHOOL_ADMIN_ROLE,
@@ -731,5 +768,28 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     await screen.findByText("4ème Z");
     expect(screen.queryByRole("button", { name: "Affecter un professeur principal" })).not.toBeInTheDocument();
     expect(screen.getByText("Professeur principal : Non assigné")).toBeInTheDocument();
+  });
+
+  it("masque l'émission des cartes sans le droit Élèves, même si les classes sont modifiables", async () => {
+    permissions.canUpdate = true;
+    studentPermissions.canUpdate = false;
+    renderPage();
+    await screen.findByText("6ème A");
+    expect(screen.queryByRole("button", { name: "Émettre / exporter les cartes" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
+  });
+
+  it("propose l'émission sur chaque classe pour un administrateur scolaire autorisé", async () => {
+    studentPermissions.canUpdate = true;
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("6ème A");
+    const buttons = screen.getAllByRole("button", { name: "Émettre / exporter les cartes" });
+    expect(buttons).toHaveLength(2);
+    await user.click(buttons[0]);
+    expect(await screen.findByRole("heading", { name: "Cartes élèves" })).toBeInTheDocument();
+    await waitFor(() => expect(batchApiMock.preflight).toHaveBeenCalledWith("CLS-1"));
+    expect(batchApiMock.prepare).not.toHaveBeenCalled();
+    expect(screen.getByText("Aucun élève éligible. Aucune carte n'est préparée.")).toBeInTheDocument();
   });
 });
