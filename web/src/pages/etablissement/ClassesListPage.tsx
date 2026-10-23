@@ -38,7 +38,9 @@ import {
 } from "../../lib/classHeadTeacher";
 import { ClassHeadTeacherAssignModal } from "../../components/classes/ClassHeadTeacherAssignModal";
 import { StudentCardBatchDialog } from "../../components/students/StudentCardBatchDialog";
+import { StudentCardBatchPdfDialog } from "../../components/students/StudentCardBatchPdfDialog";
 import { canIssueClassStudentCards, CLASS_CARD_BATCH_BUTTON_LABEL } from "../../lib/studentCardBatchSession";
+import { CLASS_CARD_PDF_BUTTON_LABEL } from "../../lib/studentCardBatchPdf";
 
 export { composeClassPreviewName, getClassDisplayName, isPedagogicalSeriesCode };
 
@@ -107,6 +109,7 @@ export function ClassesListPage() {
   const [editing, setEditing] = useState<SchoolClass | null>(null);
   const [assigning, setAssigning] = useState<SchoolClass | null>(null);
   const [cardClass, setCardClass] = useState<SchoolClass | null>(null);
+  const [pdfOpen, setPdfOpen] = useState(false);
   const [form, setForm] = useState<ClassFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
@@ -403,9 +406,16 @@ export function ClassesListPage() {
           ) : null
         }
         secondaryActions={
-          <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
-            Actualiser
-          </Button>
+          <>
+            {canIssueCards ? (
+              <Button type="button" variant="secondary" onClick={() => setPdfOpen(true)}>
+                {CLASS_CARD_PDF_BUTTON_LABEL}
+              </Button>
+            ) : null}
+            <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
+              Actualiser
+            </Button>
+          </>
         }
       >
         {loading ? (
@@ -565,6 +575,8 @@ export function ClassesListPage() {
         schoolName={activeSchool?.name ?? null}
         onClose={() => setCardClass(null)}
       />
+
+      <StudentCardBatchPdfDialog open={pdfOpen} onClose={() => setPdfOpen(false)} />
 
       <ClassHeadTeacherAssignModal
         open={Boolean(assigning)}

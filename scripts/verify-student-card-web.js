@@ -120,6 +120,29 @@ function main() {
     assert.doesNotMatch(block[0], /studentCardBatchApi\.(prepare|activate|abort|receipt)/);
   }
 
+  // CARTE-BATCH-PDF-02 : conversion locale du CR80, sans émission et sans stockage des jetons.
+  const batchPdf = read("web/src/lib/studentCardBatchPdf.ts");
+  const batchPdfDialog = read("web/src/components/students/StudentCardBatchPdfDialog.tsx");
+  const pdfProduct = [batchPdf, batchPdfDialog].join("\n");
+  assert.match(classesPage, /CLASS_CARD_PDF_BUTTON_LABEL/);
+  assert.match(classesPage, /StudentCardBatchPdfDialog/);
+  assert.match(batchPdf, /Produire le PDF A4/);
+  assert.match(batchPdf, /somafrik-card-batch-print-v1/);
+  assert.match(batchPdf, /85\.6/);
+  assert.match(batchPdf, /53\.98/);
+  assert.match(batchPdf, /from "pdf-lib"/);
+  assert.match(batchPdfDialog, /accept="\.html,text\/html"/);
+  assert.match(batchPdfDialog, /revokeObjectURL/);
+  assert.match(webPackage, /"pdf-lib": "\^1\.17\.1"/);
+  assert.match(webPackage, /"jsqr": "\^1\.4\.0"/);
+  assert.doesNotMatch(pdfProduct, /studentCardBatchApi|studentCardBatchPrintable|api\/client|localStorage|sessionStorage|indexedDB|console\.log|fetch\(/);
+  assert.doesNotMatch(pdfProduct, /\/batches|student-cards\/scan|api\.post/);
+  const pdfEffects = [...batchPdfDialog.matchAll(/useEffect\(\(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/g)];
+  assert.equal(pdfEffects.length, 1, "le dialogue PDF ne déclenche la conversion que sur le fichier choisi");
+  for (const block of pdfEffects) {
+    assert.doesNotMatch(block[0], /prepare|activate|abort|receipt|fetch\(/);
+  }
+
   console.log("verify-student-card-web: SUCCESS");
 }
 
