@@ -2256,6 +2256,18 @@ app.post("/api/student-cards/verify", requireAuth, requirePermission("POST /api/
   ));
 }));
 
+// CARTE-BATCH-API-01 : précontrôle en lecture seule, permission carte existante et scope école.
+app.get("/api/classes/:classCode/student-cards/preflight",
+  requireAuth, requirePermission("GET /api/students/:id/cards"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const principal = await enrollmentHttpPrincipal(req);
+    const { previewClassCardBatch } = require("./lib/studentCardBatchPreflight");
+    res.json(await previewClassCardBatch(repository, studentCardsHttpScope(principal), req.params.classCode));
+  }),
+);
+
 app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/students/:id/cards"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
