@@ -61,7 +61,10 @@ function main() {
 
   // CARTE-UI-01 : le jeton n'est manipulé que par useStudentCardQr ; StudentCardFace ne reçoit que l'image.
   assert.match(qrHook, /from "qrcode"/);
-  assert.match(qrHook, /QRCode\.toDataURL\(cardToken/);
+  // Requête liée au jeton courant (et à la tentative) : un résultat périmé n'est jamais affiché.
+  assert.match(qrHook, /useMemo\(\(\) => \(\{ token: cardToken, attempt \}\), \[cardToken, attempt\]\)/);
+  assert.match(qrHook, /QRCode\.toDataURL\(request\.token/);
+  assert.match(qrHook, /result\?\.request === request \? result : null/);
   assert.match(qrHook, /errorCorrectionLevel: "M"/);
   assert.match(qrHook, /margin: 4/);
   assert.match(qrHook, /export type StudentCardQrState = "idle" \| "loading" \| "ready" \| "error"/);
