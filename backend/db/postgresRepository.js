@@ -9,6 +9,7 @@ const {
   resolveStudentDemoLoginIdentity,
 } = require("../lib/demoSeedPolicy");
 const { hashSeedUserSecrets } = require("../lib/superadminSeedSecret");
+const { isPlatformScopePrincipal } = require("../lib/platformScopePrincipal");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
 const { mapAssignment } = require("./teacherAssignmentsRepository");
@@ -2351,6 +2352,29 @@ class PostgresRepository {
       "UPDATE sessions SET revoked_at = NOW(), revoke_reason = $2 WHERE session_code = $1 AND revoked_at IS NULL",
       [sessionId, reason]
     );
+  }
+
+  /**
+   * SEC-TENANT-01 — rattachement établissement encore valide pour un refresh :
+   * établissement principal de l'utilisateur ou rôle actif dans cet établissement.
+   */
+  async isUserAttachedToSchool(userId, schoolId) {
+    await this.init();
+    if (!isUuid(userId) || !isUuid(schoolId)) return false;
+    const row = await this.one(
+      `SELECT (
+         EXISTS (SELECT 1 FROM users WHERE id = $1::uuid AND school_id = $2::uuid)
+         OR EXISTS (
+           SELECT 1 FROM user_roles
+           WHERE user_id = $1::uuid
+             AND school_id = $2::uuid
+             AND status = 'active'
+             AND revoked_at IS NULL
+         )
+       ) AS attached`,
+      [userId, schoolId],
+    );
+    return row?.attached === true;
   }
 
   async findSessionByCode(sessionId) {
@@ -6662,7 +6686,11 @@ class PostgresRepository {
       scopeLevel: role === "Super Administrateur Somafrik" ? "Global" : role === "Admin Pays" ? "Pays" : "Établissement",
       countryScope,
       countryCode,
-      schoolCode: role === "Admin Pays" ? "*" : user.school_code ?? "*",
+      // SEC-TENANT-01 : "*" réservé aux rôles plateforme ; un compte scolaire sans
+      // établissement n'a aucun rattachement (""), jamais une portée plateforme.
+      schoolCode: role === "Admin Pays"
+        ? "*"
+        : user.school_code ?? (isPlatformScopePrincipal({ role, roleKeys: display.roleKeys }) ? "*" : ""),
       accessChannel: "Application",
       identifier,
       passwordHash: user.password_hash,
