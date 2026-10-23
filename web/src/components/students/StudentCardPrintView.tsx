@@ -1,116 +1,124 @@
 import { useEffect, useState } from "react";
-import QRCode from "qrcode";
-import { Button } from "../../design-system";
+import { Button, InlineAlert } from "../../design-system";
 import { PrintButton } from "../ui/PrintButton";
 import { schoolHasLogo, schoolLogoSrc, type SchoolLogoSource } from "../../lib/schoolLogo";
+import type { StudentCardHolder } from "../../lib/studentCardsApi";
 import {
-  STUDENT_CARD_CR80,
+  STUDENT_CARD_HOLDER_PRINT_REFUSED_NOTICE,
   STUDENT_CARD_PREVIEW_CLOSE_NOTICE,
   studentCardDocumentTitle,
-  studentCardInitials,
+  studentCardHolderTitle,
+  studentCardRef,
+  type StudentCardHolderKind,
   type StudentCardPrintIdentity,
 } from "../../lib/studentCardPolicy";
+import { useStudentCardQr } from "../../lib/studentCardQr";
+import { useStudentCardFonts } from "../../lib/studentCardFonts";
+import { StudentCardFace, type StudentCardFaceQr } from "./StudentCardFace";
+
+/**
+ * CARTE-UI-01 — orchestrateur de l'aperçu et de l'impression.
+ * Le jeton n'est transmis qu'à useStudentCardQr ; StudentCardFace ne reçoit que l'image du QR.
+ * Imprimer reste désactivé tant que le titulaire n'est pas déterminé, que le QR n'est pas prêt
+ * ou que la typographie de la carte est en cours de chargement.
+ */
+export type StudentCardPrintFormat = "cr80" | "a4";
+
+const PRINT_BODY_CLASS = "somafrik-print-student-card";
+const PRINT_A4_BODY_CLASS = "somafrik-print-student-card-a4";
 
 interface StudentCardPrintViewProps {
   cardToken: string;
+  holder: StudentCardHolder | null;
   identity: StudentCardPrintIdentity;
   school: SchoolLogoSource;
   onClose: () => void;
 }
 
-type QrState = "loading" | "ready" | "error";
-
-const QR_OPTIONS = {
-  margin: 0,
-  width: 180,
-  errorCorrectionLevel: "M",
-} as const;
-
-export function StudentCardPrintView({
-  cardToken,
-  identity,
-  school,
-  onClose,
-}: StudentCardPrintViewProps) {
-  const [qrState, setQrState] = useState<QrState>("loading");
-  const [qrSrc, setQrSrc] = useState<string | null>(null);
-  const [qrAttempt, setQrAttempt] = useState(0);
+export function StudentCardPrintView({ cardToken, holder, identity, school, onClose }: StudentCardPrintViewProps) {
+  const holderTitle = studentCardHolderTitle(holder);
+  // Titulaire non déterminé : aucun QR n'est généré, aucune impression n'est possible.
+  const qr = useStudentCardQr(holderTitle ? cardToken : null);
+  const fonts = useStudentCardFonts();
+  const [format, setFormat] = useState<StudentCardPrintFormat>("cr80");
   const logoSrc = schoolHasLogo(school) ? schoolLogoSrc(school) : null;
-  const documentTitle = studentCardDocumentTitle(identity.studentCode);
+  const documentTitle = studentCardDocumentTitle(identity.studentCode, holder?.kind as StudentCardHolderKind | null);
+  const qrState = qr.state;
+  const printReady = Boolean(holderTitle) && qrState === "ready" && fonts !== "loading";
 
   useEffect(() => {
-    document.body.classList.add("somafrik-print-student-card");
+    document.body.classList.add(PRINT_BODY_CLASS);
     return () => {
-      document.body.classList.remove("somafrik-print-student-card");
+      document.body.classList.remove(PRINT_BODY_CLASS, PRINT_A4_BODY_CLASS);
     };
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    setQrState("loading");
-    setQrSrc(null);
-    void QRCode.toDataURL(cardToken, QR_OPTIONS)
-      .then((url) => {
-        if (cancelled) return;
-        setQrSrc(url);
-        setQrState("ready");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setQrSrc(null);
-        setQrState("error");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [cardToken, qrAttempt]);
+    document.body.classList.toggle(PRINT_A4_BODY_CLASS, format === "a4");
+  }, [format]);
+
+  if (!holderTitle) {
+    return (
+      <section className="space-y-4" aria-label="Prévisualisation de la carte">
+        <InlineAlert tone="danger" title="Impression impossible">
+          {STUDENT_CARD_HOLDER_PRINT_REFUSED_NOTICE}
+        </InlineAlert>
+        <div className="no-print flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Terminer
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
+  const faceQr: StudentCardFaceQr =
+    qrState === "ready" && qr.src ? { kind: "ready", src: qr.src } : { kind: qrState === "error" ? "error" : "loading" };
 
   return (
     <section className="space-y-4" aria-label="Prévisualisation de la carte">
       <p className="no-print text-sm text-muted">{STUDENT_CARD_PREVIEW_CLOSE_NOTICE}</p>
-      <article
-        className="student-card-sheet grid grid-cols-[22mm_1fr_24mm] items-center gap-2 overflow-hidden border border-line bg-white p-2 text-ink"
-        style={{ width: STUDENT_CARD_CR80.width, height: STUDENT_CARD_CR80.height }}
-        data-testid="student-card-sheet"
-      >
-        <div className="flex h-full flex-col items-center justify-center gap-1">
-          {logoSrc ? (
-            <img src={logoSrc} alt="" className="h-8 w-8 object-contain" />
-          ) : null}
-          {identity.photoUrl ? (
-            <img src={identity.photoUrl} alt="" className="h-14 w-12 rounded object-cover" />
-          ) : (
-            <div
-              className="flex h-14 w-12 items-center justify-center rounded bg-slate-100 text-sm font-semibold"
-              aria-hidden="true"
-            >
-              {studentCardInitials(identity.displayName)}
-            </div>
-          )}
-        </div>
-        <div className="min-w-0">
-          <p className="text-[9px] font-semibold uppercase tracking-wide text-muted">Carte élève</p>
-          <p className="truncate text-sm font-semibold">{identity.displayName}</p>
-          <p className="truncate text-[11px]">{identity.classLabel}</p>
-          <p className="truncate text-[11px]">{identity.studentCode}</p>
-          <p className="truncate text-[10px] text-muted">{identity.schoolName}</p>
-        </div>
-        <div className="flex flex-col items-center justify-center">
-          {qrState === "ready" && qrSrc ? (
-            <img src={qrSrc} alt="QR carte élève" className="h-16 w-16" data-testid="student-card-qr" />
-          ) : (
-            <p className="text-center text-[9px]">{qrState === "error" ? "QR indisponible" : "Génération du QR…"}</p>
-          )}
-          <p className="mt-1 max-w-full truncate text-[8px]">ID carte : {identity.publicId}</p>
-        </div>
-      </article>
+      <div className="student-card-preview">
+        <StudentCardFace
+          holderTitle={holderTitle}
+          identity={{
+            displayName: identity.displayName,
+            classLabel: identity.classLabel,
+            studentCode: identity.studentCode,
+            schoolName: identity.schoolName,
+            photoUrl: identity.photoUrl,
+          }}
+          cardRef={studentCardRef(identity.publicId)}
+          logoSrc={logoSrc}
+          qr={faceQr}
+        />
+      </div>
+      <p className="no-print text-xs text-muted">
+        Aperçu agrandi. L’impression se fait à la taille réelle CR80 (85,60 × 53,98 mm) : réglez l’échelle sur 100 %, sans
+        ajustement à la page.
+      </p>
       {qrState === "error" ? (
         <p className="no-print text-sm text-danger">Le QR n’a pas pu être généré. N’imprimez pas cette carte.</p>
       ) : null}
+      {fonts === "fallback" ? (
+        <p className="no-print text-xs text-muted">La police de la carte n’a pas pu être chargée : une police de secours sera utilisée.</p>
+      ) : null}
+      <fieldset className="no-print flex flex-wrap items-center gap-3 text-sm">
+        <legend className="sr-only">Format d’impression</legend>
+        <span className="font-medium text-ink">Format d’impression :</span>
+        <label className="inline-flex items-center gap-1">
+          <input type="radio" name="student-card-print-format" checked={format === "cr80"} onChange={() => setFormat("cr80")} />
+          Imprimante à cartes (CR80)
+        </label>
+        <label className="inline-flex items-center gap-1">
+          <input type="radio" name="student-card-print-format" checked={format === "a4"} onChange={() => setFormat("a4")} />
+          Feuille A4 (taille réelle, à découper)
+        </label>
+      </fieldset>
       <div className="no-print flex flex-wrap gap-2">
-        <PrintButton documentTitle={documentTitle} disabled={qrState !== "ready"} />
+        <PrintButton documentTitle={documentTitle} disabled={!printReady} />
         {qrState === "error" ? (
-          <Button type="button" variant="secondary" onClick={() => setQrAttempt((attempt) => attempt + 1)}>
+          <Button type="button" variant="secondary" onClick={qr.retry}>
             Réessayer le QR
           </Button>
         ) : null}

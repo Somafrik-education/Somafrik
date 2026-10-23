@@ -13,7 +13,16 @@ import {
   studentCardDocumentTitle,
   studentCardErrorMessage,
   studentCardPrintIdentityKeys,
+  STUDENT_CARD_HOLDER_TITLES,
+  STUDENT_CARD_SCREEN_PLACEHOLDERS,
+  studentCardHolderTitle,
+  studentCardNameStep,
+  studentCardOptionalText,
+  studentCardRef,
+  studentCardValueStep,
 } from "./studentCardPolicy";
+import { buildStudentWorkspace } from "./studentWorkspaceService";
+import { buildStudentWorkspaceViewModel } from "./studentWorkspaceViewModel";
 import type { SchoolSettings } from "./schoolSettingsApi";
 
 function settings(partial: Partial<SchoolSettings>): SchoolSettings {
@@ -101,6 +110,8 @@ describe("studentCardPolicy", () => {
     expect(JSON.stringify(identity)).not.toMatch(/parentPhone|parentEmail|birthDate|token_hash|cardToken|schoolId/);
     expect(studentCardDocumentTitle("CD-001")).toBe("Carte-eleve-CD-001");
     expect(studentCardDocumentTitle("CD 001")).toBe("Carte-eleve-CD-001");
+    expect(studentCardDocumentTitle("CD-001", "etudiant")).toBe("Carte-etudiant-CD-001");
+    expect(studentCardDocumentTitle(null, "eleve")).toBe("Carte-eleve-eleve");
     expect(STUDENT_CARD_CR80).toEqual({ width: "85.60mm", height: "53.98mm" });
   });
 });
@@ -118,5 +129,59 @@ describe("CARTE-CYCLE-01 — titulaire de carte", () => {
     const message = studentCardErrorMessage(new ApiError("x", 409, "STUDENT_CARD_HOLDER_UNDETERMINED"));
     expect(message).toBe(STUDENT_CARD_HOLDER_UNDETERMINED_NOTICE);
     expect(STUDENT_CARD_HOLDER_LABELS).toEqual({ eleve: "Élève", etudiant: "Étudiant" });
+  });
+});
+
+describe("CARTE-UI-01 — présentation de la carte", () => {
+  it("en-tête imprimé : uniquement depuis le titulaire résolu par le Backend", () => {
+    expect(STUDENT_CARD_HOLDER_TITLES).toEqual({ eleve: "CARTE D’ÉLÈVE", etudiant: "CARTE D’ÉTUDIANT" });
+    expect(studentCardHolderTitle({ kind: "eleve", source: "school_type" })).toBe("CARTE D’ÉLÈVE");
+    expect(studentCardHolderTitle({ kind: "etudiant", source: "level_setting" })).toBe("CARTE D’ÉTUDIANT");
+    for (const holder of [null, undefined, { kind: null, source: null }, { kind: "Etudiant", source: null }, { kind: "student", source: null }] as never[]) {
+      expect(studentCardHolderTitle(holder)).toBeNull();
+    }
+  });
+
+  it("référence de carte abrégée aux 6 derniers caractères de l'identifiant public", () => {
+    expect(studentCardRef("Q2FydGVEZW1vTm9uVmFsaWQ")).toBe("mFsaWQ");
+    expect(studentCardRef("Q2FydGVEZW1vTm9uVmFsaWQ")).toHaveLength(6);
+    expect(studentCardRef("  ABC  ")).toBe("ABC");
+    expect(studentCardRef(null)).toBe("");
+  });
+
+  it("les libellés d'écran de donnée manquante ne sont jamais imprimés (verrouillés sur le view model réel)", () => {
+    const workspace = buildStudentWorkspace({
+      studentId: "CD-UI-01",
+      academicYear: "2026-2027",
+      data: { students: [{ id: "CD-UI-01", matricule: "", schoolCode: "CD-UI", firstName: "Awa", lastName: "Diallo", birthDate: "", enrollmentDate: "" } as never] },
+    });
+    expect(workspace).not.toBeNull();
+    const vm = buildStudentWorkspaceViewModel(workspace!);
+    for (const label of [vm.classLabel, vm.enrollmentStatusLabel]) {
+      expect(STUDENT_CARD_SCREEN_PLACEHOLDERS).toContain(label);
+      expect(studentCardOptionalText(label)).toBeNull();
+    }
+    for (const empty of ["", "   ", null, undefined, "Non renseigné", " Aucune inscription active "]) {
+      expect(studentCardOptionalText(empty)).toBeNull();
+    }
+    expect(studentCardOptionalText(" 6ème A ")).toBe("6ème A");
+    const identity = buildStudentCardPrintIdentity({
+      displayName: "Awa Diallo",
+      classLabel: "Non renseigné",
+      studentCode: "Non renseigné",
+      schoolName: "",
+      photoUrl: "  ",
+      publicId: "CARD-A",
+    });
+    expect(identity).toEqual({ displayName: "Awa Diallo", classLabel: null, studentCode: null, schoolName: null, photoUrl: null, publicId: "CARD-A" });
+  });
+
+  it("paliers typographiques : le nom diminue par paliers au lieu d'être tronqué", () => {
+    expect(studentCardNameStep("Awa Diallo")).toBe("l1");
+    expect(studentCardNameStep("Mukendi Kabongo Ngalula Marie")).toBe("l2");
+    expect(studentCardNameStep("Mukendi Kabongo Ngalula Marie-Josée Tshibanda")).toBe("l3");
+    expect(studentCardNameStep("Mukendi Kabongo Ngalula Marie-Josée Tshibanda Wa Kalombo Ilunga")).toBe("l4");
+    expect(studentCardValueStep("CD-KIN-SE-26-0042", 16)).toBe("l2");
+    expect(studentCardValueStep("CD-001", 16)).toBe("l1");
   });
 });

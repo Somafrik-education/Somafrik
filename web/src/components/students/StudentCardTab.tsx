@@ -258,6 +258,7 @@ export function StudentCardTab({
           {preview && printIdentity ? (
             <StudentCardPrintView
               cardToken={preview.cardToken}
+              holder={holder}
               identity={printIdentity}
               school={activeSchool?.activeSchool ?? null}
               onClose={closePreview}
