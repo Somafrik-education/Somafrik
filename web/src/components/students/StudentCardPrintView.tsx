@@ -14,6 +14,7 @@ import {
 } from "../../lib/studentCardPolicy";
 import { useStudentCardQr } from "../../lib/studentCardQr";
 import { useStudentCardFonts } from "../../lib/studentCardFonts";
+import { loadStudentCardPhoto } from "../../lib/studentCardPhoto";
 import { StudentCardFace, type StudentCardFaceQr } from "./StudentCardFace";
 
 /**
@@ -41,10 +42,28 @@ export function StudentCardPrintView({ cardToken, holder, identity, school, onCl
   const qr = useStudentCardQr(holderTitle ? cardToken : null);
   const fonts = useStudentCardFonts();
   const [format, setFormat] = useState<StudentCardPrintFormat>("cr80");
+  const [photo, setPhoto] = useState<{ src: string | null; loading: boolean }>({ src: null, loading: Boolean(identity.photoUrl) });
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectSrc: string | null = null;
+    setPhoto({ src: null, loading: Boolean(identity.photoUrl) });
+    void loadStudentCardPhoto(identity.photoUrl)
+      .then(({ src, revoke }) => {
+        if (revoke) objectSrc = src;
+        if (!cancelled) setPhoto({ src, loading: false });
+        else if (objectSrc) URL.revokeObjectURL(objectSrc);
+      })
+      .catch(() => { if (!cancelled) setPhoto({ src: null, loading: false }); });
+    return () => {
+      cancelled = true;
+      if (objectSrc) URL.revokeObjectURL(objectSrc);
+    };
+  }, [identity.photoUrl]);
   const logoSrc = schoolHasLogo(school) ? schoolLogoSrc(school) : null;
   const documentTitle = studentCardDocumentTitle(identity.studentCode, holder?.kind as StudentCardHolderKind | null);
   const qrState = qr.state;
-  const printReady = Boolean(holderTitle) && qrState === "ready" && fonts !== "loading";
+  const printReady = Boolean(holderTitle) && qrState === "ready" && fonts !== "loading" && !photo.loading;
 
   useEffect(() => {
     document.body.classList.add(PRINT_BODY_CLASS);
@@ -86,7 +105,7 @@ export function StudentCardPrintView({ cardToken, holder, identity, school, onCl
             classLabel: identity.classLabel,
             studentCode: identity.studentCode,
             schoolName: identity.schoolName,
-            photoUrl: identity.photoUrl,
+            photoUrl: photo.src,
           }}
           cardRef={studentCardRef(identity.publicId)}
           logoSrc={logoSrc}
