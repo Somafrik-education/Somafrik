@@ -34,35 +34,42 @@ export interface StudentCardQr {
  * (par exemple titulaire non déterminé).
  */
 export function useStudentCardQr(cardToken: string | null): StudentCardQr {
-  const [state, setState] = useState<StudentCardQrState>(cardToken ? "loading" : "idle");
-  const [src, setSrc] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  // Each result is bound to its request. A render with another token can never
+  // expose the previous QR, even before the cleanup effect runs.
+  const [result, setResult] = useState<{
+    token: string;
+    attempt: number;
+    state: "ready" | "error";
+    src: string | null;
+  } | null>(null);
+  const [request, setRequest] = useState<{ token: string | null; attempt: number }>({
+    token: cardToken,
+    attempt: 0,
+  });
+  const attempt = request.token === cardToken ? request.attempt : 0;
 
   useEffect(() => {
+    if (!cardToken) return;
     let cancelled = false;
-    setSrc(null);
-    if (!cardToken) {
-      setState("idle");
-      return () => {
-        cancelled = true;
-      };
-    }
-    setState("loading");
     void QRCode.toDataURL(cardToken, { ...STUDENT_CARD_QR_OPTIONS, color: { ...STUDENT_CARD_QR_OPTIONS.color } })
       .then((url) => {
-        if (cancelled) return;
-        setSrc(url);
-        setState("ready");
+        if (!cancelled) setResult({ token: cardToken, attempt, state: "ready", src: url });
       })
       .catch(() => {
-        if (cancelled) return;
-        setSrc(null);
-        setState("error");
+        if (!cancelled) setResult({ token: cardToken, attempt, state: "error", src: null });
       });
     return () => {
       cancelled = true;
     };
   }, [cardToken, attempt]);
 
-  return { state, src, retry: () => setAttempt((value) => value + 1) };
+  const current = result?.token === cardToken && result.attempt === attempt ? result : null;
+  return {
+    state: !cardToken ? "idle" : current?.state ?? "loading",
+    src: current?.src ?? null,
+    retry: () => setRequest((prev) => ({
+      token: cardToken,
+      attempt: prev.token === cardToken ? prev.attempt + 1 : 1,
+    })),
+  };
 }
