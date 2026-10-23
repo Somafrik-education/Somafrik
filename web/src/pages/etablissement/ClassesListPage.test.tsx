@@ -776,6 +776,7 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     renderPage();
     await screen.findByText("6ème A");
     expect(screen.queryByRole("button", { name: "Émettre / exporter les cartes" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Produire le PDF A4" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Modifier" }).length).toBeGreaterThan(0);
   });
 
@@ -791,5 +792,18 @@ describe("ClassesListPage (CRUD /api/classes)", () => {
     await waitFor(() => expect(batchApiMock.preflight).toHaveBeenCalledWith("CLS-1"));
     expect(batchApiMock.prepare).not.toHaveBeenCalled();
     expect(screen.getByText("Aucun élève éligible. Aucune carte n'est préparée.")).toBeInTheDocument();
+  });
+
+  it("propose le PDF A4 sans précontrôle ni émission", async () => {
+    studentPermissions.canUpdate = true;
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("6ème A");
+    expect(screen.getAllByRole("button", { name: "Produire le PDF A4" })).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Produire le PDF A4" }));
+    expect(await screen.findByRole("heading", { name: "PDF A4 des cartes" })).toBeInTheDocument();
+    expect(batchApiMock.preflight).not.toHaveBeenCalled();
+    expect(batchApiMock.prepare).not.toHaveBeenCalled();
+    expect(batchApiMock.activate).not.toHaveBeenCalled();
   });
 });

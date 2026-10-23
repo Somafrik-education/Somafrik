@@ -431,6 +431,20 @@ const STUDENT_CARD_BATCH_WEB_01_EXACT = new Set([
   "docs/student-card/CARTE-BATCH-WEB-01-parcours.md",
 ]);
 
+// CARTE-BATCH-PDF-02 : export PDF A4 depuis le document CR80 déjà enregistré.
+// La page Classes n'est pas un fichier d'intégration. Elle n'est admise qu'avec
+// les DEUX ancres : le convertisseur local et le dialogue d'import. Aucun
+// backend, aucune migration, aucune route d'émission.
+const STUDENT_CARD_BATCH_PDF_02_ANCHORS = Object.freeze([
+  "web/src/lib/studentCardBatchPdf.ts",
+  "web/src/components/students/StudentCardBatchPdfDialog.tsx",
+]);
+const STUDENT_CARD_BATCH_PDF_02_EXACT = new Set([
+  "web/src/pages/etablissement/ClassesListPage.tsx",
+  "web/src/pages/etablissement/ClassesListPage.test.tsx",
+  "docs/student-card/CARTE-BATCH-PDF-02-parcours.md",
+]);
+
 // CARTE-PR3-M1 (#947) : exception pour le menu, uniquement avec les deux ancres exactes.
 const STUDENT_CARD_PR3_M1_NAV_FILE = "Mobile/src/navigation/roleDrawerPreferences.ts";
 const STUDENT_CARD_PR3_M1_NAV_ANCHORS = Object.freeze([
@@ -540,6 +554,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     const cardCycle01 = STUDENT_CARD_CYCLE_01_ANCHORS.every((anchor) => changed.includes(anchor));
     const batchApi02 = STUDENT_CARD_BATCH_API_02_ANCHORS.every((anchor) => changed.includes(anchor));
     const batchWeb01 = STUDENT_CARD_BATCH_WEB_01_ANCHORS.every((anchor) => changed.includes(anchor));
+    const batchPdf02 = STUDENT_CARD_BATCH_PDF_02_ANCHORS.every((anchor) => changed.includes(anchor));
     const pr3MobileNav = navChanged && navAnchored;
     const r3DiagnosticNav = navChanged && r3DiagnosticAnchored;
     const outside = changed.filter(
@@ -549,6 +564,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
         && !(cardCycle01 && STUDENT_CARD_CYCLE_01_EXACT.has(file))
         && !(batchApi02 && STUDENT_CARD_BATCH_API_02_EXACT.has(file))
         && !(batchWeb01 && STUDENT_CARD_BATCH_WEB_01_EXACT.has(file))
+        && !(batchPdf02 && STUDENT_CARD_BATCH_PDF_02_EXACT.has(file))
         && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE)
         && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE)),
     );
@@ -1226,6 +1242,50 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           evaluateLot4Scope(["web/src/lib/studentCardsApi.ts", webOnly]).kind,
           "fail",
           `L4-09: ${webOnly} sans les ancres CARTE-BATCH-WEB-01 doit rester FAIL`,
+        );
+      }
+
+      // CARTE-BATCH-PDF-02 : diff exact admis ; la page Classes exige les deux ancres PDF.
+      const batchPdf02Files = [
+        "docs/student-card/CARTE-BATCH-PDF-02-parcours.md",
+        "scripts/verify-school-setup-lot4-red.ts",
+        "scripts/verify-student-card-web.js",
+        "web/package.json",
+        "web/package-lock.json",
+        "web/src/components/students/StudentCardBatchPdfDialog.test.tsx",
+        "web/src/components/students/StudentCardBatchPdfDialog.tsx",
+        "web/src/lib/studentCardBatchPdf.test.ts",
+        "web/src/lib/studentCardBatchPdf.ts",
+        "web/src/pages/etablissement/ClassesListPage.test.tsx",
+        "web/src/pages/etablissement/ClassesListPage.tsx",
+      ];
+      assert.equal(evaluateLot4Scope(batchPdf02Files).kind, "na", "L4-09: diff exact CARTE-BATCH-PDF-02 admis nominativement");
+      for (const [extra, label] of [
+        ["backend/lib/financeManagement.js", "fichier backend"],
+        ["backend/db/postgresRepository.js", "boot PostgreSQL"],
+        ["backend/db/migrations/20261024_other_table.sql", "autre migration"],
+        ["web/src/App.tsx", "route hors liste"],
+        ["web/src/lib/permissions.ts", "fichier RBAC Web"],
+        ["docs/student-card/CARTE-BATCH-PDF-03.md", "autre document"],
+      ] as const) {
+        assert.equal(
+          evaluateLot4Scope([...batchPdf02Files, extra]).kind,
+          "fail",
+          `L4-09: CARTE-BATCH-PDF-02 + ${label} doit rester FAIL`,
+        );
+      }
+      for (const missingAnchor of STUDENT_CARD_BATCH_PDF_02_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(batchPdf02Files.filter((file) => file !== missingAnchor)).kind,
+          "fail",
+          `L4-09: CARTE-BATCH-PDF-02 sans l'ancre ${missingAnchor} doit rester FAIL`,
+        );
+      }
+      for (const pdfOnly of STUDENT_CARD_BATCH_PDF_02_EXACT) {
+        assert.equal(
+          evaluateLot4Scope(["web/src/lib/studentCardsApi.ts", pdfOnly]).kind,
+          "fail",
+          `L4-09: ${pdfOnly} sans les ancres CARTE-BATCH-PDF-02 doit rester FAIL`,
         );
       }
 
