@@ -234,7 +234,9 @@ export function StudentCardTab({
         displayName: workspace.displayName,
         classLabel: workspace.classLabel,
         studentCode: dossier?.studentCode || workspace.matriculeLabel,
-        schoolName: workspace.schoolNameLabel,
+        // Le nom canonique prévaut : le libellé workspace peut être un code établissement.
+        // Si le nom est indisponible, la ligne est masquée (jamais de repli sur un code).
+        schoolName: activeSchool?.activeSchool?.name ?? null,
         photoUrl: dossier?.photoUrl ?? null,
         publicId: preview.publicId,
       })
