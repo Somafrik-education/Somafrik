@@ -99,45 +99,53 @@ function sanitizeAttributes(attributes: unknown): Record<string, unknown> | unde
 /** Profondeur maximale acceptée ; au-delà, la branche est abandonnée. */
 export const MAX_GRAPES_PROJECT_DEPTH = 64;
 
-function sanitizeComponent(component: unknown, depth: number, seen: WeakSet<object>): unknown {
+/**
+ * `ancestors` ne contient que les objets du chemin en cours : une référence
+ * partagée légitime (même objet à deux endroits) est conservée, seul un vrai
+ * cycle (objet qui se contient lui-même) est coupé.
+ */
+function sanitizeComponent(component: unknown, depth: number, ancestors: Set<object>): unknown {
   if (component === null || typeof component !== "object") {
     return typeof component === "function" || typeof component === "symbol" ? undefined : component;
   }
-  if (depth > MAX_GRAPES_PROJECT_DEPTH || seen.has(component)) return null;
-  seen.add(component);
+  if (depth > MAX_GRAPES_PROJECT_DEPTH || ancestors.has(component)) return null;
+  ancestors.add(component);
+  try {
+    if (Array.isArray(component)) {
+      return component
+        .map((entry) => sanitizeComponent(entry, depth + 1, ancestors))
+        .filter((entry) => entry !== null && entry !== undefined);
+    }
 
-  if (Array.isArray(component)) {
-    return component
-      .map((entry) => sanitizeComponent(entry, depth + 1, seen))
-      .filter((entry) => entry !== null && entry !== undefined);
+    const source = component as Record<string, unknown>;
+    const tag = String(source.tagName ?? "").trim().toLowerCase();
+    const type = String(source.type ?? "").trim().toLowerCase();
+    if (BLOCKED_TAGS.has(tag) || BLOCKED_TAGS.has(type)) return null;
+
+    const safe: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(source)) {
+      if (BLOCKED_COMPONENT_KEYS.has(key) || key === "__proto__" || key === "constructor" || key === "prototype") continue;
+      if (key === "attributes") {
+        const attributes = sanitizeAttributes(value);
+        if (attributes) safe.attributes = attributes;
+        continue;
+      }
+      if (key === "components") {
+        safe.components = typeof value === "string" ? "" : sanitizeComponent(value, depth + 1, ancestors);
+        continue;
+      }
+      if (key === "content" && typeof value === "string" && /[<>]/.test(value)) {
+        // Le contenu brut n'est jamais réinterprété comme du HTML.
+        safe.content = value.replace(/[<>]/g, "");
+        continue;
+      }
+      const next = sanitizeComponent(value, depth + 1, ancestors);
+      if (next !== undefined) safe[key] = next;
+    }
+    return safe;
+  } finally {
+    ancestors.delete(component);
   }
-
-  const source = component as Record<string, unknown>;
-  const tag = String(source.tagName ?? "").trim().toLowerCase();
-  const type = String(source.type ?? "").trim().toLowerCase();
-  if (BLOCKED_TAGS.has(tag) || BLOCKED_TAGS.has(type)) return null;
-
-  const safe: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (BLOCKED_COMPONENT_KEYS.has(key) || key === "__proto__" || key === "constructor" || key === "prototype") continue;
-    if (key === "attributes") {
-      const attributes = sanitizeAttributes(value);
-      if (attributes) safe.attributes = attributes;
-      continue;
-    }
-    if (key === "components") {
-      safe.components = typeof value === "string" ? "" : sanitizeComponent(value, depth + 1, seen);
-      continue;
-    }
-    if (key === "content" && typeof value === "string" && /[<>]/.test(value)) {
-      // Le contenu brut n'est jamais réinterprété comme du HTML.
-      safe.content = value.replace(/[<>]/g, "");
-      continue;
-    }
-    const next = sanitizeComponent(value, depth + 1, seen);
-    if (next !== undefined) safe[key] = next;
-  }
-  return safe;
 }
 
 /**
@@ -148,7 +156,7 @@ function sanitizeComponent(component: unknown, depth: number, seen: WeakSet<obje
  */
 export function sanitizeGrapesProjectData(project: unknown): Record<string, unknown> | null {
   if (!project || typeof project !== "object" || Array.isArray(project)) return null;
-  const safe = sanitizeComponent(project, 0, new WeakSet());
+  const safe = sanitizeComponent(project, 0, new Set());
   return safe && typeof safe === "object" && !Array.isArray(safe) ? (safe as Record<string, unknown>) : null;
 }
 

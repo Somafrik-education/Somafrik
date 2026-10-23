@@ -118,6 +118,32 @@ describe("SEC-XSS-01 — projet GrapesJS enregistré", () => {
     expect(safe).not.toBeNull();
   });
 
+  it("références partagées légitimes conservées (non cycliques)", () => {
+    const sharedStyle = { color: "#0f172a", "font-weight": "700" };
+    const sharedCell = { tagName: "td", content: "Note", attributes: { class: "cell" } };
+    const safe = sanitizeGrapesProjectData(
+      project([
+        { tagName: "p", style: sharedStyle },
+        { tagName: "p", style: sharedStyle },
+        { tagName: "tr", components: [sharedCell, sharedCell] },
+      ]),
+    );
+    const [first, second, row] = firstComponents(safe);
+    expect(first.style).toEqual(sharedStyle);
+    expect(second.style).toEqual(sharedStyle);
+    expect(row.components).toEqual([sharedCell, sharedCell]);
+  });
+
+  it("cycle réel coupé, branches sœurs partagées conservées", () => {
+    const shared = { tagName: "span", content: "ok" };
+    const loop: Record<string, unknown> = { tagName: "div", components: [shared] };
+    (loop.components as unknown[]).push(loop, shared);
+    const safe = sanitizeGrapesProjectData(project([loop]));
+    const [div] = firstComponents(safe);
+    expect(div.components).toEqual([shared, shared]);
+    expect(() => JSON.stringify(safe)).not.toThrow();
+  });
+
   it("clés de prototype et valeurs non JSON ignorées", () => {
     const raw = JSON.parse('{"pages":[],"__proto__":{"polluted":true},"constructor":{"x":1}}');
     const safe = sanitizeGrapesProjectData({ ...raw, fn: () => 1, sym: Symbol("s") });
