@@ -8,8 +8,9 @@ import {
   DEFAULT_BULLETIN_CSS,
 } from "../../lib/bulletinGrapesTemplate";
 import {
-  GRAPES_CANVAS_FRAME_CONTENT,
+  GRAPES_CANVAS_HEAD_EVENT,
   GRAPES_SAFE_PARSER_OPTIONS,
+  applyCanvasContentSecurityPolicy,
   sanitizeGrapesProjectData,
 } from "../../lib/bulletinPreviewIsolation";
 
@@ -79,7 +80,6 @@ export function BulletinGrapesEditor({ designKey, design, onExport }: BulletinGr
       fromElement: false,
       // SEC-XSS-01 : aucun script ni attribut actif du modèle dans le canevas.
       parser: { optionsHtml: { ...GRAPES_SAFE_PARSER_OPTIONS } },
-      canvas: { frameContent: GRAPES_CANVAS_FRAME_CONTENT },
       deviceManager: {
         devices: [
           { name: "A4", width: "794px" },
@@ -88,6 +88,10 @@ export function BulletinGrapesEditor({ designKey, design, onExport }: BulletinGr
       },
     });
 
+    // SEC-XSS-01 : CSP du canevas posée avant le rendu du contenu du modèle.
+    editor.on(GRAPES_CANVAS_HEAD_EVENT, ({ window }: { window?: Window }) => {
+      applyCanvasContentSecurityPolicy(window?.document);
+    });
     registerBulletinBlocks(editor);
     loadEditorContent(editor, design);
 

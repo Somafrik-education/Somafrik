@@ -4,7 +4,7 @@ import {
   BULLETIN_PREVIEW_SANDBOX,
   BulletinPreviewError,
   GRAPES_CANVAS_CSP,
-  GRAPES_CANVAS_FRAME_CONTENT,
+  applyCanvasContentSecurityPolicy,
   GRAPES_SAFE_PARSER_OPTIONS,
   MAX_BULLETIN_PREVIEW_CHARS,
   MAX_GRAPES_PROJECT_DEPTH,
@@ -155,6 +155,16 @@ describe("SEC-XSS-01 — projet GrapesJS enregistré", () => {
     expect(GRAPES_SAFE_PARSER_OPTIONS).toEqual({ allowScripts: false, allowUnsafeAttr: false, allowUnsafeAttrValue: false });
     expect(Object.isFrozen(GRAPES_SAFE_PARSER_OPTIONS)).toBe(true);
     expect(GRAPES_CANVAS_CSP).toContain("script-src 'none'");
-    expect(GRAPES_CANVAS_FRAME_CONTENT).toContain(GRAPES_CANVAS_CSP);
+    expect(GRAPES_CANVAS_CSP).toContain("frame-src 'none'");
+  });
+
+  it("CSP du canevas insérée en tête du <head>", () => {
+    const doc = document.implementation.createHTMLDocument("canevas");
+    doc.head.appendChild(doc.createElement("style"));
+    expect(applyCanvasContentSecurityPolicy(doc)).toBe(true);
+    const first = doc.head.firstElementChild as HTMLMetaElement;
+    expect(first.httpEquiv).toBe("Content-Security-Policy");
+    expect(first.content).toBe(GRAPES_CANVAS_CSP);
+    expect(applyCanvasContentSecurityPolicy(null)).toBe(false);
   });
 });

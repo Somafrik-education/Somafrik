@@ -168,9 +168,14 @@ export const GRAPES_SAFE_PARSER_OPTIONS = Object.freeze({
 });
 
 /**
- * Document initial du canevas de l'éditeur : aucun script du modèle ne s'y
- * exécute (les gestionnaires `on*` et `javascript:` sont bloqués par la CSP).
+ * CSP du canevas de l'éditeur : aucun script du modèle ne s'y exécute (les
+ * gestionnaires `on*` et `javascript:` sont bloqués), ni cadre ni objet.
  * GrapesJS pilote le canevas depuis la page parente, sans script interne.
+ *
+ * Note : `canvas.frameContent` n'est pas utilisable, GrapesJS 0.22 reconstruit
+ * le <head> du canevas après l'avoir écrit. La CSP est donc insérée à
+ * l'événement `canvas:frame:load:head`, avant le rendu du contenu du modèle.
+ * Une CSP déclarée par <meta> reste appliquée même si l'élément est retiré.
  */
 export const GRAPES_CANVAS_CSP = [
   "script-src 'none'",
@@ -180,4 +185,14 @@ export const GRAPES_CANVAS_CSP = [
   "form-action 'none'",
 ].join("; ");
 
-export const GRAPES_CANVAS_FRAME_CONTENT = `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="${GRAPES_CANVAS_CSP}">`;
+export const GRAPES_CANVAS_HEAD_EVENT = "canvas:frame:load:head";
+
+export function applyCanvasContentSecurityPolicy(doc: Document | null | undefined): boolean {
+  const head = doc?.head;
+  if (!doc || !head) return false;
+  const meta = doc.createElement("meta");
+  meta.httpEquiv = "Content-Security-Policy";
+  meta.content = GRAPES_CANVAS_CSP;
+  head.insertBefore(meta, head.firstChild);
+  return true;
+}
