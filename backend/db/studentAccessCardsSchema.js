@@ -99,6 +99,7 @@ ${STUDENT_ACCESS_CARDS_CONSTRAINTS_SQL}
 ${require("./studentCardsNfcSchema").STUDENT_CARDS_NFC_SCHEMA_SQL}
 ${require("./studentCardsNfcReservationsSchema").STUDENT_CARDS_NFC_RESERVATIONS_SCHEMA_SQL}
 ${require("./studentCardsNfcRecoverySchema").STUDENT_CARDS_NFC_RECOVERY_SCHEMA_SQL}
+${require("./studentCardBatchesSchema").STUDENT_CARD_BATCHES_SCHEMA_SQL}
 `;
 
 async function assertStudentAccessCardsSchemaPreflight(db) {

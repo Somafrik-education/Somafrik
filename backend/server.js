@@ -2268,6 +2268,95 @@ app.get("/api/classes/:classCode/student-cards/preflight",
   }),
 );
 
+// CARTE-BATCH-API-02 — préparation QR sans activation. Le corps client est ignoré :
+// le plan vient du roster serveur. Les interruptions de test ne sont pas exposées.
+app.post("/api/classes/:classCode/student-cards/batches",
+  requireAuth, requirePermission("POST /api/classes/:classCode/student-cards/batches"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { prepareClassCardBatch } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    const result = await prepareClassCardBatch(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      principal,
+    );
+    res.status(result.batchId ? 201 : 200).json(result);
+  }),
+);
+
+app.get("/api/classes/:classCode/student-cards/batches/:batchId",
+  requireAuth, requirePermission("GET /api/classes/:classCode/student-cards/batches/:batchId"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { readClassCardBatch } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    res.json(await readClassCardBatch(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      req.params.batchId,
+      principal,
+    ));
+  }),
+);
+
+app.post("/api/classes/:classCode/student-cards/batches/:batchId/receipt",
+  requireAuth, requirePermission("POST /api/classes/:classCode/student-cards/batches/:batchId/receipt"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { recordBatchReceipt } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    res.json(await recordBatchReceipt(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      req.params.batchId,
+      req.body ?? {},
+      principal,
+    ));
+  }),
+);
+
+app.post("/api/classes/:classCode/student-cards/batches/:batchId/activate",
+  requireAuth, requirePermission("POST /api/classes/:classCode/student-cards/batches/:batchId/activate"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { activateClassCardBatch } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    res.json(await activateClassCardBatch(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      req.params.batchId,
+      req.body ?? {},
+      principal,
+    ));
+  }),
+);
+
+app.post("/api/classes/:classCode/student-cards/batches/:batchId/abort",
+  requireAuth, requirePermission("POST /api/classes/:classCode/student-cards/batches/:batchId/abort"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { abortClassCardBatch } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    res.json(await abortClassCardBatch(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      req.params.batchId,
+      principal,
+    ));
+  }),
+);
+
 app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/students/:id/cards"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
