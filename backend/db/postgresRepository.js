@@ -9,6 +9,7 @@ const {
   resolveStudentDemoLoginIdentity,
 } = require("../lib/demoSeedPolicy");
 const { hashSeedUserSecrets } = require("../lib/superadminSeedSecret");
+const { isPlatformScopePrincipal } = require("../lib/platformScopePrincipal");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
 const { mapAssignment } = require("./teacherAssignmentsRepository");
@@ -2335,12 +2336,20 @@ class PostgresRepository {
     await this.init();
     const code = String(sessionId ?? "").trim();
     if (!code) return null;
+    // SEC-TENANT-01 : même requête, état courant du compte (statut et établissement
+    // canonique users.school_id) pour refuser une session devenue non autorisée.
     return this.one(
-      `SELECT session_code, user_id, revoked_at, expires_at
-       FROM sessions
-       WHERE session_code = $1
-         AND revoked_at IS NULL
-         AND expires_at > NOW()`,
+      `SELECT sess.session_code, sess.user_id, sess.school_id, sess.revoked_at, sess.expires_at,
+              u.status AS user_status,
+              u.school_id AS user_school_id,
+              us.school_code AS user_school_code,
+              us.login_code AS user_school_login_code
+       FROM sessions sess
+       LEFT JOIN users u ON u.id = sess.user_id
+       LEFT JOIN schools us ON us.id = u.school_id AND us.deleted_at IS NULL
+       WHERE sess.session_code = $1
+         AND sess.revoked_at IS NULL
+         AND sess.expires_at > NOW()`,
       [code],
     );
   }
@@ -2353,12 +2362,49 @@ class PostgresRepository {
     );
   }
 
+  /**
+   * SEC-TENANT-01 — rattachement canonique GP-003 : users.id → users.school_id → schools.id.
+   * Aucun repli vers user_roles. null si l'utilisateur n'a pas d'établissement actif.
+   */
+  async findUserCanonicalSchool(userId) {
+    await this.init();
+    if (!isUuid(userId)) return null;
+    const row = await this.one(
+      `SELECT u.school_id::text AS school_id, s.school_code, s.login_code
+       FROM users u
+       JOIN schools s ON s.id = u.school_id
+       WHERE u.id = $1::uuid
+         AND s.deleted_at IS NULL`,
+      [userId],
+    );
+    if (!row?.school_id || !row.school_code) return null;
+    return { schoolId: row.school_id, schoolCode: row.school_code, loginCode: row.login_code ?? "" };
+  }
+
+  /**
+   * SEC-TENANT-01 — refresh : l'établissement de la session doit rester
+   * l'établissement canonique de l'utilisateur (users.school_id).
+   */
+  async isUserAttachedToSessionSchool(session = {}) {
+    await this.init();
+    if (!isUuid(session.user_id) || !isUuid(session.school_id)) return false;
+    const row = await this.one(
+      `SELECT EXISTS (
+         SELECT 1 FROM users WHERE id = $1::uuid AND school_id = $2::uuid
+       ) AS attached`,
+      [session.user_id, session.school_id],
+    );
+    return row?.attached === true;
+  }
+
   async findSessionByCode(sessionId) {
     await this.init();
     const code = String(sessionId ?? "").trim();
     if (!code) return null;
     return this.one(
-      `SELECT sess.*, u.user_code, u.role, s.school_code, c.iso_code AS country_code
+      `SELECT sess.*, u.user_code, u.role, u.status AS user_status,
+              s.school_code, s.login_code AS school_login_code,
+              c.iso_code AS country_code
        FROM sessions sess
        LEFT JOIN users u ON u.id = sess.user_id
        LEFT JOIN schools s ON s.id = sess.school_id
@@ -6662,7 +6708,11 @@ class PostgresRepository {
       scopeLevel: role === "Super Administrateur Somafrik" ? "Global" : role === "Admin Pays" ? "Pays" : "Établissement",
       countryScope,
       countryCode,
-      schoolCode: role === "Admin Pays" ? "*" : user.school_code ?? "*",
+      // SEC-TENANT-01 : "*" réservé aux rôles plateforme ; un compte scolaire sans
+      // établissement n'a aucun rattachement (""), jamais une portée plateforme.
+      schoolCode: role === "Admin Pays"
+        ? "*"
+        : user.school_code ?? (isPlatformScopePrincipal({ role, roleKeys: display.roleKeys }) ? "*" : ""),
       accessChannel: "Application",
       identifier,
       passwordHash: user.password_hash,

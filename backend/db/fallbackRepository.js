@@ -290,6 +290,29 @@ class FallbackRepository {
     return this.sessions.get(sessionId) ?? null;
   }
 
+  /** SEC-TENANT-01 — rattachement canonique du compte (mémoire : schoolCode du compte). */
+  async findUserCanonicalSchool(userId) {
+    const id = String(userId ?? "").trim();
+    if (!id) return null;
+    // Même source que le runtime (applyClientsAuthOverlay) : comptes clients d'abord, puis jeu démo.
+    const clientAccounts =
+      typeof this.listClientsAuthAccounts === "function" ? (await this.listClientsAuthAccounts()) ?? [] : [];
+    const dataset = await this.getDataset();
+    const account = [...clientAccounts, ...(dataset?.userAccounts ?? [])].find(
+      (row) => String(row?.id ?? "") === id,
+    );
+    const schoolCode = String(account?.schoolCode ?? "").trim();
+    if (!schoolCode || schoolCode === "*") return null;
+    return { schoolId: String(account.schoolId ?? ""), schoolCode, loginCode: "" };
+  }
+
+  /** SEC-TENANT-01 — refresh : l'établissement de session doit rester celui du compte. */
+  async isUserAttachedToSessionSchool(session = {}) {
+    const canonical = await this.findUserCanonicalSchool(session.user_id);
+    const sessionSchool = String(session.school_code ?? "").trim().toUpperCase();
+    return Boolean(canonical) && Boolean(sessionSchool) && canonical.schoolCode.toUpperCase() === sessionSchool;
+  }
+
   async rotateSessionRefresh({
     sessionId,
     newHash,

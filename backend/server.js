@@ -6918,13 +6918,15 @@ async function issueRefreshedAccessToken(session, payload) {
       /* fail-closed: keep session.role */
     }
   }
+  const { resolveRefreshSchoolCode } = require("./lib/refreshSchoolAttachment");
+  const refreshedSchoolCode = await resolveRefreshSchoolCode({ repository, session, payload, roleKeys });
   let permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
   if (typeof repository.resolveEffectivePermissions === "function") {
     const live = await repository.resolveEffectivePermissions({
       sub: session.user_id,
       role: session.role,
       roleKeys,
-      schoolCode: session.school_code ?? payload.schoolCode,
+      schoolCode: refreshedSchoolCode,
       countryCode: session.country_code ?? payload.countryCode,
     });
     if (Array.isArray(live?.permissions)) permissions = live.permissions;
@@ -6955,7 +6957,7 @@ async function issueRefreshedAccessToken(session, payload) {
   const accessToken = tokenService.createAccessToken({
     sub: session.user_id,
     role: session.role,
-    schoolCode: session.school_code ?? "*",
+    schoolCode: refreshedSchoolCode,
     countryCode: session.country_code ?? payload.countryCode ?? "",
     authSource: payload.authSource ?? "mobile",
     sessionId: payload.sessionId,
@@ -7085,7 +7087,22 @@ function buildPrincipal(response, rolePermissionsMap = null) {
       : display.role === "Super Administrateur OKAFRIK"
         ? "Super Administrateur Somafrik"
         : display.role;
-  const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
+  // SEC-TENANT-01 : "*" réservé aux rôles plateforme. Un rôle scolaire sans
+  // rattachement concret est refusé, jamais promu en portée plateforme.
+  const {
+    isPlatformScopePrincipal,
+    isSchoolRolePrincipal,
+    hasConcreteSchoolCode,
+  } = require("./lib/platformScopePrincipal");
+  const scopeShape = { role, roleKeys: display.roleKeys };
+  const platformScope = isPlatformScopePrincipal(scopeShape);
+  const candidateSchoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "";
+  if (!platformScope && isSchoolRolePrincipal(scopeShape) && !hasConcreteSchoolCode(candidateSchoolCode)) {
+    throw new BusinessError(403, "Rattachement établissement requis pour ce compte.");
+  }
+  const schoolCode = platformScope
+    ? candidateSchoolCode || "*"
+    : hasConcreteSchoolCode(candidateSchoolCode) ? candidateSchoolCode : "";
   const schoolId =
     !schoolCode || schoolCode === "*"
       ? ""
@@ -7379,6 +7396,8 @@ function requireAuth(req, res, next) {
       if (!activeSession) {
         throw new BusinessError(401, "Session révoquée.");
       }
+      const { assertAccessSessionAccount } = require("./lib/accessSessionAccountGuard");
+      await assertAccessSessionAccount({ principal: req.principal, activeSession, repository, sessionId });
     }
 
     const {
@@ -7401,7 +7420,18 @@ function requireAuth(req, res, next) {
     }
 
     const { applyEffectiveSchoolScope } = require("./lib/principalSchoolScope");
-    await applyEffectiveSchoolScope(req, lookupSchoolForEffectiveScope);
+    const { hydrateCanonicalSchoolAttachment } = require("./lib/canonicalSchoolAttachment");
+    req.principal = await hydrateCanonicalSchoolAttachment(req.principal, repository);
+    try {
+      await applyEffectiveSchoolScope(req, lookupSchoolForEffectiveScope);
+    } catch (scopeError) {
+      // SEC-TENANT-01 : un compte scolaire sans rattachement reste refusé partout,
+      // sauf pour fermer ses propres sessions.
+      const sessionClosingPaths = new Set(["/api/auth/logout", "/api/auth/revoke-all"]);
+      if (scopeError?.code !== "SCHOOL_SCOPE_ATTACHMENT_REQUIRED" || !sessionClosingPaths.has(req.path)) {
+        throw scopeError;
+      }
+    }
 
     const passwordChangeExemptPaths = new Set([
       "/api/auth/change-password",

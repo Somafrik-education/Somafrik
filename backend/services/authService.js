@@ -1,6 +1,7 @@
 const { AccountIdentifier } = require("./accountIdentifier");
 const { verifySecret, materializeAccountSecretHashes } = require("./credentialService");
 const { resolveParentChildren } = require("../lib/parentChildren");
+const { isPlatformScopePrincipal } = require("../lib/platformScopePrincipal");
 const {
   getLoginAttemptKey,
   assertLoginNotLocked,
@@ -292,6 +293,14 @@ class BusinessError extends Error {
   }
 }
 
+/**
+ * SEC-TENANT-01 — schoolCode "*" n'est un joker de tenant que pour un compte
+ * plateforme. Un compte scolaire sans rattachement ne correspond à aucune école.
+ */
+function matchesPlatformScope(user, userSchool) {
+  return userSchool === "*" && isPlatformScopePrincipal(user);
+}
+
 class AuthService {
   constructor({
     school,
@@ -535,7 +544,7 @@ class AuthService {
     const matches = this.userAccounts.filter((user) => {
       const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
       return (
-        (userSchool === "*" || tenantKeys.has(userSchool)) &&
+        (tenantKeys.has(userSchool) || matchesPlatformScope(user, userSchool)) &&
         this.userMatchesIdentifier(user, identifier)
       );
     });
@@ -574,7 +583,7 @@ class AuthService {
     return this.userAccounts.find((user) => {
       const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
       return (
-        (userSchool === "*" || tenantKeys.has(userSchool)) &&
+        (tenantKeys.has(userSchool) || matchesPlatformScope(user, userSchool)) &&
         String(user.id) === String(teacher.userId)
       );
     });

@@ -16,6 +16,7 @@ const {
   sanitizeUsersForResponse,
 } = require("../lib/sanitizeUserForResponse");
 const { attachCanonicalSchoolIdentity } = require("../lib/sessionSchoolIdentity");
+const { isPlatformScopePrincipal } = require("../lib/platformScopePrincipal");
 const {
   isPlatformSuperadminAccount,
   rejectsKnownSuperadminSecret,
@@ -171,7 +172,8 @@ class BackOfficeAccessService {
         return exact;
       }
 
-      const platform = matches.find((account) => account.schoolCode === "*");
+      // SEC-TENANT-01 : seul un compte plateforme sert de repli "*" ; jamais un compte scolaire sans école.
+      const platform = matches.find((account) => account.schoolCode === "*" && isPlatformScopePrincipal(account));
       if (platform) {
         return platform;
       }
