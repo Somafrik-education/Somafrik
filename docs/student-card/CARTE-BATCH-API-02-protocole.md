@@ -19,6 +19,10 @@ Une carte déjà `active` dans la classe n'est ni remplacée, ni révoquée, ni 
 
 Le corps de `POST .../batches` est ignoré. Le plan est reconstruit côté serveur (roster, titulaire, carte active).
 
+## Initialisation
+
+Le socle `student_access_cards` s'applique seul sur `schools`, `users` et `students`. Les tables de lot ne font pas partie de ce socle : `ensureStudentCardBatchesCanonicalSchema` les crée ensuite, une fois que `classes` existe dans le schéma canonique. Sans `classes`, l'initialisation des lots s'arrête avant toute clé étrangère.
+
 ## Secrets
 
 Le secret QR et le nonce de livraison ne sont jamais écrits en clair : uniquement `token_hash` et `delivery_nonce_hash` (SHA-256). Ils ne figurent pas dans l'audit, les lignes de lot, ni une clé d'idempotence. Il n'y a pas d'idempotence HTTP sur ces routes : une réponse perdue ne peut pas être rejouée depuis le serveur pour retrouver un secret non stocké.

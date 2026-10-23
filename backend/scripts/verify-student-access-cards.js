@@ -118,7 +118,11 @@ function main() {
   assert.doesNotMatch(catalog, /Carte Élève|moduleKey: "cards"/);
   assert.doesNotMatch(presences, /student_access_cards|cardToken/);
   assert.doesNotMatch(schema, /\bqr_payload\b|\braw_token\b/);
-  assert.match(STUDENT_ACCESS_CARDS_SCHEMA_SQL, /CREATE TABLE IF NOT EXISTS student_card_batches/);
+  assert.doesNotMatch(STUDENT_ACCESS_CARDS_SCHEMA_SQL, /student_card_batches|REFERENCES classes/);
+  assert.match(repo, /ensureStudentCardBatchesCanonicalSchema/);
+  const cardsBoot = repo.indexOf("ensureStudentAccessCardsCanonicalSchema");
+  const batchesBoot = repo.indexOf("ensureStudentCardBatchesCanonicalSchema");
+  assert.ok(cardsBoot > 0 && batchesBoot > cardsBoot);
   assert.match(server, /app\.post\("\/api\/classes\/:classCode\/student-cards\/batches"/);
   assert.doesNotMatch(server, /failAfterInsert|failBeforeCommit/);
   const batchMigration = read("backend/db/migrations/20261023_student_card_batches.sql");

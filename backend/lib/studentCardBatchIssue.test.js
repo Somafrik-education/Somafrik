@@ -14,6 +14,8 @@ const {
   BATCH_ERROR,
   nextBatchStatus,
 } = require("./studentCardBatchIssue");
+const { STUDENT_ACCESS_CARDS_SCHEMA_SQL } = require("../db/studentAccessCardsSchema");
+const { STUDENT_CARD_BATCHES_SCHEMA_SQL } = require("../db/studentCardBatchesSchema");
 
 const SERVER = fs.readFileSync(path.join(__dirname, "../server.js"), "utf8");
 const rbac = new RbacService();
@@ -32,6 +34,20 @@ function routeSlice(marker, nextMarker) {
   assert.ok(start >= 0 && end > start, marker);
   return SERVER.slice(start, end);
 }
+
+test("le socle des cartes ne crée pas les lots, le boot canonique les applique après classes", () => {
+  assert.doesNotMatch(STUDENT_ACCESS_CARDS_SCHEMA_SQL, /student_card_batches/);
+  assert.doesNotMatch(STUDENT_ACCESS_CARDS_SCHEMA_SQL, /REFERENCES classes/);
+  assert.match(STUDENT_CARD_BATCHES_SCHEMA_SQL, /REFERENCES classes\(id\)/);
+  assert.match(STUDENT_CARD_BATCHES_SCHEMA_SQL, /student_card_batch_items_student_tenant_fk/);
+  assert.match(STUDENT_CARD_BATCHES_SCHEMA_SQL, /student_card_batch_items_card_tenant_fk/);
+  assert.match(STUDENT_CARD_BATCHES_SCHEMA_SQL, /student_card_batches_one_open_per_class/);
+  const repo = fs.readFileSync(path.join(__dirname, "../db/postgresRepository.js"), "utf8");
+  const schemaIdx = repo.indexOf("await this.query(schema)");
+  const cardsIdx = repo.indexOf("ensureStudentAccessCardsCanonicalSchema");
+  const batchesIdx = repo.indexOf("ensureStudentCardBatchesCanonicalSchema");
+  assert.ok(schemaIdx > 0 && cardsIdx > schemaIdx && batchesIdx > cardsIdx);
+});
 
 test("préparation QR : durée maximale de 30 minutes", () => {
   assert.equal(BATCH_PREPARE_TTL_MS, 30 * 60 * 1000);

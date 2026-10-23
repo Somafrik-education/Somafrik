@@ -123,6 +123,7 @@ class PostgresRepository {
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.query(schema);
     await this.ensureStudentAccessCardsCanonicalSchema();
+    await this.ensureStudentCardBatchesCanonicalSchema();
     await this.ensureIdempotencySchema();
     await this.ensureLoginLockoutsCanonicalSchema();
     this.attachLoginLockoutStore();
@@ -275,6 +276,11 @@ class PostgresRepository {
     // CARTE-PR3-A1 : passages au portail, après les cartes (FK carte → élève → établissement).
     const { SCHOOL_ENTRY_EVENTS_SCHEMA_SQL } = require("./schoolEntryEventsSchema");
     await this.query(SCHOOL_ENTRY_EVENTS_SCHEMA_SQL);
+  }
+
+  async ensureStudentCardBatchesCanonicalSchema() {
+    const { ensureStudentCardBatchesSchema } = require("./studentCardBatchesSchema");
+    await ensureStudentCardBatchesSchema(this);
   }
 
   async ensureLoginLockoutsCanonicalSchema() {
