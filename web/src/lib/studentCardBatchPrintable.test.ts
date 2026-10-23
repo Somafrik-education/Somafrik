@@ -4,8 +4,12 @@ import { render } from "@testing-library/react";
 import { classStudentsApi, type ClassStudent } from "./classStudentsApi";
 import { studentCardsApi } from "./studentCardsApi";
 import { StudentCardFace } from "../components/students/StudentCardFace";
+import { ApiError } from "../api/client";
+import { convertBatchPrintFileToPdf } from "./studentCardBatchPdf";
+import { renderStudentCardQrDataUrl } from "./studentCardQr";
 import {
   CARD_BATCH_PRINT_FORMAT,
+  loadBatchPhoto,
   CARD_BATCH_PRINT_LEGACY_FORMAT,
   assembleBatchPrintDocument,
   convertBatchPrintDocument,
@@ -21,6 +25,12 @@ import { TEST_PHOTO_JPEG_DATA_URL, testPngDataUrl } from "./studentCardTestImage
 vi.mock("./classStudentsApi", () => ({
   classStudentsApi: { list: vi.fn() },
 }));
+
+const requestBlob = vi.hoisted(() => vi.fn());
+vi.mock("../api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/client")>();
+  return { ...actual, requestBlob };
+});
 
 vi.mock("./studentCardsApi", () => ({
   studentCardsApi: { list: vi.fn() },
@@ -120,14 +130,18 @@ describe("conversion locale CR80", () => {
       holder: { kind: "eleve", source: "school_type" },
     });
 
+    const loadPhoto = vi.fn(async () => ({ photo: { state: "absent" } as CardVisual, issue: null }));
     const identities = await loadBatchPrintIdentities({
       classCode: "WEB-CR80",
       schoolName: "Lycée Smoke CR80",
       className: "Terminale A",
       studentIds: [studentUuid],
+      loadPhoto,
     });
 
     expect(studentCardsApi.list).toHaveBeenCalledWith(studentUuid);
+    // CARTE-PHOTO-02 : même source canonique que la carte individuelle, par l'UUID du lot.
+    expect(loadPhoto).toHaveBeenCalledWith(studentUuid, null);
     expect(identities).toEqual([
       {
         studentId: studentUuid,
@@ -137,6 +151,7 @@ describe("conversion locale CR80", () => {
         classLabel: "Terminale A",
         schoolName: "Lycée Smoke CR80",
         photo: { state: "absent" },
+        photoIssue: null,
       },
     ]);
   });
@@ -330,4 +345,80 @@ describe("intégration du logo et de la police", () => {
     const notFont = vi.fn(async () => new Response("<html>")) as unknown as typeof fetch;
     expect(await loadEmbeddedCardFontCss(notFont)).toBe("");
   });
+});
+
+describe("CARTE-PHOTO-02 — photo canonique dans le lot par classe", () => {
+  function stubCanvas() {
+    const bitmap = { width: 300, height: 400, close: vi.fn() };
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => bitmap));
+    const context = { fillRect: vi.fn(), drawImage: vi.fn(), fillStyle: "", imageSmoothingQuality: "low" };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => context as never);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockImplementation(() => TEST_PHOTO_JPEG_DATA_URL);
+    return { bitmap, context };
+  }
+
+  it("intègre la vraie photo lue sur la route canonique, recadrée au format de la maquette", async () => {
+    const { context } = stubCanvas();
+    requestBlob.mockReset();
+    requestBlob.mockResolvedValue(new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: "image/jpeg" }));
+    const result = await loadBatchPhoto("eeeeeeee-eeee-4eee-8eee-eeeeeeeeee11", null);
+    expect(requestBlob).toHaveBeenCalledWith("/students/eeeeeeee-eeee-4eee-8eee-eeeeeeeeee11/photo");
+    expect(result).toEqual({ photo: { state: "embedded", src: TEST_PHOTO_JPEG_DATA_URL }, issue: null });
+    expect(context.drawImage).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("absence, droits et fichier disparu : jamais d'image inventée, cause conservée hors document", async () => {
+    for (const [failure, expected] of [
+      [new ApiError("Aucune", 404, "STUDENT_PHOTO_ABSENT"), { photo: { state: "absent" }, issue: null }],
+      [new ApiError("Refusé", 403), { photo: { state: "unavailable" }, issue: "forbidden" }],
+      [new ApiError("Fichier", 404, "STUDENT_PHOTO_FILE_MISSING"), { photo: { state: "unavailable" }, issue: "file_missing" }],
+    ] as const) {
+      requestBlob.mockReset();
+      requestBlob.mockRejectedValue(failure);
+      expect(await loadBatchPhoto("STU-1", null)).toEqual(expected);
+    }
+    const assembled = documentFor([{ ...identity, photo: { state: "unavailable" }, photoIssue: "forbidden" }]);
+    if (!assembled.ok) throw new Error("document attendu");
+    expect(JSON.stringify(assembled.value)).not.toContain("forbidden");
+  });
+
+  it("HTML CR80 puis PDF A4 hors connexion : la photo intégrée est reprise sans nouvelle requête", async () => {
+    stubCanvas();
+    requestBlob.mockReset();
+    requestBlob.mockResolvedValue(new Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: "image/jpeg" }));
+    const loaded = await loadBatchPhoto("STU-1", null);
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    const publicId = "pubphoto0001";
+    const cardToken = `${publicId}.secretxvalue00000001`;
+    const assembled = assembleBatchPrintDocument(
+      { batchId: BATCH_ID, classCode: "CLS-1", className: "6ème A", expiresAt: null },
+      [{ studentId: "stu00000001", publicId, cardToken, secret: "secretxvalue00000001" }],
+      [{ ...identity, studentId: "stu00000001", photo: loaded.photo }],
+    );
+    if (!assembled.ok) throw new Error("document attendu");
+    const html = convertBatchPrintDocument(assembled.value, new Map([[publicId, await renderStudentCardQrDataUrl(cardToken)]]));
+    if (!html.ok) throw new Error("document attendu");
+    const face = parse(html.value).querySelector(".student-card-face")!;
+    expect(face.querySelector('[data-testid="student-card-photo"]')?.getAttribute("src")).toBe(TEST_PHOTO_JPEG_DATA_URL);
+    expect(visiblePart(html.value)).not.toContain("secretxvalue00000001");
+
+    requestBlob.mockReset();
+    const offline = vi.fn(async () => {
+      throw new Error("hors connexion");
+    });
+    vi.stubGlobal("fetch", offline);
+    const pdf = await convertBatchPrintFileToPdf(html.value);
+    vi.unstubAllGlobals();
+    expect(pdf.ok).toBe(true);
+    if (!pdf.ok) return;
+    expect(pdf.visuals.photos.embedded).toBe(1);
+    expect(offline).not.toHaveBeenCalled();
+    expect(requestBlob).not.toHaveBeenCalled();
+    const bytes = new TextDecoder("latin1").decode(pdf.bytes);
+    expect(bytes).toContain("/DCTDecode");
+    expect(bytes).not.toContain("secretxvalue00000001");
+  }, 30000);
 });

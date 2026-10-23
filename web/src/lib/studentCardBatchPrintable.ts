@@ -26,6 +26,7 @@ import {
   studentCardOptionalText,
   studentCardRef,
 } from "./studentCardPolicy";
+import { fetchStudentCardPhoto, type StudentCardPhotoState } from "./studentCardPhoto";
 import { renderStudentCardQrDataUrl } from "./studentCardQr";
 import { studentCardsApi } from "./studentCardsApi";
 import type { PreparedCardSecret } from "./studentCardBatchSession";
@@ -57,6 +58,8 @@ export interface BatchPrintIdentity {
   schoolName: string | null;
   /** Absent : l'identité ne fournit pas de photo (initiales imprimées). */
   photo?: CardVisual;
+  /** Raison non sensible d'une photo non intégrée ; jamais écrite dans le document. */
+  photoIssue?: StudentCardPhotoState | null;
 }
 
 export interface BatchPrintCard {
@@ -412,22 +415,13 @@ function acceptedImageUrl(url: string): boolean {
 }
 
 /**
- * Récupère l'image, la recadre aux dimensions de la maquette (photo : couverture 20 × 25,7 mm ;
- * logo : contenu dans un carré) et l'intègre en data URL. Aucun identifiant ni jeton n'est envoyé.
+ * Recadre une image déjà lue aux dimensions de la maquette (photo : couverture 20 × 25,7 mm ;
+ * logo : contenu dans un carré) et l'intègre en data URL PNG/JPEG.
  */
-export const embedCardImage: CardImageLoader = async (url, kind) => {
-  const raw = String(url ?? "").trim();
-  if (!raw) return ABSENT;
-  if (!acceptedImageUrl(raw) || typeof document === "undefined" || typeof createImageBitmap !== "function") {
-    return UNAVAILABLE;
-  }
-  const controller = typeof AbortController === "function" ? new AbortController() : null;
-  const timer = controller ? setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS) : null;
+export async function embedCardBlob(blob: Blob, kind: CardImageKind): Promise<CardVisual> {
+  if (typeof document === "undefined" || typeof createImageBitmap !== "function") return UNAVAILABLE;
+  if (!blob.type.startsWith("image/") || blob.size <= 0 || blob.size > IMAGE_MAX_SOURCE_BYTES) return UNAVAILABLE;
   try {
-    const response = await fetch(raw, { credentials: "omit", cache: "no-store", signal: controller?.signal });
-    if (!response.ok) return UNAVAILABLE;
-    const blob = await response.blob();
-    if (!blob.type.startsWith("image/") || blob.size <= 0 || blob.size > IMAGE_MAX_SOURCE_BYTES) return UNAVAILABLE;
     const bitmap = await createImageBitmap(blob);
     const width = kind === "photo" ? CARD_PHOTO_PIXELS.width : CARD_LOGO_PIXELS;
     const height = kind === "photo" ? CARD_PHOTO_PIXELS.height : CARD_LOGO_PIXELS;
@@ -453,9 +447,54 @@ export const embedCardImage: CardImageLoader = async (url, kind) => {
     return decodeCardVisualDataUrl(src) ? { state: "embedded", src } : UNAVAILABLE;
   } catch {
     return UNAVAILABLE;
+  }
+}
+
+/**
+ * Récupère une image publique (logo, ancienne URL tierce) puis l'intègre.
+ * Aucun identifiant ni jeton n'est envoyé.
+ */
+export const embedCardImage: CardImageLoader = async (url, kind) => {
+  const raw = String(url ?? "").trim();
+  if (!raw) return ABSENT;
+  if (!acceptedImageUrl(raw)) return UNAVAILABLE;
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS) : null;
+  try {
+    const response = await fetch(raw, { credentials: "omit", cache: "no-store", signal: controller?.signal });
+    if (!response.ok) return UNAVAILABLE;
+    return await embedCardBlob(await response.blob(), kind);
+  } catch {
+    return UNAVAILABLE;
   } finally {
     if (timer) clearTimeout(timer);
   }
+};
+
+export interface BatchPhotoResult {
+  photo: CardVisual;
+  /** Raison non sensible quand la photo n'est pas intégrée (droits, fichier manquant…). */
+  issue: StudentCardPhotoState | null;
+}
+
+export type BatchPhotoLoader = (studentRef: string, legacyPhotoUrl: string | null) => Promise<BatchPhotoResult>;
+
+/**
+ * CARTE-PHOTO-02 — même source que la carte individuelle : la pièce PHOTO canonique de l'élève
+ * (lecture authentifiée), puis l'ancien champ photo_url seulement si le dossier n'a aucune pièce.
+ */
+export const loadBatchPhoto: BatchPhotoLoader = async (studentRef, legacyPhotoUrl) => {
+  const source = await fetchStudentCardPhoto({ studentRef, legacyPhotoUrl });
+  if (source.state === "photo") {
+    const photo = await embedCardBlob(source.blob, "photo");
+    return { photo, issue: photo.state === "embedded" ? null : "invalid" };
+  }
+  if (source.state === "photo_url") {
+    const photo = await embedCardImage(source.src, "photo");
+    return { photo, issue: photo.state === "embedded" ? null : "unavailable" };
+  }
+  if (source.state === "absent") return { photo: ABSENT, issue: null };
+  return { photo: UNAVAILABLE, issue: source.state };
 };
 
 /** Logo de l'établissement : absent si aucun logo téléversé, jamais de logo de remplacement. */
@@ -503,9 +542,9 @@ export async function loadBatchPrintIdentities(input: {
   schoolName: string | null;
   className: string | null;
   studentIds: readonly string[];
-  loadImage?: CardImageLoader;
+  loadPhoto?: BatchPhotoLoader;
 }): Promise<BatchPrintIdentity[]> {
-  const loadImage = input.loadImage ?? embedCardImage;
+  const loadPhoto = input.loadPhoto ?? loadBatchPhoto;
   const roster = (await classStudentsApi.list(input.classCode)) as RosterStudent[];
   const identities: BatchPrintIdentity[] = [];
   for (const studentId of input.studentIds) {
@@ -514,11 +553,11 @@ export async function loadBatchPrintIdentities(input: {
     const kind = listed.holder?.kind === "eleve" || listed.holder?.kind === "etudiant" ? listed.holder.kind : null;
     const displayName = student ? String(student.name ?? "").trim() || `${student.lastName ?? ""} ${student.firstName ?? ""}`.trim() : "";
     const studentCode = student ? String(student.matricule ?? "").trim() || String(student.studentCode ?? "").trim() : "";
-    let photo: CardVisual = ABSENT;
+    let photo: BatchPhotoResult = { photo: ABSENT, issue: null };
     try {
-      photo = await loadImage(student?.photoUrl ?? null, "photo");
+      photo = await loadPhoto(studentId, student?.photoUrl ?? null);
     } catch {
-      photo = UNAVAILABLE;
+      photo = { photo: UNAVAILABLE, issue: "unavailable" };
     }
     identities.push({
       studentId,
@@ -527,7 +566,8 @@ export async function loadBatchPrintIdentities(input: {
       studentCode: studentCode || null,
       classLabel: input.className,
       schoolName: input.schoolName,
-      photo,
+      photo: photo.photo,
+      photoIssue: photo.issue,
     });
   }
   return identities;

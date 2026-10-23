@@ -11,6 +11,7 @@ import {
   type BatchPrintIdentity,
 } from "../../lib/studentCardBatchPrintable";
 import { cardVisualReport, cardVisualReportMessage, type CardVisual } from "../../lib/studentCardDesign";
+import { studentCardBatchPhotoIssueSummary } from "../../lib/studentCardPhoto";
 import {
   canActivateBatch,
   canConfirmDocumentSave,
@@ -238,11 +239,11 @@ export function StudentCardBatchDialog({
     }
     const saved = await saveDocument(printable.value, suggestedCardDocumentName(classCode), defaultSaveEnvironment());
     if (saved.cancelled || !saved.verified || saved.bytesWritten <= 0) return;
-    setVisualNotice(
-      cardVisualReportMessage(
-        cardVisualReport(assembled.value.schoolLogo, assembled.value.cards.map((card) => card.photo)),
-      ),
+    const report = cardVisualReportMessage(
+      cardVisualReport(assembled.value.schoolLogo, assembled.value.cards.map((card) => card.photo)),
     );
+    const reasons = studentCardBatchPhotoIssueSummary(identities.map((identity) => identity.photoIssue ?? null));
+    setVisualNotice([report, reasons].filter(Boolean).join(" ") || null);
     dispatch({ type: "document_saved", bytesWritten: saved.bytesWritten, printableConverted: true });
   }
 

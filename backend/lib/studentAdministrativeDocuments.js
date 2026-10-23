@@ -222,7 +222,44 @@ function createStudentDocumentsService(repo) {
     };
   }
 
-  return { list, upload, verify, archive, download };
+  /**
+   * CARTE-PHOTO-02 — photo d'identité canonique de l'élève : la pièce administrative PHOTO
+   * la plus récente, non archivée (déposée ou vérifiée). Aucune autre copie n'existe :
+   * un téléversement ne renseigne jamais students.photo_url. Lecture seule, scellée
+   * school_id + student_id, même droit que le téléchargement (Documents:READ).
+   * Codes : STUDENT_PHOTO_ABSENT (aucune pièce PHOTO), STUDENT_PHOTO_FILE_MISSING
+   * (ligne présente mais fichier absent du stockage), STUDENT_PHOTO_INVALID (type non image).
+   */
+  async function photo({ studentRef, schoolCode, principal }) {
+    assertDocumentRight(principal, "read");
+    const student = await requireStudent(db, studentRef, schoolCode);
+    const doc = await db.one(
+      "SELECT id, storage_key, metadata FROM student_documents " +
+      "WHERE school_id=$1 AND student_id=$2 AND metadata->>'source'=$3 " +
+      "AND document_type='PHOTO' AND status IN ('submitted','verified') " +
+      "ORDER BY created_at DESC, id DESC LIMIT 1",
+      [student.school_id, student.id, SOURCE],
+    );
+    if (!doc) throw error(404, "Aucune photo enregistrée pour cet élève.", "STUDENT_PHOTO_ABSENT");
+    const metadata = doc.metadata && typeof doc.metadata === "object" ? doc.metadata : {};
+    const mimeType = String(metadata.mimeType || "");
+    if (mimeType !== "image/png" && mimeType !== "image/jpeg") {
+      throw error(422, "La photo enregistrée n'est pas une image PNG ou JPEG.", "STUDENT_PHOTO_INVALID");
+    }
+    if (!doc.storage_key) throw error(404, "Fichier photo introuvable.", "STUDENT_PHOTO_FILE_MISSING");
+    let bytes;
+    try {
+      bytes = await readAttachmentBytes(doc.storage_key);
+    } catch (cause) {
+      if (cause?.code === "ENOENT" || cause?.statusCode === 404) {
+        throw error(404, "Fichier photo introuvable.", "STUDENT_PHOTO_FILE_MISSING");
+      }
+      throw cause;
+    }
+    return { bytes, mimeType, documentId: String(doc.id) };
+  }
+
+  return { list, upload, verify, archive, download, photo };
 }
 
 module.exports = { DOC_TYPES, SOURCE, assertDocumentRight, requireType, createStudentDocumentsService };

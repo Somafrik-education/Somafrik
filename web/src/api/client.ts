@@ -157,10 +157,12 @@ export async function requestBlob(path: string, options: RequestInit = {}, retri
     }
     const text = await response.text();
     let message = "Erreur plateforme";
+    let code: string | undefined;
     if (text) {
       try {
-        const data = JSON.parse(text) as { message?: unknown };
+        const data = JSON.parse(text) as { message?: unknown; code?: unknown };
         if (data.message) message = String(data.message);
+        if (typeof data.code === "string") code = data.code;
       } catch {
         const cannotRoute = text.match(/Cannot (GET|POST|PUT|DELETE) ([^\s<]+)/i);
         if (cannotRoute) {
@@ -170,7 +172,7 @@ export async function requestBlob(path: string, options: RequestInit = {}, retri
         }
       }
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, code);
   }
 
   return response.blob();

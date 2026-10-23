@@ -209,7 +209,7 @@ describe("StudentCardBatchDialog", () => {
       "CLS-1",
       [
         { ...printIdentity, photo: { state: "embedded", src: TEST_PHOTO_JPEG_DATA_URL } },
-        { ...printIdentity, studentId: "student-two", displayName: "Jean ILUNGA", photo: { state: "unavailable" } },
+        { ...printIdentity, studentId: "student-two", displayName: "Jean ILUNGA", photo: { state: "unavailable" }, photoIssue: "forbidden" },
       ],
       { school, loadSchoolLogo },
     );
@@ -226,6 +226,8 @@ describe("StudentCardBatchDialog", () => {
     expect(await screen.findByTestId("card-batch-visual-notice")).toHaveTextContent(
       "1 photo non intégrée : initiales imprimées",
     );
+    expect(screen.getByTestId("card-batch-visual-notice")).toHaveTextContent("Causes : 1 non lisible avec vos droits");
+    expect(String(saveDocument.mock.calls[0][0])).not.toContain("forbidden");
     expect(document.body.textContent).not.toContain(SECRET);
   });
 

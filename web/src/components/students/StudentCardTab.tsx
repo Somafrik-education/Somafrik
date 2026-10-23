@@ -263,6 +263,8 @@ export function StudentCardTab({
               holder={holder}
               identity={printIdentity}
               school={activeSchool?.activeSchool ?? null}
+              photoStudentRef={workspace.studentId}
+              photoScope={resolvedSchoolCode}
               onClose={closePreview}
             />
           ) : (

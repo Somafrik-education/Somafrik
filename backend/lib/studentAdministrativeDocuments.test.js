@@ -162,3 +162,44 @@ test("FICHE-DOC-01 : upload PostgreSQL, téléchargement, vérification unique e
     else process.env.NODE_ENV = oldNode;
   }
 });
+
+test("CARTE-PHOTO-02 : photo canonique scellée établissement + élève, droits et fichier manquant", async () => {
+  const queries = [];
+  const base = createFakeRepo();
+  let photoRow = null;
+  const repo = {
+    ...base,
+    async one(sql, params) {
+      if (sql.includes("document_type='PHOTO'")) {
+        queries.push({ sql, params });
+        return photoRow;
+      }
+      return base.one(sql, params);
+    },
+  };
+  const svc = createStudentDocumentsService(repo);
+  await assert.rejects(
+    svc.photo({ studentRef: studentCode, schoolCode, principal: { schoolCode, permissions: ["Élèves:READ"] } }),
+    (e) => e.statusCode === 403,
+  );
+  await assert.rejects(
+    svc.photo({ studentRef: studentCode, schoolCode: "BI-2026-0001", principal }),
+    (e) => e.statusCode === 404 && e.code === "STUDENT_DOC_NOT_FOUND",
+  );
+  await assert.rejects(
+    svc.photo({ studentRef: studentCode, schoolCode, principal }),
+    (e) => e.statusCode === 404 && e.code === "STUDENT_PHOTO_ABSENT",
+  );
+  const { sql, params } = queries.at(-1);
+  assert.match(sql, /WHERE school_id=\$1 AND student_id=\$2/);
+  assert.match(sql, /status IN \('submitted','verified'\)/);
+  assert.match(sql, /ORDER BY created_at DESC/);
+  assert.deepEqual(params, [schoolId, studentId, "administrative_upload"]);
+
+  photoRow = { id: "p1", storage_key: "", metadata: { mimeType: "application/pdf" } };
+  await assert.rejects(svc.photo({ studentRef: studentCode, schoolCode, principal }),
+    (e) => e.statusCode === 422 && e.code === "STUDENT_PHOTO_INVALID");
+  photoRow = { id: "p1", storage_key: "", metadata: { mimeType: "image/png" } };
+  await assert.rejects(svc.photo({ studentRef: studentCode, schoolCode, principal }),
+    (e) => e.statusCode === 404 && e.code === "STUDENT_PHOTO_FILE_MISSING");
+});
