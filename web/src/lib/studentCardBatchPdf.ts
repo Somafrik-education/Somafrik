@@ -1,14 +1,57 @@
 import jsQR from "jsqr";
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import {
+  PDFDocument,
+  StandardFonts,
+  appendBezierCurve,
+  clip,
+  closePath,
+  endPath,
+  lineTo,
+  moveTo,
+  popGraphicsState,
+  pushGraphicsState,
+  rgb,
+  setCharacterSpacing,
+  type PDFFont,
+  type PDFImage,
+  type PDFOperator,
+  type PDFPage,
+  type RGB,
+} from "pdf-lib";
+import {
+  CARD_CUT_MARK_COLOR,
+  CARD_CUT_MARK_WIDTH_PT,
+  CARD_SHEET,
+  CARD_SHEET_GUTTER_MM,
+  STUDENT_CARD_INTER_METRICS,
+  STUDENT_CARD_P1,
+  cardCutMarkSegments,
+  cardRectMm,
+  cardVisualReport,
+  chooseCardSheetLayout,
+  decodeCardVisualDataUrl,
+  readCardVisual,
+  studentCardNameSizeMm,
+  type CardSheetLayout,
+  type CardVisual,
+  type CardVisualReport,
+  type CutMarkSegment,
+} from "./studentCardDesign";
 
 /**
  * CARTE-BATCH-PDF-02 — PDF A4 à partir du document CR80 déjà enregistré.
  *
- * Le fichier HTML somafrik-card-batch-print-v1 est la seule source. Les images
- * QR sont recopiées telles quelles. Aucune émission, aucune activation, aucun
- * envoi des jetons. Le PDF et le HTML restent des documents sensibles.
+ * Le fichier HTML somafrik-card-batch-print-v2 (ou l'ancien somafrik-card-batch-print-v1)
+ * est la seule source. Les images QR sont recopiées telles quelles. Aucune émission, aucune
+ * activation, aucun envoi des jetons. Le PDF et le HTML restent des documents sensibles.
+ *
+ * CARTE-BATCH-DESIGN-01 — chaque carte est dessinée selon la maquette P1 (STUDENT_CARD_P1) :
+ * bandeau, logo, photo ou initiales, identité, QR à droite, référence et pied Somafrik.
+ * Logo et photo viennent uniquement de la source v2 ; un document v1 n'en contient pas,
+ * les cartes sont alors produites sans logo et avec les initiales, sans rien inventer.
  */
-export const CARD_PDF_PRINT_FORMAT = "somafrik-card-batch-print-v1";
+export const CARD_PDF_PRINT_FORMAT = "somafrik-card-batch-print-v2";
+export const CARD_PDF_LEGACY_PRINT_FORMAT = "somafrik-card-batch-print-v1";
 export const CLASS_CARD_PDF_BUTTON_LABEL = "Produire le PDF A4";
 export const CLASS_CARD_PDF_DIALOG_TITLE = "PDF A4 des cartes";
 
@@ -31,47 +74,14 @@ const SECRET_RE = /^[A-Za-z0-9_-]{16,200}$/;
 const STUDENT_ID_RE = /^[A-Za-z0-9_-]{8,80}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLASS_CODE_RE = /^[A-Za-z0-9_-]{1,64}$/;
-const MAX_SOURCE_CHARS = 8_000_000;
+/** Le document v2 transporte la police, le logo et les photos : plafond relevé, toujours borné. */
+export const CARD_PDF_MAX_SOURCE_CHARS = 32_000_000;
 const MAX_CARDS = 400;
 const MAX_PNG_SIDE = 1024;
 const MM_TO_PT = 72 / 25.4;
-const QR_MM = 22;
-const MIN_TEXT_PT = 6.5;
 
-export const CARD_SHEET = {
-  pageWidthMm: 210,
-  pageHeightMm: 297,
-  cardWidthMm: 85.6,
-  cardHeightMm: 53.98,
-  columns: 2 as const,
-  markMm: 1.5,
-  offsetMm: 0.35,
-  minMarginMm: 5,
-} as const;
-
-export const CARD_SHEET_GUTTER_MM = 2 * (CARD_SHEET.offsetMm + CARD_SHEET.markMm);
-
-export interface CardSheetLayout {
-  columns: 2;
-  rows: 4 | 5;
-  cardsPerPage: 8 | 10;
-  gutterMm: number;
-  marginXMm: number;
-  marginYMm: number;
-  markMm: number;
-  offsetMm: number;
-  cardWidthMm: number;
-  cardHeightMm: number;
-  pageWidthMm: number;
-  pageHeightMm: number;
-}
-
-export interface CutMarkSegment {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
+export { CARD_SHEET, CARD_SHEET_GUTTER_MM, cardCutMarkSegments, cardRectMm, chooseCardSheetLayout };
+export type { CardSheetLayout, CutMarkSegment };
 
 export type CardPdfResult =
   | {
@@ -81,6 +91,7 @@ export type CardPdfResult =
       cardCount: number;
       cardsPerPage: 8 | 10;
       classCode: string;
+      visuals: CardVisualReport;
     }
   | { ok: false; message: string };
 
@@ -90,11 +101,14 @@ interface PrintableCard {
   schoolName: string | null;
   classLabel: string | null;
   studentCode: string | null;
+  cardRef: string;
+  photo: CardVisual;
   png: Uint8Array;
 }
 
 interface ValidatedDocument {
   classCode: string;
+  schoolLogo: CardVisual;
   cards: PrintableCard[];
 }
 
@@ -104,12 +118,9 @@ export function cardPdfOptionalLine(value: string | null): string | null {
   return text;
 }
 
+/** Taille du nom : mêmes paliers que la carte individuelle (STUDENT_CARD_P1). */
 export function cardPdfNameSizeMm(displayName: string): number {
-  const length = Array.from(displayName.trim()).length;
-  if (length <= 22) return 3.7;
-  if (length <= 34) return 3.05;
-  if (length <= 48) return 2.7;
-  return 2.35;
+  return studentCardNameSizeMm(displayName);
 }
 
 export function suggestedCardPdfName(classCode: string): string {
@@ -117,72 +128,14 @@ export function suggestedCardPdfName(classCode: string): string {
   return `cartes-a4-${safe || "classe"}.pdf`;
 }
 
-export function chooseCardSheetLayout(limits: { minMarginMm?: number } = {}): CardSheetLayout | null {
-  const minMarginMm = limits.minMarginMm ?? CARD_SHEET.minMarginMm;
-  return measureSheet(5, minMarginMm) ?? measureSheet(4, minMarginMm);
-}
-
-export function cardRectMm(layout: CardSheetLayout, slot: number): { x: number; y: number; width: number; height: number } {
-  const column = slot % layout.columns;
-  const row = Math.floor(slot / layout.columns);
-  return {
-    x: layout.marginXMm + column * (layout.cardWidthMm + layout.gutterMm),
-    y:
-      layout.pageHeightMm -
-      layout.marginYMm -
-      (row + 1) * layout.cardHeightMm -
-      row * layout.gutterMm,
-    width: layout.cardWidthMm,
-    height: layout.cardHeightMm,
-  };
-}
-
-export function cardCutMarkSegments(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  offset: number,
-  mark: number,
-): CutMarkSegment[] {
-  return [
-    { x1: x - offset - mark, y1: y, x2: x - offset, y2: y },
-    { x1: x, y1: y - offset - mark, x2: x, y2: y - offset },
-    { x1: x + width + offset, y1: y, x2: x + width + offset + mark, y2: y },
-    { x1: x + width, y1: y - offset - mark, x2: x + width, y2: y - offset },
-    { x1: x - offset - mark, y1: y + height, x2: x - offset, y2: y + height },
-    { x1: x, y1: y + height + offset, x2: x, y2: y + height + offset + mark },
-    { x1: x + width + offset, y1: y + height, x2: x + width + offset + mark, y2: y + height },
-    { x1: x + width, y1: y + height + offset, x2: x + width, y2: y + height + offset + mark },
-  ];
+/** Référence imprimée : 6 derniers caractères de l'identifiant public, jamais le jeton. */
+export function cardPdfRef(publicId: string): string {
+  const value = publicId.trim();
+  return value.length > 6 ? value.slice(-6) : value;
 }
 
 function fail(message: string): CardPdfResult {
   return { ok: false, message };
-}
-
-function measureSheet(rows: 4 | 5, minMarginMm: number): CardSheetLayout | null {
-  const { columns, cardWidthMm, cardHeightMm, pageWidthMm, pageHeightMm, markMm, offsetMm } = CARD_SHEET;
-  const gutterMm = CARD_SHEET_GUTTER_MM;
-  const gridWidth = columns * cardWidthMm + (columns - 1) * gutterMm;
-  const gridHeight = rows * cardHeightMm + (rows - 1) * gutterMm;
-  const marginXMm = (pageWidthMm - gridWidth) / 2;
-  const marginYMm = (pageHeightMm - gridHeight) / 2;
-  if (marginXMm < minMarginMm || marginYMm < minMarginMm) return null;
-  return {
-    columns,
-    rows,
-    cardsPerPage: rows === 5 ? 10 : 8,
-    gutterMm,
-    marginXMm,
-    marginYMm,
-    markMm,
-    offsetMm,
-    cardWidthMm,
-    cardHeightMm,
-    pageWidthMm,
-    pageHeightMm,
-  };
 }
 
 function sameText(actual: string | null, expected: string): boolean {
@@ -212,12 +165,12 @@ function readableLine(value: string | null, forbidden: readonly string[]): strin
 }
 
 export async function convertBatchPrintFileToPdf(source: string): Promise<CardPdfResult> {
-  if (typeof source !== "string" || source.length === 0 || source.length > MAX_SOURCE_CHARS) {
+  if (typeof source !== "string" || source.length === 0 || source.length > CARD_PDF_MAX_SOURCE_CHARS) {
     return fail(CARD_PDF_UNRECOGNIZED);
   }
   const validated = validateSource(source);
   if (!validated.accepted) return validated.failure;
-  const images = extractPngDataUrls(source);
+  const images = extractQrDataUrls(source);
   if (images.length !== validated.cards.length) return fail(CARD_PDF_INCOMPLETE);
   const printable: PrintableCard[] = [];
   for (let index = 0; index < validated.cards.length; index += 1) {
@@ -233,24 +186,32 @@ export async function convertBatchPrintFileToPdf(source: string): Promise<CardPd
       schoolName: card.schoolName,
       classLabel: card.classLabel,
       studentCode: card.studentCode,
+      cardRef: cardPdfRef(card.publicId),
+      photo: card.photo,
       png,
     });
   }
-  return drawPdf({ classCode: validated.classCode, cards: printable });
+  return drawPdf({ classCode: validated.classCode, schoolLogo: validated.schoolLogo, cards: printable });
 }
 
 interface ParsedCard {
   cardToken: string;
+  publicId: string;
   holderTitle: string;
   displayName: string;
   schoolName: string | null;
   classLabel: string | null;
   studentCode: string | null;
+  photo: CardVisual;
 }
+
+const NOT_IN_SOURCE: CardVisual = { state: "not_in_source" };
 
 function validateSource(
   source: string,
-): { accepted: true; classCode: string; cards: ParsedCard[] } | { accepted: false; failure: CardPdfResult } {
+):
+  | { accepted: true; classCode: string; schoolLogo: CardVisual; cards: ParsedCard[] }
+  | { accepted: false; failure: CardPdfResult } {
   const match = source.match(
     new RegExp(`<script type="application/json" id="${SOURCE_ID}">([\\s\\S]*?)</script>`),
   );
@@ -261,9 +222,10 @@ function validateSource(
   } catch {
     return { accepted: false, failure: fail(CARD_PDF_UNRECOGNIZED) };
   }
-  if (!isRecord(parsed) || parsed.format !== CARD_PDF_PRINT_FORMAT) {
+  if (!isRecord(parsed) || (parsed.format !== CARD_PDF_PRINT_FORMAT && parsed.format !== CARD_PDF_LEGACY_PRINT_FORMAT)) {
     return { accepted: false, failure: fail(CARD_PDF_UNRECOGNIZED) };
   }
+  const legacy = parsed.format === CARD_PDF_LEGACY_PRINT_FORMAT;
   if (!Array.isArray(parsed.cards) || parsed.cards.length === 0 || parsed.cards.length > MAX_CARDS) {
     return { accepted: false, failure: fail(CARD_PDF_INCOMPLETE) };
   }
@@ -279,21 +241,24 @@ function validateSource(
   if (parsed.className != null && (typeof parsed.className !== "string" || parsed.className.length > 160)) {
     return { accepted: false, failure: fail(CARD_PDF_INCOMPLETE) };
   }
+  const schoolLogo = legacy ? NOT_IN_SOURCE : readCardVisual(parsed.schoolLogo);
+  if (!schoolLogo) return { accepted: false, failure: fail(CARD_PDF_INCOMPLETE) };
 
   const publicIds = new Set<string>();
   const tokens = new Set<string>();
   const studentIds = new Set<string>();
   const cards: ParsedCard[] = [];
   for (const entry of parsed.cards) {
-    const card = readCard(entry, publicIds, tokens, studentIds);
+    const card = readCard(entry, legacy, publicIds, tokens, studentIds);
     if (!card) return { accepted: false, failure: fail(CARD_PDF_INCOMPLETE) };
     cards.push(card);
   }
-  return { accepted: true, classCode: parsed.classCode, cards };
+  return { accepted: true, classCode: parsed.classCode, schoolLogo, cards };
 }
 
 function readCard(
   entry: unknown,
+  legacy: boolean,
   publicIds: Set<string>,
   tokens: Set<string>,
   studentIds: Set<string>,
@@ -327,15 +292,34 @@ function readCard(
   const classLine = readableLine(classLabel, forbidden);
   const matricule = readableLine(studentCode, forbidden);
   if (school === undefined || classLine === undefined || matricule === undefined) return null;
+  const photo = legacy ? NOT_IN_SOURCE : readCardVisual(entry.photo);
+  if (!photo) return null;
   studentIds.add(studentId);
   publicIds.add(publicId);
   tokens.add(cardToken);
-  return { cardToken, holderTitle, displayName: name, schoolName: school, classLabel: classLine, studentCode: matricule };
+  return {
+    cardToken,
+    publicId,
+    holderTitle,
+    displayName: name,
+    schoolName: school,
+    classLabel: classLine,
+    studentCode: matricule,
+    photo,
+  };
 }
 
-function extractPngDataUrls(source: string): string[] {
+/**
+ * Seules les images du QR comptent (attribut alt figé de la carte, v1 et v2). Le logo et les
+ * photos sont relus depuis la source JSON validée, jamais depuis le balisage.
+ */
+function extractQrDataUrls(source: string): string[] {
   const found: string[] = [];
-  const pattern = /<img\b[^>]*\bsrc="(data:image\/png;base64,[A-Za-z0-9+/=\s]+)"/g;
+  const alt = STUDENT_CARD_P1.labels.qrAlt;
+  const pattern = new RegExp(
+    `<img\\b(?=[^>]*\\balt="${alt}")[^>]*\\bsrc="(data:image\\/png;base64,[A-Za-z0-9+/=\\s]+)"`,
+    "g",
+  );
   for (const match of source.matchAll(pattern)) found.push(match[1]);
   return found;
 }
@@ -536,112 +520,141 @@ function toRgba(
   return rgba;
 }
 
-async function drawPdf(document: ValidatedDocument): Promise<CardPdfResult> {
-  const layout = chooseCardSheetLayout();
-  if (!layout) return fail(CARD_PDF_INCOMPLETE);
-  try {
-    const pdf = await PDFDocument.create();
-    const regular = await pdf.embedFont(StandardFonts.Helvetica);
-    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-    const images: Awaited<ReturnType<PDFDocument["embedPng"]>>[] = [];
-    for (const card of document.cards) {
-      images.push(await pdf.embedPng(card.png));
-    }
-    const pageWidth = layout.pageWidthMm * MM_TO_PT;
-    const pageHeight = layout.pageHeightMm * MM_TO_PT;
-    const pageCount = Math.ceil(document.cards.length / layout.cardsPerPage);
-    const pages: PDFPage[] = [];
-    for (let index = 0; index < pageCount; index += 1) pages.push(pdf.addPage([pageWidth, pageHeight]));
-    document.cards.forEach((card, index) => {
-      const page = pages[Math.floor(index / layout.cardsPerPage)];
-      const rect = cardRectMm(layout, index % layout.cardsPerPage);
-      drawCard(page, rect, card, images[index], regular, bold);
-      drawCutMarks(page, rect, layout);
-    });
-    const bytes = await pdf.save();
-    return {
-      ok: true,
-      bytes,
-      pageCount,
-      cardCount: document.cards.length,
-      cardsPerPage: layout.cardsPerPage,
-      classCode: document.classCode,
-    };
-  } catch {
-    return fail(CARD_PDF_INCOMPLETE);
-  }
+/* ------------------------------------------------------------------------------------------ */
+/* Dessin de la maquette P1 (cotes STUDENT_CARD_P1, en millimètres).                           */
+/* ------------------------------------------------------------------------------------------ */
+
+interface Fonts {
+  regular: PDFFont;
+  bold: PDFFont;
 }
 
-function drawCutMarks(
-  page: PDFPage,
-  rect: { x: number; y: number; width: number; height: number },
-  layout: CardSheetLayout,
-) {
-  const color = rgb(0.45, 0.45, 0.45);
-  for (const segment of cardCutMarkSegments(rect.x, rect.y, rect.width, rect.height, layout.offsetMm, layout.markMm)) {
-    page.drawLine({
-      start: { x: segment.x1 * MM_TO_PT, y: segment.y1 * MM_TO_PT },
-      end: { x: segment.x2 * MM_TO_PT, y: segment.y2 * MM_TO_PT },
-      thickness: 0.4,
-      color,
-    });
-  }
+interface CardBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
-function drawCard(
+const pt = (valueMm: number) => valueMm * MM_TO_PT;
+
+function hexColor(hex: string): RGB {
+  const value = hex.replace("#", "");
+  return rgb(
+    Number.parseInt(value.slice(0, 2), 16) / 255,
+    Number.parseInt(value.slice(2, 4), 16) / 255,
+    Number.parseInt(value.slice(4, 6), 16) / 255,
+  );
+}
+
+const COLORS = {
+  navy: hexColor(STUDENT_CARD_P1.colors.navy),
+  brand: hexColor(STUDENT_CARD_P1.colors.brand),
+  ink: hexColor(STUDENT_CARD_P1.colors.ink),
+  muted: hexColor(STUDENT_CARD_P1.colors.muted),
+  tint: hexColor(STUDENT_CARD_P1.colors.tint),
+  paper: hexColor(STUDENT_CARD_P1.colors.paper),
+  mark: hexColor(CARD_CUT_MARK_COLOR),
+};
+
+function valueStep(value: string, threshold: number): "l1" | "l2" {
+  return Array.from(value.trim()).length <= threshold ? "l1" : "l2";
+}
+
+/** Position de la ligne de base dans une boîte de ligne CSS (Inter, interlignage centré). */
+function baselineInLine(sizeMm: number, lineHeight: number): number {
+  const { ascent, descent } = STUDENT_CARD_INTER_METRICS;
+  return ((lineHeight - (ascent + descent)) * sizeMm) / 2 + ascent * sizeMm;
+}
+
+function trackedWidthMm(text: string, font: PDFFont, sizeMm: number, trackingEm = 0): number {
+  const chars = Array.from(text).length;
+  return font.widthOfTextAtSize(text, pt(sizeMm)) / MM_TO_PT + chars * trackingEm * sizeMm;
+}
+
+interface TextStyle {
+  font: PDFFont;
+  sizeMm: number;
+  color: RGB;
+  trackingEm?: number;
+  opacity?: number;
+}
+
+/** Écrit une ligne ; (xMm, baselineFromTopMm) dans le repère de la carte, origine en haut à gauche. */
+function drawLine(page: PDFPage, box: CardBox, text: string, xMm: number, baselineFromTopMm: number, style: TextStyle) {
+  const tracking = (style.trackingEm ?? 0) * style.sizeMm;
+  if (tracking) page.pushOperators(setCharacterSpacing(pt(tracking)));
+  page.drawText(text, {
+    x: pt(box.x + xMm),
+    y: pt(box.y + box.height - baselineFromTopMm),
+    size: pt(style.sizeMm),
+    font: style.font,
+    color: style.color,
+    opacity: style.opacity,
+  });
+  if (tracking) page.pushOperators(setCharacterSpacing(0));
+}
+
+function roundedRectPath(x: number, y: number, width: number, height: number, radius: number): PDFOperator[] {
+  const r = Math.min(radius, width / 2, height / 2);
+  const k = 0.5522847498 * r;
+  return [
+    moveTo(x + r, y),
+    lineTo(x + width - r, y),
+    appendBezierCurve(x + width - r + k, y, x + width, y + r - k, x + width, y + r),
+    lineTo(x + width, y + height - r),
+    appendBezierCurve(x + width, y + height - r + k, x + width - r + k, y + height, x + width - r, y + height),
+    lineTo(x + r, y + height),
+    appendBezierCurve(x + r - k, y + height, x, y + height - r + k, x, y + height - r),
+    lineTo(x, y + r),
+    appendBezierCurve(x, y + r - k, x + r - k, y, x + r, y),
+    closePath(),
+  ];
+}
+
+/** Rectangle (mm, repère carte depuis le haut) en points PDF. */
+function areaPt(box: CardBox, leftMm: number, topMm: number, widthMm: number, heightMm: number) {
+  return {
+    x: pt(box.x + leftMm),
+    y: pt(box.y + box.height - topMm - heightMm),
+    width: pt(widthMm),
+    height: pt(heightMm),
+  };
+}
+
+/** Image recadrée dans une zone (couverture ou contenu), découpée par le tracé donné. */
+function drawClippedImage(
   page: PDFPage,
-  rect: { x: number; y: number; width: number; height: number },
-  card: PrintableCard,
-  image: Awaited<ReturnType<PDFDocument["embedPng"]>>,
-  regular: PDFFont,
-  bold: PDFFont,
+  image: PDFImage,
+  area: { x: number; y: number; width: number; height: number },
+  clipPath: PDFOperator[],
+  fit: "cover" | "contain",
 ) {
-  const x = rect.x * MM_TO_PT;
-  const y = rect.y * MM_TO_PT;
-  const width = rect.width * MM_TO_PT;
-  const height = rect.height * MM_TO_PT;
-  page.drawRectangle({
-    x,
-    y,
+  const scale =
+    fit === "cover"
+      ? Math.max(area.width / image.width, area.height / image.height)
+      : Math.min(area.width / image.width, area.height / image.height);
+  const width = image.width * scale;
+  const height = image.height * scale;
+  page.pushOperators(pushGraphicsState(), ...clipPath, clip(), endPath());
+  page.drawImage(image, {
+    x: area.x + (area.width - width) / 2,
+    y: area.y + (area.height - height) / 2,
     width,
     height,
-    borderWidth: 0.2 * MM_TO_PT,
-    borderColor: rgb(0.1, 0.1, 0.1),
   });
-  const qr = QR_MM * MM_TO_PT;
-  const pad = 3 * MM_TO_PT;
-  page.drawImage(image, {
-    x: x + width - pad - qr,
-    y: y + (height - qr) / 2,
-    width: qr,
-    height: qr,
-  });
-  const textWidth = width - pad * 2 - qr - 2 * MM_TO_PT;
-  let cursor = y + height - 2.6 * MM_TO_PT;
-  const bottom = y + 2.2 * MM_TO_PT;
-  const drawLines = (text: string, font: PDFFont, size: number) => {
-    for (const line of wrapText(text, font, size, textWidth)) {
-      if (cursor - size < bottom) return;
-      page.drawText(line, { x: x + pad, y: cursor - size, size, font, color: rgb(0.08, 0.08, 0.08) });
-      cursor -= size * 1.2;
-    }
-  };
-  drawLines(card.holderTitle, regular, 2.5 * MM_TO_PT);
-  cursor -= 0.6 * MM_TO_PT;
-  drawLines(card.displayName, bold, Math.max(cardPdfNameSizeMm(card.displayName) * MM_TO_PT, MIN_TEXT_PT));
-  if (card.schoolName) drawLines(card.schoolName, regular, 2.4 * MM_TO_PT);
-  if (card.classLabel) drawLines(card.classLabel, regular, 2.45 * MM_TO_PT);
-  if (card.studentCode) drawLines(`Matricule ${card.studentCode}`, regular, 2.35 * MM_TO_PT);
+  page.pushOperators(popGraphicsState());
 }
 
-function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+function wrapText(text: string, font: PDFFont, sizeMm: number, maxWidthMm: number, trackingEm = 0): string[] {
+  const fits = (value: string) => trackedWidthMm(value, font, sizeMm, trackingEm) <= maxWidthMm;
   const lines: string[] = [];
   let current = "";
   for (const word of text.split(/\s+/).filter(Boolean)) {
-    const pieces = font.widthOfTextAtSize(word, size) <= maxWidth ? [word] : breakWord(word, font, size, maxWidth);
+    const pieces = fits(word) ? [word] : breakWord(word, fits);
     for (const piece of pieces) {
       const next = current ? `${current} ${piece}` : piece;
-      if (font.widthOfTextAtSize(next, size) <= maxWidth) current = next;
+      if (fits(next)) current = next;
       else {
         if (current) lines.push(current);
         current = piece;
@@ -652,12 +665,12 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   return lines.length > 0 ? lines : [text];
 }
 
-function breakWord(word: string, font: PDFFont, size: number, maxWidth: number): string[] {
+function breakWord(word: string, fits: (value: string) => boolean): string[] {
   const parts: string[] = [];
   let chunk = "";
   for (const char of Array.from(word)) {
     const next = chunk + char;
-    if (font.widthOfTextAtSize(next, size) <= maxWidth || chunk.length === 0) chunk = next;
+    if (fits(next) || chunk.length === 0) chunk = next;
     else {
       parts.push(chunk);
       chunk = char;
@@ -665,4 +678,215 @@ function breakWord(word: string, font: PDFFont, size: number, maxWidth: number):
   }
   if (chunk) parts.push(chunk);
   return parts;
+}
+
+function initialsOf(displayName: string): string {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean).slice(0, 2);
+  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "?";
+}
+
+function drawCard(
+  page: PDFPage,
+  box: CardBox,
+  card: PrintableCard,
+  qr: PDFImage,
+  photo: PDFImage | null,
+  logo: PDFImage | null,
+  fonts: Fonts,
+) {
+  const d = STUDENT_CARD_P1;
+  const W = d.widthMm;
+  const H = d.heightMm;
+  const longSchool = card.schoolName ? valueStep(card.schoolName, d.thresholds.schoolName) === "l2" : false;
+
+  // Fond de carte.
+  page.drawRectangle({ ...areaPt(box, 0, 0, W, H), color: COLORS.paper });
+
+  // Bandeau institutionnel.
+  const bandH = longSchool ? d.band.longHeightMm : d.band.heightMm;
+  page.drawRectangle({ ...areaPt(box, 0, 0, W, bandH), color: COLORS.navy });
+
+  if (logo) {
+    const radius = d.band.logoDiameterMm / 2;
+    const centerX = box.x + d.band.padXMm + radius;
+    const centerY = box.y + H - bandH / 2;
+    page.drawCircle({ x: pt(centerX), y: pt(centerY), size: pt(radius), color: COLORS.paper });
+    const image = d.band.logoImageMm;
+    const area = areaPt(box, d.band.padXMm + radius - image / 2, bandH / 2 - image / 2, image, image);
+    const circle = roundedRectPath(pt(centerX - radius), pt(centerY - radius), pt(2 * radius), pt(2 * radius), pt(radius));
+    drawClippedImage(page, logo, area, circle, "contain");
+  }
+
+  const columnLeft = d.band.padXMm + d.band.slotWidthMm;
+  const columnWidth = W - 2 * (d.band.padXMm + d.band.slotWidthMm);
+  const columnCenter = columnLeft + columnWidth / 2;
+  const holderSize = longSchool ? d.band.longHolderSizeMm : d.band.holderSizeMm;
+  const schoolStep = longSchool ? "l2" : "l1";
+  const schoolSize = d.band.schoolSizeMm[schoolStep];
+  const schoolLineHeight = d.band.schoolLineHeight[schoolStep];
+  const schoolLines = card.schoolName ? wrapText(card.schoolName, fonts.regular, schoolSize, columnWidth) : [];
+  const gap = longSchool ? d.band.longTextGapMm : d.band.textGapMm;
+  const blockHeight = holderSize + (schoolLines.length > 0 ? gap + schoolLines.length * schoolSize * schoolLineHeight : 0);
+  let bandCursor = (bandH - blockHeight) / 2;
+  const holderStyle: TextStyle = {
+    font: fonts.bold,
+    sizeMm: holderSize,
+    color: COLORS.paper,
+    trackingEm: d.band.holderTrackingEm,
+  };
+  const holderWidth = trackedWidthMm(card.holderTitle, fonts.bold, holderSize, d.band.holderTrackingEm);
+  drawLine(page, box, card.holderTitle, columnCenter - holderWidth / 2, bandCursor + baselineInLine(holderSize, 1), holderStyle);
+  bandCursor += holderSize + gap;
+  for (const line of schoolLines) {
+    const width = trackedWidthMm(line, fonts.regular, schoolSize);
+    drawLine(page, box, line, columnCenter - width / 2, bandCursor + baselineInLine(schoolSize, schoolLineHeight), {
+      font: fonts.regular,
+      sizeMm: schoolSize,
+      color: COLORS.paper,
+      opacity: d.band.schoolOpacity,
+    });
+    bandCursor += schoolSize * schoolLineHeight;
+  }
+
+  // Corps : photo ou initiales, identité, QR à droite.
+  const bodyTop = longSchool ? d.body.longTopMm : d.body.topMm;
+  const photoLeft = d.body.leftMm;
+  const photoArea = areaPt(box, photoLeft, bodyTop, d.photo.widthMm, d.photo.heightMm);
+  const photoPath = roundedRectPath(photoArea.x, photoArea.y, photoArea.width, photoArea.height, pt(d.photo.radiusMm));
+  page.pushOperators(pushGraphicsState(), ...photoPath, clip(), endPath());
+  page.drawRectangle({ ...photoArea, color: COLORS.tint });
+  page.pushOperators(popGraphicsState());
+  if (photo) {
+    drawClippedImage(page, photo, photoArea, photoPath, "cover");
+  } else {
+    const initials = initialsOf(card.displayName);
+    const size = d.photo.initialsSizeMm;
+    const width = trackedWidthMm(initials, fonts.bold, size, d.photo.initialsTrackingEm);
+    const { ascent, descent } = STUDENT_CARD_INTER_METRICS;
+    const baseline = bodyTop + d.photo.heightMm / 2 - ((ascent + descent) * size) / 2 + ascent * size;
+    drawLine(page, box, initials, photoLeft + d.photo.widthMm / 2 - width / 2, baseline, {
+      font: fonts.bold,
+      sizeMm: size,
+      color: COLORS.navy,
+      trackingEm: d.photo.initialsTrackingEm,
+    });
+  }
+
+  const qrLeft = W - d.body.rightMm - d.qr.sizeMm;
+  page.drawImage(qr, areaPt(box, qrLeft, bodyTop, d.qr.sizeMm, d.qr.sizeMm));
+
+  const infoLeft = photoLeft + d.photo.widthMm + d.body.gapMm;
+  const infoWidth = qrLeft - d.body.gapMm - infoLeft;
+  let cursor = bodyTop;
+  const block = (text: string, style: TextStyle, lineHeight: number) => {
+    for (const line of wrapText(text, style.font, style.sizeMm, infoWidth, style.trackingEm)) {
+      drawLine(page, box, line, infoLeft, cursor + baselineInLine(style.sizeMm, lineHeight), style);
+      cursor += style.sizeMm * lineHeight;
+    }
+  };
+  block(card.displayName, { font: fonts.bold, sizeMm: studentCardNameSizeMm(card.displayName), color: COLORS.ink }, d.info.nameLineHeight);
+  if (card.classLabel) {
+    cursor += d.info.gapMm;
+    const size = d.info.valueSizeMm[valueStep(card.classLabel, d.thresholds.classLabel)];
+    block(card.classLabel, { font: fonts.bold, sizeMm: size, color: COLORS.ink }, d.info.valueLineHeight);
+  }
+  if (card.studentCode) {
+    cursor += d.info.gapMm;
+    block(
+      d.labels.matricule.toUpperCase(),
+      { font: fonts.bold, sizeMm: d.info.captionSizeMm, color: COLORS.muted, trackingEm: d.info.captionTrackingEm },
+      d.info.captionLineHeight,
+    );
+    const size = d.info.valueSizeMm[valueStep(card.studentCode, d.thresholds.studentCode)];
+    block(
+      card.studentCode,
+      { font: fonts.bold, sizeMm: size, color: COLORS.ink, trackingEm: d.info.numberTrackingEm },
+      d.info.valueLineHeight,
+    );
+  }
+
+  // Pied de carte : référence abrégée et marque Somafrik.
+  const footTop = H - d.foot.heightMm;
+  page.drawRectangle({ ...areaPt(box, 0, footTop, W, d.foot.heightMm), color: COLORS.tint });
+  page.drawRectangle({ ...areaPt(box, 0, footTop, W, d.foot.borderMm), color: COLORS.brand });
+  const footSize = d.foot.textSizeMm;
+  const footContent = d.foot.heightMm - d.foot.borderMm;
+  const footBaseline = footTop + d.foot.borderMm + (footContent - footSize) / 2 + baselineInLine(footSize, 1);
+  const label = `${d.labels.cardRef} `;
+  const footStyle: TextStyle = { font: fonts.regular, sizeMm: footSize, color: COLORS.muted };
+  drawLine(page, box, label, d.foot.padXMm, footBaseline, footStyle);
+  drawLine(page, box, `…${card.cardRef}`, d.foot.padXMm + trackedWidthMm(label, fonts.regular, footSize), footBaseline, {
+    ...footStyle,
+    trackingEm: d.info.numberTrackingEm,
+  });
+  const brandWidth = trackedWidthMm(d.labels.brand, fonts.bold, footSize, d.foot.brandTrackingEm);
+  drawLine(page, box, d.labels.brand, W - d.foot.padXMm - brandWidth, footBaseline, {
+    font: fonts.bold,
+    sizeMm: footSize,
+    color: COLORS.muted,
+    trackingEm: d.foot.brandTrackingEm,
+  });
+}
+
+async function embedVisual(pdf: PDFDocument, visual: CardVisual): Promise<PDFImage | null> {
+  if (visual.state !== "embedded") return null;
+  const decoded = decodeCardVisualDataUrl(visual.src);
+  if (!decoded) throw new Error("visual");
+  return decoded.type === "png" ? pdf.embedPng(decoded.bytes) : pdf.embedJpg(decoded.bytes);
+}
+
+async function drawPdf(document: ValidatedDocument): Promise<CardPdfResult> {
+  const layout = chooseCardSheetLayout();
+  if (!layout) return fail(CARD_PDF_INCOMPLETE);
+  try {
+    const pdf = await PDFDocument.create();
+    const fonts: Fonts = {
+      regular: await pdf.embedFont(StandardFonts.Helvetica),
+      bold: await pdf.embedFont(StandardFonts.HelveticaBold),
+    };
+    const logo = await embedVisual(pdf, document.schoolLogo);
+    const qrs: PDFImage[] = [];
+    const photos: (PDFImage | null)[] = [];
+    for (const card of document.cards) {
+      qrs.push(await pdf.embedPng(card.png));
+      photos.push(await embedVisual(pdf, card.photo));
+    }
+    const pageWidth = layout.pageWidthMm * MM_TO_PT;
+    const pageHeight = layout.pageHeightMm * MM_TO_PT;
+    const pageCount = Math.ceil(document.cards.length / layout.cardsPerPage);
+    const pages: PDFPage[] = [];
+    for (let index = 0; index < pageCount; index += 1) pages.push(pdf.addPage([pageWidth, pageHeight]));
+    document.cards.forEach((card, index) => {
+      const page = pages[Math.floor(index / layout.cardsPerPage)];
+      const rect = cardRectMm(layout, index % layout.cardsPerPage);
+      drawCard(page, rect, card, qrs[index], photos[index], logo, fonts);
+      drawCutMarks(page, rect, layout);
+    });
+    const bytes = await pdf.save();
+    return {
+      ok: true,
+      bytes,
+      pageCount,
+      cardCount: document.cards.length,
+      cardsPerPage: layout.cardsPerPage,
+      classCode: document.classCode,
+      visuals: cardVisualReport(
+        document.schoolLogo,
+        document.cards.map((card) => card.photo),
+      ),
+    };
+  } catch {
+    return fail(CARD_PDF_INCOMPLETE);
+  }
+}
+
+function drawCutMarks(page: PDFPage, rect: CardBox, layout: CardSheetLayout) {
+  for (const segment of cardCutMarkSegments(rect.x, rect.y, rect.width, rect.height, layout.offsetMm, layout.markMm)) {
+    page.drawLine({
+      start: { x: segment.x1 * MM_TO_PT, y: segment.y1 * MM_TO_PT },
+      end: { x: segment.x2 * MM_TO_PT, y: segment.y2 * MM_TO_PT },
+      thickness: CARD_CUT_MARK_WIDTH_PT,
+      color: COLORS.mark,
+    });
+  }
 }

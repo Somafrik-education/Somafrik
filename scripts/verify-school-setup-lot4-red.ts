@@ -445,6 +445,19 @@ const STUDENT_CARD_BATCH_PDF_02_EXACT = new Set([
   "docs/student-card/CARTE-BATCH-PDF-02-parcours.md",
 ]);
 
+// CARTE-BATCH-DESIGN-01 : maquette P1 unique pour la carte individuelle, le HTML CR80 par classe
+// et le PDF A4. La page Classes (logo de l'établissement transmis au lot) n'est admise qu'avec
+// les DEUX ancres : la référence de design et le générateur du document CR80. Aucun backend,
+// aucune migration, aucune route d'émission.
+const STUDENT_CARD_BATCH_DESIGN_01_ANCHORS = Object.freeze([
+  "web/src/lib/studentCardDesign.ts",
+  "web/src/lib/studentCardBatchPrintable.ts",
+]);
+const STUDENT_CARD_BATCH_DESIGN_01_EXACT = new Set([
+  "web/src/pages/etablissement/ClassesListPage.tsx",
+  "docs/student-card/CARTE-BATCH-DESIGN-01-maquette.md",
+]);
+
 // CARTE-PR3-M1 (#947) : exception pour le menu, uniquement avec les deux ancres exactes.
 const STUDENT_CARD_PR3_M1_NAV_FILE = "Mobile/src/navigation/roleDrawerPreferences.ts";
 const STUDENT_CARD_PR3_M1_NAV_ANCHORS = Object.freeze([
@@ -555,6 +568,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     const batchApi02 = STUDENT_CARD_BATCH_API_02_ANCHORS.every((anchor) => changed.includes(anchor));
     const batchWeb01 = STUDENT_CARD_BATCH_WEB_01_ANCHORS.every((anchor) => changed.includes(anchor));
     const batchPdf02 = STUDENT_CARD_BATCH_PDF_02_ANCHORS.every((anchor) => changed.includes(anchor));
+    const batchDesign01 = STUDENT_CARD_BATCH_DESIGN_01_ANCHORS.every((anchor) => changed.includes(anchor));
     const pr3MobileNav = navChanged && navAnchored;
     const r3DiagnosticNav = navChanged && r3DiagnosticAnchored;
     const outside = changed.filter(
@@ -565,6 +579,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
         && !(batchApi02 && STUDENT_CARD_BATCH_API_02_EXACT.has(file))
         && !(batchWeb01 && STUDENT_CARD_BATCH_WEB_01_EXACT.has(file))
         && !(batchPdf02 && STUDENT_CARD_BATCH_PDF_02_EXACT.has(file))
+        && !(batchDesign01 && STUDENT_CARD_BATCH_DESIGN_01_EXACT.has(file))
         && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE)
         && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE)),
     );
@@ -1286,6 +1301,59 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           evaluateLot4Scope(["web/src/lib/studentCardsApi.ts", pdfOnly]).kind,
           "fail",
           `L4-09: ${pdfOnly} sans les ancres CARTE-BATCH-PDF-02 doit rester FAIL`,
+        );
+      }
+
+      // CARTE-BATCH-DESIGN-01 : diff exact admis ; la page Classes exige les deux ancres de design.
+      const batchDesign01Files = [
+        "docs/student-card/CARTE-BATCH-DESIGN-01-maquette.md",
+        "scripts/verify-school-setup-lot4-red.ts",
+        "scripts/verify-student-card-web.js",
+        "web/src/components/students/StudentCardBatchDialog.test.tsx",
+        "web/src/components/students/StudentCardBatchDialog.tsx",
+        "web/src/components/students/StudentCardBatchPdfDialog.test.tsx",
+        "web/src/components/students/StudentCardBatchPdfDialog.tsx",
+        "web/src/components/students/StudentCardFace.test.tsx",
+        "web/src/components/students/StudentCardFace.tsx",
+        "web/src/index.css",
+        "web/src/lib/studentCardBatchPdf.test.ts",
+        "web/src/lib/studentCardBatchPdf.ts",
+        "web/src/lib/studentCardBatchPrintable.test.ts",
+        "web/src/lib/studentCardBatchPrintable.ts",
+        "web/src/lib/studentCardDesign.test.ts",
+        "web/src/lib/studentCardDesign.ts",
+        "web/src/lib/studentCardFonts.ts",
+        "web/src/lib/studentCardPolicy.ts",
+        "web/src/lib/studentCardTestImages.ts",
+        "web/src/pages/etablissement/ClassesListPage.tsx",
+      ];
+      assert.equal(evaluateLot4Scope(batchDesign01Files).kind, "na", "L4-09: diff exact CARTE-BATCH-DESIGN-01 admis nominativement");
+      for (const [extra, label] of [
+        ["backend/lib/financeManagement.js", "fichier backend"],
+        ["backend/db/postgresRepository.js", "boot PostgreSQL"],
+        ["backend/db/migrations/20261024_card_design.sql", "migration"],
+        ["web/src/App.tsx", "route hors liste"],
+        ["web/src/lib/permissions.ts", "fichier RBAC Web"],
+        ["docs/student-card/CARTE-BATCH-DESIGN-02.md", "autre document"],
+      ] as const) {
+        assert.equal(
+          evaluateLot4Scope([...batchDesign01Files, extra]).kind,
+          "fail",
+          `L4-09: CARTE-BATCH-DESIGN-01 + ${label} doit rester FAIL`,
+        );
+      }
+      for (const missingAnchor of STUDENT_CARD_BATCH_DESIGN_01_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(batchDesign01Files.filter((file) => file !== missingAnchor)).kind,
+          "fail",
+          `L4-09: CARTE-BATCH-DESIGN-01 sans l'ancre ${missingAnchor} doit rester FAIL`,
+        );
+      }
+      for (const designOnly of STUDENT_CARD_BATCH_DESIGN_01_EXACT) {
+        assert.equal(
+          evaluateLot4Scope(["web/src/lib/studentCardsApi.ts", designOnly]).kind,
+          "fail",
+          `L4-09: ${designOnly} sans les ancres CARTE-BATCH-DESIGN-01 doit rester FAIL`,
         );
       }
 

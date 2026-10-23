@@ -60,6 +60,24 @@ describe("dialogue PDF A4", () => {
     expect(window.sessionStorage.length).toBe(0);
   });
 
+  it("signale qu'un document v1 est réimprimé sans logo ni photo, sans réémission", async () => {
+    convertBatchPrintFileToPdf.mockResolvedValue({
+      ok: true,
+      bytes: new Uint8Array([37, 80, 68, 70]),
+      pageCount: 1,
+      cardCount: 2,
+      cardsPerPage: 10,
+      classCode: "CLS-1",
+      visuals: { logo: "not_in_source", photos: { embedded: 0, absent: 0, unavailable: 0, not_in_source: 2 } },
+    });
+    const user = userEvent.setup();
+    render(<StudentCardBatchPdfDialog open onClose={vi.fn()} />);
+    await user.upload(screen.getByLabelText("Document CR80"), new File(["<html></html>"], "ancien.html", { type: "text/html" }));
+    expect(await screen.findByText(/produit avant l’intégration du logo et des photos/)).toBeInTheDocument();
+    expect(screen.getByText(/Aucune carte n’est réémise ni remplacée/)).toBeInTheDocument();
+    expect(batchApi.prepare).not.toHaveBeenCalled();
+  });
+
   it("affiche le refus sans reprendre le contenu du fichier", async () => {
     const secret = "supersecretvalue";
     convertBatchPrintFileToPdf.mockResolvedValue({ ok: false, message: CARD_PDF_UNRECOGNIZED });

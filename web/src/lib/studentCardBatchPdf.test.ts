@@ -10,11 +10,19 @@ import {
   decodePDFRawStream,
 } from "pdf-lib";
 import jsQR from "jsqr";
-import { CARD_BATCH_PRINT_FORMAT, assembleBatchPrintDocument, convertBatchPrintDocument } from "./studentCardBatchPrintable";
+import {
+  CARD_BATCH_PRINT_FORMAT,
+  CARD_BATCH_PRINT_LEGACY_FORMAT,
+  assembleBatchPrintDocument,
+  convertBatchPrintDocument,
+} from "./studentCardBatchPrintable";
+import { STUDENT_CARD_P1, type CardVisual } from "./studentCardDesign";
+import { TEST_PHOTO_JPEG_DATA_URL, testPng, testPngDataUrl } from "./studentCardTestImages";
 import { renderStudentCardQrDataUrl } from "./studentCardQr";
 import { STUDENT_CARD_HOLDER_TITLES, studentCardNameStep, studentCardOptionalText } from "./studentCardPolicy";
 import {
   CARD_PDF_INCOMPLETE,
+  CARD_PDF_LEGACY_PRINT_FORMAT,
   CARD_PDF_PRINT_FORMAT,
   CARD_PDF_QR_MISMATCH,
   CARD_PDF_UNRECOGNIZED,
@@ -56,7 +64,12 @@ function hidden(value: string, secret: string): boolean {
   return !value.includes(secret);
 }
 
-async function buildHtml(count: number, bare: boolean) {
+interface FixtureVisuals {
+  logo?: CardVisual;
+  photo?: (index: number) => CardVisual | undefined;
+}
+
+async function buildHtml(count: number, bare: boolean, visuals: FixtureVisuals = {}) {
   const secrets: FixtureSecret[] = [];
   const identities = [];
   const qrs = new Map<string, string>();
@@ -73,11 +86,12 @@ async function buildHtml(count: number, bare: boolean) {
       studentCode: bare ? null : `MAT-${index}`,
       classLabel: bare ? null : "6ème A",
       schoolName: bare ? null : "Institut Nuru",
+      photo: visuals.photo?.(index),
     });
     qrs.set(publicId, await renderStudentCardQrDataUrl(cardToken));
   }
   const assembled = assembleBatchPrintDocument(
-    { batchId: BATCH_ID, classCode: "CLS-1", className: bare ? null : "6ème A", expiresAt: null },
+    { batchId: BATCH_ID, classCode: "CLS-1", className: bare ? null : "6ème A", expiresAt: null, schoolLogo: visuals.logo },
     secrets,
     identities,
   );
@@ -126,6 +140,8 @@ function rgbImages(pdf: PDFDocument) {
     const subtype = object.dict.get(PDFName.of("Subtype"))?.toString();
     const color = object.dict.get(PDFName.of("ColorSpace"))?.toString();
     if (subtype !== "/Image" || color !== "/DeviceRGB") continue;
+    // Photos JPEG : recopiées telles quelles (DCTDecode), non décodées ici.
+    if (object.dict.get(PDFName.of("Filter"))?.toString() === "/DCTDecode") continue;
     const width = object.dict.lookup(PDFName.of("Width"));
     const height = object.dict.lookup(PDFName.of("Height"));
     if (!(width instanceof PDFNumber) || !(height instanceof PDFNumber)) continue;
@@ -216,9 +232,81 @@ function pdfText(content: string): string {
     const bytes = match[1].replace(/\s/g, "");
     const raw = new Uint8Array(bytes.length / 2);
     for (let index = 0; index < raw.length; index += 1) raw[index] = Number.parseInt(bytes.slice(index * 2, index * 2 + 2), 16);
-    parts.push(new TextDecoder("windows-1252").decode(raw));
+    parts.push(decodeWinAnsi(raw));
   }
   return parts.join("\n");
+}
+
+/**
+ * WinAnsi (Helvetica standard). Les octets 0x80–0x9F ne sont pas du Latin-1 : « ’ » = 0x92,
+ * « … » = 0x85. Table explicite, indépendante du TextDecoder de l'environnement de test.
+ */
+const WIN_ANSI_HIGH: Record<number, string> = {
+  0x80: "€", 0x82: "‚", 0x83: "ƒ", 0x84: "„", 0x85: "…", 0x86: "†", 0x87: "‡", 0x88: "ˆ", 0x89: "‰",
+  0x8a: "Š", 0x8b: "‹", 0x8c: "Œ", 0x8e: "Ž", 0x91: "‘", 0x92: "’", 0x93: "“", 0x94: "”", 0x95: "•",
+  0x96: "–", 0x97: "—", 0x98: "˜", 0x99: "™", 0x9a: "š", 0x9b: "›", 0x9c: "œ", 0x9e: "ž", 0x9f: "Ÿ",
+};
+
+function decodeWinAnsi(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => WIN_ANSI_HIGH[byte] ?? String.fromCharCode(byte)).join("");
+}
+
+interface TextRun {
+  x: number;
+  y: number;
+  text: string;
+}
+
+function textRuns(content: string): TextRun[] {
+  const runs: TextRun[] = [];
+  const pattern = /1 0 0 1 ([\d.-]+) ([\d.-]+) Tm\s+<([0-9A-Fa-f]+)> Tj/g;
+  for (const match of content.matchAll(pattern)) {
+    const hex = match[3];
+    const raw = new Uint8Array(hex.length / 2);
+    for (let index = 0; index < raw.length; index += 1) raw[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+    runs.push({ x: Number(match[1]), y: Number(match[2]), text: decodeWinAnsi(raw) });
+  }
+  return runs;
+}
+
+interface FilledRect {
+  color: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function filledRects(content: string): FilledRect[] {
+  const rects: FilledRect[] = [];
+  const pattern =
+    /([\d.]+) ([\d.]+) ([\d.]+) rg\s+0 w\s+\[\] 0 d\s+1 0 0 1 ([\d.-]+) ([\d.-]+) cm\s+1 0 0 1 0 0 cm\s+1 0 0 1 0 0 cm\s+0 0 m\s+0 ([\d.]+) l\s+([\d.]+) [\d.]+ l\s+[\d.]+ 0 l\s+h\s+f/g;
+  for (const match of content.matchAll(pattern)) {
+    const hex = match
+      .slice(1, 4)
+      .map((value) => Math.round(Number(value) * 255).toString(16).padStart(2, "0"))
+      .join("");
+    rects.push({ color: `#${hex}`, x: Number(match[4]), y: Number(match[5]), width: Number(match[7]), height: Number(match[6]) });
+  }
+  return rects;
+}
+
+interface DrawnImage {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function drawnImages(content: string): DrawnImage[] {
+  const images: DrawnImage[] = [];
+  const pattern =
+    /1 0 0 1 ([\d.-]+) ([\d.-]+) cm\s+1 0 0 1 0 0 cm\s+([\d.]+) 0 0 ([\d.]+) 0 0 cm\s+1 0 0 1 0 0 cm\s+\/(\S+) Do/g;
+  for (const match of content.matchAll(pattern)) {
+    images.push({ name: match[5], x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]) });
+  }
+  return images;
 }
 
 function decodePdfLiteral(token: string): string {
@@ -331,17 +419,17 @@ describe("conversion PDF du document CR80", () => {
     expect(text.includes("Awa DIOP")).toBe(true);
     expect(text.includes("Institut Nuru")).toBe(true);
     expect(text.includes("6ème A")).toBe(true);
-    expect(text.includes("Matricule MAT-0")).toBe(true);
+    expect(text.includes("MATRICULE")).toBe(true);
+    expect(text.includes("MAT-0")).toBe(true);
     expect(text.includes("CARTE D’ÉLÈVE")).toBe(true);
+    expect(text.includes("Réf. carte")).toBe(true);
+    expect(text.includes(`…${fixture.secrets[0].publicId.slice(-6)}`)).toBe(true);
+    expect(text.includes("Somafrik")).toBe(true);
     expect(hidden(text, secret)).toBe(true);
 
-    const cardWidth = 85.6 * MM_TO_PT;
-    const cardHeight = 53.98 * MM_TO_PT;
     const mark = 1.5 * MM_TO_PT;
-    const qr = 22 * MM_TO_PT;
+    const qr = STUDENT_CARD_P1.qr.sizeMm * MM_TO_PT;
     const lengths = segmentLengths(content);
-    expect(countClose(lengths, cardWidth)).toBe(1);
-    expect(countClose(lengths, cardHeight)).toBe(2);
     expect(countClose(lengths, mark)).toBe(8);
     const transforms = matrices(content);
     expect(transforms.length).toBeGreaterThan(0);
@@ -368,8 +456,10 @@ describe("conversion PDF du document CR80", () => {
     const text = pdfText(await contentOf(pdf, 0));
     expect(text.includes("Titulaire 0")).toBe(true);
     expect(text.includes("Institut Nuru")).toBe(false);
-    expect(text.includes("Matricule")).toBe(false);
+    expect(text.includes("MATRICULE")).toBe(false);
     expect(text.includes("6ème A")).toBe(false);
+    // Sans photo : initiales, comme la carte individuelle.
+    expect(text.includes("T0")).toBe(true);
   }, 30000);
 
   it("répartit 1, 8, 10, 11 et 25 cartes sans nouvelle page inutile", async () => {
@@ -457,6 +547,7 @@ describe("conversion PDF du document CR80", () => {
 
   it("ne contacte aucun serveur et ne journalise pas les jetons", async () => {
     const source = readFileSync(resolve(process.cwd(), "src/lib/studentCardBatchPdf.ts"), "utf8");
+    const design = readFileSync(resolve(process.cwd(), "src/lib/studentCardDesign.ts"), "utf8");
     const dialog = readFileSync(resolve(process.cwd(), "src/components/students/StudentCardBatchPdfDialog.tsx"), "utf8");
     const fetchMock = vi.fn(() => Promise.reject(new Error("offline")));
     vi.stubGlobal("fetch", fetchMock);
@@ -466,10 +557,144 @@ describe("conversion PDF du document CR80", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
 
-    const product = `${source}\n${dialog}`;
-    expect(/studentCardBatchApi|api\/client|localStorage|sessionStorage|indexedDB|console\.log|fetch\(/.test(product)).toBe(false);
+    const product = `${source}\n${dialog}\n${design}`;
+    expect(/studentCardBatchApi|studentCardBatchPrintable|api\/client|localStorage|sessionStorage|indexedDB|console\.log|fetch\(/.test(product)).toBe(false);
     expect(product.includes("85.6")).toBe(true);
     expect(product.includes("53.98")).toBe(true);
     expect(source.includes(CARD_PDF_PRINT_FORMAT)).toBe(true);
+  }, 30000);
+});
+
+describe("CARTE-BATCH-DESIGN-01 — maquette P1 dans le PDF A4", () => {
+  const LOGO_COLOR: [number, number, number] = [200, 30, 40];
+  const PHOTO_TOP: [number, number, number] = [214, 190, 160];
+  const PHOTO_BOTTOM: [number, number, number] = [30, 60, 120];
+  const logo: CardVisual = { state: "embedded", src: testPngDataUrl(32, 32, LOGO_COLOR) };
+  const pngPhoto: CardVisual = { state: "embedded", src: testPngDataUrl(40, 52, PHOTO_TOP, PHOTO_BOTTOM) };
+  const jpegPhoto: CardVisual = { state: "embedded", src: TEST_PHOTO_JPEG_DATA_URL };
+
+  function legacyFrom(html: string): string {
+    return replaceScript(html, (parsed) => {
+      parsed.format = CARD_PDF_LEGACY_PRINT_FORMAT;
+      delete parsed.schoolLogo;
+      for (const card of parsed.cards as Record<string, unknown>[]) delete card.photo;
+    });
+  }
+
+  it("dessine le bandeau, le logo, la photo, le QR à droite et le pied aux cotes de la maquette", async () => {
+    const fixture = await buildHtml(3, false, {
+      logo,
+      photo: (index) => (index === 0 ? pngPhoto : index === 1 ? jpegPhoto : { state: "absent" }),
+    });
+    const result = await convertBatchPrintFileToPdf(fixture.html);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.visuals).toEqual({
+      logo: "embedded",
+      photos: { embedded: 2, absent: 1, unavailable: 0, not_in_source: 0 },
+    });
+    const pdf = await PDFDocument.load(result.bytes);
+    const content = await contentOf(pdf, 0);
+    const layout = chooseCardSheetLayout()!;
+    const card = cardRectMm(layout, 0);
+    const d = STUDENT_CARD_P1;
+    const left = card.x * MM_TO_PT;
+    const top = (card.y + card.height) * MM_TO_PT;
+
+    const rects = filledRects(content);
+    const band = rects.find((rect) => rect.color === d.colors.navy && closeTo(rect.x, left));
+    expect(band).toBeDefined();
+    expect(closeTo(band!.width, d.widthMm * MM_TO_PT)).toBe(true);
+    expect(closeTo(band!.height, d.band.heightMm * MM_TO_PT)).toBe(true);
+    expect(closeTo(band!.y + band!.height, top)).toBe(true);
+    const foot = rects.find((rect) => rect.color === d.colors.tint && closeTo(rect.x, left) && closeTo(rect.y, card.y * MM_TO_PT));
+    expect(closeTo(foot!.height, d.foot.heightMm * MM_TO_PT)).toBe(true);
+    const footLine = rects.find((rect) => rect.color === d.colors.brand && closeTo(rect.x, left));
+    expect(closeTo(footLine!.height, d.foot.borderMm * MM_TO_PT)).toBe(true);
+    expect(closeTo(footLine!.y + footLine!.height, (card.y + d.foot.heightMm) * MM_TO_PT)).toBe(true);
+
+    const images = drawnImages(content);
+    const qrSize = d.qr.sizeMm * MM_TO_PT;
+    const qr = images.find((image) => closeTo(image.width, qrSize) && closeTo(image.height, qrSize) && image.x < left + d.widthMm * MM_TO_PT);
+    expect(qr).toBeDefined();
+    expect(closeTo(qr!.x, left + (d.widthMm - d.body.rightMm - d.qr.sizeMm) * MM_TO_PT)).toBe(true);
+    expect(closeTo(qr!.y + qr!.height, top - d.body.topMm * MM_TO_PT)).toBe(true);
+    // Photo en « cover » : centrée dans le cadre 20 × 25,7 mm, le débord est découpé.
+    const photoCenterX = left + (d.body.leftMm + d.photo.widthMm / 2) * MM_TO_PT;
+    const photoCenterY = top - (d.body.topMm + d.photo.heightMm / 2) * MM_TO_PT;
+    const photo = images.find(
+      (image) => closeTo(image.x + image.width / 2, photoCenterX) && closeTo(image.y + image.height / 2, photoCenterY),
+    );
+    expect(photo).toBeDefined();
+    expect(photo!.width).toBeGreaterThanOrEqual(d.photo.widthMm * MM_TO_PT - 0.05);
+    expect(photo!.height).toBeGreaterThanOrEqual(d.photo.heightMm * MM_TO_PT - 0.05);
+    const logoImage = images.find((image) => closeTo(image.width, d.band.logoImageMm * MM_TO_PT) && image.x < left + 10 * MM_TO_PT);
+    expect(logoImage).toBeDefined();
+
+    // Les images du logo et de la photo PNG sont recopiées sans altération.
+    const sourcePhoto = await decodeCardPngRgba(testPng(40, 52, PHOTO_TOP, PHOTO_BOTTOM));
+    const sourceLogo = await decodeCardPngRgba(testPng(32, 32, LOGO_COLOR));
+    const rgb = rgbImages(pdf);
+    expect(rgb.some((image) => checksum(image.rgb) === checksum(sourceRgb(sourcePhoto!.rgba)))).toBe(true);
+    expect(rgb.some((image) => checksum(image.rgb) === checksum(sourceRgb(sourceLogo!.rgba)))).toBe(true);
+
+    // 3 QR + 2 photos + logo (une seule ressource partagée, dessinée 3 fois).
+    expect(content.match(/\/\S+\s+Do/g)).toHaveLength(3 + 2 + 3);
+    const text = pdfText(content);
+    expect(text.includes("TI")).toBe(false);
+    expect(textRuns(content).some((run) => run.text === "T2")).toBe(true);
+    for (let index = 0; index < 3; index += 1) {
+      const payload = rgb.filter((image) => image.width > 100).map((image) => qrFromRgb(image.rgb, image.width, image.height));
+      expect(payload.some((value) => matches(value, fixture.secrets[index].cardToken))).toBe(true);
+    }
+  }, 30000);
+
+  it("réimprime un document v1 sans logo ni photo, avec les initiales et sans réémission", async () => {
+    const fixture = await htmlFor(2);
+    const legacy = legacyFrom(fixture.html);
+    expect(legacy).toContain(CARD_BATCH_PRINT_LEGACY_FORMAT);
+    const result = await convertBatchPrintFileToPdf(legacy);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.visuals).toEqual({
+      logo: "not_in_source",
+      photos: { embedded: 0, absent: 0, unavailable: 0, not_in_source: 2 },
+    });
+    const pdf = await PDFDocument.load(result.bytes);
+    const content = await contentOf(pdf, 0);
+    expect(content.match(/\/\S+\s+Do/g)).toHaveLength(2);
+    const runs = textRuns(content).map((run) => run.text);
+    expect(runs).toContain("AD");
+    expect(runs).toContain("T1");
+    const images = rgbImages(pdf);
+    expect(images).toHaveLength(2);
+    expect(matches(qrFromRgb(images[0].rgb, images[0].width, images[0].height), fixture.secrets[0].cardToken)).toBe(true);
+  }, 30000);
+
+  it("ne confond pas la photo ou le logo avec le QR, et refuse une image altérée", async () => {
+    const fixture = await buildHtml(1, false, { logo, photo: () => pngPhoto });
+    expect((fixture.html.match(/<img\b/g) ?? []).length).toBe(3);
+    const ok = await convertBatchPrintFileToPdf(fixture.html);
+    expect(ok.ok).toBe(true);
+
+    const svgPhoto = replaceScript(fixture.html, (parsed) => {
+      const cards = parsed.cards as Record<string, unknown>[];
+      cards[0].photo = { state: "embedded", src: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" };
+    });
+    const fakePng = replaceScript(fixture.html, (parsed) => {
+      parsed.schoolLogo = { state: "embedded", src: "data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQY=" };
+    });
+    const unknownState = replaceScript(fixture.html, (parsed) => {
+      parsed.schoolLogo = { state: "remote", src: "https://example.invalid/logo.png" };
+    });
+    const missingPhoto = replaceScript(fixture.html, (parsed) => {
+      const cards = parsed.cards as Record<string, unknown>[];
+      delete cards[0].photo;
+    });
+    for (const altered of [svgPhoto, fakePng, unknownState, missingPhoto]) {
+      const result = await convertBatchPrintFileToPdf(altered);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.message).toBe(CARD_PDF_INCOMPLETE);
+    }
   }, 30000);
 });

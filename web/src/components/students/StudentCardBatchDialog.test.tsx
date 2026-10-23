@@ -4,6 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { ApiError } from "../../api/client";
 import type { DocumentSaveEnvironment } from "../../lib/studentCardBatchSession";
 import type { BatchPrintIdentity } from "../../lib/studentCardBatchPrintable";
+import type { SchoolLogoSource } from "../../lib/schoolLogo";
+import type { CardVisual } from "../../lib/studentCardDesign";
+import { TEST_PHOTO_JPEG_DATA_URL, testPngDataUrl } from "../../lib/studentCardTestImages";
 import { StudentCardBatchDialog } from "./StudentCardBatchDialog";
 
 const SECRET = "supersecretvalue";
@@ -52,7 +55,11 @@ const printIdentity: BatchPrintIdentity = {
   schoolName: "Institut Nuru",
 };
 
-function renderDialog(classCode = "CLS-1", identities: BatchPrintIdentity[] = [printIdentity]) {
+function renderDialog(
+  classCode = "CLS-1",
+  identities: BatchPrintIdentity[] = [printIdentity],
+  extra: { school?: SchoolLogoSource; loadSchoolLogo?: (school: SchoolLogoSource) => Promise<CardVisual> } = {},
+) {
   const saveDocument = vi.fn<(textBody: string, filename: string, env: DocumentSaveEnvironment) => Promise<{ verified: boolean; bytesWritten: number; cancelled: boolean }>>(
     async () => ({ verified: true, bytesWritten: 80, cancelled: false }),
   );
@@ -66,6 +73,8 @@ function renderDialog(classCode = "CLS-1", identities: BatchPrintIdentity[] = [p
       onClose={vi.fn()}
       loadPrintIdentities={loadPrintIdentities}
       saveDocument={saveDocument}
+      school={extra.school}
+      loadSchoolLogo={extra.loadSchoolLogo}
     />,
   );
   return { ...view, saveDocument, loadPrintIdentities };
@@ -179,6 +188,45 @@ describe("StudentCardBatchDialog", () => {
     expect(document.body.textContent).not.toContain(SECRET);
     expect(setItem).not.toHaveBeenCalled();
     setItem.mockRestore();
+  });
+
+  it("intègre le logo et la photo au document CR80, et signale les éléments manquants", async () => {
+    batchApi.prepare.mockResolvedValue({
+      ok: true,
+      nonce: "nonce-value",
+      secrets: [
+        { studentId: "student-new", publicId: "pubidvalue", cardToken: TOKEN, secret: SECRET },
+        { studentId: "student-two", publicId: "pubidsecond", cardToken: `pubidsecond.${SECRET}2`, secret: `${SECRET}2` },
+      ],
+      view: publicView,
+    });
+    batchApi.receiptTechnical.mockResolvedValue({ ...publicView, status: "received" });
+    const school = { code: "CD-1", hasLogo: true, logoSource: "school_upload", logoUploadedAt: "2026-10-01T10:00:00.000Z" };
+    const logo: CardVisual = { state: "embedded", src: testPngDataUrl(32, 32, [200, 30, 40]) };
+    const loadSchoolLogo = vi.fn(async () => logo);
+    const user = userEvent.setup();
+    const { saveDocument } = renderDialog(
+      "CLS-1",
+      [
+        { ...printIdentity, photo: { state: "embedded", src: TEST_PHOTO_JPEG_DATA_URL } },
+        { ...printIdentity, studentId: "student-two", displayName: "Jean ILUNGA", photo: { state: "unavailable" } },
+      ],
+      { school, loadSchoolLogo },
+    );
+    await user.click(await screen.findByRole("button", { name: "Préparer les cartes" }));
+    await user.click(await screen.findByRole("button", { name: "Enregistrer le document CR80" }));
+    await waitFor(() => expect(saveDocument).toHaveBeenCalledTimes(1));
+    expect(loadSchoolLogo).toHaveBeenCalledWith(school);
+    const savedFile = String(saveDocument.mock.calls[0][0]);
+    expect(savedFile).toContain('class="scf-band"');
+    expect(savedFile).toContain('data-testid="student-card-logo"');
+    expect(savedFile).toContain('data-testid="student-card-photo"');
+    expect(savedFile).toContain(">JI</span>");
+    expect(savedFile).toContain("somafrik-card-batch-print-v2");
+    expect(await screen.findByTestId("card-batch-visual-notice")).toHaveTextContent(
+      "1 photo non intégrée : initiales imprimées",
+    );
+    expect(document.body.textContent).not.toContain(SECRET);
   });
 
   it("réessaie l'activation sans nouvelle préparation si la réponse est perdue", async () => {

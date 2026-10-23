@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StudentCardFace, type StudentCardFaceProps } from "./StudentCardFace";
+import { studentCardFaceCss } from "../../lib/studentCardDesign";
 import { STUDENT_CARD_QR_OPTIONS, STUDENT_CARD_QR_QUIET_ZONE_MODULES } from "../../lib/studentCardQr";
 
 const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "index.css"), "utf8");
@@ -31,9 +32,9 @@ function props(overrides: Partial<StudentCardFaceProps> = {}): StudentCardFacePr
   };
 }
 
-/** Bloc CSS de la carte (hors règles d'impression globales). */
+/** CSS du recto : produit par la référence unique CARTE-BATCH-DESIGN-01 (hors règles d'impression globales). */
 function cardCss(): string {
-  return css.slice(css.indexOf("CARTE-UI-01 — recto de la carte"), css.indexOf("@page student-card-cr80"));
+  return studentCardFaceCss();
 }
 
 describe("StudentCardFace — CARTE-UI-01", () => {

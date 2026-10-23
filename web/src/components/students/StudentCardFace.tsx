@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useInsertionEffect, useState } from "react";
+import { STUDENT_CARD_P1, studentCardFaceCss } from "../../lib/studentCardDesign";
 import {
   STUDENT_CARD_CR80,
   studentCardInitials,
@@ -12,7 +13,23 @@ import {
  * Mise en page pure : aucune prop ne transporte le jeton de carte. Le QR arrive déjà rendu sous
  * forme d’image (`qr.src`), produit en amont par StudentCardPrintView.
  * Les données facultatives absentes (null) sont masquées, jamais remplacées par un libellé.
+ *
+ * CARTE-BATCH-DESIGN-01 — ce composant est la seule mise en page de la carte : le document HTML
+ * CR80 par classe le rend tel quel (renderToStaticMarkup) avec le même CSS (studentCardFaceCss),
+ * et le PDF A4 dessine les cotes de STUDENT_CARD_P1.
  */
+const FACE_STYLE_ID = "somafrik-student-card-face-css";
+
+function useStudentCardFaceCss() {
+  useInsertionEffect(() => {
+    if (typeof document === "undefined" || document.getElementById(FACE_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = FACE_STYLE_ID;
+    style.textContent = studentCardFaceCss();
+    document.head.appendChild(style);
+  }, []);
+}
+
 export type StudentCardFaceQr =
   | { kind: "ready"; src: string }
   | { kind: "loading" }
@@ -37,6 +54,7 @@ export interface StudentCardFaceProps {
 }
 
 export function StudentCardFace({ holderTitle, identity, cardRef, logoSrc, qr }: StudentCardFaceProps) {
+  useStudentCardFaceCss();
   const [photoFailed, setPhotoFailed] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
   useEffect(() => setPhotoFailed(false), [identity.photoUrl]);
@@ -45,7 +63,7 @@ export function StudentCardFace({ holderTitle, identity, cardRef, logoSrc, qr }:
   const showPhoto = Boolean(identity.photoUrl) && !photoFailed;
   const showLogo = Boolean(logoSrc) && !logoFailed;
   const nameStep = studentCardNameStep(identity.displayName);
-  const schoolStep = identity.schoolName ? studentCardValueStep(identity.schoolName, 38) : null;
+  const schoolStep = identity.schoolName ? studentCardValueStep(identity.schoolName, STUDENT_CARD_P1.thresholds.schoolName) : null;
 
   return (
     <article
@@ -96,15 +114,15 @@ export function StudentCardFace({ holderTitle, identity, cardRef, logoSrc, qr }:
             {identity.displayName}
           </p>
           {identity.classLabel ? (
-            <p className={`scf-value scf-value-${studentCardValueStep(identity.classLabel, 40)}`} data-testid="student-card-class">
+            <p className={`scf-value scf-value-${studentCardValueStep(identity.classLabel, STUDENT_CARD_P1.thresholds.classLabel)}`} data-testid="student-card-class">
               {identity.classLabel}
             </p>
           ) : null}
           {identity.studentCode ? (
             <div>
-              <p className="scf-caption">Matricule</p>
+              <p className="scf-caption">{STUDENT_CARD_P1.labels.matricule}</p>
               <p
-                className={`scf-value scf-number scf-value-${studentCardValueStep(identity.studentCode, 16)}`}
+                className={`scf-value scf-number scf-value-${studentCardValueStep(identity.studentCode, STUDENT_CARD_P1.thresholds.studentCode)}`}
                 data-testid="student-card-code"
               >
                 {identity.studentCode}
@@ -115,7 +133,7 @@ export function StudentCardFace({ holderTitle, identity, cardRef, logoSrc, qr }:
 
         <div className="scf-qr">
           {qr.kind === "ready" ? (
-            <img src={qr.src} alt="QR de la carte" data-testid="student-card-qr" />
+            <img src={qr.src} alt={STUDENT_CARD_P1.labels.qrAlt} data-testid="student-card-qr" />
           ) : (
             <p className="scf-qr-status">{qr.kind === "error" ? "QR indisponible" : "Génération du QR…"}</p>
           )}
@@ -124,9 +142,9 @@ export function StudentCardFace({ holderTitle, identity, cardRef, logoSrc, qr }:
 
       <footer className="scf-foot">
         <span>
-          Réf. carte <span className="scf-number" data-testid="student-card-ref">…{cardRef}</span>
+          {STUDENT_CARD_P1.labels.cardRef} <span className="scf-number" data-testid="student-card-ref">…{cardRef}</span>
         </span>
-        <span className="scf-brand">Somafrik</span>
+        <span className="scf-brand">{STUDENT_CARD_P1.labels.brand}</span>
       </footer>
     </article>
   );
