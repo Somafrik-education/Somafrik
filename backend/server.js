@@ -7406,6 +7406,8 @@ function requireAuth(req, res, next) {
     }
 
     const { applyEffectiveSchoolScope } = require("./lib/principalSchoolScope");
+    const { hydrateCanonicalSchoolAttachment } = require("./lib/canonicalSchoolAttachment");
+    req.principal = await hydrateCanonicalSchoolAttachment(req.principal, repository);
     try {
       await applyEffectiveSchoolScope(req, lookupSchoolForEffectiveScope);
     } catch (scopeError) {

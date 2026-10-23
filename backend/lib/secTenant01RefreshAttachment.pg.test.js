@@ -1,8 +1,9 @@
 "use strict";
 
 /**
- * SEC-TENANT-01 — isUserAttachedToSchool (PostgreSQL) : base du contrôle de
- * rattachement au refresh JWT. Établissement principal ou rôle actif uniquement.
+ * SEC-TENANT-01 — rattachement canonique PostgreSQL (GP-003 : users.school_id) :
+ * findUserCanonicalSchool (requireAuth) et isUserAttachedToSessionSchool (refresh).
+ * Un rôle actif secondaire dans user_roles ne constitue pas un rattachement.
  */
 
 const assert = require("node:assert/strict");
@@ -71,27 +72,34 @@ async function main() {
       )
     ).rows[0].id;
 
-    assert.equal(await repo.isUserAttachedToSchool(user, schoolA), true, "établissement principal");
-    assert.equal(await repo.isUserAttachedToSchool(user, schoolB), false, "autre établissement");
-    assert.equal(await repo.isUserAttachedToSchool(user, null), false, "session sans établissement");
-    assert.equal(await repo.isUserAttachedToSchool("not-a-uuid", schoolA), false, "identifiant invalide");
+    const session = (schoolId) => ({ user_id: user, school_id: schoolId });
+    assert.equal(await repo.isUserAttachedToSessionSchool(session(schoolA)), true, "établissement principal");
+    assert.equal(await repo.isUserAttachedToSessionSchool(session(schoolB)), false, "autre établissement");
+    assert.equal(await repo.isUserAttachedToSessionSchool(session(null)), false, "session sans établissement");
+    assert.equal(
+      await repo.isUserAttachedToSessionSchool({ user_id: "not-a-uuid", school_id: schoolA }),
+      false,
+      "identifiant invalide",
+    );
+    const canonical = await repo.findUserCanonicalSchool(user);
+    assert.equal(canonical?.schoolId, schoolA, "établissement canonique");
+    assert.equal(canonical?.schoolCode, "CD-2026-0901", "code interne canonique");
 
     await pool.query(
       `INSERT INTO user_roles (user_id, school_id, role_key, status) VALUES ($1, $2, 'SECRETARY', 'active')`,
       [user, schoolB],
     );
-    assert.equal(await repo.isUserAttachedToSchool(user, schoolB), true, "rôle actif dans B");
-
-    await pool.query(
-      `UPDATE user_roles SET status = 'revoked', revoked_at = NOW() WHERE user_id = $1 AND school_id = $2`,
-      [user, schoolB],
+    assert.equal(
+      await repo.isUserAttachedToSessionSchool(session(schoolB)),
+      false,
+      "rôle secondaire actif dans B : pas un rattachement (GP-003)",
     );
-    assert.equal(await repo.isUserAttachedToSchool(user, schoolB), false, "rôle révoqué dans B");
 
     await pool.query(`UPDATE users SET school_id = NULL WHERE id = $1`, [user]);
-    assert.equal(await repo.isUserAttachedToSchool(user, schoolA), false, "retrait de l'établissement principal");
+    assert.equal(await repo.isUserAttachedToSessionSchool(session(schoolA)), false, "retrait de l'établissement principal");
+    assert.equal(await repo.findUserCanonicalSchool(user), null, "plus d'établissement canonique");
 
-    console.log("secTenant01RefreshAttachment.pg.test.js: 8/8 PASS");
+    console.log("secTenant01RefreshAttachment.pg.test.js: 9/9 PASS");
   } finally {
     await pool.end();
     if (typeof repo.close === "function") await repo.close();

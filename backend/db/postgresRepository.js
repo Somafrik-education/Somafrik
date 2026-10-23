@@ -2355,24 +2355,36 @@ class PostgresRepository {
   }
 
   /**
-   * SEC-TENANT-01 — rattachement établissement encore valide pour un refresh :
-   * établissement principal de l'utilisateur ou rôle actif dans cet établissement.
+   * SEC-TENANT-01 — rattachement canonique GP-003 : users.id → users.school_id → schools.id.
+   * Aucun repli vers user_roles. null si l'utilisateur n'a pas d'établissement actif.
    */
-  async isUserAttachedToSchool(userId, schoolId) {
+  async findUserCanonicalSchool(userId) {
     await this.init();
-    if (!isUuid(userId) || !isUuid(schoolId)) return false;
+    if (!isUuid(userId)) return null;
     const row = await this.one(
-      `SELECT (
-         EXISTS (SELECT 1 FROM users WHERE id = $1::uuid AND school_id = $2::uuid)
-         OR EXISTS (
-           SELECT 1 FROM user_roles
-           WHERE user_id = $1::uuid
-             AND school_id = $2::uuid
-             AND status = 'active'
-             AND revoked_at IS NULL
-         )
+      `SELECT u.school_id::text AS school_id, s.school_code, s.login_code
+       FROM users u
+       JOIN schools s ON s.id = u.school_id
+       WHERE u.id = $1::uuid
+         AND s.deleted_at IS NULL`,
+      [userId],
+    );
+    if (!row?.school_id || !row.school_code) return null;
+    return { schoolId: row.school_id, schoolCode: row.school_code, loginCode: row.login_code ?? "" };
+  }
+
+  /**
+   * SEC-TENANT-01 — refresh : l'établissement de la session doit rester
+   * l'établissement canonique de l'utilisateur (users.school_id).
+   */
+  async isUserAttachedToSessionSchool(session = {}) {
+    await this.init();
+    if (!isUuid(session.user_id) || !isUuid(session.school_id)) return false;
+    const row = await this.one(
+      `SELECT EXISTS (
+         SELECT 1 FROM users WHERE id = $1::uuid AND school_id = $2::uuid
        ) AS attached`,
-      [userId, schoolId],
+      [session.user_id, session.school_id],
     );
     return row?.attached === true;
   }
@@ -2382,7 +2394,8 @@ class PostgresRepository {
     const code = String(sessionId ?? "").trim();
     if (!code) return null;
     return this.one(
-      `SELECT sess.*, u.user_code, u.role, s.school_code, c.iso_code AS country_code
+      `SELECT sess.*, u.user_code, u.role, s.school_code, s.login_code AS school_login_code,
+              c.iso_code AS country_code
        FROM sessions sess
        LEFT JOIN users u ON u.id = sess.user_id
        LEFT JOIN schools s ON s.id = sess.school_id

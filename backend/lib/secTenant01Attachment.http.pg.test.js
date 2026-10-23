@@ -307,6 +307,40 @@ async function main() {
     assert.equal(afterLogout.status, 401, `session révoquée après logout: ${afterLogout.text}`);
     check();
 
+    // Claim JWT schoolCode vide, compte rattaché en base : autorité users.school_id (GP-003).
+    const staleClaimToken = tokens.createAccessToken({
+      sub: users.attached,
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "",
+      countryCode: "CD",
+      permissions: ["ALL_PRIVILEGES"],
+      mustChangePassword: false,
+    });
+    const staleStudents = await request("/students", { token: staleClaimToken });
+    assert.equal(staleStudents.status, 200, `claim vide rattaché: ${staleStudents.text}`);
+    const staleNames = JSON.stringify(staleStudents.data);
+    assert.ok(staleNames.includes("Alpha") && !staleNames.includes("Beta"), "claim vide : élèves de A uniquement");
+    check();
+    const staleCross = await request("/students", {
+      token: staleClaimToken,
+      headers: { "X-Somafrik-School-Code": schoolB.login_code },
+    });
+    assert.equal(staleCross.status, 403, `claim vide : sélection B refusée: ${staleCross.text}`);
+    check();
+    const orphanClaimToken = tokens.createAccessToken({
+      sub: users.unattached,
+      role: "Proviseur / Directeur",
+      roleKeys: ["PRINCIPAL"],
+      schoolCode: "",
+      countryCode: "CD",
+      permissions: ["ALL_PRIVILEGES"],
+      mustChangePassword: false,
+    });
+    const orphanStudents = await request("/students", { token: orphanClaimToken });
+    assert.equal(orphanStudents.status, 403, `claim vide non rattaché: ${orphanStudents.text}`);
+    check();
+
     // Refresh : rattaché → OK ; après retrait de l'établissement → 401 et session révoquée.
     const fresh = await webLogin("ST01-ADMIN-A", schoolA.login_code);
     assert.equal(fresh.status, 200, `refresh login: ${fresh.text}`);

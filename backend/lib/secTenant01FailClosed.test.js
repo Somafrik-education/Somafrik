@@ -14,6 +14,7 @@ const {
 } = require("./platformScopePrincipal");
 const { resolveEffectiveSchoolScope } = require("./principalSchoolScope");
 const { resolveRefreshSchoolCode } = require("./refreshSchoolAttachment");
+const { hydrateCanonicalSchoolAttachment } = require("./canonicalSchoolAttachment");
 const { AuthService, BusinessError } = require("../services/authService");
 const { BackOfficeAccessService } = require("../services/backOfficeAccessService");
 const { attachMemoryLoginLockoutStore } = require("./loginLockout");
@@ -196,7 +197,7 @@ function refreshRepository({ attached }) {
   const revoked = [];
   return {
     revoked,
-    async isUserAttachedToSchool() {
+    async isUserAttachedToSessionSchool() {
       return attached;
     },
     async revokeSession(sessionId, reason) {
@@ -285,4 +286,93 @@ test("attribution: aucun rôle scolaire n'est accordé à un compte sans établi
   }
   const roles = (store._tables.userRoles || []).filter((row) => row.user_id === orphan.id);
   assert.deepEqual(roles, []);
+});
+
+test("refresh: dépôt sans vérification de rattachement → refus (fail-closed)", async () => {
+  const revoked = [];
+  const repository = {
+    async revokeSession(sessionId, reason) {
+      revoked.push({ sessionId, reason });
+    },
+  };
+  await assert.rejects(
+    () =>
+      resolveRefreshSchoolCode({
+        repository,
+        session: { role: "Admin School", school_code: "CD-2026-0001", school_id: "s1", user_id: "u1" },
+        payload: { sessionId: "sess-4" },
+        roleKeys: ["SCHOOL_ADMIN"],
+      }),
+    (error) => error.statusCode === 401 && error.code === "SESSION_SCHOOL_ATTACHMENT_MISSING",
+  );
+  assert.deepEqual(revoked, [{ sessionId: "sess-4", reason: "school_attachment_missing" }]);
+});
+
+test("refresh: claim schoolCode du refresh token différent de la session → refus", async () => {
+  const repository = refreshRepository({ attached: true });
+  await assert.rejects(
+    () =>
+      resolveRefreshSchoolCode({
+        repository,
+        session: {
+          role: "Admin School",
+          school_code: "CD-2026-0001",
+          school_login_code: "CD-IN-26-001",
+          school_id: "s1",
+          user_id: "u1",
+        },
+        payload: { sessionId: "sess-5", schoolCode: "CD-2026-0002" },
+        roleKeys: ["SCHOOL_ADMIN"],
+      }),
+    (error) => error.statusCode === 401,
+  );
+  for (const schoolCode of ["CD-2026-0001", "CD-IN-26-001", ""]) {
+    assert.equal(
+      await resolveRefreshSchoolCode({
+        repository,
+        session: {
+          role: "Admin School",
+          school_code: "CD-2026-0001",
+          school_login_code: "CD-IN-26-001",
+          school_id: "s1",
+          user_id: "u1",
+        },
+        payload: { sessionId: "sess-6", schoolCode },
+        roleKeys: ["SCHOOL_ADMIN"],
+      }),
+      "CD-2026-0001",
+    );
+  }
+});
+
+test("hydratation: claim vide d'un rôle scolaire relu depuis users.school_id (GP-003)", async () => {
+  const repository = {
+    async findUserCanonicalSchool(userId) {
+      return userId === "attached" ? { schoolId: "s1", schoolCode: "CD-2026-0001" } : null;
+    },
+  };
+  const attached = await hydrateCanonicalSchoolAttachment(
+    { sub: "attached", role: "Comptable", roleKeys: ["ACCOUNTANT"], schoolCode: "" },
+    repository,
+  );
+  assert.equal(attached.schoolCode, "CD-2026-0001");
+  assert.equal(attached.schoolAttachmentSource, "users.school_id");
+  assert.equal(resolveEffectiveSchoolScope({ principal: attached }).schoolCode, "CD-2026-0001");
+
+  const orphan = await hydrateCanonicalSchoolAttachment(
+    { sub: "orphan", role: "Comptable", roleKeys: ["ACCOUNTANT"], schoolCode: "*" },
+    repository,
+  );
+  assertAttachmentRequired(() => resolveEffectiveSchoolScope({ principal: orphan }));
+
+  const noReader = await hydrateCanonicalSchoolAttachment(
+    { sub: "attached", role: "Comptable", roleKeys: ["ACCOUNTANT"], schoolCode: "" },
+    {},
+  );
+  assertAttachmentRequired(() => resolveEffectiveSchoolScope({ principal: noReader }));
+
+  const platform = { sub: "attached", role: "Super Administrateur Somafrik", schoolCode: "*" };
+  assert.equal(await hydrateCanonicalSchoolAttachment(platform, repository), platform);
+  const concrete = { sub: "attached", role: "Comptable", roleKeys: ["ACCOUNTANT"], schoolCode: "CD-2026-0009" };
+  assert.equal(await hydrateCanonicalSchoolAttachment(concrete, repository), concrete);
 });
