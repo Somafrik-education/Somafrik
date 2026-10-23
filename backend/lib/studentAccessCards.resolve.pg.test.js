@@ -108,7 +108,9 @@ async function main() {
         country_id UUID NOT NULL REFERENCES countries(id),
         school_code VARCHAR(32) NOT NULL UNIQUE,
         login_code VARCHAR(32),
-        name TEXT NOT NULL
+        name TEXT NOT NULL,
+        -- CARTE-CYCLE-01 : établissement de cycle déterminé par le type exact (titulaire élève).
+        school_type TEXT DEFAULT 'Lycée'
       );
       CREATE TABLE users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -155,7 +157,9 @@ async function main() {
       );
       CREATE TABLE school_settings (
         school_id UUID PRIMARY KEY REFERENCES schools(id),
-        student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE
+        student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        student_card_holder_kind TEXT,
+        student_card_holder_levels JSONB NOT NULL DEFAULT '{}'::jsonb
       );
       CREATE TABLE attendance (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

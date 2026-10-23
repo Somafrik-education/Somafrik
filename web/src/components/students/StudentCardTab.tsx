@@ -8,13 +8,16 @@ import {
   studentCardsApi,
   type IssuedStudentAccessCard,
   type StudentAccessCard,
+  type StudentCardHolder,
 } from "../../lib/studentCardsApi";
 import {
+  STUDENT_CARD_HOLDER_UNDETERMINED_NOTICE,
   STUDENT_CARD_MASTER_OFF_NOTICE,
   STUDENT_CARD_NFC_ONLY_NOTICE,
   STUDENT_CARD_REPRINT_NOTICE,
   STUDENT_CARD_SETTINGS_UNAVAILABLE_NOTICE,
   buildStudentCardPrintIdentity,
+  isStudentCardHolderDetermined,
   resolveStudentCardSettingsGate,
   studentCardActions,
   studentCardErrorMessage,
@@ -79,6 +82,7 @@ export function StudentCardTab({
   ).trim();
   const [gate, setGate] = useState<StudentCardSettingsGate>({ state: "unavailable" });
   const [cards, setCards] = useState<StudentAccessCard[]>([]);
+  const [holder, setHolder] = useState<StudentCardHolder | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [issueOpen, setIssueOpen] = useState(false);
@@ -93,12 +97,14 @@ export function StudentCardTab({
     const listed = await studentCardsApi.list(workspace.studentId);
     if (currentScopeRef.current !== requestScope) return;
     setCards(Array.isArray(listed.cards) ? listed.cards : []);
+    setHolder(listed.holder ?? null);
   }, [workspace.studentId]);
 
   useEffect(() => {
     currentScopeRef.current = cardScopeKey;
     setPreview(null);
     setCards([]);
+    setHolder(null);
     setIssueOpen(false);
     setPendingAction(null);
     setPendingIssue(false);
@@ -116,6 +122,7 @@ export function StudentCardTab({
         if (!cancelled && currentScopeRef.current === requestScope) {
           setGate({ state: "unavailable" });
           setCards([]);
+          setHolder(null);
           setLoading(false);
         }
         return;
@@ -127,6 +134,7 @@ export function StudentCardTab({
         setGate(nextGate);
         if (nextGate.state !== "ready") {
           setCards([]);
+          setHolder(null);
           return;
         }
         await reloadCards(requestScope);
@@ -134,6 +142,7 @@ export function StudentCardTab({
         if (!cancelled && currentScopeRef.current === requestScope) {
           setGate({ state: "unavailable" });
           setCards([]);
+          setHolder(null);
         }
       } finally {
         if (!cancelled && currentScopeRef.current === requestScope) setLoading(false);
@@ -147,13 +156,15 @@ export function StudentCardTab({
 
   const readyMedium = gate.state === "ready" ? gate.medium : null;
   const hasActiveCard = cards.some((card) => card.status === "active");
+  // CARTE-CYCLE-01 : émettre ou remplacer génère un jeton ; interdit tant que le titulaire est indéterminé.
+  const holderReady = isStudentCardHolderDetermined(holder);
 
   function scopeIsCurrent(requestScope: string) {
     return currentScopeRef.current === requestScope;
   }
 
   async function issueCard() {
-    if (!readyMedium || pendingIssue) return;
+    if (!readyMedium || pendingIssue || !holderReady) return;
     const requestScope = cardScopeKey;
     setPendingIssue(true);
     setNotice(null);
@@ -165,7 +176,10 @@ export function StudentCardTab({
       await reloadCards(requestScope);
     } catch (error) {
       if (!scopeIsCurrent(requestScope)) return;
-      if (error instanceof ApiError && error.code === "STUDENT_CARD_ACTIVE_ALREADY_EXISTS") {
+      if (
+        error instanceof ApiError &&
+        (error.code === "STUDENT_CARD_ACTIVE_ALREADY_EXISTS" || error.code === "STUDENT_CARD_HOLDER_UNDETERMINED")
+      ) {
         await reloadCards(requestScope).catch(() => undefined);
         if (!scopeIsCurrent(requestScope)) return;
         setIssueOpen(false);
@@ -179,6 +193,7 @@ export function StudentCardTab({
 
   async function confirmAction() {
     if (!pendingAction || actionBusy) return;
+    if (pendingAction.action === "replace" && !holderReady) return;
     const requestScope = cardScopeKey;
     const action = pendingAction;
     setActionBusy(true);
@@ -200,7 +215,7 @@ export function StudentCardTab({
     } catch (error) {
       if (!scopeIsCurrent(requestScope)) return;
       setNotice(studentCardErrorMessage(error));
-      if (error instanceof ApiError && error.code === "STUDENT_CARD_INVALID_STATE") {
+      if (error instanceof ApiError && (error.code === "STUDENT_CARD_INVALID_STATE" || error.code === "STUDENT_CARD_HOLDER_UNDETERMINED")) {
         await reloadCards(requestScope).catch(() => undefined);
       }
     } finally {
@@ -260,8 +275,13 @@ export function StudentCardTab({
             <p className="text-sm text-ink">Aucune émission n’est possible sans activer le QR.</p>
           ) : null}
           {!hasActiveCard ? <p className="text-sm font-medium text-ink">Aucune carte élève active.</p> : null}
+          {canManage && !holderReady && (readyMedium || hasActiveCard || cards.length > 0) ? (
+            <InlineAlert tone="info" title="Titulaire de carte à configurer">
+              {STUDENT_CARD_HOLDER_UNDETERMINED_NOTICE}
+            </InlineAlert>
+          ) : null}
           {canManage && readyMedium && !hasActiveCard ? (
-            <Button type="button" onClick={() => setIssueOpen(true)}>
+            <Button type="button" disabled={!holderReady} onClick={() => setIssueOpen(true)}>
               Émettre une carte
             </Button>
           ) : null}
@@ -291,7 +311,12 @@ export function StudentCardTab({
                           </Button>
                         ) : null}
                         {actions.includes("replace") ? (
-                          <Button type="button" variant="secondary" onClick={() => setPendingAction({ card, action: "replace" })}>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={!holderReady}
+                            onClick={() => setPendingAction({ card, action: "replace" })}
+                          >
                             Remplacer
                           </Button>
                         ) : null}
@@ -304,7 +329,7 @@ export function StudentCardTab({
           </ul>
           {readyMedium && !hasActiveCard ? (
             <StudentCardIssueDialog
-              open={issueOpen}
+              open={issueOpen && holderReady}
               medium={readyMedium}
               pending={pendingIssue}
               onCancel={() => setIssueOpen(false)}

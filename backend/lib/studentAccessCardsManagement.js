@@ -22,6 +22,7 @@ const STUDENT_CARD_ERROR = Object.freeze({
   TENANT_DENIED: "STUDENT_CARD_TENANT_DENIED",
   TOKEN_INVALID: "STUDENT_CARD_TOKEN_INVALID",
   ENROLLMENT_UNRESOLVED: "STUDENT_CARD_ENROLLMENT_UNRESOLVED",
+  HOLDER_UNDETERMINED: "STUDENT_CARD_HOLDER_UNDETERMINED",
 });
 
 const STUDENT_CARD_MEDIA = Object.freeze(["nfc", "qr", "nfc_qr"]);
@@ -184,6 +185,41 @@ async function assertStudentCardMasterEnabled(repo, schoolId) {
   }
 }
 
+/** CARTE-CYCLE-01 — titulaire résolu pour cet élève (lecture seule). */
+async function resolveHolderForStudent(store, schoolId, studentId) {
+  const { resolveStudentCardHolderFromContext } = require("./studentCardHolder");
+  const context = typeof store.findCardHolderContext === "function"
+    ? await store.findCardHolderContext(schoolId, studentId)
+    : null;
+  return resolveStudentCardHolderFromContext(context);
+}
+
+/**
+ * Émission imprimable (QR) interdite tant que le titulaire n'est pas déterminé.
+ * Appelée AVANT toute génération de jeton : aucune carte créée, consommée ou modifiée.
+ */
+async function assertStudentCardHolderDetermined(store, schoolId, studentId) {
+  const holder = await resolveHolderForStudent(store, schoolId, studentId);
+  if (!holder.kind) {
+    throw studentCardError(
+      409,
+      "Titulaire de carte non configuré (élève ou étudiant). Configurez-le dans les paramètres de la carte avant d'émettre une carte.",
+      STUDENT_CARD_ERROR.HOLDER_UNDETERMINED,
+    );
+  }
+  return holder;
+}
+
+async function readStudentCardHolder(repo, studentRef, schoolScope) {
+  const schoolId = asId(schoolScope.schoolId);
+  if (!schoolId) {
+    throw studentCardError(403, "Accès refusé: établissement hors périmètre.", STUDENT_CARD_ERROR.TENANT_DENIED);
+  }
+  const store = cardsStore(repo);
+  const student = await requireStudentInSchool(store, schoolId, studentRef);
+  return resolveHolderForStudent(store, schoolId, student.id);
+}
+
 async function writeCardAudit(repo, principal, auditMeta, entry) {
   if (typeof repo.recordAudit !== "function") return;
   const newValue = sanitizeAuditValue(entry.newValue);
@@ -272,6 +308,7 @@ async function issueStudentCard(repo, payload, principal, auditMeta, schoolScope
   }
   const store = cardsStore(repo);
   const student = await requireStudentInSchool(store, schoolId, payload?.studentId);
+  await assertStudentCardHolderDetermined(store, schoolId, student.id);
   const existingActive = await store.findActive(schoolId, student.id);
   if (existingActive) {
     throw studentCardError(
@@ -425,6 +462,7 @@ async function replaceStudentCard(repo, cardId, principal, auditMeta, schoolScop
   if (card.nfc_uid) {
     throw studentCardError(409, "Le remplacement NFC nécessite une nouvelle carte et une réservation explicite.", "STUDENT_CARD_NFC_REPLACEMENT_REQUIRED");
   }
+  await assertStudentCardHolderDetermined(store, schoolId, card.student_id);
   let generated = generateCardSecrets();
   assertSecretEntropy(generated);
   let replaced;
@@ -551,4 +589,6 @@ module.exports = {
   replaceStudentCard,
   scanStudentCard,
   assertStudentCardMasterEnabled,
+  assertStudentCardHolderDetermined,
+  readStudentCardHolder,
 };

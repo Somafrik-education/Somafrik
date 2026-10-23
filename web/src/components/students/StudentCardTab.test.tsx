@@ -31,7 +31,8 @@ vi.mock("../../lib/schoolSettingsApi", () => ({
 
 vi.mock("../../lib/studentCardsApi", () => ({
   studentCardsApi: {
-    list: (...args: unknown[]) => api.list(...args),
+    // CARTE-CYCLE-01 : titulaire déterminé par défaut ; un test peut fournir son propre `holder`.
+    list: async (...args: unknown[]) => ({ holder: { kind: "eleve", source: "school_type" }, ...(await api.list(...args)) }),
     issue: (...args: unknown[]) => api.issue(...args),
     markLost: (...args: unknown[]) => api.markLost(...args),
     revoke: (...args: unknown[]) => api.revoke(...args),
@@ -363,5 +364,52 @@ describe("StudentCardTab", () => {
     expect(screen.getByText("ID carte : CARD-B")).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("TOKEN-A2");
     expect(document.body.innerHTML).not.toContain("CARD-A2.TOKEN-A2");
+  });
+
+  describe("CARTE-CYCLE-01 — titulaire non déterminé", () => {
+    it("désactive l'émission, explique la configuration et n'appelle jamais l'émission", async () => {
+      const user = userEvent.setup();
+      api.list.mockResolvedValue({ cards: [], holder: { kind: null, source: null } });
+      render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-1" />);
+      const issue = await screen.findByRole("button", { name: "Émettre une carte" });
+      expect(issue).toBeDisabled();
+      expect(screen.getByText(/Titulaire de carte non configuré/)).toBeInTheDocument();
+      await user.click(issue);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(api.issue).not.toHaveBeenCalled();
+    });
+
+    it("désactive le remplacement mais laisse déclarer perdue ou révoquer une carte existante", async () => {
+      api.list.mockResolvedValue({
+        cards: [{ id: "card-1", publicId: "CARD-A", medium: "qr", status: "active" }],
+        holder: { kind: null, source: null },
+      });
+      render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-1" />);
+      expect(await screen.findByRole("button", { name: "Remplacer" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Déclarer perdue" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Révoquer" })).toBeEnabled();
+      expect(api.replace).not.toHaveBeenCalled();
+    });
+
+    it("titulaire absent de la réponse : non déterminé (fail-closed)", async () => {
+      api.list.mockResolvedValue({ cards: [], holder: null });
+      render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-1" />);
+      expect(await screen.findByRole("button", { name: "Émettre une carte" })).toBeDisabled();
+    });
+
+    it("refus serveur STUDENT_CARD_HOLDER_UNDETERMINED : message clair, liste relue, aucun QR", async () => {
+      const user = userEvent.setup();
+      api.list
+        .mockResolvedValueOnce({ cards: [], holder: { kind: "eleve", source: "school_type" } })
+        .mockResolvedValue({ cards: [], holder: { kind: null, source: null } });
+      api.issue.mockRejectedValue(new ApiError("Titulaire", 409, "STUDENT_CARD_HOLDER_UNDETERMINED"));
+      render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-1" />);
+      await user.click(await screen.findByRole("button", { name: "Émettre une carte" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /Émettre/ }));
+      await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(1));
+      expect((await screen.findAllByText(/Titulaire de carte non configuré/)).length).toBeGreaterThan(0);
+      expect(screen.queryByTestId("student-card-qr")).toBeNull();
+      expect(await screen.findByRole("button", { name: "Émettre une carte" })).toBeDisabled();
+    });
   });
 });

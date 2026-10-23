@@ -11,6 +11,11 @@ export type SchoolSettings = {
   studentCardNfcEnabled?: boolean;
   studentCardAttendanceEnabled?: boolean;
   studentCardFinanceCheckEnabled?: boolean;
+  /** CARTE-CYCLE-01 — titulaire explicite (null = non configuré) et surcharges par niveau d'enseignement. */
+  studentCardHolderKind?: "eleve" | "etudiant" | null;
+  studentCardHolderLevels?: Record<string, "eleve" | "etudiant">;
+  /** Titulaire déduit du type d'établissement exact (null = type non déterminant). */
+  studentCardHolderFromSchoolType?: "eleve" | "etudiant" | null;
   schoolYear?: string;
   periods?: Array<Record<string, unknown>>;
 };

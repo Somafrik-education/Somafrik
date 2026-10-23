@@ -254,6 +254,8 @@ async function main() {
          student_card_finance_check_enabled = FALSE`,
       [schoolA.id, schoolB.id],
     );
+    // CARTE-CYCLE-01 : titulaire explicite (élève) pour les établissements de test émetteurs de cartes.
+    await pool.query("UPDATE school_settings SET student_card_holder_kind = 'eleve' WHERE school_id = ANY($1::uuid[])", [[schoolA.id, schoolB.id]]);
     await pool.query(`INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status) VALUES ($1,$2,$3,'2026-10-15','present')`,
       [schoolA.id, S1, classA1.id]);
     const contact = (await pool.query(

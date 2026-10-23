@@ -94,6 +94,56 @@ function createStudentAccessCardsPgStore(repo) {
     );
   }
 
+  /**
+   * CARTE-CYCLE-01 — contexte du titulaire : type d'établissement et réglages explicites ; le niveau
+   * d'enseignement de la classe courante n'est lu que si des surcharges par niveau existent
+   * (même règle d'inscription que findRosterClass), avec son activité dans school_levels.
+   */
+  async function findCardHolderContext(schoolId, studentId) {
+    if (!asTrimmed(schoolId) || !isUuid(studentId)) return null;
+    const context = await one(
+      `SELECT s.school_type, ss.student_card_holder_kind, ss.student_card_holder_levels
+         FROM schools s
+         LEFT JOIN school_settings ss ON ss.school_id = s.id
+        WHERE s.id = $1`,
+      [schoolId],
+    );
+    if (!context) return null;
+    const { normalizeHolderLevels } = require("../lib/studentCardHolder");
+    if (!Object.keys(normalizeHolderLevels(context.student_card_holder_levels)).length) {
+      return { ...context, level_id: null };
+    }
+    const { ROSTER_ENROLLMENT_SQL } = require("../lib/studentEnrollmentC18");
+    // Établissement mixte : niveau de la classe courante + activité du niveau dans CET établissement.
+    // Plusieurs classes courantes de niveaux différents = niveau incertain (aucun choix arbitraire).
+    const rows = await all(
+      `SELECT DISTINCT c.level_id::text AS level_id,
+              EXISTS (
+                SELECT 1 FROM school_levels sl
+                 WHERE sl.school_id = e.school_id
+                   AND sl.level_id = c.level_id
+                   AND sl.status = 'active'
+              ) AS level_active
+         FROM enrollments e
+         INNER JOIN academic_years y
+           ON y.id = e.academic_year_id
+          AND y.school_id = e.school_id
+          AND y.is_current IS TRUE
+         INNER JOIN classes c
+           ON c.id = e.class_id
+          AND c.school_id = e.school_id
+          AND c.academic_year_id = e.academic_year_id
+        WHERE e.school_id = $1
+          AND e.student_id = $2
+          AND e.class_id IS NOT NULL
+          AND ${ROSTER_ENROLLMENT_SQL}
+        LIMIT 2`,
+      [schoolId, studentId],
+    );
+    if (rows.length !== 1 || !rows[0].level_id) return { ...context, level_id: null, level_active: false };
+    return { ...context, level_id: rows[0].level_id, level_active: rows[0].level_active === true };
+  }
+
   async function findActive(schoolId, studentId) {
     if (!asTrimmed(schoolId) || !asTrimmed(studentId)) return null;
     return one(
@@ -407,6 +457,7 @@ function createStudentAccessCardsPgStore(repo) {
     findByPublicIdInSchool,
     findScanStudent,
     findRosterClass,
+    findCardHolderContext,
     findActive,
     getById,
     listByStudent,

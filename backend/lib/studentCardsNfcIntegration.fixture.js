@@ -84,6 +84,8 @@ async function createIntegrationFixture() {
         "INSERT INTO school_settings(school_id,student_card_enabled,student_card_nfc_enabled) VALUES($1,TRUE,TRUE) ON CONFLICT(school_id) DO UPDATE SET student_card_enabled=TRUE,student_card_nfc_enabled=TRUE",
         [school],
       );
+      // CARTE-CYCLE-01 : titulaire explicite (élève) pour les établissements de test émetteurs de cartes.
+      await pool.query("UPDATE school_settings SET student_card_holder_kind = 'eleve' WHERE school_id = $1", [school]);
       const year = (
         await pool.query(
           "INSERT INTO academic_years(school_id,name,is_current,status) VALUES($1,'2026-2027',TRUE,'open') RETURNING id",

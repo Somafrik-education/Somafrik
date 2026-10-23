@@ -12,6 +12,7 @@ const {
   extractValidatedSchoolSettingsScalars,
   settingsPatchFromCaptured,
   resolveStudentCardFlags,
+  resolveStudentCardHolderSettings,
 } = require("../lib/schoolSettingsManagement");
 
 function createSchoolSettingsMemoryStore(seed = {}) {
@@ -83,6 +84,7 @@ function createSchoolSettingsMemoryStore(seed = {}) {
     async upsertSettings(schoolId, patch) {
       const current = settings.get(schoolId);
       const flags = resolveStudentCardFlags(patch, current);
+      const holder = resolveStudentCardHolderSettings(patch, current);
       const row = {
         school_id: schoolId,
         period_mode: patch.periodMode ?? current?.period_mode ?? "trimestre",
@@ -93,6 +95,8 @@ function createSchoolSettingsMemoryStore(seed = {}) {
         student_card_nfc_enabled: flags.studentCardNfcEnabled,
         student_card_attendance_enabled: flags.studentCardAttendanceEnabled,
         student_card_finance_check_enabled: flags.studentCardFinanceCheckEnabled,
+        student_card_holder_kind: holder.studentCardHolderKind,
+        student_card_holder_levels: { ...holder.studentCardHolderLevels },
         created_at: current?.created_at ?? new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };

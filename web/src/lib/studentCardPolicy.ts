@@ -1,6 +1,6 @@
 import { ApiError } from "../api/client";
 import { hasBackOfficePermission, type PermissionContext } from "./permissions";
-import type { StudentCardMedium, StudentCardStatus } from "./studentCardsApi";
+import type { StudentCardHolder, StudentCardMedium, StudentCardStatus } from "./studentCardsApi";
 import type { SchoolSettings } from "./schoolSettingsApi";
 
 export const STUDENT_CARD_CR80 = {
@@ -23,6 +23,22 @@ export const STUDENT_CARD_MASTER_OFF_NOTICE =
 export const STUDENT_CARD_SETTINGS_UNAVAILABLE_NOTICE =
   "Les paramètres de carte élève sont indisponibles. Aucune émission n’est possible.";
 
+export type StudentCardHolderKind = "eleve" | "etudiant";
+
+/** CARTE-CYCLE-01 — libellés du réglage (l'en-tête imprimé relève de CARTE-UI-01). */
+export const STUDENT_CARD_HOLDER_LABELS: Record<StudentCardHolderKind, string> = {
+  eleve: "Élève",
+  etudiant: "Étudiant",
+};
+
+export const STUDENT_CARD_HOLDER_UNDETERMINED_NOTICE =
+  "Titulaire de carte non configuré : précisez « élève » ou « étudiant » dans Paramètres, section Carte élève, avant d’émettre ou de remplacer une carte. Les cartes existantes ne sont pas modifiées.";
+
+/** Seuls « eleve » et « etudiant » autorisent une émission ; absent ou inconnu = non déterminé. */
+export function isStudentCardHolderDetermined(holder: StudentCardHolder | null | undefined): boolean {
+  return holder?.kind === "eleve" || holder?.kind === "etudiant";
+}
+
 export const STUDENT_CARD_FINANCE_NOTICE =
   "Le contrôle financier est informatif. Il ne bloque pas la prise de présence.";
 
@@ -31,6 +47,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   STUDENT_CARD_ACTIVE_ALREADY_EXISTS: "Une carte active existe déjà. La liste a été actualisée.",
   STUDENT_CARD_INVALID_STATE: "Cette carte n’est plus dans un état qui autorise cette action.",
   STUDENT_CARD_NOT_FOUND: "Carte introuvable.",
+  STUDENT_CARD_HOLDER_UNDETERMINED: STUDENT_CARD_HOLDER_UNDETERMINED_NOTICE,
   PERMISSION_DENIED: "Action non autorisée.",
   PLATFORM_PERSONAL_DATA_DENIED: "Accès refusé.",
 };

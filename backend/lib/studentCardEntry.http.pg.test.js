@@ -276,6 +276,8 @@ async function main() {
          student_card_attendance_enabled = TRUE, student_card_finance_check_enabled = EXCLUDED.student_card_finance_check_enabled`,
       [schoolA.id, schoolB.id],
     );
+    // CARTE-CYCLE-01 : titulaire explicite (élève) pour les établissements de test émetteurs de cartes.
+    await pool.query("UPDATE school_settings SET student_card_holder_kind = 'eleve' WHERE school_id = ANY($1::uuid[])", [[schoolA.id, schoolB.id]]);
 
     child = spawn(process.execPath, ["backend/server.js"], {
       cwd: ROOT,

@@ -16,6 +16,12 @@ export interface StudentAccessCard {
   updatedAt?: string | null;
 }
 
+/** CARTE-CYCLE-01 — titulaire résolu par le serveur pour cet élève. */
+export interface StudentCardHolder {
+  kind: "eleve" | "etudiant" | null;
+  source: "level_setting" | "school_setting" | "school_type" | null;
+}
+
 export interface IssuedStudentAccessCard extends StudentAccessCard {
   cardToken: string;
 }
@@ -27,7 +33,7 @@ export interface ReplaceStudentAccessCardResult {
 
 export const studentCardsApi = {
   list(studentId: string) {
-    return api.get<{ cards: StudentAccessCard[] }>(
+    return api.get<{ cards: StudentAccessCard[]; holder?: StudentCardHolder | null }>(
       `/students/${encodeURIComponent(studentId)}/cards`,
     );
   },
