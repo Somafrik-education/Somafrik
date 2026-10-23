@@ -25,7 +25,7 @@ export const STUDENT_CARD_SETTINGS_UNAVAILABLE_NOTICE =
 
 export type StudentCardHolderKind = "eleve" | "etudiant";
 
-/** CARTE-CYCLE-01 — libellés du réglage (l'en-tête imprimé relève de CARTE-UI-01). */
+/** CARTE-CYCLE-01 — libellés du réglage (en-tête imprimé : STUDENT_CARD_HOLDER_TITLES). */
 export const STUDENT_CARD_HOLDER_LABELS: Record<StudentCardHolderKind, string> = {
   eleve: "Élève",
   etudiant: "Étudiant",
@@ -125,12 +125,13 @@ export function studentCardErrorMessage(error: unknown): string {
   return "L’opération carte n’a pas abouti.";
 }
 
-export function studentCardDocumentTitle(studentCode: string): string {
+export function studentCardDocumentTitle(studentCode: string | null | undefined, holderKind?: StudentCardHolderKind | null): string {
   const safe = String(studentCode ?? "")
     .trim()
     .replace(/[^\w.-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return `Carte-eleve-${safe || "eleve"}`;
+  const prefix = holderKind === "etudiant" ? "Carte-etudiant" : "Carte-eleve";
+  return `${prefix}-${safe || (holderKind === "etudiant" ? "etudiant" : "eleve")}`;
 }
 
 export function studentCardInitials(displayName: string): string {
@@ -143,12 +144,74 @@ export function studentCardInitials(displayName: string): string {
   return initials || "?";
 }
 
+/**
+ * CARTE-UI-01 — en-tête imprimé, déterminé UNIQUEMENT par le titulaire résolu par le Backend
+ * (CARTE-CYCLE-01). Aucune déduction Web (nom d'établissement, classe, type) : absent = null.
+ */
+export const STUDENT_CARD_HOLDER_TITLES: Record<StudentCardHolderKind, string> = {
+  eleve: "CARTE D’ÉLÈVE",
+  etudiant: "CARTE D’ÉTUDIANT",
+};
+
+export function studentCardHolderTitle(holder: StudentCardHolder | null | undefined): string | null {
+  if (!isStudentCardHolderDetermined(holder)) return null;
+  return STUDENT_CARD_HOLDER_TITLES[holder!.kind as StudentCardHolderKind];
+}
+
+export const STUDENT_CARD_HOLDER_PRINT_REFUSED_NOTICE =
+  "Titulaire de carte non déterminé : impression impossible. Précisez « élève » ou « étudiant » dans Paramètres, section Carte élève.";
+
+/** Référence de carte abrégée : 6 derniers caractères de l'identifiant public (jamais le jeton). */
+export function studentCardRef(publicId: string | null | undefined): string {
+  const value = String(publicId ?? "").trim();
+  return value.length > 6 ? value.slice(-6) : value;
+}
+
+/**
+ * Libellés d'écran utilisés quand une donnée manque (studentWorkspaceViewModel). Ils ne doivent
+ * jamais être imprimés : la ligne correspondante est masquée.
+ */
+export const STUDENT_CARD_SCREEN_PLACEHOLDERS: readonly string[] = Object.freeze([
+  "Non renseigné",
+  "Aucune inscription active",
+]);
+
+export function studentCardOptionalText(value: string | null | undefined): string | null {
+  const text = typeof value === "string" ? value.normalize("NFC").trim() : "";
+  if (!text || STUDENT_CARD_SCREEN_PLACEHOLDERS.includes(text)) return null;
+  return text;
+}
+
+/** Paliers typographiques : le texte n'est jamais tronqué, il diminue puis passe à la ligne (≥ 6,5 pt). */
+export type StudentCardTextStep = "l1" | "l2" | "l3" | "l4";
+
+export function studentCardNameStep(displayName: string): StudentCardTextStep {
+  const length = Array.from(displayName.trim()).length;
+  if (length <= 22) return "l1";
+  if (length <= 34) return "l2";
+  if (length <= 48) return "l3";
+  return "l4";
+}
+
+export function studentCardValueStep(value: string, threshold: number): "l1" | "l2" {
+  return Array.from(value.trim()).length <= threshold ? "l1" : "l2";
+}
+
 export interface StudentCardPrintIdentity {
   displayName: string;
-  classLabel: string;
-  studentCode: string;
-  schoolName: string;
+  classLabel: string | null;
+  studentCode: string | null;
+  schoolName: string | null;
   photoUrl: string | null;
+  publicId: string;
+}
+
+export interface StudentCardPrintIdentityInput {
+  displayName: string;
+  classLabel?: string | null;
+  studentCode?: string | null;
+  schoolName?: string | null;
+  photoUrl?: string | null;
   publicId: string;
 }
 
@@ -161,14 +224,15 @@ const PRINT_IDENTITY_KEYS = [
   "publicId",
 ] as const;
 
-export function buildStudentCardPrintIdentity(input: StudentCardPrintIdentity): StudentCardPrintIdentity {
+/** Données strictement nécessaires à l'affichage ; les valeurs absentes ou de remplacement deviennent null. */
+export function buildStudentCardPrintIdentity(input: StudentCardPrintIdentityInput): StudentCardPrintIdentity {
   return {
-    displayName: input.displayName.trim(),
-    classLabel: input.classLabel.trim(),
-    studentCode: input.studentCode.trim(),
-    schoolName: input.schoolName.trim(),
+    displayName: studentCardOptionalText(input.displayName) ?? "",
+    classLabel: studentCardOptionalText(input.classLabel),
+    studentCode: studentCardOptionalText(input.studentCode),
+    schoolName: studentCardOptionalText(input.schoolName),
     photoUrl: input.photoUrl?.trim() || null,
-    publicId: input.publicId.trim(),
+    publicId: String(input.publicId ?? "").trim(),
   };
 }
 

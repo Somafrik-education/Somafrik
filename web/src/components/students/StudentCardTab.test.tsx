@@ -412,4 +412,39 @@ describe("StudentCardTab", () => {
       expect(await screen.findByRole("button", { name: "Émettre une carte" })).toBeDisabled();
     });
   });
+
+  describe("CARTE-UI-01 — aperçu de la carte depuis le parcours d'émission", () => {
+    const issued = { id: "card-9", publicId: "PUB-ID-XYZ123", cardToken: "PUB-ID-XYZ123.TOKEN-9", medium: "qr", status: "active" };
+
+    it("étudiant : la carte émise porte l'en-tête CARTE D’ÉTUDIANT issu du titulaire Backend", async () => {
+      const user = userEvent.setup();
+      api.list.mockResolvedValue({ cards: [], holder: { kind: "etudiant", source: "level_setting" } });
+      api.issue.mockResolvedValue(issued);
+      render(<StudentCardTab workspace={workspace} dossier={dossier as never} canManage schoolCode="CD-1" />);
+      await user.click(await screen.findByRole("button", { name: "Émettre une carte" }));
+      await user.click(screen.getByRole("button", { name: "Émettre" }));
+      expect(await screen.findByTestId("student-card-qr")).toBeInTheDocument();
+      expect(screen.getByTestId("student-card-holder-title")).toHaveTextContent("CARTE D’ÉTUDIANT");
+      expect(screen.getByTestId("student-card-ref")).toHaveTextContent("…XYZ123");
+      expect(qrToDataUrl).toHaveBeenCalledWith("PUB-ID-XYZ123.TOKEN-9", expect.objectContaining({ margin: 4, errorCorrectionLevel: "M" }));
+      expect(document.body.innerHTML).not.toContain("TOKEN-9");
+    });
+
+    it("libellés d'écran « Non renseigné » / « Aucune inscription active » : jamais imprimés", async () => {
+      const user = userEvent.setup();
+      api.issue.mockResolvedValue(issued);
+      const sparse = {
+        ...workspace,
+        classLabel: "Aucune inscription active",
+        matriculeLabel: "Non renseigné",
+        schoolNameLabel: "Non renseigné",
+      } as StudentWorkspaceViewModel;
+      render(<StudentCardTab workspace={sparse} canManage schoolCode="CD-1" />);
+      await user.click(await screen.findByRole("button", { name: "Émettre une carte" }));
+      await user.click(screen.getByRole("button", { name: "Émettre" }));
+      const sheet = await screen.findByTestId("student-card-sheet");
+      expect(sheet.textContent).not.toMatch(/Non renseigné|Aucune inscription active|Matricule/);
+      expect(screen.getByTestId("student-card-name")).toHaveTextContent("Kabila Amina");
+    });
+  });
 });
