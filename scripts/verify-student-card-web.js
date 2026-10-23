@@ -107,8 +107,9 @@ function main() {
   assert.match(batchDialog, /documentSaveVerified|canConfirmDocumentSave/);
   assert.match(batchDialog, /printableConverted: true/);
   assert.match(batchDialog, /Je confirme avoir enregistré ce document CR80/);
-  assert.match(batchPrintable, /85\.60mm/);
-  assert.match(batchPrintable, /53\.98mm/);
+  assert.match(batchPrintable, /STUDENT_CARD_CR80\.width/);
+  assert.match(batchPrintable, /STUDENT_CARD_CR80\.height/);
+  assert.match(batchPrintable, /somafrik-card-batch-print-v2/);
   assert.match(batchPrintable, /somafrik-card-batch-print-v1/);
   assert.match(batchPrintable, /readBatchPrintDocument/);
   assert.doesNotMatch(batchDialog, /buildStudentCardBatchDocument|\.txt/);
@@ -123,13 +124,15 @@ function main() {
   // CARTE-BATCH-PDF-02 : conversion locale du CR80, sans émission et sans stockage des jetons.
   const batchPdf = read("web/src/lib/studentCardBatchPdf.ts");
   const batchPdfDialog = read("web/src/components/students/StudentCardBatchPdfDialog.tsx");
-  const pdfProduct = [batchPdf, batchPdfDialog].join("\n");
+  const cardDesign = read("web/src/lib/studentCardDesign.ts");
+  const pdfProduct = [batchPdf, batchPdfDialog, cardDesign].join("\n");
   assert.match(classesPage, /CLASS_CARD_PDF_BUTTON_LABEL/);
   assert.match(classesPage, /StudentCardBatchPdfDialog/);
   assert.match(batchPdf, /Produire le PDF A4/);
+  assert.match(batchPdf, /somafrik-card-batch-print-v2/);
   assert.match(batchPdf, /somafrik-card-batch-print-v1/);
-  assert.match(batchPdf, /85\.6/);
-  assert.match(batchPdf, /53\.98/);
+  assert.match(cardDesign, /widthMm: 85\.6/);
+  assert.match(cardDesign, /heightMm: 53\.98/);
   assert.match(batchPdf, /from "pdf-lib"/);
   assert.match(batchPdfDialog, /accept="\.html,text\/html"/);
   assert.match(batchPdfDialog, /revokeObjectURL/);
@@ -142,6 +145,19 @@ function main() {
   for (const block of pdfEffects) {
     assert.doesNotMatch(block[0], /prepare|activate|abort|receipt|fetch\(/);
   }
+
+  // CARTE-BATCH-DESIGN-01 : une seule référence de design (maquette P1) pour la carte individuelle,
+  // le document HTML CR80 par classe et le PDF A4. Aucun gabarit simplifié.
+  assert.match(face, /studentCardFaceCss/);
+  assert.match(face, /STUDENT_CARD_P1/);
+  assert.doesNotMatch(css, /\.student-card-face \.scf-band \{/);
+  assert.match(batchPrintable, /createElement\(StudentCardFace/);
+  assert.match(batchPrintable, /studentCardFaceCss\(\)/);
+  assert.match(batchPrintable, /chooseCardSheetLayout/);
+  assert.doesNotMatch(batchPrintable, /<article class="card">|<h1>/);
+  assert.match(batchPdf, /STUDENT_CARD_P1/);
+  assert.match(batchPdf, /from "\.\/studentCardDesign"/);
+  assert.doesNotMatch(cardDesign, /fetch\(|localStorage|sessionStorage|indexedDB|console\.log|cardToken/);
 
   console.log("verify-student-card-web: SUCCESS");
 }

@@ -3,16 +3,18 @@ import { Button, InlineAlert, Modal } from "../../design-system";
 import {
   CARD_PDF_INCOMPLETE,
   CLASS_CARD_PDF_DIALOG_TITLE,
+  CARD_PDF_MAX_SOURCE_CHARS,
   convertBatchPrintFileToPdf,
   suggestedCardPdfName,
 } from "../../lib/studentCardBatchPdf";
+import { cardVisualReportMessage } from "../../lib/studentCardDesign";
 
 interface StudentCardBatchPdfDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-const MAX_FILE_BYTES = 8_000_000;
+const MAX_FILE_BYTES = CARD_PDF_MAX_SOURCE_CHARS;
 
 function resultMessage(cardCount: number, pageCount: number): string {
   const cards = cardCount > 1 ? `${cardCount} cartes` : `${cardCount} carte`;
@@ -37,6 +39,7 @@ function downloadPdf(bytes: Uint8Array, filename: string) {
 export function StudentCardBatchPdfDialog({ open, onClose }: StudentCardBatchPdfDialogProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [visualNotice, setVisualNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const request = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -45,6 +48,7 @@ export function StudentCardBatchPdfDialog({ open, onClose }: StudentCardBatchPdf
     if (!open) {
       setMessage(null);
       setError(null);
+      setVisualNotice(null);
       setBusy(false);
     }
     return () => {
@@ -60,6 +64,7 @@ export function StudentCardBatchPdfDialog({ open, onClose }: StudentCardBatchPdf
   async function onFile(file: File | undefined) {
     setMessage(null);
     setError(null);
+    setVisualNotice(null);
     if (!file) return;
     const current = request.current + 1;
     request.current = current;
@@ -78,6 +83,7 @@ export function StudentCardBatchPdfDialog({ open, onClose }: StudentCardBatchPdf
       }
       downloadPdf(result.bytes, suggestedCardPdfName(result.classCode));
       setMessage(resultMessage(result.cardCount, result.pageCount));
+      setVisualNotice(result.visuals ? cardVisualReportMessage(result.visuals) : null);
     } catch {
       if (current === request.current) setError(CARD_PDF_INCOMPLETE);
     } finally {
@@ -125,6 +131,11 @@ export function StudentCardBatchPdfDialog({ open, onClose }: StudentCardBatchPdf
         {message ? (
           <InlineAlert tone="success" title="PDF A4">
             {message}
+          </InlineAlert>
+        ) : null}
+        {message && visualNotice ? (
+          <InlineAlert tone="info" title="Logo et photos">
+            {visualNotice}
           </InlineAlert>
         ) : null}
       </div>

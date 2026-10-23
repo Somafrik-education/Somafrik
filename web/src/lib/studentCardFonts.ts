@@ -20,7 +20,8 @@ const LATIN_RANGE =
 const LATIN_EXT_RANGE =
   "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF";
 
-const FACES: ReadonlyArray<{ weight: string; src: string; unicodeRange: string }> = [
+/** Fichiers locaux de la police de carte, aussi intégrés au document HTML CR80 par classe. */
+export const STUDENT_CARD_FONT_FACES: ReadonlyArray<{ weight: string; src: string; unicodeRange: string }> = [
   { weight: "500", src: interLatin500, unicodeRange: LATIN_RANGE },
   { weight: "600", src: interLatin600, unicodeRange: LATIN_RANGE },
   { weight: "700", src: interLatin700, unicodeRange: LATIN_RANGE },
@@ -47,7 +48,7 @@ export function loadStudentCardFonts(): Promise<StudentCardFontState> {
   if (!fontApiAvailable()) return Promise.resolve("fallback");
   if (pending) return pending;
   const load = Promise.all(
-    FACES.map(async ({ weight, src, unicodeRange }) => {
+    STUDENT_CARD_FONT_FACES.map(async ({ weight, src, unicodeRange }) => {
       const face = new FontFace(STUDENT_CARD_FONT_FAMILY, `url(${src}) format("woff2")`, {
         weight,
         style: "normal",

@@ -2,6 +2,7 @@ import { ApiError } from "../api/client";
 import { hasBackOfficePermission, type PermissionContext } from "./permissions";
 import type { StudentCardHolder, StudentCardMedium, StudentCardStatus } from "./studentCardsApi";
 import type { SchoolSettings } from "./schoolSettingsApi";
+import { studentCardNameStepOf } from "./studentCardDesign";
 
 export const STUDENT_CARD_CR80 = {
   width: "85.60mm",
@@ -186,11 +187,7 @@ export function studentCardOptionalText(value: string | null | undefined): strin
 export type StudentCardTextStep = "l1" | "l2" | "l3" | "l4";
 
 export function studentCardNameStep(displayName: string): StudentCardTextStep {
-  const length = Array.from(displayName.trim()).length;
-  if (length <= 22) return "l1";
-  if (length <= 34) return "l2";
-  if (length <= 48) return "l3";
-  return "l4";
+  return studentCardNameStepOf(displayName);
 }
 
 export function studentCardValueStep(value: string, threshold: number): "l1" | "l2" {

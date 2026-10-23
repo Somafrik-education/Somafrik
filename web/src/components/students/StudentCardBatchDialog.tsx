@@ -1,13 +1,16 @@
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { Button, InlineAlert, Modal } from "../../design-system";
 import { formatDateTimeForDisplay } from "../../lib/dates";
+import type { SchoolLogoSource } from "../../lib/schoolLogo";
 import { studentCardBatchApi } from "../../lib/studentCardBatchApi";
 import {
   assembleBatchPrintDocument,
   loadBatchPrintIdentities,
+  loadBatchPrintSchoolLogo,
   renderBatchPrintDocument,
   type BatchPrintIdentity,
 } from "../../lib/studentCardBatchPrintable";
+import { cardVisualReport, cardVisualReportMessage, type CardVisual } from "../../lib/studentCardDesign";
 import {
   canActivateBatch,
   canConfirmDocumentSave,
@@ -29,6 +32,8 @@ interface StudentCardBatchDialogProps {
   classCode: string;
   className: string;
   schoolName?: string | null;
+  /** Établissement actif : source du logo intégré au document CR80 (CARTE-BATCH-DESIGN-01). */
+  school?: SchoolLogoSource;
   onClose: () => void;
   loadPrintIdentities?: (input: {
     classCode: string;
@@ -36,6 +41,8 @@ interface StudentCardBatchDialogProps {
     className: string | null;
     studentIds: readonly string[];
   }) => Promise<BatchPrintIdentity[]>;
+  /** Logo intégré au document CR80 (CARTE-BATCH-DESIGN-01). Par défaut : logo de l'établissement actif. */
+  loadSchoolLogo?: (school: SchoolLogoSource) => Promise<CardVisual>;
   saveDocument?: (
     textBody: string,
     filename: string,
@@ -71,11 +78,14 @@ export function StudentCardBatchDialog({
   classCode,
   className,
   schoolName = null,
+  school = null,
   onClose,
   loadPrintIdentities = loadBatchPrintIdentities,
+  loadSchoolLogo = loadBatchPrintSchoolLogo,
   saveDocument = saveStudentCardBatchDocument,
 }: StudentCardBatchDialogProps) {
   const [state, dispatch] = useReducer(reduceBatchFlow, classCode, initialBatchFlow);
+  const [visualNotice, setVisualNotice] = useState<string | null>(null);
   const secretsRef = useRef<PreparedCardSecret[]>([]);
   const nonceRef = useRef<string | null>(null);
   const classNameRef = useRef(className);
@@ -93,6 +103,7 @@ export function StudentCardBatchDialog({
     }
     let cancelled = false;
     forget(secretsRef, nonceRef);
+    setVisualNotice(null);
     dispatch({ type: "reset", classCode });
     void (async () => {
       try {
@@ -187,8 +198,11 @@ export function StudentCardBatchDialog({
   async function onSaveDocument() {
     const secrets = secretsRef.current;
     if (!state.batchId || secrets.length === 0) return;
+    setVisualNotice(null);
     let identities: BatchPrintIdentity[];
+    let schoolLogo: CardVisual;
     try {
+      schoolLogo = await loadSchoolLogo(school).catch((): CardVisual => ({ state: "unavailable" }));
       identities = await loadPrintIdentities({
         classCode,
         schoolName,
@@ -208,6 +222,7 @@ export function StudentCardBatchDialog({
         classCode,
         className: state.className ?? classNameRef.current,
         expiresAt: state.expiresAt,
+        schoolLogo,
       },
       secrets,
       identities,
@@ -223,6 +238,11 @@ export function StudentCardBatchDialog({
     }
     const saved = await saveDocument(printable.value, suggestedCardDocumentName(classCode), defaultSaveEnvironment());
     if (saved.cancelled || !saved.verified || saved.bytesWritten <= 0) return;
+    setVisualNotice(
+      cardVisualReportMessage(
+        cardVisualReport(assembled.value.schoolLogo, assembled.value.cards.map((card) => card.photo)),
+      ),
+    );
     dispatch({ type: "document_saved", bytesWritten: saved.bytesWritten, printableConverted: true });
   }
 
@@ -348,6 +368,11 @@ export function StudentCardBatchDialog({
         <p className="mt-2 text-sm text-muted">
           Document CR80 enregistré ({state.documentBytes} octets). Il permet d'imprimer les cartes sans nouvelle
           émission.
+        </p>
+      ) : null}
+      {state.documentBytes && visualNotice ? (
+        <p className="mt-2 text-sm text-muted" data-testid="card-batch-visual-notice">
+          {visualNotice}
         </p>
       ) : null}
     </Modal>
