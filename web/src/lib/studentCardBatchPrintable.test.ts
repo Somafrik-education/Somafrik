@@ -1,10 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { classStudentsApi, type ClassStudent } from "./classStudentsApi";
+import { studentCardsApi } from "./studentCardsApi";
 import {
   assembleBatchPrintDocument,
   convertBatchPrintDocument,
+  loadBatchPrintIdentities,
   readBatchPrintDocument,
   type BatchPrintIdentity,
 } from "./studentCardBatchPrintable";
+
+vi.mock("./classStudentsApi", () => ({
+  classStudentsApi: { list: vi.fn() },
+}));
+
+vi.mock("./studentCardsApi", () => ({
+  studentCardsApi: { list: vi.fn() },
+}));
 
 const SECRET = "supersecretvalue";
 const TOKEN = `pubidvalue.${SECRET}`;
@@ -58,5 +69,54 @@ describe("conversion locale CR80", () => {
     const assembled = documentFor();
     if (!assembled.ok) throw new Error("document attendu");
     expect(convertBatchPrintDocument(assembled.value, new Map()).ok).toBe(false);
+  });
+
+  it("relie l'UUID du lot au matricule de la liste de classe", async () => {
+    const studentUuid = "eeeeeeee-eeee-4eee-8eee-0000000000b1";
+    const roster: ClassStudent & { studentUuid: string } = {
+      id: "STU-WEB-CR80",
+      publicId: "STU-WEB-CR80",
+      studentCode: "STU-WEB-CR80",
+      matricule: "STU-WEB-CR80",
+      studentUuid,
+      firstName: "Awa",
+      lastName: "DIOP",
+      name: "Awa DIOP",
+      gender: "",
+      birthDate: "",
+      className: "Terminale A",
+      classCode: "WEB-CR80",
+      schoolCode: "CD-WEB-26-001",
+      parentPhone: "",
+      parentEmail: "",
+      status: "active",
+      enrollmentId: null,
+      enrollmentDate: "",
+      academicYearName: "2026-2027",
+    };
+    vi.mocked(classStudentsApi.list).mockResolvedValue([roster]);
+    vi.mocked(studentCardsApi.list).mockResolvedValue({
+      cards: [],
+      holder: { kind: "eleve", source: "school_type" },
+    });
+
+    const identities = await loadBatchPrintIdentities({
+      classCode: "WEB-CR80",
+      schoolName: "Lycée Smoke CR80",
+      className: "Terminale A",
+      studentIds: [studentUuid],
+    });
+
+    expect(studentCardsApi.list).toHaveBeenCalledWith(studentUuid);
+    expect(identities).toEqual([
+      {
+        studentId: studentUuid,
+        holderKind: "eleve",
+        displayName: "Awa DIOP",
+        studentCode: "STU-WEB-CR80",
+        classLabel: "Terminale A",
+        schoolName: "Lycée Smoke CR80",
+      },
+    ]);
   });
 });

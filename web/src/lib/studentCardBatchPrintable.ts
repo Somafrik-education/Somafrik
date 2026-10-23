@@ -195,25 +195,49 @@ export async function renderBatchPrintDocument(document: BatchPrintDocument): Pr
   return convertBatchPrintDocument(document, qrByPublicId);
 }
 
+type RosterStudent = {
+  id?: string;
+  studentUuid?: string;
+  studentCode?: string;
+  publicId?: string;
+  matricule?: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+};
+
+/**
+ * Le lot identifie l'élève par son UUID. La liste de classe expose cet UUID
+ * dans studentUuid et réserve id au matricule public.
+ */
+function findRosterStudent(roster: readonly RosterStudent[], studentId: string): RosterStudent | undefined {
+  const wanted = studentId.trim();
+  if (!wanted) return undefined;
+  return roster.find((student) =>
+    [student.id, student.studentUuid, student.studentCode, student.publicId, student.matricule]
+      .some((value) => String(value ?? "").trim() === wanted),
+  );
+}
+
 export async function loadBatchPrintIdentities(input: {
   classCode: string;
   schoolName: string | null;
   className: string | null;
   studentIds: readonly string[];
 }): Promise<BatchPrintIdentity[]> {
-  const roster = await classStudentsApi.list(input.classCode);
-  const byId = new Map(roster.map((student) => [student.id, student]));
+  const roster = (await classStudentsApi.list(input.classCode)) as RosterStudent[];
   const identities: BatchPrintIdentity[] = [];
   for (const studentId of input.studentIds) {
-    const student = byId.get(studentId);
+    const student = findRosterStudent(roster, studentId);
     const listed = await studentCardsApi.list(studentId);
     const kind = listed.holder?.kind === "eleve" || listed.holder?.kind === "etudiant" ? listed.holder.kind : null;
-    const displayName = student ? student.name.trim() || `${student.lastName} ${student.firstName}`.trim() : "";
+    const displayName = student ? String(student.name ?? "").trim() || `${student.lastName ?? ""} ${student.firstName ?? ""}`.trim() : "";
+    const studentCode = student ? String(student.matricule ?? "").trim() || String(student.studentCode ?? "").trim() : "";
     identities.push({
       studentId,
       holderKind: kind,
       displayName: displayName || null,
-      studentCode: student ? student.matricule.trim() || student.studentCode.trim() || null : null,
+      studentCode: studentCode || null,
       classLabel: input.className,
       schoolName: input.schoolName,
     });
