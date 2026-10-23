@@ -59,3 +59,17 @@ test("SQL du précontrôle : séparation de classe/établissement, sans écritur
     if (cached) require.cache[modulePath] = cached;
   }
 });
+
+test("route HTTP : authentification, permission carte existante, scope école et no-store", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const server = fs.readFileSync(path.resolve(__dirname, "../server.js"), "utf8");
+  const route = server.match(/app\.get\("\/api\/classes\/:classCode\/student-cards\/preflight"[\s\S]*?\n\);/);
+  assert.ok(route, "route GET de précontrôle présente");
+  assert.match(route[0], /requireAuth/);
+  assert.match(route[0], /requirePermission\("GET \/api\/students\/:id\/cards"\)/);
+  assert.match(route[0], /requireStudentCardsPg\(\)/);
+  assert.match(route[0], /studentCardsHttpScope\(principal\)/);
+  assert.match(route[0], /Cache-Control", "no-store"/);
+  assert.doesNotMatch(route[0], /issueStudentCard|replaceStudentCard|generateCardSecrets/);
+});
