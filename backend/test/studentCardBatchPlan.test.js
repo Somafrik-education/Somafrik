@@ -29,3 +29,16 @@ test("doublons et identifiants absents rejetés", () => {
   assert.throws(() => planStudentCardBatch([{ studentId: "a" }, { studentId: " a " }]), /dupliqué/);
   assert.throws(() => planStudentCardBatch(null), /Liste/);
 });
+
+test("état de carte inconnu : fail-closed, aucune émission candidate", () => {
+  for (const unknown of [undefined, null, "false", 0]) {
+    const plan = planStudentCardBatch([{ studentId: "a", eligible: true, holderKind: "eleve", hasActiveCard: unknown }]);
+    assert.equal(plan.counts.issueCandidates, 0);
+    assert.equal(plan.entries[0].reason, "CARD_STATE_UNDETERMINED");
+  }
+});
+
+test("état de carte actif explicite reste non remplaçable même si inéligible", () => {
+  const plan = planStudentCardBatch([{ studentId: "a", eligible: false, holderKind: null, hasActiveCard: true }]);
+  assert.equal(plan.entries[0].decision, "already_active");
+});
