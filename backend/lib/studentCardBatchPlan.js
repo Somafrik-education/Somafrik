@@ -22,19 +22,20 @@ function planStudentCardBatch(rows) {
       throw new TypeError("Identifiant élève absent ou dupliqué.");
     }
     seen.add(studentId);
+    const cardStateKnown = typeof row.hasActiveCard === "boolean";
     const active = row.hasActiveCard === true;
     const eligible = row.eligible === true;
     const holderDetermined = row.holderKind === "eleve" || row.holderKind === "etudiant";
     const decision = active
       ? BATCH_CARD_DECISIONS.ALREADY_ACTIVE
-      : eligible && holderDetermined
+      : cardStateKnown && eligible && holderDetermined
         ? BATCH_CARD_DECISIONS.ISSUE_CANDIDATE
         : BATCH_CARD_DECISIONS.INELIGIBLE;
     return {
       studentId,
       decision,
       reason: decision === BATCH_CARD_DECISIONS.INELIGIBLE
-        ? !eligible ? "NOT_ELIGIBLE" : "HOLDER_UNDETERMINED"
+        ? !cardStateKnown ? "CARD_STATE_UNDETERMINED" : !eligible ? "NOT_ELIGIBLE" : "HOLDER_UNDETERMINED"
         : null,
     };
   });
