@@ -2184,6 +2184,26 @@ app.get("/api/students/:studentId/documents/:documentId/file", requireAuth, requ
   res.send(file.bytes);
 }));
 
+/**
+ * CARTE-PHOTO-02 — photo d'identité de l'élève (pièce PHOTO canonique), pour la carte.
+ * Mêmes contrôles que le téléchargement d'une pièce : élève du tenant, Documents:READ.
+ * Réponse binaire, jamais mise en cache, aucun chemin de stockage exposé.
+ */
+app.get("/api/students/:studentId/photo", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const file = await studentDocumentsHttpService().photo({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+  });
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Type", file.mimeType);
+  res.setHeader("Content-Disposition", "inline");
+  res.send(file.bytes);
+}));
+
 app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
   const { assertEnrollmentStudentAccess } = require("./lib/enrollmentSchoolScope");
   const principal = await enrollmentHttpPrincipal(req);

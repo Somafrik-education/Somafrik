@@ -458,6 +458,22 @@ const STUDENT_CARD_BATCH_DESIGN_01_EXACT = new Set([
   "docs/student-card/CARTE-BATCH-DESIGN-01-maquette.md",
 ]);
 
+// CARTE-PHOTO-02 : photo canonique (pièce PHOTO) pour toutes les cartes. La route de lecture
+// vit dans server.js et le service des pièces élève ; le client Web transmet le code d'erreur.
+// Admis uniquement avec les DEUX ancres : le chargeur Web de la photo et son test HTTP PostgreSQL.
+// Aucune migration, aucun fichier RBAC, aucune route d'émission.
+const STUDENT_CARD_PHOTO_02_ANCHORS = Object.freeze([
+  "web/src/lib/studentCardPhoto.ts",
+  "backend/lib/studentCardPhoto.http.pg.test.js",
+]);
+// backend/server.js et package.json sont déjà admis pour le chantier Carte élève (PR6/PR7).
+const STUDENT_CARD_PHOTO_02_EXACT = new Set([
+  "backend/lib/studentAdministrativeDocuments.js",
+  "backend/lib/studentAdministrativeDocuments.test.js",
+  "web/src/api/client.ts",
+  "docs/student-card/CARTE-PHOTO-02-photo-canonique.md",
+]);
+
 // CARTE-PR3-M1 (#947) : exception pour le menu, uniquement avec les deux ancres exactes.
 const STUDENT_CARD_PR3_M1_NAV_FILE = "Mobile/src/navigation/roleDrawerPreferences.ts";
 const STUDENT_CARD_PR3_M1_NAV_ANCHORS = Object.freeze([
@@ -569,6 +585,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     const batchWeb01 = STUDENT_CARD_BATCH_WEB_01_ANCHORS.every((anchor) => changed.includes(anchor));
     const batchPdf02 = STUDENT_CARD_BATCH_PDF_02_ANCHORS.every((anchor) => changed.includes(anchor));
     const batchDesign01 = STUDENT_CARD_BATCH_DESIGN_01_ANCHORS.every((anchor) => changed.includes(anchor));
+    const photo02 = STUDENT_CARD_PHOTO_02_ANCHORS.every((anchor) => changed.includes(anchor));
     const pr3MobileNav = navChanged && navAnchored;
     const r3DiagnosticNav = navChanged && r3DiagnosticAnchored;
     const outside = changed.filter(
@@ -580,6 +597,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
         && !(batchWeb01 && STUDENT_CARD_BATCH_WEB_01_EXACT.has(file))
         && !(batchPdf02 && STUDENT_CARD_BATCH_PDF_02_EXACT.has(file))
         && !(batchDesign01 && STUDENT_CARD_BATCH_DESIGN_01_EXACT.has(file))
+        && !(photo02 && STUDENT_CARD_PHOTO_02_EXACT.has(file))
         && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE)
         && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE)),
     );
@@ -1354,6 +1372,55 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           evaluateLot4Scope(["web/src/lib/studentCardsApi.ts", designOnly]).kind,
           "fail",
           `L4-09: ${designOnly} sans les ancres CARTE-BATCH-DESIGN-01 doit rester FAIL`,
+        );
+      }
+
+      // CARTE-PHOTO-02 : diff exact admis ; server.js et le client Web exigent les deux ancres.
+      const photo02Files = [
+        "backend/lib/studentAdministrativeDocuments.js",
+        "backend/lib/studentAdministrativeDocuments.test.js",
+        "backend/lib/studentCardPhoto.http.pg.test.js",
+        "backend/server.js",
+        "docs/student-card/CARTE-PHOTO-02-photo-canonique.md",
+        "package.json",
+        "scripts/verify-school-setup-lot4-red.ts",
+        "web/src/api/client.ts",
+        "web/src/components/students/StudentCardBatchDialog.test.tsx",
+        "web/src/components/students/StudentCardBatchDialog.tsx",
+        "web/src/components/students/StudentCardPrintView.photo.test.tsx",
+        "web/src/components/students/StudentCardPrintView.tsx",
+        "web/src/components/students/StudentCardTab.tsx",
+        "web/src/lib/studentCardBatchPrintable.test.ts",
+        "web/src/lib/studentCardBatchPrintable.ts",
+        "web/src/lib/studentCardPhoto.test.ts",
+        "web/src/lib/studentCardPhoto.ts",
+      ];
+      assert.equal(evaluateLot4Scope(photo02Files).kind, "na", "L4-09: diff exact CARTE-PHOTO-02 admis nominativement");
+      for (const [extra, label] of [
+        ["backend/lib/financeManagement.js", "fichier backend"],
+        ["backend/db/postgresRepository.js", "boot PostgreSQL"],
+        ["backend/db/migrations/20261025_student_photo.sql", "migration"],
+        ["web/src/lib/permissions.ts", "fichier RBAC Web"],
+        ["docs/student-card/CARTE-PHOTO-03.md", "autre document"],
+      ] as const) {
+        assert.equal(
+          evaluateLot4Scope([...photo02Files, extra]).kind,
+          "fail",
+          `L4-09: CARTE-PHOTO-02 + ${label} doit rester FAIL`,
+        );
+      }
+      for (const missingAnchor of STUDENT_CARD_PHOTO_02_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(photo02Files.filter((file) => file !== missingAnchor)).kind,
+          "fail",
+          `L4-09: CARTE-PHOTO-02 sans l'ancre ${missingAnchor} doit rester FAIL`,
+        );
+      }
+      for (const photoOnly of STUDENT_CARD_PHOTO_02_EXACT) {
+        assert.equal(
+          evaluateLot4Scope(["web/src/lib/studentCardsApi.ts", photoOnly]).kind,
+          "fail",
+          `L4-09: ${photoOnly} sans les ancres CARTE-PHOTO-02 doit rester FAIL`,
         );
       }
 
