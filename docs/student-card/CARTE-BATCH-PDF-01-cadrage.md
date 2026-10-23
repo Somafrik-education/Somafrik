@@ -27,3 +27,29 @@ Ajouter sur chaque ligne de classe un bouton **Émettre / exporter cartes PDF** 
 
 ## Gates de livraison
 Chaque lot reste **Draft/HOLD**. Diff GitHub indépendant CTO et CI verte exigés avant Ready/Merge. Pas de déploiement automatique, pas de promotion `main`.
+
+
+## Protocole BATCH-API — décision d'architecture (étape suivante)
+
+**Statut : conception contrôlée / HOLD. Aucun endpoint ni mutation produit n'est encore créé.**
+
+### Précontrôle serveur
+L'opérateur choisit une classe active de son établissement. Le Backend authentifie le principal, vérifie la permission d'émission, le tenant, l'année scolaire courante et le paramétrage carte QR. Il résout le titulaire par élève via CARTE-CYCLE-01. Il renvoie un **bilan sans jeton** : élèves éligibles sans carte active, cartes actives non réexportables, inéligibles et motifs. Aucune mutation lors du précontrôle. Pour les classes vides, pas d'émission.
+
+### Transaction et concurrence
+Une confirmation explicite distingue **émettre les nouvelles cartes seulement** de tout remplacement. Une transaction sérialise les émissions concurrentes par élève (verrou sur l'élève ou verrou transactionnel canonique). Revalider droits, classe, année, éligibilité, présence de carte active et titulaire **sous protection concurrente** ; vérifier les contraintes d'unicité existantes. Si une carte active apparaît entre précontrôle et confirmation, elle est ignorée, jamais remplacée. Chaque carte nouvelle est émise **une seule fois**. Ne jamais générer de nouveau secret pour une carte déjà active.
+
+### Problème de réponse perdue : exigence de conception P0
+Le secret QR n'est stocké qu'en empreinte irréversible. Si une transaction d'émission réussit mais que la réponse HTTP ou la génération PDF échoue avant réception, le secret est perdu et la carte ne peut pas être réexportée. **Il est interdit de prétendre que l'idempotence HTTP résout cette impossibilité à elle seule.** Avant tout GO d'implémentation, présenter un mécanisme concret de livraison atomique ou d'accusé de réception garantissant qu'une émission interrompue ne crée pas de carte active définitivement non imprimable. Évaluer notamment une préparation sans activation, un verrouillage transitoire et une expiration sûre, sans conservation de jeton persistant en clair. Une révocation/rotation explicite ne peut jamais se produire silencieusement.
+
+### Contrat de génération PDF
+Le PDF final contient exclusivement les **nouvelles cartes effectivement délivrables**, avec QR exact du jeton de leur émission ; les cartes déjà actives ne figurent pas comme de fausses copies. Produire un récapitulatif distinct des élèves exclus et des cartes déjà actives, sans secrets. Les fichiers PDF ne sont pas archivés côté serveur. Les réponses sensibles portent `Cache-Control: no-store`, `Content-Disposition: attachment` et des restrictions de journalisation ; ne jamais passer de jeton en URL.
+
+### Pagination physique A4
+10 cartes de 53,98 mm totalisent 269,9 mm en cinq rangées. Sur 297 mm il reste 27,1 mm pour marges et intervalles. Définir des marges, traits de coupe, tolérance d'imprimante et vérifications de rendu avant de figer 2 × 5. Ne pas déformer ni couper les cartes ; adopter 2 × 4 si les exigences d'impression ne permettent pas 2 × 5.
+
+### Invariants NFC
+Tester l'évolution `medium: qr → nfc_qr` via `nfc-provision` sur **la même ligne** et vérifier que `id`, `public_id`, `token_hash`, `status=active` restent identiques et que la lecture du QR imprimé reste valide. Les opérations de réservation NFC créant une nouvelle carte ou de remplacement ne doivent jamais être déclenchées par le flux PDF.
+
+### Gate avant code
+Écrire des tests RED du précontrôle, de l'isolation tenant, de la concurrence, de l'échec de livraison et de l'invariance NFC. Le protocole de livraison après coupure réseau exige une décision CTO distincte avant l'implémentation. **NO READY / NO MERGE / NO DEPLOY.**
