@@ -209,6 +209,7 @@ jobs:
           npm run verify:auth-sessions
           npm run verify:sec-tenant-01
           npm run verify:sec-pdf-01
+          npm run verify:sec-xss-01
           npm run verify:privacy-erasure
           npm run verify:rbac-s1-4
           npm run verify:sanitize-user-responses
