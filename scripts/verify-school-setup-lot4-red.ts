@@ -401,6 +401,22 @@ const STUDENT_CARD_CYCLE_01_EXACT = new Set([
   "web/src/lib/schoolSettingsApi.ts",
 ]);
 
+// CARTE-BATCH-API-02 (#984) : préparation et activation des cartes QR par classe.
+// Fichiers exacts, admis uniquement lorsque le diff porte les DEUX ancres : le
+// module du protocole et SA migration datée. postgresRepository.js n'est admis
+// que dans ce couple. Aucune autre migration, aucun autre boot, aucun fichier
+// LOT 4 exclusif.
+const STUDENT_CARD_BATCH_API_02_ANCHORS = Object.freeze([
+  "backend/lib/studentCardBatchIssue.js",
+  "backend/db/migrations/20261023_student_card_batches.sql",
+]);
+const STUDENT_CARD_BATCH_API_02_EXACT = new Set([
+  "backend/db/migrations/20261023_student_card_batches.sql",
+  "backend/db/studentCardBatchesSchema.js",
+  "backend/db/postgresRepository.js",
+  "docs/student-card/CARTE-BATCH-API-02-protocole.md",
+]);
+
 // CARTE-PR3-M1 (#947) : exception pour le menu, uniquement avec les deux ancres exactes.
 const STUDENT_CARD_PR3_M1_NAV_FILE = "Mobile/src/navigation/roleDrawerPreferences.ts";
 const STUDENT_CARD_PR3_M1_NAV_ANCHORS = Object.freeze([
@@ -508,6 +524,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     const pr3EntryControl = changed.includes(STUDENT_CARD_PR3_A1_ANCHOR);
     const pr3RollCall = STUDENT_CARD_PR3_B_ANCHORS.every((anchor) => changed.includes(anchor));
     const cardCycle01 = STUDENT_CARD_CYCLE_01_ANCHORS.every((anchor) => changed.includes(anchor));
+    const batchApi02 = STUDENT_CARD_BATCH_API_02_ANCHORS.every((anchor) => changed.includes(anchor));
     const pr3MobileNav = navChanged && navAnchored;
     const r3DiagnosticNav = navChanged && r3DiagnosticAnchored;
     const outside = changed.filter(
@@ -515,6 +532,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
         && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file))
         && !(pr3RollCall && STUDENT_CARD_PR3_B_EXACT.has(file))
         && !(cardCycle01 && STUDENT_CARD_CYCLE_01_EXACT.has(file))
+        && !(batchApi02 && STUDENT_CARD_BATCH_API_02_EXACT.has(file))
         && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE)
         && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE)),
     );
@@ -1096,6 +1114,55 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           evaluateLot4Scope(["web/src/components/students/StudentCardTab.tsx", cycle01Only]).kind,
           "fail",
           `L4-09: ${cycle01Only} sans les ancres CARTE-CYCLE-01 doit rester FAIL`,
+        );
+      }
+
+      // CARTE-BATCH-API-02 (#984) : diff exact admis ; tout ajout hors liste reste FAIL, ancres obligatoires.
+      const batchApi02Files = [
+        "backend/db/migrations/20261023_student_card_batches.sql",
+        "backend/db/postgresRepository.js",
+        "backend/db/studentCardBatchesSchema.js",
+        "backend/lib/platformPersonalDataGuard.js",
+        "backend/lib/studentAccessCardsManagement.test.js",
+        "backend/lib/studentCardBatchIssue.http.pg.test.js",
+        "backend/lib/studentCardBatchIssue.js",
+        "backend/lib/studentCardBatchIssue.test.js",
+        "backend/lib/studentCardBatches.schema.pg.test.js",
+        "backend/scripts/verify-student-access-cards.js",
+        "backend/server.js",
+        "backend/services/rbacService.js",
+        "docs/student-card/CARTE-BATCH-API-02-protocole.md",
+        "package.json",
+        "scripts/verify-school-setup-lot4-red.ts",
+      ];
+      assert.equal(evaluateLot4Scope(batchApi02Files).kind, "na", "L4-09: diff exact CARTE-BATCH-API-02 admis nominativement");
+      for (const [extra, label] of [
+        ["backend/db/migrations/20261024_other_table.sql", "autre migration"],
+        ["backend/db/migrations/20261021_school_settings_student_card_holder.sql", "migration d'un autre chantier"],
+        ["backend/lib/schoolSetupStatus.js", "fichier LOT 4 exclusif"],
+        ["backend/lib/financeManagement.js", "autre fichier backend"],
+        ["backend/db/connectionConfig.js", "autre fichier de boot"],
+        ["docs/student-card/CARTE-BATCH-API-03.md", "autre document"],
+      ] as const) {
+        assert.equal(
+          evaluateLot4Scope([...batchApi02Files, extra]).kind,
+          "fail",
+          `L4-09: CARTE-BATCH-API-02 + ${label} doit rester FAIL`,
+        );
+      }
+      for (const missingAnchor of STUDENT_CARD_BATCH_API_02_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(batchApi02Files.filter((file) => file !== missingAnchor)).kind,
+          "fail",
+          `L4-09: CARTE-BATCH-API-02 sans l'ancre ${missingAnchor} doit rester FAIL`,
+        );
+      }
+      for (const batchOnly of STUDENT_CARD_BATCH_API_02_EXACT) {
+        if (STUDENT_CARD_BATCH_API_02_ANCHORS.includes(batchOnly)) continue;
+        assert.equal(
+          evaluateLot4Scope(["backend/lib/studentCardBatchIssue.js", "backend/server.js", batchOnly]).kind,
+          "fail",
+          `L4-09: ${batchOnly} sans la migration ancre CARTE-BATCH-API-02 doit rester FAIL`,
         );
       }
 

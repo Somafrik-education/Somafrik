@@ -118,6 +118,16 @@ function main() {
   assert.doesNotMatch(catalog, /Carte Élève|moduleKey: "cards"/);
   assert.doesNotMatch(presences, /student_access_cards|cardToken/);
   assert.doesNotMatch(schema, /\bqr_payload\b|\braw_token\b/);
+  assert.doesNotMatch(STUDENT_ACCESS_CARDS_SCHEMA_SQL, /student_card_batches|REFERENCES classes/);
+  assert.match(repo, /ensureStudentCardBatchesCanonicalSchema/);
+  const cardsBoot = repo.indexOf("ensureStudentAccessCardsCanonicalSchema");
+  const batchesBoot = repo.indexOf("ensureStudentCardBatchesCanonicalSchema");
+  assert.ok(cardsBoot > 0 && batchesBoot > cardsBoot);
+  assert.match(server, /app\.post\("\/api\/classes\/:classCode\/student-cards\/batches"/);
+  assert.doesNotMatch(server, /failAfterInsert|failBeforeCommit/);
+  const batchMigration = read("backend/db/migrations/20261023_student_card_batches.sql");
+  assert.match(batchMigration, /delivery_nonce_hash/);
+  assert.doesNotMatch(batchMigration, /\bcard_token\b|\bqr_payload\b|\braw_token\b|\bdelivery_nonce\b(?!_hash)/);
   assert.match(schema, /student_access_cards_nfc_uid_unique/);
   assert.match(schema, /student_access_cards_nfc_check/);
   assert.doesNotMatch(migration, /CREATE TABLE student_debts|CREATE TABLE student_invoices/);

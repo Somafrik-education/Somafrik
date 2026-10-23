@@ -101,6 +101,13 @@ const routePermissions = {
   // CARTE-PR2 : la route ne donne accès qu'à la validité ; chaque section est filtrée en aval.
   "POST /api/student-cards/verify": ["Élèves:READ", "Voir élèves", "Gérer élèves", "Présences:CREATE", "Présences:UPDATE"],
   "POST /api/student-cards": ["Élèves:UPDATE", "Gérer élèves"],
+  // CARTE-BATCH-API-02 — même permission que l'émission unitaire. Lecture du lot comprise :
+  // le statut sert à reprendre une préparation, jamais à relire un secret.
+  "POST /api/classes/:classCode/student-cards/batches": ["Élèves:UPDATE", "Gérer élèves"],
+  "GET /api/classes/:classCode/student-cards/batches/:batchId": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/classes/:classCode/student-cards/batches/:batchId/receipt": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/classes/:classCode/student-cards/batches/:batchId/activate": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/classes/:classCode/student-cards/batches/:batchId/abort": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/nfc-confirm": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/nfc-retry": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/nfc-provision": ["Élèves:UPDATE", "Gérer élèves"],

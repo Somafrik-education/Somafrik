@@ -140,6 +140,11 @@ test("CARTE-PR2 — Superadmin / Admin Pays refusés même avec ALL_PRIVILEGES",
     "POST /api/student-cards/:id/replace",
     "POST /api/student-cards/scan",
     "GET /api/student-cards/capabilities",
+    "POST /api/classes/:classCode/student-cards/batches",
+    "GET /api/classes/:classCode/student-cards/batches/:batchId",
+    "POST /api/classes/:classCode/student-cards/batches/:batchId/receipt",
+    "POST /api/classes/:classCode/student-cards/batches/:batchId/activate",
+    "POST /api/classes/:classCode/student-cards/batches/:batchId/abort",
   ];
   const superadmin = {
     role: "Super Administrateur Somafrik",
