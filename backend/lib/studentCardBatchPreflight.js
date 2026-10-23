@@ -30,7 +30,8 @@ async function previewClassCardBatch(repo, schoolScope, classCode) {
       WHERE school_id = $1 AND class_code = $2 LIMIT 2`,
     [schoolId, code],
   );
-  const found = classes.rows ?? [];
+  if (!Array.isArray(classes?.rows)) throw new Error("Lecture PostgreSQL des classes indisponible.");
+  const found = classes.rows;
   if (found.length !== 1) {
     const err = new Error("Classe introuvable ou ambiguë.");
     err.statusCode = 404;
@@ -47,17 +48,19 @@ async function previewClassCardBatch(repo, schoolScope, classCode) {
       ORDER BY s.id`,
     [schoolId, found[0].id],
   );
+  if (!Array.isArray(roster?.rows)) throw new Error("Lecture PostgreSQL des inscriptions indisponible.");
   const entries = [];
-  for (const row of roster.rows ?? []) {
+  for (const row of roster.rows) {
     const id = String(row.student_id);
     const active = await repo.query(
       `SELECT 1 FROM student_access_cards WHERE school_id = $1 AND student_id = $2 AND status = 'active' LIMIT 1`,
       [schoolId, id],
     );
+    if (!Array.isArray(active?.rows)) throw new Error("Lecture PostgreSQL des cartes indisponible.");
     const holder = await readStudentCardHolder(repo, id, schoolScope);
     entries.push({
       studentId: id,
-      hasActiveCard: (active.rows ?? []).length > 0,
+      hasActiveCard: active.rows.length > 0,
       eligible: true,
       holderKind: holder?.kind ?? null,
     });
