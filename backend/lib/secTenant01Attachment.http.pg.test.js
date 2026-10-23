@@ -161,7 +161,20 @@ async function seed(pool) {
     [schoolA.id, schoolB.id],
   );
 
-  return { schoolA, schoolB, users: { attached, roleOnly, unattached, multi, superadmin, superTeacher } };
+  const mover = await insertUser("ST01-MOVER", schoolA.id, "SCHOOL_ADMIN", "Marc", "Bola");
+  await grant(mover, schoolA.id, "SCHOOL_ADMIN");
+  const disabled = await insertUser("ST01-DISABLED", schoolA.id, "SCHOOL_ADMIN", "Dora", "Imba");
+  await grant(disabled, schoolA.id, "SCHOOL_ADMIN");
+  const archived = await insertUser("ST01-ARCHIVED", schoolA.id, "SECRETARY", "Aline", "Rova");
+  await grant(archived, schoolA.id, "SECRETARY");
+  const superDisabled = await insertUser("ST01-SUPER-OFF", null, "SUPER_ADMIN", "Sid", "Off");
+  await grant(superDisabled, null, "SUPER_ADMIN");
+
+  return {
+    schoolA,
+    schoolB,
+    users: { attached, roleOnly, unattached, multi, superadmin, superTeacher, mover, disabled, archived, superDisabled },
+  };
 }
 
 async function webLogin(identifier, schoolCode) {
@@ -358,6 +371,52 @@ async function main() {
     const revokedAccess = await request("/auth/effective-permissions", { token: refreshed.data.accessToken });
     assert.equal(revokedAccess.status, 401, `access token de la session révoquée: ${revokedAccess.text}`);
     check();
+
+    // Ancien JWT au schoolCode concret A après changement users.school_id A → B : refus + révocation.
+    const moverLogin = await webLogin("ST01-MOVER", schoolA.login_code);
+    assert.equal(moverLogin.status, 200, `mover login A: ${moverLogin.text}`);
+    assert.equal((await request("/students", { token: moverLogin.data.accessToken })).status, 200, "mover A avant transfert");
+    await pool.query(`UPDATE users SET school_id = $2 WHERE id = $1`, [users.mover, schoolB.id]);
+    const moverOld = await request("/students", { token: moverLogin.data.accessToken });
+    assert.equal(moverOld.status, 401, `ancien JWT A après transfert vers B: ${moverOld.text}`);
+    check();
+    const moverOldB = await request("/students", {
+      token: moverLogin.data.accessToken,
+      headers: { "X-Somafrik-School-Code": schoolB.login_code },
+    });
+    assert.equal(moverOldB.status, 401, `ancien JWT A ne sélectionne pas B: ${moverOldB.text}`);
+    check();
+    const moverRefresh = await request("/auth/refresh", {
+      method: "POST",
+      body: { refreshToken: moverLogin.data.refreshToken },
+    });
+    assert.equal(moverRefresh.status, 401, `refresh après transfert: ${moverRefresh.text}`);
+    check();
+    const moverRevoked = await pool.query(
+      `SELECT revoked_at IS NOT NULL AS revoked, revoke_reason FROM sessions WHERE user_id = $1`,
+      [users.mover],
+    );
+    assert.ok(moverRevoked.rows.length && moverRevoked.rows.every((row) => row.revoked), "session du transféré révoquée");
+    check();
+
+    // Compte désactivé / archivé (y compris Superadmin) : jeton existant et refresh refusés.
+    for (const [label, identifier, userId, schoolCode, status] of [
+      ["désactivé", "ST01-DISABLED", users.disabled, schoolA.login_code, "inactive"],
+      ["archivé", "ST01-ARCHIVED", users.archived, schoolA.login_code, "archived"],
+      ["Superadmin désactivé", "ST01-SUPER-OFF", users.superDisabled, undefined, "inactive"],
+    ]) {
+      const session = await webLogin(identifier, schoolCode);
+      assert.equal(session.status, 200, `${label} login avant statut: ${session.text}`);
+      await pool.query(`UPDATE users SET status = $2 WHERE id = $1`, [userId, status]);
+      const access = await request("/auth/effective-permissions", { token: session.data.accessToken });
+      assert.equal(access.status, 401, `${label}: jeton existant refusé: ${access.text}`);
+      check();
+      const refresh = await request("/auth/refresh", { method: "POST", body: { refreshToken: session.data.refreshToken } });
+      assert.equal(refresh.status, 401, `${label}: refresh refusé: ${refresh.text}`);
+      check();
+      assertRefused(await webLogin(identifier, schoolCode), `${label}: nouvelle connexion`);
+      check();
+    }
 
     // Superadmin : portée plateforme conservée, données personnelles établissement refusées.
     const superLogin = await webLogin("ST01-SUPER");

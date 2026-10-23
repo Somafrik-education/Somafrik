@@ -2336,12 +2336,20 @@ class PostgresRepository {
     await this.init();
     const code = String(sessionId ?? "").trim();
     if (!code) return null;
+    // SEC-TENANT-01 : même requête, état courant du compte (statut et établissement
+    // canonique users.school_id) pour refuser une session devenue non autorisée.
     return this.one(
-      `SELECT session_code, user_id, revoked_at, expires_at
-       FROM sessions
-       WHERE session_code = $1
-         AND revoked_at IS NULL
-         AND expires_at > NOW()`,
+      `SELECT sess.session_code, sess.user_id, sess.school_id, sess.revoked_at, sess.expires_at,
+              u.status AS user_status,
+              u.school_id AS user_school_id,
+              us.school_code AS user_school_code,
+              us.login_code AS user_school_login_code
+       FROM sessions sess
+       LEFT JOIN users u ON u.id = sess.user_id
+       LEFT JOIN schools us ON us.id = u.school_id AND us.deleted_at IS NULL
+       WHERE sess.session_code = $1
+         AND sess.revoked_at IS NULL
+         AND sess.expires_at > NOW()`,
       [code],
     );
   }
@@ -2394,7 +2402,8 @@ class PostgresRepository {
     const code = String(sessionId ?? "").trim();
     if (!code) return null;
     return this.one(
-      `SELECT sess.*, u.user_code, u.role, s.school_code, s.login_code AS school_login_code,
+      `SELECT sess.*, u.user_code, u.role, u.status AS user_status,
+              s.school_code, s.login_code AS school_login_code,
               c.iso_code AS country_code
        FROM sessions sess
        LEFT JOIN users u ON u.id = sess.user_id

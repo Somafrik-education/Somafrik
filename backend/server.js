@@ -7384,6 +7384,8 @@ function requireAuth(req, res, next) {
       if (!activeSession) {
         throw new BusinessError(401, "Session révoquée.");
       }
+      const { assertAccessSessionAccount } = require("./lib/accessSessionAccountGuard");
+      await assertAccessSessionAccount({ principal: req.principal, activeSession, repository, sessionId });
     }
 
     const {

@@ -38,6 +38,11 @@ function payloadMatchesSessionSchool(payload = {}, session = {}) {
  * @returns {Promise<string>} schoolCode à embarquer dans le nouvel access token
  */
 async function resolveRefreshSchoolCode({ repository, session = {}, payload = {}, roleKeys = [] }) {
+  // Compte non actif (désactivé, archivé, suspendu…) : aucun refresh, tous rôles.
+  if (Object.prototype.hasOwnProperty.call(session, "user_status") && session.user_status !== "active") {
+    await revokeAndRefuse(repository, session, payload, "account_inactive", "SESSION_ACCOUNT_INACTIVE");
+  }
+
   const scopeShape = { role: session.role, roleKeys };
   if (isPlatformScopePrincipal(scopeShape)) {
     return session.school_code ?? "*";
@@ -57,12 +62,16 @@ async function resolveRefreshSchoolCode({ repository, session = {}, payload = {}
     return schoolCode;
   }
 
+  await revokeAndRefuse(repository, session, payload, "school_attachment_missing", "SESSION_SCHOOL_ATTACHMENT_MISSING");
+}
+
+async function revokeAndRefuse(repository, session, payload, reason, code) {
   const sessionId = String(payload.sessionId ?? session.session_code ?? "").trim();
   if (sessionId && typeof repository?.revokeSession === "function") {
-    await repository.revokeSession(sessionId, "school_attachment_missing");
+    await repository.revokeSession(sessionId, reason);
   }
   const error = new BusinessError(401, "Session expirée ou révoquée");
-  error.code = "SESSION_SCHOOL_ATTACHMENT_MISSING";
+  error.code = code;
   throw error;
 }
 

@@ -376,3 +376,131 @@ test("hydratation: claim vide d'un rôle scolaire relu depuis users.school_id (G
   const concrete = { sub: "attached", role: "Comptable", roleKeys: ["ACCOUNTANT"], schoolCode: "CD-2026-0009" };
   assert.equal(await hydrateCanonicalSchoolAttachment(concrete, repository), concrete);
 });
+
+const { assertAccessSessionAccount } = require("./accessSessionAccountGuard");
+
+function guardRepository(canonical = null) {
+  const revoked = [];
+  return {
+    revoked,
+    async revokeSession(sessionId, reason) {
+      revoked.push({ sessionId, reason });
+    },
+    async findUserCanonicalSchool() {
+      return canonical;
+    },
+  };
+}
+
+const ACTIVE_SESSION_A = {
+  user_status: "active",
+  user_school_id: "s-a",
+  user_school_code: "CD-2026-0001",
+  user_school_login_code: "CD-IN-26-001",
+};
+
+test("session: compte non actif → 401 et session révoquée, tous rôles", async () => {
+  for (const [status, principal] of [
+    ["inactive", { role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: "CD-2026-0001" }],
+    ["archived", { role: "Secrétaire", roleKeys: ["SECRETARY"], schoolCode: "CD-2026-0001" }],
+    ["suspended", { role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], schoolCode: "*" }],
+    [null, { role: "Admin Pays", roleKeys: ["COUNTRY_ADMIN"], schoolCode: "*" }],
+  ]) {
+    const repository = guardRepository();
+    await assert.rejects(
+      () =>
+        assertAccessSessionAccount({
+          principal,
+          activeSession: { ...ACTIVE_SESSION_A, user_status: status },
+          repository,
+          sessionId: "sess-x",
+        }),
+      (error) => error.statusCode === 401 && error.code === "SESSION_ACCOUNT_INACTIVE",
+      String(status),
+    );
+    assert.deepEqual(repository.revoked, [{ sessionId: "sess-x", reason: "account_inactive" }]);
+  }
+});
+
+test("session: ancien jeton A après transfert du compte vers B → 401 et révocation", async () => {
+  const repository = guardRepository();
+  await assert.rejects(
+    () =>
+      assertAccessSessionAccount({
+        principal: { role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: "CD-2026-0001", schoolId: "s-a" },
+        activeSession: { user_status: "active", user_school_id: "s-b", user_school_code: "CD-2026-0002" },
+        repository,
+        sessionId: "sess-y",
+      }),
+    (error) => error.statusCode === 401 && error.code === "SESSION_SCHOOL_ATTACHMENT_MISSING",
+  );
+  assert.deepEqual(repository.revoked, [{ sessionId: "sess-y", reason: "school_attachment_changed" }]);
+});
+
+test("session: compte retiré de tout établissement → 401", async () => {
+  await assert.rejects(
+    () =>
+      assertAccessSessionAccount({
+        principal: { role: "Enseignant", roleKeys: ["TEACHER"], schoolCode: "CD-2026-0001" },
+        activeSession: { user_status: "active", user_school_id: null, user_school_code: null },
+        repository: guardRepository(),
+        sessionId: "sess-z",
+      }),
+    (error) => error.statusCode === 401,
+  );
+});
+
+test("session: établissement canonique inchangé (code interne ou login_code) → accepté", async () => {
+  for (const schoolCode of ["CD-2026-0001", "CD-IN-26-001"]) {
+    const repository = guardRepository();
+    await assertAccessSessionAccount({
+      principal: { role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode },
+      activeSession: ACTIVE_SESSION_A,
+      repository,
+      sessionId: "sess-ok",
+    });
+    assert.deepEqual(repository.revoked, []);
+  }
+  const platform = guardRepository();
+  await assertAccessSessionAccount({
+    principal: { role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], schoolCode: "*" },
+    activeSession: { user_status: "active", user_school_id: null },
+    repository: platform,
+    sessionId: "sess-sa",
+  });
+  assert.deepEqual(platform.revoked, []);
+});
+
+test("session: dépôt sans projection de compte → rattachement relu (findUserCanonicalSchool)", async () => {
+  await assertAccessSessionAccount({
+    principal: { role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: "SCH-MEM" },
+    activeSession: { session_code: "mem" },
+    repository: guardRepository({ schoolId: "", schoolCode: "SCH-MEM" }),
+    sessionId: "mem",
+  });
+  await assert.rejects(
+    () =>
+      assertAccessSessionAccount({
+        principal: { role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: "SCH-MEM" },
+        activeSession: { session_code: "mem" },
+        repository: guardRepository(null),
+        sessionId: "mem",
+      }),
+    (error) => error.statusCode === 401,
+  );
+});
+
+test("refresh: compte non actif → 401 et session révoquée, même plateforme", async () => {
+  const repository = refreshRepository({ attached: true });
+  await assert.rejects(
+    () =>
+      resolveRefreshSchoolCode({
+        repository,
+        session: { role: "SUPER_ADMIN", user_status: "inactive", school_code: null },
+        payload: { sessionId: "sess-r" },
+        roleKeys: ["SUPER_ADMIN"],
+      }),
+    (error) => error.statusCode === 401 && error.code === "SESSION_ACCOUNT_INACTIVE",
+  );
+  assert.deepEqual(repository.revoked, [{ sessionId: "sess-r", reason: "account_inactive" }]);
+});
