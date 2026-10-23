@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StudentCardPrintView } from "./StudentCardPrintView";
 import type { StudentCardHolder } from "../../lib/studentCardsApi";
@@ -173,4 +173,52 @@ describe("StudentCardPrintView — CARTE-UI-01", () => {
     expect(screen.queryByText("Matricule")).toBeNull();
     expect(document.body.textContent).not.toMatch(/Non renseigné|Aucune inscription active/);
   });
+  it("carte A prête → B : masque immédiatement le QR A et bloque impression jusqu’au QR B", async () => {
+    const pending = new Map<string, (value: string) => void>();
+    qrToDataUrl.mockImplementation((token: string) => new Promise<string>((resolve) => pending.set(token, resolve)));
+    const view = (token: string, name: string, holder: StudentCardHolder | null = ELEVE) => (
+      <StudentCardPrintView cardToken={token} holder={holder}
+        identity={{ ...identity, displayName: name }} school={school} onClose={() => undefined} />
+    );
+    const { rerender } = render(view("CARD-A.SECRET-A", "Élève A"));
+    await waitFor(() => expect(pending.has("CARD-A.SECRET-A")).toBe(true));
+    await act(async () => pending.get("CARD-A.SECRET-A")!("data:image/png;base64,QR-A"));
+    expect(screen.getByRole("button", { name: "Imprimer" })).toBeEnabled();
+    rerender(view("CARD-B.SECRET-B", "Élève B"));
+    expect(screen.getByTestId("student-card-name")).toHaveTextContent("Élève B");
+    expect(screen.queryByTestId("student-card-qr")).toBeNull();
+    expect(screen.getByRole("button", { name: "Imprimer" })).toBeDisabled();
+    expect(document.body.innerHTML).not.toContain("QR-A");
+    await waitFor(() => expect(pending.has("CARD-B.SECRET-B")).toBe(true));
+    await act(async () => pending.get("CARD-B.SECRET-B")!("data:image/png;base64,QR-B"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Imprimer" })).toBeEnabled());
+    expect(screen.getByTestId("student-card-qr")).toHaveAttribute("src", "data:image/png;base64,QR-B");
+    rerender(view("CARD-B.SECRET-B", "Élève B", null));
+    expect(screen.queryByTestId("student-card-qr")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Imprimer" })).toBeNull();
+  });
+
+  it("A → B → A : résultats asynchrones périmés ignorés, nouvelle génération requise", async () => {
+    const pending: Array<{ token: string; resolve: (url: string) => void }> = [];
+    qrToDataUrl.mockImplementation((token: string) =>
+      new Promise<string>((resolve) => pending.push({ token, resolve })));
+    const view = (token: string) => (
+      <StudentCardPrintView cardToken={token} holder={ELEVE}
+        identity={identity} school={school} onClose={() => undefined} />
+    );
+    const { rerender } = render(view("CARD-A.SECRET-A"));
+    await waitFor(() => expect(pending.length).toBe(1));
+    rerender(view("CARD-B.SECRET-B"));
+    await waitFor(() => expect(pending.length).toBe(2));
+    rerender(view("CARD-A.SECRET-A"));
+    await waitFor(() => expect(pending.length).toBe(3));
+    await act(async () => pending[0].resolve("data:image/png;base64,STALE-A"));
+    await act(async () => pending[1].resolve("data:image/png;base64,STALE-B"));
+    expect(screen.queryByTestId("student-card-qr")).toBeNull();
+    expect(screen.getByRole("button", { name: "Imprimer" })).toBeDisabled();
+    await act(async () => pending[2].resolve("data:image/png;base64,FRESH-A"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Imprimer" })).toBeEnabled());
+    expect(screen.getByTestId("student-card-qr")).toHaveAttribute("src", "data:image/png;base64,FRESH-A");
+  });
+
 });
