@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 
 /**
@@ -34,42 +34,35 @@ export interface StudentCardQr {
  * (par exemple titulaire non déterminé).
  */
 export function useStudentCardQr(cardToken: string | null): StudentCardQr {
-  // Each result is bound to its request. A render with another token can never
-  // expose the previous QR, even before the cleanup effect runs.
+  // Request identity is unique per token transition, including A → B → A.
+  // An old QR can never be reused when returning to a previously seen token.
+  const [attempt, setAttempt] = useState(0);
+  const request = useMemo(() => ({ token: cardToken, attempt }), [cardToken, attempt]);
   const [result, setResult] = useState<{
-    token: string;
-    attempt: number;
+    request: typeof request;
     state: "ready" | "error";
     src: string | null;
   } | null>(null);
-  const [request, setRequest] = useState<{ token: string | null; attempt: number }>({
-    token: cardToken,
-    attempt: 0,
-  });
-  const attempt = request.token === cardToken ? request.attempt : 0;
 
   useEffect(() => {
-    if (!cardToken) return;
+    if (!request.token) return;
     let cancelled = false;
-    void QRCode.toDataURL(cardToken, { ...STUDENT_CARD_QR_OPTIONS, color: { ...STUDENT_CARD_QR_OPTIONS.color } })
+    void QRCode.toDataURL(request.token, { ...STUDENT_CARD_QR_OPTIONS, color: { ...STUDENT_CARD_QR_OPTIONS.color } })
       .then((url) => {
-        if (!cancelled) setResult({ token: cardToken, attempt, state: "ready", src: url });
+        if (!cancelled) setResult({ request, state: "ready", src: url });
       })
       .catch(() => {
-        if (!cancelled) setResult({ token: cardToken, attempt, state: "error", src: null });
+        if (!cancelled) setResult({ request, state: "error", src: null });
       });
     return () => {
       cancelled = true;
     };
-  }, [cardToken, attempt]);
+  }, [request]);
 
-  const current = result?.token === cardToken && result.attempt === attempt ? result : null;
+  const current = result?.request === request ? result : null;
   return {
-    state: !cardToken ? "idle" : current?.state ?? "loading",
+    state: !request.token ? "idle" : current?.state ?? "loading",
     src: current?.src ?? null,
-    retry: () => setRequest((prev) => ({
-      token: cardToken,
-      attempt: prev.token === cardToken ? prev.attempt + 1 : 1,
-    })),
+    retry: () => setAttempt((value) => value + 1),
   };
 }
