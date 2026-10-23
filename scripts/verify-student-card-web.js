@@ -88,6 +88,38 @@ function main() {
   assert.doesNotMatch(face, /parentPhone|parentEmail|birthDate|token_hash|publicId/);
   assert.doesNotMatch(read("web/src/lib/studentCardPolicy.ts"), /Mobile\/|NDEFReader|navigator\.nfc/);
 
+  // CARTE-BATCH-WEB-01 : secrets hors stockage permanent, pas d'émission unitaire, pas de réémission dans un effet.
+  const batchApi = read("web/src/lib/studentCardBatchApi.ts");
+  const batchSession = read("web/src/lib/studentCardBatchSession.ts");
+  const batchPrintable = read("web/src/lib/studentCardBatchPrintable.ts");
+  const batchDialog = read("web/src/components/students/StudentCardBatchDialog.tsx");
+  const classesPage = read("web/src/pages/etablissement/ClassesListPage.tsx");
+  const batchProduct = [batchApi, batchSession, batchPrintable, batchDialog].join("\n");
+  assert.match(classesPage, /canIssueClassStudentCards/);
+  assert.match(classesPage, /CLASS_CARD_BATCH_BUTTON_LABEL/);
+  assert.match(batchSession, /Émettre \/ exporter les cartes/);
+  assert.match(batchSession, /automaticBatchCalls/);
+  assert.match(batchApi, /\/preflight/);
+  assert.match(batchApi, /\/receipt/);
+  assert.match(batchApi, /\/activate/);
+  assert.match(batchApi, /\/abort/);
+  assert.match(batchApi, /\/batches`, \{\}/);
+  assert.match(batchDialog, /documentSaveVerified|canConfirmDocumentSave/);
+  assert.match(batchDialog, /printableConverted: true/);
+  assert.match(batchDialog, /Je confirme avoir enregistré ce document CR80/);
+  assert.match(batchPrintable, /85\.60mm/);
+  assert.match(batchPrintable, /53\.98mm/);
+  assert.match(batchPrintable, /somafrik-card-batch-print-v1/);
+  assert.match(batchPrintable, /readBatchPrintDocument/);
+  assert.doesNotMatch(batchDialog, /buildStudentCardBatchDocument|\.txt/);
+  assert.doesNotMatch(batchProduct, /localStorage|sessionStorage|indexedDB|Idempotency-Key|withIdempotency|console\.log/);
+  assert.doesNotMatch(batchApi, /student-cards\/scan|api\.post<IssuedStudentAccessCard>\("\/student-cards"/);
+  const effectBlocks = [...batchDialog.matchAll(/useEffect\(\(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/g)];
+  assert.ok(effectBlocks.length >= 2, "les effets du dialogue doivent rester explicites");
+  for (const block of effectBlocks) {
+    assert.doesNotMatch(block[0], /studentCardBatchApi\.(prepare|activate|abort|receipt)/);
+  }
+
   console.log("verify-student-card-web: SUCCESS");
 }
 
