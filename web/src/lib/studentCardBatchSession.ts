@@ -144,6 +144,8 @@ export interface BatchFlowState {
   secretsHeld: boolean;
   nonceHeld: boolean;
   documentSaveVerified: boolean;
+  /** Vrai seulement après conversion locale du document CR80, pas après un simple fichier de jetons. */
+  printableConverted: boolean;
   operatorConfirmedSave: boolean;
   documentBytes: number | null;
   message: string | null;
@@ -160,7 +162,8 @@ export type BatchFlowAction =
   | { type: "unusable"; view: PublicBatchView }
   | { type: "receiving" }
   | { type: "received"; view: PublicBatchView }
-  | { type: "document_saved"; bytesWritten: number }
+  | { type: "document_saved"; bytesWritten: number; printableConverted: boolean }
+  | { type: "notice"; message: string }
   | { type: "operator_confirmed"; confirmed: boolean }
   | { type: "saving" }
   | { type: "saved"; view: PublicBatchView }
@@ -204,6 +207,7 @@ export function initialBatchFlow(classCode: string): BatchFlowState {
     secretsHeld: false,
     nonceHeld: false,
     documentSaveVerified: false,
+    printableConverted: false,
     operatorConfirmedSave: false,
     documentBytes: null,
     message: null,
@@ -227,6 +231,7 @@ export function canConfirmDocumentSave(state: BatchFlowState): boolean {
   return (
     (state.phase === "awaiting_save" || state.phase === "save_lost") &&
     state.documentSaveVerified &&
+    state.printableConverted &&
     state.operatorConfirmedSave &&
     state.secretsHeld
   );
@@ -236,6 +241,7 @@ export function canActivateBatch(state: BatchFlowState): boolean {
   return (
     (state.phase === "awaiting_activation" || state.phase === "activation_lost") &&
     state.documentSaveVerified &&
+    state.printableConverted &&
     state.operatorConfirmedSave &&
     state.secretsHeld &&
     state.status === "saved"
@@ -457,6 +463,7 @@ function clearPrivate(state: BatchFlowState, patch: Partial<BatchFlowState>): Ba
     secretsHeld: false,
     nonceHeld: false,
     documentSaveVerified: false,
+    printableConverted: false,
     operatorConfirmedSave: false,
     documentBytes: null,
     secretsRecoverable: false,
@@ -513,13 +520,20 @@ export function reduceBatchFlow(state: BatchFlowState, action: BatchFlowAction):
         secretsHeld: state.secretsHeld,
         nonceHeld: state.nonceHeld,
       });
-    case "document_saved":
+    case "document_saved": {
+      const printableConverted = action.printableConverted && action.bytesWritten > 0;
       return {
         ...state,
-        documentSaveVerified: action.bytesWritten > 0,
-        documentBytes: action.bytesWritten,
-        message: null,
+        documentSaveVerified: printableConverted,
+        printableConverted,
+        documentBytes: printableConverted ? action.bytesWritten : null,
+        message: printableConverted
+          ? null
+          : "Un fichier de jetons ne permet pas d'activer les cartes. Le document CR80 est requis.",
       };
+    }
+    case "notice":
+      return { ...state, message: action.message };
     case "operator_confirmed":
       return { ...state, operatorConfirmedSave: action.confirmed };
     case "saving":
@@ -530,6 +544,7 @@ export function reduceBatchFlow(state: BatchFlowState, action: BatchFlowAction):
         secretsHeld: state.secretsHeld,
         nonceHeld: false,
         documentSaveVerified: state.documentSaveVerified,
+        printableConverted: state.printableConverted,
         operatorConfirmedSave: state.operatorConfirmedSave,
         documentBytes: state.documentBytes,
       });
@@ -594,6 +609,7 @@ export function reduceBatchFlow(state: BatchFlowState, action: BatchFlowAction):
         secretsHeld: state.secretsHeld,
         nonceHeld: state.nonceHeld,
         documentSaveVerified: state.documentSaveVerified,
+        printableConverted: state.printableConverted,
         operatorConfirmedSave: state.operatorConfirmedSave,
         documentBytes: state.documentBytes,
       });
@@ -679,32 +695,6 @@ function applyFailure(state: BatchFlowState, failure: BatchFailure): BatchFlowSt
   return { ...state, message: failure.message, secretsRecoverable: false };
 }
 
-export function buildStudentCardBatchDocument(input: {
-  classCode: string;
-  className: string | null;
-  batchId: string;
-  expiresAt: string | null;
-  cards: readonly PreparedCardSecret[];
-}): string {
-  const lines = [
-    "Somafrik — cartes élèves",
-    `Classe: ${input.className ? `${input.className} (${input.classCode})` : input.classCode}`,
-    `Lot: ${input.batchId}`,
-    `Expiration: ${input.expiresAt ?? "non précisée"}`,
-    "Les cartes de ce document ne sont pas actives.",
-    "L'aperçu à l'écran ne suffit pas pour les activer.",
-    "Conservez ce fichier. Le navigateur ne le mémorise pas.",
-    "",
-  ];
-  for (const card of input.cards) {
-    lines.push(`Élève: ${card.studentId}`);
-    lines.push(`Identifiant public: ${card.publicId}`);
-    lines.push(`Jeton: ${card.cardToken}`);
-    lines.push("");
-  }
-  return lines.join("\n");
-}
-
 export interface DocumentSaveHandle {
   createWritable: () => Promise<{
     write: (data: string) => Promise<void>;
@@ -733,7 +723,7 @@ function isAbortError(error: unknown): boolean {
 
 export function suggestedCardDocumentName(classCode: string): string {
   const safe = classCode.replace(/[^A-Za-z0-9_-]+/g, "").slice(0, 48);
-  return `cartes-${safe || "classe"}.txt`;
+  return `cartes-cr80-${safe || "classe"}.html`;
 }
 
 export async function saveStudentCardBatchDocument(
@@ -747,7 +737,7 @@ export async function saveStudentCardBatchDocument(
     try {
       const handle = await env.showSaveFilePicker({
         suggestedName: filename,
-        types: [{ description: "Document cartes élèves", accept: { "text/plain": [".txt"] } }],
+        types: [{ description: "Cartes élèves CR80", accept: { "text/html": [".html"] } }],
       });
       const writable = await handle.createWritable();
       await writable.write(textBody);
@@ -761,7 +751,7 @@ export async function saveStudentCardBatchDocument(
   const owner = env.document;
   if (!owner) return { verified: false, bytesWritten: 0, method: null, cancelled: false };
   const anchor = owner.createElement("a");
-  const url = URL.createObjectURL(new Blob([textBody], { type: "text/plain;charset=utf-8" }));
+  const url = URL.createObjectURL(new Blob([textBody], { type: "text/html;charset=utf-8" }));
   anchor.href = url;
   anchor.download = filename;
   owner.body.appendChild(anchor);

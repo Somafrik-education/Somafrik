@@ -2,7 +2,7 @@
 
 **DRAFT / HOLD — aucune fusion, aucun déploiement.**
 
-L'administrateur scolaire ouvre une classe et prépare les cartes QR des élèves éligibles. Le PDF A4 imprimable est le lot suivant (CARTE-BATCH-PDF-02). Ce parcours n'active rien à partir du seul aperçu.
+L'administrateur scolaire ouvre une classe et prépare les cartes QR des élèves éligibles. L'activation n'est possible qu'après l'enregistrement d'un document CR80 produit localement. Le PDF A4 (CARTE-BATCH-PDF-02) devra relire ce document, sans nouvelle émission et sans demander les secrets au serveur. Ce parcours n'active rien à partir du seul aperçu.
 
 ## Parcours
 
@@ -10,14 +10,15 @@ L'administrateur scolaire ouvre une classe et prépare les cartes QR des élève
 2. **Précontrôle.** Le dialogue affiche les élèves éligibles, les cartes déjà actives (non réexportées) et les élèves exclus avec leur motif. Aucune carte n'est créée.
 3. **Préparation.** `POST .../batches` avec un corps vide. Les secrets QR et le nonce restent dans la mémoire du composant, le temps de l'onglet. Ils ne vont ni dans `localStorage`, ni dans `sessionStorage`, ni dans `IndexedDB`, ni dans l'adresse.
 4. **Accusé technique.** Il est envoyé tout de suite avec le nonce reçu. S'il échoue, l'opérateur renvoie cet accusé. Une nouvelle préparation n'est pas lancée.
-5. **Document.** « Enregistrer le document » écrit un fichier texte (sélecteur de fichier, ou téléchargement si le sélecteur est absent). L'annulation du sélecteur ne valide rien. La case de confirmation reste inactive tant que cette écriture n'est pas terminée.
-6. **Activation.** Elle n'est proposée qu'après l'accusé de sauvegarde accepté par le serveur, lui-même envoyé avec les secrets détenus en mémoire. L'aperçu ne contient pas ces secrets.
+5. **Document CR80.** « Enregistrer le document CR80 » convertit localement les secrets encore en mémoire en une feuille HTML à la taille réelle 85,60 × 53,98 mm, avec la source versionnée `somafrik-card-batch-print-v1`. Un fichier de jetons ne débloque pas l'activation. L'annulation du sélecteur ne valide rien. Le téléchargement de secours ne suffit pas : la case de confirmation reste obligatoire.
+6. **Activation.** Elle n'est proposée qu'après cette conversion, la confirmation de l'opérateur et l'accusé de sauvegarde accepté par le serveur. L'aperçu ne contient pas les secrets. Le serveur ne pourra pas réimprimer les QR.
 
 ## Coupure réseau
 
 | Situation | Comportement de l'écran |
 | --- | --- |
 | Réponse de préparation perdue | Message explicite. Aucun second appel tant que l'opérateur ne choisit pas « Contrôler le lot ». |
+| Fichier de jetons seul | L'activation reste impossible. Seul le document CR80 convertible est accepté. |
 | Lot déjà ouvert | `409`, identifiants publics, `secretsRecoverable` affiché faux. Abandon explicite, puis seulement une nouvelle demande. |
 | Accusé ou activation sans réponse | Nouvel envoi de la même étape. Pas de nouvelle préparation. |
 | Lot expiré | Les QR non activés ne le seront jamais. Nouvelle préparation uniquement sur action. |

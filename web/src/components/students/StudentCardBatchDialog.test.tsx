@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ApiError } from "../../api/client";
 import type { DocumentSaveEnvironment } from "../../lib/studentCardBatchSession";
+import type { BatchPrintIdentity } from "../../lib/studentCardBatchPrintable";
 import { StudentCardBatchDialog } from "./StudentCardBatchDialog";
 
 const SECRET = "supersecretvalue";
@@ -42,20 +43,32 @@ const publicView = {
   ],
 };
 
-function renderDialog(classCode = "CLS-1") {
+const printIdentity: BatchPrintIdentity = {
+  studentId: "student-new",
+  holderKind: "eleve",
+  displayName: "Awa DIOP",
+  studentCode: "MAT-1",
+  classLabel: "6ème A",
+  schoolName: "Institut Nuru",
+};
+
+function renderDialog(classCode = "CLS-1", identities: BatchPrintIdentity[] = [printIdentity]) {
   const saveDocument = vi.fn<(textBody: string, filename: string, env: DocumentSaveEnvironment) => Promise<{ verified: boolean; bytesWritten: number; cancelled: boolean }>>(
     async () => ({ verified: true, bytesWritten: 80, cancelled: false }),
   );
+  const loadPrintIdentities = vi.fn(async () => identities);
   const view = render(
     <StudentCardBatchDialog
       open
       classCode={classCode}
       className="6ème A"
+      schoolName="Institut Nuru"
       onClose={vi.fn()}
+      loadPrintIdentities={loadPrintIdentities}
       saveDocument={saveDocument}
     />,
   );
-  return { ...view, saveDocument };
+  return { ...view, saveDocument, loadPrintIdentities };
 }
 
 describe("StudentCardBatchDialog", () => {
@@ -136,16 +149,20 @@ describe("StudentCardBatchDialog", () => {
     const user = userEvent.setup();
     const { saveDocument } = renderDialog();
     await user.click(await screen.findByRole("button", { name: "Préparer les cartes" }));
-    expect(await screen.findByRole("button", { name: "Enregistrer le document" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Enregistrer le document CR80" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Activer les cartes" })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox")).toBeDisabled();
     expect(document.body.textContent).not.toContain(SECRET);
     expect(batchApi.receiptSaved).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: "Enregistrer le document" }));
-    expect(saveDocument).toHaveBeenCalledTimes(1);
-    expect(String(saveDocument.mock.calls[0][0])).toContain(TOKEN);
-    expect(String(saveDocument.mock.calls[0][0])).not.toContain("student-active");
+    await user.click(screen.getByRole("button", { name: "Enregistrer le document CR80" }));
+    await waitFor(() => expect(saveDocument).toHaveBeenCalledTimes(1));
+    const savedFile = String(saveDocument.mock.calls[0][0]);
+    expect(savedFile).toContain("85.60mm");
+    expect(savedFile).toContain("53.98mm");
+    expect(savedFile).toContain(TOKEN);
+    expect(savedFile).not.toContain("student-active");
+    expect(String(saveDocument.mock.calls[0][1])).toMatch(/\.html$/);
     const checkbox = screen.getByRole("checkbox");
     expect(checkbox).toBeEnabled();
     await user.click(checkbox);
@@ -181,7 +198,8 @@ describe("StudentCardBatchDialog", () => {
     const user = userEvent.setup();
     renderDialog();
     await user.click(await screen.findByRole("button", { name: "Préparer les cartes" }));
-    await user.click(await screen.findByRole("button", { name: "Enregistrer le document" }));
+    await user.click(await screen.findByRole("button", { name: "Enregistrer le document CR80" }));
+    await waitFor(() => expect(screen.getByRole("checkbox")).toBeEnabled());
     await user.click(screen.getByRole("checkbox"));
     await user.click(screen.getByRole("button", { name: "Confirmer la sauvegarde" }));
     await user.click(await screen.findByRole("button", { name: "Activer les cartes" }));
@@ -214,6 +232,25 @@ describe("StudentCardBatchDialog", () => {
     expect(document.body.textContent).not.toContain("other-school-student");
     expect(document.body.textContent).not.toContain(SECRET);
     expect(batchApi.prepare).not.toHaveBeenCalled();
+  });
+
+  it("n'active pas si le document CR80 ne peut pas être produit", async () => {
+    const user = userEvent.setup();
+    const { saveDocument } = renderDialog("CLS-1", [{ ...printIdentity, holderKind: null }]);
+    batchApi.prepare.mockResolvedValue({
+      ok: true,
+      nonce: "nonce-value",
+      secrets: [{ studentId: "student-new", publicId: "pubidvalue", cardToken: TOKEN, secret: SECRET }],
+      view: publicView,
+    });
+    batchApi.receiptTechnical.mockResolvedValue({ ...publicView, status: "received" });
+    await user.click(await screen.findByRole("button", { name: "Préparer les cartes" }));
+    await user.click(await screen.findByRole("button", { name: "Enregistrer le document CR80" }));
+    expect(await screen.findByText(/ne seront pas activées/)).toBeInTheDocument();
+    expect(saveDocument).not.toHaveBeenCalled();
+    expect(batchApi.receiptSaved).not.toHaveBeenCalled();
+    expect(batchApi.activate).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Activer les cartes" })).not.toBeInTheDocument();
   });
 
   it("refuse l'administrateur plateforme sans liste d'élèves", async () => {

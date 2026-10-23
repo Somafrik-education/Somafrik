@@ -5,7 +5,6 @@ import type { PermissionContext } from "./permissions";
 import type { SessionUser } from "../types";
 import {
   automaticBatchCalls,
-  buildStudentCardBatchDocument,
   canActivateBatch,
   canConfirmDocumentSave,
   canIssueClassStudentCards,
@@ -124,7 +123,10 @@ describe("session du lot", () => {
     expect(canConfirmDocumentSave(state)).toBe(false);
     state = reduceBatchFlow(state, { type: "operator_confirmed", confirmed: true });
     expect(canConfirmDocumentSave(state)).toBe(false);
-    state = reduceBatchFlow(state, { type: "document_saved", bytesWritten: 120 });
+    const tokenFile = reduceBatchFlow(state, { type: "document_saved", bytesWritten: 120, printableConverted: false });
+    expect(canConfirmDocumentSave(tokenFile)).toBe(false);
+    expect(canActivateBatch(tokenFile)).toBe(false);
+    state = reduceBatchFlow(state, { type: "document_saved", bytesWritten: 120, printableConverted: true });
     expect(canConfirmDocumentSave(state)).toBe(true);
     expect(canActivateBatch(state)).toBe(false);
     state = reduceBatchFlow(state, {
@@ -168,16 +170,8 @@ describe("session du lot", () => {
     expect(JSON.stringify(pending)).not.toContain(SECRET);
   });
 
-  it("écrit le document seulement pour les cartes préparées et confirme la sauvegarde", async () => {
-    const text = buildStudentCardBatchDocument({
-      classCode: "CLS-1",
-      className: "6ème A",
-      batchId: BATCH_ID,
-      expiresAt: "2026-10-23T18:00:00.000Z",
-      cards: [{ studentId: "student-new", publicId: "pubidvalue", cardToken: TOKEN, secret: SECRET }],
-    });
-    expect(text).toContain(TOKEN);
-    expect(text).not.toContain("student-active");
+  it("confirme la sauvegarde du fichier choisi par l'opérateur", async () => {
+    const text = "<!DOCTYPE html><html><body>CR80</body></html>";
     const writes: string[] = [];
     const saved = await saveStudentCardBatchDocument(text, "cartes-CLS-1.txt", {
       showSaveFilePicker: async () => ({

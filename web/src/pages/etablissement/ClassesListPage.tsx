@@ -562,6 +562,7 @@ export function ClassesListPage() {
         open={Boolean(cardClass)}
         classCode={cardClass?.classCode ?? ""}
         className={cardClass ? getClassDisplayName(cardClass) : ""}
+        schoolName={activeSchool?.name ?? null}
         onClose={() => setCardClass(null)}
       />
 

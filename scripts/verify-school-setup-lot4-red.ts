@@ -1191,8 +1191,11 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "web/src/components/students/StudentCardBatchDialog.tsx",
         "web/src/lib/studentCardBatchApi.test.ts",
         "web/src/lib/studentCardBatchApi.ts",
+        "web/src/lib/studentCardBatchPrintable.test.ts",
+        "web/src/lib/studentCardBatchPrintable.ts",
         "web/src/lib/studentCardBatchSession.test.ts",
         "web/src/lib/studentCardBatchSession.ts",
+        "web/src/lib/studentCardQr.ts",
         "web/src/pages/etablissement/ClassesListPage.test.tsx",
         "web/src/pages/etablissement/ClassesListPage.tsx",
       ];

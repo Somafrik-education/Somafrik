@@ -33,6 +33,14 @@ export interface StudentCardQr {
  * Génère l'image du QR pour l'aperçu et l'impression. `cardToken` null : aucune génération
  * (par exemple titulaire non déterminé).
  */
+/** Image du QR, même réglage que l'aperçu unitaire. Le jeton ne sort pas de cette fonction. */
+export function renderStudentCardQrDataUrl(cardToken: string): Promise<string> {
+  return QRCode.toDataURL(cardToken, {
+    ...STUDENT_CARD_QR_OPTIONS,
+    color: { ...STUDENT_CARD_QR_OPTIONS.color },
+  });
+}
+
 export function useStudentCardQr(cardToken: string | null): StudentCardQr {
   // Request identity is unique per token transition, including A → B → A.
   // An old QR can never be reused when returning to a previously seen token.

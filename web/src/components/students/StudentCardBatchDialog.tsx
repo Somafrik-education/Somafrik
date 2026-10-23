@@ -3,7 +3,12 @@ import { Button, InlineAlert, Modal } from "../../design-system";
 import { formatDateTimeForDisplay } from "../../lib/dates";
 import { studentCardBatchApi } from "../../lib/studentCardBatchApi";
 import {
-  buildStudentCardBatchDocument,
+  assembleBatchPrintDocument,
+  loadBatchPrintIdentities,
+  renderBatchPrintDocument,
+  type BatchPrintIdentity,
+} from "../../lib/studentCardBatchPrintable";
+import {
   canActivateBatch,
   canConfirmDocumentSave,
   classifyBatchError,
@@ -23,7 +28,14 @@ interface StudentCardBatchDialogProps {
   open: boolean;
   classCode: string;
   className: string;
+  schoolName?: string | null;
   onClose: () => void;
+  loadPrintIdentities?: (input: {
+    classCode: string;
+    schoolName: string | null;
+    className: string | null;
+    studentIds: readonly string[];
+  }) => Promise<BatchPrintIdentity[]>;
   saveDocument?: (
     textBody: string,
     filename: string,
@@ -58,7 +70,9 @@ export function StudentCardBatchDialog({
   open,
   classCode,
   className,
+  schoolName = null,
   onClose,
+  loadPrintIdentities = loadBatchPrintIdentities,
   saveDocument = saveStudentCardBatchDocument,
 }: StudentCardBatchDialogProps) {
   const [state, dispatch] = useReducer(reduceBatchFlow, classCode, initialBatchFlow);
@@ -173,16 +187,43 @@ export function StudentCardBatchDialog({
   async function onSaveDocument() {
     const secrets = secretsRef.current;
     if (!state.batchId || secrets.length === 0) return;
-    const textBody = buildStudentCardBatchDocument({
-      classCode,
-      className: state.className ?? classNameRef.current,
-      batchId: state.batchId,
-      expiresAt: state.expiresAt,
-      cards: secrets,
-    });
-    const saved = await saveDocument(textBody, suggestedCardDocumentName(classCode), defaultSaveEnvironment());
+    let identities: BatchPrintIdentity[];
+    try {
+      identities = await loadPrintIdentities({
+        classCode,
+        schoolName,
+        className: state.className ?? classNameRef.current,
+        studentIds: secrets.map((card) => card.studentId),
+      });
+    } catch {
+      dispatch({
+        type: "notice",
+        message: "Le document CR80 ne peut pas être produit. Les cartes ne seront pas activées.",
+      });
+      return;
+    }
+    const assembled = assembleBatchPrintDocument(
+      {
+        batchId: state.batchId,
+        classCode,
+        className: state.className ?? classNameRef.current,
+        expiresAt: state.expiresAt,
+      },
+      secrets,
+      identities,
+    );
+    if (!assembled.ok) {
+      dispatch({ type: "notice", message: assembled.message });
+      return;
+    }
+    const printable = await renderBatchPrintDocument(assembled.value);
+    if (!printable.ok) {
+      dispatch({ type: "notice", message: printable.message });
+      return;
+    }
+    const saved = await saveDocument(printable.value, suggestedCardDocumentName(classCode), defaultSaveEnvironment());
     if (saved.cancelled || !saved.verified || saved.bytesWritten <= 0) return;
-    dispatch({ type: "document_saved", bytesWritten: saved.bytesWritten });
+    dispatch({ type: "document_saved", bytesWritten: saved.bytesWritten, printableConverted: true });
   }
 
   async function onConfirmSave() {
@@ -298,11 +339,16 @@ export function StudentCardBatchDialog({
             disabled={!state.documentSaveVerified || busy}
             onChange={(event) => dispatch({ type: "operator_confirmed", confirmed: event.target.checked })}
           />
-          <span>Je confirme avoir enregistré ce document. L'aperçu ne suffit pas à activer les cartes.</span>
+          <span>
+            Je confirme avoir enregistré ce document CR80. L'aperçu ne suffit pas à activer les cartes.
+          </span>
         </label>
       ) : null}
       {state.documentBytes ? (
-        <p className="mt-2 text-sm text-muted">Document enregistré ({state.documentBytes} octets).</p>
+        <p className="mt-2 text-sm text-muted">
+          Document CR80 enregistré ({state.documentBytes} octets). Il permet d'imprimer les cartes sans nouvelle
+          émission.
+        </p>
       ) : null}
     </Modal>
   );
@@ -379,7 +425,7 @@ function Footer({
       ) : null}
       {state.phase === "awaiting_save" || state.phase === "save_lost" ? (
         <Button type="button" variant="secondary" onClick={onSaveDocument} disabled={busy || !state.secretsHeld}>
-          Enregistrer le document
+          Enregistrer le document CR80
         </Button>
       ) : null}
       {state.phase === "awaiting_save" || state.phase === "save_lost" ? (
