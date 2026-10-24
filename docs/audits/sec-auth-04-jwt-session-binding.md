@@ -45,9 +45,9 @@ Appliqué à :
 
 ## 4. Tests historiques réalignés (sans contournement)
 
-38 bancs HTTP fabriquaient des access tokens **sans session** (ils passaient grâce à C-03). Ils utilisent désormais `backend/lib/testAccessSession.js` : `mintSessionAccessToken` crée une **vraie ligne `sessions`** via le dépôt (sujet = `sub` du jeton, refresh aléatoire jamais renvoyé), puis signe le jeton avec ce `sessionId`. Aucun chemin serveur n'est assoupli.
+37 fichiers de bancs HTTP (dont la fixture NFC partagée) fabriquaient des access tokens **sans session** (ils passaient grâce à C-03). Ils utilisent désormais `backend/lib/testAccessSession.js` : `mintSessionAccessToken` crée une **vraie ligne `sessions`** via le dépôt (sujet = `sub` du jeton, refresh aléatoire jamais renvoyé), puis signe le jeton avec ce `sessionId`. Aucun chemin serveur n'est assoupli.
 
-Voir §6 pour les assertions modifiées et leur justification.
+Voir §6 pour les assertions modifiées et leur justification. La création de session refuse un dépôt sans `createSession` ; le rôle vide est stocké `""` (colonne non nulle).
 
 ## 5. Résultats AUTH4-01 à AUTH4-24
 
@@ -78,13 +78,31 @@ Bancs : **PG** = `secAuth04SessionBinding.http.pg.test.js` (PostgreSQL 16, base 
 | AUTH4-21 | Changement d'établissement | Pas d'accès transversal | **PASS** — 401 `SESSION_SCHOOL_ATTACHMENT_MISSING`, y compris avec l'en-tête du nouvel établissement | PG |
 | AUTH4-22 | Ancien JWT sans `sessionId` (forme réelle Web, Mobile, Superadmin, Admin Pays, enseignant, parent) | Refus contrôlé | **PASS** — 401 `SESSION_REQUIRED` | PG, MEM |
 | AUTH4-23 | Route hors `requireAuth` (`/api/privacy/erasure-requests`) | Même protection | **PASS** — jeton sans session, session d'autrui ou révoquée → traité comme anonyme (400, demande non attribuée) ; jeton lié → 201 | PG, MEM |
-| AUTH4-24 | Non-régression SEC-AUTH-03 | Préservé avec #994 | RESULTAT_AUTH4_24 | Fusion locale |
+| AUTH4-24 | Non-régression SEC-AUTH-03 | Préservé avec #994 | **PASS** — fusion locale non poussée #994 + SEC-AUTH-04 (sans conflit) : `verify:sec-auth-03` 18/18 + 7 unitaires, `verify:sec-auth-04` 21/21 + 11 ; les constats D1 (C-03) et D2 (F3) de #994 passent de 200 à **401** | Fusion locale |
 
 Compteurs : PG 21 contrôles OK ; MEM 5/5 ; U 6/6.
 
 ## 6. Assertions historiques modifiées
 
-ASSERTIONS_MODIFIEES
+Méthode : les bancs ont été exécutés avec une trace temporaire (non commitée) de chaque refus du contrôle de session ; chaque refus a été rapproché de son assertion. Aucune assertion ne passe « par accident » (par exemple liste vide sur une réponse 401) : chaque refus est vérifié par `assertSessionRefused(réponse, libellé, code exact)`.
+
+| Banc | Jeton historique | Avant | Après | Justification |
+|---|---|---|---|---|
+| academicYearTenant P0-4, usersTenant P0-4, enrollmentTenant ENR-02, planningTenant PL-02, presenceTenant PR-02, mobileSyncTenant SY-06, schoolSetupStatus, dRevalidation PR-audit-write | compte A revendiquant l'établissement B (`leftover B`) | 200/403 ou écriture ramenée sur A | 401 `SESSION_SCHOOL_ATTACHMENT_MISSING` | Le garde SEC-TENANT-01 (déjà appliqué à toute session réelle) s'applique désormais aussi à ces jetons. |
+| academicYearTenant P0-6, usersTenant P0-6, planningTenant PL-07, presenceTenant PR-07, enrollmentTenant ENR-05, schoolSetupStatus | compte sans `school_id`, claim leftover | 403 de la route | 401 `SESSION_SCHOOL_ATTACHMENT_MISSING` | idem |
+| P0-5, PL-06, PR-06, ENR-04, SY-07, schoolSetupStatus | jeton sans `sub` | 401 ou 403 | 401 `SESSION_SUBJECT_MISMATCH` | Session sans propriétaire (F3). |
+| financeReadiness F8-P0-004 et « leftover JWT » | `sub` inexistant en base | 403/404, liste vide | 401 `SESSION_SUBJECT_MISMATCH` | idem |
+| mobileSyncAssignments KILOMBO overlay | `sub` = `teachers.id` (pas un compte) | 200 | 401 `SESSION_SUBJECT_MISMATCH` | Aucune connexion n'émet ce sujet ; en PostgreSQL une telle session était déjà refusée par SEC-TENANT-01 (compte absent). |
+| financeLiveRbac scénario 5 | compte rattaché à B revendiquant A | 403 RBAC | 401 `SESSION_SCHOOL_ATTACHMENT_MISSING` | Garde de session avant RBAC. |
+| platformAnnouncements PA-04 | compte inactif | 403/404 | 401 `SESSION_ACCOUNT_INACTIVE` | Garde SEC-TENANT-01. |
+| Réutilisation du même jeton après un refus | — | — | 401 `SESSION_REVOKED` | Le garde révoque la session refusée. |
+
+Couverture conservée avec des jetons légitimes (aucune assertion supprimée sans remplacement) :
+- **ENR-07, PR-audit, POST membership A (planning)** : la traçabilité « écriture et audit sur A, jamais B » est vérifiée avec le jeton réel de A ; l'écriture avec le claim leftover est vérifiée refusée et sans effet.
+- **mobileSync (5 bancs), rejeu de curseur** : un vrai compte de B rejoue le curseur de A → 400 `MOBILE_SYNC_CURSOR_INVALID` ; le lien établissement seul reste couvert par `mobileSyncCursor.test.js` (« tenant mismatch → 403 ») ; le claim B sur le compte A est vérifié refusé.
+- **studentCardVerification « libellé seul »** : un compte réel sans rôle attribué est créé ; la route répond **403 RBAC** (avant : 401 ou 403 acceptés).
+
+Ces réalignements touchent 16 bancs ; la conversion mécanique en touche 37. Volume : voir §10 du mandat — une séparation 04A (contrôle Backend) / 04B (tests historiques) reste possible, mais 04A seul ferait échouer ces bancs en CI : les deux parties doivent être fusionnées ensemble.
 
 ## 7. Constats hors périmètre (non corrigés, décision CTO requise)
 
@@ -96,7 +114,10 @@ ASSERTIONS_MODIFIEES
 
 ## 8. Dépendance à #994 et ordre de fusion
 
-COMPATIBILITE_994
+- **Pas de dépendance fonctionnelle** : SEC-AUTH-04 ne contient aucun commit de #994 et ne nécessite pas F2.
+- **Fusion locale de vérification** (non poussée) `audit/sec-auth-03-jwt-session-binding@77993db2` + cette branche : **aucun conflit** (`server.js`, `postgresRepository.js`, `package.json`, `pr-gates.yml` fusionnés automatiquement). `verify:sec-auth-03` et `verify:sec-auth-04` verts sur le résultat.
+- **Ordre proposé** : #994 puis SEC-AUTH-04 (F2 d'abord, correctif le plus simple ; SEC-AUTH-04 rend ensuite obsolètes les constats D1/D2 de #994, qui passent à 401). L'ordre inverse fonctionne aussi.
+- Après les deux fusions, le banc SEC-AUTH-04 peut adopter le garde `disposableTestDatabaseGuard` de #994 ; d'ici là il crée et supprime sa propre base au nom unique.
 
 ## 9. Impact Web / Mobile et risques
 
