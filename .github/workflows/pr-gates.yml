@@ -203,15 +203,12 @@ jobs:
       - name: Foundation
         run: npm run verify:v2-foundation
       - name: Chromium sandbox prerequisites (SEC-PDF-02)
+        # Profil AppArmor limité au binaire Chromium de Puppeteer ;
+        # la restriction globale des espaces de noms du runner reste active.
         run: |
           set -euo pipefail
-          # Ubuntu 24.04 restreint les espaces de noms utilisateur non privilégiés
-          # (AppArmor) : la sandbox Chromium, exigée par défaut, en a besoin.
-          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
           id -u
-          unshare -U -r true && echo "user namespaces: OK"
+          bash scripts/ci/chromium-userns-apparmor.sh
       - name: Security baseline
         run: |
           set -euo pipefail

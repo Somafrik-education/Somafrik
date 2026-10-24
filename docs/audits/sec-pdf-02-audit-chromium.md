@@ -14,6 +14,8 @@ Base : `develop@a0edc64a` (SEC-PDF-01 #985 intégré). SEC-XSS-01 #987 : chantie
 | Docker local (`docker-compose.yml`) | Même image, root. | Développement |
 | CI GitHub (`ubuntu-latest` = 24.04) | Utilisateur `runner` non-root ; AppArmor restreint les espaces de noms utilisateur non privilégiés. | Confirmé (logs CI) |
 
+**CI — justification.** Pour exécuter réellement la sandbox exigée, les jobs « Core tests » (PR Gates) et « Security invariants » (`security.yml`) — seuls à générer des PDF avec ce moteur — chargent `scripts/ci/chromium-userns-apparmor.sh` : profil AppArmor `somafrik-ci-chromium` accordant `userns` **au seul binaire Chromium de Puppeteer**. La restriction globale du runner reste à 1 (vérifié par le script) ; aucun `sysctl`. Runner GitHub hébergé, éphémère, détruit après le job.
+
 À confirmer dans le tableau de bord Render, sans modification : type de runtime (Node ou Docker), commande de build et de démarrage, utilisateur d'exécution, présence de `PUPPETEER_EXECUTABLE_PATH`, valeur de `NODE_ENV`.
 
 ### A3 — Binaires Chromium
@@ -58,9 +60,14 @@ Les autres composants (cartes élèves, exports) n'utilisent pas Chromium.
 | Valeur | Mode | Effet |
 |---|---|---|
 | (absente), `enabled`, `required` | `required` | Sandbox exigée. **Nouveau défaut, y compris en production.** |
-| `disabled`, `insecure-local` | `insecure-local` | Sans sandbox ; **refusé si `NODE_ENV=production`**. Postes locaux en root uniquement. |
+| `disabled`, `insecure-local` | `insecure-local` | Sans sandbox ; **poste local uniquement** (garde ci-dessous). |
 | `pdf-disabled` | `pdf-disabled` | Génération PDF coupée (503). Mécanisme de retour arrière. |
 | autre | `invalid` | Génération PDF refusée (503). |
+
+Garde locale du mode sans sandbox (toutes les conditions requises, sinon refus 503) :
+- `NODE_ENV` vaut exactement `development` ou `test` (vide, `production`, `staging` ou autre → refus) ;
+- `APP_ENV` absent ou `local` / `development` / `test` / `ci` (`preproduction`, `production`, `demo` ou autre → refus) ;
+- variable `RENDER` absente (Render la définit sur tous ses services).
 
 Changement de contrat : sous SEC-PDF-01, l'absence de la variable signifiait « sans sandbox ».
 
@@ -77,10 +84,30 @@ Fail-closed : un seul lancement par demande, avec les options de la politique ; 
 | Docker `backend/Dockerfile` (root) | PDF **503** | SEC-PDF-02B : image non-root (proposition ci-dessous) |
 | Postes locaux en root | PDF 503 | `SOMAFRIK_PDF_CHROMIUM_SANDBOX=disabled` (hors production) |
 
-Vérification préproduction proposée (lecture seule, à exécuter par un opérateur) :
-1. Depuis le shell Render du service, relever `id -u` et `cat /proc/sys/user/max_user_namespaces`.
-2. Exécuter `unshare -U -r true` en tant qu'utilisateur du service.
-3. Lancer `node --test backend/lib/secPdf02RealSandbox.test.js` (documents fictifs).
+### Contrôles Render en lecture seule (liste minimale, avant tout déploiement)
+
+Dans le tableau de bord du service API (aucune modification) :
+
+| # | Paramètre | Où | Attendu pour la sandbox |
+|---|---|---|---|
+| R1 | Runtime | Settings → Runtime / Language | `Node` (natif) ou `Docker` — détermine le binaire |
+| R2 | Build command | Settings → Build & Deploy | inclut `npm ci` dans `backend` (le `postinstall` télécharge Chrome 150) |
+| R3 | Start command | Settings → Build & Deploy | `node server.js` (ou `npm start`) dans `backend` |
+| R4 | Auto-deploy | Settings → Build & Deploy | Branche suivie (`develop` en préprod) : un merge déclenche-t-il un déploiement ? |
+| R5 | Variables | Environment | Présence et valeur de `NODE_ENV`, `APP_ENV`, `PUPPETEER_EXECUTABLE_PATH`, `PUPPETEER_CACHE_DIR`, `SOMAFRIK_PDF_CHROMIUM_SANDBOX` (noms et valeurs non secrètes uniquement) |
+
+Depuis le shell du service (lecture seule, documents fictifs) :
+
+| # | Commande | Attendu |
+|---|---|---|
+| S1 | `id -u` | ≠ 0 (non-root) |
+| S2 | `cat /proc/sys/user/max_user_namespaces` | > 0 |
+| S3 | `cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null` | absent ou 0 ; sinon profil requis |
+| S4 | `unshare -U -r true && echo OK` | `OK` |
+| S5 | `cd backend && node -e '(async()=>console.log(await require("puppeteer").executablePath()))()'` | chemin du Chrome 150 existant |
+| S6 | `node --test backend/lib/secPdf02RealSandbox.test.js` | 4/4 (« adequately sandboxed ») |
+
+Si S1 à S6 sont conformes : état 1 (confirmé). Sinon : ne pas déployer (SEC-PDF-02B ou retour arrière).
 
 Retour arrière (dans l'ordre de préférence) :
 1. Redéployer la version précédente validée.

@@ -92,9 +92,9 @@ Le moteur PDF des bulletins exige la sandbox Chromium par défaut. Variable du s
 |---|---|
 | absente, `enabled`, `required` | Sandbox exigée (défaut) ; si elle ne démarre pas, PDF en 503, sans repli |
 | `pdf-disabled` | Génération PDF désactivée (retour arrière) |
-| `disabled` | Sans sandbox — **refusé en production**, réservé aux postes locaux |
+| `disabled` | Sans sandbox — postes locaux uniquement (`NODE_ENV` development/test, pas d'`APP_ENV` préprod/prod, pas de variable `RENDER`) ; **refusé sur Render** |
 
-Prérequis : processus API non-root et espaces de noms utilisateur disponibles. Le runtime réel de l'API Render (Node natif ou Docker, utilisateur d'exécution) doit être vérifié avant tout déploiement de SEC-PDF-02. Procédure et matrice : `docs/audits/sec-pdf-02-audit-chromium.md`.
+Prérequis : processus API non-root et espaces de noms utilisateur disponibles. Le runtime réel de l'API Render (Node natif ou Docker, utilisateur d'exécution) doit être vérifié avant tout déploiement de SEC-PDF-02. Contrôles en lecture seule (R1–R5, S1–S6), procédure et matrice : `docs/audits/sec-pdf-02-audit-chromium.md`.
 
 ## DNS
 
