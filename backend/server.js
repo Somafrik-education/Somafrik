@@ -560,7 +560,7 @@ app.post("/api/privacy/erasure-requests", loginRateLimiter, asyncHandler(async (
   if (match?.[1]) {
     try {
       principal = tokenService.verify(match[1], "access");
-      // SEC-AUTH-04 : même liaison session que requireAuth ; sinon demande anonyme.
+      // SEC-AUTH-04 : même liaison de session que les routes protégées ; sinon demande anonyme.
       await assertBoundAccessSession(principal);
     } catch {
       principal = null;
