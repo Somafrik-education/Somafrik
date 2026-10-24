@@ -209,6 +209,12 @@ async function main() {
         [USERS[key], schoolId, `U-${key}`.toUpperCase(), key, `${key}@verify.test`, role],
       );
     }
+    // SEC-AUTH-04 : compte réel « libellé seul » (aucun user_roles) pour le contrôle RBAC.
+    await pool.query(
+      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       VALUES ($1,$2,'U-LABELONLY','labelOnly','T','labelonly@verify.test','Directeur','active',FALSE)`,
+      [U(77), schoolA.id],
+    );
     await pool.query(`ALTER TABLE users ENABLE TRIGGER users_permanent_identity_insert`);
     for (const [key, schoolId, , roleKey] of people) {
       await pool.query(`INSERT INTO user_roles (user_id, school_id, role_key, status) VALUES ($1,$2,$3,'active')`,
@@ -358,7 +364,7 @@ async function main() {
     assert.deepEqual(directorS1.data.guardians, [{ name: "Mama Kabila", phone: "+243810000001", isPrincipal: false }]);
     // Libellé seul sans roleKey ni permission : aucun droit.
     const labelOnly = await verify(await mint({ sub: U(77), role: "Directeur", roleKeys: [], schoolCode: LEFTOVER_A, permissions: [] }), card1.cardToken);
-    assert.ok([401, 403].includes(labelOnly.status), `libellé seul refusé (${labelOnly.status})`);
+    assert.equal(labelOnly.status, 403, `libellé seul refusé par le RBAC (${labelOnly.status})`);
 
     // ---------- Permissions retirées : sections retirées ----------
     await pool.query(

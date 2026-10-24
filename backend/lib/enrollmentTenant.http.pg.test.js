@@ -469,13 +469,10 @@ async function main() {
     assert.equal(leakedB.rows[0].c, 0, "ENR-07 0 audit Enrollment sur leftover B");
 
     const getNoSub = await request("/students", { token: tokenNoSub });
-    assert.ok(getNoSub.status === 403 || getNoSub.status === 401, `ENR-04 sans sub status=${getNoSub.status}`);
+    assertSessionRefused(getNoSub, "ENR-04 sans sub", "SESSION_SUBJECT_MISMATCH");
 
     const getNoSchool = await request("/students", { token: tokenNoSchool });
-    assert.ok(
-      getNoSchool.status === 403 || getNoSchool.status === 401,
-      `ENR-05 sans school_id status=${getNoSchool.status}`,
-    );
+    assertSessionRefused(getNoSchool, "ENR-05 sans school_id", "SESSION_SCHOOL_ATTACHMENT_MISSING");
 
     await setLoginCodeTriggers(pool, false);
     await pool.query(`

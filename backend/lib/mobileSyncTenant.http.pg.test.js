@@ -292,7 +292,7 @@ async function main() {
     );
 
     const getNoSub = await request("/mobile-sync/l1/classes", { token: tokenNoSub });
-    assert.ok([400, 401, 403].includes(getNoSub.status), `SY-07 sans sub status=${getNoSub.status}`);
+    assertSessionRefused(getNoSub, "SY-07 sans sub", "SESSION_SUBJECT_MISMATCH");
 
     const getNoLogin = await request("/mobile-sync/l1/classes", { token: tokenNoLogin });
     assert.ok([400, 401, 403].includes(getNoLogin.status), `SY-08 login_code vide status=${getNoLogin.status}`);
