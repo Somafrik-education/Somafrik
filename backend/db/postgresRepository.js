@@ -2347,6 +2347,7 @@ class PostgresRepository {
     return this.one(
       `SELECT sess.session_code, sess.user_id, sess.school_id, sess.revoked_at, sess.expires_at,
               u.status AS user_status,
+              u.user_code AS user_code,
               u.school_id AS user_school_id,
               us.school_code AS user_school_code,
               us.login_code AS user_school_login_code

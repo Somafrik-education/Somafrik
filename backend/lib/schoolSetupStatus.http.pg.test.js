@@ -13,6 +13,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("path");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 if (process.env.GITHUB_ACTIONS && !DATABASE_URL) {
@@ -303,7 +304,7 @@ test(
     let child = null;
 
     function mint(payload) {
-      return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+      return mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
     }
 
     try {
@@ -341,28 +342,28 @@ test(
       );
       assert.equal(termsAfterBoot.rows[0].c, 0, "fixture A doit rester sans période après boot serveur");
 
-      const tokenA = mint({
+      const tokenA = await mint({
         sub: USER_A,
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
         schoolCode: LEFTOVER_A,
         permissions: SETUP_PERMISSIONS,
       });
-      const tokenForgedB = mint({
+      const tokenForgedB = await mint({
         sub: USER_A,
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
         schoolCode: LEFTOVER_B,
         permissions: SETUP_PERMISSIONS,
       });
-      const tokenNoSchool = mint({
+      const tokenNoSchool = await mint({
         sub: USER_NO_SCHOOL,
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
         schoolCode: LEFTOVER_A,
         permissions: SETUP_PERMISSIONS,
       });
-      const tokenNoSub = mint({
+      const tokenNoSub = await mint({
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
         schoolCode: LEFTOVER_A,

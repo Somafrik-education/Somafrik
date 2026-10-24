@@ -11,6 +11,7 @@ const path = require("path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_ENROLLMENT_GP_IT_DATABASE ?? "somafrik_enrollment_tenant_it")
@@ -248,7 +249,7 @@ async function main() {
   process.env.SOMAFRIK_DB_REQUIRED = "true";
   const repo = createPostgresRepository(isolatedUrl);
   const tokens = new TokenService({ secret: JWT_SECRET });
-  const mint = (payload) => tokens.createAccessToken({ mustChangePassword: false, ...payload });
+  const mint = (payload) => mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   const pool = new Pool({ connectionString: isolatedUrl });
   let child = null;
 
@@ -280,48 +281,48 @@ async function main() {
     });
     await waitForHealth(child, stderrRef);
 
-    const tokenA = mint({
+    const tokenA = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: PERMS,
     });
-    const tokenB = mint({
+    const tokenB = await mint({
       sub: USER_B,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_B,
       permissions: PERMS,
     });
-    const tokenForgedB = mint({
+    const tokenForgedB = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_B,
       permissions: PERMS,
     });
-    const tokenNoSub = mint({
+    const tokenNoSub = await mint({
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: PERMS,
     });
-    const tokenNoSchool = mint({
+    const tokenNoSchool = await mint({
       sub: USER_NO_SCHOOL,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: PERMS,
     });
-    const tokenSuper = mint({
+    const tokenSuper = await mint({
       sub: USER_SUPER,
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
       schoolCode: "*",
       permissions: PERMS,
     });
-    const tokenPaysCd = mint({
+    const tokenPaysCd = await mint({
       sub: USER_PAYS_CD,
       role: "Admin Pays",
       roleKeys: ["COUNTRY_ADMIN"],
@@ -347,10 +348,10 @@ async function main() {
 
     const getForgedJwt = await request("/students", { token: tokenForgedB });
     const forged = unwrapList(getForgedJwt.data);
-    assert.ok(
-      getForgedJwt.status === 200 && forged.some(isStudentA) && !forged.some(isStudentB),
-      `ENR-02 JWT leftover B depuis user A ne doit jamais lister B (status=${getForgedJwt.status})`,
-    );
+    // SEC-AUTH-04 : le claim leftover B d'une session de A est refusé par le garde de
+    // session (SEC-TENANT-01), avant la route ; la session est révoquée.
+    assertSessionRefused(getForgedJwt, "ENR-02 JWT leftover B depuis user A", "SESSION_SCHOOL_ATTACHMENT_MISSING");
+    assert.ok(!forged.some(isStudentB), "ENR-02 JWT leftover B ne doit jamais lister B");
     assert.ok(
       forged.every((row) => row.schoolCode === LOGIN_A),
       "ENR-02 projection membership A",
@@ -402,12 +403,24 @@ async function main() {
       return rows.rows;
     };
 
-    const postALeftover = await request(`/classes/${CLASS_A}/students`, {
+    // SEC-AUTH-04 : l'écriture avec le claim leftover B est refusée (session révoquée
+    // à ENR-02) et ne crée rien ; la traçabilité ENR-07 est vérifiée avec le jeton A.
+    const countForgedBefore = await pool.query("SELECT count(*)::int AS c FROM students");
+    const postForged = await request(`/classes/${CLASS_A}/students`, {
       method: "POST",
       token: tokenForgedB,
+      body: { firstName: "Refuse", lastName: "Leftover", gender: "Féminin", birthDate: "2012-04-12" },
+    });
+    assertSessionRefused(postForged, "ENR-07 POST leftover B", "SESSION_REVOKED");
+    const countForgedAfter = await pool.query("SELECT count(*)::int AS c FROM students");
+    assert.equal(countForgedAfter.rows[0].c, countForgedBefore.rows[0].c, "ENR-07 aucune écriture avec le claim leftover B");
+
+    const postALeftover = await request(`/classes/${CLASS_A}/students`, {
+      method: "POST",
+      token: tokenA,
       body: { firstName: "Nouveau", lastName: "AuditA", gender: "Féminin", birthDate: "2012-04-12" },
     });
-    assert.equal(postALeftover.status, 201, `ENR-07 POST leftover B status=${postALeftover.status}`);
+    assert.equal(postALeftover.status, 201, `ENR-07 POST A (jeton A) status=${postALeftover.status}`);
     const enrolledCode = String(postALeftover.data?.student?.studentCode ?? "").trim();
     assert.ok(enrolledCode, "ENR-07 studentCode enroll A");
     const enrollAudits = await leftoverAuditOnB("enroll_student", enrolledCode);
@@ -416,17 +429,17 @@ async function main() {
     assert.equal(enrollAudits[0].school_code, LEFTOVER_A);
     assert.notEqual(enrollAudits[0].school_code, LEFTOVER_B, "ENR-07 enroll jamais leftover B");
 
-    const getEnrolled = await request(`/students/${enrolledCode}`, { token: tokenForgedB });
-    assert.equal(getEnrolled.status, 200, `ENR-07 GET enrolled leftover B status=${getEnrolled.status}`);
+    const getEnrolled = await request(`/students/${enrolledCode}`, { token: tokenA });
+    assert.equal(getEnrolled.status, 200, `ENR-07 GET enrolled (jeton A) status=${getEnrolled.status}`);
     const patchALeftover = await request(`/students/${enrolledCode}`, {
       method: "PATCH",
-      token: tokenForgedB,
+      token: tokenA,
       body: {
         firstName: "Nouveau2",
         expectedUpdatedAt: getEnrolled.data?.updatedAt,
       },
     });
-    assert.equal(patchALeftover.status, 200, `ENR-07 PATCH leftover B status=${patchALeftover.status}`);
+    assert.equal(patchALeftover.status, 200, `ENR-07 PATCH (jeton A) status=${patchALeftover.status}`);
     const patchAudits = await leftoverAuditOnB("update_student", enrolledCode);
     assert.equal(patchAudits.length, 1, "ENR-07 une ligne audit patch");
     assert.equal(patchAudits[0].login_code, LOGIN_A, "ENR-07 patch audit = membership A");
@@ -434,11 +447,11 @@ async function main() {
 
     const deleteALeftover = await request(`/students/${enrolledCode}`, {
       method: "DELETE",
-      token: tokenForgedB,
+      token: tokenA,
     });
     assert.ok(
       deleteALeftover.status === 200 || deleteALeftover.status === 204,
-      `ENR-07 DELETE leftover B status=${deleteALeftover.status}`,
+      `ENR-07 DELETE (jeton A) status=${deleteALeftover.status}`,
     );
     const deleteAudits = await leftoverAuditOnB("archive_student", enrolledCode);
     assert.equal(deleteAudits.length, 1, "ENR-07 une ligne audit archive");
@@ -481,7 +494,7 @@ async function main() {
        VALUES ($1, $2, 'ADM-NL', 'Sans', 'Login', 'nl@enroll.gp.test', 'Admin School', 'active', FALSE)`,
       [USER_NO_LOGIN, emptySchool.rows[0].id],
     );
-    const tokenNoLogin = mint({
+    const tokenNoLogin = await mint({
       sub: USER_NO_LOGIN,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
