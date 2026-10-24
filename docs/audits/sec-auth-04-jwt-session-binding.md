@@ -126,3 +126,14 @@ Ces réalignements touchent 16 bancs ; la conversion mécanique en touche 37. Vo
 - **Plateforme** : Superadmin et Admin Pays soumis aux mêmes contrôles ; aucune exemption.
 - **PostgreSQL / mémoire** : même contrôle, vérifié par les deux bancs.
 - **Retour arrière** : revenir au commit précédent. Aucun schéma, aucune migration, aucune variable d'environnement.
+
+## 10. Garde de périmètre L4-09 (décision CTO : option 1)
+
+`scripts/verify-school-setup-lot4-red.ts` classait le diff comme « chantier Carte élève » (fichiers `studentCard*` convertis) et refusait le reste du chantier. Exception ciblée, sur le modèle des chantiers Carte élève ancrés :
+
+- active seulement si les **deux** ancres `backend/lib/accessSessionBinding.js` et `backend/lib/testAccessSession.js` sont dans le diff ;
+- `SEC_AUTH_04_EXACT` : liste fermée des fichiers non Carte élève de #995 (aucune expression régulière) ; les fichiers Carte élève restent soumis aux règles ordinaires ;
+- `.gitleaksignore` : seul l'ajout exact de l'empreinte SEC-AUTH-03 (#994) est admis, fichier develop intact ;
+- un fichier LOT 4 exclusif reste refusé ; les PR Carte élève ordinaires ne changent pas.
+
+Auto-tests ajoutés dans L4-09 : diff exact admis ; 9 ajouts hors liste refusés (backend, dépôt, migration, RBAC Web, Web/Mobile arbitraires, document, LOT 4) ; chaque ancre manquante refusée ; chacun des 28 fichiers admis seulement par l'exception refusé sans les ancres ; `.gitleaksignore` refusé avec une empreinte supplémentaire ou différente, un fichier develop modifié, un doublon ou aucun ajout. Aucun `skip`, aucun `continue-on-error`.

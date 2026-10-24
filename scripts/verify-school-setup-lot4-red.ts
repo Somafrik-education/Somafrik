@@ -491,6 +491,93 @@ const STUDENT_CARD_R3_DIAG_ANCHORS = Object.freeze([
 ]);
 const STUDENT_CARD_R3_DIAG_NAV_FILE = "Mobile/src/navigation/AppNavigator.tsx";
 
+// SEC-AUTH-04 (#995, autorisation CTO) : liaison obligatoire JWT ↔ session. Le
+// chantier n'ajoute aucune fonctionnalité Carte élève ; il convertit les bancs
+// Carte élève existants à des jetons liés à une session réelle. Exception
+// active seulement si les DEUX ancres sont présentes ; liste fermée des autres
+// fichiers du chantier (aucune expression régulière). Les fichiers Carte élève
+// restent soumis aux règles ordinaires (isStudentCardPr6IntegrationFile) et un
+// fichier LOT 4 exclusif reste refusé.
+const SEC_AUTH_04_ANCHORS = Object.freeze([
+  "backend/lib/accessSessionBinding.js",
+  "backend/lib/testAccessSession.js",
+]);
+const SEC_AUTH_04_EXACT = new Set([
+  ...SEC_AUTH_04_ANCHORS,
+  ".github/workflows/pr-gates.yml",
+  "backend/db/postgresRepository.js",
+  "backend/lib/academicYearTenant.http.pg.test.js",
+  "backend/lib/accessSessionBinding.test.js",
+  "backend/lib/communicationsC2.http.pg.test.js",
+  "backend/lib/communicationsC3.http.pg.test.js",
+  "backend/lib/communicationsC4.http.pg.test.js",
+  "backend/lib/communicationsReadiness.http.pg.test.js",
+  "backend/lib/dRevalidation.http.pg.test.js",
+  "backend/lib/enrollmentTenant.http.pg.test.js",
+  "backend/lib/financeLiveRbac.http.pg.test.js",
+  "backend/lib/financeReadiness.http.pg.test.js",
+  "backend/lib/mobilePushDevices.http.pg.test.js",
+  "backend/lib/mobileSyncAssignments.http.pg.test.js",
+  "backend/lib/mobileSyncClasses.http.pg.test.js",
+  "backend/lib/mobileSyncCourseSchedules.http.pg.test.js",
+  "backend/lib/mobileSyncSchoolCourses.http.pg.test.js",
+  "backend/lib/mobileSyncStudents.http.pg.test.js",
+  "backend/lib/mobileSyncTenant.http.pg.test.js",
+  "backend/lib/parentAttendanceIsolation.http.pg.test.js",
+  "backend/lib/planningTenant.http.pg.test.js",
+  "backend/lib/platformAnnouncements.http.pg.test.js",
+  "backend/lib/presenceTenant.http.pg.test.js",
+  "backend/lib/schoolSetupStatus.http.pg.test.js",
+  "backend/lib/secAuth04SessionBinding.http.pg.test.js",
+  "backend/lib/secAuth04SessionBinding.memory.test.js",
+  "backend/lib/secTenant01Attachment.http.pg.test.js",
+  "backend/lib/studentAdministrativeNotes.http.pg.test.js",
+  "backend/lib/studentEnrollmentC18.http.pg.test.js",
+  "backend/lib/usersTenant.http.pg.test.js",
+  "backend/server.js",
+  "docs/audits/sec-auth-04-jwt-session-binding.md",
+  "package.json",
+  "scripts/verify-school-setup-lot4-red.ts",
+]);
+// Entrée SEC-AUTH-03 (#994) reportée à l'identique : seul ajout admis dans
+// .gitleaksignore pour SEC-AUTH-04 (le scan parcourt la branche de #994).
+const SEC_AUTH_03_GITLEAKS_FINGERPRINTS = new Set([
+  "f24a9bf91a2fae27198f724b3d209a2eab51b50e:backend/lib/secAuth03SessionBinding.http.pg.test.js:generic-api-key:286",
+]);
+
+/** Ajouts non commentés de `current` après `baseline`, ou null si `baseline` n'est pas un préfixe intact. */
+function gitleaksIgnoreAdditions(baseline: string, current: string): string[] | null {
+  const base = baseline.replace(/\s+$/, "");
+  const next = current.replace(/\s+$/, "");
+  if (next !== base && !next.startsWith(`${base}\n`)) return null;
+  return next
+    .slice(base.length)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+}
+
+function gitleaksAdditionsExactly(additions: string[] | null, allowed: ReadonlySet<string>) {
+  return additions !== null
+    && additions.length === allowed.size
+    && additions.every((line) => allowed.has(line))
+    && new Set(additions).size === additions.length;
+}
+
+function isApprovedSecAuth04GitleaksIgnore(file: string) {
+  if (file !== ".gitleaksignore") return false;
+  try {
+    const baseline = execFileSync("git", ["show", "origin/develop:.gitleaksignore"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    const current = read(path.join(repoRoot, file));
+    return gitleaksAdditionsExactly(gitleaksIgnoreAdditions(baseline, current), SEC_AUTH_03_GITLEAKS_FINGERPRINTS);
+  } catch {
+    return false; // No git base or unrecognized history => fail closed.
+  }
+}
+
 function isStudentCardPr6Signal(file: string) {
   return (
     file === "scripts/verify-student-card-web.js" ||
@@ -588,6 +675,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     const photo02 = STUDENT_CARD_PHOTO_02_ANCHORS.every((anchor) => changed.includes(anchor));
     const pr3MobileNav = navChanged && navAnchored;
     const r3DiagnosticNav = navChanged && r3DiagnosticAnchored;
+    const secAuth04 = SEC_AUTH_04_ANCHORS.every((anchor) => changed.includes(anchor));
     const outside = changed.filter(
       (file) => !isStudentCardPr6IntegrationFile(file)
         && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file))
@@ -599,7 +687,9 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
         && !(batchDesign01 && STUDENT_CARD_BATCH_DESIGN_01_EXACT.has(file))
         && !(photo02 && STUDENT_CARD_PHOTO_02_EXACT.has(file))
         && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE)
-        && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE)),
+        && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE))
+        && !(secAuth04 && SEC_AUTH_04_EXACT.has(file))
+        && !(secAuth04 && isApprovedSecAuth04GitleaksIgnore(file)),
     );
     if (outside.length === 0 && exclusiveLot4.length === 0) {
       return {
@@ -1504,6 +1594,79 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       assert.equal(evaluateLot4Scope([STUDENT_CARD_PR3_M1_NAV_FILE, "Mobile/src/navigation/AppNavigator.tsx"]).kind, "fail", "catalogue sans ancre FAIL");
       assert.equal(evaluateLot4Scope([...m1NavFiles, "Mobile/src/navigation/rolesUnauthorized.ts"]).kind, "fail", "autre navigation hors liste FAIL");
       assert.equal(evaluateLot4Scope([...m1NavFiles, "backend/db/migrations/20261017_unrelated.sql"]).kind, "fail", "migration hors liste FAIL");
+
+      // SEC-AUTH-04 (#995) : exception ancrée, liste fermée.
+      const secAuth04CardFiles = [
+        "Mobile/src/lib/studentCardEntryControl.integration.pg.test.ts",
+        "backend/lib/studentAccessCards.attendance.pg.test.js",
+        "backend/lib/studentAccessCards.finance.pg.test.js",
+        "backend/lib/studentAccessCards.http.pg.test.js",
+        "backend/lib/studentAccessCards.scan.http.pg.test.js",
+        "backend/lib/studentCardBatchIssue.http.pg.test.js",
+        "backend/lib/studentCardEntry.http.pg.test.js",
+        "backend/lib/studentCardHolder.http.pg.test.js",
+        "backend/lib/studentCardPhoto.http.pg.test.js",
+        "backend/lib/studentCardRollCall.http.pg.test.js",
+        "backend/lib/studentCardVerification.http.pg.test.js",
+        "backend/lib/studentCardsNfcIntegration.fixture.js",
+        "backend/lib/studentCardsNfcProvision.http.pg.test.js",
+      ];
+      const secAuth04Files = [...SEC_AUTH_04_EXACT, ...secAuth04CardFiles];
+      assert.equal(evaluateLot4Scope(secAuth04Files).kind, "na", "L4-09: diff exact SEC-AUTH-04 admis nominativement");
+      for (const [extra, label] of [
+        ["backend/lib/financeManagement.js", "fichier backend hors liste"],
+        ["backend/db/fallbackRepository.js", "autre dépôt"],
+        ["backend/db/migrations/20261024_sec_auth_04.sql", "migration"],
+        ["web/src/lib/permissions.ts", "fichier RBAC Web"],
+        ["web/src/pages/LoginPage.tsx", "fichier Web arbitraire"],
+        ["Mobile/src/screens/LoginScreen.tsx", "fichier Mobile arbitraire"],
+        ["docs/audits/sec-auth-05.md", "autre document"],
+        ["backend/lib/schoolSetupStatus.js", "fichier LOT 4"],
+        ["web/src/components/schoolSetup/SchoolSetupOptionalCompleteness.tsx", "fichier LOT 4 exclusif"],
+      ] as const) {
+        assert.equal(
+          evaluateLot4Scope([...secAuth04Files, extra]).kind,
+          "fail",
+          `L4-09: SEC-AUTH-04 + ${label} (${extra}) doit rester FAIL`,
+        );
+      }
+      for (const missingAnchor of SEC_AUTH_04_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(secAuth04Files.filter((file) => file !== missingAnchor)).kind,
+          "fail",
+          `L4-09: SEC-AUTH-04 sans l'ancre ${missingAnchor} doit rester FAIL`,
+        );
+      }
+      for (const secAuth04Only of SEC_AUTH_04_EXACT) {
+        if ((SEC_AUTH_04_ANCHORS as readonly string[]).includes(secAuth04Only)) continue;
+        // Déjà admis par les règles Carte élève ordinaires (PR6/PR7) : inchangé.
+        if (isStudentCardPr6IntegrationFile(secAuth04Only)) continue;
+        assert.equal(
+          evaluateLot4Scope(["backend/lib/studentCardEntry.http.pg.test.js", secAuth04Only]).kind,
+          "fail",
+          `L4-09: ${secAuth04Only} sans les ancres SEC-AUTH-04 doit rester FAIL (PR Carte élève ordinaire)`,
+        );
+      }
+      const devGitleaks = "# en-tête\nabc:file.js:generic-api-key:1\n";
+      const sec03Entry = [...SEC_AUTH_03_GITLEAKS_FINGERPRINTS][0];
+      assert.equal(
+        gitleaksAdditionsExactly(gitleaksIgnoreAdditions(devGitleaks, `${devGitleaks}#\n# 4) SEC-AUTH-03\n${sec03Entry}\n`), SEC_AUTH_03_GITLEAKS_FINGERPRINTS),
+        true,
+        "L4-09: seule l'entrée SEC-AUTH-03 reportée est admise dans .gitleaksignore",
+      );
+      for (const [current, label] of [
+        [`${devGitleaks}${sec03Entry}\nautre:secret.js:generic-api-key:9\n`, "empreinte supplémentaire"],
+        [`${devGitleaks}autre:secret.js:generic-api-key:9\n`, "empreinte différente"],
+        [`# en-tête modifié\n${sec03Entry}\n`, "fichier develop modifié"],
+        [`${devGitleaks}${sec03Entry}\n${sec03Entry}\n`, "doublon"],
+        [devGitleaks, "aucun ajout"],
+      ] as const) {
+        assert.equal(
+          gitleaksAdditionsExactly(gitleaksIgnoreAdditions(devGitleaks, current), SEC_AUTH_03_GITLEAKS_FINGERPRINTS),
+          false,
+          `L4-09: .gitleaksignore SEC-AUTH-04 avec ${label} doit rester refusé`,
+        );
+      }
 
       const lot4PlusStudentCard = evaluateLot4Scope([
         "web/src/pages/parametres/SchoolSetupSettingsPage.tsx",
