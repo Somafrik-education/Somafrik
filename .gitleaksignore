@@ -50,3 +50,9 @@ f4fdd6f05966b149eba0ddd494862b15f9b686d5:Mobile/google-services.json:gcp-api-key
 #    voit un finding distinct. Toute autre ligne ou tout autre commit reste scanné.
 766fe2156312eef613875afe5c3e4dea3b2942eb:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:88
 766fe2156312eef613875afe5c3e4dea3b2942eb:Mobile/scripts/verify-student-card-nfc-apk_test.py:generic-api-key:90
+#
+# 4) SEC-AUTH-03 : faux secret JWT de test (cas « autre secret → 401 ») dans le
+#    banc HTTP, introduit par f24a9bf9. Le fichier courant génère ce secret à
+#    l'exécution (aucun littéral committé) ; le finding ne subsiste que dans ce
+#    commit historique.
+f24a9bf91a2fae27198f724b3d209a2eab51b50e:backend/lib/secAuth03SessionBinding.http.pg.test.js:generic-api-key:286
