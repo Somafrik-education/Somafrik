@@ -291,7 +291,8 @@ async function main() {
     const [h, p, s] = String(refreshed.data.accessToken).split(".");
     const flipped = `${h}.${p}.${s.slice(0, -2)}${s.endsWith("AA") ? "BB" : "AA"}`;
     assertStatus(await probe(flipped), 401, "B3 signature altérée");
-    const otherSecret = new TokenService({ secret: "un-autre-secret-de-test-suffisamment-long-0123" });
+    // Secret aléatoire généré à l'exécution (aucun littéral committé).
+    const otherSecret = new TokenService({ secret: crypto.randomBytes(32).toString("hex") });
     assertStatus(
       await probe(otherSecret.createAccessToken({ ...base, sessionId: webClaims.sessionId })),
       401,
