@@ -11,6 +11,7 @@ const path = require("path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_USERS_GP003_IT_DATABASE ?? "somafrik_users_gp003_it")
@@ -233,8 +234,8 @@ async function seed(pool) {
   return { schoolAId: schoolA.rows[0].id, schoolBId: schoolB.rows[0].id };
 }
 
-function mintFactory(tokens) {
-  return (payload) => tokens.createAccessToken({ mustChangePassword: false, ...payload });
+function mintFactory(tokens, repo) {
+  return (payload) => mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
 }
 
 async function main() {
@@ -256,7 +257,7 @@ async function main() {
   process.env.SOMAFRIK_DB_REQUIRED = "true";
   const repo = createPostgresRepository(isolatedUrl);
   const tokens = new TokenService({ secret: JWT_SECRET });
-  const mint = mintFactory(tokens);
+  const mint = mintFactory(tokens, repo);
   const pool = new Pool({ connectionString: isolatedUrl });
   let child = null;
 
@@ -312,14 +313,14 @@ async function main() {
       [USER_NO_LOGIN, emptySchool.rows[0].id],
     );
 
-    const tokenA = mint({ sub: USER_A, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_A, permissions: USER_PERMS });
-    const tokenB = mint({ sub: USER_B, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_B, permissions: USER_PERMS });
-    const tokenNoSub = mint({ role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_A, permissions: [...USER_PERMS, "ALL_PRIVILEGES"] });
-    const tokenNoSchool = mint({ sub: USER_NO_SCHOOL, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_A, permissions: USER_PERMS });
-    const tokenNoLogin = mint({ sub: USER_NO_LOGIN, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: "CD-2026-0099", permissions: USER_PERMS });
-    const tokenSuper = mint({ sub: USER_SUPER, role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], schoolCode: "*", permissions: ["ALL_PRIVILEGES"] });
-    const tokenPaysCd = mint({ sub: USER_PAYS_CD, role: "Admin Pays", roleKeys: ["COUNTRY_ADMIN"], schoolCode: "*", countryCode: "CD", permissions: USER_PERMS });
-    const tokenForgedB = mint({ sub: USER_A, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_B, permissions: USER_PERMS });
+    const tokenA = await mint({ sub: USER_A, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_A, permissions: USER_PERMS });
+    const tokenB = await mint({ sub: USER_B, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_B, permissions: USER_PERMS });
+    const tokenNoSub = await mint({ role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_A, permissions: [...USER_PERMS, "ALL_PRIVILEGES"] });
+    const tokenNoSchool = await mint({ sub: USER_NO_SCHOOL, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_A, permissions: USER_PERMS });
+    const tokenNoLogin = await mint({ sub: USER_NO_LOGIN, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: "CD-2026-0099", permissions: USER_PERMS });
+    const tokenSuper = await mint({ sub: USER_SUPER, role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], schoolCode: "*", permissions: ["ALL_PRIVILEGES"] });
+    const tokenPaysCd = await mint({ sub: USER_PAYS_CD, role: "Admin Pays", roleKeys: ["COUNTRY_ADMIN"], schoolCode: "*", countryCode: "CD", permissions: USER_PERMS });
+    const tokenForgedB = await mint({ sub: USER_A, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_B, permissions: USER_PERMS });
 
     const getA = await request("/backoffice/users", { token: tokenA });
     assert.equal(getA.status, 200, `P0-1 GET A: ${JSON.stringify(getA.data)}`);
@@ -380,10 +381,8 @@ async function main() {
 
     const getForgedJwt = await request("/backoffice/users", { token: tokenForgedB });
     const forgedUsers = unwrapList(getForgedJwt.data);
-    assert.ok(
-      getForgedJwt.status === 403 || forgedUsers.every((row) => row.schoolCode === LOGIN_A || row.schoolId === fixture.schoolAId),
-      `P0-4 JWT leftover B: ${getForgedJwt.status} ${JSON.stringify(getForgedJwt.data)}`,
-    );
+    // SEC-AUTH-04 : claim leftover B sur une session de A → garde de session.
+    assertSessionRefused(getForgedJwt, "P0-4 JWT leftover B", "SESSION_SCHOOL_ATTACHMENT_MISSING");
     assert.equal(forgedUsers.some((row) => row.schoolCode === LOGIN_B || row.id === STAFF_B), false, "P0-4: jamais B");
 
     const getForgedHeader = await request("/backoffice/users", {
@@ -394,10 +393,10 @@ async function main() {
     assert.equal(headerUsers.some((row) => row.schoolCode === LOGIN_B), false, "P0-4 header: jamais B");
 
     const getNoSub = await request("/backoffice/users", { token: tokenNoSub });
-    assert.ok(getNoSub.status === 403 || getNoSub.status === 401, `P0-5 sans sub: ${getNoSub.status}`);
+    assertSessionRefused(getNoSub, "P0-5 sans sub", "SESSION_SUBJECT_MISMATCH");
 
     const getNoSchool = await request("/backoffice/users", { token: tokenNoSchool });
-    assert.equal(getNoSchool.status, 403, `P0-6 sans school_id: ${JSON.stringify(getNoSchool.data)}`);
+    assertSessionRefused(getNoSchool, "P0-6 sans school_id", "SESSION_SCHOOL_ATTACHMENT_MISSING");
 
     const getNoLogin = await request("/backoffice/users", { token: tokenNoLogin });
     assert.equal(getNoLogin.status, 403, `P0-7 login_code vide: ${JSON.stringify(getNoLogin.data)}`);

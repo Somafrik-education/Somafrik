@@ -13,6 +13,7 @@ const path = require("path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_D_REVALIDATION_IT_DATABASE ?? "somafrik_d_revalidation_it")
@@ -300,7 +301,7 @@ async function main() {
   let child = null;
 
   function mint(payload) {
-    return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+    return mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   }
 
   try {
@@ -327,42 +328,42 @@ async function main() {
     });
     await waitForHealth(child, stderrRef);
 
-    const tokenA = mint({
+    const tokenA = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: PERMS,
     });
-    const tokenB = mint({
+    const tokenB = await mint({
       sub: USER_B,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_B,
       permissions: PERMS,
     });
-    const tokenForgedB = mint({
+    const tokenForgedB = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_B,
       permissions: PERMS,
     });
-    const tokenTeacherNone = mint({
+    const tokenTeacherNone = await mint({
       sub: USER_TEACHER_NONE,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       schoolCode: LEFTOVER_A,
       permissions: TEACHER_PERMS,
     });
-    const tokenTeacherA = mint({
+    const tokenTeacherA = await mint({
       sub: USER_TEACHER_A,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       schoolCode: LEFTOVER_A,
       permissions: TEACHER_PERMS,
     });
-    const tokenParent = mint({
+    const tokenParent = await mint({
       sub: USER_PARENT,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -370,7 +371,7 @@ async function main() {
       permissions: TEACHER_PERMS,
       studentIds: [],
     });
-    const tokenPaysCd = mint({
+    const tokenPaysCd = await mint({
       sub: USER_PAYS_CD,
       role: "Admin Pays",
       roleKeys: ["COUNTRY_ADMIN"],
@@ -416,9 +417,11 @@ async function main() {
       token: tokenForgedB,
       body: attendanceBody("2026-09-10"),
     });
+    // SEC-AUTH-04 : claim leftover B sur une session de A → refusé par le garde de
+    // session (SEC-TENANT-01) ; avant, l'écriture était acceptée et ramenée sur A.
     check(
       "PR-audit-write",
-      postALeftover.status === 201 || postALeftover.status === 200,
+      postALeftover.status === 401 && postALeftover.data?.code === "SESSION_SCHOOL_ATTACHMENT_MISSING",
       `status=${postALeftover.status} body=${JSON.stringify(postALeftover.data)}`,
     );
     const audits = await pool.query(

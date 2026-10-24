@@ -10,6 +10,7 @@ const path = require("path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_SYNC_L1_TENANT_IT_DATABASE ?? "somafrik_sync_l1_tenant_it")
@@ -188,7 +189,7 @@ async function main() {
   let child = null;
 
   function mint(payload) {
-    return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+    return mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   }
 
   try {
@@ -242,27 +243,27 @@ async function main() {
       [USER_NO_LOGIN, emptySchool.rows[0].id],
     );
 
-    const tokenA = mint({
+    const tokenA = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: PERMS,
     });
-    const tokenForgedB = mint({
+    const tokenForgedB = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_B,
       permissions: PERMS,
     });
-    const tokenNoSub = mint({
+    const tokenNoSub = await mint({
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: PERMS,
     });
-    const tokenNoLogin = mint({
+    const tokenNoLogin = await mint({
       sub: USER_NO_LOGIN,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
@@ -280,7 +281,9 @@ async function main() {
     );
 
     const getForged = await request("/mobile-sync/l1/classes", { token: tokenForgedB });
-    assert.ok(getForged.status === 200 || getForged.status === 403, `SY-06 status=${getForged.status}`);
+    // SEC-AUTH-04 : claim leftover B sur une session de A → refusé par le garde de
+    // session (SEC-TENANT-01) avant la route ; la session est révoquée.
+    assertSessionRefused(getForged, "SY-06 JWT leftover B", "SESSION_SCHOOL_ATTACHMENT_MISSING");
     const forgedItems = Array.isArray(getForged.data?.items) ? getForged.data.items : [];
     assert.equal(
       forgedItems.some((row) => String(row.classCode ?? row.class_code) === CLASS_B),
@@ -289,7 +292,7 @@ async function main() {
     );
 
     const getNoSub = await request("/mobile-sync/l1/classes", { token: tokenNoSub });
-    assert.ok([400, 401, 403].includes(getNoSub.status), `SY-07 sans sub status=${getNoSub.status}`);
+    assertSessionRefused(getNoSub, "SY-07 sans sub", "SESSION_SUBJECT_MISMATCH");
 
     const getNoLogin = await request("/mobile-sync/l1/classes", { token: tokenNoLogin });
     assert.ok([400, 401, 403].includes(getNoLogin.status), `SY-08 login_code vide status=${getNoLogin.status}`);

@@ -19,6 +19,7 @@ const { Pool } = require("pg");
 const { deflateSync } = require("node:zlib");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_CARTE_PHOTO02_IT_DATABASE ?? "somafrik_carte_photo02_it")
@@ -287,7 +288,7 @@ async function main() {
   process.env.SOMAFRIK_DB_REQUIRED = "true";
   const repo = createPostgresRepository(isolatedUrl);
   const tokens = new TokenService({ secret: JWT_SECRET });
-  const mint = (payload) => tokens.createAccessToken({ mustChangePassword: false, ...payload });
+  const mint = (payload) => mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   const pool = new Pool({ connectionString: isolatedUrl });
   const storage = await fs.mkdtemp(path.join(os.tmpdir(), "somafrik-photo02-"));
   let child = null;
@@ -322,9 +323,9 @@ async function main() {
     });
     await waitForHealth(child, stderrRef);
 
-    const tokenA = mint({ sub: USER_A, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_A, permissions: ADMIN_PERMS });
-    const tokenB = mint({ sub: USER_B, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_B, permissions: ADMIN_PERMS });
-    const tokenCards = mint({
+    const tokenA = await mint({ sub: USER_A, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_A, permissions: ADMIN_PERMS });
+    const tokenB = await mint({ sub: USER_B, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: LEFTOVER_B, permissions: ADMIN_PERMS });
+    const tokenCards = await mint({
       sub: USER_CARDS, role: "Gestion cartes", roleKeys: ["GESTION_CARTES"], schoolCode: LEFTOVER_A,
       permissions: ["Élèves:READ", "Élèves:UPDATE"],
     });

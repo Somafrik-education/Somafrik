@@ -63,7 +63,7 @@ test("contrôle d'entrée : entrée, déjà entré, reprise réseau sans doublon
     [supervisorId, school.id],
   );
   await pool.query("INSERT INTO user_roles(user_id,school_id,role_key,status) VALUES($1,$2,'SUPERVISOR','active')", [supervisorId, school.id]);
-  const supervisor = fixture.mint({
+  const supervisor = await fixture.mint({
     sub: supervisorId, role: "Surveillant", roleKeys: ["SUPERVISOR"], schoolCode: school.code,
     countryCode: "CD", mustChangePassword: false, permissions: ENTRY,
   });

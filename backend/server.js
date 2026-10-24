@@ -560,6 +560,8 @@ app.post("/api/privacy/erasure-requests", loginRateLimiter, asyncHandler(async (
   if (match?.[1]) {
     try {
       principal = tokenService.verify(match[1], "access");
+      // SEC-AUTH-04 : même liaison de session que les routes protégées ; sinon demande anonyme.
+      await assertBoundAccessSession(principal);
     } catch {
       principal = null;
     }
@@ -7474,6 +7476,18 @@ function rejectJwtInQueryString(req, res, next) {
   return next();
 }
 
+/**
+ * SEC-AUTH-04 — contrôle commun à tout access token (requireAuth et routes
+ * publiques qui attribuent une action à un jeton) : session liée au sujet
+ * (C-03, F3), puis état du compte et établissement canonique (SEC-TENANT-01).
+ */
+async function assertBoundAccessSession(principal) {
+  const { resolveBoundAccessSession } = require("./lib/accessSessionBinding");
+  const { assertAccessSessionAccount } = require("./lib/accessSessionAccountGuard");
+  const { sessionId, activeSession } = await resolveBoundAccessSession({ principal, repository });
+  await assertAccessSessionAccount({ principal, activeSession, repository, sessionId });
+}
+
 function requireAuth(req, res, next) {
   (async () => {
     // S2.1 — auth exclusivement via header Bearer (plus de fallback query).
@@ -7499,15 +7513,8 @@ function requireAuth(req, res, next) {
       throw new BusinessError(401, "Authentification JWT requise");
     }
 
-    const sessionId = String(req.principal?.sessionId ?? "").trim();
-    if (sessionId && typeof repository.findActiveAccessSession === "function") {
-      const activeSession = await repository.findActiveAccessSession(sessionId);
-      if (!activeSession) {
-        throw new BusinessError(401, "Session révoquée.");
-      }
-      const { assertAccessSessionAccount } = require("./lib/accessSessionAccountGuard");
-      await assertAccessSessionAccount({ principal: req.principal, activeSession, repository, sessionId });
-    }
+    // SEC-AUTH-04 : session obligatoire, active et appartenant au sujet du jeton.
+    await assertBoundAccessSession(req.principal);
 
     const {
       isPlatformPersonalDataForbiddenHttp,

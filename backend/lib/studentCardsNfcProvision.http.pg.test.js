@@ -287,7 +287,7 @@ test("CHANGEMENT D'UTILISATEUR entre les deux étapes : défi refusé, aucun enr
     [second, school.id],
   );
   await fixture.pool.query("INSERT INTO user_roles(user_id,school_id,role_key,status) VALUES($1,$2,'SCHOOL_ADMIN','active')", [second, school.id]);
-  const secondToken = fixture.mint({
+  const secondToken = await fixture.mint({
     sub: second, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: school.code, mustChangePassword: false,
     permissions: ["Élèves:READ", "Élèves:UPDATE", "Classes:READ", "Voir élèves", "Gérer élèves"],
   });

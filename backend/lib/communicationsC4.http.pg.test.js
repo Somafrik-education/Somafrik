@@ -10,6 +10,7 @@ const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { drainOutbox } = require("./communicationsNotificationsService");
 const { dispatchProcessedEvents } = require("./communicationsDispatcher");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_COM_C4_IT_DATABASE ?? "somafrik_com_c4_it")
@@ -150,13 +151,17 @@ async function setRoleModuleGrant(pool, roleKey, moduleKey, { create = false, re
   }
 }
 
-function mint(tokens, overrides) {
-  return tokens.createAccessToken({
+function mint({ tokens, repository }, overrides) {
+  return mintSessionAccessToken({
+    tokens,
+    repository,
+    payload: {
     mustChangePassword: false,
     role: "Admin School",
     roleKeys: ["SCHOOL_ADMIN"],
     permissions: ["Notifications:READ", "Notifications:CREATE", "Notifications:UPDATE"],
     ...overrides,
+  },
   });
 }
 
@@ -312,13 +317,13 @@ async function main() {
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
 
-    const adminA = mint(tokens, { sub: ADMIN_A, schoolCode: "SCH-C4-A", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
-    const parentA = mint(tokens, { sub: PARENT_A, schoolCode: "SCH-C4-A", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ","Messages:READ","Messages:CREATE","Announcements:READ"] });
-    const parentA2 = mint(tokens, { sub: PARENT_A2, schoolCode: "SCH-C4-A", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
-    const studentA = mint(tokens, { sub: STUDENT_USER_A, schoolCode: "SCH-C4-A", role: "Élève / Étudiant", roleKeys: ["STUDENT"], permissions: ["Notifications:READ"] });
-    const adminB = mint(tokens, { sub: ADMIN_B, schoolCode: "SCH-C4-B", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
-    const parentB = mint(tokens, { sub: PARENT_B, schoolCode: "SCH-C4-B", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
-    const superSa = mint(tokens, { sub: SUPER_SA, schoolCode: "*", role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], permissions: ["ALL_PRIVILEGES"] });
+    const adminA = await mint({ tokens, repository: repo }, { sub: ADMIN_A, schoolCode: "SCH-C4-A", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
+    const parentA = await mint({ tokens, repository: repo }, { sub: PARENT_A, schoolCode: "SCH-C4-A", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ","Messages:READ","Messages:CREATE","Announcements:READ"] });
+    const parentA2 = await mint({ tokens, repository: repo }, { sub: PARENT_A2, schoolCode: "SCH-C4-A", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
+    const studentA = await mint({ tokens, repository: repo }, { sub: STUDENT_USER_A, schoolCode: "SCH-C4-A", role: "Élève / Étudiant", roleKeys: ["STUDENT"], permissions: ["Notifications:READ"] });
+    const adminB = await mint({ tokens, repository: repo }, { sub: ADMIN_B, schoolCode: "SCH-C4-B", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
+    const parentB = await mint({ tokens, repository: repo }, { sub: PARENT_B, schoolCode: "SCH-C4-B", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
+    const superSa = await mint({ tokens, repository: repo }, { sub: SUPER_SA, schoolCode: "*", role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], permissions: ["ALL_PRIVILEGES"] });
 
     const store = repo.getClientsStore();
     async function outboxCount(sourceId) {

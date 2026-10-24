@@ -11,6 +11,7 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { mintSessionAccessToken } = require("./testAccessSession");
 const {
   prepareClassCardBatch,
   recordBatchReceipt,
@@ -336,7 +337,7 @@ async function main() {
   process.env.SOMAFRIK_DB_REQUIRED = "true";
   const repo = createPostgresRepository(isolatedUrl);
   const tokens = new TokenService({ secret: JWT_SECRET });
-  const mint = (payload) => tokens.createAccessToken({ mustChangePassword: false, ...payload });
+  const mint = (payload) => mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   const pool = new Pool({ connectionString: isolatedUrl });
   let child = null;
   const secrets = [];
@@ -372,28 +373,28 @@ async function main() {
     });
     await waitForHealth(child, stderrRef);
 
-    const tokenA = mint({
+    const tokenA = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: CODE_A,
       permissions: ["Élèves:UPDATE", "Gérer élèves", "Présences:CREATE", "Présences:UPDATE"],
     });
-    const tokenB = mint({
+    const tokenB = await mint({
       sub: USER_B,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: CODE_B,
       permissions: ["Élèves:UPDATE", "Gérer élèves"],
     });
-    const tokenAccountant = mint({
+    const tokenAccountant = await mint({
       sub: USER_ACCOUNTANT,
       role: "Comptable",
       roleKeys: ["ACCOUNTANT"],
       schoolCode: CODE_A,
       permissions: ["Paiements:READ"],
     });
-    const tokenSuper = mint({
+    const tokenSuper = await mint({
       sub: USER_SUPER,
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
