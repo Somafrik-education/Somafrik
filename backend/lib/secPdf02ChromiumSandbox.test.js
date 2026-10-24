@@ -93,8 +93,9 @@ test("POLICY — table de décision explicite", () => {
     [{ NODE_ENV: "production" }, PDF_SANDBOX_MODES.REQUIRED, "default"],
     [{ [PDF_CHROMIUM_SANDBOX_ENV]: "enabled" }, PDF_SANDBOX_MODES.REQUIRED, "explicit"],
     [{ [PDF_CHROMIUM_SANDBOX_ENV]: " REQUIRED " }, PDF_SANDBOX_MODES.REQUIRED, "explicit"],
-    [{ [PDF_CHROMIUM_SANDBOX_ENV]: "disabled" }, PDF_SANDBOX_MODES.INSECURE_LOCAL, "explicit"],
+    [{ [PDF_CHROMIUM_SANDBOX_ENV]: "disabled", NODE_ENV: "development" }, PDF_SANDBOX_MODES.INSECURE_LOCAL, "explicit"],
     [{ [PDF_CHROMIUM_SANDBOX_ENV]: "insecure-local", NODE_ENV: "test" }, PDF_SANDBOX_MODES.INSECURE_LOCAL, "explicit"],
+    [{ [PDF_CHROMIUM_SANDBOX_ENV]: "disabled", NODE_ENV: "test", APP_ENV: "ci" }, PDF_SANDBOX_MODES.INSECURE_LOCAL, "explicit"],
     [{ [PDF_CHROMIUM_SANDBOX_ENV]: "disabled", NODE_ENV: "production" }, PDF_SANDBOX_MODES.INVALID, "explicit"],
     [{ [PDF_CHROMIUM_SANDBOX_ENV]: "pdf-disabled", NODE_ENV: "production" }, PDF_SANDBOX_MODES.PDF_DISABLED, "explicit"],
     [{ [PDF_CHROMIUM_SANDBOX_ENV]: "false" }, PDF_SANDBOX_MODES.INVALID, "explicit"],
@@ -104,6 +105,33 @@ test("POLICY — table de décision explicite", () => {
     const policy = resolvePdfChromiumSandboxPolicy(env);
     assert.equal(policy.mode, mode, JSON.stringify(env));
     assert.equal(policy.source, source, JSON.stringify(env));
+  }
+});
+
+test("POLICY — mode sans sandbox refusé hors poste local explicite", () => {
+  const refused = [
+    [{}, "insecure_requires_local_node_env"],
+    [{ NODE_ENV: "" }, "insecure_requires_local_node_env"],
+    [{ NODE_ENV: "staging" }, "insecure_requires_local_node_env"],
+    [{ NODE_ENV: "production" }, "insecure_requires_local_node_env"],
+    [{ NODE_ENV: "production", APP_ENV: "preproduction" }, "insecure_requires_local_node_env"],
+    [{ NODE_ENV: "development", APP_ENV: "preproduction" }, "insecure_forbidden_app_env"],
+    [{ NODE_ENV: "test", APP_ENV: "production" }, "insecure_forbidden_app_env"],
+    [{ NODE_ENV: "development", APP_ENV: "demo" }, "insecure_forbidden_app_env"],
+    [{ NODE_ENV: "development", APP_ENV: "inconnu" }, "insecure_forbidden_app_env"],
+    [{ NODE_ENV: "development", RENDER: "true" }, "insecure_forbidden_on_render"],
+    [{ NODE_ENV: "test", APP_ENV: "local", RENDER: "true" }, "insecure_forbidden_on_render"],
+  ];
+  for (const [env, reason] of refused) {
+    for (const value of ["disabled", "insecure-local"]) {
+      const policy = resolvePdfChromiumSandboxPolicy({ ...env, [PDF_CHROMIUM_SANDBOX_ENV]: value });
+      assert.equal(policy.mode, PDF_SANDBOX_MODES.INVALID, `${value} ${JSON.stringify(env)}`);
+      assert.equal(policy.reason, reason, `${value} ${JSON.stringify(env)}`);
+      assert.throws(
+        () => renderer.buildChromiumLaunchOptions({ ...env, [PDF_CHROMIUM_SANDBOX_ENV]: value }),
+        (error) => assertUnavailable(error),
+      );
+    }
   }
 });
 
@@ -128,7 +156,7 @@ test("PDF2-05 — configuration invalide ou interdite : refus contrôlé", async
     await withEnv({ [PDF_CHROMIUM_SANDBOX_ENV]: "disabled", NODE_ENV: "production" }, async () => {
       await assert.rejects(
         () => renderer.renderReportCardPdf(report(), SCHOOL),
-        (error) => assertUnavailable(error, "sandbox_config_insecure_forbidden_in_production"),
+        (error) => assertUnavailable(error, "sandbox_config_insecure_requires_local_node_env"),
       );
     });
     await withEnv({ [PDF_CHROMIUM_SANDBOX_ENV]: "pdf-disabled" }, async () => {
@@ -137,7 +165,7 @@ test("PDF2-05 — configuration invalide ou interdite : refus contrôlé", async
   } finally {
     spy.restore();
   }
-  assert.ok(spy.lines.some((line) => line.includes("[SEC-PDF-02]") && line.includes("insecure_forbidden_in_production")));
+  assert.ok(spy.lines.some((line) => line.includes("[SEC-PDF-02]") && line.includes("insecure_requires_local_node_env")));
 });
 
 test("PDF2-06 — sandbox exigée mais indisponible : un seul essai, aucun repli --no-sandbox", { timeout: 60000 }, async () => {
@@ -184,7 +212,7 @@ test("PDF2-09 — binaire Chromium absent : erreur contrôlée, sans chemin", as
   const spy = silenceConsoleError();
   try {
     await withEnv(
-      { [PDF_CHROMIUM_SANDBOX_ENV]: "disabled", PUPPETEER_EXECUTABLE_PATH: "/nonexistent/sec-pdf-02/chrome" },
+      { [PDF_CHROMIUM_SANDBOX_ENV]: "disabled", NODE_ENV: "test", APP_ENV: undefined, RENDER: undefined, PUPPETEER_EXECUTABLE_PATH: "/nonexistent/sec-pdf-02/chrome" },
       async () => {
         await assert.rejects(
           () => renderer.renderReportCardPdf(report(), SCHOOL),
@@ -235,7 +263,7 @@ test("PDF2-16 — erreur PDF côté HTTP : uniquement message générique et cod
 // --- Rendus réels (politique de l'environnement courant) --------------------
 
 test("PDF2-17 — mode local explicite (`disabled`) hors production : rendu conforme", { timeout: 60000 }, async () => {
-  await withEnv({ [PDF_CHROMIUM_SANDBOX_ENV]: "disabled", NODE_ENV: "test" }, async () => {
+  await withEnv({ [PDF_CHROMIUM_SANDBOX_ENV]: "disabled", NODE_ENV: "test", APP_ENV: undefined, RENDER: undefined }, async () => {
     assertPdf(await renderer.renderReportCardPdf(report(), SCHOOL));
   });
 });

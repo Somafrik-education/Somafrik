@@ -9,9 +9,15 @@
  * | Valeur                         | Mode            | Effet                                                |
  * |--------------------------------|-----------------|------------------------------------------------------|
  * | (absente), `enabled`, `required` | required      | Sandbox exigée. Aucune relance sans sandbox.         |
- * | `disabled`, `insecure-local`   | insecure-local  | Sans sandbox. Refusé si NODE_ENV=production.         |
+ * | `disabled`, `insecure-local`   | insecure-local  | Sans sandbox, poste local uniquement (garde ci-dessous). |
  * | `pdf-disabled`                 | pdf-disabled    | Génération PDF désactivée (retour arrière contrôlé). |
  * | toute autre valeur             | invalid         | Génération PDF refusée.                              |
+ *
+ * Garde locale du mode sans sandbox — toutes les conditions sont requises :
+ * - NODE_ENV vaut exactement `development` ou `test` (vide ou autre → refus) ;
+ * - APP_ENV absent ou `local` / `development` / `test` / `ci`
+ *   (`preproduction`, `production`, `demo` ou toute autre valeur → refus) ;
+ * - variable `RENDER` absente (Render la définit sur ses services).
  *
  * Changement de contrat (SEC-PDF-01 → SEC-PDF-02) : l'absence de la variable
  * signifiait « sans sandbox » ; elle signifie désormais « sandbox exigée ».
@@ -32,8 +38,15 @@ function normalize(value) {
   return String(value ?? "").trim().toLowerCase();
 }
 
-function isProductionEnv(env) {
-  return normalize(env.NODE_ENV) === "production";
+const LOCAL_NODE_ENVS = new Set(["development", "test"]);
+const LOCAL_APP_ENVS = new Set(["", "local", "development", "test", "ci"]);
+
+/** Raison du refus du mode sans sandbox, ou null si l'environnement est local. */
+function insecureLocalRefusal(env) {
+  if (!LOCAL_NODE_ENVS.has(normalize(env.NODE_ENV))) return "insecure_requires_local_node_env";
+  if (!LOCAL_APP_ENVS.has(normalize(env.APP_ENV))) return "insecure_forbidden_app_env";
+  if (normalize(env.RENDER) !== "") return "insecure_forbidden_on_render";
+  return null;
 }
 
 /**
@@ -51,8 +64,9 @@ function resolvePdfChromiumSandboxPolicy(env = process.env) {
     return { mode: PDF_SANDBOX_MODES.PDF_DISABLED, source: "explicit" };
   }
   if (raw === "disabled" || raw === "insecure-local") {
-    if (isProductionEnv(env)) {
-      return { mode: PDF_SANDBOX_MODES.INVALID, source: "explicit", reason: "insecure_forbidden_in_production" };
+    const refusal = insecureLocalRefusal(env);
+    if (refusal) {
+      return { mode: PDF_SANDBOX_MODES.INVALID, source: "explicit", reason: refusal };
     }
     return { mode: PDF_SANDBOX_MODES.INSECURE_LOCAL, source: "explicit" };
   }

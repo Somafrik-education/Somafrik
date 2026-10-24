@@ -258,7 +258,7 @@ test("SANDBOX — exigée par défaut (SEC-PDF-02), désactivable explicitement 
   const defaults = renderer.buildChromiumLaunchOptions({});
   assert.equal(defaults.args.includes("--no-sandbox"), false);
   assert.ok(defaults.args.includes("--host-resolver-rules=MAP * ~NOTFOUND"));
-  const insecureLocal = renderer.buildChromiumLaunchOptions({ SOMAFRIK_PDF_CHROMIUM_SANDBOX: "disabled" });
+  const insecureLocal = renderer.buildChromiumLaunchOptions({ SOMAFRIK_PDF_CHROMIUM_SANDBOX: "disabled", NODE_ENV: "test" });
   assert.ok(insecureLocal.args.includes("--no-sandbox"));
   assert.ok(insecureLocal.args.includes("--host-resolver-rules=MAP * ~NOTFOUND"));
   const sandboxed = renderer.buildChromiumLaunchOptions({ SOMAFRIK_PDF_CHROMIUM_SANDBOX: "enabled" });
