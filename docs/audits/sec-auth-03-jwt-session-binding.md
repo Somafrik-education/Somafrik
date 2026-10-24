@@ -19,15 +19,15 @@ Base : `develop@a0edc64a`. Comptes fictifs, PostgreSQL jetable, aucun jeton jour
 | Demande d'effacement | `/api/privacy/erasure-requests` | Route publique ; un jeton est vérifié sans contrôle de session pour attribuer la demande. |
 | Contrats #148 / #149 | `docs/project/V2-RECONSTRUCTION.md`, `apps/api`, `packages/auth` | RS256, liaison `sid === sessionId` et `sub === userId`, `jti` à usage unique. **Implémentés en bibliothèque V2 non branchée** : l'API servie (`backend/server.js`) ne les utilise pas. |
 
-## 2. Constats
+## 2. Constats et statut
 
-| # | Constat | Exploitable sans le secret JWT | Décision |
+| # | Constat | Exploitable sans le secret JWT | **Statut dans cette PR** |
 |---|---|---|---|
-| **F2** | **Le changement de mot de passe par l'utilisateur ne révoquait pas ses autres sessions.** Un refresh token volé restait utilisable jusqu'à 7 jours (avec rotation) après le changement. | **Oui** | **Corrigé dans cette PR** |
-| C-03 | Un access token signé **sans `sessionId`** est accepté sans contrôle de session (pas de révocation, pas de garde de statut). | Non — aucun chemin d'émission n'en produit ; seul un détenteur du secret peut en forger. | Rapport + proposition |
-| F3 | Le `sessionId` n'est pas lié au `sub` : la session active d'un autre utilisateur **du même établissement** est acceptée (entre établissements, le garde SEC-TENANT-01 la révoque). | Non — exige le secret. | Rapport + proposition |
-| F4 | `/api/privacy/erasure-requests` attribue une demande avec un jeton révoqué non expiré (≤ 15 min). L'exécution reste protégée par `requireAuth`. | Oui, impact faible | Rapport |
-| F5 | Pas d'`aud` ni de `jti` sur l'access token ; HS256 au lieu du RS256 contractualisé (#148/#149). | — | Rapport (écart contrat / exécution) |
+| **F2** | Le changement de mot de passe par l'utilisateur ne révoquait pas ses autres sessions : un refresh token volé restait utilisable jusqu'à 7 jours (avec rotation). | **Oui** | **CORRIGÉ** (§3) |
+| **C-03** | Un access token signé **sans `sessionId`** est accepté sans aucun contrôle de session (ni révocation, ni garde de statut / établissement). | Non : aucun chemin d'émission n'en produit ; seul un détenteur du secret peut en forger. | **NON CORRIGÉ** — proposition §4 |
+| **F3** | Aucune vérification de correspondance session ↔ utilisateur : la session active d'un autre utilisateur **du même établissement** est acceptée (entre établissements, le garde SEC-TENANT-01 la révoque). | Non : exige le secret. | **NON CORRIGÉ** — proposition §4 |
+| **F5** | HS256 au lieu du RS256 contractualisé (#148/#149) ; pas d'`aud` ni de `jti` sur l'access token. | — | **NON CORRIGÉ** — hors périmètre (pas de migration cryptographique dans cette PR) |
+| F4 | `/api/privacy/erasure-requests` attribue une demande avec un jeton révoqué non expiré (≤ 15 min) ; l'exécution reste protégée par `requireAuth`. | Oui, impact faible | **NON CORRIGÉ** — proposition §4 |
 
 Anciens jetons : les access tokens expirent en 15 minutes en production ; les refresh tokens ont toujours porté un `sessionId`. Aucun jeton légitime sans `sessionId` ne peut encore circuler.
 
@@ -42,6 +42,9 @@ Anciens jetons : les access tokens expirent en 15 minutes en production ; les re
 Impact Web / Mobile : l'utilisateur qui change son mot de passe reste connecté sur l'appareil courant ; ses autres appareils devront se reconnecter.
 
 ## 4. Propositions (non réalisées, autorisation CTO requise)
+
+Banc d'intégration : `backend/lib/disposableTestDatabaseGuard.js` refuse toute base non loopback, tout hôte de fournisseur (Render, Supabase, Neon, AWS, pooler), tout paramètre `host`/`hostaddr` distant, tout environnement production / préproduction / Render, et vérifie côté serveur la base courante et l'adresse avant le `DROP SCHEMA`.
+
 
 - **C-03** : refuser en `requireAuth` tout access token sans `sessionId` (401). Impact : de nombreux tests HTTP existants forgent des jetons sans session (ex. `academicYearTenant.http.pg.test.js`) et devraient créer une session de test.
 - **F3** : exiger `activeSession.user_id === principal.sub` (résolu en identifiant base) dans `requireAuth`.

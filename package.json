@@ -207,7 +207,7 @@
     "verify:jwt-header": "npm --prefix backend run verify:jwt-header",
     "verify:auth-sessions": "node --test backend/lib/authTokenPolicy.test.js backend/lib/sessionRefreshService.test.js backend/lib/passwordResetSessions.test.js backend/lib/communicationsPasswordReset.red.test.js backend/lib/passwordResetNotification.test.js backend/services/tokenService.test.js && node backend/scripts/verify-auth-sessions.js",
     "verify:sec-tenant-01": "node --test backend/lib/secTenant01FailClosed.test.js && node backend/lib/secTenant01RefreshAttachment.pg.test.js && node backend/lib/secTenant01Attachment.http.pg.test.js",
-    "verify:sec-auth-03": "node --test backend/lib/secAuth03RevokeOtherSessions.test.js && node backend/lib/secAuth03SessionBinding.http.pg.test.js",
+    "verify:sec-auth-03": "node --test backend/lib/secAuth03RevokeOtherSessions.test.js backend/lib/disposableTestDatabaseGuard.test.js && node backend/lib/secAuth03SessionBinding.http.pg.test.js",
     "verify:sec-pdf-01": "node --test backend/lib/secPdf01RendererIsolation.test.js",
     "verify:privacy-erasure": "node --test backend/lib/privacyErasure.test.js backend/lib/retentionPolicy.test.js && node backend/scripts/verify-privacy-erasure.js",
     "verify:function-search-path": "node --test backend/lib/functionSearchPath.test.js && node backend/lib/functionSearchPath.pg.test.js && node backend/scripts/verify-function-search-path.js",

@@ -24,6 +24,10 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { hashSecret } = require("../services/credentialService");
+const {
+  assertConnectedToDisposableDatabase,
+  assertDisposableLocalDatabaseUrl,
+} = require("./disposableTestDatabaseGuard");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = "somafrik_sec_auth_03_http_it";
@@ -41,6 +45,8 @@ function withDatabaseName(databaseUrl, databaseName) {
 }
 
 async function resetIsolatedDatabase() {
+  // Garde : instance locale jetable uniquement, avant toute connexion.
+  assertDisposableLocalDatabaseUrl(DATABASE_URL);
   const admin = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
   try {
     const existing = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [IT_DATABASE]);
@@ -49,8 +55,10 @@ async function resetIsolatedDatabase() {
     await admin.end();
   }
   const url = withDatabaseName(DATABASE_URL, IT_DATABASE);
-  const reset = new Pool({ connectionString: url });
+  const reset = new Pool({ connectionString: url, max: 1 });
   try {
+    // Garde côté serveur sur la connexion qui exécute le DROP.
+    await assertConnectedToDisposableDatabase(reset, IT_DATABASE);
     await reset.query("DROP SCHEMA public CASCADE");
     await reset.query("CREATE SCHEMA public");
   } finally {
