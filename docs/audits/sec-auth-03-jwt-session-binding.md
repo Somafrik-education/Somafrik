@@ -43,7 +43,7 @@ Impact Web / Mobile : l'utilisateur qui change son mot de passe reste connecté 
 
 ## 4. Propositions (non réalisées, autorisation CTO requise)
 
-Banc d'intégration : `backend/lib/disposableTestDatabaseGuard.js` refuse toute base non loopback, tout hôte de fournisseur (Render, Supabase, Neon, AWS, pooler), tout paramètre `host`/`hostaddr` distant, tout environnement production / préproduction / Render, et vérifie côté serveur la base courante et l'adresse avant le `DROP SCHEMA`.
+Banc d'intégration : `backend/lib/disposableTestDatabaseGuard.js` refuse toute base non loopback, tout hôte de fournisseur (Render, Supabase, Neon, AWS, pooler), tout paramètre `host`/`hostaddr` distant, tout environnement production / préproduction / Render, et vérifie côté serveur, avant le `DROP SCHEMA`, la base courante et une adresse serveur loopback ou privée (service Docker publié sur localhost en CI) ; toute adresse publique est refusée.
 
 
 - **C-03** : refuser en `requireAuth` tout access token sans `sessionId` (401). Impact : de nombreux tests HTTP existants forgent des jetons sans session (ex. `academicYearTenant.http.pg.test.js`) et devraient créer une session de test.

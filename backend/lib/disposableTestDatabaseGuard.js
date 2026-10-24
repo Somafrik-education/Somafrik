@@ -9,11 +9,28 @@
  * - aucun hôte de fournisseur (Render, Supabase, Neon, AWS, pooler…) ;
  * - environnement ni production, ni préproduction, ni service Render ;
  * - côté serveur, juste avant le DROP : base courante = base dédiée au banc,
- *   adresse du serveur loopback (ou connexion locale sans adresse).
+ *   adresse du serveur loopback ou privée (conteneur local, ex. service
+ *   Docker publié sur localhost en CI), ou connexion socket sans adresse.
+ *   Toute adresse publique est refusée.
  */
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 const PROVIDER_HOST_PATTERN = /render|supabase|neon|amazonaws|rds\.|azure|gcp|pooler|cloud/i;
+const IPV4_PRIVATE_OR_LOOPBACK = [
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+];
+
+/** Adresse serveur acceptable : loopback ou plage privée (RFC 1918 / ULA IPv6). */
+function isLoopbackOrPrivateAddress(addr) {
+  const value = normalize(addr).replace(/^::ffff:/, "");
+  if (value === "::1") return true;
+  if (/^f[cd][0-9a-f]{2}:/.test(value)) return true;
+  return IPV4_PRIVATE_OR_LOOPBACK.some((re) => re.test(value));
+}
+
 const FORBIDDEN_APP_ENVS = new Set(["production", "preproduction", "preprod", "staging", "demo"]);
 
 class UnsafeTestDatabaseError extends Error {
@@ -60,7 +77,7 @@ async function assertConnectedToDisposableDatabase(pool, expectedDatabase) {
   const db = String(rows[0]?.db ?? "");
   const addr = rows[0]?.addr == null ? null : String(rows[0].addr);
   if (db !== expectedDatabase) throw new UnsafeTestDatabaseError("base courante différente de la base dédiée au banc");
-  if (addr !== null && !["127.0.0.1", "::1"].includes(addr)) {
+  if (addr !== null && !isLoopbackOrPrivateAddress(addr)) {
     throw new UnsafeTestDatabaseError("serveur PostgreSQL non local");
   }
   return true;
@@ -70,4 +87,5 @@ module.exports = {
   UnsafeTestDatabaseError,
   assertConnectedToDisposableDatabase,
   assertDisposableLocalDatabaseUrl,
+  isLoopbackOrPrivateAddress,
 };
