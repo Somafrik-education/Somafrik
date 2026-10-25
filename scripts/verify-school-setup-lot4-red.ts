@@ -539,6 +539,30 @@ const SEC_AUTH_04_EXACT = new Set([
   "package.json",
   "scripts/verify-school-setup-lot4-red.ts",
 ]);
+// Fichiers Carte élève de #995 (conversion des bancs aux sessions réelles).
+// En mode SEC-AUTH-04, eux aussi sont limités à cette liste fermée : la règle
+// Carte élève ordinaire (préfixes studentCard*) ne s'applique pas.
+const SEC_AUTH_04_CARD_EXACT = new Set([
+  "Mobile/src/lib/studentCardEntryControl.integration.pg.test.ts",
+  "backend/lib/studentAccessCards.attendance.pg.test.js",
+  "backend/lib/studentAccessCards.finance.pg.test.js",
+  "backend/lib/studentAccessCards.http.pg.test.js",
+  "backend/lib/studentAccessCards.scan.http.pg.test.js",
+  "backend/lib/studentCardBatchIssue.http.pg.test.js",
+  "backend/lib/studentCardEntry.http.pg.test.js",
+  "backend/lib/studentCardHolder.http.pg.test.js",
+  "backend/lib/studentCardPhoto.http.pg.test.js",
+  "backend/lib/studentCardRollCall.http.pg.test.js",
+  "backend/lib/studentCardVerification.http.pg.test.js",
+  "backend/lib/studentCardsNfcIntegration.fixture.js",
+  "backend/lib/studentCardsNfcProvision.http.pg.test.js",
+]);
+
+/** Mode SEC-AUTH-04 : chaque fichier du diff doit figurer dans une liste fermée. */
+function isSecAuth04ClosedListFile(file: string) {
+  return SEC_AUTH_04_EXACT.has(file) || SEC_AUTH_04_CARD_EXACT.has(file) || isApprovedSecAuth04GitleaksIgnore(file);
+}
+
 // Entrée SEC-AUTH-03 (#994) reportée à l'identique : seul ajout admis dans
 // .gitleaksignore pour SEC-AUTH-04 (le scan parcourt la branche de #994).
 const SEC_AUTH_03_GITLEAKS_FINGERPRINTS = new Set([
@@ -676,6 +700,21 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     const pr3MobileNav = navChanged && navAnchored;
     const r3DiagnosticNav = navChanged && r3DiagnosticAnchored;
     const secAuth04 = SEC_AUTH_04_ANCHORS.every((anchor) => changed.includes(anchor));
+    if (secAuth04) {
+      // Exception SEC-AUTH-04 : liste fermée intégrale, y compris pour les fichiers
+      // Carte élève ; aucune règle par préfixe, aucun autre chantier ancré.
+      const leakedSecAuth04 = [...new Set([...changed.filter((file) => !isSecAuth04ClosedListFile(file)), ...exclusiveLot4])];
+      if (leakedSecAuth04.length === 0) {
+        return {
+          kind: "na",
+          message: "L4-09 N/A: chantier SEC-AUTH-04 (liaison JWT-session), diff limité à sa liste fermée.",
+        };
+      }
+      return {
+        kind: "fail",
+        message: `L4-09: chantier SEC-AUTH-04 hors liste fermée: ${leakedSecAuth04.join(", ")}`,
+      };
+    }
     const outside = changed.filter(
       (file) => !isStudentCardPr6IntegrationFile(file)
         && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file))
@@ -687,9 +726,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
         && !(batchDesign01 && STUDENT_CARD_BATCH_DESIGN_01_EXACT.has(file))
         && !(photo02 && STUDENT_CARD_PHOTO_02_EXACT.has(file))
         && !(pr3MobileNav && file === STUDENT_CARD_PR3_M1_NAV_FILE)
-        && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE))
-        && !(secAuth04 && SEC_AUTH_04_EXACT.has(file))
-        && !(secAuth04 && isApprovedSecAuth04GitleaksIgnore(file)),
+        && !(r3DiagnosticNav && (file === STUDENT_CARD_PR3_M1_NAV_FILE || file === STUDENT_CARD_R3_DIAG_NAV_FILE)),
     );
     if (outside.length === 0 && exclusiveLot4.length === 0) {
       return {
@@ -1596,22 +1633,7 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       assert.equal(evaluateLot4Scope([...m1NavFiles, "backend/db/migrations/20261017_unrelated.sql"]).kind, "fail", "migration hors liste FAIL");
 
       // SEC-AUTH-04 (#995) : exception ancrée, liste fermée.
-      const secAuth04CardFiles = [
-        "Mobile/src/lib/studentCardEntryControl.integration.pg.test.ts",
-        "backend/lib/studentAccessCards.attendance.pg.test.js",
-        "backend/lib/studentAccessCards.finance.pg.test.js",
-        "backend/lib/studentAccessCards.http.pg.test.js",
-        "backend/lib/studentAccessCards.scan.http.pg.test.js",
-        "backend/lib/studentCardBatchIssue.http.pg.test.js",
-        "backend/lib/studentCardEntry.http.pg.test.js",
-        "backend/lib/studentCardHolder.http.pg.test.js",
-        "backend/lib/studentCardPhoto.http.pg.test.js",
-        "backend/lib/studentCardRollCall.http.pg.test.js",
-        "backend/lib/studentCardVerification.http.pg.test.js",
-        "backend/lib/studentCardsNfcIntegration.fixture.js",
-        "backend/lib/studentCardsNfcProvision.http.pg.test.js",
-      ];
-      const secAuth04Files = [...SEC_AUTH_04_EXACT, ...secAuth04CardFiles];
+      const secAuth04Files = [...SEC_AUTH_04_EXACT, ...SEC_AUTH_04_CARD_EXACT];
       assert.equal(evaluateLot4Scope(secAuth04Files).kind, "na", "L4-09: diff exact SEC-AUTH-04 admis nominativement");
       for (const [extra, label] of [
         ["backend/lib/financeManagement.js", "fichier backend hors liste"],
@@ -1623,11 +1645,28 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         ["docs/audits/sec-auth-05.md", "autre document"],
         ["backend/lib/schoolSetupStatus.js", "fichier LOT 4"],
         ["web/src/components/schoolSetup/SchoolSetupOptionalCompleteness.tsx", "fichier LOT 4 exclusif"],
+        // Fichiers Carte élève hors liste : admis par la règle ordinaire, refusés en mode SEC-AUTH-04.
+        ["backend/lib/studentCardEntry.js", "code métier Carte élève"],
+        ["backend/lib/studentAccessCards.js", "dépôt Carte élève"],
+        ["backend/lib/studentCardEntry.test.js", "autre test Carte élève"],
+        ["web/src/lib/studentCardsApi.ts", "client Web Carte élève"],
+        ["web/src/components/students/StudentCardTab.tsx", "écran Web Carte élève"],
+        ["Mobile/src/lib/studentCardEntryControl.ts", "logique Mobile Carte élève"],
+        ["Mobile/src/screens/StudentCardEntryScreen.tsx", "écran Mobile Carte élève"],
+        ["Mobile/scripts/verify-student-card-qr.js", "vérificateur Carte élève"],
+        ["backend/db/migrations/20261025_student_cards.sql", "migration Carte élève"],
       ] as const) {
         assert.equal(
           evaluateLot4Scope([...secAuth04Files, extra]).kind,
           "fail",
           `L4-09: SEC-AUTH-04 + ${label} (${extra}) doit rester FAIL`,
+        );
+      }
+      for (const cardFile of SEC_AUTH_04_CARD_EXACT) {
+        assert.equal(
+          evaluateLot4Scope([cardFile]).kind,
+          "na",
+          `L4-09: ${cardFile} seul reste admis par la règle Carte élève ordinaire (inchangée)`,
         );
       }
       for (const missingAnchor of SEC_AUTH_04_ANCHORS) {
