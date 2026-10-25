@@ -14,6 +14,7 @@ const { TokenService } = require("../services/tokenService");
 const { MOBILE_SYNC_ERROR } = require("./mobileSyncErrors");
 const { PERMISSION_DENIED } = require("../services/rbacService");
 const { encodeMobileSyncCursor } = require("./mobileSyncCursor");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(
@@ -113,10 +114,14 @@ async function stopChild(child) {
   });
 }
 
-function mintAccess(tokens, payload) {
-  return tokens.createAccessToken({
+function mintAccess({ tokens, repository }, payload) {
+  return mintSessionAccessToken({
+    tokens,
+    repository,
+    payload: {
     mustChangePassword: false,
     ...payload,
+  },
   });
 }
 
@@ -409,14 +414,14 @@ async function main() {
 
     await waitForHealth(child);
 
-    const adminToken = mintAccess(tokens, {
+    const adminToken = await mintAccess({ tokens, repository: repo }, {
       sub: ADMIN_USER_ID,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: "SCH-A",
       permissions: ["Élèves:READ", "Gérer élèves"],
     });
-    const teacherToken = mintAccess(tokens, {
+    const teacherToken = await mintAccess({ tokens, repository: repo }, {
       sub: TEACHER_USER_ID,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
@@ -427,7 +432,7 @@ async function main() {
         { classId: ID_B, classCode: "MS-CLS-B", status: "active" },
       ],
     });
-    const accountantToken = mintAccess(tokens, {
+    const accountantToken = await mintAccess({ tokens, repository: repo }, {
       sub: ACCOUNTANT_USER_ID,
       role: "Comptable",
       roleKeys: ["ACCOUNTANT"],
@@ -476,8 +481,22 @@ async function main() {
     assert.equal(crossResource.status, 400, `classes cursor 400: ${JSON.stringify(crossResource.data)}`);
     assert.equal(crossResource.data?.code, MOBILE_SYNC_ERROR.CURSOR_INVALID);
 
-    const tenantToken = mintAccess(tokens, {
-      sub: ADMIN_USER_ID,
+    // SEC-AUTH-04 : le rejeu du curseur de A est fait par un vrai compte de B (session
+    // et claim cohérents) ; un claim B sur le compte de A est refusé avant la route.
+    const adminBUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaab001";
+    await repo.pool.query(
+      `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)
+       SELECT $1, id, 'ADM-B-STU', 'Bea', 'Admin', 'admin-b-stu@test.local', 'Admin School', 'active', FALSE
+       FROM schools WHERE school_code = 'SCH-B'`,
+      [adminBUserId],
+    );
+    await repo.pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       SELECT $1, id, 'SCHOOL_ADMIN', 'active' FROM schools WHERE school_code = 'SCH-B'`,
+      [adminBUserId],
+    );
+    const tenantToken = await mintAccess({ tokens, repository: repo }, {
+      sub: adminBUserId,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: "SCH-B",
@@ -487,9 +506,25 @@ async function main() {
       `/mobile-sync/l1/students?cursor=${encodeURIComponent(admin.data.nextCursor)}`,
       { token: tenantToken },
     );
-    assert.equal(tenant.status, 403, `tenant 403: ${JSON.stringify(tenant.data)}`);
+    // Curseur de A rejoué par B : refusé (lien principal du curseur). Le lien
+    // établissement seul est couvert par mobileSyncCursor.test.js (« tenant mismatch »).
+    assert.equal(tenant.status, 400, `tenant : rejeu par B refusé: ${JSON.stringify(tenant.data)}`);
+    assert.equal(tenant.data?.code, "MOBILE_SYNC_CURSOR_INVALID");
+    // Compte A revendiquant B : refusé par le garde de session avant la route.
+    const forgedTenantToken = await mintAccess({ tokens, repository: repo }, {
+      sub: ADMIN_USER_ID,
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      schoolCode: "SCH-B",
+      permissions: ["Élèves:READ", "Gérer élèves"],
+    });
+    const forgedTenant = await request(
+      `/mobile-sync/l1/students?cursor=${encodeURIComponent(admin.data.nextCursor)}`,
+      { token: forgedTenantToken },
+    );
+    assertSessionRefused(forgedTenant, "tenant : claim B sur le compte A", "SESSION_SCHOOL_ATTACHMENT_MISSING");
 
-    const dualToken = mintAccess(tokens, {
+    const dualToken = await mintAccess({ tokens, repository: repo }, {
       sub: DUAL_USER_ID,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
@@ -501,7 +536,7 @@ async function main() {
     assert.ok((dual.data.items ?? []).every((item) => item.classCode === "MS-CLS-A"));
     assert.ok(!(dual.data.items ?? []).some((item) => item.classCode === "MS-CLS-B-ONLY"));
 
-    const accountantDualToken = mintAccess(tokens, {
+    const accountantDualToken = await mintAccess({ tokens, repository: repo }, {
       sub: ACC_DUAL_USER_ID,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
@@ -529,7 +564,7 @@ async function main() {
     assert.equal(resync.status, 200, `resync 200: ${JSON.stringify(resync.data)}`);
     assert.ok(!(resync.data.items ?? []).some((item) => item.id === fixture.studentA.id));
 
-    const parentToken = mintAccess(tokens, {
+    const parentToken = await mintAccess({ tokens, repository: repo }, {
       sub: PARENT_USER_ID,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -564,7 +599,7 @@ async function main() {
       [CUSTOM_USER_ID, fixture.schoolA],
     );
 
-    const customToken = mintAccess(tokens, {
+    const customToken = await mintAccess({ tokens, repository: repo }, {
       sub: CUSTOM_USER_ID,
       role: "CUSTOM_ROLE",
       roleKeys: ["CUSTOM_ROLE"],

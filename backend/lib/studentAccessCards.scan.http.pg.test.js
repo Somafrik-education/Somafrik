@@ -7,6 +7,7 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { STUDENT_CARD_ERROR } = require("./studentAccessCardsManagement");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_STUDENT_CARDS_SCAN_HTTP_IT_DATABASE ?? "somafrik_student_cards_scan_http_it")
@@ -172,7 +173,7 @@ async function main() {
   process.env.SOMAFRIK_DB_REQUIRED = "true";
   const repo = createPostgresRepository(isolatedUrl);
   const tokens = new TokenService({ secret: JWT_SECRET });
-  const mint = (payload) => tokens.createAccessToken({ mustChangePassword: false, ...payload });
+  const mint = (payload) => mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   const pool = new Pool({ connectionString: isolatedUrl });
   let child = null;
   try {
@@ -290,49 +291,49 @@ async function main() {
     });
     await waitForHealth(child, stderrRef);
 
-    const tokenAdmin = mint({
+    const tokenAdmin = await mint({
       sub: USER_ADMIN,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: ["Élèves:UPDATE", "Gérer élèves"],
     });
-    const tokenAccountant = mint({
+    const tokenAccountant = await mint({
       sub: USER_ACCOUNTANT,
       role: "Comptable",
       roleKeys: ["ACCOUNTANT"],
       schoolCode: LEFTOVER_A,
       permissions: ["Paiements:READ", "Paiements:CREATE"],
     });
-    const tokenTeacher = mint({
+    const tokenTeacher = await mint({
       sub: USER_TEACHER,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       schoolCode: LEFTOVER_A,
       permissions: ["Présences:CREATE", "Présences:UPDATE"],
     });
-    const tokenParent = mint({
+    const tokenParent = await mint({
       sub: USER_PARENT,
       role: "Parent",
       roleKeys: ["PARENT"],
       schoolCode: LEFTOVER_A,
       permissions: ["Présences:READ", "Voir présences"],
     });
-    const tokenStudent = mint({
+    const tokenStudent = await mint({
       sub: USER_STUDENT,
       role: "Élève / Étudiant",
       roleKeys: ["STUDENT"],
       schoolCode: LEFTOVER_A,
       permissions: ["Présences:READ"],
     });
-    const tokenSuper = mint({
+    const tokenSuper = await mint({
       sub: USER_SUPER,
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
       schoolCode: LOGIN_A,
       permissions: ["ALL_PRIVILEGES", "Présences:CREATE"],
     });
-    const tokenPays = mint({
+    const tokenPays = await mint({
       sub: USER_PAYS,
       role: "Admin Pays",
       roleKeys: ["COUNTRY_ADMIN"],
@@ -340,7 +341,7 @@ async function main() {
       countryCode: "CD",
       permissions: ["COUNTRY_PRIVILEGES", "Présences:UPDATE"],
     });
-    const tokenAdminB = mint({
+    const tokenAdminB = await mint({
       sub: USER_ADMIN_B,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
@@ -348,14 +349,14 @@ async function main() {
       permissions: ["Élèves:UPDATE", "Gérer élèves", "Présences:CREATE"],
     });
 
-    const tokenTeacherUpdate = mint({
+    const tokenTeacherUpdate = await mint({
       sub: USER_TEACHER,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       schoolCode: LEFTOVER_A,
       permissions: ["Présences:UPDATE"],
     });
-    const tokenTeacherCreate = mint({
+    const tokenTeacherCreate = await mint({
       sub: USER_TEACHER,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
@@ -411,7 +412,7 @@ async function main() {
     assert.equal(capHeaderSpoof.status, 403, JSON.stringify(capHeaderSpoof.data));
     assert.equal(capHeaderSpoof.data?.code, "SCHOOL_SCOPE_OVERRIDE_FORBIDDEN");
     const capTeacherB = await request("/student-cards/capabilities", {
-      token: mint({
+      token: await mint({
         sub: USER_TEACHER_B,
         role: "Enseignant",
         roleKeys: ["TEACHER"],
@@ -474,7 +475,7 @@ async function main() {
     assert.equal(cross.status, 404, JSON.stringify(cross.data));
     assert.equal(cross.data?.code, STUDENT_CARD_ERROR.NOT_FOUND);
     assert.equal(JSON.stringify(cross.data).includes(STUDENT_A), false);
-    const teacherB = mint({
+    const teacherB = await mint({
       sub: USER_TEACHER_B,
       role: "Enseignant",
       roleKeys: ["TEACHER"],

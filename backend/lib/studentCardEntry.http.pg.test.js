@@ -14,6 +14,7 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { ENTRY_ERROR } = require("./studentCardEntry");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_ENTRY_IT_DATABASE ?? "somafrik_student_card_entry_it")
@@ -157,7 +158,7 @@ async function main() {
   process.env.SOMAFRIK_DB_REQUIRED = "true";
   const repo = createPostgresRepository(isolatedUrl);
   const tokens = new TokenService({ secret: JWT_SECRET });
-  const mint = (payload) => tokens.createAccessToken({ mustChangePassword: false, ...payload });
+  const mint = (payload) => mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   const pool = new Pool({ connectionString: isolatedUrl });
   let child = null;
   try {
@@ -308,26 +309,26 @@ async function main() {
 
     const ENTRY = ["Contrôle d'entrée:CREATE", "Contrôle d'entrée:READ"];
     const token = {
-      admin: mint({ sub: USERS.ADMIN, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: CODE_A,
+      admin: await mint({ sub: USERS.ADMIN, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: CODE_A,
         permissions: ["Élèves:UPDATE", "Gérer élèves", ...ENTRY] }),
-      director: mint({ sub: USERS.DIRECTOR, role: "Directeur", roleKeys: ["PRINCIPAL"], schoolCode: CODE_A, permissions: ENTRY }),
-      secretary: mint({ sub: USERS.SECRETARY, role: "Secrétaire", roleKeys: ["SECRETARY"], schoolCode: CODE_A, permissions: ENTRY }),
-      supervisor: mint({ sub: USERS.SUPERVISOR, role: "Surveillant", roleKeys: ["SUPERVISOR"], schoolCode: CODE_A, permissions: ENTRY }),
-      teacher: mint({ sub: USERS.TEACHER, role: "Enseignant", roleKeys: ["TEACHER"], schoolCode: CODE_A, permissions: ENTRY }),
-      proviseurNoGrant: mint({ sub: USERS.PROVISEUR_NO_GRANT, role: "Proviseur", roleKeys: ["PROVISEUR"], schoolCode: CODE_A,
+      director: await mint({ sub: USERS.DIRECTOR, role: "Directeur", roleKeys: ["PRINCIPAL"], schoolCode: CODE_A, permissions: ENTRY }),
+      secretary: await mint({ sub: USERS.SECRETARY, role: "Secrétaire", roleKeys: ["SECRETARY"], schoolCode: CODE_A, permissions: ENTRY }),
+      supervisor: await mint({ sub: USERS.SUPERVISOR, role: "Surveillant", roleKeys: ["SUPERVISOR"], schoolCode: CODE_A, permissions: ENTRY }),
+      teacher: await mint({ sub: USERS.TEACHER, role: "Enseignant", roleKeys: ["TEACHER"], schoolCode: CODE_A, permissions: ENTRY }),
+      proviseurNoGrant: await mint({ sub: USERS.PROVISEUR_NO_GRANT, role: "Proviseur", roleKeys: ["PROVISEUR"], schoolCode: CODE_A,
         permissions: ENTRY }),
-      parent: mint({ sub: USERS.PARENT, role: "Parent", roleKeys: ["PARENT"], schoolCode: CODE_A, permissions: ENTRY }),
-      superAdmin: mint({ sub: USERS.SUPER, role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], schoolCode: LOGIN_A,
+      parent: await mint({ sub: USERS.PARENT, role: "Parent", roleKeys: ["PARENT"], schoolCode: CODE_A, permissions: ENTRY }),
+      superAdmin: await mint({ sub: USERS.SUPER, role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], schoolCode: LOGIN_A,
         permissions: ["ALL_PRIVILEGES", ...ENTRY] }),
-      pays: mint({ sub: USERS.PAYS, role: "Admin Pays", roleKeys: ["COUNTRY_ADMIN"], schoolCode: LOGIN_A, countryCode: "CD",
+      pays: await mint({ sub: USERS.PAYS, role: "Admin Pays", roleKeys: ["COUNTRY_ADMIN"], schoolCode: LOGIN_A, countryCode: "CD",
         permissions: ["COUNTRY_PRIVILEGES", ...ENTRY] }),
-      directorB: mint({ sub: USERS.DIRECTOR_B, role: "Directeur", roleKeys: ["PRINCIPAL"], schoolCode: CODE_B, permissions: ENTRY }),
-      secretaryTeacher: mint({ sub: USERS.SECRETARY_TEACHER, role: "Secrétaire", roleKeys: ["SECRETARY", "TEACHER"],
+      directorB: await mint({ sub: USERS.DIRECTOR_B, role: "Directeur", roleKeys: ["PRINCIPAL"], schoolCode: CODE_B, permissions: ENTRY }),
+      secretaryTeacher: await mint({ sub: USERS.SECRETARY_TEACHER, role: "Secrétaire", roleKeys: ["SECRETARY", "TEACHER"],
         schoolCode: CODE_A, permissions: ENTRY }),
       // JWT signé mais périmé : PRINCIPAL dans le jeton, TEACHER seul en base.
-      stale: mint({ sub: USERS.STALE, role: "Directeur", roleKeys: ["PRINCIPAL"], schoolCode: CODE_A, permissions: ENTRY }),
+      stale: await mint({ sub: USERS.STALE, role: "Directeur", roleKeys: ["PRINCIPAL"], schoolCode: CODE_A, permissions: ENTRY }),
     };
-    const adminB = mint({ sub: USERS.DIRECTOR_B, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: CODE_B,
+    const adminB = await mint({ sub: USERS.DIRECTOR_B, role: "Admin School", roleKeys: ["SCHOOL_ADMIN"], schoolCode: CODE_B,
       permissions: ["Élèves:UPDATE", "Gérer élèves"] });
     await pool.query(
       `INSERT INTO user_roles (user_id, school_id, role_key, status) VALUES ($1,$2,'SCHOOL_ADMIN','active') ON CONFLICT DO NOTHING`,

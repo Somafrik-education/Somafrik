@@ -18,7 +18,7 @@ let settingsTokenA;
 before(async () => {
   f = await createIntegrationFixture();
   [A, B] = f.schools;
-  settingsTokenA = f.mint({
+  settingsTokenA = await f.mint({
     sub: A.user,
     role: "Admin School",
     roleKeys: ["SCHOOL_ADMIN"],

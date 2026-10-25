@@ -8,6 +8,7 @@ const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { STUDENT_CARD_ERROR } = require("./studentAccessCardsManagement");
 const { randomUUID } = require("node:crypto");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_STUDENT_CARDS_HTTP_IT_DATABASE ?? "somafrik_student_cards_http_it")
@@ -252,7 +253,7 @@ async function main() {
   process.env.SOMAFRIK_DB_REQUIRED = "true";
   const repo = createPostgresRepository(isolatedUrl);
   const tokens = new TokenService({ secret: JWT_SECRET });
-  const mint = (payload) => tokens.createAccessToken({ mustChangePassword: false, ...payload });
+  const mint = (payload) => mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   const pool = new Pool({ connectionString: isolatedUrl });
   let child = null;
 
@@ -286,42 +287,42 @@ async function main() {
     });
     await waitForHealth(child, stderrRef);
 
-    const tokenA = mint({
+    const tokenA = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: ["Élèves:READ", "Élèves:UPDATE", "Gérer élèves", "Voir élèves"],
     });
-    const tokenB = mint({
+    const tokenB = await mint({
       sub: USER_B,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_B,
       permissions: ["Élèves:READ", "Élèves:UPDATE", "Gérer élèves", "Voir élèves"],
     });
-    const tokenTeacher = mint({
+    const tokenTeacher = await mint({
       sub: USER_TEACHER,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       schoolCode: LEFTOVER_A,
       permissions: ["Élèves:READ", "Voir élèves"],
     });
-    const tokenAccountant = mint({
+    const tokenAccountant = await mint({
       sub: USER_ACCOUNTANT,
       role: "Comptable",
       roleKeys: ["ACCOUNTANT"],
       schoolCode: LEFTOVER_A,
       permissions: ["Paiements:READ"],
     });
-    const tokenSuper = mint({
+    const tokenSuper = await mint({
       sub: USER_SUPER,
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
       schoolCode: LOGIN_A,
       permissions: ["ALL_PRIVILEGES", "Élèves:READ", "Élèves:UPDATE"],
     });
-    const tokenPays = mint({
+    const tokenPays = await mint({
       sub: USER_PAYS,
       role: "Admin Pays",
       roleKeys: ["COUNTRY_ADMIN"],

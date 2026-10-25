@@ -13,6 +13,7 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { PERMISSION_DENIED } = require("../services/rbacService");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_FINANCE_F8_IT_DATABASE ?? "somafrik_finance_f8_it")
@@ -107,8 +108,8 @@ async function stopChild(child) {
   });
 }
 
-function mintAccess(tokens, payload) {
-  return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+function mintAccess({ tokens, repository }, payload) {
+  return mintSessionAccessToken({ tokens, repository, payload: { mustChangePassword: false, ...payload } });
 }
 
 function staleClaims(overrides) {
@@ -382,16 +383,16 @@ async function main() {
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
 
-    const accountantA = mintAccess(
-      tokens,
+    const accountantA = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: ACCOUNTANT_A, schoolCode: "SCH-F8-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
-    const accountantB = mintAccess(
-      tokens,
+    const accountantB = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: ACCOUNTANT_B, schoolCode: "SCH-F8-B", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
-    const liveToken = mintAccess(
-      tokens,
+    const liveToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: LIVE_USER, schoolCode: "SCH-F8-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
 
@@ -453,8 +454,8 @@ async function main() {
     assert.ok(feesA.every((row) => String(row.currency).toUpperCase() === "XOF"), "obligations en XOF");
     assert.ok(feesA.every((row) => Number(row.balance) > 0));
 
-    const leftoverOnlyToken = mintAccess(
-      tokens,
+    const leftoverOnlyToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({
         sub: ORPHAN_USER,
         schoolCode: "SCH-F8-A",
@@ -463,6 +464,8 @@ async function main() {
       }),
     );
     const leftoverOnlyGrids = await request("/finance/fee-grids", { token: leftoverOnlyToken });
+    // SEC-AUTH-04 : compte inexistant → refus de session explicite (F3), pas une liste vide.
+    assertSessionRefused(leftoverOnlyGrids, "leftover JWT sans compte", "SESSION_SUBJECT_MISMATCH");
     assert.equal(
       unwrapList(leftoverOnlyGrids.data).length,
       0,
@@ -778,8 +781,8 @@ async function main() {
       `SELECT count(*)::int AS c FROM student_fee_obligations o JOIN schools s ON s.id = o.school_id WHERE s.school_code = 'SCH-F8-B' AND o.archived_at IS NULL`,
     );
 
-    const emptySchoolToken = mintAccess(
-      tokens,
+    const emptySchoolToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({
         sub: ACCOUNTANT_A,
         schoolCode: "",
@@ -790,8 +793,8 @@ async function main() {
         roleKeys: ["ACCOUNTANT"],
       }),
     );
-    const blankNoScopeToken = mintAccess(
-      tokens,
+    const blankNoScopeToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({
         sub: ORPHAN_USER,
         schoolCode: "",
@@ -922,13 +925,12 @@ async function main() {
         date: "2026-08-28",
       },
     });
-    assert.ok(
-      [403, 404].includes(blankNoScopePay.status),
-      `F8-P0-004 schoolCode vide sans scope effectif: ${JSON.stringify(blankNoScopePay.data)}`,
-    );
+    // SEC-AUTH-04 : ORPHAN_USER n'existe pas en base ; sa session n'a pas de
+    // propriétaire et le jeton est refusé avant la route (F3).
+    assertSessionRefused(blankNoScopePay, "F8-P0-004 schoolCode vide sans scope effectif", "SESSION_SUBJECT_MISMATCH");
 
-    const scopedSuperToken = mintAccess(
-      tokens,
+    const scopedSuperToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({
         sub: ACCOUNTANT_A,
         schoolCode: "",
@@ -970,8 +972,8 @@ async function main() {
       `F8-P0-004 Superadmin scoped lit A interdit (#503): ${JSON.stringify(scopedSuperGetA.data)}`,
     );
 
-    const countryAdminToken = mintAccess(
-      tokens,
+    const countryAdminToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({
         sub: ACCOUNTANT_A,
         schoolCode: "",
@@ -1083,8 +1085,8 @@ async function main() {
       "F8-P1-006 aucune paiement créé sur l'école piège FR préfixe CI",
     );
 
-    const globalSuperToken = mintAccess(
-      tokens,
+    const globalSuperToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({
         sub: ACCOUNTANT_A,
         schoolCode: "",

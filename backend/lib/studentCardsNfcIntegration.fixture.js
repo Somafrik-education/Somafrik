@@ -7,6 +7,7 @@ const { randomUUID } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { resolve } = require("node:path");
 const { Pool } = require("pg");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 async function createIntegrationFixture() {
   const input = process.env.SOMAFRIK_NFC_TEST_DATABASE_URL;
@@ -92,7 +93,7 @@ async function createIntegrationFixture() {
           [school],
         )
       ).rows[0].id;
-      const token = tokens.createAccessToken({
+      const token = await mintSessionAccessToken({ tokens, repository: repo, payload: {
         sub: user,
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
@@ -105,7 +106,7 @@ async function createIntegrationFixture() {
           "Voir élèves",
           "Gérer élèves",
         ],
-      });
+      } });
       schools.push({ id: school, code, user, year, token });
     }
     const extraTokens = {};
@@ -136,7 +137,7 @@ async function createIntegrationFixture() {
         "INSERT INTO user_roles(user_id,school_id,role_key,status) VALUES($1,$2,$3,'active')",
         [id, schoolId, roleKey],
       );
-      extraTokens[key] = tokens.createAccessToken({
+      extraTokens[key] = await mintSessionAccessToken({ tokens, repository: repo, payload: {
         sub: id,
         role,
         roleKeys: [roleKey],
@@ -144,7 +145,7 @@ async function createIntegrationFixture() {
         countryCode: "CD",
         mustChangePassword: false,
         permissions,
-      });
+      } });
     }
     child = spawn(process.execPath, ["backend/server.js"], {
       cwd: resolve(__dirname, "../.."),
@@ -231,7 +232,8 @@ async function createIntegrationFixture() {
       request,
       cohort,
       // Jeton signé avec le secret local de la fixture (identités synthétiques uniquement).
-      mint: (claims) => tokens.createAccessToken(claims),
+      // SEC-AUTH-04 : jeton lié à une session réelle du sujet (asynchrone).
+      mint: (claims) => mintSessionAccessToken({ tokens, repository: repo, payload: claims }),
       // Secret local de la fixture (jamais un secret d'environnement réel) : signer un défi de test.
       jwtSecret,
       logs: () => logs,

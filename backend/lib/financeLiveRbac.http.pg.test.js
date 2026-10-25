@@ -12,6 +12,7 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { PERMISSION_DENIED } = require("../services/rbacService");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_FINANCE_F6_RBAC_IT_DATABASE ?? "somafrik_finance_f6_rbac_it")
@@ -97,8 +98,8 @@ async function stopChild(child) {
   });
 }
 
-function mintAccess(tokens, payload) {
-  return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+function mintAccess({ tokens, repository }, payload) {
+  return mintSessionAccessToken({ tokens, repository, payload: { mustChangePassword: false, ...payload } });
 }
 
 function staleClaims(overrides) {
@@ -287,20 +288,20 @@ async function main() {
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
 
-    const liveToken = mintAccess(
-      tokens,
+    const liveToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: LIVE_USER, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
-    const accountantToken = mintAccess(
-      tokens,
+    const accountantToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: ACCOUNTANT_A, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
-    const zeroToken = mintAccess(
-      tokens,
+    const zeroToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: ZERO_USER, schoolCode: "SCH-A" }),
     );
-    const namedToken = mintAccess(
-      tokens,
+    const namedToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({
         sub: NAMED_USER,
         schoolCode: "SCH-A",
@@ -308,12 +309,12 @@ async function main() {
         roleKeys: ["SCHOOL_ADMIN"],
       }),
     );
-    const dualOnA = mintAccess(
-      tokens,
+    const dualOnA = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: DUAL_USER, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
-    const dualOnB = mintAccess(
-      tokens,
+    const dualOnB = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: DUAL_USER, schoolCode: "SCH-B", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
 
@@ -411,10 +412,10 @@ async function main() {
       token: dualOnA,
       body: paymentBody(fixture.studentCodeA),
     });
-    assert.equal(dualReadA.status, 403, `scénario 5 lecture A: ${JSON.stringify(dualReadA.data)}`);
-    assert.equal(dualReadA.data?.code, PERMISSION_DENIED);
-    assert.equal(dualPayA.status, 403, `scénario 5 mutation A: ${JSON.stringify(dualPayA.data)}`);
-    assert.equal(dualPayA.data?.code, PERMISSION_DENIED);
+    // SEC-AUTH-04 : compte rattaché à B (users.school_id) avec un claim A → refusé par
+    // le garde de session (SEC-TENANT-01) avant le RBAC de la route ; session révoquée.
+    assertSessionRefused(dualReadA, "scénario 5 lecture A", "SESSION_SCHOOL_ATTACHMENT_MISSING");
+    assertSessionRefused(dualPayA, "scénario 5 mutation A", "SESSION_REVOKED");
     const dualReadB = await request("/payments", { token: dualOnB });
     assert.equal(dualReadB.status, 200, `scénario 5 lecture B: ${JSON.stringify(dualReadB.data)}`);
     const dualPayB = await request("/payments", {
