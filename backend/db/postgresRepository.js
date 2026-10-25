@@ -1487,6 +1487,14 @@ class PostgresRepository {
     return this.getClientsStore().listAssignableUserRoles(principal);
   }
 
+  /** SEC-AUTH-05 — historique user_roles (voir lib/liveRoleState.js). */
+  userHasRoleHistory(userId) {
+    const store = this.getClientsStore();
+    const bound = typeof store.bind === "function" ? store.bind({}) : store;
+    if (typeof bound?.userHasRoleHistory !== "function") return Promise.resolve(false);
+    return bound.userHasRoleHistory(userId);
+  }
+
   listActiveUserRoleKeys(userId) {
     const store = this.getClientsStore();
     if (typeof store.bind === "function") {

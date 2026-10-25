@@ -3856,6 +3856,14 @@ class FallbackRepository {
     return Promise.resolve([]);
   }
 
+  /** SEC-AUTH-05 — historique user_roles (voir lib/liveRoleState.js). */
+  userHasRoleHistory(userId) {
+    const store = this.getClientsStore();
+    const bound = store?.bind ? store.bind() : store;
+    if (typeof bound?.userHasRoleHistory !== "function") return Promise.resolve(false);
+    return bound.userHasRoleHistory(userId);
+  }
+
   listActiveUserRoleKeysForSchool(userId, schoolId) {
     const uid = String(userId ?? "").trim();
     const sid = String(schoolId ?? "").trim();

@@ -293,6 +293,12 @@ function createClientsMemoryStore(seed = {}) {
           .filter((row) => row.user_id === userId && row.status === "active" && !row.revoked_at)
           .map((row) => row.role_key);
       },
+      /** SEC-AUTH-05 — le compte a-t-il au moins un enregistrement user_roles (actif ou retiré) ? */
+      async userHasRoleHistory(userId) {
+        const id = String(userId ?? "").trim();
+        if (!id) return false;
+        return tables.userRoles.some((row) => String(row.user_id ?? "") === id);
+      },
       async listActiveUserRoleKeysForSchool(userId, schoolId) {
         const uid = String(userId ?? "").trim();
         const sid = String(schoolId ?? "").trim();

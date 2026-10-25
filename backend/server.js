@@ -3305,6 +3305,12 @@ function usersApiUsers(users) {
 }
 
 app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, res) => {
+  // SEC-AUTH-05 : permissions effectives relues en base (comme requirePermission),
+  // jamais celles figées dans le jeton.
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions(req.principal);
+    req.principal = { ...req.principal, permissions: Array.isArray(live?.permissions) ? live.permissions : [] };
+  }
   if (!canResetUserPassword(req.principal)) {
     throw new BusinessError(403, "Permission insuffisante pour réinitialiser le mot de passe.");
   }
@@ -7026,17 +7032,18 @@ async function issueRefreshedAccessToken(session, payload) {
   const rolePermissionsMap = await getRolePermissionsMap();
   const { mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
   let roleKeys = session.role ? [toRoleKey(session.role)].filter(Boolean) : [];
-  if (typeof repository.listActiveUserRoleKeys === "function" && session.user_id) {
-    try {
-      const loaded = await repository.listActiveUserRoleKeys(session.user_id);
-      if (Array.isArray(loaded) && loaded.length) {
-        roleKeys = loaded;
-      } else if (Array.isArray(loaded) && (!session.role || session.role === "Sans affectation")) {
-        roleKeys = [];
-      }
-    } catch {
-      /* fail-closed: keep session.role */
-    }
+  // SEC-AUTH-05 : le refresh ne réémet jamais un rôle retiré. Tous les rôles
+  // retirés → aucun rôle et libellé « Sans affectation ».
+  let sessionRole = session.role;
+  const { loadLiveRoleState } = require("./lib/liveRoleState");
+  const liveRoles = session.user_id ? await loadLiveRoleState(repository, session.user_id) : { keys: null, revoked: false };
+  if (liveRoles.revoked) {
+    roleKeys = [];
+    sessionRole = "Sans affectation";
+  } else if (Array.isArray(liveRoles.keys) && liveRoles.keys.length) {
+    roleKeys = liveRoles.keys;
+  } else if (Array.isArray(liveRoles.keys) && (!session.role || session.role === "Sans affectation")) {
+    roleKeys = [];
   }
   const { resolveRefreshSchoolCode } = require("./lib/refreshSchoolAttachment");
   const refreshedSchoolCode = await resolveRefreshSchoolCode({ repository, session, payload, roleKeys });
@@ -7044,7 +7051,7 @@ async function issueRefreshedAccessToken(session, payload) {
   if (typeof repository.resolveEffectivePermissions === "function") {
     const live = await repository.resolveEffectivePermissions({
       sub: session.user_id,
-      role: session.role,
+      role: sessionRole,
       roleKeys,
       schoolCode: refreshedSchoolCode,
       countryCode: session.country_code ?? payload.countryCode,
@@ -7058,7 +7065,7 @@ async function issueRefreshedAccessToken(session, payload) {
   });
 
   let assignmentFields = {};
-  if (principalHasRole({ role: session.role, roleKeys }, "Enseignant")) {
+  if (principalHasRole({ role: sessionRole, roleKeys }, "Enseignant")) {
     const state = await getAuthoritativeBackOfficeState();
     const { teacherPrincipalAssignmentFields } = require("./lib/teacherSessionAssignments");
     assignmentFields = teacherPrincipalAssignmentFields(
@@ -7076,7 +7083,7 @@ async function issueRefreshedAccessToken(session, payload) {
 
   const accessToken = tokenService.createAccessToken({
     sub: session.user_id,
-    role: session.role,
+    role: sessionRole,
     schoolCode: refreshedSchoolCode,
     countryCode: session.country_code ?? payload.countryCode ?? "",
     authSource: payload.authSource ?? "mobile",

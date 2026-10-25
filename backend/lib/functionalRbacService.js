@@ -762,16 +762,14 @@ async function collectPrincipalRoleKeys(repo, principal) {
   const seen = new Set();
 
   const userId = asTrimmed(principal?.sub || principal?.id);
-  let liveKeys = null;
-  if (userId && typeof repo.listActiveUserRoleKeys === "function") {
-    try {
-      const loaded = await repo.listActiveUserRoleKeys(userId);
-      if (Array.isArray(loaded)) liveKeys = loaded;
-    } catch {
-      liveKeys = null;
-    }
-  }
+  // SEC-AUTH-05 : rôles actifs relus en base. Tous les rôles retirés (historique
+  // présent, aucun actif) → aucun rôle : les revendications du jeton ne sont plus
+  // un repli. Repli conservé uniquement pour un compte sans aucun user_roles.
+  const { loadLiveRoleState } = require("./liveRoleState");
+  const live = await loadLiveRoleState(repo, userId);
+  if (live.revoked) return roleKeys;
 
+  const liveKeys = live.keys;
   const usedLiveRoles = Array.isArray(liveKeys) && liveKeys.length > 0;
   if (usedLiveRoles) {
     for (const value of liveKeys) addRoleKey(roleKeys, seen, value);
@@ -987,6 +985,7 @@ module.exports = {
   patchConfiguredPermissions,
   resetConfiguredPermissionOverrides,
   listRbacAuditHistory,
+  collectPrincipalRoleKeys,
   resolveEffectivePermissionsForPrincipal,
   archiveRbacRole,
   throwLegacyRolePermissionsWrite,
