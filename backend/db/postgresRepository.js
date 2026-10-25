@@ -2458,6 +2458,21 @@ class PostgresRepository {
     return result.rowCount ?? 0;
   }
 
+  /** SEC-AUTH-03 — révoque les sessions actives de l'utilisateur, sauf `keepSessionId`. */
+  async revokeOtherSessionsForUser(userId, keepSessionId, reason = "password_change") {
+    await this.init();
+    const dbUserId = await this.resolveDbUserId(userId);
+    if (!dbUserId) return 0;
+    const keep = String(keepSessionId ?? "").trim() || null;
+    const result = await this.query(
+      `UPDATE sessions SET revoked_at = NOW(), revoke_reason = $3
+       WHERE user_id = $1 AND revoked_at IS NULL
+         AND ($2::text IS NULL OR session_code::text <> $2::text)`,
+      [dbUserId, keep, reason],
+    );
+    return result.rowCount ?? 0;
+  }
+
   async createPrivacyRequest(row) {
     await this.init();
     const school = row.schoolCode ? await this.getSchoolByCode(row.schoolCode) : null;
