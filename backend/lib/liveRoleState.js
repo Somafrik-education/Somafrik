@@ -14,6 +14,11 @@
  *   jamais un repli sur le jeton.
  *
  * L'historique n'est lu que si la liste des rôles actifs est vide.
+ *
+ * SEC-TENANT-02 : avec `schoolId` (établissement canonique vérifié), seuls les
+ * rôles actifs de cet établissement comptent (listActiveUserRoleKeysForSchool) :
+ * un rôle détenu dans un autre établissement ne s'applique jamais ici. Un compte
+ * dont les seuls rôles sont ailleurs a un historique : « revoked », aucun rôle.
  */
 
 const ROLE_READ_TIMEOUT_MS = 5000;
@@ -38,14 +43,16 @@ function unavailable(reason, logger) {
   return UNAVAILABLE;
 }
 
-async function loadLiveRoleState(repo, userId, { timeoutMs = ROLE_READ_TIMEOUT_MS, logger = console } = {}) {
+async function loadLiveRoleState(repo, userId, { timeoutMs = ROLE_READ_TIMEOUT_MS, logger = console, schoolId } = {}) {
   const id = String(userId ?? "").trim();
   if (!id) return unavailable("identifiant absent", logger);
-  if (typeof repo?.listActiveUserRoleKeys !== "function") return unavailable("dépôt sans lecture des rôles", logger);
+  const scope = String(schoolId ?? "").trim();
+  const reader = scope ? "listActiveUserRoleKeysForSchool" : "listActiveUserRoleKeys";
+  if (typeof repo?.[reader] !== "function") return unavailable("dépôt sans lecture des rôles", logger);
 
   let active;
   try {
-    active = await withTimeout(repo.listActiveUserRoleKeys(id), timeoutMs);
+    active = await withTimeout(scope ? repo.listActiveUserRoleKeysForSchool(id, scope) : repo.listActiveUserRoleKeys(id), timeoutMs);
   } catch {
     return unavailable("lecture des rôles actifs en échec", logger);
   }

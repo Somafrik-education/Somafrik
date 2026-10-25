@@ -770,7 +770,10 @@ async function collectPrincipalRoleKeys(repo, principal) {
   // rôles déjà relus et bornés à l'établissement). Aucun jeton n'y arrive : depuis
   // SEC-AUTH-04, requireAuth refuse tout jeton sans `sub` lié à sa session.
   const { loadLiveRoleState } = require("./liveRoleState");
-  const live = userId ? await loadLiveRoleState(repo, userId) : { status: "explicit", keys: null };
+  // SEC-TENANT-02 : principal rattaché (schoolId canonique vérifié par requireAuth,
+  // ou émis à la connexion / au refresh) → rôles de cet établissement uniquement.
+  const schoolId = asTrimmed(principal?.schoolId);
+  const live = userId ? await loadLiveRoleState(repo, userId, { schoolId }) : { status: "explicit", keys: null };
   if (live.status === "active") {
     for (const value of live.keys) addRoleKey(roleKeys, seen, value);
   } else if (live.status === "legacy" || live.status === "explicit") {
