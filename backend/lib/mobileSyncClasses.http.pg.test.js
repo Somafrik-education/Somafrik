@@ -471,8 +471,12 @@ async function main() {
       [TEACHER_USER_ID],
     );
     const teacherRoleRevoked = await request("/mobile-sync/l1/classes", { token: teacherToken });
-    assert.equal(teacherRoleRevoked.status, 200, `Teacher rôle révoqué: ${JSON.stringify(teacherRoleRevoked.data)}`);
-    assert.deepEqual(teacherRoleRevoked.data.items ?? [], []);
+    // SEC-AUTH-05 : tous les rôles retirés → refus immédiat par requirePermission
+    // (403 PERMISSION_DENIED) au lieu de 200 + liste vide (qui reposait sur le repli
+    // F7 vers les rôles du jeton). Le client Mobile purge la ressource sur 403
+    // (syncEngine : « blocked_authorization »).
+    assert.equal(teacherRoleRevoked.status, 403, `Teacher rôle révoqué: ${JSON.stringify(teacherRoleRevoked.data)}`);
+    assert.equal(teacherRoleRevoked.data?.code, "PERMISSION_DENIED");
 
     await repo.pool.query(
       `UPDATE user_roles
@@ -481,8 +485,9 @@ async function main() {
       [ADMIN_USER_ID],
     );
     const adminRoleRevoked = await request("/mobile-sync/l1/classes", { token: adminToken });
-    assert.equal(adminRoleRevoked.status, 200, `Admin rôles live []: ${JSON.stringify(adminRoleRevoked.data)}`);
-    assert.deepEqual(adminRoleRevoked.data.items ?? [], []);
+    // SEC-AUTH-05 : même règle pour l'administrateur (403 PERMISSION_DENIED, purge Mobile).
+    assert.equal(adminRoleRevoked.status, 403, `Admin rôles live []: ${JSON.stringify(adminRoleRevoked.data)}`);
+    assert.equal(adminRoleRevoked.data?.code, "PERMISSION_DENIED");
 
     await repo.pool.query(
       `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)

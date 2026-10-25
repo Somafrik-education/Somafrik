@@ -1487,6 +1487,15 @@ class PostgresRepository {
     return this.getClientsStore().listAssignableUserRoles(principal);
   }
 
+  /** SEC-AUTH-05 — historique user_roles (voir lib/liveRoleState.js). */
+  userHasRoleHistory(userId) {
+    const store = this.getClientsStore();
+    const bound = typeof store.bind === "function" ? store.bind({}) : store;
+    // Pas de réponse « aucun historique » par défaut : l'absence doit être établie (fail-closed).
+    if (typeof bound?.userHasRoleHistory !== "function") return Promise.reject(new Error("userHasRoleHistory indisponible"));
+    return bound.userHasRoleHistory(userId);
+  }
+
   listActiveUserRoleKeys(userId) {
     const store = this.getClientsStore();
     if (typeof store.bind === "function") {

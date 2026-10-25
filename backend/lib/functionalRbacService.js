@@ -762,20 +762,18 @@ async function collectPrincipalRoleKeys(repo, principal) {
   const seen = new Set();
 
   const userId = asTrimmed(principal?.sub || principal?.id);
-  let liveKeys = null;
-  if (userId && typeof repo.listActiveUserRoleKeys === "function") {
-    try {
-      const loaded = await repo.listActiveUserRoleKeys(userId);
-      if (Array.isArray(loaded)) liveKeys = loaded;
-    } catch {
-      liveKeys = null;
-    }
-  }
-
-  const usedLiveRoles = Array.isArray(liveKeys) && liveKeys.length > 0;
-  if (usedLiveRoles) {
-    for (const value of liveKeys) addRoleKey(roleKeys, seen, value);
-  } else {
+  // SEC-AUTH-05 (fail-closed) : rôles actifs relus en base. Rôles retirés ou
+  // validation impossible → aucun rôle. Les revendications du jeton ne servent de
+  // repli que pour un compte dont l'absence d'historique user_roles est établie.
+  //
+  // Sans sujet : évaluation interne d'un jeu de rôles explicite (ex. mobileSyncScope,
+  // rôles déjà relus et bornés à l'établissement). Aucun jeton n'y arrive : depuis
+  // SEC-AUTH-04, requireAuth refuse tout jeton sans `sub` lié à sa session.
+  const { loadLiveRoleState } = require("./liveRoleState");
+  const live = userId ? await loadLiveRoleState(repo, userId) : { status: "explicit", keys: null };
+  if (live.status === "active") {
+    for (const value of live.keys) addRoleKey(roleKeys, seen, value);
+  } else if (live.status === "legacy" || live.status === "explicit") {
     if (Array.isArray(principal?.roleKeys)) {
       for (const value of principal.roleKeys) addRoleKey(roleKeys, seen, value);
     }
@@ -987,6 +985,7 @@ module.exports = {
   patchConfiguredPermissions,
   resetConfiguredPermissionOverrides,
   listRbacAuditHistory,
+  collectPrincipalRoleKeys,
   resolveEffectivePermissionsForPrincipal,
   archiveRbacRole,
   throwLegacyRolePermissionsWrite,

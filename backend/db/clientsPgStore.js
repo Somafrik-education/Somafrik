@@ -209,6 +209,14 @@ function createClientsPgStore(repo) {
         );
         return rows.map((row) => row.role_key);
       },
+      /** SEC-AUTH-05 — le compte a-t-il au moins un enregistrement user_roles (actif ou retiré) ? */
+      async userHasRoleHistory(userId) {
+        const id = String(userId ?? "").trim();
+        // user_roles.user_id est un UUID : un autre identifiant n'a aucun historique.
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return false;
+        const rows = await all("SELECT 1 FROM user_roles WHERE user_id = $1::uuid LIMIT 1", [id]);
+        return rows.length > 0;
+      },
       async listActiveUserRoleKeysForSchool(userId, schoolId) {
         const uid = String(userId ?? "").trim();
         const sid = String(schoolId ?? "").trim();

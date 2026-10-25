@@ -3856,6 +3856,15 @@ class FallbackRepository {
     return Promise.resolve([]);
   }
 
+  /** SEC-AUTH-05 — historique user_roles (voir lib/liveRoleState.js). */
+  userHasRoleHistory(userId) {
+    const store = this.getClientsStore();
+    const bound = store?.bind ? store.bind() : store;
+    // Pas de réponse « aucun historique » par défaut : l'absence doit être établie (fail-closed).
+    if (typeof bound?.userHasRoleHistory !== "function") return Promise.reject(new Error("userHasRoleHistory indisponible"));
+    return bound.userHasRoleHistory(userId);
+  }
+
   listActiveUserRoleKeysForSchool(userId, schoolId) {
     const uid = String(userId ?? "").trim();
     const sid = String(schoolId ?? "").trim();

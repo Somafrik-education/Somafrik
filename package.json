@@ -211,6 +211,7 @@
     "verify:sec-pdf-01": "node --test backend/lib/secPdf01RendererIsolation.test.js",
     "verify:privacy-erasure": "node --test backend/lib/privacyErasure.test.js backend/lib/retentionPolicy.test.js && node backend/scripts/verify-privacy-erasure.js",
     "verify:sec-auth-04": "node --test backend/lib/accessSessionBinding.test.js backend/lib/secAuth04SessionBinding.memory.test.js && node backend/lib/secAuth04SessionBinding.http.pg.test.js",
+    "verify:sec-auth-05": "node --test backend/lib/liveRoleState.test.js && node backend/lib/secAuth05RoleRevocation.http.pg.test.js",
     "verify:function-search-path": "node --test backend/lib/functionSearchPath.test.js && node backend/lib/functionSearchPath.pg.test.js && node backend/scripts/verify-function-search-path.js",
     "verify:preprod-503": "node backend/scripts/verify-preprod-503.js",
     "verify:preprod-503-local": "node --test backend/lib/preprod503Probe.test.js && node backend/scripts/verify-preprod-503.js --local",
