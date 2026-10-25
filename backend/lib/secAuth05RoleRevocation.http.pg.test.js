@@ -157,7 +157,7 @@ async function seed(pool) {
     ]);
 
   const users = {};
-  for (const key of ["lastRole", "refresher", "demoted", "regrant", "inactive", "concurrent", "target", "keeper"]) {
+  for (const key of ["lastRole", "refresher", "demoted", "regrant", "inactive", "concurrent", "target", "keeper", "outage"]) {
     users[key] = await insertUser(`ST05-${key.toUpperCase()}`, schoolA.id, "SCHOOL_ADMIN");
     await grant(users[key], schoolA.id, "SCHOOL_ADMIN");
   }
@@ -353,6 +353,29 @@ async function main() {
       "legacy : même accès après refresh qu'à la connexion",
     );
     ok(`compte legacy sans user_roles : comportement inchangé (HTTP ${legacyAccess.status})`);
+
+    // Fail-closed : lecture des rôles impossible (table indisponible) → aucun droit,
+    // aucun privilège réémis par le refresh. Table rétablie ensuite.
+    const outage = await login("ST05-OUTAGE", schoolA.login_code);
+    assertStatus(await adminRoute(outage.accessToken), 200, "fail-closed avant incident");
+    await pool.query("ALTER TABLE user_roles RENAME TO user_roles_sec_auth_05_outage");
+    let outageRoute;
+    let outageRefresh;
+    try {
+      outageRoute = await adminRoute(outage.accessToken);
+      outageRefresh = await request("/auth/refresh", { method: "POST", body: { refreshToken: outage.refreshToken } });
+    } finally {
+      await pool.query("ALTER TABLE user_roles_sec_auth_05_outage RENAME TO user_roles");
+    }
+    assertStatus(outageRoute, [401, 403, 500, 503], "fail-closed : route admin refusée pendant l'incident");
+    if (outageRefresh.status === 200) {
+      const fresh = claims(outageRefresh.data.accessToken);
+      check(fresh.role === "Sans affectation", `fail-closed refresh : libellé ${fresh.role}`);
+      check(!(fresh.permissions ?? []).some((perm) => ["ALL_PRIVILEGES", "Gérer utilisateurs", "Utilisateurs:UPDATE"].includes(perm)), "fail-closed refresh : aucune permission réémise");
+    } else {
+      assertStatus(outageRefresh, [401, 500, 503], "fail-closed : refresh refusé pendant l'incident");
+    }
+    ok(`fail-closed : lecture des rôles impossible → route ${outageRoute.status}, refresh ${outageRefresh.status} sans privilège`);
 
     // AUTH5-14 — session révoquée.
     assertStatus(await request("/auth/logout", { method: "POST", token: keeper.accessToken }), 200, "AUTH5-14 logout");

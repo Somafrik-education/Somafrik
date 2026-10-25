@@ -7032,18 +7032,18 @@ async function issueRefreshedAccessToken(session, payload) {
   const rolePermissionsMap = await getRolePermissionsMap();
   const { mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
   let roleKeys = session.role ? [toRoleKey(session.role)].filter(Boolean) : [];
-  // SEC-AUTH-05 : le refresh ne réémet jamais un rôle retiré. Tous les rôles
-  // retirés → aucun rôle et libellé « Sans affectation ».
+  // SEC-AUTH-05 (fail-closed) : le refresh ne réémet jamais un rôle retiré. Rôles
+  // retirés ou validation impossible → aucun rôle, libellé « Sans affectation » et
+  // aucune permission. Rôle de connexion conservé uniquement pour un compte legacy
+  // dont l'absence d'historique user_roles est établie.
   let sessionRole = session.role;
   const { loadLiveRoleState } = require("./lib/liveRoleState");
-  const liveRoles = session.user_id ? await loadLiveRoleState(repository, session.user_id) : { keys: null, revoked: false };
-  if (liveRoles.revoked) {
+  const liveRoles = await loadLiveRoleState(repository, session.user_id);
+  if (liveRoles.status === "active") {
+    roleKeys = liveRoles.keys;
+  } else if (liveRoles.status !== "legacy") {
     roleKeys = [];
     sessionRole = "Sans affectation";
-  } else if (Array.isArray(liveRoles.keys) && liveRoles.keys.length) {
-    roleKeys = liveRoles.keys;
-  } else if (Array.isArray(liveRoles.keys) && (!session.role || session.role === "Sans affectation")) {
-    roleKeys = [];
   }
   const { resolveRefreshSchoolCode } = require("./lib/refreshSchoolAttachment");
   const refreshedSchoolCode = await resolveRefreshSchoolCode({ repository, session, payload, roleKeys });

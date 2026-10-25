@@ -762,18 +762,14 @@ async function collectPrincipalRoleKeys(repo, principal) {
   const seen = new Set();
 
   const userId = asTrimmed(principal?.sub || principal?.id);
-  // SEC-AUTH-05 : rôles actifs relus en base. Tous les rôles retirés (historique
-  // présent, aucun actif) → aucun rôle : les revendications du jeton ne sont plus
-  // un repli. Repli conservé uniquement pour un compte sans aucun user_roles.
+  // SEC-AUTH-05 (fail-closed) : rôles actifs relus en base. Rôles retirés ou
+  // validation impossible → aucun rôle. Les revendications du jeton ne servent de
+  // repli que pour un compte dont l'absence d'historique user_roles est établie.
   const { loadLiveRoleState } = require("./liveRoleState");
   const live = await loadLiveRoleState(repo, userId);
-  if (live.revoked) return roleKeys;
-
-  const liveKeys = live.keys;
-  const usedLiveRoles = Array.isArray(liveKeys) && liveKeys.length > 0;
-  if (usedLiveRoles) {
-    for (const value of liveKeys) addRoleKey(roleKeys, seen, value);
-  } else {
+  if (live.status === "active") {
+    for (const value of live.keys) addRoleKey(roleKeys, seen, value);
+  } else if (live.status === "legacy") {
     if (Array.isArray(principal?.roleKeys)) {
       for (const value of principal.roleKeys) addRoleKey(roleKeys, seen, value);
     }

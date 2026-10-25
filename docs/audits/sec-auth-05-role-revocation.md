@@ -20,7 +20,7 @@ Origine du repli : `user_roles` a été alimentée à partir de `users.role` par
 
 ## 2. Reproduction (base `c4d49077`)
 
-`SEC_AUTH_05_REPRO=1 node backend/lib/secAuth05RoleRevocation.http.pg.test.js` sur la base exacte : **9 écarts**.
+`SEC_AUTH_05_REPRO=1 node backend/lib/secAuth05RoleRevocation.http.pg.test.js` sur la base exacte : **10 écarts**.
 
 ```
 DÉFAUT AUTH5-03 route admin après retrait du dernier rôle : attendu 401,403, reçu 200
@@ -32,19 +32,21 @@ DÉFAUT AUTH5-05 réinitialisation du rôle retiré : attendu 403, reçu 400
 DÉFAUT AUTH5-08 après retrait : attendu 401,403, reçu 200
 DÉFAUT AUTH5-09 Superadmin après retrait : attendu 401,403, reçu 200
 DÉFAUT AUTH5-10 Admin Pays après retrait : attendu 401,403, reçu 200
+DÉFAUT fail-closed : route admin refusée pendant l'incident : attendu 401,403,500,503, reçu 200
 ```
 
 (La route de réinitialisation est appelée avec un corps vide : 400 = permission accordée, 403 = refusée ; aucun mot de passe n'est modifié.)
 
 ## 3. Solution retenue
 
-1. `backend/lib/liveRoleState.js` — `loadLiveRoleState(repo, userId)` :
-   - rôles actifs → ces rôles ;
-   - **aucun rôle actif mais un historique `user_roles`** (tous retirés) → **aucun rôle** ;
-   - aucun enregistrement `user_roles` (compte legacy), dépôt sans lecture ou erreur de lecture → repli existant inchangé.
-   L'historique n'est lu que si la liste des rôles actifs est vide.
-2. `collectPrincipalRoleKeys` (`functionalRbacService.js`) : tous les rôles retirés → aucun rôle, donc aucune permission, quelles que soient les revendications du jeton.
-3. `issueRefreshedAccessToken` (`server.js`) : même règle ; le jeton rafraîchi porte le libellé « Sans affectation » et aucune permission.
+1. `backend/lib/liveRoleState.js` — `loadLiveRoleState(repo, userId)`, **fail-closed** (revue CTO du HEAD `43da29a6`) :
+   - `active` : au moins un rôle actif → ces rôles ;
+   - `revoked` : aucun rôle actif, historique `user_roles` présent → **aucun rôle** ;
+   - `legacy` : aucun rôle actif **et** `userHasRoleHistory` a répondu exactement `false` → seul cas de repli sur le rôle de connexion ;
+   - `unavailable` : erreur SQL, délai dépassé (5 s), dépôt sans lecture (`listActiveUserRoleKeys` ou `userHasRoleHistory` absent), résultat invalide (liste non conforme, historique non booléen), identifiant absent → **aucun rôle**, avertissement journalisé sans identifiant ni secret.
+   Les dépôts PostgreSQL et mémoire ne répondent jamais « aucun historique » par défaut : un store sans lecture d'historique rejette.
+2. `collectPrincipalRoleKeys` (`functionalRbacService.js`) : seuls `active` (rôles en base) et `legacy` (revendications du jeton) donnent un rôle ; `revoked` et `unavailable` → aucun rôle, donc aucune permission.
+3. `issueRefreshedAccessToken` (`server.js`) : même règle ; hors `active` et `legacy`, le jeton rafraîchi porte le libellé « Sans affectation » et aucune permission. Pendant un incident de lecture des rôles, le refresh échoue (500) ou réémet un jeton sans privilège : jamais un rôle de connexion.
 4. `POST /api/users/:id/reset-password` : permissions effectives relues (`resolveEffectivePermissions`, comme `requirePermission`) avant `canResetUserPassword`.
 5. `userHasRoleHistory(userId)` : dépôts PostgreSQL (`SELECT 1 … WHERE user_id = $1::uuid LIMIT 1`, index `idx_user_roles_user`) et mémoire.
 
@@ -59,7 +61,7 @@ DÉFAUT AUTH5-10 Admin Pays après retrait : attendu 401,403, reçu 200
 
 ## 5. Résultats
 
-`backend/lib/secAuth05RoleRevocation.http.pg.test.js` (PostgreSQL, HTTP réel) : **12/12** (base : 9 écarts). `backend/lib/liveRoleState.test.js` : **6/6**.
+`backend/lib/secAuth05RoleRevocation.http.pg.test.js` (PostgreSQL, HTTP réel) : **13/13** (base : 10 écarts, dont l'incident de lecture des rôles : 200). `backend/lib/liveRoleState.test.js` : **10/10** (erreur SQL, délai dépassé, dépôt indisponible ou incomplet, résultat invalide, absence réelle d'historique, dépôts PostgreSQL et mémoire).
 
 | Réf. | Résultat | Preuve |
 |---|---|---|
@@ -82,9 +84,11 @@ DÉFAUT AUTH5-10 Admin Pays après retrait : attendu 401,403, reçu 200
 
 Compte legacy sans `user_roles` : comportement identique avant et après (accès à la connexion et après refresh).
 
+Incident de lecture des rôles (table `user_roles` renommée pendant le test) : base **200** (repli sur le jeton) → après correctif route **403**, refresh **500** sans privilège réémis.
+
 ## 6. Risques résiduels et constats hors périmètre
 
-- **Erreur de lecture de `user_roles`** : comportement antérieur conservé (repli sur le rôle de connexion). Un mode fail-closed changerait le comportement en cas d'incident de base ; à décider séparément.
+- **Incident de lecture de `user_roles`** : les accès protégés sont refusés (403) pendant l'incident, y compris pour les comptes légitimes ; le refresh peut échouer (500) après rotation du refresh token, avec la fenêtre de grâce existante (15 s). Comportement voulu (fail-closed, revue CTO).
 - **Comptes legacy sans `user_roles`** : leur rôle reste celui du jeton jusqu'à son expiration (≤ 15 min) ; un retrait passe par `users.role`. Migration des comptes restants à envisager.
 - **`POST /api/backoffice/bulletin-design/preview`** : contrôle sur la revendication Superadmin du jeton. Éditeur de bulletins hors périmètre : non modifié.
 - **Dépôt mémoire** : utilisateur désactivé non revérifié par la garde de session (projection absente) — mode de développement uniquement, inchangé.

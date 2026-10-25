@@ -3860,7 +3860,8 @@ class FallbackRepository {
   userHasRoleHistory(userId) {
     const store = this.getClientsStore();
     const bound = store?.bind ? store.bind() : store;
-    if (typeof bound?.userHasRoleHistory !== "function") return Promise.resolve(false);
+    // Pas de réponse « aucun historique » par défaut : l'absence doit être établie (fail-closed).
+    if (typeof bound?.userHasRoleHistory !== "function") return Promise.reject(new Error("userHasRoleHistory indisponible"));
     return bound.userHasRoleHistory(userId);
   }
 
