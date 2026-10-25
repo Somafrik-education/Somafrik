@@ -221,11 +221,16 @@ function createClientsPgStore(repo) {
         const uid = String(userId ?? "").trim();
         const sid = String(schoolId ?? "").trim();
         if (!uid || !sid) return [];
+        // SEC-TENANT-02 : lecture sur le chemin de chaque requête protégée. Comparaison
+        // en UUID (index idx_user_roles_user) au lieu d'un cast texte (parcours complet).
+        // Un identifiant non UUID ne correspond à aucune ligne, comme avant.
+        const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!UUID.test(uid) || !UUID.test(sid)) return [];
         const rows = await all(
           `SELECT role_key
            FROM user_roles
-           WHERE user_id::text = $1
-             AND school_id::text = $2
+           WHERE user_id = $1::uuid
+             AND school_id = $2::uuid
              AND status = 'active'
              AND revoked_at IS NULL
            ORDER BY granted_at ASC`,
