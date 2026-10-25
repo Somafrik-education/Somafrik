@@ -94,7 +94,7 @@ Incident de lecture des rôles (table `user_roles` renommée pendant le test) : 
 | Tests unitaires (230 fichiers `node --test`) | 227/230 | 227/230 — mêmes 3 échecs préexistants (`demoAssignments.greenB`, `legacyBootMigrations.guard`, `secPdf01RendererIsolation`), sans lien avec SEC-AUTH-05 |
 | Scripts `verify:*` (sec-auth-03, sec-auth-04, sec-tenant-01, auth-sessions, jwt-header, privacy-erasure, platform-personal-data-deny, functional-rbac, user-role-lifecycle, rbac-s1-4, rbac-admin-01, parent-linking, teacher-account-creation, clients-management, class-student-enrollment, finance-management, planning-rbac-reconcile, pedagogy-management, presences-roster, platform-management, db-config, school-setup-lot4-red) | 22/22 | 22/22 |
 | `verify:mobile-sync-l1-*` (5) et `verify:d-revalidation` (gardes CI) | 6/6 après réalignement | 6/6 (ancien contrat) |
-| Bancs PostgreSQL HTTP à jetons (40 sur la branche, dont `secAuth05RoleRevocation`) | 39/40 après réalignement de 6 bancs — **1 écart ouvert** (`studentCardRollCall`, voir §5.3) | 39/39 (banc SEC-AUTH-05 absent de la base) |
+| Bancs PostgreSQL HTTP à jetons (40 sur la branche, dont `secAuth05RoleRevocation`) | 39/40 au HEAD `4e83528c` (seul écart : `studentCardRollCall`, réaligné depuis, voir §5.3 ; relance en cours) | 39/39 (banc SEC-AUTH-05 absent de la base) |
 
 ### 5.2 Assertions réalignées (contrat plus strict, aucune assertion affaiblie)
 
@@ -111,9 +111,20 @@ Sept bancs vérifiaient, après retrait de **tous** les rôles d'un compte, une 
 
 Chaque assertion exige le statut **et** le code exacts ; les autres assertions des bancs sont inchangées.
 
-### 5.3 Écart ouvert — décision CTO requise
+### 5.3 Banc Carte élève `studentCardRollCall` — réaligné sous autorisation CTO (L4-09)
 
-`backend/lib/studentCardRollCall.http.pg.test.js` (non exécuté par la CI de cette PR : workflow `nfc-encoding-preprod`, déclenché par `backend/**student*Card*`) attend `ROLL_CALL_ROLE_FORBIDDEN` après retrait du rôle `PRINCIPAL` (seul rôle du compte) ; la branche renvoie 403 `PERMISSION_DENIED` (refus plus tôt, même effet : aucun appel exceptionnel, aucune présence écrite). Le réalignement est prêt (statut 403 + code exact pour `scan` et `validate`, banc vert localement) mais **modifier ce fichier Carte élève déclenche la garde L4-09** : l'ajout d'une exception L4-09 (ancres + liste fermée, comme SEC-AUTH-04) exige une autorisation CTO. Il n'est donc pas inclus dans cette PR.
+`backend/lib/studentCardRollCall.http.pg.test.js` attendait `ROLL_CALL_ROLE_FORBIDDEN` après retrait du rôle `PRINCIPAL` (seul rôle du compte) ; la branche renvoie 403 `PERMISSION_DENIED` : refus plus tôt, par `requirePermission`. Réalignement autorisé par le CTO, dans les limites suivantes :
+
+- seule l'assertion du scénario de rôle retiré change, pour `scan` et `validate` : statut 403 et code `PERMISSION_DENIED` exacts ; toutes les autres assertions du banc sont inchangées ;
+- garanties conservées et vérifiées : aucune présence écrite (`attendanceOn` sur toute la table, tous établissements : `[]`), aucun appel exceptionnel, supervision toujours refusée (403), et corps du refus limité à `code` et `message` (aucune donnée d'élève, de classe ou d'établissement).
+
+**Exception L4-09 nominative SEC-AUTH-05** (`scripts/verify-school-setup-lot4-red.ts`) :
+
+- active seulement si les **deux** ancres propres au chantier sont présentes : `backend/lib/liveRoleState.js` et `backend/lib/secAuth05RoleRevocation.http.pg.test.js` ;
+- liste fermée exacte des fichiers du chantier ; **un seul** fichier Carte élève admis (`studentCardRollCall.http.pg.test.js`) ;
+- indépendante de SEC-AUTH-04 : ni ses ancres ni ses listes ne sont réutilisées ni élargies ;
+- tests négatifs (auto-tests de la garde) : tout autre fichier Carte élève fait échouer la garde (autre banc, code métier, test unitaire, dépôt, Mobile, Web, migration), de même qu'un fichier LOT 4, une ancre ou un fichier de la liste SEC-AUTH-04, l'absence d'une ancre, ou un fichier de la liste sans les ancres ;
+- contrôle par mutation : avec un second fichier Carte élève ajouté à la liste, la garde échoue sur le test négatif.
 
 ## 6. Risques résiduels et constats hors périmètre
 

@@ -762,10 +762,19 @@ async function main() {
       [USER_DIRECTOR],
     );
     const G = { sessionId: session(), classId: classA1.id, date: "2026-10-19", mode: "direction" };
-    assert.equal((await scan(tokenDirector, { ...G, cardToken: cards.S1.cardToken })).data?.code, ROLL_CALL_ERROR.ROLE_FORBIDDEN,
+    // SEC-AUTH-05 : dernier rôle retiré → refus dès requirePermission (403 PERMISSION_DENIED),
+    // avant le contrôle métier ROLL_CALL_ROLE_FORBIDDEN (repli F7 sur les rôles du jeton supprimé).
+    const revokedScan = await scan(tokenDirector, { ...G, cardToken: cards.S1.cardToken });
+    assert.equal(revokedScan.status, 403, JSON.stringify(revokedScan.data));
+    assert.equal(revokedScan.data?.code, "PERMISSION_DENIED",
       "rôle PRINCIPAL révoqué : appel exceptionnel refusé malgré un jeton encore valide");
     const g1 = sealReceipt(keys, { ...openReceipt(keys, f1.data.receipt), dt: G.date, ses: G.sessionId, exp: Date.now() + 60_000 });
-    assert.equal((await validate(tokenDirector, { ...G, justification, receipts: [g1] })).data?.code, ROLL_CALL_ERROR.ROLE_FORBIDDEN);
+    const revokedValidate = await validate(tokenDirector, { ...G, justification, receipts: [g1] });
+    assert.equal(revokedValidate.status, 403, JSON.stringify(revokedValidate.data));
+    assert.equal(revokedValidate.data?.code, "PERMISSION_DENIED");
+    for (const refused of [revokedScan, revokedValidate]) {
+      assert.deepEqual(Object.keys(refused.data ?? {}).sort(), ["code", "message"], "refus sans aucune donnée (élève, classe, établissement)");
+    }
     assert.equal((await overview(tokenDirector)).status, 403);
     assert.deepEqual(await attendanceOn(pool, G.date), []);
 

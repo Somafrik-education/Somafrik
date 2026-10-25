@@ -559,6 +559,46 @@ const SEC_AUTH_04_CARD_EXACT = new Set([
   "backend/lib/studentCardsNfcProvision.http.pg.test.js",
 ]);
 
+// SEC-AUTH-05 (#996, autorisation CTO) : révocation immédiate des rôles retirés.
+// Exception distincte de SEC-AUTH-04 (aucune réutilisation) : active seulement si
+// les DEUX ancres propres à ce chantier sont présentes ; liste fermée des fichiers
+// du chantier. Un seul fichier Carte élève admis : le banc d'appel exceptionnel,
+// dont l'assertion de rôle retiré passe de ROLL_CALL_ROLE_FORBIDDEN à
+// 403 PERMISSION_DENIED. Tout autre fichier Carte élève reste refusé.
+const SEC_AUTH_05_ANCHORS = Object.freeze([
+  "backend/lib/liveRoleState.js",
+  "backend/lib/secAuth05RoleRevocation.http.pg.test.js",
+]);
+const SEC_AUTH_05_EXACT = new Set([
+  ...SEC_AUTH_05_ANCHORS,
+  ".github/workflows/pr-gates.yml",
+  "backend/db/clientsMemoryStore.js",
+  "backend/db/clientsPgStore.js",
+  "backend/db/fallbackRepository.js",
+  "backend/db/postgresRepository.js",
+  "backend/lib/dRevalidation.findings.md",
+  "backend/lib/dRevalidation.http.pg.test.js",
+  "backend/lib/functionalRbacService.js",
+  "backend/lib/liveRoleState.test.js",
+  "backend/lib/mobileSyncAssignments.http.pg.test.js",
+  "backend/lib/mobileSyncClasses.http.pg.test.js",
+  "backend/lib/mobileSyncCourseSchedules.http.pg.test.js",
+  "backend/lib/mobileSyncSchoolCourses.http.pg.test.js",
+  "backend/lib/mobileSyncStudents.http.pg.test.js",
+  "backend/server.js",
+  "docs/audits/sec-auth-05-role-revocation.md",
+  "package.json",
+  "scripts/verify-school-setup-lot4-red.ts",
+]);
+const SEC_AUTH_05_CARD_EXACT = new Set([
+  "backend/lib/studentCardRollCall.http.pg.test.js",
+]);
+
+/** Mode SEC-AUTH-05 : chaque fichier du diff doit figurer dans sa liste fermée. */
+function isSecAuth05ClosedListFile(file: string) {
+  return SEC_AUTH_05_EXACT.has(file) || SEC_AUTH_05_CARD_EXACT.has(file);
+}
+
 /** Mode SEC-AUTH-04 : chaque fichier du diff doit figurer dans une liste fermée. */
 function isSecAuth04ClosedListFile(file: string) {
   return SEC_AUTH_04_EXACT.has(file) || SEC_AUTH_04_CARD_EXACT.has(file) || isApprovedSecAuth04GitleaksIgnore(file);
@@ -700,6 +740,21 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     const photo02 = STUDENT_CARD_PHOTO_02_ANCHORS.every((anchor) => changed.includes(anchor));
     const pr3MobileNav = navChanged && navAnchored;
     const r3DiagnosticNav = navChanged && r3DiagnosticAnchored;
+    const secAuth05 = SEC_AUTH_05_ANCHORS.every((anchor) => changed.includes(anchor));
+    if (secAuth05) {
+      // Exception SEC-AUTH-05 : liste fermée intégrale, indépendante de SEC-AUTH-04.
+      const leakedSecAuth05 = [...new Set([...changed.filter((file) => !isSecAuth05ClosedListFile(file)), ...exclusiveLot4])];
+      if (leakedSecAuth05.length === 0) {
+        return {
+          kind: "na",
+          message: "L4-09 N/A: chantier SEC-AUTH-05 (révocation des rôles retirés), diff limité à sa liste fermée.",
+        };
+      }
+      return {
+        kind: "fail",
+        message: `L4-09: chantier SEC-AUTH-05 hors liste fermée: ${leakedSecAuth05.join(", ")}`,
+      };
+    }
     const secAuth04 = SEC_AUTH_04_ANCHORS.every((anchor) => changed.includes(anchor));
     if (secAuth04) {
       // Exception SEC-AUTH-04 : liste fermée intégrale, y compris pour les fichiers
@@ -1686,6 +1741,53 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           evaluateLot4Scope(["backend/lib/studentCardEntry.http.pg.test.js", secAuth04Only]).kind,
           "fail",
           `L4-09: ${secAuth04Only} sans les ancres SEC-AUTH-04 doit rester FAIL (PR Carte élève ordinaire)`,
+        );
+      }
+      // SEC-AUTH-05 (#996) : exception nominative distincte, liste fermée.
+      const secAuth05Files = [...SEC_AUTH_05_EXACT, ...SEC_AUTH_05_CARD_EXACT];
+      assert.equal(evaluateLot4Scope(secAuth05Files).kind, "na", "L4-09: diff exact SEC-AUTH-05 admis nominativement");
+      for (const [extra, label] of [
+        // Test négatif exigé : tout autre fichier Carte élève reste interdit.
+        ["backend/lib/studentCardEntry.http.pg.test.js", "autre banc Carte élève"],
+        ["backend/lib/studentCardRollCall.js", "code métier d'appel Carte élève"],
+        ["backend/lib/studentCardRollCall.test.js", "test unitaire d'appel Carte élève"],
+        ["backend/lib/studentAccessCards.js", "dépôt Carte élève"],
+        ["Mobile/src/lib/studentCardRollCall.ts", "logique Mobile Carte élève"],
+        ["web/src/lib/studentCardsApi.ts", "client Web Carte élève"],
+        ["backend/db/migrations/20261025_student_cards.sql", "migration Carte élève"],
+        ["backend/lib/financeManagement.js", "fichier backend hors liste"],
+        ["backend/lib/schoolSetupStatus.js", "fichier LOT 4"],
+        ["web/src/components/schoolSetup/SchoolSetupOptionalCompleteness.tsx", "fichier LOT 4 exclusif"],
+        // Aucune réutilisation de la liste SEC-AUTH-04 sans ses propres ancres.
+        ["backend/lib/accessSessionBinding.js", "ancre SEC-AUTH-04"],
+        ["backend/lib/studentAccessCards.http.pg.test.js", "fichier Carte élève de la liste SEC-AUTH-04"],
+      ] as const) {
+        assert.equal(
+          evaluateLot4Scope([...secAuth05Files, extra]).kind,
+          "fail",
+          `L4-09: SEC-AUTH-05 + ${label} (${extra}) doit rester FAIL`,
+        );
+      }
+      for (const missingAnchor of SEC_AUTH_05_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(secAuth05Files.filter((file) => file !== missingAnchor)).kind,
+          "fail",
+          `L4-09: SEC-AUTH-05 sans l'ancre ${missingAnchor} doit rester FAIL`,
+        );
+      }
+      assert.equal(
+        evaluateLot4Scope([...SEC_AUTH_04_EXACT, ...SEC_AUTH_04_CARD_EXACT].filter((file) => !(SEC_AUTH_04_ANCHORS as readonly string[]).includes(file))
+          .concat(["backend/lib/liveRoleState.test.js"])).kind,
+        "fail",
+        "L4-09: la liste SEC-AUTH-04 sans ses ancres n'est pas admise via SEC-AUTH-05",
+      );
+      for (const secAuth05Only of SEC_AUTH_05_EXACT) {
+        if ((SEC_AUTH_05_ANCHORS as readonly string[]).includes(secAuth05Only)) continue;
+        if (isStudentCardPr6IntegrationFile(secAuth05Only)) continue;
+        assert.equal(
+          evaluateLot4Scope(["backend/lib/studentCardRollCall.http.pg.test.js", secAuth05Only]).kind,
+          "fail",
+          `L4-09: ${secAuth05Only} sans les ancres SEC-AUTH-05 doit rester FAIL (PR Carte élève ordinaire)`,
         );
       }
       const devGitleaks = "# en-tête\nabc:file.js:generic-api-key:1\n";
