@@ -70,6 +70,8 @@ test("SEC-AUTH-05 — dépôt indisponible ou incomplet : refus", async () => {
     assert.deepEqual(await load(repo), { status: "unavailable", keys: [] });
   }
   assert.equal((await loadLiveRoleState(repoWith({ active: ["TEACHER"] }), "", { logger: silent })).status, "unavailable", "identifiant absent");
+  // Rôles actifs présents : l'historique n'est pas requis.
+  assert.deepEqual(await load({ listActiveUserRoleKeys: async () => ["TEACHER"] }), { status: "active", keys: ["TEACHER"] });
 });
 
 test("SEC-AUTH-05 — résultat invalide : refus", async () => {
@@ -89,6 +91,11 @@ test("SEC-AUTH-05 — rôles du principal : seuls « active » et « legacy » d
   assert.deepEqual(await collectPrincipalRoleKeys(repoWith({ active: "x" }), PLATFORM_CLAIMS), [], "résultat invalide");
   assert.deepEqual(await collectPrincipalRoleKeys({}, PLATFORM_CLAIMS), [], "dépôt indisponible");
   assert.ok((await collectPrincipalRoleKeys(repoWith({ active: [], history: false }), PLATFORM_CLAIMS)).includes("SUPER_ADMIN"), "legacy établi");
+  // Sans sujet : évaluation interne d'un jeu de rôles explicite (jamais un jeton, SEC-AUTH-04).
+  const explicit = { roleKeys: ["TEACHER"], role: "Enseignant" };
+  const noRead = repoWith({ activeError: sqlError });
+  assert.deepEqual(await collectPrincipalRoleKeys(noRead, explicit), ["TEACHER"]);
+  assert.deepEqual(noRead.calls, [], "aucune lecture user_roles sans sujet");
 });
 
 test("SEC-AUTH-05 — dépôts PostgreSQL / mémoire : pas de « aucun historique » par défaut", async () => {

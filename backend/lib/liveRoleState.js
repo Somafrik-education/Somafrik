@@ -41,9 +41,7 @@ function unavailable(reason, logger) {
 async function loadLiveRoleState(repo, userId, { timeoutMs = ROLE_READ_TIMEOUT_MS, logger = console } = {}) {
   const id = String(userId ?? "").trim();
   if (!id) return unavailable("identifiant absent", logger);
-  if (typeof repo?.listActiveUserRoleKeys !== "function" || typeof repo?.userHasRoleHistory !== "function") {
-    return unavailable("dépôt sans lecture des rôles", logger);
-  }
+  if (typeof repo?.listActiveUserRoleKeys !== "function") return unavailable("dépôt sans lecture des rôles", logger);
 
   let active;
   try {
@@ -54,6 +52,8 @@ async function loadLiveRoleState(repo, userId, { timeoutMs = ROLE_READ_TIMEOUT_M
   if (!isRoleKeyList(active)) return unavailable("rôles actifs invalides", logger);
   if (active.length) return { status: "active", keys: active };
 
+  // L'historique n'est requis que si aucun rôle n'est actif.
+  if (typeof repo.userHasRoleHistory !== "function") return unavailable("dépôt sans lecture de l'historique", logger);
   let history;
   try {
     history = await withTimeout(repo.userHasRoleHistory(id), timeoutMs);

@@ -765,11 +765,15 @@ async function collectPrincipalRoleKeys(repo, principal) {
   // SEC-AUTH-05 (fail-closed) : rôles actifs relus en base. Rôles retirés ou
   // validation impossible → aucun rôle. Les revendications du jeton ne servent de
   // repli que pour un compte dont l'absence d'historique user_roles est établie.
+  //
+  // Sans sujet : évaluation interne d'un jeu de rôles explicite (ex. mobileSyncScope,
+  // rôles déjà relus et bornés à l'établissement). Aucun jeton n'y arrive : depuis
+  // SEC-AUTH-04, requireAuth refuse tout jeton sans `sub` lié à sa session.
   const { loadLiveRoleState } = require("./liveRoleState");
-  const live = await loadLiveRoleState(repo, userId);
+  const live = userId ? await loadLiveRoleState(repo, userId) : { status: "explicit", keys: null };
   if (live.status === "active") {
     for (const value of live.keys) addRoleKey(roleKeys, seen, value);
-  } else if (live.status === "legacy") {
+  } else if (live.status === "legacy" || live.status === "explicit") {
     if (Array.isArray(principal?.roleKeys)) {
       for (const value of principal.roleKeys) addRoleKey(roleKeys, seen, value);
     }
