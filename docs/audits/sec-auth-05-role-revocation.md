@@ -94,7 +94,7 @@ Incident de lecture des rôles (table `user_roles` renommée pendant le test) : 
 | Tests unitaires (230 fichiers `node --test`) | 227/230 | 227/230 — mêmes 3 échecs préexistants (`demoAssignments.greenB`, `legacyBootMigrations.guard`, `secPdf01RendererIsolation`), sans lien avec SEC-AUTH-05 |
 | Scripts `verify:*` (sec-auth-03, sec-auth-04, sec-tenant-01, auth-sessions, jwt-header, privacy-erasure, platform-personal-data-deny, functional-rbac, user-role-lifecycle, rbac-s1-4, rbac-admin-01, parent-linking, teacher-account-creation, clients-management, class-student-enrollment, finance-management, planning-rbac-reconcile, pedagogy-management, presences-roster, platform-management, db-config, school-setup-lot4-red) | 22/22 | 22/22 |
 | `verify:mobile-sync-l1-*` (5) et `verify:d-revalidation` (gardes CI) | 6/6 après réalignement | 6/6 (ancien contrat) |
-| Bancs PostgreSQL HTTP à jetons (41) | 40/41 après réalignement de 6 bancs — **1 écart ouvert** (`studentCardRollCall`, voir §5.3) | 41/41 |
+| Bancs PostgreSQL HTTP à jetons (40 sur la branche, dont `secAuth05RoleRevocation`) | 39/40 après réalignement de 6 bancs — **1 écart ouvert** (`studentCardRollCall`, voir §5.3) | 39/39 (banc SEC-AUTH-05 absent de la base) |
 
 ### 5.2 Assertions réalignées (contrat plus strict, aucune assertion affaiblie)
 
