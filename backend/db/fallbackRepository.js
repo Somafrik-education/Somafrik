@@ -346,6 +346,21 @@ class FallbackRepository {
     return count;
   }
 
+  /** SEC-AUTH-03 — révoque les sessions actives de l'utilisateur, sauf `keepSessionId`. */
+  async revokeOtherSessionsForUser(userId, keepSessionId, reason = "password_change") {
+    let count = 0;
+    const wanted = String(userId ?? "");
+    const keep = String(keepSessionId ?? "").trim();
+    for (const [code, session] of this.sessions.entries()) {
+      if (String(session.user_id ?? "") !== wanted || session.revoked_at) continue;
+      if (keep && String(code) === keep) continue;
+      session.revoked_at = new Date();
+      session.revoke_reason = reason;
+      count += 1;
+    }
+    return count;
+  }
+
   async createPrivacyRequest(row) {
     const stored = {
       id: row.id,

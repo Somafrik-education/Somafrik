@@ -694,8 +694,17 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   }
 
   const updatedUser = await repository.changeUserPassword(lookupKeys, newPassword);
+  // SEC-AUTH-03 : un nouveau mot de passe ferme toutes les autres sessions
+  // (autres appareils, refresh tokens éventuellement compromis). La session
+  // courante est conservée ; sans sessionId, toutes les sessions sont fermées.
+  const keepSessionId = String(req.principal.sessionId ?? "").trim() || null;
+  const revokedOtherSessions =
+    typeof repository.revokeOtherSessionsForUser === "function"
+      ? await repository.revokeOtherSessionsForUser(req.principal.sub, keepSessionId, "password_change")
+      : await repository.revokeAllSessionsForUser(req.principal.sub, "password_change");
   await auditService.record(req, "change_own_password", "user", req.principal.sub, {
     oldTemporaryPasswordInvalidated: true,
+    revokedOtherSessions,
   });
   const sanitizedUpdatedUser = sanitizeUserForResponse(updatedUser);
   let safeUser = {
