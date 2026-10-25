@@ -301,7 +301,10 @@ pg("DIAG-10 global UID uniqueness unchanged: a diagnosed UID still cannot be res
   await f.diagnose(f.blank(card));
   await assert.rejects(f.reserve(await f.student(), { uid: card.uid }), { code: "STUDENT_CARD_NFC_UID_EXISTS" });
   await assert.rejects(f.reserve(await f.student(f.b), { school: f.b, uid: card.uid }), { code: "STUDENT_CARD_NFC_UID_EXISTS" });
-  const index = await f.pool.query("SELECT indexdef FROM pg_indexes WHERE indexname='student_access_cards_nfc_uid_unique'");
+  // Scope the index lookup to the fixture schema: global pg_indexes scans can
+  // race with concurrent NFC tests dropping their independent schemas.
+  const index = await f.pool.query("SELECT pg_get_indexdef(to_regclass('student_access_cards_nfc_uid_unique')) AS indexdef");
+  assert.ok(index.rows[0].indexdef, "UID unique index must exist in the fixture schema");
   assert.match(index.rows[0].indexdef, /UNIQUE INDEX .* \(nfc_uid\) WHERE \(nfc_uid IS NOT NULL\)$/);
 });
 
