@@ -554,6 +554,7 @@ const SEC_AUTH_04_CARD_EXACT = new Set([
   "backend/lib/studentCardPhoto.http.pg.test.js",
   "backend/lib/studentCardRollCall.http.pg.test.js",
   "backend/lib/studentCardVerification.http.pg.test.js",
+  "backend/lib/studentCardsNfcDiagnosis.pg.test.js", // DIAG-10: schema-local index lookup (CTO #995)
   "backend/lib/studentCardsNfcIntegration.fixture.js",
   "backend/lib/studentCardsNfcProvision.http.pg.test.js",
 ]);
@@ -1635,6 +1636,7 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       // SEC-AUTH-04 (#995) : exception ancrée, liste fermée.
       const secAuth04Files = [...SEC_AUTH_04_EXACT, ...SEC_AUTH_04_CARD_EXACT];
       assert.equal(evaluateLot4Scope(secAuth04Files).kind, "na", "L4-09: diff exact SEC-AUTH-04 admis nominativement");
+      assert.equal(evaluateLot4Scope([...secAuth04Files, "backend/lib/studentCardsNfcDiagnosis.pg.test.js"]).kind, "na", "DIAG-10 reste explicitement autorisé");
       for (const [extra, label] of [
         ["backend/lib/financeManagement.js", "fichier backend hors liste"],
         ["backend/db/fallbackRepository.js", "autre dépôt"],
