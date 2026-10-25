@@ -41,7 +41,7 @@ Preuve locale extras : **8 PASS / 0 FAIL**. Gates Planning / Présences / Sync L
 | PR-scope-parent | Présences scope | parent sans élève GET **200 count=0** | **fermé** (#439) |
 | SY-01 / SY-06 / SY-07 / SY-08 | Sync L1 | A jamais B ; leftover B jamais B ; fail-closed | **fermé** |
 | SY-02 | Sync L1 students | B jamais A | **fermé** |
-| SY-09 | Sync L1 enseignant révoqué | 200 `items: []` (pas 403) ; `scopeKind` absent du body | **fermé** |
+| SY-09 | Sync L1 enseignant révoqué | SEC-AUTH-05 : 403 `PERMISSION_DENIED`, aucune donnée (avant : 200 `items: []` via le repli sur les rôles du jeton) ; le client Mobile purge la ressource sur 403 | **fermé** |
 | SY-10 | Sync L1 Admin Pays CD | 400 / jamais BI | **fermé** |
 
 Gate : `npm run verify:d-revalidation`.

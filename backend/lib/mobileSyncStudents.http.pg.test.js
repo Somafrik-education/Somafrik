@@ -585,8 +585,12 @@ async function main() {
       [TEACHER_USER_ID, fixture.schoolA],
     );
     const teacherRoleRevoked = await request("/mobile-sync/l1/students", { token: teacherToken });
-    assert.equal(teacherRoleRevoked.status, 200, `teacher role revoked: ${JSON.stringify(teacherRoleRevoked.data)}`);
-    assert.deepEqual(teacherRoleRevoked.data.items, []);
+    // SEC-AUTH-05 : tous les rôles retirés → refus immédiat par requirePermission
+    // (403 PERMISSION_DENIED) au lieu de 200 + liste vide (qui reposait sur le repli
+    // F7 vers les rôles du jeton). Le client Mobile purge la ressource sur 403
+    // (syncEngine : « blocked_authorization »).
+    assert.equal(teacherRoleRevoked.status, 403, `teacher role revoked: ${JSON.stringify(teacherRoleRevoked.data)}`);
+    assert.equal(teacherRoleRevoked.data?.code, "PERMISSION_DENIED");
 
     await repo.pool.query(
       `INSERT INTO users (id, school_id, user_code, first_name, last_name, email, role, status, must_change_password)

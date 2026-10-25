@@ -45,7 +45,8 @@ DÉFAUT fail-closed : route admin refusée pendant l'incident : attendu 401,403,
    - `legacy` : aucun rôle actif **et** `userHasRoleHistory` a répondu exactement `false` → seul cas de repli sur le rôle de connexion ;
    - `unavailable` : erreur SQL, délai dépassé (5 s), dépôt sans lecture (`listActiveUserRoleKeys` ou `userHasRoleHistory` absent), résultat invalide (liste non conforme, historique non booléen), identifiant absent → **aucun rôle**, avertissement journalisé sans identifiant ni secret.
    Les dépôts PostgreSQL et mémoire ne répondent jamais « aucun historique » par défaut : un store sans lecture d'historique rejette.
-2. `collectPrincipalRoleKeys` (`functionalRbacService.js`) : seuls `active` (rôles en base) et `legacy` (revendications du jeton) donnent un rôle ; `revoked` et `unavailable` → aucun rôle, donc aucune permission.
+   L'historique n'est lu (et `userHasRoleHistory` exigé) que si la liste des rôles actifs est vide : le chemin nominal reste une seule requête.
+2. `collectPrincipalRoleKeys` (`functionalRbacService.js`) : seuls `active` (rôles en base) et `legacy` (revendications du jeton) donnent un rôle ; `revoked` et `unavailable` → aucun rôle, donc aucune permission. Un principal **sans sujet** (`sub`/`id` absents) est une évaluation interne d'un jeu de rôles explicite (statut `explicit`, aucune lecture `user_roles`) : voir l'audit §8.
 3. `issueRefreshedAccessToken` (`server.js`) : même règle ; hors `active` et `legacy`, le jeton rafraîchi porte le libellé « Sans affectation » et aucune permission. Pendant un incident de lecture des rôles, le refresh échoue (500) ou réémet un jeton sans privilège : jamais un rôle de connexion.
 4. `POST /api/users/:id/reset-password` : permissions effectives relues (`resolveEffectivePermissions`, comme `requirePermission`) avant `canResetUserPassword`.
 5. `userHasRoleHistory(userId)` : dépôts PostgreSQL (`SELECT 1 … WHERE user_id = $1::uuid LIMIT 1`, index `idx_user_roles_user`) et mémoire.
@@ -61,7 +62,7 @@ DÉFAUT fail-closed : route admin refusée pendant l'incident : attendu 401,403,
 
 ## 5. Résultats
 
-`backend/lib/secAuth05RoleRevocation.http.pg.test.js` (PostgreSQL, HTTP réel) : **13/13** (base : 10 écarts, dont l'incident de lecture des rôles : 200). `backend/lib/liveRoleState.test.js` : **10/10** (erreur SQL, délai dépassé, dépôt indisponible ou incomplet, résultat invalide, absence réelle d'historique, dépôts PostgreSQL et mémoire).
+`backend/lib/secAuth05RoleRevocation.http.pg.test.js` (PostgreSQL, HTTP réel) : **13/13** (base : 10 écarts, dont l'incident de lecture des rôles : 200). `backend/lib/liveRoleState.test.js` : **10/10** (erreur SQL, délai dépassé, dépôt indisponible ou incomplet, résultat invalide, absence réelle d'historique, chemin sans sujet sans lecture, dépôts PostgreSQL et mémoire).
 
 | Réf. | Résultat | Preuve |
 |---|---|---|
@@ -86,6 +87,34 @@ Compte legacy sans `user_roles` : comportement identique avant et après (accès
 
 Incident de lecture des rôles (table `user_roles` renommée pendant le test) : base **200** (repli sur le jeton) → après correctif route **403**, refresh **500** sans privilège réémis.
 
+### 5.1 Comparaison complète branche / base
+
+| Ensemble | Branche | Base `c4d49077` |
+|---|---|---|
+| Tests unitaires (230 fichiers `node --test`) | 227/230 | 227/230 — mêmes 3 échecs préexistants (`demoAssignments.greenB`, `legacyBootMigrations.guard`, `secPdf01RendererIsolation`), sans lien avec SEC-AUTH-05 |
+| Scripts `verify:*` (sec-auth-03, sec-auth-04, sec-tenant-01, auth-sessions, jwt-header, privacy-erasure, platform-personal-data-deny, functional-rbac, user-role-lifecycle, rbac-s1-4, rbac-admin-01, parent-linking, teacher-account-creation, clients-management, class-student-enrollment, finance-management, planning-rbac-reconcile, pedagogy-management, presences-roster, platform-management, db-config, school-setup-lot4-red) | 22/22 | 22/22 |
+| `verify:mobile-sync-l1-*` (5) et `verify:d-revalidation` (gardes CI) | 6/6 après réalignement | 6/6 (ancien contrat) |
+| Bancs PostgreSQL HTTP à jetons (41) | 40/41 après réalignement de 6 bancs — **1 écart ouvert** (`studentCardRollCall`, voir §5.3) | 41/41 |
+
+### 5.2 Assertions réalignées (contrat plus strict, aucune assertion affaiblie)
+
+Sept bancs vérifiaient, après retrait de **tous** les rôles d'un compte, une réponse **200 avec une liste vide** (ou le refus métier `ROLL_CALL_ROLE_FORBIDDEN`). Ce comportement reposait sur le repli F7 : le jeton conservait ses rôles, la route passait `requirePermission`, puis le périmètre relu en base était vide. Après correctif, la requête est refusée **dès `requirePermission`** : 403 `PERMISSION_DENIED`, aucune donnée. Le client Mobile traite 403 en purgeant la ressource (`Mobile/src/offline/l1/syncEngine.ts`, `blocked_authorization`) : aucune donnée obsolète conservée, aucune modification client.
+
+| Banc | Avant | Après |
+|---|---|---|
+| `mobileSyncClasses.http.pg.test.js` (enseignant, puis administrateur) | 200 `items: []` | 403 `PERMISSION_DENIED` |
+| `mobileSyncStudents.http.pg.test.js` | 200 `items: []` | 403 `PERMISSION_DENIED` |
+| `mobileSyncAssignments.http.pg.test.js` (sync + `GET /assignments`) | 200 `[]` | 403 `PERMISSION_DENIED` |
+| `mobileSyncCourseSchedules.http.pg.test.js` | 200 `items: []` | 403 `PERMISSION_DENIED` |
+| `mobileSyncSchoolCourses.http.pg.test.js` | 200 `items: []` | 403 `PERMISSION_DENIED` |
+| `dRevalidation.http.pg.test.js` SY-09 (+ `dRevalidation.findings.md`) | 200 `items: []` | 403 `PERMISSION_DENIED`, sans `items` |
+
+Chaque assertion exige le statut **et** le code exacts ; les autres assertions des bancs sont inchangées.
+
+### 5.3 Écart ouvert — décision CTO requise
+
+`backend/lib/studentCardRollCall.http.pg.test.js` (non exécuté par la CI de cette PR : workflow `nfc-encoding-preprod`, déclenché par `backend/**student*Card*`) attend `ROLL_CALL_ROLE_FORBIDDEN` après retrait du rôle `PRINCIPAL` (seul rôle du compte) ; la branche renvoie 403 `PERMISSION_DENIED` (refus plus tôt, même effet : aucun appel exceptionnel, aucune présence écrite). Le réalignement est prêt (statut 403 + code exact pour `scan` et `validate`, banc vert localement) mais **modifier ce fichier Carte élève déclenche la garde L4-09** : l'ajout d'une exception L4-09 (ancres + liste fermée, comme SEC-AUTH-04) exige une autorisation CTO. Il n'est donc pas inclus dans cette PR.
+
 ## 6. Risques résiduels et constats hors périmètre
 
 - **Incident de lecture de `user_roles`** : les accès protégés sont refusés (403) pendant l'incident, y compris pour les comptes légitimes ; le refresh peut échouer (500) après rotation du refresh token, avec la fenêtre de grâce existante (15 s). Comportement voulu (fail-closed, revue CTO).
@@ -97,3 +126,41 @@ Incident de lecture des rôles (table `user_roles` renommée pendant le test) : 
 ## 7. Performance
 
 Aucune requête supplémentaire lorsque l'utilisateur a au moins un rôle actif (cas nominal). Sinon une requête `SELECT 1 FROM user_roles WHERE user_id = $1::uuid LIMIT 1` sur l'index `idx_user_roles_user` (≈ 0,1 ms mesuré). Réinitialisation de mot de passe : une résolution de permissions, identique à celle de `requirePermission`.
+
+### 7.1 Délai de 5 s et connexions PostgreSQL concurrentes (mesuré)
+
+Le délai est appliqué côté Node (`Promise.race`) : il libère la **requête HTTP**, pas la **requête SQL**. Le pool (`max` 5 par défaut, sans `statement_timeout` ni `connectionTimeoutMillis`) garde la connexion jusqu'à la fin de la requête SQL.
+
+Mesure locale (base jetable, `LOCK TABLE user_roles IN ACCESS EXCLUSIVE MODE` tenu ~25 s, `GET /api/teachers`, compte administrateur fictif) :
+
+| Scénario | Base `c4d49077` | Branche |
+|---|---|---|
+| 2 requêtes concurrentes (< taille du pool) | aucune réponse en 20 s | **403 à 5,03 s** (fail-closed) |
+| Requête authentifiée sans permission (`/auth/effective-permissions`) pendant le verrou, 2 requêtes en cours | aucune réponse en 8 s | 200 à 5,0 s, **aucune permission** |
+| 8 requêtes concurrentes (> taille du pool) | aucune réponse en 20 s ; 5 connexions en attente de verrou | **identique** : aucune réponse en 20 s ; 5 connexions en attente de verrou |
+| Connexions encore en attente après les réponses | 2 (scénario 2) / 5 (scénario 8) | 2 / 5 : les requêtes SQL abandonnées continuent |
+| `/api/health` pendant le verrou | 200, 4–5 ms | 200, 4 ms |
+| Retour à la normale après libération du verrou | < 100 ms | < 120 ms |
+
+Conséquences :
+- en dessous de la taille du pool, le délai transforme une attente illimitée en refus contrôlé à 5 s ;
+- au-delà, le pool est saturé **avant comme après** le correctif : les requêtes suivantes attendent une connexion libre (pas de délai d'acquisition) ; le correctif n'aggrave pas cette situation, il ne la résout pas ;
+- aucune connexion n'est perdue : toutes reviennent au pool à la libération du verrou.
+
+Un `statement_timeout` (ou `connectionTimeoutMillis`) sur le pool réglerait la saturation, mais c'est un changement de configuration globale de la base, qui touche toutes les requêtes : **hors périmètre** (consigne CTO : ne pas élargir le correctif). Recommandation pour un chantier séparé.
+
+## 8. Audit des appels de `collectPrincipalRoleKeys` sans sujet
+
+`collectPrincipalRoleKeys` n'est appelée que par `resolveEffectivePermissionsForPrincipal` (dépôts PostgreSQL et mémoire `resolveEffectivePermissions`, et `liveRbacPrincipalAuthority`). Chaque appelant :
+
+| Appelant | Principal transmis | `sub` | Isolation |
+|---|---|---|---|
+| `requirePermission` (`server.js`, ~l. 7627) | `req.principal` | toujours présent | `requireAuth` (SEC-AUTH-04) refuse tout jeton sans `sub` UUID lié à une session active dont `user_id === sub` |
+| `GET /api/auth/effective-permissions` (~l. 525) | `req.principal` | toujours présent | idem (`requireAuth`) |
+| `POST /api/users/:id/reset-password` (~l. 3311) | `req.principal` | toujours présent | idem (`requireAuth`) |
+| Connexion (~l. 7115) et changement de mot de passe (~l. 739) | `buildPrincipal(user)` | `resolvePrincipalSub` : identifiant du compte, jamais vide | principal construit côté serveur depuis la base |
+| Refresh (`issueRefreshedAccessToken`, ~l. 7052) | `{ sub: session.user_id, … }` | `session.user_id` | `user_id` nul → `loadLiveRoleState` amont `unavailable` → `roleKeys = []`, « Sans affectation » ; jamais `explicit` avec privilège |
+| Finance (`liveRbacPrincipalAuthority.js`) | `req.principal` + dépôt borné | toujours présent | rôles relus et bornés à l'établissement par le dépôt mandataire |
+| **`mobileSyncScope.loadLivePermissions`** | `{ roleKeys, roles, role, schoolCode, effectiveSchoolId }` | **absent, volontairement** | **seul appel sans sujet** : `roleKeys` proviennent de `listActiveUserRoleKeys` borné à l'établissement (lecture en base, jamais du jeton) ; liste vide → retour `[]` avant tout appel. Le sujet est omis pour ne pas recharger des rôles d'un autre établissement |
+
+Aucune donnée de requête authentifiée n'atteint le chemin `explicit` : les seuls principaux issus d'un jeton passent par `requireAuth`, qui garantit `sub`. Couvert par `liveRoleState.test.js` (chemin sans sujet sans lecture `user_roles`), les suites `verify:sec-auth-04` (jetons sans `sub` refusés) et `verify:mobile-sync-l1-*`.

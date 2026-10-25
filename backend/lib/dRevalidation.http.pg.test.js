@@ -473,12 +473,12 @@ async function main() {
       [USER_TEACHER_A, fixture.schoolAId],
     );
     const revoked = await request("/mobile-sync/l1/students", { token: tokenTeacherA });
-    const revokedItems = Array.isArray(revoked.data?.items) ? revoked.data.items : null;
-    const scopeKindOk = revoked.data?.scopeKind == null || revoked.data.scopeKind === "none";
+    // SEC-AUTH-05 : dernier rôle retiré → 403 PERMISSION_DENIED (plus de repli sur les rôles du
+    // jeton) ; aucune donnée renvoyée. Le client Mobile purge la ressource sur 403.
     check(
       "SY-09",
-      revoked.status === 200 && Array.isArray(revokedItems) && revokedItems.length === 0 && scopeKindOk,
-      `status=${revoked.status} items=${JSON.stringify(revokedItems)} scopeKind=${revoked.data?.scopeKind ?? "absent"}`,
+      revoked.status === 403 && revoked.data?.code === "PERMISSION_DENIED" && revoked.data?.items === undefined,
+      `status=${revoked.status} code=${revoked.data?.code ?? "absent"} items=${JSON.stringify(revoked.data?.items ?? null)}`,
     );
 
     const pays = await request("/mobile-sync/l1/students", { token: tokenPaysCd });
