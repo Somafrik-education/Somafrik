@@ -1,0 +1,58 @@
+name: Merge authorization (R15)
+
+# Publie le statut « governance/merge-authorization » sur le HEAD exact de la PR.
+# Non bloquant tant que le Ruleset de la branche cible ne l'exige pas
+# (voir docs/governance/MERGE-AUTHORIZATION.md, §6).
+#
+# Sécurité :
+# - pull_request_target exécute ce fichier tel qu'il existe sur la branche cible :
+#   une PR ne peut pas modifier le contrôle qui la juge.
+# - Seul le script de la branche cible est extrait ; aucun code de la PR n'est
+#   extrait ni exécuté.
+# - pull_request_review exécute en revanche la version du workflow présente dans
+#   la PR (limite GitHub) : d'où l'exigence d'une approbation CTO sur le dernier
+#   push, qui couvre tout changement de ce fichier (docs §8).
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
+    branches: [develop, main]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Numéro de la PR à réévaluer"
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  statuses: write
+
+concurrency:
+  group: merge-authorization-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  evaluate:
+    name: merge-authorization
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Extraire le script de la branche cible uniquement
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          persist-credentials: false
+          sparse-checkout: scripts/governance
+          sparse-checkout-cone-mode: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Évaluer l'autorisation et publier le statut
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: node scripts/governance/verify-merge-authorization.mjs --pr "$PR_NUMBER"
