@@ -112,7 +112,7 @@ function assertProductionSecrets(env = process.env) {
 function warnIfUnsafeDevelopmentSecrets(env = process.env) {
   if (env.NODE_ENV === "production") return;
   if (!env.JWT_SECRET) {
-    console.warn("JWT_SECRET non défini: utilisation du secret de développement.");
+    console.warn("JWT_SECRET non défini : secret éphémère aléatoire (jetons invalides au redémarrage). Définir JWT_SECRET pour les tests reproductibles et le multi-instance.");
   }
 }
 

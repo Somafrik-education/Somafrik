@@ -160,6 +160,15 @@ async function seed(pool) {
       schoolA.id,
     ]);
   }
+  const year = (
+    await pool.query(`INSERT INTO academic_years (school_id, name, status) VALUES ($1, '2026-2027', 'open') RETURNING id`, [schoolA.id])
+  ).rows[0].id;
+  for (const label of ["1", "2", "3"]) {
+    await pool.query(
+      `INSERT INTO classes (school_id, academic_year_id, class_code, name, status) VALUES ($1, $2, $3, $4, 'active')`,
+      [schoolA.id, year, `SJ01-CLS-${label}`, `Classe Jwt ${label}`],
+    );
+  }
   return { schoolA, schoolB, users };
 }
 
@@ -328,6 +337,52 @@ async function main() {
       assertStatus(await probe(hmacToken(header(other.accessToken), payload)), 401, `JWT01-16 typ ${JSON.stringify(typ)}`);
     }
     ok("JWT01-16 jeton d'une autre finalité → 401");
+
+    // JWT01-17 — compatibilité : jeton d'accès historique (sans aud) refusé, puis renouvelé
+    // par refresh comme le font les clients (Web : api/client.ts ; Mobile : httpClient.ts
+    // httpRequest, 401 → refresh → rejeu). Refresh token et curseur Mobile historiques valides.
+    const historicAccess = (token) => {
+      const payload = claims(token);
+      delete payload.aud;
+      return hmacToken({ alg: "HS256", typ: "JWT" }, payload);
+    };
+    const web = await login("SJ01-ADMIN");
+    const webRefreshHead = header(web.refreshToken);
+    const webRefreshClaims = claims(web.refreshToken);
+    if (!REPRO || "aud" in claims(web.accessToken)) {
+      assert.deepEqual(Object.keys(webRefreshHead).sort(), ["alg", "typ"], "refresh token : format d'en-tête historique");
+      assert.equal(webRefreshClaims.aud, undefined, "refresh token : format historique (sans aud)");
+      assert.equal(claims(web.accessToken).aud, "somafrik-api", "jeton d'accès émis avec aud");
+    }
+    const webAttempt = await probe(historicAccess(web.accessToken));
+    assertStatus(webAttempt, 401, "JWT01-17 Web : jeton d'accès historique sans aud");
+    const webRenewed = await request("/auth/refresh", { method: "POST", body: { refreshToken: web.refreshToken } });
+    assertStatus(webRenewed, 200, "JWT01-17 Web : refresh avec le refresh token historique");
+    if (webRenewed.status === 200) assertStatus(await probe(webRenewed.data.accessToken), 200, "JWT01-17 Web : requête rejouée");
+
+    const mobile = await request("/login", {
+      method: "POST",
+      body: { role: "school_admin", identifier: "SJ01-ADMIN", pin: PIN, schoolCode: schoolA.login_code },
+    });
+    assertStatus(mobile, 200, "JWT01-17 Mobile : connexion");
+    const firstPage = await request("/mobile-sync/l1/classes?limit=1", { token: mobile.data.accessToken });
+    assertStatus(firstPage, 200, "JWT01-17 Mobile : première page de synchronisation");
+    const cursor17 = firstPage.data?.nextCursor;
+    assert.ok(cursor17, "curseur de synchronisation émis");
+    const syncAttempt = await request(`/mobile-sync/l1/classes?cursor=${encodeURIComponent(cursor17)}`, {
+      token: historicAccess(mobile.data.accessToken),
+    });
+    assertStatus(syncAttempt, 401, "JWT01-17 Mobile : jeton d'accès historique sans aud");
+    const mobileRenewed = await request("/auth/refresh", { method: "POST", body: { refreshToken: mobile.data.refreshToken } });
+    assertStatus(mobileRenewed, 200, "JWT01-17 Mobile : refresh avec le refresh token historique");
+    if (mobileRenewed.status === 200) {
+      const resumed = await request(`/mobile-sync/l1/classes?cursor=${encodeURIComponent(cursor17)}`, {
+        token: mobileRenewed.data.accessToken,
+      });
+      assertStatus(resumed, 200, "JWT01-17 Mobile : reprise de la synchronisation avec le curseur existant");
+      if (!REPRO) assert.notEqual(resumed.data?.cursorStatus, "invalid", "curseur conservé : aucune resynchronisation complète");
+    }
+    ok("JWT01-17 jeton d'accès historique refusé puis renouvelé ; refresh token et curseur Mobile conservés");
 
     if (REPRO) {
       console.log(`SEC-JWT-01 REPRO : ${defects.length} écart(s)`);

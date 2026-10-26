@@ -214,6 +214,7 @@ jobs:
           npm run verify:sec-auth-04
           npm run verify:sec-auth-05
           npm run verify:sec-tenant-02
+          npm run verify:sec-jwt-01
           npm run verify:rbac-s1-4
           npm run verify:sanitize-user-responses
           npm run verify:db-config
