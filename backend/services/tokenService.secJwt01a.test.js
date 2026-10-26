@@ -141,3 +141,25 @@ test("SEC-JWT-01a — aucun secret public de repli", () => {
   // Configuration explicite : utilisée telle quelle.
   assert.equal(new TokenService({ env: { JWT_SECRET: SECRET } }).secret, SECRET);
 });
+
+test("SEC-JWT-01a — cas limites : exp <= iat refusé, expiration dès exp <= now", () => {
+  const service = tokens();
+  const t = now();
+  // Fenêtre vide ou inversée.
+  for (const [iat, exp] of [[t - 10, t - 10], [t - 5, t - 10], [t, t]]) {
+    assert.throws(() => service.verify(legacy(HEAD, accessPayload({ iat, exp })), "access"), /Validité JWT invalide|Token expire/, `${iat}/${exp}`);
+  }
+  assert.throws(() => service.verify(legacy(HEAD, accessPayload({ iat: t + 30, exp: t + 30 })), "access"), /Validité JWT invalide/, "exp = iat dans le futur");
+  assert.throws(() => service.verify(legacy(HEAD, accessPayload({ iat: t + 30, exp: t + 20 })), "access"), /Validité JWT invalide/, "exp < iat");
+  // Expiration à la seconde exacte : exp = now est expiré ; exp = now + 1 est valide.
+  assert.throws(() => service.verify(legacy(HEAD, accessPayload({ iat: t - 60, exp: t })), "access"), /Token expire/);
+  assert.ok(service.verify(legacy(HEAD, accessPayload({ iat: t - 60, exp: t + 2 })), "access"));
+  // Mêmes règles pour les refresh tokens et les curseurs Mobile ; jetons émis toujours valides.
+  const refreshBase = { sub: "u1", sessionId: "11111111-1111-4111-8111-111111111111", typ: "refresh", iss: "somafrik-api" };
+  assert.throws(() => service.verify(legacy(HEAD, { ...refreshBase, iat: t - 60, exp: t }), "refresh"), /Token expire/);
+  assert.throws(() => service.verify(legacy(HEAD, { ...refreshBase, iat: t, exp: t }), "refresh"), /Validité JWT invalide|Token expire/);
+  assert.equal(service.verify(service.createRefreshToken({ sub: "u1" }).token, "refresh").typ, "refresh");
+  const cursorBase = { typ: "mobile_sync_cursor", schoolCode: "CD-2026-0001", iss: "somafrik-api" };
+  assert.throws(() => service.verify(legacy(HEAD, { ...cursorBase, iat: t - 60, exp: t }), "mobile_sync_cursor"), /Token expire/);
+  assert.equal(service.verify(service.sign(cursorBase, 300), "mobile_sync_cursor").typ, "mobile_sync_cursor");
+});

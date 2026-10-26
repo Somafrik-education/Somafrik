@@ -142,9 +142,15 @@ class TokenService {
     if (!isIntegerSeconds(payload.exp) || !isIntegerSeconds(payload.iat)) {
       throw new Error("Validité JWT invalide");
     }
+    // Expiration dès exp <= now (exp exclu), contrôlée en premier pour garder le
+    // contrat « expiré » des appelants (ex. curseur Mobile → 409 réconciliation).
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp < now) {
+    if (payload.exp <= now) {
       throw new Error("Token expire");
+    }
+    // Fenêtre de validité non vide : un jeton dont exp <= iat n'est jamais valide.
+    if (payload.exp <= payload.iat) {
+      throw new Error("Validité JWT invalide");
     }
     if (payload.iat > now + CLOCK_SKEW_SECONDS) {
       throw new Error("Emission JWT dans le futur");
