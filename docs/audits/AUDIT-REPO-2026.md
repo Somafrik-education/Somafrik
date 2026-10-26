@@ -82,7 +82,7 @@
 
 **Conséquences :**
 - **[S]** Un AAB construit depuis `develop` porterait `versionCode` 13, inférieur au 24 déjà construit sur `main`. Play le refuserait si le 24 a été envoyé **[À VÉRIFIER]**.
-- **[V]** Une fusion complète de `main` dans `develop` réintroduirait la configuration sans NFC ni QR caméra, d'où la décision CTO de ne pas fusionner automatiquement.
+- **[À VÉRIFIER]** Une fusion main → develop nécessite une simulation et une revue des fichiers Android pour garantir la préservation de NFC/QR.
 - **Correction minimale candidate (non appliquée) :** relever seulement `ANDROID_VERSION_CODE` et `android.versionCode` sur `develop` (≥ 25), et reporter le correctif `fs.mkdirSync` de `build-android-env.js`. **[À VÉRIFIER]** La source canonique du `versionCode` : `releaseEnvironments.js` est lu par `app.config.js`, et `app.json` doit rester aligné (garde `android-release-readiness`).
 
 ### 2.3 Workflows CI : écarts `develop` / `main` [V]
@@ -165,7 +165,7 @@ Les check runs « ignorés » (parités LOT hors périmètre) sont comptés dans
 
 Classement par analyse git : fusion simulée et identité des fichiers par rapport à `develop@0192e1a`. Une revue sémantique par l'auteur reste requise avant toute fermeture. **Aucune PR n'a été fermée par cet audit.**
 
-### A. Contenu déjà présent dans `develop` (8)
+### A. Contenu intégralement ou partiellement présent dans develop — fermeture après validation sémantique (8)
 
 | PR | Preuve [V] |
 |---|---|
