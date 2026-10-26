@@ -113,28 +113,149 @@ async function verifyTestCluster(clusterUrl) {
   }
 }
 
-async function createRunDatabase(clusterUrl, name) {
-  guards.assertRunDatabaseName(name);
-  const client = pgClient(clusterUrl.toString());
-  await client.connect();
-  try {
-    await client.query(`DROP DATABASE IF EXISTS ${name}`);
-    await client.query(`CREATE DATABASE ${name}`);
-  } finally {
-    await client.end();
-  }
-  return guards.databaseUrl(clusterUrl, name);
+// ---------------------------------------------------------------------------
+// Bases possédées par l'exécution courante
+//
+// Règles : (1) jamais de suppression préalable — une base qui existe déjà n'a
+// pas été créée par cette exécution, elle n'est ni supprimée ni réutilisée ;
+// (2) chaque base créée reçoit le marqueur somafrik:test-run:<RUN_ID> ;
+// (3) une base n'est supprimée que si elle figure dans OWNED (créée par ce
+// processus) ET porte encore ce marqueur. Le nettoyage passe par finally et
+// par les gestionnaires SIGINT/SIGTERM.
+// ---------------------------------------------------------------------------
+
+const RUN_ID = `${process.pid}_${crypto.randomBytes(6).toString("hex")}`;
+const OWNED = new Map();
+// File séquentielle : création (CREATE + marqueur) et suppression ne s'entrelacent
+// jamais, y compris avec le nettoyage déclenché par un signal.
+let lifecycleQueue = Promise.resolve();
+let interruptedBy = null;
+
+function serialized(operation) {
+  const next = lifecycleQueue.then(operation, operation);
+  lifecycleQueue = next.catch(() => {});
+  return next;
 }
 
-async function dropRunDatabase(clusterUrl, name) {
-  guards.assertRunDatabaseName(name);
+async function withClusterClient(clusterUrl, fn) {
   const client = pgClient(clusterUrl.toString());
   await client.connect();
   try {
-    await client.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+    return await fn(client);
   } finally {
     await client.end();
   }
+}
+
+async function readDatabaseComment(client, name) {
+  const result = await client.query(
+    "SELECT shobj_description(oid, 'pg_database') AS comment FROM pg_database WHERE datname = $1",
+    [name],
+  );
+  return result.rowCount ? { exists: true, comment: result.rows[0].comment ?? null } : { exists: false, comment: null };
+}
+
+async function createOwnedDatabase(clusterUrl, name) {
+  guards.assertRunDatabaseName(name);
+  const marker = guards.ownershipMarker(RUN_ID);
+  return serialized(async () => {
+    if (interruptedBy) {
+      throw new guards.BaselineGuardError(`Exécution interrompue (${interruptedBy}) : aucune nouvelle base n'est créée.`);
+    }
+    await withClusterClient(clusterUrl, async (client) => {
+      const current = await readDatabaseComment(client, name);
+      if (current.exists) {
+        throw new guards.BaselineGuardError(
+          `La base « ${name} » existe déjà : elle n'a pas été créée par cette exécution, elle n'est ni supprimée ni réutilisée. ` +
+            "Si elle provient d'une exécution interrompue, supprimez-la manuellement après vérification.",
+        );
+      }
+      // Sans IF NOT EXISTS : une création concurrente échoue (42P04) au lieu d'être adoptée.
+      await client.query(`CREATE DATABASE ${name}`);
+      try {
+        await client.query(`COMMENT ON DATABASE ${name} IS '${marker}'`);
+      } catch (error) {
+        // Base créée à l'instant par cette connexion mais non marquée : supprimée aussitôt.
+        await client.query(`DROP DATABASE ${name} WITH (FORCE)`);
+        throw error;
+      }
+      OWNED.set(name, marker);
+    });
+    return guards.databaseUrl(clusterUrl, name);
+  });
+}
+
+async function dropOwnedDatabase(clusterUrl, name) {
+  guards.assertRunDatabaseName(name);
+  return serialized(() => dropOwnedDatabaseNow(clusterUrl, name));
+}
+
+async function dropOwnedDatabaseNow(clusterUrl, name) {
+  const marker = OWNED.get(name);
+  if (!marker) {
+    throw new guards.BaselineGuardError(`Suppression refusée : « ${name} » n'a pas été créée par cette exécution.`);
+  }
+  await withClusterClient(clusterUrl, async (client) => {
+    const current = await readDatabaseComment(client, name);
+    if (!current.exists) {
+      OWNED.delete(name);
+      return;
+    }
+    if (current.comment !== marker) {
+      throw new guards.BaselineGuardError(
+        `Suppression refusée : « ${name} » ne porte plus le marqueur de cette exécution (${marker}).`,
+      );
+    }
+    await client.query(`DROP DATABASE ${name} WITH (FORCE)`);
+    OWNED.delete(name);
+  });
+}
+
+/** Supprime toutes les bases encore possédées ; renvoie les erreurs sans s'interrompre. */
+async function dropAllOwnedDatabases(clusterUrl) {
+  const errors = [];
+  for (const name of [...OWNED.keys()]) {
+    try {
+      await dropOwnedDatabase(clusterUrl, name);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  return errors;
+}
+
+/** Crée une base possédée, exécute fn, puis la supprime dans tous les cas. */
+async function withOwnedDatabase(clusterUrl, name, fn) {
+  const url = await createOwnedDatabase(clusterUrl, name);
+  let primary = null;
+  try {
+    return await fn(url);
+  } catch (error) {
+    primary = error;
+    throw error;
+  } finally {
+    try {
+      await dropOwnedDatabase(clusterUrl, name);
+    } catch (dropError) {
+      if (!primary) throw dropError;
+      console.error(`✖ Nettoyage de « ${name} » impossible : ${dropError.message}`);
+    }
+  }
+}
+
+function installSignalCleanup(clusterUrl) {
+  let handled = false;
+  const handler = (signal) => {
+    if (handled) return;
+    handled = true;
+    interruptedBy = signal;
+    console.error(`✖ Signal ${signal} reçu : suppression des bases créées par cette exécution.`);
+    dropAllOwnedDatabases(clusterUrl)
+      .then((errors) => errors.forEach((error) => console.error(`✖ ${error.message}`)))
+      .finally(() => process.exit(signal === "SIGINT" ? 130 : 143));
+  };
+  process.on("SIGINT", handler);
+  process.on("SIGTERM", handler);
 }
 
 // ---------------------------------------------------------------------------
@@ -195,9 +316,8 @@ function runExpectedFailure(entry, env) {
 }
 
 async function runSeededDatabaseEntry(entry, { clusterUrl, env, outDir }) {
-  const name = guards.runDatabaseName("seeded", `${process.pid}_${crypto.randomBytes(4).toString("hex")}`);
-  const url = await createRunDatabase(clusterUrl, name);
-  try {
+  const name = guards.runDatabaseName("seeded", RUN_ID);
+  return withOwnedDatabase(clusterUrl, name, async (url) => {
     const seededEnv = { ...env, DATABASE_URL: url, SOMAFRIK_DB_REQUIRED: "true" };
     delete seededEnv.SOMAFRIK_SKIP_DEMO_SEED;
     const bootstrap = spawnSync(
@@ -215,9 +335,7 @@ async function runSeededDatabaseEntry(entry, { clusterUrl, env, outDir }) {
     }
     const label = `seeded-${path.basename(entry.file, ".js")}`;
     return runNodeTest([entry.file], { outDir, label, env: seededEnv, concurrency: 1 }).results;
-  } finally {
-    await dropRunDatabase(clusterUrl, name);
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +468,6 @@ async function main() {
   const notes = [];
   let env = { ...process.env };
   let clusterUrl = null;
-  let nfcDatabase = null;
 
   if (mode === "pg") {
     // Validation AVANT toute connexion : URL dédiée, loopback, base sentinelle.
@@ -374,11 +491,9 @@ async function main() {
     // du dépôt créent leurs propres bases à partir de celle-ci et certains
     // n'acceptent pas d'autre base source (gardes ADMIN-*).
     env.DATABASE_URL = guards.databaseUrl(clusterUrl, guards.MAINTENANCE_DATABASE);
-    // Base exigée par la fixture NFC : recréée à neuf, supprimée à la fin.
-    nfcDatabase = guards.NFC_TEST_DATABASE;
-    env.SOMAFRIK_NFC_TEST_DATABASE_URL = await createRunDatabase(clusterUrl, nfcDatabase);
+    installSignalCleanup(clusterUrl);
     notes.push(
-      `Base source des tests : \`${guards.MAINTENANCE_DATABASE}\` du cluster vérifié ; base NFC \`${guards.NFC_TEST_DATABASE}\` recréée pour l'exécution.`,
+      `Base source des tests : \`${guards.MAINTENANCE_DATABASE}\` du cluster vérifié ; base NFC \`${guards.NFC_TEST_DATABASE}\` créée et possédée par cette exécution (\`${guards.ownershipMarker(RUN_ID)}\`).`,
     );
   }
 
@@ -395,7 +510,12 @@ async function main() {
   let results = [];
   const expected = [];
   let mainStatus = 0;
+  let primaryError = null;
   try {
+    if (mode === "pg") {
+      // Base exigée par la fixture NFC : créée par cette exécution (refus si elle existe déjà).
+      env.SOMAFRIK_NFC_TEST_DATABASE_URL = await createOwnedDatabase(clusterUrl, guards.NFC_TEST_DATABASE);
+    }
     const run = runNodeTest(mainFiles, {
       outDir,
       label: "main",
@@ -404,6 +524,9 @@ async function main() {
       coverage: mode === "unit" && coverageRequested ? "node" : undefined,
     });
     if (run.signal) throw new Error(`node --test interrompu par le signal ${run.signal}.`);
+    // Laisse passer un signal reçu pendant node --test avant toute nouvelle création de base.
+    await new Promise((resolve) => setImmediate(resolve));
+    if (interruptedBy) throw new Error(`Exécution interrompue (${interruptedBy}).`);
     mainStatus = run.status;
     results = run.results;
     for (const entry of excluded) {
@@ -412,9 +535,16 @@ async function main() {
         results = results.concat(await runSeededDatabaseEntry(entry, { clusterUrl, env, outDir }));
       }
     }
+  } catch (error) {
+    primaryError = error;
   } finally {
-    if (nfcDatabase) await dropRunDatabase(clusterUrl, nfcDatabase);
+    if (mode === "pg") {
+      const cleanupErrors = await dropAllOwnedDatabases(clusterUrl);
+      for (const error of cleanupErrors) console.error(`✖ ${error.message}`);
+      if (cleanupErrors.length && !primaryError) primaryError = cleanupErrors[0];
+    }
   }
+  if (primaryError) throw primaryError;
 
   let coverage = null;
   if (coverageRequested) {
@@ -442,8 +572,18 @@ async function main() {
   console.log(`✔ Baseline ${mode} verte.`);
 }
 
-module.exports = { createRunDatabase, dropRunDatabase, verifyTestCluster, lcovTotals };
+module.exports = {
+  RUN_ID,
+  createOwnedDatabase,
+  dropAllOwnedDatabases,
+  dropOwnedDatabase,
+  lcovTotals,
+  verifyTestCluster,
+  withOwnedDatabase,
+};
 
 if (require.main === module) {
-  main().catch((error) => fail(error?.stack || String(error)));
+  main().catch((error) =>
+    fail(error instanceof guards.BaselineGuardError ? error.message : error?.stack || String(error)),
+  );
 }

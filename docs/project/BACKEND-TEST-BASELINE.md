@@ -43,8 +43,23 @@ Un hôte `localhost` n'est **pas** une preuve qu'une base est jetable : une base
 | Déclaration explicite | la sentinelle ne porte pas le commentaire `somafrik:disposable-test-cluster`. Ce commentaire est posé **volontairement** à la création du cluster de test (étape CI dédiée) ; l'exécuteur ne le pose jamais. |
 | Contenu du cluster | une seule base n'a pas un nom de base de test reconnu (ex. `somafrik`, `somafrik_dev`, `production`). |
 | Environnement des tests | toute variable de base héritée (`DATABASE_URL`, `*_DATABASE_URL`, `*_DB_URL`, `*_IT_DATABASE`, `PG*`, `DB_*`, `SUPABASE_DB_URL`) est **retirée** ; l'exécuteur fixe lui-même `DATABASE_URL`. |
-| Bases créées/supprimées par l'exécuteur | nom hors de la liste fermée : `somafrik_test_run_*` (base amorcée) et `nfc_encoding_test` (exigée par la fixture NFC, recréée puis supprimée). |
+| Bases créées/supprimées par l'exécuteur | nom hors de la liste fermée : `somafrik_test_run_*` (base amorcée) et `nfc_encoding_test` (exigée par la fixture NFC). Voir « Propriété des bases » ci-dessous. |
 | Base source des tests | `DATABASE_URL` = base de maintenance `postgres` du cluster **vérifié** : les tests créent leurs propres bases à partir d'elle, et les gardes de 10 tests `admin*` n'acceptent que `postgres` (ou `somafrik`) comme base source. |
+
+### Propriété des bases : seule l'exécution courante peut supprimer ce qu'elle a créé
+
+| Règle | Effet |
+|---|---|
+| Jamais de suppression préalable | `CREATE DATABASE` sans `DROP … IF EXISTS` avant. Une base qui existe déjà (même nommée `nfc_encoding_test` ou `somafrik_test_run_*`) n'a pas été créée par cette exécution : création **refusée**, base ni supprimée ni réutilisée, exécution en échec. |
+| Marqueur de propriété | chaque base créée reçoit `COMMENT ON DATABASE … IS 'somafrik:test-run:<pid>_<12 hex>'` (identifiant unique, format strict, pas d'injection possible). Si la pose du marqueur échoue, la base qui vient d'être créée est supprimée aussitôt. |
+| Suppression | uniquement si la base figure dans la liste des bases créées par ce processus **et** porte encore son marqueur (`DROP DATABASE … WITH (FORCE)`). Une base étrangère, une base marquée par une autre exécution ou une base au marqueur altéré est refusée et conservée. |
+| Chemins d'erreur | nettoyage en `finally` (exécution principale, base amorcée) ; une erreur de nettoyage ne masque pas l'erreur d'origine. |
+| Interruption | gestionnaires `SIGINT`/`SIGTERM` (annulation CI) : arrêt de toute nouvelle création, suppression des bases possédées. Création et suppression passent par une file séquentielle : le nettoyage attend la fin d'une création en cours (base + marqueur). |
+| `SIGKILL` | aucun nettoyage possible : la base reste avec son marqueur ; l'exécution suivante refuse alors de démarrer (`… existe déjà`) jusqu'à suppression manuelle. Échec fermé. |
+
+Preuves négatives (`scripts/backend-test-baseline.test.js`, cluster réel) : bases étrangères `nfc_encoding_test`, `somafrik_test_run_foreign_probe`, `somafrik_foreign_probe_it`, `foreign_probe_test` contenant une donnée témoin → suppression et recréation refusées, donnée intacte ; base marquée par une autre exécution → conservée ; chemin nominal, chemin d'erreur et marqueur altéré ; `nfc_encoding_test` étrangère pré-existante → exécuteur en échec sans y toucher ; `SIGTERM` du groupe de processus → aucune base restante.
+
+**Limite (assumée)** : ces garanties portent sur l'**exécuteur**. Les fichiers de test PostgreSQL du dépôt créent et suppriment eux-mêmes leurs bases `*_it` / `somafrik_<x>_<hex>` sur le cluster ; c'est pourquoi le cluster entier doit être dédié aux tests (garde-fous ci-dessus).
 
 Préparer un cluster local jetable (jamais celui de développement) :
 
@@ -56,7 +71,7 @@ PGPASSWORD=postgres psql -h localhost -p 55432 -U postgres -d somafrik_disposabl
 SOMAFRIK_TEST_PG_URL=postgres://postgres:postgres@localhost:55432/somafrik_disposable_test_cluster npm run test:backend-baseline:pg
 ```
 
-Tests négatifs reproductibles : `scripts/backend-test-baseline.test.js` (16 tests ; 13 sans base, 3 sur cluster réel exécutés dans le job CI `pg`). Ils couvrent : variable absente, `DATABASE_URL` seule, hôtes distants et leurres, paramètres d'URL, base non sentinelle, sentinelle sans commentaire, cluster contenant une base étrangère, noms de bases de travail, nettoyage de l'environnement, cluster injoignable, couverture absente.
+Tests négatifs reproductibles : `scripts/backend-test-baseline.test.js` (21 tests ; 14 sans base, 7 sur cluster réel exécutés dans le job CI `pg`). Ils couvrent : variable absente, `DATABASE_URL` seule, hôtes distants et leurres, paramètres d'URL, base non sentinelle, sentinelle sans commentaire, cluster contenant une base étrangère, noms de bases de travail, nettoyage de l'environnement, cluster injoignable, couverture absente.
 
 ## 4. Règles de la baseline
 
@@ -78,6 +93,17 @@ Tests négatifs reproductibles : `scripts/backend-test-baseline.test.js` (16 tes
 
 Preuve de mutation : en réintroduisant temporairement une écriture legacy dans `saveBackOfficeState` (préchargement hors dépôt), 3 des 4 tests de chacun des deux fichiers échouent (le 4ᵉ porte sur la lecture ou la réponse HTTP).
 
+**Couverture des anciens tests (analyse)** : dans les deux anciens fichiers, `saveBackOfficeState` était le **premier** appel de `run()` ; depuis LOT 8 (2026-08-14) ils échouaient avant toute autre assertion. Aucune couverture *exécutée* n'est donc perdue. En revanche, une partie de leurs **intentions** reste pertinente et n'est reprise par aucun test comportemental :
+
+| Intention de l'ancien test | Fonction | Encore utilisée en production ? | Couverte ailleurs ? |
+|---|---|---|---|
+| Synchronisation élèves / personnel / notes depuis le snapshot | `sync*DomainFromBackOffice` | Non (aucun appelant produit) | Sans objet — remplacé par le test de refus |
+| Élève introuvable dans un autre établissement pour une note | `resolveStudentForGrade` | Oui, via `upsertGrade` (`server.js`, `pedagogyService`, `pedagogyPgStore`) | **Non** (contrôles structurels sur le texte source seulement) |
+| Enseignant refusé hors de ses classes / matières / établissement | `teacherCanAccessStudentClass`, `teacherCanAccessEvaluation` | Oui, via `upsertGrade` | **Non** (idem) |
+| Rattachement d'un compte enseignant sans détournement d'un autre utilisateur | `ensurePgUserForBackOfficeTeacher` | Oui, via `materializeBackOfficeTeacher` (← `upsertEvaluationFromLegacy`) | **Non** |
+
+Ces lacunes sont **préexistantes** (pas causées par #1006). Recommandation : les reprendre dans la matrice de caractérisation RBAC / tenant sur PostgreSQL (lot MONO-T2), hors #1006.
+
 Test PostgreSQL complémentaire, déjà signalé comme préexistant dans #997/#998 : `backend/lib/backofficeStateRemoval.pg.test.js` suppose une base déjà initialisée (table `schools`, établissement `CD-2026-0001`). Déclaré « base amorcée » ; fichier non modifié.
 
 ## 6. Résultats de référence (exécution locale, 2026-10-26)
@@ -86,7 +112,7 @@ Environnement : Node 22.22.0, PostgreSQL 16.15 en cluster jetable configuré com
 
 | Mode | Fichiers | PASS | FAIL | SKIP | Couverture lignes / branches |
 |---|---|---|---|---|---|
-| garde-fous | 1 | 16 | 0 | 0 | — |
+| garde-fous | 1 | 21 | 0 | 0 | — |
 | unit | 334 | 2 635 | 0 | 3 | 66,9 % / 68,4 % (334 fichiers chargés) |
 | pg | 128 | 249 | 0 | 0 | 67,2 % / 60,6 % (283 fichiers chargés) |
 
@@ -101,7 +127,11 @@ Les 73 tests PostgreSQL ignorés lors de l'audit étaient les suites NFC (`stude
 - **Non couverts par cette baseline :** scripts `verify:*`, tests Web (Vitest), tests Mobile, e2e (Maestro, navigateur). Ils restent exécutés par les workflows existants, inchangés.
 - La couverture PostgreSQL utilise `npx --yes c8@10.1.3` (même convention que `npx --yes tsx` dans `package.json`) ; aucune dépendance n'est ajoutée aux lockfiles. Si `c8` échoue, la baseline échoue.
 - Les scripts `verify:*` existants qui créent leurs propres bases ne passent pas par ces garde-fous ; ils ne sont pas modifiés par MONO-T0.
-- **Instabilité préexistante : `backend/lib/secAuth04SessionBinding.http.pg.test.js`** (SEC-AUTH-04, #995). Ses 21 contrôles passent, puis le processus peut planter au nettoyage : `DROP DATABASE … WITH (FORCE)` termine une connexion encore ouverte d'un pool `pg` du test, sans écouteur `error` (« terminating connection due to administrator command »). Reproduit en isolation sur le fichier inchangé de `develop` : 1 échec sur 6 exécutions ; 1 sur 4 exécutions complètes de la baseline. La baseline le signale (FAIL) ; il n'est **ni ignoré, ni relancé automatiquement**. Correctif proposé (test uniquement, hors mandat MONO-T0 car test de sécurité) : écouteur `error` sur les pools du test et fermeture de toutes les connexions avant la suppression de la base.
+- **Instabilité préexistante : `backend/lib/secAuth04SessionBinding.http.pg.test.js`** (SEC-AUTH-04, #995) — **non modifié par #1006**.
+  - Symptôme : les 21 contrôles passent, puis le processus plante au nettoyage (`terminating connection due to administrator command`, SQLSTATE 57P01). Reproduit en isolation sur le fichier inchangé de `develop` : 2 échecs sur 8 exécutions isolées (et 1 sur 4 exécutions complètes de la baseline).
+  - Cause (tracée par instrumentation hors dépôt des pools `pg`) : le pool de `PostgresRepository` (`backend/db/postgresRepository.js:114`, 10 connexions inactives) est fermé par `repo.close()` → `pool.end()`, qui rend la main avant la fin des sessions serveur ; `dropDisposableDatabase` exécute ensuite `DROP DATABASE … WITH (FORCE)`, qui termine ces sessions ; le message 57P01 est relayé en événement `error` sur un pool **sans écouteur** (`listeners=0`) → exception non capturée.
+  - Correctif proposé (test uniquement, 3 lignes, mandat séparé) : utiliser l'outil existant `backend/lib/pgPoolGuard.js`, déjà employé par d'autres tests pour ce cas — `guardPgPool(repo.pool)` et `const pool = guardPgPool(new Pool(...))`. Validé sur une copie temporaire non suivie : 0 échec sur 15 exécutions.
+  - **Constat produit, hors périmètre** : le pool de production `PostgresRepository` n'a pas d'écouteur `error` et `server.js` n'a pas de gestionnaire `uncaughtException`. Une session inactive terminée côté serveur (redémarrage, bascule, terminaison administrative) émettrait la même erreur et ferait vraisemblablement tomber le processus API. À traiter par un mandat dédié.
 
 ## Annexe — fichiers de test backend non atteints par les workflows avant MONO-T0 (estimation statique)
 

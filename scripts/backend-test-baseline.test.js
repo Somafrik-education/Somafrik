@@ -9,7 +9,10 @@
  * 3. Couverture : demandée mais absente ⇒ échec (jamais SUCCESS).
  * 4. Cluster réel (si SOMAFRIK_TEST_PG_URL est fourni, comme dans le job CI pg) :
  *    un cluster contenant une base étrangère ou une sentinelle sans commentaire
- *    est refusé ; l'exécuteur ne crée ni ne supprime que ses bases de travail.
+ *    est refusé ; preuves négatives : une base étrangère (même nommée *_test,
+ *    *_it, somafrik_test_run_* ou nfc_encoding_test) n'est jamais supprimée ni
+ *    modifiée ; seule une base créée ET marquée par l'exécution courante est
+ *    supprimable, y compris sur les chemins d'erreur et d'interruption.
  *
  *   node --test scripts/backend-test-baseline.test.js
  */
@@ -160,6 +163,13 @@ test("Bases gérées : seuls somafrik_test_run_* et nfc_encoding_test peuvent ê
   }
 });
 
+test("Marqueur de propriété : identifiant d'exécution strict (pas d'injection SQL dans le commentaire)", () => {
+  assert.equal(guards.ownershipMarker("1234_0123456789ab"), "somafrik:test-run:1234_0123456789ab");
+  for (const runId of ["", "abc", "1234_XYZ", "1_0123456789ab'; DROP DATABASE somafrik; --", "1_0123456789abc"]) {
+    assert.throws(() => guards.ownershipMarker(runId), refusedWith(/Identifiant d'exécution invalide/), runId);
+  }
+});
+
 test("Environnement : toute variable de base héritée est retirée avant les tests", () => {
   const { env, removed } = guards.sanitizeDatabaseEnv({
     PATH: "/usr/bin",
@@ -293,17 +303,176 @@ test("Cluster réel : sentinelle sans commentaire refusée", realCluster, async 
   await verifyTestCluster(clusterUrl);
 });
 
-test("Cluster réel : l'exécuteur ne crée/supprime que ses bases gérées", realCluster, async () => {
-  const { createRunDatabase, dropRunDatabase } = require("./backend-test-baseline");
-  const clusterUrl = guards.parseTestClusterUrl(CLUSTER_URL);
-  await assert.rejects(() => createRunDatabase(clusterUrl, "somafrik"), refusedWith(/Nom de base de travail refusé/));
-  await assert.rejects(() => dropRunDatabase(clusterUrl, guards.SENTINEL_DATABASE), refusedWith(/Nom de base de travail refusé/));
-  await assert.rejects(() => dropRunDatabase(clusterUrl, "postgres"), refusedWith(/Nom de base de travail refusé/));
+// Bases « étrangères » : créées hors de l'exécuteur, nommées comme des bases de
+// test, et contenant une donnée témoin qui doit survivre à toute tentative.
+const FOREIGN_DATABASES = [
+  "nfc_encoding_test", //            nom géré par l'exécuteur, mais pas créé par lui
+  "somafrik_test_run_foreign_probe", // motif des bases de travail, mais pas créé par lui
+  "somafrik_foreign_probe_it", //    motif *_it des tests du dépôt
+  "foreign_probe_test", //           motif *_test
+];
 
-  const name = guards.runDatabaseName("guardtest", String(process.pid));
-  const url = await createRunDatabase(clusterUrl, name);
-  assert.equal(new URL(url).pathname, `/${name}`);
-  await dropRunDatabase(clusterUrl, name);
-  const remaining = await onCluster((client) => client.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]));
-  assert.equal(remaining.rowCount, 0);
+async function databaseUrlFor(name) {
+  return guards.databaseUrl(guards.parseTestClusterUrl(CLUSTER_URL), name);
+}
+
+async function createForeignDatabaseWithWitness(name, comment = null) {
+  await onCluster(async (client) => {
+    await client.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+    await client.query(`CREATE DATABASE ${name}`);
+    if (comment) await client.query(`COMMENT ON DATABASE ${name} IS '${comment}'`);
+  });
+  const client = pgClient(await databaseUrlFor(name));
+  await client.connect();
+  try {
+    await client.query("CREATE TABLE mono_t0_witness (value text NOT NULL)");
+    await client.query("INSERT INTO mono_t0_witness VALUES ('donnée étrangère')");
+  } finally {
+    await client.end();
+  }
+}
+
+async function readWitness(name) {
+  const exists = await onCluster((client) => client.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]));
+  if (!exists.rowCount) return { exists: false, rows: [] };
+  const client = pgClient(await databaseUrlFor(name));
+  await client.connect();
+  try {
+    const result = await client.query("SELECT value FROM mono_t0_witness");
+    return { exists: true, rows: result.rows.map((row) => row.value) };
+  } finally {
+    await client.end();
+  }
+}
+
+async function dropForeignDatabase(name) {
+  await onCluster((client) => client.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`));
+}
+
+test("Preuve négative : bases étrangères *_test / *_it / gérées jamais supprimées ni modifiées par l'exécuteur", realCluster, async () => {
+  const runner = require("./backend-test-baseline");
+  const clusterUrl = guards.parseTestClusterUrl(CLUSTER_URL);
+  for (const name of FOREIGN_DATABASES) await createForeignDatabaseWithWitness(name);
+  try {
+    for (const name of FOREIGN_DATABASES) {
+      // Suppression : refusée (nom hors liste fermée, ou base non créée par cette exécution).
+      await assert.rejects(() => runner.dropOwnedDatabase(clusterUrl, name), refusedWith(/(refusé)/), name);
+      // Création par-dessus : refusée sans suppression préalable (noms gérés uniquement).
+      if (name === "nfc_encoding_test" || name.startsWith(guards.RUN_DATABASE_PREFIX)) {
+        await assert.rejects(() => runner.createOwnedDatabase(clusterUrl, name), refusedWith(/existe déjà/), name);
+      } else {
+        await assert.rejects(() => runner.createOwnedDatabase(clusterUrl, name), refusedWith(/Nom de base de travail refusé/), name);
+      }
+      assert.deepEqual(await readWitness(name), { exists: true, rows: ["donnée étrangère"] }, `${name} intacte`);
+    }
+    // Nettoyage global de l'exécuteur : ne touche à aucune base étrangère.
+    assert.deepEqual(await runner.dropAllOwnedDatabases(clusterUrl), []);
+    for (const name of FOREIGN_DATABASES) {
+      assert.deepEqual(await readWitness(name), { exists: true, rows: ["donnée étrangère"] }, `${name} intacte après nettoyage`);
+    }
+  } finally {
+    for (const name of FOREIGN_DATABASES) await dropForeignDatabase(name);
+  }
+});
+
+test("Preuve négative : une base portant le marqueur d'une AUTRE exécution n'est pas supprimée", realCluster, async () => {
+  const runner = require("./backend-test-baseline");
+  const clusterUrl = guards.parseTestClusterUrl(CLUSTER_URL);
+  const name = "somafrik_test_run_other_run_probe";
+  await createForeignDatabaseWithWitness(name, guards.ownershipMarker("1_aaaaaaaaaaaa"));
+  try {
+    await assert.rejects(() => runner.dropOwnedDatabase(clusterUrl, name), refusedWith(/n'a pas été créée par cette exécution/));
+    assert.deepEqual(await readWitness(name), { exists: true, rows: ["donnée étrangère"] });
+  } finally {
+    await dropForeignDatabase(name);
+  }
+});
+
+test("Exécution courante : seule une base créée ET marquée par elle est supprimable (succès, erreur, marqueur altéré)", realCluster, async () => {
+  const runner = require("./backend-test-baseline");
+  const clusterUrl = guards.parseTestClusterUrl(CLUSTER_URL);
+  const marker = guards.ownershipMarker(runner.RUN_ID);
+  const exists = async (name) =>
+    (await onCluster((client) => client.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]))).rowCount === 1;
+
+  // Chemin nominal : créée avec le marqueur de l'exécution, supprimée à la sortie.
+  const nominal = guards.runDatabaseName("proof_ok", runner.RUN_ID);
+  await runner.withOwnedDatabase(clusterUrl, nominal, async () => {
+    const comment = await onCluster((client) =>
+      client.query("SELECT shobj_description(oid, 'pg_database') AS c FROM pg_database WHERE datname = $1", [nominal]),
+    );
+    assert.equal(comment.rows[0].c, marker);
+  });
+  assert.equal(await exists(nominal), false, "supprimée après succès");
+
+  // Chemin d'erreur : l'erreur remonte et la base est quand même supprimée.
+  const failing = guards.runDatabaseName("proof_err", runner.RUN_ID);
+  await assert.rejects(
+    () => runner.withOwnedDatabase(clusterUrl, failing, async () => {
+      throw new Error("échec simulé pendant les tests");
+    }),
+    /échec simulé/,
+  );
+  assert.equal(await exists(failing), false, "supprimée après erreur");
+
+  // Marqueur altéré par un tiers : suppression refusée, base conservée.
+  const tampered = guards.runDatabaseName("proof_tamper", runner.RUN_ID);
+  await runner.createOwnedDatabase(clusterUrl, tampered);
+  try {
+    await onCluster((client) => client.query(`COMMENT ON DATABASE ${tampered} IS 'autre propriétaire'`));
+    await assert.rejects(() => runner.dropOwnedDatabase(clusterUrl, tampered), refusedWith(/ne porte plus le marqueur/));
+    assert.equal(await exists(tampered), true, "base au marqueur altéré conservée");
+  } finally {
+    await dropForeignDatabase(tampered);
+  }
+  // Base déjà supprimée par un tiers : nettoyage idempotent, sans erreur.
+  assert.deepEqual(await runner.dropAllOwnedDatabases(clusterUrl), []);
+});
+
+test("Exécuteur pg : une nfc_encoding_test étrangère pré-existante bloque l'exécution sans être touchée", realCluster, async () => {
+  await createForeignDatabaseWithWitness("nfc_encoding_test");
+  try {
+    const result = runRunner(["pg"], { SOMAFRIK_TEST_PG_URL: CLUSTER_URL });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /« nfc_encoding_test » existe déjà/);
+    assert.deepEqual(await readWitness("nfc_encoding_test"), { exists: true, rows: ["donnée étrangère"] });
+  } finally {
+    await dropForeignDatabase("nfc_encoding_test");
+  }
+});
+
+test("Exécuteur pg : interruption (SIGTERM du groupe, comme une annulation CI) ⇒ bases de l'exécution supprimées", realCluster, async () => {
+  const { spawn } = require("node:child_process");
+  const exists = async () =>
+    (await onCluster((client) => client.query("SELECT 1 FROM pg_database WHERE datname = 'nfc_encoding_test'"))).rowCount === 1;
+  assert.equal(await exists(), false, "précondition : aucune nfc_encoding_test");
+  const child = spawn(process.execPath, [RUNNER, "pg"], {
+    cwd: ROOT,
+    detached: true,
+    env: {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      SOMAFRIK_TEST_PG_URL: CLUSTER_URL,
+      SOMAFRIK_TEST_BASELINE_OUT: fs.mkdtempSync(path.join(os.tmpdir(), "mono-t0-sig-")),
+    },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  const exited = new Promise((resolve) => child.on("exit", (code, signal) => resolve({ code, signal })));
+  const deadline = Date.now() + 60_000;
+  while (!(await exists())) {
+    assert.ok(Date.now() < deadline, `nfc_encoding_test jamais créée : ${stderr}`);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  process.kill(-child.pid, "SIGTERM");
+  const { code } = await exited;
+  assert.notEqual(code, 0, "une exécution interrompue n'est jamais verte");
+  assert.equal(await exists(), false, `nfc_encoding_test supprimée après interruption : ${stderr}`);
+  const leftovers = await onCluster((client) =>
+    client.query("SELECT datname FROM pg_database WHERE datname LIKE 'somafrik_test_run_%'"),
+  );
+  assert.deepEqual(leftovers.rows, [], "aucune base de travail restante");
 });

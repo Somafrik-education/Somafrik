@@ -20,7 +20,9 @@
  *      DATABASE_URL vers la base de maintenance `postgres` du cluster VÉRIFIÉ
  *      (les tests du dépôt n'acceptent que `postgres` comme base source) ;
  *   6. l'exécuteur ne crée ni ne supprime que ses bases gérées :
- *      `somafrik_test_run_*` et `nfc_encoding_test`.
+ *      `somafrik_test_run_*` et `nfc_encoding_test` ; il refuse de créer une
+ *      base qui existe déjà (jamais de suppression préalable) et ne supprime
+ *      qu'une base créée par l'exécution courante et portant son marqueur.
  *
  * Ce module est pur (aucune connexion) : il est couvert par
  * scripts/backend-test-baseline.test.js.
@@ -137,6 +139,15 @@ function assertRunDatabaseName(name) {
   return name;
 }
 
+// Marqueur de propriété posé (COMMENT ON DATABASE) sur chaque base créée par
+// une exécution ; seule l'exécution qui porte ce marqueur peut la supprimer.
+const OWNERSHIP_PREFIX = "somafrik:test-run:";
+
+function ownershipMarker(runId) {
+  if (!/^[0-9]{1,10}_[0-9a-f]{12}$/.test(String(runId))) refuse(`Identifiant d'exécution invalide : « ${runId} ».`);
+  return `${OWNERSHIP_PREFIX}${runId}`;
+}
+
 function runDatabaseName(label, unique) {
   return assertRunDatabaseName(`${RUN_DATABASE_PREFIX}${label}_${unique}`.toLowerCase().replace(/[^a-z0-9_]/g, "_"));
 }
@@ -165,6 +176,7 @@ module.exports = {
   BaselineGuardError,
   MAINTENANCE_DATABASE,
   NFC_TEST_DATABASE,
+  OWNERSHIP_PREFIX,
   RUN_DATABASE_PREFIX,
   SENTINEL_COMMENT,
   SENTINEL_DATABASE,
@@ -173,6 +185,7 @@ module.exports = {
   assertRunDatabaseName,
   databaseUrl,
   isTestDatabaseName,
+  ownershipMarker,
   parseTestClusterUrl,
   runDatabaseName,
   sanitizeDatabaseEnv,
