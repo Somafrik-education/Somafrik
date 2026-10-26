@@ -3,7 +3,7 @@
 Base : `develop@e4fc2b1c8f0bdcdaf005cbe8e0299f34e1bd6d7e` (#994 à #997 intégrées). Branche : `fix/sec-jwt-01-rs256-migration`.
 Comptes fictifs, PostgreSQL local jetable, secrets générés à l'exécution du banc ; aucune clé, aucun secret, aucun jeton réel dans ce document ni dans le dépôt.
 
-**Statut : audit et reproduction terminés. Implémentation arrêtée à la frontière de déploiement (§6, gouvernance du mandat) : découpage soumis au CTO.**
+**Statut : audit validé par le CTO (option A+, découpage en trois PR). SEC-JWT-01a (durcissement HS256) implémenté : §10. SEC-JWT-01b et 01c non commencés.**
 
 ## 1. Inventaire des émetteurs et vérificateurs
 
@@ -152,3 +152,68 @@ Points à trancher par le CTO :
 - Secret public de développement si `NODE_ENV≠production` (environnement non protégé uniquement).
 - Clé NFC dérivée de `JWT_SECRET` lorsqu'aucune clé dédiée n'est définie : toute rotation de `JWT_SECRET` doit être coordonnée avec les cartes (hors périmètre de ce chantier).
 - Saturation du pool PostgreSQL (SEC-AUTH-05 §7.1) et revendications de rôle des routes sans `requirePermission` (SEC-TENANT-02 §6) : inchangées.
+
+## 10. SEC-JWT-01a — Durcissement HS256 (implémenté)
+
+Branche `fix/sec-jwt-01a-hs256-hardening`, base `develop@e4fc2b1c`. Aucune nouvelle clé, `JWT_SECRET` inchangé, NFC et Render non modifiés, RS256 non introduit.
+
+### 10.1 Changements (`backend/services/tokenService.js`, `backend/lib/authTokenPolicy.js`)
+
+| Règle | Portée | Détail |
+|---|---|---|
+| En-têtes en liste fermée | tous les jetons | seuls `alg` (HS256) et `typ` (JWT) ; `kid`, `jku`, `x5u`, `jwk`, `x5c`, `crit`, `cty` et tout autre paramètre → refus. Contrôles `alg` / `typ` existants inchangés (mêmes messages) |
+| `exp` et `iat` obligatoires | tous les jetons (accès, refresh, curseur) | entiers ≥ 0 ; tous les jetons émis par `sign()` les portaient déjà |
+| `iat` / `nbf` | tous les jetons | refus si dans le futur au-delà de la tolérance d'horloge **explicite de 60 s** ; `nbf` facultatif mais entier |
+| Durée de vie ≤ 900 s | jetons d'accès | vérification `exp − iat ≤ 900` ; émission : `JWT_ACCESS_TTL_SECONDS` plafonné à 900 s dans **tous** les environnements (auparavant 8 h hors production) |
+| `aud` | jetons d'accès | `somafrik-api`, imposé par le serveur à l'émission (une valeur fournie par l'appelant est écrasée), exigé à l'identique à la vérification |
+| Refresh tokens, curseurs | — | format inchangé (pas d'`aud`) : les refresh tokens historiques restent valides |
+| Secret de développement | — | repli public supprimé ; sans `JWT_SECRET` : secret aléatoire éphémère par processus hors production (avertissement) ; en production, aucune signature ni vérification et démarrage refusé (`assertProductionSecrets`, inchangé). Tests reproductibles et multi-instance : `JWT_SECRET` explicite (déjà le cas de tous les bancs et workflows) |
+
+### 10.2 Reproduction (base `e4fc2b1c`, banc final)
+
+`SEC_JWT_01_REPRO=1 node backend/lib/secJwt01TokenPolicy.http.pg.test.js` : **19 écarts** (les 17 du §4 et les 2 contrôles de compatibilité JWT01-17, où la base accepte un jeton d'accès sans `aud`).
+
+```
+DÉFAUT JWT01-05 kid inconnu (signature valide) : attendu 401, reçu 200
+DÉFAUT JWT01-06 kid arbitraire "../../../../etc/passwd" : attendu 401, reçu 200
+DÉFAUT JWT01-06 kid arbitraire "' OR 1=1 --" : attendu 401, reçu 200
+DÉFAUT JWT01-06 kid arbitraire "" : attendu 401, reçu 200
+DÉFAUT JWT01-06 kid arbitraire 42 : attendu 401, reçu 200
+DÉFAUT JWT01-06 kid arbitraire {"k":1} : attendu 401, reçu 200
+DÉFAUT JWT01-06 kid arbitraire "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx : attendu 401, reçu 200
+DÉFAUT JWT01-06 clé fournie par le jeton (jku) : attendu 401, reçu 200
+DÉFAUT JWT01-06 clé fournie par le jeton (x5u) : attendu 401, reçu 200
+DÉFAUT JWT01-06 clé fournie par le jeton (jwk) : attendu 401, reçu 200
+DÉFAUT JWT01-07 audience incorrecte : attendu 401, reçu 200
+DÉFAUT JWT01-07 liste d'audiences incorrecte : attendu 401, reçu 200
+DÉFAUT JWT01-09 exp absent : attendu 401, reçu 200
+DÉFAUT JWT01-09 exp non numérique : attendu 401, reçu 200
+DÉFAUT JWT01-09 durée de vie > 900 s : attendu 401, reçu 200
+DÉFAUT JWT01-10 nbf futur : attendu 401, reçu 200
+DÉFAUT JWT01-10 iat futur : attendu 401, reçu 200
+DÉFAUT JWT01-17 Web : jeton d'accès historique sans aud : attendu 401, reçu 200
+DÉFAUT JWT01-17 Mobile : jeton d'accès historique sans aud : attendu 401, reçu 200
+```
+
+Branche : **14/14** (JWT01-01 à 17). Tests unitaires `tokenService.secJwt01a.test.js` : **8/8** ; `tokenService.test.js` et `authTokenPolicy.test.js` inchangés et verts. Gate CI `verify:sec-jwt-01` (pr-gates, « Security baseline »).
+
+### 10.3 Compatibilité Web / Mobile (preuve demandée par le CTO)
+
+| Étape (banc PostgreSQL HTTP JWT01-17) | Résultat |
+|---|---|
+| Refresh token émis : en-tête `alg`/`typ` seul, aucun `aud` (format historique identique) | vérifié |
+| Jeton d'accès historique (sans `aud`) sur une route protégée | 401 |
+| `POST /auth/refresh` avec le refresh token historique | 200, nouveau jeton d'accès avec `aud` |
+| Requête rejouée (Web) | 200 |
+| Mobile : curseur de synchronisation obtenu avant le changement, jeton d'accès historique | 401 |
+| Mobile : refresh puis reprise de la synchronisation **avec le même curseur** | 200, curseur conservé (aucune resynchronisation complète) |
+
+Clients :
+- **Web** (`web/src/api/client.ts`) : sur 401, un refresh partagé puis rejeu ; couvert par `web/src/lib/apiClient.authRefresh.test.ts` et `web/src/api/client.jwtRefresh.test.ts`.
+- **Mobile** (`Mobile/src/services/httpClient.ts`, `httpRequest`) : sur 401, `refreshAccessTokenOnce` puis rejeu de la requête. La synchronisation L1 passe par `httpRequest` (`L1CacheRuntime` → `createL1Api(httpRequest)`) : le moteur ne voit un 401 — et ne purge sa partition hors ligne — que si le refresh lui-même échoue, comme avant. Un refresh token valide n'est pas touché par ce chantier : **aucune perte de données hors ligne**.
+
+Effet au déploiement : chaque client voit au plus un 401 transparent sur son jeton d'accès courant (≤ 15 min), renouvelé automatiquement.
+
+### 10.4 Résultats branche / base
+
+Comparaison complète branche / base en cours ; résultats à compléter avant ouverture de la PR Draft.
