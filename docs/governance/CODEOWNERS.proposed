@@ -4,3 +4,4 @@
 # Voir docs/governance/MERGE-AUTHORIZATION.md §6.
 *            @<login-personnel-cto>
 /.github/    @<login-personnel-cto>
+/scripts/governance/    @<login-personnel-cto>

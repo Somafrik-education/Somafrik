@@ -4,17 +4,20 @@ name: Merge authorization (R15)
 # Non bloquant tant que le Ruleset de la branche cible ne l'exige pas
 # (voir docs/governance/MERGE-AUTHORIZATION.md, §6).
 #
-# Sécurité :
-# - pull_request_target exécute ce fichier tel qu'il existe sur la branche cible :
-#   une PR ne peut pas modifier le contrôle qui la juge.
-# - Seul le script de la branche cible est extrait ; aucun code de la PR n'est
-#   extrait ni exécuté.
-# - pull_request_review exécute en revanche la version du workflow présente dans
-#   la PR (limite GitHub) : d'où l'exigence d'une approbation CTO sur le dernier
-#   push, qui couvre tout changement de ce fichier (docs §8).
+# Sécurité (vérifiée en recette, PR #1001 — docs §5 et §7) :
+# - Pour `pull_request` et `pull_request_review`, GitHub exécute la version de ce
+#   fichier présente dans la PR (merge ref). Une PR qui modifie ce fichier peut donc
+#   altérer le statut qu'elle reçoit : le statut n'est qu'une défense en profondeur.
+#   La barrière est l'approbation CTO du dernier push (Ruleset) qui couvre tout
+#   changement sous .github/.
+# - `pull_request_target` n'est pas utilisé : depuis le 08/12/2025, GitHub l'exécute
+#   depuis la branche par défaut (main), il ne se déclencherait donc jamais tant que
+#   ce fichier n'y est pas.
+# - Le YAML de la branche cible extrait le script de la branche cible, pas celui de la PR
+#   (une PR qui modifie ce YAML peut changer ce comportement : voir premier point).
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
     branches: [develop, main]
   pull_request_review:

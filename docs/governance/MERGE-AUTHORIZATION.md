@@ -89,9 +89,26 @@ CTO-GO-MERGE PR=#NNN HEAD=<SHA complet, 40 caractères> TARGET=develop
 ## 5. Contrôle automatisé : fonctionnement et garanties réelles
 
 **Déclencheurs :**
-- **`pull_request_target`** (ouverture, nouveau commit, passage Draft ↔ Ready, modification du titre ou de la cible). Le workflow et le script exécutés sont ceux de la **branche cible** : une PR ne peut pas modifier le contrôle qui la juge. Aucun code de la PR n'est extrait.
-- **`pull_request_review`** (review déposée, modifiée ou rejetée). Le script extrait est celui de la branche cible, mais le fichier YAML exécuté est celui de la PR (limite GitHub, voir §7).
+- **`pull_request`** (ouverture, nouveau commit, passage Draft ↔ Ready, modification du titre ou de la cible), sur les PR vers `develop` ou `main`.
+- **`pull_request_review`** (review déposée, modifiée ou rejetée).
+- Pour ces deux événements, **GitHub exécute la version du YAML présente dans la PR** (merge ref), constaté en recette (§5.1). Le YAML extrait le script de la **branche cible**, pas celui de la PR. Mais une PR qui modifie ce YAML peut modifier ce comportement : voir §7.
 - **`workflow_dispatch`** : réévaluation manuelle. Elle n'est disponible qu'une fois le workflow présent sur la branche par défaut (`main`).
+
+### 5.1 Recette des déclencheurs (PR #1001, 26/10/2026)
+
+PR de recette `recette/r15-head` → `recette/r15-base`, sans Ruleset. La branche de base porte un pas qui affiche `YAML=BASE`, la tête affiche `YAML=PR-HEAD`, et chaque exécution affiche le commit du script extrait.
+
+**Première version (`pull_request_target`, HEAD R15 `7d613aad`) :**
+
+| Événement | Exécution | Résultat |
+|---|---|---|
+| Ouverture, nouveau commit, titre, Draft ↔ Ready | **Aucune** (0 exécution `pull_request_target` dans tout le dépôt) | Le statut n'est jamais publié |
+| Review « Comment » (run 40341694684) | `YAML=PR-HEAD`, `workflow_sha` = merge ref `eed31249`, script extrait de la base `8da7a41e` | Statut `failure` publié sur le HEAD **courant**. Motifs : liste d'autorisateurs vide, Draft, cible hors périmètre, review du compte `Somafrik` refusée |
+| Review « Approve » par le compte auteur | Rejetée par GitHub : « Can not approve your own pull request » | — |
+
+**Cause.** Depuis le 08/12/2025, GitHub exécute `pull_request_target` depuis la **branche par défaut** (`main` ici), et non depuis la base de la PR ([changelog GitHub](https://github.blog/changelog/2025-11-07-actions-pull_request_target-and-environment-branch-protections-changes/)). De plus, les dépôts publics recevront une politique désactivant `pull_request_target` par défaut, appliquée à partir du 02/12/2026 ([changelog](https://github.blog/changelog/2026-09-17-workflow-execution-protections-in-github-actions-generally-available/)).
+
+**Correction.** Remplacement par `pull_request`. Le résultat de la seconde recette est consigné dans la PR #1000.
 
 **Décision.** Elle est refusée si l'un des points suivants n'est pas satisfait :
 - PR ouverte et non Draft ;
@@ -160,7 +177,9 @@ CTO-GO-MERGE PR=#NNN HEAD=<SHA complet, 40 caractères> TARGET=develop
 2. **Statut falsifiable depuis le dépôt.** Lier le contrôle à GitHub Actions écarte les statuts publiés avec un jeton personnel. En revanche, **tout workflow du dépôt** dispose de la même identité GitHub Actions. Exemple : un compte en écriture pousse sur une branche quelconque un workflow déclenché au push, qui publie `governance/merge-authorization = success` sur n'importe quel SHA.
 
    Le statut R15 est donc une **défense en profondeur**. La barrière non falsifiable est la **review GitHub d'un compte distinct**, avec approbation des propriétaires de code et du dernier push (§6.3–6.4).
-3. **`pull_request_review`.** Le YAML exécuté est celui de la PR : une PR qui modifie `merge-authorization.yml` peut altérer le statut publié lors d'une review. Ce risque est couvert par l'obligation d'approbation CTO sur le dernier push, et par les propriétaires de code sur `.github/`. Le CTO doit relire tout changement sous `.github/`.
+3. **YAML contrôlé par la PR.** Pour `pull_request` et `pull_request_review`, le YAML exécuté est celui de la PR (constaté en recette, §5.1). Une PR qui modifie `merge-authorization.yml` ou le script peut donc altérer le statut qu'elle reçoit. Aucun déclencheur GitHub ne permet aujourd'hui d'éviter cela sans passer par la branche par défaut.
+   - **Garde-fou :** l'obligation d'approbation CTO sur le dernier push, et les propriétaires de code sur `.github/` et `scripts/governance/`. Le CTO doit relire tout changement sous ces chemins.
+   - **Alternative plus robuste, à décider :** une GitHub App, ou un `pull_request_target` une fois le workflow sur `main`, avec une politique d'événements explicitement autorisée pour ce workflow.
 4. **CI terminée après l'approbation :** pas de réévaluation automatique (§5).
 5. **Branche à jour exigée (mode strict).** Chaque avancée de `develop` impose de mettre la PR à jour, ce qui produit un nouveau HEAD et exige une nouvelle autorisation. C'est voulu, mais coûteux en séquence.
 6. **Lectures non vérifiées.** Les acteurs de contournement et le journal d'audit n'ont pas pu être lus avec des droits administrateur depuis cet environnement.
