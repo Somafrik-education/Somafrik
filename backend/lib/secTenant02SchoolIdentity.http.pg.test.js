@@ -195,6 +195,13 @@ async function seed(pool) {
   users.dual = await insertUser("ST06-DUAL", schoolA.id, "TEACHER");
   await grant(users.dual, schoolA.id, "TEACHER");
   await grant(users.dual, schoolB.id, "SCHOOL_ADMIN");
+  // Multirôle légitime dans un seul établissement (B).
+  users.multiB = await insertUser("ST06-MULTI-B", schoolB.id, "SCHOOL_ADMIN");
+  await grant(users.multiB, schoolB.id, "SCHOOL_ADMIN");
+  await grant(users.multiB, schoolB.id, "TEACHER");
+  // Rattaché à A (users.role TEACHER), administration attribuée dans B (ex. contact provisionné par B).
+  users.elsewhere = await insertUser("ST06-ELSEWHERE", schoolA.id, "TEACHER");
+  await grant(users.elsewhere, schoolB.id, "SCHOOL_ADMIN");
   // Compte qui changera d'établissement après retrait de ses rôles.
   users.drifter = await insertUser("ST06-DRIFTER", schoolA.id, "SCHOOL_ADMIN");
   await grant(users.drifter, schoolA.id, "SCHOOL_ADMIN");
@@ -403,7 +410,57 @@ async function main() {
       check(refreshedClaims.role !== "Admin School", `TENANT2-08 refresh : libellé ${refreshedClaims.role}`);
       assertStatus(await adminRoute(dualRefresh.data.accessToken), 403, "TENANT2-08 refresh : route d'administration sur A");
     }
-    ok("TENANT2-08 multirôle : permissions de B jamais appliquées aux données de A");
+    // Parcours multirôles légitimes conservés.
+    const liveRoles = async (token) => (await request("/auth/effective-permissions", { token })).data?.roleKeys ?? [];
+    check(JSON.stringify(await liveRoles(dual.accessToken)) === JSON.stringify(["TEACHER"]), "TENANT2-08 multirôle : rôle de A conservé (TEACHER)");
+    assertStatus(await classes(dual.accessToken), 200, "TENANT2-08 multirôle : accès enseignant à A conservé");
+    if (dualRefresh.status === 200) {
+      check(JSON.stringify(await liveRoles(dualRefresh.data.accessToken)) === JSON.stringify(["TEACHER"]), "TENANT2-08 refresh : seules les permissions de A");
+      check(claims(dualRefresh.data.accessToken).schoolCode !== schoolB.school_code, "TENANT2-08 refresh : établissement de la session conservé");
+      assertStatus(await classes(dualRefresh.data.accessToken), 200, "TENANT2-08 refresh : accès enseignant à A conservé");
+    }
+    const multiB = await login("ST06-MULTI-B", schoolB.login_code);
+    check(
+      JSON.stringify([...(await liveRoles(multiB.accessToken))].sort()) === JSON.stringify(["SCHOOL_ADMIN", "TEACHER"]),
+      "TENANT2-08 multirôle même établissement : deux rôles conservés",
+    );
+    assertStatus(await adminRoute(multiB.accessToken), 200, "TENANT2-08 multirôle même établissement : administration");
+    const multiBRefresh = await refresh(multiB.refreshToken);
+    assertStatus(multiBRefresh, 200, "TENANT2-08 multirôle même établissement : refresh");
+    if (multiBRefresh.status === 200) assertStatus(await adminRoute(multiBRefresh.data.accessToken), 200, "TENANT2-08 multirôle même établissement : administration après refresh");
+    const elsewhere = await login("ST06-ELSEWHERE", schoolA.login_code);
+    assertStatus(await adminRoute(elsewhere.accessToken), 403, "TENANT2-08 administration attribuée dans B : aucune administration de A");
+    // users.role (TEACHER) est reconstitué dans user_roles pour A au démarrage : seul ce rôle
+    // s'applique dans A, jamais l'administration détenue dans B.
+    const elsewhereRoles = await liveRoles(elsewhere.accessToken);
+    check(JSON.stringify(elsewhereRoles) === JSON.stringify(["TEACHER"]), `TENANT2-08 rôle d'administration de B : seul le rôle de A s'applique (${JSON.stringify(elsewhereRoles)})`);
+    ok("TENANT2-08 multirôle : permissions de B jamais appliquées aux données de A ; parcours légitimes conservés");
+
+    // --- TENANT2-17 : la compatibilité « dépôt sans identifiant canonique » est inaccessible en PostgreSQL ---
+    // La projection de session lit user_school_code dans la même ligne schools que user_school_id
+    // (JOIN us.id = u.school_id) : un code canonique implique un identifiant canonique.
+    const projected = await repo.findActiveAccessSession(claims((await login("ST06-ADMIN-B", schoolB.login_code)).accessToken).sessionId);
+    check(
+      Boolean(projected?.user_school_id) && Boolean(projected.user_school_id) === Boolean(projected.user_school_code),
+      "TENANT2-17 projection : code et identifiant canoniques indissociables",
+    );
+    const orphanedCodes = await pool.query(
+      `SELECT count(*)::int AS n FROM sessions sess JOIN users u ON u.id = sess.user_id
+       LEFT JOIN schools us ON us.id = u.school_id AND us.deleted_at IS NULL
+       WHERE us.school_code IS NOT NULL AND u.school_id IS NULL`,
+    );
+    check(orphanedCodes.rows[0].n === 0, "TENANT2-17 aucune session à code canonique sans identifiant");
+    for (const userId of [users.adminA, users.adminB, users.dual, users.legacy]) {
+      const canonical = await repo.findUserCanonicalSchool(userId);
+      check(Boolean(canonical?.schoolId), "TENANT2-17 findUserCanonicalSchool PostgreSQL : identifiant toujours fourni");
+    }
+    // Forme exacte de l'exception : schoolCode valide + schoolId d'un autre établissement → refus en PostgreSQL.
+    const validCodeForeignId = forge((await login("ST06-ADMIN-B", schoolB.login_code)).accessToken, {
+      schoolCode: adminBClaims.schoolCode,
+      schoolId: schoolA.id,
+    });
+    assertStatus(await classes(validCodeForeignId), 401, "TENANT2-17 schoolCode valide + schoolId étranger (PostgreSQL)");
+    ok("TENANT2-17 exception du dépôt mémoire inaccessible en PostgreSQL");
 
     // --- TENANT2-09 : rôle retiré (SEC-AUTH-05 conservé) ---
     const adminB2 = await login("ST06-ADMIN-B2", schoolB.login_code);

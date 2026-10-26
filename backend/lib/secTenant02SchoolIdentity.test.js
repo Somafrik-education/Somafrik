@@ -182,3 +182,22 @@ test("SEC-TENANT-02 — Finance : rôles déjà bornés par le dépôt mandatair
   }
   assert.deepEqual(reads, [SCHOOL_A], "une seule lecture, bornée à l'établissement");
 });
+
+test("SEC-TENANT-02 — PostgreSQL : l'exception « sans identifiant canonique » est inaccessible", async () => {
+  // Projection PostgreSQL : le schoolId du jeton est toujours comparé, même avec un code valide.
+  for (const schoolCode of ["CD-2026-0001", "CD-IN-26-001"]) {
+    const repository = guardRepository({ schoolId: "", schoolCode: "CD-2026-0001" });
+    await assert.rejects(() => guard(admin({ schoolCode, schoolId: SCHOOL_B }), SESSION_A, repository), refused);
+    assert.equal(repository.canonicalReads, 0, "projection utilisée, jamais la lecture de repli");
+  }
+  // Projection sans identifiant (compte sans établissement) : aucun établissement canonique → refus.
+  await assert.rejects(
+    () =>
+      guard(admin({ schoolCode: "CD-2026-0001", schoolId: SCHOOL_A }), {
+        user_status: "active",
+        user_school_id: null,
+        user_school_code: "CD-2026-0001",
+      }),
+    refused,
+  );
+});

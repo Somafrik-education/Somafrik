@@ -22,7 +22,7 @@ Origine du multirôle inter-établissements : provisionnement de contacts (`clie
 
 ## 2. Reproduction (base `1f1c35c5`)
 
-`SEC_TENANT_02_REPRO=1 node backend/lib/secTenant02SchoolIdentity.http.pg.test.js` sur la base exacte : **20 écarts**.
+`SEC_TENANT_02_REPRO=1 node backend/lib/secTenant02SchoolIdentity.http.pg.test.js` sur la base exacte : **25 écarts** (banc final, 15 groupes de scénarios).
 
 ```
 DÉFAUT TENANT2-02 schoolCode A + schoolId B : classes de A servies
@@ -39,6 +39,11 @@ DÉFAUT TENANT2-08 activités de A servies via le rôle de B
 DÉFAUT TENANT2-08 activités de A avec le rôle de B : attendu 403, reçu 200
 DÉFAUT TENANT2-08 permissions effectives : rôle de B absent dans A
 DÉFAUT TENANT2-08 refresh : route d'administration sur A : attendu 403, reçu 200
+DÉFAUT TENANT2-08 multirôle : rôle de A conservé (TEACHER)
+DÉFAUT TENANT2-08 refresh : seules les permissions de A
+DÉFAUT TENANT2-08 administration attribuée dans B : aucune administration de A : attendu 403, reçu 200
+DÉFAUT TENANT2-08 rôle d'administration de B : seul le rôle de A s'applique (["SCHOOL_ADMIN","TEACHER"])
+DÉFAUT TENANT2-17 schoolCode valide + schoolId étranger (PostgreSQL) : attendu 401, reçu 200
 DÉFAUT TENANT2-10 Superadmin portant un schoolId d'établissement : attendu 401, reçu 403
 DÉFAUT TENANT2-11 Admin Pays portant un schoolId d'établissement : attendu 401, reçu 403
 DÉFAUT TENANT2-12 synchronisation, schoolCode A forgé : attendu 401, reçu 200
@@ -51,8 +56,8 @@ Deux familles :
 
 | Famille | Scénarios | Exploitable sans le secret JWT |
 |---|---|---|
-| **Multirôle inter-établissements** : un enseignant de A détenant `SCHOOL_ADMIN` dans B obtient les droits d'administration sur **les données de A** (routes d'administration, export complet de A, activités), y compris après refresh | TENANT2-08 | **Oui** : jeton légitime, parcours de connexion normal |
-| **Identité contradictoire acceptée** (`schoolCode` ≠ `schoolId`, établissement inconnu, `schoolId` sur un compte plateforme) | TENANT2-02/03/04/10/11/12/13/14 | Non : jeton signé avec le secret (forgé ou mal émis). Défense en profondeur |
+| **Multirôle inter-établissements** : un compte de A (enseignant) détenant `SCHOOL_ADMIN` dans B obtient les droits d'administration sur **les données de A** (routes d'administration, export complet de A, activités), y compris après refresh | TENANT2-08 (deux comptes : rôles explicites ; rôle de A issu de `users.role`) | **Oui** : jeton légitime, parcours de connexion normal |
+| **Identité contradictoire acceptée** (`schoolCode` ≠ `schoolId`, établissement inconnu, `schoolId` sur un compte plateforme) | TENANT2-02/03/04/10/11/12/13/14/17 | Non : jeton signé avec le secret (forgé ou mal émis). Défense en profondeur |
 
 Les autres scénarios étaient déjà conformes sur la base : signature invalide (05), session d'un autre établissement (06), refresh après changement d'établissement (07, SEC-TENANT-01), rôle retiré (09, SEC-AUTH-05), Superadmin et Admin Pays sans accès implicite (10/11), PostgreSQL indisponible (15), concurrence (16).
 
@@ -85,7 +90,69 @@ Les autres scénarios étaient déjà conformes sur la base : signature invalide
 
 ## 5. Résultats
 
-Comparaison complète branche / base en cours ; résultats à compléter avant ouverture de la PR Draft.
+### 5.1 Bancs SEC-TENANT-02
+
+- `backend/lib/secTenant02SchoolIdentity.http.pg.test.js` (PostgreSQL, HTTP réel) : **15/15** sur la branche ; base : 25 écarts (§2).
+- `backend/lib/secTenant02SchoolIdentity.test.js` : **10/10**.
+- Gate CI `verify:sec-tenant-02` (pr-gates, « Security baseline »).
+
+| Réf. | Résultat | Preuve |
+|---|---|---|
+| TENANT2-01 Concordants | PASS | admin B : classes et activités de B uniquement |
+| TENANT2-02 `schoolCode` A + `schoolId` B (et inverse) | PASS (base : **200**, données de A → 401) | |
+| TENANT2-03 / 04 Code ou ID inconnu | PASS (base : 404 / **200** → 401) | |
+| TENANT2-05 Signature invalide | PASS (déjà conforme) | charge modifiée, autre secret |
+| TENANT2-06 Session active, tenant incohérent | PASS (déjà conforme) | |
+| TENANT2-07 Refresh d'une identité incohérente | PASS (déjà conforme) | compte déplacé : refresh 401 ; aucun appareil push enregistré sur l'ancien établissement |
+| TENANT2-08 Multirôle deux établissements | PASS (base : **administration, export et activités de A via le rôle de B**, y compris après refresh) | voir §5.2 |
+| TENANT2-09 Rôle retiré | PASS (SEC-AUTH-05 conservé) | |
+| TENANT2-10 Superadmin | PASS (base : 403 → **401** pour un jeton portant un `schoolId`) | aucune donnée de A |
+| TENANT2-11 Admin Pays | PASS | établissement de son pays sur en-tête (contrat existant) 200 ; autre pays 403 ; sans en-tête aucune école ; `schoolId` porté → 401 |
+| TENANT2-12 Synchronisation Mobile | PASS (base : **200** avec `schoolCode` forgé → 401) | |
+| TENANT2-13 Export | PASS (base : **export de A** avec `schoolCode` forgé → 401) | |
+| TENANT2-14 Legacy (aucun `user_roles`) | PASS | concordant 200 ; forgé 401 |
+| TENANT2-15 PostgreSQL indisponible | PASS (déjà conforme) | aucune donnée, refresh refusé |
+| TENANT2-16 Concurrence | PASS | 6 requêtes A/B parallèles, aucune confusion |
+| TENANT2-17 Exception « dépôt sans identifiant canonique » | PASS (base : **200**) | voir §5.3 |
+
+### 5.2 Parcours multirôles (revue CTO)
+
+| Parcours | Base | Branche |
+|---|---|---|
+| Enseignant A + `SCHOOL_ADMIN` dans B, connecté à A : rôles effectifs dans A | `["SCHOOL_ADMIN","TEACHER"]` | `["TEACHER"]` |
+| … route d'administration / export / activités de A | 200 | 403 |
+| … accès enseignant à A (`GET /classes`) | 200 | 200 (conservé) |
+| … refresh : rôles effectifs / administration / accès enseignant | `SCHOOL_ADMIN` présent, administration 200 | `["TEACHER"]`, administration 403, accès enseignant 200 ; établissement de la session conservé |
+| … bascule vers B par en-tête | 403 | 403 |
+| Compte de A (`users.role` TEACHER) avec `SCHOOL_ADMIN` attribué dans B | administration de A 200 | `["TEACHER"]`, administration 403 |
+| Multirôle **dans un même établissement** (`SCHOOL_ADMIN` + `TEACHER` dans B) | deux rôles, administration 200 | deux rôles, administration 200, refresh 200 et administration 200 (inchangé) |
+| Synchronisation Mobile multi-établissements (`mobileSyncClasses` « dual-school », « accountant-dual ») | vert | vert (inchangé) |
+| Finance (`financeLiveRbac`, `verify:finance-rbac`, `verify:finance-management`) | vert | vert (dépôt mandataire, aucune lecture supplémentaire) |
+
+Note : au démarrage, le serveur reconstitue dans `user_roles` le rôle de `users.role` pour l'établissement du compte ; un compte rattaché à A garde donc ce rôle dans A.
+
+### 5.3 Exception du dépôt mémoire inaccessible en PostgreSQL (revue CTO)
+
+`tokenMatchesCanonicalSchool` n'accepte un `schoolId` sans le comparer que si l'établissement canonique **n'a pas d'identifiant**. En PostgreSQL, ce cas ne peut pas se produire :
+
+1. La garde utilise la projection de la requête de session (`findActiveAccessSession`) : `user_school_code` et `user_school_id` viennent de la **même ligne** (`LEFT JOIN schools us ON us.id = u.school_id`). Le code canonique n'existe que si l'identifiant existe ; sans identifiant, l'objet canonique vaut `null` → refus.
+2. Le repli `findUserCanonicalSchool` (PostgreSQL) renvoie `null` si `school_id` est absent (`JOIN schools`, contrôle `row.school_id`).
+3. Preuves exécutées :
+   - banc PostgreSQL TENANT2-17 : projection réelle avec identifiant et code indissociables ; aucune session à code canonique sans identifiant ; `findUserCanonicalSchool` fournit toujours l'identifiant ; jeton `schoolCode` **valide** + `schoolId` d'un autre établissement → **401** (base : 200) ;
+   - test unitaire : avec projection de session, le `schoolId` est toujours comparé, même avec un code valide, et la lecture de repli n'est jamais appelée ; projection sans identifiant → refus.
+
+L'exception ne concerne que le dépôt mémoire (développement), dont les comptes n'ont pas toujours d'identifiant d'établissement.
+
+### 5.4 Comparaison complète branche / base `1f1c35c5`
+
+| Ensemble | Branche | Base |
+|---|---|---|
+| Tests unitaires (`node --test`, 231 / 230 fichiers) | 2 échecs | mêmes 2 échecs préexistants (`demoAssignments.greenB`, `legacyBootMigrations.guard`) |
+| Scripts `verify:*` (32 : sec-auth-03/04/05, sec-tenant-01/02, auth-sessions, jwt-header, privacy-erasure, platform-personal-data-deny, functional-rbac, user-role-lifecycle, rbac-s1-4, rbac-admin-01, parent-linking, teacher-account-creation, clients-management, class-student-enrollment, finance-management, finance-rbac, planning-rbac-reconcile, pedagogy-management, presences-roster, platform-management, db-config, school-setup-lot4-red, d-revalidation, mobile-sync-l1 ×5, student-card-qr) + banc mémoire SEC-AUTH-04 | 33/33 | 32/33 (`verify:sec-tenant-02` absent de la base) |
+| Bancs PostgreSQL (120 fichiers `*.pg.test.js`) | 118/120 dans le passage complet ; le banc SEC-TENANT-02, modifié pendant ce passage (tests complémentaires de la revue CTO), relancé seul ensuite : 15/15 | `backofficeStateRemoval.pg.test.js` échoue aussi sur la base (préexistant) |
+| Job PostgreSQL `nfc-encoding-preprod` (rejoué en local) | 20/20 | — |
+
+Le code de production n'a pas changé depuis ce passage (commit `0a69695e`) : seuls le banc et les tests SEC-TENANT-02 et ce rapport ont évolué. Aucune assertion existante n'a été modifiée ; aucun banc existant réaligné.
 
 ## 6. Risques résiduels et constats hors périmètre
 
