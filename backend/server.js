@@ -7038,7 +7038,8 @@ async function issueRefreshedAccessToken(session, payload) {
   // dont l'absence d'historique user_roles est établie.
   let sessionRole = session.role;
   const { loadLiveRoleState } = require("./lib/liveRoleState");
-  const liveRoles = await loadLiveRoleState(repository, session.user_id);
+  // SEC-TENANT-02 : rôles de l'établissement de la session uniquement.
+  const liveRoles = await loadLiveRoleState(repository, session.user_id, { schoolId: session.school_id ?? "" });
   if (liveRoles.status === "active") {
     roleKeys = liveRoles.keys;
   } else if (liveRoles.status !== "legacy") {
@@ -7051,6 +7052,7 @@ async function issueRefreshedAccessToken(session, payload) {
   if (typeof repository.resolveEffectivePermissions === "function") {
     const live = await repository.resolveEffectivePermissions({
       sub: session.user_id,
+      schoolId: session.school_id ?? "",
       role: sessionRole,
       roleKeys,
       schoolCode: refreshedSchoolCode,
@@ -7110,7 +7112,28 @@ async function sendAuthenticatedResponse(req, res, response, action) {
       /* fail-closed: keep the login projection */
     }
   }
-  const principal = buildPrincipal(response, rolePermissionsMap);
+  let principal = buildPrincipal(response, rolePermissionsMap);
+  // SEC-TENANT-02 : compte rattaché à un établissement → seuls les rôles de cet
+  // établissement entrent dans le jeton (jamais ceux détenus ailleurs).
+  {
+    const { isPlatformScopePrincipal } = require("./lib/platformScopePrincipal");
+    if (
+      userId &&
+      principal.schoolId &&
+      !isPlatformScopePrincipal(principal) &&
+      typeof repository.listActiveUserRoleKeysForSchool === "function"
+    ) {
+      try {
+        const scoped = await repository.listActiveUserRoleKeysForSchool(userId, principal.schoolId);
+        if (Array.isArray(scoped)) {
+          response.user = { ...response.user, roleKeys: scoped };
+          principal = buildPrincipal(response, rolePermissionsMap);
+        }
+      } catch {
+        /* fail-closed : les permissions effectives ci-dessous restent relues par établissement */
+      }
+    }
+  }
   if (typeof repository.resolveEffectivePermissions === "function") {
     const live = await repository.resolveEffectivePermissions(principal);
     if (Array.isArray(live?.permissions)) {
@@ -7501,7 +7524,7 @@ async function assertBoundAccessSession(principal) {
   const { resolveBoundAccessSession } = require("./lib/accessSessionBinding");
   const { assertAccessSessionAccount } = require("./lib/accessSessionAccountGuard");
   const { sessionId, activeSession } = await resolveBoundAccessSession({ principal, repository });
-  await assertAccessSessionAccount({ principal, activeSession, repository, sessionId });
+  return assertAccessSessionAccount({ principal, activeSession, repository, sessionId });
 }
 
 function requireAuth(req, res, next) {
@@ -7530,7 +7553,12 @@ function requireAuth(req, res, next) {
     }
 
     // SEC-AUTH-04 : session obligatoire, active et appartenant au sujet du jeton.
-    await assertBoundAccessSession(req.principal);
+    // SEC-TENANT-02 : schoolCode et schoolId vérifiés contre l'établissement
+    // canonique ; seul l'identifiant canonique vérifié est conservé.
+    const verifiedSchool = await assertBoundAccessSession(req.principal);
+    if (verifiedSchool?.schoolId) {
+      req.principal = { ...req.principal, schoolId: String(verifiedSchool.schoolId) };
+    }
 
     const {
       isPlatformPersonalDataForbiddenHttp,

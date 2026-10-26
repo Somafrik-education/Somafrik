@@ -1,11 +1,7 @@
 "use strict";
 
 const { BusinessError } = require("../services/authService");
-const {
-  isPlatformScopePrincipal,
-  isSchoolRolePrincipal,
-  hasConcreteSchoolCode,
-} = require("./platformScopePrincipal");
+const { isPlatformScopePrincipal, hasConcreteSchoolCode } = require("./platformScopePrincipal");
 
 const ACTIVE_ACCOUNT_STATUS = "active";
 
@@ -18,15 +14,23 @@ function hasAccountProjection(activeSession) {
 }
 
 /**
- * Le schoolCode (ou schoolId) porté par le jeton doit désigner l'établissement
- * canonique actuel du compte (users.school_id, GP-003).
+ * SEC-TENANT-02 (F6) — l'identité établissement portée par le jeton doit
+ * désigner l'établissement canonique actuel du compte (users.school_id, GP-003).
+ * Chaque identifiant présent est vérifié : un schoolId concordant ne couvre plus
+ * un schoolCode d'un autre établissement, et inversement.
+ * Dépôt sans identifiant canonique (mémoire) : le schoolId n'est accepté que si
+ * le schoolCode, lui, est vérifié.
  */
 function tokenMatchesCanonicalSchool(principal, canonical) {
   const tokenCode = normalizeCode(principal?.schoolCode);
   const tokenSchoolId = String(principal?.schoolId ?? "").trim().toLowerCase();
   const canonicalId = String(canonical?.schoolId ?? "").trim().toLowerCase();
-  if (tokenSchoolId && canonicalId && tokenSchoolId === canonicalId) return true;
-  return [canonical?.schoolCode, canonical?.loginCode].map(normalizeCode).filter(Boolean).includes(tokenCode);
+  const codeGiven = hasConcreteSchoolCode(tokenCode);
+  const codeOk =
+    !codeGiven || [canonical?.schoolCode, canonical?.loginCode].map(normalizeCode).filter(Boolean).includes(tokenCode);
+  let idOk = true;
+  if (tokenSchoolId) idOk = canonicalId ? tokenSchoolId === canonicalId : codeGiven && codeOk;
+  return (codeGiven || Boolean(tokenSchoolId)) && codeOk && idOk;
 }
 
 async function rejectSession(repository, sessionId, reason, message) {
@@ -34,7 +38,12 @@ async function rejectSession(repository, sessionId, reason, message) {
     await repository.revokeSession(sessionId, reason);
   }
   const error = new BusinessError(401, message);
-  error.code = reason === "account_inactive" ? "SESSION_ACCOUNT_INACTIVE" : "SESSION_SCHOOL_ATTACHMENT_MISSING";
+  error.code =
+    reason === "account_inactive"
+      ? "SESSION_ACCOUNT_INACTIVE"
+      : reason === "school_identity_mismatch"
+        ? "SESSION_SCHOOL_IDENTITY_MISMATCH"
+        : "SESSION_SCHOOL_ATTACHMENT_MISSING";
   throw error;
 }
 
@@ -50,6 +59,10 @@ async function rejectSession(repository, sessionId, reason, message) {
  *
  * PostgreSQL : l'état du compte vient de la même requête que la session.
  * Dépôt sans projection de compte : rattachement relu via findUserCanonicalSchool.
+ *
+ * SEC-TENANT-02 : schoolCode et schoolId sont tous deux vérifiés ; renvoie
+ * l'établissement canonique vérifié (ou null), sans requête supplémentaire en
+ * PostgreSQL (projection de la requête de session).
  */
 async function assertAccessSessionAccount({ principal, activeSession, repository, sessionId }) {
   const projected = hasAccountProjection(activeSession);
@@ -57,9 +70,26 @@ async function assertAccessSessionAccount({ principal, activeSession, repository
     await rejectSession(repository, sessionId, "account_inactive", "Compte inactif. Session révoquée.");
   }
 
-  if (isPlatformScopePrincipal(principal) || !isSchoolRolePrincipal(principal)) return;
-  if (!hasConcreteSchoolCode(principal?.schoolCode)) return;
+  // SEC-TENANT-02 : un compte plateforme sans rattachement concret ne porte aucun
+  // identifiant d'établissement (aucun accès scolaire implicite).
+  if (isPlatformScopePrincipal(principal)) {
+    if (String(principal?.schoolId ?? "").trim() && !hasConcreteSchoolCode(principal?.schoolCode)) {
+      await rejectSession(
+        repository,
+        sessionId,
+        "school_identity_mismatch",
+        "Identité établissement incohérente. Session révoquée.",
+      );
+    }
+    return null;
+  }
+  // Aucun identifiant d'établissement : rôle scolaire → hydratation canonique
+  // (canonicalSchoolAttachment), compte sans affectation → aucune école.
+  const claimsSchool = hasConcreteSchoolCode(principal?.schoolCode) || Boolean(String(principal?.schoolId ?? "").trim());
+  if (!claimsSchool) return null;
 
+  // Tout compte non plateforme portant un établissement (rôle scolaire ou compte
+  // sans affectation) doit désigner son établissement canonique.
   let canonical = null;
   if (projected) {
     canonical = activeSession.user_school_id
@@ -81,6 +111,7 @@ async function assertAccessSessionAccount({ principal, activeSession, repository
       "Rattachement établissement modifié. Session révoquée.",
     );
   }
+  return canonical;
 }
 
 module.exports = {
