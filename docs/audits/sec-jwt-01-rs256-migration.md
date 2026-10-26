@@ -163,6 +163,7 @@ Branche `fix/sec-jwt-01a-hs256-hardening`, base `develop@e4fc2b1c`. Aucune nouve
 |---|---|---|
 | En-têtes en liste fermée | tous les jetons | seuls `alg` (HS256) et `typ` (JWT) ; `kid`, `jku`, `x5u`, `jwk`, `x5c`, `crit`, `cty` et tout autre paramètre → refus. Contrôles `alg` / `typ` existants inchangés (mêmes messages) |
 | `exp` et `iat` obligatoires | tous les jetons (accès, refresh, curseur) | entiers ≥ 0 ; tous les jetons émis par `sign()` les portaient déjà |
+| Expiration et fenêtre de validité (revue CTO) | tous les jetons | expiré dès `exp <= now` (auparavant `exp < now`), contrôlé en premier pour garder le contrat « expiré » des appelants (curseur Mobile → 409, réconciliation) ; puis refus de toute fenêtre vide `exp <= iat` |
 | `iat` / `nbf` | tous les jetons | refus si dans le futur au-delà de la tolérance d'horloge **explicite de 60 s** ; `nbf` facultatif mais entier |
 | Durée de vie ≤ 900 s | jetons d'accès | vérification `exp − iat ≤ 900` ; émission : `JWT_ACCESS_TTL_SECONDS` plafonné à 900 s dans **tous** les environnements (auparavant 8 h hors production) |
 | `aud` | jetons d'accès | `somafrik-api`, imposé par le serveur à l'émission (une valeur fournie par l'appelant est écrasée), exigé à l'identique à la vérification |
@@ -195,7 +196,7 @@ DÉFAUT JWT01-17 Web : jeton d'accès historique sans aud : attendu 401, reçu 2
 DÉFAUT JWT01-17 Mobile : jeton d'accès historique sans aud : attendu 401, reçu 200
 ```
 
-Branche : **14/14** (JWT01-01 à 17). Tests unitaires `tokenService.secJwt01a.test.js` : **8/8** ; `tokenService.test.js` et `authTokenPolicy.test.js` inchangés et verts. Gate CI `verify:sec-jwt-01` (pr-gates, « Security baseline »).
+Branche : **14/14** (JWT01-01 à 17). Tests unitaires `tokenService.secJwt01a.test.js` : **9/9** (dont les cas limites `exp <= iat` et `exp = now` pour les jetons d'accès, refresh tokens et curseurs Mobile) ; `tokenService.test.js` et `authTokenPolicy.test.js` inchangés et verts. Gate CI `verify:sec-jwt-01` (pr-gates, « Security baseline »).
 
 ### 10.3 Compatibilité Web / Mobile (preuve demandée par le CTO)
 
