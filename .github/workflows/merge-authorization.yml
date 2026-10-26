@@ -52,7 +52,7 @@ jobs:
           sparse-checkout: scripts/governance
           sparse-checkout-cone-mode: true
       - name: R15-RECETTE marqueur de révision
-        run: echo "R15-RECETTE YAML=BASE event=${{ github.event_name }} action=${{ github.event.action }} workflow_sha=${{ github.workflow_sha }} github_sha=${{ github.sha }} script_commit=$(git rev-parse HEAD) pr_head=${{ github.event.pull_request.head.sha }}"
+        run: echo "R15-RECETTE YAML=PR-HEAD event=${{ github.event_name }} action=${{ github.event.action }} workflow_sha=${{ github.workflow_sha }} github_sha=${{ github.sha }} script_commit=$(git rev-parse HEAD) pr_head=${{ github.event.pull_request.head.sha }}"
       - uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"
