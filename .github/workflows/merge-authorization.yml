@@ -19,7 +19,7 @@ name: Merge authorization (R15)
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
-    branches: [develop, main]
+    branches: [develop, main, recette/r15-base]  # RECETTE R15 uniquement
   pull_request_review:
     types: [submitted, edited, dismissed]
   workflow_dispatch:
@@ -51,6 +51,8 @@ jobs:
           persist-credentials: false
           sparse-checkout: scripts/governance
           sparse-checkout-cone-mode: true
+      - name: R15-RECETTE marqueur de révision
+        run: echo "R15-RECETTE YAML=BASE event=${{ github.event_name }} action=${{ github.event.action }} workflow_sha=${{ github.workflow_sha }} github_sha=${{ github.sha }} script_commit=$(git rev-parse HEAD) pr_head=${{ github.event.pull_request.head.sha }}"
       - uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"
