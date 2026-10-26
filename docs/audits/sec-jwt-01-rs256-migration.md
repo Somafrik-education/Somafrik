@@ -3,7 +3,7 @@
 Base : `develop@e4fc2b1c8f0bdcdaf005cbe8e0299f34e1bd6d7e` (#994 à #997 intégrées). Branche : `fix/sec-jwt-01-rs256-migration`.
 Comptes fictifs, PostgreSQL local jetable, secrets générés à l'exécution du banc ; aucune clé, aucun secret, aucun jeton réel dans ce document ni dans le dépôt.
 
-**Statut : audit validé par le CTO (option A+, découpage en trois PR). SEC-JWT-01a (durcissement HS256) implémenté : §10. SEC-JWT-01b et 01c non commencés.**
+**Statut : audit validé par le CTO (option A+, découpage en trois PR). SEC-JWT-01a (durcissement HS256) implémenté et comparé : §10. SEC-JWT-01b et 01c non commencés.**
 
 ## 1. Inventaire des émetteurs et vérificateurs
 
@@ -217,4 +217,19 @@ Effet au déploiement : chaque client voit au plus un 401 transparent sur son je
 
 ### 10.4 Résultats branche / base
 
-Comparaison complète branche / base en cours ; résultats à compléter avant ouverture de la PR Draft.
+HEAD de code `327eceea` (aucune modification de code après ce commit), base `develop@e4fc2b1c`.
+
+| Ensemble | Branche | Base | Lecture |
+|---|---|---|---|
+| Tests unitaires (`node --test`, backend) | 2 échecs | mêmes 2 échecs (`demoAssignments.greenB`, `legacyBootMigrations.guard`) | préexistants |
+| Scripts `verify:*` (33 : sec-jwt-01, sec-auth-03/04/05, sec-tenant-01/02, auth-sessions, jwt-header, privacy-erasure, platform-personal-data-deny, functional-rbac, user-role-lifecycle, rbac-s1-4, rbac-admin-01, parent-linking, teacher-account-creation, clients-management, class-student-enrollment, finance-management, finance-rbac, planning-rbac-reconcile, pedagogy-management, presences-roster, platform-management, db-config, school-setup-lot4-red, d-revalidation, mobile-sync-l1 ×5, student-card-qr) + banc mémoire SEC-AUTH-04 | **34/34** | 33/34 | seul `verify:sec-jwt-01` manque à la base (nouveau) |
+| Bancs PostgreSQL (121 fichiers `*.pg.test.js`, dont le banc JWT01) | **120/121** | `backofficeStateRemoval.pg.test.js` échoue aussi sur la base | préexistant |
+| Job PostgreSQL `nfc-encoding-preprod` (rejoué en local) | 19/20 au passage complet | — | voir ci-dessous |
+
+**`studentCardRollCall.http.pg.test.js` (job NFC)** : un échec au passage complet sur l'assertion `identityLeaks(s1.data)` (prénom « Bao » trouvé dans la réponse d'un scan). Relancé : **3/3 vert sur la branche**, vert sur la base. La réponse contient un reçu chiffré aléatoire en base64url ; la recherche de sous-chaînes courtes (« Bao ») peut y trouver une coïncidence aléatoire. Fragilité préexistante du test, sans lien avec SEC-JWT-01a (aucun code de reçu, de carte ou NFC modifié) ; non masquée, signalée pour un suivi séparé.
+
+**Confirmations demandées** :
+- curseur Mobile expiré → **409** (`CURSOR_EXPIRED`) : test existant `mobileSyncCursor.test.js` « TTL dépassé → expired » inchangé et vert, plus le cas limite `exp = now` (§10.2) ;
+- anciens refresh tokens utilisables : banc JWT01-17 (refresh 200 avec le refresh token historique, reprise de la synchronisation avec le même curseur) ; `verify:auth-sessions`, `verify:sec-auth-03/04/05` verts.
+
+**Aucune régression introduite par SEC-JWT-01a.**
