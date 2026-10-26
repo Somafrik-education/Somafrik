@@ -1,26 +1,11 @@
 {
-  "$comment": "MONO-T0 — exceptions de la baseline des tests backend. Chaque entrée est exécutée et vérifiée ; aucune n'est ignorée silencieusement. Voir docs/project/BACKEND-TEST-BASELINE.md.",
-  "expectedFailures": [
-    {
-      "file": "backend/lib/pedagogyStaffSyncRepository.test.js",
-      "mode": "unit",
-      "expectedOutput": "L'écriture globale BackOffice State a été supprimée",
-      "reason": "Teste le pipeline saveBackOfficeState → syncPedagogyStaffDomainFromBackOffice / syncNotesDomainFromBackOffice, retiré volontairement par LOT 8 (f5e3ad36, 2026-08-14). saveBackOfficeState lève désormais BACKOFFICE_STATE_WRITE_REMOVED (410). Rouge depuis LOT 8, exécuté par aucun workflow.",
-      "decision": "CTO : supprimer le fichier ou le réécrire en test de non-régression du retrait. L'échec reste figé tant qu'aucune décision n'est prise."
-    },
-    {
-      "file": "backend/lib/studentsSyncRepository.test.js",
-      "mode": "unit",
-      "expectedOutput": "L'écriture globale BackOffice State a été supprimée",
-      "reason": "Teste le pipeline saveBackOfficeState → syncStudentsDomainFromBackOffice → materializeBackOfficeStudent, retiré volontairement par LOT 8 (f5e3ad36, 2026-08-14). saveBackOfficeState lève désormais BACKOFFICE_STATE_WRITE_REMOVED (410). Rouge depuis LOT 8, exécuté par aucun workflow.",
-      "decision": "CTO : supprimer le fichier ou le réécrire en test de non-régression du retrait. L'échec reste figé tant qu'aucune décision n'est prise."
-    }
-  ],
+  "$comment": "MONO-T0 — exceptions de la baseline des tests backend. Chaque entrée est exécutée et vérifiée ; aucune n'est ignorée silencieusement. expectedFailures est vide : les deux anciens tests legacy ont été remplacés par des tests de non-régression du refus. Voir docs/project/BACKEND-TEST-BASELINE.md.",
+  "expectedFailures": [],
   "seededDatabase": [
     {
       "file": "backend/lib/backofficeStateRemoval.pg.test.js",
       "mode": "pg",
-      "reason": "Suppose une base déjà initialisée par le schéma Somafrik (table schools, établissement CD-2026-0001). Exécuté dans une base locale dédiée, amorcée par initializeRepository({ required: true }) avant le test."
+      "reason": "Suppose une base déjà initialisée par le schéma Somafrik (table schools, établissement CD-2026-0001). Exécuté dans une base de travail somafrik_test_run_seeded_* du cluster de test, amorcée par initializeRepository({ required: true }) puis supprimée."
     }
   ]
 }

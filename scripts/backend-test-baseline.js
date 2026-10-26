@@ -9,13 +9,13 @@
  *   node scripts/backend-test-baseline.js inventory
  *
  * - unit : tous les fichiers backend/**\/*.test.js hors *.pg.test.js.
- * - pg   : tous les fichiers backend/**\/*.pg.test.js, en série, sur une base
- *          PostgreSQL LOCALE (DATABASE_URL vers localhost uniquement).
+ * - pg   : tous les fichiers backend/**\/*.pg.test.js, en série, sur un cluster
+ *          PostgreSQL DÉDIÉ AUX TESTS (voir backend-test-baseline-guards.js) :
+ *          SOMAFRIK_TEST_PG_URL obligatoire, DATABASE_URL jamais lue.
  *
  * Les exceptions (scripts/backend-test-baseline.manifest.json) sont exécutées
- * et vérifiées, jamais ignorées : un échec attendu doit échouer avec la cause
- * documentée, sinon la baseline échoue. Les tests ignorés (skip) sont listés
- * avec leur fichier dans le résumé.
+ * et vérifiées, jamais ignorées. Avec --coverage, l'absence de rapport de
+ * couverture fait échouer la baseline.
  *
  * Sorties : backend-test-baseline/<mode>/ (résultats JSON, couverture, résumé
  * Markdown, recopié dans $GITHUB_STEP_SUMMARY quand il existe).
@@ -23,7 +23,9 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
+const guards = require("./backend-test-baseline-guards");
 
 const ROOT = path.resolve(__dirname, "..");
 const BACKEND = path.join(ROOT, "backend");
@@ -31,8 +33,6 @@ const REPORTER = path.join(__dirname, "backend-test-baseline-reporter.mjs");
 const MANIFEST_PATH = path.join(__dirname, "backend-test-baseline.manifest.json");
 const OUTPUT_ROOT = path.resolve(process.env.SOMAFRIK_TEST_BASELINE_OUT || path.join(ROOT, "backend-test-baseline"));
 const C8_VERSION = "10.1.3";
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
-const SEEDED_DB_PREFIX = "somafrik_test_baseline_seeded";
 
 function fail(message) {
   console.error(`✖ ${message}`);
@@ -82,19 +82,64 @@ function loadManifest() {
   return entries;
 }
 
-function assertLocalDatabaseUrl(value, name) {
-  if (!value) fail(`${name} est obligatoire pour le mode pg.`);
-  let url;
-  try {
-    url = new URL(value);
-  } catch {
-    fail(`${name} invalide.`);
-  }
-  if (!LOCAL_HOSTS.has(url.hostname)) {
-    fail(`${name} doit viser une base PostgreSQL locale et jetable (hôte reçu : ${url.hostname}).`);
-  }
-  return url;
+// ---------------------------------------------------------------------------
+// Cluster PostgreSQL de test
+// ---------------------------------------------------------------------------
+
+function pgClient(connectionString) {
+  const { Client } = require(require.resolve("pg", { paths: [BACKEND] }));
+  return new Client({ connectionString });
 }
+
+/** Lit l'état du cluster et refuse tout cluster qui n'est pas dédié aux tests. */
+async function verifyTestCluster(clusterUrl) {
+  const client = pgClient(clusterUrl.toString());
+  await client.connect();
+  try {
+    const current = await client.query("SELECT current_database() AS name");
+    const comment = await client.query(
+      "SELECT shobj_description(oid, 'pg_database') AS comment FROM pg_database WHERE datname = current_database()",
+    );
+    const databases = await client.query("SELECT datname FROM pg_database ORDER BY datname");
+    const version = await client.query("SHOW server_version");
+    guards.assertDedicatedTestCluster({
+      currentDatabase: current.rows[0]?.name,
+      sentinelComment: comment.rows[0]?.comment ?? null,
+      databases: databases.rows.map((row) => row.datname),
+    });
+    return { serverVersion: version.rows[0]?.server_version ?? "inconnue" };
+  } finally {
+    await client.end();
+  }
+}
+
+async function createRunDatabase(clusterUrl, name) {
+  guards.assertRunDatabaseName(name);
+  const client = pgClient(clusterUrl.toString());
+  await client.connect();
+  try {
+    await client.query(`DROP DATABASE IF EXISTS ${name}`);
+    await client.query(`CREATE DATABASE ${name}`);
+  } finally {
+    await client.end();
+  }
+  return guards.databaseUrl(clusterUrl, name);
+}
+
+async function dropRunDatabase(clusterUrl, name) {
+  guards.assertRunDatabaseName(name);
+  const client = pgClient(clusterUrl.toString());
+  await client.connect();
+  try {
+    await client.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+  } finally {
+    await client.end();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Exécution
+// ---------------------------------------------------------------------------
 
 function runNodeTest(files, { outDir, label, env, concurrency, coverage }) {
   const jsonFile = path.join(outDir, `${label}.results.json`);
@@ -149,58 +194,38 @@ function runExpectedFailure(entry, env) {
   };
 }
 
-function seededDatabaseUrl(baseUrl) {
-  const url = new URL(baseUrl.toString());
-  url.pathname = `/${SEEDED_DB_PREFIX}_${process.pid}`;
-  return url;
-}
-
-function runSeededDatabaseEntry(entry, { baseUrl, env, outDir, coverage }) {
-  const target = seededDatabaseUrl(baseUrl);
-  const databaseName = target.pathname.slice(1);
-  const adminUrl = new URL(baseUrl.toString());
-  adminUrl.pathname = "/postgres";
-  const admin = (sql) => {
-    const script = `
-      const { Client } = require(${JSON.stringify(require.resolve("pg", { paths: [BACKEND] }))});
-      const client = new Client({ connectionString: ${JSON.stringify(adminUrl.toString())} });
-      client.connect().then(() => client.query(${JSON.stringify(sql)})).then(() => client.end())
-        .catch((error) => { console.error(error.message); process.exit(1); });`;
-    const done = spawnSync(process.execPath, ["-e", script], { env, encoding: "utf8" });
-    if (done.status !== 0) fail(`PostgreSQL (${sql}) : ${done.stderr}`);
-  };
-  admin(`DROP DATABASE IF EXISTS ${databaseName}`);
-  admin(`CREATE DATABASE ${databaseName}`);
-  const seededEnv = { ...env, DATABASE_URL: target.toString(), SOMAFRIK_DB_REQUIRED: "true" };
-  delete seededEnv.SOMAFRIK_SKIP_DEMO_SEED;
-  const bootstrap = spawnSync(
-    process.execPath,
-    [
-      "-e",
-      `require("./db/repositoryFactory").initializeRepository({ required: true })
-        .then(({ repository }) => repository.close?.())
-        .catch((error) => { console.error(error.message); process.exit(1); });`,
-    ],
-    { cwd: BACKEND, env: seededEnv, encoding: "utf8", maxBuffer: 1024 * 1024 * 64 },
-  );
-  if (bootstrap.status !== 0) {
-    admin(`DROP DATABASE IF EXISTS ${databaseName}`);
-    fail(`Amorçage de la base dédiée impossible pour ${entry.file} : ${bootstrap.stderr}`);
+async function runSeededDatabaseEntry(entry, { clusterUrl, env, outDir }) {
+  const name = guards.runDatabaseName("seeded", `${process.pid}_${crypto.randomBytes(4).toString("hex")}`);
+  const url = await createRunDatabase(clusterUrl, name);
+  try {
+    const seededEnv = { ...env, DATABASE_URL: url, SOMAFRIK_DB_REQUIRED: "true" };
+    delete seededEnv.SOMAFRIK_SKIP_DEMO_SEED;
+    const bootstrap = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        `require("./db/repositoryFactory").initializeRepository({ required: true })
+          .then(({ repository }) => repository.close?.())
+          .catch((error) => { console.error(error.message); process.exit(1); });`,
+      ],
+      { cwd: BACKEND, env: seededEnv, encoding: "utf8", maxBuffer: 1024 * 1024 * 64 },
+    );
+    if (bootstrap.status !== 0) {
+      throw new Error(`Amorçage de la base de travail impossible pour ${entry.file} : ${bootstrap.stderr}`);
+    }
+    const label = `seeded-${path.basename(entry.file, ".js")}`;
+    return runNodeTest([entry.file], { outDir, label, env: seededEnv, concurrency: 1 }).results;
+  } finally {
+    await dropRunDatabase(clusterUrl, name);
   }
-  const label = `seeded-${path.basename(entry.file, ".js")}`;
-  const run = runNodeTest([entry.file], { outDir, label, env: seededEnv, concurrency: 1, coverage });
-  admin(`DROP DATABASE IF EXISTS ${databaseName}`);
-  return run.results;
 }
 
-function summarize(results) {
-  const counts = { pass: 0, fail: 0, skip: 0, todo: 0 };
-  for (const item of results) counts[item.status] = (counts[item.status] ?? 0) + 1;
-  return counts;
-}
+// ---------------------------------------------------------------------------
+// Couverture et résumé
+// ---------------------------------------------------------------------------
 
 function lcovTotals(file) {
-  if (!fs.existsSync(file)) return null;
+  if (!file || !fs.existsSync(file)) return null;
   let lf = 0;
   let lh = 0;
   let brf = 0;
@@ -213,6 +238,7 @@ function lcovTotals(file) {
     else if (line.startsWith("BRF:")) brf += Number(line.slice(4));
     else if (line.startsWith("BRH:")) brh += Number(line.slice(4));
   }
+  if (!files || !lf) return null;
   const pct = (hit, found) => (found ? `${((100 * hit) / found).toFixed(1)} %` : "n/a");
   return { files, lines: pct(lh, lf), branches: pct(brh, brf) };
 }
@@ -231,25 +257,31 @@ function c8Report(v8Dir, outDir) {
     "--exclude=**/node_modules/**",
   ];
   const bin = process.env.SOMAFRIK_C8_BIN;
-  const command = bin ? bin : "npx";
+  const command = bin || "npx";
   const fullArgs = bin ? args : ["--yes", `c8@${C8_VERSION}`, ...args];
   const done = spawnSync(command, fullArgs, { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" });
   if (done.status !== 0) {
-    console.error("⚠ Rapport de couverture c8 impossible : couverture PG non mesurée pour cette exécution.");
+    console.error(`✖ Générateur de couverture c8 en échec (code ${done.status ?? done.signal}).`);
     return null;
   }
   return path.join(reportDir, "lcov.info");
 }
 
-function writeSummary(outDir, mode, { results, expected, totalsFile, excluded, total }) {
+function summarize(results) {
+  const counts = { pass: 0, fail: 0, skip: 0, todo: 0 };
+  for (const item of results) counts[item.status] = (counts[item.status] ?? 0) + 1;
+  return counts;
+}
+
+function writeSummary(outDir, mode, { results, expected, coverage, coverageRequested, excluded, total, notes }) {
   const counts = summarize(results);
   const skipped = results.filter((item) => item.status === "skip");
   const failed = results.filter((item) => item.status === "fail" && item.nesting === 0);
-  const coverage = totalsFile ? lcovTotals(totalsFile) : null;
   const lines = [];
   lines.push(`## Baseline tests backend — ${mode}`);
   lines.push("");
   lines.push(`Fichiers de test du mode : ${total} (dont ${excluded.length} sous régime d'exception)`);
+  for (const note of notes) lines.push("", note);
   lines.push("");
   lines.push("| Catégorie | Nombre |");
   lines.push("|---|---|");
@@ -259,11 +291,10 @@ function writeSummary(outDir, mode, { results, expected, totalsFile, excluded, t
   lines.push(`| TODO | ${counts.todo} |`);
   lines.push(`| Échecs attendus vérifiés (manifeste) | ${expected.filter((item) => item.ok).length} / ${expected.length} |`);
   lines.push("");
-  lines.push(
-    coverage
-      ? `Couverture ${mode} : lignes ${coverage.lines}, branches ${coverage.branches} (${coverage.files} fichiers backend chargés).`
-      : `Couverture ${mode} : non mesurée pour cette exécution.`,
-  );
+  if (!coverageRequested) lines.push(`Couverture ${mode} : non demandée.`);
+  else if (coverage) {
+    lines.push(`Couverture ${mode} : lignes ${coverage.lines}, branches ${coverage.branches} (${coverage.files} fichiers backend chargés).`);
+  } else lines.push(`Couverture ${mode} : **ÉCHEC — demandée mais aucun rapport exploitable** (la baseline échoue).`);
   if (mode === "pg") {
     lines.push("");
     lines.push(
@@ -294,9 +325,11 @@ function writeSummary(outDir, mode, { results, expected, totalsFile, excluded, t
   return counts;
 }
 
-function main() {
+// ---------------------------------------------------------------------------
+
+async function main() {
   const [mode, ...flags] = process.argv.slice(2);
-  const coverage = flags.includes("--coverage");
+  const coverageRequested = flags.includes("--coverage");
   if (!["unit", "pg", "inventory"].includes(mode)) {
     fail("Usage : node scripts/backend-test-baseline.js <unit|pg|inventory> [--coverage]");
   }
@@ -310,63 +343,107 @@ function main() {
     return;
   }
 
-  const outDir = path.join(OUTPUT_ROOT, mode);
-  fs.rmSync(outDir, { recursive: true, force: true });
-  fs.mkdirSync(outDir, { recursive: true });
-
   const modeFiles = mode === "unit" ? unitFiles : pgFiles;
   const excluded = manifest.filter((entry) => entry.mode === mode);
   const excludedSet = new Set(excluded.map((entry) => entry.file));
   const mainFiles = modeFiles.filter((file) => !excludedSet.has(file));
-  const env = { ...process.env };
-  let baseUrl = null;
-  let v8Dir = null;
+  const notes = [];
+  let env = { ...process.env };
+  let clusterUrl = null;
+  let nfcDatabase = null;
 
   if (mode === "pg") {
-    baseUrl = assertLocalDatabaseUrl(env.DATABASE_URL, "DATABASE_URL");
-    if (!env.SOMAFRIK_NFC_TEST_DATABASE_URL) {
-      const nfc = new URL(baseUrl.toString());
-      nfc.pathname = "/nfc_encoding_test";
-      env.SOMAFRIK_NFC_TEST_DATABASE_URL = nfc.toString();
+    // Validation AVANT toute connexion : URL dédiée, loopback, base sentinelle.
+    try {
+      clusterUrl = guards.parseTestClusterUrl(process.env[guards.TEST_PG_URL_VAR]);
+    } catch (error) {
+      fail(error.message);
     }
-    assertLocalDatabaseUrl(env.SOMAFRIK_NFC_TEST_DATABASE_URL, "SOMAFRIK_NFC_TEST_DATABASE_URL");
-    if (coverage) {
-      v8Dir = path.join(outDir, "v8");
-      fs.mkdirSync(v8Dir, { recursive: true });
-      env.NODE_V8_COVERAGE = v8Dir;
+    const sanitized = guards.sanitizeDatabaseEnv(process.env);
+    env = sanitized.env;
+    if (sanitized.removed.length) {
+      notes.push(`Variables de base retirées de l'environnement des tests : ${sanitized.removed.map((key) => `\`${key}\``).join(", ")}.`);
     }
+    try {
+      const { serverVersion } = await verifyTestCluster(clusterUrl);
+      notes.push(`Cluster de test vérifié (base sentinelle, commentaire, bases toutes de test) — PostgreSQL ${serverVersion}.`);
+    } catch (error) {
+      fail(error instanceof guards.BaselineGuardError ? error.message : `Cluster de test injoignable : ${error.message}`);
+    }
+    // Base source des tests : maintenance `postgres` du cluster vérifié. Les tests
+    // du dépôt créent leurs propres bases à partir de celle-ci et certains
+    // n'acceptent pas d'autre base source (gardes ADMIN-*).
+    env.DATABASE_URL = guards.databaseUrl(clusterUrl, guards.MAINTENANCE_DATABASE);
+    // Base exigée par la fixture NFC : recréée à neuf, supprimée à la fin.
+    nfcDatabase = guards.NFC_TEST_DATABASE;
+    env.SOMAFRIK_NFC_TEST_DATABASE_URL = await createRunDatabase(clusterUrl, nfcDatabase);
+    notes.push(
+      `Base source des tests : \`${guards.MAINTENANCE_DATABASE}\` du cluster vérifié ; base NFC \`${guards.NFC_TEST_DATABASE}\` recréée pour l'exécution.`,
+    );
   }
 
-  const run = runNodeTest(mainFiles, {
-    outDir,
-    label: "main",
-    env,
-    concurrency: mode === "pg" ? 1 : undefined,
-    coverage: mode === "unit" && coverage ? "node" : undefined,
-  });
-  if (run.signal) fail(`node --test interrompu par le signal ${run.signal}.`);
-  let results = run.results;
+  const outDir = path.join(OUTPUT_ROOT, mode);
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(outDir, { recursive: true });
+  let v8Dir = null;
+  if (mode === "pg" && coverageRequested) {
+    v8Dir = path.join(outDir, "v8");
+    fs.mkdirSync(v8Dir, { recursive: true });
+    env.NODE_V8_COVERAGE = v8Dir;
+  }
 
+  let results = [];
   const expected = [];
-  for (const entry of excluded) {
-    if (entry.kind === "expected-failure") expected.push(runExpectedFailure(entry, env));
-    if (entry.kind === "seeded-database") {
-      results = results.concat(runSeededDatabaseEntry(entry, { baseUrl, env, outDir, coverage: undefined }));
+  let mainStatus = 0;
+  try {
+    const run = runNodeTest(mainFiles, {
+      outDir,
+      label: "main",
+      env,
+      concurrency: mode === "pg" ? 1 : undefined,
+      coverage: mode === "unit" && coverageRequested ? "node" : undefined,
+    });
+    if (run.signal) throw new Error(`node --test interrompu par le signal ${run.signal}.`);
+    mainStatus = run.status;
+    results = run.results;
+    for (const entry of excluded) {
+      if (entry.kind === "expected-failure") expected.push(runExpectedFailure(entry, env));
+      if (entry.kind === "seeded-database") {
+        results = results.concat(await runSeededDatabaseEntry(entry, { clusterUrl, env, outDir }));
+      }
     }
+  } finally {
+    if (nfcDatabase) await dropRunDatabase(clusterUrl, nfcDatabase);
   }
 
-  let totalsFile = null;
-  if (coverage) {
-    totalsFile = mode === "unit" ? path.join(outDir, "coverage-lcov.info") : c8Report(v8Dir, outDir);
+  let coverage = null;
+  if (coverageRequested) {
+    const lcov = mode === "unit" ? path.join(outDir, "coverage-lcov.info") : c8Report(v8Dir, outDir);
+    coverage = lcovTotals(lcov);
   }
-  const counts = writeSummary(outDir, mode, { results, expected, totalsFile, excluded, total: modeFiles.length });
+  const counts = writeSummary(outDir, mode, {
+    results,
+    expected,
+    coverage,
+    coverageRequested,
+    excluded,
+    total: modeFiles.length,
+    notes,
+  });
 
-  const expectedBroken = expected.filter((item) => !item.ok);
-  if (!results.length) fail("Aucun résultat de test collecté.");
-  if (counts.fail > 0 || expectedBroken.length > 0 || (run.status !== 0 && counts.fail === 0)) {
-    fail(`Baseline ${mode} en échec : ${counts.fail} test(s) FAIL, ${expectedBroken.length} échec(s) attendu(s) non conforme(s).`);
-  }
+  const problems = [];
+  if (!results.length) problems.push("aucun résultat de test collecté");
+  if (counts.fail > 0) problems.push(`${counts.fail} test(s) FAIL`);
+  const brokenExpectations = expected.filter((item) => !item.ok).length;
+  if (brokenExpectations) problems.push(`${brokenExpectations} échec(s) attendu(s) non conforme(s)`);
+  if (mainStatus !== 0 && counts.fail === 0) problems.push(`node --test a terminé avec le code ${mainStatus}`);
+  if (coverageRequested && !coverage) problems.push("couverture demandée mais non produite");
+  if (problems.length) fail(`Baseline ${mode} en échec : ${problems.join(" ; ")}.`);
   console.log(`✔ Baseline ${mode} verte.`);
 }
 
-main();
+module.exports = { createRunDatabase, dropRunDatabase, verifyTestCluster, lcovTotals };
+
+if (require.main === module) {
+  main().catch((error) => fail(error?.stack || String(error)));
+}
