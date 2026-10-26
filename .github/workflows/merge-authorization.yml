@@ -54,7 +54,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"
+      - name: Refus explicite si le script est absent de la branche cible
+        # Cas d'amorçage (la branche cible ne porte pas encore R15) : fail-closed lisible.
+        if: hashFiles('scripts/governance/verify-merge-authorization.mjs') == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          head_sha="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .head.sha)"
+          gh api -X POST "repos/$REPO/statuses/$head_sha" \
+            -f state=failure \
+            -f context=governance/merge-authorization \
+            -f description="Refusé : script de gouvernance absent de la branche cible (fail-closed)."
+          echo "Refusé : scripts/governance absent de la branche cible ; statut failure publié sur $head_sha." | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Évaluer l'autorisation et publier le statut
+        if: hashFiles('scripts/governance/verify-merge-authorization.mjs') != ''
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
