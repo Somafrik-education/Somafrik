@@ -1,7 +1,7 @@
 # Baseline des tests backend (MONO-T0)
 
 **Statut :** DRAFT / HOLD — préalable à toute refactorisation des monolithes (MONO-AUDIT-01).
-**Base :** `develop@12eb98fa9c653484c9cc156ad2a429a4fe205dd7`.
+**Base :** `develop@bd881c9a8967196d7d8ef82cf576d240bbe723cc` (après fusion de #1007 ; rebasé le 2026-10-27, diff de la PR inchangé). Base d'origine : `12eb98fa`.
 
 Ce document décrit comment exécuter **tous** les tests backend `node:test`, comment la couverture est mesurée, et quels tests relèvent d'un régime d'exception (avec la raison et la condition pour les traiter).
 
@@ -93,20 +93,24 @@ Tests négatifs reproductibles : `scripts/backend-test-baseline.test.js` (21 tes
 
 Preuve de mutation : en réintroduisant temporairement une écriture legacy dans `saveBackOfficeState` (préchargement hors dépôt), 3 des 4 tests de chacun des deux fichiers échouent (le 4ᵉ porte sur la lecture ou la réponse HTTP).
 
-**Couverture des anciens tests (analyse)** : dans les deux anciens fichiers, `saveBackOfficeState` était le **premier** appel de `run()` ; depuis LOT 8 (2026-08-14) ils échouaient avant toute autre assertion. Aucune couverture *exécutée* n'est donc perdue. En revanche, une partie de leurs **intentions** reste pertinente et n'est reprise par aucun test comportemental :
+**Couverture des anciens tests (analyse, corrigée le 2026-10-27 par mesure de couverture)** : dans les deux anciens fichiers, `saveBackOfficeState` était le **premier** appel de `run()` ; depuis LOT 8 (2026-08-14) ils échouaient avant toute autre assertion. Aucune couverture *exécutée* n'est donc perdue.
 
-| Intention de l'ancien test | Fonction | Encore utilisée en production ? | Couverte ailleurs ? |
-|---|---|---|---|
-| Synchronisation élèves / personnel / notes depuis le snapshot | `sync*DomainFromBackOffice` | Non (aucun appelant produit) | Sans objet — remplacé par le test de refus |
-| Élève introuvable dans un autre établissement pour une note | `resolveStudentForGrade` | Oui, via `upsertGrade` (`server.js`, `pedagogyService`, `pedagogyPgStore`) | **Non** (contrôles structurels sur le texte source seulement) |
-| Enseignant refusé hors de ses classes / matières / établissement | `teacherCanAccessStudentClass`, `teacherCanAccessEvaluation` | Oui, via `upsertGrade` | **Non** (idem) |
-| Rattachement d'un compte enseignant sans détournement d'un autre utilisateur | `ensurePgUserForBackOfficeTeacher` | Oui, via `materializeBackOfficeTeacher` (← `upsertEvaluationFromLegacy`) | **Non** |
+La première version de cette analyse (2026-10-26) affirmait que les contrôles d'écriture des notes n'étaient couverts par aucun test comportemental. **C'était inexact.** Mesure de couverture PostgreSQL de la baseline (lignes exécutées) et lecture des assertions :
 
-Ces lacunes sont **préexistantes** (pas causées par #1006). Recommandation : les reprendre dans la matrice de caractérisation RBAC / tenant sur PostgreSQL (lot MONO-T2), hors #1006.
+| Intention de l'ancien test | Fonction | Atteignable en production ? | Couverture mesurée (baseline PG) | Refus vérifiés ailleurs |
+|---|---|---|---|---|
+| Synchronisation élèves / personnel / notes depuis le snapshot | `sync*DomainFromBackOffice` | Non (aucun appelant) | — | Sans objet : remplacé par le test de refus |
+| Enseignant refusé hors de son affectation | `upsertGrade` → `teacherCanAccessStudentClass`, `teacherCanAccessEvaluation` | Oui (`pedagogyService.upsertGrade` ← `server.js`, `pedagogyPgStore.upsertSchoolGrade`) | `upsertGrade` 78 %, `teacherCanAccessStudentClass` 92 %, `teacherCanAccessEvaluation` 64 % | **Oui** — `backend/lib/pedagogyRepository.pg.test.js` : 403 pour affectation d'une autre année, sans affectation, affectation inactive, permission création seule, principal sans `sub` |
+| Évaluation d'un **autre établissement** refusée à l'enseignant | `teacherCanAccessEvaluation` (porte `evaluation_school`) | Oui | branche de refus **non exécutée** | **Non — lacune réelle** |
+| Évaluation sans classe ou matière refusée | `teacherCanAccessEvaluation` (porte `evaluation_subject`) | Oui | branche de refus **non exécutée** | **Non — lacune réelle** |
+| Élève BackOffice d'un autre établissement ignoré pour une note | `resolveStudentForGrade` (branche `backOfficeStudent`) | **Non** : dépend de `getBackOfficeState()`, qui renvoie `null` depuis LOT 8 | branche non exécutée | Sans objet — code mort |
+| Rattachement d'un compte enseignant BackOffice sans détournement | `ensurePgUserForBackOfficeTeacher` ← `materializeBackOfficeTeacher` | **Non** : même dépendance à `getBackOfficeState()` | 1 % | Sans objet — code mort |
+
+Lacunes réelles (préexistantes, non causées par #1006) : refus d'une évaluation d'un autre établissement et refus d'une évaluation sans classe/matière dans `teacherCanAccessEvaluation`. Recommandation : les ajouter à la matrice de caractérisation RBAC / tenant PostgreSQL (MONO-T2). Les branches BackOffice inatteignables sont des candidates à suppression lors du découpage de `postgresRepository.js`, après preuve de leur inaccessibilité.
 
 Test PostgreSQL complémentaire, déjà signalé comme préexistant dans #997/#998 : `backend/lib/backofficeStateRemoval.pg.test.js` suppose une base déjà initialisée (table `schools`, établissement `CD-2026-0001`). Déclaré « base amorcée » ; fichier non modifié.
 
-## 6. Résultats de référence (exécution locale, 2026-10-26)
+## 6. Résultats de référence (exécution locale, 2026-10-26 ; confirmés à l'identique le 2026-10-27 sur le HEAD rebasé)
 
 Environnement : Node 22.22.0, PostgreSQL 16.15 en cluster jetable configuré comme la CI (sentinelle + commentaire), contenant déjà les bases d'une exécution précédente, avec `DATABASE_URL` et `SOMAFRIK_USERS_GP003_IT_DATABASE` parasites (retirées par l'exécuteur), Chromium fourni. Ces chiffres ne remplacent pas l'exécution GitHub Actions.
 
@@ -128,7 +132,7 @@ Les 73 tests PostgreSQL ignorés lors de l'audit étaient les suites NFC (`stude
 - La couverture PostgreSQL utilise `npx --yes c8@10.1.3` (même convention que `npx --yes tsx` dans `package.json`) ; aucune dépendance n'est ajoutée aux lockfiles. Si `c8` échoue, la baseline échoue.
 - Les scripts `verify:*` existants qui créent leurs propres bases ne passent pas par ces garde-fous ; ils ne sont pas modifiés par MONO-T0.
 - **Instabilité préexistante : `backend/lib/secAuth04SessionBinding.http.pg.test.js`** (SEC-AUTH-04, #995) — **non modifié par #1006**.
-  - Symptôme : les 21 contrôles passent, puis le processus plante au nettoyage (`terminating connection due to administrator command`, SQLSTATE 57P01). Reproduit en isolation sur le fichier inchangé de `develop` : 2 échecs sur 8 exécutions isolées (et 1 sur 4 exécutions complètes de la baseline).
+  - Symptôme : les 21 contrôles passent, puis le processus plante au nettoyage (`terminating connection due to administrator command`, SQLSTATE 57P01). Reproduit sur le fichier inchangé de `develop` : 2 échecs sur 8 exécutions isolées et 1 sur 4 exécutions complètes de la baseline (2026-10-26) ; 1 sur 12 exécutions isolées et 1 dans `npm run verify:sec-auth-04` (2026-10-27, HEAD rebasé). Soit 4 échecs sur 21 exécutions observées, **toujours après 21 contrôles sur 21 réussis** : jamais sur une assertion de sécurité. Le même script est exécuté par « Core tests » (Security baseline) : toute PR peut donc voir Core tests rouge de façon intermittente, indépendamment de son contenu.
   - Cause (tracée par instrumentation hors dépôt des pools `pg`) : le pool de `PostgresRepository` (`backend/db/postgresRepository.js:114`, 10 connexions inactives) est fermé par `repo.close()` → `pool.end()`, qui rend la main avant la fin des sessions serveur ; `dropDisposableDatabase` exécute ensuite `DROP DATABASE … WITH (FORCE)`, qui termine ces sessions ; le message 57P01 est relayé en événement `error` sur un pool **sans écouteur** (`listeners=0`) → exception non capturée.
   - Correctif proposé (test uniquement, 3 lignes, mandat séparé) : utiliser l'outil existant `backend/lib/pgPoolGuard.js`, déjà employé par d'autres tests pour ce cas — `guardPgPool(repo.pool)` et `const pool = guardPgPool(new Pool(...))`. Validé sur une copie temporaire non suivie : 0 échec sur 15 exécutions.
   - **Constat produit, hors périmètre** : le pool de production `PostgresRepository` n'a pas d'écouteur `error` et `server.js` n'a pas de gestionnaire `uncaughtException`. Une session inactive terminée côté serveur (redémarrage, bascule, terminaison administrative) émettrait la même erreur et ferait vraisemblablement tomber le processus API. À traiter par un mandat dédié.
