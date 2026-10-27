@@ -1,0 +1,141 @@
+name: Backend test baseline (MONO-T0)
+
+# Exécute la TOTALITÉ des tests backend node:test (unitaires puis PostgreSQL),
+# avec mesure de couverture séparée. Les exceptions sont déclarées dans
+# scripts/backend-test-baseline.manifest.json et vérifiées, jamais ignorées.
+# Documentation : docs/project/BACKEND-TEST-BASELINE.md
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "backend/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/backend-test-baseline*"
+      - ".github/workflows/backend-test-baseline.yml"
+  schedule:
+    - cron: "45 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-test-baseline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22.12.0"
+
+jobs:
+  unit:
+    name: Backend unit tests + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          npm ci
+          for attempt in 1 2 3; do
+            if npm ci --prefix backend; then break; fi
+            if [ "$attempt" -eq 3 ]; then echo "npm ci backend failed after 3 attempts"; exit 1; fi
+            echo "Retrying backend install (Puppeteer Chrome archive)"
+            rm -rf "$HOME/.cache/puppeteer/chrome"
+          done
+      - name: Baseline guard tests (no database)
+        run: node --test scripts/backend-test-baseline.test.js
+      - name: Run backend unit baseline
+        run: node scripts/backend-test-baseline.js unit --coverage
+      - name: Upload unit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-baseline-unit
+          path: |
+            backend-test-baseline/unit/*.json
+            backend-test-baseline/unit/*.md
+            backend-test-baseline/unit/coverage-lcov.info
+          if-no-files-found: warn
+          retention-days: 14
+
+  pg:
+    name: Backend PostgreSQL tests + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          # Base sentinelle exigée par scripts/backend-test-baseline-guards.js.
+          POSTGRES_DB: somafrik_disposable_test_cluster
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      # Cluster éphémère du job, dédié aux tests. DATABASE_URL n'est jamais lue par
+      # l'exécuteur : il crée et supprime ses propres bases somafrik_test_run_*.
+      SOMAFRIK_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/somafrik_disposable_test_cluster
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          npm ci
+          for attempt in 1 2 3; do
+            if npm ci --prefix backend; then break; fi
+            if [ "$attempt" -eq 3 ]; then echo "npm ci backend failed after 3 attempts"; exit 1; fi
+            echo "Retrying backend install (Puppeteer Chrome archive)"
+            rm -rf "$HOME/.cache/puppeteer/chrome"
+          done
+      - name: Declare the job cluster disposable (sentinel comment)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d somafrik_disposable_test_cluster -v ON_ERROR_STOP=1 \
+            -c "COMMENT ON DATABASE somafrik_disposable_test_cluster IS 'somafrik:disposable-test-cluster'"
+          psql -h localhost -U postgres -d somafrik_disposable_test_cluster -Atc "SHOW server_version"
+      - name: Baseline guard tests (real cluster)
+        run: node --test scripts/backend-test-baseline.test.js
+      - name: Run backend PostgreSQL baseline
+        run: node scripts/backend-test-baseline.js pg --coverage
+      - name: Upload PostgreSQL results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-baseline-pg
+          path: |
+            backend-test-baseline/pg/*.json
+            backend-test-baseline/pg/*.md
+            backend-test-baseline/pg/coverage/lcov.info
+            backend-test-baseline/pg/coverage/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14
