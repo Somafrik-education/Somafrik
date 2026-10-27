@@ -15,7 +15,7 @@ Mobile/android/
 Mobile/ios/
 
 # MONO-T0 — sorties locales de la baseline des tests backend
-backend-test-baseline/
+/backend-test-baseline/
 
 # Environment
 .env

@@ -29,6 +29,7 @@ const ROOT = path.resolve(__dirname, "..");
 const RUNNER = path.join(__dirname, "backend-test-baseline.js");
 const SENTINEL_URL = `postgres://postgres:postgres@127.0.0.1:5432/${guards.SENTINEL_DATABASE}`;
 const CLUSTER_URL = process.env[guards.TEST_PG_URL_VAR];
+const FIXTURE = "scripts/fixtures/backend-test-baseline/interruptible.fixture.js";
 
 function refusedWith(pattern) {
   return (error) => {
@@ -233,6 +234,30 @@ test("Exécuteur pg : cluster injoignable = échec (jamais de repli)", () => {
   assert.match(result.stderr, /Cluster de test injoignable/);
 });
 
+test("Exécuteur : fichiers factices refusés dans GitHub Actions et hors du dossier de fixtures", () => {
+  const ci = runRunner(["unit"], { GITHUB_ACTIONS: "true", SOMAFRIK_TEST_BASELINE_FIXTURE_FILES: FIXTURE });
+  assert.equal(ci.status, 1);
+  assert.match(ci.stderr, /refusée dans GitHub Actions/);
+  for (const file of [
+    "backend/lib/pgPoolGuard.test.js",
+    "scripts/fixtures/backend-test-baseline/../../backend-test-baseline.test.js",
+    "scripts/fixtures/backend-test-baseline/absent.fixture.js",
+    " , ",
+  ]) {
+    const result = runRunner(["unit"], { SOMAFRIK_TEST_BASELINE_FIXTURE_FILES: file });
+    assert.equal(result.status, 1, file);
+    assert.match(result.stderr, /SOMAFRIK_TEST_BASELINE_FIXTURE_FILES/, file);
+  }
+});
+
+test("Exécuteur : une exécution sur fichiers factices n'est jamais verte, même si tout passe", () => {
+  const result = runRunner(["unit"], { SOMAFRIK_TEST_BASELINE_FIXTURE_FILES: FIXTURE });
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /\| PASS \| 1 \|/);
+  assert.match(result.stderr, /jamais une baseline/);
+  assert.doesNotMatch(result.stdout, /Baseline unit verte/);
+});
+
 // ---------------------------------------------------------------------------
 // 3. Couverture
 // ---------------------------------------------------------------------------
@@ -432,7 +457,8 @@ test("Exécution courante : seule une base créée ET marquée par elle est supp
 test("Exécuteur pg : une nfc_encoding_test étrangère pré-existante bloque l'exécution sans être touchée", realCluster, async () => {
   await createForeignDatabaseWithWitness("nfc_encoding_test");
   try {
-    const result = runRunner(["pg"], { SOMAFRIK_TEST_PG_URL: CLUSTER_URL });
+    // Fichier factice : si la garde cédait, aucun vrai test ne tournerait sur le cluster partagé.
+    const result = runRunner(["pg"], { SOMAFRIK_TEST_PG_URL: CLUSTER_URL, SOMAFRIK_TEST_BASELINE_FIXTURE_FILES: FIXTURE });
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stderr, /« nfc_encoding_test » existe déjà/);
     assert.deepEqual(await readWitness("nfc_encoding_test"), { exists: true, rows: ["donnée étrangère"] });
@@ -446,6 +472,10 @@ test("Exécuteur pg : interruption (SIGTERM du groupe, comme une annulation CI) 
   const exists = async () =>
     (await onCluster((client) => client.query("SELECT 1 FROM pg_database WHERE datname = 'nfc_encoding_test'"))).rowCount === 1;
   assert.equal(await exists(), false, "précondition : aucune nfc_encoding_test");
+  // Fichier factice sans base : interrompre un vrai *.pg.test.js pourrait laisser
+  // sa base IT dans un état partiel (ex. après DROP SCHEMA public) sur le cluster
+  // partagé avec l'étape suivante du job CI.
+  const readyFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "mono-t0-ready-")), "ready");
   const child = spawn(process.execPath, [RUNNER, "pg"], {
     cwd: ROOT,
     detached: true,
@@ -454,6 +484,8 @@ test("Exécuteur pg : interruption (SIGTERM du groupe, comme une annulation CI) 
       HOME: process.env.HOME,
       SOMAFRIK_TEST_PG_URL: CLUSTER_URL,
       SOMAFRIK_TEST_BASELINE_OUT: fs.mkdtempSync(path.join(os.tmpdir(), "mono-t0-sig-")),
+      SOMAFRIK_TEST_BASELINE_FIXTURE_FILES: FIXTURE,
+      SOMAFRIK_TEST_BASELINE_FIXTURE_READY: readyFile,
     },
     stdio: ["ignore", "ignore", "pipe"],
   });
@@ -462,11 +494,13 @@ test("Exécuteur pg : interruption (SIGTERM du groupe, comme une annulation CI) 
     stderr += chunk;
   });
   const exited = new Promise((resolve) => child.on("exit", (code, signal) => resolve({ code, signal })));
+  // Interruption pendant node --test, une fois la base de l'exécution créée.
   const deadline = Date.now() + 60_000;
-  while (!(await exists())) {
-    assert.ok(Date.now() < deadline, `nfc_encoding_test jamais créée : ${stderr}`);
+  while (!fs.existsSync(readyFile)) {
+    assert.ok(Date.now() < deadline, `node --test jamais démarré : ${stderr}`);
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
+  assert.equal(await exists(), true, "nfc_encoding_test créée avant node --test");
   process.kill(-child.pid, "SIGTERM");
   const { code } = await exited;
   assert.notEqual(code, 0, "une exécution interrompue n'est jamais verte");

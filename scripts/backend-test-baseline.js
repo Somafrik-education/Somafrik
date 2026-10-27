@@ -57,6 +57,31 @@ function listBackendTests() {
   return found.sort();
 }
 
+// Réservé aux tests de l'exécuteur (scripts/backend-test-baseline.test.js) :
+// remplace les tests du dépôt par des fichiers factices qui ne touchent aucune
+// base, pour pouvoir interrompre l'exécuteur sans laisser de base partielle.
+const FIXTURE_FILES_VAR = "SOMAFRIK_TEST_BASELINE_FIXTURE_FILES";
+const FIXTURE_DIR = "scripts/fixtures/backend-test-baseline/";
+
+function selectFixtureFiles(value) {
+  if (value === undefined) return null;
+  if (process.env.GITHUB_ACTIONS === "true") {
+    fail(`${FIXTURE_FILES_VAR} est refusée dans GitHub Actions : la baseline exécute toujours les tests du dépôt.`);
+  }
+  const files = String(value)
+    .split(",")
+    .map((file) => file.trim())
+    .filter(Boolean);
+  if (!files.length) fail(`${FIXTURE_FILES_VAR} est vide.`);
+  for (const file of files) {
+    const normalized = path.posix.normalize(file);
+    if (normalized !== file || !file.startsWith(FIXTURE_DIR) || !fs.existsSync(path.join(ROOT, file))) {
+      fail(`${FIXTURE_FILES_VAR} : fichier refusé « ${file} » (seuls les fichiers existants de ${FIXTURE_DIR}).`);
+    }
+  }
+  return files;
+}
+
 function loadManifest() {
   const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8"));
   const entries = [
@@ -461,8 +486,10 @@ async function main() {
     return;
   }
 
-  const modeFiles = mode === "unit" ? unitFiles : pgFiles;
-  const excluded = manifest.filter((entry) => entry.mode === mode);
+  // Fichiers factices (tests de l'exécuteur uniquement) : jamais en CI, jamais vert.
+  const fixtureFiles = selectFixtureFiles(process.env[FIXTURE_FILES_VAR]);
+  const modeFiles = fixtureFiles ?? (mode === "unit" ? unitFiles : pgFiles);
+  const excluded = fixtureFiles ? [] : manifest.filter((entry) => entry.mode === mode);
   const excludedSet = new Set(excluded.map((entry) => entry.file));
   const mainFiles = modeFiles.filter((file) => !excludedSet.has(file));
   const notes = [];
@@ -568,6 +595,7 @@ async function main() {
   if (brokenExpectations) problems.push(`${brokenExpectations} échec(s) attendu(s) non conforme(s)`);
   if (mainStatus !== 0 && counts.fail === 0) problems.push(`node --test a terminé avec le code ${mainStatus}`);
   if (coverageRequested && !coverage) problems.push("couverture demandée mais non produite");
+  if (fixtureFiles) problems.push(`exécution sur fichiers factices (${FIXTURE_FILES_VAR}) : jamais une baseline`);
   if (problems.length) fail(`Baseline ${mode} en échec : ${problems.join(" ; ")}.`);
   console.log(`✔ Baseline ${mode} verte.`);
 }
