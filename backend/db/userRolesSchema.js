@@ -203,6 +203,26 @@ function deterministicUserRolePredicateSql(mappedRole) {
   )`;
 }
 
+/**
+ * SEC-RBAC-REVOKE-01 — `user_roles` est la source de vérité des attributions.
+ * Une ligne révoquée pour (utilisateur, établissement, rôle) est une décision
+ * explicite : aucun chemin de boot ne la renverse à partir des données
+ * héritées (`users.role`, `profile_payload.secondaryRoles`). Seul un nouvel
+ * octroi via l'API (grantUserRole) peut réactiver ce rôle.
+ * Les index uniques ne portent que sur les lignes actives : sans ce prédicat,
+ * `ON CONFLICT DO NOTHING` ne voit pas la révocation.
+ */
+function notExplicitlyRevokedSql(userIdExpr, schoolIdExpr, roleKeyExpr) {
+  return `NOT EXISTS (
+    SELECT 1
+    FROM user_roles ur_revoked
+    WHERE ur_revoked.user_id = ${userIdExpr}
+      AND ur_revoked.school_id IS NOT DISTINCT FROM ${schoolIdExpr}
+      AND upper(ur_revoked.role_key) = upper(${roleKeyExpr})
+      AND ur_revoked.status = 'revoked'
+  )`;
+}
+
 function backfillFromUsersRoleSql(catalogAvailable) {
   const mappedRole = mapLegacyRoleKeySql("u.role", catalogAvailable);
   return `
@@ -219,6 +239,7 @@ WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
     (${mappedRole}) = 'STUDENT'
     OR NOT ${linkedActiveStudentExistsSql("u.id")}
   )
+  AND ${notExplicitlyRevokedSql("u.id", "u.school_id", `(${mappedRole})`)}
 ON CONFLICT DO NOTHING
 `;
 }
@@ -241,6 +262,7 @@ SELECT
 FROM users u
 WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
   AND ${deterministicUserRolePredicateSql(mappedRole)}
+  AND ${notExplicitlyRevokedSql("u.id", "u.school_id", `(${mappedRole})`)}
 ON CONFLICT DO NOTHING
 `;
 }
@@ -261,6 +283,9 @@ WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
       AND ur.revoked_at IS NULL
       AND ur.school_id IS NOT DISTINCT FROM u.school_id
   )
+  -- Un rôle explicitement révoqué n'est pas « manquant » : le boot ne doit ni
+  -- le recréer ni échouer à cause de lui.
+  AND ${notExplicitlyRevokedSql("u.id", "u.school_id", `(${mappedRole})`)}
 ORDER BY u.user_code
 LIMIT 50
 `;
@@ -289,6 +314,7 @@ WHERE btrim(elem) <> ''
     (${mappedRole}) = 'STUDENT'
     OR NOT ${linkedActiveStudentExistsSql("u.id")}
   )
+  AND ${notExplicitlyRevokedSql("u.id", "u.school_id", `(${mappedRole})`)}
 ON CONFLICT DO NOTHING
 `;
 }
@@ -320,4 +346,5 @@ module.exports = {
   backfillFromSecondaryRolesSql,
   seedDeterministicUserRolesSql,
   missingMappedUserRolesSql,
+  notExplicitlyRevokedSql,
 };
