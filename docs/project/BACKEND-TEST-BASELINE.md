@@ -101,12 +101,32 @@ La première version de cette analyse (2026-10-26) affirmait que les contrôles 
 |---|---|---|---|---|
 | Synchronisation élèves / personnel / notes depuis le snapshot | `sync*DomainFromBackOffice` | Non (aucun appelant) | — | Sans objet : remplacé par le test de refus |
 | Enseignant refusé hors de son affectation | `upsertGrade` → `teacherCanAccessStudentClass`, `teacherCanAccessEvaluation` | Oui (`pedagogyService.upsertGrade` ← `server.js`, `pedagogyPgStore.upsertSchoolGrade`) | `upsertGrade` 78 %, `teacherCanAccessStudentClass` 92 %, `teacherCanAccessEvaluation` 64 % | **Oui** — `backend/lib/pedagogyRepository.pg.test.js` : 403 pour affectation d'une autre année, sans affectation, affectation inactive, permission création seule, principal sans `sub` |
-| Évaluation d'un **autre établissement** refusée à l'enseignant | `teacherCanAccessEvaluation` (porte `evaluation_school`) | Oui | branche de refus **non exécutée** | **Non — lacune réelle** |
-| Évaluation sans classe ou matière refusée | `teacherCanAccessEvaluation` (porte `evaluation_subject`) | Oui | branche de refus **non exécutée** | **Non — lacune réelle** |
+| Évaluation d'un **autre établissement** refusée à l'enseignant | `teacherCanAccessEvaluation` (porte `evaluation_school`) | Oui | branche de refus **non exécutée** | **Fermée par MONO-T0-GUARDS** : `notesTeacherGuards.pg.test.js` |
+| Évaluation sans classe ou matière refusée | `teacherCanAccessEvaluation` (porte `evaluation_subject`) | Oui | branche de refus **non exécutée** | **Fermée par MONO-T0-GUARDS** : `notesTeacherGuards.pg.test.js` |
 | Élève BackOffice d'un autre établissement ignoré pour une note | `resolveStudentForGrade` (branche `backOfficeStudent`) | **Non** : dépend de `getBackOfficeState()`, qui renvoie `null` depuis LOT 8 | branche non exécutée | Sans objet — code mort |
 | Rattachement d'un compte enseignant BackOffice sans détournement | `ensurePgUserForBackOfficeTeacher` ← `materializeBackOfficeTeacher` | **Non** : même dépendance à `getBackOfficeState()` | 1 % | Sans objet — code mort |
 
-Lacunes réelles (préexistantes, non causées par #1006) : refus d'une évaluation d'un autre établissement et refus d'une évaluation sans classe/matière dans `teacherCanAccessEvaluation`. Recommandation : les ajouter à la matrice de caractérisation RBAC / tenant PostgreSQL (MONO-T2). Les branches BackOffice inatteignables sont des candidates à suppression lors du découpage de `postgresRepository.js`, après preuve de leur inaccessibilité.
+Lacunes (préexistantes, non causées par #1006) **fermées par MONO-T0-GUARDS** : `backend/lib/notesTeacherGuards.pg.test.js`, 21 tests sur fixtures PostgreSQL canoniques (aucun endpoint BackOffice), chaque refus vérifiant aussi la porte qui refuse (trace d'autorisation). Aucune logique métier modifiée. Les branches BackOffice inatteignables restent candidates à suppression lors du découpage de `postgresRepository.js` ; leur inaccessibilité est désormais prouvée par test.
+
+Correspondance des anciens scénarios avec les nouveaux tests :
+
+| Ancien scénario | Nouveau test (`notesTeacherGuards.pg.test.js`, sauf mention) |
+|---|---|
+| S1, S2, S5, P1, P2, P7 — pipeline `saveBackOfficeState` | tests de refus 410 (`studentsSyncRepository.test.js`, `pedagogyStaffSyncRepository.test.js`) |
+| P3 — enseignant affecté autorisé | « classe élève : enseignant affecté (affectation active) autorisé » |
+| P3 — enseignant non affecté refusé | « classe non affectée refusée » ; « affectation inactive seule ⇒ refus » ; « élève d'un autre établissement ⇒ refus » ; « élève sans inscription active ⇒ refus » |
+| P3 — `user_code` BO n'est pas une autorité | « identifiant BO (user_code) ou compte sans fiche enseignant ⇒ refus » ; idem côté évaluation |
+| P4 — classe + matière affectées autorisées | « évaluation : classe + matière + année affectées ⇒ autorisé » |
+| P4 — matière non affectée refusée | « matière non affectée (affectation inactive) ⇒ refus » ; « classe non affectée ⇒ refus » ; « affectation d'une autre année scolaire ⇒ refus » |
+| P4 — évaluation d'un autre établissement refusée | « interétablissement (principal école A, évaluation école B) ⇒ refus à la porte établissement » ; « interétablissement même en revendiquant l'école B (ou `*`) ⇒ refus » |
+| Enseignant inexistant | « enseignant inexistant (compte sans fiche, user_code BO, UUID inconnu) ⇒ refus » |
+| Année scolaire manquante | « année scolaire introuvable ⇒ refus (garde défensive) » — inatteignable depuis `upsertGrade` (`NOT NULL` sur `term_id`, `terms.academic_year_id`, `classes.academic_year_id`) |
+| Classe ou matière manquante | « classe ou matière absente ⇒ refus » |
+| S3 — résolution scopée, autre école ⇒ `null` | « résolution canonique par matricule ou UUID » ; « jamais résolu hors de l'établissement demandé » ; « clé vide ou inconnue ⇒ null » |
+| S4 — `STUDENT_TENANT_CONFLICT` via matérialisation BO | « branche historique BackOffice inatteignable (LOT 8) ⇒ aucune matérialisation » (preuve d'inaccessibilité) |
+| P5, P6 — matérialisation enseignant BO | inatteignables (même dépendance à `getBackOfficeState()`, renvoie `null`) ; non testés comme comportements vivants |
+
+Preuve de mutation (2026-10-27) : 8 altérations temporaires des gardes, chacune détectée par au moins un test — porte établissement désactivée, enseignant absent autorisé, année absente autorisée, filtre `status = 'active'` retiré, condition d'année retirée, condition de matière retirée, scope établissement de l'élève retiré, contrôle « élève sans classe » retiré.
 
 Test PostgreSQL complémentaire, déjà signalé comme préexistant dans #997/#998 : `backend/lib/backofficeStateRemoval.pg.test.js` suppose une base déjà initialisée (table `schools`, établissement `CD-2026-0001`). Déclaré « base amorcée » ; fichier non modifié.
 
@@ -118,7 +138,7 @@ Environnement : Node 22.22.0, PostgreSQL 16.15 en cluster jetable configuré com
 |---|---|---|---|---|---|
 | garde-fous | 1 | 23 | 0 | 0 | — |
 | unit | 335 | 2 640 | 0 | 3 | 67,0 % / 68,4 % (335 fichiers chargés) |
-| pg | 128 | 249 | 0 | 0 | 67,2 % / 60,7 % (285 fichiers chargés) ; 3 exécutions complètes consécutives sur le même cluster, toutes vertes, 0 deadlock |
+| pg | 129 | 270 | 0 | 0 | 67,2 % / 60,8 % (285 fichiers chargés) ; MONO-T0-CLOSE : 3 exécutions complètes consécutives vertes, 0 deadlock ; MONO-T0-GUARDS : +21 tests (`notesTeacherGuards.pg.test.js`) |
 
 SKIP unitaires (conditions internes aux fichiers, inchangées) : `studentCardsNfcEncoding.sql.test.js` (1), `teacherAssignmentsRepository.test.js` (1), `usersLoginIdentity.test.js` (1).
 
