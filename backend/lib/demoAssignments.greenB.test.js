@@ -37,6 +37,17 @@ function fakeRepairClient({ users, linkedStudentUserIds = [] }) {
         const found = linked.has(params[0]);
         return { rowCount: found ? 1 : 0, rows: found ? [{ ok: 1 }] : [] };
       }
+      if (source.includes("status = 'revoked'")) {
+        const [userId, schoolId, roleKey] = params;
+        const found = roles.some(
+          (row) =>
+            row.user_id === userId &&
+            row.school_id === schoolId &&
+            String(row.role_key).toUpperCase() === String(roleKey).toUpperCase() &&
+            row.status === "revoked",
+        );
+        return { rowCount: found ? 1 : 0, rows: found ? [{ ok: 1 }] : [] };
+      }
       if (source.includes("INSERT INTO user_roles")) {
         const [userId, schoolId, roleKey] = params;
         const exists = roles.some(
@@ -92,6 +103,28 @@ test("GREEN-B: backfill Démo crée SCHOOL_ADMIN + TEACHER dans user_roles et re
   const second = await repairPublicDemoCanonicalRoles(client);
   assert.equal(second.inserted, 0);
   assert.equal(client.roles.length, 2);
+});
+
+test("SEC-RBAC-REVOKE-01 : la réparation Démo ne réattribue jamais un rôle révoqué", async () => {
+  const client = fakeRepairClient({
+    users: [
+      { id: ADMIN_ID, user_code: "USR-DEMO-ADMIN", role: "SCHOOL_ADMIN" },
+      { id: TEACHER_ID, user_code: "USR-DEMO-TEACHER", role: "TEACHER" },
+    ],
+  });
+  await repairPublicDemoCanonicalRoles(client);
+  const teacherRole = client.roles.find((row) => row.user_id === TEACHER_ID);
+  teacherRole.status = "revoked";
+  teacherRole.revoked_at = new Date();
+
+  // Le seul enseignant ayant été révoqué, la preuve exige un enseignant actif :
+  // la réparation échoue explicitement au lieu de réattribuer le rôle.
+  await assert.rejects(repairPublicDemoCanonicalRoles(client), /PUBLIC_DEMO_ROLE_REPAIR_TEACHER_MISSING/);
+  assert.deepEqual(
+    client.roles.filter((row) => row.user_id === TEACHER_ID).map((row) => row.status),
+    ["revoked"],
+    "aucune ligne TEACHER active recréée",
+  );
 });
 
 test("GREEN-B: réparation refuse un rôle plateforme dans l'école Démo", async () => {
