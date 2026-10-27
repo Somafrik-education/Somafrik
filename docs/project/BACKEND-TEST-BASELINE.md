@@ -110,15 +110,15 @@ Lacunes réelles (préexistantes, non causées par #1006) : refus d'une évaluat
 
 Test PostgreSQL complémentaire, déjà signalé comme préexistant dans #997/#998 : `backend/lib/backofficeStateRemoval.pg.test.js` suppose une base déjà initialisée (table `schools`, établissement `CD-2026-0001`). Déclaré « base amorcée » ; fichier non modifié.
 
-## 6. Résultats de référence (exécution locale, 2026-10-26 ; confirmés à l'identique le 2026-10-27 sur le HEAD rebasé)
+## 6. Résultats de référence (exécution locale ; dernière mise à jour 2026-10-27, MONO-T0-CLOSE)
 
 Environnement : Node 22.22.0, PostgreSQL 16.15 en cluster jetable configuré comme la CI (sentinelle + commentaire), contenant déjà les bases d'une exécution précédente, avec `DATABASE_URL` et `SOMAFRIK_USERS_GP003_IT_DATABASE` parasites (retirées par l'exécuteur), Chromium fourni. Ces chiffres ne remplacent pas l'exécution GitHub Actions.
 
 | Mode | Fichiers | PASS | FAIL | SKIP | Couverture lignes / branches |
 |---|---|---|---|---|---|
-| garde-fous | 1 | 21 | 0 | 0 | — |
-| unit | 334 | 2 635 | 0 | 3 | 66,9 % / 68,4 % (334 fichiers chargés) |
-| pg | 128 | 249 | 0 | 0 | 67,2 % / 60,6 % (283 fichiers chargés) |
+| garde-fous | 1 | 23 | 0 | 0 | — |
+| unit | 335 | 2 640 | 0 | 3 | 67,0 % / 68,4 % (335 fichiers chargés) |
+| pg | 128 | 249 | 0 | 0 | 67,2 % / 60,7 % (285 fichiers chargés) ; 3 exécutions complètes consécutives sur le même cluster, toutes vertes, 0 deadlock |
 
 SKIP unitaires (conditions internes aux fichiers, inchangées) : `studentCardsNfcEncoding.sql.test.js` (1), `teacherAssignmentsRepository.test.js` (1), `usersLoginIdentity.test.js` (1).
 
@@ -131,17 +131,24 @@ Les 73 tests PostgreSQL ignorés lors de l'audit étaient les suites NFC (`stude
 - **Non couverts par cette baseline :** scripts `verify:*`, tests Web (Vitest), tests Mobile, e2e (Maestro, navigateur). Ils restent exécutés par les workflows existants, inchangés.
 - La couverture PostgreSQL utilise `npx --yes c8@10.1.3` (même convention que `npx --yes tsx` dans `package.json`) ; aucune dépendance n'est ajoutée aux lockfiles. Si `c8` échoue, la baseline échoue.
 - Les scripts `verify:*` existants qui créent leurs propres bases ne passent pas par ces garde-fous ; ils ne sont pas modifiés par MONO-T0.
-- **Instabilité préexistante : `backend/lib/postgresSeedUserRoles.pg.test.js`** (#757) — **non modifié par #1006** ; ce fichier n'était exécuté par aucun workflow avant cette baseline.
-  - Symptôme : `40P01 deadlock detected` dans `ensureUserRolesCanonicalSchema` (`backend/db/postgresRepository.js:693`), appelé par le test (ligne 239) pour un second boot pendant que le `backend/server.js` lancé par le test tourne encore.
-  - Cause : la DDL du boot (`AccessExclusiveLock`) entre en concurrence avec le travail de fond du serveur vivant (livraisons `communication_channel_deliveries`, lectures `users`). PostgreSQL tue l'une des deux sessions : si c'est le serveur, le test passe ; si c'est la DDL du test, il échoue.
-  - Mesures (2026-10-27) : 1 échec sur 15 exécutions isolées (6 deadlocks dans le journal PostgreSQL) ; 2 échecs sur 3 exécutions complètes de la baseline (CI 55de5bd8 et une exécution locale).
-  - Correctif du test (mandat séparé) : faire le second boot après l'arrêt du serveur enfant.
-  - **Constat produit, hors périmètre** : la DDL de boot n'est pas sérialisée ; deux instances qui démarrent ensemble peuvent s'interbloquer. Piste : verrou consultatif (`pg_advisory_xact_lock`) autour du boot de schéma.
-- **Instabilité préexistante : `backend/lib/secAuth04SessionBinding.http.pg.test.js`** (SEC-AUTH-04, #995) — **non modifié par #1006**.
+- **`backend/lib/postgresSeedUserRoles.pg.test.js` (#757) — instabilité préexistante, corrigée par MONO-T0-CLOSE (cycle de vie du test uniquement).** Ce fichier n'était exécuté par aucun workflow avant cette baseline.
+  - Symptôme : `40P01 deadlock detected` dans `ensureUserRolesCanonicalSchema` (`backend/db/postgresRepository.js:693`), appelé par le test pour un second boot pendant que le `backend/server.js` lancé par le test tournait encore. Mesures avant correction (2026-10-27) : 1 échec sur 15 exécutions isolées (6 deadlocks dans le journal PostgreSQL) ; 2 échecs sur 3 exécutions complètes de la baseline.
+  - Cause : la DDL du boot (`AccessExclusiveLock`) entrait en concurrence avec le travail de fond du serveur vivant (livraisons `communication_channel_deliveries`, lectures `users`).
+  - Correctif (test) : les contrôles HTTP s'exécutent d'abord ; le serveur est ensuite arrêté (`stopChildProcess`, y compris un processus tué par signal) et le test attend qu'il ne reste **aucune session** du serveur sur la base (`pg_stat_activity`, échec explicite sinon) ; les seules lignes révoquées par le test sont réactivées (retour exact à l'état post-seed, vérifié ligne à ligne) ; le second boot est alors exécuté et doit laisser **le même ensemble** d'affectations actives (comparaison plus stricte que l'ancien simple comptage). Un écouteur `exit` tue le serveur enfant si le test se termine sans passer par `finally`. Outil partagé : `backend/lib/pgTestLifecycle.js` (code de test, testé par `pgTestLifecycle.test.js`).
+  - Pourquoi pas un redémarrage du serveur : voir constat produit n° 3 ci-dessous.
+  - Mesures après correction : 30 exécutions isolées sur 30 réussies, **0 deadlock** dans le journal PostgreSQL, 0 serveur orphelin, 0 session restante ; 3 baselines pg complètes vertes.
+- **`backend/lib/secAuth04SessionBinding.http.pg.test.js` (SEC-AUTH-04, #995) — instabilité préexistante, corrigée par MONO-T0-CLOSE (cycle de vie du test uniquement ; aucune assertion modifiée).**
   - Symptôme : les 21 contrôles passent, puis le processus plante au nettoyage (`terminating connection due to administrator command`, SQLSTATE 57P01). Reproduit sur le fichier inchangé de `develop` : 2 échecs sur 8 exécutions isolées et 1 sur 4 exécutions complètes de la baseline (2026-10-26) ; 1 sur 12 exécutions isolées et 1 dans `npm run verify:sec-auth-04` (2026-10-27, HEAD rebasé). Soit 4 échecs sur 21 exécutions observées, **toujours après 21 contrôles sur 21 réussis** : jamais sur une assertion de sécurité. Le même script est exécuté par « Core tests » (Security baseline) : toute PR peut donc voir Core tests rouge de façon intermittente, indépendamment de son contenu.
   - Cause (tracée par instrumentation hors dépôt des pools `pg`) : le pool de `PostgresRepository` (`backend/db/postgresRepository.js:114`, 10 connexions inactives) est fermé par `repo.close()` → `pool.end()`, qui rend la main avant la fin des sessions serveur ; `dropDisposableDatabase` exécute ensuite `DROP DATABASE … WITH (FORCE)`, qui termine ces sessions ; le message 57P01 est relayé en événement `error` sur un pool **sans écouteur** (`listeners=0`) → exception non capturée.
-  - Correctif proposé (test uniquement, 3 lignes, mandat séparé) : utiliser l'outil existant `backend/lib/pgPoolGuard.js`, déjà employé par d'autres tests pour ce cas — `guardPgPool(repo.pool)` et `const pool = guardPgPool(new Pool(...))`. Validé sur une copie temporaire non suivie : 0 échec sur 15 exécutions.
-  - **Constat produit, hors périmètre** : le pool de production `PostgresRepository` n'a pas d'écouteur `error` et `server.js` n'a pas de gestionnaire `uncaughtException`. Une session inactive terminée côté serveur (redémarrage, bascule, terminaison administrative) émettrait la même erreur et ferait vraisemblablement tomber le processus API. À traiter par un mandat dédié.
+  - Correctif appliqué (test) : `guardPgPool` (outil existant `backend/lib/pgPoolGuard.js`) sur `repo.pool` et sur le pool du test — seule l'erreur 57P01 est absorbée, toute autre erreur remonte ; avant `DROP DATABASE … WITH (FORCE)`, attente qu'aucune session ne subsiste sur la base jetable (`FORCE` reste le dernier recours) ; arrêt effectif du serveur enfant (`stopChildProcess`) ; échec de suppression de la base jetable désormais visible (`FAIL` + code de sortie 1) au lieu d'être ignoré ; écouteur `exit` contre un serveur orphelin.
+  - Mesures après correction : 30 exécutions isolées sur 30 réussies (21 contrôles sur 21 à chaque fois), **0 erreur 57P01**, 0 serveur orphelin, 0 base `somafrik_sec_auth_04_*` restante ; `npm run verify:sec-auth-04` vert.
+
+### Constats produit (hors périmètre #1006 — PR distinctes à mandater)
+
+1. **Pool PostgreSQL de production sans écouteur `error`** (`backend/db/postgresRepository.js:114`) et pas de gestionnaire `uncaughtException` dans `server.js` : une session inactive terminée côté serveur (redémarrage, bascule, terminaison administrative, 57P01) ferait vraisemblablement tomber le processus API. Révélé par SEC-AUTH-04.
+2. **DDL de boot non sérialisée** : `ensureUserRolesCanonicalSchema` (et le reste de `init()`) prend des verrous exclusifs sans verrou consultatif ; deux instances qui démarrent ensemble, ou une instance qui démarre pendant qu'une autre sert du trafic, peuvent s'interbloquer (40P01). Piste : `pg_advisory_xact_lock` autour du boot de schéma. Révélé par `postgresSeedUserRoles`.
+3. **`server.js` ne redémarre pas sur une base qu'il a lui-même amorcée par la démo** : second démarrage refusé (`CANONICAL_SCHOOL_COURSE_AMBIGUOUS`, « Plusieurs school_courses actifs ou collision classe+matière »), avec ou sans `SOMAFRIK_SKIP_DEMO_SEED`. Reproduit hors test (boot 1 : 200 ; boots 2 et 3 : refus). Les données de démonstration et la vérification canonique du boot sont incohérentes.
+4. **Sécurité RBAC — un rôle révoqué est réactivé au boot suivant.** `revokeUserRole` (`backend/db/clientsPgStore.js:290`, appelé par `userRoleLifecycleService`) révoque la ligne `user_roles` mais laisse `users.role` ; `ensureUserRolesCanonicalSchema`, exécuté à **chaque** boot (y compris en production, `postgresRepository.js:149`), recrée depuis `users.role` une affectation active (`ON CONFLICT DO NOTHING` ne voit pas la ligne révoquée). `ensureSeededUserRoles` (démo) fait de même. Mesuré : 110 → 111 affectations actives après un boot, pour un `SCHOOL_ADMIN` révoqué. **Non corrigé et non masqué par #1006** (aucun changement RBAC autorisé) ; à traiter en priorité par une PR dédiée avec un test de non-régression.
 
 ## Annexe — fichiers de test backend non atteints par les workflows avant MONO-T0 (estimation statique)
 

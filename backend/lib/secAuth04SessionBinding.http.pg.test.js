@@ -18,6 +18,8 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { hashSecret } = require("../services/credentialService");
+const { guardPgPool } = require("./pgPoolGuard");
+const { hasExited, stopChildProcess, waitForNoDatabaseSessions } = require("./pgTestLifecycle");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const ROOT = path.resolve(__dirname, "../..");
@@ -69,6 +71,10 @@ async function dropDisposableDatabase(name) {
   if (!/^somafrik_sec_auth_04_[0-9a-f]{12}$/.test(name)) return;
   const admin = new Pool({ connectionString: withDatabaseName(DATABASE_URL, "postgres") });
   try {
+    // Les pools du test sont fermés, mais PostgreSQL peut encore fermer leurs
+    // sessions : attendre qu'elles disparaissent avant de supprimer la base.
+    // WITH (FORCE) reste le dernier recours si une session subsiste.
+    await waitForNoDatabaseSessions(admin, name);
     await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
   } finally {
     await admin.end();
@@ -107,21 +113,6 @@ async function waitForHealth(child, stderrRef) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`Backend health timeout\n${stderrRef.value}`);
-}
-
-async function stopChild(child) {
-  if (!child || child.exitCode != null) return;
-  child.kill("SIGTERM");
-  await new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
-    }, 5000);
-    child.on("exit", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
 }
 
 function claims(token) {
@@ -208,9 +199,17 @@ async function main() {
   process.env.SOMAFRIK_DB_REQUIRED = "true";
   const db = await createDisposableDatabase();
   const repo = createPostgresRepository(db.url);
-  const pool = new Pool({ connectionString: db.url });
+  // Une session terminée par DROP DATABASE … WITH (FORCE) (57P01) ne doit pas
+  // devenir une exception non capturée ; toute autre erreur de pool remonte.
+  guardPgPool(repo.pool);
+  const pool = guardPgPool(new Pool({ connectionString: db.url }));
   const tokens = new TokenService({ secret: JWT_SECRET });
   let child = null;
+  // Dernier recours si le processus se termine sans passer par finally : aucun serveur orphelin.
+  const killOrphan = () => {
+    if (child && !hasExited(child)) child.kill("SIGKILL");
+  };
+  process.once("exit", killOrphan);
   const passed = [];
   const ok = (label) => passed.push(label);
 
@@ -465,10 +464,19 @@ async function main() {
     for (const label of passed) console.log(`OK ${label}`);
     throw error;
   } finally {
-    await stopChild(child);
+    // Le nettoyage continue même si l'arrêt échoue ; l'échec reste visible.
+    await stopChildProcess(child).catch((error) => {
+      console.error(`FAIL arrêt du serveur enfant : ${error.message}`);
+      process.exitCode = 1;
+    });
     await pool.end().catch(() => {});
-    await repo.close?.().catch?.(() => {});
-    await dropDisposableDatabase(db.name).catch(() => {});
+    await repo.close().catch(() => {});
+    await dropDisposableDatabase(db.name).catch((error) => {
+      // Une base jetable non supprimée est un défaut visible, jamais silencieux.
+      console.error(`FAIL suppression de la base jetable : ${error.message}`);
+      process.exitCode = 1;
+    });
+    process.removeListener("exit", killOrphan);
   }
 }
 
