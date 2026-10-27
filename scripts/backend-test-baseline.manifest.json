@@ -1,6 +1,37 @@
 {
-  "$comment": "MONO-T0 — exceptions de la baseline des tests backend. Chaque entrée est exécutée et vérifiée ; aucune n'est ignorée silencieusement. expectedFailures est vide : les deux anciens tests legacy ont été remplacés par des tests de non-régression du refus. Voir docs/project/BACKEND-TEST-BASELINE.md.",
-  "expectedFailures": [],
+  "$comment": "MONO-T0 — exceptions de la baseline des tests backend. Chaque entrée est exécutée et vérifiée ; aucune n'est ignorée silencieusement. expectedFailures : défauts produit reproduits par MONO-T1 ; chaque fichier exprime le comportement CORRECT, doit échouer avec la cause documentée (expectedOutput), et fera échouer la baseline le jour où il passe (mettre alors le manifeste à jour avec la PR corrective). Voir docs/project/MONO-T1-CHARACTERIZATION.md.",
+  "expectedFailures": [
+    {
+      "file": "backend/lib/monoT1.anomaly.A1-teacher-homonym-scope.http.pg.test.js",
+      "mode": "pg",
+      "reason": "ANOMALIE-MONO-T1-A1 : périmètre enseignant du jeton rapproché par nom (authService.assignmentMatchesTeacher) ; homonymes de démo ⇒ élèves hors affectation exposés par GET /api/students, classe affectée omise. PR corrective séparée à proposer.",
+      "expectedOutput": "ANOMALIE-MONO-T1-A1 : périmètre enseignant ≠ affectations canoniques"
+    },
+    {
+      "file": "backend/lib/monoT1.anomaly.A2-subscription-iso-date.http.pg.test.js",
+      "mode": "pg",
+      "reason": "ANOMALIE-MONO-T1-A2 : schoolSubscriptionAccessService.parseFrDate lit AAAA-MM-JJ comme JJ-MM-AA ; tout abonnement daté (colonne DATE, ISO) est « blocked ». PR corrective séparée à proposer.",
+      "expectedOutput": "ANOMALIE-MONO-T1-A2 : abonnement actif vu"
+    },
+    {
+      "file": "backend/lib/monoT1.anomaly.A3-attendance-status-coercion.http.pg.test.js",
+      "mode": "pg",
+      "reason": "ANOMALIE-MONO-T1-A3 : statut de présence inconnu accepté (201) et enregistré « absent » (PostgresRepository.toAttendanceStatus), écrasant l'appel existant. PR corrective séparée à proposer.",
+      "expectedOutput": "ANOMALIE-MONO-T1-A3 : statut « Inventé » → HTTP"
+    },
+    {
+      "file": "backend/lib/monoT1.anomaly.A4-ambiguous-class-name.http.pg.test.js",
+      "mode": "pg",
+      "reason": "ANOMALIE-MONO-T1-A4 : création d'évaluation par nom de classe ambigu résolue arbitrairement (findClassByNormalizedName, ORDER BY created_at DESC LIMIT 1), classCode ignoré. PR corrective séparée à proposer.",
+      "expectedOutput": "ANOMALIE-MONO-T1-A4 : nom ambigu"
+    },
+    {
+      "file": "backend/lib/monoT1.anomaly.A5-payment-status-upsert.http.pg.test.js",
+      "mode": "pg",
+      "reason": "ANOMALIE-MONO-T1-A5 : POST/PATCH /api/finance/payment-statuses passent par un upsert sans validation : corps vide créé (201), identifiant inconnu créé par PATCH (200). PR corrective séparée à proposer.",
+      "expectedOutput": "ANOMALIE-MONO-T1-A5 : POST {}"
+    }
+  ],
   "seededDatabase": [
     {
       "file": "backend/lib/backofficeStateRemoval.pg.test.js",
