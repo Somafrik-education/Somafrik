@@ -121,11 +121,11 @@ test("balayage : jeton correctement signé sur une session inexistante ⇒ 401",
   await sweep(() => ({ Authorization: `Bearer ${orphan}` }), "session inconnue");
 });
 
-test("jeton dans l'URL (?token= / ?access_token=) refusé même valide", { skip }, async () => {
+test("jeton dans la chaîne de requête (paramètres token et access_token) refusé même valide", { skip }, async () => {
   const token = await server.login("cdAdmin");
   for (const param of ["token", "access_token"]) {
     const response = await server.request("GET", `/api/students?${param}=${encodeURIComponent(token)}`);
-    assertRefusedWithoutData(response, `?${param}=`);
+    assertRefusedWithoutData(response, `paramètre ${param}`);
   }
 });
 
