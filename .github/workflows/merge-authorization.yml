@@ -16,12 +16,22 @@ name: Merge authorization (R15)
 # - Le YAML de la branche cible extrait le script de la branche cible, pas celui de la PR
 #   (une PR qui modifie ce YAML peut changer ce comportement : voir premier point).
 
+# ---------------------------------------------------------------------------
+# GOV-PAUSE-02 — R15 SUSPENDU pendant le développement (décision CTO requise).
+# Les déclencheurs automatiques sont désactivés : aucun statut
+# « governance/merge-authorization » n'est publié sur les PR (ni success, ni
+# failure). Le script, la configuration et les tests R15 restent inchangés et
+# testés en CI (Core tests → verify:governance-r15).
+# Fail-closed : si un Ruleset exige ce statut, son absence bloque la fusion.
+# Réactivation : retirer les « # » des 5 lignes ci-dessous (procédure complète :
+# docs/governance/GOV-PAUSE-02.md).
+# ---------------------------------------------------------------------------
 on:
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
-    branches: [develop, main]
-  pull_request_review:
-    types: [submitted, edited, dismissed]
+  # pull_request:
+  #   types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
+  #   branches: [develop, main]
+  # pull_request_review:
+  #   types: [submitted, edited, dismissed]
   workflow_dispatch:
     inputs:
       pr_number:
