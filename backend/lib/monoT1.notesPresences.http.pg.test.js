@@ -132,8 +132,11 @@ test("évaluations : création par l'enseignant affecté ; refus classe/matière
   assert.deepEqual(row, { class_code: ASSIGNED_CLASS.code, school_code: "CD-2026-0001" });
 });
 
-test("évaluations : classId prioritaire ; classCode du corps ignoré", { skip }, async () => {
-  const created = await server.request("POST", "/api/evaluations", {
+// MONO-FIX-A4 : ce test caractérisait l'ancien comportement (classCode contradictoire
+// ignoré en silence, 201). Le mandat A4 impose le refus des identifiants contradictoires.
+test("évaluations : classId prioritaire ; classCode contradictoire refusé sans écriture (MONO-FIX-A4)", { skip }, async () => {
+  const before = await server.snapshot("SELECT id FROM evaluations ORDER BY id");
+  const conflicting = await server.request("POST", "/api/evaluations", {
     token: await server.login("cdTeacher"),
     body: evaluationBody({
       classId: classIds["CLS-2026-000041"],
@@ -142,11 +145,19 @@ test("évaluations : classId prioritaire ; classCode du corps ignoré", { skip }
       title: "MONO-T1 résolution",
     }),
   });
+  assertStatus(conflicting, 400, "classId 6ème B + classCode 1ère B");
+  assert.equal(conflicting.data?.code, "EVAL_ATTACHMENT_CLASS_CONFLICT");
+  assert.equal(await server.snapshot("SELECT id FROM evaluations ORDER BY id"), before, "aucune évaluation écrite");
+
+  const created = await server.request("POST", "/api/evaluations", {
+    token: await server.login("cdTeacher"),
+    body: evaluationBody({ classId: classIds["CLS-2026-000041"], className: "6ème B", title: "MONO-T1 résolution" }),
+  });
   assertStatus(created, 201, "création 6ème B par classId");
   const row = await server.one(`SELECT c.class_code FROM evaluations e JOIN classes c ON c.id = e.class_id WHERE e.id = $1`, [
     created.data.id,
   ]);
-  assert.deepEqual(row, { class_code: "CLS-2026-000041" }, "rattachée au classId, le classCode fourni (1ère B) est ignoré");
+  assert.deepEqual(row, { class_code: "CLS-2026-000041" }, "rattachée au classId");
 });
 
 test("évaluations : listes bornées (enseignant voit les siennes, BI aucune)", { skip }, async () => {

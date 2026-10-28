@@ -982,6 +982,7 @@ export function GradesEvaluationsPage() {
         state={state}
         schoolCode={code}
         classNames={classNames}
+        classes={classes}
         user={scopeUser}
         initial={editingEvaluation}
       />

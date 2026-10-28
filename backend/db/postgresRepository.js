@@ -107,6 +107,9 @@ function buildResetPasswordUser(account, secretHash, temporaryPassword) {
   return next;
 }
 
+/** Champs d'un corps d'évaluation qui désignent sa classe (MONO-FIX-A4). */
+const EVALUATION_CLASS_FIELDS = Object.freeze(["className", "class_name", "classId", "class_id", "classCode", "class_code"]);
+
 class PostgresRepository {
   constructor(databaseConfig) {
     const poolConfig =
@@ -3508,9 +3511,12 @@ class PostgresRepository {
          WHERE e.id = $1`,
         [existing.id],
       );
+      // MONO-FIX-A4 : sans changement de classe demandé, l'évaluation garde son
+      // class_id exact ; jamais de ré-identification par nom (homonymes).
+      const classTouched = evaluationPatchTouches(evaluation, EVALUATION_CLASS_FIELDS);
       attachmentEvaluation = {
         ...attachmentEvaluation,
-        className: attachmentEvaluation.className ?? attachmentEvaluation.class_name ?? refs?.class_name,
+        ...(classTouched ? {} : { classId: existing.class_id, className: undefined, class_name: undefined }),
         subject:
           attachmentEvaluation.subject ??
           attachmentEvaluation.subjectName ??
@@ -3528,7 +3534,19 @@ class PostgresRepository {
             schoolId,
             id,
           ]),
-        findClassByName: (schoolId, name) => this.findClassByNormalizedName(schoolId, name),
+        findClassByCode: (schoolId, code) =>
+          this.one(
+            `SELECT * FROM classes WHERE school_id = $1 AND LOWER(TRIM(class_code)) = LOWER(TRIM($2)) LIMIT 1`,
+            [schoolId, code],
+          ),
+        // MONO-FIX-A4 : TOUS les homonymes (aucun « premier résultat » implicite).
+        findClassesByName: async (schoolId, name) => {
+          const { normalizeText } = require("../lib/evaluationAttachment");
+          const target = normalizeText(name);
+          if (!target) return [];
+          const rows = await this.all(`SELECT * FROM classes WHERE school_id = $1 ORDER BY id`, [schoolId]);
+          return rows.filter((row) => normalizeText(row.name) === target);
+        },
         ensureClass: ensure
           ? async (schoolId, name) => {
               const classId = await this.ensureClassForSchool(schoolId, name);
@@ -3732,7 +3750,7 @@ class PostgresRepository {
       title = patchTouches(["title"])
         ? String(evaluation.title ?? "Évaluation").trim() || "Évaluation"
         : String(existing.title ?? "Évaluation").trim() || "Évaluation";
-      classId = patchTouches(["className", "class_name", "classId", "class_id"])
+      classId = patchTouches(EVALUATION_CLASS_FIELDS)
         ? schoolClass.id
         : existing.class_id;
       subjectId = patchTouches(["subject", "subjectName", "subjectCode", "subjectId", "subject_id"])
