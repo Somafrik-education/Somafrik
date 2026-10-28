@@ -28,6 +28,7 @@ const {
   expandWeeklyOccurrences,
   resolveSchoolTimeZone,
 } = require("./planningWeeklyOccurrences");
+const { assertAttendanceItemsStatuses } = require("./attendanceStatus");
 const { mergeAttendanceTeacherKey } = require("./presencesAttendanceAuthz");
 const {
   resolveActiveRoomId,
@@ -703,6 +704,9 @@ async function upsertAttendanceBatch(store, payload, principal, auditMeta, optio
             ...mergeAttendanceTeacherKey(item, payload),
           }))
         : [];
+      // MONO-FIX-A3 : statuts de TOUT le lot validés avant la première écriture
+      // (un seul statut invalide ⇒ 400, aucune présence écrite ni écrasée).
+      assertAttendanceItemsStatuses(items);
       const guards = Array.isArray(options?.writeGuards) ? options.writeGuards : null;
       const saved = [];
       for (const [index, item] of items.entries()) {

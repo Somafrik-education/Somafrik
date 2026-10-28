@@ -2,12 +2,6 @@
   "$comment": "MONO-T0 — exceptions de la baseline des tests backend. Chaque entrée est exécutée et vérifiée ; aucune n'est ignorée silencieusement. expectedFailures : défauts produit reproduits par MONO-T1 ; chaque fichier exprime le comportement CORRECT, doit échouer avec la cause documentée (expectedOutput), et fera échouer la baseline le jour où il passe (mettre alors le manifeste à jour avec la PR corrective). Voir docs/project/MONO-T1-CHARACTERIZATION.md.",
   "expectedFailures": [
     {
-      "file": "backend/lib/monoT1.anomaly.A3-attendance-status-coercion.http.pg.test.js",
-      "mode": "pg",
-      "reason": "ANOMALIE-MONO-T1-A3 : statut de présence inconnu accepté (201) et enregistré « absent » (PostgresRepository.toAttendanceStatus), écrasant l'appel existant. PR corrective séparée à proposer.",
-      "expectedOutput": "ANOMALIE-MONO-T1-A3 : statut « Inventé » → HTTP"
-    },
-    {
       "file": "backend/lib/monoT1.anomaly.A4-ambiguous-class-name.http.pg.test.js",
       "mode": "pg",
       "reason": "ANOMALIE-MONO-T1-A4 : création d'évaluation par nom de classe ambigu résolue arbitrairement (findClassByNormalizedName, ORDER BY created_at DESC LIMIT 1), classCode ignoré. PR corrective séparée à proposer.",

@@ -1020,6 +1020,8 @@ class FallbackRepository {
     if (!items.length) {
       return [];
     }
+    // MONO-FIX-A3 : tout le lot est validé avant la première écriture.
+    require("../lib/attendanceStatus").assertAttendanceItemsStatuses(items);
 
     const saved = [];
     for (const item of items) {
@@ -1035,6 +1037,8 @@ class FallbackRepository {
       error.statusCode = 400;
       throw error;
     }
+    // MONO-FIX-A3 : statut hors catalogue ⇒ 400 (le libellé stocké reste celui reçu).
+    require("../lib/attendanceStatus").normalizeAttendanceStatus(payload.status, payload.present);
 
     const state = (await this.getBackOfficeState()) ?? {};
     const catalogStudents = Array.isArray(state.students) ? state.students : [];
