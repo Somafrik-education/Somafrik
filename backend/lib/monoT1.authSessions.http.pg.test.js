@@ -208,7 +208,7 @@ test("routes publiques : santé, code établissement inconnu, route E2E désacti
 
 test("REFRESH-R1 : identité et rôles enseignants conservés lors du refresh", { skip }, async () => {
   const original = await server.request("POST", "/api/backoffice/login", {
-    body: { identifier: "patrick.ilunga@somafrik.cd", password: "1234", schoolCode: "CD-2026-0001" },
+    body: { identifier: "patrick.ilunga@somafrik.cd", password: "1234", schoolCode: await server.loginCode("CD-2026-0001") },
   });
   assertStatus(original, 200, "login enseignant");
   const refreshed = await server.request("POST", "/api/auth/refresh", {
