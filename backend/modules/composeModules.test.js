@@ -28,6 +28,15 @@ function named(label) {
   return fn;
 }
 
+test("le catalogue de production accepte une application Express (fonction)", () => {
+  const app = function application() {};
+  for (const verb of ["get", "post", "put", "patch", "delete", "all"]) {
+    app[verb] = () => app;
+  }
+  const report = loadBackendModules(app);
+  assert.equal(report.routeCount, 0);
+});
+
 test("le catalogue de production reste inline, dans l'ordre prévu, sans route", () => {
   const app = fakeApp();
   const report = loadBackendModules(app);

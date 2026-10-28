@@ -16,8 +16,13 @@ function handlerName(handler) {
   return typeof handler;
 }
 
+function isApplication(app) {
+  // Express exporte une fonction (le gestionnaire de requêtes), pas un simple objet.
+  return Boolean(app) && (typeof app === "function" || typeof app === "object");
+}
+
 function createRouteRegistry(app, { moduleId, allowRoutes }) {
-  if (!app || typeof app !== "object") {
+  if (!isApplication(app)) {
     throw new TypeError("Application Express requise.");
   }
   if (typeof moduleId !== "string" || !/^[a-z][a-z0-9-]*$/.test(moduleId)) {
