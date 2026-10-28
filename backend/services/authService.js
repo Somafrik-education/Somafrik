@@ -74,14 +74,22 @@ function buildTeacherNameKeys(teacher = {}, user = {}) {
   return keys;
 }
 
+/**
+ * Une affectation appartient-elle à cet enseignant ?
+ *
+ * Correctif MONO-T1-A1 : dès que l'affectation référence un enseignant
+ * (teacherId, sinon teacherCode), seule cette référence fait foi. Le repli
+ * par nom ne vaut que pour une affectation sans aucune référence : sinon un
+ * homonyme (même prénom et nom dans l'établissement) hériterait des classes
+ * d'un autre enseignant.
+ */
 function assignmentMatchesTeacher(assignment = {}, teacher = {}, user = {}) {
-  const teacherId = String(teacher.id ?? "").trim();
-  const teacherPublicId = String(teacher.publicId ?? "").trim();
-  const userId = String(user.id ?? "").trim();
-  const ref = String(assignment.teacherId ?? "").trim();
-
-  if (ref && (ref === teacherId || ref === teacherPublicId || (userId && ref === userId))) {
-    return true;
+  const ref = String(assignment.teacherId ?? "").trim() || String(assignment.teacherCode ?? "").trim();
+  if (ref) {
+    const ownRefs = [teacher.id, teacher.publicId, teacher.teacherCode, user.id]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    return ownRefs.includes(ref);
   }
 
   const nameKeys = buildTeacherNameKeys(teacher, user);
