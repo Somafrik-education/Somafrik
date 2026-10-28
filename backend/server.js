@@ -3519,15 +3519,26 @@ app.get("/api/finance/payment-statuses", requireAuth, requirePermission("GET /ap
 
 app.post("/api/finance/payment-statuses", requireAuth, requirePermission("POST /api/finance/payment-statuses"), asyncHandler(async (req, res) => {
   assertCanManagePaymentStatuses(req.principal);
-  const row = await repository.upsertFinancePaymentStatus(req.body ?? {}, req.principal);
+  const { assertPaymentStatusPayload } = require("./lib/financePaymentStatusValidation");
+  assertPaymentStatusPayload(req.body, { create: true });
+  const row = await repository.upsertFinancePaymentStatus(req.body, req.principal);
   res.status(201).json(row);
 }));
 
 app.patch("/api/finance/payment-statuses/:statusId", requireAuth, requirePermission("PATCH /api/finance/payment-statuses/:statusId"), asyncHandler(async (req, res) => {
   assertCanManagePaymentStatuses(req.principal);
+  const { assertPaymentStatusPayload, assertKnownPaymentStatus } = require("./lib/financePaymentStatusValidation");
+  assertPaymentStatusPayload(req.body);
+  const principal = await financeHttpPrincipal(req);
+  // Vérifier l'existence dans le périmètre de l'établissement AVANT l'upsert.
+  const visible = await repository.listFinancePaymentStatuses(principal);
+  assertKnownPaymentStatus(visible, req.params.statusId);
+  if (req.body?.code !== undefined && req.body.code !== req.params.statusId) {
+    assertPaymentStatusPayload({ code: "" });
+  }
   const row = await repository.upsertFinancePaymentStatus(
-    { ...(req.body ?? {}), code: req.params.statusId, id: req.params.statusId },
-    req.principal,
+    { ...req.body, code: req.params.statusId, id: req.params.statusId },
+    principal,
   );
   res.json(row);
 }));
