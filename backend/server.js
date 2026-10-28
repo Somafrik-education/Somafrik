@@ -7980,6 +7980,13 @@ function appSecurityHeaders(req, res, next) {
   next();
 }
 
+// MONO-L0 — point de composition des modules extraits.
+// Les middlewares globaux et les routes de ce fichier restent au-dessus,
+// dans le même ordre. Le catalogue de production n'enregistre aucune route :
+// un lot d'extraction s'enregistrera ici, avant le gestionnaire d'erreur.
+const { loadBackendModules } = require("./modules/loadModules");
+loadBackendModules(app);
+
 app.use((error, _req, res, _next) => {
   if (error.statusCode) {
     if (error.statusCode >= 500) {
