@@ -142,6 +142,8 @@ function mapSubscriptionRow(row) {
     cancellationEffectiveDate: profile.cancellationEffectiveDate,
     cancellationReason: profile.cancellationReason,
     ...profile,
+    // Statut stocké (colonne subscriptions.status) : jamais masqué par le profil JSON (MONO-FIX-O9).
+    dbStatus: row.status ?? null,
   };
 }
 

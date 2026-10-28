@@ -38,25 +38,98 @@ function computeDelinquencyDays(subscription, today = new Date()) {
   return diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
 }
 
+/**
+ * Statuts d'abonnement : valeurs stockées (anglais, colonne subscriptions.status)
+ * et libellés métier historiques (français) → statut canonique.
+ * Toute valeur non vide absente de cette table est « Inconnu » (aucun accès).
+ */
+const SUBSCRIPTION_STATUS_ALIASES = Object.freeze({
+  actif: "Actif",
+  active: "Actif",
+  essai: "Essai",
+  trial: "Essai",
+  brouillon: "Brouillon",
+  draft: "Brouillon",
+  en_retard: "En retard",
+  late: "En retard",
+  past_due: "En retard",
+  overdue: "En retard",
+  suspendu: "Suspendu",
+  suspended: "Suspendu",
+  expire: "Expiré",
+  expired: "Expiré",
+  annule: "Annulé",
+  cancelled: "Annulé",
+  canceled: "Annulé",
+  resilie: "Résilié",
+  terminated: "Résilié",
+});
+const UNKNOWN_STATUS = "Inconnu";
+const BLOCKED_LIFECYCLES = new Set(["Suspendu", "Expiré", "Annulé", "Résilié", UNKNOWN_STATUS]);
+const ACCESS_LEVELS = new Set(["full", "limited", "readonly", "blocked"]);
+
+function statusKey(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+/** Statut canonique, null si vide, « Inconnu » si la valeur n'est pas reconnue. */
+function canonicalSubscriptionStatus(value) {
+  const key = statusKey(value);
+  if (!key) return null;
+  return SUBSCRIPTION_STATUS_ALIASES[key] ?? UNKNOWN_STATUS;
+}
+
+function isSuspendedSchool(school = {}) {
+  return ["suspendu", "suspended"].includes(statusKey(school.status));
+}
+
+/**
+ * Cycle de vie de l'abonnement (MONO-FIX-O9).
+ *
+ * Signaux lus : dbStatus (colonne subscriptions.status, transmise telle quelle
+ * par les projections), status, lifecycleStatus (profil) et paymentStatus.
+ *   1. « Suspendu » dans n'importe quel signal l'emporte toujours ;
+ *   2. lifecycleStatus explicite (profil), sinon :
+ *   3. statut inconnu ⇒ « Inconnu » ; annulé / résilié ⇒ tels quels ;
+ *   4. paiement en retard ⇒ « En retard » (ordre historique conservé) ;
+ *   5. expiré ⇒ « Expiré » ; sinon essai / brouillon / actif ;
+ *      sans aucun statut (abonnement absent) : « Actif », comme avant.
+ */
 function resolveLifecycleStatus(subscription = {}, school = {}) {
-  if (subscription.lifecycleStatus) return subscription.lifecycleStatus;
-  const status = String(subscription.status ?? school.subscriptionStatus ?? "").trim();
-  const payment = String(subscription.paymentStatus ?? "").trim();
-  if (/suspendu/i.test(status) || /suspendu/i.test(payment)) return "Suspendu";
-  if (/retard/i.test(payment)) return "En retard";
-  if (/actif/i.test(status)) return "Actif";
-  if (/expir/i.test(status)) return "Expiré";
-  return "Actif";
+  const storage = canonicalSubscriptionStatus(subscription.dbStatus);
+  const declared = canonicalSubscriptionStatus(subscription.status ?? school.subscriptionStatus);
+  const lifecycle = canonicalSubscriptionStatus(subscription.lifecycleStatus);
+  const payment = statusKey(subscription.paymentStatus);
+  if ([storage, declared, lifecycle].includes("Suspendu") || payment.includes("suspendu") || payment.includes("suspended")) {
+    return "Suspendu";
+  }
+  if (lifecycle) return lifecycle;
+  const statuses = [storage, declared].filter(Boolean);
+  for (const status of [UNKNOWN_STATUS, "Annulé", "Résilié"]) {
+    if (statuses.includes(status)) return status;
+  }
+  if (payment.includes("retard")) return "En retard";
+  if (statuses.includes("Expiré")) return "Expiré";
+  return statuses.find((status) => status !== "Actif") ?? "Actif";
 }
 
 function resolveAccessLevel(subscription = {}, school = {}) {
-  if (subscription.accessLevel) return subscription.accessLevel;
   const lifecycle = resolveLifecycleStatus(subscription, school);
-  if (lifecycle === "Suspendu" || lifecycle === "Expiré" || lifecycle === "Annulé") return "blocked";
+  // Un abonnement ou un établissement suspendu n'est jamais limité ni complet,
+  // même si le profil JSON porte encore un accessLevel plus permissif.
+  if (lifecycle === "Suspendu" || isSuspendedSchool(school)) return "blocked";
+  if (subscription.accessLevel) {
+    return ACCESS_LEVELS.has(subscription.accessLevel) ? subscription.accessLevel : "blocked";
+  }
+  if (BLOCKED_LIFECYCLES.has(lifecycle)) return "blocked";
   const daysLate = computeDelinquencyDays(subscription);
   if (daysLate >= 30) return "blocked";
   if (daysLate >= 14 || lifecycle === "En retard") return "limited";
-  if (String(school.status ?? "").trim().toLowerCase() === "suspendu") return "blocked";
   return "full";
 }
 
@@ -145,4 +218,7 @@ module.exports = {
   findSubscriptionForSchool,
   parseSubscriptionDate,
   computeDelinquencyDays,
+  canonicalSubscriptionStatus,
+  resolveLifecycleStatus,
+  resolveAccessLevel,
 };
