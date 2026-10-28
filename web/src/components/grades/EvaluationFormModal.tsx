@@ -83,7 +83,9 @@ export function EvaluationFormModal({
       const matching = classOptions.filter((row) => classNamesMatch(row.name, initial.className));
       setClassId(matching.length === 1 ? matching[0].id : "");
     } else {
-      setClassId("");
+      // Une seule classe proposée : aucune ambiguïté, présélection (comportement historique).
+      // Plusieurs classes, dont des homonymes : choix explicite obligatoire.
+      setClassId(classOptions.length === 1 ? classOptions[0].id : "");
     }
   }, [open, initial?.id, initial?.classId, initial?.className, classOptions]);
   const [subject, setSubject] = useState(initial?.subject ?? "");
