@@ -76,6 +76,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "cancelSchoolPayment",
   "listFinancePaymentStatuses",
   "upsertFinancePaymentStatus",
+  "updateFinancePaymentStatus",
   "listFinanceFeeGrids",
   "getFinanceFeeGrid",
   "upsertFinanceFeeGrid",
