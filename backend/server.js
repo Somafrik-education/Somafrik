@@ -7637,6 +7637,13 @@ function requireAuth(req, res, next) {
       }
     }
 
+    // MONO-O9-R1b : contrôler l'abonnement à CHAQUE requête scolaire,
+    // y compris avec un access JWT émis avant la suspension.
+    // Les rôles plateforme ne sont pas soumis à l'abonnement d'une école.
+    // Logout/revoke-all restent accessibles pour terminer une session.
+    const { assertActiveSchoolRequest } = require("./lib/schoolAccessRequestGuard");
+    await assertActiveSchoolRequest(req.principal, req.path, getAuthoritativeBackOfficeState);
+
     const passwordChangeExemptPaths = new Set([
       "/api/auth/change-password",
       "/api/auth/logout",
