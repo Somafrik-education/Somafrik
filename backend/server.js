@@ -7041,7 +7041,7 @@ function isPlainObject(value) {
 
 async function issueRefreshedAccessToken(session, payload) {
   const rolePermissionsMap = await getRolePermissionsMap();
-  const { mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
+  const { displayRoles, mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
   let roleKeys = session.role ? [toRoleKey(session.role)].filter(Boolean) : [];
   // SEC-AUTH-05 (fail-closed) : le refresh ne réémet jamais un rôle retiré. Rôles
   // retirés ou validation impossible → aucun rôle, libellé « Sans affectation » et
@@ -7114,9 +7114,19 @@ async function issueRefreshedAccessToken(session, payload) {
     );
   }
 
+  // REFRESH-R1 : mêmes libellés/roleKeys que le principal de connexion.
+  // Les rôles restent relus en direct : aucune attribution révoquée n'est restaurée.
+  const liveDisplay = displayRoles(roleKeys);
+  const effectiveRole = liveDisplay.role === "Super Administrateur OKAFRIK"
+    ? "Super Administrateur Somafrik"
+    : liveDisplay.role;
   const accessToken = tokenService.createAccessToken({
     sub: session.user_id,
-    role: sessionRole,
+    userId: session.user_id,
+    schoolId: session.school_id ?? "",
+    role: effectiveRole,
+    roles: liveDisplay.roles,
+    roleKeys: liveDisplay.roleKeys,
     schoolCode: refreshedSchoolCode,
     countryCode: session.country_code ?? payload.countryCode ?? "",
     authSource: payload.authSource ?? "mobile",
