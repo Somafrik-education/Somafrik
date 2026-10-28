@@ -1,0 +1,2482 @@
+{
+  "generatedBy": "backend/lib/monoT1.rbacMatrix.http.pg.test.js (MONO_T1_UPDATE_RBAC_MATRIX=1)",
+  "accounts": {
+    "cdAdmin": "SCHOOL_ADMIN",
+    "cdProviseur": "PROVISEUR",
+    "cdPrefet": "PREFET_ETUDES",
+    "cdSecretary": "SECRETARY",
+    "cdTeacher": "TEACHER",
+    "cdParent": "PARENT"
+  },
+  "legend": {
+    "refusé": "403 PERMISSION_DENIED (ou PARENT_NOTES_READ_ONLY) : la porte RBAC refuse avant le gestionnaire",
+    "accès": "porte RBAC franchie (la réponse peut être 2xx, 400, 404… selon le gestionnaire et les paramètres fictifs)",
+    "écriture autorisée (non envoyée)": "écriture permise par la matrice par défaut ou effective : jamais déclenchée par le test"
+  },
+  "routes": {
+    "GET /api/privacy/erasure-requests": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/privacy/erasure-requests/:requestId/execute": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/contacts": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/contacts": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/contacts/:contactId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/contacts/:contactId/provision-account": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishment-roles": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/establishment-roles": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/establishment-roles/:roleId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/establishment-roles/:roleId/archive": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/rbac/catalog": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/rbac/history": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/rbac/permissions": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/rbac/permissions": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/rbac/permissions/effective": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/rbac/permissions/reset": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/rbac/role-display-labels": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/rbac/roles": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/rbac/roles/:roleId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/rbac/roles/:roleId/archive": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/rbac/roles/:roleId/display-label": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/rbac/roles/:roleId/display-label/reset": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/relations": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/relations": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/relations/:relationId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/relations/:relationId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/role-permissions": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/backoffice/role-permissions": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/users": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/users": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/users/:userId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/users/:userId/reassign-school": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/users/:userId/roles/grant": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/users/:userId/roles/revoke": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/users/assignable-roles": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/users/create-teacher": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/users/provision": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/establishment-roles/assignable": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/classes/:classCode/students": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/classes/:classCode/students": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/parents/identity": {
+      "cdAdmin": "accès",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/parents/link": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/parents/relations": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "PATCH /api/parents/relations/:relationId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/:id/lost": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/:id/nfc-confirm": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/:id/nfc-provision": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/:id/nfc-provision/confirm": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/:id/nfc-recover": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/:id/nfc-reencode": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/:id/nfc-retry": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/:id/replace": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/:id/revoke": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/student-cards/capabilities": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "GET /api/student-cards/entries": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/entry-scan": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/nfc-diagnose": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/student-cards/roll-call/overview": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/student-cards/roll-call/roster": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/roll-call/scan": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/roll-call/validate": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/scan": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "POST /api/student-cards/verify": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "écriture autorisée (non envoyée)"
+    },
+    "GET /api/students": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "DELETE /api/students/:id": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/students/:id": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "PATCH /api/students/:id": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/students/:id/cards": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/students/:id/notes": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/students/:id/payments": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "GET /api/students/:id/presences": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/students/:id/report": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/students/:id/report.pdf": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/students/:studentId/documents": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/students/:studentId/documents": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "écriture autorisée (non envoyée)"
+    },
+    "POST /api/students/:studentId/documents/:documentId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "écriture autorisée (non envoyée)"
+    },
+    "GET /api/students/:studentId/documents/:documentId/file": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/students/:studentId/documents/:documentId/verify": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "écriture autorisée (non envoyée)"
+    },
+    "GET /api/students/:studentId/enrollments": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/students/:studentId/enrollments/:enrollmentId/assign-class": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/students/:studentId/enrollments/:enrollmentId/close": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/students/:studentId/enrollments/:enrollmentId/transfer": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/students/:studentId/enrollments/:enrollmentId/validate": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/students/:studentId/photo": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/assignments": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "POST /api/assignments": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/assignments/:assignmentId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/assignments/:assignmentId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/report-cards": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "PUT /api/backoffice/report-cards": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/evaluation-types": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/evaluation-types": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/evaluation-types/:typeId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/evaluation-types/:typeId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/evaluations": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/evaluations": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/evaluations/:evaluationId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "GET /api/exams": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "POST /api/exams": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/exams/:examId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/exams/:examId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/exams/:examId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/exams/:examId/cancel": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/exams/:examId/validate": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/notes": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/notes": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "GET /api/presences": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/presences": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "GET /api/report-card-templates": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "PUT /api/report-card-templates": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/report-card-templates/:templateId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/report-cards": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/report-cards/:cardId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/report-cards/:cardId/publish": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/report-cards/generate": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/v2/exams": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/finance/unpaid": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "GET /api/backoffice/finance/unpaid/:studentId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "GET /api/backoffice/finance/unpaid/:studentId/reminders": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "POST /api/backoffice/finance/unpaid/:studentId/reminders": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/finance/catalog": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "GET /api/finance/fee-grids": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "POST /api/finance/fee-grids": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/finance/fee-grids/:gridId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "PATCH /api/finance/fee-grids/:gridId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/finance/fee-grids/:gridId/activate": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/finance/fee-grids/:gridId/apply": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/finance/fee-grids/:gridId/deactivate": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/finance/payment-methods": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "PUT /api/finance/payment-methods": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/finance/payment-statuses": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "POST /api/finance/payment-statuses": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/finance/payment-statuses/:statusId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/finance/payment-student-options": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "POST /api/finance/reconcile-payment-allocations": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/finance/student-fees": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "GET /api/finance/student-fees/:obligationId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "POST /api/finance/student-fees/:obligationId/adjust": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/payments": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "POST /api/payments": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/payments/:paymentId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "POST /api/payments/:paymentId/cancel": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/announcements": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/backoffice/announcements": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/announcements/:announcementId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "PATCH /api/backoffice/announcements/:announcementId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/announcements/:announcementId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/announcements/:announcementId/read": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "écriture autorisée (non envoyée)"
+    },
+    "POST /api/backoffice/announcements/attachments": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/announcements/audience-options": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/announcements/unread-count": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/backoffice/communications/attachments": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/communications/attachments/:attachmentId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/backoffice/communications/deliveries/health": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/backoffice/conversations": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/backoffice/conversations": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/conversations/:conversationId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/backoffice/conversations/:conversationId/messages": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/backoffice/conversations/:conversationId/messages": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/internal-notifications": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/backoffice/internal-notifications": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/internal-notifications/:notificationId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "PATCH /api/backoffice/internal-notifications/:notificationId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "écriture autorisée (non envoyée)"
+    },
+    "PATCH /api/backoffice/internal-notifications/:notificationId/read": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "écriture autorisée (non envoyée)"
+    },
+    "POST /api/backoffice/internal-notifications/attachments": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/internal-notifications/attachments/:attachmentId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/backoffice/internal-notifications/unread-count": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/backoffice/messages": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/backoffice/messages": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/messages/:messageId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "PATCH /api/backoffice/messages/:messageId/read": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "écriture autorisée (non envoyée)"
+    },
+    "GET /api/backoffice/messages/recipients": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/messages/unread-count": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/backoffice/notifications": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/notifications": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/notifications/:notificationId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/platform-announcements": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/backoffice/platform-announcements": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/platform-announcements/:announcementId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/backoffice/platform-announcements/:announcementId/archive": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/platform-announcements/:announcementId/read": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "écriture autorisée (non envoyée)"
+    },
+    "POST /api/backoffice/platform-announcements/attachments": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/platform-announcements/attachments/:attachmentId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/backoffice/platform-announcements/unread-count": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/academic-config": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "PUT /api/academic-config": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/academic-periods": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/education-class-groups": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/education-class-groups": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/education-class-groups/:groupId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/education-class-groups/:groupId/archive": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/education-levels": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/education-levels": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/education-levels/:levelId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/education-levels/:levelId/archive": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/education-reference/labels": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/education-streams": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/education-streams": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/education-streams/:streamId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/education-streams/:streamId/archive": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/import/students/validate": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/planning-exams": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "PUT /api/backoffice/planning-exams": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/classes": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/classes": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/classes/:classCode": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/classes/:classCode/head-teacher": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/classes/:classCode/head-teacher": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/classes/:classCode/head-teacher/candidates": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/classes/:classCode/student-cards/batches": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/classes/:classCode/student-cards/batches/:batchId": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/classes/:classCode/student-cards/batches/:batchId/abort": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/classes/:classCode/student-cards/batches/:batchId/activate": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/classes/:classCode/student-cards/batches/:batchId/receipt": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/classes/:classCode/student-cards/preflight": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/course-schedule-replacements": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "POST /api/course-schedule-replacements": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/course-schedule-replacements/:replacementId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/course-schedule-replacements/:replacementId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/course-schedule-replacements/options": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/course-schedules": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "POST /api/course-schedules": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/course-schedules/:scheduleId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/course-schedules/:scheduleId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/courses": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "POST /api/courses": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/courses/:courseId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/courses/:courseId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/education-reference/catalog": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/education-reference/school-activation": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/mobile-sync/l1/assignments": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "GET /api/mobile-sync/l1/classes": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/mobile-sync/l1/course-schedules": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "GET /api/mobile-sync/l1/school-courses": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "GET /api/mobile-sync/l1/students": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/school-documents": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/school-documents": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/school-documents/:documentId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/school-documents/:documentId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/school-rooms": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "POST /api/school-rooms": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/school-rooms/:roomId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/school-rooms/:roomId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/school-settings": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/school-settings": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/teachers": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/teachers": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/teachers/:teacherCode": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/teachers/:teacherCode": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/teachers/:teacherCode": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/v2/academic-years": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
+    "POST /api/v2/academic-years": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/v2/academic-years/:id": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/v2/documents": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/v2/reports/advanced": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/v2/school-setup/guided": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/v2/school-setup/guided/steps/:stepKey/complete": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/v2/school-setup/status": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/v2/subjects": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "POST /api/v2/subjects": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/v2/subjects/:code": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/audit": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/countries": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/countries": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/countries/:code": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/dashboard-chart-config": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/backoffice/dashboard-chart-config": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishment-documents": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "PUT /api/backoffice/establishment-documents": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishments": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/establishments": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/backoffice/establishments/:code": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishments/:code": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/establishments/:code": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/establishments/:code/activate": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "DELETE /api/backoffice/establishments/:code/logo": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/backoffice/establishments/:code/logo": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishments/:code/subscription": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/establishments/:code/suspend": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishments/:schoolCode/academic-config": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/backoffice/establishments/:schoolCode/academic-config": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/backoffice/establishments/:schoolCode/academic-periods": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishments/:schoolCode/education-reference/catalog": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/backoffice/establishments/:schoolCode/education-reference/school-activation": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishments/:schoolCode/evaluation-types": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/establishments/:schoolCode/evaluation-types": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/establishments/:schoolCode/evaluation-types/:typeId": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/establishments/:schoolCode/evaluation-types/:typeId/archive": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishments/:schoolCode/notification-settings": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/establishments/:schoolCode/notification-settings": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PUT /api/backoffice/establishments/:schoolCode/notification-settings": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/establishments/:schoolCode/school-settings": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/establishments/:schoolCode/school-settings": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/establishments/import": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/platform-compliance": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/subscription-access": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/subscription-discounts": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/subscription-discounts/:discountId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/subscription-offers": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/subscription-offers/:offerId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/subscription-payments": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/subscription-payments/:paymentId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/subscriptions": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "POST /api/backoffice/subscriptions": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "PATCH /api/backoffice/subscriptions/:subscriptionId": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/backoffice/trial-requests": {
+      "cdAdmin": "refusé",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
+    "GET /api/data-export": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    }
+  }
+}

@@ -14,6 +14,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - "scripts/backend-test-baseline*"
+      - "scripts/mono-t1-route-inventory*"
+      - "docs/project/MONO-T1-ROUTES.*"
       - ".github/workflows/backend-test-baseline.yml"
   schedule:
     - cron: "45 2 * * *"
@@ -57,6 +59,10 @@ jobs:
           done
       - name: Baseline guard tests (no database)
         run: node --test scripts/backend-test-baseline.test.js
+      - name: MONO-T1 route inventory is up to date (no database)
+        # Relevé runtime des routes de backend/server.js (base loopback injoignable,
+        # aucun port ouvert) comparé à docs/project/MONO-T1-ROUTES.{json,md}.
+        run: node scripts/mono-t1-route-inventory.js --check
       - name: Run backend unit baseline
         run: node scripts/backend-test-baseline.js unit --coverage
       - name: Upload unit results

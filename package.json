@@ -61,6 +61,7 @@
     "test:v2-api": "npm --prefix apps/api test",
     "test:backend-baseline:unit": "node scripts/backend-test-baseline.js unit --coverage",
     "test:backend-baseline:pg": "node scripts/backend-test-baseline.js pg --coverage",
+    "test:mono-t1:inventory": "node scripts/mono-t1-route-inventory.js",
     "verify:v2-foundation": "node scripts/verify-v2-foundation.js && npm run test:v2-domain && npm run test:v2-auth && npm run test:v2-api",
     "verify:notes-sync": "node --test backend/lib/legacyBootMigrations.guard.test.js && node backend/lib/gradesBoPersistence.test.js && node backend/lib/evaluationAttachment.test.js && node backend/lib/evaluationSyncRepository.test.js && node backend/lib/teacherNotesWriteAccess.test.js",
     "verify:students-sync": "node --test backend/lib/legacyStudentsStateWrite.test.js backend/lib/studentsProjectionCache.test.js",
