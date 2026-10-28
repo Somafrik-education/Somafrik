@@ -22,7 +22,7 @@ let server = null;
 before(async () => {
   if (skip) return;
   server = await startCharacterizationServer({ database: "somafrik_mono_t1_anomaly_a4_it", port: 19974 });
-  await server.applyActiveSubscriptionFixture();
+  await server.assertActiveSubscriptionPrecondition();
   assertStatus(
     await server.request("POST", "/api/evaluation-types", { token: await server.login("cdAdmin"), body: { code: "devoir", name: "Devoir" } }),
     201,

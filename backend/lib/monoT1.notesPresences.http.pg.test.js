@@ -12,7 +12,7 @@
  * Données de démonstration : l'enseignant patrick.ilunga@somafrik.cd
  * (CD-2026-0001-ENS-0003) est affecté en Sciences à 6ème A (CLS-2026-000035),
  * 5ème A et 6ème B ; 1ère B (CLS-2026-000036) ne lui est pas affectée.
- * Fixture : abonnement actif (anomalie MONO-T1-A2, cf. harnais).
+ * Précondition : abonnement actif réel de la fixture (vérifié, aucune écriture).
  */
 
 const { test, before, after } = require("node:test");
@@ -46,7 +46,7 @@ const evaluationBody = (overrides = {}) => ({
 before(async () => {
   if (skip) return;
   server = await startCharacterizationServer({ database: "somafrik_mono_t1_notes_it", port: 19964 });
-  await server.applyActiveSubscriptionFixture();
+  await server.assertActiveSubscriptionPrecondition();
   const rows = await server.pool.query("SELECT class_code, id FROM classes WHERE class_code = ANY($1)", [
     [ASSIGNED_CLASS.code, UNASSIGNED_CLASS.code, "CLS-2026-000041"],
   ]);

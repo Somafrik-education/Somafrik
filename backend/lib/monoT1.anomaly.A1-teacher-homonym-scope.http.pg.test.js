@@ -3,9 +3,9 @@
 /**
  * ANOMALIE-MONO-T1-A1 — périmètre enseignant fondé sur un homonyme.
  *
- * Échec ATTENDU (scripts/backend-test-baseline.manifest.json › expectedFailures) :
- * ce test exprime le comportement correct ; il échoue tant que le défaut existe
- * et devra passer avec la PR corrective (le manifeste signale alors le changement).
+ * CORRIGÉE par #1011 (dad5591d) : test de non-régression, exécuté normalement
+ * par la baseline pg (retiré de manifest › expectedFailures). Il exprime le
+ * comportement correct et échouerait si le défaut réapparaissait.
  *
  * Constat : à la connexion, les affectations portées par le jeton enseignant
  * sont rapprochées par NOM (authService.assignmentMatchesTeacher, repli sur

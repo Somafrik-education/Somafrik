@@ -22,7 +22,7 @@ const DATE = "2026-10-19";
 before(async () => {
   if (skip) return;
   server = await startCharacterizationServer({ database: "somafrik_mono_t1_anomaly_a3_it", port: 19973 });
-  await server.applyActiveSubscriptionFixture();
+  await server.assertActiveSubscriptionPrecondition();
 });
 
 after(async () => {

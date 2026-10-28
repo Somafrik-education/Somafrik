@@ -318,7 +318,8 @@
         "backend/scripts/verify-runtime-bootstrap.js"
       ],
       "monoT1Tests": [
-        "backend/lib/monoT1.authSessions.http.pg.test.js"
+        "backend/lib/monoT1.authSessions.http.pg.test.js",
+        "backend/lib/monoT1.subscriptionAccess.http.pg.test.js"
       ]
     },
     {
@@ -5355,7 +5356,8 @@
       "existingHttpTests": [],
       "monoT1Tests": [
         "backend/lib/monoT1.anomaly.A4-ambiguous-class-name.http.pg.test.js",
-        "backend/lib/monoT1.notesPresences.http.pg.test.js"
+        "backend/lib/monoT1.notesPresences.http.pg.test.js",
+        "backend/lib/monoT1.subscriptionAccess.http.pg.test.js"
       ]
     },
     {
@@ -5406,7 +5408,8 @@
       "existingHttpTests": [],
       "monoT1Tests": [
         "backend/lib/monoT1.anomaly.A4-ambiguous-class-name.http.pg.test.js",
-        "backend/lib/monoT1.notesPresences.http.pg.test.js"
+        "backend/lib/monoT1.notesPresences.http.pg.test.js",
+        "backend/lib/monoT1.subscriptionAccess.http.pg.test.js"
       ]
     },
     {
@@ -16569,7 +16572,8 @@
       "existingTests": [],
       "existingHttpTests": [],
       "monoT1Tests": [
-        "backend/lib/monoT1.anomaly.A2-subscription-iso-date.http.pg.test.js"
+        "backend/lib/monoT1.anomaly.A2-subscription-iso-date.http.pg.test.js",
+        "backend/lib/monoT1.subscriptionAccess.http.pg.test.js"
       ]
     },
     {

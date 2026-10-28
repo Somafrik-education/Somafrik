@@ -3,7 +3,8 @@
 /**
  * ANOMALIE-MONO-T1-A2 — abonnement actif vu « suspendu » (date ISO mal lue).
  *
- * Échec ATTENDU (manifeste › expectedFailures) : test du comportement correct.
+ * CORRIGÉE par #1010 (d306a0de) : test de non-régression, exécuté normalement
+ * par la baseline pg (retiré de manifest › expectedFailures).
  *
  * Constat : schoolSubscriptionAccessService.parseFrDate découpe « AAAA-MM-JJ »
  * sur « - » et lit [jour, mois, année] : 2027-08-31 devient le 2027 août 0031,

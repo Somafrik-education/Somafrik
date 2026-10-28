@@ -29,7 +29,7 @@ const paymentBody = (studentId, amount = 5, extra = {}) => ({
 before(async () => {
   if (skip) return;
   server = await startCharacterizationServer({ database: "somafrik_mono_t1_finance_it", port: 19965 });
-  await server.applyActiveSubscriptionFixture();
+  await server.assertActiveSubscriptionPrecondition();
 });
 
 after(async () => {

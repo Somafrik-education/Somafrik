@@ -21,7 +21,7 @@ let announcementId = null;
 before(async () => {
   if (skip) return;
   server = await startCharacterizationServer({ database: "somafrik_mono_t1_communication_it", port: 19966 });
-  await server.applyActiveSubscriptionFixture();
+  await server.assertActiveSubscriptionPrecondition();
   const byEmail = async (email) => (await server.one("SELECT id FROM users WHERE email = $1", [email])).id;
   ids.parent = await byEmail("parent.dupont@example.com");
   ids.biAdmin = await byEmail("admin@bujumbura.somafrik");

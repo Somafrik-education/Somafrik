@@ -9,7 +9,7 @@
  * insuffisante, interétablissement (aucune fuite d'existence), entrée
  * invalide, absence d'écriture en cas de refus.
  *
- * Fixture : abonnement actif (cf. anomalie MONO-T1-A2 dans le harnais).
+ * Précondition : abonnement actif réel de la fixture (vérifié, aucune écriture).
  */
 
 const { test, before, after } = require("node:test");
@@ -28,7 +28,7 @@ const CLASS_CODE = "CLS-2026-000035";
 before(async () => {
   if (skip) return;
   server = await startCharacterizationServer({ database: "somafrik_mono_t1_students_it", port: 19963 });
-  await server.applyActiveSubscriptionFixture();
+  await server.assertActiveSubscriptionPrecondition();
 });
 
 after(async () => {

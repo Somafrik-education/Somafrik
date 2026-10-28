@@ -42,9 +42,9 @@ let server = null;
 before(async () => {
   if (skip) return;
   server = await startCharacterizationServer({ database: "somafrik_mono_t1_rbac_matrix_it", port: 19967 });
-  // La porte abonnement précède requirePermission sur certaines routes : sans
-  // abonnement actif (anomalie MONO-T1-A2), c'est elle qui refuserait.
-  await server.applyActiveSubscriptionFixture();
+  // La porte abonnement précède requirePermission sur certaines routes : la
+  // matrice exige l'abonnement actif réel de la fixture (sinon c'est elle qui refuserait).
+  await server.assertActiveSubscriptionPrecondition();
 });
 
 after(async () => {

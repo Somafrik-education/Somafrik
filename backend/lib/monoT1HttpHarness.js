@@ -41,6 +41,9 @@ const ACCOUNTS = Object.freeze({
   biAdmin: { identifier: "admin@bujumbura.somafrik", school: "BI-2026-0002" },
   countryAdminCd: { identifier: "admin.rdc@somafrik.app", school: null },
   superAdmin: { identifier: "superadmin@somafrik.app", school: null, superadmin: true },
+  // Fixtures d'abonnement réelles (backend/data.js) : échu le 31-05-2026 / suspendu.
+  expiredSchoolUser: { identifier: "user-16@somafrik.demo", school: "SCH-DEMO-0017" },
+  suspendedSchoolUser: { identifier: "user-21@somafrik.demo", school: "SCH-DEMO-0022" },
 });
 
 const skipWithoutDatabase = DATABASE_URL ? false : "DATABASE_URL absent (exécuter via npm run test:backend-baseline:pg)";
@@ -208,20 +211,24 @@ async function startCharacterizationServer({ database, port, env = {} }) {
     },
 
     /**
-     * Fixture « abonnement actif » : retire la date de fin des abonnements de
-     * démonstration. Contournement documenté de l'anomalie MONO-T1-A2
-     * (schoolSubscriptionAccessService.parseFrDate lit une date ISO AAAA-MM-JJ
-     * comme JJ-MM-AA : tout abonnement daté est vu « suspendu »). Sans cette
-     * fixture, les écritures soumises à abonnement (notes, présences, création
-     * d'élève…) seraient refusées par 403 quelle que soit l'autorisation.
-     * Reproduction du défaut : monoT1.anomaly.A2-*.http.pg.test.js.
+     * Précondition « abonnement actif » (lecture seule, aucune écriture) :
+     * l'abonnement réel de la fixture CD-2026-0001 (fin 31-08-2027, données
+     * backend/data.js) doit donner un accès complet. Échec explicite sinon,
+     * jamais de SKIP : si la date de démonstration est dépassée, les tests
+     * soumis à abonnement le signalent au lieu de mesurer la mauvaise porte.
+     * (Remplace l'ancien contournement de l'anomalie MONO-T1-A2, corrigée
+     * par #1010, qui effaçait subscriptions.end_date.)
      */
-    async applyActiveSubscriptionFixture() {
-      await pool.query("UPDATE subscriptions SET end_date = NULL");
+    async assertActiveSubscriptionPrecondition(accountKey = "cdAdmin") {
       const access = await instance.request("GET", "/api/backoffice/subscription-access", {
-        token: await instance.login("cdAdmin"),
+        token: await instance.login(accountKey),
       });
-      assert.equal(access.data?.level, "full", `fixture abonnement actif : ${access.text.slice(0, 200)}`);
+      assert.equal(access.status, 200, `précondition abonnement : ${access.text.slice(0, 200)}`);
+      assert.equal(
+        access.data?.level,
+        "full",
+        `précondition abonnement actif (fixture réelle) : niveau « ${access.data?.level} », ${access.data?.daysLate} jour(s) de retard`,
+      );
     },
   };
 
