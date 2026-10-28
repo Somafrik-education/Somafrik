@@ -38,26 +38,114 @@ function computeDelinquencyDays(subscription, today = new Date()) {
   return diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;
 }
 
-function resolveLifecycleStatus(subscription = {}, school = {}) {
-  if (subscription.lifecycleStatus) return subscription.lifecycleStatus;
-  const status = String(subscription.status ?? school.subscriptionStatus ?? "").trim();
-  const payment = String(subscription.paymentStatus ?? "").trim();
-  if (/suspendu/i.test(status) || /suspendu/i.test(payment)) return "Suspendu";
-  if (/retard/i.test(payment)) return "En retard";
-  if (/actif/i.test(status)) return "Actif";
-  if (/expir/i.test(status)) return "Expiré";
-  return "Actif";
+/**
+ * Statuts d'abonnement : valeurs stockées (anglais, colonne subscriptions.status)
+ * et libellés métier historiques (français) → statut canonique.
+ * Toute valeur non vide absente de cette table est « Inconnu » (aucun accès).
+ */
+const SUBSCRIPTION_STATUS_ALIASES = Object.freeze({
+  actif: "Actif",
+  active: "Actif",
+  essai: "Essai",
+  trial: "Essai",
+  brouillon: "Brouillon",
+  draft: "Brouillon",
+  en_retard: "En retard",
+  late: "En retard",
+  past_due: "En retard",
+  overdue: "En retard",
+  suspendu: "Suspendu",
+  suspended: "Suspendu",
+  expire: "Expiré",
+  expired: "Expiré",
+  annule: "Annulé",
+  cancelled: "Annulé",
+  canceled: "Annulé",
+  resilie: "Résilié",
+  terminated: "Résilié",
+});
+const UNKNOWN_STATUS = "Inconnu";
+const BLOCKED_LIFECYCLES = new Set(["Suspendu", "Expiré", "Annulé", "Résilié", UNKNOWN_STATUS]);
+const ACCESS_LEVELS = new Set(["full", "limited", "readonly", "blocked"]);
+
+function statusKey(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
 }
 
+/** Statut canonique, null si vide, « Inconnu » si la valeur n'est pas reconnue. */
+function canonicalSubscriptionStatus(value) {
+  const key = statusKey(value);
+  if (!key) return null;
+  return SUBSCRIPTION_STATUS_ALIASES[key] ?? UNKNOWN_STATUS;
+}
+
+function isSuspendedSchool(school = {}) {
+  return ["suspendu", "suspended"].includes(statusKey(school.status));
+}
+
+/**
+ * Cycle de vie de l'abonnement (MONO-FIX-O9).
+ *
+ * Signaux lus : dbStatus (colonne subscriptions.status, transmise telle quelle
+ * par les projections), status, lifecycleStatus (profil) et paymentStatus.
+ *   1. « Suspendu » dans n'importe quel signal l'emporte toujours ;
+ *   2. statut bloquant dans n'importe quel signal (inconnu, annulé, résilié,
+ *      expiré) : un cycle de vie « Actif » resté dans le profil JSON ou un
+ *      paiement en retard ne le masquent pas ;
+ *   3. lifecycleStatus explicite (profil), sinon paiement en retard ⇒ « En retard » ;
+ *   4. sinon essai / brouillon / actif ; sans aucun statut (abonnement absent) :
+ *      « Actif », comme avant.
+ */
+function resolveLifecycleStatus(subscription = {}, school = {}) {
+  const storage = canonicalSubscriptionStatus(subscription.dbStatus);
+  const declared = canonicalSubscriptionStatus(subscription.status ?? school.subscriptionStatus);
+  const lifecycle = canonicalSubscriptionStatus(subscription.lifecycleStatus);
+  const payment = statusKey(subscription.paymentStatus);
+  const signals = [storage, declared, lifecycle].filter(Boolean);
+  if (signals.includes("Suspendu") || payment.includes("suspendu") || payment.includes("suspended")) {
+    return "Suspendu";
+  }
+  for (const status of [UNKNOWN_STATUS, "Annulé", "Résilié", "Expiré"]) {
+    if (signals.includes(status)) return status;
+  }
+  if (lifecycle) return lifecycle;
+  if (payment.includes("retard")) return "En retard";
+  return [storage, declared].find((status) => status && status !== "Actif") ?? "Actif";
+}
+
+/** Ordre de restriction des niveaux d'accès. */
+const ACCESS_LEVEL_RANK = Object.freeze({ full: 0, limited: 1, readonly: 2, blocked: 3 });
+
+function mostRestrictive(...levels) {
+  return levels.reduce((current, level) => (ACCESS_LEVEL_RANK[level] > ACCESS_LEVEL_RANK[current] ? level : current));
+}
+
+/**
+ * Niveau d'accès (MONO-FIX-O9). Ordre de priorité :
+ *   1. abonnement ou établissement suspendu ⇒ blocked ;
+ *   2. statut bloquant (expiré, annulé, résilié, inconnu) ⇒ blocked ;
+ *   3. échéance dépassée de 30 jours ou plus ⇒ blocked ;
+ *   4. politique de retard : J+14 ou paiement en retard ⇒ limited, sinon full ;
+ *   5. surcharge accessLevel du profil : ne peut que RESTREINDRE le niveau
+ *      calculé, jamais l'élever ; valeur non reconnue ⇒ blocked.
+ */
 function resolveAccessLevel(subscription = {}, school = {}) {
-  if (subscription.accessLevel) return subscription.accessLevel;
   const lifecycle = resolveLifecycleStatus(subscription, school);
-  if (lifecycle === "Suspendu" || lifecycle === "Expiré" || lifecycle === "Annulé") return "blocked";
+  if (lifecycle === "Suspendu" || isSuspendedSchool(school)) return "blocked";
+  if (BLOCKED_LIFECYCLES.has(lifecycle)) return "blocked";
   const daysLate = computeDelinquencyDays(subscription);
   if (daysLate >= 30) return "blocked";
-  if (daysLate >= 14 || lifecycle === "En retard") return "limited";
-  if (String(school.status ?? "").trim().toLowerCase() === "suspendu") return "blocked";
-  return "full";
+  const computed = daysLate >= 14 || lifecycle === "En retard" ? "limited" : "full";
+  if (subscription.accessLevel === undefined || subscription.accessLevel === null || subscription.accessLevel === "") {
+    return computed;
+  }
+  if (!ACCESS_LEVELS.has(subscription.accessLevel)) return "blocked";
+  return mostRestrictive(computed, subscription.accessLevel);
 }
 
 function schoolMatchesCode(school, schoolCode) {
@@ -145,4 +233,7 @@ module.exports = {
   findSubscriptionForSchool,
   parseSubscriptionDate,
   computeDelinquencyDays,
+  canonicalSubscriptionStatus,
+  resolveLifecycleStatus,
+  resolveAccessLevel,
 };

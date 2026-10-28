@@ -1303,8 +1303,12 @@ class PostgresRepository {
     return this.getPlatformStore().updateCountry(code, patch, principal, auditMeta);
   }
 
-  upsertPlatformSubscription(payload, principal, auditMeta) {
-    return this.getPlatformStore().upsertSubscription(payload, principal, auditMeta);
+  async upsertPlatformSubscription(payload, principal, auditMeta) {
+    const saved = await this.getPlatformStore().upsertSubscription(payload, principal, auditMeta);
+    // MONO-FIX-O9 : la connexion lit les abonnements du jeu de données en cache ;
+    // une suspension doit s'appliquer immédiatement, pas au prochain rechargement.
+    this.cachedDataset = null;
+    return saved;
   }
 
   createPlatformNotification(payload, principal, auditMeta) {
@@ -6685,6 +6689,8 @@ class PostgresRepository {
       annualPrice: Number(subscription.price_per_student ?? 0) * 10,
       currency: subscription.billing_currency,
       status: this.fromDbStatus(subscription.status === "active" ? "active" : subscription.status),
+      // Statut stocké brut : fromDbStatus ramène les valeurs non prévues à « Actif » (MONO-FIX-O9).
+      dbStatus: subscription.status ?? null,
       paymentStatus: subscription.status === "active" ? "À jour" : "En retard",
       startDate: this.formatDate(subscription.start_date),
       endDate: this.formatDate(subscription.end_date),

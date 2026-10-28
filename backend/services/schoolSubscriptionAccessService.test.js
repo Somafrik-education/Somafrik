@@ -105,3 +105,192 @@ test("chaîne réelle : ligne PostgreSQL (DATE) → mapSubscriptionRow → accè
   }
   assert.ok(Math.abs(parseSubscriptionDate(endDate).getTime() - Date.now()) < 201 * DAY);
 });
+
+/* ------------------------------------------------------------------------ *
+ * MONO-FIX-O9 — normalisation des statuts : un abonnement suspendu bloque.  *
+ * ------------------------------------------------------------------------ */
+
+const {
+  canonicalSubscriptionStatus,
+  resolveAccessLevel,
+  canUseFeature,
+} = require("./schoolSubscriptionAccessService");
+const { PostgresRepository } = require("../db/postgresRepository");
+
+const FUTURE = isoDaysFromToday(200);
+const SENSITIVE_FEATURES = ["connect", "write_notes", "write_presence", "create_student", "announcements", "notifications"];
+
+function levelOf(subscription, school = { code: "X" }) {
+  return resolveSchoolAccess("X", { schools: [school], subscriptions: [{ schoolCode: "X", endDate: FUTURE, ...subscription }] }).level;
+}
+
+test("O9 — statuts stockés (anglais) et libellés historiques (français) normalisés ; inconnu ⇒ « Inconnu »", () => {
+  const expected = {
+    active: "Actif", Actif: "Actif", ACTIVE: "Actif",
+    trial: "Essai", Essai: "Essai", draft: "Brouillon", Brouillon: "Brouillon",
+    suspended: "Suspendu", Suspendu: "Suspendu", " SUSPENDED ": "Suspendu",
+    expired: "Expiré", "Expiré": "Expiré", expire: "Expiré",
+    "En retard": "En retard", past_due: "En retard",
+    cancelled: "Annulé", canceled: "Annulé", "Annulé": "Annulé",
+    terminated: "Résilié", "Résilié": "Résilié",
+    en_attente_validation: "Inconnu", pending: "Inconnu", "n'importe quoi": "Inconnu",
+  };
+  for (const [value, canonical] of Object.entries(expected)) {
+    assert.equal(canonicalSubscriptionStatus(value), canonical, JSON.stringify(value));
+  }
+  for (const empty of [null, undefined, "", "   "]) assert.equal(canonicalSubscriptionStatus(empty), null);
+});
+
+test("O9 — « suspended » dans n'importe quel signal ⇒ blocked, même avec échéance future, paiement à jour et accessLevel « full »", () => {
+  const signals = [
+    { status: "suspended" },
+    { status: "Suspendu" },
+    { dbStatus: "suspended", status: "Actif", lifecycleStatus: "Actif" },
+    { lifecycleStatus: "Suspendu", status: "active" },
+    { status: "active", paymentStatus: "Suspendu" },
+  ];
+  for (const signal of signals) {
+    assert.equal(levelOf({ paymentStatus: "À jour", accessLevel: "full", ...signal }), "blocked", JSON.stringify(signal));
+    assert.equal(levelOf({ paymentStatus: "À jour", ...signal }), "blocked", JSON.stringify(signal));
+  }
+});
+
+test("O9 — établissement suspendu (« suspended » ou « Suspendu ») ⇒ blocked, même avec abonnement actif et accessLevel « full »", () => {
+  for (const status of ["suspended", "Suspendu", "SUSPENDU"]) {
+    assert.equal(levelOf({ status: "active", paymentStatus: "À jour", accessLevel: "full" }, { code: "X", status }), "blocked", status);
+  }
+  assert.equal(levelOf({ status: "active", paymentStatus: "À jour" }, { code: "X", status: "active" }), "full");
+});
+
+test("O9 — statut inconnu, annulé ou résilié : aucun accès par défaut", () => {
+  for (const status of ["en_attente_validation", "pending", "cancelled", "Annulé", "terminated", "Résilié"]) {
+    assert.equal(levelOf({ status, paymentStatus: "À jour" }), "blocked", `status ${status}`);
+    assert.equal(levelOf({ dbStatus: status, status: "Actif", paymentStatus: "À jour" }), "blocked", `dbStatus ${status}`);
+    assert.equal(levelOf({ lifecycleStatus: status, status: "active" }), "blocked", `lifecycleStatus ${status}`);
+  }
+  assert.equal(levelOf({ status: "active", accessLevel: "superuser" }), "blocked", "accessLevel invalide");
+});
+
+test("O9 — politique conservée : retard de paiement, échéances J+14 / J+30, essai, abonnement absent ; expiré bloquant", () => {
+  assert.equal(levelOf({ status: "active", paymentStatus: "À jour" }), "full");
+  assert.equal(levelOf({ status: "trial", paymentStatus: "À jour" }), "full");
+  assert.equal(levelOf({ status: "active", paymentStatus: "En retard" }), "limited");
+  assert.equal(levelOf({ status: "expired", paymentStatus: "En retard" }), "blocked", "expiré reste bloquant, même avec paiement en retard");
+  assert.equal(levelOf({ status: "expired", paymentStatus: "À jour" }), "blocked");
+  assert.equal(levelOf({ status: "active", paymentStatus: "À jour", endDate: isoDaysFromToday(-14) }), "limited");
+  assert.equal(levelOf({ status: "active", paymentStatus: "À jour", endDate: isoDaysFromToday(-30) }), "blocked");
+  assert.equal(levelOf({ status: "active", accessLevel: "limited" }), "limited", "surcharge restrictive appliquée");
+  assert.equal(
+    resolveSchoolAccess("X", { schools: [{ code: "X" }], subscriptions: [] }).level,
+    "full",
+    "abonnement absent : comportement inchangé (hors périmètre O9)",
+  );
+});
+
+test("O9 — fonctionnalités sensibles : blocked refuse tout ; limited garde notes/présences mais pas l'inscription", () => {
+  for (const feature of SENSITIVE_FEATURES) {
+    assert.equal(canUseFeature({ level: "blocked" }, feature), false, `blocked ${feature}`);
+  }
+  assert.deepEqual(
+    SENSITIVE_FEATURES.filter((feature) => canUseFeature({ level: "limited" }, feature)),
+    ["connect", "write_notes", "write_presence"],
+  );
+  assert.throws(() => assertSchoolFeature("X", { schools: [{ code: "X" }], subscriptions: [{ schoolCode: "X", status: "suspended" }] }, "write_notes"), (error) => error.statusCode === 403);
+});
+
+test("O9 — projections : le statut stocké n'est plus masqué (profil JSON « Actif », fromDbStatus)", () => {
+  const platformRow = mapSubscriptionRow({
+    id: "sub-o9",
+    school_id: "school-1",
+    school_code: "X",
+    plan_name: "Standard",
+    status: "suspended",
+    end_date: FUTURE,
+    profile_payload: { status: "Actif", lifecycleStatus: "Actif", paymentStatus: "À jour", accessLevel: "full" },
+  });
+  assert.equal(platformRow.status, "Actif", "le profil masque toujours le libellé affiché");
+  assert.equal(platformRow.dbStatus, "suspended", "mais le statut stocké est transmis");
+  assert.equal(resolveAccessLevel(platformRow, { code: "X" }), "blocked");
+
+  const repository = Object.create(PostgresRepository.prototype);
+  for (const [stored, level] of [["suspended", "blocked"], ["en_attente_validation", "blocked"], ["active", "full"]]) {
+    const datasetRow = repository.mapSubscription({ id: "s", school_code: "X", status: stored, end_date: new Date(`${FUTURE}T00:00:00`), price_per_student: 0 });
+    assert.equal(datasetRow.dbStatus, stored);
+    assert.equal(resolveAccessLevel(datasetRow, { code: "X" }), level, `jeu de données, statut ${stored}`);
+  }
+});
+
+/* -------------------------------------------------------------------------- *
+ * O9 — revue CTO : un statut bloquant n'est jamais contourné par accessLevel. *
+ * -------------------------------------------------------------------------- */
+
+const BLOCKING_STATUSES = [
+  "suspended", "Suspendu",
+  "expired", "Expiré",
+  "cancelled", "Annulé",
+  "terminated", "Résilié",
+  "en_attente_validation",
+];
+const PERMISSIVE_OVERRIDES = ["full", "limited", "readonly"];
+
+test("O9/CTO — chaque statut bloquant × accessLevel contradictoire ⇒ blocked (statut, statut stocké, cycle de vie)", () => {
+  for (const status of BLOCKING_STATUSES) {
+    for (const accessLevel of PERMISSIVE_OVERRIDES) {
+      const cases = {
+        status: { status, paymentStatus: "À jour", accessLevel },
+        dbStatus: { dbStatus: status, status: "Actif", paymentStatus: "À jour", accessLevel },
+        lifecycleStatus: { lifecycleStatus: status, status: "active", paymentStatus: "À jour", accessLevel },
+        "paiement en retard": { status, paymentStatus: "En retard", accessLevel },
+      };
+      for (const [signal, subscription] of Object.entries(cases)) {
+        assert.equal(levelOf(subscription), "blocked", `${signal}=${status}, accessLevel=${accessLevel}`);
+      }
+    }
+  }
+});
+
+test("O9/CTO — profil JSON obsolète (« Actif » / « À jour » / accessLevel permissif) sur un statut stocké bloquant ⇒ blocked", () => {
+  for (const stored of ["suspended", "expired", "cancelled", "terminated", "en_attente_validation"]) {
+    for (const accessLevel of PERMISSIVE_OVERRIDES) {
+      const subscription = mapSubscriptionRow({
+        id: `sub-${stored}`,
+        school_id: "school-1",
+        school_code: "X",
+        plan_name: "Standard",
+        status: stored,
+        end_date: FUTURE,
+        profile_payload: { status: "Actif", lifecycleStatus: "Actif", paymentStatus: "À jour", accessLevel },
+      });
+      assert.equal(subscription.status, "Actif", "le profil obsolète masque le libellé affiché");
+      assert.equal(
+        resolveSchoolAccess("X", { schools: [{ code: "X" }], subscriptions: [subscription] }).level,
+        "blocked",
+        `stocké ${stored}, profil Actif, accessLevel ${accessLevel}`,
+      );
+    }
+  }
+});
+
+test("O9/CTO — échéance bloquante (J+30) jamais contournée par une surcharge permissive ; politique J+14 conservée", () => {
+  for (const accessLevel of PERMISSIVE_OVERRIDES) {
+    assert.equal(levelOf({ status: "active", paymentStatus: "À jour", accessLevel, endDate: isoDaysFromToday(-30) }), "blocked", `J+30 ${accessLevel}`);
+    assert.equal(levelOf({ status: "active", paymentStatus: "À jour", accessLevel, endDate: isoDaysFromToday(-200) }), "blocked", `J+200 ${accessLevel}`);
+  }
+  assert.equal(levelOf({ status: "active", paymentStatus: "À jour", endDate: isoDaysFromToday(-14) }), "limited", "J+14 sans surcharge");
+  assert.equal(levelOf({ status: "active", paymentStatus: "À jour", accessLevel: "full", endDate: isoDaysFromToday(-14) }), "limited", "J+14 : full ne lève pas la limitation");
+  assert.equal(levelOf({ status: "active", paymentStatus: "En retard", accessLevel: "full" }), "limited", "paiement en retard : full ne lève pas la limitation");
+  assert.equal(levelOf({ status: "active", paymentStatus: "À jour", endDate: isoDaysFromToday(-13) }), "full", "J+13 : accès complet");
+});
+
+test("O9/CTO — la surcharge ne peut que restreindre ; valeur non reconnue ⇒ blocked", () => {
+  const active = { status: "active", paymentStatus: "À jour" };
+  assert.equal(levelOf({ ...active }), "full");
+  assert.equal(levelOf({ ...active, accessLevel: "full" }), "full");
+  assert.equal(levelOf({ ...active, accessLevel: "limited" }), "limited");
+  assert.equal(levelOf({ ...active, accessLevel: "readonly" }), "readonly");
+  assert.equal(levelOf({ ...active, accessLevel: "blocked" }), "blocked");
+  assert.equal(levelOf({ ...active, paymentStatus: "En retard", accessLevel: "readonly" }), "readonly", "plus restrictif que limited");
+  for (const invalid of ["superuser", "FULL", "admin", 1]) {
+    assert.equal(levelOf({ ...active, accessLevel: invalid }), "blocked", `accessLevel ${String(invalid)}`);
+  }
+});
