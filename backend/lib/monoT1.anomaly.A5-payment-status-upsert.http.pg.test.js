@@ -3,9 +3,9 @@
 /**
  * ANOMALIE-MONO-T1-A5 — statuts de paiement créés sans validation.
  *
- * Échec ATTENDU (manifeste › expectedFailures) : test du comportement correct.
+ * CORRIGÉ par MONO-FIX-A5 : test de non-régression exécuté normalement.
  *
- * Constat (relevé par le balayage RBAC MONO-T1) : POST et PATCH
+ * Ancien constat (relevé par le balayage RBAC MONO-T1) : POST et PATCH
  * /api/finance/payment-statuses passent tous deux par
  * upsertFinancePaymentStatus :
  *   - POST {} crée un statut au code et au libellé vides (201) ;
