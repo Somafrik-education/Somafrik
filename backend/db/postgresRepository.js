@@ -5362,6 +5362,8 @@ class PostgresRepository {
     if (!items.length) {
       return [];
     }
+    // MONO-FIX-A3 : tout le lot est validé avant la première écriture.
+    require("../lib/attendanceStatus").assertAttendanceItemsStatuses(items);
 
     const { mergeAttendanceClassIdentity, mergeAttendanceTeacherKey } = require("../lib/presencesAttendanceAuthz");
     const saved = [];
@@ -7751,24 +7753,10 @@ class PostgresRepository {
   }
 
   toAttendanceStatus(status, present) {
-    const normalized = String(status ?? "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toLowerCase();
-    if (normalized === "absent" || normalized === "absence") return "absent";
-    if (normalized === "retard" || normalized === "late") return "late";
-    // Justifié = absence justifiée (contrat D3.5b)
-    if (
-      normalized === "justifie" ||
-      normalized === "justifiee" ||
-      normalized === "excused" ||
-      normalized === "excuse"
-    ) {
-      return "excused";
-    }
-    if (normalized === "present" || normalized === "present.") return "present";
-    return present ? "present" : "absent";
+    // MONO-FIX-A3 : statut inconnu, vide sans booléen present, ou mal typé ⇒ 400
+    // ATTENDANCE_STATUS_INVALID (jamais de conversion silencieuse en « absent »).
+    const { normalizeAttendanceStatus } = require("../lib/attendanceStatus");
+    return normalizeAttendanceStatus(status, present);
   }
 
   fromAttendanceStatus(status) {

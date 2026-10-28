@@ -3,7 +3,9 @@
 /**
  * ANOMALIE-MONO-T1-A3 — statut de présence inconnu enregistré « absent ».
  *
- * Échec ATTENDU (manifeste › expectedFailures) : test du comportement correct.
+ * CORRIGÉE par MONO-FIX-A3 : test de non-régression, exécuté normalement par la
+ * baseline pg (retiré de manifest › expectedFailures). Voir aussi
+ * attendanceStatusValidation.http.pg.test.js (lots, valeurs vides, permissions).
  *
  * Constat : POST /api/presences accepte un statut inconnu (201) ; le dépôt
  * (PostgresRepository.toAttendanceStatus) le convertit en « absent » et
