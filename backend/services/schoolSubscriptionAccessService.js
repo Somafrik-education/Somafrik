@@ -94,43 +94,58 @@ function isSuspendedSchool(school = {}) {
  * Signaux lus : dbStatus (colonne subscriptions.status, transmise telle quelle
  * par les projections), status, lifecycleStatus (profil) et paymentStatus.
  *   1. « Suspendu » dans n'importe quel signal l'emporte toujours ;
- *   2. lifecycleStatus explicite (profil), sinon :
- *   3. statut inconnu ⇒ « Inconnu » ; annulé / résilié ⇒ tels quels ;
- *   4. paiement en retard ⇒ « En retard » (ordre historique conservé) ;
- *   5. expiré ⇒ « Expiré » ; sinon essai / brouillon / actif ;
- *      sans aucun statut (abonnement absent) : « Actif », comme avant.
+ *   2. statut bloquant dans n'importe quel signal (inconnu, annulé, résilié,
+ *      expiré) : un cycle de vie « Actif » resté dans le profil JSON ou un
+ *      paiement en retard ne le masquent pas ;
+ *   3. lifecycleStatus explicite (profil), sinon paiement en retard ⇒ « En retard » ;
+ *   4. sinon essai / brouillon / actif ; sans aucun statut (abonnement absent) :
+ *      « Actif », comme avant.
  */
 function resolveLifecycleStatus(subscription = {}, school = {}) {
   const storage = canonicalSubscriptionStatus(subscription.dbStatus);
   const declared = canonicalSubscriptionStatus(subscription.status ?? school.subscriptionStatus);
   const lifecycle = canonicalSubscriptionStatus(subscription.lifecycleStatus);
   const payment = statusKey(subscription.paymentStatus);
-  if ([storage, declared, lifecycle].includes("Suspendu") || payment.includes("suspendu") || payment.includes("suspended")) {
+  const signals = [storage, declared, lifecycle].filter(Boolean);
+  if (signals.includes("Suspendu") || payment.includes("suspendu") || payment.includes("suspended")) {
     return "Suspendu";
   }
-  if (lifecycle) return lifecycle;
-  const statuses = [storage, declared].filter(Boolean);
-  for (const status of [UNKNOWN_STATUS, "Annulé", "Résilié"]) {
-    if (statuses.includes(status)) return status;
+  for (const status of [UNKNOWN_STATUS, "Annulé", "Résilié", "Expiré"]) {
+    if (signals.includes(status)) return status;
   }
+  if (lifecycle) return lifecycle;
   if (payment.includes("retard")) return "En retard";
-  if (statuses.includes("Expiré")) return "Expiré";
-  return statuses.find((status) => status !== "Actif") ?? "Actif";
+  return [storage, declared].find((status) => status && status !== "Actif") ?? "Actif";
 }
 
+/** Ordre de restriction des niveaux d'accès. */
+const ACCESS_LEVEL_RANK = Object.freeze({ full: 0, limited: 1, readonly: 2, blocked: 3 });
+
+function mostRestrictive(...levels) {
+  return levels.reduce((current, level) => (ACCESS_LEVEL_RANK[level] > ACCESS_LEVEL_RANK[current] ? level : current));
+}
+
+/**
+ * Niveau d'accès (MONO-FIX-O9). Ordre de priorité :
+ *   1. abonnement ou établissement suspendu ⇒ blocked ;
+ *   2. statut bloquant (expiré, annulé, résilié, inconnu) ⇒ blocked ;
+ *   3. échéance dépassée de 30 jours ou plus ⇒ blocked ;
+ *   4. politique de retard : J+14 ou paiement en retard ⇒ limited, sinon full ;
+ *   5. surcharge accessLevel du profil : ne peut que RESTREINDRE le niveau
+ *      calculé, jamais l'élever ; valeur non reconnue ⇒ blocked.
+ */
 function resolveAccessLevel(subscription = {}, school = {}) {
   const lifecycle = resolveLifecycleStatus(subscription, school);
-  // Un abonnement ou un établissement suspendu n'est jamais limité ni complet,
-  // même si le profil JSON porte encore un accessLevel plus permissif.
   if (lifecycle === "Suspendu" || isSuspendedSchool(school)) return "blocked";
-  if (subscription.accessLevel) {
-    return ACCESS_LEVELS.has(subscription.accessLevel) ? subscription.accessLevel : "blocked";
-  }
   if (BLOCKED_LIFECYCLES.has(lifecycle)) return "blocked";
   const daysLate = computeDelinquencyDays(subscription);
   if (daysLate >= 30) return "blocked";
-  if (daysLate >= 14 || lifecycle === "En retard") return "limited";
-  return "full";
+  const computed = daysLate >= 14 || lifecycle === "En retard" ? "limited" : "full";
+  if (subscription.accessLevel === undefined || subscription.accessLevel === null || subscription.accessLevel === "") {
+    return computed;
+  }
+  if (!ACCESS_LEVELS.has(subscription.accessLevel)) return "blocked";
+  return mostRestrictive(computed, subscription.accessLevel);
 }
 
 function schoolMatchesCode(school, schoolCode) {

@@ -13,6 +13,8 @@
  *   - sessions réelles ouvertes AVANT la suspension (enseignant, administrateur) ;
  *   - suspension par l'API Superadmin avec le statut stocké « suspended » ;
  *   - variante : profil JSON resté « Actif » / accessLevel « full » (SQL) ;
+ *   - statuts stockés bloquants (expiré, annulé, résilié, inconnu) et échéance
+ *     dépassée de 40 jours, chacun avec une surcharge accessLevel « full » ;
  *   - statut inconnu, établissement lui-même suspendu, abonnement échu ;
  *   - contrôle : un abonnement actif garde l'accès complet (non-régression A2).
  * Chaque refus est vérifié sans écriture en base.
@@ -280,6 +282,32 @@ test("abonnement suspendu en base, profil JSON resté « Actif » / accessLevel 
   const access = await accessOf("CD-2026-0001");
   assert.deepEqual({ level: access.level, lifecycle: access.lifecycle }, { level: "blocked", lifecycle: "Suspendu" });
   assertAllRefused(await attemptProtectedWrites(), "profil obsolète");
+});
+
+test("statut stocké bloquant (expiré, annulé, résilié, inconnu) + profil JSON « Actif » / accessLevel « full » : « blocked », sessions ouvertes refusées sans écriture", { skip }, async () => {
+  for (const stored of ["expired", "cancelled", "terminated", "en_attente_validation"]) {
+    await pool.query(
+      `UPDATE subscriptions SET status = $1, end_date = CURRENT_DATE + 365,
+              profile_payload = '{"status":"Actif","lifecycleStatus":"Actif","paymentStatus":"À jour","accessLevel":"full"}'::jsonb
+       WHERE school_id = (SELECT id FROM schools WHERE school_code = 'CD-2026-0001')`,
+      [stored],
+    );
+    const access = await accessOf("CD-2026-0001");
+    assert.equal(access.level, "blocked", `statut stocké ${stored} : niveau « ${access.level} » (${access.lifecycle})`);
+    assertAllRefused(await attemptProtectedWrites(), `statut stocké ${stored}`);
+  }
+});
+
+test("échéance dépassée de 40 jours + accessLevel « full » : « blocked » (aucune surcharge permissive), sessions ouvertes refusées sans écriture", { skip }, async () => {
+  await pool.query(
+    `UPDATE subscriptions SET status = 'active', end_date = CURRENT_DATE - 40,
+            profile_payload = '{"status":"Actif","lifecycleStatus":"Actif","paymentStatus":"À jour","accessLevel":"full"}'::jsonb
+     WHERE school_id = (SELECT id FROM schools WHERE school_code = 'CD-2026-0001')`,
+  );
+  const access = await accessOf("CD-2026-0001");
+  assert.equal(access.level, "blocked", `échéance J+40 : niveau « ${access.level} »`);
+  assert.ok(access.daysLate >= 39, `retard lu : ${access.daysLate} jour(s)`);
+  assertAllRefused(await attemptProtectedWrites(), "échéance J+40 avec surcharge full");
 });
 
 test("statut d'abonnement inconnu : aucun accès par défaut (« blocked », connexion refusée)", { skip }, async () => {
