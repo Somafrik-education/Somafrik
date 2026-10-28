@@ -30,3 +30,17 @@ Les résultats ci-dessus correspondent aux HEAD **avant fusion**, pas à une bas
 **Décision à cette date : GO documentaire de consolidation, mais NO-GO pour une clôture produit sans réserve et pour la modularisation tant que les risques résiduels O9 et les tests de consolidation ne sont pas tranchés. NO-GO production.** Une décision CTO explicite est requise avant les lots de modularisation.
 
 Aucune modification métier, test, migration, seed, règle GitHub ou environnement dans cette annexe.
+
+## Consolidation finale du 28 octobre 2026 — après le FINAL-SMOKE
+
+Le rapport `MONO-T2-FINAL-SMOKE.md` est une photographie du code `develop@35319d13`. Depuis ce smoke, trois corrections supplémentaires ont été fusionnées :
+
+| Référence | PR | Commit squash sur develop | Résultat | 
+|---|---|---|---|
+| A5-REG-01 — dépôt mémoire | #1021 | `8c386d3ad390bcdb52b00a42d92dc766c7ba6b0a` | Délégation PATCH et contrat dépôt complétés |
+| MULTI-ROLE-01 — Enseignant/Préfet | #1022 | `321c502b140963be03f0c2f18eb648a76e5cc678` | Reconnaissance du rôle enseignant pour la saisie des présences |
+| O9-R1b — ancien access JWT | #1023 | `09ce72712d036e3729ebefd3625a7cf9cf9c5fc0` | Contrôle de l'abonnement sur chaque requête authentifiée scolaire |
+
+Les CI au HEAD de ces PR étaient toutes vertes au moment de leur fusion : #1021 7/7, #1022 11/11 et #1023 20/20. **Cela ne remplace pas un smoke manuel Web/Mobile sur le nouveau develop final**, ni une preuve de performance du contrôle d'abonnement. Les observations du FINAL-SMOKE sont historiques ; les anomalies ci-dessus sont corrigées dans le code mais les interfaces déployées n'ont pas été revalidées ici.
+
+Décision CTO : **GO clôture documentaire et démarrage Lot 0 outillage sous contrôle des gates** ; **NO-GO déploiement production** sans validation release indépendante. Les points P2 existants sur POST des statuts financiers restent suivis séparément.
