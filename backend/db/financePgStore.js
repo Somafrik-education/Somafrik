@@ -1074,6 +1074,32 @@ function createFinancePgStore(repo) {
             );
         return mapStatusRow({ ...row, school_code: school?.code, login_code: school?.loginCode || school?.code });
       },
+      updateFinancePaymentStatus: async (statusCode, patch, principal) => {
+        const scopedPrincipal = await withFinancePrincipal(principal);
+        const schoolCode = primaryFinanceSchoolCode(scopedPrincipal);
+        const school = schoolCode ? await bind(repo).getSchoolByCode(schoolCode) : null;
+        if (!school?.id) return null;
+        // Jamais de fallback global, ni d'INSERT : un PATCH ne peut modifier
+        // qu'un statut appartenant à l'établissement demandeur.
+        const existing = await repo.one(
+          "SELECT * FROM payment_statuses WHERE status_code = $1 AND school_id = $2 LIMIT 1",
+          [statusCode, school.id],
+        );
+        if (!existing) return null;
+        const updated = await repo.one(
+          `UPDATE payment_statuses
+           SET label = $3, is_active = $4, sort_order = $5, profile_payload = $6::jsonb, updated_at = NOW()
+           WHERE id = $1 AND school_id = $2 RETURNING *`,
+          [
+            existing.id, school.id,
+            patch.label !== undefined ? patch.label : existing.label,
+            patch.status !== undefined ? patch.status === "Actif" : existing.is_active,
+            patch.sortOrder !== undefined ? Number(patch.sortOrder) : existing.sort_order,
+            JSON.stringify({ ...(existing.profile_payload || {}), ...patch, code: statusCode }),
+          ],
+        );
+        return updated ? mapStatusRow({ ...updated, school_code: school.code, login_code: school.loginCode || school.code }) : null;
+      },
       async listPaymentStudentOptions(principal) {
         const scope = resolveFinanceSchoolScope(await withFinancePrincipal(principal));
         if (scope.mode === "none") return [];
