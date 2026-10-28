@@ -3536,10 +3536,13 @@ app.patch("/api/finance/payment-statuses/:statusId", requireAuth, requirePermiss
   if (req.body?.code !== undefined && req.body.code !== req.params.statusId) {
     assertPaymentStatusPayload({ code: "" });
   }
-  const row = await repository.upsertFinancePaymentStatus(
-    { ...req.body, code: req.params.statusId, id: req.params.statusId },
-    principal,
-  );
+  const row = await repository.updateFinancePaymentStatus(req.params.statusId, req.body, principal);
+  if (!row) {
+    const error = new Error("Statut de paiement introuvable.");
+    error.statusCode = 404;
+    error.code = "FINANCE_PAYMENT_STATUS_NOT_FOUND";
+    throw error;
+  }
   res.json(row);
 }));
 
