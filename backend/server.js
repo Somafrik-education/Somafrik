@@ -3536,10 +3536,13 @@ app.patch("/api/finance/payment-statuses/:statusId", requireAuth, requirePermiss
   if (req.body?.code !== undefined && req.body.code !== req.params.statusId) {
     assertPaymentStatusPayload({ code: "" });
   }
-  const row = await repository.upsertFinancePaymentStatus(
-    { ...req.body, code: req.params.statusId, id: req.params.statusId },
-    principal,
-  );
+  const row = await repository.updateFinancePaymentStatus(req.params.statusId, req.body, principal);
+  if (!row) {
+    const error = new Error("Statut de paiement introuvable.");
+    error.statusCode = 404;
+    error.code = "FINANCE_PAYMENT_STATUS_NOT_FOUND";
+    throw error;
+  }
   res.json(row);
 }));
 
@@ -7041,7 +7044,7 @@ function isPlainObject(value) {
 
 async function issueRefreshedAccessToken(session, payload) {
   const rolePermissionsMap = await getRolePermissionsMap();
-  const { mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
+  const { displayRoles, mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
   let roleKeys = session.role ? [toRoleKey(session.role)].filter(Boolean) : [];
   // SEC-AUTH-05 (fail-closed) : le refresh ne réémet jamais un rôle retiré. Rôles
   // retirés ou validation impossible → aucun rôle, libellé « Sans affectation » et
@@ -7059,6 +7062,26 @@ async function issueRefreshedAccessToken(session, payload) {
   }
   const { resolveRefreshSchoolCode } = require("./lib/refreshSchoolAttachment");
   const refreshedSchoolCode = await resolveRefreshSchoolCode({ repository, session, payload, roleKeys });
+  // MONO-SEC-O9-R1 : une rotation JWT ne contourne pas la suspension SaaS.
+  // La validation utilise l'état autoritatif courant et non les claims du jeton.
+  const { isPlatformScopePrincipal, isSchoolRolePrincipal } = require("./lib/platformScopePrincipal");
+  if (!isPlatformScopePrincipal({ role: sessionRole, roleKeys }) &&
+      isSchoolRolePrincipal({ role: sessionRole, roleKeys })) {
+    const state = await getAuthoritativeBackOfficeState();
+    const { assertSchoolCanConnect } = require("./services/schoolSubscriptionAccessService");
+    try {
+      assertSchoolCanConnect(refreshedSchoolCode, state);
+    } catch (error) {
+      // Révoquer l'ensemble des sessions de ce compte lorsqu'il est bloqué.
+      // Ne jamais réémettre de jeton après le refus.
+      if (typeof repository.revokeAllSessionsForUser === "function") {
+        await repository.revokeAllSessionsForUser(session.user_id, "subscription_blocked");
+      } else if (typeof repository.revokeSession === "function") {
+        await repository.revokeSession(payload.sessionId, "subscription_blocked");
+      }
+      throw error;
+    }
+  }
   let permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
   if (typeof repository.resolveEffectivePermissions === "function") {
     const live = await repository.resolveEffectivePermissions({
@@ -7094,9 +7117,19 @@ async function issueRefreshedAccessToken(session, payload) {
     );
   }
 
+  // REFRESH-R1 : mêmes libellés/roleKeys que le principal de connexion.
+  // Les rôles restent relus en direct : aucune attribution révoquée n'est restaurée.
+  const liveDisplay = displayRoles(roleKeys);
+  const effectiveRole = liveDisplay.role === "Super Administrateur OKAFRIK"
+    ? "Super Administrateur Somafrik"
+    : liveDisplay.role;
   const accessToken = tokenService.createAccessToken({
     sub: session.user_id,
-    role: sessionRole,
+    userId: session.user_id,
+    schoolId: session.school_id ?? "",
+    role: effectiveRole,
+    roles: liveDisplay.roles,
+    roleKeys: liveDisplay.roleKeys,
     schoolCode: refreshedSchoolCode,
     countryCode: session.country_code ?? payload.countryCode ?? "",
     authSource: payload.authSource ?? "mobile",

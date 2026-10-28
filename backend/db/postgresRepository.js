@@ -1886,6 +1886,9 @@ class PostgresRepository {
   upsertFinancePaymentStatus(payload, principal) {
     return this.getFinanceStore().upsertFinancePaymentStatus(payload, principal);
   }
+  updateFinancePaymentStatus(statusCode, patch, principal) {
+    return this.getFinanceStore().updateFinancePaymentStatus(statusCode, patch, principal);
+  }
 
   listFinanceFeeGrids(principal) {
     return this.getFinanceStore().listFinanceFeeGrids(principal);

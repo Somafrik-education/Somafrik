@@ -204,3 +204,23 @@ test("routes publiques : santé, code établissement inconnu, route E2E désacti
   // Sans SOMAFRIK_E2E=true : la route de réinitialisation des verrous n'existe pas (404).
   assertStatus(await server.request("POST", "/api/backoffice/e2e/clear-login-lockout", { body: {} }), 404, "route E2E");
 });
+
+
+test("REFRESH-R1 : identité et rôles enseignants conservés lors du refresh", { skip }, async () => {
+  const original = await server.request("POST", "/api/backoffice/login", {
+    body: { identifier: "patrick.ilunga@somafrik.cd", password: "1234", schoolCode: await server.loginCode("CD-2026-0001") },
+  });
+  assertStatus(original, 200, "login enseignant");
+  const refreshed = await server.request("POST", "/api/auth/refresh", {
+    body: { refreshToken: original.data.refreshToken },
+  });
+  assertStatus(refreshed, 200, "refresh enseignant");
+  const decode = (jwt) => JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString("utf8"));
+  const before = decode(original.data.accessToken);
+  const after = decode(refreshed.data.accessToken);
+  assert.equal(after.role, before.role, "le libellé de rôle ne devient pas TEACHER");
+  assert.deepEqual(after.roleKeys, before.roleKeys, "les rôles actifs sont conservés");
+  assert.equal(after.schoolCode, before.schoolCode);
+  assert.equal(after.schoolId, before.schoolId);
+  assert.equal(after.userId, before.userId);
+});
