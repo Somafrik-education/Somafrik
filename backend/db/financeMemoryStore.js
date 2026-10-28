@@ -960,6 +960,19 @@ function createFinanceMemoryStore({
       if (!existing) tables.paymentStatuses.push(row);
       return mapStatusRow(row);
     },
+    updateFinancePaymentStatus: async (statusCode, patch, principal) => {
+      const schoolCode = primaryFinanceSchoolCode(scopedPrincipal(principal));
+      const row = tables.paymentStatuses.find((item) =>
+        item.status_code === statusCode && String(item.school_code || "").toUpperCase() === String(schoolCode || "").toUpperCase()
+      );
+      if (!row) return null;
+      if (patch.label !== undefined) row.label = patch.label;
+      if (patch.status !== undefined) row.is_active = patch.status === "Actif";
+      if (patch.sortOrder !== undefined) row.sort_order = Number(patch.sortOrder);
+      row.profile_payload = { ...(row.profile_payload || {}), ...patch, code: statusCode };
+      row.updated_at = new Date().toISOString();
+      return mapStatusRow(row);
+    },
     async listPaymentStudentOptions(principal) {
       const scope = resolveFinanceSchoolScope(scopedPrincipal(principal));
       if (scope.mode === "none") return [];
