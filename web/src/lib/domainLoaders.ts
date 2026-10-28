@@ -133,7 +133,13 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
     }),
     presences: async () => ({ presences: (await api.get<unknown[]>("/presences")) as BackOfficeState["presences"] }),
     academicConfigs: async () => {
-      const config = await api.get<Record<string, unknown>>(academicConfigPath(options.schoolCode));
+      // A platform-wide session has no establishment academic configuration.
+      // Do not call /academic-config without a concrete school code.
+      const scopedSchool = String(options.schoolCode ?? "").trim().toUpperCase();
+      if (!scopedSchool || scopedSchool === "*") {
+        return { academicConfigs: {} as BackOfficeState["academicConfigs"] };
+      }
+      const config = await api.get<Record<string, unknown>>(academicConfigPath(scopedSchool));
       const schoolCode = String(config?.schoolCode ?? options.schoolCode ?? "").trim();
       return {
         academicConfigs: schoolCode
