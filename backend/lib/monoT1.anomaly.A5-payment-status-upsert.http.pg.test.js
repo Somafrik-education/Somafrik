@@ -41,3 +41,26 @@ test("ANOMALIE-MONO-T1-A5 : corps vide refusé (400) et identifiant inconnu intr
     `ANOMALIE-MONO-T1-A5 : POST {} → HTTP ${empty.status}, PATCH inconnu → HTTP ${unknown.status}, écriture ${unchanged ? "aucune" : "effectuée"}`,
   );
 });
+
+test("A5-R1 : PATCH partiel conserve les champs omis et refuse toute création implicite", { skip }, async () => {
+  const token = await server.login("cdAdmin");
+  const code = "MONO-A5-R1-ONLY";
+  const created = await server.request("POST", "/api/finance/payment-statuses", {
+    token, body: { code, label: "Initial", status: "Inactif", sortOrder: 13 },
+  });
+  assert.equal(created.status, 201);
+  const first = await server.request("PATCH", "/api/finance/payment-statuses/" + code, {
+    token, body: { label: "Modifié" },
+  });
+  assert.equal(first.status, 200);
+  const persisted = await server.one("SELECT label, is_active, sort_order FROM payment_statuses WHERE status_code = $1", [code]);
+  assert.equal(persisted.label, "Modifié");
+  assert.equal(persisted.is_active, false);
+  assert.equal(Number(persisted.sort_order), 13);
+  const second = await server.request("PATCH", "/api/finance/payment-statuses/" + code, {
+    token, body: { sortOrder: 17 },
+  });
+  assert.equal(second.status, 200);
+  const after = await server.one("SELECT label, is_active, sort_order FROM payment_statuses WHERE status_code = $1", [code]);
+  assert.deepEqual(after, { label: "Modifié", is_active: false, sort_order: 17 });
+});
