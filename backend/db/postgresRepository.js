@@ -5463,8 +5463,8 @@ class PostgresRepository {
     // MONO-REFRESH-R2 : un enseignant multirôle conserve le parcours enseignant
     // même si son rôle principal est Préfet. Les contrôles d'affectation
     // et d'isolement établissement sont déjà exécutés ci-dessus.
-    const { principalHasRole } = require("../lib/userRoleLifecycle");
-    const isEnseignant = principalHasRole(principal, "Enseignant");
+    const { isAttendanceTeacherPrincipal } = require("../lib/attendanceTeacherRole");
+    const isEnseignant = isAttendanceTeacherPrincipal(principal);
     const teacherKey = isEnseignant
       ? String(principal.sub ?? "").trim()
       : this.extractExplicitTeacherKey(payload);
