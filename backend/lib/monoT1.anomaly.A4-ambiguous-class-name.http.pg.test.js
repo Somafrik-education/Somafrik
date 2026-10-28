@@ -3,7 +3,13 @@
 /**
  * ANOMALIE-MONO-T1-A4 — nom de classe ambigu résolu arbitrairement.
  *
- * Échec ATTENDU (manifeste › expectedFailures) : test du comportement correct.
+ * CORRIGÉE par MONO-FIX-A4 : test de non-régression, exécuté normalement par la
+ * baseline pg (retiré de manifest › expectedFailures).
+ * Adaptation MONO-FIX-A4 : la requête de refus ne porte plus de classCode. Le
+ * mandat A4 fait de classCode un identifiant canonique (« classCode valide :
+ * sélectionner exactement la classe ») ; l'assertion de sécurité est conservée
+ * pour le NOM SEUL (refus explicite, aucune écriture), et le cas classCode
+ * vérifie désormais que la classe EXACTE est retenue.
  *
  * Constat : la création d'évaluation résout la classe par classId, sinon par
  * nom (PostgresRepository.findClassByNormalizedName : ORDER BY created_at DESC
@@ -45,7 +51,6 @@ test("ANOMALIE-MONO-T1-A4 : un nom de classe ambigu sans classId est refusé exp
     token: await server.login("cdTeacher"),
     body: {
       className: "6ème A",
-      classCode: "CLS-2026-000035",
       subject: "Sciences",
       period: "Trimestre 1",
       title: "MONO-T1 A4",
@@ -58,4 +63,25 @@ test("ANOMALIE-MONO-T1-A4 : un nom de classe ambigu sans classId est refusé exp
     [400, 409].includes(response.status) && unchanged,
     `ANOMALIE-MONO-T1-A4 : nom ambigu (${homonyms.n} « 6ème A ») → HTTP ${response.status} ${String(response.data?.code ?? "")}, écriture ${unchanged ? "aucune" : "effectuée"}`,
   );
+});
+
+test("A4 : nom ambigu accompagné d'un classCode ⇒ la classe EXACTE désignée par le code, jamais un homonyme", { skip }, async () => {
+  const response = await server.request("POST", "/api/evaluations", {
+    token: await server.login("cdTeacher"),
+    body: {
+      className: "6ème A",
+      classCode: "CLS-2026-000035",
+      subject: "Sciences",
+      period: "Trimestre 1",
+      title: "MONO-T1 A4 classCode",
+      maxScore: 20,
+      evaluationType: "devoir",
+    },
+  });
+  assertStatus(response, 201, "classCode canonique");
+  const stored = await server.one(
+    "SELECT c.class_code FROM evaluations e JOIN classes c ON c.id = e.class_id WHERE e.id::text = $1",
+    [String(response.data?.id)],
+  );
+  assert.equal(stored?.class_code, "CLS-2026-000035");
 });
