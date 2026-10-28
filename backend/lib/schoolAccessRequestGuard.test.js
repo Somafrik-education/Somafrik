@@ -19,5 +19,12 @@ test("O9-R1b : stale school JWT rejected immediately on suspended/expired status
 test("O9-R1b : active school JWT allowed, platform and logout exempt", async () => {
   await assert.doesNotReject(() => assertActiveSchoolRequest(principal, "/api/students", async () => state("active")));
   await assert.doesNotReject(() => assertActiveSchoolRequest(principal, "/api/auth/logout", async () => { throw Error("must not load"); }));
-  await assert.doesNotReject(() => assertActiveSchoolRequest({ role: "Superadmin", roleKeys: ["SUPERADMIN"], schoolCode: "*" }, "/api/students", async () => { throw Error("must not load"); }));
+  await assert.doesNotReject(() => assertActiveSchoolRequest({ role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], schoolCode: "*" }, "/api/students", async () => { throw Error("must not load"); }));
+});
+
+test("O9-R1b : non-canonical SUPERADMIN cannot bypass tenant gate", async () => {
+  await assert.rejects(
+    () => assertActiveSchoolRequest({ role: "Superadmin", roleKeys: ["SUPERADMIN"], schoolCode: "*" }, "/api/students", async () => state("active")),
+    (err) => err.statusCode === 403,
+  );
 });
