@@ -276,18 +276,6 @@ test("abonnement suspendu par l'API (statut stocké « suspended ») : « blocke
   assertAllRefused(await attemptProtectedWrites(), "abonnement « suspended »");
 });
 
-test("O9-R1 : refresh d'une session préexistante refusé et sessions révoquées après suspension", { skip }, async () => {
-  const response = await request("POST", "/api/auth/refresh", {
-    body: { refreshToken: tokens.cdAdminRefresh },
-  });
-  assert.equal(response.status, 403, "refresh doit refuser l'abonnement suspendu");
-  assert.equal(response.data?.accessToken, undefined);
-  const reuse = await request("POST", "/api/auth/refresh", {
-    body: { refreshToken: tokens.cdAdminRefresh },
-  });
-  assert.equal(reuse.status, 401, "session révoquée, aucun nouveau token");
-});
-
 test("abonnement suspendu en base, profil JSON resté « Actif » / accessLevel « full » : toujours « blocked »", { skip }, async () => {
   await pool.query(
     `UPDATE subscriptions SET status = 'suspended',
@@ -369,3 +357,16 @@ test("contrôle : un abonnement actif (fin ISO 2027-08-31) garde l'accès comple
   const response = await login("user-12@somafrik.demo", "SCH-DEMO-0013");
   assert.equal(response.status, 200, `connexion SCH-DEMO-0013 : HTTP ${response.status} ${response.text.slice(0, 160)}`);
 });
+
+test("O9-R1 : refresh d'une session préexistante refusé et sessions révoquées après suspension", { skip }, async () => {
+  const response = await request("POST", "/api/auth/refresh", {
+    body: { refreshToken: tokens.cdAdminRefresh },
+  });
+  assert.equal(response.status, 403, "refresh doit refuser l'abonnement suspendu");
+  assert.equal(response.data?.accessToken, undefined);
+  const reuse = await request("POST", "/api/auth/refresh", {
+    body: { refreshToken: tokens.cdAdminRefresh },
+  });
+  assert.equal(reuse.status, 401, "session révoquée, aucun nouveau token");
+});
+
