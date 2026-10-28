@@ -197,6 +197,9 @@ before(async () => {
   await startServer();
   // Sessions réelles ouvertes AVANT toute suspension.
   tokens.cdAdmin = await sessionToken("admin@unikin.somafrik", "CD-2026-0001");
+  const beforeSuspension = await login("admin@unikin.somafrik", "CD-2026-0001");
+  assert.equal(beforeSuspension.status, 200);
+  tokens.cdAdminRefresh = beforeSuspension.data.refreshToken;
   tokens.cdTeacher = await sessionToken("patrick.ilunga@somafrik.cd", "CD-2026-0001");
   const superadmin = await request("POST", "/api/backoffice/login", {
     body: { identifier: "superadmin@somafrik.app", password: superadminLoginPassword() },
@@ -271,6 +274,18 @@ test("abonnement suspendu par l'API (statut stocké « suspended ») : « blocke
     assert.equal(response.data?.accessToken, undefined);
   }
   assertAllRefused(await attemptProtectedWrites(), "abonnement « suspended »");
+});
+
+test("O9-R1 : refresh d'une session préexistante refusé et sessions révoquées après suspension", { skip }, async () => {
+  const response = await request("POST", "/api/auth/refresh", {
+    body: { refreshToken: tokens.cdAdminRefresh },
+  });
+  assert.equal(response.status, 403, "refresh doit refuser l'abonnement suspendu");
+  assert.equal(response.data?.accessToken, undefined);
+  const reuse = await request("POST", "/api/auth/refresh", {
+    body: { refreshToken: tokens.cdAdminRefresh },
+  });
+  assert.equal(reuse.status, 401, "session révoquée, aucun nouveau token");
 });
 
 test("abonnement suspendu en base, profil JSON resté « Actif » / accessLevel « full » : toujours « blocked »", { skip }, async () => {
