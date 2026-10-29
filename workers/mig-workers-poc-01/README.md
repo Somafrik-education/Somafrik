@@ -1,39 +1,69 @@
 # MIG-WORKERS-POC-01
 
-POC expérimental, isolé de la production. Il ne déploie pas de Worker, ne change pas le DNS et n'ouvre aucune base Supabase.
+POC expérimental, isolé de la production. Il ne déploie pas de Worker, ne change pas le DNS et n'ouvre aucune base Supabase. La migration des 371 routes reste interdite. La PR reste brouillon.
 
-La migration des 371 routes reste interdite. Le 29 octobre 2026 (Europe/Paris), `npm test` a réussi dans le runtime local Wrangler. Cette exécution ne ferme pas la condition CTO : la preuve 3 n'a pas tourné, et les preuves 2 et 4 n'ont pas vu un Hyperdrive ni une Queue hébergés par Cloudflare.
+Le serveur Node traditionnel reste le repli.
 
-| # | Preuve | Résultat local du 29 octobre 2026 | Ce qui manque pour valider |
-|---|---|---|---|
-| 1 | Express dans Workers, `TokenService`, `RbacService.canAccess("GET /api/students")` | Réussie. Anonyme, jeton d'URL et JWT invalide : 401. `Comptable` et `super_admin` : 403. `student` et `school_admin` : 200, sans donnée d'élève | Rejouer sur un Worker Cloudflare déployé, hors production |
-| 2 | Transaction `BEGIN` / lecture / `ROLLBACK` via `env.HYPERDRIVE.connectionString` | Réussie contre Postgres local, binding `localConnectionString`, base dont le nom contient `workers_poc` | Un Hyperdrive Cloudflare vers une base de test, pas Supabase prod ou préprod |
-| 3 | PDF de bulletin par Browser Run | Non exécutée. Sans binding, la route répond `503` `BROWSER_BINDING_REQUIRED`. Aucun PDF n'est produit par le Puppeteer npm | Un compte Cloudflare et le binding `BROWSER` |
-| 4 | Notification différée | Réussie en local : `NOTIFY_QUEUE` fait passer `poc_outbox` de `queued` à `processed` | Une Queue Cloudflare |
+## Middleware JWT / RBAC
 
-Le serveur Node traditionnel reste le repli. Cette PR ne l'écarte pas.
+`requireRepresentativeAccess` est un middleware représentatif simplifié. Il appelle `TokenService.verify` et `RbacService.canAccess` sur la seule route `GET /api/students`, sans reprendre une liste de permissions du JWT.
 
-## Adaptations déjà nécessaires
+Il ne certifie pas le middleware de production. Il ne couvre pas la session PostgreSQL, le refresh, la grâce de réutilisation, la portée établissement, les permissions lues en base, le rate limit, l'idempotence, ni les autres routes.
 
-- `iconv-lite` 0.4, tiré par Express, appelle `require("./streams")` alors que son champ `browser` neutralise ce module. Avec `nodejs_compat`, le runtime Workers s'arrête au démarrage. Le POC alias ce module vers `src/iconvLiteShim.js`, limité à UTF-8. Les routes du POC ne lisent pas de corps de requête.
-- `import.meta.url` est indéfini dans l'isolate. `TokenService` et `RbacService` sont donc empaquetés par `src/backendBridge.cjs`, pas chargés par `createRequire`.
-- `GET /api/classes` est dans `PLATFORM_ADMIN_ALLOWED`. La route représentative est `GET /api/students`, qui est bien dans la liste d'interdiction des données personnelles. Le code RBAC du dépôt n'est pas modifié.
-- La clé mobile `country_admin` n'est pas reconnue par `isPlatformAdminPrincipal` (le garde-fou connaît le libellé `Admin Pays` et la clé `COUNTRY_ADMIN`). Le POC ne lui injecte pas de `roleKeys` et ne corrige pas ce point.
+La réponse 200 porte `middleware: "representative-simplified"` et ne contient ni élève ni établissement.
+
+## Preuves locales déjà obtenues
+
+Exécutées par `npm test` le 29 octobre 2026, après-midi (Europe/Paris), sur le runtime local Wrangler et une base Postgres jetable.
+
+| # | Preuve | Résultat local |
+|---|---|---|
+| 1 | Express, JWT, RBAC simplifié sur `GET /api/students` | Réussie. 401 anonyme, jeton d'URL, JWT invalide. 403 `Comptable` et `super_admin`. 200 `student` et `school_admin` |
+| 2 | Transaction `BEGIN` / lecture / `ROLLBACK` via `env.HYPERDRIVE.connectionString` | Réussie avec `localConnectionString`. Le nom de base contient `workers_poc` |
+| 3 | PDF Browser Run | Non exécutée. `503` `BROWSER_BINDING_REQUIRED`. Aucun PDF réussi n'est simulé |
+| 4 | File locale | Réussie : la ligne passe de `queued` à `processed`. Les cas négatifs couvrent l'échec de publication, le message dupliqué, le traitement répété et la reprise. Aucun envoi Expo |
+
+## Preuves qui exigent un environnement Cloudflare réel
+
+| # | Reste à faire hors de cette PR |
+|---|---|
+| 1 | Rejouer le middleware simplifié sur un Worker Cloudflare, hors production |
+| 2 | Créer un Hyperdrive vers une base de test, pas vers Supabase prod ou préprod |
+| 3 | Lier `BROWSER` et produire un PDF réel. Configuration préparée, non déployée : `wrangler.browser-run.jsonc` |
+| 4 | Rejouer la file sur une Queue Cloudflare |
+
+## Browser Run — bindings et coût
+
+`wrangler.browser-run.jsonc` déclare le binding `BROWSER` lu par `src/pdf.js`. `workers_dev` est faux. Il n'y a pas de `account_id`, pas de route DNS, pas de secret. Le test local continue d'utiliser `wrangler.jsonc`, qui n'a pas ce binding.
+
+Tarif public de la page Browser Run du 21 avril 2026, pour une session Puppeteer :
+
+| Offre | Inclus | Au-delà |
+|---|---|---|
+| Workers Free | 10 minutes par jour, 3 navigateurs concurrents | non prévu |
+| Workers Paid | 10 heures par mois, 10 navigateurs concurrents en moyenne mensuelle | 0,09 USD par heure, 2 USD par navigateur supplémentaire |
+
+L'offre Workers Paid à 5 USD par mois ne contient pas ces dépassements. Cette PR ne lance pas Browser Run.
+
+## Shim UTF-8
+
+`src/iconvLiteShim.cjs` remplace `iconv-lite` uniquement dans les deux fichiers Wrangler du POC. Il accepte UTF-8, reconstitue un caractère coupé entre deux fragments, et rejette un encodage non pris en charge ou une séquence invalide. Il n'est pas branché sur l'application Somafrik.
+
+## Dette RBAC indépendante
+
+`country_admin` et `Admin Pays` divergent sur `GET /api/students`. Le constat est dans `DEBT-ADMIN-PAYS.md`. Le module RBAC n'est pas modifié.
 
 ## Garde-fous
 
 - `APP_ENV` doit valoir `workers-poc`.
 - Le jeton dans l'URL est refusé.
-- Le principal envoyé au RBAC ne reprend pas une liste de permissions portée par le JWT.
-- La réponse 200 ne contient ni élève, ni établissement, seulement la route et le rôle.
 - Toute URL PostgreSQL dont l'hôte est Supabase, Render ou `somafrik.app` est refusée.
 - Le nom de base doit contenir `workers_poc`.
 - Le HTML du bulletin est la maquette officielle, remplie avec un élève fictif, sans URL externe.
-- Browser Run absent : échec explicite, pas de repli Chromium local.
 
 ## Lancer
 
-La variable `POC_DATABASE_URL` désigne uniquement la base jetable. Elle ne va pas dans git.
+`POC_DATABASE_URL` désigne uniquement la base jetable. Elle ne va pas dans git.
 
 ```bash
 cd workers/mig-workers-poc-01

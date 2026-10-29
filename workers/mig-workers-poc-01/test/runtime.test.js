@@ -145,6 +145,7 @@ test("MIG-WORKERS-POC-01 — Express, Hyperdrive local, file, PDF non simulé", 
     allowed: true,
     route: "GET /api/students",
     role: "student",
+    middleware: "representative-simplified",
   });
 
   const platformDenied = await fetch("http://127.0.0.1:8791/api/poc/students-access", {
@@ -161,6 +162,7 @@ test("MIG-WORKERS-POC-01 — Express, Hyperdrive local, file, PDF non simulé", 
     allowed: true,
     route: "GET /api/students",
     role: "school_admin",
+    middleware: "representative-simplified",
   });
 
   const transaction = await fetch("http://127.0.0.1:8791/api/poc/transaction", {

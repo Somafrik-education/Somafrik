@@ -42,6 +42,8 @@ Le code du POC vit dans `workers/mig-workers-poc-01/`. Il ne déploie rien et re
 
 Relevé local du 29 octobre 2026, après-midi (Europe/Paris), runtime Wrangler sur une base Postgres jetable : les preuves 1, 2 et 4 passent dans ce runtime. La preuve 2 utilise `localConnectionString`, pas un Hyperdrive Cloudflare. La preuve 3 n'a pas été exécutée : sans binding Browser Run, la route répond `503` `BROWSER_BINDING_REQUIRED`, et aucun PDF local n'est substitué. La condition CTO reste donc ouverte. Le détail est dans le README du POC.
 
+Le middleware JWT du POC est représentatif et simplifié : il ne certifie pas le middleware de production. La configuration Browser Run non déployée est `workers/mig-workers-poc-01/wrangler.browser-run.jsonc`. L'écart `country_admin` / `Admin Pays` est une dette RBAC indépendante, décrite dans `workers/mig-workers-poc-01/DEBT-ADMIN-PAYS.md`, sans changement du module RBAC.
+
 ---
 
 ## 0. Méthode et légende

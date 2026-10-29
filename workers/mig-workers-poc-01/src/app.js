@@ -3,8 +3,8 @@ import express from "express";
 import backend from "./backendBridge.cjs";
 import { buildPocBulletinHtml } from "./bulletin.js";
 import { renderBulletinPdf } from "./pdf.js";
+import { enqueueNotification } from "./queueDelivery.js";
 import {
-  insertQueuedOutbox,
   PocDatabaseError,
   readOutbox,
   runPocTransaction,
@@ -42,6 +42,10 @@ export function createPocApp({ getEnv }) {
     return getEnv();
   }
 
+  // Middleware représentatif simplifié. Il réutilise TokenService.verify et
+  // RbacService.canAccess sur une seule route. Il ne rejoue pas le middleware
+  // de production : pas de session PostgreSQL, pas de portée établissement,
+  // pas de permissions lues en base, pas de rate limit, pas d'idempotence.
   function requireRepresentativeAccess(req, res, next) {
     const secret = String(env().POC_JWT_SECRET ?? "");
     if (secret.length < 32) {
@@ -79,6 +83,7 @@ export function createPocApp({ getEnv }) {
       allowed: true,
       route: REPRESENTATIVE_ROUTE,
       role: req.pocPrincipal.role,
+      middleware: "representative-simplified",
     });
   });
 
@@ -109,13 +114,21 @@ export function createPocApp({ getEnv }) {
   app.post("/api/poc/outbox", requireRepresentativeAccess, async (_req, res) => {
     const id = randomUUID();
     try {
-      await insertQueuedOutbox(env().HYPERDRIVE?.connectionString, id);
-      await env().NOTIFY_QUEUE.send({ id });
+      await enqueueNotification({
+        connectionString: env().HYPERDRIVE?.connectionString,
+        queue: env().NOTIFY_QUEUE,
+        id,
+      });
       res.status(202).json({ id, status: "queued" });
     } catch (error) {
-      res.status(databaseStatus(error)).json({
-        code: error instanceof PocDatabaseError ? error.code : "POC_OUTBOX_ERROR",
-      });
+      if (error instanceof PocDatabaseError) {
+        return res.status(databaseStatus(error)).json({ code: error.code });
+      }
+      const code =
+        error?.code === "POC_QUEUE_PUBLISH_FAILED" || error?.code === "POC_QUEUE_BINDING_REQUIRED"
+          ? error.code
+          : "POC_OUTBOX_ERROR";
+      return res.status(503).json({ code });
     }
   });
 
