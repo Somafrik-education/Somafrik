@@ -254,9 +254,13 @@ test("LAYER-CONFIG — JS désactivé, hors ligne, interception, contexte dédi�
   }
 });
 
-test("SANDBOX — désactivée par défaut (image root), réactivable explicitement", () => {
+test("SANDBOX — exigée par défaut (SEC-PDF-02), désactivable explicitement hors production", () => {
   const defaults = renderer.buildChromiumLaunchOptions({});
-  assert.ok(defaults.args.includes("--no-sandbox"));
+  assert.equal(defaults.args.includes("--no-sandbox"), false);
+  assert.ok(defaults.args.includes("--host-resolver-rules=MAP * ~NOTFOUND"));
+  const insecureLocal = renderer.buildChromiumLaunchOptions({ SOMAFRIK_PDF_CHROMIUM_SANDBOX: "disabled", NODE_ENV: "test" });
+  assert.ok(insecureLocal.args.includes("--no-sandbox"));
+  assert.ok(insecureLocal.args.includes("--host-resolver-rules=MAP * ~NOTFOUND"));
   const sandboxed = renderer.buildChromiumLaunchOptions({ SOMAFRIK_PDF_CHROMIUM_SANDBOX: "enabled" });
   assert.equal(sandboxed.args.includes("--no-sandbox"), false);
   assert.equal(sandboxed.args.includes("--disable-setuid-sandbox"), false);

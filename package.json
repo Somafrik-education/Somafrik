@@ -212,6 +212,7 @@
     "verify:sec-tenant-01": "node --test backend/lib/secTenant01FailClosed.test.js && node backend/lib/secTenant01RefreshAttachment.pg.test.js && node backend/lib/secTenant01Attachment.http.pg.test.js",
     "verify:sec-auth-03": "node --test backend/lib/secAuth03RevokeOtherSessions.test.js backend/lib/disposableTestDatabaseGuard.test.js && node backend/lib/secAuth03SessionBinding.http.pg.test.js",
     "verify:sec-pdf-01": "node --test backend/lib/secPdf01RendererIsolation.test.js",
+    "verify:sec-pdf-02": "node --test backend/lib/secPdf02ChromiumSandbox.test.js && node --test backend/lib/secPdf02RealSandbox.test.js",
     "verify:privacy-erasure": "node --test backend/lib/privacyErasure.test.js backend/lib/retentionPolicy.test.js && node backend/scripts/verify-privacy-erasure.js",
     "verify:sec-auth-04": "node --test backend/lib/accessSessionBinding.test.js backend/lib/secAuth04SessionBinding.memory.test.js && node backend/lib/secAuth04SessionBinding.http.pg.test.js",
     "verify:sec-auth-05": "node --test backend/lib/liveRoleState.test.js && node backend/lib/secAuth05RoleRevocation.http.pg.test.js",
