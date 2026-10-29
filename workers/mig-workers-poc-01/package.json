@@ -1,0 +1,22 @@
+{
+  "name": "somafrik-mig-workers-poc-01",
+  "private": true,
+  "version": "0.0.0",
+  "description": "POC isolé MIG-WORKERS-POC-01. Ne pas déployer.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/runtime.test.js",
+    "dev": "wrangler dev --local --port 8791"
+  },
+  "dependencies": {
+    "@cloudflare/puppeteer": "^1.1.0",
+    "express": "^4.22.2",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.45.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

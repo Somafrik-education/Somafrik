@@ -12,9 +12,35 @@
 | Statut | **DRAFT / HOLD / NO MERGE** |
 | Autorité | CTO Somafrik |
 
-Ce document est le seul changement de la branche. Il ne modifie ni le code, ni les schémas, ni les workflows, ni les paramètres Render, Supabase ou Cloudflare.
+Le relevé initial ne modifie ni le code, ni les schémas, ni les paramètres Render, Supabase ou Cloudflare.
 
-Le SHA du commit documentaire est le HEAD de la pull request. Il n'est pas recopié dans ce fichier, parce qu'un hash inscrit avant le commit ne peut pas se désigner lui-même.
+---
+
+## Décision CTO du 29 octobre 2026 — cible Workers
+
+Décision reçue le 29 octobre 2026, après-midi (Europe/Paris), après le relevé de 11:48 CET. Le rapport #1026, déjà fusionné, recommandait le scénario B. Cette section le met à jour.
+
+| Sujet | Décision |
+|---|---|
+| Cible principale | **Cloudflare Workers** pour l'API, avec Cron Triggers, Queues, Browser Run, R2 et Hyperdrive |
+| Postgres | Supabase production et préproduction, inchangés, connexion prévue par Hyperdrive |
+| Scénario B (Node traditionnel) | **Option de repli**, plus la cible |
+| Migration des 371 routes | Interdite tant que `MIG-WORKERS-POC-01` n'a pas réussi quatre preuves isolées |
+| Offre Workers | Paid à 5 USD/mois privilégiée si le POC est viable. Ce minimum ne couvre pas Browser Run, R2 ni les dépassements. La mémoire reste **128 Mo** par isolate |
+| DNS, données scolaires, production | Hors du POC |
+
+Les quatre preuves exigées avant toute migration complète :
+
+1. Un endpoint Express représentatif, exécuté dans Workers, avec le JWT et le RBAC existants, sans les affaiblir.
+2. Une transaction PostgreSQL réelle sur une base de test, via le binding Hyperdrive.
+3. Un bulletin PDF produit par Browser Run.
+4. Un traitement différé de notification par Queues ou Cron.
+
+L'analyse des sections 5 et 6 reste valable. La documentation Cloudflare confirme `pg` avec Hyperdrive (minimum `pg@8.16.3`, page node-postgres mise à jour le 21 avril 2026) et Browser Run via `@cloudflare/puppeteer`. Elle ne garantit pas que le code Somafrik tient sans adaptation. Le boot DDL, le disque, `setInterval`, Nodemailer sur le port 587 et la mémoire 128 Mo restent des travaux.
+
+Le code du POC vit dans `workers/mig-workers-poc-01/`. Il ne déploie rien et refuse les hôtes Supabase, Render et `somafrik.app`.
+
+Relevé local du 29 octobre 2026, après-midi (Europe/Paris), runtime Wrangler sur une base Postgres jetable : les preuves 1, 2 et 4 passent dans ce runtime. La preuve 2 utilise `localConnectionString`, pas un Hyperdrive Cloudflare. La preuve 3 n'a pas été exécutée : sans binding Browser Run, la route répond `503` `BROWSER_BINDING_REQUIRED`, et aucun PDF local n'est substitué. La condition CTO reste donc ouverte. Le détail est dans le README du POC.
 
 ---
 
@@ -42,18 +68,18 @@ Aucune chaîne de connexion, aucun mot de passe, aucun jeton et aucune clé de s
 
 ## 1. Synthèse exécutive
 
-Somafrik peut quitter Render **sans réécrire le backend** et **sans nouvelle version mobile obligatoire**, à condition de conserver les noms `api.somafrik.app` et `api-preprod.somafrik.app`, de garder un runtime Node.js 22 capable d'exécuter l'image actuelle, et de traiter les fichiers locaux avant toute suppression de service.
+Somafrik peut quitter Render **sans nouvelle version mobile obligatoire**, à condition de conserver les noms `api.somafrik.app` et `api-preprod.somafrik.app`, et de traiter les fichiers locaux avant toute suppression de service.
 
-Le portage du monolithe Express vers Cloudflare Workers ou vers les Edge Functions Supabase est **insuffisant**. Les deux runtimes refusent, par leurs limites publiées, la combinaison réellement utilisée : processus long, Chromium, disque persistant, pool PostgreSQL et travailleurs `setInterval`.
+Le relevé de 11:48 CET constatait que Workers et les Edge Functions Supabase refusent, par leurs limites publiées, la combinaison actuelle sans adaptation : processus long, Chromium, disque persistant, pool PostgreSQL et travailleurs `setInterval`.
 
-**Recommandation : scénario B.**
+**Cible retenue par le CTO le 29 octobre 2026 : scénario A adapté (Workers), sous réserve du POC. Le scénario B devient le repli.**
 
 | Couche | Cible |
 |---|---|
 | DNS | Rester sur la zone Cloudflare déjà autoritaire |
 | Web | Assets statiques Vite sur Cloudflare, mêmes noms `somafrik.app` et `preprod.somafrik.app` |
 | TLS, proxy et WAF | Cloudflare devant le Web ; devant l'API seulement après réglage de `TRUST_PROXY_HOPS` |
-| API | Runtime Node.js traditionnel, image `backend/Dockerfile` (Node 22.12 + Chromium) |
+| API | Cloudflare Workers après `MIG-WORKERS-POC-01`. Repli : image `backend/Dockerfile` (Node 22.12 + Chromium) |
 | PostgreSQL | Projets Supabase déjà désignés, sans nouvelle base |
 | Fichiers | Objet (R2 recommandé, Storage Supabase acceptable) après POC, téléchargement toujours autorisé par l'API |
 | Mobile | Aucun changement de contrat ni de nom. Expo Updates est désactivé : un changement de nom imposerait un binaire |
@@ -435,7 +461,7 @@ Aucune fonction actuelle n'est un bon premier candidat sans réécriture : le PD
 | Maintenabilité | Deux modèles, ou un fork permanent de Puppeteer | Un seul backend, celui déjà testé en CI | Deux runtimes à garder alignés |
 | Réversibilité | Faible après réécriture | Forte tant que Render n'est pas supprimé | Forte si aucune route n'y est déplacée |
 
-**Recommandation argumentée : B.** A est écarté par les limites publiées et par Puppeteer, le disque et les travailleurs. C n'enlève pas le besoin d'un Node. B conserve le contrat mobile, le RBAC et la CI actuelle. Le prix de B est un hébergement Node à choisir, pas une réécriture.
+**Position de l'audit au 29 octobre 2026, 11:48 CET : B était la recommandation.** A était écarté tant qu'il était envisagé comme un déplacement sans adaptation. **Décision CTO du même jour : A devient la cible, à condition d'adapter** Express, le pool `pg`, Puppeteer, les `setInterval`, les disques et le SMTP, puis de réussir `MIG-WORKERS-POC-01`. B reste le repli si une des quatre preuves échoue. C n'est toujours pas une cible.
 
 Le fournisseur exact du Node (le successeur de Render) est une **décision CTO**. Le critère technique est : conteneur Docker, Node 22.12, Chromium, au moins 2 Go de RAM, disque ou volume le temps de la bascule fichiers, sortie HTTPS vers Supabase, Expo et SMTP, une seule instance au départ, région proche de la base. Ce mandat ne crée pas ce service.
 
@@ -730,7 +756,9 @@ Rollback de chaque bascule DNS : remettre le CNAME vers le service Render **s'il
 
 ---
 
-## 14. Architecture cible recommandée
+## 14. Architecture de repli Node
+
+Le dessin ci-dessous est le **repli Node** décrit le 29 octobre 2026 au matin. La cible décidée l'après-midi est le tableau « Décision CTO » : Workers, Hyperdrive, Browser Run, Queues, R2, Supabase. Elle ne remplace ce dessin que si `MIG-WORKERS-POC-01` réussit.
 
 ```text
 Utilisateur Web
@@ -757,7 +785,7 @@ Mobile Expo              |  TLS, cache bypass, TRUST_PROXY_HOPS aligné
 
 Région Node production : proche de `eu-west-1`. Préproduction : proche de `eu-central-1`. Le Web, lui, est global via Cloudflare.
 
-Ce dessin retire Render. Il ne retire pas Node.
+Ce dessin de repli retire Render et conserve Node. La cible Workers retire aussi le processus Node permanent, seulement après les quatre preuves.
 
 ---
 
@@ -853,7 +881,7 @@ Questions non résolues :
 
 Décisions explicites attendues avant tout mandat d'implémentation :
 
-1. Adopter le scénario B et écarter A comme cible.
+1. **Tranché le 29 octobre 2026 :** cible Workers, repli Node. La migration complète attend les quatre preuves du POC.
 2. Geler les noms publics Web et API.
 3. Autoriser une fenêtre de lecture des disques, distincte de ce mandat, avant toute suppression.
 4. Choisir R2 (recommandé) ou Supabase Storage, avec téléchargement contrôlé par l'API.
@@ -871,8 +899,9 @@ Décisions explicites attendues avant tout mandat d'implémentation :
 | Contrôle | Résultat |
 |---|---|
 | Base | `develop` `09ce72712d036e3729ebefd3625a7cf9cf9c5fc0`, alignée sur `origin/develop` au moment de la branche |
-| Nature du diff | Un fichier : `docs/audits/MIG-AUD-01-render-supabase-cloudflare.md` |
-| Code produit, SQL, workflows, lockfiles, `.env`, configs de déploiement | Non modifiés |
+| Nature du diff de l'audit #1026 | Un fichier : `docs/audits/MIG-AUD-01-render-supabase-cloudflare.md` |
+| Code produit, SQL, workflows, lockfiles, `.env`, configs de déploiement de l'audit #1026 | Non modifiés |
+| Suivi POC | `workers/mig-workers-poc-01/` et `.github/workflows/mig-workers-poc-01.yml` sont hors de l'audit #1026. Ils ne déploient pas et ne touchent pas au backend de production |
 | Secrets dans ce rapport | Aucune chaîne de connexion, aucun mot de passe, aucun jeton, aucune clé. Le code de vérification Brevo lu dans le DNS public n'est pas recopié |
 | Opérations distantes modificatrices | Aucune. DNS et HTTP en lecture. Pas d'appel d'écriture Render, Supabase ou Cloudflare |
 | Merge, rebase, push de `develop` ou `main` | Aucun |
@@ -898,4 +927,4 @@ Le diff GitHub indépendant reste au CTO, avant tout passage en Ready ou tout me
 
 ---
 
-**MIG-AUD-01 — AUDIT DOCUMENTÉ / DRAFT / HOLD — EN ATTENTE DU DIFF CTO INDÉPENDANT.**
+**MIG-AUD-01 — AUDIT DOCUMENTÉ — DÉCISION CTO : WORKERS SOUS RÉSERVE DU POC MIG-WORKERS-POC-01.**

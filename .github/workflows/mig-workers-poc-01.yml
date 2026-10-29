@@ -1,0 +1,41 @@
+name: MIG-WORKERS-POC-01
+
+on:
+  pull_request:
+    paths:
+      - "workers/mig-workers-poc-01/**"
+      - ".github/workflows/mig-workers-poc-01.yml"
+      - "docs/audits/MIG-AUD-01-render-supabase-cloudflare.md"
+  workflow_dispatch:
+
+jobs:
+  isolated-proofs:
+    name: Express, Hyperdrive local, queue
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: poc
+          POSTGRES_PASSWORD: poc_local_only
+          POSTGRES_DB: somafrik_workers_poc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U poc -d somafrik_workers_poc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Install POC dependencies
+        working-directory: workers/mig-workers-poc-01
+        run: npm ci
+      - name: Run the isolated proofs
+        working-directory: workers/mig-workers-poc-01
+        env:
+          POC_DATABASE_URL: postgresql://poc:poc_local_only@127.0.0.1:5432/somafrik_workers_poc
+        run: npm test
