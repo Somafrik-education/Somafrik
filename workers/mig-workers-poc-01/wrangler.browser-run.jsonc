@@ -1,0 +1,27 @@
+// Configuration de preuve Browser Run. Ne pas déployer.
+// Aucun account_id, aucune route DNS, aucun secret.
+// Binding requis par src/pdf.js : env.BROWSER, passé à puppeteer.launch.
+// Tarif public Browser Run, page du 21 avril 2026, sessions Puppeteer :
+// Workers Free : 10 minutes par jour, 3 navigateurs concurrents.
+// Workers Paid : 10 heures par mois puis 0,09 USD par heure ;
+// 10 navigateurs concurrents en moyenne mensuelle, puis 2 USD par navigateur.
+// Ce fichier n'est pas celui de wrangler dev du test local.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "somafrik-mig-workers-poc-01-browser-run",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "iconv-lite": "./src/iconvLiteShim.cjs"
+  },
+  "workers_dev": false,
+  "preview_urls": false,
+  "browser": {
+    "binding": "BROWSER"
+  },
+  "vars": {
+    "APP_ENV": "workers-poc",
+    "SOMAFRIK_POC": "mig-workers-poc-01"
+  }
+}
