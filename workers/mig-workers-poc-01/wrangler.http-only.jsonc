@@ -1,7 +1,7 @@
-// MIG-WORKERS-CLOUD-HTTP-01 — configuration HTTP uniquement.
-// Préparation locale : NE PAS DÉPLOYER sans autorisation CTO explicite.
-// Le nom cible désigne le Worker Hello World existant : deploy l'écraserait.
-// POC_JWT_SECRET : secret séparé, jamais en vars ni dans Git.
+// MIG-WORKERS-CLOUD-HTTP-02 — POC HTTP cloud, données fictives seulement.
+// Cible : Worker expérimental existant (Hello World remplacé au déploiement).
+// POC_JWT_SECRET est un secret Cloudflare, jamais une variable vars ni Git.
+// Aucun binding Hyperdrive, Browser Run, Queue ; aucune route DNS Somafrik.
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "somafrik-mig-workers-cloud-01",
@@ -11,7 +11,7 @@
   "alias": {
     "iconv-lite": "./src/iconvLiteShim.cjs"
   },
-  "workers_dev": false,
+  "workers_dev": true,
   "preview_urls": false,
   "vars": {
     "APP_ENV": "workers-poc",
