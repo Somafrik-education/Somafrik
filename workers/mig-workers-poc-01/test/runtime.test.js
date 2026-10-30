@@ -80,16 +80,17 @@ test("MIG-WORKERS-POC-01 — Express, Hyperdrive local, file, PDF non simulé", 
   assert.match(html, /Élève fictif POC-01/);
   await assert.rejects(renderBulletinPdf(undefined, html), /BROWSER_BINDING_REQUIRED/);
 
+  const normalizeLineEndings = (value) => value.replace(/\r\n/g, "\n");
   const officialHtml = await readFile(
     path.resolve(root, "../../backend/templates/bulletin/report-card.html"),
     "utf8",
   );
-  assert.equal(templateHtml, officialHtml);
+  assert.equal(normalizeLineEndings(templateHtml), normalizeLineEndings(officialHtml));
   const officialCss = await readFile(
     path.resolve(root, "../../backend/templates/bulletin/report-card.css"),
     "utf8",
   );
-  assert.equal(templateCss, officialCss);
+  assert.equal(normalizeLineEndings(templateCss), normalizeLineEndings(officialCss));
 
   const configPath = path.join(root, ".wrangler-test.jsonc");
   const base = JSON.parse(
