@@ -1,0 +1,20 @@
+// MIG-WORKERS-CLOUD-HTTP-01 — configuration HTTP uniquement.
+// Préparation locale : NE PAS DÉPLOYER sans autorisation CTO explicite.
+// Le nom cible désigne le Worker Hello World existant : deploy l'écraserait.
+// POC_JWT_SECRET : secret séparé, jamais en vars ni dans Git.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "somafrik-mig-workers-cloud-01",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "iconv-lite": "./src/iconvLiteShim.cjs"
+  },
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "APP_ENV": "workers-poc",
+    "SOMAFRIK_POC": "mig-workers-cloud-http-01"
+  }
+}
