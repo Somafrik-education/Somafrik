@@ -24,8 +24,8 @@ Ce mandat prépare l'expérimentation. Il ne crée aucune ressource Cloudflare, 
 | Base SHA | `a11ec568871209fc2282c7796a1350812e22ad39` |
 | Merge-base avec `origin/develop` | `a11ec568871209fc2282c7796a1350812e22ad39` |
 | Source des composants réutilisés | `e7513c5b5a11c3824ec320116e058c3db8e54ff9` (HEAD de #1027 au moment de la copie) |
-| HEAD | Le commit qui introduit ce fichier. Il est égal à `git rev-parse HEAD` sur la PR. Un fichier ne peut pas contenir le hash du commit qui le crée |
-| Ahead / behind | 1 / 0 au commit de préparation, si aucun commit ne suit |
+| Commit de préparation, vérifié par les checks | `75ea144bee19866b7a4b52b9d063c85bac2dc53b` |
+| Ahead / behind après le relevé des checks | 2 / 0 |
 | PR #1027 | Non modifiée, laissée en brouillon |
 
 Fichiers repris tels quels depuis `e7513c5b5`, sans édition :
@@ -221,13 +221,36 @@ Conditions avant toute migration des routes :
 
 | Contrôle | Résultat |
 |---|---|
-| Checks GitHub | Pas encore exécutés au moment où ce fichier est écrit. Ils seront ceux de la PR brouillon. Le workflow `MIG-WORKERS-CLOUD-01` rejoue les tests locaux et vérifie que les quatre preuves du rapport restent `BLOCKED` |
+| Checks GitHub | Relevés le 29 octobre 2026, 14:10–14:12 (Europe/Paris), sur `75ea144bee19866b7a4b52b9d063c85bac2dc53b`. 8 réussites, 10 ignorés par filtre de chemins, 0 échec. Les quatre preuves Cloudflare restent `BLOCKED` |
 | Production | Aucune modification de `backend/`, des bases, du DNS, des secrets réels, du RBAC canonique, de `develop` ou de `main` |
 | PR #1027 | Non modifiée |
 | Ressources distantes créées | aucune |
 | Coût engagé | 0 USD |
 | Nettoyage | Rien à détruire. La procédure est dans la section B, pour l'essai futur seulement |
 | Contrôle indépendant | Encore dû. Pas de passage Ready, pas de merge |
+
+| Check | Workflow | Résultat |
+|---|---|---|
+| Config préparée et preuves locales | MIG-WORKERS-CLOUD-01 | réussi |
+| Express, Hyperdrive local, queue | MIG-WORKERS-POC-01 | réussi |
+| Scope | PR Gates | réussi |
+| Secrets | PR Gates | réussi |
+| Quality | PR Gates | réussi |
+| Core tests | PR Gates | réussi |
+| Required | PR Gates | réussi |
+| android-release-readiness | Android release readiness GO-PROD | réussi |
+| Risk-targeted | PR Gates | ignoré |
+| LOT 0 parity | PR Gates | ignoré |
+| LOT 1 parity | PR Gates | ignoré |
+| LOT 2 parity | PR Gates | ignoré |
+| LOT 3 parity | PR Gates | ignoré |
+| LOT 4 parity | PR Gates | ignoré |
+| LOT 5 parity | PR Gates | ignoré |
+| LOT 6 parity | PR Gates | ignoré |
+| LOT 7 parity | PR Gates | ignoré |
+| LOT 8 parity | PR Gates | ignoré |
+
+Les jobs ignorés n'ont pas exécuté leurs suites. Les deux jobs de POC rejouent des preuves locales. Ils ne font pas passer les quatre preuves Cloudflare.
 
 Les tests locaux déjà validés par #1027 sont rejoués par `npm test` dans `workers/mig-workers-poc-01`, avec `POC_DATABASE_URL` vers une base dont le nom contient `workers_poc`. Ils ne changent pas le statut BLOCKED des preuves Cloudflare.
 
