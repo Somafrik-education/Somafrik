@@ -1,0 +1,44 @@
+name: MIG-WORKERS-CLOUD-01
+
+on:
+  pull_request:
+    paths:
+      - "workers/mig-workers-cloud-01/**"
+      - "workers/mig-workers-poc-01/**"
+      - "docs/audits/MIG-WORKERS-CLOUD-01.md"
+      - ".github/workflows/mig-workers-cloud-01.yml"
+  workflow_dispatch:
+
+jobs:
+  prepared-and-local:
+    name: Config préparée et preuves locales
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: poc
+          POSTGRES_PASSWORD: poc_local_only
+          POSTGRES_DB: somafrik_workers_poc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U poc -d somafrik_workers_poc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+      - name: Install POC dependencies
+        working-directory: workers/mig-workers-poc-01
+        run: npm ci
+      - name: Run the already validated local proofs
+        working-directory: workers/mig-workers-poc-01
+        env:
+          POC_DATABASE_URL: postgresql://poc:poc_local_only@127.0.0.1:5432/somafrik_workers_poc
+        run: npm test
+      - name: Check the undeployed cloud config
+        run: node --test workers/mig-workers-cloud-01/test/prepared.test.js
