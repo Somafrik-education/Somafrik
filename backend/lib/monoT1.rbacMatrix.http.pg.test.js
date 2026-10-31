@@ -67,10 +67,24 @@ test("matrice RBAC : aucune cellule ne change par rapport à la référence ; re
     assert.equal(effective.status, 200, `permissions effectives ${account}`);
     live[account] = { token, principal: { ...claimsOf(token), permissions: effective.data.permissions ?? [] } };
   }
+  // Le jeton d'accès vit au plus 15 min. Le balayage dépasse cette durée sur un
+  // runner lent : sans renouvellement, la fin du parcours répond 401 au lieu
+  // du 403 RBAC. On reloge avant 8 min ; les permissions effectives restent
+  // celles lues ci-dessus.
+  let tokensIssuedAt = Date.now();
+  async function refreshAccessTokens() {
+    if (Date.now() - tokensIssuedAt < 8 * 60 * 1000) return;
+    for (const account of Object.keys(ACCOUNTS)) {
+      server.forgetToken(account);
+      live[account].token = await server.login(account);
+    }
+    tokensIssuedAt = Date.now();
+  }
 
   const observed = {};
   const mustRefuse = [];
   for (const route of routes) {
+    await refreshAccessTokens();
     const key = `${route.method} ${route.path}`;
     observed[key] = {};
     for (const [account, roleKey] of Object.entries(ACCOUNTS)) {
