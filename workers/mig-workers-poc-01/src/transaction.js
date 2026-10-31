@@ -14,7 +14,7 @@ export class PocDatabaseError extends Error {
   }
 }
 
-export function assertPocConnectionString(connectionString) {
+export function assertPocConnectionString(connectionString, target = "local") {
   let url;
   try {
     url = new URL(String(connectionString ?? ""));
@@ -24,21 +24,40 @@ export function assertPocConnectionString(connectionString) {
   if (url.protocol !== "postgres:" && url.protocol !== "postgresql:") {
     throw new PocDatabaseError("POC_DATABASE_URL_INVALID");
   }
-  if (BLOCKED_HOST.test(url.hostname)) {
-    throw new PocDatabaseError("POC_DATABASE_HOST_REFUSED");
-  }
   const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
-  if (!database.includes("workers_poc")) {
-    throw new PocDatabaseError("POC_DATABASE_NAME_REFUSED");
+  if (target === "supabase-preprod-hyperdrive") {
+    // Les credentials et la base viennent du binding Hyperdrive épinglé par ID
+    // dans wrangler.hyperdrive-preprod.jsonc. Aucun DATABASE_URL externe accepté.
+    if (url.username !== "somafrik_hyperdrive_poc" || database !== "postgres") {
+      throw new PocDatabaseError("POC_DATABASE_TARGET_REFUSED");
+    }
+  } else if (target === "local") {
+    if (BLOCKED_HOST.test(url.hostname)) {
+      throw new PocDatabaseError("POC_DATABASE_HOST_REFUSED");
+    }
+    if (!database.includes("workers_poc")) {
+      throw new PocDatabaseError("POC_DATABASE_NAME_REFUSED");
+    }
+  } else {
+    throw new PocDatabaseError("POC_DATABASE_TARGET_REFUSED");
   }
   return database;
 }
 
-async function withClient(connectionString, fn) {
-  assertPocConnectionString(connectionString);
+async function withClient(connectionString, fn, target = "local") {
+  assertPocConnectionString(connectionString, target);
   const client = new Client({ connectionString });
   await client.connect();
   try {
+    if (target === "supabase-preprod-hyperdrive") {
+      // Aucune table publique ne doit être créée/modifiée par ce POC.
+      await client.query("SET search_path TO somafrik_workers_poc");
+      const identity = await client.query("SELECT current_user AS username, current_schema() AS schema");
+      if (identity.rows[0]?.username !== "somafrik_hyperdrive_poc" ||
+          identity.rows[0]?.schema !== "somafrik_workers_poc") {
+        throw new PocDatabaseError("POC_DATABASE_TARGET_REFUSED");
+      }
+    }
     return await fn(client);
   } finally {
     await client.end();
@@ -56,7 +75,7 @@ async function ensurePocTables(client) {
   )`);
 }
 
-export async function runPocTransaction(connectionString) {
+export async function runPocTransaction(connectionString, target = "local") {
   return withClient(connectionString, async (client) => {
     await ensurePocTables(client);
     const id = randomUUID();
@@ -84,7 +103,7 @@ export async function runPocTransaction(connectionString) {
       throw new PocDatabaseError("POC_TRANSACTION_ROLLBACK_FAILED");
     }
     return { rolledBack: true };
-  });
+  }, target);
 }
 
 export async function insertQueuedOutbox(connectionString, id) {

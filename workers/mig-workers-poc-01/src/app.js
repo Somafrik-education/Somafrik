@@ -25,7 +25,8 @@ function databaseStatus(error) {
   if (error instanceof PocDatabaseError) {
     if (
       error.code === "POC_DATABASE_HOST_REFUSED" ||
-      error.code === "POC_DATABASE_NAME_REFUSED"
+      error.code === "POC_DATABASE_NAME_REFUSED" ||
+      error.code === "POC_DATABASE_TARGET_REFUSED"
     ) {
       return 403;
     }
@@ -89,7 +90,9 @@ export function createPocApp({ getEnv }) {
 
   app.post("/api/poc/transaction", requireRepresentativeAccess, async (_req, res) => {
     try {
-      const result = await runPocTransaction(env().HYPERDRIVE?.connectionString);
+      const target = env().POC_DB_TARGET === "supabase-preprod-hyperdrive"
+        ? "supabase-preprod-hyperdrive" : "local";
+      const result = await runPocTransaction(env().HYPERDRIVE?.connectionString, target);
       res.json({ rolledBack: result.rolledBack === true });
     } catch (error) {
       res.status(databaseStatus(error)).json({
