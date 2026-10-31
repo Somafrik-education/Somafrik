@@ -28,7 +28,11 @@ export function assertPocConnectionString(connectionString, target = "local") {
   if (target === "supabase-preprod-hyperdrive") {
     // Les credentials et la base viennent du binding Hyperdrive épinglé par ID
     // dans wrangler.hyperdrive-preprod.jsonc. Aucun DATABASE_URL externe accepté.
-    if (url.username !== "somafrik_hyperdrive_poc" || database !== "postgres") {
+    // Hyperdrive émet une URI de proxy dont le username peut différer
+    // du rôle PostgreSQL réel. Contrôler l'identité APRES connexion,
+    // avant toute écriture, plutôt que de comparer le username du proxy.
+    // L'appelant utilise uniquement env.HYPERDRIVE.connectionString.
+    if (!url.hostname || !url.username || !database) {
       throw new PocDatabaseError("POC_DATABASE_TARGET_REFUSED");
     }
   } else if (target === "local") {
@@ -52,9 +56,10 @@ async function withClient(connectionString, fn, target = "local") {
     if (target === "supabase-preprod-hyperdrive") {
       // Aucune table publique ne doit être créée/modifiée par ce POC.
       await client.query("SET search_path TO somafrik_workers_poc");
-      const identity = await client.query("SELECT current_user AS username, current_schema() AS schema");
+      const identity = await client.query("SELECT current_user AS username, current_schema() AS schema, current_database() AS db");
       if (identity.rows[0]?.username !== "somafrik_hyperdrive_poc" ||
-          identity.rows[0]?.schema !== "somafrik_workers_poc") {
+          identity.rows[0]?.schema !== "somafrik_workers_poc" ||
+          identity.rows[0]?.db !== "postgres") {
         throw new PocDatabaseError("POC_DATABASE_TARGET_REFUSED");
       }
     }
