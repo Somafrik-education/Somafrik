@@ -11,17 +11,10 @@ test("preprod Hyperdrive: guard base et rôle restreints", () => {
     ),
     "postgres",
   );
-  for (const url of [
-    "postgres://proxy_user:fake@proxy.example:5432/",
-    "postgres://proxy_user:fake@proxy.example:5432/",
-    "postgres://somafrik_hyperdrive_poc:fake@proxy.example:5432/postgres?other=1",
-  ]) {
-    if (url.includes("?other")) continue; // URL options are driver-specific
-    assert.throws(
-      () => assertPocConnectionString(url, "supabase-preprod-hyperdrive"),
-      /POC_DATABASE_TARGET_REFUSED/,
-    );
-  }
+  assert.throws(
+    () => assertPocConnectionString("postgres://proxy_user:fake@proxy.example:5432/", "supabase-preprod-hyperdrive"),
+    /POC_DATABASE_TARGET_REFUSED/,
+  );
   // Le proxy Hyperdrive ne reprend pas nécessairement le rôle réel.
   assert.equal(
     assertPocConnectionString("postgres://proxy_user:fake@proxy.example:5432/postgres", "supabase-preprod-hyperdrive"),
