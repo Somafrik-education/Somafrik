@@ -561,6 +561,7 @@ export function FinanceUnpaidPage() {
         open={Boolean(paymentStudentId)}
         mode="quick-student"
         initialStudentId={paymentStudentId ?? undefined}
+        initialStudentCode={ledgerRows.find((row) => row.studentId === paymentStudentId)?.matricule}
         unpaidRemaining={rows.find((row) => row.studentId === paymentStudentId)?.amountDue}
         unpaidFeeIds={rows.find((row) => row.studentId === paymentStudentId)?.feeIds}
         onClose={() => setPaymentStudentId(null)}
