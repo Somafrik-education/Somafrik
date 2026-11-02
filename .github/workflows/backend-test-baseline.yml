@@ -121,6 +121,14 @@ jobs:
             echo "Retrying backend install (Puppeteer Chrome archive)"
             rm -rf "$HOME/.cache/puppeteer/chrome"
           done
+      # BULLETIN-SEC-01 : pdftotext lit le texte des bulletins PDF générés
+      # (bulletinSec01.http.pg.test.js). En CI, son absence fait échouer ces tests.
+      - name: Install poppler-utils (pdftotext)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          pdftotext -v
       - name: Declare the job cluster disposable (sentinel comment)
         env:
           PGPASSWORD: postgres

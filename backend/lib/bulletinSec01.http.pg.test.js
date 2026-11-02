@@ -321,6 +321,15 @@ function pdfToTextAvailable() {
   }
 }
 
+/**
+ * Lecture du texte PDF par pdftotext (poppler-utils). En CI (CI=true), le
+ * contrôle est obligatoire : outil absent ⇒ échec, jamais SKIP. Hors CI, SKIP
+ * explicite avec son motif.
+ */
+const pdfTextSkip =
+  skip ||
+  (!process.env.CI && !pdfToTextAvailable() && "pdftotext (poppler-utils) absent : contrôle textuel du PDF non exécutable hors CI");
+
 function pdfText(buffer) {
   return execFileSync("pdftotext", ["-layout", "-", "-"], { input: buffer }).toString("utf8");
 }
@@ -425,7 +434,7 @@ test("P0-3 : le bulletin porte l'identité de l'établissement propriétaire", {
 
 test(
   "P0-3 (PDF) : nom et code imprimés = établissement propriétaire",
-  { skip: skip || (!pdfToTextAvailable() && "pdftotext (poppler-utils) absent : contrôle textuel du PDF non exécutable") },
+  { skip: pdfTextSkip },
   async () => {
     const pdf = await request(studentRoute("Benoit", "report.pdf"), state.tokens.adminB);
     assert.equal(pdf.status, 200, pdf.text.slice(0, 300));
@@ -439,7 +448,7 @@ test(
 
 test(
   "P0-1/P0-2 (PDF) : moyenne et rang imprimés sur notes publiées de la classe",
-  { skip: skip || (!pdfToTextAvailable() && "pdftotext (poppler-utils) absent : contrôle textuel du PDF non exécutable") },
+  { skip: pdfTextSkip },
   async () => {
     const pdf = await request(studentRoute("Alice", "report.pdf"), state.tokens.parentAlice);
     assert.equal(pdf.status, 200, pdf.text.slice(0, 300));
