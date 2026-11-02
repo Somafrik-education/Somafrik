@@ -51,6 +51,8 @@ function assertSourceGuards() {
 
   // F7 : contrat structurel du formulaire — pas de copies UI fragiles.
   assert.match(modal, /data-testid="payment-add-line"/);
+  assert.match(modal, /Ajouter une obligation/);
+  assert.match(modal, /payment-line-balance-/);
   assert.doesNotMatch(modal, /UNALLOCATED_TARGET/);
   assert.doesNotMatch(modal, /UNALLOCATED_FEE_TYPE/);
   assert.match(modal, /setLines\(\(current\) => \[\s*\.\.\.current,\s*createPaymentLine\(/);
