@@ -143,6 +143,7 @@ class PostgresRepository {
     await this.ensureFinanceCanonicalSchema();
     await this.ensureEnrollmentC18CanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
+    await this.ensureSubjectHierarchyCanonicalSchema();
     await this.ensureTeacherCourseCanonicalReconcile();
     await this.ensurePlatformCanonicalSchema();
     await this.ensurePlatformRolePermissionsBootstrap();
@@ -280,6 +281,12 @@ class PostgresRepository {
     // CARTE-PR3-A1 : passages au portail, après les cartes (FK carte → élève → établissement).
     const { SCHOOL_ENTRY_EVENTS_SCHEMA_SQL } = require("./schoolEntryEventsSchema");
     await this.query(SCHOOL_ENTRY_EVENTS_SCHEMA_SQL);
+  }
+
+  /** BULLETIN-MODEL-01 — hiérarchie matière principale → sous-matières (additive). */
+  async ensureSubjectHierarchyCanonicalSchema() {
+    const { ensureSubjectHierarchySchema } = require("./subjectHierarchySchema");
+    await ensureSubjectHierarchySchema(this);
   }
 
   async ensureStudentCardBatchesCanonicalSchema() {

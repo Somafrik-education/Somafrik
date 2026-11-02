@@ -23,7 +23,9 @@ const {
   ROUNDING_STAGE_V1,
   RANKING_METRIC_V1,
   PASS_RULE_METRIC_V1,
+  resolveSubjectComponentRule,
 } = require("./academicRuleProfile");
+const { FACT_STATUSES, expectedMissingCells, computeSubjectTotals } = require("./reportCardSubjectTotals");
 const { validateSpec: validateSchemaSpec, validateAgainstProfile } = require("./reportCardSchema");
 
 const AGGREGATE_SLOTS = new Set([
@@ -195,6 +197,7 @@ function assertRequestedSlots(profile, schema) {
 }
 
 function aggregateWeighted(profile, cells, { periodId, scoreComponentId } = {}) {
+  if (Array.isArray(profile.subjects)) return aggregateSubjectWeighted(cells, { periodId, scoreComponentId });
   let points = 0;
   let maxPoints = 0;
   let maxComplete = true;
@@ -221,6 +224,27 @@ function aggregateWeighted(profile, cells, { periodId, scoreComponentId } = {}) 
     }
   }
   return { points, max_points: maxComplete ? maxPoints : null };
+}
+
+/**
+ * BULLETIN-MODEL-01 — agrégat à règles par matière : chaque cellule porte son
+ * maximum et son poids effectifs. Une note MISSING ne rapporte aucun point mais
+ * son maximum reste attendu (jamais 0 silencieux, jamais de % gonflé).
+ */
+function aggregateSubjectWeighted(cells, { periodId, scoreComponentId } = {}) {
+  let points = 0;
+  let maxPoints = 0;
+  for (const cell of cells) {
+    if (periodId && cell.period_id !== periodId) continue;
+    if (scoreComponentId && cell.score_component_id !== scoreComponentId) continue;
+    if (cell.kind === "NUMERIC") {
+      points += cell.internal * cell.weight;
+      maxPoints += cell.max * cell.weight;
+    } else if (cell.kind === "MISSING") {
+      maxPoints += cell.max * cell.weight;
+    }
+  }
+  return { points, max_points: maxPoints };
 }
 
 function numericSlot(internal, profile) {
@@ -416,6 +440,13 @@ function validateFactRows(profile, rows, periodIds, componentIds) {
       const numeric = Number(row.raw_score);
       if (!Number.isFinite(numeric)) throw new ReportCardEngineError("INVALID_FACTS");
     }
+    if (Array.isArray(profile.subjects)) {
+      if (row.fact_status != null && !FACT_STATUSES.includes(row.fact_status)) {
+        throw new ReportCardEngineError("INVALID_FACTS");
+      }
+      const rule = resolveSubjectComponentRule(profile, String(row.subject_id), row.period_id, row.score_component_id);
+      if (rule.state === "COMPOSITE") throw new ReportCardEngineError("COMPOSITE_SUBJECT_FACT");
+    }
     const key = factSemanticKey(row);
     if (seenFacts.has(key)) throw new ReportCardEngineError("DUPLICATE_FACT");
     seenFacts.add(key);
@@ -431,7 +462,58 @@ function groupByStudent(rows) {
   return students;
 }
 
+function buildSubjectCell(profile, studentId, row) {
+  const rule = resolveSubjectComponentRule(profile, String(row.subject_id), row.period_id, row.score_component_id);
+  const cell = {
+    student_id: studentId,
+    subject_id: row.subject_id,
+    period_id: row.period_id,
+    score_component_id: row.score_component_id,
+  };
+  const hasScore = row.raw_score != null && row.raw_score !== "";
+  if (rule.state === "NOT_CONFIGURED") {
+    return { ...cell, kind: "NOT_CONFIGURED", internal: null, exposed: null };
+  }
+  if (rule.state === "NOT_APPLICABLE") {
+    if (hasScore && row.fact_status !== "CANCELLED") {
+      throw new ReportCardEngineError("FACT_FOR_NOT_APPLICABLE_COMPONENT");
+    }
+    return { ...cell, kind: "NOT_APPLICABLE", internal: null, exposed: null };
+  }
+  const expected = { ...cell, max: rule.max, weight: rule.weight };
+  if (row.fact_status === "UNPUBLISHED" || row.fact_status === "CANCELLED") {
+    return { ...expected, kind: "MISSING", reason: row.fact_status, internal: null, exposed: null };
+  }
+  if (!hasScore) {
+    return { ...expected, kind: "MISSING", reason: "NOT_ENTERED", internal: null, exposed: null };
+  }
+  const numericValue = Number(row.raw_score);
+  try {
+    assertScoreBounds({ numericScore: numericValue, max: rule.max });
+  } catch (err) {
+    wrapEngineError(err, "INVALID_FACTS");
+  }
+  return {
+    ...expected,
+    kind: "NUMERIC",
+    internal: numericValue,
+    exposed: roundNumber(numericValue, profile.rounding.decimals, profile.rounding.mode),
+  };
+}
+
+function compareCell(a, b) {
+  return (
+    compareId(a.subject_id, b.subject_id) ||
+    compareId(a.period_id, b.period_id) ||
+    compareId(a.score_component_id, b.score_component_id)
+  );
+}
+
 function buildCells(profile, studentId, rows) {
+  if (Array.isArray(profile.subjects)) {
+    const cells = rows.map((row) => buildSubjectCell(profile, studentId, row));
+    return [...cells, ...expectedMissingCells(profile, studentId, cells)].sort(compareCell);
+  }
   return rows
     .map((row) => {
       const component = componentById(profile, row.score_component_id);
@@ -559,6 +641,11 @@ function computeReportCard(input = {}) {
     const presence = collectPresence(schema, ctx);
     const slots = computeSlots(profile, schema, cells, ranksByStudent.get(studentId) || new Map());
     const result = { student_id: studentId, cells, slots, presence };
+    if (Array.isArray(profile.subjects)) {
+      result.subject_totals = computeSubjectTotals(profile, cells, (value) =>
+        roundNumber(value, profile.rounding.decimals, profile.rounding.mode)
+      );
+    }
     if (calculable) {
       const period_aggregates = periodAggregatesFor(profile, cells);
       result.period_aggregates = period_aggregates;
