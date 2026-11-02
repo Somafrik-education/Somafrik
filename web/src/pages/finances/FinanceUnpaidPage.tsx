@@ -43,7 +43,7 @@ import { financeApi } from "../../lib/financeApi";
 import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { ApiError } from "../../api/client";
 import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
-import { financeObligationStatusLabel, financePaymentStatusLabel } from "../../lib/financeObligationStatus";
+import { financeObligationStatusLabel, financePaymentStatusLabel, financeScreenFeeLabel } from "../../lib/financeObligationStatus";
 import { EmptyState, LoadingState } from "../../design-system";
 
 type UnpaidLoadStatus = "idle" | "loading" | "ready" | "forbidden" | "unauthenticated" | "error";
@@ -521,7 +521,7 @@ export function FinanceUnpaidPage() {
                 <ul className="mt-2 space-y-1">
                   {detail.payments.map((payment, index) => (
                     <li key={String(payment.id ?? index)} className="flex justify-between gap-2 text-muted">
-                      <span>{String(payment.label ?? payment.feeType ?? "Paiement")}</span>
+                      <span>{financeScreenFeeLabel(payment.label ?? payment.feeType) || "Paiement"}</span>
                       <span>
                       {formatFinanceAmount(Number(payment.amount ?? 0), String(payment.currency ?? detail.row.currency))}
                       {" · "}

@@ -60,6 +60,7 @@ describe("FIN-SIMPLE-02 — three presentation indicators", () => {
     assert.match(unpaid, /Reste à payer/);
     assert.match(read("Mobile/src/components/PaymentMutationControls.tsx"), /Aucune somme n'est exigible pour cet élève/);
     assert.doesNotMatch(read("Mobile/src/components/PaymentMutationControls.tsx"), /Non imputé/);
-    assert.match(read("Mobile/src/components/PaymentReceiptCard.tsx"), /Non imputé/);
+    assert.match(read("Mobile/src/components/PaymentReceiptCard.tsx"), /Non affecté à un frais/);
+    assert.doesNotMatch(read("Mobile/src/components/PaymentReceiptCard.tsx"), /Non imputé|Montant imputé/);
   });
 });

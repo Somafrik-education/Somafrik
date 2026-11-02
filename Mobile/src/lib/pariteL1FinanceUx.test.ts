@@ -30,7 +30,8 @@ assert.match(entityCard, /accessibilityState/);
 assert.match(receiptCard, /Référence/);
 assert.match(receiptCard, /Moyen/);
 assert.match(receiptCard, /Libellés/);
-assert.match(receiptCard, /Non imputé/);
+assert.match(receiptCard, /Non affecté à un frais/);
+assert.doesNotMatch(receiptCard, /Non imputé|Montant imputé/);
 
 // Impayés : même grammaire de carte dépliable et conservation des données métier.
 assert.match(unpaidScreen, /ExpandableFinanceCard/);
