@@ -11,13 +11,17 @@ import { useToast } from "../ui/Toast";
 import { getCurrentSchool } from "../../lib/establishment";
 import { formatFinanceAmount, resolveFinanceCurrency } from "../../lib/financeCurrency";
 import {
+  canAddPaymentObligationLine,
   collectStudentPaymentClasses,
   createPaymentLine,
   defaultPaymentDate,
   paymentDateFromInput,
   paymentDateToInput,
+  paymentLineExceedsBalance,
   parseLineAmount,
+  PAYMENT_LINE_EXCEEDS_BALANCE_ERROR,
   searchStudentsForPayment,
+  soleUnusedObligationId,
   sumPaymentLines,
   validateMultiItemPaymentInput,
   type PaymentRecord,
@@ -164,18 +168,9 @@ export function QuickPaymentModal({
     !catalogLoading &&
     openObligations.length === 0 &&
     unpaidHasOpenBalance;
-  const obligationSelectOptions = useMemo(() => {
-    const obligationOptions = openObligations.map((row) => ({
-      value: row.obligationId,
-      label: `${row.label}${row.periodLabel ? ` · ${row.periodLabel}` : ""} · reste ${formatFinanceAmount(row.balance, row.currency || catalogCurrency)}`,
-    }));
-    if (obligationResolveError || openObligations.length === 0) return [];
-    if (openObligations.length > 1) {
-      return [{ value: "", label: "Sélectionner un frais" }, ...obligationOptions];
-    }
-    return obligationOptions;
-  }, [openObligations, catalogCurrency, obligationResolveError]);
   const total = sumPaymentLines(lines);
+  const lineExceedsBalance = lines.some((line) => paymentLineExceedsBalance(line, openObligations));
+  const canAddObligation = canAddPaymentObligationLine(lines.length, openObligations.length);
   const openBalance = openObligations.reduce(
     (sum, row) => sum + (Number.isFinite(row.balance) ? row.balance : 0),
     0,
@@ -395,6 +390,10 @@ export function QuickPaymentModal({
       method,
       date: paymentDateFromInput(dateInput),
       lines,
+      openObligations: openObligations.map((row) => ({
+        obligationId: row.obligationId,
+        balance: row.balance,
+      })),
     });
     if (validationError) {
       showToast(validationError, "error");
@@ -460,13 +459,13 @@ export function QuickPaymentModal({
           </Button>
           <Button
             variant="secondary"
-            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance}
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance || lineExceedsBalance}
             onClick={(event) => void handleSubmit(event, true)}
           >
             {busy ? "Enregistrement…" : "Enregistrer et imprimer"}
           </Button>
           <Button
-            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance}
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance || lineExceedsBalance}
             onClick={(event) => void handleSubmit(event, false)}
           >
             {busy ? "Enregistrement…" : "Enregistrer l'encaissement"}
@@ -634,59 +633,96 @@ export function QuickPaymentModal({
         {collectionLocked ? null : (
           <div className="space-y-3">
             <p className="text-sm font-semibold text-ink">Affectation de l'encaissement</p>
-            {lines.map((line, index) => (
-              <div
-                key={line.id}
-                className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:grid-cols-[1fr_8rem_auto]"
-                data-testid={`payment-line-${index}`}
-              >
-                <Field label="Frais concerné" required>
-                  <Select
-                    value={line.obligationId}
-                    onChange={(event) => updateLine(line.id, { obligationId: event.target.value })}
-                    options={obligationSelectOptions}
-                  />
-                </Field>
-                <Field label="Montant à encaisser" required>
-                  <Input
-                    type="number"
-                    min={1}
-                    step="0.01"
-                    value={line.amount}
-                    onChange={(event) => updateLine(line.id, { amount: event.target.value })}
-                    placeholder="0"
-                  />
-                </Field>
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={lines.length <= 1}
-                    onClick={() => removeLine(line.id)}
-                    aria-label="Supprimer la ligne"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+            {lines.map((line, index) => {
+              const taken = new Set(
+                lines
+                  .filter((row) => row.id !== line.id)
+                  .map((row) => String(row.obligationId ?? "").trim())
+                  .filter(Boolean),
+              );
+              const available = openObligations.filter((row) => !taken.has(row.obligationId));
+              const obligationOptions = available.map((row) => ({
+                value: row.obligationId,
+                label: `${row.label}${row.periodLabel ? ` · ${row.periodLabel}` : ""} · reste ${formatFinanceAmount(row.balance, row.currency || catalogCurrency)}`,
+              }));
+              const lineOptions =
+                !line.obligationId || available.length !== 1
+                  ? [{ value: "", label: "Sélectionner un frais" }, ...obligationOptions]
+                  : obligationOptions;
+              const selected = openObligations.find((row) => row.obligationId === line.obligationId);
+              const balanceLabel = selected
+                ? formatFinanceAmount(selected.balance, selected.currency || currency)
+                : "—";
+              const exceedsLine = paymentLineExceedsBalance(line, openObligations);
+              return (
+                <div
+                  key={line.id}
+                  className="grid gap-3 rounded-xl border border-line bg-slate-50 p-3 sm:grid-cols-[minmax(0,1.5fr)_8.5rem_8.5rem_auto]"
+                  data-testid={`payment-line-${index}`}
+                >
+                  <Field label="Frais concerné" required>
+                    <Select
+                      value={line.obligationId}
+                      onChange={(event) => updateLine(line.id, { obligationId: event.target.value })}
+                      options={lineOptions}
+                    />
+                  </Field>
+                  <Field label="Solde encore dû">
+                    <Input
+                      readOnly
+                      tabIndex={-1}
+                      value={balanceLabel}
+                      data-testid={`payment-line-balance-${index}`}
+                    />
+                  </Field>
+                  <Field label="Montant à encaisser" required>
+                    <Input
+                      type="number"
+                      min={1}
+                      step="0.01"
+                      value={line.amount}
+                      onChange={(event) => updateLine(line.id, { amount: event.target.value })}
+                      placeholder="0"
+                    />
+                  </Field>
+                  <div className="flex items-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={lines.length <= 1}
+                      onClick={() => removeLine(line.id)}
+                      aria-label="Supprimer la ligne"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {exceedsLine ? (
+                    <p
+                      className="text-sm font-semibold text-danger sm:col-span-4"
+                      role="alert"
+                      data-testid={`payment-line-exceeds-${index}`}
+                    >
+                      {PAYMENT_LINE_EXCEEDS_BALANCE_ERROR}
+                    </p>
+                  ) : null}
                 </div>
-              </div>
-            ))}
-            {isQuickStudent ? null : (
-              <Button
-                type="button"
-                variant="secondary"
-                data-testid="payment-add-line"
-                disabled={Boolean(catalogError)}
-                onClick={() =>
-                  setLines((current) => [
-                    ...current,
-                    createPaymentLine(openObligations.length === 1 ? openObligations[0].obligationId : ""),
-                  ])
-                }
-              >
-                <Plus className="mr-1 h-4 w-4" />
-                Ajouter une ligne de frais
-              </Button>
-            )}
+              );
+            })}
+            <Button
+              type="button"
+              variant="secondary"
+              data-testid="payment-add-line"
+              disabled={Boolean(catalogError) || !canAddObligation}
+              onClick={() =>
+                setLines((current) => [
+                  ...current,
+                  createPaymentLine(soleUnusedObligationId(current, openObligations)),
+                ])
+              }
+            >
+              <Plus className="mr-1 h-4 w-4" aria-hidden="true" />
+              Ajouter une obligation
+            </Button>
           </div>
         )}
 

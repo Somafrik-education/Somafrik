@@ -91,6 +91,46 @@ export function createPaymentLine(obligationId = ""): QuickPaymentLine {
   return { id: rand, obligationId, amount: "" };
 }
 
+export const PAYMENT_LINE_AMOUNT_ERROR = "Chaque libellé doit avoir un montant strictement positif";
+export const PAYMENT_DUPLICATE_OBLIGATION_ERROR =
+  "Une même obligation ne peut pas être encaissée deux fois dans la même opération.";
+export const PAYMENT_LINE_EXCEEDS_BALANCE_ERROR =
+  "Le montant dépasse le solde encore dû de cette obligation.";
+
+/** Préremplit la nouvelle ligne seulement lorsqu'il reste une seule obligation libre. */
+export function soleUnusedObligationId(
+  lines: Array<{ obligationId?: string }>,
+  openObligations: Array<{ obligationId?: string }>,
+): string {
+  const used = new Set(lines.map((line) => String(line.obligationId ?? "").trim()).filter(Boolean));
+  const unused = openObligations
+    .map((row) => String(row.obligationId ?? "").trim())
+    .filter((id) => id && !used.has(id));
+  return unused.length === 1 ? unused[0] : "";
+}
+
+/**
+ * Sans obligation ouverte (élève pas encore choisi), le bouton reste disponible.
+ * Dès qu'un élève a des obligations, une ligne par obligation au maximum.
+ */
+export function canAddPaymentObligationLine(lineCount: number, openObligationCount: number): boolean {
+  if (openObligationCount <= 0) return true;
+  return lineCount < openObligationCount;
+}
+
+export function paymentLineExceedsBalance(
+  line: { obligationId?: string; amount?: string | number },
+  openObligations: Array<{ obligationId?: string; balance?: number }>,
+): boolean {
+  const obligationId = String(line.obligationId ?? "").trim();
+  if (!obligationId) return false;
+  const known = openObligations.find((row) => String(row.obligationId ?? "").trim() === obligationId);
+  if (!known) return false;
+  const amount = parseLineAmount(line.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return false;
+  return amount > Number(known.balance) + 0.004;
+}
+
 export function parseLineAmount(value: string | number | undefined): number {
   return Number(String(value ?? "").replace(/\s/g, "").replace(",", "."));
 }
@@ -430,6 +470,7 @@ export function validateMultiItemPaymentInput(input: {
   method?: string;
   date?: string;
   lines?: QuickPaymentLine[];
+  openObligations?: Array<{ obligationId: string; balance: number }>;
 }): string | null {
   if (!input.student?.id) return "Veuillez sélectionner un élève";
   const classOptions = input.classOptions ?? [];
@@ -442,13 +483,21 @@ export function validateMultiItemPaymentInput(input: {
   if (!input.date?.trim()) return "La date du paiement est obligatoire";
   const lines = input.lines ?? [];
   if (!lines.length) return "Ajoutez au moins un libellé";
+  const seen = new Set<string>();
   for (const line of lines) {
     const obligationId = String(line.obligationId ?? "").trim();
     if (!obligationId || obligationId === "__unallocated__") {
       return "Chaque ligne doit viser un frais encore dû.";
     }
+    if (seen.has(obligationId)) return PAYMENT_DUPLICATE_OBLIGATION_ERROR;
+    seen.add(obligationId);
     const amount = parseLineAmount(line.amount);
-    if (!Number.isFinite(amount) || amount <= 0) return "Chaque libellé doit avoir un montant strictement positif";
+    if (!Number.isFinite(amount) || amount <= 0) return PAYMENT_LINE_AMOUNT_ERROR;
+    if (input.openObligations) {
+      const known = input.openObligations.find((row) => row.obligationId === obligationId);
+      if (!known) return "Chaque ligne doit viser un frais encore dû.";
+      if (amount > Number(known.balance) + 0.004) return PAYMENT_LINE_EXCEEDS_BALANCE_ERROR;
+    }
   }
   return null;
 }
