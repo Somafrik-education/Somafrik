@@ -124,121 +124,123 @@ function createReportCardPublicationPgStore(db) {
     );
   }
 
+  async function insertInTx(client, { record, supersedeReportCardId, command }) {
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))", [
+      record.school_id,
+      record.report_card_id,
+    ]);
+    if (record.corrected_from_version != null) {
+      const source = await queryOne(
+        client,
+        `SELECT verification_status FROM report_card_published_snapshots
+         WHERE school_id = $1 AND report_card_id = $2 AND published_snapshot_version = $3`,
+        [record.school_id, record.report_card_id, record.corrected_from_version]
+      );
+      if (!source) throw coded("PUBLICATION_NOT_FOUND");
+      if (source.verification_status === VERIFICATION_STATES[2]) throw coded("INVALID_TRANSITION");
+      if (source.verification_status !== VERIFICATION_STATES[0]) throw coded("CONCURRENCY_CONFLICT");
+    }
+    if (supersedeReportCardId) {
+      await client.query(
+        `UPDATE report_card_published_snapshots
+         SET verification_status = $1
+         WHERE school_id = $2
+           AND report_card_id = $3
+           AND published_snapshot_version IS DISTINCT FROM $4
+           AND verification_status = $5`,
+        [
+          VERIFICATION_STATES[1],
+          record.school_id,
+          supersedeReportCardId,
+          record.published_snapshot_version,
+          VERIFICATION_STATES[0],
+        ]
+      );
+    }
+    const inserted = await queryOne(
+      client,
+      `INSERT INTO report_card_published_snapshots (
+         school_id, report_card_id, published_snapshot_version, published_at,
+         status, verification_status, public_id, token_hash, token_ciphertext,
+         wrapping_key_id, canonical_bytes, snapshot_sha256, snapshot_signature,
+         signing_key_id, engine_id, corrected_from_version, correction_reason,
+         actor_id, command_id
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+       )
+       ON CONFLICT (school_id, report_card_id, published_snapshot_version) DO NOTHING
+       RETURNING *`,
+      [
+        record.school_id,
+        record.report_card_id,
+        record.published_snapshot_version,
+        record.sealed.payload.published_at,
+        record.status,
+        record.verification_status,
+        record.public_id,
+        record.token_hash,
+        record.token_ciphertext,
+        record.wrapping_key_id,
+        record.sealed.canonical_bytes,
+        record.snapshot_sha256,
+        record.snapshot_signature,
+        record.signing_key_id,
+        record.sealed.payload.engine_id,
+        record.corrected_from_version == null ? null : record.corrected_from_version,
+        record.correction_reason || null,
+        record.actor_id || null,
+        record.command_id || null,
+      ]
+    );
+    if (!inserted) {
+      const existing = mapRecord(
+        await queryOne(
+          client,
+          `SELECT * FROM report_card_published_snapshots
+           WHERE school_id = $1 AND report_card_id = $2 AND published_snapshot_version = $3`,
+          [record.school_id, record.report_card_id, record.published_snapshot_version]
+        )
+      );
+      if (!existing) throw new Error("PUBLICATION_NOT_FOUND");
+      if (existing.snapshot_sha256 !== record.snapshot_sha256) throw new IdempotencyConflict();
+      return existing;
+    }
+    await client.query(
+      `INSERT INTO report_card_publish_outbox (
+         school_id, report_card_id, published_snapshot_version, public_id, event
+       ) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (school_id, report_card_id, published_snapshot_version) DO NOTHING`,
+      [
+        record.school_id,
+        record.report_card_id,
+        record.published_snapshot_version,
+        record.public_id,
+        PUBLISH.outbox_event,
+      ]
+    );
+    if (command && command.command_id) {
+      await client.query(
+        `INSERT INTO report_card_correction_commands (
+           school_id, report_card_id, command_id, reason, source_version, result_version, public_id
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (school_id, report_card_id, command_id) DO NOTHING`,
+        [
+          command.school_id,
+          command.report_card_id,
+          command.command_id,
+          command.reason,
+          command.source_version,
+          command.result_version || record.published_snapshot_version,
+          command.public_id || record.public_id,
+        ]
+      );
+    }
+    return mapRecord(inserted);
+  }
+
   async function insertPublication({ record, supersedeReportCardId, command }) {
     try {
-      return await withTx(async (client) => {
-        await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text), hashtext($2::text))", [
-          record.school_id,
-          record.report_card_id,
-        ]);
-        if (record.corrected_from_version != null) {
-          const source = await queryOne(
-            client,
-            `SELECT verification_status FROM report_card_published_snapshots
-             WHERE school_id = $1 AND report_card_id = $2 AND published_snapshot_version = $3`,
-            [record.school_id, record.report_card_id, record.corrected_from_version]
-          );
-          if (!source) throw coded("PUBLICATION_NOT_FOUND");
-          if (source.verification_status === VERIFICATION_STATES[2]) throw coded("INVALID_TRANSITION");
-          if (source.verification_status !== VERIFICATION_STATES[0]) throw coded("CONCURRENCY_CONFLICT");
-        }
-        if (supersedeReportCardId) {
-          await client.query(
-            `UPDATE report_card_published_snapshots
-             SET verification_status = $1
-             WHERE school_id = $2
-               AND report_card_id = $3
-               AND published_snapshot_version IS DISTINCT FROM $4
-               AND verification_status = $5`,
-            [
-              VERIFICATION_STATES[1],
-              record.school_id,
-              supersedeReportCardId,
-              record.published_snapshot_version,
-              VERIFICATION_STATES[0],
-            ]
-          );
-        }
-        const inserted = await queryOne(
-          client,
-          `INSERT INTO report_card_published_snapshots (
-             school_id, report_card_id, published_snapshot_version, published_at,
-             status, verification_status, public_id, token_hash, token_ciphertext,
-             wrapping_key_id, canonical_bytes, snapshot_sha256, snapshot_signature,
-             signing_key_id, engine_id, corrected_from_version, correction_reason,
-             actor_id, command_id
-           ) VALUES (
-             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
-           )
-           ON CONFLICT (school_id, report_card_id, published_snapshot_version) DO NOTHING
-           RETURNING *`,
-          [
-            record.school_id,
-            record.report_card_id,
-            record.published_snapshot_version,
-            record.sealed.payload.published_at,
-            record.status,
-            record.verification_status,
-            record.public_id,
-            record.token_hash,
-            record.token_ciphertext,
-            record.wrapping_key_id,
-            record.sealed.canonical_bytes,
-            record.snapshot_sha256,
-            record.snapshot_signature,
-            record.signing_key_id,
-            record.sealed.payload.engine_id,
-            record.corrected_from_version == null ? null : record.corrected_from_version,
-            record.correction_reason || null,
-            record.actor_id || null,
-            record.command_id || null,
-          ]
-        );
-        if (!inserted) {
-          const existing = mapRecord(
-            await queryOne(
-              client,
-              `SELECT * FROM report_card_published_snapshots
-               WHERE school_id = $1 AND report_card_id = $2 AND published_snapshot_version = $3`,
-              [record.school_id, record.report_card_id, record.published_snapshot_version]
-            )
-          );
-          if (!existing) throw new Error("PUBLICATION_NOT_FOUND");
-          if (existing.snapshot_sha256 !== record.snapshot_sha256) throw new IdempotencyConflict();
-          return existing;
-        }
-        await client.query(
-          `INSERT INTO report_card_publish_outbox (
-             school_id, report_card_id, published_snapshot_version, public_id, event
-           ) VALUES ($1,$2,$3,$4,$5)
-           ON CONFLICT (school_id, report_card_id, published_snapshot_version) DO NOTHING`,
-          [
-            record.school_id,
-            record.report_card_id,
-            record.published_snapshot_version,
-            record.public_id,
-            PUBLISH.outbox_event,
-          ]
-        );
-        if (command && command.command_id) {
-          await client.query(
-            `INSERT INTO report_card_correction_commands (
-               school_id, report_card_id, command_id, reason, source_version, result_version, public_id
-             ) VALUES ($1,$2,$3,$4,$5,$6,$7)
-             ON CONFLICT (school_id, report_card_id, command_id) DO NOTHING`,
-            [
-              command.school_id,
-              command.report_card_id,
-              command.command_id,
-              command.reason,
-              command.source_version,
-              command.result_version || record.published_snapshot_version,
-              command.public_id || record.public_id,
-            ]
-          );
-        }
-        return mapRecord(inserted);
-      });
+      return await withTx((client) => insertInTx(client, { record, supersedeReportCardId, command }));
     } catch (err) {
       if (isUniqueViolation(err)) {
         const existing = await find(
@@ -249,6 +251,27 @@ function createReportCardPublicationPgStore(db) {
         if (existing && existing.snapshot_sha256 === record.snapshot_sha256) return existing;
         throw new IdempotencyConflict();
       }
+      throw err;
+    }
+  }
+
+  /**
+   * BULLETIN-PUBLISH-01 — publication d'un lot (une classe) dans UNE transaction :
+   * tout ou rien. Verrous consultatifs pris dans l'ordre des report_card_id
+   * (pas d'interblocage). Un conflit d'une seule ligne annule tout le lot.
+   */
+  async function insertPublications({ entries } = {}) {
+    const ordered = [...(entries || [])].sort((a, b) =>
+      String(a.record.report_card_id).localeCompare(String(b.record.report_card_id))
+    );
+    try {
+      return await withTx(async (client) => {
+        const out = [];
+        for (const entry of ordered) out.push(await insertInTx(client, entry));
+        return out;
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new IdempotencyConflict();
       throw err;
     }
   }
@@ -429,6 +452,7 @@ function createReportCardPublicationPgStore(db) {
     find,
     findByPublicId,
     insertPublication,
+    insertPublications,
     listOutbox,
     listCurrent,
     listHistory,
