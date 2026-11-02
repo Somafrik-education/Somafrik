@@ -13,7 +13,7 @@ import {
   type CanonicalPayment,
 } from "../lib/dataTruth";
 import { formatFinanceAmount, formatFinanceDate } from "../lib/financeCurrency";
-import { financePaymentStatusLabel } from "../lib/financeObligationStatus";
+import { financePaymentStatusLabel, financeScreenFeeLabel } from "../lib/financeObligationStatus";
 
 type Props = {
   payment: CanonicalPayment;
@@ -41,7 +41,7 @@ export default function PaymentReceiptCard({
   const summaryMeta = [money(total), paymentMethodLabel(payment), paidAt ? formatFinanceDate(paidAt) : ""]
     .filter(Boolean)
     .join(" · ");
-  const badgeTone = /annul/i.test(statusLabel) ? "danger" : /non imput|attente/i.test(statusLabel) ? "warning" : "default";
+  const badgeTone = /annul/i.test(statusLabel) ? "danger" : /non affect|attente/i.test(statusLabel) ? "warning" : "default";
 
   return (
     <ExpandableFinanceCard
@@ -59,7 +59,7 @@ export default function PaymentReceiptCard({
         <Text style={styles.detailValue}>{paymentMethodLabel(payment)}</Text>
         <Text style={styles.detailLabel}>Libellés</Text>
         <Text style={styles.detailValue}>{paymentItemCount(payment)}</Text>
-        <Text style={styles.detailLabel}>Non imputé</Text>
+        <Text style={styles.detailLabel}>Non affecté à un frais</Text>
         <Text style={styles.detailValue}>{money(Number(payment.unallocatedAmount ?? 0))}</Text>
       </View>
 
@@ -67,7 +67,7 @@ export default function PaymentReceiptCard({
         <View style={styles.items}>
           {items.map((item, index) => (
             <View key={item.id || `${reference}-${index}`} style={styles.itemRow}>
-              <Text style={styles.itemLabel}>{item.feeLabel || item.feeType || "Libellé"}</Text>
+              <Text style={styles.itemLabel}>{financeScreenFeeLabel(item.feeLabel || item.feeType) || "Libellé"}</Text>
               <Text style={styles.itemAmount} selectable>
                 {money(Number(item.amount || 0))}
               </Text>

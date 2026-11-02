@@ -146,8 +146,10 @@ function sourceGuards() {
   assert.match(cash, /unallocatedAmount \?\? 0/);
   assert.doesNotMatch(cash, /collected - allocated/);
   assert.match(receipt, /Montant reçu/);
-  assert.match(receipt, /Montant imputé/);
-  assert.match(receipt, /Montant non imputé/);
+  assert.match(receipt, /Affecté aux frais ouverts/);
+  assert.match(receipt, /Non affecté à un frais/);
+  assert.doesNotMatch(receipt, /Montant imputé/);
+  assert.doesNotMatch(receipt, /Montant non imputé/);
 
   console.log("verify-finance-web-mobile-convergence: source guards OK");
 }

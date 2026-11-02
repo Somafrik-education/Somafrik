@@ -2,6 +2,7 @@ import type { BackOfficeState, School, SessionUser, StudentFee } from "../types"
 import { inputToPeriodDate, todayPeriodDate } from "./dates";
 import { auditActor, makeAuditEntry, type AuditEntry } from "./audit";
 import { normalize } from "./format";
+import { financeScreenFeeLabel } from "./financeObligationStatus";
 
 export type PaymentRecord = Record<string, unknown>;
 
@@ -106,7 +107,7 @@ export function paymentItemsDetailLabel(items: unknown): string {
   if (!list.length) return "";
   if (list.length === 1) {
     const first = list[0] as { feeLabel?: string; feeType?: string } | undefined;
-    return String(first?.feeLabel || first?.feeType || "1 libellé");
+    return financeScreenFeeLabel(first?.feeLabel || first?.feeType) || "1 libellé";
   }
   return `${list.length} libellés`;
 }

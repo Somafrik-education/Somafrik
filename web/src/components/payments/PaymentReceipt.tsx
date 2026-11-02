@@ -2,7 +2,7 @@ import type { PaymentRecord } from "../../lib/quickPayment";
 import type { School, SessionUser } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
-import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
+import { financePaymentStatusLabel, financeScreenFeeLabel } from "../../lib/financeObligationStatus";
 import { schoolLogoSrc } from "../../lib/schoolLogo";
 
 interface PaymentReceiptProps {
@@ -17,14 +17,14 @@ function receiptItems(payment: PaymentRecord): { label: string; amount: number }
     return items.map((item) => {
       const row = item as { feeLabel?: string; feeType?: string; amount?: number };
       return {
-        label: String(row.feeLabel || row.feeType || "Libellé"),
+        label: financeScreenFeeLabel(row.feeLabel || row.feeType) || "Libellé",
         amount: Number(row.amount ?? 0),
       };
     });
   }
   return [
     {
-      label: String(payment.feeType ?? payment.label ?? "Libellé"),
+      label: financeScreenFeeLabel(payment.feeType ?? payment.label) || "Libellé",
       amount: Number(payment.totalAmount ?? payment.amount ?? 0),
     },
   ];
@@ -141,11 +141,11 @@ export function PaymentReceipt({ payment, school, enteredByName }: PaymentReceip
           </dd>
         </div>
         <div className="flex justify-between gap-4">
-          <dt className="text-muted">Montant imputé</dt>
+          <dt className="text-muted">Affecté aux frais ouverts</dt>
           <dd className="font-semibold">{formatFinanceAmount(Number(payment.allocatedAmount ?? 0), currency)}</dd>
         </div>
         <div className="flex justify-between gap-4">
-          <dt className="text-muted">Montant non imputé</dt>
+          <dt className="text-muted">Non affecté à un frais</dt>
           <dd className="font-semibold">
             {formatFinanceAmount(Number(payment.unallocatedAmount ?? payment.overpaymentAmount ?? 0), currency)}
           </dd>

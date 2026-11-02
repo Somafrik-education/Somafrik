@@ -9,7 +9,7 @@ import { getTeacherLoginIdentifier } from "../../lib/entityIdentifiers";
 import type { EntityModuleConfig } from "../../lib/entityModules";
 import { isPaymentCancelled, paymentItemsDetailLabel, type PaymentRecord } from "../../lib/quickPayment";
 import { formatFinanceAmount, formatFinanceDate } from "../../lib/financeCurrency";
-import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
+import { financePaymentStatusLabel, financeScreenFeeLabel } from "../../lib/financeObligationStatus";
 import {
   formatContactPersonName,
   formatStudentPersonName,
@@ -149,7 +149,7 @@ function renderDataCell(
     return financePaymentStatusLabel(row.status);
   }
   if (module.key === "payments" && key === "itemsDetail") {
-    const label = paymentItemsDetailLabel(row.items) || String(row.itemsDetail ?? row.feeType ?? "—");
+    const label = financeScreenFeeLabel(paymentItemsDetailLabel(row.items) || String(row.itemsDetail ?? row.feeType ?? "")) || "—";
     return (
       <button
         type="button"

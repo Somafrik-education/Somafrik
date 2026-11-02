@@ -229,7 +229,8 @@ async function main() {
   assert.doesNotMatch(paymentMutation, /UNALLOCATED_TARGET/);
   assert.doesNotMatch(paymentMutation, /Non imputé/);
   assert.match(paymentMutation, /Aucune somme n'est exigible pour cet élève/);
-  assert.match(paymentReceipt, /Non imputé/);
+  assert.match(paymentReceipt, /Non affecté à un frais/);
+  assert.doesNotMatch(paymentReceipt, /Non imputé|Montant imputé/);
   assert.match(studentPayments, /paymentsHistoryTitle|Historique détaillé/);
   assert.doesNotMatch(studentPayments, /styles\.summaryCard/);
   assert.doesNotMatch(studentPayments, /styles\.summaryValue/);
