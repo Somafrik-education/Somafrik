@@ -1,0 +1,359 @@
+{
+  "id": "fixture.qualification.subjects-simple-tjex",
+  "title": "Qualification BULLETIN-MODEL-01 — matières simples, maxima TJ/EX variables (données fictives)",
+  "qualification_only": true,
+  "not_a_country_pack": true,
+  "engine_id": "somafrik.report_card.v1",
+  "tenant": {
+    "schoolId": "school-a",
+    "actorSchoolId": "school-a"
+  },
+  "profile": {
+    "period_mode": "term",
+    "periods": [
+      "T1",
+      "T2",
+      "T3"
+    ],
+    "annual": true,
+    "score_components": [
+      {
+        "id": "TJ",
+        "applicability": "always"
+      },
+      {
+        "id": "EX",
+        "applicability": "always"
+      }
+    ],
+    "missing_score": "NOT_APPLICABLE_not_zero",
+    "rounding": {
+      "decimals": 2,
+      "mode": "half_up",
+      "stage": "display_only"
+    },
+    "ranking": {
+      "enabled": true,
+      "ties": "competition",
+      "metric": "PERCENTAGE"
+    },
+    "aggregation": {
+      "mode": "weighted_sum",
+      "coefficient_default": 1,
+      "percentage": "points_over_max_100"
+    },
+    "pass_rule": {
+      "metric": "PERCENTAGE",
+      "threshold": 50
+    },
+    "subjects": [
+      {
+        "id": "GEOGRAPHIE",
+        "order": 1,
+        "components": {
+          "TJ": {
+            "max": 30
+          },
+          "EX": {
+            "max": 70
+          }
+        }
+      },
+      {
+        "id": "MATHEMATIQUES",
+        "order": 2,
+        "components": {
+          "TJ": {
+            "max": 40
+          },
+          "EX": {
+            "max": 60
+          }
+        },
+        "period_overrides": {
+          "T3": {
+            "EX": {
+              "max": 80
+            }
+          }
+        }
+      },
+      {
+        "id": "EDUCATION_PHYSIQUE",
+        "order": 3,
+        "components": {
+          "TJ": {
+            "max": 50
+          }
+        }
+      }
+    ]
+  },
+  "schema": {
+    "sections": [
+      {
+        "id": "TOTALS",
+        "order": 1,
+        "kind": "totals",
+        "columns": [
+          {
+            "id": "COL_T1_POINTS",
+            "order": 1,
+            "kind": "computed_slot",
+            "slot": "PERIOD_POINTS",
+            "period_id": "T1"
+          },
+          {
+            "id": "COL_T3_MAX",
+            "order": 2,
+            "kind": "computed_slot",
+            "slot": "PERIOD_MAX",
+            "period_id": "T3"
+          },
+          {
+            "id": "COL_ANNUAL_POINTS",
+            "order": 3,
+            "kind": "computed_slot",
+            "slot": "ANNUAL_POINTS"
+          },
+          {
+            "id": "COL_ANNUAL_MAX",
+            "order": 4,
+            "kind": "computed_slot",
+            "slot": "ANNUAL_MAX"
+          },
+          {
+            "id": "COL_PERCENTAGE",
+            "order": 5,
+            "kind": "computed_slot",
+            "slot": "PERCENTAGE"
+          },
+          {
+            "id": "COL_RANK",
+            "order": 6,
+            "kind": "computed_slot",
+            "slot": "RANK"
+          }
+        ]
+      }
+    ],
+    "identity_fields": [
+      {
+        "id": "STUDENT_NAME",
+        "order": 1
+      }
+    ]
+  },
+  "facts": [
+    {
+      "student_id": "STU1",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 56
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 30
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 45
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "EDUCATION_PHYSIQUE",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 40
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 21
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 49
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 32
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 48
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "EDUCATION_PHYSIQUE",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 45
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 27
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 63
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 36
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 72
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "EDUCATION_PHYSIQUE",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 35
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 15
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 35
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 20
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 30
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "EDUCATION_PHYSIQUE",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 25
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 15
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 35
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 20
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 30
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "EDUCATION_PHYSIQUE",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 25
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 15
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "GEOGRAPHIE",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 35
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 20
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "MATHEMATIQUES",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 40
+    },
+    {
+      "student_id": "STU2",
+      "subject_id": "EDUCATION_PHYSIQUE",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 25
+    }
+  ]
+}
