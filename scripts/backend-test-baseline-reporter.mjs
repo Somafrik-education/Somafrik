@@ -30,6 +30,8 @@ export default async function* baselineReporter(source) {
       status,
       skipReason: status === "skip" && typeof data.skip === "string" ? data.skip : undefined,
       error: status === "fail" ? errorMessage(data) : undefined,
+      // CI-FAST-01 : durée, pour recalculer les poids des lots (scripts/ci-baseline-weights.js).
+      durationMs: typeof data.details?.duration_ms === "number" ? Math.round(data.details.duration_ms) : undefined,
     });
   }
   yield `${JSON.stringify(results)}\n`;

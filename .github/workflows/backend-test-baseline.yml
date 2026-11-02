@@ -4,29 +4,55 @@ name: Backend test baseline (MONO-T0)
 # avec mesure de couverture séparée. Les exceptions sont déclarées dans
 # scripts/backend-test-baseline.manifest.json et vérifiées, jamais ignorées.
 # Documentation : docs/project/BACKEND-TEST-BASELINE.md
+#
+# CI-FAST-01 — niveau B (FULL CI) : baseline complète, série, avec couverture.
+# Ne tourne plus sur chaque PR (le niveau A, PR Gates, exécute la sélection
+# backend en lots et bloque via « Required ») ; tourne chaque nuit, après
+# chaque fusion dans develop, à la demande, et dans le niveau C (release-gate.yml)
+# sur le SHA candidat exact. Un échec planifié ou post-fusion ouvre / met à jour
+# une issue « ci:full-failure » (ci-full-failure-report.yml : visible, jamais silencieux).
+# Voir docs/project/CI-FAST-01.md.
 
 on:
-  pull_request:
-    branches: [develop, main]
+  push:
+    branches: [develop]
     paths:
       - "backend/**"
       - "packages/**"
       - "package.json"
       - "package-lock.json"
       - "scripts/backend-test-baseline*"
+      - "scripts/fixtures/backend-test-baseline/**"
+      - "scripts/ci-pg-select*"
+      - "scripts/ci-baseline-*"
+      - "scripts/ci-fast-01*"
       - "scripts/mono-t1-route-inventory*"
+      - "docs/project/MONO-T1-RBAC-MATRIX.json"
       - "docs/project/MONO-T1-ROUTES.*"
       - ".github/workflows/backend-test-baseline.yml"
   schedule:
     - cron: "45 2 * * *"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "SHA (40 caractères) ou branche à tester ; vide = branche choisie"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: "SHA candidat exact (niveau C)"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: backend-test-baseline-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Appel du niveau C : un groupe par SHA. Fusions successives dans develop :
+  # la plus récente remplace l'exécution en cours (elle contient la précédente).
+  group: backend-test-baseline-${{ github.event_name }}-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
   NODE_VERSION: "22.12.0"
@@ -40,6 +66,8 @@ jobs:
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -57,8 +85,8 @@ jobs:
             echo "Retrying backend install (Puppeteer Chrome archive)"
             rm -rf "$HOME/.cache/puppeteer/chrome"
           done
-      - name: Baseline guard tests (no database)
-        run: node --test scripts/backend-test-baseline.test.js
+      - name: Baseline guard tests and CI-FAST-01 tools (no database)
+        run: node --test scripts/backend-test-baseline.test.js scripts/ci-fast-01.test.js
       - name: MONO-T1 route inventory is up to date (no database)
         # Relevé runtime des routes de backend/server.js (base loopback injoignable,
         # aucun port ouvert) comparé à docs/project/MONO-T1-ROUTES.{json,md}.
@@ -104,6 +132,8 @@ jobs:
       JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}

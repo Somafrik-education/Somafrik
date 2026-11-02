@@ -37,6 +37,8 @@ jobs:
       mobile: ${{ steps.detect.outputs.mobile }}
       dependencies: ${{ steps.detect.outputs.dependencies }}
       targeted: ${{ steps.detect.outputs.targeted }}
+      backend: ${{ steps.pg_select.outputs.backend }}
+      pg_mode: ${{ steps.pg_select.outputs.pg_mode }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -120,6 +122,34 @@ jobs:
           for flag in code workflows db auth sync classes students teachers finance pedagogy reportcard planning users platform lot4_sensitive web mobile dependencies targeted; do
             printf '%s=%s\n' "$flag" "${!flag}" >> "$GITHUB_OUTPUT"
           done
+
+      # CI-FAST-01 — niveau A : quelle part de la baseline backend MONO-T0 la PR
+      # exige (none | targeted | full). En cas de doute : full. Voir
+      # docs/project/CI-FAST-01.md et scripts/ci-pg-select.js.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - id: pg_select
+        name: Select backend baseline (CI-FAST-01)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" \
+            | node scripts/ci-pg-select.js --out=ci-pg-selection.json
+          {
+            echo "## Sélection baseline backend (CI-FAST-01)"
+            echo
+            echo '```json'
+            cat ci-pg-selection.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload backend selection
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-pg-selection
+          path: ci-pg-selection.json
+          if-no-files-found: error
+          retention-days: 14
 
   quality:
     name: Quality
@@ -741,14 +771,171 @@ jobs:
           set -euo pipefail
           npm run test:lot8-parity
 
+  # CI-FAST-01 — niveau A, backend : tests unitaires complets, garde de
+  # l'exécuteur, inventaire MONO-T1 et outils CI. Dès qu'un fichier backend
+  # (ou ce qui l'exécute) change.
+  backend_unit:
+    name: Backend unit (fast)
+    needs: scope
+    if: needs.scope.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          npm ci
+          for attempt in 1 2 3; do
+            if npm ci --prefix backend; then break; fi
+            if [ "$attempt" -eq 3 ]; then echo "npm ci backend failed after 3 attempts"; exit 1; fi
+            echo "Retrying backend install (Puppeteer Chrome archive)"
+            rm -rf "$HOME/.cache/puppeteer/chrome"
+          done
+      - name: Baseline guard tests and CI-FAST-01 tools (no database)
+        run: node --test scripts/backend-test-baseline.test.js scripts/ci-fast-01.test.js
+      - name: MONO-T1 route inventory is up to date (no database)
+        run: node scripts/mono-t1-route-inventory.js --check
+      - name: Run backend unit baseline
+        run: node scripts/backend-test-baseline.js unit
+      - name: Upload unit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-backend-unit
+          path: |
+            backend-test-baseline/unit/*.json
+            backend-test-baseline/unit/*.md
+          if-no-files-found: warn
+          retention-days: 14
+
+  # CI-FAST-01 — niveau A, PostgreSQL : sélection (complète ou ciblée + socle
+  # sécurité) découpée en lots, chacun sur SON cluster PostgreSQL éphémère
+  # (isolation entre lots : aucun cluster partagé).
+  backend_pg:
+    name: Backend PostgreSQL (shard ${{ matrix.shard }}/3)
+    needs: scope
+    if: needs.scope.outputs.pg_mode == 'full' || needs.scope.outputs.pg_mode == 'targeted'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: somafrik_disposable_test_cluster
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      SOMAFRIK_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/somafrik_disposable_test_cluster
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          npm ci
+          for attempt in 1 2 3; do
+            if npm ci --prefix backend; then break; fi
+            if [ "$attempt" -eq 3 ]; then echo "npm ci backend failed after 3 attempts"; exit 1; fi
+            echo "Retrying backend install (Puppeteer Chrome archive)"
+            rm -rf "$HOME/.cache/puppeteer/chrome"
+          done
+      - name: Install poppler-utils (pdftotext)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          pdftotext -v
+      - name: Declare the job cluster disposable (sentinel comment)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d somafrik_disposable_test_cluster -v ON_ERROR_STOP=1 \
+            -c "COMMENT ON DATABASE somafrik_disposable_test_cluster IS 'somafrik:disposable-test-cluster'"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-pg-selection
+      - name: Run backend PostgreSQL shard
+        run: node scripts/backend-test-baseline.js pg --select=ci-pg-selection.json --shard=${{ matrix.shard }}/3
+      - name: Upload shard plan and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-backend-pg-shard-${{ matrix.shard }}
+          path: |
+            backend-test-baseline/pg/*.json
+            backend-test-baseline/pg/*.md
+          if-no-files-found: warn
+          retention-days: 14
+
+  # CI-FAST-01 — contrôle d'agrégation : chaque fichier sélectionné a été
+  # attribué à exactement un lot (aucun vert sur des tests non déclenchés).
+  backend_pg_verify:
+    name: Backend PostgreSQL shards complete
+    needs: [scope, backend_pg]
+    if: always() && (needs.scope.outputs.pg_mode == 'full' || needs.scope.outputs.pg_mode == 'targeted')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-pg-selection
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pr-backend-pg-shard-*
+          path: shard-plans
+      - name: Verify shard coverage
+        run: node scripts/ci-baseline-shards-verify.js --selection=ci-pg-selection.json --plans=shard-plans --shards=3
+
   required:
     name: Required
     if: always()
-    needs: [scope, quality, secrets, core, targeted, lot0, lot1, lot2, lot3, lot4, lot5, lot6, lot7, lot8]
+    needs: [scope, quality, secrets, core, targeted, lot0, lot1, lot2, lot3, lot4, lot5, lot6, lot7, lot8, backend_unit, backend_pg, backend_pg_verify]
     runs-on: ubuntu-latest
     steps:
       - name: Enforce required PR gates
         env:
+          CODE: ${{ needs.scope.outputs.code }}
+          WORKFLOWS: ${{ needs.scope.outputs.workflows }}
+          TARGETED_SCOPE: ${{ needs.scope.outputs.targeted }}
+          BACKEND: ${{ needs.scope.outputs.backend }}
+          PG_MODE: ${{ needs.scope.outputs.pg_mode }}
+          BACKEND_UNIT: ${{ needs.backend_unit.result }}
+          BACKEND_PG: ${{ needs.backend_pg.result }}
+          BACKEND_PG_VERIFY: ${{ needs.backend_pg_verify.result }}
           SCOPE: ${{ needs.scope.result }}
           QUALITY: ${{ needs.quality.result }}
           SECRETS: ${{ needs.secrets.result }}
@@ -765,9 +952,38 @@ jobs:
           LOT8: ${{ needs.lot8.result }}
         run: |
           set -euo pipefail
-          for result in "$SCOPE" "$QUALITY" "$SECRETS" "$CORE" "$TARGETED" "$LOT0" "$LOT1" "$LOT2" "$LOT3" "$LOT4" "$LOT5" "$LOT6" "$LOT7" "$LOT8"; do
+          failed=0
+          # CI-FAST-01 : un job PLANIFIÉ par Scope doit réussir ; « skipped »
+          # n'est accepté que pour un job que Scope n'a pas planifié.
+          expect_success() {
+            local name="$1" planned="$2" result="$3"
+            if [ "$planned" = "true" ]; then
+              if [ "$result" != "success" ]; then echo "::error::$name planifié mais $result" >&2; failed=1; fi
+            else
+              case "$result" in
+                success|skipped) ;;
+                *) echo "::error::$name : $result" >&2; failed=1 ;;
+              esac
+            fi
+            echo "$name planned=$planned result=$result"
+          }
+          [ "$SCOPE" = "success" ] || { echo "::error::Scope : $SCOPE" >&2; exit 1; }
+          case "$PG_MODE" in none|targeted|full) ;; *) echo "::error::pg_mode inattendu « $PG_MODE »" >&2; exit 1 ;; esac
+          case "$BACKEND" in true|false) ;; *) echo "::error::backend inattendu « $BACKEND »" >&2; exit 1 ;; esac
+          if [ "$CODE" = "true" ] || [ "$WORKFLOWS" = "true" ]; then code_or_workflows=true; else code_or_workflows=false; fi
+          if [ "$PG_MODE" != "none" ]; then pg_planned=true; else pg_planned=false; fi
+          expect_success Secrets true "$SECRETS"
+          expect_success Quality "$code_or_workflows" "$QUALITY"
+          expect_success "Core tests" "$code_or_workflows" "$CORE"
+          expect_success Risk-targeted "$TARGETED_SCOPE" "$TARGETED"
+          expect_success "Backend unit" "$BACKEND" "$BACKEND_UNIT"
+          expect_success "Backend PostgreSQL" "$pg_planned" "$BACKEND_PG"
+          expect_success "Backend PostgreSQL shards complete" "$pg_planned" "$BACKEND_PG_VERIFY"
+          # Lots de parité : condition purement dérivée de Scope (réussi ci-dessus).
+          for result in "$LOT0" "$LOT1" "$LOT2" "$LOT3" "$LOT4" "$LOT5" "$LOT6" "$LOT7" "$LOT8"; do
             case "$result" in
               success|skipped) ;;
-              *) echo "Required gate failed: $result" >&2; exit 1 ;;
+              *) echo "::error::LOT parity : $result" >&2; failed=1 ;;
             esac
           done
+          exit "$failed"

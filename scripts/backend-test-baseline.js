@@ -5,8 +5,16 @@
  *
  * Usage :
  *   node scripts/backend-test-baseline.js unit [--coverage]
- *   node scripts/backend-test-baseline.js pg   [--coverage]
+ *   node scripts/backend-test-baseline.js pg   [--coverage] [--select=<fichier>] [--shard=K/N]
  *   node scripts/backend-test-baseline.js inventory
+ *
+ * CI-FAST-01 (docs/project/CI-FAST-01.md) :
+ * - --select=<fichier> : sélection JSON produite par scripts/ci-pg-select.js
+ *   (full = tout le mode ; targeted = sous-ensemble validé du mode).
+ * - --shard=K/N : n'exécute que le lot K du découpage déterministe des fichiers
+ *   planifiés (poids : scripts/backend-test-baseline.weights.json). Le fichier
+ *   <mode>/plan.json décrit le lot ; scripts/ci-baseline-shards-verify.js
+ *   vérifie que l'union des lots couvre exactement la sélection.
  *
  * - unit : tous les fichiers backend/**\/*.test.js hors *.pg.test.js.
  * - pg   : tous les fichiers backend/**\/*.pg.test.js, en série, sur un cluster
@@ -26,11 +34,13 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 const guards = require("./backend-test-baseline-guards");
+const plan = require("./backend-test-baseline-plan");
 
 const ROOT = path.resolve(__dirname, "..");
 const BACKEND = path.join(ROOT, "backend");
 const REPORTER = path.join(__dirname, "backend-test-baseline-reporter.mjs");
 const MANIFEST_PATH = path.join(__dirname, "backend-test-baseline.manifest.json");
+const WEIGHTS_PATH = path.join(__dirname, "backend-test-baseline.weights.json");
 const OUTPUT_ROOT = path.resolve(process.env.SOMAFRIK_TEST_BASELINE_OUT || path.join(ROOT, "backend-test-baseline"));
 const C8_VERSION = "10.1.3";
 
@@ -474,8 +484,17 @@ async function main() {
   const [mode, ...flags] = process.argv.slice(2);
   const coverageRequested = flags.includes("--coverage");
   if (!["unit", "pg", "inventory"].includes(mode)) {
-    fail("Usage : node scripts/backend-test-baseline.js <unit|pg|inventory> [--coverage]");
+    fail("Usage : node scripts/backend-test-baseline.js <unit|pg|inventory> [--coverage] [--select=<fichier>] [--shard=K/N]");
   }
+  const flagValue = (name) => {
+    const found = flags.filter((flag) => flag.startsWith(`--${name}=`));
+    if (found.length > 1) fail(`--${name} donné plusieurs fois.`);
+    return found.length ? found[0].slice(name.length + 3) : undefined;
+  };
+  const unknownFlags = flags.filter((flag) => flag !== "--coverage" && !/^--(select|shard)=/.test(flag));
+  if (unknownFlags.length) fail(`Option(s) inconnue(s) : ${unknownFlags.join(" ")}.`);
+  const selectPath = flagValue("select");
+  const shardValue = flagValue("shard");
   const manifest = loadManifest();
   const all = listBackendTests();
   const pgFiles = all.filter((file) => file.endsWith(".pg.test.js"));
@@ -489,10 +508,39 @@ async function main() {
   // Fichiers factices (tests de l'exécuteur uniquement) : jamais en CI, jamais vert.
   const fixtureFiles = selectFixtureFiles(process.env[FIXTURE_FILES_VAR]);
   const modeFiles = fixtureFiles ?? (mode === "unit" ? unitFiles : pgFiles);
-  const excluded = fixtureFiles ? [] : manifest.filter((entry) => entry.mode === mode);
-  const excludedSet = new Set(excluded.map((entry) => entry.file));
-  const mainFiles = modeFiles.filter((file) => !excludedSet.has(file));
   const notes = [];
+  // CI-FAST-01 : sélection puis lot. Sans option, plannedFiles = modeFiles.
+  let plannedFiles = modeFiles;
+  let planInfo = { mode, selection: "full", shard: null, selected: modeFiles.length };
+  try {
+    if ((selectPath !== undefined || shardValue !== undefined) && (fixtureFiles || mode !== "pg")) {
+      throw new plan.PlanError("--select et --shard ne s'appliquent qu'au mode pg sur les tests du dépôt.");
+    }
+    if (selectPath !== undefined) {
+      const selection = plan.loadSelection(path.resolve(selectPath), modeFiles);
+      plannedFiles = selection.files;
+      planInfo = { ...planInfo, selection: selection.mode, selected: plannedFiles.length };
+    }
+    planInfo.selectedDigest = plan.digest(plannedFiles);
+    if (shardValue !== undefined) {
+      const shard = plan.parseShard(shardValue);
+      const weights = JSON.parse(fs.readFileSync(WEIGHTS_PATH, "utf8")).seconds ?? {};
+      plannedFiles = plan.partition(plannedFiles, shard.total, weights)[shard.index - 1];
+      planInfo = { ...planInfo, shard };
+    }
+  } catch (error) {
+    fail(error.message);
+  }
+  if (planInfo.selection !== "full" || planInfo.shard) {
+    notes.push(
+      `Plan CI-FAST-01 : sélection ${planInfo.selection} (${planInfo.selected} / ${modeFiles.length} fichiers)` +
+        `${planInfo.shard ? `, lot ${planInfo.shard.index}/${planInfo.shard.total} : ${plannedFiles.length} fichier(s)` : ""}.`,
+    );
+  }
+  const plannedSet = new Set(plannedFiles);
+  const excluded = fixtureFiles ? [] : manifest.filter((entry) => entry.mode === mode && plannedSet.has(entry.file));
+  const excludedSet = new Set(excluded.map((entry) => entry.file));
+  const mainFiles = plannedFiles.filter((file) => !excludedSet.has(file));
   let env = { ...process.env };
   let clusterUrl = null;
 
@@ -527,6 +575,7 @@ async function main() {
   const outDir = path.join(OUTPUT_ROOT, mode);
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
+  fs.writeFileSync(path.join(outDir, "plan.json"), `${JSON.stringify({ ...planInfo, files: plannedFiles }, null, 2)}\n`);
   let v8Dir = null;
   if (mode === "pg" && coverageRequested) {
     v8Dir = path.join(outDir, "v8");
@@ -543,7 +592,7 @@ async function main() {
       // Base exigée par la fixture NFC : créée par cette exécution (refus si elle existe déjà).
       env.SOMAFRIK_NFC_TEST_DATABASE_URL = await createOwnedDatabase(clusterUrl, guards.NFC_TEST_DATABASE);
     }
-    const run = runNodeTest(mainFiles, {
+    const run = !mainFiles.length ? { status: 0, results: [] } : runNodeTest(mainFiles, {
       outDir,
       label: "main",
       env,
@@ -584,12 +633,15 @@ async function main() {
     coverage,
     coverageRequested,
     excluded,
-    total: modeFiles.length,
+    total: plannedFiles.length,
     notes,
   });
 
   const problems = [];
-  if (!results.length) problems.push("aucun résultat de test collecté");
+  // Un lot vide n'existe que si la sélection compte moins de fichiers que de
+  // lots : le contrôle d'agrégation exige alors les autres lots.
+  const emptyShard = planInfo.shard && !plannedFiles.length;
+  if (!results.length && !emptyShard) problems.push("aucun résultat de test collecté");
   if (counts.fail > 0) problems.push(`${counts.fail} test(s) FAIL`);
   const brokenExpectations = expected.filter((item) => !item.ok).length;
   if (brokenExpectations) problems.push(`${brokenExpectations} échec(s) attendu(s) non conforme(s)`);

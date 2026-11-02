@@ -30,6 +30,8 @@ Sorties : `backend-test-baseline/<mode>/` (ignoré par Git) — `main.results.js
 
 Workflow : `.github/workflows/backend-test-baseline.yml` — deux jobs (`unit`, `pg` avec service `postgres:16`), déclenchés sur les PR vers `develop`/`main` qui touchent le backend, chaque nuit et à la demande. Il **n'est pas** ajouté aux checks requis (`.github/governance/merge-authorizers.json` → `Required`) : c'est une décision CTO.
 
+> **CI-FAST-01 (mandat CTO) :** ce workflow devient le niveau B (nuit, après fusion dans `develop`, à la demande, et appelé par le niveau C `release-gate.yml` sur le SHA candidat). Sur les PR, la baseline est exécutée par PR Gates (`Backend unit (fast)`, `Backend PostgreSQL (shard K/3)`, `Backend PostgreSQL shards complete`), **agrégée dans `Required`**. Voir `docs/project/CI-FAST-01.md`.
+
 ## 3. Sécurité du mode PostgreSQL
 
 Un hôte `localhost` n'est **pas** une preuve qu'une base est jetable : une base de développement peut tourner en local. Les tests PostgreSQL créent et suppriment des dizaines de bases sur le **serveur** visé (`*_it`, `somafrik_<x>_<hex>`, `nfc_prog_05_<hex>`…) et acceptent des surcharges `SOMAFRIK_*_IT_DATABASE`. La baseline exige donc un **cluster entier dédié aux tests** (`scripts/backend-test-baseline-guards.js`) :
