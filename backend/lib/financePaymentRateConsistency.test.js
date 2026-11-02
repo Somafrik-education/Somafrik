@@ -191,7 +191,10 @@ function assertSourceGuards() {
   const cancelStart = service.indexOf("async function cancelPayment", createStart);
   const createPayment = service.slice(createStart, cancelStart);
   assert.doesNotMatch(createPayment, /reconcileUnallocatedPaymentsInTx/);
-  assert.match(createPayment, /obligationId est requis pour imputer un paiement/);
+  assert.match(createPayment, /obligationId est requis pour affecter un encaissement à un frais ouvert/);
+  assert.match(service, /FINANCE_UNALLOCATED_FORBIDDEN/);
+  assert.match(createPayment, /F4_ERROR\.UNALLOCATED_FORBIDDEN/);
+  assert.doesNotMatch(createPayment, /feeLabel = "Non imputé"/);
 
   const adminCtx = fs.readFileSync(path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"), "utf8");
   assert.match(adminCtx, /getStudentFees/);

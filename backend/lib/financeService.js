@@ -52,7 +52,42 @@ const F4_ERROR = Object.freeze({
   OBLIGATION_ID_REQUIRED: "FINANCE_OBLIGATION_ID_REQUIRED",
   OBLIGATION_NOT_OPEN: "FINANCE_OBLIGATION_NOT_OPEN",
   LEGACY_RECONCILE_DISABLED: "FINANCE_LEGACY_RECONCILE_DISABLED",
+  NO_OPEN_OBLIGATION: "FINANCE_NO_OPEN_OBLIGATION",
+  OBLIGATIONS_SETTLED: "FINANCE_OBLIGATIONS_SETTLED",
+  PAYMENT_EXCEEDS_BALANCE: "FINANCE_PAYMENT_EXCEEDS_BALANCE",
+  UNALLOCATED_FORBIDDEN: "FINANCE_UNALLOCATED_FORBIDDEN",
 });
+
+function refuseCollection(code, message, details) {
+  throw createFinanceError(422, message, code, details);
+}
+
+function isArchivedObligation(fee) {
+  return Boolean(fee?.archivedAt || fee?.archived_at || fee?.archived);
+}
+
+function isCancelledObligation(fee) {
+  const status = asTrimmed(fee?.status).toLowerCase();
+  return status === "annulé" || status === "annule";
+}
+
+function isRecordedObligation(fee) {
+  return Boolean(fee) && !isArchivedObligation(fee) && !isCancelledObligation(fee);
+}
+
+function refuseWhenNothingIsDue(obligations) {
+  const recorded = (obligations || []).filter(isRecordedObligation);
+  if (!recorded.length) {
+    refuseCollection(
+      F4_ERROR.NO_OPEN_OBLIGATION,
+      "Aucune obligation financière n'est enregistrée pour cet élève. L'encaissement est interdit.",
+    );
+  }
+  refuseCollection(
+    F4_ERROR.OBLIGATIONS_SETTLED,
+    "Toutes les obligations de cet élève sont soldées. L'encaissement est interdit.",
+  );
+}
 
 function ignoreClientScope(payload = {}) {
   const next = { ...payload };
@@ -237,10 +272,15 @@ function isOpenObligation(fee) {
 async function openObligationsForItem(tx, obligations, item, student, school) {
   const obligationId = asTrimmed(item.obligationId);
   if (!obligationId) {
-    if (!asTrimmed(item.feeType) || isUnallocatedFeeTypeInput(item.feeType)) return [];
+    if (!asTrimmed(item.feeType) || isUnallocatedFeeTypeInput(item.feeType)) {
+      refuseCollection(
+        F4_ERROR.UNALLOCATED_FORBIDDEN,
+        "Un encaissement doit viser une obligation encore due. Les paiements libres, les avances et les trop-perçus sont interdits.",
+      );
+    }
     throw createFinanceError(
       400,
-      "obligationId est requis pour imputer un paiement à une dette. Sans obligationId, utilisez Non imputé.",
+      "obligationId est requis pour affecter un encaissement à un frais ouvert.",
       F4_ERROR.OBLIGATION_ID_REQUIRED,
     );
   }
@@ -289,8 +329,8 @@ async function openObligationsForItem(tx, obligations, item, student, school) {
   }
   if (!isOpenObligation(target)) {
     throw createFinanceError(
-      409,
-      "Cette obligation n'est plus ouverte et ne peut pas recevoir une nouvelle imputation.",
+      422,
+      "Cette obligation n'est plus ouverte. Seuls les frais encore dus peuvent être encaissés.",
       F4_ERROR.OBLIGATION_NOT_OPEN,
       { obligationId },
     );
@@ -423,29 +463,17 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
         catalogItemId = catalog.id || null;
       } else if (isUnallocatedFeeTypeInput(feeType)) {
         feeType = "";
-        feeLabel = feeLabel && !isUnallocatedFeeTypeInput(feeLabel) ? feeLabel : "Non imputé";
+        if (isUnallocatedFeeTypeInput(feeLabel)) feeLabel = "";
       } else if (feeType) {
         feeType = persistableFeeType(feeType);
         feeLabel = feeLabel || feeType;
-      }
-
-      if (!obligationId && feeType) {
-        throw createFinanceError(
-          400,
-          "obligationId est requis pour imputer un paiement. Utilisez Non imputé pour un encaissement sans dette cible.",
-          F4_ERROR.OBLIGATION_ID_REQUIRED,
-        );
-      }
-      if (!obligationId) {
-        feeType = "";
-        feeLabel = "Non imputé";
       }
 
       resolvedItems.push({
         feeTypeId: catalogId,
         catalogItemId,
         feeType,
-        feeLabel: feeLabel || feeType || "Non imputé",
+        feeLabel: feeLabel || feeType || "Frais",
         amount: money(item.amount),
         obligationId,
       });
@@ -457,20 +485,62 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     }
 
     let obligations = await tx.listObligationsByStudent(school.id, student.dbId || student.id, { lock: true });
+    const currency = requireSchoolCurrency(school);
+    const openBefore = obligations.filter((fee) => isOpenObligation(fee));
+    if (!openBefore.length) refuseWhenNothingIsDue(obligations);
+    const totalOpenBefore = money(openBefore.reduce((sum, fee) => sum + money(fee.balance), 0));
+    if (totalAmount > totalOpenBefore) {
+      refuseCollection(
+        F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
+        `Le montant dépasse le solde encore dû de ${money(totalAmount - totalOpenBefore)} ${currency}.`,
+        { amount: totalAmount, balance: totalOpenBefore, currency },
+      );
+    }
+
     const allocations = [];
     const targetedBalances = new Map();
+    const remainingCap = new Map();
     let leftoverTotal = 0;
     for (const item of resolvedItems) {
-      const open = await openObligationsForItem(tx, obligations, item, student, school);
-      for (const fee of open) {
-        const key = String(fee.dbId || fee.id);
-        if (!targetedBalances.has(key)) targetedBalances.set(key, money(fee.balance));
+      if (!item.obligationId) {
+        if (!item.feeType || isUnallocatedFeeTypeInput(item.feeLabel)) {
+          refuseCollection(
+            F4_ERROR.UNALLOCATED_FORBIDDEN,
+            "Un encaissement doit viser une obligation encore due. Les paiements libres, les avances et les trop-perçus sont interdits.",
+          );
+        }
+        throw createFinanceError(
+          400,
+          "obligationId est requis pour affecter un encaissement à un frais ouvert.",
+          F4_ERROR.OBLIGATION_ID_REQUIRED,
+        );
       }
+      const open = await openObligationsForItem(tx, obligations, item, student, school);
+      const fee = open[0];
+      const key = String(fee.dbId || fee.id);
+      if (!remainingCap.has(key)) remainingCap.set(key, money(fee.balance));
+      const cap = remainingCap.get(key);
+      if (money(item.amount) > cap) {
+        refuseCollection(
+          F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
+          `Le montant dépasse le solde encore dû de ${money(item.amount - cap)} ${currency}.`,
+          { obligationId: item.obligationId, amount: money(item.amount), balance: cap, currency },
+        );
+      }
+      remainingCap.set(key, money(cap - item.amount));
+      if (!targetedBalances.has(key)) targetedBalances.set(key, money(fee.balance));
       const { updated, allocations: itemAllocations, leftover } = allocateAmount(open, item.amount);
+      if (money(leftover) > 0) {
+        refuseCollection(
+          F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
+          `Le montant dépasse le solde encore dû de ${money(leftover)} ${currency}.`,
+          { obligationId: item.obligationId, currency },
+        );
+      }
       leftoverTotal = money(leftoverTotal + leftover);
       allocations.push(...itemAllocations);
-      const byId = new Map(updated.map((fee) => [String(fee.dbId || fee.id), fee]));
-      obligations = obligations.map((fee) => byId.get(String(fee.dbId || fee.id)) || fee);
+      const byId = new Map(updated.map((row) => [String(row.dbId || row.id), row]));
+      obligations = obligations.map((row) => byId.get(String(row.dbId || row.id)) || row);
     }
 
     const remainingBefore = money([...targetedBalances.values()].reduce((sum, value) => sum + money(value), 0));

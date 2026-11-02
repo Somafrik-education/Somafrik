@@ -96,21 +96,23 @@ describe("Finance F4 — contrat d'allocation", () => {
     assert.equal(store.tables.allocations.length, 0);
   });
 
-  it("accepte un encaissement explicitement Non imputé sans toucher aux dettes", async () => {
+  it("refuse un encaissement Non imputé tant qu'une dette est ouverte", async () => {
     const store = createStore();
     const before = await seed(store);
-    const payment = await store.createSchoolPayment(
-      {
-        studentId: STUDENT,
-        items: [{ feeType: "Non imputé", amount: 7_000 }],
-        method: "Espèces",
-        date: "2026-09-05",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ feeType: "Non imputé", amount: 7_000 }],
+            method: "Espèces",
+            date: "2026-09-05",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.UNALLOCATED_FORBIDDEN,
     );
-    assert.equal(payment.allocatedAmount, 0);
-    assert.equal(payment.unallocatedAmount, 7_000);
-    assert.equal(payment.status, "Non imputé");
+    assert.equal(store.tables.payments.length, 0);
     assert.equal(store.tables.allocations.length, 0);
     const after = await store.listFinanceStudentFees(admin);
     assert.equal(after.find((row) => row.id === before.tuition.id).balance, 30_000);
@@ -137,24 +139,26 @@ describe("Finance F4 — contrat d'allocation", () => {
     assert.equal(fee.status, "Partiellement payé");
   });
 
-  it("transforme le dépassement d'une dette en Non imputé", async () => {
+  it("refuse le dépassement d'une dette sans encaisser le surplus", async () => {
     const store = createStore();
     const { tuition } = await seed(store);
-    const payment = await store.createSchoolPayment(
-      {
-        studentId: STUDENT,
-        items: [{ obligationId: tuition.id, feeType: "Scolarité", amount: 40_000 }],
-        method: "Espèces",
-        date: "2026-09-05",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ obligationId: tuition.id, feeType: "Scolarité", amount: 40_000 }],
+            method: "Espèces",
+            date: "2026-09-05",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
     );
-    assert.equal(payment.allocatedAmount, 30_000);
-    assert.equal(payment.unallocatedAmount, 10_000);
     const fee = (await store.listFinanceStudentFees(admin)).find((row) => row.id === tuition.id);
-    assert.equal(fee.amountPaid, 30_000);
-    assert.equal(fee.balance, 0);
-    assert.equal(fee.status, "Payé");
+    assert.equal(fee.amountPaid, 0);
+    assert.equal(fee.balance, 30_000);
+    assert.equal(store.tables.payments.length, 0);
   });
 
   it("un reçu peut imputer deux obligations explicites", async () => {

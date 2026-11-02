@@ -314,12 +314,27 @@ test("PG Finance : crash avant stockage idempotence rollback le paiement", async
       lastName: "A",
       sub: user.rows[0].id,
     };
+    const estherObligations = [];
+    for (const [label, feeType, amount, period] of [
+      ["Minerval / scolarité", "Scolarité", 1000, "M1"],
+      ["Frais d'examen", "Examen", 10, "M2"],
+      ["Frais de cantine", "Cantine", 100, "M3"],
+    ]) {
+      const inserted = await pool.query(
+        `INSERT INTO student_fee_obligations (
+           school_id, student_id, fee_type, label, currency, period_label,
+           initial_amount, amount_due, amount_paid, balance, status
+         ) VALUES ($1,$2,$3,$4,'CDF',$5,$6,$6,0,$6,'À payer') RETURNING id`,
+        [school.rows[0].id, student.rows[0].id, feeType, label, period, amount],
+      );
+      estherObligations.push(inserted.rows[0].id);
+    }
     const payload = {
       studentId: "CD-2026-0001-STU-ESTHER",
       items: [
-        { feeType: "Non imputé", feeLabel: "Minerval / scolarité", amount: 500 },
-        { feeType: "Non imputé", feeLabel: "Frais d'examen", amount: 1 },
-        { feeType: "Non imputé", feeLabel: "Frais de cantine", amount: 40 },
+        { obligationId: estherObligations[0], feeType: "Scolarité", feeLabel: "Minerval / scolarité", amount: 500 },
+        { obligationId: estherObligations[1], feeType: "Examen", feeLabel: "Frais d'examen", amount: 1 },
+        { obligationId: estherObligations[2], feeType: "Cantine", feeLabel: "Frais de cantine", amount: 40 },
       ],
       paymentMethod: "cash",
       paidAt: "2026-08-19",

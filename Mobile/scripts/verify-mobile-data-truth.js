@@ -226,8 +226,9 @@ async function main() {
   const paymentMutation = read(path.join(SRC, "components", "PaymentMutationControls.tsx"));
   const paymentReceipt = read(path.join(SRC, "components", "PaymentReceiptCard.tsx"));
   assert.match(studentPayments, /PaymentMutationControls/);
-  assert.match(paymentMutation, /UNALLOCATED_TARGET/);
-  assert.match(paymentMutation, /label: "Non imputé"/);
+  assert.doesNotMatch(paymentMutation, /UNALLOCATED_TARGET/);
+  assert.doesNotMatch(paymentMutation, /Non imputé/);
+  assert.match(paymentMutation, /Aucune somme n'est exigible pour cet élève/);
   assert.match(paymentReceipt, /Non imputé/);
   assert.match(studentPayments, /paymentsHistoryTitle|Historique détaillé/);
   assert.doesNotMatch(studentPayments, /styles\.summaryCard/);

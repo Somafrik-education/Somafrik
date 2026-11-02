@@ -641,22 +641,24 @@ describe("F3 P1-C — échec Finance durable", () => {
 });
 
 describe("F3 scénario J — paiement ne crée pas de dette", () => {
-  it("encaissement Non imputé sans obligation → 0 obligation créée", async () => {
+  it("encaissement sans obligation → 422, aucune obligation créée", async () => {
     const store = createStore();
     const before = store.tables.studentFees.length;
-    const payment = await store.createSchoolPayment(
-      {
-        studentId: STUDENT_ID,
-        items: [{ feeType: "Non imputé", amount: 5_000 }],
-        method: "Espèces",
-        date: "2026-09-01",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT_ID,
+            items: [{ feeType: "Non imputé", amount: 5_000 }],
+            method: "Espèces",
+            date: "2026-09-01",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === "FINANCE_NO_OPEN_OBLIGATION",
     );
     assert.equal(store.tables.studentFees.length, before);
-    assert.equal(store.tables.payments.length, 1);
+    assert.equal(store.tables.payments.length, 0);
     assert.equal(store.tables.allocations.length, 0);
-    assert.equal(payment.unallocatedAmount, 5_000);
-    assert.equal(payment.status, "Non imputé");
   });
 });

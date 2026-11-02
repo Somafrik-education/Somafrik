@@ -85,7 +85,7 @@ export interface QuickPaymentLine {
   amount: string;
 }
 
-export function createPaymentLine(obligationId = "__unallocated__"): QuickPaymentLine {
+export function createPaymentLine(obligationId = ""): QuickPaymentLine {
   const rand = globalThis.crypto?.randomUUID?.() ?? `line-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return { id: rand, obligationId, amount: "" };
 }
@@ -442,7 +442,10 @@ export function validateMultiItemPaymentInput(input: {
   const lines = input.lines ?? [];
   if (!lines.length) return "Ajoutez au moins un libellé";
   for (const line of lines) {
-    if (!String(line.obligationId ?? "").trim()) return "Chaque ligne doit cibler une obligation ou Non imputé";
+    const obligationId = String(line.obligationId ?? "").trim();
+    if (!obligationId || obligationId === "__unallocated__") {
+      return "Chaque ligne doit viser un frais encore dû.";
+    }
     const amount = parseLineAmount(line.amount);
     if (!Number.isFinite(amount) || amount <= 0) return "Chaque libellé doit avoir un montant strictement positif";
   }

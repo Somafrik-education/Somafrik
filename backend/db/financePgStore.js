@@ -833,12 +833,34 @@ function createFinancePgStore(repo) {
     };
   }
 
+  function mapCollectionLockError(error) {
+    if (error?.statusCode) return error;
+    const message = String(error?.message || "");
+    if (
+      message.includes("FINANCE_PAYMENT_NOT_COVERED") ||
+      message.includes("FINANCE_OBLIGATION_OVERALLOCATED") ||
+      message.includes("FINANCE_PAYMENT_OVERALLOCATED")
+    ) {
+      return createFinanceError(
+        422,
+        "Cet encaissement dépasse le solde encore dû ou n'est pas couvert par une obligation ouverte.",
+        "FINANCE_PAYMENT_EXCEEDS_BALANCE",
+      );
+    }
+    return error;
+  }
+
   const api = {
     async withTransaction(fn) {
-      return repo.withTransaction(async (tx) => {
-        const scoped = repo.createTxScope(tx);
-        return fn(bind(scoped));
-      });
+      try {
+        return await repo.withTransaction(async (tx) => {
+          await tx.query("SELECT set_config('somafrik.enforce_collection_cover', 'on', true)");
+          const scoped = repo.createTxScope(tx);
+          return fn(bind(scoped));
+        });
+      } catch (error) {
+        throw mapCollectionLockError(error);
+      }
     },
     async listProjection() {
       const [payments, statuses, grids, items, fees, history, reminders, paymentItems, allocations] = await Promise.all([

@@ -18,9 +18,38 @@ let paymentId = null;
 const STUDENT = "CD-IN-EL-26-001";
 const STUDENT_2 = "CD-IN-EL-26-002";
 
+const obligationByStudent = {};
+
+async function ensureOpenObligation(studentCode) {
+  if (obligationByStudent[studentCode]) return obligationByStudent[studentCode];
+  const existing = await server.one(
+    `SELECT o.id
+     FROM student_fee_obligations o
+     JOIN students s ON s.id = o.student_id
+     WHERE s.student_code = $1 AND o.archived_at IS NULL AND o.balance >= 20
+     ORDER BY o.balance DESC
+     LIMIT 1`,
+    [studentCode],
+  );
+  if (existing?.id) {
+    obligationByStudent[studentCode] = existing.id;
+    return existing.id;
+  }
+  const student = await server.one(`SELECT id, school_id FROM students WHERE student_code = $1`, [studentCode]);
+  const created = await server.one(
+    `INSERT INTO student_fee_obligations (
+       school_id, student_id, fee_type, label, currency, initial_amount, amount_due, amount_paid, balance, status
+     ) VALUES ($1,$2,'Scolarité','Scolarité','CDF',100000,100000,0,100000,'À payer')
+     RETURNING id`,
+    [student.school_id, student.id],
+  );
+  obligationByStudent[studentCode] = created.id;
+  return created.id;
+}
+
 const paymentBody = (studentId, amount = 5, extra = {}) => ({
   studentId,
-  items: [{ feeType: "Non imputé", amount }],
+  items: [{ obligationId: obligationByStudent[studentId], feeType: "Scolarité", amount }],
   method: "Espèces",
   date: "2026-10-20",
   ...extra,
@@ -30,6 +59,8 @@ before(async () => {
   if (skip) return;
   server = await startCharacterizationServer({ database: "somafrik_mono_t1_finance_it", port: 19965 });
   await server.assertActiveSubscriptionPrecondition();
+  await ensureOpenObligation(STUDENT);
+  await ensureOpenObligation(STUDENT_2);
 });
 
 after(async () => {

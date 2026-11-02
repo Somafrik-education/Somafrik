@@ -193,12 +193,35 @@ test("Finance : retry même clé → même payment.id / référence, aucun secon
     lastName: "School",
     sub: "USR-MEM-ADMIN",
   };
+  for (const [id, feeType, label, amount] of [
+    ["obl-min", "Scolarité", "Minerval / scolarité", 1000],
+    ["obl-exam", "Examen", "Frais d'examen", 10],
+    ["obl-can", "Cantine", "Frais de cantine", 100],
+  ]) {
+    store.tables.studentFees.push({
+      id,
+      school_id: "school-a",
+      school_code: "CD-2026-0001",
+      student_id: "stu-esther",
+      student_code: "CD-2026-0001-STU-ESTHER",
+      fee_type: feeType,
+      label,
+      currency: "CDF",
+      amount_due: amount,
+      amount_paid: 0,
+      exemption: 0,
+      discount: 0,
+      balance: amount,
+      status: "À payer",
+      profile_payload: {},
+    });
+  }
   const payload = {
     studentId: "CD-2026-0001-STU-ESTHER",
     items: [
-      { feeType: "Non imputé", feeLabel: "Minerval / scolarité", amount: 500 },
-      { feeType: "Non imputé", feeLabel: "Frais d'examen", amount: 1 },
-      { feeType: "Non imputé", feeLabel: "Frais de cantine", amount: 40 },
+      { obligationId: "obl-min", feeType: "Scolarité", feeLabel: "Minerval / scolarité", amount: 500 },
+      { obligationId: "obl-exam", feeType: "Examen", feeLabel: "Frais d'examen", amount: 1 },
+      { obligationId: "obl-can", feeType: "Cantine", feeLabel: "Frais de cantine", amount: 40 },
     ],
     paymentMethod: "cash",
     paidAt: "2026-08-19",

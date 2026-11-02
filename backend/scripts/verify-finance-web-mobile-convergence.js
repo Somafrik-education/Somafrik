@@ -43,6 +43,8 @@ function sourceGuards() {
   assert.match(contract, /obligationBelongsToStudent/);
   assert.match(contract, /trim\(value\) === UNALLOCATED_TARGET/);
   assert.match(contract, /FINANCE_OBLIGATION_ID_REQUIRED/);
+  assert.match(contract, /FINANCE_UNALLOCATED_FORBIDDEN/);
+  assert.match(contract, /throw financeUnallocatedForbidden\(\)/);
   assert.doesNotMatch(contract, /amountDue - amountPaid/);
   assert.doesNotMatch(contract, /Math\.max\(0,\s*(due|amountDue)/);
   assert.doesNotMatch(contract, /!id \|\| id === UNALLOCATED_TARGET/);
@@ -55,6 +57,8 @@ function sourceGuards() {
   assert.match(webWrite, /Number\(fee\.balance\)/);
   assert.match(webWrite, /trim\(value\) === UNALLOCATED_TARGET/);
   assert.match(webWrite, /FINANCE_OBLIGATION_ID_REQUIRED/);
+  assert.match(webWrite, /FINANCE_UNALLOCATED_FORBIDDEN/);
+  assert.match(webWrite, /throw financeUnallocatedForbidden\(\)/);
   assert.doesNotMatch(webWrite, /amountDue - amountPaid/);
   assert.doesNotMatch(webWrite, /!id \|\| id === UNALLOCATED_TARGET/);
   assert.doesNotMatch(webWrite, /!obligationId => Non imputé/);
@@ -63,8 +67,11 @@ function sourceGuards() {
   assert.match(webModal, /listStudentFees/);
   assert.match(webModal, /listPaymentStudentOptions/);
   assert.match(webModal, /getFinanceCatalog/);
-  assert.match(webModal, /UNALLOCATED_TARGET/);
-  assert.match(webModal, /Montant non imputé/);
+  assert.doesNotMatch(webModal, /UNALLOCATED_TARGET/);
+  assert.doesNotMatch(webModal, /Montant non imputé/);
+  assert.doesNotMatch(webModal, /Montant imputé/);
+  assert.match(webModal, /Aucune somme n'est exigible pour cet élève/);
+  assert.match(webModal, /Solde encore dû/);
   assert.match(webModal, /obligationId/);
   assert.doesNotMatch(webModal, /PAYMENT_METHODS/);
   assert.doesNotMatch(webModal, /\["Espèces", "Mobile Money", "Virement"\]/);
@@ -75,7 +82,8 @@ function sourceGuards() {
   // F7 : EntityPage n'expose plus le jargon technique « obligationId ».
   // Le contrat F4/F5 reste : encaissement via QuickPaymentModal, jamais POST générique.
   assert.match(entityPage, /QuickPaymentModal/);
-  assert.match(entityPage, /non imputé/);
+  assert.match(entityPage, /frais encore dû/);
+  assert.doesNotMatch(entityPage, /non imputé/);
   assert.match(entityPage, /financeActions\.canCreatePayment/);
   assert.doesNotMatch(
     entityPage.slice(entityPage.indexOf('if (module.key === "payments")'), entityPage.indexOf('if (String(module.key) === "paymentStatuses")')),
@@ -89,6 +97,9 @@ function sourceGuards() {
   assert.match(mobileEnroll, /Number\.isFinite\(balance\) && balance > 0/);
   assert.match(mobileEnroll, /trim\(value\) === UNALLOCATED_TARGET/);
   assert.match(mobileEnroll, /FINANCE_OBLIGATION_ID_REQUIRED/);
+  assert.match(mobileEnroll, /FINANCE_UNALLOCATED_FORBIDDEN/);
+  assert.match(mobileEnroll, /throw financeUnallocatedForbidden\(\)/);
+  assert.doesNotMatch(mobileEnroll, /return UNALLOCATED_TARGET;/);
   assert.doesNotMatch(mobileEnroll, /due - paid - exempt/);
   assert.doesNotMatch(mobileEnroll, /Math\.max\(0, due - paid/);
   assert.doesNotMatch(mobileEnroll, /!id \|\| id === UNALLOCATED_TARGET/);
@@ -99,8 +110,10 @@ function sourceGuards() {
   assert.match(mobileControls, /buildFinancePaymentWritePayload/);
   assert.match(mobileControls, /isOfflineContext/);
   assert.match(mobileControls, /Aucune file Finance/);
-  assert.match(mobileControls, /UNALLOCATED_TARGET/);
-  assert.match(mobileControls, /Non imputé/);
+  assert.doesNotMatch(mobileControls, /UNALLOCATED_TARGET/);
+  assert.doesNotMatch(mobileControls, /Non imputé/);
+  assert.match(mobileControls, /Aucune somme n'est exigible pour cet élève/);
+  assert.match(mobileControls, /feeOptions\.length === 0/);
   assert.doesNotMatch(mobileControls, /persistOutbox:\s*true/);
   assert.doesNotMatch(mobileControls, /submitProtectedMutation/);
   assert.doesNotMatch(mobileControls, /enqueueOutbox/);
