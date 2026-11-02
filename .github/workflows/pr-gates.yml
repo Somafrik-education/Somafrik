@@ -782,6 +782,10 @@ jobs:
     timeout-minutes: 30
     env:
       NODE_ENV: test
+      # Même environnement que le job unit de la baseline MONO-T0 : sans base.
+      # Le DATABASE_URL global de PR Gates ferait viser aux tests unitaires
+      # un PostgreSQL absent de ce job.
+      DATABASE_URL: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

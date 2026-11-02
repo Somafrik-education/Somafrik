@@ -216,3 +216,9 @@ test("PR Gates : le contrôle Required agrège les jobs backend et exige un succ
   assert.match(PR_GATES, /cancel-in-progress: true/);
   assert.doesNotMatch(PR_GATES, /continue-on-error:\s*true/);
 });
+
+test("PR Gates : le job unit backend tourne sans base, comme la baseline MONO-T0", () => {
+  const job = PR_GATES.slice(PR_GATES.indexOf("\n  backend_unit:"), PR_GATES.indexOf("\n  backend_pg:"));
+  assert.match(job, /\n      DATABASE_URL: ""\n/);
+  assert.doesNotMatch(job, /services:/);
+});
