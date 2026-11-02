@@ -231,6 +231,31 @@ async function main() {
     const naked = await pool.query(`SELECT count(*)::int AS n FROM payments WHERE payment_code = 'PAY-SEC-NAKED'`);
     assert.equal(naked.rows[0].n, 0);
 
+    await assert.rejects(
+      () =>
+        store.withTransaction(async (tx) => {
+          await tx.insertPayment({
+            schoolId: school.rows[0].id,
+            studentDbId: student.rows[0].id,
+            reference: "PAY-SEC-UNCOVERED",
+            amount: 25,
+            currency: "CDF",
+            method: "Espèces",
+            status: "Payé",
+            date: "2026-09-04",
+            comment: "",
+            feeType: "Scolarité",
+            schoolCode: "CD-2026-SEC",
+            studentId: "CD-SEC-STU-1",
+          });
+        }),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
+    );
+    const uncovered = await pool.query(
+      `SELECT count(*)::int AS n FROM payments WHERE payment_code = 'PAY-SEC-UNCOVERED'`,
+    );
+    assert.equal(uncovered.rows[0].n, 0, "la transaction d'encaissement ne commit pas un paiement sans affectation");
+
     const race = await Promise.allSettled([
       store.createSchoolPayment(
         {

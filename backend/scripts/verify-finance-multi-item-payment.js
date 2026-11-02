@@ -53,7 +53,7 @@ function assertSourceGuards() {
   assert.match(modal, /data-testid="payment-add-line"/);
   assert.doesNotMatch(modal, /UNALLOCATED_TARGET/);
   assert.doesNotMatch(modal, /UNALLOCATED_FEE_TYPE/);
-  assert.match(modal, /setLines\(\(current\) => \[\.\.\.current, createPaymentLine/);
+  assert.match(modal, /setLines\(\(current\) => \[\s*\.\.\.current,\s*createPaymentLine\(/);
   assert.match(modal, /obligationId/);
   assert.match(modal, /Aucune somme n'est exigible pour cet élève/);
   assert.match(modal, /listPaymentStudentOptions/);
