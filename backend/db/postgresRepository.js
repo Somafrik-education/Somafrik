@@ -7511,6 +7511,107 @@ class PostgresRepository {
     return this.getCourseSchedulesRepository().listForMobileSync(schoolCode, options);
   }
 
+  /**
+   * BULLETIN-SEC-01 — source fraîche du bulletin historique d'un élève, lue dans
+   * PostgreSQL (pas le jeu de données en cache) et limitée à son établissement
+   * et à sa classe active : établissement propriétaire, camarades de la classe,
+   * notes de la classe avec leurs faits de publication. Le filtrage final est
+   * fait par lib/studentBulletinScope.js. `null` si l'élève est introuvable.
+   */
+  async loadStudentBulletinSource(student = {}) {
+    const studentUuid = String(student.studentUuid ?? "").trim();
+    const schoolId = String(student.schoolId ?? "").trim();
+    if (!studentUuid || !schoolId) return null;
+    const studentRow = await this.one(
+      `SELECT st.id, st.school_id, e.class_id
+       FROM students st
+       LEFT JOIN LATERAL (
+         SELECT en.class_id
+         FROM enrollments en
+         JOIN academic_years ay ON ay.id = en.academic_year_id
+         WHERE en.student_id = st.id
+           AND en.school_id = st.school_id
+           AND en.class_id IS NOT NULL
+           AND lower(btrim(en.status)) IN ('active', 'enrolled')
+         ORDER BY ay.is_current DESC, en.created_at DESC
+         LIMIT 1
+       ) e ON TRUE
+       WHERE st.id::text = $1 AND st.school_id::text = $2`,
+      [studentUuid, schoolId],
+    );
+    if (!studentRow) return null;
+    const classId = studentRow.class_id ? String(studentRow.class_id) : null;
+    const schoolRow = await this.one(
+      `SELECT s.*, c.name AS country_name, c.iso_code, c.currency AS country_currency, c.phone_code
+       FROM schools s
+       JOIN countries c ON c.id = s.country_id
+       WHERE s.id = $1`,
+      [studentRow.school_id],
+    );
+    if (!schoolRow || !classId) {
+      return { school: schoolRow ? this.mapSchool(schoolRow) : null, classId, students: [], notes: [] };
+    }
+    const [classmateRows, gradeRows] = await Promise.all([
+      this.all(
+        `SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
+         FROM students st
+         JOIN schools s ON s.id = st.school_id
+         JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
+         JOIN classes cl ON cl.id = e.class_id
+         WHERE st.school_id = $1 AND e.class_id = $2 AND cl.school_id = $1`,
+        [studentRow.school_id, classId],
+      ),
+      this.all(
+        `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,
+                COALESCE(
+                  (
+                    SELECT sc.coefficient
+                    FROM school_courses sc
+                    WHERE sc.school_id = g.school_id
+                      AND sc.class_id = g.class_id
+                      AND sc.subject_id = g.subject_id
+                      AND sc.status = 'active'
+                    ORDER BY sc.created_at ASC, sc.id ASC
+                    LIMIT 1
+                  ),
+                  sub.coefficient
+                ) AS subject_coefficient, t.teacher_code, term.name AS term_name,
+                ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
+                ev.title AS evaluation_title, ev.status AS evaluation_status, ev.active AS evaluation_active,
+                ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
+                ev.evaluation_type AS evaluation_type_pg, ev.evaluation_type_id,
+                et.name AS evaluation_type_name, et.code AS evaluation_type_code
+         FROM grades g
+         JOIN schools s ON s.id = g.school_id
+         JOIN students st ON st.id = g.student_id AND st.school_id = g.school_id
+         JOIN classes cl ON cl.id = g.class_id AND cl.school_id = g.school_id
+         JOIN subjects sub ON sub.id = g.subject_id
+         JOIN teachers t ON t.id = g.teacher_id
+         JOIN terms term ON term.id = g.term_id AND term.academic_year_id = cl.academic_year_id
+         LEFT JOIN evaluations ev ON ev.id = g.evaluation_id AND ev.school_id = g.school_id
+         LEFT JOIN evaluation_types et ON et.id = ev.evaluation_type_id
+         WHERE g.school_id = $1 AND g.class_id = $2
+         ORDER BY g.created_at`,
+        [studentRow.school_id, classId],
+      ),
+    ]);
+    const students = classmateRows.map((row) => ({ ...this.mapStudent(row), classId: String(row.class_id) }));
+    const studentIdByUuid = new Map(students.map((row) => [String(row.studentUuid), row.id]));
+    const notes = gradeRows.map((row) => ({
+      ...this.mapGrade(row),
+      // Clé élève alignée sur l'identifiant canonique de mapStudent (même élève, même UUID).
+      studentId: studentIdByUuid.get(String(row.student_id)) ?? row.student_code,
+      classId: String(row.class_id),
+      bulletinPublication: {
+        publicationStatus: row.publication_status,
+        hasEvaluation: Boolean(row.evaluation_id),
+        evaluationStatus: row.evaluation_status ?? null,
+        evaluationActive: row.evaluation_uuid ? row.evaluation_active !== false : false,
+      },
+    }));
+    return { school: this.mapSchool(schoolRow), classId, students, notes };
+  }
+
   async getGradeById(id) {
     const grade = await this.one(
       `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,

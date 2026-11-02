@@ -3088,8 +3088,47 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
   });
 }));
 
+/**
+ * BULLETIN-SEC-01 — bulletin historique d'un élève dont l'accès a déjà été vérifié.
+ * Notes publiées uniquement, rang limité à l'établissement et à la classe,
+ * identité de l'établissement propriétaire (lib/studentBulletinScope.js).
+ * PostgreSQL : lecture fraîche limitée à l'établissement ; dépôt mémoire : jeu de données.
+ */
+async function buildStudentBulletinReport(student, period = "Trimestre 1") {
+  const { buildStudentBulletinScope, bulletinSchoolIdentity } = require("./lib/studentBulletinScope");
+  let scopeInput;
+  if (typeof repository.loadStudentBulletinSource === "function") {
+    const source = await repository.loadStudentBulletinSource(student);
+    if (!source) {
+      throw new BusinessError(404, "Eleve introuvable");
+    }
+    scopeInput = {
+      student,
+      schools: source.school ? [source.school] : [],
+      classId: source.classId,
+      students: source.students,
+      notes: source.notes,
+    };
+  } else {
+    const runtime = await getRuntime();
+    scopeInput = {
+      student,
+      schools: runtime.platformSchools ?? [],
+      students: runtime.students ?? [],
+      notes: runtime.notes ?? [],
+      evaluations: runtime.evaluations ?? [],
+    };
+  }
+  const scope = buildStudentBulletinScope(scopeInput);
+  const gradeBook = new GradeBookService({ students: scope.students, notes: scope.notes, courses: [] });
+  const report = {
+    ...gradeBook.generateReport(student.id, period, "Publié"),
+    school: bulletinSchoolIdentity(scope.school),
+  };
+  return { report, school: scope.school };
+}
+
 app.get("/api/students/:id/report", requireAuth, requirePermission("GET /api/students/:id/report"), asyncHandler(async (req, res) => {
-  const { gradeBookService } = await getRuntime();
   const { students } = await getAuthoritativeBackOfficeState();
   const student = findStudent(tenantScopeService.filterRows(students, req.principal), req.params.id);
 
@@ -3097,11 +3136,11 @@ app.get("/api/students/:id/report", requireAuth, requirePermission("GET /api/stu
     return res.status(404).json({ message: "Eleve introuvable" });
   }
 
-  res.json(stripSensitiveFieldsDeep(gradeBookService.generateReport(student.id)));
+  const { report } = await buildStudentBulletinReport(student);
+  res.json(stripSensitiveFieldsDeep(report));
 }));
 
 app.get("/api/students/:id/report.pdf", requireAuth, requirePermission("GET /api/students/:id/report.pdf"), asyncHandler(async (req, res) => {
-  const { gradeBookService, reportPdfService } = await getRuntime();
   const backOfficeState = await getAuthoritativeBackOfficeState();
   const { students } = backOfficeState;
   const student = findStudent(tenantScopeService.filterRows(students, req.principal), req.params.id);
@@ -3113,9 +3152,9 @@ app.get("/api/students/:id/report.pdf", requireAuth, requirePermission("GET /api
   const period = req.query.period ? String(req.query.period) : "Trimestre 1";
   const { resolveBulletinLayoutForStudent } = require("./lib/documentsExamsService");
   const design = await resolveBulletinLayoutForStudent(repository, student);
-  const baseReport = gradeBookService.generateReport(student.id, period, "Publié");
+  const { report: baseReport, school } = await buildStudentBulletinReport(student, period);
   const report = applyBulletinDesignToReport(baseReport, design);
-  const pdf = await reportPdfService.generateReportCardPdf(report);
+  const pdf = await new ReportPdfService({ school }).generateReportCardPdf(report);
   const filename = `bulletin-${student.matricule}-${period.replace(/\s+/g, "-").toLowerCase()}.pdf`;
 
   res.setHeader("Content-Type", "application/pdf");
