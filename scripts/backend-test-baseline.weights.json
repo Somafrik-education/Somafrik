@@ -1,5 +1,5 @@
 {
-  "$comment": "CI-FAST-01 — durées indicatives (secondes) des fichiers PostgreSQL, relevées sur la CI GitHub (PR #1040, job 125519105206) ; matrice RBAC : mesure après parallélisation (MONO_T1_RBAC_MATRIX_PARALLELISM=4). Ne sert qu'à équilibrer les lots : un fichier absent pèse 10 s et reste exécuté. Mise à jour : node scripts/ci-baseline-weights.js <main.results.json>... --write.",
+  "$comment": "CI-FAST-01 — durées indicatives (secondes) des fichiers PostgreSQL, relevées sur la CI GitHub (PR #1040, job 125519105206) ; matrice RBAC : 580 s mesurées sur la CI après parallélisation (PR #1044, lot 1/3). Ne sert qu'à équilibrer les lots : un fichier absent pèse 10 s et reste exécuté. Mise à jour : node scripts/ci-baseline-weights.js <main.results.json>... --write.",
   "source": "PR #1040 job 125519105206",
   "seconds": {
     "backend/db/communicationsC4.bootstrap.pg.test.js": 0.5,
@@ -58,7 +58,7 @@
     "backend/lib/mobileSyncStudents.http.pg.test.js": 5.0,
     "backend/lib/mobileSyncStudents.pg.test.js": 0.4,
     "backend/lib/mobileSyncTenant.http.pg.test.js": 3.9,
-    "backend/lib/monoT1.rbacMatrix.http.pg.test.js": 520,
+    "backend/lib/monoT1.rbacMatrix.http.pg.test.js": 580,
     "backend/lib/parentAttendanceIsolation.http.pg.test.js": 6.3,
     "backend/lib/parentLinking.pg.test.js": 1.2,
     "backend/lib/pedagogyMigration.pg.test.js": 0.4,

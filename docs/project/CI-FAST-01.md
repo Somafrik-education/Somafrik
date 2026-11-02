@@ -35,7 +35,7 @@ La matrice RBAC envoie ≈ 2 000 requêtes une par une. Profil local : **≈ 700
 | A1 | La baseline MONO-T0 n'est **pas** dans `Required` (PR Gates) : un échec ne bloque pas l'agrégat. | protection plus faible qu'elle n'en a l'air |
 | A2 | 85 des 149 fichiers PostgreSQL de la baseline sont aussi lancés par les scripts `verify:*` de PR Gates (Core / Risk-targeted). | doublons (non retirés ici, voir §6) |
 | A3 | La baseline série de 43 min tourne sur chaque PR backend, puis encore la nuit. | délai |
-| A4 | 37 workflows de PR n'ont pas de `concurrency` : une nouvelle poussée laisse tourner les anciennes exécutions. | file d'attente des runners |
+| A4 | 37 workflows de PR n’ont pas de `concurrency` : une nouvelle poussée laisse tourner les anciennes exécutions. | file d’attente des runners |
 | A5 | Ruleset `develop` (19008211) : aucun contrôle requis. Ruleset `main` (19007889) : contrôle requis `CI`, qu'aucun workflow de PR ne produit. Les Rulesets proposés (`docs/governance/rulesets/*.proposed.json`) exigent `Required` + `governance/merge-authorization`. | constaté, **non modifié** |
 | A6 | `CI Full Nightly` teste toujours `develop` : rien ne valide le SHA exact candidat à une release. | pas de niveau C |
 | A7 | Sur les 60 dernières fusions dans `develop`, 22 ne touchent ni le backend ni ce qui l'exécute ; le filtre de chemins de la baseline les excluait déjà. | le gain vient du temps d'une PR backend, pas du filtrage |
@@ -90,10 +90,32 @@ Le socle sécurité est défini **par motif** (tout nouveau test qui suit la con
 | Matrice RBAC parallèle | `MONO_T1_RBAC_MATRIX_PARALLELISM` (défaut 4, 1 = série). Mêmes cellules, même ordre du document, même comparaison à la référence ; contrôle ajouté : aucune cellule non sondée. Jetons renouvelés entre lots de 64 requêtes. **Local : 1 168 s → 366 s**, référence identique. Mutation (une cellule de la référence inversée) : le test échoue. |
 | Lots PostgreSQL | `--select=<fichier>` et `--shard=K/N` dans `scripts/backend-test-baseline.js` ; découpage déterministe par poids mesurés (`scripts/backend-test-baseline.weights.json`, recalcul : `scripts/ci-baseline-weights.js`) ; `plan.json` par lot ; `scripts/ci-baseline-shards-verify.js` vérifie l'union. Isolation : un cluster par lot, exécution série dans chaque lot comme avant. |
 | Installation | jobs backend : `npm ci` racine + `backend` seulement (pas web / Mobile), cache npm `setup-node`. |
-| Concurrence | `concurrency` ajouté aux 37 workflows de PR qui n'en avaient pas : une nouvelle poussée annule l'exécution précédente de la même PR ; push, nuit et appels ne sont jamais annulés. |
+| Concurrence | `concurrency` ajouté à 36 des 37 workflows de PR qui n’en avaient pas : une nouvelle poussée annule l’exécution précédente de la même PR ; push, nuit et appels ne sont jamais annulés. Exception : `release-governance.yml`, dont le contenu est figé par empreinte SHA-256 (`verify-release-governance-core.js`) — inchangé. |
 | Délais | **aucun `timeout-minutes` augmenté** (jobs de lot : 30 min, contre 60 pour l'ancien job série). |
 
-Projection d'une PR backend complète (poids mesurés) : lot 1 = matrice seule (≈ 460 s sur CI après parallélisation), lots 2 et 3 ≈ 420 s chacun, + ≈ 1 min de préparation. Mesure réelle : voir le rapport de la PR (CI de cette PR, qui est elle-même en mode `full`).
+### Mesures (après) — CI de cette PR, en mode `full` (149 fichiers PostgreSQL)
+
+Run PR Gates `41539996950`, SHA `4fea742` :
+
+| Job | Durée | Résultat |
+|---|---|---|
+| Scope (dont sélection) | 0,4 min | success — `pg_mode=full` |
+| Backend unit (fast) | 1,1 min | success |
+| Backend PostgreSQL (shard 1/3) — matrice RBAC seule | 10,5 min (tests : 9,7 min) | success |
+| Backend PostgreSQL (shard 2/3) | 6,5 min | success |
+| Backend PostgreSQL (shard 3/3) | 6,4 min | success |
+| Backend PostgreSQL shards complete | 0,2 min | success |
+| Risk-targeted (inchangé) | ≈ 12 min | success |
+| **Required** | vert **15,0 min** après la poussée (dont ≈ 2,3 min d'attente de runners) | success |
+
+| Scénario | Avant | Après |
+|---|---|---|
+| PR backend (code, migrations, dépendances) | baseline série **43,3–43,5 min**, non bloquante | baseline complète en lots **≈ 10,5 min**, bloquante ; PR Gates vert en 15 min (chemin critique : Risk-targeted) |
+| PR de tests backend seuls | 43 min | tests modifiés + socle sécurité (31 fichiers, dont la matrice) : ≈ 10,5 min |
+| PR web / mobile / docs / workers | pas de baseline (filtre de chemins) | pas de baseline ; `Required` vérifie qu'aucun job backend n'était planifié |
+| Matrice RBAC seule (CI) | 1 463 s | 580 s (× 2,5) |
+| Nuit / post-fusion (niveau B, série + couverture) | ≈ 43 min | ≈ 28 min attendus (matrice parallèle) |
+
 
 ## 5. Protection GitHub (non modifiée)
 
