@@ -15,6 +15,13 @@
  * écriture n'est envoyée QUE si la matrice par défaut ET les permissions
  * effectives du compte la refusent (aucune écriture autorisée déclenchée) ;
  * pour ces cellules, le refus est en plus exigé indépendamment de la référence.
+ *
+ * Le jeton d'accès dure au plus 15 minutes. Le balayage dépasse cette durée :
+ * un jeton expiré est rejeté en 401 « Authentification JWT requise » avant
+ * requirePermission. Ce 401 n'est pas un refus RBAC et ne satisfait pas
+ * l'assertion. Le test ouvre une nouvelle session réelle du même compte
+ * lorsque le jeton approche de l'expiration. La politique d'autorisation
+ * et les codes de refus exigés ne changent pas.
  */
 
 const { test, before, after } = require("node:test");
@@ -38,6 +45,12 @@ const ACCOUNTS = {
 const REFUSAL_CODES = new Set(["PERMISSION_DENIED", "PARENT_NOTES_READ_ONLY"]);
 // CI-FAST-01 : requêtes simultanées (1 = parcours série d'origine).
 const PARALLELISM = Math.max(1, Math.min(8, Number.parseInt(process.env.MONO_T1_RBAC_MATRIX_PARALLELISM ?? "4", 10) || 4));
+const ACCESS_TOKEN_REFRESH_MARGIN_SECONDS = 90;
+
+function accessTokenNeedsRefresh(token, nowMs = Date.now()) {
+  const exp = Number(claimsOf(token).exp);
+  return !Number.isFinite(exp) || exp * 1000 <= nowMs + ACCESS_TOKEN_REFRESH_MARGIN_SECONDS * 1000;
+}
 
 let server = null;
 
@@ -56,6 +69,16 @@ after(async () => {
 function claimsOf(token) {
   return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString("utf8"));
 }
+
+test("un jeton d'accès à moins de 90 secondes de l'expiration doit être renouvelé", () => {
+  const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString("base64url");
+  const body = (exp) => Buffer.from(JSON.stringify({ exp })).toString("base64url");
+  const now = 1_700_000_000_000;
+  const soon = `${header}.${body(Math.floor(now / 1000) + 30)}.sig`;
+  const later = `${header}.${body(Math.floor(now / 1000) + 600)}.sig`;
+  assert.equal(accessTokenNeedsRefresh(soon, now), true);
+  assert.equal(accessTokenNeedsRefresh(later, now), false);
+});
 
 test("matrice RBAC : aucune cellule ne change par rapport à la référence ; refus exigé quand défaut ET effectif refusent", { skip }, async () => {
   const rbac = new RbacService();
@@ -81,6 +104,17 @@ test("matrice RBAC : aucune cellule ne change par rapport à la référence ; re
       live[account].token = await server.login(account);
     }
     tokensIssuedAt = Date.now();
+  }
+
+  async function accessTokenFor(account) {
+    if (!accessTokenNeedsRefresh(live[account].token)) return live[account].token;
+    server.forgetToken(account);
+    const token = await server.login(account);
+    live[account] = {
+      token,
+      principal: { ...claimsOf(token), permissions: live[account].principal.permissions },
+    };
+    return token;
   }
 
   // CI-FAST-01 : les cellules sont indépendantes (GET, ou écriture refusée par
@@ -112,13 +146,20 @@ test("matrice RBAC : aucune cellule ne change par rapport à la référence ; re
     });
     const refused = response.status === 403 && REFUSAL_CODES.has(response.data?.code);
     observed[key][account] = refused ? "refusé" : "accès";
-    if (route.method !== "GET" && !refused) mustRefuse.push(`${account} ${key} → ${response.status}`);
+    if (route.method !== "GET" && !refused) {
+      const detail = response.data?.code || response.data?.message || "";
+      mustRefuse.push(`${account} ${key} → ${response.status}${detail ? ` ${detail}` : ""}`);
+    }
   }
   // Un lot dure bien moins que 8 min : le renouvellement des jetons entre deux
   // lots garde la marge de la durée de vie de 15 min.
   const batchSize = PARALLELISM * 16;
   for (let start = 0; start < cells.length; start += batchSize) {
     await refreshAccessTokens();
+    // #1039 : renouvellement par expiration réelle du jeton (marge 90 s),
+    // en série et avant le lot : un lot dure quelques secondes, aucun worker
+    // ne relogue un compte pendant qu'un autre l'utilise.
+    for (const account of Object.keys(ACCOUNTS)) await accessTokenFor(account);
     const queue = cells.slice(start, start + batchSize);
     await Promise.all(
       Array.from({ length: PARALLELISM }, async () => {

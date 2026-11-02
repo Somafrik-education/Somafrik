@@ -220,6 +220,47 @@ describe("FIN-SEC-01 verrouillage des encaissements", () => {
     assert.equal(after.balance, 18_000);
   });
 
+  it("refuse la répétition d'une même obligation même si la somme tient dans le solde", async () => {
+    const store = createStore();
+    const { tuition, transport } = await seed(store);
+    await assert.rejects(
+      () =>
+        pay(store, [
+          { obligationId: tuition.id, amount: 5_000 },
+          { obligationId: tuition.id, amount: 5_000 },
+        ]),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.OBLIGATION_DUPLICATE,
+    );
+    assert.equal(store.tables.payments.length, 0, "aucun reçu partiel");
+    assert.equal(store.tables.paymentItems.length, 0);
+    assert.equal(store.tables.allocations.length, 0);
+    const fees = await store.listFinanceStudentFees(admin);
+    assert.equal(fees.find((row) => row.id === tuition.id).balance, 30_000);
+    assert.equal(fees.find((row) => row.id === transport.id).balance, 20_000);
+  });
+
+  it("isole un encaissement multi-obligations d'un autre établissement", async () => {
+    const store = createStore();
+    const { tuition, transport } = await seed(store);
+    await assert.rejects(
+      () =>
+        pay(
+          store,
+          [
+            { obligationId: tuition.id, amount: 1_000 },
+            { obligationId: transport.id, amount: 1_000 },
+          ],
+          foreign,
+        ),
+      (error) => error.statusCode === 404 || error.statusCode === 403,
+    );
+    assert.equal(store.tables.payments.length, 0);
+    assert.equal(store.tables.allocations.length, 0);
+    const fees = await store.listFinanceStudentFees(admin);
+    assert.equal(fees.find((row) => row.id === tuition.id).balance, 30_000);
+    assert.equal(fees.find((row) => row.id === transport.id).balance, 20_000);
+  });
+
   it("interdit l'avance, le non affecté et le montant nul ou négatif", async () => {
     const store = createStore();
     const { tuition } = await seed(store);

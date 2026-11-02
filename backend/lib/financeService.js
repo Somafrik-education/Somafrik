@@ -55,6 +55,7 @@ const F4_ERROR = Object.freeze({
   NO_OPEN_OBLIGATION: "FINANCE_NO_OPEN_OBLIGATION",
   OBLIGATIONS_SETTLED: "FINANCE_OBLIGATIONS_SETTLED",
   PAYMENT_EXCEEDS_BALANCE: "FINANCE_PAYMENT_EXCEEDS_BALANCE",
+  OBLIGATION_DUPLICATE: "FINANCE_OBLIGATION_DUPLICATE",
   UNALLOCATED_FORBIDDEN: "FINANCE_UNALLOCATED_FORBIDDEN",
 });
 
@@ -525,6 +526,13 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
           F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
           `Le montant dépasse le solde encore dû de ${money(item.amount - cap)} ${currency}.`,
           { obligationId: item.obligationId, amount: money(item.amount), balance: cap, currency },
+        );
+      }
+      if (targetedBalances.has(key)) {
+        refuseCollection(
+          F4_ERROR.OBLIGATION_DUPLICATE,
+          "Une même obligation ne peut pas figurer deux fois dans le même encaissement.",
+          { obligationId: item.obligationId },
         );
       }
       remainingCap.set(key, money(cap - item.amount));
