@@ -11,6 +11,7 @@ const fs = require("node:fs");
 const path = require("path");
 const { createFinanceMemoryStore } = require("../db/financeMemoryStore");
 const { studentMatchesClassScope, money } = require("./financeManagement");
+const { F4_ERROR } = require("./financeService");
 const {
   assertPaymentConservation,
   computeObligationBalance,
@@ -150,48 +151,28 @@ function assertCashIdentity(payment, { received, allocated, unallocated }) {
 }
 
 describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
-  it("FIN-CALC-RED-001 overpayment 1 CDF settles obligation and preserves 1 CDF unallocated", async () => {
+  it("FIN-SEC-01 dépassement de 1 CDF refusé, solde intact", async () => {
     const store = createStore();
     const before = await seedObligation(store, { amount: 1 });
     assert.equal(money(before.balance), 1);
-
-    const payment = await store.createSchoolPayment(
-      {
-        studentId: STUDENT,
-        items: [{ obligationId: before.id, feeType: "Scolarité", amount: 2 }],
-        method: "Espèces",
-        date: "2026-09-07",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ obligationId: before.id, feeType: "Scolarité", amount: 2 }],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
     );
-
-    assertCashIdentity(payment, { received: 2, allocated: 1, unallocated: 1 });
-
     const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
-    assert.equal(money(after.amountDue), money(before.amountDue), "amountDue historique inchangé");
-    assert.equal(money(after.balance), 0);
-    assert.equal(after.status, "Payé");
-
-    const allocs = activeAllocations(store, after.dbId || after.id);
-    assert.equal(allocs.length, 1);
-    assert.equal(money(allocs[0].amount), 1, "allocation.amount = 1 CDF");
-    assert.notEqual(money(allocs[0].amount), 2, "jamais 2 CDF imputés");
-
-    const raw = store.tables.studentFees.find((row) => String(row.id) === String(after.dbId || after.id));
-    const sumAlloc = allocs.reduce((sum, row) => sum + money(row.amount), 0);
-    assert.equal(money(raw.amount_paid), sumAlloc, "amount_paid persisté = SUM(allocations actives)");
-
-    const projected = projectPaymentCash(payment, allocs.map((row) => ({ amount: row.amount, reversedAt: null })));
-    assert.equal(money(projected.unallocatedAmount), 1);
-
-    // Incident Oscar : le trop-perçu ne doit pas présenter la créance comme « Partiellement payé ».
-    assert.equal(after.status, "Payé");
-    assert.notEqual(payment.status, PARTIAL_STATUS, "statut paiement ne doit pas être Partiel si la dette est soldée");
-    assert.notEqual(
-      presentPaymentStatus(payment, allocs.map((row) => ({ amount: row.amount }))),
-      PARTIAL_STATUS,
-    );
-    assert.doesNotMatch(String(payment.status), /partiel/i);
+    assert.equal(money(after.balance), 1);
+    assert.equal(money(after.amountPaid), 0);
+    assert.equal(store.tables.payments.length, 0);
+    assert.equal(activeAllocations(store, after.dbId || after.id).length, 0);
   });
 
   it("FIN-CALC-RED-002 paiement exact 100/100", async () => {
@@ -230,42 +211,46 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     assert.equal(after.status, "Partiellement payé");
   });
 
-  it("FIN-CALC-RED-004 surpaiement 101/100", async () => {
+  it("FIN-CALC-RED-004 surpaiement 101/100 refusé", async () => {
     const store = createStore();
     const before = await seedObligation(store, { amount: 100 });
-    const payment = await store.createSchoolPayment(
-      {
-        studentId: STUDENT,
-        items: [{ obligationId: before.id, amount: 101 }],
-        method: "Espèces",
-        date: "2026-09-07",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ obligationId: before.id, amount: 101 }],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE && /1 CDF/.test(error.message),
     );
-    assertCashIdentity(payment, { received: 101, allocated: 100, unallocated: 1 });
     const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
-    assert.equal(money(after.balance), 0);
-    assert.equal(after.status, "Payé");
-    assert.notEqual(payment.status, PARTIAL_STATUS);
+    assert.equal(money(after.balance), 100);
+    assert.equal(store.tables.payments.length, 0);
   });
 
-  it("FIN-CALC-RED-005 gros surpaiement 150/100", async () => {
+  it("FIN-CALC-RED-005 gros surpaiement 150/100 refusé", async () => {
     const store = createStore();
     const before = await seedObligation(store, { amount: 100 });
-    const payment = await store.createSchoolPayment(
-      {
-        studentId: STUDENT,
-        items: [{ obligationId: before.id, amount: 150 }],
-        method: "Espèces",
-        date: "2026-09-07",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ obligationId: before.id, amount: 150 }],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
     );
-    assertCashIdentity(payment, { received: 150, allocated: 100, unallocated: 50 });
     const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
-    assert.equal(money(after.balance), 0);
-    assert.equal(after.status, "Payé");
-    assert.notEqual(payment.status, PARTIAL_STATUS);
+    assert.equal(money(after.balance), 100);
+    assert.notEqual(after.status, "Payé");
   });
 
   // Décision métier CTO 2026-09-07 : conserver 409 si obligationId cible une dette
@@ -297,7 +282,7 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
           },
           admin,
         ),
-      (error) => error?.statusCode === 409 && error?.code === "FINANCE_OBLIGATION_NOT_OPEN",
+      (error) => error?.statusCode === 422 && error?.code === F4_ERROR.OBLIGATIONS_SETTLED,
     );
     const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
     assert.equal(money(after.amountPaid), paidBefore, "aucune modification artificielle de amountPaid");
@@ -327,17 +312,21 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     const feeB = fees.find((row) => row.feeType === "Transport") || fees.find((row) => /Frais B/i.test(String(row.label)));
     assert.ok(feeA && feeB, `obligations A/B introuvables: ${fees.map((row) => `${row.feeType}:${row.label}`).join("|")}`);
 
-    const onlyA = await store.createSchoolPayment(
-      {
-        studentId: STUDENT,
-        items: [{ obligationId: feeA.id, amount: 110 }],
-        method: "Espèces",
-        date: "2026-09-07",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ obligationId: feeA.id, amount: 110 }],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
     );
-    assertCashIdentity(onlyA, { received: 110, allocated: 30, unallocated: 80 });
     const afterOnlyA = await store.listFinanceStudentFees(admin);
+    assert.equal(money(afterOnlyA.find((row) => row.id === feeA.id).balance), 30, "A inchangée si le reçu dépasse");
     assert.equal(money(afterOnlyA.find((row) => row.id === feeB.id).balance), 70, "B intacte sans obligationId B");
 
     const store2 = createStore();
@@ -361,11 +350,27 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     const a = fees2.find((row) => row.feeType === "Scolarité") || fees2.find((row) => /Frais A/i.test(String(row.label)));
     const b = fees2.find((row) => row.feeType === "Transport") || fees2.find((row) => /Frais B/i.test(String(row.label)));
     assert.ok(a && b);
-    const split = await store2.createSchoolPayment(
+    await assert.rejects(
+      () =>
+        store2.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [
+              { obligationId: a.id, amount: 40 },
+              { obligationId: b.id, amount: 70 },
+            ],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
+    );
+    const capped = await store2.createSchoolPayment(
       {
         studentId: STUDENT,
         items: [
-          { obligationId: a.id, amount: 40 },
+          { obligationId: a.id, amount: 30 },
           { obligationId: b.id, amount: 70 },
         ],
         method: "Espèces",
@@ -373,7 +378,7 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
       },
       admin,
     );
-    assertCashIdentity(split, { received: 110, allocated: 100, unallocated: 10 });
+    assertCashIdentity(capped, { received: 100, allocated: 100, unallocated: 0 });
     const afterSplit = await store2.listFinanceStudentFees(admin);
     assert.ok(afterSplit.every((row) => money(row.balance) >= 0), "aucune obligation négative");
     assert.equal(money(afterSplit.find((row) => row.id === a.id).balance), 0);
@@ -386,7 +391,7 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     const created = await store.createSchoolPayment(
       {
         studentId: STUDENT,
-        items: [{ obligationId: before.id, amount: 101 }],
+        items: [{ obligationId: before.id, amount: 100 }],
         method: "Espèces",
         date: "2026-09-07",
       },
@@ -410,19 +415,22 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
   it("FIN-CALC-RED-009 allocation cannot exceed open obligation balance", async () => {
     const store = createStore();
     const before = await seedObligation(store, { amount: 1 });
-    const payment = await store.createSchoolPayment(
-      {
-        studentId: STUDENT,
-        items: [{ obligationId: before.id, amount: 2 }],
-        method: "Espèces",
-        date: "2026-09-07",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ obligationId: before.id, amount: 2 }],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
     );
     const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
-    const allocs = activeAllocations(store, after.dbId || after.id);
-    assert.ok(allocs.every((row) => money(row.amount) <= 1));
-    assert.equal(money(payment.allocatedAmount), 1);
+    assert.equal(activeAllocations(store, after.dbId || after.id).length, 0);
+    assert.equal(money(after.balance), 1);
   });
 
   it("FIN-CALC-RED-010 projected paid amount cannot create negative business balance", async () => {
@@ -431,7 +439,7 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     await store.createSchoolPayment(
       {
         studentId: STUDENT,
-        items: [{ obligationId: before.id, amount: 2 }],
+        items: [{ obligationId: before.id, amount: 1 }],
         method: "Espèces",
         date: "2026-09-07",
       },
@@ -458,13 +466,13 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     const payment = await store.createSchoolPayment(
       {
         studentId: STUDENT,
-        items: [{ obligationId: before.id, amount: 101 }],
+        items: [{ obligationId: before.id, amount: 100 }],
         method: "Espèces",
         date: "2026-09-07",
       },
       admin,
     );
-    assertCashIdentity(payment, { received: 101, allocated: 100, unallocated: 1 });
+    assertCashIdentity(payment, { received: 100, allocated: 100, unallocated: 0 });
     await store.cancelSchoolPayment(payment.reference || payment.id, "Annulation test", admin);
     const again = await store.cancelSchoolPayment(payment.reference || payment.id, "Annulation test", admin);
     assert.ok(String(again.status).toLowerCase().includes("annul"));
@@ -483,7 +491,7 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     const service = new IdempotencyService({});
     const payload = {
       studentId: STUDENT,
-      items: [{ obligationId: before.id, amount: 2 }],
+      items: [{ obligationId: before.id, amount: 1 }],
       method: "Espèces",
       date: "2026-09-07",
     };
@@ -534,16 +542,29 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     await store.adjustFinanceStudentFee(before.id, { exemption: 20 }, admin);
     const open = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
     assert.equal(money(open.balance), 80);
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ obligationId: before.id, amount: 81 }],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
+    );
     const payment = await store.createSchoolPayment(
       {
         studentId: STUDENT,
-        items: [{ obligationId: before.id, amount: 81 }],
+        items: [{ obligationId: before.id, amount: 80 }],
         method: "Espèces",
         date: "2026-09-07",
       },
       admin,
     );
-    assertCashIdentity(payment, { received: 81, allocated: 80, unallocated: 1 });
+    assertCashIdentity(payment, { received: 80, allocated: 80, unallocated: 0 });
     const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
     assert.equal(money(after.balance), 0);
     assert.equal(after.status, "Payé");
@@ -574,24 +595,25 @@ describe("FIN-CALC-RED — trop-perçu / imputation / statuts", () => {
     assert.notEqual(money(after.balance), 70);
   });
 
-  it("FIN-CALC-GREEN-016 pendant : 50 reçu / dette ciblée 30 → imputé 30, leftover 20, Trop-perçu", async () => {
+  it("FIN-SEC-01 50 reçu / dette 30 est refusé, pas converti en trop-perçu", async () => {
     const store = createStore();
     const before = await seedObligation(store, { amount: 30 });
-    const payment = await store.createSchoolPayment(
-      {
-        studentId: STUDENT,
-        items: [{ obligationId: before.id, amount: 50 }],
-        method: "Espèces",
-        date: "2026-09-07",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ obligationId: before.id, amount: 50 }],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE,
     );
-    assertCashIdentity(payment, { received: 50, allocated: 30, unallocated: 20 });
     const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === before.id);
-    assert.equal(money(after.balance), 0);
-    assert.equal(after.status, "Payé");
-    assert.equal(payment.status, OVERPAYMENT_STATUS);
-    assert.notEqual(payment.status, PARTIAL_STATUS);
+    assert.equal(money(after.balance), 30);
+    assert.notEqual(after.status, "Payé");
   });
 
   it("FIN-CALC-GREEN-016 call-site : leftover allocateAmount seulement après solde des cibles", () => {

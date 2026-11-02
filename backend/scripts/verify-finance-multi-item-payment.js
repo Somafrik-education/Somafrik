@@ -51,11 +51,11 @@ function assertSourceGuards() {
 
   // F7 : contrat structurel du formulaire — pas de copies UI fragiles.
   assert.match(modal, /data-testid="payment-add-line"/);
-  assert.match(modal, /createPaymentLine\(UNALLOCATED_TARGET\)/);
+  assert.doesNotMatch(modal, /UNALLOCATED_TARGET/);
+  assert.doesNotMatch(modal, /UNALLOCATED_FEE_TYPE/);
   assert.match(modal, /setLines\(\(current\) => \[\.\.\.current, createPaymentLine/);
   assert.match(modal, /obligationId/);
-  assert.match(modal, /UNALLOCATED_TARGET/);
-  assert.match(modal, /UNALLOCATED_FEE_TYPE/);
+  assert.match(modal, /Aucune somme n'est exigible pour cet élève/);
   assert.match(modal, /listPaymentStudentOptions/);
   assert.match(modal, /getFinanceCatalog/);
   assert.match(modal, /financeApi\.createPayment/);
@@ -166,11 +166,44 @@ async function runHttp() {
     const studentCode = enrolled.data.student?.studentCode ?? enrolled.data.studentCode;
     const studentId = enrolled.data.student?.id ?? enrolled.data.id ?? studentCode;
 
+    const estherGrid = await request("/finance/fee-grids", {
+      method: "POST",
+      token: adminToken,
+      body: {
+        className: createdClass.data.name,
+        academicYear: offering.academicYear?.name || "2025-2026",
+        currency: "CDF",
+        items: [
+          { feeType: "Scolarité", label: "Minerval / scolarité", amount: 1000, status: "Actif" },
+          { feeType: "Examen", label: "Frais d'examen", amount: 10, status: "Actif" },
+          { feeType: "Cantine", label: "Frais de cantine", amount: 100, status: "Actif" },
+        ],
+      },
+    });
+    assert.equal(estherGrid.status, 201, JSON.stringify(estherGrid.data));
+    await request(`/finance/fee-grids/${encodeURIComponent(estherGrid.data.id)}/activate`, {
+      method: "POST",
+      token: adminToken,
+    });
+    const appliedEsther = await request(`/finance/fee-grids/${encodeURIComponent(estherGrid.data.id)}/apply`, {
+      method: "POST",
+      token: adminToken,
+      body: { studentIds: [studentCode] },
+    });
+    assert.equal(appliedEsther.status, 200, JSON.stringify(appliedEsther.data));
+    const estherFees = asRows((await request("/finance/student-fees", { token: adminToken })).data).filter(
+      (row) => row.studentId === studentCode || row.studentId === studentId,
+    );
+    const feeByLabel = (label) => estherFees.find((row) => row.label === label || row.feeLabel === label);
+    const minerval = feeByLabel("Minerval / scolarité");
+    const examen = feeByLabel("Frais d'examen");
+    const cantine = feeByLabel("Frais de cantine");
+    assert.ok(minerval && examen && cantine, JSON.stringify(estherFees));
     const listBefore = asRows((await request("/payments", { token: adminToken })).data);
     const estherItems = [
-      { feeType: "Non imputé", feeLabel: "Minerval / scolarité", amount: 500 },
-      { feeType: "Non imputé", feeLabel: "Frais d'examen", amount: 1 },
-      { feeType: "Non imputé", feeLabel: "Frais de cantine", amount: 40 },
+      { obligationId: minerval.id, feeType: "Scolarité", feeLabel: "Minerval / scolarité", amount: 500 },
+      { obligationId: examen.id, feeType: "Examen", feeLabel: "Frais d'examen", amount: 1 },
+      { obligationId: cantine.id, feeType: "Cantine", feeLabel: "Frais de cantine", amount: 40 },
     ];
     const created = await request("/payments", {
       method: "POST",
@@ -187,9 +220,9 @@ async function runHttp() {
     assert.equal(created.status, 201, JSON.stringify(created.data));
     assert.equal(created.data.totalAmount, 541, "total serveur 541, total client ignoré");
     assert.equal(created.data.amount, 541);
-    assert.equal(Number(created.data.allocatedAmount || 0), 0);
-    assert.equal(Number(created.data.unallocatedAmount), 541);
-    assert.equal(created.data.status, "Non imputé");
+    assert.equal(Number(created.data.allocatedAmount), 541);
+    assert.equal(Number(created.data.unallocatedAmount || 0), 0);
+    assert.equal(created.data.status, "Partiel");
     assert.equal(created.data.items?.length, 3);
     assert.equal(created.data.itemCount, 3);
     assert.equal(created.data.itemsDetail, "3 libellés");

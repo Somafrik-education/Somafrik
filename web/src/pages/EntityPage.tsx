@@ -1034,7 +1034,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         return;
       }
       try {
-        showToast("Utilisez Enregistrer un encaissement. Chaque montant vise un frais ouvert, sinon il reste non imputé.", "error");
+        showToast("Utilisez Enregistrer un encaissement. Chaque montant doit viser un frais encore dû.", "error");
       } catch {
         /* toast */
       }

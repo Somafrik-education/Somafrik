@@ -718,12 +718,17 @@ async function main() {
     await insertFee(pool, { ...feeContext, studentId: STUDENT_A, label: "Échu ligne", dueDate: past, amountDue: 3000 });
     await expectBadge("OVERDUE", "Échéance impayée");
 
-    await repo.createSchoolPayment({
-      studentId: STUDENT_A,
-      items: [{ feeType: "Non imputé", amount: 750 }],
-      method: "Espèces",
-      date: "2026-10-02",
-    }, principalA);
+    await pool.query(
+      `INSERT INTO payments (
+         school_id, student_id, payment_code, amount, currency, payment_method, payment_status,
+         payment_date, fee_type, profile_payload
+       ) VALUES ($1,$2,'PAY-HIST-NON-AFFECTE',750,'CDF','Espèces','paid','2026-10-02','Non imputé',$3::jsonb)`,
+      [
+        feeContext.schoolId,
+        STUDENT_A,
+        JSON.stringify({ status: "Non imputé", unallocatedAmount: 750, studentId: STUDENT_A }),
+      ],
+    );
     await expectBadge("REVIEW", "Situation à vérifier");
 
     await clearStudentFinance(pool, STUDENT_A);

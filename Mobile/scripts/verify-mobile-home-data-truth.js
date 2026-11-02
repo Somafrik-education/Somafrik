@@ -233,8 +233,9 @@ function main() {
   // Preserve the explicit non-allocated cash path, without restoring an old KPI.
   assert.match(paymentsScreen, /PaymentMutationControls/);
   const paymentMutation = read(path.join("components", "PaymentMutationControls.tsx"));
-  assert.match(paymentMutation, /UNALLOCATED_TARGET/);
-  assert.match(paymentMutation, /label: "Non imputé"/);
+  assert.doesNotMatch(paymentMutation, /UNALLOCATED_TARGET/);
+  assert.doesNotMatch(paymentMutation, /Non imputé/);
+  assert.match(paymentMutation, /Aucune somme n'est exigible pour cet élève/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
   assert.doesNotMatch(paymentsScreen, /des paiements réglés/);
   assert.doesNotMatch(paymentsScreen, /paymentStats\.paidAmount/);

@@ -605,7 +605,7 @@ async function main() {
     const sameIntention = "f8-idem-same";
     const unallocatedBody = {
       studentId: fixture.studentCodeA1,
-      items: [{ feeType: "Non imputé", amount: 15 }],
+      items: [{ obligationId: insA1Restored.id, amount: 15, feeType: "Inscription" }],
       method: "Espèces",
       date: "2026-08-28",
     };
@@ -621,10 +621,11 @@ async function main() {
       headers: { "Idempotency-Key": sameIntention },
       body: unallocatedBody,
     });
-    assert.equal(unalloc1.status, 201, `non imputé: ${JSON.stringify(unalloc1.data)}`);
+    assert.equal(unalloc1.status, 201, `encaissement idempotent: ${JSON.stringify(unalloc1.data)}`);
     assert.equal(unalloc2.status, 201, `replay idempotent: ${JSON.stringify(unalloc2.data)}`);
     assert.equal(unalloc1.data?.id, unalloc2.data?.id, "même intention = un seul encaissement");
-    assert.equal(Number(unalloc1.data?.unallocatedAmount ?? unalloc1.data?.overpaymentAmount), 15);
+    assert.equal(Number(unalloc1.data?.allocatedAmount), 15);
+    assert.equal(Number(unalloc1.data?.unallocatedAmount ?? 0), 0);
 
     const distinct = await request("/payments", {
       method: "POST",
@@ -759,7 +760,7 @@ async function main() {
       headers: { "Idempotency-Key": "f8-p0-004-seed-b" },
       body: {
         studentId: fixture.studentCodeB,
-        items: [{ feeType: "Non imputé", amount: 5 }],
+        items: [{ obligationId: feesB[0].id, amount: 5, feeType: feesB[0].feeType }],
         method: "Espèces",
         date: "2026-08-28",
       },
@@ -823,7 +824,7 @@ async function main() {
       headers: { "Idempotency-Key": "f8-p0-004-pay-a" },
       body: {
         studentId: fixture.studentCodeA1,
-        items: [{ feeType: "Non imputé", amount: 1 }],
+        items: [{ obligationId: insA1Restored.id, amount: 1, feeType: "Inscription" }],
         method: "Espèces",
         date: "2026-08-28",
       },
@@ -1145,7 +1146,7 @@ async function main() {
       token: liveToken,
       body: {
         studentId: fixture.studentCodeA1,
-        items: [{ feeType: "Non imputé", amount: 1 }],
+        items: [{ obligationId: insA1Restored.id, amount: 1, feeType: "Inscription" }],
         method: "Espèces",
         date: "2026-08-28",
       },

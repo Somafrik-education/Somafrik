@@ -205,12 +205,12 @@ export function validatePaymentDraft(input: {
     }
     const fees = Array.isArray(input.obligationOptions) ? input.obligationOptions : [];
     const obligationId = trimField(input.obligationId);
-    if (!isUnallocatedObligationId(input.obligationId) && !obligationId) {
-      errors.obligationId = "FINANCE_OBLIGATION_ID_REQUIRED";
-    } else if (!isUnallocatedObligationId(input.obligationId) && fees.length) {
-      if (!fees.some((row) => trimField(row.obligationId) === obligationId)) {
-        errors.obligationId = "Frais invalide pour cet élève.";
-      }
+    if (isUnallocatedObligationId(input.obligationId)) {
+      errors.obligationId = "Les paiements libres, les avances et les trop-perçus sont interdits.";
+    } else if (!obligationId) {
+      errors.obligationId = "Chaque ligne doit viser un frais encore dû.";
+    } else if (fees.length && !fees.some((row) => trimField(row.obligationId) === obligationId)) {
+      errors.obligationId = "Frais invalide pour cet élève.";
     }
   }
   return errors;
@@ -241,12 +241,12 @@ export function validateFinancePaymentLinesDraft(input: {
   lines.forEach((line, index) => {
     const amount = validateAmount(line.amount, "Montant", true);
     if (amount) errors[`amount-${index}`] = amount;
-    if (!isUnallocatedObligationId(line.obligationId) && !trimField(line.obligationId)) {
-      errors[`obligationId-${index}`] = "FINANCE_OBLIGATION_ID_REQUIRED";
-    } else if (!isUnallocatedObligationId(line.obligationId) && fees.length) {
-      if (!fees.some((row) => trimField(row.obligationId) === trimField(line.obligationId))) {
-        errors[`obligationId-${index}`] = "Frais invalide pour cet élève.";
-      }
+    if (isUnallocatedObligationId(line.obligationId)) {
+      errors[`obligationId-${index}`] = "Les paiements libres, les avances et les trop-perçus sont interdits.";
+    } else if (!trimField(line.obligationId)) {
+      errors[`obligationId-${index}`] = "Chaque ligne doit viser un frais encore dû.";
+    } else if (fees.length && !fees.some((row) => trimField(row.obligationId) === trimField(line.obligationId))) {
+      errors[`obligationId-${index}`] = "Frais invalide pour cet élève.";
     }
   });
   return errors;

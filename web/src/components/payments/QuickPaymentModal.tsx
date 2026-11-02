@@ -28,12 +28,9 @@ import { buildPaymentReceiptPrintPlan } from "../../pages/entity-page/paymentWor
 import { financeApi } from "../../lib/financeApi";
 import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import {
-  UNALLOCATED_FEE_TYPE,
-  UNALLOCATED_TARGET,
   OPEN_OBLIGATION_RESOLVE_ERROR,
   buildFinancePaymentWritePayload,
   collectOpenObligationsFromProjection,
-  draftLineCash,
   findFinanceStudentOption,
   presentPaymentCashFromProjection,
   type FinanceObligationProjection,
@@ -108,7 +105,7 @@ export function QuickPaymentModal({
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
   const [classId, setClassId] = useState("");
-  const [lines, setLines] = useState<QuickPaymentLine[]>([createPaymentLine(UNALLOCATED_TARGET)]);
+  const [lines, setLines] = useState<QuickPaymentLine[]>([createPaymentLine("")]);
   const [method, setMethod] = useState("");
   const [dateInput, setDateInput] = useState(paymentDateToInput(defaultPaymentDate()));
   const [comment, setComment] = useState("");
@@ -172,17 +169,20 @@ export function QuickPaymentModal({
       value: row.obligationId,
       label: `${row.label}${row.periodLabel ? ` · ${row.periodLabel}` : ""} · reste ${formatFinanceAmount(row.balance, row.currency || catalogCurrency)}`,
     }));
-    if (!isQuickStudent) {
-      return [{ value: UNALLOCATED_TARGET, label: UNALLOCATED_FEE_TYPE }, ...obligationOptions];
-    }
-    if (obligationResolveError) return [];
+    if (obligationResolveError || openObligations.length === 0) return [];
     if (openObligations.length > 1) {
       return [{ value: "", label: "Sélectionner un frais" }, ...obligationOptions];
     }
     return obligationOptions;
-  }, [openObligations, catalogCurrency, isQuickStudent, obligationResolveError]);
-  const draftCash = draftLineCash(lines);
+  }, [openObligations, catalogCurrency, obligationResolveError]);
   const total = sumPaymentLines(lines);
+  const openBalance = openObligations.reduce(
+    (sum, row) => sum + (Number.isFinite(row.balance) ? row.balance : 0),
+    0,
+  );
+  const nothingDue = Boolean(selectedStudent) && !catalogLoading && openObligations.length === 0 && !obligationResolveError;
+  const exceedsOpenBalance = openObligations.length > 0 && total > openBalance + 0.004;
+  const collectionLocked = obligationResolveError || nothingDue;
   const currency = resolveFinanceCurrency(catalogCurrency, school?.currency);
 
   useEffect(() => {
@@ -192,7 +192,7 @@ export function QuickPaymentModal({
     setSearch("");
     setSelectedStudent(null);
     setClassId("");
-    setLines([createPaymentLine(UNALLOCATED_TARGET)]);
+    setLines([createPaymentLine("")]);
     setMethod("");
     setDateInput(paymentDateToInput(defaultPaymentDate()));
     setComment("");
@@ -295,11 +295,7 @@ export function QuickPaymentModal({
         setLines([createPaymentLine(openRows[0].obligationId)]);
         return;
       }
-      if (mode === "quick-student") {
-        setLines([createPaymentLine("")]);
-        return;
-      }
-      setLines([createPaymentLine(UNALLOCATED_TARGET)]);
+      setLines([createPaymentLine("")]);
     };
     applyOpenLines(collectOpenObligationsFromProjection(studentIdentityFromSearch(student), fees));
     try {
@@ -328,17 +324,12 @@ export function QuickPaymentModal({
 
   async function persistPayment(printAfter = false) {
     if (!selectedStudent || busyRef.current) return;
-    if (mode === "quick-student" && (obligationResolveError || (openObligations.length === 0 && unpaidHasOpenBalance))) {
+    if (obligationResolveError) {
       showToast(OPEN_OBLIGATION_RESOLVE_ERROR, "error");
       return;
     }
-    if (
-      mode === "quick-student" &&
-      unpaidHasOpenBalance &&
-      lines.some((line) => String(line.obligationId ?? "").trim() === UNALLOCATED_TARGET) &&
-      openObligations.length === 0
-    ) {
-      showToast(OPEN_OBLIGATION_RESOLVE_ERROR, "error");
+    if (nothingDue) {
+      showToast("Aucune somme n'est exigible pour cet élève. L'encaissement est désactivé.", "error");
       return;
     }
     busyRef.current = true;
@@ -418,7 +409,7 @@ export function QuickPaymentModal({
       <Modal
         open={open}
         title="Reçu de paiement"
-        description={`Montant reçu ${formatFinanceAmount(cash.received, currency)} · imputé ${formatFinanceAmount(cash.allocated, currency)} · non imputé ${formatFinanceAmount(cash.unallocated, currency)}`}
+        description={`Encaissement de ${formatFinanceAmount(cash.received, currency)}.`}
         onClose={() => {
           setShowReceipt(false);
           onClose();
@@ -469,13 +460,13 @@ export function QuickPaymentModal({
           </Button>
           <Button
             variant="secondary"
-            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || obligationResolveError}
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance}
             onClick={(event) => void handleSubmit(event, true)}
           >
             {busy ? "Enregistrement…" : "Enregistrer et imprimer"}
           </Button>
           <Button
-            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || obligationResolveError}
+            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance}
             onClick={(event) => void handleSubmit(event, false)}
           >
             {busy ? "Enregistrement…" : "Enregistrer l'encaissement"}
@@ -612,6 +603,14 @@ export function QuickPaymentModal({
               >
                 {OPEN_OBLIGATION_RESOLVE_ERROR}
               </p>
+            ) : nothingDue ? (
+              <p
+                className="rounded-xl border border-dashed border-line bg-slate-50 px-4 py-3 text-sm text-muted"
+                role="status"
+                data-testid="quick-payment-nothing-due"
+              >
+                Aucune somme n'est exigible pour cet élève. L'encaissement est désactivé.
+              </p>
             ) : (
               <OpenObligationCards
                 currency={currency}
@@ -632,7 +631,7 @@ export function QuickPaymentModal({
           </div>
         ) : null}
 
-        {obligationResolveError ? null : (
+        {collectionLocked ? null : (
           <div className="space-y-3">
             <p className="text-sm font-semibold text-ink">Affectation de l'encaissement</p>
             {lines.map((line, index) => (
@@ -678,7 +677,10 @@ export function QuickPaymentModal({
                 data-testid="payment-add-line"
                 disabled={Boolean(catalogError)}
                 onClick={() =>
-                  setLines((current) => [...current, createPaymentLine(UNALLOCATED_TARGET)])
+                  setLines((current) => [
+                    ...current,
+                    createPaymentLine(openObligations.length === 1 ? openObligations[0].obligationId : ""),
+                  ])
                 }
               >
                 <Plus className="mr-1 h-4 w-4" />
@@ -689,26 +691,25 @@ export function QuickPaymentModal({
         )}
 
         <div className="rounded-xl border border-line bg-white px-4 py-3">
-          <div className="grid gap-2 text-sm sm:grid-cols-3">
+          <div className="grid gap-2 text-sm sm:grid-cols-2">
             <div>
-              <p className="text-xs uppercase tracking-wide text-muted">Montant reçu</p>
+              <p className="text-xs uppercase tracking-wide text-muted">Solde encore dû</p>
+              <p className="font-black text-ink" data-testid="payment-open-balance">
+                {formatFinanceAmount(openBalance, currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted">Montant à encaisser</p>
               <p className="font-black text-ink" data-testid="payment-received">
-                {formatFinanceAmount(draftCash.received, currency)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted">Montant imputé</p>
-              <p className="font-black text-ink" data-testid="payment-allocated">
-                {formatFinanceAmount(draftCash.allocated, currency)}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs uppercase tracking-wide text-muted">Montant non imputé</p>
-              <p className="font-black text-brand" data-testid="payment-unallocated">
-                {formatFinanceAmount(draftCash.unallocated, currency)}
+                {formatFinanceAmount(total, currency)}
               </p>
             </div>
           </div>
+          {exceedsOpenBalance ? (
+            <p className="mt-3 text-sm font-semibold text-danger" role="alert" data-testid="payment-exceeds">
+              Le montant dépasse le solde encore dû. L'encaissement est désactivé.
+            </p>
+          ) : null}
           <p className="mt-3 text-right text-xs uppercase tracking-wide text-muted">Total</p>
           <p className="text-right text-2xl font-black text-brand" data-testid="payment-total">
             {formatFinanceAmount(total, currency)}

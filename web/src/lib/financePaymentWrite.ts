@@ -139,6 +139,12 @@ function financeObligationIdRequired(): Error & { code: string } {
   return error;
 }
 
+function financeUnallocatedForbidden(): Error & { code: string } {
+  const error = new Error("FINANCE_UNALLOCATED_FORBIDDEN") as Error & { code: string };
+  error.code = "FINANCE_UNALLOCATED_FORBIDDEN";
+  return error;
+}
+
 function normalizeObligationStatus(status: unknown): string {
   return trim(status)
     .normalize("NFD")
@@ -204,7 +210,7 @@ export function buildFinancePaymentItems(lines: FinancePaymentWriteLine[]): Arra
   return lines.map((line) => {
     const amount = typeof line.amount === "number" ? line.amount : parseFinanceAmount(line.amount);
     if (isUnallocatedTarget(line.obligationId)) {
-      return { feeType: UNALLOCATED_FEE_TYPE, amount };
+      throw financeUnallocatedForbidden();
     }
     const obligationId = trim(line.obligationId);
     if (!obligationId) {
@@ -226,7 +232,8 @@ export function assertNoFeeTypeOnlyImputation(items: Array<Record<string, unknow
   for (const item of items) {
     const obligationId = trim(item.obligationId);
     const feeType = trim(item.feeType || item.feeLabel || item.label);
-    if (!obligationId && feeType !== UNALLOCATED_FEE_TYPE) {
+    if (!obligationId) {
+      if (feeType === UNALLOCATED_FEE_TYPE) throw financeUnallocatedForbidden();
       throw financeObligationIdRequired();
     }
   }

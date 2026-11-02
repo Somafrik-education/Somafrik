@@ -200,17 +200,19 @@ describe("Finance F5 — convergence Web ↔ Mobile", () => {
       { obligationId: inscription.id, amount: 10_000, feeType: "Inscription" },
       { obligationId: tuition.id, amount: 15_000, feeType: "Scolarité" },
       { obligationId: transport.id, amount: 3_000, feeType: "Transport" },
-      { obligationId: UNALLOCATED_TARGET, amount: 2_000 },
     ];
     const web = webPayload(lines);
     const mobile = mobilePayload(lines);
     assert.deepEqual(web.items, mobile.items);
     assert.equal(web.items[0].obligationId, inscription.id);
-    assert.equal(web.items[3].feeType, UNALLOCATED_FEE_TYPE);
+    assert.throws(
+      () => webPayload([{ obligationId: UNALLOCATED_TARGET, amount: 2_000 }]),
+      (error) => error.code === "FINANCE_UNALLOCATED_FORBIDDEN",
+    );
     const payment = await store.createSchoolPayment(web, admin);
-    assert.equal(payment.amount, 30_000);
+    assert.equal(payment.amount, 28_000);
     assert.equal(payment.allocatedAmount, 28_000);
-    assert.equal(payment.unallocatedAmount, 2_000);
+    assert.equal(payment.unallocatedAmount, 0);
     assert.equal(store.tables.allocations.length, 3);
     const ids = store.tables.allocations.map((row) => String(row.obligation_id)).sort();
     assert.deepEqual(
@@ -221,32 +223,52 @@ describe("Finance F5 — convergence Web ↔ Mobile", () => {
     );
   });
 
-  it("5. Non imputé : allocated=0 unallocated=montant", async () => {
+  it("5. Non imputé est refusé, même si des frais sont ouverts", async () => {
     const store = createStore();
     await seed(store);
-    const payload = webPayload([{ obligationId: UNALLOCATED_TARGET, amount: 7_000 }]);
-    assert.deepEqual(payload.items, [{ feeType: UNALLOCATED_FEE_TYPE, amount: 7_000 }]);
-    const payment = await store.createSchoolPayment(payload, admin);
-    const cash = presentPaymentCashFromProjection(payment);
-    assert.equal(cash.allocated, 0);
-    assert.equal(cash.unallocated, 7_000);
-    assert.equal(payment.status, UNALLOCATED_FEE_TYPE);
+    assert.throws(
+      () => webPayload([{ obligationId: UNALLOCATED_TARGET, amount: 7_000 }]),
+      (error) => error.code === "FINANCE_UNALLOCATED_FORBIDDEN",
+    );
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [{ feeType: UNALLOCATED_FEE_TYPE, amount: 7_000 }],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === "FINANCE_UNALLOCATED_FORBIDDEN",
+    );
     assert.equal(store.tables.allocations.length, 0);
+    assert.equal(store.tables.payments.length, 0);
   });
 
-  it("6. mixte : allocation + unallocated = paiement", async () => {
+  it("6. une ligne non affectée refuse tout le reçu", async () => {
     const store = createStore();
     const { tuition } = await seed(store);
-    const payment = await store.createSchoolPayment(
-      mobilePayload([
-        { obligationId: tuition.id, amount: 10_000, feeType: "Scolarité" },
-        { obligationId: UNALLOCATED_TARGET, amount: 5_000 },
-      ]),
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: STUDENT,
+            items: [
+              { obligationId: tuition.id, amount: 10_000, feeType: "Scolarité" },
+              { feeType: UNALLOCATED_FEE_TYPE, amount: 5_000 },
+            ],
+            method: "Espèces",
+            date: "2026-09-07",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422,
     );
-    assert.equal(payment.allocatedAmount + payment.unallocatedAmount, payment.amount);
-    assert.equal(payment.allocatedAmount, 10_000);
-    assert.equal(payment.unallocatedAmount, 5_000);
+    const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === tuition.id);
+    assert.equal(after.balance, 15_000);
+    assert.equal(store.tables.payments.length, 0);
   });
 
   it("7. annulation : même dette restaurée", async () => {
@@ -310,9 +332,10 @@ describe("Finance F5 — convergence Web ↔ Mobile", () => {
       () => buildFinancePaymentItems([{ obligationId: "   ", feeType: "Scolarité", amount: 10_000 }]),
       (error) => error.code === "FINANCE_OBLIGATION_ID_REQUIRED",
     );
-    assert.deepEqual(buildFinancePaymentItems([{ obligationId: UNALLOCATED_TARGET, amount: 10_000 }]), [
-      { feeType: UNALLOCATED_FEE_TYPE, amount: 10_000 },
-    ]);
+    assert.throws(
+      () => buildFinancePaymentItems([{ obligationId: UNALLOCATED_TARGET, amount: 10_000 }]),
+      (error) => error.code === "FINANCE_UNALLOCATED_FORBIDDEN",
+    );
     const explicit = buildFinancePaymentItems([
       { obligationId: "obl-1", amount: 40, feeType: "Scolarité" },
     ]);
@@ -351,17 +374,19 @@ describe("Finance F5 — convergence Web ↔ Mobile", () => {
     );
   });
 
-  it("surpaiement : le serveur tronque, le client n'invente pas la répartition", async () => {
+  it("surpaiement : le serveur refuse, le client n'invente pas la répartition", async () => {
     const store = createStore();
     const { tuition } = await seed(store);
-    const payment = await store.createSchoolPayment(
-      webPayload([{ obligationId: tuition.id, amount: 20_000, feeType: "Scolarité" }], { date: "2026-09-08" }),
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          webPayload([{ obligationId: tuition.id, amount: 20_000, feeType: "Scolarité" }], { date: "2026-09-08" }),
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === "FINANCE_PAYMENT_EXCEEDS_BALANCE",
     );
-    assert.equal(payment.allocatedAmount, 15_000);
-    assert.equal(payment.unallocatedAmount, 5_000);
     const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === tuition.id);
-    assert.equal(after.balance, 0);
-    assert.equal(isOpenObligationFromProjection(after), false);
+    assert.equal(after.balance, 15_000);
+    assert.equal(isOpenObligationFromProjection(after), true);
   });
 });

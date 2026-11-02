@@ -153,9 +153,10 @@ assert.throws(
   () => buildFinancePaymentItems([{ obligationId: "   ", feeType: "Scolarité", amount: 10_000 }]),
   (error: unknown) => error instanceof Error && error.message.includes("FINANCE_OBLIGATION_ID_REQUIRED"),
 );
-assert.deepEqual(buildFinancePaymentItems([{ obligationId: UNALLOCATED_TARGET, amount: 10_000 }]), [
-  { feeType: "Non imputé", amount: 10_000 },
-]);
+assert.throws(
+  () => buildFinancePaymentItems([{ obligationId: UNALLOCATED_TARGET, amount: 10_000 }]),
+  (error: unknown) => error instanceof Error && error.message.includes("FINANCE_UNALLOCATED_FORBIDDEN"),
+);
 assert.deepEqual(buildFinancePaymentItems([{ obligationId: "obl-1", amount: 40, feeType: "Scolarité" }]), [
   { obligationId: "obl-1", amount: 40, feeType: "Scolarité", feeLabel: "Scolarité" },
 ]);
@@ -179,19 +180,19 @@ assert.equal(identified.date, "2026-08-24");
 assert.equal(identified.paidAt, "2026-08-24");
 assert.ok(!("className" in identified), "className n'est pas une identité métier");
 
-const unallocatedPayload = buildSchoolPaymentPayload({
-  studentId: awa.id,
-  classId: String(awa.classId),
-  amount: 1000,
-  feeType: "",
-  method: "Espèces",
-  date: "2026-08-24",
-  obligationId: UNALLOCATED_TARGET,
-});
-const unallocatedItem = (unallocatedPayload.items as Array<{ feeType: string; obligationId?: string }>)[0];
-assert.equal(unallocatedItem.feeType, "Non imputé");
-assert.equal(unallocatedItem.obligationId, undefined);
-assert.notEqual(unallocatedItem.feeType, "Acompte");
+assert.throws(
+  () =>
+    buildSchoolPaymentPayload({
+      studentId: awa.id,
+      classId: String(awa.classId),
+      amount: 1000,
+      feeType: "",
+      method: "Espèces",
+      date: "2026-08-24",
+      obligationId: UNALLOCATED_TARGET,
+    }),
+  (error: unknown) => error instanceof Error && error.message.includes("FINANCE_UNALLOCATED_FORBIDDEN"),
+);
 
 const openFees = collectOpenPaymentFees(awa.id, [
   { id: "obl-1", studentId: awa.id, feeType: "Mensualité", label: "Mensualité", balance: 1000, status: "À payer" },
@@ -220,7 +221,7 @@ assert.equal(
     classOptions: [{ classId: String(awa.classId) }],
     obligationOptions: [{ obligationId: "obl-1" }],
   }).obligationId,
-  "FINANCE_OBLIGATION_ID_REQUIRED",
+  "Chaque ligne doit viser un frais encore dû.",
 );
 assert.equal(
   validatePaymentDraft({
@@ -231,7 +232,7 @@ assert.equal(
     obligationId: UNALLOCATED_TARGET,
     obligationOptions: [{ obligationId: "obl-1" }],
   }).obligationId,
-  undefined,
+  "Les paiements libres, les avances et les trop-perçus sont interdits.",
 );
 assert.equal(
   validatePaymentDraft({
@@ -350,8 +351,8 @@ assert.equal(estherOpen[0].balance, 30_000);
 assert.equal(preselectPaymentObligationId(estherIdentity, estherFees), ESTHER_OCTOBRE_ID);
 assert.notEqual(preselectPaymentObligationId(estherIdentity, estherFees), UNALLOCATED_TARGET);
 assert.equal(collectOpenPaymentFees(estherFromRoster.id, estherFees).length, 1);
-assert.equal(collectOpenPaymentFees(ESTHER_UUID, []).length, 0, "élève sans obligation → Non imputé légitime");
-assert.equal(preselectPaymentObligationId(estherIdentity, []), UNALLOCATED_TARGET);
+assert.equal(collectOpenPaymentFees(ESTHER_UUID, []).length, 0, "élève sans obligation → aucune ligne exigible");
+assert.equal(preselectPaymentObligationId(estherIdentity, []), "");
 
 const emptySnapshotDraft = applyScopedPaymentFeeDraft({
   session: 1,
@@ -361,7 +362,7 @@ const emptySnapshotDraft = applyScopedPaymentFeeDraft({
   identity: estherIdentity,
   scopedFees: [],
 });
-assert.equal(emptySnapshotDraft?.obligationId, UNALLOCATED_TARGET, "snapshot vide → Non imputé temporaire");
+assert.equal(emptySnapshotDraft?.obligationId, "", "snapshot vide → aucune préselection");
 const scopedEstherDraft = applyScopedPaymentFeeDraft({
   session: 1,
   selection: 1,
@@ -384,7 +385,7 @@ const noneDraft = applyScopedPaymentFeeDraft({
   identity: noneStudent,
   scopedFees: [],
 });
-assert.equal(noneDraft?.obligationId, UNALLOCATED_TARGET, "véritable élève sans obligation → Non imputé");
+assert.equal(noneDraft?.obligationId, "", "véritable élève sans obligation → encaissement impossible");
 assert.equal(collectOpenPaymentFees(noneStudent, []).length, 0);
 
 function deferred<T>() {
@@ -532,8 +533,8 @@ const latestFeeRows: PaymentFeeRow[] = [
 ];
 assert.equal(preselectPaymentObligationId(awa.id, latestFeeRows), "nov");
 assert.equal(preselectPaymentObligationId(awa.id, [...latestFeeRows].reverse()), "nov");
-assert.equal(preselectPaymentObligationId(awa.id, []), UNALLOCATED_TARGET);
+assert.equal(preselectPaymentObligationId(awa.id, []), "");
 assert.equal(preselectPaymentObligationId(awa.id, [latestFeeRows[1]]), "sep");
 assert.equal(preselectPaymentObligationId(awa.id, [
   { ...latestFeeRows[0], dueDate: "" }, { ...latestFeeRows[1], dueDate: "" },
-]), UNALLOCATED_TARGET);
+]), "");

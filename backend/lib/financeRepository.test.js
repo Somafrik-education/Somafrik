@@ -139,18 +139,21 @@ async function main() {
   assert.equal(afterPay.balance, 0);
   assert.equal(afterPay.status, "Payé");
 
-  const overpay = await store.createSchoolPayment(
-    {
-      studentId: "CD-2026-0001-STU-0001",
-      items: [{ obligationId: transport.id, feeType: "Transport", amount: 30_000 }],
-      method: "Espèces",
-      date: "2026-08-13",
-    },
-    accountant,
+  await assert.rejects(
+    () =>
+      store.createSchoolPayment(
+        {
+          studentId: "CD-2026-0001-STU-0001",
+          items: [{ obligationId: transport.id, feeType: "Transport", amount: 30_000 }],
+          method: "Espèces",
+          date: "2026-08-13",
+        },
+        accountant,
+      ),
+    (error) => error.statusCode === 422 && error.code === "FINANCE_PAYMENT_EXCEEDS_BALANCE",
   );
-  assert.equal(overpay.overpaymentAmount, 10_000);
   const annex = (await store.listFinanceStudentFees(admin)).find((row) => row.feeType === "Transport");
-  assert.equal(annex.balance, 0);
+  assert.equal(annex.balance, 20_000);
 
   await assert.rejects(
     () =>
@@ -162,7 +165,7 @@ async function main() {
   );
 
   const createAudits = store.tables.auditLogs.filter((row) => row.action === "create_payment");
-  assert.equal(createAudits.length, 2);
+  assert.equal(createAudits.length, 1);
   assert.equal(createAudits[0].entityId, payment.reference);
 
   const cancelled = await store.cancelSchoolPayment(payment.reference, "Erreur de saisie", admin);

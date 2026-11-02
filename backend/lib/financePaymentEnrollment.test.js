@@ -10,8 +10,8 @@
  * ou un 404 STUDENT_NOT_FOUND si l'identité ne matchait pas.
  * Mobile affichait alors « Enregistrement refusé. » sans le message API.
  *
- * F4 : ce test porte sur le scope inscription/classe, pas sur l'imputation.
- * Son paiement valide est donc explicitement Non imputé.
+ * Le paiement valide vise une obligation ouverte de l'élève.
+ * L'encaissement sans obligation est refusé plus loin dans le service.
  */
 const assert = require("node:assert/strict");
 const { createFinanceMemoryStore } = require("../db/financeMemoryStore");
@@ -105,12 +105,34 @@ const admin = {
   sub: "USR-ENROLL-ADMIN",
 };
 
+function openFee(store, studentId, amount = 25000) {
+  const id = `obl-${studentId}`;
+  store.tables.studentFees.push({
+    id,
+    school_id: "school-a",
+    school_code: "CD-2026-0001",
+    student_id: studentId,
+    student_code: studentId,
+    fee_type: "Scolarité",
+    label: "Scolarité",
+    currency: "CDF",
+    amount_due: amount,
+    amount_paid: 0,
+    exemption: 0,
+    discount: 0,
+    balance: amount,
+    status: "À payer",
+    profile_payload: {},
+  });
+  return id;
+}
+
 function paymentBody(overrides = {}) {
   return {
     studentId: "CD-2026-0001-STU-SOLO",
     method: "Espèces",
     date: "2026-08-22",
-    items: [{ feeType: "Non imputé", amount: 25000 }],
+    items: [{ feeType: "Scolarité", amount: 25000 }],
     ...overrides,
   };
 }
@@ -128,27 +150,33 @@ async function main() {
     (error) => error.statusCode === 400 && error.code === FINANCE_ERROR.CLASS_REQUIRED,
   );
 
-  const solo = await store.createSchoolPayment(paymentBody(), admin);
+  const soloFee = openFee(store, "stu-solo");
+  const solo = await store.createSchoolPayment(
+    paymentBody({ items: [{ obligationId: soloFee, feeType: "Scolarité", amount: 25000 }] }),
+    admin,
+  );
   assert.equal(solo.classId, CLASS_JEAN);
   assert.equal(solo.className, "4ème C");
-  assert.equal(solo.status, "Non imputé");
-  assert.equal(solo.unallocatedAmount, 25000);
-  assert.equal(store.tables.allocations.length, 0);
+  assert.equal(solo.status, "Payé");
+  assert.equal(solo.unallocatedAmount, 0);
+  assert.equal(store.tables.allocations.length, 1);
   assert.equal(store.tables.payments.length, 1);
 
+  const awaFee = openFee(store, "stu-awa");
   const chosen = await store.createSchoolPayment(
     paymentBody({
       studentId: "CD-2026-0001-STU-0001",
       classId: CLASS_AWA_B,
       date: "2026-08-23",
+      items: [{ obligationId: awaFee, feeType: "Scolarité", amount: 25000 }],
     }),
     admin,
   );
   assert.equal(chosen.classId, CLASS_AWA_B);
   assert.equal(chosen.className, "5ème B");
-  assert.equal(chosen.status, "Non imputé");
-  assert.equal(chosen.unallocatedAmount, 25000);
-  assert.equal(store.tables.allocations.length, 0);
+  assert.equal(chosen.status, "Payé");
+  assert.equal(chosen.unallocatedAmount, 0);
+  assert.equal(store.tables.allocations.length, 2);
 
   await assert.rejects(
     () =>
@@ -196,7 +224,7 @@ async function main() {
   );
 
   assert.equal(store.tables.payments.length, 2, "seuls les paiements valides sont persistés");
-  assert.equal(store.tables.allocations.length, 0, "test enrollment : aucune imputation implicite");
+  assert.equal(store.tables.allocations.length, 2, "seules les obligations ouvertes sont affectées");
 
   console.log("financePaymentEnrollment.test.js: OK");
 }
