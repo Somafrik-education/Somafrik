@@ -288,6 +288,27 @@ test("matricule présent sans UUID canonique : historique conservé, encaissemen
   assert.equal(resolveCanonicalStudentDbId({ studentCode: MATRICULE, publicId: MATRICULE, id: MATRICULE }), "");
   assert.equal(resolveCanonicalStudentDbId({ dbId: MATRICULE, studentCode: MATRICULE }), "");
   assert.equal(resolveCanonicalStudentDbId({ dbId: UUID, studentCode: MATRICULE }), UUID);
+  assert.equal(
+    resolveCanonicalStudentDbId({
+      id: MATRICULE,
+      publicId: MATRICULE,
+      studentCode: MATRICULE,
+      studentUuid: `stu-${MATRICULE}`,
+    }),
+    `stu-${MATRICULE}`,
+  );
+  assert.equal(
+    resolveCanonicalStudentDbId({ id: "profile-legacy", publicId: "profile-legacy", studentCode: MATRICULE }),
+    "",
+  );
+  assert.equal(
+    resolveCanonicalStudentDbId({
+      id: "stu-solo",
+      publicId: "CD-2026-0001-STU-SOLO",
+      studentCode: "CD-2026-0001-STU-SOLO",
+    }),
+    "stu-solo",
+  );
 });
 
 test("identité absente : un identifiant de profil n'est jamais un UUID canonique", () => {

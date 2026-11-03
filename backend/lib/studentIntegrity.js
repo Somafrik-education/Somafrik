@@ -101,16 +101,24 @@ function classifyStudentIntegrity(input = {}) {
 }
 
 /**
- * UUID canonique, ou identifiant interne distinct du matricule.
- * Un matricule seul, ou recopié dans dbId, n'est pas une identité vérifiée.
+ * UUID canonique, ou identifiant interne distinct du matricule et de l'identifiant public.
+ * Un matricule seul, recopié dans dbId ou dans id, n'est pas une identité vérifiée.
+ * Un identifiant de profil égal à l'identifiant public ne remplace jamais un UUID absent.
  */
 function resolveCanonicalStudentDbId(student = {}) {
-  const uuid = verifiedCanonicalUuid(student.dbId);
+  const matricule = asText(student.studentCode || student.matricule || student.publicId);
+  const uuid = verifiedCanonicalUuid(student.dbId, student.studentUuid, student.student_uuid);
   if (uuid) return uuid;
   const dbId = asText(student.dbId);
-  const matricule = asText(student.studentCode || student.matricule || student.publicId);
-  if (!dbId || (matricule && dbId === matricule)) return "";
-  return dbId;
+  if (dbId && dbId !== matricule) return dbId;
+  for (const value of [student.studentUuid, student.student_uuid]) {
+    const text = asText(value);
+    if (text && text !== matricule) return text;
+  }
+  const id = asText(student.id);
+  const publicId = asText(student.publicId);
+  if (id && id !== matricule && (!publicId || id !== publicId)) return id;
+  return "";
 }
 
 function readOptionalBoolean(value) {

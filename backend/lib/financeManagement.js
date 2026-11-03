@@ -353,6 +353,9 @@ function studentMatches(student, key) {
     student.login_code,
     student.identityCode,
     student.identity_code,
+    student.dbId,
+    student.studentUuid,
+    student.student_uuid,
   ]
     .map((value) => asTrimmed(value))
     .filter(Boolean);
