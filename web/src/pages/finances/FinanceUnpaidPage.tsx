@@ -39,6 +39,7 @@ import { usePermissionContext } from "../../lib/usePermissionContext";
 import { useDeepLinkId } from "../../lib/notificationDeepLink";
 import { resolveFinanceUiActions } from "../../lib/financeActionPermissions";
 import { QuickPaymentModal } from "../../components/payments/QuickPaymentModal";
+import { canonicalStudentUuid, unpaidCollectionBlockMessage } from "../../lib/studentIntegrity";
 import { financeApi } from "../../lib/financeApi";
 import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { ApiError } from "../../api/client";
@@ -313,7 +314,7 @@ export function FinanceUnpaidPage() {
           <Button variant="secondary" size="sm" onClick={() => setDetailStudentId(row.studentId)}>
             Détail
           </Button>
-          {canRegisterPayment ? (
+          {canRegisterPayment && row.collectionEligible === true ? (
             <Button
               variant="secondary"
               size="sm"
@@ -322,6 +323,15 @@ export function FinanceUnpaidPage() {
             >
               Enregistrer un paiement
             </Button>
+          ) : null}
+          {canRegisterPayment && row.collectionEligible !== true ? (
+            <p
+              className="max-w-xs text-right text-xs text-danger"
+              role="alert"
+              data-testid={`unpaid-collection-blocked-${row.studentId}`}
+            >
+              {unpaidCollectionBlockMessage(row.integrityCategory)}
+            </p>
           ) : null}
           {canRemind && !ownScopeOnly ? (
             <Button size="sm" onClick={() => openReminderModal(row)}>
@@ -332,6 +342,9 @@ export function FinanceUnpaidPage() {
       ),
     },
   ];
+
+  const paymentLedgerRow = ledgerRows.find((row) => row.studentId === paymentStudentId);
+  const paymentCanonicalId = canonicalStudentUuid(paymentLedgerRow?.canonicalStudentId);
 
   return (
     <>
@@ -560,8 +573,8 @@ export function FinanceUnpaidPage() {
       <QuickPaymentModal
         open={Boolean(paymentStudentId)}
         mode="quick-student"
-        initialStudentId={paymentStudentId ?? undefined}
-        initialStudentCode={ledgerRows.find((row) => row.studentId === paymentStudentId)?.matricule}
+        initialStudentId={paymentCanonicalId || undefined}
+        initialStudentCode={paymentLedgerRow?.matricule}
         unpaidRemaining={rows.find((row) => row.studentId === paymentStudentId)?.amountDue}
         unpaidFeeIds={rows.find((row) => row.studentId === paymentStudentId)?.feeIds}
         onClose={() => setPaymentStudentId(null)}

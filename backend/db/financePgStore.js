@@ -888,7 +888,13 @@ function createFinancePgStore(repo) {
            JOIN schools s ON s.id = i.school_id`,
         ),
         repo.all(
-          `SELECT o.*, s.school_code, s.login_code, st.student_code
+          `SELECT o.*, s.school_code, s.login_code, st.student_code, st.status AS student_status,
+                  EXISTS (
+                    SELECT 1 FROM enrollments e
+                    WHERE e.student_id = st.id
+                      AND e.school_id = o.school_id
+                      AND ${ROSTER_ENROLLMENT_SQL}
+                  ) AS has_active_enrollment
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
            JOIN students st ON st.id = o.student_id
@@ -1015,7 +1021,14 @@ function createFinancePgStore(repo) {
       const allocPred = sqlSchoolPredicate("s", scope, allocParams);
       const [rows, allocations] = await Promise.all([
         repo.all(
-          `SELECT o.*, s.school_code, s.login_code, st.student_code, ctry.iso_code AS country_iso,
+          `SELECT o.*, s.school_code, s.login_code, st.student_code, st.status AS student_status,
+                  ctry.iso_code AS country_iso,
+                  EXISTS (
+                    SELECT 1 FROM enrollments e
+                    WHERE e.student_id = st.id
+                      AND e.school_id = o.school_id
+                      AND ${ROSTER_ENROLLMENT_SQL}
+                  ) AS has_active_enrollment,
                   COALESCE(pa.allocated, 0) AS allocated_paid
            FROM student_fee_obligations o
            JOIN schools s ON s.id = o.school_id
