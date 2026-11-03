@@ -56,10 +56,21 @@ const HTTP_STATUS = Object.freeze({
   PUBLICATION_ALREADY_EXISTS: 409,
   MODEL_NOT_BOUND: 409,
   CLASS_NOT_FOUND: 404,
+  // BULLETIN-CATALOG-01
+  CONFIGURATION_INVALID: 422,
+  CATALOG_MODEL_UNKNOWN: 404,
+  CATALOG_MODEL_NOT_AVAILABLE: 403,
+  CATALOG_MODEL_RETIRED: 409,
+  CATALOG_MODEL_REQUIRED: 400,
+  CATALOG_CONFIGURATION_REQUIRED: 409,
+  CATALOG_UNAVAILABLE: 503,
+  COUNTRY_UNKNOWN: 409,
+  CONFIRMATION_REQUIRED: 400,
+  AVAILABILITY_INVALID: 400,
 });
 
 /** Codes dont le détail (anomalies pédagogiques, sans donnée nominative) est renvoyé au demandeur habilité. */
-const DETAILED_CODES = new Set(["REPORT_CARD_INCOMPLETE", "INVALID_PEDAGOGICAL_DATA", "PUBLICATION_ALREADY_EXISTS"]);
+const DETAILED_CODES = new Set(["REPORT_CARD_INCOMPLETE", "INVALID_PEDAGOGICAL_DATA", "PUBLICATION_ALREADY_EXISTS", "CONFIGURATION_INVALID"]);
 
 function parseCapability(value) {
   if (typeof value !== "string") return null;
@@ -422,6 +433,108 @@ function registerReportCardHttp(app, deps = {}) {
     if (resolved == null || resolved === "") throw coded("TENANT_REQUIRED");
     return resolved;
   }
+
+  // -------------------------------------------------------------------------
+  // BULLETIN-CATALOG-01 — catalogue des modèles et disponibilité par pays.
+  // Superadmin : modèles, pays, disponibilité, historique (aucune donnée d'élève).
+  // Établissement : modèles autorisés dans SON pays (serveur), configuration, activation.
+  // -------------------------------------------------------------------------
+  function catalogService() {
+    const catalog = deps.catalog || (typeof deps.getCatalog === "function" ? deps.getCatalog() : null);
+    if (!catalog) throw coded("CATALOG_UNAVAILABLE");
+    return catalog;
+  }
+
+  app.get(
+    "/api/report-card/catalog/admin",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, ...(await catalogService().adminOverview({ actor })) });
+    })
+  );
+
+  app.put(
+    "/api/report-card/catalog/admin/models/:modelId/countries/:countryId",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const result = await catalogService().setAvailability({
+        actor,
+        modelId: req.params.modelId,
+        countryId: req.params.countryId,
+        available: req.body?.available,
+        confirm: req.body?.confirm,
+      });
+      res.json({ ok: true, ...result });
+    })
+  );
+
+  app.get(
+    "/api/report-card/catalog/admin/audit",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const audit = await catalogService().adminAudit({ actor, modelId: req.query?.modelId });
+      res.json({ ok: true, audit });
+    })
+  );
+
+  app.get(
+    "/api/report-card/catalog",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, ...(await catalogService().schoolCatalog({ actor })) });
+    })
+  );
+
+  app.get(
+    "/api/report-card/catalog/models/:modelId/configuration",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, ...(await catalogService().configurationContext({ actor, modelId: req.params.modelId })) });
+    })
+  );
+
+  app.post(
+    "/api/report-card/catalog/models/:modelId/preview",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const preview = await catalogService().preview({ actor, modelId: req.params.modelId, input: req.body?.input });
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, preview });
+    })
+  );
+
+  app.put(
+    "/api/report-card/catalog/models/:modelId/configuration",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      res.json({ ok: true, ...(await catalogService().save({ actor, modelId: req.params.modelId, input: req.body?.input })) });
+    })
+  );
+
+  app.post(
+    "/api/report-card/catalog/models/:modelId/activate",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const result = await catalogService().activate({
+        actor,
+        modelId: req.params.modelId,
+        confirm: req.body?.confirm,
+        commandId: req.body?.commandId,
+      });
+      res.json({ ok: true, ...result });
+    })
+  );
 
   app.post("/api/public/report-cards/verify", (req, res) => {
     const { publication } = services();

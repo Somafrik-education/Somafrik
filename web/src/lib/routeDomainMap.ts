@@ -53,6 +53,8 @@ const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   { prefix: "/parametres/roles-droits", domains: ["academicConfigs", "users", "rolePermissions"] },
   { prefix: "/parametres/annee-scolaire", domains: ["academicConfigs", "schools"] },
   { prefix: "/parametres/documents", domains: ["documents", "academicConfigs"] },
+  // Catalogue des bulletins (Superadmin) : données chargées par la page elle-même.
+  { prefix: "/parametres/bulletins-catalogue", domains: [] },
   { prefix: "/parametres/graphiques", domains: ["dashboardChartConfig", "rolePermissions"] },
   { prefix: "/parametres", domains: ["academicConfigs", "schools", "rolePermissions", "users"] },
   { prefix: "/administration", domains: ["users", "schools", "countries"] },

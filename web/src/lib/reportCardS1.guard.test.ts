@@ -14,18 +14,19 @@ describe("S1 / #659 CTA non-régression", () => {
     expect(entity).toMatch(/Configurer un bulletin/);
     expect(entity).toMatch(/report-card-request-model-cta/);
     expect(entity).toMatch(/\/bulletins\/modele/);
-    const school = readRel("web/src/pages/ReportCardSchoolWorkflowPage.tsx");
-    expect(school).toMatch(/Soumettre la demande de modèle/);
-    expect(school).toMatch(/report-card-submit-request/);
-    expect(school).toMatch(/report-card-model-key/);
+    // BULLETIN-CATALOG-01 : le CTA mène à la galerie des modèles autorisés et à l'assistant.
+    const school = readRel("web/src/pages/ReportCardCatalogSchoolPage.tsx");
+    expect(school).toMatch(/Choisir ce modèle/);
+    expect(school).toMatch(/catalog-save/);
+    expect(school).toMatch(/catalog-activate-confirm/);
     expect(existsSync(path.join(ROOT, "backend/scripts/verify-report-card-s1-e2e.js"))).toBe(true);
     const e2e = readRel("backend/scripts/verify-report-card-s1-e2e.js");
-    expect(e2e).toMatch(/e2e-report-card-school-request-visible-and-persisted/);
-    expect(e2e).toMatch(/e2e-report-card-source-upload-preview-persisted/);
-    expect(e2e).toMatch(/e2e-report-card-superadmin-explicit-mapping/);
-    expect(e2e).toMatch(/e2e-report-card-ready-review-school-approval-active/);
-    expect(e2e).toMatch(/e2e-report-card-request-rbac-fail-closed/);
-    expect(e2e).toMatch(/e2e-report-card-cross-tenant-forbidden/);
+    expect(e2e).toMatch(/e2e-report-card-catalog-superadmin-country-availability/);
+    expect(e2e).toMatch(/e2e-report-card-catalog-school-configure-save-activate/);
+    expect(e2e).toMatch(/e2e-report-card-catalog-rbac-fail-closed/);
+    expect(e2e).toMatch(/e2e-report-card-catalog-other-country-and-cross-tenant/);
+    // La migration du catalogue est appliquée par le test, jamais au démarrage du serveur.
+    expect(e2e).toMatch(/REPORT_CARD_CATALOG_SQL/);
     expect(e2e).not.toMatch(/page\.waitForTimeout\(\s*\d+/);
 
     const app = readRel("web/src/App.tsx");
@@ -41,14 +42,15 @@ describe("S1 / #659 CTA non-régression", () => {
     expect(app).not.toMatch(/path="\/bulletins\/historique"[\s\S]{0,180}?action="CREATE"/);
     expect(app).not.toMatch(/path="\/bulletins"(?!\/)[\s\S]{0,180}?action="CREATE"/);
 
-    const rbacStart = e2e.indexOf("e2e-report-card-request-rbac-fail-closed");
-    const rbacEnd = e2e.indexOf("e2e-report-card-cross-tenant-forbidden");
+    const rbacStart = e2e.indexOf("e2e-report-card-catalog-rbac-fail-closed");
+    const rbacEnd = e2e.indexOf("e2e-report-card-catalog-other-country-and-cross-tenant");
     expect(rbacStart).toBeGreaterThan(-1);
     expect(rbacEnd).toBeGreaterThan(rbacStart);
     const rbac = e2e.slice(rbacStart, rbacEnd);
     expect(rbac).toMatch(/page\.goto\(`\$\{WEB_URL\}\/bulletins\/modele`/);
     expect(rbac).toMatch(/waitForURL\(\/\\\/bulletins\\\/\?\$/);
     expect(rbac).not.toMatch(/getByRole\("heading", \{ name: \/modèle de bulletin\/i \}\)\.waitFor/);
-    expect(rbac).toMatch(/created\.status, 403/);
+    expect(rbac).toMatch(/saved\.status, 403/);
+    expect(rbac).toMatch(/activated\.status, 403/);
   });
 });

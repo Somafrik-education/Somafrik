@@ -1,12 +1,22 @@
 "use strict";
 
 /**
- * E2E Playwright réel — Bulletins LOT 6→11 / S1 smoke #656 / défaut #659.
- * Admin établissement → CTA demande modèle → persistance → artefact → mapping
- * Superadmin → revue → approbation → ACTIVE. RBAC fail-closed + cross-tenant.
+ * E2E Playwright réel — Bulletins S1 / #659, refondu pour BULLETIN-CATALOG-01.
+ *
+ * Superadmin : catalogue des bulletins → disponibilité du modèle pour un pays
+ * (confirmation explicite + historique). Établissement du pays : CTA
+ * « Configurer un bulletin » → galerie des modèles autorisés → assistant →
+ * aperçu réel → enregistrement → activation confirmée. RBAC fail-closed
+ * (secrétaire en lecture), établissement d'un autre pays sans modèle,
+ * isolation entre établissements, Superadmin sans accès au parcours école.
+ *
+ * La migration du catalogue est appliquée EXPLICITEMENT à la base isolée de
+ * ce test (elle n'est jamais exécutée au démarrage du serveur).
+ * Captures : SOMAFRIK_E2E_SCREENSHOTS=<dossier> (bureau 1440×900, tablette 820×1180).
  *
  * Aucun mock du workflow métier. PostgreSQL isolé. Interdit : waitForTimeout numérique Playwright.
  */
+
 const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn, execSync } = require("node:child_process");
@@ -15,9 +25,8 @@ const os = require("node:os");
 const path = require("node:path");
 const { Pool } = require("pg");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
+const { REPORT_CARD_CATALOG_SQL } = require("../db/reportCardCatalogSchema");
 const { hashSecret } = require("../services/credentialService");
-const { createAcademicRuleProfilePgStore } = require("../db/academicRuleProfilePgStore");
-const { createReportCardSchemaPgStore } = require("../db/reportCardSchemaPgStore");
 
 const ROOT = path.resolve(__dirname, "../..");
 const API_PORT = 19891;
@@ -29,61 +38,13 @@ const SCHOOL_A_CODE = "CD-2026-0001";
 const SCHOOL_B_CODE = "BI-2026-0001";
 const WEB_URL = `http://127.0.0.1:${WEB_PORT}`;
 const NEW_PASSWORD = "ReportCard#2026Aa";
-const MODEL_KEY = "e2e-trimestriel";
 const ACADEMIC_YEAR_NAME = "2026-2027";
 const EVIDENCE_DIR = path.join(os.tmpdir(), "somafrik-report-card-s1-e2e");
-
-const PDF_BYTES = Buffer.from("%PDF-1.4\n%SOMAFRIK-S1-E2E\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
-const PNG_BYTES = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64",
-);
-
-function calculableProfile() {
-  return {
-    period_mode: "term",
-    periods: ["T1", "T2", "T3"],
-    annual: true,
-    score_components: [
-      { id: "TJ", applicability: "always", max: 20, coefficient: 2 },
-      { id: "EX", applicability: "per_subject", max: 20 },
-    ],
-    missing_score: "NOT_APPLICABLE_not_zero",
-    rounding: { decimals: 2, mode: "half_up", stage: "display_only" },
-    aggregation: {
-      mode: "weighted_sum",
-      coefficient_default: 1,
-      percentage: "points_over_max_100",
-    },
-    ranking: { enabled: true, ties: "competition", metric: "PERCENTAGE" },
-    pass_rule: { metric: "PERCENTAGE", threshold: 50 },
-  };
-}
-
-function compatibleSchema() {
-  return {
-    sections: [
-      {
-        id: "IDENTITY",
-        order: 1,
-        kind: "identity",
-        columns: [{ id: "STUDENT_NAME", order: 1, kind: "identity" }],
-      },
-      {
-        id: "SUBJECTS",
-        order: 2,
-        kind: "subject_rows",
-        rows: [{ id: "SUBJECT_LINE", order: 1, kind: "subject" }],
-        columns: [
-          { id: "COL_TJ", order: 1, kind: "score_component", score_component_id: "TJ" },
-          { id: "COL_EX", order: 2, kind: "score_component", score_component_id: "EX" },
-        ],
-      },
-    ],
-    identity_fields: [{ id: "STUDENT_NAME", order: 1 }],
-    metadata_fields: [{ id: "SCHOOL_YEAR", order: 1 }],
-  };
-}
+const SCREENSHOT_DIR = String(process.env.SOMAFRIK_E2E_SCREENSHOTS ?? "").trim();
+const TABLET = { width: 820, height: 1180 };
+// Exécution locale : navigateur préinstallé (CI : navigateur Playwright standard).
+const LAUNCH = process.env.SOMAFRIK_CHROMIUM_PATH ? { headless: true, executablePath: process.env.SOMAFRIK_CHROMIUM_PATH } : { headless: true };
+const DESKTOP = { width: 1440, height: 900 };
 
 function withDatabaseName(databaseUrl, databaseName) {
   const parsed = new URL(databaseUrl);
@@ -195,21 +156,26 @@ async function prepareDatabase(databaseUrl) {
   const superadminPasswordHash = hashSecret(superadminLoginPassword());
   let schoolAId = "";
   let schoolBId = "";
+  let countryCdId = "";
   try {
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
     await pool.query(fs.readFileSync(path.join(ROOT, "backend/db/schema.sql"), "utf8"));
     await pool.query(PEDAGOGY_SCHEMA_SQL);
+    await pool.query(fs.readFileSync(path.join(ROOT, "backend/db/migrations/20261103_subject_hierarchy.sql"), "utf8"));
+    // Migration du catalogue : appliquée explicitement pour ce test (jamais au démarrage).
+    await pool.query(REPORT_CARD_CATALOG_SQL);
     const countryCd = await pool.query(
-      `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('RDC', 'CD', '+243', 'CDF') RETURNING id`,
+      `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('République démocratique du Congo', 'CD', '+243', 'CDF') RETURNING id`,
     );
     const countryBi = await pool.query(
       `INSERT INTO countries (name, iso_code, phone_code, currency) VALUES ('Burundi', 'BI', '+257', 'BIF') RETURNING id`,
     );
+    countryCdId = countryCd.rows[0].id;
     const schoolA = await pool.query(
       `INSERT INTO schools (country_id, school_code, login_code, name, status, profile_payload)
        VALUES ($1, $2, $3, 'Lycée Kinshasa E2E', 'active', '{"timezone":"Africa/Kinshasa"}'::jsonb) RETURNING id`,
-      [countryCd.rows[0].id, SCHOOL_A_CODE, SCHOOL_A_CODE],
+      [countryCdId, SCHOOL_A_CODE, SCHOOL_A_CODE],
     );
     const schoolB = await pool.query(
       `INSERT INTO schools (country_id, school_code, login_code, name, status, profile_payload)
@@ -218,11 +184,36 @@ async function prepareDatabase(databaseUrl) {
     );
     schoolAId = schoolA.rows[0].id;
     schoolBId = schoolB.rows[0].id;
-    await pool.query(
-      `INSERT INTO academic_years (school_id, name, status, is_current, start_date, end_date)
-       VALUES ($1, $2, 'open', TRUE, '2026-09-01', '2027-07-31')`,
-      [schoolAId, ACADEMIC_YEAR_NAME],
-    );
+    for (const schoolId of [schoolAId, schoolBId]) {
+      const year = await pool.query(
+        `INSERT INTO academic_years (school_id, name, status, is_current, start_date, end_date)
+         VALUES ($1, $2, 'open', TRUE, '2026-09-01', '2027-07-31') RETURNING id`,
+        [schoolId, ACADEMIC_YEAR_NAME],
+      );
+      for (const [index, name] of ["Trimestre 1", "Trimestre 2", "Trimestre 3"].entries()) {
+        await pool.query(
+          `INSERT INTO terms (academic_year_id, name, start_date) VALUES ($1, $2, $3)`,
+          [year.rows[0].id, name, `2026-${9 + index}-01`],
+        );
+      }
+      for (const [order, [code, name]] of [
+        ["MATHEMATIQUES", "Mathématiques"],
+        ["FRANCAIS", "Français"],
+        ["SCIENCES", "Sciences"],
+        ["CIVISME", "Éducation civique"],
+      ].entries()) {
+        await pool.query(
+          `INSERT INTO subjects (school_id, subject_code, name, status, display_order) VALUES ($1, $2, $3, 'active', $4)`,
+          [schoolId, code, name, order + 1],
+        );
+      }
+      for (const [order, [code, name]] of [["interrogation", "Interrogation"], ["examen", "Examen"]].entries()) {
+        await pool.query(
+          `INSERT INTO evaluation_types (school_id, code, name, display_order) VALUES ($1, $2, $3, $4)`,
+          [schoolId, code, name, order + 1],
+        );
+      }
+    }
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status, must_change_password)
        VALUES (NULL, 'USR-2026-000002', 'Super', 'Admin', 'superadmin-e2e@test.cd', $1, $1, 'SUPER_ADMIN', 'active', FALSE)`,
@@ -256,7 +247,7 @@ async function prepareDatabase(databaseUrl) {
   } finally {
     await pool.end();
   }
-  return { isolatedUrl, schoolAId, schoolBId };
+  return { isolatedUrl, schoolAId, schoolBId, countryCdId };
 }
 
 async function seedSecretaryReadOnly(databaseUrl) {
@@ -293,34 +284,10 @@ async function seedSecretaryReadOnly(databaseUrl) {
   }
 }
 
-async function seedCatalog(databaseUrl, schoolAId) {
-  const pool = new Pool({ connectionString: databaseUrl });
-  try {
-    const profileStore = createAcademicRuleProfilePgStore(pool);
-    const schemaStore = createReportCardSchemaPgStore(pool);
-    await profileStore.createProfile({
-      schoolId: schoolAId,
-      actorSchoolId: schoolAId,
-      profileKey: "e2e-academic-profile",
-      spec: calculableProfile(),
-      activate: true,
-    });
-    await schemaStore.createSchema({
-      schoolId: schoolAId,
-      actorSchoolId: schoolAId,
-      schemaKey: "e2e-report-schema",
-      spec: compatibleSchema(),
-      activate: true,
-    });
-  } finally {
-    await pool.end();
-  }
-}
-
 async function ensureChromium() {
   const { chromium } = require("playwright");
   try {
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch(LAUNCH);
     await browser.close();
   } catch {
     execSync("npx playwright install chromium", { cwd: ROOT, stdio: "inherit" });
@@ -334,40 +301,36 @@ function requestModelCta(page) {
     .or(page.getByRole("button", { name: "Configurer un bulletin" }));
 }
 
-function submitRequestCta(page) {
-  return page
-    .getByTestId("report-card-submit-request")
-    .or(page.getByRole("button", { name: "Soumettre la demande de modèle" }));
+/** Capture de preuve (bureau + tablette) quand SOMAFRIK_E2E_SCREENSHOTS est défini. */
+async function capture(page, name) {
+  if (!SCREENSHOT_DIR) return;
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+  const viewport = page.viewportSize();
+  const suffix = viewport && viewport.width < 1000 ? "tablette" : "bureau";
+  await page.screenshot({ path: path.join(SCREENSHOT_DIR, `${name}-${suffix}.png`), fullPage: true });
 }
 
-async function expectValue(locator, expected) {
-  await locator.waitFor();
-  const value = await locator.inputValue();
-  assert.equal(value, expected, `valeur champ attendue ${expected}, reçu ${value}`);
+async function captureBoth(page, name) {
+  if (!SCREENSHOT_DIR) return;
+  await capture(page, name);
+  await page.setViewportSize(TABLET);
+  await capture(page, name);
+  await page.setViewportSize(DESKTOP);
 }
 
-function decodeJwtPayload(token) {
-  try {
-    const part = String(token || "").split(".")[1];
-    if (!part) return null;
-    return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
-  } catch {
-    return null;
-  }
+function isCatalogCall(method, suffix) {
+  return (response) => {
+    let pathname = "";
+    try {
+      pathname = new URL(response.url()).pathname;
+    } catch {
+      pathname = response.url();
+    }
+    return response.request().method() === method && pathname.startsWith("/api/report-card/catalog") && pathname.endsWith(suffix);
+  };
 }
 
-function isReportCardCreatePost(response) {
-  let pathname = "";
-  try {
-    pathname = new URL(response.url()).pathname;
-  } catch {
-    pathname = response.url();
-  }
-  return (
-    response.request().method() === "POST" &&
-    pathname === "/api/report-card/requests"
-  );
-}
+
 
 async function loginAsSchool(page, identifier, password, schoolCode) {
   await page.goto(`${WEB_URL}/login`, { waitUntil: "domcontentloaded" });
@@ -446,9 +409,6 @@ async function waitVisibleText(page, text) {
   await page.getByText(text).first().waitFor();
 }
 
-async function waitWorkflowState(page, status) {
-  await page.locator(`li[data-workflow-state="${status}"]`).waitFor({ timeout: 20000 });
-}
 
 async function clickAndWaitHttp(page, locator, match) {
   const pending = page.waitForResponse(
@@ -470,317 +430,169 @@ async function saveFailureEvidence(page, label) {
   }
 }
 
-async function runBrowserScenarios({ schoolAId }) {
+
+async function runBrowserScenarios({ countryCdId }) {
   const { chromium } = require("playwright");
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const browser = await chromium.launch(LAUNCH);
+  const context = await browser.newContext({ viewport: DESKTOP });
   const page = await context.newPage();
   page.setDefaultTimeout(20000);
   page.on("response", (response) => {
     if (!response.url().includes("/report-card/") || response.ok()) return;
     console.error(`http ${response.status()} ${response.request().method()} ${response.url()}`);
   });
-  const state = {
-    requestId: "",
-    artifactId: "",
-    artifactVersion: "",
-    schoolId: schoolAId,
-  };
   try {
-    await named("e2e-report-card-school-request-visible-and-persisted", async () => {
+    await named("e2e-report-card-catalog-superadmin-country-availability", async () => {
+      await loginAsSuperadmin(page, "superadmin", superadminLoginPassword());
+      // Ancien éditeur retiré : les anciennes URLs mènent au catalogue.
+      await page.goto(`${WEB_URL}/parametres/bulletins-configuration`, { waitUntil: "domcontentloaded" });
+      await page.waitForURL(/\/parametres\/bulletins-catalogue$/, { timeout: 20000 });
+      await page.goto(`${WEB_URL}/parametres`, { waitUntil: "domcontentloaded" });
+      await page.getByText("Catalogue des bulletins").first().click();
+      await page.waitForURL(/\/parametres\/bulletins-catalogue$/, { timeout: 20000 });
+      await page.getByTestId("catalog-admin-model-colombiere").waitFor();
+      await page.getByTestId("catalog-admin-model-berceau").waitFor();
+      assert.equal(await page.locator("textarea").count(), 0, "aucun éditeur JSON dans l'interface");
+      await page.getByTestId("catalog-admin-model-colombiere").getByTestId("catalog-admin-allowed-none").waitFor();
+      await captureBoth(page, "01-superadmin-catalogue");
+      await page.getByTestId("catalog-admin-model-berceau").getByRole("button", { name: "Voir le modèle" }).click();
+      await page.getByTestId("catalog-admin-view").waitFor();
+      await capture(page, "02-superadmin-voir-modele-berceau");
+      await page.keyboard.press("Escape");
+      await page.getByTestId("catalog-admin-view").waitFor({ state: "detached" });
+      await page.getByTestId("catalog-admin-manage-colombiere").click();
+      await page.getByTestId("catalog-admin-availability").waitFor();
+      await page.getByTestId("catalog-admin-toggle-CD").click();
+      await page.getByTestId("catalog-admin-confirm-summary").waitFor();
+      await capture(page, "03-superadmin-confirmation-disponibilite");
+      const put = await clickAndWaitHttp(page, page.getByTestId("catalog-admin-confirm"), isCatalogCall("PUT", `/countries/${countryCdId}`));
+      assert.equal(put.status(), 200, "PUT disponibilité");
+      await page.getByTestId("catalog-admin-audit").waitFor();
+      await waitVisibleText(page, "Jamais configuré");
+      await captureBoth(page, "04-superadmin-disponibilite-historique");
+      await page.keyboard.press("Escape");
+      await page.getByTestId("catalog-admin-availability").waitFor({ state: "detached" });
+      await page.getByTestId("catalog-admin-model-colombiere").getByTestId("catalog-admin-allowed").waitFor();
+      const token = await sessionToken(page);
+      const schoolRoute = await request("/report-card/catalog/models/colombiere/configuration", { token });
+      assert.equal(schoolRoute.status, 403, "Superadmin : aucun accès au parcours école");
+      const publications = await request("/report-card/publications", { token });
+      assert.notEqual(publications.status, 200, "Superadmin : aucun accès aux bulletins");
+    });
+
+    await named("e2e-report-card-catalog-school-configure-save-activate", async () => {
+      await logout(page);
       await loginAsSchool(page, "admin", "1234", SCHOOL_A_CODE);
       await openBulletinsFromNav(page);
       const cta = requestModelCta(page);
       try {
         await cta.first().waitFor({ timeout: 8000 });
       } catch {
-        throw new Error(
-          "Admin établissement connecté → /bulletins → CTA « Configurer un bulletin » introuvable (#659)",
-        );
+        throw new Error("Admin établissement connecté → /bulletins → CTA « Configurer un bulletin » introuvable (#659)");
       }
       await cta.first().click();
-      await page.waitForURL(/\/bulletins\/modele\/?$/, { timeout: 15000 });
-      const year = page.getByTestId("report-card-academic-year").or(page.getByText(ACADEMIC_YEAR_NAME));
-      await year.first().waitFor({ timeout: 15000 });
-      const modelInput = page.getByTestId("report-card-model-key").or(page.getByLabel(/clé modèle/i));
-      await modelInput.waitFor();
-      await modelInput.fill(MODEL_KEY);
-      await expectValue(modelInput, MODEL_KEY);
-      const description = page.getByTestId("report-card-model-description").or(page.getByLabel(/^Description$/i));
-      await description.fill("Demande E2E S1 isolée");
-      const tokenBefore = await sessionToken(page);
-      const jwt = decodeJwtPayload(tokenBefore);
-      const sessionPerms = await page.evaluate(() => {
-        try {
-          const parsed = JSON.parse(sessionStorage.getItem("somafrik.web.session") || "{}");
-          return parsed.permissions || parsed.user?.permissions || [];
-        } catch {
-          return [];
-        }
-      });
-      const livePerms = [...new Set([...(jwt?.permissions || []), ...sessionPerms])];
-      assert.ok(
-        livePerms.includes("Bulletins:CREATE"),
-        `Admin School sans Bulletins:CREATE: jwt=${JSON.stringify(jwt?.permissions || [])} session=${JSON.stringify(sessionPerms)}`,
-      );
-      const submit = submitRequestCta(page);
-      await submit.first().waitFor();
-      const created = await clickAndWaitHttp(page, submit.first(), isReportCardCreatePost);
-      const createdBody = await created.text();
-      assert.ok(
-        created.ok(),
-        `submit HTTP ${created.status()} ${created.url()} body=${createdBody} payload=${created.request().postData()}`,
-      );
-      let payload = null;
-      try {
-        payload = createdBody ? JSON.parse(createdBody) : null;
-      } catch {
-        payload = null;
-      }
-      state.requestId = String(payload?.request?.id || "");
-      assert.match(state.requestId, /^[0-9a-f-]{36}$/i, "request id absent de la réponse HTTP");
-      await waitWorkflowState(page, "SUBMITTED");
+      await page.waitForURL(/\/bulletins\/modele$/, { timeout: 20000 });
+      await page.getByTestId("catalog-school-model-colombiere").waitFor();
+      assert.equal(await page.getByTestId("catalog-school-model-berceau").count(), 0, "modèle non autorisé dans le pays : invisible");
+      await captureBoth(page, "05-ecole-galerie");
+      await page.getByTestId("catalog-school-choose-colombiere").click();
+      await page.getByTestId("catalog-step-structure").waitFor();
+      await captureBoth(page, "06-ecole-assistant-structure");
+      await page.getByTestId("catalog-next").click();
+      await page.getByTestId("catalog-step-subjects").waitFor();
+      await page.getByLabel("Mathématiques", { exact: true }).check();
+      await page.getByLabel("Français", { exact: true }).check();
+      await page.getByLabel("Éducation civique", { exact: true }).check();
+      await page.getByLabel("Maximum EX — Éducation civique").fill("");
+      await page.getByLabel("Maximum TJ — Éducation civique").fill("10");
+      await captureBoth(page, "07-ecole-assistant-matieres-maxima");
+      await page.getByTestId("catalog-next").click();
+      await page.getByTestId("catalog-step-sources").waitFor();
+      await page.getByTestId("catalog-next").click();
+      await page.getByText("Choisissez au moins un type d'évaluation.").first().waitFor();
+      await capture(page, "08-ecole-assistant-erreurs-champ");
+      const tj = page.locator("fieldset", { has: page.getByText("Travail journalier (TJ)", { exact: true }) });
+      await tj.getByLabel("Interrogation").check();
+      const ex = page.locator("fieldset", { has: page.getByText("Examen (EX)", { exact: true }) });
+      await ex.getByLabel("Examen").check();
+      await capture(page, "09-ecole-assistant-calcul");
+      const previewCall = page.waitForResponse(isCatalogCall("POST", "/preview"));
+      await page.getByTestId("catalog-next").click();
+      assert.equal((await previewCall).status(), 200, "aperçu");
+      await page.getByTestId("catalog-preview").waitFor();
+      assert.ok((await page.getByTestId("catalog-preview").locator("[data-failing]").count()) > 0, "notes en échec signalées dans l'aperçu");
+      await page.getByLabel("Signature 1").fill("Le titulaire");
+      await page.getByLabel("Signature 2").fill("Le chef d'établissement");
+      await page.getByLabel("Signature 3").fill("Le parent");
+      await page.getByTestId("catalog-preview-refresh").click();
+      await page.getByTestId("catalog-preview").getByText("Le chef d'établissement").waitFor();
+      await captureBoth(page, "10-ecole-apercu");
+      await page.getByTestId("catalog-next").click();
+      await page.getByTestId("catalog-step-summary").waitFor();
+      assert.equal(await page.getByTestId("catalog-activate").isDisabled(), true, "activation impossible avant enregistrement");
+      const saved = await clickAndWaitHttp(page, page.getByTestId("catalog-save"), isCatalogCall("PUT", "/configuration"));
+      assert.equal(saved.status(), 200, "enregistrement");
+      await page.getByTestId("catalog-saved").waitFor();
+      await captureBoth(page, "11-ecole-recapitulatif-enregistre");
+      await page.getByTestId("catalog-activate").click();
+      await page.getByTestId("catalog-activate-summary").waitFor();
+      await capture(page, "12-ecole-confirmation-activation");
+      const activated = await clickAndWaitHttp(page, page.getByTestId("catalog-activate-confirm"), isCatalogCall("POST", "/activate"));
+      assert.equal(activated.status(), 200, "activation");
+      await page.getByTestId("catalog-school-notice").waitFor();
       await page.reload({ waitUntil: "domcontentloaded" });
-      await waitWorkflowState(page, "SUBMITTED");
-      await waitVisibleText(page, MODEL_KEY);
-      const listed = await request("/report-card/requests", { token: await sessionToken(page) });
-      assert.equal(listed.status, 200, JSON.stringify(listed.data));
-      const row = (listed.data?.requests || []).find((item) => item.id === state.requestId);
-      assert.ok(row, "demande absente après reload");
-      assert.equal(row.status, "SUBMITTED");
-      assert.equal(String(row.school_id || state.schoolId), String(state.schoolId));
-      assert.equal(row.model_key, MODEL_KEY);
-    });
-
-    await named("e2e-report-card-source-upload-preview-persisted", async () => {
-      const fileInput = page.locator(`li[data-workflow-state] input[type="file"]`).first();
-      await fileInput.waitFor();
-      await fileInput.setInputFiles({
-        name: "modele-e2e.pdf",
-        mimeType: "application/pdf",
-        buffer: PDF_BYTES,
-      });
-      const uploadPdf = await clickAndWaitHttp(
-        page,
-        page.getByTestId("report-card-upload-source").or(page.getByRole("button", { name: "Envoyer un modèle de bulletin" })).first(),
-        (response) =>
-          response.url().includes("/source-artifact") &&
-          response.request().method() === "POST" &&
-          !response.url().includes("/content"),
-      );
-      assert.ok(uploadPdf.ok(), `upload PDF HTTP ${uploadPdf.status()}`);
-      const pdfBody = await uploadPdf.json().catch(() => null);
-      const pdfId = String(pdfBody?.artifact?.artifact_id || "");
-      assert.ok(pdfId, "artifact_id PDF absent");
-      await page.locator("[data-source-artifact-preview]").waitFor();
-      await waitVisibleText(page, pdfId);
-      const preview = page.locator(
-        "[data-source-artifact-preview] iframe, [data-source-artifact-preview] img, iframe[title^='source-artifact'], img[alt^='source-artifact']",
-      );
-      await preview.first().waitFor();
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await page.locator("[data-source-artifact-preview]").waitFor();
-      await waitVisibleText(page, pdfId);
-
-      await fileInput.setInputFiles({
-        name: "modele-e2e.png",
-        mimeType: "image/png",
-        buffer: PNG_BYTES,
-      });
-      const uploadPng = await clickAndWaitHttp(
-        page,
-        page.getByTestId("report-card-upload-source").or(page.getByRole("button", { name: "Envoyer un modèle de bulletin" })).first(),
-        (response) =>
-          response.url().includes("/source-artifact") &&
-          response.request().method() === "POST" &&
-          !response.url().includes("/content"),
-      );
-      assert.ok(uploadPng.ok(), `upload PNG HTTP ${uploadPng.status()}`);
-      const pngBody = await uploadPng.json().catch(() => null);
-      state.artifactId = String(pngBody?.artifact?.artifact_id || "");
-      state.artifactVersion = String(pngBody?.artifact?.version || "");
-      assert.ok(state.artifactId, "artifact_id PNG absent");
-      assert.notEqual(state.artifactId, pdfId, "la version PNG doit remplacer l'artefact PDF");
-      await waitVisibleText(page, state.artifactId);
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await waitVisibleText(page, state.artifactId);
-      const current = await request(`/report-card/requests/${encodeURIComponent(state.requestId)}/source-artifact`, {
-        token: await sessionToken(page),
-      });
-      assert.equal(current.status, 200, JSON.stringify(current.data));
-      assert.equal(current.data?.artifact?.artifact_id, state.artifactId);
-      assert.equal(String(current.data?.artifact?.version), state.artifactVersion);
-    });
-
-    await named("e2e-report-card-superadmin-explicit-mapping", async () => {
-      await logout(page);
-      await loginAsSuperadmin(page, "superadmin", superadminLoginPassword());
-      await page.goto(`${WEB_URL}/parametres/bulletins-configuration`, { waitUntil: "domcontentloaded" });
-      await page.getByRole("heading", { name: /configuration bulletins/i }).waitFor();
-      const schoolInput = page.getByTestId("report-card-target-school").or(page.getByLabel(/établissement cible/i));
-      await schoolInput.fill(state.schoolId);
-      const loaded = await clickAndWaitHttp(
-        page,
-        page.getByTestId("report-card-load-queue").or(page.getByRole("button", { name: "Charger la file" })),
-        (response) => response.url().includes("/report-card/admin/queue") && response.request().method() === "GET",
-      );
-      assert.ok(loaded.ok(), `queue HTTP ${loaded.status()}`);
-      const queueBody = await loaded.json().catch(() => null);
-      const found = (queueBody?.requests || []).find((item) => item.id === state.requestId);
-      assert.ok(found, "Superadmin ne retrouve pas la demande créée");
-      assert.equal(found.school_id, state.schoolId);
-      await waitVisibleText(page, MODEL_KEY);
-      await waitVisibleText(page, state.artifactId);
-      const adminPreview = page.locator(
-        "iframe[title^='source-artifact'], img[alt^='source-artifact']",
-      );
-      await adminPreview.first().waitFor();
-
-      const review = await clickAndWaitHttp(
-        page,
-        page.getByRole("button", { name: "Examiner" }),
-        (response) => response.url().includes("/review") && response.request().method() === "POST",
-      );
-      assert.ok(review.ok(), `review HTTP ${review.status()}`);
-      const configure = await clickAndWaitHttp(
-        page,
-        page.getByRole("button", { name: "Configurer" }),
-        (response) => response.url().includes("/configure") && response.request().method() === "POST",
-      );
-      assert.ok(configure.ok(), `configure HTTP ${configure.status()}`);
-      await page.getByLabel(/profil académique/i).waitFor();
-      const saveTemplate = await clickAndWaitHttp(
-        page,
-        page.getByRole("button", { name: "Enregistrer gabarit" }),
-        (response) => response.url().includes("/save-template") && response.request().method() === "POST",
-      );
-      assert.ok(saveTemplate.ok(), `save-template HTTP ${saveTemplate.status()}`);
-      const bind = await clickAndWaitHttp(
-        page,
-        page.getByRole("button", { name: "Lier le bundle" }),
-        (response) => response.url().includes("/bind-bundle") && response.request().method() === "POST",
-      );
-      assert.ok(bind.ok(), `bind-bundle HTTP ${bind.status()}`);
-      const bindBody = await bind.json().catch(() => null);
-      const bindReq = bindBody?.request || {};
-      assert.ok(bindReq.profile_id, "mapping AcademicRuleProfile absent");
-      assert.ok(bindReq.schema_id, "mapping ReportCardSchema absent");
-      assert.ok(bindReq.rendering_template_id, "mapping RenderingTemplate absent");
-      const ready = await clickAndWaitHttp(
-        page,
-        page.getByRole("button", { name: "Prêt pour revue" }),
-        (response) => response.url().includes("/ready-for-review") && response.request().method() === "POST",
-      );
-      assert.ok(ready.ok(), `ready-for-review HTTP ${ready.status()}`);
-      await waitWorkflowState(page, "READY_FOR_REVIEW");
-    });
-
-    await named("e2e-report-card-ready-review-school-approval-active", async () => {
-      await logout(page);
-      await loginAsSchool(page, "admin", "1234", SCHOOL_A_CODE);
-      await page.goto(`${WEB_URL}/bulletins/modele`, { waitUntil: "domcontentloaded" });
-      await waitWorkflowState(page, "READY_FOR_REVIEW");
-      const approve = await clickAndWaitHttp(
-        page,
-        page.getByRole("button", { name: "Approuver" }),
-        (response) => response.url().includes("/approve") && response.request().method() === "POST",
-      );
-      assert.ok(approve.ok(), `approve HTTP ${approve.status()}`);
-      await waitWorkflowState(page, "APPROVED");
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await waitWorkflowState(page, "APPROVED");
-
-      await logout(page);
-      await loginAsSuperadmin(page, "superadmin", superadminLoginPassword());
-      await page.goto(`${WEB_URL}/parametres/bulletins-configuration`, { waitUntil: "domcontentloaded" });
-      await page.getByTestId("report-card-target-school").or(page.getByLabel(/établissement cible/i)).fill(state.schoolId);
-      await clickAndWaitHttp(
-        page,
-        page.getByTestId("report-card-load-queue").or(page.getByRole("button", { name: "Charger la file" })),
-        (response) => response.url().includes("/report-card/admin/queue") && response.request().method() === "GET",
-      );
-      await waitWorkflowState(page, "APPROVED");
-      const activate = await clickAndWaitHttp(
-        page,
-        page.getByRole("button", { name: "Activer" }),
-        (response) => response.url().includes("/activate") && response.request().method() === "POST",
-      );
-      assert.ok(activate.ok(), `activate HTTP ${activate.status()}`);
-      await waitWorkflowState(page, "ACTIVE");
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await page.getByTestId("report-card-target-school").or(page.getByLabel(/établissement cible/i)).fill(state.schoolId);
-      await clickAndWaitHttp(
-        page,
-        page.getByTestId("report-card-load-queue").or(page.getByRole("button", { name: "Charger la file" })),
-        (response) => response.url().includes("/report-card/admin/queue") && response.request().method() === "GET",
-      );
-      await waitWorkflowState(page, "ACTIVE");
-      await waitVisibleText(page, MODEL_KEY);
-      await waitVisibleText(page, state.artifactId);
+      await page.getByTestId("catalog-school-model-colombiere").getByText("Actif dans l'établissement").waitFor();
+      await captureBoth(page, "13-ecole-modele-actif");
       const token = await sessionToken(page);
-      const again = await request(
-        `/report-card/admin/requests/${encodeURIComponent(state.requestId)}?schoolId=${encodeURIComponent(state.schoolId)}`,
-        { token },
-      );
-      assert.equal(again.status, 200, JSON.stringify(again.data));
-      assert.equal(again.data?.request?.id, state.requestId);
-      assert.equal(again.data?.request?.status, "ACTIVE");
-      const artifact = await request(
-        `/report-card/admin/requests/${encodeURIComponent(state.requestId)}/source-artifact?schoolId=${encodeURIComponent(state.schoolId)}`,
-        { token },
-      );
-      assert.equal(artifact.status, 200, JSON.stringify(artifact.data));
-      assert.equal(artifact.data?.artifact?.artifact_id, state.artifactId);
-      assert.equal(String(artifact.data?.artifact?.version), state.artifactVersion);
-      const binding = await request(
-        `/report-card/admin/bindings/${encodeURIComponent(MODEL_KEY)}?schoolId=${encodeURIComponent(state.schoolId)}`,
-        { token },
-      );
+      const binding = await request("/report-card/bindings/catalog-colombiere", { token });
       assert.equal(binding.status, 200, JSON.stringify(binding.data));
-      assert.ok(binding.data?.binding, "binding ACTIVE absent après reload");
+      assert.ok(binding.data?.binding, "liaison ACTIVE absente après rechargement");
+      const admin = await request("/report-card/catalog/admin", { token });
+      assert.equal(admin.status, 403, "Admin School : pas de gestion nationale");
+      const put = await request(`/report-card/catalog/admin/models/berceau/countries/${countryCdId}`, {
+        method: "PUT",
+        token,
+        body: { available: true, confirm: true },
+      });
+      assert.equal(put.status, 403, "Admin School : disponibilité nationale interdite");
     });
 
-    await named("e2e-report-card-request-rbac-fail-closed", async () => {
+    await named("e2e-report-card-catalog-rbac-fail-closed", async () => {
       await logout(page);
       await loginAsSchool(page, "secretaire", "1234", SCHOOL_A_CODE);
       await openBulletinsFromNav(page);
-      assert.equal(await requestModelCta(page).count(), 0, "Secrétaire READ-only ne doit pas voir le CTA de demande");
+      assert.equal(await requestModelCta(page).count(), 0, "Secrétaire READ-only ne doit pas voir le CTA");
       await page.goto(`${WEB_URL}/bulletins/modele`, { waitUntil: "domcontentloaded" });
       await page.waitForURL(/\/bulletins\/?$/, { timeout: 20000 });
       const pathname = new URL(page.url()).pathname.replace(/\/$/, "") || "/";
       assert.equal(pathname, "/bulletins", "navigation directe READ-only doit rediriger hors /bulletins/modele");
-      assert.equal(
-        await page.getByRole("heading", { name: /modèle de bulletin/i }).count(),
-        0,
-        "la page modèle ne doit pas rester visible après refus route",
-      );
-      assert.equal(await submitRequestCta(page).count(), 0, "navigation directe ne doit pas exposer la soumission");
+      assert.equal(await page.getByTestId("catalog-school").count(), 0, "la page de configuration ne doit pas rester visible");
       const token = await sessionToken(page);
-      const created = await request("/report-card/requests", {
-        method: "POST",
+      const saved = await request("/report-card/catalog/models/colombiere/configuration", {
+        method: "PUT",
         token,
-        body: { modelKey: "rbac-bypass", description: "interdit" },
+        body: { input: { structure: "SINGLE" } },
       });
-      assert.equal(created.status, 403, JSON.stringify(created.data));
+      assert.equal(saved.status, 403, JSON.stringify(saved.data));
+      const activated = await request("/report-card/catalog/models/colombiere/activate", { method: "POST", token, body: { confirm: true } });
+      assert.equal(activated.status, 403, JSON.stringify(activated.data));
     });
 
-    await named("e2e-report-card-cross-tenant-forbidden", async () => {
+    await named("e2e-report-card-catalog-other-country-and-cross-tenant", async () => {
       await logout(page);
       await loginAsSchool(page, "admin-bi", "1234", SCHOOL_B_CODE);
       await page.goto(`${WEB_URL}/bulletins/modele`, { waitUntil: "domcontentloaded" });
-      await page.getByRole("heading", { name: /modèle de bulletin/i }).waitFor();
+      await page.getByTestId("catalog-school-empty").waitFor();
+      await waitVisibleText(page, "Burundi");
+      await captureBoth(page, "14-ecole-autre-pays-aucun-modele");
       const token = await sessionToken(page);
-      const listed = await request("/report-card/requests", { token });
+      const listed = await request("/report-card/catalog", { token });
       assert.equal(listed.status, 200, JSON.stringify(listed.data));
-      const leaked = (listed.data?.requests || []).some((item) => item.id === state.requestId);
-      assert.equal(leaked, false, "établissement B voit la demande de A");
-      const foreign = await request(`/report-card/requests/${encodeURIComponent(state.requestId)}`, { token });
-      assert.ok([403, 404].includes(foreign.status), `GET cross-tenant ${foreign.status}`);
-      const artifact = await request(
-        `/report-card/requests/${encodeURIComponent(state.requestId)}/source-artifact`,
-        { token },
-      );
-      assert.ok([403, 404].includes(artifact.status), `artefact cross-tenant ${artifact.status}`);
+      assert.deepEqual(listed.data.models, [], "modèle non autorisé au Burundi : invisible");
+      const ctx = await request("/report-card/catalog/models/colombiere/configuration", { token });
+      assert.equal(ctx.status, 403, `configuration hors pays ${ctx.status}`);
+      const foreign = await request("/report-card/bindings/catalog-colombiere", { token });
+      assert.notEqual(foreign.status, 200, "établissement B ne voit pas la liaison de A");
     });
   } catch (error) {
     await saveFailureEvidence(page, "report-card-s1-e2e");
@@ -828,9 +640,8 @@ async function main() {
   try {
     await waitForUrl(`${apiBase()}/health`, "backend");
     await waitForUrl(WEB_URL, "web");
-    await seedCatalog(prepared.isolatedUrl, prepared.schoolAId);
     await seedSecretaryReadOnly(prepared.isolatedUrl);
-    await runBrowserScenarios({ schoolAId: prepared.schoolAId });
+    await runBrowserScenarios(prepared);
     console.log(`OK report-card-s1-e2e (${Date.now() - startedAt}ms)`);
   } catch (error) {
     console.error("backend log:\n", backendLog.slice(-6000));
