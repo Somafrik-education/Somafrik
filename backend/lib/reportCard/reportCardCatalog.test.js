@@ -216,6 +216,6 @@ test("migration catalogue : aucune exposition Supabase anon/authenticated (RLS +
     assert.match(sql, new RegExp("ALTER TABLE public\\." + table + " ENABLE ROW LEVEL SECURITY;", "i"));
     assert.match(sql, new RegExp("REVOKE ALL PRIVILEGES ON TABLE public\\." + table + " FROM PUBLIC;", "i"));
   }
-  assert.match(sql, /FOREACH role_name IN ARRAY ARRAY\\['anon', 'authenticated'\\]/);
-  assert.match(sql, /REVOKE ALL PRIVILEGES ON SEQUENCE public\\.report_card_catalog_availability_audit_id_seq FROM PUBLIC;/);
+  assert.match(sql, /FOREACH role_name IN ARRAY ARRAY\['anon', 'authenticated'\]/);
+  assert.match(sql, /REVOKE ALL PRIVILEGES ON SEQUENCE public\.report_card_catalog_availability_audit_id_seq FROM PUBLIC;/);
 });
