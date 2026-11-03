@@ -113,6 +113,7 @@ async function renderPage() {
 
 async function selectClassAndPreview() {
   await waitFor(() => expect(screen.getByLabelText("Classe").querySelectorAll("option").length).toBeGreaterThan(1));
+  await waitFor(() => expect(screen.getByLabelText("Modèle de bulletin")).toHaveValue("colombiere"));
   fireEvent.change(screen.getByLabelText("Classe"), { target: { value: "class-1" } });
   fireEvent.click(screen.getByTestId("rc-preview"));
   await screen.findByTestId("rc-students");
