@@ -1,4 +1,5 @@
 const { BusinessError } = require("./authService");
+const { classifyUnpaidFees } = require("../lib/studentIntegrity");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 const UNPAID_FEE_STATUSES = new Set(["À payer", "Partiellement payé", "En retard"]);
@@ -142,11 +143,14 @@ function aggregateByStudent(fees, reminders, state, now = new Date()) {
       .filter(Boolean)
       .sort((a, b) => b.localeCompare(a))[0];
     const periods = [...new Set(studentFees.map((fee) => fee.periodLabel ?? fee.academicYear).filter(Boolean))];
+    const integrity = classifyUnpaidFees(studentFees, studentId);
+    const matricule = resolveStudentMatricule(state, studentId) || integrity.matricule;
 
     return {
       studentId,
+      canonicalStudentId: integrity.canonicalStudentId,
       studentName: primary.studentName ?? studentId,
-      matricule: resolveStudentMatricule(state, studentId),
+      matricule,
       className: primary.className,
       schoolCode: primary.schoolCode,
       periodLabel: periods.length === 1 ? String(periods[0]) : periods.length > 1 ? "Plusieurs périodes" : "—",
@@ -161,6 +165,8 @@ function aggregateByStudent(fees, reminders, state, now = new Date()) {
       feeIds: studentFees.map((fee) => fee.id),
       lastReminderAt,
       reminderCount: studentReminders.length,
+      collectionEligible: integrity.collectionEligible,
+      integrityCategory: integrity.category,
     };
   });
 }

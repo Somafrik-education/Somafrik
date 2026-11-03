@@ -6,6 +6,7 @@ const {
   toMoney,
 } = require("./financeDomainInvariants");
 const { isSuperAdminPrincipal } = require("./superadminPrincipal");
+const { readOptionalBoolean } = require("./studentIntegrity");
 
 const FINANCE_ERROR = Object.freeze({
   PAYMENT_NOT_FOUND: "PAYMENT_NOT_FOUND",
@@ -221,6 +222,10 @@ function mapObligationRow(row) {
     dbId: row.id,
     studentId: profile.studentId || row.student_code || row.student_id,
     studentDbId: row.student_id,
+    canonicalStudentId: row.student_id ? String(row.student_id) : "",
+    studentCode: String(row.student_code || profile.studentCode || "").trim(),
+    studentStatus: String(row.student_status || profile.studentStatus || "").trim(),
+    hasActiveEnrollment: readOptionalBoolean(row.has_active_enrollment),
     studentName: profile.studentName || "",
     schoolId: row.school_id,
     schoolCode: mappedSchoolCode(row, profile),

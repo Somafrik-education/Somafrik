@@ -14,6 +14,7 @@ import { normalize } from "./format";
 import { isPaymentCounted } from "./quickPayment";
 import { scopedStudentFees } from "./fees";
 import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
+import { integrityFromFees } from "./studentIntegrity";
 
 /** Délai minimum entre deux relances pour le même élève (IMP-013). */
 export const REMINDER_COOLDOWN_DAYS = 3;
@@ -173,11 +174,14 @@ export function aggregateUnpaidByStudent(
         .map((row) => row.sentAt)
         .sort((a, b) => b.localeCompare(a))[0];
       const periods = [...new Set(studentFees.map((fee) => fee.periodLabel ?? fee.academicYear).filter(Boolean))];
+      const integrity = integrityFromFees(studentFees, studentId);
+      const matricule = String(student?.matricule ?? student?.publicId ?? integrity.matricule ?? "").trim() || undefined;
 
       return {
         studentId,
+        canonicalStudentId: integrity.canonicalStudentId,
         studentName: primary.studentName ?? String(student?.name ?? studentId),
-        matricule: String(student?.matricule ?? student?.publicId ?? "").trim() || undefined,
+        matricule,
         className: primary.className,
         schoolCode: primary.schoolCode,
         periodLabel: periods.length === 1 ? String(periods[0]) : periods.length > 1 ? "Plusieurs périodes" : "—",
@@ -192,6 +196,8 @@ export function aggregateUnpaidByStudent(
         feeIds: studentFees.map((fee) => fee.id),
         lastReminderAt,
         reminderCount: studentReminders.length,
+        collectionEligible: integrity.collectionEligible,
+        integrityCategory: integrity.integrityCategory,
       } satisfies StudentUnpaidRow;
     })
     .filter((row) => row.amountDue > 0 || fees.some((fee) => fee.studentId === row.studentId))

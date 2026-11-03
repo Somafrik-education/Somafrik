@@ -42,6 +42,38 @@ test("list normalise les sentAt Date avant de déterminer la dernière relance",
   assert.equal(result.rows[0].reminderCount, 2);
 });
 
+test("une obligation ouverte sans inscription active reste visible et n'est pas encaissable", () => {
+  const state = unpaidState([]);
+  state.studentFees[0].studentDbId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+  state.studentFees[0].studentCode = "CD-IN-ME-26-00010";
+  state.studentFees[0].hasActiveEnrollment = false;
+  state.studentFees[0].amountDue = 320000;
+  state.studentFees[0].balance = 320000;
+
+  const result = new UnpaidService().list(state, { schoolCode: "CD-2026-0001" });
+
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].amountDue, 320000);
+  assert.equal(result.rows[0].collectionEligible, false);
+  assert.equal(result.rows[0].integrityCategory, "no_active_enrollment");
+  assert.equal(result.rows[0].canonicalStudentId, "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa");
+});
+
+test("un élève inscrit dont l'identifiant public diverge reste encaissable via l'UUID", () => {
+  const state = unpaidState([]);
+  state.studentFees[0].studentId = "profile-legacy";
+  state.studentFees[0].studentDbId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+  state.studentFees[0].studentCode = "CD-IN-ME-26-00010";
+  state.studentFees[0].hasActiveEnrollment = true;
+
+  const result = new UnpaidService().list(state, { schoolCode: "CD-2026-0001" });
+
+  assert.equal(result.rows[0].collectionEligible, true);
+  assert.equal(result.rows[0].integrityCategory, "identity_mismatch");
+  assert.equal(result.rows[0].canonicalStudentId, "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa");
+  assert.equal(result.rows[0].amountDue, 100000);
+});
+
 test("list ignore un sentAt invalide sans provoquer de réponse 500", () => {
   const valid = "2026-09-09T14:35:00.000Z";
   const state = unpaidState([
