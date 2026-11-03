@@ -216,10 +216,13 @@ export const SettingsSecurityPage = lazyPage(
   () => import("./pages/parametres/SettingsPlaceholders"),
   "SettingsSecurityPage",
 );
-export const BulletinDesignPage = lazyPage(() => import("./pages/BulletinDesignPage"), "BulletinDesignPage");
-export const ReportCardSchoolWorkflowPage = lazyPage(
-  () => import("./pages/ReportCardSchoolWorkflowPage"),
-  "ReportCardSchoolWorkflowPage",
+export const ReportCardCatalogAdminPage = lazyPage(
+  () => import("./pages/ReportCardCatalogAdminPage"),
+  "ReportCardCatalogAdminPage",
+);
+export const ReportCardCatalogSchoolPage = lazyPage(
+  () => import("./pages/ReportCardCatalogSchoolPage"),
+  "ReportCardCatalogSchoolPage",
 );
 export const ReportCardHistoryPage = lazyPage(
   () => import("./pages/ReportCardHistoryPage"),
@@ -236,10 +239,6 @@ export const ReportCardsEntryPage = lazyPage(
 export const ReportCardStaffRoute = lazyPage(
   () => import("./pages/ReportCardsEntryPage"),
   "ReportCardStaffRoute",
-);
-export const ReportCardSuperadminWorkflowPage = lazyPage(
-  () => import("./pages/ReportCardSuperadminWorkflowPage"),
-  "ReportCardSuperadminWorkflowPage",
 );
 export const VerifyReportCardPage = lazyPage(
   () => import("./pages/VerifyReportCardPage"),

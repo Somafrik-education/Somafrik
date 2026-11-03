@@ -199,6 +199,20 @@ export function ReportCardPresentationTable({ view }: { view: ReportCardPresenta
       {view.decision && view.decision.passed != null ? (
         <p className="text-sm font-bold">Décision : {view.decision.passed ? "Admis(e)" : "Non admis(e)"}</p>
       ) : null}
+      {view.signatures && view.signatures.length ? (
+        <div
+          className="grid gap-4 pt-2"
+          style={{ gridTemplateColumns: `repeat(${view.signatures.length}, minmax(0, 1fr))` }}
+          data-testid="report-card-signatures"
+        >
+          {view.signatures.map((label, index) => (
+            <div key={`${index}-${label}`} className="text-center text-xs">
+              <p className="font-semibold text-ink">{label}</p>
+              <div className="mt-8 border-t border-dashed border-slate-400" aria-hidden="true" />
+            </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

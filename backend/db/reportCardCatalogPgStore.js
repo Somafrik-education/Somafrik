@@ -133,9 +133,11 @@ function createReportCardCatalogPgStore(db) {
     params.push(Math.max(1, Math.min(500, Number(limit) || 200)));
     const result = await pool.query(
       `SELECT a.id, a.model_id, a.country_id::text AS country_id, c.name AS country_name,
-              a.old_available, a.new_available, a.actor_id, a.created_at
+              a.old_available, a.new_available, a.actor_id, a.created_at,
+              NULLIF(BTRIM(CONCAT_WS(' ', u.first_name, u.last_name)), '') AS actor_label
          FROM report_card_catalog_availability_audit a
          JOIN countries c ON c.id = a.country_id
+         LEFT JOIN users u ON u.id::text = a.actor_id
          ${where}
         ORDER BY a.created_at DESC, a.id DESC
         LIMIT $${params.length}`,
@@ -164,7 +166,7 @@ function createReportCardCatalogPgStore(db) {
            FROM subjects s
            LEFT JOIN subjects p ON p.id = s.parent_subject_id AND p.school_id = s.school_id
           WHERE s.school_id::text = $1
-          ORDER BY s.subject_code COLLATE "C"`,
+          ORDER BY s.display_order NULLS LAST, s.name, s.subject_code COLLATE "C"`,
         [tenant],
       ),
       pool.query(

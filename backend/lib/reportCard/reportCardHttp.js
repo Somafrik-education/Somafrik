@@ -67,7 +67,6 @@ const HTTP_STATUS = Object.freeze({
   COUNTRY_UNKNOWN: 409,
   CONFIRMATION_REQUIRED: 400,
   AVAILABILITY_INVALID: 400,
-  TENANT_REQUIRED: 403,
 });
 
 /** Codes dont le détail (anomalies pédagogiques, sans donnée nominative) est renvoyé au demandeur habilité. */

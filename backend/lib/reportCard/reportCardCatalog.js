@@ -354,7 +354,13 @@ function samplePresentation(built, { school } = {}) {
   return buildStudentPresentation({
     student: result.students[0],
     profile,
-    labels: { ...built.labels, school: school || null, students: { EXEMPLE: { name: "Élève d'exemple" } } },
+    labels: {
+      ...built.labels,
+      school: school || "Établissement d'exemple",
+      className: "Classe d'exemple",
+      academicYear: "Année d'exemple",
+      students: { EXEMPLE: { name: "Élève d'exemple" } },
+    },
     presentation: built.templateSpec.presentation,
     meta: { official: false },
   });
@@ -387,7 +393,7 @@ function sampleConfiguration(model, structure) {
 }
 
 function modelPreview(model, structure) {
-  return samplePresentation(sampleConfiguration(model, structure), { school: "Établissement d'exemple" });
+  return samplePresentation(sampleConfiguration(model, structure));
 }
 
 function hasPermission(actor, token) {
@@ -566,6 +572,8 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
       evaluationTypes: context.evaluationTypes.filter((row) => text(row.status || "active") === "active").map((row) => ({ code: row.code, name: row.name })),
       terms: context.terms,
       configuration: state.active ? "ACTIVE" : state.saved ? "SAVED" : "NONE",
+      // Configuration enregistrée en attente d'activation (éventuellement au-dessus d'une configuration active).
+      pendingSaved: Boolean(state.saved),
       current: source ? inputFromProfile(source.profile, source.template) : null,
     };
   }

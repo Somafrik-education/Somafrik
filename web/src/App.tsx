@@ -8,7 +8,8 @@ import { DataProvider } from "./context/DataContext";
 import { marketplaceEnabled } from "./lib/featureFlags";
 import {
   AdministrationLayout,
-  BulletinDesignPage,
+  ReportCardCatalogAdminPage,
+  ReportCardCatalogSchoolPage,
   CancellationRequestPage,
   ChangeOfferPage,
   ChartSettingsPage,
@@ -80,12 +81,10 @@ import {
   TimetableByTeacherPage,
   TimetableLayout,
   UsersPage,
-  ReportCardSchoolWorkflowPage,
   ReportCardHistoryPage,
   ReportCardManagementPage,
   ReportCardsEntryPage,
   ReportCardStaffRoute,
-  ReportCardSuperadminWorkflowPage,
   VerifyReportCardPage,
 } from "./lazyPages";
 import { ActiveSchoolProvider } from "./context/ActiveSchoolContext";
@@ -326,7 +325,7 @@ export default function App() {
         <Route path="/communication" element={<Navigate to="/messages" replace />} />
         <Route path="/communication/messages" element={<Navigate to="/messages" replace />} />
         <Route path="/communication/annonces" element={<Navigate to="/annonces" replace />} />
-        <Route path="/conception-bulletins" element={<Navigate to="/parametres/documents" replace />} />
+        <Route path="/conception-bulletins" element={<Navigate to="/parametres/bulletins-catalogue" replace />} />
         <Route
           path="/presences"
           element={
@@ -376,7 +375,7 @@ export default function App() {
           element={
             <PermissionRoute view="bulletins" action="CREATE" fallbackPath="/bulletins">
               <ReportCardStaffRoute>
-                <ReportCardSchoolWorkflowPage />
+                <ReportCardCatalogSchoolPage />
               </ReportCardStaffRoute>
             </PermissionRoute>
           }
@@ -575,19 +574,14 @@ export default function App() {
               </PermissionRoute>
             }
           />
+          {/* BULLETIN-CATALOG-01 : l'éditeur Superadmin est retiré ; anciennes URLs -> catalogue. */}
+          <Route path="documents" element={<Navigate to="/parametres/bulletins-catalogue" replace />} />
+          <Route path="bulletins-configuration" element={<Navigate to="/parametres/bulletins-catalogue" replace />} />
           <Route
-            path="documents"
-            element={
-              <PermissionRoute view="bulletinDesign">
-                <BulletinDesignPage />
-              </PermissionRoute>
-            }
-          />
-          <Route
-            path="bulletins-configuration"
+            path="bulletins-catalogue"
             element={
               <PermissionRoute view="reportCardConfiguration">
-                <ReportCardSuperadminWorkflowPage />
+                <ReportCardCatalogAdminPage />
               </PermissionRoute>
             }
           />

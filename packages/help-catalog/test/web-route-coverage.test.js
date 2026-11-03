@@ -145,6 +145,7 @@ const PROTECTED_HELP_SUBPATHS = Object.freeze({
   "/parametres/integrations": HELP_SCREEN.SETTINGS_COMING_SOON,
   "/parametres/documents": HELP_SCREEN.SETTINGS,
   "/parametres/bulletins-configuration": HELP_SCREEN.SETTINGS,
+  "/parametres/bulletins-catalogue": HELP_SCREEN.SETTINGS,
   "/parametres/graphiques": HELP_SCREEN.SETTINGS,
   "/parametres/abonnements": HELP_SCREEN.SETTINGS,
   "/abonnements/offres": HELP_SCREEN.PLATFORM,
