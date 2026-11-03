@@ -48,6 +48,7 @@ vi.mock("./pedagogyApi", () => ({
 vi.mock("./studentsApi", () => ({ studentsApi: { list: vi.fn() } }));
 vi.mock("./teachersApi", () => ({ teachersApi: { list: vi.fn() } }));
 
+import { api } from "../api/client";
 import { establishmentsApi } from "./establishmentsApi";
 import { loadDomains, usesPlatformSchoolCatalog } from "./domainLoaders";
 import { COUNTRY_ADMIN_ROLE, SUPER_ADMIN_ROLE } from "./orgHierarchy";
@@ -58,6 +59,32 @@ describe("loadDomains — schools tenant-scoped", () => {
   beforeEach(() => {
     vi.mocked(establishmentsApi.list).mockReset();
     vi.mocked(establishmentsApi.get).mockReset();
+  });
+
+  it("Superadmin sans établissement ne charge pas /academic-config", async () => {
+    vi.mocked(api.get).mockReset();
+    for (const schoolCode of [undefined, "", "*", "  "]) {
+      const result = await loadDomains(["academicConfigs"], {
+        role: SUPER_ADMIN_ROLE,
+        schoolCode,
+      });
+      expect(result.serverErrors).toEqual([]);
+      expect(result.data.academicConfigs).toEqual({});
+    }
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
+  it("Configuration académique avec école concrète utilise la route scoped", async () => {
+    vi.mocked(api.get).mockReset();
+    vi.mocked(api.get).mockResolvedValue({ schoolCode: "CD-2026-0001" });
+    const result = await loadDomains(["academicConfigs"], {
+      role: "Admin School",
+      schoolCode: "cd-2026-0001",
+    });
+    expect(api.get).toHaveBeenCalledWith(
+      "/backoffice/establishments/CD-2026-0001/academic-config",
+    );
+    expect(result.data.academicConfigs).toHaveProperty("CD-2026-0001");
   });
 
   it("A/C. SCHOOL_ADMIN avec schoolCode → GET :code, jamais la liste globale", async () => {
