@@ -15,6 +15,8 @@ const PERM_READ = "REPORT_CARD_READ";
 const PERM_REPRINT = "REPORT_CARD_REPRINT";
 const PERM_CORRECT = "REPORT_CARD_CORRECT";
 const PERM_REVOKE = "REPORT_CARD_REVOKE";
+const PERM_GENERATE = "REPORT_CARD_GENERATE";
+const PERM_PUBLISH = "REPORT_CARD_PUBLISH";
 const VERIFICATION_ACTIVE = "ACTIVE";
 const HISTORICAL_STATUSES = new Set(["ACTIVE", "SUPERSEDED", "REVOKED"]);
 
@@ -41,7 +43,22 @@ const HTTP_STATUS = Object.freeze({
   MAPPING_REQUIRED: 409,
   STORAGE_UNAVAILABLE: 503,
   ARTIFACT_NOT_FOUND: 404,
+  // BULLETIN-PUBLISH-01
+  REPORT_CARD_INCOMPLETE: 422,
+  INVALID_PEDAGOGICAL_DATA: 422,
+  PROFILE_NOT_PUBLISHABLE: 422,
+  INVALID_PERIOD_SCOPE: 400,
+  CLASS_REQUIRED: 400,
+  MODEL_KEY_REQUIRED: 400,
+  DRAFT_CONFIRMATION_REQUIRED: 400,
+  DRAFT_CHANGED: 409,
+  PUBLICATION_ALREADY_EXISTS: 409,
+  MODEL_NOT_BOUND: 409,
+  CLASS_NOT_FOUND: 404,
 });
+
+/** Codes dont le détail (anomalies pédagogiques, sans donnée nominative) est renvoyé au demandeur habilité. */
+const DETAILED_CODES = new Set(["REPORT_CARD_INCOMPLETE", "INVALID_PEDAGOGICAL_DATA", "PUBLICATION_ALREADY_EXISTS"]);
 
 function parseCapability(value) {
   if (typeof value !== "string") return null;
@@ -192,9 +209,11 @@ function mapError(err) {
   if (err && (!err.code || /^[0-9A-Z]{5}$/.test(String(err.code))) && !HTTP_STATUS[code]) {
     console.error("[report-card] unmapped error", code, err.message || err);
   }
+  const body = { ok: false, code, error: { code } };
+  if (DETAILED_CODES.has(code) && Array.isArray(err.details)) body.details = err.details;
   return {
     status: HTTP_STATUS[code] || 400,
-    body: { ok: false, code, error: { code } },
+    body,
   };
 }
 
@@ -299,7 +318,12 @@ function registerReportCardHttp(app, deps = {}) {
         deps.correction ||
         (typeof deps.getCorrection === "function" ? deps.getCorrection() : null) ||
         (publication ? getOrCreateCorrection(publication) : null),
+      classPublication: classPublicationService(),
     };
+  }
+
+  function classPublicationService() {
+    return deps.classPublication || (typeof deps.getClassPublication === "function" ? deps.getClassPublication() : null);
   }
 
   function requireSourceArtifact() {
@@ -329,6 +353,11 @@ function registerReportCardHttp(app, deps = {}) {
       getFacts: typeof deps.getFacts === "function" ? deps.getFacts : null,
       getProfile: typeof deps.getProfile === "function" ? deps.getProfile : null,
       getSchema: typeof deps.getSchema === "function" ? deps.getSchema : null,
+      recomputeSubjectStudent: (args) => {
+        const service = classPublicationService();
+        if (!service || typeof service.recomputeStudent !== "function") throw coded("FACTS_REQUIRED");
+        return service.recomputeStudent(args);
+      },
     });
     cachedCorrectionPublication = publication;
     return cachedCorrection;
@@ -689,6 +718,49 @@ function registerReportCardHttp(app, deps = {}) {
         requireActive: false,
       });
       res.json({ ok: true, payload, template });
+    })
+  );
+
+  function classPublicationArgs(actor, schoolId, body = {}) {
+    return {
+      tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+      actor,
+      classId: body.classId,
+      academicYearId: body.academicYearId,
+      modelKey: body.modelKey,
+      period: body.period,
+      expectedDraftSha256: body.expectedDraftSha256,
+    };
+  }
+
+  // BULLETIN-PUBLISH-01 — brouillon non officiel (aucune écriture).
+  app.post(
+    "/api/report-card/publications/preview",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_GENERATE);
+      const { classPublication } = services();
+      if (!classPublication || typeof classPublication.preview !== "function") throw coded("REQUEST_NOT_FOUND");
+      const draft = await classPublication.preview(classPublicationArgs(actor, schoolId, req.body || {}));
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, draft });
+    })
+  );
+
+  // BULLETIN-PUBLISH-01 — publication officielle de l'empreinte de brouillon validée.
+  app.post(
+    "/api/report-card/publications",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_PUBLISH);
+      const { classPublication } = services();
+      if (!classPublication || typeof classPublication.publish !== "function") throw coded("REQUEST_NOT_FOUND");
+      const result = await classPublication.publish(classPublicationArgs(actor, schoolId, req.body || {}));
+      res.status(result.status === "PUBLISHED" ? 201 : 200).json({ ok: true, ...result });
     })
   );
 

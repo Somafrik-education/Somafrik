@@ -84,6 +84,15 @@ function resolveReportCardActorFromPrincipal(principal) {
   if (hasFeatureAction(principal, "Bulletins", "DELETE")) {
     permissions.push("REPORT_CARD_REVOKE");
   }
+  // BULLETIN-PUBLISH-01 : même règle que la publication existante des bulletins
+  // (POST /api/report-cards/:cardId/publish) ; jamais pour un parent ou un élève.
+  if (
+    !isStudentScopedPrincipal(principal) &&
+    (hasFeatureAction(principal, "Bulletins", "UPDATE") || principalPermissionList(principal).includes("Valider bulletins"))
+  ) {
+    permissions.push("REPORT_CARD_GENERATE");
+    permissions.push("REPORT_CARD_PUBLISH");
+  }
   const actor = {
     actorId,
     actorSchoolId: tenantSchoolIdFromPrincipal(principal),

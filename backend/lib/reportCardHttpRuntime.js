@@ -15,6 +15,8 @@ const {
 const { createReportCardConfiguration } = require("./reportCard/reportCardConfiguration");
 const { createReportCardPublication } = require("./reportCard/reportCardPublication");
 const { createReportCardInitialPublication } = require("./reportCard/reportCardInitialPublication");
+const { createReportCardClassPublication } = require("./reportCard/reportCardClassPublication");
+const { createSubjectHierarchyPgStore } = require("../db/subjectHierarchyPgStore");
 const { createReportCardSourceArtifact } = require("./reportCard/reportCardSourceArtifact");
 const { createDiskSourceStorage } = require("./reportCard/reportCardSourceStorage");
 const { createReportCardSourceArtifactPgStore } = require("../db/reportCardSourceArtifactPgStore");
@@ -224,7 +226,18 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
     });
   }
 
-  return { configuration, publication, getFacts, getProfile, getSchema, factsStore, publishInitial, sourceArtifact };
+  const classPublication =
+    overrides.classPublication ||
+    (publication && factsStore && db
+      ? createReportCardClassPublication({
+          publication,
+          factsStore,
+          configuration,
+          catalogStore: overrides.catalogStore || createSubjectHierarchyPgStore(db.pool || db),
+        })
+      : null);
+
+  return { configuration, publication, getFacts, getProfile, getSchema, factsStore, publishInitial, sourceArtifact, classPublication };
 }
 
 function createReportCardHttpBindings({
@@ -267,6 +280,7 @@ function createReportCardHttpBindings({
     getSchema: (args) => getRuntime().getSchema && getRuntime().getSchema(args),
     getSourceArtifact: () => getRuntime().sourceArtifact,
     publishInitial: (args) => getRuntime().publishInitial(args),
+    getClassPublication: () => getRuntime().classPublication,
     resolveActor,
     resolveSchoolId,
     internalAuth,

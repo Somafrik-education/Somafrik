@@ -139,4 +139,5 @@ function createReportCardInitialPublication({ publication, factsStore, configura
 
 module.exports = {
   createReportCardInitialPublication,
+  resolveBoundBundle,
 };
