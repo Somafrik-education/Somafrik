@@ -307,12 +307,12 @@ export function ReportCardManagementPage() {
       ) : null}
 
       {modelsError ? (
-        <Card className="border-red-200 bg-red-50 p-4" data-testid="rc-model-error">
+        <div data-testid="rc-model-error"><Card className="border-red-200 bg-red-50 p-4">
           <p role="alert" className="text-sm font-bold text-red-800">{modelsError}</p>
           <button type="button" className="mt-2 text-sm font-bold text-brand underline" onClick={() => setModelsRetry((value) => value + 1)}>Réessayer</button>
-        </Card>
+        </Card></div>
       ) : !modelsLoading && models.length === 0 ? (
-        <Card className="space-y-2 p-4" data-testid="rc-model-empty">
+        <div data-testid="rc-model-empty"><Card className="space-y-2 p-4">
           <p className="text-sm font-bold text-ink">{modelRequests.length === 0 ? "Aucun modèle de bulletin configuré pour cet établissement." : "Aucun modèle de bulletin actif pour cet établissement."}</p>
           {modelRequests.length > 0 ? (
             <ul className="list-disc pl-5 text-sm text-muted" data-testid="rc-model-pending">
@@ -323,7 +323,7 @@ export function ReportCardManagementPage() {
           ) : null}
           <p className="text-sm text-muted">Pour utiliser les bulletins, soumettez une demande de modèle. Un administrateur habilité doit ensuite terminer sa configuration et son activation.</p>
           <Link to="/bulletins/modele" className="inline-block text-sm font-bold text-brand underline">Demander ou suivre un modèle de bulletin</Link>
-        </Card>
+        </Card></div>
       ) : null}
 
       <Card className="grid gap-4 p-4 md:grid-cols-3 lg:grid-cols-6">
