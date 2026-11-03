@@ -51,7 +51,7 @@ Fichier : `backend/db/migrations/20261104_report_card_catalog.sql` (+ `.rollback
 
 ## 4. Procédure de configuration (après validation CTO)
 
-1. Appliquer la migration **manuellement** sur l'environnement cible (fenêtre validée) :
+1. Appliquer la migration **manuellement**, **en préproduction seulement, après autorisation CTO** :
    `psql "$DATABASE_URL" -f backend/db/migrations/20261104_report_card_catalog.sql`
 2. Superadmin : Paramètres → Catalogue des bulletins → « Gérer la disponibilité » → rendre le modèle disponible pour le pays → confirmer.
 3. Admin établissement du pays : Pédagogie → Bulletins → « Configurer un bulletin » → « Choisir ce modèle » → assistant → « Enregistrer » → « Activer ce bulletin » → confirmer.
@@ -73,6 +73,7 @@ Fichier : `backend/db/migrations/20261104_report_card_catalog.sql` (+ `.rollback
 | Web (Vitest, toutes suites) dont `ReportCardCatalog.test.tsx` (13 cas : galerie, filtres, confirmation, historique, états chargement/erreur/refus/vide/503, pays inconnu, lecture seule, assistant, note unique, parcours complet, erreurs serveur par champ, activation refusée, sortie sans perte) | 1787/1787 |
 | E2E Playwright réel `verify-report-card-s1-e2e.js` (refondu : disponibilité Superadmin, configuration école, RBAC secrétaire, autre pays + isolation) | 4/4 |
 | Garde MONO-T1, couverture aide, garde S1, ESLint (0 erreur), `tsc` | OK |
+| `npm run verify:settings-functional-audit` (matrice SETTINGS-01 : carte « Catalogue des bulletins » déclarée, anciennes URL en redirections ; script inchangé) | OK (14 cartes) |
 
 ## 7. Captures (bureau 1440×900, tablette 820×1180) — `docs/project/bulletin-catalog-01/`
 
@@ -81,8 +82,8 @@ Les captures 01–14 viennent de l'E2E réel ; 15–21 du même parcours avec r�
 
 ## 8. Risques résiduels
 
-1. **Classes** : la configuration s'applique à tout l'établissement (liaison par modèle). Le choix par classe « si le contrat le permet » n'est pas implémenté : aucune règle contractuelle de ce type n'existe dans le code.
-2. **Anciennes pages** (`ReportCardSuperadminWorkflowPage`, `BulletinDesignPage`, `ReportCardSchoolWorkflowPage`) conservées non routées, ainsi que leurs routes API (demandes, artefacts source) : suppression à décider (impact sur les demandes existantes).
-3. **Migration manuelle** : tant qu'elle n'est pas appliquée, le catalogue répond 503 ; l'UI affiche « Le catalogue des bulletins n'est pas encore installé ».
+1. **Classes** : la configuration s'applique à tout l'établissement (liaison par modèle). **Décision CTO : configuration par classe hors périmètre de #1051.**
+2. **Anciennes pages** (`ReportCardSuperadminWorkflowPage`, `BulletinDesignPage`, `ReportCardSchoolWorkflowPage`) : **décision CTO — code historique conservé, accès Superadmin masqués, redirections maintenues.** Leurs routes API (demandes, artefacts source) restent en place.
+3. **Migration manuelle** : **décision CTO — en préproduction seulement, après autorisation.** Tant qu'elle n'est pas appliquée, le catalogue répond 503 ; l'UI affiche « Le catalogue des bulletins n'est pas encore installé ».
 4. **Modèles définis dans le code** : ajouter un modèle demande du code (`MODEL_DEFINITIONS`) **et** une ligne en base ; une ligne sans définition est ignorée (fail-closed).
 5. **E2E local** : le navigateur Playwright n'est pas téléchargeable dans le bac à sable ; exécution avec `SOMAFRIK_CHROMIUM_PATH` (variable optionnelle, sans effet en CI).
