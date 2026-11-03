@@ -1,5 +1,8 @@
 -- BULLETIN-CATALOG-01 — catalogue des modèles de bulletins et disponibilité par pays.
 --
+-- HOLD (décision CTO) : fichier de travail, JAMAIS exécuté automatiquement.
+-- Aucun appel au démarrage (postgresRepository) tant que le catalogue n'est pas validé.
+--
 -- Additive et idempotente : trois tables nouvelles, aucune modification des
 -- tables existantes (profils, gabarits, demandes, liaisons, snapshots publiés).
 -- Indépendante du moteur somafrik.report_card.v1 : aucun calcul ne lit ces tables.
