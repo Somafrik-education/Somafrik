@@ -52,7 +52,7 @@ Fichier : `backend/db/migrations/20261104_report_card_catalog.sql` (+ `.rollback
 ## 4. Procédure de configuration (après validation CTO)
 
 1. Appliquer la migration **manuellement**, **en préproduction seulement, après autorisation CTO** :
-   `psql "$DATABASE_URL" -f backend/db/migrations/20261104_report_card_catalog.sql`
+   préflight puis application — commandes exactes et GO/NO-GO : `docs/project/BULLETIN-PREPROD-01.md`.
 2. Superadmin : Paramètres → Catalogue des bulletins → « Gérer la disponibilité » → rendre le modèle disponible pour le pays → confirmer.
 3. Admin établissement du pays : Pédagogie → Bulletins → « Configurer un bulletin » → « Choisir ce modèle » → assistant → « Enregistrer » → « Activer ce bulletin » → confirmer.
 4. Gestion des bulletins : choisir le modèle `catalog-<modèle>` → aperçu → publication (parcours existant inchangé).

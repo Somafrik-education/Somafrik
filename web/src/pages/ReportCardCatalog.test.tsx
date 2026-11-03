@@ -166,7 +166,47 @@ describe("Superadmin — Catalogue des bulletins", () => {
     unmount();
     api.adminOverview.mockRejectedValueOnce(new ApiErr(503, "CATALOG_UNAVAILABLE"));
     renderPage(<ReportCardCatalogAdminPage />);
-    expect(await screen.findByText(/pas encore installé/)).toBeInTheDocument();
+    expect(await screen.findByTestId("catalog-admin-not-installed")).toHaveTextContent(/pas encore installé/);
+  });
+});
+
+describe("BULLETIN-PREPROD-01 — catalogue indisponible côté serveur", () => {
+  it("Superadmin, tables absentes (503) : état explicite « non installé », référence support, pas d'alerte rouge", async () => {
+    api.adminOverview.mockRejectedValueOnce(new ApiErr(503, "CATALOG_UNAVAILABLE"));
+    renderPage(<ReportCardCatalogAdminPage />);
+    const state = await screen.findByTestId("catalog-admin-not-installed");
+    expect(state).toHaveTextContent("pas encore installé");
+    expect(state).toHaveTextContent("CATALOG_UNAVAILABLE (HTTP 503)");
+    expect(screen.queryByTestId("catalog-admin-error")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    api.adminOverview.mockResolvedValueOnce({ countries: [CD], models: [{ ...colombiere, availability: [] }] });
+    fireEvent.click(screen.getByText("Vérifier à nouveau"));
+    expect(await screen.findByTestId("catalog-admin-model-colombiere")).toBeInTheDocument();
+  });
+
+  it("Superadmin, API antérieure au catalogue (404 sans code) : « serveur pas à jour »", async () => {
+    api.adminOverview.mockRejectedValueOnce(new ApiErr(404));
+    renderPage(<ReportCardCatalogAdminPage />);
+    expect(await screen.findByTestId("catalog-admin-outdated")).toHaveTextContent("ne propose pas encore le catalogue");
+  });
+
+  it("Établissement, 503 ou 404 : message non technique, bulletins publiés rassurés, retour possible", async () => {
+    for (const err of [new ApiErr(503, "CATALOG_UNAVAILABLE"), new ApiErr(404)]) {
+      api.schoolCatalog.mockRejectedValueOnce(err);
+      const view = renderPage(<ReportCardCatalogSchoolPage />);
+      const state = await screen.findByTestId("catalog-school-unavailable");
+      expect(state).toHaveTextContent("pas encore disponible");
+      expect(state).toHaveTextContent("bulletins déjà publiés restent consultables");
+      expect(state.textContent).not.toMatch(/CATALOG_UNAVAILABLE|migration|HTTP/);
+      expect(within(state).getByText("Retour aux bulletins")).toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it("modèle inconnu (404 CATALOG_MODEL_UNKNOWN) reste une erreur ordinaire, pas « serveur pas à jour »", async () => {
+    api.schoolCatalog.mockRejectedValueOnce(new ApiErr(404, "CATALOG_MODEL_UNKNOWN"));
+    renderPage(<ReportCardCatalogSchoolPage />);
+    expect(await screen.findByTestId("catalog-school-error")).toBeInTheDocument();
   });
 });
 
