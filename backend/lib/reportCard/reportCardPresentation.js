@@ -67,7 +67,26 @@ function rankView(rank) {
   return { value: null, reason: text(rank.reason) || "NOT_RANKED" };
 }
 
-function totalView(total) {
+/**
+ * BULLETIN-UX — note en échec (affichage uniquement) : valeur strictement
+ * inférieure à `ratio × maximum` de SA cellule (défaut : moitié du maximum ;
+ * `presentation.failing_ratio` du gabarit si l'établissement en configure un).
+ * Jamais pour un maximum, une note manquante, une valeur non applicable ou un
+ * total incomplet. Aucune valeur, aucun total ni aucun rang n'est modifié.
+ */
+const DEFAULT_FAILING_RATIO = 0.5;
+
+function numberOf(value) {
+  if (value == null || typeof value !== "object") return Number.isFinite(value) ? value : null;
+  if (Number.isFinite(value.internal)) return value.internal;
+  return Number.isFinite(value.exposed) ? value.exposed : null;
+}
+
+function isFailing(value, max, ratio) {
+  return Number.isFinite(value) && Number.isFinite(max) && max > 0 && value < ratio * max;
+}
+
+function totalView(total, ratio = DEFAULT_FAILING_RATIO) {
   if (!total || typeof total !== "object") return null;
   return {
     status: text(total.status) || null,
@@ -75,27 +94,38 @@ function totalView(total) {
     max: exposed(total.max_points),
     percentage: exposed(total.percentage),
     rank: rankView(total.rank),
+    failing: text(total.status) === "COMPLETE" && isFailing(numberOf(total.points), numberOf(total.max_points), ratio),
   };
 }
 
-function componentCell(component) {
-  if (!component || component.kind === NOT_APPLICABLE) return { state: NOT_APPLICABLE, value: null, max: null };
+function componentCell(component, ratio = DEFAULT_FAILING_RATIO) {
+  if (!component || component.kind === NOT_APPLICABLE) return { state: NOT_APPLICABLE, value: null, max: null, failing: false };
+  const numeric = component.kind === "NUMERIC";
   return {
     state: text(component.kind) || "MISSING",
-    value: component.kind === "NUMERIC" ? component.exposed ?? null : null,
+    value: numeric ? component.exposed ?? null : null,
     max: component.max ?? null,
+    failing: numeric && isFailing(Number.isFinite(component.internal) ? component.internal : component.exposed, component.max, ratio),
   };
 }
 
-function rowPeriods(row, periods, components) {
+function failingRatioOf(presentation) {
+  const value = presentation ? presentation.failing_ratio : undefined;
+  if (value === undefined || value === null) return DEFAULT_FAILING_RATIO;
+  const ratio = Number(value);
+  if (!Number.isFinite(ratio) || ratio <= 0 || ratio > 1) throw new ReportCardPresentationError("FAILING_RATIO_INVALID");
+  return ratio;
+}
+
+function rowPeriods(row, periods, components, ratio) {
   const out = {};
   for (const period of periods) {
     const total = row.periods ? row.periods[period.id] : null;
-    const view = totalView(total) || { status: NOT_APPLICABLE, points: null, max: null, percentage: null, rank: null };
+    const view = totalView(total, ratio) || { status: NOT_APPLICABLE, points: null, max: null, percentage: null, rank: null, failing: false };
     if (row.kind !== "composite") {
       view.components = {};
       for (const component of components) {
-        view.components[component.id] = componentCell(total && total.components ? total.components[component.id] : null);
+        view.components[component.id] = componentCell(total && total.components ? total.components[component.id] : null, ratio);
       }
     }
     delete view.rank;
@@ -153,9 +183,14 @@ function buildStudentPresentation({ student, profile, labels = {}, presentation 
     const entry = allPeriods.find((period) => period.id === id);
     return { id, label: (entry && entry.label) || text(periodLabels[id]) || id };
   });
-  const components = componentEntries(profile).map((component) => ({ id: component.id, label: component.label || component.id }));
+  const componentLabels = (presentation && presentation.component_labels) || {};
+  const components = componentEntries(profile).map((component) => ({
+    id: component.id,
+    label: component.label || text(componentLabels[component.id]) || component.id,
+  }));
   const subjectLabels = labels.subjects || {};
   const style = resolveStyle(presentation.style, totals.rows);
+  const failingRatio = failingRatioOf(presentation);
 
   const rows = orderedRows(totals.rows, style).map(({ row, level, parent }) => {
     const spec = subjectEntry(profile, row.subject_id);
@@ -168,9 +203,9 @@ function buildStudentPresentation({ student, profile, labels = {}, presentation 
       level,
       label,
       ...(parentLabel ? { group_label: parentLabel } : {}),
-      periods: rowPeriods(row, periods, components),
+      periods: rowPeriods(row, periods, components, failingRatio),
       annual: totals.scope && totals.scope.annual ? (() => {
-        const view = totalView(row.annual);
+        const view = totalView(row.annual, failingRatio);
         if (view) delete view.rank;
         return view;
       })() : null,
@@ -178,7 +213,7 @@ function buildStudentPresentation({ student, profile, labels = {}, presentation 
   });
 
   const periodTotals = {};
-  for (const period of periods) periodTotals[period.id] = totalView(totals.periods ? totals.periods[period.id] : null);
+  for (const period of periods) periodTotals[period.id] = totalView(totals.periods ? totals.periods[period.id] : null, failingRatio);
   const studentCode = text(student.student_id);
   const studentLabel = labels.students ? labels.students[studentCode] : null;
   const decision = (Array.isArray(student.slots) ? student.slots : []).find((slot) => slot && slot.kind === "DECISION");
@@ -201,9 +236,10 @@ function buildStudentPresentation({ student, profile, labels = {}, presentation 
     rows,
     totals: {
       periods: periodTotals,
-      annual: totals.scope && totals.scope.annual ? totalView(totals.annual) : null,
+      annual: totals.scope && totals.scope.annual ? totalView(totals.annual, failingRatio) : null,
     },
     status: text(totals.status) || null,
+    failing_ratio: failingRatio,
     cohort_size: totals.cohort_size ?? null,
     issues: Array.isArray(totals.issues) ? totals.issues.map((issue) => ({ ...issue })) : [],
     decision: decision ? { passed: decision.passed === true ? true : decision.passed === false ? false : null } : null,

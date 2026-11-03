@@ -165,3 +165,12 @@ table.results td.missing {
   min-height: 18mm;
   font-size: 9pt;
 }
+
+/* Note en échec (valeur < seuil × maximum de sa cellule) : rouge et soulignée. */
+table.results td.failing,
+table.results span.failing {
+  color: #b91c1c;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 1.5px;
+}

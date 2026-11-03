@@ -115,7 +115,9 @@ function normalizePresentation(raw) {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
     throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
   }
-  const unknown = Object.keys(raw).filter((key) => !["style", "signatures", "period_labels"].includes(key));
+  const unknown = Object.keys(raw).filter(
+    (key) => !["style", "signatures", "failing_ratio", "period_labels", "component_labels"].includes(key)
+  );
   if (unknown.length) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID", `unknown presentation key ${unknown[0]}`);
   const style = raw.style == null || raw.style === "" ? "auto" : String(raw.style);
   if (!PRESENTATION_STYLES.includes(style)) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
@@ -129,24 +131,33 @@ function normalizePresentation(raw) {
     return value;
   });
   const out = { style, signatures: Object.freeze(signatures) };
-  // BULLETIN-CATALOG-01 — intitulés d'affichage des périodes (optionnels).
-  if (raw.period_labels !== undefined) out.period_labels = normalizePeriodLabels(raw.period_labels);
+  // Seuil d'affichage des notes en échec (part du maximum de chaque cellule) ; absent : moitié.
+  if (raw.failing_ratio !== undefined) {
+    const ratio = Number(raw.failing_ratio);
+    if (typeof raw.failing_ratio !== "number" || !Number.isFinite(ratio) || ratio <= 0 || ratio > 1) {
+      throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+    }
+    out.failing_ratio = ratio;
+  }
+  // BULLETIN-CATALOG-01 — intitulés d'affichage des périodes et des composantes (optionnels).
+  if (raw.period_labels !== undefined) out.period_labels = normalizeLabelMap(raw.period_labels);
+  if (raw.component_labels !== undefined) out.component_labels = normalizeLabelMap(raw.component_labels);
   return Object.freeze(out);
 }
 
-const MAX_PERIOD_LABELS = 12;
-const PERIOD_ID_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
+const MAX_LABELS = 12;
+const LABEL_ID_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
 
-function normalizePeriodLabels(raw) {
+function normalizeLabelMap(raw) {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
     throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
   }
   const entries = Object.entries(raw);
-  if (entries.length > MAX_PERIOD_LABELS) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  if (entries.length > MAX_LABELS) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
   const out = {};
   for (const [id, label] of entries.sort(([a], [b]) => a.localeCompare(b))) {
     const value = typeof label === "string" ? label.trim() : "";
-    if (!PERIOD_ID_RE.test(id) || !value || value.length > MAX_SIGNATURE_LENGTH) {
+    if (!LABEL_ID_RE.test(id) || !value || value.length > MAX_SIGNATURE_LENGTH) {
       throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
     }
     out[id] = value;
