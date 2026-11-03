@@ -207,3 +207,15 @@ test("préflight de migration : strictement en lecture seule (BULLETIN-PREPROD-0
   }
   assert.match(sql, /expected_db/, "la base cible doit être confirmée explicitement");
 });
+
+
+test("migration catalogue : aucune exposition Supabase anon/authenticated (RLS + révocation)", () => {
+  const sql = fs.readFileSync(path.resolve(__dirname, "../../db/migrations/20261104_report_card_catalog.sql"), "utf8");
+  const tables = ["report_card_catalog_models", "report_card_catalog_availability", "report_card_catalog_availability_audit"];
+  for (const table of tables) {
+    assert.match(sql, new RegExp("ALTER TABLE public\\." + table + " ENABLE ROW LEVEL SECURITY;", "i"));
+    assert.match(sql, new RegExp("REVOKE ALL PRIVILEGES ON TABLE public\\." + table + " FROM PUBLIC;", "i"));
+  }
+  assert.match(sql, /FOREACH role_name IN ARRAY ARRAY\\['anon', 'authenticated'\\]/);
+  assert.match(sql, /REVOKE ALL PRIVILEGES ON SEQUENCE public\\.report_card_catalog_availability_audit_id_seq FROM PUBLIC;/);
+});
