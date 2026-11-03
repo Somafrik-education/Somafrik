@@ -115,7 +115,7 @@ function normalizePresentation(raw) {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
     throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
   }
-  const unknown = Object.keys(raw).filter((key) => !["style", "signatures"].includes(key));
+  const unknown = Object.keys(raw).filter((key) => !["style", "signatures", "failing_ratio"].includes(key));
   if (unknown.length) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID", `unknown presentation key ${unknown[0]}`);
   const style = raw.style == null || raw.style === "" ? "auto" : String(raw.style);
   if (!PRESENTATION_STYLES.includes(style)) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
@@ -128,7 +128,16 @@ function normalizePresentation(raw) {
     if (!value || value.length > MAX_SIGNATURE_LENGTH) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
     return value;
   });
-  return Object.freeze({ style, signatures: Object.freeze(signatures) });
+  const out = { style, signatures: Object.freeze(signatures) };
+  // Seuil d'affichage des notes en échec (part du maximum de chaque cellule) ; absent : moitié.
+  if (raw.failing_ratio !== undefined) {
+    const ratio = Number(raw.failing_ratio);
+    if (typeof raw.failing_ratio !== "number" || !Number.isFinite(ratio) || ratio <= 0 || ratio > 1) {
+      throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+    }
+    out.failing_ratio = ratio;
+  }
+  return Object.freeze(out);
 }
 
 function specSha256(spec) {

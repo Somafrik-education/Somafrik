@@ -4,6 +4,7 @@
  * moteur : aucun calcul ici. Un aperçu (official=false) porte le bandeau
  * BROUILLON et ne peut pas être présenté comme un bulletin publié.
  */
+import type { ReactNode } from "react";
 import type {
   PresentationCell,
   PresentationRow,
@@ -15,9 +16,20 @@ function show(value: number | string | null | undefined) {
   return value == null || value === "" ? "—" : String(value);
 }
 
+/** Note en échec : rouge et soulignée (Web, impression) — jamais un maximum, une absence ou un non applicable. */
+const FAILING_CLASS = "font-semibold text-red-700 underline decoration-1 underline-offset-2";
+
 function Score({ cell }: { cell: PresentationCell | undefined }) {
   if (!cell || cell.state === "NOT_APPLICABLE") return <td className="px-1 py-1 text-center text-muted">—</td>;
-  if (cell.state === "NUMERIC") return <td className="px-1 py-1 text-center">{show(cell.value)}</td>;
+  if (cell.state === "NUMERIC") {
+    return cell.failing ? (
+      <td className={`px-1 py-1 text-center ${FAILING_CLASS}`} data-failing>
+        {show(cell.value)}
+      </td>
+    ) : (
+      <td className="px-1 py-1 text-center">{show(cell.value)}</td>
+    );
+  }
   return (
     <td className="px-1 py-1 text-center italic text-amber-700" data-missing>
       Manquante
@@ -56,13 +68,24 @@ function SubjectRow({ view, row }: { view: ReportCardPresentation; row: Presenta
           ...view.components.map((component) =>
             composite ? <td key={`${period.id}-v-${component.id}`} /> : <Score key={`${period.id}-v-${component.id}`} cell={total?.components?.[component.id]} />,
           ),
-          <td key={`${period.id}-sum`} className="px-1 py-1 text-center font-bold">{show(total?.points)}</td>,
+          <td
+            key={`${period.id}-sum`}
+            className={`px-1 py-1 text-center font-bold ${total?.failing ? FAILING_CLASS : ""}`}
+            {...(total?.failing ? { "data-failing": true } : {})}
+          >
+            {show(total?.points)}
+          </td>,
         ];
       })}
       {view.totals.annual ? (
         <>
           <td className="px-1 py-1 text-center text-muted">{show(row.annual?.max)}</td>
-          <td className="px-1 py-1 text-center font-bold">{show(row.annual?.points)}</td>
+          <td
+            className={`px-1 py-1 text-center font-bold ${row.annual?.failing ? FAILING_CLASS : ""}`}
+            {...(row.annual?.failing ? { "data-failing": true } : {})}
+          >
+            {show(row.annual?.points)}
+          </td>
         </>
       ) : null}
     </tr>
@@ -71,7 +94,11 @@ function SubjectRow({ view, row }: { view: ReportCardPresentation; row: Presenta
 
 export function ReportCardPresentationTable({ view }: { view: ReportCardPresentation }) {
   const span = view.components.length * 2 + 1;
-  const summary = (label: string, pick: (total: PresentationTotal | null | undefined) => string, testId: string) => (
+  const summary = (
+    label: string,
+    pick: (total: PresentationTotal | null | undefined) => ReactNode,
+    testId: string,
+  ) => (
     <tr className="font-bold" data-testid={testId}>
       <th scope="row" className="sticky left-0 z-10 bg-white px-2 py-1 text-left">{label}</th>
       {view.periods.map((period) => [
@@ -83,6 +110,22 @@ export function ReportCardPresentationTable({ view }: { view: ReportCardPresenta
       {view.totals.annual ? <td colSpan={2} className="px-1 py-1 text-center">{pick(view.totals.annual)}</td> : null}
     </tr>
   );
+  // Total : seuls les points obtenus peuvent être en échec, jamais le maximum.
+  const totalText = (t: PresentationTotal | null | undefined): ReactNode =>
+    t ? (
+      <>
+        {t.failing ? (
+          <span className={FAILING_CLASS} data-failing>
+            {show(t.points)}
+          </span>
+        ) : (
+          show(t.points)
+        )}
+        {` / ${show(t.max)}`}
+      </>
+    ) : (
+      "—"
+    );
   return (
     <section className="space-y-3" data-testid="report-card-presentation" data-style={view.style} data-official={view.official ? "true" : "false"}>
       {!view.official ? (
@@ -147,7 +190,7 @@ export function ReportCardPresentationTable({ view }: { view: ReportCardPresenta
             {view.rows.map((row) => (
               <SubjectRow key={row.subject_id} view={view} row={row} />
             ))}
-            {summary("Total", (t) => (t ? `${show(t.points)} / ${show(t.max)}` : "—"), "report-card-total")}
+            {summary("Total", totalText, "report-card-total")}
             {summary("Pourcentage", (t) => (t && t.percentage != null ? `${t.percentage} %` : "—"), "report-card-percentage")}
             {summary("Rang", (t) => rankText(t, view.cohort_size), "report-card-rank")}
           </tbody>

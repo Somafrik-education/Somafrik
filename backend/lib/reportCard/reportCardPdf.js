@@ -220,7 +220,11 @@ function display(value) {
 
 function scoreCell(cell) {
   if (!cell || cell.state === "NOT_APPLICABLE") return `<td class="na">—</td>`;
-  if (cell.state === "NUMERIC") return `<td>${escapeHtml(display(cell.value))}</td>`;
+  if (cell.state === "NUMERIC") {
+    return cell.failing
+      ? `<td class="failing" data-failing>${escapeHtml(display(cell.value))}</td>`
+      : `<td>${escapeHtml(display(cell.value))}</td>`;
+  }
   return `<td class="missing" data-missing>${escapeHtml("Manquante")}</td>`;
 }
 
@@ -260,11 +264,12 @@ function presentationRow(view, row) {
     for (const component of view.components) {
       cells.push(row.kind === "composite" ? `<td></td>` : scoreCell(total.components ? total.components[component.id] : null));
     }
-    cells.push(`<td class="sum">${escapeHtml(display(total.points))}</td>`);
+    cells.push(`<td class="sum${total.failing ? " failing" : ""}"${total.failing ? " data-failing" : ""}>${escapeHtml(display(total.points))}</td>`);
   }
   if (view.totals.annual) {
     cells.push(`<td class="max">${escapeHtml(display(row.annual && row.annual.max))}</td>`);
-    cells.push(`<td class="sum">${escapeHtml(display(row.annual && row.annual.points))}</td>`);
+    const annualFailing = Boolean(row.annual && row.annual.failing);
+    cells.push(`<td class="sum${annualFailing ? " failing" : ""}"${annualFailing ? " data-failing" : ""}>${escapeHtml(display(row.annual && row.annual.points))}</td>`);
   }
   return `<tr class="${classes}" data-subject="${escapeHtml(row.subject_id)}" data-kind="${escapeHtml(row.kind)}">${cells.join("")}</tr>`;
 }
@@ -278,19 +283,28 @@ function rankLabel(rank, cohortSize) {
 function summaryRows(view) {
   const lines = [];
   const span = view.components.length * 2 + 1;
+  // `pick` renvoie du HTML déjà échappé.
   const row = (label, pick) => {
     const cells = [`<td class="subject">${escapeHtml(label)}</td>`];
     for (const period of view.periods) {
       const total = view.totals.periods[period.id];
-      cells.push(`<td colspan="${span}" class="sum" data-period-total="${escapeHtml(period.id)}">${escapeHtml(pick(total))}</td>`);
+      cells.push(`<td colspan="${span}" class="sum" data-period-total="${escapeHtml(period.id)}">${pick(total)}</td>`);
       cells.push(`<td></td>`);
     }
-    if (view.totals.annual) cells.push(`<td colspan="2" class="sum" data-annual-total>${escapeHtml(pick(view.totals.annual))}</td>`);
+    if (view.totals.annual) cells.push(`<td colspan="2" class="sum" data-annual-total>${pick(view.totals.annual)}</td>`);
     return `<tr class="summary">${cells.join("")}</tr>`;
   };
-  lines.push(row("Total", (total) => (total ? `${display(total.points)} / ${display(total.max)}` : "—")));
-  lines.push(row("Pourcentage", (total) => (total && total.percentage != null ? `${total.percentage} %` : "—")));
-  lines.push(row("Rang", (total) => rankLabel(total && total.rank, view.cohort_size)));
+  // Total : seuls les points obtenus peuvent être en échec, jamais le maximum.
+  lines.push(
+    row("Total", (total) => {
+      if (!total) return "—";
+      const points = escapeHtml(display(total.points));
+      const shown = total.failing ? `<span class="failing" data-failing>${points}</span>` : points;
+      return `${shown} / ${escapeHtml(display(total.max))}`;
+    })
+  );
+  lines.push(row("Pourcentage", (total) => escapeHtml(total && total.percentage != null ? `${total.percentage} %` : "—")));
+  lines.push(row("Rang", (total) => escapeHtml(rankLabel(total && total.rank, view.cohort_size))));
   return lines.join("\n");
 }
 
