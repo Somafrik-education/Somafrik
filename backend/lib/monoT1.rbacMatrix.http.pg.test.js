@@ -43,6 +43,8 @@ const ACCOUNTS = {
   cdParent: "PARENT",
 };
 const REFUSAL_CODES = new Set(["PERMISSION_DENIED", "PARENT_NOTES_READ_ONLY"]);
+// CI-FAST-01 : requêtes simultanées (1 = parcours série d'origine).
+const PARALLELISM = Math.max(1, Math.min(8, Number.parseInt(process.env.MONO_T1_RBAC_MATRIX_PARALLELISM ?? "4", 10) || 4));
 const ACCESS_TOKEN_REFRESH_MARGIN_SECONDS = 90;
 
 function accessTokenNeedsRefresh(token, nowMs = Date.now()) {
@@ -115,31 +117,59 @@ test("matrice RBAC : aucune cellule ne change par rapport à la référence ; re
     return token;
   }
 
+  // CI-FAST-01 : les cellules sont indépendantes (GET, ou écriture refusée par
+  // la porte RBAC avant tout gestionnaire) ; elles sont sondées par lots de
+  // routes, avec PARALLELISM requêtes simultanées sur le même serveur. Le
+  // document observé garde l'ordre de l'inventaire et des comptes : la
+  // comparaison et la référence régénérée sont identiques au parcours série.
   const observed = {};
-  const mustRefuse = [];
+  const cells = [];
   for (const route of routes) {
-    await refreshAccessTokens();
     const key = `${route.method} ${route.path}`;
     observed[key] = {};
     for (const [account, roleKey] of Object.entries(ACCOUNTS)) {
-      const defaultAllows = route.allowedRoles.includes(roleKey);
-      const liveAllows = route.permissionKeys.some((permissionKey) => rbac.canAccess(live[account].principal, permissionKey));
-      if (route.method !== "GET" && (defaultAllows || liveAllows)) {
-        observed[key][account] = "écriture autorisée (non envoyée)";
-        continue;
-      }
-      const response = await server.request(route.method, route.path.replace(/:[A-Za-z_]\w*/g, "MONO-T1-INCONNU"), {
-        token: await accessTokenFor(account),
-        body: route.method === "GET" ? undefined : {},
-      });
-      const refused = response.status === 403 && REFUSAL_CODES.has(response.data?.code);
-      observed[key][account] = refused ? "refusé" : "accès";
-      if (route.method !== "GET" && !refused) {
-        const detail = response.data?.code || response.data?.message || "";
-        mustRefuse.push(`${account} ${key} → ${response.status}${detail ? ` ${detail}` : ""}`);
-      }
+      observed[key][account] = null;
+      cells.push({ route, key, account, roleKey });
     }
   }
+  const mustRefuse = [];
+  async function probe({ route, key, account, roleKey }) {
+    const defaultAllows = route.allowedRoles.includes(roleKey);
+    const liveAllows = route.permissionKeys.some((permissionKey) => rbac.canAccess(live[account].principal, permissionKey));
+    if (route.method !== "GET" && (defaultAllows || liveAllows)) {
+      observed[key][account] = "écriture autorisée (non envoyée)";
+      return;
+    }
+    const response = await server.request(route.method, route.path.replace(/:[A-Za-z_]\w*/g, "MONO-T1-INCONNU"), {
+      token: live[account].token,
+      body: route.method === "GET" ? undefined : {},
+    });
+    const refused = response.status === 403 && REFUSAL_CODES.has(response.data?.code);
+    observed[key][account] = refused ? "refusé" : "accès";
+    if (route.method !== "GET" && !refused) {
+      const detail = response.data?.code || response.data?.message || "";
+      mustRefuse.push(`${account} ${key} → ${response.status}${detail ? ` ${detail}` : ""}`);
+    }
+  }
+  // Un lot dure bien moins que 8 min : le renouvellement des jetons entre deux
+  // lots garde la marge de la durée de vie de 15 min.
+  const batchSize = PARALLELISM * 16;
+  for (let start = 0; start < cells.length; start += batchSize) {
+    await refreshAccessTokens();
+    // #1039 : renouvellement par expiration réelle du jeton (marge 90 s),
+    // en série et avant le lot : un lot dure quelques secondes, aucun worker
+    // ne relogue un compte pendant qu'un autre l'utilise.
+    for (const account of Object.keys(ACCOUNTS)) await accessTokenFor(account);
+    const queue = cells.slice(start, start + batchSize);
+    await Promise.all(
+      Array.from({ length: PARALLELISM }, async () => {
+        while (queue.length) await probe(queue.shift());
+      }),
+    );
+  }
+  mustRefuse.sort();
+  const unprobed = cells.filter(({ key, account }) => observed[key][account] === null).map(({ key, account }) => `${key} [${account}]`);
+  assert.deepEqual(unprobed, [], "cellule(s) de la matrice non sondée(s)");
 
   assert.deepEqual(mustRefuse, [], "écriture refusée par défaut et en effectif mais acceptée par HTTP");
 

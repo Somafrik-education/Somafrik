@@ -1,12 +1,22 @@
 name: CI Full Nightly
 
+# CI-FAST-01 — niveau B (nuit, develop) et, par workflow_call, niveau C
+# (release-gate.yml) sur le SHA candidat exact.
 on:
   schedule:
     - cron: "30 1 * * *"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: "SHA candidat exact (niveau C)"
+        required: true
+        type: string
 
 concurrency:
-  group: ci-full-nightly
+  # Un groupe par déclencheur et par révision : un appel du niveau C n'est
+  # jamais mis en attente ni remplacé par l'exécution de nuit.
+  group: ci-full-${{ github.event_name }}-${{ inputs.ref || 'develop' }}
   cancel-in-progress: false
 
 env:
@@ -35,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: develop
+          ref: ${{ inputs.ref || 'develop' }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
