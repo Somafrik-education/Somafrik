@@ -115,7 +115,7 @@ function normalizePresentation(raw) {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
     throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
   }
-  const unknown = Object.keys(raw).filter((key) => !["style", "signatures"].includes(key));
+  const unknown = Object.keys(raw).filter((key) => !["style", "signatures", "period_labels"].includes(key));
   if (unknown.length) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID", `unknown presentation key ${unknown[0]}`);
   const style = raw.style == null || raw.style === "" ? "auto" : String(raw.style);
   if (!PRESENTATION_STYLES.includes(style)) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
@@ -128,7 +128,30 @@ function normalizePresentation(raw) {
     if (!value || value.length > MAX_SIGNATURE_LENGTH) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
     return value;
   });
-  return Object.freeze({ style, signatures: Object.freeze(signatures) });
+  const out = { style, signatures: Object.freeze(signatures) };
+  // BULLETIN-CATALOG-01 — intitulés d'affichage des périodes (optionnels).
+  if (raw.period_labels !== undefined) out.period_labels = normalizePeriodLabels(raw.period_labels);
+  return Object.freeze(out);
+}
+
+const MAX_PERIOD_LABELS = 12;
+const PERIOD_ID_RE = /^[A-Z][A-Z0-9_]{0,31}$/;
+
+function normalizePeriodLabels(raw) {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  }
+  const entries = Object.entries(raw);
+  if (entries.length > MAX_PERIOD_LABELS) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  const out = {};
+  for (const [id, label] of entries.sort(([a], [b]) => a.localeCompare(b))) {
+    const value = typeof label === "string" ? label.trim() : "";
+    if (!PERIOD_ID_RE.test(id) || !value || value.length > MAX_SIGNATURE_LENGTH) {
+      throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+    }
+    out[id] = value;
+  }
+  return Object.freeze(out);
 }
 
 function specSha256(spec) {

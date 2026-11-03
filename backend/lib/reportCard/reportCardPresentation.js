@@ -148,9 +148,10 @@ function buildStudentPresentation({ student, profile, labels = {}, presentation 
 
   const allPeriods = periodEntries(profile);
   const scopeIds = Array.isArray(totals.scope?.periods) ? totals.scope.periods : allPeriods.map((period) => period.id);
+  const periodLabels = (presentation && presentation.period_labels) || {};
   const periods = scopeIds.map((id) => {
     const entry = allPeriods.find((period) => period.id === id);
-    return { id, label: (entry && entry.label) || id };
+    return { id, label: (entry && entry.label) || text(periodLabels[id]) || id };
   });
   const components = componentEntries(profile).map((component) => ({ id: component.id, label: component.label || component.id }));
   const subjectLabels = labels.subjects || {};

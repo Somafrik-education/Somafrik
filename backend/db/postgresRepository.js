@@ -175,6 +175,7 @@ class PostgresRepository {
     await this.ensureReportCardPublicationCanonicalSchema();
     await this.ensureReportCardConfigurationCanonicalSchema();
     await this.ensureReportCardSourceArtifactCanonicalSchema();
+    await this.ensureReportCardCatalogCanonicalSchema();
     await this.runSchoolSettingsCanonicalBoot();
     await this.ensureSchoolSetupGuidedSchema();
     await this.runDocumentsExamsCanonicalBoot();
@@ -1035,6 +1036,12 @@ class PostgresRepository {
   async ensureReportCardConfigurationCanonicalSchema() {
     const { REPORT_CARD_CONFIGURATION_SQL } = require("./reportCardConfigurationSql");
     await this.query(REPORT_CARD_CONFIGURATION_SQL);
+  }
+
+  /** BULLETIN-CATALOG-01 — catalogue des modèles et disponibilité par pays (additif). */
+  async ensureReportCardCatalogCanonicalSchema() {
+    const { REPORT_CARD_CATALOG_SQL } = require("./reportCardCatalogSchema");
+    await this.query(REPORT_CARD_CATALOG_SQL);
   }
 
   async ensureReportCardSourceArtifactCanonicalSchema() {
