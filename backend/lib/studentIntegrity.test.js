@@ -182,6 +182,92 @@ test("inscription undefined, nulle ou inconnue : fail-closed, solde toujours cla
   assert.equal(unknown.historyVisible, true);
 });
 
+test("contrat CTO : UUID confirmé, établissement correspondant et inscription active", () => {
+  const balance = 320000;
+  const profile = "profile-legacy-id";
+  const fee = (overrides) => ({ balance, amountDue: balance, ...overrides });
+
+  const matriculeOnly = classifyUnpaidFees(
+    [fee({
+      studentId: profile,
+      studentDbId: MATRICULE,
+      canonicalStudentId: MATRICULE,
+      studentCode: MATRICULE,
+      studentExists: true,
+      hasActiveEnrollment: true,
+      studentStatus: "active",
+    })],
+    profile,
+  );
+  assert.equal(matriculeOnly.collectionEligible, false);
+  assert.equal(matriculeOnly.category, "unverified_identity");
+  assert.equal(matriculeOnly.canonicalStudentId, "");
+  assert.notEqual(matriculeOnly.canonicalStudentId, MATRICULE);
+  assert.notEqual(matriculeOnly.canonicalStudentId, profile);
+  assert.equal(matriculeOnly.historyVisible, true);
+  assert.equal(matriculeOnly.matricule, MATRICULE);
+
+  const provedByMatricule = classifyStudentIntegrity({
+    studentExists: true,
+    matricule: MATRICULE,
+    displayedStudentId: MATRICULE,
+    hasActiveEnrollment: true,
+    financeRowExists: true,
+    studentStatus: "active",
+  });
+  assert.equal(provedByMatricule.category, "unverified_identity");
+  assert.equal(provedByMatricule.collectionEligible, false);
+  assert.equal(provedByMatricule.historyVisible, true);
+
+  const inactive = classifyUnpaidFees(
+    [fee({ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: false, studentStatus: "active" })],
+    UUID,
+  );
+  assert.equal(inactive.collectionEligible, false);
+  assert.equal(inactive.category, "no_active_enrollment");
+  assert.equal(inactive.canonicalStudentId, UUID);
+  assert.equal(inactive.historyVisible, true);
+
+  const active = classifyUnpaidFees(
+    [fee({ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: true, studentStatus: "active" })],
+    UUID,
+  );
+  assert.equal(active.collectionEligible, true);
+  assert.equal(active.category, "active");
+  assert.equal(active.canonicalStudentId, UUID);
+  assert.equal(active.historyVisible, true);
+
+  const divergent = classifyUnpaidFees(
+    [fee({
+      studentId: profile,
+      studentDbId: UUID,
+      canonicalStudentId: UUID,
+      studentCode: MATRICULE,
+      hasActiveEnrollment: true,
+    })],
+    profile,
+  );
+  assert.equal(divergent.collectionEligible, true);
+  assert.equal(divergent.category, "identity_mismatch");
+  assert.equal(divergent.canonicalStudentId, UUID);
+  assert.notEqual(divergent.canonicalStudentId, profile);
+  assert.equal(divergent.historyVisible, true);
+
+  const otherSchool = classifyUnpaidFees(
+    [fee({ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: true, schoolMismatch: true })],
+    UUID,
+  );
+  assert.equal(otherSchool.collectionEligible, false);
+  assert.equal(otherSchool.category, "school_mismatch");
+  assert.equal(otherSchool.canonicalStudentId, UUID);
+  assert.equal(otherSchool.historyVisible, true);
+
+  for (const result of [matriculeOnly, inactive, active, divergent, otherSchool]) {
+    assert.equal(result.historyVisible, true);
+    assert.equal(balance, 320000);
+  }
+});
+
 test("matricule présent sans UUID canonique : historique conservé, encaissement refusé", () => {
   const result = classifyUnpaidFees(
     [

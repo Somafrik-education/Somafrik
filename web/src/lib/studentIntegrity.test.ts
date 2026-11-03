@@ -95,6 +95,75 @@ describe("STUDENT-INTEGRITY-01", () => {
     }
   });
 
+  it("contrat CTO : UUID confirmé, établissement correspondant et inscription active", () => {
+    const profile = "profile-legacy-id";
+    const source = fee({
+      studentId: profile,
+      studentDbId: MATRICULE,
+      canonicalStudentId: MATRICULE,
+      studentCode: MATRICULE,
+      studentExists: true,
+      hasActiveEnrollment: true,
+      balance: 320000,
+    });
+
+    const matriculeOnly = integrityFromFees([source], profile);
+    expect(matriculeOnly.collectionEligible).toBe(false);
+    expect(matriculeOnly.integrityCategory).toBe("unverified_identity");
+    expect(matriculeOnly.canonicalStudentId).toBe("");
+    expect(matriculeOnly.canonicalStudentId).not.toBe(MATRICULE);
+    expect(matriculeOnly.canonicalStudentId).not.toBe(profile);
+    expect(matriculeOnly.matricule).toBe(MATRICULE);
+    expect(source.balance).toBe(320000);
+    expect(unpaidCollectionBlockMessage(matriculeOnly.integrityCategory)).toMatch(/solde reste consultable/i);
+
+    const inactive = integrityFromFees(
+      [fee({ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: false, balance: 320000 })],
+      UUID,
+    );
+    expect(inactive.collectionEligible).toBe(false);
+    expect(inactive.integrityCategory).toBe("no_active_enrollment");
+    expect(inactive.canonicalStudentId).toBe(UUID);
+
+    const active = integrityFromFees(
+      [fee({ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: true, balance: 320000 })],
+      UUID,
+    );
+    expect(active.collectionEligible).toBe(true);
+    expect(active.integrityCategory).toBe("active");
+    expect(active.canonicalStudentId).toBe(UUID);
+
+    const divergent = integrityFromFees(
+      [fee({
+        studentId: profile,
+        studentDbId: UUID,
+        canonicalStudentId: UUID,
+        studentCode: MATRICULE,
+        hasActiveEnrollment: true,
+        balance: 320000,
+      })],
+      profile,
+    );
+    expect(divergent.collectionEligible).toBe(true);
+    expect(divergent.integrityCategory).toBe("identity_mismatch");
+    expect(divergent.canonicalStudentId).toBe(UUID);
+    expect(divergent.canonicalStudentId).not.toBe(profile);
+
+    const otherSchool = integrityFromFees(
+      [fee({ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: true, schoolMismatch: true, balance: 320000 })],
+      UUID,
+    );
+    expect(otherSchool.collectionEligible).toBe(false);
+    expect(otherSchool.integrityCategory).toBe("school_mismatch");
+    expect(otherSchool.canonicalStudentId).toBe(UUID);
+    expect(otherSchool.canonicalStudentId).not.toBe(profile);
+
+    for (const result of [matriculeOnly, inactive, divergent, otherSchool]) {
+      expect(unpaidCollectionBlockMessage(result.integrityCategory).length).toBeGreaterThan(0);
+    }
+    expect(source.balance).toBe(320000);
+  });
+
   it("refuse l'encaissement quand le matricule est présent sans UUID canonique", () => {
     const result = integrityFromFees(
       [fee({ studentId: MATRICULE, studentCode: MATRICULE, hasActiveEnrollment: true, balance: 320000 })],

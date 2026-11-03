@@ -56,21 +56,29 @@ function enrollmentIsActive(input = {}) {
  */
 function classifyStudentIntegrity(input = {}) {
   const financeRowExists = input.financeRowExists === true;
-  const studentExists = input.studentExists === true;
   const archived = input.archived === true || ARCHIVED_STUDENT.has(normalizeToken(input.studentStatus));
   const schoolMismatch = input.schoolMismatch === true;
   const activeEnrollment = enrollmentIsActive(input);
   const displayed = asText(input.displayedStudentId);
   const uuid = verifiedCanonicalUuid(input.studentUuid);
   const matricule = asText(input.matricule);
+  const studentExists = input.studentExists === true && Boolean(uuid);
   const identityMismatch = Boolean(
-    studentExists &&
-      displayed &&
-      (uuid || matricule) &&
+    displayed &&
       displayed !== uuid &&
       displayed !== matricule,
   );
 
+  if (!uuid) {
+    if (financeRowExists) {
+      return {
+        category: matricule ? "unverified_identity" : "orphan_finance",
+        collectionEligible: false,
+        historyVisible: true,
+      };
+    }
+    return { category: "missing", collectionEligible: false, historyVisible: false };
+  }
   if (!studentExists && financeRowExists) {
     return { category: "orphan_finance", collectionEligible: false, historyVisible: true };
   }
@@ -85,9 +93,6 @@ function classifyStudentIntegrity(input = {}) {
   }
   if (activeEnrollment !== true) {
     return { category: "no_active_enrollment", collectionEligible: false, historyVisible: true };
-  }
-  if (!uuid) {
-    return { category: "unverified_identity", collectionEligible: false, historyVisible: true };
   }
   if (identityMismatch) {
     return { category: "identity_mismatch", collectionEligible: true, historyVisible: true };
@@ -134,12 +139,11 @@ function classifyUnpaidFees(fees, displayedStudentId) {
     (fee) => fee.orphanFinance === true || fee.studentDbId === "" || fee.canonicalStudentId === "",
   );
   const explicitMissing = list.some((fee) => fee.studentExists === false);
-  const verifiedIdentity = Boolean(canonicalStudentId || matricule);
   return {
     canonicalStudentId,
     matricule: matricule || undefined,
     ...classifyStudentIntegrity({
-      studentExists: !explicitMissing && !explicitOrphan && verifiedIdentity,
+      studentExists: !explicitMissing && !explicitOrphan && Boolean(canonicalStudentId),
       financeRowExists: list.length > 0,
       studentUuid: canonicalStudentId,
       matricule,

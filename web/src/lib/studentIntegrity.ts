@@ -51,23 +51,20 @@ export function integrityFromFees(fees: StudentFee[], displayedStudentId: string
     (fee) => fee.orphanFinance === true || fee.studentDbId === "" || fee.canonicalStudentId === "",
   );
   const explicitMissing = fees.some((fee) => fee.studentExists === false);
-  const verifiedIdentity = Boolean(canonicalStudentId || matricule);
   const archived = fees.some((fee) => ARCHIVED.has(String(fee.studentStatus ?? "").trim().toLowerCase()));
   const schoolMismatch = fees.some((fee) => fee.schoolMismatch === true);
-  const identityMismatch = Boolean(
-    verifiedIdentity &&
-      displayed &&
-      displayed !== canonicalStudentId &&
-      displayed !== matricule,
-  );
+  const identityMismatch = Boolean(displayed && displayed !== canonicalStudentId && displayed !== matricule);
 
-  if (explicitOrphan || explicitMissing || !verifiedIdentity) {
+  if (!canonicalStudentId) {
     return {
       canonicalStudentId: "",
       matricule,
       collectionEligible: false,
-      integrityCategory: fees.length ? "orphan_finance" : "missing",
+      integrityCategory: !fees.length ? "missing" : matricule ? "unverified_identity" : "orphan_finance",
     };
+  }
+  if (explicitOrphan || explicitMissing) {
+    return { canonicalStudentId, matricule, collectionEligible: false, integrityCategory: "orphan_finance" };
   }
   if (schoolMismatch) {
     return { canonicalStudentId, matricule, collectionEligible: false, integrityCategory: "school_mismatch" };
@@ -77,9 +74,6 @@ export function integrityFromFees(fees: StudentFee[], displayedStudentId: string
   }
   if (!enrollmentActive(fees)) {
     return { canonicalStudentId, matricule, collectionEligible: false, integrityCategory: "no_active_enrollment" };
-  }
-  if (!canonicalStudentId) {
-    return { canonicalStudentId: "", matricule, collectionEligible: false, integrityCategory: "unverified_identity" };
   }
   if (identityMismatch) {
     return { canonicalStudentId, matricule, collectionEligible: true, integrityCategory: "identity_mismatch" };
