@@ -112,6 +112,18 @@ export type ManagedClass = {
 
 export type ActiveModel = { model_key: string; description?: string | null };
 
+export type BulletinModelRequest = { model_key: string; status: string; description?: string | null };
+
+/** Distinct loading contract: a successful empty list is NOT an HTTP failure. */
+export async function listBulletinModelRequests(): Promise<BulletinModelRequest[]> {
+  const data = await api.get<{ ok?: boolean; requests?: BulletinModelRequest[] }>("/report-card/requests");
+  if (!data || data.ok === false || !Array.isArray(data.requests)) {
+    throw new Error("MODEL_REQUESTS_INVALID_RESPONSE");
+  }
+  return data.requests.filter((request) => typeof request?.model_key === "string" && typeof request?.status === "string");
+}
+
+
 function publicationPath(reportCardId: string) {
   return "/report-card/publications/" + encodeURIComponent(reportCardId);
 }
