@@ -82,6 +82,7 @@ import {
   UsersPage,
   ReportCardSchoolWorkflowPage,
   ReportCardHistoryPage,
+  ReportCardManagementPage,
   ReportCardsEntryPage,
   ReportCardStaffRoute,
   ReportCardSuperadminWorkflowPage,
@@ -347,6 +348,16 @@ export default function App() {
           element={
             <PermissionRoute view="exams">
               <EntityPage entity="exams" />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/bulletins/gestion"
+          element={
+            <PermissionRoute view="bulletins">
+              <ReportCardStaffRoute>
+                <ReportCardManagementPage />
+              </ReportCardStaffRoute>
             </PermissionRoute>
           }
         />

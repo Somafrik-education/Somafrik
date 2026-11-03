@@ -94,12 +94,41 @@ function normalizeRenderingTemplate(raw) {
     return Object.freeze({ id, order, source, label });
   });
   sections.sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
-  return Object.freeze({
+  const normalized = {
     paper,
     orientation,
     qr_required: true,
     sections: Object.freeze(sections),
+  };
+  // BULLETIN-UI-01 — bloc de présentation OPTIONNEL : absent, la spec normalisée
+  // (et donc son empreinte) est strictement celle d'avant ; les gabarits existants
+  // et les bulletins déjà publiés ne changent pas.
+  if (raw.presentation !== undefined) normalized.presentation = normalizePresentation(raw.presentation);
+  return Object.freeze(normalized);
+}
+
+const PRESENTATION_STYLES = Object.freeze(["auto", "simple", "hierarchical"]);
+const MAX_SIGNATURES = 4;
+const MAX_SIGNATURE_LENGTH = 60;
+
+function normalizePresentation(raw) {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  }
+  const unknown = Object.keys(raw).filter((key) => !["style", "signatures"].includes(key));
+  if (unknown.length) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID", `unknown presentation key ${unknown[0]}`);
+  const style = raw.style == null || raw.style === "" ? "auto" : String(raw.style);
+  if (!PRESENTATION_STYLES.includes(style)) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  const signaturesIn = raw.signatures == null ? [] : raw.signatures;
+  if (!Array.isArray(signaturesIn) || signaturesIn.length > MAX_SIGNATURES) {
+    throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  }
+  const signatures = signaturesIn.map((label) => {
+    const value = typeof label === "string" ? label.trim() : "";
+    if (!value || value.length > MAX_SIGNATURE_LENGTH) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+    return value;
   });
+  return Object.freeze({ style, signatures: Object.freeze(signatures) });
 }
 
 function specSha256(spec) {
@@ -112,4 +141,5 @@ module.exports = {
   rejectCountrySchoolKeys,
   specSha256,
   SECTION_SOURCES,
+  PRESENTATION_STYLES,
 };

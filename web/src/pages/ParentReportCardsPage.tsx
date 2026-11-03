@@ -12,6 +12,11 @@ import {
   type ParentPublishedReportCard,
 } from "../lib/parentReportCards";
 import { parentReportCardApi } from "../lib/parentReportCardApi";
+import { ReportCardPresentationTable } from "../components/bulletin/ReportCardPresentationTable";
+import {
+  reportCardManagementApi,
+  type ReportCardPresentation,
+} from "../lib/reportCardManagementApi";
 import {
   parentDashboardStudentKeys,
   resolveParentDashboardStudent,
@@ -276,6 +281,20 @@ function ParentReportCard({
   onDownloadPdf: (card: ParentPublishedReportCard, version: number) => Promise<void>;
 }) {
   const currentSnapshot = snapshotForParentStudent(card.payload, selectedChild);
+  // BULLETIN-UI-01 — résultats du bulletin OFFICIEL publié (snapshot figé), à la demande.
+  const [results, setResults] = useState<ReportCardPresentation[] | null>(null);
+  const [resultsState, setResultsState] = useState<"idle" | "loading" | "error" | "none">("idle");
+  const loadResults = async () => {
+    setResultsState("loading");
+    try {
+      const { presentation } = await reportCardManagementApi.presentation(card.reportCardId, card.version);
+      setResults(presentation);
+      setResultsState(presentation && presentation.length ? "idle" : "none");
+    } catch {
+      setResults(null);
+      setResultsState("error");
+    }
+  };
   const versions = card.history.length
     ? [...card.history].sort(
         (left, right) =>
@@ -315,6 +334,27 @@ function ParentReportCard({
           </p>
         </div>
       ) : null}
+
+      <div className="space-y-3 border-b border-line p-5" data-testid="parent-report-card-results">
+        {results && results.length ? (
+          results.map((view) => <ReportCardPresentationTable key={view.student.code} view={view} />)
+        ) : (
+          <button
+            type="button"
+            onClick={() => void loadResults()}
+            disabled={resultsState === "loading"}
+            className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold text-brand disabled:opacity-50"
+          >
+            {resultsState === "loading" ? "Chargement…" : "Afficher les résultats"}
+          </button>
+        )}
+        {resultsState === "none" ? (
+          <p className="text-sm text-muted">Résultats détaillés non disponibles pour ce bulletin : consultez le PDF officiel.</p>
+        ) : null}
+        {resultsState === "error" ? (
+          <p role="alert" className="text-sm font-bold text-red-800">Impossible d'afficher les résultats de ce bulletin.</p>
+        ) : null}
+      </div>
 
       <div className="p-5">
         <h4 className="font-black text-ink">Versions publiées</h4>

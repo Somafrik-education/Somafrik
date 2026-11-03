@@ -8,6 +8,7 @@
 const express = require("express");
 const { VERIFY_HEADERS } = require("../../contracts/reportCard/contract");
 const { toPublicArtifact } = require("./reportCardSourceArtifact");
+const { buildStudentPresentation, hasSubjectTotals } = require("./reportCardPresentation");
 
 const PERM_CONFIGURE = "REPORT_CARD_CONFIGURE";
 const PERM_APPROVE = "REPORT_CARD_SCHOOL_APPROVE_TEMPLATE";
@@ -322,6 +323,42 @@ function registerReportCardHttp(app, deps = {}) {
     };
   }
 
+  /**
+   * BULLETIN-UI-01 — présentation par matières d'un payload (snapshot publié ou
+   * brouillon). Lecture seule : résultats du moteur + profil ÉPINGLÉ par la
+   * provenance + libellés de l'établissement du bulletin. null quand le payload
+   * n'a pas de totaux par matière (bulletins historiques : rendu générique).
+   */
+  async function presentationFor({ payload, schoolId, template, meta }) {
+    if (!hasSubjectTotals(payload)) return null;
+    const getProfile = typeof deps.getProfile === "function" ? deps.getProfile : null;
+    const ref = payload.provenance && payload.provenance.profile;
+    if (!getProfile || !ref) return null;
+    const tenant = { schoolId, actorSchoolId: schoolId };
+    const found = await Promise.resolve(getProfile({ tenant, ref }));
+    const profile = found && Array.isArray(found.subjects) ? found : found && found.spec;
+    if (!profile || !Array.isArray(profile.subjects)) return null;
+    const students = payload.students;
+    const subjectCodes = new Set();
+    for (const student of students) for (const row of student.subject_totals.rows) subjectCodes.add(row.subject_id);
+    const getLabels = typeof deps.getPresentationLabels === "function" ? deps.getPresentationLabels : null;
+    const labels = getLabels
+      ? (await Promise.resolve(
+          getLabels({
+            schoolId,
+            classId: payload.class_id,
+            academicYearId: payload.academic_year_id,
+            subjectCodes: [...subjectCodes],
+            studentCodes: students.map((student) => student.student_id),
+          })
+        )) || {}
+      : {};
+    const presentation = (template && template.presentation) || {};
+    return students.map((student) =>
+      buildStudentPresentation({ student, profile, labels, presentation, meta: { ...meta, period_scope: payload.period_scope ?? null } })
+    );
+  }
+
   function classPublicationService() {
     return deps.classPublication || (typeof deps.getClassPublication === "function" ? deps.getClassPublication() : null);
   }
@@ -620,12 +657,19 @@ function registerReportCardHttp(app, deps = {}) {
         requireActive: false,
       });
       assertPdfQrScopeSafe(unscopedPayload, actor);
+      const presentation = await presentationFor({
+        payload,
+        schoolId,
+        template,
+        meta: { official: true, report_card_id: req.params.reportCardId, version, published_at: payload.published_at },
+      });
       const rendered = await pdf.render({
         tenant,
         reportCardId: req.params.reportCardId,
         version,
         renderingTemplate: template,
         payload,
+        ...(presentation ? { presentation } : {}),
       });
       res.setHeader("Content-Type", "application/pdf");
       res.send(rendered.pdf);
@@ -650,6 +694,41 @@ function registerReportCardHttp(app, deps = {}) {
         getTemplate,
       });
       res.json({ ok: true, payload, template });
+    })
+  );
+
+  // BULLETIN-UI-01 — bulletin publié présenté par matières (lecture du snapshot figé).
+  app.get(
+    "/api/report-card/publications/:reportCardId/presentation",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_READ);
+      const { publication, getTemplate } = services();
+      const version = Number(req.query.version);
+      const { payload, template, record } = await consultPublishedSnapshot({
+        publication,
+        actor,
+        schoolId,
+        reportCardId: req.params.reportCardId,
+        version,
+        getTemplate,
+        requireActive: false,
+      });
+      const presentation = await presentationFor({
+        payload,
+        schoolId,
+        template,
+        meta: {
+          official: true,
+          report_card_id: req.params.reportCardId,
+          version,
+          published_at: payload.published_at,
+          verification_status: record.verification_status,
+        },
+      });
+      res.json({ ok: true, verification_status: record.verification_status, presentation });
     })
   );
 
@@ -744,6 +823,21 @@ function registerReportCardHttp(app, deps = {}) {
       const { classPublication } = services();
       if (!classPublication || typeof classPublication.preview !== "function") throw coded("REQUEST_NOT_FOUND");
       const draft = await classPublication.preview(classPublicationArgs(actor, schoolId, req.body || {}));
+      // BULLETIN-UI-01 — aperçu par matières : document NON OFFICIEL (official:false).
+      const students = Array.isArray(draft.students) ? draft.students : [];
+      const presentation = await presentationFor({
+        payload: {
+          provenance: draft.provenance,
+          class_id: draft.class_id,
+          academic_year_id: draft.academic_year_id,
+          period_scope: draft.period_scope,
+          students,
+        },
+        schoolId,
+        template: await resolvePublishedTemplate({ provenance: draft.provenance }, schoolId, services().getTemplate).catch(() => null),
+        meta: { official: false },
+      });
+      if (presentation) students.forEach((student, index) => { student.presentation = presentation[index]; });
       res.setHeader("Cache-Control", "no-store");
       res.json({ ok: true, draft });
     })
