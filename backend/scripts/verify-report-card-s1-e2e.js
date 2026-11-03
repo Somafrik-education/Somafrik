@@ -330,8 +330,8 @@ async function ensureChromium() {
 function requestModelCta(page) {
   return page
     .getByTestId("report-card-request-model-cta")
-    .or(page.getByRole("link", { name: "Demander un modèle de bulletin" }))
-    .or(page.getByRole("button", { name: "Demander un modèle de bulletin" }));
+    .or(page.getByRole("link", { name: "Configurer un bulletin" }))
+    .or(page.getByRole("button", { name: "Configurer un bulletin" }));
 }
 
 function submitRequestCta(page) {
@@ -495,7 +495,7 @@ async function runBrowserScenarios({ schoolAId }) {
         await cta.first().waitFor({ timeout: 8000 });
       } catch {
         throw new Error(
-          "Admin établissement connecté → /bulletins → CTA « Demander un modèle de bulletin » introuvable (#659)",
+          "Admin établissement connecté → /bulletins → CTA « Configurer un bulletin » introuvable (#659)",
         );
       }
       await cta.first().click();

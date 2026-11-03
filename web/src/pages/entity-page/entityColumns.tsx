@@ -1,3 +1,4 @@
+import { reportCardStatusLabel } from "../../lib/reportCardStatus";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Button, type Column } from "@/design-system";
@@ -147,6 +148,10 @@ function renderDataCell(
   }
   if (module.key === "payments" && key === "status") {
     return financePaymentStatusLabel(row.status);
+  }
+  if (module.key === "bulletins" && key === "status") {
+    // Table historique report_cards : « generated » = Généré, jamais Publié.
+    return reportCardStatusLabel("legacy", row.status);
   }
   if (module.key === "payments" && key === "itemsDetail") {
     const label = financeScreenFeeLabel(paymentItemsDetailLabel(row.items) || String(row.itemsDetail ?? row.feeType ?? "")) || "—";

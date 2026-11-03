@@ -18,6 +18,7 @@ import { academicYearsApi, type AcademicYear } from "../lib/academicYearsApi";
 import { getCurrentRolePermissions, hasBackOfficePermission } from "../lib/permissions";
 import { usePermissionContext } from "../lib/usePermissionContext";
 import { reportCardHistoryApi, type PublishedVersionRow } from "../lib/reportCardHistoryApi";
+import { reportCardStatusLabel } from "../lib/reportCardStatus";
 import {
   issueLabel,
   listBulletinModelRequests,
@@ -536,7 +537,7 @@ export function ReportCardManagementPage() {
               {official.history.map((version) => (
                 <li key={version.published_snapshot_version} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
                   <span className="font-bold">
-                    v{version.published_snapshot_version} — {version.verification_status === "ACTIVE" ? "Active" : version.verification_status === "SUPERSEDED" ? "Remplacée" : version.verification_status === "REVOKED" ? "Révoquée" : version.verification_status}
+                    v{version.published_snapshot_version} — {reportCardStatusLabel("canonical", version.verification_status)}
                   </span>
                   <button
                     type="button"

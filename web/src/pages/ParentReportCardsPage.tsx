@@ -12,6 +12,7 @@ import {
   type ParentPublishedReportCard,
 } from "../lib/parentReportCards";
 import { parentReportCardApi } from "../lib/parentReportCardApi";
+import { reportCardStatusLabel } from "../lib/reportCardStatus";
 import { ReportCardPresentationTable } from "../components/bulletin/ReportCardPresentationTable";
 import {
   reportCardManagementApi,
@@ -35,11 +36,7 @@ function studentValue(student: Record<string, unknown> | null | undefined) {
 }
 
 function statusLabel(status?: string) {
-  const normalized = String(status ?? "ACTIVE").trim().toUpperCase();
-  if (normalized === "SUPERSEDED") return "Remplacé";
-  if (normalized === "REVOKED") return "Révoqué";
-  if (normalized === "ACTIVE") return "Actif";
-  return normalized || "Publié";
+  return reportCardStatusLabel("canonical", String(status ?? "").trim() || "ACTIVE");
 }
 
 function safeFilePart(value: string) {

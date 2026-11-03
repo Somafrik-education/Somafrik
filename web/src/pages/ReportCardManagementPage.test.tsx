@@ -256,7 +256,7 @@ describe("BULLETIN-UI-01 — gestion des bulletins (Web)", () => {
     expect(api.presentation).toHaveBeenCalledWith("rc-1", 2);
     expect(within(card).getByTestId("report-card-presentation")).toHaveAttribute("data-official", "true");
     expect(within(card).queryByTestId("report-card-draft-banner")).not.toBeInTheDocument();
-    expect(within(card).getByTestId("rc-history")).toHaveTextContent("v1 — Remplacée");
+    expect(within(card).getByTestId("rc-history")).toHaveTextContent("v1 — Remplacé");
     fireEvent.click(within(card).getByTestId("rc-download-pdf"));
     await waitFor(() => expect(api.pdf).toHaveBeenCalledWith("rc-1", 2));
     fireEvent.click(within(card).getByTestId("rc-print-pdf"));
