@@ -63,3 +63,35 @@ CREATE TABLE IF NOT EXISTS report_card_catalog_availability_audit (
 
 CREATE INDEX IF NOT EXISTS idx_report_card_catalog_audit_model
   ON report_card_catalog_availability_audit (model_id, created_at DESC);
+
+
+-- BULLETIN-PREPROD-02 — durcissement Supabase.
+-- Les privilèges par défaut des tables public peuvent autoriser anon/authenticated.
+-- Les routes HTTP du backend utilisent la connexion PostgreSQL serveur ; aucun
+-- accès direct au Data API Supabase n'est nécessaire pour ces trois tables.
+-- Révoquer explicitement les privilèges et activer RLS sans politique publique.
+-- Cette opération est additive et idempotente, également sur une base non-Supabase.
+REVOKE ALL PRIVILEGES ON TABLE public.report_card_catalog_models FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON TABLE public.report_card_catalog_availability FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON TABLE public.report_card_catalog_availability_audit FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON SEQUENCE public.report_card_catalog_availability_audit_id_seq FROM PUBLIC;
+
+-- Les rôles Supabase existent sur le projet réel ; via DO, la migration reste
+-- compatible avec PostgreSQL local où ces rôles ne sont pas définis.
+DO $catalog_security$
+DECLARE role_name text;
+BEGIN
+  FOREACH role_name IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
+      EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.report_card_catalog_models FROM %I', role_name);
+      EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.report_card_catalog_availability FROM %I', role_name);
+      EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public.report_card_catalog_availability_audit FROM %I', role_name);
+      EXECUTE format('REVOKE ALL PRIVILEGES ON SEQUENCE public.report_card_catalog_availability_audit_id_seq FROM %I', role_name);
+    END IF;
+  END LOOP;
+END
+$catalog_security$;
+
+ALTER TABLE public.report_card_catalog_models ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.report_card_catalog_availability ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.report_card_catalog_availability_audit ENABLE ROW LEVEL SECURITY;
