@@ -286,6 +286,9 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       !disableCreate &&
       !module?.planningManaged &&
       module?.key !== "payments" &&
+      // BULLETIN-UX-02 : pas de création générique de bulletin ; les bulletins
+      // naissent du parcours canonique (configuration, aperçu, publication).
+      module?.key !== "bulletins" &&
       !entityCreateViaContactsOnly(module?.key ?? "");
   const allowDelete = isParentChildMode
     ? canArchiveParentAction
@@ -1610,7 +1613,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
           data-testid="report-card-request-model-cta"
           onClick={() => navigate("/bulletins/modele")}
         >
-          Demander un modèle de bulletin
+          Configurer un bulletin
         </Button>
       ) : null}
         {module.key === "payments" && financeActions.canCreatePayment ? (

@@ -11,7 +11,7 @@ function readRel(rel: string) {
 describe("S1 / #659 CTA non-régression", () => {
   it("e2e-report-card-school-request-cta-guard", () => {
     const entity = readRel("web/src/pages/EntityPage.tsx");
-    expect(entity).toMatch(/Demander un modèle de bulletin/);
+    expect(entity).toMatch(/Configurer un bulletin/);
     expect(entity).toMatch(/report-card-request-model-cta/);
     expect(entity).toMatch(/\/bulletins\/modele/);
     const school = readRel("web/src/pages/ReportCardSchoolWorkflowPage.tsx");

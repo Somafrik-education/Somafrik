@@ -1,3 +1,4 @@
+import { reportCardStatusLabel } from "../lib/reportCardStatus";
 import { FormEvent, useState } from "react";
 import {
   reportCardHistoryApi,
@@ -76,10 +77,8 @@ export function ReportCardHistoryPage() {
         {versions.map((row) => (
           <li key={`${row.report_card_id}:${row.published_snapshot_version}`}>
             <span>v{row.published_snapshot_version}</span>{" "}
-            <strong>{row.verification_status}</strong>
-            {row.verification_status === "ACTIVE" ? <span> ACTIVE</span> : null}
-            {row.verification_status === "SUPERSEDED" ? <span> SUPERSEDED</span> : null}
-            {row.verification_status === "REVOKED" ? <span> REVOKED</span> : null}
+            {/* Statuts canoniques ACTIVE / SUPERSEDED / REVOKED affichés en français. */}
+            <strong data-status={row.verification_status}>{reportCardStatusLabel("canonical", row.verification_status)}</strong>
             {row.verification_status === "ACTIVE" ? (
               <button type="button" onClick={() => void onRevoke(row.published_snapshot_version)}>
                 Révoquer
