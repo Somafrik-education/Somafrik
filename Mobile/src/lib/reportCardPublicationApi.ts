@@ -5,6 +5,7 @@
 import { httpRequest } from "../services/httpClient";
 import { downloadReportCardPdf } from "../services/api";
 import type { SnapshotPayload } from "./reportCardSnapshotDisplay";
+import { reportCardPresentationPath, type ReportCardPresentation } from "./reportCardPresentationMobile";
 
 export type ReportCardPublicationRow = {
   event?: string;
@@ -41,6 +42,17 @@ export async function getReportCardPublicationSnapshot(reportCardId: string, ver
   );
   if (!data?.payload) return null;
   return { payload: data.payload, template: data.template } satisfies ReportCardPublicationSnapshot;
+}
+
+/**
+ * BULLETIN-UI-01 — bulletin PUBLIÉ présenté par matières (lecture du snapshot figé).
+ * null pour un bulletin historique sans totaux par matière.
+ */
+export async function getReportCardPresentation(reportCardId: string, version: number | string) {
+  const data = await httpRequest<{ ok?: boolean; presentation?: ReportCardPresentation[] | null }>(
+    reportCardPresentationPath(reportCardId, version),
+  );
+  return Array.isArray(data?.presentation) ? data.presentation : null;
 }
 
 export { downloadReportCardPdf };

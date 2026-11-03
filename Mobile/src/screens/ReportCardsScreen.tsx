@@ -9,6 +9,8 @@ import { ReportCardWorkflowCards } from "../components/ReportCardWorkflowCards";
 import QueryStateView from "../components/QueryStateView";
 import StudentSwitcher from "../components/StudentSwitcher";
 import { ReportCardSnapshotView } from "../components/bulletin/ReportCardSnapshotView";
+import { ReportCardPresentationView } from "../components/bulletin/ReportCardPresentationView";
+import type { ReportCardPresentation } from "../lib/reportCardPresentationMobile";
 import { downloadReportCardPdf } from "../services/api";
 import {
   DATA_TRUTH_COPY,
@@ -19,6 +21,7 @@ import {
   type ResourceSnapshot,
 } from "../lib/dataTruth";
 import {
+  getReportCardPresentation,
   getReportCardPublicationSnapshot,
   listReportCardPublications,
   type ReportCardPublicationRow,
@@ -59,7 +62,19 @@ type PublishedBulletinCard = {
   template?: RenderingTemplate | null;
   student: SnapshotStudent;
   versionHistory: PublishedVersionRow[];
+  /** BULLETIN-UI-01 — périmètre et classe figés dans le snapshot (filtres). */
+  periodScope: string;
+  classId: string;
 };
+
+type ResultsState =
+  | { status: "loading" }
+  | { status: "ready"; views: ReportCardPresentation[] }
+  | { status: "none" }
+  | { status: "forbidden" }
+  | { status: "error" };
+
+const ALL_FILTER = "";
 
 function bulletinErrorSnapshot(
   error: unknown,
@@ -103,15 +118,25 @@ function cardsFromPublication(
       template,
       student,
       versionHistory,
+      periodScope: String((payload as { period_scope?: unknown }).period_scope ?? ""),
+      classId: String((payload as { class_id?: unknown }).class_id ?? ""),
     };
   });
+}
+
+function periodScopeLabel(scope: string) {
+  if (!scope) return "Période";
+  return scope === "ANNUAL" ? "Bilan annuel" : scope;
 }
 
 export default function ReportCardsScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const contentStyle = [styles.content, { paddingBottom: stackPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
-  const { studentsData } = useAdminData();
+  const { studentsData, classesData } = useAdminData();
+  const [periodFilter, setPeriodFilter] = useState(ALL_FILTER);
+  const [classFilter, setClassFilter] = useState(ALL_FILTER);
+  const [resultsByCard, setResultsByCard] = useState<Record<string, ResultsState>>({});
   const [expandedReportCardId, setExpandedReportCardId] = useState<string | null>(null);
   const [reportCardsSnapshot, setReportCardsSnapshot] = useState<ResourceSnapshot<PublishedBulletinCard>>({
     status: "idle",
@@ -197,7 +222,7 @@ export default function ReportCardsScreen() {
     [session, selectedStudentId],
   );
 
-  const rows = useMemo(() => {
+  const scopedRows = useMemo(() => {
     if (reportCardsSnapshot.status !== "success") return [];
     if (studentScope.unscoped) {
       const allowed = new Set(studentsData.map((student) => student.id).filter(Boolean));
@@ -206,6 +231,43 @@ export default function ReportCardsScreen() {
     }
     return filterRowsByStudentScope(reportCardsSnapshot.data, studentScope);
   }, [reportCardsSnapshot, studentScope, studentsData]);
+
+  const periodOptions = useMemo(
+    () => [...new Set(scopedRows.map((card) => card.periodScope).filter(Boolean))],
+    [scopedRows],
+  );
+  const classOptions = useMemo(
+    () => [...new Set(scopedRows.map((card) => card.classId).filter(Boolean))],
+    [scopedRows],
+  );
+  const rows = useMemo(
+    () =>
+      scopedRows.filter(
+        (card) =>
+          (!periodFilter || card.periodScope === periodFilter) && (!classFilter || card.classId === classFilter),
+      ),
+    [scopedRows, periodFilter, classFilter],
+  );
+
+  const classLabel = (classId: string) => classesData.find((item) => item.id === classId)?.name || "Classe";
+
+  const loadResults = async (card: PublishedBulletinCard) => {
+    setResultsByCard((current) => ({ ...current, [card.id]: { status: "loading" } }));
+    try {
+      const views = await getReportCardPresentation(card.reportCardId, card.version);
+      const own = (views || []).filter((view) => view.student.code === card.studentId);
+      setResultsByCard((current) => ({
+        ...current,
+        [card.id]: own.length ? { status: "ready", views: own } : { status: "none" },
+      }));
+    } catch (error) {
+      const statusCode = error instanceof ApiClientError ? error.status : undefined;
+      setResultsByCard((current) => ({
+        ...current,
+        [card.id]: statusCode === 401 || statusCode === 403 ? { status: "forbidden" } : { status: "error" },
+      }));
+    }
+  };
 
   const openPdf = async (card: PublishedBulletinCard) => {
     try {
@@ -240,6 +302,26 @@ export default function ReportCardsScreen() {
           ? `${rows.length} bulletin(s) disponible(s)`
           : "Documents publiés par l'établissement"}
       </Text>
+      {periodOptions.length > 1 || (isBulletinStaff && classOptions.length > 1) ? (
+        <View style={styles.filters} testID="report-card-filters">
+          {periodOptions.length > 1 ? (
+            <FilterChips
+              label="Période"
+              value={periodFilter}
+              onChange={setPeriodFilter}
+              options={periodOptions.map((value) => ({ value, label: periodScopeLabel(value) }))}
+            />
+          ) : null}
+          {isBulletinStaff && classOptions.length > 1 ? (
+            <FilterChips
+              label="Classe"
+              value={classFilter}
+              onChange={setClassFilter}
+              options={classOptions.map((value) => ({ value, label: classLabel(value) }))}
+            />
+          ) : null}
+        </View>
+      ) : null}
       {isBulletinStaff ? (
         <View style={styles.workflowBlock}>
           <Text style={styles.workflowTitle}>État du workflow bulletin</Text>
@@ -299,7 +381,10 @@ export default function ReportCardsScreen() {
                   <Metric label="Rang" value={rankLabel} />
                   <Metric label="Publié le" value={card.publishedAt || "—"} />
                 </View>
-                <ReportCardSnapshotView payload={card.payload} template={card.template} studentId={card.studentId} />
+                <ResultsBlock state={resultsByCard[card.id]} onLoad={() => void loadResults(card)} />
+                {resultsByCard[card.id]?.status === "ready" ? null : (
+                  <ReportCardSnapshotView payload={card.payload} template={card.template} studentId={card.studentId} />
+                )}
                 {card.versionHistory.length > 0 ? (
                   <View style={styles.historyBlock}>
                     <Text style={styles.historyTitle}>Historique des versions</Text>
@@ -333,6 +418,73 @@ export default function ReportCardsScreen() {
         </View>
       )}
     </ScrollView>
+  );
+}
+
+function ResultsBlock({ state, onLoad }: { state: ResultsState | undefined; onLoad: () => void }) {
+  if (state?.status === "ready") {
+    return (
+      <View>
+        {state.views.map((view) => (
+          <ReportCardPresentationView key={view.student.code} view={view} />
+        ))}
+      </View>
+    );
+  }
+  return (
+    <View style={styles.resultsBlock}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        style={styles.resultsButton}
+        disabled={state?.status === "loading"}
+        onPress={onLoad}
+        testID="report-card-show-results"
+      >
+        <Text style={styles.resultsButtonText}>
+          {state?.status === "loading" ? "Chargement des résultats…" : "Voir les résultats par matière"}
+        </Text>
+      </TouchableOpacity>
+      {state?.status === "none" ? (
+        <Text style={styles.hint}>Résultats détaillés non disponibles pour ce bulletin : ouvrez le PDF officiel.</Text>
+      ) : null}
+      {state?.status === "forbidden" ? (
+        <Text style={styles.hint}>Vos droits ne permettent pas de consulter ce bulletin.</Text>
+      ) : null}
+      {state?.status === "error" ? (
+        <Text style={styles.hint}>Impossible de charger les résultats. Réessayez.</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function FilterChips({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <View style={styles.filterRow}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <View style={styles.chips}>
+        {[{ value: ALL_FILTER, label: "Toutes" }, ...options].map((option) => (
+          <TouchableOpacity
+            key={option.value || "all"}
+            style={[styles.chip, option.value === value && styles.chipActive]}
+            onPress={() => onChange(option.value)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: option.value === value }}
+          >
+            <Text style={[styles.chipText, option.value === value && styles.chipTextActive]}>{option.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -372,4 +524,30 @@ const styles = StyleSheet.create({
   workflowBlock: { marginBottom: 18, gap: 8 },
   workflowTitle: { color: "#0F172A", fontSize: 18, fontWeight: "900" },
   hint: { color: "#64748B", fontSize: 13, fontWeight: "700", marginBottom: 8 },
+  filters: { gap: 8, marginBottom: 12 },
+  filterRow: { gap: 4 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chip: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#FFFFFF",
+  },
+  chipActive: { backgroundColor: "#2563EB", borderColor: "#2563EB" },
+  chipText: { color: "#334155", fontWeight: "800", fontSize: 12 },
+  chipTextActive: { color: "#FFFFFF" },
+  resultsBlock: { marginBottom: 12, gap: 6 },
+  resultsButton: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 10,
+  },
+  resultsButtonText: { color: "#2563EB", fontWeight: "900" },
 });

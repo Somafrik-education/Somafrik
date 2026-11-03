@@ -225,6 +225,10 @@ export const ReportCardHistoryPage = lazyPage(
   () => import("./pages/ReportCardHistoryPage"),
   "ReportCardHistoryPage",
 );
+export const ReportCardManagementPage = lazyPage(
+  () => import("./pages/ReportCardManagementPage"),
+  "ReportCardManagementPage",
+);
 export const ReportCardsEntryPage = lazyPage(
   () => import("./pages/ReportCardsEntryPage"),
   "ReportCardsEntryPage",

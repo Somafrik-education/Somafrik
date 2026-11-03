@@ -75,3 +75,93 @@ table.slots {
   word-break: break-all;
   max-width: 70mm;
 }
+
+/* BULLETIN-UI-01 — présentation par matières (modèles A et B). */
+/* Saut de page ENTRE deux élèves seulement : le QR de vérification reste sur la page du bulletin. */
+.student-card + .student-card {
+  page-break-before: always;
+  break-before: page;
+}
+
+.identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2mm 8mm;
+  margin: 0 0 4mm;
+  font-size: 9.5pt;
+}
+
+.identity dt {
+  font-weight: 700;
+}
+
+.identity dd {
+  margin: 0;
+}
+
+table.results {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 7.5pt;
+  margin-bottom: 4mm;
+}
+
+table.results th,
+table.results td {
+  border: 1px solid #111;
+  padding: 1.2mm 1mm;
+  text-align: center;
+}
+
+table.results td.subject,
+table.results th.subject {
+  text-align: left;
+  min-width: 34mm;
+}
+
+table.results tr.composite td {
+  font-weight: 700;
+  background: #eee;
+}
+
+table.results tr.child td.subject {
+  padding-left: 5mm;
+}
+
+table.results tr.summary td {
+  font-weight: 700;
+}
+
+table.results td.max {
+  color: #444;
+}
+
+table.results td.missing {
+  font-style: italic;
+}
+
+.incomplete {
+  font-weight: 700;
+  margin: 0 0 3mm;
+}
+
+.appreciation .lines {
+  border-bottom: 1px solid #111;
+  height: 12mm;
+}
+
+.signatures {
+  display: flex;
+  justify-content: space-between;
+  gap: 6mm;
+  margin: 6mm 0;
+  page-break-inside: avoid;
+}
+
+.signature {
+  flex: 1;
+  border-top: 1px solid #111;
+  padding-top: 2mm;
+  min-height: 18mm;
+  font-size: 9pt;
+}

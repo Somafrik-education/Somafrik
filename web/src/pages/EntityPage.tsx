@@ -1592,6 +1592,17 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   const primaryActions = (
     <>
+        {module.key === "bulletins" && canRead ? (
+        <Button
+          size="sm"
+          type="button"
+          variant="secondary"
+          data-testid="report-card-management-cta"
+          onClick={() => navigate("/bulletins/gestion")}
+        >
+          Gérer les bulletins
+        </Button>
+      ) : null}
         {module.key === "bulletins" && canCreate ? (
         <Button
           size="sm"

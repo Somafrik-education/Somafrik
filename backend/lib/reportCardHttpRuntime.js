@@ -237,7 +237,26 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
         })
       : null);
 
-  return { configuration, publication, getFacts, getProfile, getSchema, factsStore, publishInitial, sourceArtifact, classPublication };
+  // BULLETIN-UI-01 — libellés d'affichage, bornés à l'établissement du bulletin.
+  const labelsStore =
+    overrides.labelsStore || (db ? require("../db/reportCardPresentationLabelsStore").createReportCardPresentationLabelsPgStore(db.pool || db) : null);
+  async function getPresentationLabels(args = {}) {
+    if (!labelsStore) return {};
+    return labelsStore.getLabels(args);
+  }
+
+  return {
+    configuration,
+    publication,
+    getFacts,
+    getProfile,
+    getSchema,
+    factsStore,
+    publishInitial,
+    sourceArtifact,
+    classPublication,
+    getPresentationLabels,
+  };
 }
 
 function createReportCardHttpBindings({
@@ -281,6 +300,8 @@ function createReportCardHttpBindings({
     getSourceArtifact: () => getRuntime().sourceArtifact,
     publishInitial: (args) => getRuntime().publishInitial(args),
     getClassPublication: () => getRuntime().classPublication,
+    getPresentationLabels: (args) =>
+      getRuntime().getPresentationLabels ? getRuntime().getPresentationLabels(args) : {},
     resolveActor,
     resolveSchoolId,
     internalAuth,
