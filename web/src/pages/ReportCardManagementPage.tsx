@@ -10,6 +10,7 @@
  * ne sont qu'une aide : le serveur reste seul juge (403 traduit, jamais masqué).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Card, SectionHeader } from "../components/ui/Card";
 import { Field, Select } from "../components/ui/Field";
 import { ReportCardPresentationTable } from "../components/bulletin/ReportCardPresentationTable";
@@ -19,9 +20,11 @@ import { usePermissionContext } from "../lib/usePermissionContext";
 import { reportCardHistoryApi, type PublishedVersionRow } from "../lib/reportCardHistoryApi";
 import {
   issueLabel,
+  listBulletinModelRequests,
   publicationErrorMessage,
   reportCardManagementApi,
   type ActiveModel,
+  type BulletinModelRequest,
   type ClassPublicationSelection,
   type DraftStudent,
   type ManagedClass,
@@ -67,6 +70,10 @@ export function ReportCardManagementPage() {
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ManagedClass[]>([]);
   const [models, setModels] = useState<ActiveModel[]>([]);
+  const [modelRequests, setModelRequests] = useState<BulletinModelRequest[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsError, setModelsError] = useState("");
+  const [modelsRetry, setModelsRetry] = useState(0);
   const [setupError, setSetupError] = useState("");
   const [yearId, setYearId] = useState("");
   const [classId, setClassId] = useState("");
@@ -92,26 +99,48 @@ export function ReportCardManagementPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [y, c, m] = await Promise.all([
-          academicYearsApi.list(),
-          reportCardManagementApi.listClasses(),
-          reportCardManagementApi.listActiveModels().catch(() => [] as ActiveModel[]),
-        ]);
+        const [y, c] = await Promise.all([academicYearsApi.list(), reportCardManagementApi.listClasses()]);
         if (cancelled) return;
         setYears(Array.isArray(y) ? y : []);
         setClasses(c);
-        setModels(m);
         const current = (Array.isArray(y) ? y : []).find((row) => row.isCurrent) ?? (Array.isArray(y) ? y[0] : undefined);
         if (current) setYearId(current.id);
-        if (m.length === 1) setModelKey(m[0].model_key);
       } catch (err) {
         if (!cancelled) setSetupError(publicationErrorMessage(err));
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setModelsLoading(true);
+    setModelsError("");
+    listBulletinModelRequests()
+      .then((requests) => {
+        if (cancelled) return;
+        setModelRequests(requests);
+        const seen = new Set<string>();
+        const active: ActiveModel[] = [];
+        for (const request of requests) {
+          const key = request.model_key.trim();
+          if (request.status !== "ACTIVE" || !key || seen.has(key)) continue;
+          seen.add(key);
+          active.push({ model_key: key, description: request.description });
+        }
+        setModels(active);
+        setModelKey((selected) => active.some((model) => model.model_key === selected) ? selected : active.length === 1 ? active[0].model_key : "");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setModelRequests([]);
+        setModels([]);
+        setModelKey("");
+        setModelsError("Impossible de charger les modèles de bulletin. Vérifiez la connexion ou vos droits, puis réessayez.");
+      })
+      .finally(() => { if (!cancelled) setModelsLoading(false); });
+    return () => { cancelled = true; };
+  }, [modelsRetry]);
 
   const yearClasses = useMemo(
     () => classes.filter((row) => !yearId || !row.academicYearId || row.academicYearId === yearId),
@@ -277,6 +306,26 @@ export function ReportCardManagementPage() {
         </Card>
       ) : null}
 
+      {modelsError ? (
+        <Card className="border-red-200 bg-red-50 p-4" data-testid="rc-model-error">
+          <p role="alert" className="text-sm font-bold text-red-800">{modelsError}</p>
+          <button type="button" className="mt-2 text-sm font-bold text-brand underline" onClick={() => setModelsRetry((value) => value + 1)}>Réessayer</button>
+        </Card>
+      ) : !modelsLoading && models.length === 0 ? (
+        <Card className="space-y-2 p-4" data-testid="rc-model-empty">
+          <p className="text-sm font-bold text-ink">{modelRequests.length === 0 ? "Aucun modèle de bulletin configuré pour cet établissement." : "Aucun modèle de bulletin actif pour cet établissement."}</p>
+          {modelRequests.length > 0 ? (
+            <ul className="list-disc pl-5 text-sm text-muted" data-testid="rc-model-pending">
+              {modelRequests.map((request, index) => (
+                <li key={index}>{request.description || request.model_key} — Statut : {request.status}</li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="text-sm text-muted">Pour utiliser les bulletins, soumettez une demande de modèle. Un administrateur habilité doit ensuite terminer sa configuration et son activation.</p>
+          <Link to="/bulletins/modele" className="inline-block text-sm font-bold text-brand underline">Demander ou suivre un modèle de bulletin</Link>
+        </Card>
+      ) : null}
+
       <Card className="grid gap-4 p-4 md:grid-cols-3 lg:grid-cols-6">
         <Field label="Année scolaire" htmlFor="rc-year">
           <Select
@@ -303,7 +352,7 @@ export function ReportCardManagementPage() {
             value={modelKey}
             onChange={(event) => setModelKey(event.target.value)}
             options={[
-              { value: "", label: models.length ? "Choisir…" : "Aucun modèle actif" },
+              { value: "", label: modelsLoading ? "Chargement…" : modelsError ? "Modèles indisponibles" : models.length ? "Choisir…" : "Aucun modèle actif" },
               ...models.map((row) => ({ value: row.model_key, label: row.description || row.model_key })),
             ]}
           />
