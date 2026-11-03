@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   pdf: vi.fn(),
 }));
 const listHistory = vi.hoisted(() => vi.fn());
+const listModelRequests = vi.hoisted(() => vi.fn());
 const session = vi.hoisted(() => ({
   current: { user: { role: "Admin School", permissions: ["Bulletins:READ", "Bulletins:UPDATE"] } } as {
     user: { role: string; permissions: string[] };
@@ -22,7 +23,7 @@ const session = vi.hoisted(() => ({
 
 vi.mock("../lib/reportCardManagementApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/reportCardManagementApi")>();
-  return { ...actual, reportCardManagementApi: api };
+  return { ...actual, reportCardManagementApi: api, listBulletinModelRequests: listModelRequests };
 });
 vi.mock("../lib/reportCardHistoryApi", () => ({ reportCardHistoryApi: { listHistory: (...args: unknown[]) => listHistory(...args) } }));
 vi.mock("../lib/academicYearsApi", () => ({
@@ -121,6 +122,8 @@ describe("BULLETIN-UI-01 — gestion des bulletins (Web)", () => {
   beforeEach(() => {
     Object.values(api).forEach((fn) => fn.mockReset());
     listHistory.mockReset();
+    listModelRequests.mockReset();
+    listModelRequests.mockResolvedValue([{ model_key: "colombiere", status: "ACTIVE", description: "La Colombière" }]);
     session.current = { user: { role: "Admin School", permissions: ["Bulletins:READ", "Bulletins:UPDATE"] } };
     api.listClasses.mockResolvedValue([
       { id: "class-1", name: "6ème A", academicYearId: "year-1" },
@@ -259,4 +262,34 @@ describe("BULLETIN-UI-01 — gestion des bulletins (Web)", () => {
     await waitFor(() => expect(open).toHaveBeenCalledWith("blob:pdf", "_blank", "noopener"));
     open.mockRestore();
   });
+  it("aucun modèle configuré : message explicite et accès au parcours de demande", async () => {
+    listModelRequests.mockResolvedValue([]);
+    await renderPage();
+    expect(await screen.findByTestId("rc-model-empty")).toHaveTextContent("Aucun modèle de bulletin configuré");
+    expect(screen.getByRole("link", { name: "Demander ou suivre un modèle de bulletin" })).toHaveAttribute("href", "/bulletins/modele");
+    expect(screen.getByLabelText("Modèle de bulletin")).toHaveTextContent("Aucun modèle actif");
+    expect(screen.getByTestId("rc-preview")).toBeDisabled();
+  });
+
+  it("modèle en attente : statut réellement renvoyé par l'API, sans activation implicite", async () => {
+    listModelRequests.mockResolvedValue([{ model_key: "modele-A", description: "La Colombière", status: "READY_FOR_REVIEW" }]);
+    await renderPage();
+    expect(await screen.findByTestId("rc-model-pending")).toHaveTextContent("READY_FOR_REVIEW");
+    expect(screen.getByTestId("rc-model-empty")).toHaveTextContent("Aucun modèle de bulletin actif");
+    expect(screen.getByTestId("rc-preview")).toBeDisabled();
+  });
+
+  it("échec HTTP des modèles : message d'erreur, pas de faux état vide et reprise possible", async () => {
+    listModelRequests.mockRejectedValueOnce(new ApiError("private stack", 503, "UPSTREAM_ERROR"));
+    await renderPage();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Impossible de charger les modèles");
+    expect(alert).not.toHaveTextContent("private stack");
+    expect(screen.queryByTestId("rc-model-empty")).not.toBeInTheDocument();
+    listModelRequests.mockResolvedValue([{ model_key: "colombiere", status: "ACTIVE", description: "La Colombière" }]);
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+    await waitFor(() => expect(screen.queryByTestId("rc-model-error")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText("Modèle de bulletin")).toHaveValue("colombiere"));
+  });
+
 });
