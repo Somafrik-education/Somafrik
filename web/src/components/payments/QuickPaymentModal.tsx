@@ -29,7 +29,7 @@ import {
   type StudentSearchResult,
 } from "../../lib/quickPayment";
 import { buildPaymentReceiptPrintPlan } from "../../pages/entity-page/paymentWorkflow";
-import { financeApi } from "../../lib/financeApi";
+import { financeApi, type PaymentStudentOption } from "../../lib/financeApi";
 import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import {
   OPEN_OBLIGATION_RESOLVE_ERROR,
@@ -43,12 +43,63 @@ import {
 import { PaymentReceipt } from "./PaymentReceipt";
 import { OpenObligationCards } from "./OpenObligationCards";
 
+const STUDENTS_LOAD_ERROR =
+  "Impossible de charger la liste des élèves. La recherche ne peut pas confirmer une absence de résultat.";
+const STUDENT_UNRESOLVED_ERROR =
+  "Cet élève est introuvable pour l'encaissement dans cet établissement.";
+
+function flattenPaymentStudentOptions(options: PaymentStudentOption[], schoolCode: string): PaymentRecord[] {
+  const rows = Array.isArray(options) ? options : [];
+  const flattened: PaymentRecord[] = [];
+  for (const option of rows) {
+    const classes = option.classes?.length
+      ? option.classes
+      : option.classId
+        ? [{ classId: option.classId, classCode: option.classCode, className: option.className }]
+        : [];
+    for (const klass of classes) {
+      flattened.push({
+        id: option.studentId,
+        studentId: option.studentId,
+        firstName: option.firstName,
+        lastName: option.lastName,
+        name: `${option.firstName ?? ""} ${option.lastName ?? ""}`.trim(),
+        matricule: option.studentCode,
+        studentCode: option.studentCode,
+        publicId: option.studentCode,
+        classId: klass.classId,
+        classCode: klass.classCode,
+        className: klass.className,
+        schoolCode:
+          String(option.schoolCode ?? "").trim() ||
+          (schoolCode && schoolCode !== "*" ? schoolCode : ""),
+      });
+    }
+  }
+  return flattened;
+}
+
+function matchRosterStudent(
+  roster: PaymentRecord[],
+  identifiers: Array<string | undefined>,
+): PaymentRecord | undefined {
+  for (const raw of identifiers) {
+    const wanted = String(raw ?? "").trim();
+    if (!wanted) continue;
+    const match = findFinanceStudentOption(roster, wanted);
+    if (match) return match;
+  }
+  return undefined;
+}
+
 interface QuickPaymentModalProps {
   open: boolean;
   onClose: () => void;
   onSaved?: (payment: PaymentRecord) => void;
-  /** Préselectionne l'élève après chargement du catalogue (Impayés → encaissement). */
+  /** Préselectionne l'élève dès la liste roster (Impayés → encaissement), sans attendre le catalogue. */
   initialStudentId?: string;
+  /** Matricule public Impayés, si `initialStudentId` n'est pas l'UUID PostgreSQL du roster. */
+  initialStudentCode?: string;
   /**
    * Parcours Impayés : élève déjà connu, pas de recherche manuelle.
    * Le mode par défaut (Paiements) reste inchangé.
@@ -96,6 +147,7 @@ export function QuickPaymentModal({
   onClose,
   onSaved,
   initialStudentId,
+  initialStudentCode,
   mode = "default",
   unpaidRemaining,
   unpaidFeeIds,
@@ -125,7 +177,14 @@ export function QuickPaymentModal({
   const [catalogCurrency, setCatalogCurrency] = useState("");
   const [catalogError, setCatalogError] = useState("");
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [studentsError, setStudentsError] = useState("");
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [obligationsLoading, setObligationsLoading] = useState(false);
+  const [studentResolving, setStudentResolving] = useState(false);
   const [studentFees, setStudentFees] = useState<FinanceObligationProjection[]>([]);
+  const rosterFeesRef = useRef<FinanceObligationProjection[]>([]);
+  const schoolsRef = useRef(state.schools);
+  schoolsRef.current = state.schools;
 
   const students = useMemo(
     () => (optionStudents.length ? optionStudents : []),
@@ -162,10 +221,11 @@ export function QuickPaymentModal({
   );
   const isQuickStudent = mode === "quick-student";
   const unpaidHasOpenBalance = Number(unpaidRemaining) > 0 || (unpaidFeeIds?.length ?? 0) > 0;
+  const obligationsReady = !catalogLoading && !obligationsLoading;
   const obligationResolveError =
     isQuickStudent &&
     Boolean(selectedStudent) &&
-    !catalogLoading &&
+    obligationsReady &&
     openObligations.length === 0 &&
     unpaidHasOpenBalance;
   const total = sumPaymentLines(lines);
@@ -175,7 +235,8 @@ export function QuickPaymentModal({
     (sum, row) => sum + (Number.isFinite(row.balance) ? row.balance : 0),
     0,
   );
-  const nothingDue = Boolean(selectedStudent) && !catalogLoading && openObligations.length === 0 && !obligationResolveError;
+  const nothingDue =
+    Boolean(selectedStudent) && obligationsReady && openObligations.length === 0 && !obligationResolveError;
   const exceedsOpenBalance = openObligations.length > 0 && total > openBalance + 0.004;
   const collectionLocked = obligationResolveError || nothingDue;
   const currency = resolveFinanceCurrency(catalogCurrency, school?.currency);
@@ -183,6 +244,9 @@ export function QuickPaymentModal({
   useEffect(() => {
     const session = ++sessionGenRef.current;
     selectionGenRef.current = 0;
+    rosterFeesRef.current = [];
+    setObligationsLoading(false);
+    setStudentResolving(false);
     if (!open) return;
     setSearch("");
     setSelectedStudent(null);
@@ -194,84 +258,80 @@ export function QuickPaymentModal({
     setSavedPayment(null);
     setShowReceipt(false);
     setCatalogError("");
+    setStudentsError("");
     setCatalogLoading(true);
+    setStudentsLoading(true);
+    setStudentResolving(false);
+    setOptionStudents([]);
+    setStudentFees([]);
+
     void (async () => {
       try {
-        const [options, catalog, fees] = await Promise.all([
-          financeApi.listPaymentStudentOptions(),
-          financeApi.getFinanceCatalog(),
-          financeApi.listStudentFees(),
-        ]);
+        const options = await financeApi.listPaymentStudentOptions();
         if (session !== sessionGenRef.current) return;
-        const rows = Array.isArray(options) ? options : [];
-        const flattened: PaymentRecord[] = [];
-        for (const option of rows) {
-          const classes = option.classes?.length
-            ? option.classes
-            : option.classId
-              ? [{ classId: option.classId, classCode: option.classCode, className: option.className }]
-              : [];
-          for (const klass of classes) {
-            flattened.push({
-              id: option.studentId,
-              studentId: option.studentId,
-              firstName: option.firstName,
-              lastName: option.lastName,
-              name: `${option.firstName} ${option.lastName}`.trim(),
-              matricule: option.studentCode,
-              studentCode: option.studentCode,
-              publicId: option.studentCode,
-              classId: klass.classId,
-              classCode: klass.classCode,
-              className: klass.className,
-              schoolCode:
-                String(option.schoolCode ?? "").trim() ||
-                (schoolCode && schoolCode !== "*" ? schoolCode : ""),
-            });
-          }
-        }
+        const flattened = flattenPaymentStudentOptions(
+          Array.isArray(options) ? options : [],
+          schoolCode,
+        );
         setOptionStudents(flattened);
-        if (selectionGenRef.current === 0) {
-          setStudentFees(Array.isArray(fees) ? fees : []);
-        }
+        setStudentsError("");
+        const match = matchRosterStudent(flattened, [initialStudentId, initialStudentCode]);
+        if (!match) return;
+        setStudentResolving(true);
+        void applySelectedStudent(
+          studentSearchResultFromOption(match, schoolsRef.current),
+          flattened,
+          rosterFeesRef.current,
+        );
+      } catch {
+        if (session !== sessionGenRef.current) return;
+        setStudentsError(STUDENTS_LOAD_ERROR);
+        setOptionStudents([]);
+      } finally {
+        if (session === sessionGenRef.current) setStudentsLoading(false);
+      }
+    })();
+
+    void (async () => {
+      try {
+        const catalog = await financeApi.getFinanceCatalog();
+        if (session !== sessionGenRef.current) return;
         const activeMethods = (catalog.paymentMethods ?? []).filter((row) => row.active).map((row) => row.label);
+        if (catalog.currency) setCatalogCurrency(catalog.currency);
         if (!activeMethods.length) {
-          if (selectionGenRef.current === 0) {
-            setCatalogMethods([]);
-            setMethod("");
-            setCatalogError("Aucun moyen de paiement actif pour cet établissement.");
-            if (catalog.currency) setCatalogCurrency(catalog.currency);
-          }
+          setCatalogMethods([]);
+          setMethod("");
+          setCatalogError("Aucun moyen de paiement actif pour cet établissement.");
           return;
         }
+        setCatalogError("");
         setCatalogMethods(activeMethods);
-        setMethod(activeMethods[0]);
-        if (catalog.currency) setCatalogCurrency(catalog.currency);
-
-        const wanted = String(initialStudentId ?? "").trim();
-        if (wanted) {
-          const match = findFinanceStudentOption(flattened, wanted);
-          if (match) {
-            void applySelectedStudent(
-              studentSearchResultFromOption(match, state.schools),
-              flattened,
-              Array.isArray(fees) ? fees : [],
-            );
-          }
-        }
+        setMethod((current) => (current && activeMethods.includes(current) ? current : activeMethods[0]));
       } catch (cause) {
         if (session !== sessionGenRef.current) return;
-        if (selectionGenRef.current !== 0) return;
         setCatalogError(cause instanceof Error ? cause.message : "Catalogue financier indisponible.");
-        setOptionStudents([]);
         setCatalogMethods([]);
         setCatalogCurrency("");
-        setStudentFees([]);
       } finally {
         if (session === sessionGenRef.current) setCatalogLoading(false);
       }
     })();
-  }, [open, schoolCode, initialStudentId]);
+
+    void (async () => {
+      try {
+        const fees = await financeApi.listStudentFees();
+        if (session !== sessionGenRef.current) return;
+        if (selectionGenRef.current !== 0) return;
+        const rows = Array.isArray(fees) ? fees : [];
+        rosterFeesRef.current = rows;
+        setStudentFees(rows);
+      } catch {
+        if (session !== sessionGenRef.current) return;
+        if (selectionGenRef.current !== 0) return;
+        rosterFeesRef.current = [];
+      }
+    })();
+  }, [open, schoolCode, initialStudentId, initialStudentCode]);
 
   async function applySelectedStudent(
     student: StudentSearchResult,
@@ -280,19 +340,18 @@ export function QuickPaymentModal({
   ) {
     const session = sessionGenRef.current;
     const selection = ++selectionGenRef.current;
+    const classOptionsForStudent = collectStudentPaymentClasses(student.id, roster);
+    const nextClassId = classOptionsForStudent.length === 1 ? classOptionsForStudent[0].classId : "";
+    const applyOpenLines = (openRows: ReturnType<typeof collectOpenObligationsFromProjection>) => {
+      setLines(openRows.length === 1 ? [createPaymentLine(openRows[0].obligationId)] : [createPaymentLine("")]);
+    };
     setSelectedStudent(student);
     setSearch(student.name);
-    const options = collectStudentPaymentClasses(student.id, roster);
-    setClassId(options.length === 1 ? options[0].classId : "");
-    const applyOpenLines = (openRows: ReturnType<typeof collectOpenObligationsFromProjection>) => {
-      if (session !== sessionGenRef.current || selection !== selectionGenRef.current) return;
-      if (openRows.length === 1) {
-        setLines([createPaymentLine(openRows[0].obligationId)]);
-        return;
-      }
-      setLines([createPaymentLine("")]);
-    };
+    setClassId(nextClassId);
+    setStudentFees(fees);
     applyOpenLines(collectOpenObligationsFromProjection(studentIdentityFromSearch(student), fees));
+    setStudentResolving(false);
+    setObligationsLoading(true);
     try {
       const scoped = await financeApi.listStudentFees(student.id);
       if (session !== sessionGenRef.current || selection !== selectionGenRef.current) return;
@@ -302,6 +361,10 @@ export function QuickPaymentModal({
       }
     } catch {
       if (session !== sessionGenRef.current || selection !== selectionGenRef.current) return;
+    } finally {
+      if (session === sessionGenRef.current && selection === selectionGenRef.current) {
+        setObligationsLoading(false);
+      }
     }
   }
 
@@ -371,6 +434,10 @@ export function QuickPaymentModal({
   async function handleSubmit(event: FormEvent, printAfter = false) {
     event.preventDefault();
     if (busyRef.current) return;
+    if (studentsLoading || studentResolving || obligationsLoading) {
+      showToast("Les données d'encaissement sont encore en cours de chargement.", "error");
+      return;
+    }
     if (catalogError || !catalogMethods.length) {
       showToast(catalogError || "Catalogue financier indisponible.", "error");
       return;
@@ -459,13 +526,13 @@ export function QuickPaymentModal({
           </Button>
           <Button
             variant="secondary"
-            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance || lineExceedsBalance}
+            disabled={busy || catalogLoading || studentsLoading || studentResolving || obligationsLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance || lineExceedsBalance}
             onClick={(event) => void handleSubmit(event, true)}
           >
             {busy ? "Enregistrement…" : "Enregistrer et imprimer"}
           </Button>
           <Button
-            disabled={busy || catalogLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance || lineExceedsBalance}
+            disabled={busy || catalogLoading || studentsLoading || studentResolving || obligationsLoading || Boolean(catalogError) || !catalogMethods.length || collectionLocked || exceedsOpenBalance || lineExceedsBalance}
             onClick={(event) => void handleSubmit(event, false)}
           >
             {busy ? "Enregistrement…" : "Enregistrer l'encaissement"}
@@ -475,7 +542,7 @@ export function QuickPaymentModal({
     >
       <form
         className="space-y-5"
-        aria-busy={busy || catalogLoading}
+        aria-busy={busy || catalogLoading || studentsLoading || studentResolving || obligationsLoading}
         data-testid="quick-payment-modal"
         onSubmit={(event) => void handleSubmit(event, false)}
       >
@@ -484,9 +551,27 @@ export function QuickPaymentModal({
             Chargement du catalogue financier…
           </p>
         ) : null}
+        {studentsLoading || studentResolving ? (
+          <p
+            className="rounded-xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted"
+            role="status"
+            data-testid="payment-students-loading"
+          >
+            {studentsLoading ? "Chargement de la liste des élèves…" : "Chargement de l'élève…"}
+          </p>
+        ) : null}
         {catalogError ? (
           <p className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
             {catalogError}
+          </p>
+        ) : null}
+        {studentsError ? (
+          <p
+            className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+            role="alert"
+            data-testid="payment-students-error"
+          >
+            {studentsError}
           </p>
         ) : null}
         {isQuickStudent ? null : (
@@ -510,9 +595,13 @@ export function QuickPaymentModal({
               Saisissez au moins 2 caractères pour retrouver un élève inscrit.
             </p>
 
-            {search.length >= 2 && !selectedStudent ? (
+            {search.length >= 2 && !selectedStudent && !studentsError ? (
               <div className="max-h-44 overflow-y-auto rounded-xl border border-line bg-slate-50">
-                {searchResults.length ? (
+                {studentsLoading ? (
+                  <p className="px-4 py-3 text-sm text-muted" role="status">
+                    Chargement de la liste des élèves…
+                  </p>
+                ) : searchResults.length ? (
                   searchResults.map((student) => (
                     <button
                       key={student.id}
@@ -533,6 +622,16 @@ export function QuickPaymentModal({
             ) : null}
           </>
         )}
+
+        {isQuickStudent && !selectedStudent && !studentsLoading && !studentResolving && !studentsError && (initialStudentId || initialStudentCode) ? (
+          <p
+            className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+            role="alert"
+            data-testid="payment-student-unresolved"
+          >
+            {STUDENT_UNRESOLVED_ERROR}
+          </p>
+        ) : null}
 
         {selectedStudent && !isQuickStudent ? (
           <div
@@ -594,7 +693,11 @@ export function QuickPaymentModal({
         {selectedStudent ? (
           <div className="space-y-2">
             <p className="text-sm font-semibold text-ink">Frais encore dus</p>
-            {obligationResolveError ? (
+            {obligationsLoading ? (
+              <p className="rounded-xl border border-line bg-slate-50 px-4 py-3 text-sm text-muted" role="status">
+                Chargement des obligations…
+              </p>
+            ) : obligationResolveError ? (
               <p
                 className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
                 role="alert"
@@ -630,7 +733,7 @@ export function QuickPaymentModal({
           </div>
         ) : null}
 
-        {collectionLocked ? null : (
+        {collectionLocked || obligationsLoading || studentResolving ? null : (
           <div className="space-y-3">
             <p className="text-sm font-semibold text-ink">Affectation de l'encaissement</p>
             {lines.map((line, index) => {
