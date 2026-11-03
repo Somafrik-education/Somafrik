@@ -278,6 +278,15 @@ function validateSpec(raw) {
           calculable: Boolean(aggregation && roundingStage),
         });
 
+  const fact_sources =
+    raw.fact_sources === undefined
+      ? null
+      : normalizeFactSources(raw.fact_sources, {
+          subjects,
+          periodIds: normalizedPeriods.map((period) => period.id),
+          componentIds: score_components.map((component) => component.id),
+        });
+
   const spec = {
     engine_id: ENGINE_ID,
     layer: LAYERS[0],
@@ -293,8 +302,94 @@ function validateSpec(raw) {
     ...(aggregation ? { aggregation } : {}),
     ...(pass_rule ? { pass_rule } : {}),
     ...(subjects ? { subjects } : {}),
+    ...(fact_sources ? { fact_sources } : {}),
   };
   return spec;
+}
+
+/**
+ * BULLETIN-PUBLISH-01 — sources des notes réelles (clé optionnelle `fact_sources`).
+ *
+ *   components: { <COMPOSANTE>: { evaluation_types: [codes], aggregation: "weighted_average" | "sum" } }
+ *   periods:    { <PÉRIODE>:    { term_names: [noms de trimestre] } }
+ *
+ * Correspondance explicite et exhaustive : chaque composante et chaque période
+ * du profil doit être déclarée ; un code ou un nom ne peut désigner qu'une seule
+ * cible (sinon AMBIGUOUS_FACT_SOURCE). Codes : forme canonique evaluation_types.code ;
+ * noms : minuscules, sans accents, espaces réduits. Valeur inconnue au calcul :
+ * anomalie bloquante, jamais une conversion silencieuse.
+ */
+const FACT_AGGREGATIONS = Object.freeze(["weighted_average", "sum"]);
+
+function normalizeEvaluationTypeCode(value) {
+  const { normalizeCode } = require("../evaluationTypesManagement");
+  return normalizeCode(value);
+}
+
+function normalizeTermName(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeSourceList(raw, normalizer, seen, target) {
+  if (!Array.isArray(raw) || raw.length < 1) throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+  const values = [];
+  for (const item of raw) {
+    if (typeof item !== "string") throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+    const value = normalizer(item);
+    if (!value) throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+    if (seen.has(value)) throw new AcademicRuleProfileError("AMBIGUOUS_FACT_SOURCE", `valeur ${value} déjà associée à ${seen.get(value)}`);
+    seen.set(value, target);
+    values.push(value);
+  }
+  return values.sort();
+}
+
+function normalizeFactSources(raw, { subjects, periodIds, componentIds }) {
+  if (!subjects) throw new AcademicRuleProfileError("FACT_SOURCES_REQUIRE_SUBJECTS");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+  rejectCountrySchoolKeys(raw);
+  const rawComponents = raw.components;
+  const rawPeriods = raw.periods;
+  if (!rawComponents || typeof rawComponents !== "object" || Array.isArray(rawComponents)) {
+    throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+  }
+  if (!rawPeriods || typeof rawPeriods !== "object" || Array.isArray(rawPeriods)) {
+    throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+  }
+  for (const key of Object.keys(rawComponents)) {
+    if (!componentIds.includes(key)) throw new AcademicRuleProfileError("UNKNOWN_FACT_SOURCE_COMPONENT");
+  }
+  for (const key of Object.keys(rawPeriods)) {
+    if (!periodIds.includes(key)) throw new AcademicRuleProfileError("UNKNOWN_FACT_SOURCE_PERIOD");
+  }
+  const seenCodes = new Map();
+  const components = {};
+  for (const componentId of [...componentIds].sort()) {
+    const entry = rawComponents[componentId];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new AcademicRuleProfileError("FACT_SOURCE_COMPONENT_MISSING");
+    }
+    if (!FACT_AGGREGATIONS.includes(entry.aggregation)) throw new AcademicRuleProfileError("INVALID_FACT_AGGREGATION");
+    components[componentId] = {
+      evaluation_types: normalizeSourceList(entry.evaluation_types, normalizeEvaluationTypeCode, seenCodes, componentId),
+      aggregation: entry.aggregation,
+    };
+  }
+  const seenTerms = new Map();
+  const periods = {};
+  for (const periodId of [...periodIds].sort()) {
+    const entry = rawPeriods[periodId];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new AcademicRuleProfileError("FACT_SOURCE_PERIOD_MISSING");
+    }
+    periods[periodId] = { term_names: normalizeSourceList(entry.term_names, normalizeTermName, seenTerms, periodId) };
+  }
+  return { components, periods };
 }
 
 /**
@@ -687,4 +782,7 @@ module.exports = {
   assertScoreBounds,
   SUBJECT_KINDS,
   resolveSubjectComponentRule,
+  FACT_AGGREGATIONS,
+  normalizeEvaluationTypeCode,
+  normalizeTermName,
 };

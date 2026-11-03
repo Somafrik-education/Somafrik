@@ -17,7 +17,7 @@
  * rapporte aucun point et son maximum reste attendu.
  */
 
-const { resolveSubjectComponentRule } = require("./academicRuleProfile");
+const { resolveSubjectComponentRule, assignRanks } = require("./academicRuleProfile");
 
 /** Statut d'un fait transmis au moteur (défaut : PUBLISHED). */
 const FACT_STATUSES = Object.freeze(["PUBLISHED", "UNPUBLISHED", "CANCELLED"]);
@@ -38,11 +38,11 @@ function leafSubjects(profile) {
 }
 
 /** Cellules attendues sans fait : MISSING (NOT_ENTERED), jamais 0. */
-function expectedMissingCells(profile, studentId, cells) {
+function expectedMissingCells(profile, studentId, cells, periods = orderedPeriods(profile)) {
   const present = new Set(cells.map((cell) => `${cell.subject_id}\0${cell.period_id}\0${cell.score_component_id}`));
   const missing = [];
   for (const subject of leafSubjects(profile)) {
-    for (const periodId of orderedPeriods(profile)) {
+    for (const periodId of periods) {
       for (const componentId of componentIds(profile)) {
         const rule = resolveSubjectComponentRule(profile, subject.id, periodId, componentId);
         if (rule.state !== "APPLICABLE") continue;
@@ -145,8 +145,9 @@ function collectIssues(cells) {
  * @param {object[]} cells cellules d'un élève (buildCells)
  * @param {(value:number)=>number} round arrondi d'affichage du profil
  */
-function computeSubjectTotals(profile, cells, round) {
-  const periods = orderedPeriods(profile);
+function computeSubjectTotals(profile, cells, round, scopeCtx = null) {
+  const periods = scopeCtx ? scopeCtx.periods : orderedPeriods(profile);
+  const annualInScope = scopeCtx ? scopeCtx.annual : profile.annual !== false;
   const cellsByKey = new Map(cells.map((cell) => [`${cell.subject_id}\0${cell.period_id}\0${cell.score_component_id}`, cell]));
   const leafRows = new Map();
   for (const subject of leafSubjects(profile)) {
@@ -172,7 +173,7 @@ function computeSubjectTotals(profile, cells, round) {
       order: subject.order,
       periods: perPeriod,
     };
-    if (profile.annual !== false) row.annual = sumTotals(periods.map((periodId) => perPeriod[periodId]), round);
+    if (annualInScope) row.annual = sumTotals(periods.map((periodId) => perPeriod[periodId]), round);
     return row;
   });
   const topLevel = rows.filter((row) => row.parent_id === null);
@@ -180,16 +181,55 @@ function computeSubjectTotals(profile, cells, round) {
   for (const periodId of periods) {
     periodTotals[periodId] = sumTotals(topLevel.map((row) => row.periods[periodId]), round);
   }
-  const result = { rows, periods: periodTotals };
-  if (profile.annual !== false) result.annual = sumTotals(periods.map((periodId) => periodTotals[periodId]), round);
-  const overall = profile.annual !== false ? result.annual.status : combineStatus(Object.values(periodTotals).map((total) => total.status));
+  const result = { scope: { periods: [...periods], annual: annualInScope }, rows, periods: periodTotals };
+  if (annualInScope) result.annual = sumTotals(periods.map((periodId) => periodTotals[periodId]), round);
+  const overall = annualInScope ? result.annual.status : combineStatus(Object.values(periodTotals).map((total) => total.status));
   result.status = overall === INCOMPLETE ? INCOMPLETE : COMPLETE;
   result.issues = collectIssues(cells);
   return result;
+}
+
+/**
+ * BULLETIN-PUBLISH-01 — classement des totaux généraux (chaque période du
+ * périmètre et bilan annuel) parmi les élèves de CE calcul (même établissement,
+ * même classe, même période, même profil). Un total INCOMPLETE n'est jamais
+ * classé (NOT_RANKED / INCOMPLETE). Ex æquo : profile.ranking.ties.
+ */
+function assignSubjectRanks(profile, studentResults) {
+  const totals = studentResults.map((student) => student.subject_totals).filter(Boolean);
+  for (const subjectTotals of totals) subjectTotals.cohort_size = totals.length;
+  if (!profile.ranking || profile.ranking.enabled !== true) return;
+  const keys = [];
+  const first = totals[0];
+  if (!first) return;
+  for (const periodId of first.scope.periods) keys.push((t) => t.periods[periodId]);
+  if (first.scope.annual) keys.push((t) => t.annual);
+  for (const pick of keys) {
+    const eligible = [];
+    for (const subjectTotals of totals) {
+      const total = pick(subjectTotals);
+      if (total.status !== COMPLETE) {
+        total.rank = { kind: "NOT_RANKED", reason: total.status === INCOMPLETE ? "INCOMPLETE" : NOT_APPLICABLE };
+      } else if (total.percentage.kind === NOT_APPLICABLE) {
+        total.rank = { kind: "NOT_RANKED", reason: "NO_MAXIMUM" };
+      } else {
+        eligible.push(total);
+      }
+    }
+    eligible.sort((left, right) => right.percentage.internal - left.percentage.internal);
+    const ranks = assignRanks(
+      eligible.map((total) => total.percentage.internal),
+      profile.ranking.ties
+    );
+    eligible.forEach((total, index) => {
+      total.rank = { kind: "RANK", internal: ranks[index], exposed: ranks[index], ranked: eligible.length };
+    });
+  }
 }
 
 module.exports = {
   FACT_STATUSES,
   expectedMissingCells,
   computeSubjectTotals,
+  assignSubjectRanks,
 };

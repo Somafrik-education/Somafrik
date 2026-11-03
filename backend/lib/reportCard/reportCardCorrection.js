@@ -17,7 +17,7 @@ function requireReason(reason) {
   return text;
 }
 
-function createReportCardCorrection({ publication, getFacts, getProfile, getSchema } = {}) {
+function createReportCardCorrection({ publication, getFacts, getProfile, getSchema, recomputeSubjectStudent } = {}) {
   if (!publication || typeof publication.publish !== "function") {
     throw new ReportCardPublicationError("PUBLICATION_REQUIRED");
   }
@@ -93,7 +93,7 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
     const unscoped = await Promise.resolve(
       publication.payloadForRender({ tenant, reportCardId, version: Number(sourceVersion) })
     );
-    if (typeof getFacts !== "function" || typeof getProfile !== "function" || typeof getSchema !== "function") {
+    if (typeof getProfile !== "function" || typeof getSchema !== "function") {
       throw new ReportCardPublicationError("FACTS_REQUIRED");
     }
     const profile = await getProfile({ tenant, ref: unscoped.provenance && unscoped.provenance.profile });
@@ -102,6 +102,30 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
       throw new ReportCardPublicationError("FACTS_REQUIRED");
     }
     if (!unscoped.academic_year_id || !unscoped.class_id) {
+      throw new ReportCardPublicationError("FACTS_REQUIRED");
+    }
+    if (unscoped.period_scope != null) {
+      // BULLETIN-PUBLISH-01 : bulletin par élève issu des notes réelles.
+      if (typeof recomputeSubjectStudent !== "function") throw new ReportCardPublicationError("FACTS_REQUIRED");
+      const recomputed = await recomputeSubjectStudent({ tenant, payload: unscoped, profile, schema });
+      const subjectPayload = {
+        report_card_id: unscoped.report_card_id,
+        published_snapshot_version: Number(sourceVersion) + 1,
+        school_id: unscoped.school_id,
+        published_at: new Date().toISOString(),
+        published_by: actor && actor.actorId ? String(actor.actorId) : null,
+        engine_id: unscoped.engine_id,
+        provenance: unscoped.provenance,
+        students: [recomputed.student],
+        academic_year_id: unscoped.academic_year_id,
+        class_id: unscoped.class_id,
+        model_key: unscoped.model_key,
+        period_scope: unscoped.period_scope,
+        content_sha256: recomputed.content_sha256,
+      };
+      return publishCorrection({ tenant, actor, sourceVersion, reason, commandId, payload: subjectPayload });
+    }
+    if (typeof getFacts !== "function") {
       throw new ReportCardPublicationError("FACTS_REQUIRED");
     }
     const facts = await getFacts({
@@ -132,6 +156,10 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
       academic_year_id: unscoped.academic_year_id,
       class_id: unscoped.class_id,
     };
+    return publishCorrection({ tenant, actor, sourceVersion, reason, commandId, payload });
+  }
+
+  async function publishCorrection({ tenant, actor, sourceVersion, reason, commandId, payload }) {
     let published;
     try {
       published = await Promise.resolve(
