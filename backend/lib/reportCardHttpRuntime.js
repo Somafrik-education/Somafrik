@@ -245,7 +245,18 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
     return labelsStore.getLabels(args);
   }
 
+  // BULLETIN-CATALOG-01 — catalogue (tables créées par migration explicite, jamais au démarrage).
+  const catalog =
+    overrides.catalog ||
+    (db
+      ? require("./reportCard/reportCardCatalog").createReportCardCatalog({
+          store: overrides.reportCardCatalogStore || require("../db/reportCardCatalogPgStore").createReportCardCatalogPgStore(db.pool || db),
+          configuration,
+        })
+      : null);
+
   return {
+    catalog,
     configuration,
     publication,
     getFacts,
@@ -300,6 +311,7 @@ function createReportCardHttpBindings({
     getSourceArtifact: () => getRuntime().sourceArtifact,
     publishInitial: (args) => getRuntime().publishInitial(args),
     getClassPublication: () => getRuntime().classPublication,
+    getCatalog: () => getRuntime().catalog,
     getPresentationLabels: (args) =>
       getRuntime().getPresentationLabels ? getRuntime().getPresentationLabels(args) : {},
     resolveActor,

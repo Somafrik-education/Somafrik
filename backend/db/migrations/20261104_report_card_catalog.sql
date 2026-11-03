@@ -28,15 +28,17 @@ CREATE TABLE IF NOT EXISTS report_card_catalog_models (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Modèles initiaux génériques (références de présentation : La Colombière,
--- Le Berceau de la Sagesse ; aucun établissement imposé).
+-- Modèles initiaux, construits à partir des caractéristiques structurelles des
+-- deux références pédagogiques (La Colombière : matières simples ; Le Berceau de
+-- la Sagesse : matières principales et sous-matières). Modèles personnalisables
+-- par chaque établissement ; aucun établissement imposé.
 INSERT INTO report_card_catalog_models (model_id, version, name, description, presentation_style)
 VALUES
-  ('classique', 1, 'Bulletin classique',
-   'Matières simples ; colonnes TJ et EX avec maxima par matière ; trois trimestres et bilan annuel.',
+  ('colombiere', 1, 'Modèle Colombière — matières simples',
+   'Une ligne par matière ; évaluation configurable (travail journalier et examen, ou note unique par période) ; maxima par matière ; trois trimestres et bilan annuel ; pourcentage et rang.',
    'simple'),
-  ('sous-matieres', 1, 'Bulletin à sous-matières',
-   'Matières principales regroupant des sous-matières ; maxima TJ et EX par sous-matière ; sous-totaux par matière principale.',
+  ('berceau', 1, 'Modèle Berceau — matières et sous-matières',
+   'Matières principales regroupant des sous-matières ; évaluation configurable ; maxima par sous-matière ; sous-totaux par matière principale ; trois trimestres et bilan annuel.',
    'hierarchical')
 ON CONFLICT (model_id) DO NOTHING;
 

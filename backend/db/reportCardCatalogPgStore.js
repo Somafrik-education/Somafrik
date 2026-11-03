@@ -12,9 +12,29 @@ function text(value) {
   return value == null ? "" : String(value).trim();
 }
 
+/** Tables absentes (migration non appliquée) : catalogue indisponible, jamais une liste vide. */
+function unavailable(err) {
+  if (err && err.code === "42P01") {
+    const wrapped = new Error("CATALOG_UNAVAILABLE");
+    wrapped.code = "CATALOG_UNAVAILABLE";
+    return wrapped;
+  }
+  return err;
+}
+
 function createReportCardCatalogPgStore(db) {
-  const pool = db && db.pool ? db.pool : db;
-  if (!pool || typeof pool.query !== "function") throw new Error("PostgreSQL requis.");
+  const rawPool = db && db.pool ? db.pool : db;
+  if (!rawPool || typeof rawPool.query !== "function") throw new Error("PostgreSQL requis.");
+  const pool = {
+    query: (...args) => rawPool.query(...args).catch((err) => Promise.reject(unavailable(err))),
+    connect: async () => {
+      const client = await rawPool.connect();
+      return {
+        query: (...args) => client.query(...args).catch((err) => Promise.reject(unavailable(err))),
+        release: () => client.release(),
+      };
+    },
+  };
 
   async function listModels() {
     const result = await pool.query(

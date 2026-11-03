@@ -2,7 +2,7 @@
 
 Généré par `node scripts/mono-t1-route-inventory.js` ; le contrat des routes est vérifié en CI par `--check`. Ne pas éditer à la main.
 
-Routes réellement enregistrées : **374** (relevé runtime d'Express, pas une recherche textuelle).
+Routes réellement enregistrées : **382** (relevé runtime d'Express, pas une recherche textuelle).
 
 Tous les routes authentifiées (hors expression régulière) sont aussi couvertes par les balayages A de `backend/lib/monoT1.authSessions.http.pg.test.js` (anonyme, en-tête invalide, signature étrangère, jeton expiré, session inconnue ⇒ 401 sans donnée) ; la matrice RBAC observée (`backend/lib/monoT1.rbacMatrix.http.pg.test.js`, référence `docs/project/MONO-T1-RBAC-MATRIX.json`) couvre chaque route sous `requirePermission` pour six comptes établissement ; la colonne « Tests MONO-T1 » ne liste que les tests ciblés qui appellent le chemin.
 
@@ -16,7 +16,7 @@ Limites : `allowedRoles` = matrice de rôles **par défaut** (seed), la matrice 
 | Autres | 7 | 0 | 0 | 3 | 4 | 5 / 5 | 1 |
 | B. Utilisateurs et rôles | 37 | 0 | 25 | 12 | 0 | 6 / 8 | 6 |
 | C. Élèves et inscriptions | 47 | 0 | 28 | 19 | 0 | 36 / 39 | 7 |
-| D. Notes et présences | 67 | 0 | 36 | 31 | 0 | 46 / 47 | 8 |
+| D. Notes et présences | 75 | 0 | 40 | 35 | 0 | 47 / 48 | 8 |
 | E. Finance | 26 | 0 | 13 | 13 | 0 | 18 / 18 | 9 |
 | F. Communication | 45 | 0 | 23 | 22 | 0 | 33 / 35 | 9 |
 | G. Pédagogie, planning et référentiels | 80 | 0 | 2 | 48 | 30 | 26 / 37 | 0 |
@@ -69,7 +69,7 @@ Limites : `allowedRoles` = matrice de rôles **par défaut** (seed), la matrice 
 | `GET /api/privacy/erasure-requests` | backend/server.js:619 | oui | `GET /api/privacy/erasure-requests` | — | PREFET_ETUDES, PROVISEUR, SCHOOL_ADMIN | — | — | — | — | FAIBLE | 2 | — |
 | `POST /api/privacy/erasure-requests` | backend/server.js:555 | **non** | — | assertBoundAccessSession | — | — | — | recordAudit | — | MOYEN | 2 | — |
 | `POST /api/privacy/erasure-requests/:requestId/execute` | backend/server.js:630 | oui | `POST /api/privacy/erasure-requests/:requestId/execute` | — | SCHOOL_ADMIN | — | — | — | — | MOYEN | 1 | — |
-| `POST /api/public/report-cards/verify` | backend/lib/reportCard/reportCardHttp.js:426 | **non** | — | — | — | — | — | — | — | MOYEN | 3 | — |
+| `POST /api/public/report-cards/verify` | backend/lib/reportCard/reportCardHttp.js:540 | **non** | — | — | — | — | — | — | — | MOYEN | 3 | — |
 
 ### B. Utilisateurs et rôles
 
@@ -196,41 +196,49 @@ Limites : `allowedRoles` = matrice de rôles **par défaut** (seed), la matrice 
 | `GET /api/report-card-templates` | backend/server.js:1826 | oui | `GET /api/report-card-templates` | — | COUNTRY_ADMIN, PARENT, PREFET_ETUDES, PROVISEUR, SCHOOL_ADMIN, SECRETARY, STUDENT, SUPER_ADMIN, TEACHER | — | — | listReportCardTemplates | — | MOYEN | **0** | — |
 | `PUT /api/report-card-templates` | backend/server.js:1831 | oui | `PUT /api/report-card-templates` | — | PREFET_ETUDES, PROVISEUR, SCHOOL_ADMIN, SECRETARY, SUPER_ADMIN | — | — | upsertReportCardTemplate | — | ÉLEVÉ | **0** | — |
 | `POST /api/report-card-templates/:templateId/archive` | backend/server.js:1837 | oui | `POST /api/report-card-templates/:templateId/archive` | — | PREFET_ETUDES, PROVISEUR, SCHOOL_ADMIN, SECRETARY, SUPER_ADMIN | — | — | archiveReportCardTemplate | — | ÉLEVÉ | **0** | — |
-| `GET /api/report-card/admin/bindings/:modelKey` | backend/lib/reportCard/reportCardHttp.js:992 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `GET /api/report-card/admin/catalog` | backend/lib/reportCard/reportCardHttp.js:964 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `GET /api/report-card/admin/queue` | backend/lib/reportCard/reportCardHttp.js:908 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `GET /api/report-card/admin/requests/:requestId` | backend/lib/reportCard/reportCardHttp.js:922 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `POST /api/report-card/admin/requests/:requestId/activate` | backend/lib/reportCard/reportCardHttp.js:1152 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
-| `POST /api/report-card/admin/requests/:requestId/bind-bundle` | backend/lib/reportCard/reportCardHttp.js:1049 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
-| `GET /api/report-card/admin/requests/:requestId/bundle` | backend/lib/reportCard/reportCardHttp.js:976 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `POST /api/report-card/admin/requests/:requestId/configure` | backend/lib/reportCard/reportCardHttp.js:1020 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
-| `POST /api/report-card/admin/requests/:requestId/ready-for-review` | backend/lib/reportCard/reportCardHttp.js:1095 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
-| `POST /api/report-card/admin/requests/:requestId/reject` | backend/lib/reportCard/reportCardHttp.js:1135 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | **0** | — |
-| `POST /api/report-card/admin/requests/:requestId/review` | backend/lib/reportCard/reportCardHttp.js:1008 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
-| `POST /api/report-card/admin/requests/:requestId/save-template` | backend/lib/reportCard/reportCardHttp.js:1032 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
-| `GET /api/report-card/admin/requests/:requestId/source-artifact` | backend/lib/reportCard/reportCardHttp.js:934 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `GET /api/report-card/admin/requests/:requestId/source-artifact/content` | backend/lib/reportCard/reportCardHttp.js:946 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `GET /api/report-card/bindings/:modelKey` | backend/lib/reportCard/reportCardHttp.js:565 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `GET /api/report-card/publications` | backend/lib/reportCard/reportCardHttp.js:597 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 3 | — |
-| `POST /api/report-card/publications` | backend/lib/reportCard/reportCardHttp.js:847 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 3 | — |
-| `POST /api/report-card/publications/:reportCardId/corrections` | backend/lib/reportCard/reportCardHttp.js:861 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | ÉLEVÉ | 2 | — |
-| `GET /api/report-card/publications/:reportCardId/history` | backend/lib/reportCard/reportCardHttp.js:735 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 2 | — |
-| `GET /api/report-card/publications/:reportCardId/pdf` | backend/lib/reportCard/reportCardHttp.js:638 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 3 | — |
-| `GET /api/report-card/publications/:reportCardId/presentation` | backend/lib/reportCard/reportCardHttp.js:701 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | **0** | — |
-| `GET /api/report-card/publications/:reportCardId/snapshot` | backend/lib/reportCard/reportCardHttp.js:679 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 2 | — |
-| `GET /api/report-card/publications/:reportCardId/versions/:version` | backend/lib/reportCard/reportCardHttp.js:781 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 2 | — |
-| `POST /api/report-card/publications/:reportCardId/versions/:version/revoke` | backend/lib/reportCard/reportCardHttp.js:884 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | ÉLEVÉ | 2 | — |
-| `POST /api/report-card/publications/preview` | backend/lib/reportCard/reportCardHttp.js:816 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
-| `GET /api/report-card/requests` | backend/lib/reportCard/reportCardHttp.js:431 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 3 | — |
-| `POST /api/report-card/requests` | backend/lib/reportCard/reportCardHttp.js:443 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 3 | — |
-| `GET /api/report-card/requests/:requestId` | backend/lib/reportCard/reportCardHttp.js:512 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `POST /api/report-card/requests/:requestId/approve` | backend/lib/reportCard/reportCardHttp.js:524 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
-| `GET /api/report-card/requests/:requestId/audit` | backend/lib/reportCard/reportCardHttp.js:553 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `GET /api/report-card/requests/:requestId/bundle` | backend/lib/reportCard/reportCardHttp.js:581 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
-| `POST /api/report-card/requests/:requestId/request-changes` | backend/lib/reportCard/reportCardHttp.js:536 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | **0** | — |
-| `GET /api/report-card/requests/:requestId/source-artifact` | backend/lib/reportCard/reportCardHttp.js:482 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | **0** | — |
-| `POST /api/report-card/requests/:requestId/source-artifact` | backend/lib/reportCard/reportCardHttp.js:460 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | **0** | — |
-| `GET /api/report-card/requests/:requestId/source-artifact/content` | backend/lib/reportCard/reportCardHttp.js:494 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `GET /api/report-card/admin/bindings/:modelKey` | backend/lib/reportCard/reportCardHttp.js:1106 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `GET /api/report-card/admin/catalog` | backend/lib/reportCard/reportCardHttp.js:1078 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `GET /api/report-card/admin/queue` | backend/lib/reportCard/reportCardHttp.js:1022 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `GET /api/report-card/admin/requests/:requestId` | backend/lib/reportCard/reportCardHttp.js:1036 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `POST /api/report-card/admin/requests/:requestId/activate` | backend/lib/reportCard/reportCardHttp.js:1266 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
+| `POST /api/report-card/admin/requests/:requestId/bind-bundle` | backend/lib/reportCard/reportCardHttp.js:1163 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
+| `GET /api/report-card/admin/requests/:requestId/bundle` | backend/lib/reportCard/reportCardHttp.js:1090 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `POST /api/report-card/admin/requests/:requestId/configure` | backend/lib/reportCard/reportCardHttp.js:1134 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
+| `POST /api/report-card/admin/requests/:requestId/ready-for-review` | backend/lib/reportCard/reportCardHttp.js:1209 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
+| `POST /api/report-card/admin/requests/:requestId/reject` | backend/lib/reportCard/reportCardHttp.js:1249 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | **0** | — |
+| `POST /api/report-card/admin/requests/:requestId/review` | backend/lib/reportCard/reportCardHttp.js:1122 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
+| `POST /api/report-card/admin/requests/:requestId/save-template` | backend/lib/reportCard/reportCardHttp.js:1146 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
+| `GET /api/report-card/admin/requests/:requestId/source-artifact` | backend/lib/reportCard/reportCardHttp.js:1048 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `GET /api/report-card/admin/requests/:requestId/source-artifact/content` | backend/lib/reportCard/reportCardHttp.js:1060 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `GET /api/report-card/bindings/:modelKey` | backend/lib/reportCard/reportCardHttp.js:679 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `GET /api/report-card/catalog` | backend/lib/reportCard/reportCardHttp.js:485 | oui | — | — | — | resolveSchoolId (actor) | — | — | — | MOYEN | **0** | — |
+| `GET /api/report-card/catalog/admin` | backend/lib/reportCard/reportCardHttp.js:449 | oui | — | — | — | resolveSchoolId (actor) | — | — | — | MOYEN | **0** | — |
+| `GET /api/report-card/catalog/admin/audit` | backend/lib/reportCard/reportCardHttp.js:475 | oui | — | — | — | resolveSchoolId (actor) | — | — | — | MOYEN | **0** | — |
+| `PUT /api/report-card/catalog/admin/models/:modelId/countries/:countryId` | backend/lib/reportCard/reportCardHttp.js:459 | oui | — | — | — | resolveSchoolId (actor) | — | — | — | ÉLEVÉ | **0** | — |
+| `POST /api/report-card/catalog/models/:modelId/activate` | backend/lib/reportCard/reportCardHttp.js:525 | oui | — | — | — | resolveSchoolId (actor) | — | — | — | ÉLEVÉ | **0** | — |
+| `GET /api/report-card/catalog/models/:modelId/configuration` | backend/lib/reportCard/reportCardHttp.js:495 | oui | — | — | — | resolveSchoolId (actor) | — | — | — | MOYEN | **0** | — |
+| `PUT /api/report-card/catalog/models/:modelId/configuration` | backend/lib/reportCard/reportCardHttp.js:516 | oui | — | — | — | resolveSchoolId (actor) | — | — | — | ÉLEVÉ | **0** | — |
+| `POST /api/report-card/catalog/models/:modelId/preview` | backend/lib/reportCard/reportCardHttp.js:505 | oui | — | — | — | resolveSchoolId (actor) | — | — | — | ÉLEVÉ | **0** | — |
+| `GET /api/report-card/publications` | backend/lib/reportCard/reportCardHttp.js:711 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 4 | — |
+| `POST /api/report-card/publications` | backend/lib/reportCard/reportCardHttp.js:961 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 4 | — |
+| `POST /api/report-card/publications/:reportCardId/corrections` | backend/lib/reportCard/reportCardHttp.js:975 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | ÉLEVÉ | 2 | — |
+| `GET /api/report-card/publications/:reportCardId/history` | backend/lib/reportCard/reportCardHttp.js:849 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 2 | — |
+| `GET /api/report-card/publications/:reportCardId/pdf` | backend/lib/reportCard/reportCardHttp.js:752 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 4 | — |
+| `GET /api/report-card/publications/:reportCardId/presentation` | backend/lib/reportCard/reportCardHttp.js:815 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `GET /api/report-card/publications/:reportCardId/snapshot` | backend/lib/reportCard/reportCardHttp.js:793 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 3 | — |
+| `GET /api/report-card/publications/:reportCardId/versions/:version` | backend/lib/reportCard/reportCardHttp.js:895 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 2 | — |
+| `POST /api/report-card/publications/:reportCardId/versions/:version/revoke` | backend/lib/reportCard/reportCardHttp.js:998 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | ÉLEVÉ | 2 | — |
+| `POST /api/report-card/publications/preview` | backend/lib/reportCard/reportCardHttp.js:930 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 2 | — |
+| `GET /api/report-card/requests` | backend/lib/reportCard/reportCardHttp.js:545 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 3 | — |
+| `POST /api/report-card/requests` | backend/lib/reportCard/reportCardHttp.js:557 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 3 | — |
+| `GET /api/report-card/requests/:requestId` | backend/lib/reportCard/reportCardHttp.js:626 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `POST /api/report-card/requests/:requestId/approve` | backend/lib/reportCard/reportCardHttp.js:638 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 1 | — |
+| `GET /api/report-card/requests/:requestId/audit` | backend/lib/reportCard/reportCardHttp.js:667 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `GET /api/report-card/requests/:requestId/bundle` | backend/lib/reportCard/reportCardHttp.js:695 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
+| `POST /api/report-card/requests/:requestId/request-changes` | backend/lib/reportCard/reportCardHttp.js:650 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | **0** | — |
+| `GET /api/report-card/requests/:requestId/source-artifact` | backend/lib/reportCard/reportCardHttp.js:596 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | **0** | — |
+| `POST /api/report-card/requests/:requestId/source-artifact` | backend/lib/reportCard/reportCardHttp.js:574 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | **0** | — |
+| `GET /api/report-card/requests/:requestId/source-artifact/content` | backend/lib/reportCard/reportCardHttp.js:608 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | 1 | — |
 | `GET /api/report-cards` | backend/server.js:1803 | oui | `GET /api/report-cards` | — | PARENT, PREFET_ETUDES, PROVISEUR, SCHOOL_ADMIN, SECRETARY, STUDENT, TEACHER | — | — | listReportCards | — | MOYEN | 2 | — |
 | `POST /api/report-cards/:cardId/archive` | backend/server.js:1820 | oui | `POST /api/report-cards/:cardId/archive` | — | PREFET_ETUDES, PROVISEUR, SCHOOL_ADMIN | — | — | archiveReportCard | — | ÉLEVÉ | **0** | — |
 | `POST /api/report-cards/:cardId/publish` | backend/server.js:1814 | oui | `POST /api/report-cards/:cardId/publish` | — | PREFET_ETUDES, PROVISEUR, SCHOOL_ADMIN | — | — | publishReportCard | — | ÉLEVÉ | **0** | — |

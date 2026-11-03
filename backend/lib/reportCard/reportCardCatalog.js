@@ -24,7 +24,7 @@
 const { validateSpec } = require("./academicRuleProfile");
 const { validateAgainstProfile } = require("./reportCardSchema");
 const { assertProfileSubjectsInCatalog } = require("./subjectCatalog");
-const { computeSubjectTotals, expectedMissingCells } = require("./reportCardSubjectTotals");
+const { computeReportCard } = require("./reportCardEngine");
 const { buildStudentPresentation } = require("./reportCardPresentation");
 
 const PERM_CONFIGURE = "REPORT_CARD_CONFIGURE";
@@ -33,7 +33,20 @@ const PERM_READ = "REPORT_CARD_READ";
 
 const MODEL_ID_RE = /^[a-z][a-z0-9-]{0,39}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const COMPONENTS = Object.freeze(["TJ", "EX"]);
+/**
+ * Structures d'évaluation proposées (le profil de l'établissement fixe la sienne) :
+ * - TJ_EX  : travail journalier (TJ) et examen (EX), maxima par matière ;
+ * - SINGLE : une note unique par période (NP), maximum par matière.
+ * Une matière peut n'avoir qu'une partie des composantes (ex. TJ sans EX).
+ */
+const STRUCTURES = Object.freeze({
+  TJ_EX: Object.freeze([
+    Object.freeze({ id: "TJ", label: "TJ" }),
+    Object.freeze({ id: "EX", label: "EX" }),
+  ]),
+  SINGLE: Object.freeze([Object.freeze({ id: "NP", label: "Note" })]),
+});
+const STRUCTURE_LABELS = Object.freeze({ TJ_EX: "Travail journalier (TJ) et examen (EX)", SINGLE: "Note unique par période" });
 const PERIODS = Object.freeze([
   Object.freeze({ id: "T1", label: "Trimestre 1" }),
   Object.freeze({ id: "T2", label: "Trimestre 2" }),
@@ -66,9 +79,35 @@ function text(value) {
  * rang par pourcentage. Matières, maxima, sources des notes : établissement.
  */
 const MODEL_DEFINITIONS = Object.freeze({
-  "classique@1": Object.freeze({ style: "simple", allowComposite: false }),
-  "sous-matieres@1": Object.freeze({ style: "hierarchical", allowComposite: true }),
+  // Référence pédagogique La Colombière : une ligne par matière, TJ / EX.
+  "colombiere@1": Object.freeze({ style: "simple", allowComposite: false, suggestedStructure: "TJ_EX" }),
+  // Référence pédagogique Le Berceau de la Sagesse : domaines et sous-matières, note de période.
+  "berceau@1": Object.freeze({ style: "hierarchical", allowComposite: true, suggestedStructure: "SINGLE" }),
 });
+
+/** Données d'exemple FICTIVES des aperçus du catalogue (jamais des données d'établissement). */
+const SAMPLE_SUBJECTS = Object.freeze({
+  colombiere: [
+    { code: "MATHEMATIQUES", name: "Mathématiques", max: { TJ: 20, EX: 20, NP: 40 } },
+    { code: "FRANCAIS", name: "Français", max: { TJ: 20, EX: 20, NP: 40 } },
+    { code: "SCIENCES", name: "Sciences", max: { TJ: 10, EX: 10, NP: 20 } },
+    { code: "HISTOIRE", name: "Histoire et géographie", max: { TJ: 10, EX: 10, NP: 20 } },
+    { code: "EDUCATION_CIVIQUE", name: "Éducation civique", max: { TJ: 10, NP: 10 } },
+  ],
+  berceau: [
+    { code: "FRANCAIS", name: "Français" },
+    { code: "FR_ECRIT", name: "Écrit", parent_code: "FRANCAIS", max: { TJ: 20, EX: 20, NP: 40 } },
+    { code: "FR_LECTURE", name: "Lecture", parent_code: "FRANCAIS", max: { TJ: 10, EX: 10, NP: 20 } },
+    { code: "MATHEMATIQUES", name: "Mathématiques" },
+    { code: "MATH_MENTAL", name: "Calcul mental", parent_code: "MATHEMATIQUES", max: { TJ: 10, EX: 10, NP: 20 } },
+    { code: "MATH_ECRIT", name: "Calcul écrit", parent_code: "MATHEMATIQUES", max: { TJ: 20, EX: 20, NP: 40 } },
+    { code: "ARTS", name: "Arts" },
+    { code: "ARTS_PLASTIQUES", name: "Art plastique", parent_code: "ARTS", max: { TJ: 10, NP: 10 } },
+    { code: "MUSIQUE", name: "Musique", parent_code: "ARTS", max: { TJ: 10, NP: 10 } },
+  ],
+});
+/** Proportions fictives (une note sur cinq sous la moitié : signalisation visible). */
+const SAMPLE_RATIOS = Object.freeze([0.8, 0.65, 0.4, 0.75, 0.55, 0.9, 0.7]);
 
 function definitionOf(model) {
   const definition = MODEL_DEFINITIONS[`${model.model_id}@${model.version}`];
@@ -81,12 +120,18 @@ function catalogModelKey(modelId) {
   return `catalog-${modelId}`;
 }
 
-function baseProfile() {
+function componentsOf(structure) {
+  const components = STRUCTURES[structure];
+  if (!components) fail("CONFIGURATION_INVALID", [{ field: "structure", code: "STRUCTURE_REQUIRED" }]);
+  return components;
+}
+
+function baseProfile(structure) {
   return {
     period_mode: "term",
     periods: PERIODS.map((period) => period.id),
     annual: true,
-    score_components: COMPONENTS.map((id) => ({ id, applicability: "always" })),
+    score_components: componentsOf(structure).map((component) => ({ id: component.id, applicability: "always" })),
     missing_score: "NOT_APPLICABLE_not_zero",
     rounding: { decimals: 2, mode: "half_up", stage: "display_only" },
     ranking: { enabled: true, ties: "competition", metric: "PERCENTAGE" },
@@ -118,7 +163,7 @@ function baseSchema() {
   };
 }
 
-function templateFor(definition, signatures) {
+function templateFor(definition, structure, signatures) {
   return {
     paper: "A4",
     orientation: "portrait",
@@ -128,6 +173,7 @@ function templateFor(definition, signatures) {
       style: definition.style,
       signatures,
       period_labels: Object.fromEntries(PERIODS.map((period) => [period.id, period.label])),
+      component_labels: Object.fromEntries(componentsOf(structure).map((component) => [component.id, component.label])),
     },
   };
 }
@@ -138,7 +184,8 @@ function fieldError(field, code) {
 
 /**
  * Configuration de l'établissement (entrée de l'assistant) → profil canonique.
- * input = { subjects: [{ code, components: { TJ: { max }, EX: { max } } }],
+ * input = { structure: "TJ_EX" | "SINGLE",
+ *           subjects: [{ code, components: { TJ: { max }, EX: { max } } }],
  *           factSources: { TJ: { evaluationTypes: [], aggregation }, EX: {…} },
  *           periods: { T1: { termNames: [] }, … }, signatures: [] }
  * Erreurs : codes par champ (details), jamais de conversion silencieuse.
@@ -146,6 +193,9 @@ function fieldError(field, code) {
 function buildConfiguration(model, input, context) {
   const definition = definitionOf(model);
   const errors = [];
+  const structure = text(input && input.structure);
+  if (!STRUCTURES[structure]) fail("CONFIGURATION_INVALID", [fieldError("structure", "STRUCTURE_REQUIRED")]);
+  const COMPONENTS = componentsOf(structure).map((component) => component.id);
   const catalog = Array.isArray(context?.subjects) ? context.subjects : [];
   const byCode = new Map(catalog.map((row) => [text(row.code), row]));
   const evaluationCodes = new Set((context?.evaluationTypes || []).filter((row) => text(row.status || "active") === "active").map((row) => text(row.code)));
@@ -244,7 +294,7 @@ function buildConfiguration(model, input, context) {
       subjects.push({ id: leaf.code, order, components: leaf.components });
     }
   }
-  const profileSpec = { ...baseProfile(), subjects, fact_sources: { components: factComponents, periods: factPeriods } };
+  const profileSpec = { ...baseProfile(structure), subjects, fact_sources: { components: factComponents, periods: factPeriods } };
   const schemaSpec = baseSchema();
   let profile;
   try {
@@ -261,28 +311,83 @@ function buildConfiguration(model, input, context) {
   return {
     profileSpec,
     schemaSpec,
-    templateSpec: templateFor(definition, signatures),
+    templateSpec: templateFor(definition, structure, signatures),
     profile,
     labels: { subjects: Object.fromEntries(catalog.map((row) => [text(row.code), text(row.name)])) },
   };
 }
 
 /**
- * Aperçu de STRUCTURE (aucune note, aucun élève) : moteur canonique
- * (computeSubjectTotals) sur des cellules attendues vides ⇒ maxima et
- * sous-totaux de maxima exacts ; les valeurs obtenues restent vides.
+ * Aperçu « bulletin d'exemple » : le MOTEUR CANONIQUE calcule un élève fictif
+ * (notes d'exemple dérivées des maxima) puis l'adaptateur de présentation réel
+ * produit la vue — mêmes règles, mêmes totaux, même signalisation des notes en
+ * échec que les bulletins publiés. Jamais officiel, jamais enregistré.
  */
-function structurePreview(built, { school } = {}) {
+function samplePresentation(built, { school } = {}) {
   const profile = built.profile;
-  const cells = expectedMissingCells(profile, "APERCU", []);
-  const subjectTotals = computeSubjectTotals(profile, cells, (value) => Math.round(value * 100) / 100);
+  const facts = [];
+  let index = 0;
+  for (const subject of profile.subjects) {
+    if (!subject.components) continue;
+    for (const period of PERIODS) {
+      for (const [componentId, rule] of Object.entries(subject.components)) {
+        const ratio = SAMPLE_RATIOS[index % SAMPLE_RATIOS.length];
+        index += 1;
+        facts.push({
+          student_id: "EXEMPLE",
+          subject_id: subject.id,
+          period_id: period.id,
+          score_component_id: componentId,
+          raw_score: Math.round(rule.max * ratio * 2) / 2,
+        });
+      }
+    }
+  }
+  const result = computeReportCard({
+    profile: JSON.parse(JSON.stringify(built.profileSpec)),
+    schema: JSON.parse(JSON.stringify(built.schemaSpec)),
+    facts,
+    cohort: facts,
+    tenant: { schoolId: "catalog-preview", actorSchoolId: "catalog-preview" },
+    provenance: { profile: { id: "catalog-preview", version: 1 }, schema: { id: "catalog-preview", version: 1 } },
+  });
   return buildStudentPresentation({
-    student: { student_id: "", subject_totals: subjectTotals, slots: [] },
+    student: result.students[0],
     profile,
-    labels: { ...built.labels, school: school || null },
+    labels: { ...built.labels, school: school || null, students: { EXEMPLE: { name: "Élève d'exemple" } } },
     presentation: built.templateSpec.presentation,
     meta: { official: false },
   });
+}
+
+/** Configuration d'exemple d'un modèle du catalogue (aperçus Superadmin et galerie). */
+function sampleConfiguration(model, structure) {
+  const definition = definitionOf(model);
+  const chosen = structure || definition.suggestedStructure;
+  const components = componentsOf(chosen).map((component) => component.id);
+  const subjects = (SAMPLE_SUBJECTS[model.model_id] || []).map((row) => ({ ...row, status: "active" }));
+  const input = {
+    structure: chosen,
+    subjects: subjects
+      .filter((row) => row.max)
+      .map((row) => ({
+        code: row.code,
+        components: Object.fromEntries(components.filter((id) => row.max[id]).map((id) => [id, { max: row.max[id] }])),
+      })),
+    factSources: Object.fromEntries(components.map((id) => [id, { evaluationTypes: [`exemple-${id.toLowerCase()}`], aggregation: "sum" }])),
+    periods: Object.fromEntries(PERIODS.map((period) => [period.id, { termNames: [period.label] }])),
+    signatures: definition.allowComposite ? ["Le titulaire", "Le parent"] : ["Le titulaire", "Le directeur", "Le parent"],
+  };
+  return buildConfiguration(model, input, {
+    schoolId: "catalog-preview",
+    subjects: subjects.map((row) => ({ code: row.code, name: row.name, parent_code: row.parent_code || null, status: "active" })),
+    evaluationTypes: components.map((id) => ({ code: `exemple-${id.toLowerCase()}`, status: "active" })),
+    terms: PERIODS.map((period) => period.label),
+  });
+}
+
+function modelPreview(model, structure) {
+  return samplePresentation(sampleConfiguration(model, structure), { school: "Établissement d'exemple" });
 }
 
 function hasPermission(actor, token) {
@@ -312,6 +417,17 @@ function requireModelId(modelId) {
 function createReportCardCatalog({ store, configuration, clock } = {}) {
   if (!store || !configuration) fail("CATALOG_UNAVAILABLE");
 
+  /** Métadonnées d'affichage d'un modèle (structure suggérée, aperçu réel d'exemple). */
+  function modelMeta(row) {
+    const definition = MODEL_DEFINITIONS[`${row.model_id}@${row.version}`];
+    if (!definition) return { preview: null };
+    return {
+      allow_sub_subjects: definition.allowComposite,
+      suggested_structure: definition.suggestedStructure,
+      preview: modelPreview(row, definition.suggestedStructure),
+    };
+  }
+
   function publicModel(row) {
     return {
       model_id: row.model_id,
@@ -332,6 +448,7 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
       countries,
       models: models.map((row) => ({
         ...publicModel(row),
+        ...modelMeta(row),
         availability: availability
           .filter((entry) => entry.model_id === row.model_id)
           .map((entry) => ({ country_id: entry.country_id, available: entry.available === true, updated_at: entry.updated_at, updated_by: entry.updated_by })),
@@ -389,6 +506,7 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
       if (!available && !state.active) continue;
       models.push({
         ...publicModel(row),
+        ...modelMeta(row),
         available,
         configuration: state.active ? "ACTIVE" : state.saved ? "SAVED" : "NONE",
         activated_at: state.active ? state.active.activated_at : null,
@@ -413,7 +531,9 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
   function inputFromProfile(profile, template) {
     if (!profile) return null;
     const leaves = (profile.subjects || []).filter((subject) => subject.components && Object.keys(subject.components).length);
+    const componentIds = (profile.score_components || []).map((component) => component.id);
     return {
+      structure: componentIds.includes("NP") ? "SINGLE" : "TJ_EX",
       subjects: leaves.map((subject) => ({
         code: subject.id,
         components: Object.fromEntries(Object.entries(subject.components).map(([id, rule]) => [id, { max: rule.max }])),
@@ -439,8 +559,9 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
       model: publicModel(model),
       style: definitionOf(model).style,
       allowSubSubjects: definitionOf(model).allowComposite,
+      suggestedStructure: definitionOf(model).suggestedStructure,
+      structures: Object.keys(STRUCTURES).map((id) => ({ id, label: STRUCTURE_LABELS[id], components: STRUCTURES[id] })),
       periods: PERIODS,
-      components: COMPONENTS.map((id) => ({ id, label: id })),
       subjects: context.subjects.filter((row) => text(row.status || "active") === "active").map((row) => ({ code: row.code, name: row.name, parent_code: row.parent_code })),
       evaluationTypes: context.evaluationTypes.filter((row) => text(row.status || "active") === "active").map((row) => ({ code: row.code, name: row.name })),
       terms: context.terms,
@@ -458,7 +579,7 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
 
   async function preview({ actor, modelId, input }) {
     const { built } = await buildFor(actor, modelId, input);
-    return structurePreview(built);
+    return samplePresentation(built);
   }
 
   async function save({ actor, modelId, input }) {
@@ -472,7 +593,7 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
       schemaSpec: built.schemaSpec,
       templateSpec: built.templateSpec,
     });
-    return { status: "SAVED", request_status: request.status, preview: structurePreview(built) };
+    return { status: "SAVED", request_status: request.status, preview: samplePresentation(built) };
   }
 
   async function activate({ actor, modelId, confirm, commandId }) {
@@ -495,8 +616,11 @@ module.exports = {
   ReportCardCatalogError,
   MODEL_DEFINITIONS,
   PERIODS,
+  STRUCTURES,
   buildConfiguration,
   catalogModelKey,
   createReportCardCatalog,
-  structurePreview,
+  modelPreview,
+  samplePresentation,
+  sampleConfiguration,
 };
