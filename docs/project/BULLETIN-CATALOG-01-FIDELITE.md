@@ -1,6 +1,6 @@
 # BULLETIN-CATALOG-01 — fidélité des modèles La Colombière et Le Berceau de la Sagesse
 
-Statut : **HOLD — validation visuelle impossible à ce stade.** Correctif CTO : les présentations génériques ne sont pas validées ; seules font foi les deux bulletins originaux.
+Statut : **Remplacé par le rectificatif CTO** — La Colombière et Le Berceau de la Sagesse sont des références pédagogiques, pas des documents à reproduire ; l'absence des originaux n'est plus bloquante. Voir `BULLETIN-CATALOG-01.md`. (Historique : HOLD — validation visuelle impossible faute d'originaux.)
 
 ## 1. Références originales : introuvables dans le dépôt et la session
 
