@@ -64,20 +64,40 @@ Vérifié localement (PostgreSQL 16) : base initialisée sans catalogue → **GO
 | Code #1051 sur `develop` | **GO** (`4c516c83`) |
 | SHA déployé Web = API ≥ `4c516c83` | **À confirmer** (Render) |
 | Endpoints : `503 CATALOG_UNAVAILABLE` confirmé | **À confirmer** (commandes §2) |
-| Préflight sur la base de préproduction : VERDICT GO | **À exécuter** |
+| Préflight sur la base de préproduction : VERDICT GO | **À exécuter avec la connexion de l'API** (P15 = rôle de l'API) |
+| Rôle de `DATABASE_URL` de l'API relevé (`current_user`, `rolbypassrls`) | **À confirmer** (§5 étape 1) |
 | Autorisation CTO distincte pour appliquer | **Requise** |
 
 **Verdict actuel : NO-GO d'application** tant que les trois lignes « à confirmer / à exécuter » ne sont pas vertes et que l'autorisation n'est pas donnée. Aucun risque identifié dans le contenu de la migration (additive, idempotente, trois tables nouvelles, aucune table existante modifiée).
 
-## 5. Commande exacte d'application (après GO et autorisation CTO)
+## 5. Commande exacte d'application (après GO et autorisation CTO) — mise à jour BULLETIN-PREPROD-02
 
-```bash
-psql "$PREPROD_DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction -f backend/db/migrations/20261104_report_card_catalog.sql
-```
+La migration active RLS sur les trois tables et accorde **au seul rôle applicatif** (rôle de `DATABASE_URL` de `somafrik-api-preprod`) les privilèges strictement utilisés, avec des politiques limitées à ce rôle : modèles `SELECT` ; disponibilité `SELECT, INSERT, UPDATE` ; historique `SELECT, INSERT` (ajout seul) ; séquence `USAGE, SELECT`. `anon`, `authenticated` et `PUBLIC` : aucun accès. **Jamais de `BYPASSRLS`.** Rôle applicatif = réglage `somafrik.catalog_app_role`, sinon le rôle qui applique la migration ; `anon`/`authenticated`/`PUBLIC` ou rôle inconnu : migration refusée.
 
-Sortie attendue : `CREATE TABLE`, `INSERT 0 2`, `CREATE TABLE`, `CREATE TABLE`, `CREATE INDEX`. Ré-exécution sans effet (`NOTICE … already exists, skipping`, `INSERT 0 0`). Puis relancer le préflight (P09 « déjà présentes », VERDICT GO avec réserve) et `GET /api/report-card/catalog/admin` → `200`. Aucun redémarrage requis : le serveur lit les tables à chaque requête.
+1. **Rôle réel de l'API** (connexion `DATABASE_URL` de `somafrik-api-preprod`, pas la console SQL) :
+   ```bash
+   psql "$PREPROD_API_DATABASE_URL" -XAtc "SELECT current_user, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
+   ```
+2. **Préflight avec cette même connexion** (P15 = rôle de l'API) — VERDICT GO requis :
+   ```bash
+   psql "$PREPROD_API_DATABASE_URL" -X -v ON_ERROR_STOP=1 -v expected_db='<nom exact de la base de préproduction>' -f backend/db/migrations/20261104_report_card_catalog.preflight.sql
+   ```
+3. **Application** — une seule des deux formes :
+   - Le rôle de l'API a le droit CREATE sur `public` (P05 GO) : appliquer avec la connexion de l'API (il devient propriétaire et reçoit les politiques) :
+     ```bash
+     psql "$PREPROD_API_DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction -f backend/db/migrations/20261104_report_card_catalog.sql
+     ```
+   - Sinon (P05 WARN) : appliquer avec un rôle administrateur en nommant explicitement le rôle de l'API :
+     ```bash
+     psql "$PREPROD_ADMIN_DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction -c "SELECT set_config('somafrik.catalog_app_role', '<rôle relevé à l''étape 1>', true)" -f backend/db/migrations/20261104_report_card_catalog.sql
+     ```
+4. **Contrôle après migration** : relancer le préflight de l'étape 2 (connexion de l'API). **P16** (privilèges), **P17** (RLS), **P18** (politiques couvrant le rôle) et **P19** (aucun accès `anon`/`authenticated`) doivent être GO ; tout NO-GO = catalogue inutilisable ou exposé → retour arrière. Puis `GET /api/report-card/catalog/admin` → `200` avec 2 modèles.
 
-Retour arrière : `psql "$PREPROD_DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction -f backend/db/migrations/20261104_report_card_catalog.rollback.sql` (supprime uniquement les trois tables ; bulletins publiés intacts).
+Ré-exécution sans effet (politiques recréées à l'identique). Changement ultérieur de rôle applicatif : ré-exécuter la forme 3b avec le nouveau rôle. Aucun redémarrage requis.
+
+Retour arrière : `psql "$PREPROD_ADMIN_DATABASE_URL" -X -v ON_ERROR_STOP=1 --single-transaction -f backend/db/migrations/20261104_report_card_catalog.rollback.sql` (supprime uniquement les trois tables, leurs privilèges et politiques ; bulletins publiés intacts).
+
+Preuves (PostgreSQL réel, `reportCardCatalogRls.pg.test.js`, 7/7) : rôle applicatif non propriétaire, sans superutilisateur ni `BYPASSRLS` ; privilèges par défaut de type Supabase ouverts à `anon`/`authenticated` avant migration ; lecture du catalogue, activation/désactivation par pays et historique via le store réel ; suppression ou modification de l'historique et des modèles refusées ; `anon`/`authenticated` sans aucun privilège (et `SELECT` refusé) ; sans politique, catalogue vide pour le rôle applicatif (cas #1053 initial reproduit) ; ré-exécution idempotente ; rôle public ou inconnu refusé ; préflight via le rôle applicatif : P16–P19 GO, NO-GO si une politique manque ou si `anon` reçoit un droit.
 
 ## 6. Erreur Superadmin « academicConfigs: schoolCode établissement requis »
 

@@ -7,6 +7,10 @@
 --        -v expected_db='<nom exact de la base de préproduction>' \
 --        -f backend/db/migrations/20261104_report_card_catalog.preflight.sql
 --
+-- IMPORTANT (BULLETIN-PREPROD-02) : exécuter avec la chaîne de connexion EFFECTIVEMENT
+-- utilisée par l'API (somafrik-api-preprod) : current_user = rôle applicatif contrôlé.
+-- Relancer APRÈS la migration : P16–P19 vérifient alors les privilèges réels du rôle.
+--
 -- Lecture du résultat : une ligne par contrôle (check, status, detail).
 --   GO     : conforme ;  WARN : à examiner, non bloquant ;  NO-GO : bloquant.
 -- Dernière ligne « VERDICT » : NO-GO si au moins un contrôle NO-GO.
@@ -81,6 +85,52 @@ foreign_objects AS (
        'report_card_catalog_availability_audit_id_seq', 'idx_report_card_catalog_audit_model'
      )
 ),
+role_info AS (
+  SELECT r.rolname, r.rolsuper, r.rolbypassrls FROM pg_roles r WHERE r.rolname = current_user
+),
+-- Privilèges indispensables au rôle applicatif (reportCardCatalogPgStore).
+required_privileges(rel, priv) AS (
+  VALUES ('report_card_catalog_models', 'SELECT'),
+         ('report_card_catalog_availability', 'SELECT'), ('report_card_catalog_availability', 'INSERT'), ('report_card_catalog_availability', 'UPDATE'),
+         ('report_card_catalog_availability_audit', 'SELECT'), ('report_card_catalog_availability_audit', 'INSERT')
+),
+missing_privileges AS (
+  SELECT string_agg(rel || ':' || priv, ', ' ORDER BY rel, priv) AS names, count(*) AS n
+    FROM required_privileges
+   WHERE NOT coalesce(has_table_privilege(current_user, to_regclass('public.' || rel), priv), false)
+),
+sequence_privilege AS (
+  SELECT coalesce(has_sequence_privilege(current_user, to_regclass('public.report_card_catalog_availability_audit_id_seq'), 'USAGE'), false) AS ok
+),
+rls_tables AS (
+  SELECT e.name, c.relrowsecurity, pg_get_userbyid(c.relowner) AS owner
+    FROM expected_tables e LEFT JOIN pg_class c ON c.oid = to_regclass('public.' || e.name)
+),
+-- Une opération passe RLS si le rôle est propriétaire (sans FORCE), ou si une politique
+-- couvre la commande pour ce rôle (ou PUBLIC). BYPASSRLS n'est PAS retenu comme garantie.
+uncovered_policies AS (
+  SELECT string_agg(rp.rel || ':' || rp.priv, ', ' ORDER BY rp.rel, rp.priv) AS names, count(*) AS n
+    FROM required_privileges rp
+    JOIN pg_class c ON c.oid = to_regclass('public.' || rp.rel)
+   WHERE c.relrowsecurity
+     AND NOT (pg_get_userbyid(c.relowner) = current_user AND NOT c.relforcerowsecurity)
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_policies p
+        WHERE p.schemaname = 'public' AND p.tablename = rp.rel
+          AND p.cmd IN (rp.priv, 'ALL')
+          AND (current_user = ANY (p.roles) OR 'public' = ANY (p.roles))
+     )
+),
+public_exposure AS (
+  SELECT string_agg(r.rolname || '→' || e.name, ', ' ORDER BY r.rolname, e.name) AS names, count(*) AS n
+    FROM pg_roles r CROSS JOIN expected_tables e
+   WHERE r.rolname IN ('anon', 'authenticated')
+     AND to_regclass('public.' || e.name) IS NOT NULL
+     AND (has_table_privilege(r.rolname, to_regclass('public.' || e.name), 'SELECT')
+       OR has_table_privilege(r.rolname, to_regclass('public.' || e.name), 'INSERT')
+       OR has_table_privilege(r.rolname, to_regclass('public.' || e.name), 'UPDATE')
+       OR has_table_privilege(r.rolname, to_regclass('public.' || e.name), 'DELETE'))
+),
 checks(ord, "check", status, detail) AS (
   SELECT 1, 'P01 base cible',
          CASE WHEN current_database() = :'expected_db' THEN 'GO' ELSE 'NO-GO' END,
@@ -102,10 +152,14 @@ checks(ord, "check", status, detail) AS (
   SELECT 5, 'P05 schéma public',
          CASE WHEN to_regnamespace('public') IS NULL THEN 'NO-GO'
               WHEN has_schema_privilege(current_user, 'public', 'CREATE') THEN 'GO'
-              ELSE 'NO-GO' END,
+              WHEN (SELECT present FROM catalog_present) > 0 THEN 'GO'
+              ELSE 'WARN' END,
          'search_path = ' || current_setting('search_path')
          || ' ; droit CREATE sur public pour ' || current_user || ' : '
          || CASE WHEN to_regnamespace('public') IS NOT NULL AND has_schema_privilege(current_user, 'public', 'CREATE') THEN 'oui' ELSE 'non' END
+         || CASE WHEN (SELECT present FROM catalog_present) = 0 AND NOT has_schema_privilege(current_user, 'public', 'CREATE')
+                 THEN ' — ce rôle ne peut pas appliquer la migration : l''appliquer avec un rôle administrateur ET somafrik.catalog_app_role=' || current_user
+                 ELSE '' END
   UNION ALL
   SELECT 6, 'P06 dépendance countries',
          CASE WHEN to_regclass('public.countries') IS NULL THEN 'NO-GO'
@@ -151,8 +205,10 @@ checks(ord, "check", status, detail) AS (
          coalesce('absentes : ' || (SELECT names FROM missing_prerequisites), 'toutes présentes (LOT 1→6, publication, référentiels)')
   UNION ALL
   SELECT 12, 'P12 hiérarchie des matières (20261103)',
-         CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'subjects' AND column_name = 'parent_subject_id')
-               AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'subjects' AND column_name = 'display_order')
+         -- pg_attribute (et non information_schema) : indépendant des privilèges du rôle connecté.
+         CASE WHEN (SELECT count(*) FROM pg_attribute
+                     WHERE attrelid = to_regclass('public.subjects') AND NOT attisdropped
+                       AND attname IN ('parent_subject_id', 'display_order')) = 2
               THEN 'GO' ELSE 'NO-GO' END,
          'subjects.parent_subject_id et subjects.display_order requis par la configuration école'
   UNION ALL
@@ -172,6 +228,40 @@ checks(ord, "check", status, detail) AS (
            WHERE datname = current_database() AND pid <> pg_backend_pid()
              AND state <> 'idle' AND xact_start < now() - interval '5 minutes')::text
          || ' transaction(s) de plus de 5 min (les clés étrangères vers countries prennent un verrou SHARE ROW EXCLUSIVE bref)'
+  UNION ALL
+  SELECT 15, 'P15 rôle applicatif connecté',
+         CASE WHEN lower(current_user) IN ('anon', 'authenticated') THEN 'NO-GO'
+              WHEN (SELECT rolbypassrls OR rolsuper FROM role_info) THEN 'WARN'
+              ELSE 'GO' END,
+         current_user || ' (superuser : ' || CASE WHEN (SELECT rolsuper FROM role_info) THEN 'oui' ELSE 'non' END
+         || ', BYPASSRLS : ' || CASE WHEN (SELECT rolbypassrls FROM role_info) THEN 'oui' ELSE 'non' END
+         || ') — doit être le rôle de DATABASE_URL de l''API ; BYPASSRLS n''est pas retenu comme garantie'
+  UNION ALL
+  SELECT 16, 'P16 privilèges du rôle applicatif',
+         CASE WHEN (SELECT present FROM catalog_present) < 3 THEN 'GO'
+              WHEN (SELECT n FROM missing_privileges) = 0 AND (SELECT ok FROM sequence_privilege) THEN 'GO'
+              ELSE 'NO-GO' END,
+         CASE WHEN (SELECT present FROM catalog_present) < 3 THEN 'catalogue non installé : relancer le préflight après la migration'
+              WHEN (SELECT n FROM missing_privileges) = 0 AND (SELECT ok FROM sequence_privilege) THEN 'SELECT/INSERT/UPDATE requis et USAGE séquence : accordés à ' || current_user
+              ELSE 'manquants pour ' || current_user || ' : ' || concat_ws(', ', (SELECT names FROM missing_privileges),
+                     CASE WHEN NOT (SELECT ok FROM sequence_privilege) THEN 'séquence:USAGE' END) END
+  UNION ALL
+  SELECT 17, 'P17 RLS activée (3 tables)',
+         CASE WHEN (SELECT present FROM catalog_present) < 3 THEN 'GO'
+              WHEN (SELECT bool_and(relrowsecurity) FROM rls_tables) THEN 'GO' ELSE 'NO-GO' END,
+         CASE WHEN (SELECT present FROM catalog_present) < 3 THEN 'catalogue non installé'
+              ELSE (SELECT string_agg(name || '=' || CASE WHEN relrowsecurity THEN 'RLS' ELSE 'sans RLS' END || ' (propriétaire ' || owner || ')', ', ') FROM rls_tables) END
+  UNION ALL
+  SELECT 18, 'P18 politiques RLS couvrant le rôle',
+         CASE WHEN (SELECT present FROM catalog_present) < 3 THEN 'GO'
+              WHEN (SELECT n FROM uncovered_policies) = 0 THEN 'GO' ELSE 'NO-GO' END,
+         CASE WHEN (SELECT present FROM catalog_present) < 3 THEN 'catalogue non installé'
+              WHEN (SELECT n FROM uncovered_policies) = 0 THEN 'chaque opération requise est couverte pour ' || current_user || ' (propriétaire ou politique)'
+              ELSE 'opérations bloquées par RLS pour ' || current_user || ' : ' || (SELECT names FROM uncovered_policies) END
+  UNION ALL
+  SELECT 19, 'P19 aucun accès anon / authenticated',
+         CASE WHEN (SELECT n FROM public_exposure) = 0 THEN 'GO' ELSE 'NO-GO' END,
+         coalesce('accès direct détecté : ' || (SELECT names FROM public_exposure), 'aucun privilège anon/authenticated sur le catalogue')
 )
 SELECT "check", status, detail
   FROM (
