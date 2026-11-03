@@ -155,6 +155,21 @@ export function catalogErrorMessage(error: unknown): string {
   return "Opération impossible pour le moment. Réessayez.";
 }
 
+/**
+ * BULLETIN-PREPROD-01 — catalogue indisponible côté serveur (pas une erreur passagère) :
+ * - NOT_INSTALLED : tables du catalogue absentes (migration non appliquée) → 503 CATALOG_UNAVAILABLE ;
+ * - SERVER_OUTDATED : route du catalogue inconnue du serveur (API antérieure à #1051) → 404 sans code métier.
+ */
+export type CatalogUnavailability = "NOT_INSTALLED" | "SERVER_OUTDATED";
+
+export function catalogUnavailability(error: unknown): CatalogUnavailability | null {
+  const status = (error as { status?: number })?.status;
+  const code = String((error as { code?: string })?.code ?? "");
+  if (code === "CATALOG_UNAVAILABLE") return "NOT_INSTALLED";
+  if (status === 404 && !code.startsWith("CATALOG_")) return "SERVER_OUTDATED";
+  return null;
+}
+
 export function isAccessDenied(error: unknown): boolean {
   const status = (error as { status?: number })?.status;
   const code = String((error as { code?: string })?.code ?? "");

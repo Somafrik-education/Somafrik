@@ -190,3 +190,20 @@ test("migration : jamais exécutée au démarrage (aucune référence hors tests
     assert.doesNotMatch(src, /reportCardCatalogSchema|REPORT_CARD_CATALOG_SQL|20261104_report_card_catalog/, rel);
   }
 });
+
+test("préflight de migration : strictement en lecture seule (BULLETIN-PREPROD-01)", () => {
+  const file = path.resolve(__dirname, "../../db/migrations/20261104_report_card_catalog.preflight.sql");
+  const raw = fs.readFileSync(file, "utf8");
+  const sql = raw
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .replace(/'(?:[^']|'')*'/g, "''");
+  assert.match(sql, /BEGIN TRANSACTION READ ONLY;/);
+  assert.match(sql, /ROLLBACK;\s*$/);
+  assert.doesNotMatch(sql, /\bCOMMIT\b|\bEND\s*;/i);
+  for (const keyword of ["INSERT", "UPDATE", "DELETE", "MERGE", "CREATE", "ALTER", "DROP", "TRUNCATE", "GRANT", "REVOKE", "VACUUM", "REINDEX", "LOCK", "COPY", "CALL", "DO"]) {
+    assert.doesNotMatch(sql, new RegExp(`(^|;|\\s)${keyword}\\s`, "i"), `mot-clé d'écriture interdit : ${keyword}`);
+  }
+  assert.match(sql, /expected_db/, "la base cible doit être confirmée explicitement");
+});

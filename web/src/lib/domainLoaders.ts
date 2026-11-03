@@ -65,6 +65,11 @@ export interface LoadDomainsResult {
 
 type DomainSlice = Partial<Pick<BackOfficeState, DomainKey>>;
 
+function hasConcreteSchool(schoolCode?: string): boolean {
+  const scopedSchool = String(schoolCode ?? "").trim();
+  return Boolean(scopedSchool && scopedSchool !== "*");
+}
+
 function academicConfigPath(schoolCode?: string): string {
   const scopedSchool = String(schoolCode ?? "").trim().toUpperCase();
   if (scopedSchool && scopedSchool !== "*") {
@@ -133,6 +138,14 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
     }),
     presences: async () => ({ presences: (await api.get<unknown[]>("/presences")) as BackOfficeState["presences"] }),
     academicConfigs: async () => {
+      // BULLETIN-PREPROD-01 : un compte plateforme (Superadmin, Admin Pays) sans
+      // établissement sélectionné n'a pas de configuration académique. L'API
+      // non ciblée refuse alors l'appel (400 « schoolCode établissement requis »),
+      // à juste titre : on n'interroge pas le serveur et on n'attribue aucun
+      // établissement par défaut. Établissement sélectionné : chargement normal.
+      if (!hasConcreteSchool(options.schoolCode) && usesPlatformSchoolCatalog(options.role)) {
+        return { academicConfigs: {} as BackOfficeState["academicConfigs"] };
+      }
       const config = await api.get<Record<string, unknown>>(academicConfigPath(options.schoolCode));
       const schoolCode = String(config?.schoolCode ?? options.schoolCode ?? "").trim();
       return {

@@ -21,6 +21,7 @@ import { ReportCardModelThumbnail } from "../components/bulletin/ReportCardModel
 import type { ReportCardPresentation } from "../lib/reportCardManagementApi";
 import {
   catalogErrorMessage,
+  catalogUnavailability,
   fieldIssueMessage,
   fieldIssues,
   isAccessDenied,
@@ -182,6 +183,25 @@ export function ReportCardCatalogSchoolPage() {
       <PageShell>
         {intro}
         <Card className="p-6"><p role="status" className="text-sm text-muted" data-testid="catalog-school-loading">Chargement des modèles…</p></Card>
+      </PageShell>
+    );
+  }
+  if (error && catalogUnavailability(error)) {
+    return (
+      <PageShell>
+        {intro}
+        <Card className="p-6">
+          <div data-testid="catalog-school-unavailable" role="status">
+            <p className="text-sm font-bold text-ink">La configuration des bulletins par modèle n'est pas encore disponible.</p>
+            <p className="mt-1 text-sm text-muted">
+              Somafrik prépare l'ouverture du catalogue des modèles. Vos bulletins déjà publiés restent consultables et la gestion des bulletins n'est pas interrompue.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" onClick={() => void load()}>Vérifier à nouveau</Button>
+              <Link to="/bulletins" className="inline-flex items-center px-2 text-sm font-bold text-brand hover:underline">Retour aux bulletins</Link>
+            </div>
+          </div>
+        </Card>
       </PageShell>
     );
   }

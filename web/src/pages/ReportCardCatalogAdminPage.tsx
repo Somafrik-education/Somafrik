@@ -17,6 +17,7 @@ import { Modal } from "../components/ui/Modal";
 import { ReportCardPresentationTable } from "../components/bulletin/ReportCardPresentationTable";
 import {
   catalogErrorMessage,
+  catalogUnavailability,
   isAccessDenied,
   modelTypeLabel,
   reportCardCatalogApi,
@@ -149,6 +150,35 @@ export function ReportCardCatalogAdminPage() {
         {header}
         <Card className="p-6" >
           <p role="status" className="text-sm text-muted" data-testid="catalog-admin-loading">Chargement du catalogue…</p>
+        </Card>
+      </div>
+    );
+  }
+
+  const unavailable = error ? catalogUnavailability(error) : null;
+  if (unavailable) {
+    return (
+      <div className="space-y-6">
+        {header}
+        <Card className="p-6">
+          <div data-testid={unavailable === "NOT_INSTALLED" ? "catalog-admin-not-installed" : "catalog-admin-outdated"} role="status">
+            <p className="text-sm font-bold text-ink">
+              {unavailable === "NOT_INSTALLED"
+                ? "Le catalogue des bulletins n'est pas encore installé sur ce serveur."
+                : "Ce serveur ne propose pas encore le catalogue des bulletins."}
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              {unavailable === "NOT_INSTALLED"
+                ? "L'installation (migration de la base de données) doit être réalisée par l'équipe technique, après autorisation. Aucune donnée existante n'est concernée : les bulletins publiés restent consultables."
+                : "La version de l'API déployée est antérieure au catalogue. Le déploiement doit être mis à jour par l'équipe technique."}
+            </p>
+            <p className="mt-2 text-xs text-muted">
+              Référence pour le support : {unavailable === "NOT_INSTALLED" ? "CATALOG_UNAVAILABLE (HTTP 503)" : "route absente (HTTP 404)"}
+            </p>
+            <Button className="mt-3" variant="secondary" size="sm" onClick={() => void load()}>
+              Vérifier à nouveau
+            </Button>
+          </div>
         </Card>
       </div>
     );
