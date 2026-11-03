@@ -45,6 +45,7 @@ const {
   schoolRecordInFinanceScope,
   primaryFinanceSchoolCode,
 } = require("./financeSchoolScope");
+const { resolveCanonicalStudentDbId } = require("./studentIntegrity");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 
@@ -169,12 +170,30 @@ function assertCanCancelPayment(principal) {
   throw createFinanceError(403, "Permission Paiements:UPDATE requise pour annuler un paiement.");
 }
 
+function explicitEnrollmentInactive(row) {
+  const status = asTrimmed(row?.status || row?.enrollmentStatus).toLowerCase();
+  if (!status) return false;
+  return status !== "active" && status !== "enrolled";
+}
+
+function enrollmentSchoolMatches(enrollment, school) {
+  if (!enrollment?.schoolId) return true;
+  return String(enrollment.schoolId) === String(school.id);
+}
+
 async function resolvePaymentEnrollment(tx, student, payload, school) {
   const requestedClassId = asTrimmed(payload.classId);
-  const enrollments =
+  const studentDbId = asTrimmed(student.dbId || student.id);
+  const listed =
     typeof tx.listActiveEnrollmentsForStudent === "function"
-      ? await tx.listActiveEnrollmentsForStudent(student.dbId || student.id, school.id)
+      ? await tx.listActiveEnrollmentsForStudent(studentDbId, school.id)
       : [];
+  const rows = (Array.isArray(listed) ? listed : [])
+    .filter((row) => row && typeof row === "object" && !explicitEnrollmentInactive(row));
+  const enrollments = rows.filter((row) => enrollmentSchoolMatches(row, school));
+  if (rows.length && !enrollments.length) {
+    throw createFinanceError(403, "Classe hors établissement.", FINANCE_ERROR.CLASS_TENANT_MISMATCH);
+  }
 
   if (requestedClassId) {
     const match = enrollments.find((row) => String(row.classId) === requestedClassId);
@@ -439,6 +458,15 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     if (!student) {
       throw createFinanceError(404, "Élève introuvable", FINANCE_ERROR.STUDENT_NOT_FOUND);
     }
+    const canonicalId = resolveCanonicalStudentDbId(student);
+    if (!canonicalId) {
+      throw createFinanceError(
+        400,
+        "Identité canonique non vérifiée : le matricule seul ne permet pas l'encaissement.",
+        FINANCE_ERROR.CANONICAL_IDENTITY_REQUIRED,
+      );
+    }
+    student.dbId = canonicalId;
     assertTenant(principal, student);
     const school = await tx.getSchoolByCode(student.schoolCode);
     if (!school) {

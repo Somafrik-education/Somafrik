@@ -499,6 +499,15 @@ export interface StudentFee {
   dueDate?: string;
   periodLabel?: string;
   createdAt?: string;
+  studentDbId?: string;
+  canonicalStudentId?: string;
+  studentCode?: string;
+  studentStatus?: string;
+  hasActiveEnrollment?: boolean | null;
+  enrollmentStatus?: string;
+  schoolMismatch?: boolean;
+  orphanFinance?: boolean;
+  studentExists?: boolean;
 }
 
 /** Historique de modification d'un tarif (EXG-FRAIS-018). */
@@ -563,6 +572,17 @@ export interface StudentUnpaidRow {
   feeIds: string[];
   lastReminderAt?: string;
   reminderCount: number;
+  canonicalStudentId?: string;
+  collectionEligible?: boolean;
+  integrityCategory?:
+    | "missing"
+    | "orphan_finance"
+    | "school_mismatch"
+    | "archived"
+    | "no_active_enrollment"
+    | "unverified_identity"
+    | "identity_mismatch"
+    | "active";
 }
 
 /** Statistiques tableau de bord impayés (IMP-017 à IMP-019). */

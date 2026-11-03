@@ -38,6 +38,7 @@ const {
   CANONICAL_PAYMENT_METHODS,
 } = require("../lib/financeCatalog");
 const financeService = require("../lib/financeService");
+const { resolveCanonicalStudentDbId } = require("../lib/studentIntegrity");
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -280,7 +281,7 @@ function createFinanceMemoryStore({
         }
         return {
           ...projectFixtureSchoolIdentity(student),
-          dbId: student.dbId || student.id,
+          dbId: resolveCanonicalStudentDbId(student),
           schoolCode: student.schoolCode,
         };
       },
@@ -291,10 +292,10 @@ function createFinanceMemoryStore({
         if (!student) return [];
         const rows = Array.isArray(student.enrollments) ? student.enrollments : [];
         const active = rows.filter((row) => {
-          const status = String(row.status ?? "").toLowerCase();
-          return !row.status || status === "active" || status === "enrolled";
+          const status = String(row.status ?? "").trim().toLowerCase();
+          return status === "active" || status === "enrolled";
         });
-        if (active.length) {
+        if (rows.length) {
           return active
             .filter((row) => asTrimmed(row.classId))
             .map((row) => ({
@@ -409,18 +410,23 @@ function createFinanceMemoryStore({
           (await listStudentsInClass?.(schoolCode, spec)) ||
           (spec.className ? await listStudentsInClass?.(schoolCode, spec.className) : null) ||
           [];
-        return raw.filter((student) => {
-          if (spec.classId && [student.classId, student.class_id].some((value) => String(value ?? "") === spec.classId)) {
-            return true;
-          }
-          if (spec.classCode && asTrimmed(student.classCode || student.class_code).toUpperCase() === spec.classCode.toUpperCase()) {
-            return true;
-          }
-          if (!spec.classId && !spec.classCode && spec.className) {
-            return studentMatchesClassScope(student, { className: spec.className });
-          }
-          return false;
-        });
+        return raw
+          .filter((student) => {
+            if (spec.classId && [student.classId, student.class_id].some((value) => String(value ?? "") === spec.classId)) {
+              return true;
+            }
+            if (spec.classCode && asTrimmed(student.classCode || student.class_code).toUpperCase() === spec.classCode.toUpperCase()) {
+              return true;
+            }
+            if (!spec.classId && !spec.classCode && spec.className) {
+              return studentMatchesClassScope(student, { className: spec.className });
+            }
+            return false;
+          })
+          .map((student) => ({
+            ...student,
+            dbId: resolveCanonicalStudentDbId(student),
+          }));
       },
       async listPaymentCodes(schoolId) {
         return tables.payments.filter((row) => row.school_id === schoolId).map((row) => row.payment_code);
