@@ -98,6 +98,34 @@ function mapImmutable(err) {
   return err;
 }
 
+/**
+ * BULLETIN-CLASSE-01 / L1 — compatibilité avant / après la migration
+ * 20261105_report_card_class_scope.sql (jamais exécutée automatiquement).
+ *
+ * Ce store ne manipule QUE les liaisons et demandes ÉTABLISSEMENT (class_id NULL) :
+ * la configuration par classe relève de L2. Avant migration, la colonne class_id
+ * n'existe pas (valeur `undefined`, traitée comme NULL) ; après migration, les lignes
+ * de classe éventuelles sont ignorées ici et ne peuvent pas être confondues.
+ */
+function isSchoolScoped(row) {
+  return row != null && row.class_id == null && row.academic_year_id == null;
+}
+
+function firstSchoolScoped(rows) {
+  return rows.find(isSchoolScoped) || null;
+}
+
+async function bindingsHaveClassScope(client) {
+  const result = await client.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM pg_attribute
+        WHERE attrelid = to_regclass('report_card_active_bindings')
+          AND attname = 'class_id' AND NOT attisdropped
+     ) AS scoped`
+  );
+  return result.rows[0] && result.rows[0].scoped === true;
+}
+
 function createReportCardConfigurationPgStore(db) {
   async function withClient(fn) {
     if (typeof db.connect === "function") {
@@ -111,7 +139,7 @@ function createReportCardConfigurationPgStore(db) {
     return fn(db);
   }
 
-  function bind(client) {
+  function bind(client, inTx = false) {
     async function queryOne(sql, params) {
       const result = await client.query(sql, params);
       return result.rows[0] || null;
@@ -223,17 +251,21 @@ function createReportCardConfigurationPgStore(db) {
         return mapRequest(updated);
       },
       async getActiveByPair(schoolId, modelKey) {
-        return mapRequest(
-          await queryOne(
-            `SELECT * FROM report_card_configuration_requests
-             WHERE school_id = $1 AND model_key = $2 AND status = 'ACTIVE'
-             FOR UPDATE`,
-            [schoolId, modelKey]
-          )
+        // Demande ACTIVE de portée établissement uniquement (L1) ; requête compatible
+        // avec l'ancien et le nouveau schéma.
+        const result = await client.query(
+          `SELECT * FROM report_card_configuration_requests
+           WHERE school_id = $1 AND model_key = $2 AND status = 'ACTIVE'
+           FOR UPDATE`,
+          [schoolId, modelKey]
         );
+        return mapRequest(firstSchoolScoped(result.rows));
       },
       async upsertBinding(row) {
-        const saved = await queryOne(
+        // Ancien schéma : PK (school_id, model_key). Nouveau schéma (L1) : index unique
+        // partiel des liaisons établissement. Détection à chaque appel (activation rare),
+        // et nouvelle détection si la migration est appliquée pendant l'exécution (42P10).
+        const upsert = async (scoped) => queryOne(
           `INSERT INTO report_card_active_bindings (
              school_id, model_key, request_id, engine_id,
              profile_id, profile_version, profile_spec_sha256,
@@ -241,7 +273,7 @@ function createReportCardConfigurationPgStore(db) {
              rendering_template_id, rendering_template_version, rendering_template_spec_sha256,
              activated_at
            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-           ON CONFLICT (school_id, model_key) DO UPDATE SET
+           ON CONFLICT (school_id, model_key)${scoped ? " WHERE class_id IS NULL" : ""} DO UPDATE SET
              request_id = EXCLUDED.request_id,
              engine_id = EXCLUDED.engine_id,
              profile_id = EXCLUDED.profile_id,
@@ -272,15 +304,25 @@ function createReportCardConfigurationPgStore(db) {
             row.activated_at,
           ]
         );
+        let saved;
+        if (inTx) await client.query("SAVEPOINT report_card_binding_upsert");
+        try {
+          saved = await upsert(await bindingsHaveClassScope(client));
+        } catch (err) {
+          if (!err || err.code !== "42P10") throw err;
+          if (inTx) await client.query("ROLLBACK TO SAVEPOINT report_card_binding_upsert");
+          saved = await upsert(await bindingsHaveClassScope(client));
+        }
+        if (inTx) await client.query("RELEASE SAVEPOINT report_card_binding_upsert");
         return mapBinding(saved);
       },
       async getBinding(schoolId, modelKey) {
-        return mapBinding(
-          await queryOne(
-            `SELECT * FROM report_card_active_bindings WHERE school_id = $1 AND model_key = $2`,
-            [schoolId, modelKey]
-          )
+        // Liaison établissement uniquement (L1), jamais une liaison de classe.
+        const result = await client.query(
+          `SELECT * FROM report_card_active_bindings WHERE school_id = $1 AND model_key = $2`,
+          [schoolId, modelKey]
         );
+        return mapBinding(firstSchoolScoped(result.rows));
       },
       async insertAudit(entry) {
         const row = await queryOne(
@@ -429,7 +471,7 @@ function createReportCardConfigurationPgStore(db) {
     return withClient(async (client) => {
       await client.query("BEGIN");
       try {
-        const result = await fn(bind(client));
+        const result = await fn(bind(client, true));
         await client.query("COMMIT");
         return result;
       } catch (err) {
