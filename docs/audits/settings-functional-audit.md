@@ -27,7 +27,7 @@ Le hub Paramètres déclare **14 cartes** dans `SETTING_CARDS`. Trois sont corre
 - **Mon abonnement** — lecture plan / factures / paiements. Les écrans « changer d’offre » et « résiliation » existent mais **n’écrivent pas** (clés plateforme stripées du PUT client).
 - **Sécurité** — session + bullets statiques mot de passe/PIN + journal d’audit client. **Aucune politique mutable.**
 
-**Plateforme uniquement :** politique d’abonnement par pays (Superadmin + Admin Pays, ce dernier peut modifier si `Abonnements:UPDATE`), graphiques dashboard (Superadmin). La carte **Documents** ouvre l’éditeur bulletin GrapesJS **Superadmin**, mais elle est **absente des hubs Superadmin et école** (filtre de chemins / `bulletinDesign`). Recus, attestations et en-têtes promis par la carte **n’existent pas** dans cette UI.
+**Plateforme uniquement :** politique d’abonnement par pays (Superadmin + Admin Pays, ce dernier peut modifier si `Abonnements:UPDATE`), graphiques dashboard (Superadmin). **Mise à jour BULLETIN-CATALOG-01 :** les cartes **Documents** (éditeur GrapesJS) et **Configuration bulletins** (éditeur de gabarit LOT 6) sont retirées du hub ; leurs URL redirigent vers la carte **Catalogue des bulletins** (`/parametres/bulletins-catalogue`, Superadmin uniquement, présente dans le hub Superadmin) : disponibilité des modèles par pays, sans éditeur, sans accès aux élèves, notes ni bulletins. Le code historique est conservé, non routé.
 
 **HELP :** documenter lecture + navigation + écriture seulement là où le code mute vraiment (Profil, Année, Structure/cours, Finances grilles, Utilisateurs/Affectations, Planning cœur). Interdit : Notifications / Apparence / Intégrations comme disponibles ; pénalités ; restore ; modification de la matrice par l’établissement ; écriture Notes enseignant (P1 toujours documenté) ; changer d’offre / résiliation comme parcours abouti.
 
@@ -50,8 +50,7 @@ Hub : 14 cartes. Filtrage :
 | Année scolaire | `/parametres/annee-scolaire` | Admin School | Années Académiques:READ | CREATE | UPDATE | Pas d’UI | Oui | `/api/v2/academic-years`, school-settings | Oui | Oui | Oui | Non | Oui | ACTUEL_COMPLET | Établissement | Classes, notes, bulletins, planning | Pas de suppression/clôture UI | — | Oui write | GO_HELP_READ, GO_HELP_WRITE, GO_HELP_NAVIGATION |
 | Structure pédagogique | `/parametres/structure` | Admin School | Paramètres / Matières READ | Cours école ; niveaux = plateforme | Activation + cours | Archivage cours | Oui (activation/cours) | référentiel + subjects | Oui | Oui | Oui | Catalogue national | Activation | ACTUEL_PARTIEL | Référentiel pays | Classes hors carte | Pas de création libre de niveau national | TYPE A classes | Write activation/cours | GO_HELP_READ, GO_HELP_WRITE, GO_HELP_NAVIGATION |
 | Rôles et droits | `/parametres/roles-droits` | Admin School | Catalogue assignable | Superadmin only | Superadmin only | Superadmin only | Non (école) | `establishmentRolesApi.listAssignable` | Oui | Oui | Oui (RO) | Configuration | Lecture | LECTURE_SEULE | Catalogue Superadmin | Comptes utilisateurs ASSIGN | Matrice globale non éditable école | **Pas une anomalie** | Read / nav ; WRITE interdit | GO_HELP_READ, GO_HELP_NAVIGATION |
-| Documents | `/parametres/documents` | Superadmin | `bulletinDesign` | Templates bulletin | Templates | API templates | Oui (bulletin) | `reportCardTemplatesApi` | Oui | Oui | Non | Oui | Non (carte invisible hub école) | PLATEFORME_UNIQUEMENT | Superadmin | Notes/bulletins | Recus/attestations/en-têtes absents ; carte absente hub Superadmin | TYPE A + C | HOLD / PLATFORM | PLATFORM_ONLY, HOLD_HELP |
-| Configuration bulletins | `/parametres/bulletins-configuration` | Superadmin | `reportCardConfiguration` | — | Revue / gabarit / activation | — | Oui (workflow LOT 6) | `/api/report-card/admin/*` | Oui | Oui | Non | Oui | Non | PLATEFORME_UNIQUEMENT | Superadmin + école cible | LOT 1/2/6 | Pas de mint QR ni recalcul | — | HOLD / PLATFORM | PLATFORM_ONLY, HOLD_HELP |
+| Catalogue des bulletins | `/parametres/bulletins-catalogue` | Superadmin | `reportCardConfiguration` | — (modèles définis par Somafrik) | Disponibilité par pays (confirmation + audit) | — (retrait = non disponible) | Oui | `/api/report-card/catalog/admin*` | Oui (migration manuelle) | Oui | Non | Oui | Non (configuration école via `/bulletins/modele`) | PLATEFORME_UNIQUEMENT | Superadmin ; migration appliquée | LOT 6, moteur v1 (aperçus) | Aucun éditeur ; aucun accès élèves/notes/bulletins ; pas de choix par classe | — | HOLD / PLATFORM | PLATFORM_ONLY, HOLD_HELP |
 | Sécurité | `/parametres/securite` | Admin School, Superadmin, Admin Pays | configuration / hub | — | — | — | Non | auditLog client + CSV | Non (politique) | Oui | Non | Session plateforme | Session école | LECTURE_SEULE | — | — | Politique non configurable | TYPE B | Read / nav | GO_HELP_READ, GO_HELP_NAVIGATION |
 | Données et sauvegarde | `/parametres/donnees` | Admin School, Superadmin, Admin Pays | configuration / hub | — | — | — | Non (export only) | `GET /api/data-export` | Lecture | Oui | Non | Export scoped | Export école | ACTUEL_PARTIEL | — | — | Restore = non | Hub déjà honnête | Export only | GO_HELP_READ, GO_HELP_NAVIGATION |
 | Finances | `/parametres/finances` | Admin School (+ Comptable si Frais) | Frais & tarifs:READ | CREATE | UPDATE | Désactivation | Oui (grilles/moyens) | `/api/finance/*` | Oui | Oui | Encaissement ailleurs | Non | Configuration | ACTUEL_PARTIEL | Devise canonique | Paiements runtime | Pénalités non opérationnelles | TYPE A hub | Write grilles **sans** pénalités | GO_HELP_READ, GO_HELP_WRITE, GO_HELP_NAVIGATION |
@@ -137,7 +136,7 @@ Mobile `isSchoolSettingsOperator` : Superadmin ou Admin School uniquement — un
 | Année scolaire | Oui | Oui | Oui | `SchoolYearSettingsScreen` |
 | Structure | Oui | Oui | Oui | Activation + cours |
 | Rôles | Oui RO | Oui RO | Oui | Volontaire |
-| Documents Paramètres | Superadmin | Non | Non | Volontaire plateforme |
+| Catalogue des bulletins | Superadmin | Non | Non | Volontaire plateforme |
 | Sécurité | Oui RO | Non | Non | |
 | Données / export | Oui | Non | Non | |
 | Finances config | Oui | Non (ops paiements ailleurs) | Non | Volontaire |
@@ -196,17 +195,17 @@ Aucun bloqueur P0 **spécifique Paramètres** identifié qui empêcherait l’us
 
 | Id | Fichier | Écart | Impact HELP |
 |---|---|---|---|
-| L1 | `SettingsHubPage.tsx` Documents | Promesse bulletins+reçus+attestations+en-têtes ; livré = bulletin Superadmin ; carte invisible sur les hubs filtrés | TYPE A + C — ne pas documenter pour l’école |
+| L1 | `SettingsHubPage.tsx` Documents | **Résolu (BULLETIN-CATALOG-01)** : carte retirée, remplacée par « Catalogue des bulletins » | — |
 | L2 | Hub Finances | Mention « pénalités » alors que page : différées V1 | TYPE A — corriger libellé (lot copy, pas SETTINGS-01) |
 | L3 | Hub Sécurité | Badge Disponible + « politique » alors que lecture seule | TYPE B |
 | L4 | Hub Rôles | « Pilotage des habilitations » alors que lecture seule école | TYPE B attendu métier — ajuster copy, pas le comportement |
 | L5 | Hub Structure | « … et classes » alors que création = Mon établissement | TYPE A navigation |
-| L6 | Documents hors `SUPERADMIN_SETTING_PATHS` | Superadmin n’a pas la carte Documents dans son hub | Accès URL directe `/parametres/documents` seulement |
+| L6 | Documents hors `SUPERADMIN_SETTING_PATHS` | **Résolu (BULLETIN-CATALOG-01)** : `/parametres/bulletins-catalogue` est dans `SUPERADMIN_SETTING_PATHS` ; `/parametres/documents` redirige | — |
 | L7 | Audit ACADEMIC-YEAR-CANONICAL-INTEGRITY.md | Décrit une UI Classes « Créer année » **plus vraie** | Ne pas réutiliser cet audit comme vérité |
 
 **Proposition de libellés (non appliquée) :**
 
-- Documents : « Modèles de bulletins (Superadmin) » ou retirer du hub école.
+- Documents : appliqué par BULLETIN-CATALOG-01 (carte retirée, « Catalogue des bulletins » Superadmin).
 - Finances : retirer « et pénalités ».
 - Sécurité : « Consultation session, politique affichée et journal (lecture seule) ».
 - Rôles : « Catalogue des rôles affectables (lecture seule) ».
@@ -218,13 +217,13 @@ Aucun bloqueur P0 **spécifique Paramètres** identifié qui empêcherait l’us
 
 | Type | Carte | Titre / badge | Réalité |
 |---|---|---|---|
-| A | Documents | Recus, attestations, en-têtes, QR | Bulletin GrapesJS + QR Superadmin |
+| — | Documents | Résolu BULLETIN-CATALOG-01 | Carte retirée |
 | A | Finances | Pénalités | Alerte différées V1 |
 | A | Structure | Classes dans la description | Projection RO ; création ailleurs |
 | B | Sécurité | Disponible / configurer | LECTURE_SEULE |
 | B | Rôles | Disponible / « Configurer → » / pilotage | LECTURE_SEULE école (**attendu**) |
 | B | Mon abonnement | Changement d’offre et résiliation | UI sans persistance |
-| C | Documents | Carte établissement | Superadmin only + absente hub Superadmin |
+| E | Catalogue des bulletins | Disponibilité par pays (Superadmin) | Aligné |
 | D | Notifications, Apparence, Intégrations | Bientôt | ComingSoonState — **correct** |
 | E | Profil, Année, Politique pays, Graphiques, Données (export honnête) | Alignés | OK |
 
@@ -320,9 +319,9 @@ Workflow UI `ConfigurationPage` section `annee-scolaire` : créer (nom, début, 
 
 Intégrations annoncées (Orange, MTN, Airtel, SMS, WhatsApp, SMTP, cloud, NFC, webhooks) : **pas d’UI de configuration établissement, pas production-ready via cette carte**. Ne pas confondre avec un secret serveur ou un paiement runtime ailleurs.
 
-### 13. Documents
+### 13. Catalogue des bulletins (remplace Documents et Configuration bulletins)
 
-**La carte ne correspond pas à la promesse affichée.** Livré : éditeur bulletin Superadmin (GrapesJS, templates, PDF, QR). Futur dans cette carte : reçus, attestations, en-têtes établissement, modèles par classe côté école.
+BULLETIN-CATALOG-01. Superadmin uniquement : liste des modèles (aperçu calculé sur données fictives, type, version, statut, pays autorisés), recherche, filtres pays / disponibilité, « Gérer la disponibilité » par pays avec confirmation explicite et historique (modèle, pays, ancienne / nouvelle valeur, auteur, date). Retirer un modèle d'un pays bloque seulement les nouvelles configurations ; configurations actives, bulletins publiés et QR restent valides. Aucun éditeur, aucun accès élèves / notes / bulletins. Configuration par l'établissement : Pédagogie → Bulletins → Configurer un bulletin (`/bulletins/modele`). Prérequis : migration `20261104_report_card_catalog` appliquée manuellement (préproduction, après autorisation) ; sinon la page indique que le catalogue n'est pas installé. Anciennes URL `/parametres/documents` et `/parametres/bulletins-configuration` : redirections ; code historique conservé, non routé.
 
 ### 14. Sécurité
 
