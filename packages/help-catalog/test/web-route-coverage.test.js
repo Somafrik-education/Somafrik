@@ -92,6 +92,7 @@ const PROTECTED_HELP_PATHS = Object.freeze({
   "/examens": HELP_SCREEN.EXAMS,
   "/bulletins": HELP_SCREEN.REPORT_CARDS,
   "/bulletins/historique": HELP_SCREEN.REPORT_CARDS,
+  "/bulletins/gestion": HELP_SCREEN.REPORT_CARDS,
   "/bulletins/modele": HELP_SCREEN.REPORT_CARDS,
   "/notifications": HELP_SCREEN.NOTIFICATIONS,
   "/notifications-plateforme": HELP_SCREEN.NOTIFICATIONS,
@@ -238,7 +239,7 @@ test("/examens is a distinct pedagogy screen and does not reuse Notes", () => {
 });
 
 test("Bulletins and sub-routes stay mapped to REPORT_CARDS", () => {
-  for (const pathname of ["/bulletins", "/bulletins/historique", "/bulletins/modele", "/bulletins/"]) {
+  for (const pathname of ["/bulletins", "/bulletins/historique", "/bulletins/modele", "/bulletins/gestion", "/bulletins/"]) {
     assert.equal(resolveHelpScreen({ platform: "web", pathname }), HELP_SCREEN.REPORT_CARDS);
     assert.equal(isHelpAvailable(schoolAdmin(pathname)), true);
   }
