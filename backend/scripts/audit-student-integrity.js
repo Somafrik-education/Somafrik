@@ -13,10 +13,13 @@
 
 const {
   INTEGRITY_COUNT_SQL,
+  ORPHAN_OBLIGATION_SQL,
   STUDENT_DIAGNOSIS_SQL,
   summarizeIntegrityCounts,
   assertReadOnlySql,
   classifyStudentIntegrity,
+  diagnosticAccessDecision,
+  projectOrphanObligations,
 } = require("../lib/studentIntegrity");
 
 function readArg(name) {
@@ -32,9 +35,25 @@ function activeEnrollment(enrollments) {
   });
 }
 
+function actorPrincipal() {
+  const raw = String(process.env.SOMAFRIK_INTEGRITY_ACTOR_PERMISSIONS || "").trim();
+  if (!raw) return null;
+  return { permissions: raw.split(",").map((item) => item.trim()).filter(Boolean) };
+}
+
 async function main() {
   assertReadOnlySql(INTEGRITY_COUNT_SQL);
+  assertReadOnlySql(ORPHAN_OBLIGATION_SQL);
   assertReadOnlySql(STUDENT_DIAGNOSIS_SQL);
+  const access = diagnosticAccessDecision(actorPrincipal());
+  if (!access.allowed) {
+    console.log(JSON.stringify({
+      available: false,
+      readOnly: true,
+      reason: "Diagnostic refusé : permission administrative absente. Aucune ligne n'a été lue ni modifiée.",
+    }));
+    return;
+  }
   const databaseUrl = String(process.env.DATABASE_URL || process.env.SOMAFRIK_TEST_PG_URL || "").trim();
   const studentCode = readArg("--student-code");
   if (!databaseUrl) {
@@ -52,10 +71,12 @@ async function main() {
   try {
     await client.query("SET default_transaction_read_only = on");
     const counts = await client.query(INTEGRITY_COUNT_SQL);
+    const orphans = await client.query(ORPHAN_OBLIGATION_SQL);
     const report = {
       available: true,
       readOnly: true,
       summary: summarizeIntegrityCounts(counts.rows),
+      orphans: projectOrphanObligations(orphans.rows),
     };
     if (studentCode) {
       const diagnosis = await client.query(STUDENT_DIAGNOSIS_SQL, [studentCode]);

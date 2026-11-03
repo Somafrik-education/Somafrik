@@ -7,7 +7,11 @@ const {
   classifyUnpaidFees,
   summarizeIntegrityCounts,
   assertReadOnlySql,
+  canReadStudentIntegrityDiagnostic,
+  diagnosticAccessDecision,
+  projectOrphanObligations,
   INTEGRITY_COUNT_SQL,
+  ORPHAN_OBLIGATION_SQL,
   STUDENT_DIAGNOSIS_SQL,
 } = require("./studentIntegrity");
 
@@ -153,6 +157,77 @@ test("écart d'établissement : pas de nouvel encaissement", () => {
   assert.equal(result.historyVisible, true);
 });
 
+test("inscription undefined, nulle ou inconnue : fail-closed, solde toujours classé consultable", () => {
+  for (const hasActiveEnrollment of [undefined, null]) {
+    const result = classifyUnpaidFees(
+      [{ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment, balance: 320000 }],
+      MATRICULE,
+    );
+    assert.equal(result.collectionEligible, false);
+    assert.equal(result.category, "no_active_enrollment");
+    assert.equal(result.canonicalStudentId, UUID);
+    assert.equal(result.historyVisible, true);
+  }
+  const unknown = classifyStudentIntegrity({
+    studentExists: true,
+    studentUuid: UUID,
+    matricule: MATRICULE,
+    displayedStudentId: UUID,
+    enrollmentStatus: "unknown",
+    financeRowExists: true,
+  });
+  assert.equal(unknown.collectionEligible, false);
+  assert.equal(unknown.category, "no_active_enrollment");
+  assert.equal(unknown.historyVisible, true);
+});
+
+test("identité absente : un identifiant de profil n'est jamais un UUID canonique", () => {
+  const result = classifyUnpaidFees(
+    [{ studentDbId: "profile-legacy", canonicalStudentId: "profile-legacy", balance: 320000, hasActiveEnrollment: true }],
+    "profile-legacy",
+  );
+  assert.equal(result.canonicalStudentId, "");
+  assert.notEqual(result.canonicalStudentId, "profile-legacy");
+  assert.equal(result.collectionEligible, false);
+  assert.equal(result.category, "orphan_finance");
+  assert.equal(result.historyVisible, true);
+});
+
+test("établissement divergent sur les frais : encaissement refusé, UUID conservé", () => {
+  const result = classifyUnpaidFees(
+    [{ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: true, schoolMismatch: true, balance: 320000 }],
+    MATRICULE,
+  );
+  assert.equal(result.category, "school_mismatch");
+  assert.equal(result.collectionEligible, false);
+  assert.equal(result.canonicalStudentId, UUID);
+  assert.equal(result.historyVisible, true);
+});
+
+test("une obligation orpheline reste consultable par un diagnostic autorisé, sans nom", () => {
+  assert.equal(canReadStudentIntegrityDiagnostic({ permissions: ["Impayés:READ"] }), true);
+  assert.equal(canReadStudentIntegrityDiagnostic({ permissions: ["Paiements:READ"] }), true);
+  assert.equal(canReadStudentIntegrityDiagnostic({ permissions: ["Présences:READ"] }), false);
+  assert.equal(diagnosticAccessDecision(null).allowed, true);
+  assert.equal(diagnosticAccessDecision({ permissions: ["Présences:READ"] }).allowed, false);
+  const projected = projectOrphanObligations([
+    {
+      obligation_id: "obl-orphan",
+      school_code: "CD-IN-26-001",
+      student_id: UUID,
+      balance: 320000,
+      currency: "CDF",
+      status: "En retard",
+      first_name: "Elie",
+      last_name: "Muco",
+    },
+  ]);
+  assert.equal(projected[0].obligationId, "obl-orphan");
+  assert.equal(projected[0].balance, 320000);
+  assert.equal(JSON.stringify(projected).includes("Elie"), false);
+  assert.equal(JSON.stringify(projected).includes("Muco"), false);
+});
+
 test("les comptes d'anomalies agrègent par établissement sans identité d'élève", () => {
   const summary = summarizeIntegrityCounts([
     { school_code: "CD-IN-26-001", category: "no_active_enrollment", count: 2 },
@@ -166,7 +241,10 @@ test("les comptes d'anomalies agrègent par établissement sans identité d'él�
 
 test("le diagnostic SQL est en lecture seule et n'extrait pas de nom", () => {
   assertReadOnlySql(INTEGRITY_COUNT_SQL);
+  assertReadOnlySql(ORPHAN_OBLIGATION_SQL);
   assertReadOnlySql(STUDENT_DIAGNOSIS_SQL);
   assert.match(STUDENT_DIAGNOSIS_SQL, /student_code = \$1/);
-  assert.match(INTEGRITY_COUNT_SQL, /GROUP BY s\.school_code/);
+  assert.match(INTEGRITY_COUNT_SQL, /LEFT JOIN schools/);
+  assert.match(ORPHAN_OBLIGATION_SQL, /LEFT JOIN students/);
+  assert.match(ORPHAN_OBLIGATION_SQL, /st\.id IS NULL/);
 });

@@ -503,7 +503,11 @@ export interface StudentFee {
   canonicalStudentId?: string;
   studentCode?: string;
   studentStatus?: string;
-  hasActiveEnrollment?: boolean;
+  hasActiveEnrollment?: boolean | null;
+  enrollmentStatus?: string;
+  schoolMismatch?: boolean;
+  orphanFinance?: boolean;
+  studentExists?: boolean;
 }
 
 /** Historique de modification d'un tarif (EXG-FRAIS-018). */

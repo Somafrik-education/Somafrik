@@ -71,5 +71,49 @@ describe("STUDENT-INTEGRITY-01", () => {
     const result = integrityFromFees([fee({ studentDbId: "", canonicalStudentId: "", hasActiveEnrollment: false })], "inconnu");
     expect(result.collectionEligible).toBe(false);
     expect(result.integrityCategory).toBe("orphan_finance");
+    expect(result.canonicalStudentId).toBe("");
+  });
+
+  it("fail-closed pour une inscription undefined, nulle ou inconnue", () => {
+    const missing = integrityFromFees(
+      [fee({ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: undefined })],
+      MATRICULE,
+    );
+    const absent = integrityFromFees([fee({ studentDbId: UUID, studentCode: MATRICULE })], MATRICULE);
+    const nulled = integrityFromFees(
+      [fee({ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: null })],
+      MATRICULE,
+    );
+    const unknown = integrityFromFees(
+      [fee({ studentDbId: UUID, studentCode: MATRICULE, enrollmentStatus: "unknown" })],
+      MATRICULE,
+    );
+    for (const result of [missing, absent, nulled, unknown]) {
+      expect(result.collectionEligible).toBe(false);
+      expect(result.integrityCategory).toBe("no_active_enrollment");
+      expect(result.canonicalStudentId).toBe(UUID);
+    }
+  });
+
+  it("ne transforme pas un identifiant de profil en UUID canonique", () => {
+    const result = integrityFromFees(
+      [fee({ studentId: "profile-legacy", studentDbId: "profile-legacy", canonicalStudentId: "profile-legacy", hasActiveEnrollment: true })],
+      "profile-legacy",
+    );
+    expect(result.canonicalStudentId).toBe("");
+    expect(result.canonicalStudentId).not.toBe("profile-legacy");
+    expect(result.collectionEligible).toBe(false);
+    expect(result.integrityCategory).toBe("orphan_finance");
+  });
+
+  it("refuse l'encaissement quand l'établissement diverge", () => {
+    const result = integrityFromFees(
+      [fee({ studentDbId: UUID, studentCode: MATRICULE, hasActiveEnrollment: true, schoolMismatch: true, balance: 320000 })],
+      MATRICULE,
+    );
+    expect(result.collectionEligible).toBe(false);
+    expect(result.integrityCategory).toBe("school_mismatch");
+    expect(result.canonicalStudentId).toBe(UUID);
+    expect(unpaidCollectionBlockMessage(result.integrityCategory)).toMatch(/autre établissement/i);
   });
 });

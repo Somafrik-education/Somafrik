@@ -9,6 +9,14 @@
 
 const ACTIVE_ENROLLMENT = new Set(["active", "enrolled"]);
 const ARCHIVED_STUDENT = new Set(["archived", "inactive", "deleted", "transferred", "sorti"]);
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DIAGNOSTIC_PERMISSIONS = new Set([
+  "Impayés:READ",
+  "Paiements:READ",
+  "Gérer paiements",
+  "Voir rapports financiers",
+  "ALL_PRIVILEGES",
+]);
 
 function asText(value) {
   return String(value ?? "").trim();
@@ -18,11 +26,23 @@ function normalizeToken(value) {
   return asText(value).toLowerCase();
 }
 
-function enrollmentIsActive(input) {
+function verifiedCanonicalUuid(...values) {
+  for (const value of values) {
+    const text = asText(value);
+    if (CANONICAL_UUID.test(text)) return text;
+  }
+  return "";
+}
+
+/**
+ * Fail-closed : seule une inscription explicitement active ou enrolled est vérifiée.
+ * Absent, null, vide ou statut inconnu ne devient jamais une inscription active.
+ */
+function enrollmentIsActive(input = {}) {
   if (input.hasActiveEnrollment === true) return true;
-  if (input.hasActiveEnrollment === false) return false;
+  if (input.hasActiveEnrollment === false || input.hasActiveEnrollment === null) return false;
   const status = normalizeToken(input.enrollmentStatus);
-  if (!status) return null;
+  if (!status) return false;
   return ACTIVE_ENROLLMENT.has(status);
 }
 
@@ -63,7 +83,7 @@ function classifyStudentIntegrity(input = {}) {
   if (archived) {
     return { category: "archived", collectionEligible: false, historyVisible: true };
   }
-  if (activeEnrollment === false) {
+  if (activeEnrollment !== true) {
     return { category: "no_active_enrollment", collectionEligible: false, historyVisible: true };
   }
   if (identityMismatch) {
@@ -79,22 +99,31 @@ function readOptionalBoolean(value) {
   return undefined;
 }
 
+function enrollmentSignal(value) {
+  if (value === null) return null;
+  return readOptionalBoolean(value);
+}
+
 function classifyUnpaidFees(fees, displayedStudentId) {
   const list = Array.isArray(fees) ? fees : [];
   const primary = list[0] ?? {};
-  const canonicalStudentId = asText(primary.canonicalStudentId || primary.studentDbId);
+  const canonicalStudentId = verifiedCanonicalUuid(primary.canonicalStudentId, primary.studentDbId);
   const matricule = asText(primary.studentCode || primary.matricule);
-  const flags = list
-    .map((fee) => readOptionalBoolean(fee.hasActiveEnrollment))
-    .filter((value) => value !== undefined);
-  const hasActiveEnrollment = flags.length ? flags.some(Boolean) : undefined;
+  const signals = list.map((fee) => enrollmentSignal(fee.hasActiveEnrollment));
+  const explicitTrue = signals.some((value) => value === true);
+  const explicitNegative = signals.some((value) => value === false || value === null);
+  const hasActiveEnrollment = explicitTrue ? true : explicitNegative ? false : undefined;
   const studentStatus = asText(primary.studentStatus);
-  const explicitMissing = list.some((fee) => fee.studentExists === false || fee.orphanFinance === true);
+  const explicitOrphan = list.some(
+    (fee) => fee.orphanFinance === true || fee.studentDbId === "" || fee.canonicalStudentId === "",
+  );
+  const explicitMissing = list.some((fee) => fee.studentExists === false);
+  const verifiedIdentity = Boolean(canonicalStudentId || matricule);
   return {
-    canonicalStudentId: canonicalStudentId || asText(displayedStudentId),
+    canonicalStudentId,
     matricule: matricule || undefined,
     ...classifyStudentIntegrity({
-      studentExists: explicitMissing ? false : true,
+      studentExists: !explicitMissing && !explicitOrphan && verifiedIdentity,
       financeRowExists: list.length > 0,
       studentUuid: canonicalStudentId,
       matricule,
@@ -102,13 +131,16 @@ function classifyUnpaidFees(fees, displayedStudentId) {
       studentStatus,
       archived: primary.archived === true,
       hasActiveEnrollment,
-      schoolMismatch: primary.schoolMismatch === true,
+      enrollmentStatus: primary.enrollmentStatus,
+      schoolMismatch: list.some((fee) => fee.schoolMismatch === true),
     }),
   };
 }
 
 const INTEGRITY_COUNT_SQL = `
-SELECT s.school_code AS school_code, anomaly.category, COUNT(*)::int AS count
+SELECT COALESCE(NULLIF(btrim(s.school_code), ''), 'UNKNOWN') AS school_code,
+       anomaly.category,
+       COUNT(*)::int AS count
 FROM (
   SELECT o.school_id, 'orphan_finance'::text AS category
   FROM student_fee_obligations o
@@ -145,9 +177,23 @@ FROM (
     AND btrim(o.profile_payload->>'studentId') <> st.id::text
     AND btrim(o.profile_payload->>'studentId') <> btrim(st.student_code)
 ) anomaly
-JOIN schools s ON s.id = anomaly.school_id
-GROUP BY s.school_code, anomaly.category
-ORDER BY s.school_code, anomaly.category
+LEFT JOIN schools s ON s.id = anomaly.school_id
+GROUP BY COALESCE(NULLIF(btrim(s.school_code), ''), 'UNKNOWN'), anomaly.category
+ORDER BY 1, anomaly.category
+`;
+
+const ORPHAN_OBLIGATION_SQL = `
+SELECT o.id::text AS obligation_id,
+       COALESCE(NULLIF(btrim(s.school_code), ''), '') AS school_code,
+       o.student_id::text AS student_id,
+       o.balance,
+       o.currency,
+       o.status
+FROM student_fee_obligations o
+LEFT JOIN students st ON st.id = o.student_id
+LEFT JOIN schools s ON s.id = o.school_id
+WHERE st.id IS NULL
+ORDER BY s.school_code NULLS LAST, o.id
 `;
 
 const STUDENT_DIAGNOSIS_SQL = `
@@ -197,6 +243,31 @@ function summarizeIntegrityCounts(rows = []) {
   return { schools, totals };
 }
 
+function canReadStudentIntegrityDiagnostic(principal) {
+  const permissions = new Set(principal?.permissions ?? []);
+  for (const permission of DIAGNOSTIC_PERMISSIONS) {
+    if (permissions.has(permission)) return true;
+  }
+  return false;
+}
+
+function diagnosticAccessDecision(principal) {
+  if (!principal) return { allowed: true, operator: true };
+  if (canReadStudentIntegrityDiagnostic(principal)) return { allowed: true, operator: false };
+  return { allowed: false, operator: false };
+}
+
+function projectOrphanObligations(rows = []) {
+  return rows.map((row) => ({
+    obligationId: asText(row.obligation_id || row.obligationId),
+    schoolCode: asText(row.school_code || row.schoolCode),
+    studentId: asText(row.student_id || row.studentId),
+    balance: Number(row.balance) || 0,
+    currency: asText(row.currency),
+    status: asText(row.status),
+  }));
+}
+
 function assertReadOnlySql(sql) {
   const body = String(sql || "");
   if (!/^\s*(SELECT|WITH)\b/i.test(body)) {
@@ -213,9 +284,14 @@ function assertReadOnlySql(sql) {
 module.exports = {
   classifyStudentIntegrity,
   classifyUnpaidFees,
+  verifiedCanonicalUuid,
   readOptionalBoolean,
   summarizeIntegrityCounts,
+  canReadStudentIntegrityDiagnostic,
+  diagnosticAccessDecision,
+  projectOrphanObligations,
   assertReadOnlySql,
   INTEGRITY_COUNT_SQL,
+  ORPHAN_OBLIGATION_SQL,
   STUDENT_DIAGNOSIS_SQL,
 };

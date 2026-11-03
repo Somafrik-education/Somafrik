@@ -3,6 +3,12 @@ import type { StudentFee, StudentUnpaidRow } from "../types";
 export type StudentIntegrityCategory = NonNullable<StudentUnpaidRow["integrityCategory"]>;
 
 const ARCHIVED = new Set(["archived", "inactive", "deleted", "transferred", "sorti"]);
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function canonicalStudentUuid(value: unknown): string {
+  const text = String(value ?? "").trim();
+  return CANONICAL_UUID.test(text) ? text : "";
+}
 
 export function unpaidCollectionBlockMessage(category: StudentIntegrityCategory | undefined): string {
   if (category === "archived") {
@@ -20,6 +26,14 @@ export function unpaidCollectionBlockMessage(category: StudentIntegrityCategory 
   return "Inscription inactive : l'encaissement d'une nouvelle opération est désactivé. Le solde reste consultable.";
 }
 
+function enrollmentActive(fees: StudentFee[]): boolean {
+  const flags = fees.map((fee) => fee.hasActiveEnrollment);
+  if (flags.some((value) => value === true)) return true;
+  if (flags.some((value) => value === false || value === null)) return false;
+  const status = String(fees[0]?.enrollmentStatus ?? "").trim().toLowerCase();
+  return status === "active" || status === "enrolled";
+}
+
 export function integrityFromFees(fees: StudentFee[], displayedStudentId: string): {
   canonicalStudentId: string;
   matricule?: string;
@@ -27,30 +41,41 @@ export function integrityFromFees(fees: StudentFee[], displayedStudentId: string
   integrityCategory: StudentIntegrityCategory;
 } {
   const primary = fees[0];
-  const markedMissing = fees.some((fee) => fee.studentDbId === "" || fee.canonicalStudentId === "");
-  const canonicalStudentId = String(primary?.canonicalStudentId || primary?.studentDbId || displayedStudentId).trim();
+  const canonicalStudentId = canonicalStudentUuid(primary?.canonicalStudentId) || canonicalStudentUuid(primary?.studentDbId);
   const matricule = String(primary?.studentCode || "").trim() || undefined;
-  const flags = fees.map((fee) => fee.hasActiveEnrollment).filter((value) => value === true || value === false);
-  const hasActiveEnrollment = flags.length ? flags.some(Boolean) : undefined;
-  const archived = fees.some((fee) => ARCHIVED.has(String(fee.studentStatus ?? "").trim().toLowerCase()));
   const displayed = displayedStudentId.trim();
+  const explicitOrphan = fees.some(
+    (fee) => fee.orphanFinance === true || fee.studentDbId === "" || fee.canonicalStudentId === "",
+  );
+  const explicitMissing = fees.some((fee) => fee.studentExists === false);
+  const verifiedIdentity = Boolean(canonicalStudentId || matricule);
+  const archived = fees.some((fee) => ARCHIVED.has(String(fee.studentStatus ?? "").trim().toLowerCase()));
+  const schoolMismatch = fees.some((fee) => fee.schoolMismatch === true);
   const identityMismatch = Boolean(
-    (canonicalStudentId || matricule) &&
+    verifiedIdentity &&
       displayed &&
       displayed !== canonicalStudentId &&
       displayed !== matricule,
   );
 
-  if (markedMissing) {
-    return { canonicalStudentId: displayed, matricule, collectionEligible: false, integrityCategory: "orphan_finance" };
+  if (explicitOrphan || explicitMissing || !verifiedIdentity) {
+    return {
+      canonicalStudentId: "",
+      matricule,
+      collectionEligible: false,
+      integrityCategory: fees.length ? "orphan_finance" : "missing",
+    };
+  }
+  if (schoolMismatch) {
+    return { canonicalStudentId, matricule, collectionEligible: false, integrityCategory: "school_mismatch" };
   }
   if (archived) {
     return { canonicalStudentId, matricule, collectionEligible: false, integrityCategory: "archived" };
   }
-  if (hasActiveEnrollment === false) {
+  if (!enrollmentActive(fees)) {
     return { canonicalStudentId, matricule, collectionEligible: false, integrityCategory: "no_active_enrollment" };
   }
-  if (identityMismatch && canonicalStudentId !== displayed) {
+  if (identityMismatch) {
     return { canonicalStudentId, matricule, collectionEligible: true, integrityCategory: "identity_mismatch" };
   }
   return { canonicalStudentId, matricule, collectionEligible: true, integrityCategory: "active" };

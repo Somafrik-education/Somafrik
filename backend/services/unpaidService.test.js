@@ -74,6 +74,39 @@ test("un élève inscrit dont l'identifiant public diverge reste encaissable via
   assert.equal(result.rows[0].amountDue, 100000);
 });
 
+test("inscription non vérifiée et identité absente restent visibles sans devenir encaissables", () => {
+  const unverified = unpaidState([]);
+  unverified.studentFees[0].studentDbId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+  unverified.studentFees[0].studentCode = "CD-IN-ME-26-00010";
+  unverified.studentFees[0].balance = 320000;
+  unverified.studentFees[0].amountDue = 320000;
+  const undefinedEnrollment = new UnpaidService().list(unverified, { schoolCode: "CD-2026-0001" });
+  assert.equal(undefinedEnrollment.rows[0].amountDue, 320000);
+  assert.equal(undefinedEnrollment.rows[0].collectionEligible, false);
+  assert.equal(undefinedEnrollment.rows[0].integrityCategory, "no_active_enrollment");
+
+  const nulled = unpaidState([]);
+  nulled.studentFees[0].studentDbId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+  nulled.studentFees[0].studentCode = "CD-IN-ME-26-00010";
+  nulled.studentFees[0].hasActiveEnrollment = null;
+  nulled.studentFees[0].balance = 320000;
+  nulled.studentFees[0].amountDue = 320000;
+  const nullEnrollment = new UnpaidService().list(nulled, { schoolCode: "CD-2026-0001" });
+  assert.equal(nullEnrollment.rows[0].collectionEligible, false);
+  assert.equal(nullEnrollment.rows[0].amountDue, 320000);
+
+  const missing = unpaidState([]);
+  missing.studentFees[0].studentId = "profile-legacy";
+  missing.studentFees[0].studentDbId = "profile-legacy";
+  missing.studentFees[0].balance = 320000;
+  missing.studentFees[0].amountDue = 320000;
+  const absentIdentity = new UnpaidService().list(missing, { schoolCode: "CD-2026-0001" });
+  assert.equal(absentIdentity.rows[0].canonicalStudentId, "");
+  assert.equal(absentIdentity.rows[0].collectionEligible, false);
+  assert.equal(absentIdentity.rows[0].amountDue, 320000);
+  assert.equal(absentIdentity.rows[0].integrityCategory, "orphan_finance");
+});
+
 test("list ignore un sentAt invalide sans provoquer de réponse 500", () => {
   const valid = "2026-09-09T14:35:00.000Z";
   const state = unpaidState([

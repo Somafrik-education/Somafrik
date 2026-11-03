@@ -71,8 +71,11 @@ vi.mock("../../lib/financeApi", () => ({
 }));
 
 function fee(overrides: Partial<StudentFee> & Pick<StudentFee, "id" | "studentId" | "label">): StudentFee {
+  const studentCode = overrides.studentId === STUDENT_B ? "ELE-BIN" : "ELE-AWA";
   return {
     studentName: overrides.studentId === STUDENT_B ? "Binta Traoré" : "Awa Diop",
+    hasActiveEnrollment: true,
+    studentCode,
     schoolId: SCHOOL_ID,
     schoolCode: SCHOOL_CODE,
     className: "6ème A",

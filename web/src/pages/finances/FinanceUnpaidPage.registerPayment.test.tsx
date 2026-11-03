@@ -95,8 +95,11 @@ vi.mock("../../lib/financeApi", () => ({
 }));
 
 function fee(overrides: Partial<StudentFee> & Pick<StudentFee, "id" | "studentId" | "label">): StudentFee {
+  const studentCode = overrides.studentId === STUDENT_B ? "ELE-BIN" : overrides.studentId === STUDENT_A ? "ELE-AWA" : undefined;
   return {
     studentName: overrides.studentId === STUDENT_B ? "Binta Traoré" : "Awa Diop",
+    hasActiveEnrollment: true,
+    studentCode,
     schoolId: SCHOOL_ID,
     schoolCode: SCHOOL_CODE,
     className: "6ème A",
@@ -491,6 +494,46 @@ describe("IMP-PAY — Enregistrer un paiement depuis Impayés", () => {
     createPayment.mockResolvedValueOnce({ id: "pay-retry", amount: 40_000 });
     await user.click(screen.getByRole("button", { name: "Enregistrer l'encaissement" }));
     await waitFor(() => expect(createPayment).toHaveBeenCalledTimes(2));
+  });
+
+  it("IMP-PAY-11 — identité absente : pas d'encaissement, solde conservé, profil non promu", async () => {
+    dataState.current = emptyState([
+      fee({
+        id: "obl-sco",
+        studentId: STUDENT_A,
+        label: "Scolarité T1",
+        feeType: "Scolarité",
+        hasActiveEnrollment: undefined,
+        studentCode: undefined,
+        studentDbId: "profile-legacy",
+        canonicalStudentId: "profile-legacy",
+      }),
+    ]);
+    render(<RoutedFinanceUnpaidPage />);
+    expect((await screen.findAllByText("Awa Diop")).length).toBeGreaterThan(0);
+    expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
+    expect((await screen.findAllByTestId(`unpaid-collection-blocked-${STUDENT_A}`))[0]).toHaveTextContent(/solde est conservé/i);
+    expect(screen.queryByTestId("quick-payment-modal")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/100[\s\u202f\u00a0]?000 XOF/).length).toBeGreaterThan(0);
+  });
+
+  it("IMP-PAY-12 — inscription nulle : bouton absent, solde consultable", async () => {
+    dataState.current = emptyState([
+      fee({
+        id: "obl-null",
+        studentId: STUDENT_A,
+        label: "Scolarité T1",
+        feeType: "Scolarité",
+        studentDbId: "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
+        studentCode: "ELE-AWA",
+        hasActiveEnrollment: null,
+      }),
+    ]);
+    render(<RoutedFinanceUnpaidPage />);
+    expect((await screen.findAllByText("Awa Diop")).length).toBeGreaterThan(0);
+    expect(screen.queryAllByTestId(`unpaid-register-payment-${STUDENT_A}`)).toHaveLength(0);
+    expect((await screen.findAllByTestId(`unpaid-collection-blocked-${STUDENT_A}`))[0]).toHaveTextContent(/solde reste consultable/i);
+    expect(screen.getAllByText(/100[\s\u202f\u00a0]?000 XOF/).length).toBeGreaterThan(0);
   });
 
   it("IMP-PAY-08 — double clic / retry → une seule intention idempotente", async () => {
