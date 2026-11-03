@@ -8,7 +8,8 @@
  */
 import { api, requestBlob } from "../api/client";
 
-export type PresentationCell = { state: string; value: number | null; max: number | null };
+/** `failing` : note inférieure au seuil (défaut : moitié du maximum de la cellule) — affichage seulement. */
+export type PresentationCell = { state: string; value: number | null; max: number | null; failing?: boolean };
 
 export type PresentationTotal = {
   status: string | null;
@@ -17,6 +18,7 @@ export type PresentationTotal = {
   percentage: number | null;
   rank?: { value: number | null; ranked?: number | null; reason?: string } | null;
   components?: Record<string, PresentationCell>;
+  failing?: boolean;
 };
 
 export type PresentationRow = {

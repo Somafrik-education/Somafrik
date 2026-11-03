@@ -7,7 +7,8 @@
  * rien : il réorganise un tableau trop large en une liste par période, sans
  * supprimer de matière, de sous-matière ni de maximum.
  */
-export type PresentationCell = { state: string; value: number | null; max: number | null };
+/** `failing` : note inférieure au seuil (défaut : moitié du maximum) — calculé par le serveur, affichage seulement. */
+export type PresentationCell = { state: string; value: number | null; max: number | null; failing?: boolean };
 
 export type PresentationTotal = {
   status: string | null;
@@ -16,6 +17,7 @@ export type PresentationTotal = {
   percentage: number | null;
   rank?: { value: number | null; ranked?: number | null; reason?: string } | null;
   components?: Record<string, PresentationCell>;
+  failing?: boolean;
 };
 
 export type PresentationRow = {
@@ -46,7 +48,16 @@ export type ReportCardPresentation = {
 
 export const ANNUAL_VIEW = "ANNUAL";
 
-export type PhoneComponentLine = { id: string; label: string; text: string; missing: boolean };
+/** `value` seule est colorée si `failing` ; `max` ne l'est jamais. */
+export type PhoneComponentLine = {
+  id: string;
+  label: string;
+  text: string;
+  missing: boolean;
+  value: string;
+  max: string;
+  failing: boolean;
+};
 
 export type PhoneSubjectLine = {
   key: string;
@@ -54,6 +65,9 @@ export type PhoneSubjectLine = {
   kind: "simple" | "composite";
   level: number;
   total: string;
+  totalValue: string;
+  totalMax: string;
+  totalFailing: boolean;
   components: PhoneComponentLine[];
 };
 
@@ -63,7 +77,8 @@ export type PhoneReportCard = {
   periodLabel: string;
   incomplete: boolean;
   subjects: PhoneSubjectLine[];
-  summary: { label: string; value: string }[];
+  /** Total : `points` seul coloré si `failing`, jamais `max`. */
+  summary: { label: string; value: string; failing?: boolean; points?: string; max?: string }[];
 };
 
 function show(value: number | string | null | undefined): string {
@@ -109,9 +124,12 @@ export function phoneReportCard(view: ReportCardPresentation, selected: string):
         ? []
         : view.components.map((component) => {
             const cell = total?.components?.[component.id];
-            if (!cell || cell.state === "NOT_APPLICABLE") return { id: component.id, label: component.label, text: "—", missing: false };
-            if (cell.state === "NUMERIC") return { id: component.id, label: component.label, text: fraction(cell.value, cell.max), missing: false };
-            return { id: component.id, label: component.label, text: `Manquante / ${show(cell.max)}`, missing: true };
+            const base = { id: component.id, label: component.label };
+            if (!cell || cell.state === "NOT_APPLICABLE") return { ...base, text: "—", missing: false, value: "—", max: "", failing: false };
+            if (cell.state === "NUMERIC") {
+              return { ...base, text: fraction(cell.value, cell.max), missing: false, value: show(cell.value), max: show(cell.max), failing: cell.failing === true };
+            }
+            return { ...base, text: `Manquante / ${show(cell.max)}`, missing: true, value: "Manquante", max: show(cell.max), failing: false };
           });
     return {
       key: row.subject_id,
@@ -119,6 +137,9 @@ export function phoneReportCard(view: ReportCardPresentation, selected: string):
       kind: row.kind,
       level: row.level,
       total: fraction(total?.points, total?.max),
+      totalValue: show(total?.points),
+      totalMax: show(total?.max),
+      totalFailing: total?.failing === true,
       components,
     };
   });
@@ -136,7 +157,7 @@ export function phoneReportCard(view: ReportCardPresentation, selected: string):
     incomplete: view.status === "INCOMPLETE",
     subjects,
     summary: [
-      { label: "Total", value: fraction(total?.points, total?.max) },
+      { label: "Total", value: fraction(total?.points, total?.max), failing: total?.failing === true, points: show(total?.points), max: show(total?.max) },
       { label: "Pourcentage", value: total?.percentage != null ? `${total.percentage} %` : "—" },
       { label: "Rang", value: rankText(total, view.cohort_size) },
     ],

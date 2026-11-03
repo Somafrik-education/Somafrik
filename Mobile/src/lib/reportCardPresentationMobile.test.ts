@@ -117,3 +117,42 @@ test("garde-fous : route publiée en lecture seule, aucun calcul, aucune WebView
   const component = readFileSync(path.join(ROOT, files[1]), "utf8");
   assert.match(component, /BROUILLON/);
 });
+
+test("notes en échec : la valeur seule est marquée (jamais le maximum ni une note manquante)", () => {
+  const view = berceau({
+    rows: [
+      {
+        subject_id: "MATH", parent_id: null, kind: "simple", level: 0, label: "Mathématiques",
+        periods: {
+          T1: {
+            status: "COMPLETE", points: 19, max: 40, percentage: 47.5, failing: true,
+            components: { TJ: { state: "NUMERIC", value: 9, max: 20, failing: true }, EX: { state: "NUMERIC", value: 10, max: 20, failing: false } },
+          },
+        },
+        annual: null,
+      },
+      {
+        subject_id: "SCI", parent_id: null, kind: "simple", level: 0, label: "Sciences",
+        periods: {
+          T1: {
+            status: "INCOMPLETE", points: 4, max: 20, percentage: 20, failing: false,
+            components: { TJ: { state: "NUMERIC", value: 4, max: 10, failing: true }, EX: { state: "MISSING", value: null, max: 10, failing: false } },
+          },
+        },
+        annual: null,
+      },
+    ],
+    totals: { periods: { T1: { status: "INCOMPLETE", points: 23, max: 60, percentage: 38.33, failing: false } }, annual: null },
+  });
+  const card = phoneReportCard(view, "T1");
+  const [math, sci] = card.subjects;
+  assert.deepEqual(math.components.map((c) => [c.value, c.max, c.failing]), [["9", "20", true], ["10", "20", false]]);
+  assert.equal(math.totalFailing, true);
+  assert.equal(math.totalValue, "19");
+  assert.equal(math.totalMax, "40");
+  assert.deepEqual(sci.components.map((c) => [c.value, c.failing]), [["4", true], ["Manquante", false]]);
+  assert.equal(sci.totalFailing, false, "total incomplet : non marqué");
+  assert.equal(card.summary[0].failing, false);
+  const component = readFileSync(path.join(ROOT, "Mobile/src/components/bulletin/ReportCardPresentationView.tsx"), "utf8");
+  assert.match(component, /failing: \{ color: "#B91C1C", textDecorationLine: "underline" \}/);
+});

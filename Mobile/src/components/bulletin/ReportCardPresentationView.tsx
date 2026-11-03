@@ -54,13 +54,17 @@ export function ReportCardPresentationView({ view }: { view: ReportCardPresentat
         >
           <View style={styles.subjectHeader}>
             <Text style={[styles.subjectLabel, subject.kind === "composite" && styles.compositeLabel]}>{subject.label}</Text>
-            <Text style={styles.subjectTotal}>{subject.total}</Text>
+            <Text style={styles.subjectTotal}>
+              <Text style={subject.totalFailing ? styles.failing : undefined}>{subject.totalValue}</Text>
+              {subject.totalMax !== "—" ? ` / ${subject.totalMax}` : ""}
+            </Text>
           </View>
           {subject.components.length ? (
             <View style={styles.components}>
               {subject.components.map((component) => (
                 <Text key={component.id} style={[styles.component, component.missing && styles.missing]}>
-                  {component.label} : {component.text}
+                  {component.label} : <Text style={component.failing ? styles.failing : undefined}>{component.value}</Text>
+                  {component.max ? ` / ${component.max}` : ""}
                 </Text>
               ))}
             </View>
@@ -71,7 +75,14 @@ export function ReportCardPresentationView({ view }: { view: ReportCardPresentat
         {card.summary.map((item) => (
           <View key={item.label} style={styles.summaryItem}>
             <Text style={styles.identityLabel}>{item.label}</Text>
-            <Text style={styles.summaryValue}>{item.value}</Text>
+            {item.points !== undefined ? (
+              <Text style={styles.summaryValue}>
+                <Text style={item.failing ? styles.failing : undefined}>{item.points}</Text>
+                {item.max && item.max !== "—" ? ` / ${item.max}` : ""}
+              </Text>
+            ) : (
+              <Text style={styles.summaryValue}>{item.value}</Text>
+            )}
           </View>
         ))}
       </View>
@@ -110,6 +121,8 @@ const styles = StyleSheet.create({
   components: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 4 },
   component: { color: "#475569", fontSize: 12, fontWeight: "700" },
   missing: { color: "#B45309", fontStyle: "italic" },
+  // Note en échec : rouge et soulignée.
+  failing: { color: "#B91C1C", textDecorationLine: "underline" },
   summary: { flexDirection: "row", gap: 8 },
   summaryItem: { flex: 1, backgroundColor: "#F8FAFC", borderRadius: 12, padding: 8 },
   summaryValue: { color: "#0F172A", fontWeight: "900", marginTop: 2 },
