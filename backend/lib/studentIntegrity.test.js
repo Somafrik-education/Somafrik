@@ -10,6 +10,7 @@ const {
   canReadStudentIntegrityDiagnostic,
   diagnosticAccessDecision,
   projectOrphanObligations,
+  resolveCanonicalStudentDbId,
   INTEGRITY_COUNT_SQL,
   ORPHAN_OBLIGATION_SQL,
   STUDENT_DIAGNOSIS_SQL,
@@ -179,6 +180,28 @@ test("inscription undefined, nulle ou inconnue : fail-closed, solde toujours cla
   assert.equal(unknown.collectionEligible, false);
   assert.equal(unknown.category, "no_active_enrollment");
   assert.equal(unknown.historyVisible, true);
+});
+
+test("matricule présent sans UUID canonique : historique conservé, encaissement refusé", () => {
+  const result = classifyUnpaidFees(
+    [
+      {
+        studentCode: MATRICULE,
+        hasActiveEnrollment: true,
+        studentStatus: "active",
+        balance: 320000,
+      },
+    ],
+    MATRICULE,
+  );
+  assert.equal(result.collectionEligible, false);
+  assert.equal(result.category, "unverified_identity");
+  assert.equal(result.canonicalStudentId, "");
+  assert.equal(result.matricule, MATRICULE);
+  assert.equal(result.historyVisible, true);
+  assert.equal(resolveCanonicalStudentDbId({ studentCode: MATRICULE, publicId: MATRICULE, id: MATRICULE }), "");
+  assert.equal(resolveCanonicalStudentDbId({ dbId: MATRICULE, studentCode: MATRICULE }), "");
+  assert.equal(resolveCanonicalStudentDbId({ dbId: UUID, studentCode: MATRICULE }), UUID);
 });
 
 test("identité absente : un identifiant de profil n'est jamais un UUID canonique", () => {

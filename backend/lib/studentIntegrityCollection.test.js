@@ -124,6 +124,56 @@ describe("encaissement API — éligibilité canonique au moment de la transacti
     );
   });
 
+  it("un matricule sans UUID canonique est refusé sans écrire", async () => {
+    let enrollmentLookups = 0;
+    const writes = { payments: 0, items: 0, allocations: 0 };
+    const store = {
+      async withTransaction(fn) {
+        return fn({
+          async findStudent(key) {
+            if (key !== MATRICULE) return null;
+            return {
+              id: MATRICULE,
+              publicId: MATRICULE,
+              studentCode: MATRICULE,
+              schoolCode: SCHOOL,
+              loginCode: SCHOOL,
+              firstName: "Elie",
+              lastName: "Muco",
+            };
+          },
+          async getSchoolByCode() {
+            return { id: "school-1", code: SCHOOL, loginCode: SCHOOL, currency: "CDF" };
+          },
+          async listActiveEnrollmentsForStudent() {
+            enrollmentLookups += 1;
+            return [{ classId: "class-1", schoolId: "school-1", status: "active" }];
+          },
+          async listObligationsByStudent() {
+            throw new Error("les obligations ne doivent pas être lues");
+          },
+          async insertPayment() {
+            writes.payments += 1;
+          },
+          async insertPaymentItem() {
+            writes.items += 1;
+          },
+          async insertAllocation() {
+            writes.allocations += 1;
+          },
+        });
+      },
+    };
+    await assert.rejects(
+      () => createPayment(store, payload(MATRICULE), admin),
+      (error) => error.statusCode === 400 && error.code === FINANCE_ERROR.CANONICAL_IDENTITY_REQUIRED,
+    );
+    assert.equal(enrollmentLookups, 0);
+    assert.equal(writes.payments, 0);
+    assert.equal(writes.items, 0);
+    assert.equal(writes.allocations, 0);
+  });
+
   it("une tentative directe avec un identifiant de profil ne fabrique pas d'UUID", async () => {
     const harness = createHarness({ enrollments: [{ classId: "class-1", schoolId: "school-1", status: "active" }] });
     await assert.rejects(

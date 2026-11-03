@@ -45,6 +45,7 @@ const {
   schoolRecordInFinanceScope,
   primaryFinanceSchoolCode,
 } = require("./financeSchoolScope");
+const { resolveCanonicalStudentDbId } = require("./studentIntegrity");
 
 const REMINDER_COOLDOWN_DAYS = 3;
 
@@ -457,6 +458,15 @@ async function createPayment(store, rawPayload, principal, auditMeta) {
     if (!student) {
       throw createFinanceError(404, "Élève introuvable", FINANCE_ERROR.STUDENT_NOT_FOUND);
     }
+    const canonicalId = resolveCanonicalStudentDbId(student);
+    if (!canonicalId) {
+      throw createFinanceError(
+        400,
+        "Identité canonique non vérifiée : le matricule seul ne permet pas l'encaissement.",
+        FINANCE_ERROR.CANONICAL_IDENTITY_REQUIRED,
+      );
+    }
+    student.dbId = canonicalId;
     assertTenant(principal, student);
     const school = await tx.getSchoolByCode(student.schoolCode);
     if (!school) {

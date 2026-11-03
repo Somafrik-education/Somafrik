@@ -23,6 +23,9 @@ export function unpaidCollectionBlockMessage(category: StudentIntegrityCategory 
   if (category === "missing") {
     return "Élève introuvable dans le référentiel : l'encaissement est désactivé.";
   }
+  if (category === "unverified_identity") {
+    return "Matricule sans UUID canonique vérifié : l'encaissement est désactivé. Le solde reste consultable.";
+  }
   return "Inscription inactive : l'encaissement d'une nouvelle opération est désactivé. Le solde reste consultable.";
 }
 
@@ -74,6 +77,9 @@ export function integrityFromFees(fees: StudentFee[], displayedStudentId: string
   }
   if (!enrollmentActive(fees)) {
     return { canonicalStudentId, matricule, collectionEligible: false, integrityCategory: "no_active_enrollment" };
+  }
+  if (!canonicalStudentId) {
+    return { canonicalStudentId: "", matricule, collectionEligible: false, integrityCategory: "unverified_identity" };
   }
   if (identityMismatch) {
     return { canonicalStudentId, matricule, collectionEligible: true, integrityCategory: "identity_mismatch" };

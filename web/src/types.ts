@@ -580,6 +580,7 @@ export interface StudentUnpaidRow {
     | "school_mismatch"
     | "archived"
     | "no_active_enrollment"
+    | "unverified_identity"
     | "identity_mismatch"
     | "active";
 }

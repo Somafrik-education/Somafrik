@@ -18,6 +18,8 @@ const SCHOOL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SCHOOL_CODE = "CD-IN-26-001";
 const STUDENT_A = "stu-awa";
 const STUDENT_B = "stu-binta";
+const STUDENT_A_UUID = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+const STUDENT_B_UUID = "bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb";
 
 const showToast = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => vi.fn(async () => undefined));
@@ -72,10 +74,12 @@ vi.mock("../../lib/financeApi", () => ({
 
 function fee(overrides: Partial<StudentFee> & Pick<StudentFee, "id" | "studentId" | "label">): StudentFee {
   const studentCode = overrides.studentId === STUDENT_B ? "ELE-BIN" : "ELE-AWA";
+  const studentDbId = overrides.studentId === STUDENT_B ? STUDENT_B_UUID : STUDENT_A_UUID;
   return {
     studentName: overrides.studentId === STUDENT_B ? "Binta Traoré" : "Awa Diop",
     hasActiveEnrollment: true,
     studentCode,
+    studentDbId,
     schoolId: SCHOOL_ID,
     schoolCode: SCHOOL_CODE,
     className: "6ème A",

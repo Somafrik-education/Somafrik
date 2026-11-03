@@ -95,6 +95,19 @@ describe("STUDENT-INTEGRITY-01", () => {
     }
   });
 
+  it("refuse l'encaissement quand le matricule est présent sans UUID canonique", () => {
+    const result = integrityFromFees(
+      [fee({ studentId: MATRICULE, studentCode: MATRICULE, hasActiveEnrollment: true, balance: 320000 })],
+      MATRICULE,
+    );
+    expect(result.collectionEligible).toBe(false);
+    expect(result.integrityCategory).toBe("unverified_identity");
+    expect(result.canonicalStudentId).toBe("");
+    expect(result.matricule).toBe(MATRICULE);
+    expect(unpaidCollectionBlockMessage(result.integrityCategory)).toMatch(/UUID canonique/i);
+    expect(unpaidCollectionBlockMessage(result.integrityCategory)).toMatch(/solde reste consultable/i);
+  });
+
   it("ne transforme pas un identifiant de profil en UUID canonique", () => {
     const result = integrityFromFees(
       [fee({ studentId: "profile-legacy", studentDbId: "profile-legacy", canonicalStudentId: "profile-legacy", hasActiveEnrollment: true })],

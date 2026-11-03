@@ -49,7 +49,7 @@ function enrollmentIsActive(input = {}) {
 /**
  * @param {object} input
  * @returns {{
- *   category: "missing" | "orphan_finance" | "school_mismatch" | "archived" | "no_active_enrollment" | "identity_mismatch" | "active",
+ *   category: "missing" | "orphan_finance" | "school_mismatch" | "archived" | "no_active_enrollment" | "unverified_identity" | "identity_mismatch" | "active",
  *   collectionEligible: boolean,
  *   historyVisible: boolean,
  * }}
@@ -61,7 +61,7 @@ function classifyStudentIntegrity(input = {}) {
   const schoolMismatch = input.schoolMismatch === true;
   const activeEnrollment = enrollmentIsActive(input);
   const displayed = asText(input.displayedStudentId);
-  const uuid = asText(input.studentUuid);
+  const uuid = verifiedCanonicalUuid(input.studentUuid);
   const matricule = asText(input.matricule);
   const identityMismatch = Boolean(
     studentExists &&
@@ -86,10 +86,26 @@ function classifyStudentIntegrity(input = {}) {
   if (activeEnrollment !== true) {
     return { category: "no_active_enrollment", collectionEligible: false, historyVisible: true };
   }
+  if (!uuid) {
+    return { category: "unverified_identity", collectionEligible: false, historyVisible: true };
+  }
   if (identityMismatch) {
     return { category: "identity_mismatch", collectionEligible: true, historyVisible: true };
   }
   return { category: "active", collectionEligible: true, historyVisible: true };
+}
+
+/**
+ * UUID canonique, ou identifiant interne distinct du matricule.
+ * Un matricule seul, ou recopié dans dbId, n'est pas une identité vérifiée.
+ */
+function resolveCanonicalStudentDbId(student = {}) {
+  const uuid = verifiedCanonicalUuid(student.dbId);
+  if (uuid) return uuid;
+  const dbId = asText(student.dbId);
+  const matricule = asText(student.studentCode || student.matricule || student.publicId);
+  if (!dbId || (matricule && dbId === matricule)) return "";
+  return dbId;
 }
 
 function readOptionalBoolean(value) {
@@ -285,6 +301,7 @@ module.exports = {
   classifyStudentIntegrity,
   classifyUnpaidFees,
   verifiedCanonicalUuid,
+  resolveCanonicalStudentDbId,
   readOptionalBoolean,
   summarizeIntegrityCounts,
   canReadStudentIntegrityDiagnostic,
