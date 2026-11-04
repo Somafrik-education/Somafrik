@@ -323,6 +323,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/v2/academic-years",
       "/api/v2/school-setup/status",
       "/api/v2/school-setup/guided",
+      "/api/v2/school-setup/guided/complete",
       "/api/v2/exams",
       "/api/v2/documents",
       "/api/v2/reports/advanced",
@@ -4816,6 +4817,16 @@ app.post("/api/v2/school-setup/guided/steps/:stepKey/complete", requireAuth, req
     body: req.body,
     headers: req.headers,
     params: req.params,
+    one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
+    dbQuery: typeof repository.query === "function" ? repository.query.bind(repository) : null,
+  });
+  res.json(payload);
+}));
+
+app.post("/api/v2/school-setup/guided/complete", requireAuth, requirePermission("POST /api/v2/school-setup/guided/complete"), asyncHandler(async (req, res) => {
+  const { finalizeSchoolSetupGuided } = require("./lib/schoolSetupGuided");
+  const payload = await finalizeSchoolSetupGuided({
+    principal: req.principal,
     one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
     dbQuery: typeof repository.query === "function" ? repository.query.bind(repository) : null,
   });

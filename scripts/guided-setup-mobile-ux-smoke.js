@@ -214,6 +214,8 @@ async function main() {
     await shot(page, "mobile_guided_expo_web_verify_then_finish");
 
     await page.getByLabel("Terminer la configuration").click();
+    await page.getByText("Configuration de votre établissement terminée").waitFor({ state: "visible", timeout: 15000 });
+    await page.getByLabel("Accéder au tableau de bord").click();
     await page.getByTestId("guided-setup-home").waitFor({ state: "visible", timeout: 15000 });
     await page.getByTestId("guided-setup-home").getByText("Accueil", { exact: true }).waitFor();
     await shot(page, "mobile_guided_expo_web_home_after_terminer");

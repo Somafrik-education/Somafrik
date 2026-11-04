@@ -98,11 +98,13 @@ export function shouldShowSchoolSetupWelcome(input: GuidedSetupGateInput = {}) {
   if (input.mustChangePassword) return false;
   if (!isSchoolAdminRole(input.role)) return false;
   if (!input.payload) return false;
+  if (input.payload.finalized) return false;
   return input.payload.status === "configuration_required" && input.payload.percent === 0;
 }
 
 export function shouldShowGuidedSetupDashboardCard(input: GuidedSetupGateInput = {}) {
   if (!isSchoolAdminRole(input.role)) return false;
   if (!input.payload) return false;
+  if (input.payload.finalized) return false;
   return input.payload.percent < 100;
 }
