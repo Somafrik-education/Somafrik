@@ -157,6 +157,59 @@ function createReportCardCatalogPgStore(db) {
     return result.rows[0] || null;
   }
 
+  /**
+   * BULLETIN-CLASSE-01 / L2 — classe de l'établissement (null si inconnue ou d'un autre
+   * établissement) et son année scolaire, source de vérité de la portée.
+   */
+  async function classScope(schoolId, classId) {
+    const id = text(classId);
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+    const result = await pool.query(
+      `SELECT c.id::text AS class_id, c.academic_year_id::text AS academic_year_id, c.name,
+              y.name AS academic_year_name
+         FROM classes c JOIN academic_years y ON y.id = c.academic_year_id AND y.school_id = c.school_id
+        WHERE c.id::text = $1 AND c.school_id::text = $2`,
+      [id, text(schoolId)]
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Référentiels de configuration (aucune donnée d'élève). Avec une classe : seules les
+   * matières ayant un cours actif dans la classe (et la matière principale de chaque
+   * sous-matière enseignée), et les périodes de l'année de la classe.
+   */
+  async function classContext(schoolId, scope) {
+    const tenant = text(schoolId);
+    const [subjects, types, terms] = await Promise.all([
+      pool.query(
+        `WITH taught AS (
+           SELECT DISTINCT sc.subject_id FROM school_courses sc
+            WHERE sc.school_id::text = $1 AND sc.class_id::text = $2 AND sc.status = 'active'
+         )
+         SELECT s.subject_code AS code, s.name, s.status, s.display_order, p.subject_code AS parent_code
+           FROM subjects s
+           LEFT JOIN subjects p ON p.id = s.parent_subject_id AND p.school_id = s.school_id
+          WHERE s.school_id::text = $1
+            AND (s.id IN (SELECT subject_id FROM taught)
+                 OR EXISTS (SELECT 1 FROM subjects child JOIN taught t ON t.subject_id = child.id
+                             WHERE child.parent_subject_id = s.id AND child.school_id = s.school_id))
+          ORDER BY s.display_order NULLS LAST, s.name, s.subject_code COLLATE "C"`,
+        [tenant, scope.class_id]
+      ),
+      pool.query(`SELECT code, name, status FROM evaluation_types WHERE school_id::text = $1 ORDER BY display_order, code`, [tenant]),
+      pool.query(
+        `SELECT t.name FROM terms t WHERE t.academic_year_id::text = $1 ORDER BY t.start_date NULLS LAST, t.name`,
+        [scope.academic_year_id]
+      ),
+    ]);
+    return {
+      subjects: subjects.rows.map((row) => ({ ...row, parent_code: row.parent_code ?? null })),
+      evaluationTypes: types.rows,
+      terms: [...new Set(terms.rows.map((row) => text(row.name)).filter(Boolean))],
+    };
+  }
+
   /** Référentiels de configuration de l'établissement (aucune donnée d'élève). */
   async function schoolContext(schoolId) {
     const tenant = text(schoolId);
@@ -199,6 +252,8 @@ function createReportCardCatalogPgStore(db) {
     listAudit,
     schoolCountry,
     schoolContext,
+    classScope,
+    classContext,
   };
 }
 

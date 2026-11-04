@@ -209,7 +209,7 @@ function buildConfiguration(model, input, context) {
     const code = text(entry && entry.code);
     const row = byCode.get(code);
     if (!row || text(row.status || "active") !== "active") {
-      errors.push(fieldError(`subjects.${index}`, "SUBJECT_NOT_IN_SCHOOL_CATALOG"));
+      errors.push(fieldError(`subjects.${index}`, context && context.classScoped ? "SUBJECT_NOT_IN_CLASS" : "SUBJECT_NOT_IN_SCHOOL_CATALOG"));
       return;
     }
     if (seen.has(code)) {
@@ -484,11 +484,48 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
 
   // ---------------- Établissement ----------------
 
-  async function stateFor(actor, schoolId, model) {
+  /**
+   * BULLETIN-CLASSE-01 / L2 — portée « classe » : la classe doit appartenir à l'établissement
+   * du jeton ; son année est lue en base (jamais fournie par le navigateur).
+   */
+  async function resolveClassScope(schoolId, classId) {
+    if (classId == null || text(classId) === "") return null;
+    if (typeof store.classScope !== "function") fail("CATALOG_UNAVAILABLE");
+    const row = await store.classScope(schoolId, classId);
+    if (!row) fail("CLASS_NOT_FOUND");
+    return {
+      classId: row.class_id,
+      academicYearId: row.academic_year_id,
+      className: row.name || null,
+      academicYearName: row.academic_year_name || null,
+    };
+  }
+
+  function configurationScope(scope) {
+    return scope ? { classId: scope.classId, academicYearId: scope.academicYearId } : undefined;
+  }
+
+  function publicClass(scope) {
+    return scope ? { id: scope.classId, name: scope.className, academic_year_id: scope.academicYearId, academic_year_name: scope.academicYearName } : null;
+  }
+
+  function configurationLabel(state) {
+    if (state.active) return "ACTIVE";
+    if (state.saved) return "SAVED";
+    if (state.inherited) return "INHERITED";
+    return "NONE";
+  }
+
+  async function stateFor(actor, schoolId, model, scope = null) {
     try {
-      return await configuration.catalogConfigurationState({ actor, schoolId, modelKey: catalogModelKey(model.model_id) });
+      return await configuration.catalogConfigurationState({
+        actor,
+        schoolId,
+        modelKey: catalogModelKey(model.model_id),
+        scope: configurationScope(scope),
+      });
     } catch (err) {
-      if (err && err.code === "RBAC_DENIED") return { active: null, saved: null };
+      if (err && err.code === "RBAC_DENIED") return { active: null, saved: null, inherited: null };
       throw err;
     }
   }
@@ -498,28 +535,29 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
    * (country null, reason COUNTRY_UNKNOWN). Un modèle retiré du pays reste
    * listé UNIQUEMENT s'il est déjà actif dans l'établissement, marqué indisponible.
    */
-  async function schoolCatalog({ actor }) {
+  async function schoolCatalog({ actor, classId }) {
     const schoolId = schoolOf(actor);
     if (!hasPermission(actor, PERM_READ) && !hasPermission(actor, PERM_APPROVE)) fail("RBAC_DENIED");
     const country = await store.schoolCountry(schoolId);
     const canConfigure = hasPermission(actor, PERM_APPROVE);
     if (!country) return { country: null, reason: "COUNTRY_UNKNOWN", canConfigure, models: [] };
+    const scope = await resolveClassScope(schoolId, classId);
     const models = [];
     for (const row of await store.listModels()) {
       if (!MODEL_DEFINITIONS[`${row.model_id}@${row.version}`]) continue;
       const available = row.status === "active" && (await store.isAvailable(row.model_id, country.id));
-      const state = await stateFor(actor, schoolId, row);
-      if (!available && !state.active) continue;
+      const state = await stateFor(actor, schoolId, row, scope);
+      if (!available && !state.active && !state.inherited) continue;
       models.push({
         ...publicModel(row),
         ...modelMeta(row),
         available,
-        configuration: state.active ? "ACTIVE" : state.saved ? "SAVED" : "NONE",
-        activated_at: state.active ? state.active.activated_at : null,
+        configuration: configurationLabel(state),
+        activated_at: state.active ? state.active.activated_at : state.inherited ? state.inherited.activated_at : null,
         saved_at: state.saved ? state.saved.updated_at : null,
       });
     }
-    return { country: { id: country.id, name: country.name }, reason: null, canConfigure, models };
+    return { country: { id: country.id, name: country.name }, reason: null, canConfigure, class: publicClass(scope), models };
   }
 
   async function requireConfigurableModel(actor, modelId) {
@@ -557,10 +595,17 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
     };
   }
 
-  async function configurationContext({ actor, modelId }) {
+  async function contextFor(schoolId, scope) {
+    if (!scope) return store.schoolContext(schoolId);
+    return { ...(await store.classContext(schoolId, { class_id: scope.classId, academic_year_id: scope.academicYearId })), classScoped: true };
+  }
+
+  async function configurationContext({ actor, modelId, classId }) {
     const { schoolId, model } = await requireConfigurableModel(actor, modelId);
-    const [context, state] = await Promise.all([store.schoolContext(schoolId), stateFor(actor, schoolId, model)]);
-    const source = state.saved || state.active;
+    const scope = await resolveClassScope(schoolId, classId);
+    const [context, state] = await Promise.all([contextFor(schoolId, scope), stateFor(actor, schoolId, model, scope)]);
+    // Classe sans configuration propre : pré-remplissage depuis la configuration héritée (lecture seule).
+    const source = state.saved || state.active || state.inherited;
     return {
       model: publicModel(model),
       style: definitionOf(model).style,
@@ -571,27 +616,29 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
       subjects: context.subjects.filter((row) => text(row.status || "active") === "active").map((row) => ({ code: row.code, name: row.name, parent_code: row.parent_code })),
       evaluationTypes: context.evaluationTypes.filter((row) => text(row.status || "active") === "active").map((row) => ({ code: row.code, name: row.name })),
       terms: context.terms,
-      configuration: state.active ? "ACTIVE" : state.saved ? "SAVED" : "NONE",
+      configuration: configurationLabel(state),
       // Configuration enregistrée en attente d'activation (éventuellement au-dessus d'une configuration active).
       pendingSaved: Boolean(state.saved),
+      class: publicClass(scope),
       current: source ? inputFromProfile(source.profile, source.template) : null,
     };
   }
 
-  async function buildFor(actor, modelId, input) {
+  async function buildFor(actor, modelId, input, classId) {
     const { schoolId, model } = await requireConfigurableModel(actor, modelId);
-    const context = await store.schoolContext(schoolId);
+    const scope = await resolveClassScope(schoolId, classId);
+    const context = await contextFor(schoolId, scope);
     const built = buildConfiguration(model, input, { ...context, schoolId });
-    return { schoolId, model, built };
+    return { schoolId, model, built, scope };
   }
 
-  async function preview({ actor, modelId, input }) {
-    const { built } = await buildFor(actor, modelId, input);
+  async function preview({ actor, modelId, input, classId }) {
+    const { built } = await buildFor(actor, modelId, input, classId);
     return samplePresentation(built);
   }
 
-  async function save({ actor, modelId, input }) {
-    const { schoolId, model, built } = await buildFor(actor, modelId, input);
+  async function save({ actor, modelId, input, classId }) {
+    const { schoolId, model, built, scope } = await buildFor(actor, modelId, input, classId);
     const request = await configuration.saveCatalogConfiguration({
       actor,
       schoolId,
@@ -600,20 +647,23 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
       profileSpec: built.profileSpec,
       schemaSpec: built.schemaSpec,
       templateSpec: built.templateSpec,
+      scope: configurationScope(scope),
     });
-    return { status: "SAVED", request_status: request.status, preview: samplePresentation(built) };
+    return { status: "SAVED", request_status: request.status, class: publicClass(scope), preview: samplePresentation(built) };
   }
 
-  async function activate({ actor, modelId, confirm, commandId }) {
+  async function activate({ actor, modelId, confirm, commandId, classId }) {
     if (confirm !== true) fail("CONFIRMATION_REQUIRED");
     const { schoolId, model } = await requireConfigurableModel(actor, modelId);
+    const scope = await resolveClassScope(schoolId, classId);
     const active = await configuration.activateCatalogConfiguration({
       actor,
       schoolId,
       modelKey: catalogModelKey(model.model_id),
       commandId,
+      scope: configurationScope(scope),
     });
-    return { status: active.status, model_key: active.model_key };
+    return { status: active.status, model_key: active.model_key, class: publicClass(scope) };
   }
 
   void clock;

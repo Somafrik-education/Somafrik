@@ -19,9 +19,15 @@ function layerRef(id, version, specSha256) {
   return { id, version: Number(version), spec_sha256: String(specSha256) };
 }
 
-async function resolveBoundBundle(configuration, schoolId, modelKey) {
+/**
+ * Liaison active résolue pour une classe (BULLETIN-CLASSE-01 / L2) : configuration de la
+ * classe pour son année, sinon configuration établissement (héritage), sinon null.
+ */
+async function resolveBoundBundle(configuration, schoolId, modelKey, scope = {}) {
   if (!configuration || typeof configuration.lookupActiveBinding !== "function") return null;
-  const binding = await Promise.resolve(configuration.lookupActiveBinding({ schoolId, modelKey })).catch(() => null);
+  const binding = await Promise.resolve(
+    configuration.lookupActiveBinding({ schoolId, modelKey, classId: scope.classId, academicYearId: scope.academicYearId })
+  ).catch(() => null);
   if (!binding) return null;
   const profileSpec = await Promise.resolve(
     configuration.lookupProfileSpec({
