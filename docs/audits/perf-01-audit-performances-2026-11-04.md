@@ -4,8 +4,9 @@
 |---|---|
 | Date | 04 novembre 2026 |
 | Priorité | P1 — Expérience utilisateur critique |
-| Statut | **AUDIT UNIQUEMENT / HOLD** — aucun correctif produit |
-| Base auditée | `develop` @ `eff44c5` |
+| Statut | **AUDIT UNIQUEMENT / HOLD / DRAFT** — aucun correctif produit, aucun merge |
+| Base des mesures initiales | `develop` @ `eff44c5dbe2a` |
+| Relecture code | `develop` @ `ea1250e5948f` (21 commits après le merge-base initial, voir §11) |
 | Périmètre | Web (React/Vite) · Mobile Expo React Native · Backend Express · PostgreSQL · Render |
 
 > **Gouvernance respectée.** Aucune modification de code produit, de RBAC, de schéma PostgreSQL, de cache, de transactions ni de service Render. Aucun merge, aucun déploiement. Les seuls ajouts sont ce rapport et les scripts de banc synthétique sous `docs/audits/perf-01/`.
@@ -14,14 +15,16 @@
 
 ## 0. Résumé exécutif
 
-**Verdict.** La cause principale des lenteurs démontrée par cet audit est **côté backend / PostgreSQL** : plusieurs endpoints très sollicités (présences, notes, paiements, cours, emploi du temps, fiche établissement, connexion) **lisent les tables de *tous* les établissements de la plateforme**, puis filtrent en JavaScript. Le coût de chaque requête croît donc avec la taille de **toute** la plateforme, pas avec celle de l'école consultée. Le frontend Web aggrave fortement l'effet : **le tableau de bord rappelle ces endpoints toutes les 10 secondes**, sans pagination ni requête incrémentale. Sur mobile, une connexion lente (et non coupée) aboutit à une **erreur plutôt qu'à l'affichage des données déjà en cache**.
+**Verdict.** La cause principale des lenteurs identifiée par cet audit est **côté backend / PostgreSQL** : plusieurs endpoints très sollicités (présences, notes, paiements, cours, emploi du temps, fiche établissement, connexion) **lisent les tables de *tous* les établissements de la plateforme**, puis filtrent en JavaScript. Le coût de chaque requête croît donc avec la taille de **toute** la plateforme, pas avec celle de l'école consultée. Le frontend Web aggrave l'effet dans le code : **le tableau de bord rappelle ces endpoints toutes les 10 secondes**, sans pagination ni requête incrémentale. Sur mobile, le code traite une connexion lente (et non coupée) comme une **erreur plutôt que comme un affichage des données déjà en cache**.
+
+**Gain démontré et gain non constaté.** L'écart d'environ **95 %** (1 200 000 lignes → 60 000, soit 549 Mio → 27,5 Mio sur le premier banc) est la différence de **volume de lignes lues par deux requêtes SQL** sur une base PostgreSQL locale synthétique. Ce n'est pas une réduction déjà constatée du temps d'affichage. Aucune latence Render, aucun parcours Web en 3G et aucun téléphone Android n'ont été mesurés (§1.3, §11).
 
 Les 6 constats les plus graves, par niveau de preuve :
 
 | # | Constat | Couche | Preuve | Sévérité |
 |---|---|---|---|---|
 | B1 | `GET /api/presences`, `/api/notes`, `/api/payments` (+ fiches élève) exécutent 5 à 9 requêtes SQL **sans `WHERE school_id`** puis filtrent en Node | Backend/PG | **Code + mesure** (banc local) | P0 |
-| B2 | Le volume lu croît linéairement avec le nombre d'établissements : présences ×20 écoles = **1,2 M lignes / 549 Mio** lus pour servir **une** école (contre 60 k / 27,5 Mio filtré) | PG | **Mesuré** | P0 |
+| B2 | Le volume lu croît linéairement avec le nombre d'établissements : présences ×20 écoles = **1,2 M lignes / 549 Mio** lus pour servir **une** école (contre 60 k / 27,5 Mio filtré). Écart de volume du banc, pas un temps d'écran | PG | **Mesuré (banc local)** | P0 |
 | W1 | Le tableau de bord établissement recharge **6 listes complètes toutes les 10 s** (élèves, enseignants, classes, présences, paiements, frais), plus le fil d'activité (10 s) et le compteur de notifications (30 s) | Web | **Code** | P0 |
 | B3 | `GET /api/presences` d'une école de 500 élèves à mi-année ≈ **22,8 Mio de JSON brut** (≈ 1,8 Mio gzip). Express n'a **aucune compression** ; la compression côté Render n'est pas vérifiée | API/Réseau | **Estimation calculée** + code | P0 |
 | M1 | Mobile : un `TIMEOUT` (20 s) ou un serveur injoignable **n'est pas traité comme hors ligne** → l'écran affiche une erreur au lieu des données SQLite déjà synchronisées | Mobile | **Code** | P1 |
@@ -54,8 +57,8 @@ Les 6 constats les plus graves, par niveau de preuve :
 |---|---|
 | L'environnement d'audit **n'a pas d'accès réseau** à `api.somafrik.app` ni `api-preprod.somafrik.app` (connexion refusée par le proxy sortant). | **Aucune mesure de latence réelle** préprod/prod, ni de compression Render. |
 | Pas d'accès au tableau de bord Render, aux métriques ni aux logs. | Plan d'instance, région, mémoire, cold starts : **non vérifiés**. |
-| Pas d'appareil Android ni de simulateur iOS. | Aucune mesure de temps d'ouverture ou de rendu mobile. **Aucune mesure iOS n'est revendiquée.** |
-| Banc PG local : même machine, pas de latence réseau API↔DB, cache disque chaud. | Les temps SQL mesurés sont un **plancher** : en production ils seront supérieurs (réseau, transfert des lignes, instance partagée). |
+| Pas d'appareil Android, pas d'émulateur, pas de parcours en connexion faible. | Aucune mesure de temps d'ouverture, de rendu, ni de repli cache sur téléphone. **Aucune mesure Android ou iOS n'est revendiquée.** Les durées « 3G » et « 4G » du §2.2 sont des quotients arithmétiques (taille estimée ÷ débit supposé), pas des transferts chronométrés. |
+| Banc PG local : même machine, pas de latence réseau API↔DB, cache disque chaud. | Les temps SQL ne sont pas une latence Render ni un temps d'affichage. Le rejeu du §11 retrouve les lignes, pas les mêmes millisecondes. |
 | Banc arrêté à 20 établissements (le seed à 50 a été interrompu par une restriction de permissions de l'environnement, sans lien avec Somafrik). | La tendance linéaire est établie sur 1 → 5 → 20. |
 | Le texte du mandat reçu s'interrompt en §4 (« B. Écriture hors ligne… »). | Les sections suivantes du mandat n'ont pas été reçues ; l'API, PostgreSQL et Render sont couverts d'après le périmètre de l'en-tête. |
 
@@ -81,11 +84,12 @@ Profil synthétique par établissement : 500 élèves, 10 classes, 8 matières, 
 | 20 | paiements | plateforme | 30 000 | 13,7 Mio | 41 ms |
 | 20 | paiements | filtrée | 1 500 | 0,7 Mio | 4 ms |
 
-Lecture :
+Lecture — ce que le banc démontre, et ce qu'il ne démontre pas :
 
-- Avec 20 écoles, **la même réponse « présences d'une école »** coûte **11× plus de temps SQL** et **20× plus de données** que nécessaire. Le rapport croît avec chaque nouvel établissement.
-- `GET /api/presences` et `GET /api/notes` lancent **les 5 requêtes pédagogiques en parallèle** (évaluations, notes, présences, cours, créneaux — `pedagogyPgStore.js:1227`), donc chacun paie au moins présences **+** notes : ≈ 2,5 s de SQL pur à 20 écoles, avant transfert réseau DB→API, construction des objets JS et filtrage.
-- Les volumes « plateforme » (≈ 815 Mio de lignes brutes pour présences + notes à 20 écoles) sont **incompatibles avec la mémoire d'une instance Node classique**. Le plan Render réel n'étant pas connu, le risque de saturation mémoire / GC est une **hypothèse forte à vérifier** (§7).
+- **Volume de lignes (démontré, et reproduit au §11).** À 20 écoles synthétiques, la requête présences non filtrée lit 1 200 000 lignes (549 Mio) là où la variante filtrée lit 60 000 lignes (27,5 Mio). L'écart est de 20×, soit environ **95 % de lignes en moins** sur la variante filtrée. Ce pourcentage décrit le banc. Il n'a pas été constaté comme baisse du temps d'affichage.
+- **Temps SQL (médianes locales, non transposables).** Sur la machine du premier banc, la médiane présences passe de 945 ms (non filtrée) à 86 ms (filtrée), soit environ 11×. Le rejeu retrouve les mêmes nombres de lignes, pas les mêmes millisecondes (664 ms contre 71 ms, environ 9×). Le facteur de temps dépend de la machine. Ce n'est ni une latence Render, ni un temps Web, ni un temps Android.
+- `GET /api/presences` et `GET /api/notes` lancent **les 5 requêtes pédagogiques en parallèle** (évaluations, notes, présences, cours, créneaux — `pedagogyPgStore.js:1227`). Additionner les deux médianes du premier banc (945 ms + 1 564 ms ≈ 2,5 s) donne un **temps SQL cumulé**, pas un temps mur et pas un temps d'écran.
+- Les volumes « plateforme » (≈ 815 Mio de lignes brutes pour présences + notes à 20 écoles, premier banc) dépassent ce qu'une instance Node de taille courante garde confortablement en mémoire. Le plan Render réel n'étant pas connu, le risque de saturation mémoire / GC reste une **hypothèse à vérifier** (§7), pas un incident constaté.
 - La requête notes contient une **sous-requête corrélée par ligne** (`school_courses`) : coût proportionnel au nombre total de notes de la plateforme.
 
 ### 2.2 Taille des réponses API (ESTIMATION)
@@ -102,6 +106,8 @@ Ordre de grandeur de téléchargement de la réponse présences seule :
 | 3G lente ≈ 1 Mbit/s | ≈ 190 s | ≈ 15 s |
 | 4G moyenne ≈ 10 Mbit/s | ≈ 19 s | ≈ 1,5 s |
 
+Ces durées sont des **quotients arithmétiques**. Aucun transfert n'a été chronométré en 3G, en 4G, sur Android ou via Render.
+
 Le serveur Express n'installe **aucun middleware de compression** (`backend/server.js:171-174`). Seule la stack Docker/Caddy (`deploy/caddy/Caddyfile:5`, `encode gzip zstd`) compresse ; **la topologie active documentée est Render** (`docs/render.md`), dont la compression en sortie n'a pas pu être vérifiée.
 
 ### 2.3 Bundle Web (MESURÉ — `vite build`)
@@ -115,7 +121,7 @@ Le serveur Express n'installe **aucun middleware de compression** (`backend/serv
 | `ClassesListPage` (embarque `pdf-lib` + `pako`) | 611 Kio | 241 Kio |
 | `StudentWorkspacePage` | 199 Kio | 51 Kio |
 
-**Constat W3 (MESURÉ + cause identifiée).** `vendor-recharts` (120 Kio gzip) est préchargé **sur toutes les pages, y compris `/connexion`**, alors que recharts n'est importé que par `components/charts/DashboardCharts.tsx`. Cause : la règle `manualChunks` (`web/vite.config.ts`) a placé **`clsx`** — utilisé partout via `cn()` — dans le chunk `vendor-recharts` ; le chunk d'entrée importe donc ce chunk pour un seul symbole. Gain potentiel : ≈ 42 % du JavaScript initial gzip.
+**Constat W3 (tailles MESURÉES sur le build de `eff44c5` ; règle relue au `ea1250e`, build non rejoué).** `vendor-recharts` (120 Kio gzip sur ce build) est préchargé **sur toutes les pages, y compris `/connexion`**, alors que recharts n'est importé que par `components/charts/DashboardCharts.tsx`. La règle `manualChunks` (`web/vite.config.ts:100`) n'assigne `vendor-recharts` qu'aux modules dont le chemin contient `recharts` ou `/d3-`. Elle ne cite pas `clsx`. L'explication initiale (« `clsx` placé explicitement dans ce chunk ») n'est pas écrite dans la règle, inchangée entre `eff44c5` et `ea1250e`. Les tailles de §2.3 n'ont pas été re-mesurées après les pages bulletins des 21 commits. Le « gain » d'environ 42 % du JavaScript initial gzip est un **potentiel calculé sur l'ancien build**, pas un allègement déjà livré.
 
 **Constat W4.** Ouvrir la liste des classes télécharge 241 Kio gzip (génération PDF de cartes embarquée), même si l'utilisateur ne génère aucun PDF.
 
@@ -127,12 +133,14 @@ Le serveur Express n'installe **aucun middleware de compression** (`backend/serv
 
 | Endpoint | Chemin d'exécution | Tables lues sans filtre établissement |
 |---|---|---|
-| `GET /api/presences`, `GET /api/notes`, `GET /api/students/:id/notes`, `GET /api/students/:id/presences`, `POST /api/notes`, `POST /api/presences` | `loadCanonicalPedagogyForPrincipal()` → `repository.listPedagogyProjection()` (`server.js:5429`) → `pedagogyPgStore.listProjection()` (`pedagogyPgStore.js:1226`) | evaluations, grades, attendance, school_courses, course_schedules (5 requêtes) |
-| `GET /api/payments`, `GET /api/students/:id/payments` | `loadCanonicalFinanceForPrincipal()` (`server.js:5443`) → `financePgStore.listProjection()` (`financePgStore.js:843`) | payments, payment_statuses, fee_grids, school_fee_items, student_fee_obligations, fee_tariff_history, payment_reminders, payment_items, payment_allocations (9 requêtes) |
-| `GET /api/backoffice/establishments/:code` (domaine `schools`, chargé **sur chaque route** pour un utilisateur établissement), `GET /api/courses`, `GET /api/course-schedules`, `GET /api/backoffice/finance/unpaid*`, `GET /api/backoffice/subscription-access`, `POST /api/backoffice/login`, `POST /api/login`, `POST /api/auth/change-password` | `getAuthoritativeBackOfficeState()` (`server.js:5455`) = dataset + projections finance + pédagogie + plateforme + clients + résiduel | Quasiment toute la base (37 appels dans `server.js`) |
+| `GET /api/presences`, `GET /api/notes`, `GET /api/students/:id/notes`, `GET /api/students/:id/presences`, `POST /api/notes`, `POST /api/presences` | `loadCanonicalPedagogyForPrincipal()` (`server.js:5468`) → `repository.listPedagogyProjection()` (`server.js:5471`) → `pedagogyPgStore.listProjection()` (`pedagogyPgStore.js:1226`) | evaluations, grades, attendance, school_courses, course_schedules (5 requêtes) |
+| `GET /api/payments`, `GET /api/students/:id/payments` | `loadCanonicalFinanceForPrincipal()` (`server.js:5482`) → `financePgStore.listProjection()` (`financePgStore.js:865`) | payments, payment_statuses, fee_grids, school_fee_items, student_fee_obligations, fee_tariff_history, payment_reminders, payment_items, payment_allocations (9 requêtes) |
+| `GET /api/backoffice/establishments/:code` (domaine `schools`, chargé **sur chaque route** pour un utilisateur établissement), `GET /api/courses`, `GET /api/course-schedules`, `GET /api/backoffice/finance/unpaid*`, `GET /api/backoffice/subscription-access`, `POST /api/backoffice/login`, `POST /api/login`, `POST /api/auth/change-password` | `getAuthoritativeBackOfficeState()` (`server.js:5494`) = dataset + projections finance + pédagogie + plateforme + clients + résiduel | Quasiment toute la base (37 appels dans `server.js`) |
 | `GET /api/backoffice/notifications` (domaine `notifications`, layout) | `listPlatformProjection()` | Projection plateforme complète |
 
 **Contraste utile :** les endpoints migrés plus récemment sont **déjà filtrés en SQL** — `GET /api/students` (`listSchoolStudents`), `/api/teachers`, `/api/classes`, `/api/evaluations`, `/api/finance/student-fees`, `/api/finance/fee-grids`, `/api/finance/payment-statuses`. Le problème est donc localisé aux chemins historiques, qui sont précisément ceux du tableau de bord.
+
+Relecture au `ea1250e` : les cinq requêtes de `pedagogyPgStore.listProjection()` sont identiques à `eff44c5`, toujours sans `WHERE school_id`. `financePgStore.listProjection()` (`financePgStore.js:865`) non plus. Le `SELECT` des paiements (lignes 867-872) est inchangé. La requête des obligations, dans le même `Promise.all`, a gagné une sous-requête corrélée `EXISTS` sur `enrollments` (statut élève et inscription active) : elle reste sans filtre établissement et elle est hors du banc de volume, qui ne copie que le `SELECT` des paiements.
 
 ### B2 — Croissance avec le nombre d'établissements (MESURÉ)
 
@@ -146,14 +154,14 @@ Voir §2.1. Les index `school_id` existent (`schema.sql:1035-1074`) mais **ne so
 
 ### B5 — Cache global du dataset invalidé par chaque écriture (PROUVÉ PAR CODE)
 
-- `getDataset()` (`postgresRepository.js:2058`) met en cache **tout le jeu de données de la plateforme** (15 tables) dans la mémoire du processus.
+- `getDataset()` (`postgresRepository.js:2065`) met en cache **tout le jeu de données de la plateforme** (15 tables) dans la mémoire du processus.
 - Ce cache est vidé à **40 endroits** (`cachedDataset = null`), c'est-à-dire après la plupart des écritures, **quel que soit l'établissement**.
 - Aucune protection contre l'emballement : après invalidation, plusieurs requêtes simultanées relancent chacune les 15 requêtes.
 - Effet : dans une plateforme active, une saisie de présence dans l'école A peut ralentir la connexion d'un utilisateur de l'école B.
 
 ### B6 — Pas de pagination par défaut (PROUVÉ PAR CODE)
 
-`sendList()` (`server.js:7722`) ne pagine que si le client envoie `page`, `limit`, `sort` ou `search`. Les loaders Web (`web/src/lib/domainLoaders.ts`) et Mobile (`Mobile/src/services/api.ts:503`, `:388`, `:955`) n'en envoient jamais : réponses toujours complètes. Le seul flux réellement paginé côté dashboard est le fil d'activité (`/dashboard/school-activities?limit=10`, curseur).
+`sendList()` (`server.js:7761`) ne pagine que si le client envoie `page`, `limit`, `sort` ou `search`. Les loaders Web (`web/src/lib/domainLoaders.ts`) et Mobile (`Mobile/src/services/api.ts:503`, `:388`, `:955`) n'en envoient jamais : réponses toujours complètes. Le seul flux réellement paginé côté dashboard est le fil d'activité (`/dashboard/school-activities?limit=10`, curseur).
 
 ### B7 — Compression absente côté Express (PROUVÉ PAR CODE ; effet Render NON VÉRIFIÉ)
 
@@ -178,13 +186,13 @@ Voir §2.2.
 | `internalNotificationsRead.ts:46` | 30 s + `focus` + `visibilitychange` | compteur non lus | léger |
 
 - Le polling métrique s'arrête si l'onglet est masqué (`document.hidden`) ; **le fil d'activité, lui, continue en arrière-plan**.
-- Sur une école de 500 élèves à mi-année, un onglet tableau de bord ouvert télécharge ≈ 23 Mio brut toutes les 10 s pour les seules présences (§2.2), soit **plus de 8 Gio par heure et par onglet si la réponse n'est pas compressée**. Même compressé (≈ 1,8 Mio / 10 s ≈ 650 Mio/h), c'est incompatible avec une connexion mobile payante.
+- Extrapolation arithmétique, non mesurée sur le réseau : ≈ 23 Mio brut toutes les 10 s pendant une heure (360 cycles) donnent **plus de 8 Gio par heure et par onglet** si la réponse n'est pas compressée. Le même calcul compressé donne ≈ 1,8 Mio / 10 s ≈ 650 Mio/h. Aucun de ces volumes n'a été observé sur Render, en 3G ou sur Android.
 - Les KPI sont **calculés côté client** à partir de ces listes complètes (`getEstablishmentMetrics`, `buildSchoolDashboardSecondaryMetrics`).
 
 ### 4.3 W2 — Pas de timeout, attente du plus lent (PROUVÉ PAR CODE, P1)
 
 - `request()` (`web/src/api/client.ts:97`) appelle `fetch` **sans `AbortController`** : sur une connexion bloquée, la requête peut rester en attente indéfiniment, avec spinner permanent. Aucun retry automatique (hors refresh JWT sur 401).
-- En **production**, `DomainRouteBootstrap` envoie tous les domaines de la route dans **un seul** `ensureDomains()` ; `loadDomains()` attend `Promise.allSettled` (`domainLoaders.ts:189`) puis fusionne **en une fois**. L'écran reste donc vide jusqu'à la réponse la plus lente (typiquement `/presences` ou `/payments`).
+- En **production**, `DomainRouteBootstrap` envoie tous les domaines de la route dans **un seul** `ensureDomains()` ; `loadDomains()` attend `Promise.allSettled` (`domainLoaders.ts:202`) puis fusionne **en une fois**. L'écran reste donc vide jusqu'à la réponse la plus lente (typiquement `/presences` ou `/payments`).
 - L'hydratation **progressive par domaine** n'existe qu'en mode Démo (`DomainRouteBootstrap.tsx`, branche `demoRuntimeEnabled` ; `OverviewPage.tsx:69-100`).
 
 ### 4.4 Listes, pagination, rendu
@@ -300,13 +308,13 @@ Aucune de ces causes n'est présentée comme certaine. Toutes ces mesures sont *
 
 | Question | Réponse | Preuve |
 |---|---|---|
-| Pourquoi les données tardent-elles ? | Endpoints historiques lisant toute la plateforme (B1), réponses volumineuses non paginées (B6, §2.2), attente du plus lent côté Web (W2). | Code + mesure |
-| Frontend, backend, PostgreSQL, réseau ou hébergement ? | **Backend/PostgreSQL d'abord** (démontré), **amplifié par le frontend** (polling, absence de pagination). Part réseau/hébergement **non mesurée**. | Code + mesure / H1-H6 |
+| Pourquoi les données tardent-elles ? | Endpoints historiques lisant toute la plateforme (B1), réponses volumineuses non paginées (B6, §2.2), attente du plus lent côté Web (W2). Le temps d'affichage réel n'a pas été chronométré. | Code + banc local |
+| Frontend, backend, PostgreSQL, réseau ou hébergement ? | **Backend/PostgreSQL d'abord** (code + banc local), **amplifié par le frontend** (polling, absence de pagination). Part réseau, Render et Android **non mesurée**. | Code + banc local / H1-H6 |
 | Requêtes inutiles ? | Oui : polling 10 s de 6 listes complètes, rechargement complet après mutation et après outbox, rechargement à chaque focus mobile. | Code |
 | Rechargement de données déjà récupérées ? | Web : non à la navigation (cache par domaine), **oui** via polling et après mutation. Mobile : **oui à chaque focus**. | Code |
-| Trop de données téléchargées ? | Oui : présences ≈ 22,8 Mio brut par école de 500 élèves à mi-année ; 285 Kio gz de JS initial dont 120 Kio inutiles. | Estimation + mesure |
-| Mobile utilisable en connexion faible ? | **Partiellement.** Coupure franche : lecture hors ligne sur 5 ressources, écriture hors ligne sur 3 domaines. **Connexion lente : non** — timeout sans repli cache (M1). | Code |
-| Dégradation avec le nombre d'élèves et d'établissements ? | **Oui, linéaire avec la taille de toute la plateforme** pour les endpoints B1 (×11 en temps, ×20 en volume à 20 écoles). | Mesuré |
+| Trop de données téléchargées ? | Le code renvoie les listes entières. Présences ≈ 22,8 Mio brut est une **estimation** de DTO. Les 285 Kio gz (dont 120 Kio du chunk recharts) sont le build de `eff44c5`, non rejoué. | Estimation + build initial |
+| Mobile utilisable en connexion faible ? | **D'après le code, partiellement.** Coupure franche : lecture hors ligne sur 5 ressources, écriture hors ligne sur 3 domaines. Connexion lente : le timeout ne relit pas le cache (M1). Aucun essai sur Android ni sur un lien faible réel. | Code |
+| Dégradation avec le nombre d'élèves et d'établissements ? | **Oui sur le banc local** : à 20 écoles, la requête présences non filtrée lit 20× plus de lignes (environ 95 % du volume en moins sur la variante filtrée). Le facteur de temps SQL (environ 11× puis environ 9× au rejeu) dépend de la machine. Ce n'est pas un temps d'affichage déjà mesuré. | Banc PostgreSQL local uniquement |
 
 ---
 
@@ -320,7 +328,7 @@ Classées par rapport gain / risque. Aucune ne modifie le RBAC ni le schéma, sa
 | R2 | Remplacer le polling des 6 listes par un endpoint d'**agrégats KPI** côté serveur (comptes, taux de présence du jour, encaissements), ou au minimum allonger l'intervalle et le couper en arrière-plan. | W1 | Le calcul côté serveur doit reproduire exactement la vérité métier actuelle. |
 | R3 | Paginer / borner par défaut les listes volumineuses (présences par date ou période, paiements par période). | B6, §2.2 | Contrat API : versionner ou garder la compatibilité. |
 | R4 | Activer la compression des réponses (middleware Express ou vérification Render), après mesure H1. | B7 | Changement d'infrastructure : autorisation requise. |
-| R5 | Sortir `clsx`/`tailwind-merge` du chunk recharts ; charger `pdf-lib` à la demande dans `ClassesListPage`. | W3, W4 | Aucun impact métier. |
+| R5 | Empêcher le chargement de `vendor-recharts` sur `/connexion` (la règle actuelle n'y place pas `clsx` explicitement, cf. W3) et charger `pdf-lib` à la demande dans `ClassesListPage`. Re-mesurer le build avant de chiffrer un gain. | W3, W4 | Aucun impact métier. |
 | R6 | Web : timeout + annulation des requêtes ; fusion **progressive** par domaine en production (comme en Démo). | W2 | — |
 | R7 | Mobile : traiter `TIMEOUT` / `BACKEND_UNREACHABLE` comme éligibles au repli L1 ; afficher le cache **puis** rafraîchir (stale-while-revalidate). | M1 | Respecter les règles de fraîcheur affichée (« données du … »). |
 | R8 | Mobile : dédupliquer les loaders et ajouter une durée de fraîcheur avant refetch au focus. | §5.2 | — |
@@ -356,14 +364,22 @@ psql -d perf -c "select perf_seed_school(i) from generate_series(1,20) i"
 ```
 
 ```bash
-psql -d perf -c "INSERT INTO school_courses (school_id,class_id,subject_id,course_code,coefficient) SELECT c.school_id,c.id,s.id,c.class_code||'-'||s.subject_code,2 FROM classes c JOIN subjects s ON s.school_id=c.school_id ON CONFLICT DO NOTHING; VACUUM ANALYZE;"
+psql -d perf -c "INSERT INTO school_courses (school_id,class_id,subject_id,course_code,coefficient) SELECT c.school_id,c.id,s.id,c.class_code||'-'||s.subject_code,2 FROM classes c JOIN subjects s ON s.school_id=c.school_id ON CONFLICT DO NOTHING;"
 ```
 
 ```bash
-PERF_PG_SOCKET_DIR=/var/run/postgresql docs/audits/perf-01/bench.sh S=20
+psql -d perf -c "VACUUM ANALYZE;"
 ```
 
-Fichiers : `seed.sql` (générateur), `q_att.sql`, `q_grd.sql`, `q_pay.sql` (requêtes copiées de `pedagogyPgStore.js:1227-1280` et `financePgStore.js:845-851`), `bench.sh` (mesure).
+`VACUUM` doit rester dans sa propre invocation : un seul `psql -c` qui enchaîne l'`INSERT` et `VACUUM` échoue avec `VACUUM cannot run inside a transaction block`.
+
+```bash
+PERF_PG_SOCKET_DIR=/var/run/postgresql PERF_PG_PORT=5432 docs/audits/perf-01/bench.sh S=20
+```
+
+Le script suppose le port `55432` s'il n'est pas fourni. Un cluster PostgreSQL Ubuntu écoute par défaut sur `5432` : passer `PERF_PG_PORT` est alors nécessaire.
+
+Fichiers : `seed.sql` (générateur), `q_att.sql`, `q_grd.sql`, `q_pay.sql` (requêtes copiées de `pedagogyPgStore.listProjection()`, présences lignes 1276-1284, et du `SELECT` paiements `financePgStore.js:867-872` au `ea1250e` ; le texte SQL de ces trois requêtes est celui de `eff44c5`), `bench.sh` (mesure).
 
 ### 10.2 Reproduire la mesure du bundle
 
@@ -397,3 +413,82 @@ S=20   pay  school   rows=1500      json=    0.7MiB  sql_ms=4.28
 ```
 
 « json » = somme des `row_to_json()` des lignes SQL (volume transféré de PostgreSQL vers Node, avant mapping), pas la réponse HTTP finale.
+
+Ces lignes sont le **premier banc** (machine de l'audit initial). Le rejeu S=20 est au §11.4. Les séries S=1 et S=5 n'ont pas été rejouées.
+
+---
+
+## 11. Complément de clôture — relecture sur `develop` @ `ea1250e5948f`
+
+Complément documentaire du 4 novembre 2026. Aucun code produit, aucun schéma, aucun RBAC, aucun cache, aucun service Render. La PR reste **DRAFT / HOLD**. Aucun merge.
+
+### 11.1 Branche et écart des 21 commits
+
+| Élément | Valeur |
+|---|---|
+| Branche | `docs/perf-01-audit` |
+| HEAD contrôlé par le diff CTO indépendant | `778b68967088b4047f0880b628b0cd5aa351e63f` |
+| Merge-base de ce HEAD avec `develop` | `eff44c5dbe2a38da245ee377e29ffd81f8c1696d` |
+| Écart à ce moment | 1 commit d'avance, 21 de retard |
+| `develop` relu | `ea1250e5948f0a9c2b207f2d2601a46bf1269125` |
+| Opération | rebase du commit d'audit sur ce `develop`, puis ce complément |
+
+Les 21 commits (`eff44c5dbe2a..ea1250e5948f`) portent sur les bulletins (catalogue, périmètre classe, PDF, publication, hiérarchie de matières), la finance (verrou d'encaissement, libellés, recherche d'impayés), l'intégrité élèves, l'accélération de la CI et des tests RBAC. Aucun ne filtre `pedagogyPgStore.listProjection()` ni le `SELECT` des paiements de `financePgStore.listProjection()` par `school_id`.
+
+### 11.2 Les constats tiennent-ils encore ?
+
+Oui pour les six points prioritaires. Le code des chemins chauds a été relu sur `ea1250e5948f`.
+
+| Constat | Fichiers critiques | Après les 21 commits |
+|---|---|---|
+| B1 / B2 présences et notes | `backend/db/pedagogyPgStore.js` | Fichier identique. Cinq requêtes sans `WHERE school_id`. |
+| B1 paiements | `backend/db/financePgStore.js` | `listProjection()` toujours sans filtre établissement. Le `SELECT` paiements est inchangé. Les obligations du même appel ont une sous-requête `EXISTS` en plus, toujours non filtrée. |
+| W1 polling 10 s | `dashboardSync.ts`, `OverviewPage.tsx:146`, `SchoolRecentActivities.tsx:76`, `internalNotificationsRead.ts:46` | Inchangés. Intervalle toujours 10 000 ms. |
+| W2 attente du plus lent | `web/src/api/client.ts:97`, `domainLoaders.ts` | `fetch` toujours sans `AbortController`. `Promise.allSettled` déplacé de la ligne 189 à la ligne 202 (garde-fou bulletins sur `academicConfigs`, qui ne retire pas présences ni paiements). |
+| M1 timeout sans repli cache | `readModel.ts:51-58` et `:180`, `httpClient.ts:39`, `outbox.ts:10` | Inchangés. `TIMEOUT` n'est toujours pas un repli SQLite. |
+| W3 bundle recharts | `web/vite.config.ts` | Fichier identique. Tailles non re-mesurées (§2.3). |
+
+Décalages de lignes, comportement inchangé : `loadCanonicalPedagogyForPrincipal` 5429 → 5468, `loadCanonicalFinanceForPrincipal` 5443 → 5482, `getAuthoritativeBackOfficeState` 5455 → 5494, `sendList` 7722 → 7761, `getDataset` 2058 → 2065, `financePgStore.listProjection` 843 → 865. Le pool reste 5 / plafond 6 (`connectionConfig.js:13-15`). Les index cités (`schema.sql:1035-1074`, `schema.sql:1052`) sont aux mêmes lignes. `cachedDataset = null` reste cité 40 fois. `getAuthoritativeBackOfficeState` reste à 37 appels. Les loaders mobile `getNotes` / `getPresences` / `getPayments` restent aux lignes 388, 503 et 955, sans `page` ni `limit`.
+
+Hors chemin chaud : `routeDomainMap.ts` ajoute `/parametres/bulletins-catalogue` avec une liste de domaines vide (la page charge ses propres données). La route `/bulletins` charge toujours `notes`. `FinanceUnpaidPage.tsx:199` teste toujours `navigator.onLine`.
+
+### 11.3 Limites confirmées — Render, Android, réseau faible
+
+| Mesure | État à la clôture |
+|---|---|
+| Latence Render (préprod ou prod), compression de sortie, plan, région, cold start | **Non mesurée.** Pas d'appel à `api.somafrik.app` ni `api-preprod.somafrik.app`. |
+| Téléphone Android, émulateur, temps d'ouverture, rendu | **Non mesuré.** |
+| Connexion faible réelle (3G, perte partielle, timeout sur appareil) | **Non mesurée.** M1 est une lecture du code. |
+| Temps d'affichage Web | **Non mesuré.** |
+| Durées 3G / 4G du §2.2 et les 8 Gio/h du §4.2 | **Quotients arithmétiques**, pas des transferts observés. |
+
+### 11.4 Rejeu du banc — base PostgreSQL 16 locale jetable
+
+Recette du §10.1, sur le schéma documenté uniquement (`schema.sql` + `20260813_pedagogy_canonical.sql`), pas sur la chaîne complète des migrations de `develop`. PostgreSQL 16.15. Base `perf`, données synthétiques, 20 établissements. `VACUUM ANALYZE` lancé seul (la forme combinée avec l'`INSERT` échoue, cf. §10.1). Port 5432.
+
+Les migrations bulletin / finance des 21 commits n'ont pas été appliquées. Les trois requêtes copiées ne lisent aucune colonne ajoutée par ces migrations. Le trigger `trg_payments_collection_covered` ne s'active que si `somafrik.enforce_collection_cover = on` ; le seed ne pose pas ce paramètre.
+
+Résultats S=20 (médiane de 3 `EXPLAIN ANALYZE`, puis volume `row_to_json`) :
+
+```text
+S=20   att  platform rows=1200000   json=  549.7MiB  sql_ms=664.353
+S=20   att  school   rows=60000     json=   27.5MiB  sql_ms=71.116
+S=20   grd  platform rows=240000    json=  265.1MiB  sql_ms=459.545
+S=20   grd  school   rows=12000     json=   13.2MiB  sql_ms=32.262
+S=20   pay  platform rows=30000     json=   13.8MiB  sql_ms=27.323
+S=20   pay  school   rows=1500      json=    0.7MiB  sql_ms=2.476
+```
+
+| Grandeur | Premier banc | Rejeu | Lecture |
+|---|---:|---:|---|
+| Lignes présences, non filtré / filtré | 1 200 000 / 60 000 | 1 200 000 / 60 000 | Reproduit. Écart 20×, soit 95 % de lignes en moins sur la variante filtrée. |
+| Volume JSON présences | 549,4 Mio / 27,5 Mio | 549,7 Mio / 27,5 Mio | Même ordre. L'écart de 0,3 Mio vient du texte aléatoire (`present` / `absent`, notes tirées au sort), pas d'un changement de requête. |
+| Médiane SQL présences | 945 ms / 86 ms (≈ 11×) | 664 ms / 71 ms (≈ 9×) | Direction reproduite. Les millisecondes ne le sont pas : elles dépendent de la machine. |
+| Notes, lignes | 240 000 / 12 000 | 240 000 / 12 000 | Reproduit. |
+| Paiements, lignes | 30 000 / 1 500 | 30 000 / 1 500 | Reproduit. |
+
+S=1 et S=5 n'ont pas été re-semés. Les chiffres du §2.1 et du §10.3 pour ces tailles restent ceux du premier banc.
+
+### 11.5 Décision
+
+PR **#1061** maintenue **DRAFT / HOLD**. Ce complément prépare un re-diff CTO. Il ne lance pas PERF-PR1 et ne modifie pas le produit.
