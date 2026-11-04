@@ -243,3 +243,68 @@ test("un droit Élèves ne débloque pas les autres modules", () => {
   assert.equal(access.payments, false);
   assert.equal(access.presences, false);
 });
+
+function recordingRepository(classRows) {
+  const sql = [];
+  return {
+    sql,
+    all: async (text, params) => {
+      sql.push({ text, params });
+      if (/profile_payload/.test(text)) return [{ timezone: "Africa/Dakar" }];
+      if (/teacher_assignments/.test(text)) return classRows;
+      return [];
+    },
+  };
+}
+
+const FINANCE_SQL = /FROM payments|FROM student_fee_obligations/;
+const TEACHER_FINANCE_RIGHTS = ["Élèves:READ", "Paiements:READ"];
+
+test("un enseignant avec une classe ne voit que la finance des élèves de cette classe", async () => {
+  const classId = "44444444-4444-4444-8444-444444444444";
+  const repository = recordingRepository([{ class_id: classId }]);
+  await listSchoolDashboardKpis(
+    repository,
+    principal({ role: "Enseignant", id: "33333333-3333-4333-8333-333333333333", permissions: TEACHER_FINANCE_RIGHTS }),
+    { period: "monthly" },
+    NOW,
+  );
+  const finance = repository.sql.filter((entry) => FINANCE_SQL.test(entry.text));
+  assert.ok(finance.length >= 3);
+  for (const entry of finance) {
+    assert.deepEqual(entry.params[1], [classId]);
+    assert.match(entry.text, /FROM enrollments e/);
+    assert.match(entry.text, /e\.class_id = ANY\(\$2::uuid\[\]\)/);
+  }
+  const directFinance = repository.sql.filter((entry) => /^\s*SELECT (currency|COUNT\(\*\)::int AS rows|payment_status)/.test(entry.text));
+  assert.equal(directFinance.length, 3);
+  assert.equal(directFinance.some((entry) => /cardinality/.test(entry.text)), false);
+});
+
+test("l'administration garde la finance de toute l'école", async () => {
+  const repository = recordingRepository([]);
+  await listSchoolDashboardKpis(
+    repository,
+    principal({ permissions: TEACHER_FINANCE_RIGHTS }),
+    { period: "monthly" },
+    NOW,
+  );
+  assert.equal(repository.sql.some((entry) => /teacher_assignments/.test(entry.text)), false);
+  const finance = repository.sql.filter((entry) => FINANCE_SQL.test(entry.text));
+  assert.ok(finance.length >= 3);
+  assert.ok(finance.every((entry) => entry.params[1] === null));
+});
+
+test("le sub du jeton suffit à retrouver les affectations de l'enseignant", async () => {
+  const userId = "55555555-5555-4555-8555-555555555555";
+  const repository = recordingRepository([]);
+  await listSchoolDashboardKpis(
+    repository,
+    principal({ role: "Enseignant", sub: userId, permissions: ["Élèves:READ"] }),
+    { period: "daily" },
+    NOW,
+  );
+  const lookup = repository.sql.find((entry) => /teacher_assignments/.test(entry.text));
+  assert.ok(lookup);
+  assert.deepEqual(lookup.params, [SCHOOL, userId]);
+});

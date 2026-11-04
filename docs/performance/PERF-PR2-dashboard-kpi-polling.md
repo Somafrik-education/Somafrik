@@ -80,8 +80,8 @@ Les règles reprises sont celles du client actuel, pas une nouvelle définition.
 | Classes | `classes` | Noms distincts. Pour un enseignant, uniquement ses classes actives. Sans affectation, 0. |
 | Niveaux | `classes.level`, sinon « Non renseigné » | Même regroupement que `buildSchoolDashboardSecondaryMetrics`. |
 | Présence du jour | `attendance` du jour civil de l'établissement | Élève attendu : statut hors archivé, inactif, désinscrit, transféré, sorti, et inscription de classe ouverte. Ligne manquante non comptée comme absence. Taux seulement si `recorded = expected`, sinon « — ». Présent et retard comptent comme présents. Un enseignant sans classe n'a aucun élève attendu. |
-| Recettes | `payments.amount` | Hors annulé, attente, pending, refusé, échoué, brouillon. Affichage seulement s'il reste une seule devise. `FC` est présenté `CDF`. Les allocations ne sont pas additionnées. Un enseignant affecté conserve les recettes de l'établissement, comme le client. Un enseignant sans affectation reçoit « — », même avec `Paiements:READ`. |
-| Taux de paiement | `student_fee_obligations` | Hors archivées et hors annulées. `Σ amount_paid / Σ (amount_due − exemption)`. Devises mélangées, montant manquant ou assiette nulle : « — ». Même fermeture que les recettes pour un enseignant sans classe. |
+| Recettes | `payments.amount` | Hors annulé, attente, pending, refusé, échoué, brouillon. Affichage seulement s'il reste une seule devise. `FC` est présenté `CDF`. Les allocations ne sont pas additionnées. Pour un enseignant, seuls les paiements des élèves inscrits (inscription ouverte) dans ses classes actives sont retenus. Un enseignant sans affectation reçoit « — », même avec `Paiements:READ`. L'administration garde tout l'établissement. |
+| Taux de paiement | `student_fee_obligations` | Hors archivées et hors annulées. `Σ amount_paid / Σ (amount_due − exemption)`. Devises mélangées, montant manquant ou assiette nulle : « — ». Même périmètre que les recettes : élèves des classes de l'enseignant, rien sans classe. |
 | Séries de période | dates des lignes | Élèves du graphique = élèves ayant une présence, une note ou, si le droit paiements existe, un paiement dans la fenêtre. Les cartes, elles, ne sont pas filtrées par la période. C'est le comportement de `applyEstablishmentChartPeriod`. |
 | Présences du graphique | `attendance.status` | Présent, retard, justifié, sinon absent. Taux = (présents + retards) / lignes. |
 | Notes, examens, bulletins | `grades.created_at`, `exams.exam_date`, `report_cards.created_at` | Le bulletin `draft` correspond au « brouillon » du client. Le statut « en validation » n'a pas d'équivalent canonique. |
@@ -124,6 +124,8 @@ Web : `web/src/lib/dashboardSync.test.ts`, `web/src/lib/useSchoolDashboardKpis.t
 
 La parité PostgreSQL du fixture école A, fuseau explicite `Africa/Kinshasa`, au 4 novembre 2026, 11:00 dans ce fuseau, donne : 4 élèves, 1 enseignant, 2 classes, recettes `97 CDF`, taux `53 %`, présence du jour `100 %`. L'enseignant affecté à la seule 6e voit 2 élèves et 1 classe, sans bloc finance. L'enseignant sans affectation active, y compris avec une affectation et une titularisation inactives et avec tous les droits de lecture, voit 0 élève, 0 classe, 0 enseignant, recettes « — », taux « — », présence « — » et séries vides, alors que l'administration voit toujours 4 élèves, 2 enseignants et `97 CDF`. L'école vide reste à « — » pour les recettes, le taux et la présence. L'école B n'entre pas dans les comptes de l'école A.
 
+Finance des enseignants, sur la même base après ajout d'un paiement de 300 CDF et d'une obligation 200 / 100 pour l'élève de 5e : l'administration voit `397 CDF` et un taux de `51 %` (370 dus, 190 payés). L'enseignant de la seule 6e, avec tous les droits de lecture, voit `97 CDF` et `60 %` (150 dus, 90 payés) : le paiement de l'élève de 5e n'entre pas. L'enseignant affecté à la 6e et à la 5e voit 3 élèves, 2 classes, `397 CDF` et `51 %`. L'enseignant sans affectation reste à « — ». Sur le code précédent, l'enseignant de la seule 6e recevait `397 CDF`.
+
 Autour de minuit, le 4 novembre 2026 à 23:30 UTC, le jour civil est le 5 novembre à Kinshasa et à Auckland, et encore le 4 novembre à New York. À 22:30 UTC, Auckland est déjà le 5 novembre et Kinshasa est encore le 4. Une annonce horodatée le 5 novembre 2026 à 03:30 UTC entre dans le jour Kinshasa et reste hors du jour New York. Un fuseau stocké illisible retombe sur le repli partagé.
 
 ## 10. Benchmarks
@@ -163,7 +165,8 @@ Sur ce fixture, un cycle KPI pèse 1 189 octets contre 9 033 octets de lignes. L
 ## 11. Risques résiduels
 
 - Le fuseau des graphiques était celui du navigateur. Le serveur suit le fuseau enregistré de l'établissement. Un poste dans un autre fuseau peut donc encore décaler une frontière de jour par rapport à l'écran. Un profil sans fuseau valide conserve le repli partagé `Africa/Kinshasa`.
-- Un enseignant qui a au moins une classe active et le droit `Paiements:READ` voit encore les recettes, le taux et les séries de paiements de tout l'établissement. C'est le comportement du client précédent. Seul l'enseignant sans affectation est fermé.
+- La finance d'un enseignant suit désormais les élèves de ses classes. C'est plus restrictif que l'ancien client, qui affichait les recettes de tout l'établissement à un enseignant ayant `Paiements:READ`. Les écrans Finance hors dashboard ne sont pas modifiés et gardent leur périmètre actuel.
+- Les comptes d'annuaire (enseignants, utilisateurs actifs, annonces) restent à l'échelle de l'établissement pour un enseignant qui a au moins une classe active, et à 0 sans classe.
 - Le compte « Messages » non lus du graphique d'administration n'est pas recalculé. Le dashboard ne chargeait pas ce domaine. Le chantier messages reste séparé. Les alertes internes continuent de venir du hook déjà en place.
 - Le statut bulletin « en validation » n'existe pas dans `report_cards`. Seul `draft` alimente « À valider ».
 - Les classes synthétiques fabriquées côté client quand un `className` n'avait pas de fiche ne sont pas recrées. Le compte suit `classes`.
@@ -175,5 +178,4 @@ Sur ce fixture, un cycle KPI pèse 1 189 octets contre 9 033 octets de lignes. L
 - PERF-PR3 n'est pas ouvert.
 - Lectures historiques hors dashboard.
 - Messages non lus du graphique.
-- Recettes d'un enseignant déjà affecté, encore calculées sur tout l'établissement.
 - Refonte du client HTTP.

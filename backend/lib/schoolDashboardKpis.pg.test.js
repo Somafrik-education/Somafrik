@@ -481,6 +481,99 @@ async function main() {
     assert.equal(empty.cards.paymentRate.value, "—");
     assert.equal(empty.series.presence.total, 0);
 
+    // Finance enseignant : seuls les élèves de ses classes, jamais toute l'école.
+    const ids = await pool.query(
+      `SELECT
+         (SELECT id FROM students WHERE school_id = $1 AND student_code = 'A-S2') AS s2,
+         (SELECT id FROM classes WHERE school_id = $1 AND class_code = 'A-6E') AS class6,
+         (SELECT id FROM classes WHERE school_id = $1 AND class_code = 'A-5E') AS class5,
+         (SELECT id FROM subjects WHERE school_id = $1 AND subject_code = 'A-MATH') AS subject,
+         (SELECT id FROM academic_years WHERE school_id = $1 AND is_current = true LIMIT 1) AS year`,
+      [fixture.schoolA],
+    );
+    const ref = ids.rows[0];
+    await pool.query(
+      `INSERT INTO payments (school_id, student_id, payment_code, amount, currency, payment_method, payment_status, payment_date)
+       VALUES ($1, $2, 'A-PAY-S2', 300, 'CDF', 'cash', 'paid', '2026-11-03')`,
+      [fixture.schoolA, ref.s2],
+    );
+    await pool.query(
+      `INSERT INTO student_fee_obligations
+         (school_id, student_id, class_id, fee_type, label, currency, amount_due, amount_paid, exemption, balance, status)
+       VALUES ($1, $2, $3, 'scolarite', 'S2-5E', 'CDF', 200, 100, 0, 100, 'Partiel')`,
+      [fixture.schoolA, ref.s2, ref.class5],
+    );
+    const multiUser = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, role, status)
+       VALUES ($1, 'A-MULTI', 'Deux', 'Classes', 'Enseignant', 'active') RETURNING id`,
+      [fixture.schoolA],
+    );
+    const multiTeacher = await pool.query(
+      `INSERT INTO teachers (school_id, user_id, teacher_code) VALUES ($1, $2, 'A-T2') RETURNING id`,
+      [fixture.schoolA, multiUser.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+       VALUES ($1, $2, $3, $5, $6, 'active'), ($1, $2, $4, $5, $6, 'active')`,
+      [fixture.schoolA, multiTeacher.rows[0].id, ref.class6, ref.class5, ref.subject, ref.year],
+    );
+
+    const adminFinance = await listSchoolDashboardKpis(repository, admin, { period: "monthly" }, NOW);
+    assert.equal(adminFinance.cards.revenue.amount, 397);
+    assert.equal(adminFinance.cards.paymentRate.expectedAmount, 370);
+    assert.equal(adminFinance.cards.paymentRate.collectedAmount, 190);
+    assert.equal(adminFinance.cards.paymentRate.value, "51 %");
+    assert.equal(adminFinance.series.paymentAmounts.find((item) => item.name === "Payé").value, 390);
+
+    const oneClass = await listSchoolDashboardKpis(
+      repository,
+      { role: "Enseignant", userId: fixture.teacherUserId, schoolId: fixture.schoolA, permissions: ADMIN_RIGHTS },
+      { period: "monthly" },
+      NOW,
+    );
+    assert.equal(oneClass.cards.students, 2);
+    assert.equal(oneClass.cards.classes, 1);
+    assert.equal(oneClass.cards.revenue.amount, 97);
+    assert.equal(oneClass.cards.paymentRate.expectedAmount, 150);
+    assert.equal(oneClass.cards.paymentRate.collectedAmount, 90);
+    assert.equal(oneClass.cards.paymentRate.value, "60 %");
+    assert.equal(oneClass.series.paymentAmounts.find((item) => item.name === "Payé").value, 90);
+    assert.equal(oneClass.series.paymentStatus.reduce((total, item) => total + item.value, 0), 3);
+    assert.equal(oneClass.series.activeStudents, 1);
+
+    const twoClasses = await listSchoolDashboardKpis(
+      repository,
+      { role: "Enseignant", sub: multiUser.rows[0].id, schoolId: fixture.schoolA, permissions: ADMIN_RIGHTS },
+      { period: "monthly" },
+      NOW,
+    );
+    assert.equal(twoClasses.cards.students, 3);
+    assert.equal(twoClasses.cards.classes, 2);
+    assert.equal(twoClasses.cards.teachers, adminFinance.cards.teachers);
+    assert.equal(twoClasses.cards.revenue.amount, 397);
+    assert.equal(twoClasses.cards.paymentRate.value, "51 %");
+    assert.equal(twoClasses.series.presence.total, 4);
+
+    const stillClosed = await listSchoolDashboardKpis(
+      repository,
+      { role: "Enseignant", id: libreUser.rows[0].id, schoolId: fixture.schoolA, permissions: ADMIN_RIGHTS },
+      { period: "monthly" },
+      NOW,
+    );
+    assert.equal(stillClosed.cards.revenue.display, "—");
+    assert.equal(stillClosed.cards.paymentRate.value, "—");
+    assert.deepEqual(stillClosed.series.paymentAmounts, []);
+    assert.equal(stillClosed.cards.students, 0);
+
+    const foreignSchool = await listSchoolDashboardKpis(
+      repository,
+      { role: "Admin School", schoolId: fixture.schoolB, permissions: ADMIN_RIGHTS },
+      { period: "monthly" },
+      NOW,
+    );
+    assert.equal(foreignSchool.cards.revenue.amount, 500);
+    assert.equal(foreignSchool.cards.students, 1);
+
     const listBytes = Object.values(fixture.volumes).reduce((total, value) => total + Number(value), 0);
     const kpiBytes = Buffer.byteLength(JSON.stringify(monthly));
     console.log(JSON.stringify({
