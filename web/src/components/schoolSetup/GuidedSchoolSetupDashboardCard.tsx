@@ -16,7 +16,7 @@ export function GuidedSchoolSetupDashboardCard({
   payload: GuidedSetupPayload;
   role?: string;
 }) {
-  if (!shouldShowGuidedSetupDashboardCard({ payload, role }) || payload.percent === 100) {
+  if (!shouldShowGuidedSetupDashboardCard({ payload, role }) || payload.percent === 100 || payload.finalized) {
     return null;
   }
 

@@ -21,6 +21,8 @@ export interface GuidedSetupPayload {
   completedSteps: string[];
   steps: GuidedSetupStep[];
   updatedAt: string | null;
+  finalized?: boolean;
+  finalizedAt?: string | null;
 }
 
 const GUIDED_PATH = "/v2/school-setup/guided";
@@ -30,6 +32,10 @@ export const schoolSetupGuidedApi = {
   get: () => httpRequest<GuidedSetupPayload>(GUIDED_PATH),
   completeStep: (stepKey: string) =>
     httpRequest<GuidedSetupPayload>(`${GUIDED_PATH}/steps/${encodeURIComponent(stepKey)}/complete`, {
+      method: "POST",
+    }),
+  finalize: () =>
+    httpRequest<GuidedSetupPayload>("/v2/school-setup/guided/complete", {
       method: "POST",
     }),
 };

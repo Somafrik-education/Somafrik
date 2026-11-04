@@ -6,10 +6,11 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-const { getStatus, getGuided, completeStep } = vi.hoisted(() => ({
+const { getStatus, getGuided, completeStep, finalize } = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getGuided: vi.fn(),
   completeStep: vi.fn(),
+  finalize: vi.fn(),
 }));
 
 vi.mock("../../lib/schoolSetupStatusApi", async (importOriginal) => {
@@ -23,10 +24,11 @@ vi.mock("../../lib/schoolSetupStatusApi", async (importOriginal) => {
 });
 
 vi.mock("../../lib/schoolSetupGuidedApi", () => ({
-  schoolSetupGuidedApi: {
-    get: (...args: unknown[]) => getGuided(...args),
-    completeStep: (...args: unknown[]) => completeStep(...args),
-  },
+    schoolSetupGuidedApi: {
+      get: (...args: unknown[]) => getGuided(...args),
+      completeStep: (...args: unknown[]) => completeStep(...args),
+      finalize: (...args: unknown[]) => finalize(...args),
+    },
 }));
 
 import { SchoolSetupSettingsPage } from "./SchoolSetupSettingsPage";
@@ -97,6 +99,7 @@ describe("HOLD — SchoolSetupSettingsPage wizard exclusif", () => {
     getStatus.mockReset();
     getGuided.mockReset();
     completeStep.mockReset();
+    finalize.mockReset();
     getStatus.mockResolvedValue(lot1Payload);
     getGuided.mockResolvedValue(guided40);
   });
@@ -114,9 +117,10 @@ describe("HOLD — SchoolSetupSettingsPage wizard exclusif", () => {
     expect(screen.getByText(/Progression : 3 \/ 3/)).toBeInTheDocument();
   });
 
-  it("à 100 % Terminer la configuration renvoie au Tableau de bord", async () => {
+  it("à 100 % Terminer confirme puis propose le Tableau de bord", async () => {
     const user = userEvent.setup();
     getGuided.mockResolvedValue(guided100);
+    finalize.mockResolvedValue({ ...guided100, finalized: true, finalizedAt: "2026-09-21T00:00:00.000Z" });
     render(
       <MemoryRouter initialEntries={["/parametres/configuration-etablissement"]}>
         <Routes>
@@ -127,13 +131,18 @@ describe("HOLD — SchoolSetupSettingsPage wizard exclusif", () => {
     );
     expect(await screen.findByText("Étape 10 sur 10")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Terminer la configuration" }));
-    expect(await screen.findByRole("heading", { name: "Tableau de bord" })).toBeInTheDocument();
+    expect(finalize).toHaveBeenCalledTimes(1);
     expect(completeStep).not.toHaveBeenCalled();
+    expect(await screen.findByText("Configuration de votre établissement terminée")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tableau de bord" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Accéder au tableau de bord" }));
+    expect(await screen.findByRole("heading", { name: "Tableau de bord" })).toBeInTheDocument();
   });
 
-  it("à 100 % Vérifier puis Terminer renvoie encore au Tableau de bord", async () => {
+  it("à 100 % Vérifier puis Terminer confirme encore la finalisation", async () => {
     const user = userEvent.setup();
     getGuided.mockResolvedValue(guided100);
+    finalize.mockResolvedValue({ ...guided100, finalized: true, finalizedAt: "2026-09-21T00:00:00.000Z" });
     render(
       <MemoryRouter initialEntries={["/parametres/configuration-etablissement"]}>
         <Routes>
@@ -146,7 +155,19 @@ describe("HOLD — SchoolSetupSettingsPage wizard exclusif", () => {
     await user.click(screen.getByRole("button", { name: "Vérifier la configuration" }));
     expect(screen.getByText("Étape 1 sur 10")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Terminer la configuration" }));
-    expect(await screen.findByRole("heading", { name: "Tableau de bord" })).toBeInTheDocument();
-    expect(completeStep).not.toHaveBeenCalled();
+    expect(finalize).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Configuration de votre établissement terminée")).toBeInTheDocument();
+  });
+
+  it("un rechargement conserve l'état terminé", async () => {
+    getGuided.mockResolvedValue({ ...guided100, finalized: true, finalizedAt: "2026-09-21T00:00:00.000Z" });
+    render(
+      <MemoryRouter>
+        <SchoolSetupSettingsPage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Configuration de votre établissement terminée")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Terminer la configuration" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Progression : 3 \/ 3/)).toBeInTheDocument();
   });
 });

@@ -2070,6 +2070,14 @@
       "cdTeacher": "refusé",
       "cdParent": "refusé"
     },
+    "POST /api/v2/school-setup/guided/complete": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "refusé",
+      "cdPrefet": "refusé",
+      "cdSecretary": "refusé",
+      "cdTeacher": "refusé",
+      "cdParent": "refusé"
+    },
     "POST /api/v2/school-setup/guided/steps/:stepKey/complete": {
       "cdAdmin": "écriture autorisée (non envoyée)",
       "cdProviseur": "refusé",
