@@ -129,6 +129,61 @@ async function seedSchool(pool, country, code, { classes, studentsPerClass, paym
   return { school, classIds, students, teacherUser: user };
 }
 
+/** Établissement à forte volumétrie : `students` présences le même jour, réparties sur `classes`. */
+async function seedBigDay(pool, country, code, { classes, students, day }) {
+  const school = (
+    await pool.query(
+      `INSERT INTO schools (country_id, school_code, login_code, name, status)
+       VALUES ($1, $2, $3, $4, 'active') RETURNING id`,
+      [country, code, `${code}-L`, `Ecole ${code}`],
+    )
+  ).rows[0].id;
+  const year = (
+    await pool.query(
+      `INSERT INTO academic_years (school_id, name, is_current, status) VALUES ($1, '2026-2027', true, 'open') RETURNING id`,
+      [school],
+    )
+  ).rows[0].id;
+  const classIds = [];
+  for (let c = 0; c < classes; c += 1) {
+    classIds.push(
+      (
+        await pool.query(
+          `INSERT INTO classes (school_id, academic_year_id, class_code, name, level)
+           VALUES ($1, $2, $3, $4, '6e') RETURNING id`,
+          [school, year, `${code}-C${c}`, `6e ${code}${c}`],
+        )
+      ).rows[0].id,
+    );
+  }
+  // Le compteur d'identifiants élèves est borné à 999 par année de création : on répartit sur 5 ans.
+  await pool.query(
+    `INSERT INTO students (school_id, student_code, first_name, last_name, status, created_at)
+     SELECT $1, $2 || '-S' || g, 'Prenom' || g, 'Nom', 'active', make_date(2020 + g % 5, 1, 1)
+       FROM generate_series(1, $3::int) g`,
+    [school, code, students],
+  );
+  await pool.query(
+    `INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status)
+     SELECT $1, st.id, ($2::uuid[])[1 + (row_number() OVER (ORDER BY st.id))::int % $3::int], $4::date,
+            (ARRAY['present','absent','late','excused'])[1 + (row_number() OVER (ORDER BY st.id))::int % 4]
+       FROM students st WHERE st.school_id = $1`,
+    [school, classIds, classes, day],
+  );
+  // Une seule présence la veille : elle ne doit pas apparaître dans la journée lue.
+  await pool.query(
+    `INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status)
+     SELECT $1, st.id, $2, $3::date, 'present' FROM students st WHERE st.school_id = $1 ORDER BY st.id LIMIT 1`,
+    [school, classIds[0], DAYS[3]],
+  );
+  const counts = await pool.query(
+    `SELECT class_id::text AS id, count(*)::int AS n FROM attendance
+      WHERE school_id = $1 AND attendance_date = $2::date GROUP BY class_id`,
+    [school, day],
+  );
+  return { school, classIds, perClass: new Map(counts.rows.map((row) => [row.id, row.n])) };
+}
+
 async function collect(fetchPage, limit) {
   const all = [];
   let cursor;
@@ -262,6 +317,15 @@ async function main() {
     const teacherPage = await collect((q) => reads.listPresencesPage(repo, teacherCtx, q), 50);
     assert.ok(teacherPage.all.length > 0);
     assert.ok(teacherPage.all.every((row) => String(row.classId) === A.classIds[0]));
+    // Le filtre classId ne contourne pas l'affectation : une autre classe reste vide.
+    const otherClass = await reads.listPresencesPage(repo, teacherCtx, { classId: A.classIds[1], date: DAYS[4] });
+    assert.deepEqual(otherClass, { items: [], nextCursor: null, hasMore: false });
+    const ownClassDay = await collect(
+      (q) => reads.listPresencesPage(repo, teacherCtx, { ...q, classId: A.classIds[0], date: DAYS[4] }),
+      200,
+    );
+    assert.equal(ownClassDay.all.length, 9);
+    assert.ok(ownClassDay.all.every((row) => String(row.classId) === A.classIds[0] && row.date === DAYS[4]));
     const bareTeacher = await reads.resolveReadContext(
       repo,
       { role: "Enseignant", userId: B.teacherUser },
@@ -306,6 +370,29 @@ async function main() {
     const teacherPayments = await collect((q) => reads.listPaymentsPage(repo, teacherCtx, q), 50);
     const classZero = new Set(A.students.filter((s) => s.classId === A.classIds[0]).map((s) => s.code));
     assert.ok(teacherPayments.all.length > 0 && teacherPayments.all.every((row) => classZero.has(row.studentId)));
+
+    // Journée de plus de 4 000 présences : lue en entier, par jour puis par classe, sans plafond.
+    const big = await seedBigDay(pool, country, "PGC", { classes: 3, students: 4100, day: DAYS[4] });
+    const ctxC = { schoolId: big.school, classIds: null };
+    const bigDay = await collect((q) => reads.listPresencesPage(repo, ctxC, { ...q, date: DAYS[4] }), 200);
+    assert.equal(bigDay.all.length, 4100);
+    assert.equal(bigDay.pages, 21);
+    assertNoDuplicates(bigDay.all);
+    assert.ok(bigDay.all.every((row) => row.date === DAYS[4] && String(row.schoolId) === big.school));
+    let byClassTotal = 0;
+    for (const classId of big.classIds) {
+      const one = await collect(
+        (q) => reads.listPresencesPage(repo, ctxC, { ...q, date: DAYS[4], classId }),
+        200,
+      );
+      assertNoDuplicates(one.all);
+      assert.ok(one.all.every((row) => String(row.classId) === classId), "aucune ligne d'une autre classe");
+      assert.equal(one.all.length, big.perClass.get(classId));
+      byClassTotal += one.all.length;
+    }
+    assert.equal(byClassTotal, 4100, "les classes couvrent toute la journée");
+    const otherDay = await reads.listPresencesPage(repo, ctxC, { date: DAYS[3] });
+    assert.equal(otherDay.items.length, 1, "le jour voisin reste séparé");
 
     console.log(
       JSON.stringify({

@@ -78,7 +78,7 @@ La matrice RBAC MONO-T1 régénérée donne, pour les 3 nouvelles routes, **les 
 
 | Écran | Avant | Après |
 |---|---|---|
-| Web — Présences (personnel) | `GET /api/presences` : tout l'historique de l'école, amorcé par la route | `GET /api/v2/presences?date=<jour>&limit=200`, page après page ; le domaine `presences` n'est plus amorcé sur `/presences` pour le personnel |
+| Web — Présences (personnel) | `GET /api/presences` : tout l'historique de l'école, amorcé par la route | `GET /api/v2/presences?date=<jour>&classId=<classe>&limit=200`, **classe par classe**, page après page jusqu'à la fin, sans plafond ; le domaine `presences` n'est plus amorcé sur `/presences` pour le personnel |
 | Web — Présences (Parent / Élève) | historique | inchangé |
 | Web — lien de notification vers une présence d'un autre jour | recherche dans l'historique | une seule ligne : `GET /api/v2/presences?attendanceId=…&limit=1` |
 | Web — après enregistrement d'un appel | `refresh(["presences"])` (historique complet) | relecture du jour + `invalidateDomains(["presences"])` : un autre écran relira la liste globale à son ouverture |
@@ -87,15 +87,25 @@ La matrice RBAC MONO-T1 régénérée donne, pour les 3 nouvelles routes, **les 
 
 Le registre d'appel reste complet : les élèves viennent du roster de classe. Les présences du jour ne servent qu'à pré-remplir les statuts, le statut Présent restant le défaut de saisie.
 
+Lecture classe par classe (correctif CTO) :
+
+- **Classe ouverte** : seule sa liste est lue (filtre SQL `classId`), en priorité. Les lectures des cartes en cours s'arrêtent entre deux pages et reprennent au retour à la liste des classes. Ouvrir une classe ne télécharge donc pas la journée de l'établissement.
+- **Cartes de classes** : chaque carte lit sa propre classe, 3 classes en parallèle. Son compteur ne s'affiche qu'une fois la liste de la classe lue en entier ; sinon « chargement… » ou « indisponible », avec un bouton Réessayer.
+- **Jamais de liste partielle** : la pagination suit `nextCursor` jusqu'à `hasMore: false`, sans plafond de pages. Une page qui annonce une suite sans curseur, un curseur déjà vu ou une erreur réseau rendent la classe « non lue ». Une relecture en échec garde la dernière liste complète.
+- **Enregistrement** : impossible tant que la liste de la classe n'a jamais été lue en entier. Sinon des élèves déjà notés absents seraient réécrits « Présent » par défaut.
+- **Identifiant de classe** : le filtre serveur exige l'UUID de la classe. Une carte construite depuis un code de classe retrouve l'UUID dans `state.classes` ; à défaut, la classe est signalée « indisponible » et rien n'est demandé.
+- **Journée scolaire** : le jour lu (`date`) et le jour enregistré (`DD-MM-YYYY`) sont calculés une seule fois. On prend le fuseau de l'établissement (`schools.timezone`, Africa/Kinshasa par défaut, comme les KPI PERF-PR2) quand sa fiche est chargée, sinon le jour civil du poste (comportement historique).
+- **Enseignant** : le serveur intersecte `classId` avec ses affectations actives. Une classe non affectée rend une page vide.
+
 ## 8. Tests
 
 | Fichier | Couverture |
 |---|---|
 | `backend/lib/paginatedSchoolReads.test.js` (11) | limit (défaut, max, invalide, excessive), dates, curseur altéré / d'un autre filtre, Parent et Élève refusés, Superadmin et Admin Pays refusés par la garde, établissement absent, enseignant sans affectation sans requête, paramètres = emplacements SQL, keyset en SQL, erreur PostgreSQL sans repli, filtres inconnus |
-| `backend/lib/paginatedSchoolReads.pg.test.js` | 2 établissements, historique sur 3 années, égalités de date : toutes les pages = toute la base, sans doublon, ordre `(date, id)` identique à PostgreSQL ; pages intermédiaires, dernière page, page vide, tri croissant ; écriture entre deux pages ; curseur rejoué avec d'autres filtres ou dans une autre école refusé ; école B isolée ; enseignant limité à sa classe, enseignant sans affectation vide ; filtres jour, classe, élève, statut, identifiant, période ; **DTO identiques** à la projection historique pour présences, notes et paiements ; recherche paiements par matricule, `%` non joker |
+| `backend/lib/paginatedSchoolReads.pg.test.js` | **journée de 4 100 présences sur 3 classes : 21 pages de 200, sans doublon ; par classe, chaque liste est complète et ne contient que sa classe ; la somme couvre la journée ; le jour voisin reste séparé** ; enseignant : `classId` d'une classe non affectée → page vide, sa classe → 9 lignes ; 2 établissements, historique sur 3 années, égalités de date : toutes les pages = toute la base, sans doublon, ordre `(date, id)` identique à PostgreSQL ; pages intermédiaires, dernière page, page vide, tri croissant ; écriture entre deux pages ; curseur rejoué avec d'autres filtres ou dans une autre école refusé ; école B isolée ; enseignant limité à sa classe, enseignant sans affectation vide ; filtres jour, classe, élève, statut, identifiant, période ; **DTO identiques** à la projection historique pour présences, notes et paiements ; recherche paiements par matricule, `%` non joker |
 | `backend/lib/paginatedSchoolReads.http.pg.test.js` | serveur réel, JWT figé : pagination HTTP sans doublon, registre du jour complet, routes historiques toujours en tableau, 7 paramètres invalides → 400, aucun droit en base → 403, retrait live de `Paiements:READ` puis de `Présences:READ` → 403 |
-| `web/src/lib/presencesPageApi.test.ts` (11) | chargement initial, pages suivantes sans doublon, journée vide, réponse non paginée refusée, borne de pages, lien profond, rafraîchissement, erreur réseau sans perte des lignes, parent sans requête, changement de jour |
-| `web/src/pages/PresencesPage*.test.tsx` | même vérités métier (6 élèves, badge 83 %, lien profond), désormais servies par `/v2/presences` |
+| `web/src/lib/presencesPageApi.test.ts` (19) | pages suivantes sans doublon ; filtre `classId` ; **journée de 5 000 présences lue en entier (25 pages), sans plafond** ; page « suite sans curseur » et curseur répété refusés ; réponse non paginée refusée ; lien profond ; **4 classes** dont une de 450 lignes, une requête par classe ; classe ouverte seule lue même à 4 200 lignes ; cartes interrompues entre deux pages à l'ouverture d'une classe puis reprises ; erreur en cours de pagination sans liste partielle ; relecture en échec gardant la dernière liste complète ; Réessayer ; identifiant non canonique sans requête ; parent sans requête ; changement de jour |
+| `web/src/pages/PresencesPage*.test.tsx` | mêmes vérités métier (6 élèves, badge 83 %, lien profond), servies par `/v2/presences?classId=…` ; deux classes : cartes lues par `classId` uniquement ; registre complet avec « Présent » par défaut pour l'élève sans enregistrement ; appel non enregistrable tant que la classe n'est pas lue |
 | `web/src/lib/routeDomainMap.usersSchoolCode.test.ts` | le personnel n'amorce plus l'historique sur `/presences` ; un parent le garde |
 
 ## 9. Benchmarks
@@ -125,7 +135,8 @@ Non mesuré : temps d'affichage navigateur et mémoire sur Render (pas d'accès 
 - Les écrans Web Finance et Notes, et le Mobile, transfèrent encore tout l'historique de l'école à l'ouverture.
 - L'enseignant voit sur `/api/v2/*` les classes de ses affectations en base. La route historique utilise les classes du JWT : un enseignant dont l'affectation a changé depuis sa connexion peut voir une liste différente entre les deux routes.
 - Les tableaux de bord Démo qui lisent `state.presences` le chargent depuis leur propre route. Après un appel enregistré, le domaine est invalidé et relu à leur ouverture.
-- Le jour courant est celui du poste (comme avant), pas le fuseau de l'établissement.
+- Le jour de l'appel suit le fuseau de l'établissement si sa fiche est chargée dans l'état Web ; sinon c'est le jour du poste, comme avant. Les deux ne diffèrent qu'autour de minuit, quand le poste n'est pas dans le fuseau de l'école.
+- Sur la liste des classes, un administrateur lit toutes ses classes, une requête par classe, 3 en parallèle. Le volume total reste celui de la journée de l'établissement. Seule l'ouverture d'une classe est bornée à sa classe. Un compteur agrégé en SQL par classe réduirait ce coût ; il n'est pas ajouté ici.
 
 ## 11. Impacts reportés
 

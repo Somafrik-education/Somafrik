@@ -24,8 +24,6 @@ export type PresencesPageQuery = {
 
 /** Taille de page maximale acceptée par le serveur. */
 export const PRESENCES_PAGE_LIMIT = 200;
-/** Garde-fou : 20 pages × 200 = 4 000 appels d'une journée. */
-const MAX_PAGES_PER_DAY = 20;
 
 /** Jour civil local du poste, au format AAAA-MM-JJ (même jour que formatAttendanceDate). */
 export function isoAttendanceDay(date: Date): string {
@@ -57,23 +55,50 @@ export async function fetchPresencesPage(query: PresencesPageQuery): Promise<Pre
   return body;
 }
 
-/** Toutes les présences d'un jour, page après page, sans doublon. */
-export async function fetchAllPresencesForDay(day: string): Promise<PresenceRow[]> {
+/**
+ * Toutes les lignes d'une requête, page après page, sans doublon ni plafond arbitraire.
+ * Une page qui annonce une suite sans curseur, ou un curseur déjà vu, est une erreur :
+ * une liste partielle n'est jamais renvoyée comme complète.
+ */
+export class PresencesLoadStopped extends Error {
+  constructor() {
+    super("Lecture des présences interrompue.");
+  }
+}
+
+export async function fetchAllPresences(
+  query: Omit<PresencesPageQuery, "cursor">,
+  shouldStop: () => boolean = () => false,
+): Promise<PresenceRow[]> {
   const rows: PresenceRow[] = [];
-  const seen = new Set<string>();
+  const seenRows = new Set<string>();
+  const seenCursors = new Set<string>();
   let cursor: string | null = null;
-  for (let page = 0; page < MAX_PAGES_PER_DAY; page += 1) {
-    const response = await fetchPresencesPage({ date: day, limit: PRESENCES_PAGE_LIMIT, cursor });
+  for (;;) {
+    if (shouldStop()) throw new PresencesLoadStopped();
+    const response = await fetchPresencesPage({ ...query, limit: PRESENCES_PAGE_LIMIT, cursor });
     for (const row of response.items) {
       const id = String(row.id ?? "");
-      if (id && seen.has(id)) continue;
-      if (id) seen.add(id);
+      if (id && seenRows.has(id)) continue;
+      if (id) seenRows.add(id);
       rows.push(row);
     }
-    if (!response.hasMore || !response.nextCursor) return rows;
+    if (!response.hasMore) return rows;
+    if (!response.nextCursor || seenCursors.has(response.nextCursor)) {
+      throw new Error("Pagination des présences incomplète.");
+    }
+    seenCursors.add(response.nextCursor);
     cursor = response.nextCursor;
   }
-  throw new Error("Trop de présences pour une seule journée.");
+}
+
+/** Présences d'une classe pour un jour (filtre SQL classId). */
+export function fetchClassDayPresences(
+  day: string,
+  classId: string,
+  shouldStop?: () => boolean,
+): Promise<PresenceRow[]> {
+  return fetchAllPresences({ date: day, classId }, shouldStop);
 }
 
 export async function fetchPresenceById(attendanceId: string): Promise<PresenceRow | null> {
@@ -81,42 +106,115 @@ export async function fetchPresenceById(attendanceId: string): Promise<PresenceR
   return response.items[0] ?? null;
 }
 
-/**
- * Présences d'un jour pour l'écran d'appel. Une erreur conserve les lignes déjà affichées.
- */
-export function useDayPresences(enabled: boolean, day: string) {
-  const [rows, setRows] = useState<PresenceRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const generation = useRef(0);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const reload = useCallback(async () => {
-    if (!enabled) return;
-    const current = ++generation.current;
-    setLoading(true);
-    try {
-      const next = await fetchAllPresencesForDay(day);
-      if (current !== generation.current) return;
-      setRows(next);
-      setError(null);
-    } catch (cause) {
-      if (current !== generation.current) return;
-      setError(cause instanceof Error ? cause.message : "Chargement des présences impossible.");
-    } finally {
-      if (current === generation.current) setLoading(false);
-    }
+export function isCanonicalClassId(value: string | null | undefined): value is string {
+  return UUID_PATTERN.test(String(value ?? "").trim());
+}
+
+/** Nombre de classes lues en parallèle pour les cartes. */
+const CARD_CONCURRENCY = 3;
+
+export type ClassDayEntry = {
+  /** Dernière liste complète de la classe ; null tant qu'aucune lecture n'a abouti. */
+  rows: PresenceRow[] | null;
+  status: "idle" | "loading" | "complete" | "error";
+  error: string | null;
+};
+
+const IDLE_ENTRY: ClassDayEntry = { rows: null, status: "idle", error: null };
+
+/**
+ * Présences du jour, classe par classe (écran d'appel du personnel).
+ * - La classe ouverte est lue seule et en priorité ; les autres attendent.
+ * - Sans classe ouverte, les cartes sont lues CARD_CONCURRENCY par CARD_CONCURRENCY.
+ * - Une erreur garde la dernière liste complète ; une lecture partielle n'est jamais exposée.
+ */
+export function useClassDayPresences(input: {
+  enabled: boolean;
+  day: string;
+  classIds: readonly string[];
+  priorityClassId: string | null;
+}) {
+  const { enabled, day, priorityClassId } = input;
+  const classKey = [...new Set(input.classIds.filter(isCanonicalClassId))].sort().join(",");
+  const [entries, setEntries] = useState<Record<string, ClassDayEntry>>({});
+  const inFlight = useRef(new Set<string>());
+  const generation = useRef(0);
+  const priorityRef = useRef(priorityClassId);
+  priorityRef.current = priorityClassId;
+
+  const load = useCallback(
+    async (classId: string) => {
+      if (!enabled || !isCanonicalClassId(classId)) return;
+      const current = generation.current;
+      inFlight.current.add(classId);
+      setEntries((prev) => ({
+        ...prev,
+        [classId]: { ...(prev[classId] ?? IDLE_ENTRY), status: "loading", error: null },
+      }));
+      // Une lecture de carte s'arrête entre deux pages dès qu'une autre classe est ouverte.
+      const shouldStop = () =>
+        current !== generation.current || (priorityRef.current !== null && priorityRef.current !== classId);
+      try {
+        const rows = await fetchClassDayPresences(day, classId, shouldStop);
+        if (current !== generation.current) return;
+        setEntries((prev) => ({ ...prev, [classId]: { rows, status: "complete", error: null } }));
+      } catch (cause) {
+        if (current !== generation.current) return;
+        if (cause instanceof PresencesLoadStopped) {
+          setEntries((prev) => ({
+            ...prev,
+            [classId]: { ...(prev[classId] ?? IDLE_ENTRY), status: prev[classId]?.rows ? "complete" : "idle", error: null },
+          }));
+          return;
+        }
+        const message = cause instanceof Error ? cause.message : "Chargement des présences impossible.";
+        setEntries((prev) => ({
+          ...prev,
+          [classId]: { ...(prev[classId] ?? IDLE_ENTRY), status: "error", error: message },
+        }));
+      } finally {
+        if (current === generation.current) inFlight.current.delete(classId);
+      }
+    },
+    [enabled, day],
+  );
+
+  // Changement de jour ou d'utilisateur : tout est relu.
+  useEffect(() => {
+    generation.current += 1;
+    inFlight.current = new Set();
+    setEntries({});
   }, [enabled, day]);
 
   useEffect(() => {
-    if (!enabled) {
-      generation.current += 1;
-      setRows([]);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-    void reload();
-  }, [enabled, reload]);
+    if (!enabled) return;
+    const wanted = priorityClassId
+      ? isCanonicalClassId(priorityClassId)
+        ? [priorityClassId]
+        : []
+      : classKey
+        ? classKey.split(",")
+        : [];
+    const pending = wanted.filter((id) => (entries[id]?.status ?? "idle") === "idle" && !inFlight.current.has(id));
+    const slots = priorityClassId ? 1 : CARD_CONCURRENCY - inFlight.current.size;
+    for (const classId of pending.slice(0, Math.max(0, slots))) void load(classId);
+  }, [enabled, classKey, priorityClassId, entries, load]);
 
-  return { rows, loading, error, reload, setRows };
+  const reload = useCallback((classId: string) => load(classId), [load]);
+  const retryFailed = useCallback(() => {
+    setEntries((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).map(([id, entry]) => [id, entry.status === "error" ? { ...entry, status: "idle" } : entry]),
+      ),
+    );
+  }, []);
+
+  const entryFor = useCallback((classId: string | null | undefined): ClassDayEntry => {
+    if (!classId) return IDLE_ENTRY;
+    return entries[classId] ?? IDLE_ENTRY;
+  }, [entries]);
+
+  return { entries, entryFor, reload, retryFailed };
 }
