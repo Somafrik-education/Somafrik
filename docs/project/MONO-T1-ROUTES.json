@@ -1,6 +1,6 @@
 {
   "generatedBy": "scripts/mono-t1-route-inventory.js",
-  "total": 382,
+  "total": 383,
   "routes": [
     {
       "method": "POST",
@@ -746,7 +746,7 @@
       "path": "/api/public/report-cards/verify",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 540,
+      "line": 571,
       "family": "Autres",
       "authenticated": false,
       "middlewares": [],
@@ -6222,7 +6222,7 @@
       "path": "/api/report-card/admin/bindings/:modelKey",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1106,
+      "line": 1166,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6258,7 +6258,7 @@
       "path": "/api/report-card/admin/catalog",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1078,
+      "line": 1138,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6294,7 +6294,7 @@
       "path": "/api/report-card/admin/queue",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1022,
+      "line": 1082,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6330,7 +6330,7 @@
       "path": "/api/report-card/admin/requests/:requestId",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1036,
+      "line": 1096,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6366,7 +6366,7 @@
       "path": "/api/report-card/admin/requests/:requestId/activate",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1266,
+      "line": 1326,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6402,7 +6402,7 @@
       "path": "/api/report-card/admin/requests/:requestId/bind-bundle",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1163,
+      "line": 1223,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6438,7 +6438,7 @@
       "path": "/api/report-card/admin/requests/:requestId/bundle",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1090,
+      "line": 1150,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6474,7 +6474,7 @@
       "path": "/api/report-card/admin/requests/:requestId/configure",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1134,
+      "line": 1194,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6510,7 +6510,7 @@
       "path": "/api/report-card/admin/requests/:requestId/ready-for-review",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1209,
+      "line": 1269,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6546,7 +6546,7 @@
       "path": "/api/report-card/admin/requests/:requestId/reject",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1249,
+      "line": 1309,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6578,7 +6578,7 @@
       "path": "/api/report-card/admin/requests/:requestId/review",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1122,
+      "line": 1182,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6614,7 +6614,7 @@
       "path": "/api/report-card/admin/requests/:requestId/save-template",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1146,
+      "line": 1206,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6650,7 +6650,7 @@
       "path": "/api/report-card/admin/requests/:requestId/source-artifact",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1048,
+      "line": 1108,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6686,7 +6686,7 @@
       "path": "/api/report-card/admin/requests/:requestId/source-artifact/content",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1060,
+      "line": 1120,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6722,7 +6722,7 @@
       "path": "/api/report-card/bindings/:modelKey",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 679,
+      "line": 710,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6746,9 +6746,11 @@
         "reason": "lecture de données d'un domaine critique"
       },
       "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
         "backend/lib/reportCard/reportCardHttp.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
         "backend/lib/reportCard/reportCardHttp.test.js"
       ],
       "monoT1Tests": []
@@ -6758,7 +6760,7 @@
       "path": "/api/report-card/catalog",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 485,
+      "line": 515,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6780,8 +6782,16 @@
         "level": "MOYEN",
         "reason": "lecture de données d'un domaine critique"
       },
-      "existingTests": [],
-      "existingHttpTests": [],
+      "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/scripts/verify-report-card-s1-e2e.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/scripts/verify-report-card-s1-e2e.js"
+      ],
       "monoT1Tests": []
     },
     {
@@ -6789,7 +6799,7 @@
       "path": "/api/report-card/catalog/admin",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 449,
+      "line": 479,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6811,168 +6821,17 @@
         "level": "MOYEN",
         "reason": "lecture de données d'un domaine critique"
       },
-      "existingTests": [],
-      "existingHttpTests": [],
+      "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
       "monoT1Tests": []
     },
     {
       "method": "GET",
       "path": "/api/report-card/catalog/admin/audit",
-      "pathIsRegExp": false,
-      "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 475,
-      "family": "D. Notes et présences",
-      "authenticated": true,
-      "middlewares": [
-        "internalAuth"
-      ],
-      "permissionKeys": [],
-      "unknownPermissionKeys": [],
-      "requiredPermissions": [],
-      "allowedRoles": null,
-      "subscriptionFeatures": [],
-      "tenantSignals": [
-        "resolveSchoolId (actor)"
-      ],
-      "validationSignals": [],
-      "handlerAuthz": [],
-      "repositoryCalls": [],
-      "errorStatuses": [],
-      "risk": {
-        "level": "MOYEN",
-        "reason": "lecture de données d'un domaine critique"
-      },
-      "existingTests": [],
-      "existingHttpTests": [],
-      "monoT1Tests": []
-    },
-    {
-      "method": "PUT",
-      "path": "/api/report-card/catalog/admin/models/:modelId/countries/:countryId",
-      "pathIsRegExp": false,
-      "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 459,
-      "family": "D. Notes et présences",
-      "authenticated": true,
-      "middlewares": [
-        "internalAuth"
-      ],
-      "permissionKeys": [],
-      "unknownPermissionKeys": [],
-      "requiredPermissions": [],
-      "allowedRoles": null,
-      "subscriptionFeatures": [],
-      "tenantSignals": [
-        "resolveSchoolId (actor)"
-      ],
-      "validationSignals": [],
-      "handlerAuthz": [],
-      "repositoryCalls": [],
-      "errorStatuses": [],
-      "risk": {
-        "level": "ÉLEVÉ",
-        "reason": "écriture sur un domaine critique"
-      },
-      "existingTests": [],
-      "existingHttpTests": [],
-      "monoT1Tests": []
-    },
-    {
-      "method": "POST",
-      "path": "/api/report-card/catalog/models/:modelId/activate",
-      "pathIsRegExp": false,
-      "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 525,
-      "family": "D. Notes et présences",
-      "authenticated": true,
-      "middlewares": [
-        "internalAuth"
-      ],
-      "permissionKeys": [],
-      "unknownPermissionKeys": [],
-      "requiredPermissions": [],
-      "allowedRoles": null,
-      "subscriptionFeatures": [],
-      "tenantSignals": [
-        "resolveSchoolId (actor)"
-      ],
-      "validationSignals": [],
-      "handlerAuthz": [],
-      "repositoryCalls": [],
-      "errorStatuses": [],
-      "risk": {
-        "level": "ÉLEVÉ",
-        "reason": "écriture sur un domaine critique"
-      },
-      "existingTests": [],
-      "existingHttpTests": [],
-      "monoT1Tests": []
-    },
-    {
-      "method": "GET",
-      "path": "/api/report-card/catalog/models/:modelId/configuration",
-      "pathIsRegExp": false,
-      "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 495,
-      "family": "D. Notes et présences",
-      "authenticated": true,
-      "middlewares": [
-        "internalAuth"
-      ],
-      "permissionKeys": [],
-      "unknownPermissionKeys": [],
-      "requiredPermissions": [],
-      "allowedRoles": null,
-      "subscriptionFeatures": [],
-      "tenantSignals": [
-        "resolveSchoolId (actor)"
-      ],
-      "validationSignals": [],
-      "handlerAuthz": [],
-      "repositoryCalls": [],
-      "errorStatuses": [],
-      "risk": {
-        "level": "MOYEN",
-        "reason": "lecture de données d'un domaine critique"
-      },
-      "existingTests": [],
-      "existingHttpTests": [],
-      "monoT1Tests": []
-    },
-    {
-      "method": "PUT",
-      "path": "/api/report-card/catalog/models/:modelId/configuration",
-      "pathIsRegExp": false,
-      "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 516,
-      "family": "D. Notes et présences",
-      "authenticated": true,
-      "middlewares": [
-        "internalAuth"
-      ],
-      "permissionKeys": [],
-      "unknownPermissionKeys": [],
-      "requiredPermissions": [],
-      "allowedRoles": null,
-      "subscriptionFeatures": [],
-      "tenantSignals": [
-        "resolveSchoolId (actor)"
-      ],
-      "validationSignals": [],
-      "handlerAuthz": [],
-      "repositoryCalls": [],
-      "errorStatuses": [],
-      "risk": {
-        "level": "ÉLEVÉ",
-        "reason": "écriture sur un domaine critique"
-      },
-      "existingTests": [],
-      "existingHttpTests": [],
-      "monoT1Tests": []
-    },
-    {
-      "method": "POST",
-      "path": "/api/report-card/catalog/models/:modelId/preview",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
       "line": 505,
@@ -6994,11 +6853,194 @@
       "repositoryCalls": [],
       "errorStatuses": [],
       "risk": {
+        "level": "MOYEN",
+        "reason": "lecture de données d'un domaine critique"
+      },
+      "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/report-card/catalog/admin/models/:modelId/countries/:countryId",
+      "pathIsRegExp": false,
+      "file": "backend/lib/reportCard/reportCardHttp.js",
+      "line": 489,
+      "family": "D. Notes et présences",
+      "authenticated": true,
+      "middlewares": [
+        "internalAuth"
+      ],
+      "permissionKeys": [],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [],
+      "allowedRoles": null,
+      "subscriptionFeatures": [],
+      "tenantSignals": [
+        "resolveSchoolId (actor)"
+      ],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
         "level": "ÉLEVÉ",
         "reason": "écriture sur un domaine critique"
       },
-      "existingTests": [],
-      "existingHttpTests": [],
+      "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js"
+      ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/catalog/models/:modelId/activate",
+      "pathIsRegExp": false,
+      "file": "backend/lib/reportCard/reportCardHttp.js",
+      "line": 555,
+      "family": "D. Notes et présences",
+      "authenticated": true,
+      "middlewares": [
+        "internalAuth"
+      ],
+      "permissionKeys": [],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [],
+      "allowedRoles": null,
+      "subscriptionFeatures": [],
+      "tenantSignals": [
+        "resolveSchoolId (actor)"
+      ],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
+        "level": "ÉLEVÉ",
+        "reason": "écriture sur un domaine critique"
+      },
+      "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/catalog/models/:modelId/configuration",
+      "pathIsRegExp": false,
+      "file": "backend/lib/reportCard/reportCardHttp.js",
+      "line": 525,
+      "family": "D. Notes et présences",
+      "authenticated": true,
+      "middlewares": [
+        "internalAuth"
+      ],
+      "permissionKeys": [],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [],
+      "allowedRoles": null,
+      "subscriptionFeatures": [],
+      "tenantSignals": [
+        "resolveSchoolId (actor)"
+      ],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
+        "level": "MOYEN",
+        "reason": "lecture de données d'un domaine critique"
+      },
+      "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "PUT",
+      "path": "/api/report-card/catalog/models/:modelId/configuration",
+      "pathIsRegExp": false,
+      "file": "backend/lib/reportCard/reportCardHttp.js",
+      "line": 546,
+      "family": "D. Notes et présences",
+      "authenticated": true,
+      "middlewares": [
+        "internalAuth"
+      ],
+      "permissionKeys": [],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [],
+      "allowedRoles": null,
+      "subscriptionFeatures": [],
+      "tenantSignals": [
+        "resolveSchoolId (actor)"
+      ],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
+        "level": "ÉLEVÉ",
+        "reason": "écriture sur un domaine critique"
+      },
+      "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "POST",
+      "path": "/api/report-card/catalog/models/:modelId/preview",
+      "pathIsRegExp": false,
+      "file": "backend/lib/reportCard/reportCardHttp.js",
+      "line": 535,
+      "family": "D. Notes et présences",
+      "authenticated": true,
+      "middlewares": [
+        "internalAuth"
+      ],
+      "permissionKeys": [],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [],
+      "allowedRoles": null,
+      "subscriptionFeatures": [],
+      "tenantSignals": [
+        "resolveSchoolId (actor)"
+      ],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
+        "level": "ÉLEVÉ",
+        "reason": "écriture sur un domaine critique"
+      },
+      "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js"
+      ],
       "monoT1Tests": []
     },
     {
@@ -7006,7 +7048,7 @@
       "path": "/api/report-card/publications",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 711,
+      "line": 742,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7031,12 +7073,18 @@
         "reason": "lecture de données d'un domaine critique"
       },
       "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
@@ -7049,7 +7097,7 @@
       "path": "/api/report-card/publications",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 961,
+      "line": 1021,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7073,12 +7121,18 @@
         "reason": "écriture sur un domaine critique"
       },
       "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
@@ -7091,7 +7145,7 @@
       "path": "/api/report-card/publications/:reportCardId/corrections",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 975,
+      "line": 1035,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7130,7 +7184,7 @@
       "path": "/api/report-card/publications/:reportCardId/history",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 849,
+      "line": 908,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7166,10 +7220,46 @@
     },
     {
       "method": "GET",
+      "path": "/api/report-card/publications/:reportCardId/logo",
+      "pathIsRegExp": false,
+      "file": "backend/lib/reportCard/reportCardHttp.js",
+      "line": 883,
+      "family": "D. Notes et présences",
+      "authenticated": true,
+      "middlewares": [
+        "internalAuth"
+      ],
+      "permissionKeys": [],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [],
+      "allowedRoles": null,
+      "subscriptionFeatures": [],
+      "tenantSignals": [
+        "resolveSchoolId (actor)",
+        "schoolId"
+      ],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
+        "level": "MOYEN",
+        "reason": "lecture de données d'un domaine critique"
+      },
+      "existingTests": [
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js"
+      ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "GET",
       "path": "/api/report-card/publications/:reportCardId/pdf",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 752,
+      "line": 783,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7194,12 +7284,14 @@
         "reason": "lecture de données d'un domaine critique"
       },
       "existingTests": [
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
@@ -7212,7 +7304,7 @@
       "path": "/api/report-card/publications/:reportCardId/presentation",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 815,
+      "line": 848,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7236,9 +7328,13 @@
         "reason": "lecture de données d'un domaine critique"
       },
       "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "monoT1Tests": []
@@ -7248,7 +7344,7 @@
       "path": "/api/report-card/publications/:reportCardId/snapshot",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 793,
+      "line": 826,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7272,11 +7368,15 @@
         "reason": "lecture de données d'un domaine critique"
       },
       "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
@@ -7288,7 +7388,7 @@
       "path": "/api/report-card/publications/:reportCardId/versions/:version",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 895,
+      "line": 954,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7327,7 +7427,7 @@
       "path": "/api/report-card/publications/:reportCardId/versions/:version/revoke",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 998,
+      "line": 1058,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7366,7 +7466,7 @@
       "path": "/api/report-card/publications/preview",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 930,
+      "line": 989,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7390,10 +7490,16 @@
         "reason": "écriture sur un domaine critique"
       },
       "existingTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
@@ -7404,7 +7510,7 @@
       "path": "/api/report-card/requests",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 545,
+      "line": 576,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7429,13 +7535,11 @@
       },
       "existingTests": [
         "backend/lib/reportCard/reportCardHttp.test.js",
-        "backend/lib/reportCard/reportCardLot11.http.test.js",
-        "backend/scripts/verify-report-card-s1-e2e.js"
+        "backend/lib/reportCard/reportCardLot11.http.test.js"
       ],
       "existingHttpTests": [
         "backend/lib/reportCard/reportCardHttp.test.js",
-        "backend/lib/reportCard/reportCardLot11.http.test.js",
-        "backend/scripts/verify-report-card-s1-e2e.js"
+        "backend/lib/reportCard/reportCardLot11.http.test.js"
       ],
       "monoT1Tests": []
     },
@@ -7444,7 +7548,7 @@
       "path": "/api/report-card/requests",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 557,
+      "line": 588,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7469,13 +7573,11 @@
       },
       "existingTests": [
         "backend/lib/reportCard/reportCardHttp.test.js",
-        "backend/lib/reportCard/reportCardLot11.http.test.js",
-        "backend/scripts/verify-report-card-s1-e2e.js"
+        "backend/lib/reportCard/reportCardLot11.http.test.js"
       ],
       "existingHttpTests": [
         "backend/lib/reportCard/reportCardHttp.test.js",
-        "backend/lib/reportCard/reportCardLot11.http.test.js",
-        "backend/scripts/verify-report-card-s1-e2e.js"
+        "backend/lib/reportCard/reportCardLot11.http.test.js"
       ],
       "monoT1Tests": []
     },
@@ -7484,7 +7586,7 @@
       "path": "/api/report-card/requests/:requestId",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 626,
+      "line": 657,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7520,7 +7622,7 @@
       "path": "/api/report-card/requests/:requestId/approve",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 638,
+      "line": 669,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7556,7 +7658,7 @@
       "path": "/api/report-card/requests/:requestId/audit",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 667,
+      "line": 698,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7592,7 +7694,7 @@
       "path": "/api/report-card/requests/:requestId/bundle",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 695,
+      "line": 726,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7628,7 +7730,7 @@
       "path": "/api/report-card/requests/:requestId/request-changes",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 650,
+      "line": 681,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7660,7 +7762,7 @@
       "path": "/api/report-card/requests/:requestId/source-artifact",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 596,
+      "line": 627,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7692,7 +7794,7 @@
       "path": "/api/report-card/requests/:requestId/source-artifact",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 574,
+      "line": 605,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7725,7 +7827,7 @@
       "path": "/api/report-card/requests/:requestId/source-artifact/content",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 608,
+      "line": 639,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [

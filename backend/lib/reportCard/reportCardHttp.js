@@ -1,5 +1,7 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 /**
  * LOT 7 — HTTP établissement / Superadmin / verify public.
  * Consomme LOT 6 (configuration) et LOT 4 (lookupPublic). Aucun mint, aucun recalcul.
@@ -58,6 +60,9 @@ const HTTP_STATUS = Object.freeze({
   CLASS_NOT_FOUND: 404,
   CLASS_SCOPE_INVALID: 400,
   CLASS_SCOPE_UNAVAILABLE: 503,
+  OFFICIAL_IDENTITY_UNAVAILABLE: 503,
+  OFFICIAL_ASSETS_UNAVAILABLE: 503,
+  OFFICIAL_ASSET_INTEGRITY: 500,
   // BULLETIN-CATALOG-01
   CONFIGURATION_INVALID: 422,
   CATALOG_MODEL_UNKNOWN: 404,
@@ -342,6 +347,23 @@ function registerReportCardHttp(app, deps = {}) {
    * provenance + libellés de l'établissement du bulletin. null quand le payload
    * n'a pas de totaux par matière (bulletins historiques : rendu générique).
    */
+  function identityStore() {
+    return deps.identityStore || (typeof deps.getIdentityStore === "function" ? deps.getIdentityStore() : null);
+  }
+
+  /** Octets du logo figé (empreinte vérifiée), ou null si le bulletin n'en a pas. */
+  async function frozenLogo(schoolId, payload) {
+    const sha = payload && payload.official_identity ? payload.official_identity.logo_sha256 : null;
+    if (!sha) return null;
+    const store = identityStore();
+    if (!store) throw coded("OFFICIAL_ASSETS_UNAVAILABLE");
+    const logo = await store.getLogo(schoolId, sha);
+    if (!logo) return null;
+    const actual = crypto.createHash("sha256").update(logo.bytes).digest("hex");
+    if (actual !== sha) throw coded("OFFICIAL_ASSET_INTEGRITY");
+    return logo;
+  }
+
   async function presentationFor({ payload, schoolId, template, meta }) {
     if (!hasSubjectTotals(payload)) return null;
     const getProfile = typeof deps.getProfile === "function" ? deps.getProfile : null;
@@ -368,7 +390,14 @@ function registerReportCardHttp(app, deps = {}) {
       : {};
     const presentation = (template && template.presentation) || {};
     return students.map((student) =>
-      buildStudentPresentation({ student, profile, labels, presentation, meta: { ...meta, period_scope: payload.period_scope ?? null } })
+      buildStudentPresentation({
+        student,
+        profile,
+        labels,
+        presentation,
+        meta: { ...meta, period_scope: payload.period_scope ?? null },
+        identity: payload.official_identity || null,
+      })
     );
   }
 
@@ -779,6 +808,7 @@ function registerReportCardHttp(app, deps = {}) {
         template,
         meta: { official: true, report_card_id: req.params.reportCardId, version, published_at: payload.published_at },
       });
+      const logo = presentation ? await frozenLogo(schoolId, payload) : null;
       const rendered = await pdf.render({
         tenant,
         reportCardId: req.params.reportCardId,
@@ -786,6 +816,7 @@ function registerReportCardHttp(app, deps = {}) {
         renderingTemplate: template,
         payload,
         ...(presentation ? { presentation } : {}),
+        ...(logo ? { logoDataUri: `data:${logo.media_type};base64,${Buffer.from(logo.bytes).toString("base64")}` } : {}),
       });
       res.setHeader("Content-Type", "application/pdf");
       res.send(rendered.pdf);
@@ -845,6 +876,32 @@ function registerReportCardHttp(app, deps = {}) {
         },
       });
       res.json({ ok: true, verification_status: record.verification_status, presentation });
+    })
+  );
+
+  // BULLETIN-CLASSE-01 / L3 — logo FIGÉ d'un bulletin publié (empreinte du contenu signé).
+  app.get(
+    "/api/report-card/publications/:reportCardId/logo",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_READ);
+      const { publication, getTemplate } = services();
+      const { payload } = await consultPublishedSnapshot({
+        publication,
+        actor,
+        schoolId,
+        reportCardId: req.params.reportCardId,
+        version: Number(req.query.version),
+        getTemplate,
+        requireActive: false,
+      });
+      const logo = await frozenLogo(schoolId, payload);
+      if (!logo) throw coded("REQUEST_NOT_FOUND");
+      res.setHeader("Content-Type", logo.media_type);
+      res.setHeader("Cache-Control", "private, max-age=86400, immutable");
+      res.send(logo.bytes);
     })
   );
 
@@ -948,6 +1005,7 @@ function registerReportCardHttp(app, deps = {}) {
           academic_year_id: draft.academic_year_id,
           period_scope: draft.period_scope,
           students,
+          ...(draft.official_identity ? { official_identity: draft.official_identity } : {}),
         },
         schoolId,
         template: await resolvePublishedTemplate({ provenance: draft.provenance }, schoolId, services().getTemplate).catch(() => null),

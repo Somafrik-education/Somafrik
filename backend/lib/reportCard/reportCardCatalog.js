@@ -26,6 +26,7 @@ const { validateAgainstProfile } = require("./reportCardSchema");
 const { assertProfileSubjectsInCatalog } = require("./subjectCatalog");
 const { computeReportCard } = require("./reportCardEngine");
 const { buildStudentPresentation } = require("./reportCardPresentation");
+const { HEADER_LAYOUTS, HEADER_ELEMENTS } = require("./renderingTemplate");
 
 const PERM_CONFIGURE = "REPORT_CARD_CONFIGURE";
 const PERM_APPROVE = "REPORT_CARD_SCHOOL_APPROVE_TEMPLATE";
@@ -163,7 +164,7 @@ function baseSchema() {
   };
 }
 
-function templateFor(definition, structure, signatures) {
+function templateFor(definition, structure, signatures, header = null) {
   return {
     paper: "A4",
     orientation: "portrait",
@@ -174,8 +175,35 @@ function templateFor(definition, structure, signatures) {
       signatures,
       period_labels: Object.fromEntries(PERIODS.map((period) => [period.id, period.label])),
       component_labels: Object.fromEntries(componentsOf(structure).map((component) => [component.id, component.label])),
+      ...(header ? { header } : {}),
     },
   };
+}
+
+/**
+ * BULLETIN-CLASSE-01 / L3 — en-tête de l'assistant : listes fermées, texte limité.
+ * Absent : aucun en-tête configurable (gabarits existants inchangés).
+ */
+function headerFromInput(raw, errors) {
+  if (raw == null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    errors.push(fieldError("header", "HEADER_INVALID"));
+    return null;
+  }
+  const layout = text(raw.layout) || "logo_left";
+  if (!HEADER_LAYOUTS.includes(layout)) errors.push(fieldError("header.layout", "HEADER_LAYOUT_INVALID"));
+  const show = [];
+  for (const item of Array.isArray(raw.show) ? raw.show : []) {
+    const id = text(item);
+    if (!HEADER_ELEMENTS.includes(id)) errors.push(fieldError("header.show", "HEADER_ELEMENT_UNKNOWN"));
+    else if (!show.includes(id)) show.push(id);
+  }
+  if (layout === "no_logo" && show.includes("logo")) errors.push(fieldError("header.show", "HEADER_LOGO_WITHOUT_PLACE"));
+  const lines = (Array.isArray(raw.lines) ? raw.lines : []).map(text).filter(Boolean);
+  if (lines.length > 4 || lines.some((line) => line.length > 80)) errors.push(fieldError("header.lines", "HEADER_LINES_INVALID"));
+  const title = text(raw.title);
+  if (title.length > 60) errors.push(fieldError("header.title", "HEADER_TITLE_INVALID"));
+  return { layout, show, lines, title };
 }
 
 function fieldError(field, code) {
@@ -273,6 +301,7 @@ function buildConfiguration(model, input, context) {
     factPeriods[period.id] = { term_names: names };
   }
   const signatures = (Array.isArray(input?.signatures) ? input.signatures : []).map(text).filter(Boolean);
+  const header = headerFromInput(input?.header, errors);
   if (signatures.length > 4 || signatures.some((label) => label.length > 60)) errors.push(fieldError("signatures", "INVALID_SIGNATURES"));
   if (errors.length) fail("CONFIGURATION_INVALID", errors);
 
@@ -311,7 +340,7 @@ function buildConfiguration(model, input, context) {
   return {
     profileSpec,
     schemaSpec,
-    templateSpec: templateFor(definition, structure, signatures),
+    templateSpec: templateFor(definition, structure, signatures, header),
     profile,
     labels: { subjects: Object.fromEntries(catalog.map((row) => [text(row.code), text(row.name)])) },
   };
@@ -323,7 +352,7 @@ function buildConfiguration(model, input, context) {
  * produit la vue — mêmes règles, mêmes totaux, même signalisation des notes en
  * échec que les bulletins publiés. Jamais officiel, jamais enregistré.
  */
-function samplePresentation(built, { school } = {}) {
+function samplePresentation(built, { school, identity = null } = {}) {
   const profile = built.profile;
   const facts = [];
   let index = 0;
@@ -362,7 +391,13 @@ function samplePresentation(built, { school } = {}) {
       students: { EXEMPLE: { name: "Élève d'exemple" } },
     },
     presentation: built.templateSpec.presentation,
-    meta: { official: false },
+    meta: { official: false, period_scope: "ANNUAL" },
+    identity: identity || {
+      establishment_name: school || "Établissement d'exemple",
+      establishment_address: "Adresse de l'établissement",
+      establishment_country: "Pays",
+      logo_sha256: null,
+    },
   });
 }
 
@@ -420,7 +455,14 @@ function requireModelId(modelId) {
   return id;
 }
 
-function createReportCardCatalog({ store, configuration, clock } = {}) {
+function createReportCardCatalog({ store, configuration, clock, identityStore = null } = {}) {
+  /** Identité ACTUELLE de l'établissement (aperçu : jamais figée, jamais officielle). */
+  async function currentIdentity(schoolId) {
+    if (!identityStore || typeof identityStore.currentIdentity !== "function") return null;
+    const { publicIdentity } = require("../../db/reportCardOfficialIdentityStore");
+    return publicIdentity(await identityStore.currentIdentity(schoolId));
+  }
+
   if (!store || !configuration) fail("CATALOG_UNAVAILABLE");
 
   /** Métadonnées d'affichage d'un modèle (structure suggérée, aperçu réel d'exemple). */
@@ -592,6 +634,7 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
         Object.entries((profile.fact_sources && profile.fact_sources.periods) || {}).map(([id, entry]) => [id, { termNames: entry.term_names }])
       ),
       signatures: (template && template.presentation && template.presentation.signatures) || [],
+      header: (template && template.presentation && template.presentation.header) || null,
     };
   }
 
@@ -633,8 +676,8 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
   }
 
   async function preview({ actor, modelId, input, classId }) {
-    const { built } = await buildFor(actor, modelId, input, classId);
-    return samplePresentation(built);
+    const { built, schoolId } = await buildFor(actor, modelId, input, classId);
+    return samplePresentation(built, { identity: await currentIdentity(schoolId) });
   }
 
   async function save({ actor, modelId, input, classId }) {
@@ -649,7 +692,7 @@ function createReportCardCatalog({ store, configuration, clock } = {}) {
       templateSpec: built.templateSpec,
       scope: configurationScope(scope),
     });
-    return { status: "SAVED", request_status: request.status, class: publicClass(scope), preview: samplePresentation(built) };
+    return { status: "SAVED", request_status: request.status, class: publicClass(scope), preview: samplePresentation(built, { identity: await currentIdentity(schoolId) }) };
   }
 
   async function activate({ actor, modelId, confirm, commandId, classId }) {

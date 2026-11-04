@@ -308,7 +308,29 @@ function summaryRows(view) {
   return lines.join("\n");
 }
 
-function renderPresentationStudent(view) {
+const LOGO_DATA_URI_RE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+
+/**
+ * BULLETIN-CLASSE-01 / L3 — en-tête configuré (éléments, disposition, lignes, titre) ; logo figé
+ * uniquement sous forme de data URI vérifiée (aucune ressource externe).
+ */
+function renderHeader(view, logoDataUri) {
+  const header = view.header;
+  const logo = header.logo && logoDataUri && LOGO_DATA_URI_RE.test(logoDataUri)
+    ? `<img class="header-logo" data-header-logo src="${logoDataUri}" alt="Logo de l'établissement" />`
+    : "";
+  const lines = header.lines.map((line) => `<p class="header-line">${escapeHtml(line)}</p>`).join("");
+  const title = header.title ? `<h2 class="header-title" data-header-title>${escapeHtml(header.title)}</h2>` : "";
+  const items = header.items
+    .map((item) => `<div data-header-item="${escapeHtml(item.id)}"><dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(display(item.value))}</dd></div>`)
+    .join("");
+  return `<header class="report-header layout-${escapeHtml(header.layout)}" data-header>
+      ${logo}<div class="header-text">${lines}${title}</div>
+    </header>
+    <dl class="identity">${items}</dl>`;
+}
+
+function renderPresentationStudent(view, logoDataUri = null) {
   const identity = [
     ["Établissement", view.school.name],
     ["Élève", view.student.name],
@@ -328,8 +350,9 @@ function renderPresentationStudent(view) {
         .map((label) => `<div class="signature"><span>${escapeHtml(label)}</span></div>`)
         .join("")}</div>`
     : "";
+  const top = view.header ? renderHeader(view, logoDataUri) : `<dl class="identity">${identity}</dl>`;
   return `<section class="student-card" data-student="${escapeHtml(view.student.code)}" data-style="${escapeHtml(view.style)}">
-      <dl class="identity">${identity}</dl>
+      ${top}
       ${incomplete}
       <table class="results" data-results>
         <thead>${presentationHeaderRows(view)}</thead>
@@ -359,7 +382,7 @@ function embeddedFontCss() {
 `;
 }
 
-function buildHtml(payload, qr, template, presentation = null) {
+function buildHtml(payload, qr, template, presentation = null, logoDataUri = null) {
   const htmlTemplate = fs.readFileSync(path.join(TEMPLATE_DIR, "canonical.html"), "utf8");
   const css = `${embeddedFontCss()}${fs.readFileSync(path.join(TEMPLATE_DIR, "canonical.css"), "utf8")}`;
   return htmlTemplate
@@ -369,7 +392,7 @@ function buildHtml(payload, qr, template, presentation = null) {
     .replaceAll("{{PUBLISHED_AT}}", escapeHtml(payload.published_at))
     .replaceAll(
       "{{STUDENTS}}",
-      presentation ? presentation.map(renderPresentationStudent).join("\n") : renderStudentTables(payload, template)
+      presentation ? presentation.map((view) => renderPresentationStudent(view, logoDataUri)).join("\n") : renderStudentTables(payload, template)
     )
     .replaceAll("{{QR_DATA_URL}}", qr.dataUrl)
     .replaceAll("{{QR_URL}}", escapeHtml(qr.url));
@@ -501,7 +524,7 @@ function createReportCardPdf({ publication, pdfDriver } = {}) {
   }
   const driver = pdfDriver || renderPdfAfterCommit;
 
-  function render({ tenant, reportCardId, version, renderingTemplate, payload: providedPayload, presentation = null } = {}) {
+  function render({ tenant, reportCardId, version, renderingTemplate, payload: providedPayload, presentation = null, logoDataUri = null } = {}) {
     return Promise.resolve().then(() => {
       const template = normalizeRenderingTemplate(renderingTemplate);
       return thenable(publication.payloadForRender({ tenant, reportCardId, version }), (canonicalPayload) => {
@@ -515,7 +538,7 @@ function createReportCardPdf({ publication, pdfDriver } = {}) {
             if (presentation != null && !samePresentationStudents(presentation, payload)) {
               throw new ReportCardPdfError("PDF_QR_SCOPE_MISMATCH");
             }
-            const html = buildHtml(payload, qr, template, presentation);
+            const html = buildHtml(payload, qr, template, presentation, logoDataUri);
             return thenable(driver({ html, qr, payload }), (raw) => {
               const unwrapped = unwrapDriverResult(raw);
               return Object.freeze({
