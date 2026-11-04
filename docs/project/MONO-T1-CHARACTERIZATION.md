@@ -66,7 +66,7 @@ Détail route par route : [`MONO-T1-ROUTES.md`](MONO-T1-ROUTES.md) (colonnes « 
 
 ## 4. Matrice RBAC observée (référence de caractérisation)
 
-`backend/lib/monoT1.rbacMatrix.http.pg.test.js` parcourt les **308 routes sous `requirePermission`** pour six comptes de l'école CD (admin, proviseur, préfet, secrétaire, enseignant, parent) : **1 848 cellules**, comparées à [`MONO-T1-RBAC-MATRIX.json`](MONO-T1-RBAC-MATRIX.json). Une extraction de routes hors de `server.js` ne doit modifier aucune cellule ; une évolution voulue se régénère (`MONO_T1_UPDATE_RBAC_MATRIX=1`) et se relit dans le diff.
+`backend/lib/monoT1.rbacMatrix.http.pg.test.js` parcourt les **309 routes sous `requirePermission`** pour six comptes de l'école CD (admin, proviseur, préfet, secrétaire, enseignant, parent) : **1 854 cellules**, comparées à [`MONO-T1-RBAC-MATRIX.json`](MONO-T1-RBAC-MATRIX.json). Une extraction de routes hors de `server.js` ne doit modifier aucune cellule ; une évolution voulue se régénère (`MONO_T1_UPDATE_RBAC_MATRIX=1`) et se relit dans le diff.
 
 - `refusé` = 403 `PERMISSION_DENIED` (ou `PARENT_NOTES_READ_ONLY`, posé avant) : refus **avant** le gestionnaire ; `accès` = porte franchie ; `écriture autorisée (non envoyée)` = écriture permise par la matrice par défaut ou par les permissions effectives du compte : jamais déclenchée.
 - Garde indépendante : chaque écriture refusée à la fois par la matrice par défaut et par les permissions effectives doit être refusée par HTTP.
