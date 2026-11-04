@@ -1,6 +1,6 @@
 {
   "generatedBy": "scripts/mono-t1-route-inventory.js",
-  "total": 383,
+  "total": 384,
   "routes": [
     {
       "method": "POST",
@@ -17540,6 +17540,35 @@
       "existingHttpTests": [
         "backend/lib/secTenant02SchoolIdentity.http.pg.test.js"
       ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/school-kpis",
+      "pathIsRegExp": false,
+      "file": "backend/server.js",
+      "line": 777,
+      "family": "H. Plateforme, établissements et abonnements",
+      "authenticated": true,
+      "middlewares": [
+        "requireAuth"
+      ],
+      "permissionKeys": [],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [],
+      "allowedRoles": null,
+      "subscriptionFeatures": [],
+      "tenantSignals": [],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
+        "level": "MOYEN",
+        "reason": "authentifiée sans requirePermission ni contrôle détecté (périmètre du compte lui-même attendu)"
+      },
+      "existingTests": [],
+      "existingHttpTests": [],
       "monoT1Tests": []
     },
     {

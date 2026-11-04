@@ -2,7 +2,7 @@
 
 Généré par `node scripts/mono-t1-route-inventory.js` ; le contrat des routes est vérifié en CI par `--check`. Ne pas éditer à la main.
 
-Routes réellement enregistrées : **383** (relevé runtime d'Express, pas une recherche textuelle).
+Routes réellement enregistrées : **384** (relevé runtime d'Express, pas une recherche textuelle).
 
 Tous les routes authentifiées (hors expression régulière) sont aussi couvertes par les balayages A de `backend/lib/monoT1.authSessions.http.pg.test.js` (anonyme, en-tête invalide, signature étrangère, jeton expiré, session inconnue ⇒ 401 sans donnée) ; la matrice RBAC observée (`backend/lib/monoT1.rbacMatrix.http.pg.test.js`, référence `docs/project/MONO-T1-RBAC-MATRIX.json`) couvre chaque route sous `requirePermission` pour six comptes établissement ; la colonne « Tests MONO-T1 » ne liste que les tests ciblés qui appellent le chemin.
 
@@ -20,7 +20,7 @@ Limites : `allowedRoles` = matrice de rôles **par défaut** (seed), la matrice 
 | E. Finance | 26 | 0 | 13 | 13 | 0 | 18 / 18 | 9 |
 | F. Communication | 45 | 0 | 23 | 22 | 0 | 33 / 35 | 9 |
 | G. Pédagogie, planning et référentiels | 81 | 0 | 2 | 49 | 30 | 27 / 38 | 0 |
-| H. Plateforme, établissements et abonnements | 53 | 0 | 0 | 34 | 19 | 12 / 20 | 2 |
+| H. Plateforme, établissements et abonnements | 54 | 0 | 0 | 35 | 19 | 12 / 20 | 2 |
 
 ## Routes sans authentification déclarée
 
@@ -462,6 +462,7 @@ Limites : `allowedRoles` = matrice de rôles **par défaut** (seed), la matrice 
 | `PATCH /api/backoffice/subscriptions/:subscriptionId` | backend/server.js:3752 | oui | `PATCH /api/backoffice/subscriptions/:subscriptionId` | — | COUNTRY_ADMIN, SUPER_ADMIN | — | — | upsertPlatformSubscription | — | MOYEN | 1 | — |
 | `GET /api/backoffice/trial-requests` | backend/server.js:3719 | oui | `GET /api/backoffice/trial-requests` | — | SUPER_ADMIN | — | — | — | — | FAIBLE | **0** | — |
 | `GET /api/dashboard/school-activities` | backend/server.js:768 | oui | — | — | — | — | — | — | — | MOYEN | 1 | — |
+| `GET /api/dashboard/school-kpis` | backend/server.js:777 | oui | — | — | — | — | — | — | — | MOYEN | **0** | — |
 | `GET /api/data-export` | backend/server.js:1543 | oui | `GET /api/data-export` | — | PREFET_ETUDES, PROVISEUR, SCHOOL_ADMIN | — | — | — | — | FAIBLE | 1 | — |
 | `GET /api/mvp/dashboard` | backend/server.js:4920 | oui | — | 403 explicite, assertMvpAccess, canAccessBackOfficeRole | — | — | — | getDataset, listClientsAuthAccounts | 403 | MOYEN | **0** | — |
 | `GET /api/mvp/readiness` | backend/server.js:4908 | oui | — | assertMvpAccess | — | — | — | — | — | MOYEN | **0** | — |

@@ -112,6 +112,8 @@ Le sélecteur de période du graphique visible relance cet endpoint. Il ne recha
 
 Authentification obligatoire. Le Superadmin et l'Admin Pays reçoivent 403 avant toute lecture, y compris avec `ALL_PRIVILEGES`. Le rôle doit être un rôle interne d'établissement. L'UUID vient du principal (`effectiveSchoolId` ou `schoolId`), avec le même rattrapage JWT que les activités pour l'Admin School. Un code école seul, sans UUID, est refusé. Aucune lecture inter-établissement. Une erreur PostgreSQL est propagée : pas d'appel à `getAuthoritativeBackOfficeState`, pas de projection globale.
 
+L'inventaire MONO-T1 enregistre `GET /api/dashboard/school-kpis` comme `school-activities` : `requireAuth` seul, aucune clé `routePermissions`, `allowedRoles` nul. L'heuristique statique ne voit pas le contrôle, qui est dans `resolveSchoolKpiPrincipal`. La matrice RBAC observée des routes sous `requirePermission` n'est pas élargie. Aucun droit nouveau n'est ajouté au catalogue.
+
 Les droits lus sont ceux déjà portés par le principal : `Élèves:READ`, `Enseignants:READ`, `Classes:READ`, `Paiements:READ`, `Présences:READ`, `Notes:READ`, `Examens:READ`, `Bulletins:READ`, `Documents:READ`, `Utilisateurs:READ`, `Annonces:READ`, ainsi que les alias « Voir » / « Gérer » déjà reconnus par le web. Aucun droit nouveau n'est créé dans le catalogue RBAC.
 
 ## 9. Tests
