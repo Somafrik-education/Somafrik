@@ -1,7 +1,8 @@
 import type { DomainKey } from "./domainLoaders";
 import { filterDomainsByPermissions, layoutDomainsForContext } from "./domainPermissions";
 import type { PermissionContext } from "./permissions";
-import { isParentRole } from "./format";
+import { isInternalSchoolRole, isParentRole } from "./format";
+import { isParentPresenceRole } from "./presenceRoster";
 
 const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   {
@@ -62,7 +63,15 @@ export function domainsForPath(pathname: string, ctx: PermissionContext): Domain
   const parentPublishedBulletins =
     isParentRole(ctx.user?.role) &&
     (pathname === "/bulletins" || pathname.startsWith("/bulletins/"));
-  const routeDomains = parentPublishedBulletins ? [] : (match?.domains ?? []);
+  // PERF-PR3 : l'écran Présences du personnel lit /api/v2/presences (jour courant,
+  // pages SQL) ; l'historique complet n'est plus amorcé pour lui.
+  const pagedPresences =
+    (pathname === "/presences" || pathname.startsWith("/presences/")) &&
+    isInternalSchoolRole(ctx.user?.role) &&
+    !isParentPresenceRole(ctx.user?.role, (ctx.user as { roleKeys?: unknown } | null)?.roleKeys);
+  const routeDomains = (parentPublishedBulletins ? [] : (match?.domains ?? [])).filter(
+    (domain) => !(pagedPresences && domain === "presences"),
+  );
   const combined = [...new Set([...layoutDomainsForContext(ctx), ...routeDomains])];
   return filterDomainsByPermissions(combined, ctx);
 }

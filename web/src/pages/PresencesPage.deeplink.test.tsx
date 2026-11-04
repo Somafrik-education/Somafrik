@@ -18,8 +18,8 @@ const authSession = vi.hoisted(() => ({
 
 const dataState = vi.hoisted(() => ({
   classes: [
-    { id: "uuid-a", classId: "uuid-a", classCode: "CLS-A", name: "6ème A", students: 2 },
-    { id: "uuid-b", classId: "uuid-b", classCode: "CLS-B", name: "5ème B", students: 1 },
+    { id: "aaaaaaaa-0000-4000-8000-00000000000a", classId: "aaaaaaaa-0000-4000-8000-00000000000a", classCode: "CLS-A", name: "6ème A", students: 2 },
+    { id: "bbbbbbbb-0000-4000-8000-00000000000b", classId: "bbbbbbbb-0000-4000-8000-00000000000b", classCode: "CLS-B", name: "5ème B", students: 1 },
   ],
   assignments: [] as Record<string, unknown>[],
   teachers: [] as Record<string, unknown>[],
@@ -31,7 +31,7 @@ vi.mock("../context/ActiveSchoolContext", () => ({
   useActiveSchool: () => ({ scopedUser: authSession.user }),
 }));
 vi.mock("../context/DataContext", () => ({
-  useData: () => ({ state: dataState, refresh, update: vi.fn() }),
+  useData: () => ({ state: dataState, refresh, update: vi.fn(), invalidateDomains: vi.fn() }),
 }));
 
 vi.mock("../lib/usePermissionContext", () => ({
@@ -46,7 +46,26 @@ vi.mock("../lib/permissions", async (importOriginal) => {
 
 vi.mock("../components/ui/Toast", () => ({ useToast: () => ({ showToast }) }));
 vi.mock("../lib/classStudentsApi", () => ({ classStudentsApi: { list: classStudentsList } }));
-vi.mock("../api/client", () => ({ api: { post: vi.fn(), get: vi.fn() } }));
+vi.mock("../api/client", () => ({
+  api: {
+    post: vi.fn(),
+    get: vi.fn(async (path: string) => {
+      // PERF-PR3 : le personnel lit /v2/presences (page SQL) ; mêmes données que dataState.
+      const url = new URL(`http://test${path.startsWith("/") ? "" : "/"}${path}`);
+      if (url.pathname !== "/v2/presences") return [];
+      const date = url.searchParams.get("date");
+      const attendanceId = url.searchParams.get("attendanceId");
+      const classId = url.searchParams.get("classId");
+      const items = dataState.presences.filter(
+        (row) =>
+          (!date || String(row.date ?? "") === date) &&
+          (!classId || String(row.classId ?? "") === classId) &&
+          (!attendanceId || String(row.id ?? "") === attendanceId),
+      );
+      return { items, nextCursor: null, hasMore: false };
+    }),
+  },
+}));
 
 function renderPage(search: string) {
   return render(
@@ -62,7 +81,7 @@ beforeEach(() => {
     {
       id: "att-1",
       studentId: "ELE-1",
-      classId: "uuid-a",
+      classId: "aaaaaaaa-0000-4000-8000-00000000000a",
       classCode: "CLS-A",
       date: "2026-09-01",
       status: "Absent",
@@ -71,7 +90,7 @@ beforeEach(() => {
     {
       id: "att-2",
       studentId: "ELE-2",
-      classId: "uuid-a",
+      classId: "aaaaaaaa-0000-4000-8000-00000000000a",
       classCode: "CLS-A",
       date: "2026-09-01",
       status: "Présent",
@@ -79,8 +98,8 @@ beforeEach(() => {
     },
   ];
   classStudentsList.mockResolvedValue([
-    { id: "ELE-1", publicId: "ELE-1", matricule: "ELE-1", name: "Awa Diop", classId: "uuid-a", classCode: "CLS-A" },
-    { id: "ELE-2", publicId: "ELE-2", matricule: "ELE-2", name: "Binta Traoré", classId: "uuid-a", classCode: "CLS-A" },
+    { id: "ELE-1", publicId: "ELE-1", matricule: "ELE-1", name: "Awa Diop", classId: "aaaaaaaa-0000-4000-8000-00000000000a", classCode: "CLS-A" },
+    { id: "ELE-2", publicId: "ELE-2", matricule: "ELE-2", name: "Binta Traoré", classId: "aaaaaaaa-0000-4000-8000-00000000000a", classCode: "CLS-A" },
   ]);
 });
 

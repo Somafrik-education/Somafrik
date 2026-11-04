@@ -610,6 +610,12 @@ const routePermissions = {
 
 const PERMISSION_DENIED = "PERMISSION_DENIED";
 
+// PERF-PR3 : listes paginées /api/v2/*. Alias des routes historiques (mêmes tableaux,
+// aucun droit nouveau) ; les routes gardent requirePermission(<clé historique>).
+routePermissions["GET /api/v2/presences"] = routePermissions["GET /api/presences"];
+routePermissions["GET /api/v2/payments"] = routePermissions["GET /api/payments"];
+routePermissions["GET /api/v2/notes"] = routePermissions["GET /api/notes"];
+
 class RbacService {
   constructor(rolePermissions = seedData.rolePermissions) {
     this.rolePermissions = rolePermissions;

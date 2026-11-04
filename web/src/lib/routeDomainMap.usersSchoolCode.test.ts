@@ -106,9 +106,18 @@ describe("domainsForPath — /presences hydrate les élèves", () => {
       rolePermissions: {},
     };
     const domains = domainsForPath("/presences", ctx);
-    expect(domains).toContain("presences");
+    // PERF-PR3 : le personnel lit /api/v2/presences (jour courant) ; l'historique n'est plus amorcé.
+    expect(domains).not.toContain("presences");
     expect(domains).toContain("classes");
     expect(domains).toContain("students");
+  });
+
+  it("un parent garde l'historique des présences de son enfant (route historique)", () => {
+    const ctx: PermissionContext = {
+      user: { role: "Parent", schoolCode: "CD-IN-26-001", permissions: ["Présences:READ", "Élèves:READ"] },
+      rolePermissions: {},
+    };
+    expect(domainsForPath("/presences", ctx)).toContain("presences");
   });
 
   it("n'ajoute pas students sans Élèves:READ", () => {
