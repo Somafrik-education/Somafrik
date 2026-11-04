@@ -115,6 +115,7 @@ Les promesses annulées par changement de portée se résolvent sans erreur visi
 | `web/src/lib/httpClient.perfPr4.test.ts` (19) | lecture réussie ; 400, 403, 500 typés ; 401 = session expirée ; erreur réseau ; délai de 20 s à la milliseconde près ; délai explicite sans minuteur orphelin ; écriture sans délai par défaut ; **mutation exécutée par le serveur après le délai client** : `outcomeUnknown`, un seul envoi ; aucun rejeu d'écriture après 500 ou coupure réseau ; annulation volontaire ; signal déjà annulé (aucun envoi) ; écouteur retiré ; renouvellement puis rejeu ; échec du renouvellement sans boucle ; renouvellement trop lent = délai et non session expirée ; rejeu unique d'une écriture refusée en 401 |
 | `web/src/context/DataContext.progressive.test.tsx` (11) | 3 domaines aux délais différents, le premier fusionné avant la fin du plus lent et la promesse qui attend tout ; erreur sans effacer les 2 autres ; délai dépassé qui conserve la donnée valide ; réponse obsolète ignorée ; rafraîchissement après mutation limité au domaine ; relance des seuls domaines en échec ; déconnexion pendant une lecture lente ; réponse tardive d'un ancien compte ; changement d'établissement (scolaire annulé, plateforme poursuivie) ; A → B → A ; 401 jamais exploitable |
 | `web/src/context/perfPr4.benchmark.test.tsx` (5) | banc ci-dessous, avec ses assertions |
+| `web/src/lib/domainLoaders.signal.test.ts` (8) | signal du lot présent sur **toutes** les requêtes des 29 domaines ; enseignants et évaluations : signal transmis via `api.get`, sans appel à `teachersApi.list` ni `listEvaluations` ; délai de 60 s des domaines d'historique ; annulation pendant le lot (`aborted`, ni donnée ni erreur) ; sans signal, appels identiques à l'historique (un seul argument) ; `listStudentFees(studentId)` inchangé ; `teachersApi` sans création |
 
 Tests existants adaptés :
 - `EtablissementOverviewPage.bootstrap.test.tsx` : l'appel `/assignments` porte désormais un signal (`expect.objectContaining({ signal })`).
@@ -143,6 +144,16 @@ Le banc utilise le vrai client, les vrais loaders et le vrai `DataContext` ; seu
 | Changement d'établissement à +500 ms | — | `/students` **annulé**, 0 ligne fusionnée ; `rolePermissions` prêt |
 
 Ce ne sont pas des temps de préproduction : aucun accès Render depuis la session de travail.
+
+### Contrats figés par les contrôles de parité
+
+Deux contrôles statiques figent le texte de signatures historiques :
+- `scripts/lot3-parity.test.ts` (PARITY-028) : `list: () => api.get<SchoolTeacher[]>("/teachers")` ;
+- `backend/scripts/verify-teacher-login-scope.js` : `listEvaluations: () => api.get<unknown[]>("/evaluations")`.
+
+Ces signatures sont **conservées à l'identique** : aucun paramètre, aucune création d'enseignant. Les deux contrôles restent inchangés. Pour ces deux domaines, le loader transmet signal et délai directement à `api.get`, sur le même chemin, et rappelle `teachersApi.list()` ou `pedagogyApi.listEvaluations()` sans argument lorsqu'il n'a pas d'option.
+
+Les autres fonctions de liste prennent des options facultatives (`...init`). Leurs seuls appelants hors loaders les appellent sans argument, sauf `QuickPaymentModal`, qui appelle `financeApi.listStudentFees(student.id)` : le filtre élève est inchangé. Aucune n'est passée comme callback.
 
 ## 9. Risques résiduels
 
