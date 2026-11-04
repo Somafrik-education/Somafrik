@@ -65,6 +65,7 @@ vi.mock("../context/DataContext", () => ({
     state: dataState,
     refresh,
     update: vi.fn(),
+    invalidateDomains: vi.fn(),
   }),
 }));
 
@@ -94,7 +95,19 @@ vi.mock("../lib/classStudentsApi", () => ({
 vi.mock("../api/client", () => ({
   api: {
     post: apiPost,
-    get: vi.fn(),
+    get: vi.fn(async (path: string) => {
+      // PERF-PR3 : le personnel lit /v2/presences (page SQL) ; mêmes données que dataState.
+      const url = new URL(`http://test${path.startsWith("/") ? "" : "/"}${path}`);
+      if (url.pathname !== "/v2/presences") return [];
+      const date = url.searchParams.get("date");
+      const attendanceId = url.searchParams.get("attendanceId");
+      const items = dataState.presences.filter(
+        (row) =>
+          (!date || String(row.date ?? "") === date) &&
+          (!attendanceId || String(row.id ?? "") === attendanceId),
+      );
+      return { items, nextCursor: null, hasMore: false };
+    }),
   },
 }));
 

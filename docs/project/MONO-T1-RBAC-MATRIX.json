@@ -30,6 +30,30 @@
       "cdTeacher": "refusé",
       "cdParent": "refusé"
     },
+    "GET /api/v2/notes": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "refusé",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
+    "GET /api/v2/payments": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "refusé",
+      "cdParent": "accès"
+    },
+    "GET /api/v2/presences": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "accès"
+    },
     "GET /api/backoffice/contacts": {
       "cdAdmin": "accès",
       "cdProviseur": "accès",

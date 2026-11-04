@@ -696,6 +696,7 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
 
 module.exports = {
   PERIODS,
+  teacherClassIds,
   withLiveKpiPermissions,
   resolveSchoolKpiPrincipal,
   listSchoolDashboardKpis,

@@ -31,7 +31,7 @@ vi.mock("../context/ActiveSchoolContext", () => ({
   useActiveSchool: () => ({ scopedUser: authSession.user }),
 }));
 vi.mock("../context/DataContext", () => ({
-  useData: () => ({ state: dataState, refresh, update: vi.fn() }),
+  useData: () => ({ state: dataState, refresh, update: vi.fn(), invalidateDomains: vi.fn() }),
 }));
 
 vi.mock("../lib/usePermissionContext", () => ({
@@ -46,7 +46,24 @@ vi.mock("../lib/permissions", async (importOriginal) => {
 
 vi.mock("../components/ui/Toast", () => ({ useToast: () => ({ showToast }) }));
 vi.mock("../lib/classStudentsApi", () => ({ classStudentsApi: { list: classStudentsList } }));
-vi.mock("../api/client", () => ({ api: { post: vi.fn(), get: vi.fn() } }));
+vi.mock("../api/client", () => ({
+  api: {
+    post: vi.fn(),
+    get: vi.fn(async (path: string) => {
+      // PERF-PR3 : le personnel lit /v2/presences (page SQL) ; mêmes données que dataState.
+      const url = new URL(`http://test${path.startsWith("/") ? "" : "/"}${path}`);
+      if (url.pathname !== "/v2/presences") return [];
+      const date = url.searchParams.get("date");
+      const attendanceId = url.searchParams.get("attendanceId");
+      const items = dataState.presences.filter(
+        (row) =>
+          (!date || String(row.date ?? "") === date) &&
+          (!attendanceId || String(row.id ?? "") === attendanceId),
+      );
+      return { items, nextCursor: null, hasMore: false };
+    }),
+  },
+}));
 
 function renderPage(search: string) {
   return render(

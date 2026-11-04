@@ -12,6 +12,8 @@ import { canManagePresences } from "../lib/permissions";
 import { useDeepLinkId } from "../lib/notificationDeepLink";
 import { resolveTeacherRecordForUser } from "../lib/establishment";
 import { classStudentsApi, type ClassStudent } from "../lib/classStudentsApi";
+import { isInternalSchoolRole } from "../lib/format";
+import { fetchPresenceById, isoAttendanceDay, useDayPresences } from "../lib/presencesPageApi";
 import {
   buildPresenceClassCards,
   findPresenceClassCard,
@@ -85,7 +87,7 @@ function buildInitialAttendance(
 
 export function PresencesPage() {
   const { session } = useAuth();
-  const { state, refresh } = useData();
+  const { state, refresh, invalidateDomains } = useData();
   const { scopedUser } = useActiveSchool();
   const { showToast } = useToast();
   const scopeUser = scopedUser ?? session?.user ?? null;
@@ -93,7 +95,21 @@ export function PresencesPage() {
   const { canRead } = useFeaturePermissions("Présences");
   const canUpdate = canManagePresences(permissionCtx);
 
-  const presences = (state.presences ?? []) as PresenceRow[];
+  const parentView = isParentPresenceRole(scopeUser?.role, (scopeUser as { roleKeys?: string[] } | null)?.roleKeys);
+  // PERF-PR3 : le personnel ne charge que les présences du jour, page par page en SQL.
+  // Parent et Élève gardent la route historique (périmètre d'un enfant).
+  const pagedPresences = canRead && !parentView && isInternalSchoolRole(scopeUser?.role);
+  const todayIso = isoAttendanceDay(new Date());
+  const dayPresences = useDayPresences(pagedPresences, todayIso);
+  const [deepLinkedPresence, setDeepLinkedPresence] = useState<PresenceRow | null>(null);
+  const presences = useMemo(() => {
+    if (!pagedPresences) return (state.presences ?? []) as PresenceRow[];
+    const linkedId = String(deepLinkedPresence?.id ?? "");
+    if (!linkedId || dayPresences.rows.some((row) => String(row.id ?? "") === linkedId)) {
+      return dayPresences.rows;
+    }
+    return [...dayPresences.rows, deepLinkedPresence as PresenceRow];
+  }, [pagedPresences, state.presences, dayPresences.rows, deepLinkedPresence]);
   const students = (state.students ?? []) as ExpectedStudent[];
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
@@ -121,6 +137,24 @@ export function PresencesPage() {
   const [focusedStudentId, setFocusedStudentId] = useState("");
   const deepLinkAttendanceId = useDeepLinkId("attendanceId");
   const appliedAttendanceRef = useRef("");
+
+  // Lien de notification vers une présence d'un autre jour : une seule ligne demandée.
+  useEffect(() => {
+    if (!pagedPresences || !deepLinkAttendanceId) return;
+    if (dayPresences.loading) return;
+    if (dayPresences.rows.some((row) => String(row.id ?? "") === deepLinkAttendanceId)) return;
+    let cancelled = false;
+    void fetchPresenceById(deepLinkAttendanceId)
+      .then((row) => {
+        if (!cancelled) setDeepLinkedPresence(row);
+      })
+      .catch(() => {
+        if (!cancelled) setDeepLinkedPresence(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pagedPresences, deepLinkAttendanceId, dayPresences.loading, dayPresences.rows]);
 
   const selectedCard = useMemo(
     () => findPresenceClassCard(classCards, { classId: selectedClassId, classCode: selectedClassCode }),
@@ -300,7 +334,13 @@ export function PresencesPage() {
       if (!saved?.length) {
         throw new Error("Aucune présence enregistrée.");
       }
-      await refresh(["presences"]);
+      if (pagedPresences) {
+        // Les autres écrans relisent la liste globale à leur prochaine ouverture.
+        invalidateDomains(["presences"]);
+        await dayPresences.reload();
+      } else {
+        await refresh(["presences"]);
+      }
       setAttendanceDirty(false);
       setAttendance(buildInitialAttendance(classStudents, saved ?? presences, todayLabel));
       const absentCount = items.filter((item) => item.status === "Absent").length;
@@ -342,6 +382,11 @@ export function PresencesPage() {
           title="Présences"
           description={`Sélectionnez une classe pour faire l'appel — ${todayLabel} à ${currentHour}`}
         />
+        {pagedPresences && dayPresences.error ? (
+          <p role="alert" className="text-sm text-rose-700">
+            Présences du jour indisponibles : {dayPresences.error}
+          </p>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-2">
           {classCards.map((card) => {
             const todayRows = presences.filter(
@@ -395,6 +440,11 @@ export function PresencesPage() {
             title={`Appel — ${selectedCard.className}`}
             description={`${todayLabel} · Appel du jour (journée entière) · Présent, Absent, Retard ou Justifié (absence justifiée).`}
           />
+          {pagedPresences && dayPresences.error ? (
+            <p role="alert" className="text-sm text-rose-700">
+              Présences du jour indisponibles : {dayPresences.error}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <PrintButton documentTitle={`Feuille d'appel — ${selectedCard.className} — ${todayLabel}`} />

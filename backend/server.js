@@ -4919,6 +4919,66 @@ app.get("/api/v2/documents", requireAuth, requirePermission("GET /api/v2/documen
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["code", "type", "title", "studentCode", "studentName"]);
 }));
 
+/**
+ * PERF-PR3 — listes paginées en SQL (keyset), personnel de l'établissement uniquement.
+ * Mêmes clés RBAC que les routes historiques ; les routes historiques restent inchangées.
+ */
+function paginatedReadHandler(label, resolvePrincipal, resolveScope, list) {
+  return asyncHandler(async (req, res) => {
+    if (!requireCanonicalPg(res, "all", label)) return;
+    const reads = require("./lib/paginatedSchoolReads");
+    const { teacherClassIds } = require("./lib/schoolDashboardKpis");
+    const principal = await resolvePrincipal(req);
+    reads.assertStaff(principal);
+    const scope = await resolveScope(principal, projectionScopeDeps());
+    const context = await reads.resolveReadContext(repository, principal, scope, teacherClassIds);
+    const page = await reads[list](repository, context, req.query ?? {});
+    res.set("Cache-Control", "no-store");
+    res.json(page);
+  });
+}
+
+app.get(
+  "/api/v2/presences",
+  requireAuth,
+  requirePermission("GET /api/presences"),
+  paginatedReadHandler(
+    "Liste paginée des présences",
+    async (req) => {
+      const { assertPresenceReadable } = require("./lib/presenceSchoolScope");
+      const principal = await presenceHttpPrincipal(req);
+      assertPresenceReadable(principal);
+      return principal;
+    },
+    (principal, deps) => require("./lib/projectionReadScope").resolvePedagogyProjectionScope(principal, deps),
+    "listPresencesPage",
+  ),
+);
+
+app.get(
+  "/api/v2/notes",
+  requireAuth,
+  requirePermission("GET /api/notes"),
+  paginatedReadHandler(
+    "Liste paginée des notes",
+    async (req) => presenceHttpPrincipal(req),
+    (principal, deps) => require("./lib/projectionReadScope").resolvePedagogyProjectionScope(principal, deps),
+    "listNotesPage",
+  ),
+);
+
+app.get(
+  "/api/v2/payments",
+  requireAuth,
+  requirePermission("GET /api/payments"),
+  paginatedReadHandler(
+    "Liste paginée des paiements",
+    async (req) => financeHttpPrincipal(req),
+    (principal, deps) => require("./lib/projectionReadScope").resolveFinanceProjectionScope(principal, deps),
+    "listPaymentsPage",
+  ),
+);
+
 app.get("/api/v2/reports/advanced", requireAuth, requirePermission("GET /api/v2/reports/advanced"), asyncHandler(async (req, res) => {
   const { getAdvancedReportsForPrincipal } = require("./lib/advancedReportsScope");
   res.json(await getAdvancedReportsForPrincipal({
