@@ -31,8 +31,20 @@ export type PresentationRow = {
   annual: PresentationTotal | null;
 };
 
+/** BULLETIN-CLASSE-01 / L3 — en-tête configuré par classe ; valeurs figées à la publication. */
+export type PresentationHeader = {
+  layout: "logo_left" | "logo_center" | "no_logo";
+  title: string | null;
+  lines: string[];
+  items: { id: string; label: string; value: string | null }[];
+  logo: { sha256: string; media_type: string | null } | null;
+  logo_requested?: boolean;
+};
+
 export type ReportCardPresentation = {
   official: boolean;
+  report_card_id?: string | null;
+  version?: number | null;
   style: "simple" | "hierarchical";
   school: { name: string | null };
   class_name: string | null;
@@ -44,6 +56,8 @@ export type ReportCardPresentation = {
   totals: { periods: Record<string, PresentationTotal | null>; annual: PresentationTotal | null };
   status: string | null;
   cohort_size: number | null;
+  signatures?: string[];
+  header?: PresentationHeader;
 };
 
 export const ANNUAL_VIEW = "ANNUAL";
@@ -71,8 +85,20 @@ export type PhoneSubjectLine = {
   components: PhoneComponentLine[];
 };
 
+export type PhoneHeader = {
+  layout: PresentationHeader["layout"];
+  title: string | null;
+  lines: string[];
+  items: { id: string; label: string; value: string }[];
+  /** Logo figé d'un bulletin publié (chemin authentifié) ; jamais d'URL externe. */
+  logoPath: string | null;
+};
+
 export type PhoneReportCard = {
   official: boolean;
+  /** null : modèle sans en-tête configuré → identité standard. */
+  header: PhoneHeader | null;
+  signatures: string[];
   identity: { label: string; value: string }[];
   periodLabel: string;
   incomplete: boolean;
@@ -146,6 +172,8 @@ export function phoneReportCard(view: ReportCardPresentation, selected: string):
   const total = annual ? view.totals.annual : view.totals.periods[selected];
   return {
     official: view.official === true,
+    header: phoneHeader(view),
+    signatures: (view.signatures ?? []).filter((label) => typeof label === "string" && label.trim()),
     identity: [
       { label: "Établissement", value: show(view.school.name) },
       { label: "Élève", value: show(view.student.name) },
@@ -162,6 +190,27 @@ export function phoneReportCard(view: ReportCardPresentation, selected: string):
       { label: "Rang", value: rankText(total, view.cohort_size) },
     ],
   };
+}
+
+function phoneHeader(view: ReportCardPresentation): PhoneHeader | null {
+  const header = view.header;
+  if (!header) return null;
+  const logo = header.logo;
+  const logoPath =
+    header.layout !== "no_logo" && logo && /^[0-9a-f]{64}$/.test(logo.sha256) && view.official && view.report_card_id && view.version != null
+      ? reportCardLogoPath(view.report_card_id, view.version)
+      : null;
+  return {
+    layout: header.layout,
+    title: header.title || null,
+    lines: (header.lines ?? []).filter(Boolean),
+    items: (header.items ?? []).map((item) => ({ id: item.id, label: item.label, value: show(item.value) })),
+    logoPath,
+  };
+}
+
+export function reportCardLogoPath(reportCardId: string, version: number | string) {
+  return `/report-card/publications/${encodeURIComponent(reportCardId)}/logo?version=${encodeURIComponent(String(version))}`;
 }
 
 export function reportCardPresentationPath(reportCardId: string, version: number | string) {
