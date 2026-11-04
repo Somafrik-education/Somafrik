@@ -1,6 +1,7 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
+const { projectionQuery } = require("./projectionSchoolScope");
 const {
   PEDAGOGY_ERROR,
   asTrimmed,
@@ -1223,9 +1224,13 @@ function createPedagogyPgStore(repo) {
         return fn(bind(scopedRepo));
       });
     },
-    async listProjection() {
+    async listProjection(scope) {
+      const read = (sql, alias) => {
+        const query = projectionQuery(sql, alias, scope);
+        return repo.all(query.text, query.params);
+      };
       const [evaluationRows, gradeRows, attendanceRows, courseRows, scheduleRows] = await Promise.all([
-        repo.all(`
+        read(`
           SELECT e.*, s.school_code, c.name AS class_name, c.class_code, sub.name AS subject_name,
                  t.teacher_code, tm.name AS term_name, tm.academic_year_id,
                  ay.name AS academic_year_name,
@@ -1241,8 +1246,8 @@ function createPedagogyPgStore(repo) {
           LEFT JOIN academic_years ay ON ay.id = tm.academic_year_id
           LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
           ORDER BY e.created_at DESC
-        `),
-        repo.all(`
+        `, "e"),
+        read(`
           SELECT g.*, s.school_code, st.student_code, c.name AS class_name, sub.name AS subject_name,
                  COALESCE(
                    (
@@ -1272,8 +1277,8 @@ function createPedagogyPgStore(repo) {
           LEFT JOIN evaluations e ON e.id = g.evaluation_id
           LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
           ORDER BY g.updated_at DESC
-        `),
-        repo.all(`
+        `, "g"),
+        read(`
           SELECT a.*, s.login_code, st.student_code, c.name AS class_name, t.teacher_code
           FROM attendance a
           JOIN schools s ON s.id = a.school_id
@@ -1281,8 +1286,8 @@ function createPedagogyPgStore(repo) {
           LEFT JOIN classes c ON c.id = a.class_id
           LEFT JOIN teachers t ON t.id = a.teacher_id
           ORDER BY a.attendance_date DESC
-        `),
-        repo.all(`
+        `, "a"),
+        read(`
           SELECT sc.*, s.school_code, c.name AS class_name, sub.name AS subject_name, t.teacher_code
           FROM school_courses sc
           JOIN schools s ON s.id = sc.school_id
@@ -1291,12 +1296,12 @@ function createPedagogyPgStore(repo) {
           LEFT JOIN teachers t ON t.id = sc.teacher_id
           WHERE sc.status = 'active'
           ORDER BY sc.created_at
-        `),
-        repo.all(`
+        `, "sc"),
+        read(`
           ${WEEKLY_SLOT_SELECT}
           WHERE w.status = 'active'
           ORDER BY w.day_of_week, w.start_time, w.id
-        `),
+        `, "w"),
       ]);
 
       const courses = courseRows.length

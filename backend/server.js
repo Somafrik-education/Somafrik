@@ -1095,9 +1095,18 @@ app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POS
 }));
 
 app.get("/api/courses", requireAuth, requirePermission("GET /api/courses"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const scope = deriveSchoolScope(req.principal, state);
-  res.json(tenantScopeService.filterRows(state.courses, req.principal, scope));
+  const { resolvePedagogyProjectionScope } = require("./lib/projectionReadScope");
+  const scope = await resolvePedagogyProjectionScope(req.principal, projectionScopeDeps());
+  if (!scope || scope.platform === true || typeof repository.listPedagogyProjection !== "function") {
+    res.json([]);
+    return;
+  }
+  const [pedagogy, students] = await Promise.all([
+    repository.listPedagogyProjection(scope),
+    listCanonicalStudentsForPrincipal(req.principal),
+  ]);
+  const derived = deriveSchoolScope(req.principal, { students, courses: pedagogy.courses ?? [] });
+  res.json(tenantScopeService.filterRows(pedagogy.courses ?? [], req.principal, derived));
 }));
 
 async function planningHttpPrincipal(req) {
@@ -5476,12 +5485,22 @@ async function listCanonicalStudentsForPrincipal(principal) {
   return runtime.students ?? [];
 }
 
+function projectionScopeDeps() {
+  const memory = repository?.engine === "memory" || typeof repository?.one !== "function";
+  return {
+    memory,
+    one: memory ? null : repository.one.bind(repository),
+  };
+}
+
 async function loadCanonicalPedagogyForPrincipal(principal) {
-  const pedagogy =
-    typeof repository.listPedagogyProjection === "function"
-      ? await repository.listPedagogyProjection()
-      : { notes: [], presences: [], evaluations: [] };
+  const { resolvePedagogyProjectionScope } = require("./lib/projectionReadScope");
+  const scope = await resolvePedagogyProjectionScope(principal, projectionScopeDeps());
   const students = await listCanonicalStudentsForPrincipal(principal);
+  const pedagogy =
+    scope && typeof repository.listPedagogyProjection === "function"
+      ? await repository.listPedagogyProjection(scope)
+      : { notes: [], presences: [], evaluations: [] };
   return {
     notes: pedagogy.notes ?? [],
     presences: pedagogy.presences ?? [],
@@ -5491,11 +5510,13 @@ async function loadCanonicalPedagogyForPrincipal(principal) {
 }
 
 async function loadCanonicalFinanceForPrincipal(principal) {
-  const finance =
-    typeof repository.listFinanceProjection === "function"
-      ? await repository.listFinanceProjection()
-      : { payments: [] };
+  const { resolveFinanceProjectionScope } = require("./lib/projectionReadScope");
+  const scope = await resolveFinanceProjectionScope(principal, projectionScopeDeps());
   const students = await listCanonicalStudentsForPrincipal(principal);
+  const finance =
+    scope && typeof repository.listFinanceProjection === "function"
+      ? await repository.listFinanceProjection(scope)
+      : { payments: [] };
   return {
     payments: finance.payments ?? [],
     students,
@@ -5583,7 +5604,8 @@ async function overlayPlatformProjection(state) {
 }
 
 async function overlayPedagogyProjection(state) {
-  const pedagogy = await repository.listPedagogyProjection();
+  // Lecture plateforme explicite, réservée à getAuthoritativeBackOfficeState.
+  const pedagogy = await repository.listPedagogyProjection({ platform: true });
   return {
     ...state,
     courses: pedagogy.courses ?? [],
@@ -5595,7 +5617,8 @@ async function overlayPedagogyProjection(state) {
 }
 
 async function overlayFinanceProjection(state) {
-  const finance = await repository.listFinanceProjection();
+  // Lecture plateforme explicite, réservée à getAuthoritativeBackOfficeState.
+  const finance = await repository.listFinanceProjection({ platform: true });
   return {
     ...state,
     payments: finance.payments ?? [],

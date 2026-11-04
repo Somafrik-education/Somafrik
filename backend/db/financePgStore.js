@@ -1,6 +1,7 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
+const { projectionQuery } = require("./projectionSchoolScope");
 const {
   FINANCE_ERROR,
   createFinanceError,
@@ -862,32 +863,41 @@ function createFinancePgStore(repo) {
         throw mapCollectionLockError(error);
       }
     },
-    async listProjection() {
+    async listProjection(scope) {
+      const read = (sql, alias, options) => {
+        const query = projectionQuery(sql, alias, scope, options);
+        return repo.all(query.text, query.params);
+      };
       const [payments, statuses, grids, items, fees, history, reminders, paymentItems, allocations] = await Promise.all([
-        repo.all(
+        read(
           `SELECT p.*, s.school_code, s.login_code, st.student_code
            FROM payments p
            JOIN schools s ON s.id = p.school_id
            JOIN students st ON st.id = p.student_id
            ORDER BY p.created_at`,
+          "p",
         ),
-        repo.all(
+        read(
           `SELECT ps.*, s.school_code, s.login_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id`,
+          "ps",
+          { includeGlobalCatalog: true },
         ),
-        repo.all(
+        read(
           `SELECT g.*, s.school_code, s.login_code, cl.class_code
            FROM fee_grids g
            JOIN schools s ON s.id = g.school_id
            LEFT JOIN classes cl ON cl.id = g.class_id
            ORDER BY g.created_at`,
+          "g",
         ),
-        repo.all(
+        read(
           `SELECT i.*, g.grid_code, s.school_code, s.login_code
            FROM school_fee_items i
            JOIN fee_grids g ON g.id = i.fee_grid_id
            JOIN schools s ON s.id = i.school_id`,
+          "i",
         ),
-        repo.all(
+        read(
           `SELECT o.*, s.school_code, s.login_code, st.student_code, st.status AS student_status,
                   EXISTS (
                     SELECT 1 FROM enrollments e
@@ -899,17 +909,19 @@ function createFinancePgStore(repo) {
            JOIN schools s ON s.id = o.school_id
            JOIN students st ON st.id = o.student_id
            ORDER BY o.created_at`,
+          "o",
         ),
-        repo.all(`SELECT * FROM fee_tariff_history ORDER BY created_at DESC`),
-        repo.all(
+        read(`SELECT * FROM fee_tariff_history ORDER BY created_at DESC`, ""),
+        read(
           `SELECT r.*, s.school_code, s.login_code, st.student_code
            FROM payment_reminders r
            JOIN schools s ON s.id = r.school_id
            JOIN students st ON st.id = r.student_id
            ORDER BY r.sent_at DESC`,
+          "r",
         ),
-        repo.all(`SELECT * FROM payment_items ORDER BY sort_order ASC, created_at ASC`),
-        repo.all(`SELECT * FROM payment_allocations`),
+        read(`SELECT * FROM payment_items ORDER BY sort_order ASC, created_at ASC`, ""),
+        read(`SELECT * FROM payment_allocations`, ""),
       ]);
       const itemsByPayment = new Map();
       for (const item of paymentItems) {
