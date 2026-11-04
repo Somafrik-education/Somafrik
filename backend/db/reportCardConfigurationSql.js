@@ -110,9 +110,22 @@ CREATE TABLE IF NOT EXISTS report_card_configuration_requests (
 CREATE INDEX IF NOT EXISTS idx_report_card_configuration_requests_school
   ON report_card_configuration_requests (school_id, model_key, status);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_configuration_one_active
-  ON report_card_configuration_requests (school_id, model_key)
-  WHERE status = 'ACTIVE';
+-- BULLETIN-CLASSE-01 / L1 : après la migration 20261105_report_card_class_scope.sql
+-- (manuelle), cet index est remplacé par deux index partiels (établissement / classe).
+-- Le démarrage ne doit pas le recréer : création seulement tant que class_id n'existe pas.
+DO $report_card_one_active$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_attribute
+     WHERE attrelid = 'report_card_configuration_requests'::regclass
+       AND attname = 'class_id' AND NOT attisdropped
+  ) THEN
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_configuration_one_active
+      ON report_card_configuration_requests (school_id, model_key)
+      WHERE status = 'ACTIVE';
+  END IF;
+END
+$report_card_one_active$;
 
 CREATE TABLE IF NOT EXISTS report_card_active_bindings (
   school_id UUID NOT NULL REFERENCES schools(id),
