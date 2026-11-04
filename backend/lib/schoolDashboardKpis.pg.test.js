@@ -65,6 +65,18 @@ async function seed(pool) {
   const schoolA = await school("CD-2026-0001", "Lycee A");
   const schoolB = await school("CD-2026-0002", "Lycee B");
   const empty = await school("CD-2026-0009", "Lycee vide");
+  await pool.query(
+    `UPDATE schools SET profile_payload = profile_payload || '{"timezone":"Africa/Kinshasa"}'::jsonb WHERE id = $1`,
+    [schoolA.schoolId],
+  );
+  await pool.query(
+    `UPDATE schools SET profile_payload = profile_payload || '{"timezone":"Pacific/Auckland"}'::jsonb WHERE id = $1`,
+    [schoolB.schoolId],
+  );
+  await pool.query(
+    `UPDATE schools SET profile_payload = profile_payload || '{"timezone":"America/New_York"}'::jsonb WHERE id = $1`,
+    [empty.schoolId],
+  );
 
   async function addClass(target, code, name, level) {
     const created = await pool.query(
@@ -259,6 +271,7 @@ async function main() {
     };
     const monthly = await listSchoolDashboardKpis(repository, admin, { period: "monthly", schoolId: fixture.schoolB }, NOW);
     assert.equal(monthly.schoolId, fixture.schoolA);
+    assert.equal(monthly.timeZone, "Africa/Kinshasa");
     assert.equal(monthly.cards.students, 4);
     assert.equal(monthly.cards.teachers, 1);
     assert.equal(monthly.cards.classes, 2);
@@ -317,6 +330,141 @@ async function main() {
     assert.equal(teacher.cards.attendance.value, "100 %");
     assert.equal(teacher.series.presence.total, 2);
     assert.equal(teacher.series.paymentStatus, null);
+
+    const libreUser = await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, role, status)
+       VALUES ($1, 'A-LIBRE', 'Sans', 'Classe', 'Enseignant', 'active') RETURNING id`,
+      [fixture.schoolA],
+    );
+    const libreTeacher = await pool.query(
+      `INSERT INTO teachers (school_id, user_id, teacher_code) VALUES ($1, $2, 'A-T0') RETURNING id`,
+      [fixture.schoolA, libreUser.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO teacher_assignments
+         (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+       SELECT $1, $2, c.id, s.id, y.id, 'inactive'
+       FROM classes c
+       JOIN subjects s ON s.school_id = c.school_id
+       JOIN academic_years y ON y.school_id = c.school_id AND y.is_current = true
+       WHERE c.school_id = $1 AND c.class_code = 'A-6E'
+       LIMIT 1`,
+      [fixture.schoolA, libreTeacher.rows[0].id],
+    );
+    await pool.query(
+      `INSERT INTO class_head_teachers
+         (school_id, class_id, teacher_id, academic_year_id, status, ended_at)
+       SELECT $1, c.id, $2, y.id, 'inactive', NOW()
+       FROM classes c
+       JOIN academic_years y ON y.school_id = c.school_id AND y.is_current = true
+       WHERE c.school_id = $1 AND c.class_code = 'A-6E'
+       LIMIT 1`,
+      [fixture.schoolA, libreTeacher.rows[0].id],
+    );
+    const unassigned = await listSchoolDashboardKpis(
+      repository,
+      {
+        role: "Enseignant",
+        id: libreUser.rows[0].id,
+        schoolId: fixture.schoolA,
+        permissions: ADMIN_RIGHTS,
+      },
+      { period: "monthly" },
+      NOW,
+    );
+    const stillThere = await listSchoolDashboardKpis(repository, admin, { period: "monthly" }, NOW);
+    assert.equal(stillThere.cards.students, 4);
+    assert.equal(stillThere.cards.teachers, 2);
+    assert.equal(stillThere.cards.classes, 2);
+    assert.equal(stillThere.cards.revenue.amount, 97);
+    assert.equal(stillThere.cards.paymentRate.value, "53 %");
+    assert.equal(stillThere.series.presence.total, 4);
+    assert.equal(stillThere.series.announcements, 1);
+    assert.equal(unassigned.schoolId, fixture.schoolA);
+    assert.equal(unassigned.cards.students, 0);
+    assert.equal(unassigned.cards.teachers, 0);
+    assert.equal(unassigned.cards.classes, 0);
+    assert.equal(unassigned.cards.revenue.display, "—");
+    assert.equal(unassigned.cards.revenue.amount, null);
+    assert.equal(unassigned.cards.paymentRate.value, "—");
+    assert.equal(unassigned.cards.attendance.value, "—");
+    assert.equal(unassigned.cards.attendance.expected, 0);
+    assert.deepEqual(unassigned.cards.levels, []);
+    assert.equal(unassigned.series.presence.total, 0);
+    assert.equal(unassigned.series.notes, 0);
+    assert.equal(unassigned.series.exams, 0);
+    assert.equal(unassigned.series.bulletins, 0);
+    assert.equal(unassigned.series.documents, 0);
+    assert.equal(unassigned.series.activeUsers, 0);
+    assert.equal(unassigned.series.announcements, 0);
+    assert.deepEqual(unassigned.series.paymentStatus, []);
+    assert.deepEqual(unassigned.series.paymentAmounts, []);
+    assert.deepEqual(unassigned.series.classSizes, []);
+    assert.deepEqual(unassigned.series.notesBySubject, []);
+
+    const crossing = new Date("2026-11-04T23:30:00.000Z");
+    const kinshasaNight = await listSchoolDashboardKpis(repository, admin, { period: "daily" }, crossing);
+    const newYorkNight = await listSchoolDashboardKpis(
+      repository,
+      { role: "Admin School", schoolId: fixture.empty, permissions: ["Annonces:READ"] },
+      { period: "daily" },
+      crossing,
+    );
+    const aucklandNight = await listSchoolDashboardKpis(
+      repository,
+      { role: "Admin School", schoolId: fixture.schoolB, permissions: ["Annonces:READ"] },
+      { period: "daily" },
+      crossing,
+    );
+    assert.equal(kinshasaNight.timeZone, "Africa/Kinshasa");
+    assert.equal(kinshasaNight.periodLabel, "Quotidien · 05/11/2026 – 05/11/2026");
+    assert.equal(newYorkNight.timeZone, "America/New_York");
+    assert.equal(newYorkNight.periodLabel, "Quotidien · 04/11/2026 – 04/11/2026");
+    assert.equal(aucklandNight.timeZone, "Pacific/Auckland");
+    assert.equal(aucklandNight.periodLabel, "Quotidien · 05/11/2026 – 05/11/2026");
+
+    const beforeMidnight = new Date("2026-11-04T22:30:00.000Z");
+    const kinshasaBefore = await listSchoolDashboardKpis(repository, admin, { period: "daily" }, beforeMidnight);
+    const aucklandBefore = await listSchoolDashboardKpis(
+      repository,
+      { role: "Admin School", schoolId: fixture.schoolB, permissions: ["Annonces:READ"] },
+      { period: "daily" },
+      beforeMidnight,
+    );
+    assert.equal(kinshasaBefore.periodLabel, "Quotidien · 04/11/2026 – 04/11/2026");
+    assert.equal(aucklandBefore.periodLabel, "Quotidien · 05/11/2026 – 05/11/2026");
+
+    const boundary = "2026-11-05T03:30:00.000Z";
+    await pool.query(
+      `INSERT INTO announcements (school_id, title, message, created_at)
+       VALUES ($1, 'Frontiere', 'Minuit', $2), ($3, 'Frontiere', 'Minuit', $2)`,
+      [fixture.schoolA, boundary, fixture.empty],
+    );
+    const probe = new Date("2026-11-05T06:00:00.000Z");
+    const kinshasaProbe = await listSchoolDashboardKpis(repository, admin, { period: "daily" }, probe);
+    const newYorkProbe = await listSchoolDashboardKpis(
+      repository,
+      { role: "Admin School", schoolId: fixture.empty, permissions: ["Annonces:READ"] },
+      { period: "daily" },
+      probe,
+    );
+    assert.equal(kinshasaProbe.timeZone, "Africa/Kinshasa");
+    assert.equal(kinshasaProbe.series.announcements, 1);
+    assert.equal(newYorkProbe.timeZone, "America/New_York");
+    assert.equal(newYorkProbe.series.announcements, 0);
+
+    await pool.query(
+      `UPDATE schools SET profile_payload = profile_payload || '{"timezone":"Not/AZone"}'::jsonb WHERE id = $1`,
+      [fixture.schoolB],
+    );
+    const invalidZone = await listSchoolDashboardKpis(
+      repository,
+      { role: "Admin School", schoolId: fixture.schoolB, permissions: ["Annonces:READ"] },
+      { period: "daily" },
+      beforeMidnight,
+    );
+    assert.equal(invalidZone.timeZone, "Africa/Kinshasa");
+    assert.equal(invalidZone.periodLabel, "Quotidien · 04/11/2026 – 04/11/2026");
 
     const empty = await listSchoolDashboardKpis(
       repository,

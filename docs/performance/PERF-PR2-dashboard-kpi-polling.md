@@ -63,7 +63,7 @@ La disposition des cartes, les activités à droite, le sélecteur d'indicateur,
 Réponse `Cache-Control: no-store` :
 
 - `schoolId` : UUID résolu côté serveur.
-- `period`, `periodLabel`, `timeZone` (`Africa/Kinshasa`).
+- `period`, `periodLabel`, `timeZone` (fuseau IANA de l'établissement).
 - `cards` : `students`, `teachers`, `classes`, `revenue`, `levels`, `attendance`, `paymentRate`.
 - `series` : effectifs actifs sur la période, pédagogie, présences, paiements, tailles de classes, notes par matière.
 
@@ -75,20 +75,20 @@ Les règles reprises sont celles du client actuel, pas une nouvelle définition.
 
 | Indicateur | Source SQL | Règle reprise |
 | --- | --- | --- |
-| Élèves | `students` + inscription ouverte | Tous les élèves de l'établissement. Un enseignant affecté est limité aux classes de `teacher_assignments` actives et de `class_head_teachers` actives. Sans affectation, le client ne restreint pas : le SQL non plus. |
-| Enseignants | `teachers` | Tous les enseignants de l'établissement. Le client incluait déjà toute la fiche de l'école via `schoolCode`. |
-| Classes | `classes` | Noms distincts. Pour un enseignant affecté, uniquement ses classes. |
+| Élèves | `students` + inscription ouverte | Tous les élèves de l'établissement pour un rôle non enseignant. Un enseignant est limité aux classes de `teacher_assignments` actives et de `class_head_teachers` actives. Sans affectation active, ou si l'identifiant n'est pas un UUID, le périmètre est un tableau vide : aucune classe n'est retenue. |
+| Enseignants | `teachers` | Effectif de l'établissement pour un rôle non enseignant, et pour un enseignant qui a au moins une classe active. Un enseignant sans affectation reçoit 0. |
+| Classes | `classes` | Noms distincts. Pour un enseignant, uniquement ses classes actives. Sans affectation, 0. |
 | Niveaux | `classes.level`, sinon « Non renseigné » | Même regroupement que `buildSchoolDashboardSecondaryMetrics`. |
-| Présence du jour | `attendance` du jour civil `Africa/Kinshasa` | Élève attendu : statut hors archivé, inactif, désinscrit, transféré, sorti, et inscription de classe ouverte. Ligne manquante non comptée comme absence. Taux seulement si `recorded = expected`, sinon « — ». Présent et retard comptent comme présents. |
-| Recettes | `payments.amount` | Hors annulé, attente, pending, refusé, échoué, brouillon. Affichage seulement s'il reste une seule devise. `FC` est présenté `CDF`. Les allocations ne sont pas additionnées. |
-| Taux de paiement | `student_fee_obligations` | Hors archivées et hors annulées. `Σ amount_paid / Σ (amount_due − exemption)`. Devises mélangées, montant manquant ou assiette nulle : « — ». |
+| Présence du jour | `attendance` du jour civil de l'établissement | Élève attendu : statut hors archivé, inactif, désinscrit, transféré, sorti, et inscription de classe ouverte. Ligne manquante non comptée comme absence. Taux seulement si `recorded = expected`, sinon « — ». Présent et retard comptent comme présents. Un enseignant sans classe n'a aucun élève attendu. |
+| Recettes | `payments.amount` | Hors annulé, attente, pending, refusé, échoué, brouillon. Affichage seulement s'il reste une seule devise. `FC` est présenté `CDF`. Les allocations ne sont pas additionnées. Un enseignant affecté conserve les recettes de l'établissement, comme le client. Un enseignant sans affectation reçoit « — », même avec `Paiements:READ`. |
+| Taux de paiement | `student_fee_obligations` | Hors archivées et hors annulées. `Σ amount_paid / Σ (amount_due − exemption)`. Devises mélangées, montant manquant ou assiette nulle : « — ». Même fermeture que les recettes pour un enseignant sans classe. |
 | Séries de période | dates des lignes | Élèves du graphique = élèves ayant une présence, une note ou, si le droit paiements existe, un paiement dans la fenêtre. Les cartes, elles, ne sont pas filtrées par la période. C'est le comportement de `applyEstablishmentChartPeriod`. |
 | Présences du graphique | `attendance.status` | Présent, retard, justifié, sinon absent. Taux = (présents + retards) / lignes. |
 | Notes, examens, bulletins | `grades.created_at`, `exams.exam_date`, `report_cards.created_at` | Le bulletin `draft` correspond au « brouillon » du client. Le statut « en validation » n'a pas d'équivalent canonique. |
-| Utilisateurs actifs du graphique | `users.created_at` | Le filtre de période du client lit `createdAt` avant `lastLoginAt`. Le compte suit cette première date, et exclut les statuts inactifs. |
-| Annonces | `announcements.created_at` | Comptées seulement avec le droit Annonces. Avant, la barre valait souvent 0 parce que le domaine n'était pas chargé par le dashboard. |
+| Utilisateurs actifs du graphique | `users.created_at` | Le filtre de période du client lit `createdAt` avant `lastLoginAt`. Le compte suit cette première date, et exclut les statuts inactifs. Un enseignant sans classe reçoit 0. |
+| Annonces | `announcements.created_at` | Comptées seulement avec le droit Annonces. Avant, la barre valait souvent 0 parce que le domaine n'était pas chargé par le dashboard. Un enseignant sans classe reçoit 0. |
 
-Le jour et les fenêtres quotidienne, hebdomadaire, mensuelle, trimestrielle et annuelle sont calculés en `Africa/Kinshasa`, le fuseau déjà utilisé par la présence du jour. Il n'y a pas de colonne fuseau sur `schools`.
+Le jour et les fenêtres quotidienne, hebdomadaire, mensuelle, trimestrielle et annuelle suivent `schools.profile_payload->>'timezone'`, lu par `resolveSchoolTimeZone` (le même résolveur que le planning et la carte élève). Une valeur vide ou qui n'est pas un fuseau IANA retombe sur le repli déjà partagé, `Africa/Kinshasa`. Le module KPI n'impose plus ce fuseau à tous les établissements. Le littéral SQL est le fuseau validé, jamais la chaîne brute du profil.
 
 ## 6. Périodes
 
@@ -122,7 +122,9 @@ Backend, sans base : `backend/lib/schoolDashboardKpis.test.js`.
 Backend PostgreSQL jetable : `backend/lib/schoolDashboardKpis.pg.test.js`.
 Web : `web/src/lib/dashboardSync.test.ts`, `web/src/lib/useSchoolDashboardKpis.test.tsx`, `web/src/lib/routeDomainMap.usersSchoolCode.test.ts`, `web/src/components/dashboard/SchoolRecentActivities.lot5.test.tsx`, `web/src/components/DomainRouteBootstrap.forbiddenDomains.red.test.tsx`, `web/src/pages/demoDataAccess.hydration.test.tsx`. Le hook vérifie aussi qu'une mutation reçue onglet masqué est rejouée au retour, sans attendre les 60 secondes.
 
-La parité PostgreSQL du fixture école A, au 4 novembre 2026, 11:00 Kinshasa, donne : 4 élèves, 1 enseignant, 2 classes, recettes `97 CDF`, taux `53 %`, présence du jour `100 %`. L'enseignant affecté à la seule 6e voit 2 élèves et 1 classe, sans bloc finance. L'école vide reste à « — » pour les recettes, le taux et la présence. L'école B n'entre pas dans les comptes.
+La parité PostgreSQL du fixture école A, fuseau explicite `Africa/Kinshasa`, au 4 novembre 2026, 11:00 dans ce fuseau, donne : 4 élèves, 1 enseignant, 2 classes, recettes `97 CDF`, taux `53 %`, présence du jour `100 %`. L'enseignant affecté à la seule 6e voit 2 élèves et 1 classe, sans bloc finance. L'enseignant sans affectation active, y compris avec une affectation et une titularisation inactives et avec tous les droits de lecture, voit 0 élève, 0 classe, 0 enseignant, recettes « — », taux « — », présence « — » et séries vides, alors que l'administration voit toujours 4 élèves, 2 enseignants et `97 CDF`. L'école vide reste à « — » pour les recettes, le taux et la présence. L'école B n'entre pas dans les comptes de l'école A.
+
+Autour de minuit, le 4 novembre 2026 à 23:30 UTC, le jour civil est le 5 novembre à Kinshasa et à Auckland, et encore le 4 novembre à New York. À 22:30 UTC, Auckland est déjà le 5 novembre et Kinshasa est encore le 4. Une annonce horodatée le 5 novembre 2026 à 03:30 UTC entre dans le jour Kinshasa et reste hors du jour New York. Un fuseau stocké illisible retombe sur le repli partagé.
 
 ## 10. Benchmarks
 
@@ -160,8 +162,8 @@ Sur ce fixture, un cycle KPI pèse 1 189 octets contre 9 033 octets de lignes. L
 
 ## 11. Risques résiduels
 
-- Le fuseau des graphiques était celui du navigateur. Le serveur utilise `Africa/Kinshasa`. Un poste dans un autre fuseau peut décaler une frontière de jour.
-- Un enseignant sans affectation voit encore tout l'établissement, comme le client le faisait déjà.
+- Le fuseau des graphiques était celui du navigateur. Le serveur suit le fuseau enregistré de l'établissement. Un poste dans un autre fuseau peut donc encore décaler une frontière de jour par rapport à l'écran. Un profil sans fuseau valide conserve le repli partagé `Africa/Kinshasa`.
+- Un enseignant qui a au moins une classe active et le droit `Paiements:READ` voit encore les recettes, le taux et les séries de paiements de tout l'établissement. C'est le comportement du client précédent. Seul l'enseignant sans affectation est fermé.
 - Le compte « Messages » non lus du graphique d'administration n'est pas recalculé. Le dashboard ne chargeait pas ce domaine. Le chantier messages reste séparé. Les alertes internes continuent de venir du hook déjà en place.
 - Le statut bulletin « en validation » n'existe pas dans `report_cards`. Seul `draft` alimente « À valider ».
 - Les classes synthétiques fabriquées côté client quand un `className` n'avait pas de fiche ne sont pas recrées. Le compte suit `classes`.
@@ -173,5 +175,5 @@ Sur ce fixture, un cycle KPI pèse 1 189 octets contre 9 033 octets de lignes. L
 - PERF-PR3 n'est pas ouvert.
 - Lectures historiques hors dashboard.
 - Messages non lus du graphique.
-- Fuseau stocké par établissement.
+- Recettes d'un enseignant déjà affecté, encore calculées sur tout l'établissement.
 - Refonte du client HTTP.

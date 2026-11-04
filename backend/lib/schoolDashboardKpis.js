@@ -7,11 +7,12 @@
  */
 
 const { isPlatformAdminPrincipal } = require("./platformPersonalDataGuard");
+const { resolveSchoolTimeZone } = require("./planningWeeklyOccurrences");
 const { resolveSchoolDashboardPrincipal } = require("./schoolDashboardActivities");
 
-const SCHOOL_KPI_TIME_ZONE = "Africa/Kinshasa";
 const PERIODS = Object.freeze(["daily", "weekly", "monthly", "quarterly", "annual"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TIME_ZONE_SQL_RE = /^[A-Za-z0-9_+\/-]{1,80}$/;
 
 const FOLD_FROM = "ÀÁÂÃÄÅàáâãäåÈÉÊËèéêëÌÍÎÏìíîïÒÓÔÕÖòóôõöÙÚÛÜùúûüÝýÿÇçÑñ";
 const FOLD_TO = "AAAAAAaaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuYyyCcNn";
@@ -158,7 +159,12 @@ function schoolIdOf(principal) {
   return schoolId;
 }
 
-function civilDate(now, timeZone = SCHOOL_KPI_TIME_ZONE) {
+function sqlTimeZone(raw) {
+  const zone = resolveSchoolTimeZone(raw);
+  return TIME_ZONE_SQL_RE.test(zone) ? zone : resolveSchoolTimeZone("");
+}
+
+function civilDate(now, timeZone = resolveSchoolTimeZone("")) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
     year: "numeric",
@@ -184,7 +190,7 @@ function addDays(iso, days) {
   return isoDate(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
 }
 
-function periodBounds(period, now = new Date(), timeZone = SCHOOL_KPI_TIME_ZONE) {
+function periodBounds(period, now = new Date(), timeZone = resolveSchoolTimeZone("")) {
   if (!PERIODS.includes(period)) {
     throw httpError(400, "Période invalide.");
   }
@@ -329,7 +335,7 @@ function presenceSeries(row) {
 async function teacherClassIds(repository, schoolId, principal) {
   if (!isTeacherRole(principal?.role)) return null;
   const userId = String(principal?.id ?? principal?.userId ?? "").trim();
-  if (!UUID_RE.test(userId)) return null;
+  if (!UUID_RE.test(userId)) return [];
   const rows = await repository.all(
     `SELECT DISTINCT class_id
      FROM (
@@ -346,8 +352,19 @@ async function teacherClassIds(repository, schoolId, principal) {
      WHERE class_id IS NOT NULL`,
     [schoolId, userId],
   );
-  const ids = rows.map((row) => String(row.class_id)).filter((id) => UUID_RE.test(id));
-  return ids.length ? ids : null;
+  return rows.map((row) => String(row.class_id)).filter((id) => UUID_RE.test(id));
+}
+
+function schoolWideOpenSql(paramIndex = 2) {
+  return `($${paramIndex}::uuid[] IS NULL OR cardinality($${paramIndex}::uuid[]) > 0)`;
+}
+
+async function loadSchoolTimeZone(repository, schoolId) {
+  const rows = await repository.all(
+    `SELECT profile_payload->>'timezone' AS timezone FROM schools WHERE id = $1::uuid`,
+    [schoolId],
+  );
+  return sqlTimeZone(rows[0]?.timezone);
 }
 
 function sqlTextList(values) {
@@ -380,7 +397,7 @@ function scopedStudentsSql() {
 `;
 }
 
-function periodActivityStudentsSql(startParam, endParam) {
+function periodActivityStudentsSql(startParam, endParam, timeZone) {
   return `
     SELECT a.student_id FROM attendance a
      WHERE a.school_id = $1::uuid
@@ -390,8 +407,8 @@ function periodActivityStudentsSql(startParam, endParam) {
     UNION
     SELECT g.student_id FROM grades g
      WHERE g.school_id = $1::uuid
-       AND g.created_at >= ($${startParam}::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}')
-       AND g.created_at <= (($${endParam}::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}')
+       AND g.created_at >= ($${startParam}::timestamp AT TIME ZONE '${timeZone}')
+       AND g.created_at <= (($${endParam}::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}')
        AND ($2::uuid[] IS NULL OR g.class_id = ANY($2::uuid[]))
   `;
 }
@@ -410,7 +427,10 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
   const schoolId = schoolIdOf(principal);
   const access = accessFor(principal);
   assertReadable(access);
-  const bounds = periodBounds(String(query.period ?? "monthly"), now);
+  const period = String(query.period ?? "monthly");
+  if (!PERIODS.includes(period)) throw httpError(400, "Période invalide.");
+  const timeZone = await loadSchoolTimeZone(repository, schoolId);
+  const bounds = periodBounds(period, now, timeZone);
   const classIds = await teacherClassIds(repository, schoolId, principal);
   const studentParams = [schoolId, classIds];
   const rangeParams = [schoolId, classIds, bounds.startDate, bounds.endDate];
@@ -450,7 +470,11 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
           )
         : Promise.resolve(null),
       access.teachers
-        ? repository.all(`SELECT COUNT(*)::int AS teachers FROM teachers WHERE school_id = $1::uuid`, [schoolId])
+        ? repository.all(
+            `SELECT COUNT(*)::int AS teachers FROM teachers
+             WHERE school_id = $1::uuid AND ${schoolWideOpenSql()}`,
+            [schoolId, classIds],
+          )
         : Promise.resolve(null),
       access.classes
         ? repository.all(
@@ -466,12 +490,13 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
             `SELECT currency, SUM(amount)::float8 AS collected
              FROM payments
              WHERE school_id = $1::uuid
+               AND ${schoolWideOpenSql()}
                AND NOT (
                  ${sqlFold("COALESCE(payment_status, '')")} ~ '(annul|cancel|attente|brouillon)'
                  OR ${sqlFold("COALESCE(payment_status, '')")} IN ('pending', 'refuse', 'echoue', 'failed')
                )
              GROUP BY currency`,
-            [schoolId],
+            [schoolId, classIds],
           )
         : Promise.resolve(null),
       access.payments
@@ -483,9 +508,10 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
                     COALESCE(SUM(GREATEST(0, amount_paid)), 0)::float8 AS collected
              FROM student_fee_obligations
              WHERE school_id = $1::uuid
+               AND ${schoolWideOpenSql()}
                AND archived_at IS NULL
                AND ${sqlFold("COALESCE(status, '')")} NOT IN ('annule', 'cancelled', 'canceled')`,
-            [schoolId],
+            [schoolId, classIds],
           )
         : Promise.resolve(null),
       access.payments
@@ -493,13 +519,14 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
             `SELECT payment_status AS status, COUNT(*)::int AS count, COALESCE(SUM(amount), 0)::float8 AS amount
              FROM payments
              WHERE school_id = $1::uuid
+               AND ${schoolWideOpenSql()}
                AND (
-                 (payment_date IS NOT NULL AND payment_date >= $2::date AND payment_date <= $3::date)
-                 OR (payment_date IS NULL AND created_at >= ($2::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}')
-                                      AND created_at <= (($3::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}'))
+                 (payment_date IS NOT NULL AND payment_date >= $3::date AND payment_date <= $4::date)
+                 OR (payment_date IS NULL AND created_at >= ($3::timestamp AT TIME ZONE '${timeZone}')
+                                      AND created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}'))
                )
              GROUP BY payment_status`,
-            [schoolId, bounds.startDate, bounds.endDate],
+            [schoolId, classIds, bounds.startDate, bounds.endDate],
           )
         : Promise.resolve(null),
       access.presences
@@ -521,27 +548,28 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
         : Promise.resolve(null),
       repository.all(
         `SELECT
-           ${access.notes ? `(SELECT COUNT(*)::int FROM grades g WHERE g.school_id = $1::uuid AND g.created_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND g.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND ($2::uuid[] IS NULL OR g.class_id = ANY($2::uuid[])))` : "NULL::int"} AS notes,
+           ${access.notes ? `(SELECT COUNT(*)::int FROM grades g WHERE g.school_id = $1::uuid AND g.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}') AND g.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}') AND ($2::uuid[] IS NULL OR g.class_id = ANY($2::uuid[])))` : "NULL::int"} AS notes,
            ${access.exams ? `(SELECT COUNT(*)::int FROM exams e WHERE e.school_id = $1::uuid AND e.exam_date >= $3::date AND e.exam_date <= $4::date AND ($2::uuid[] IS NULL OR e.class_id = ANY($2::uuid[])))` : "NULL::int"} AS exams,
-           ${access.bulletins ? `(SELECT COUNT(*)::int FROM report_cards b WHERE b.school_id = $1::uuid AND b.created_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND b.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND ($2::uuid[] IS NULL OR b.class_id = ANY($2::uuid[])))` : "NULL::int"} AS bulletins,
-           ${access.bulletins ? `(SELECT COUNT(*)::int FROM report_cards b WHERE b.school_id = $1::uuid AND b.status = 'draft' AND b.created_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND b.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND ($2::uuid[] IS NULL OR b.class_id = ANY($2::uuid[])))` : "NULL::int"} AS pending_bulletins,
-           ${access.documents ? `(SELECT COUNT(*)::int FROM student_documents d WHERE d.school_id = $1::uuid AND d.generated_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND d.generated_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND ($2::uuid[] IS NULL OR d.student_id IN (SELECT e.student_id FROM enrollments e WHERE e.school_id = $1::uuid AND e.class_id = ANY($2::uuid[]) AND e.closed_at IS NULL AND e.transferred_at IS NULL)))` : "NULL::int"} AS documents,
-           ${access.users ? `(SELECT COUNT(*)::int FROM users u WHERE u.school_id = $1::uuid AND ${sqlFold("COALESCE(u.status, '')")} <> ALL(ARRAY[${sqlTextList(INACTIVE_USER_STATUSES)}]::text[]) AND u.created_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND u.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}'))` : "NULL::int"} AS active_users,
-           ${access.announcements ? `(SELECT COUNT(*)::int FROM announcements n WHERE n.school_id = $1::uuid AND n.created_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND n.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}'))` : "NULL::int"} AS announcements,
+           ${access.bulletins ? `(SELECT COUNT(*)::int FROM report_cards b WHERE b.school_id = $1::uuid AND b.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}') AND b.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}') AND ($2::uuid[] IS NULL OR b.class_id = ANY($2::uuid[])))` : "NULL::int"} AS bulletins,
+           ${access.bulletins ? `(SELECT COUNT(*)::int FROM report_cards b WHERE b.school_id = $1::uuid AND b.status = 'draft' AND b.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}') AND b.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}') AND ($2::uuid[] IS NULL OR b.class_id = ANY($2::uuid[])))` : "NULL::int"} AS pending_bulletins,
+           ${access.documents ? `(SELECT COUNT(*)::int FROM student_documents d WHERE d.school_id = $1::uuid AND d.generated_at >= ($3::timestamp AT TIME ZONE '${timeZone}') AND d.generated_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}') AND ($2::uuid[] IS NULL OR d.student_id IN (SELECT e.student_id FROM enrollments e WHERE e.school_id = $1::uuid AND e.class_id = ANY($2::uuid[]) AND e.closed_at IS NULL AND e.transferred_at IS NULL)))` : "NULL::int"} AS documents,
+           ${access.users ? `(SELECT COUNT(*)::int FROM users u WHERE u.school_id = $1::uuid AND ${schoolWideOpenSql()} AND ${sqlFold("COALESCE(u.status, '')")} <> ALL(ARRAY[${sqlTextList(INACTIVE_USER_STATUSES)}]::text[]) AND u.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}') AND u.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}'))` : "NULL::int"} AS active_users,
+           ${access.announcements ? `(SELECT COUNT(*)::int FROM announcements n WHERE n.school_id = $1::uuid AND ${schoolWideOpenSql()} AND n.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}') AND n.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}'))` : "NULL::int"} AS announcements,
            ${access.students ? `(SELECT COUNT(*)::int FROM (${scopedStudentsSql()}) scoped WHERE scoped.id IN (
-               ${periodActivityStudentsSql(3, 4)}
+               ${periodActivityStudentsSql(3, 4, timeZone)}
                ${access.payments ? `UNION
                SELECT p.student_id FROM payments p
                 WHERE p.school_id = $1::uuid
+                  AND ${schoolWideOpenSql()}
                   AND (
                     (p.payment_date IS NOT NULL AND p.payment_date >= $3::date AND p.payment_date <= $4::date)
-                    OR (p.payment_date IS NULL AND p.created_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}')
-                                         AND p.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}'))
+                    OR (p.payment_date IS NULL AND p.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}')
+                                         AND p.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}'))
                   )` : ""}
              ))` : "NULL::int"} AS active_students,
            ${access.students ? `(SELECT COUNT(DISTINCT NULLIF(lower(btrim(class_name)), ''))::int FROM (${scopedStudentsSql()}) scoped WHERE scoped.id IN (
-               ${periodActivityStudentsSql(3, 4)}
-               ${access.payments ? `UNION SELECT p.student_id FROM payments p WHERE p.school_id = $1::uuid AND ((p.payment_date IS NOT NULL AND p.payment_date >= $3::date AND p.payment_date <= $4::date) OR (p.payment_date IS NULL AND p.created_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND p.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}')))` : ""}
+               ${periodActivityStudentsSql(3, 4, timeZone)}
+               ${access.payments ? `UNION SELECT p.student_id FROM payments p WHERE p.school_id = $1::uuid AND ${schoolWideOpenSql()} AND ((p.payment_date IS NOT NULL AND p.payment_date >= $3::date AND p.payment_date <= $4::date) OR (p.payment_date IS NULL AND p.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}') AND p.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}')))` : ""}
              ))` : "NULL::int"} AS period_classes`,
         [schoolId, classIds, bounds.startDate, bounds.endDate],
       ),
@@ -552,8 +580,8 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
                     COUNT(*)::int AS value
              FROM scoped
              WHERE id IN (
-               ${periodActivityStudentsSql(3, 4)}
-               ${access.payments ? `UNION SELECT p.student_id FROM payments p WHERE p.school_id = $1::uuid AND ((p.payment_date IS NOT NULL AND p.payment_date >= $3::date AND p.payment_date <= $4::date) OR (p.payment_date IS NULL AND p.created_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}') AND p.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}')))` : ""}
+               ${periodActivityStudentsSql(3, 4, timeZone)}
+               ${access.payments ? `UNION SELECT p.student_id FROM payments p WHERE p.school_id = $1::uuid AND ${schoolWideOpenSql()} AND ((p.payment_date IS NOT NULL AND p.payment_date >= $3::date AND p.payment_date <= $4::date) OR (p.payment_date IS NULL AND p.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}') AND p.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}')))` : ""}
              )
              GROUP BY 1
              ORDER BY COUNT(*) DESC, 1
@@ -567,8 +595,8 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
              FROM grades g
              JOIN subjects s ON s.id = g.subject_id AND s.school_id = g.school_id
              WHERE g.school_id = $1::uuid
-               AND g.created_at >= ($3::timestamp AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}')
-               AND g.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${SCHOOL_KPI_TIME_ZONE}')
+               AND g.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}')
+               AND g.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}')
                AND ($2::uuid[] IS NULL OR g.class_id = ANY($2::uuid[]))
              GROUP BY s.name
              ORDER BY COUNT(*) DESC, s.name
@@ -624,7 +652,6 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
 }
 
 module.exports = {
-  SCHOOL_KPI_TIME_ZONE,
   PERIODS,
   resolveSchoolKpiPrincipal,
   listSchoolDashboardKpis,

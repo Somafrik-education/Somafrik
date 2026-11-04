@@ -32,6 +32,7 @@ test("le module KPI n'appelle pas la projection globale", () => {
   const source = fs.readFileSync(path.join(__dirname, "schoolDashboardKpis.js"), "utf8");
   assert.equal(source.includes("getAuthoritativeBackOfficeState"), false);
   assert.equal(source.includes("platform: true"), false);
+  assert.equal(source.includes("Africa/Kinshasa"), false);
 });
 
 test("Superadmin et Admin Pays sont refusés avant toute lecture", async () => {
@@ -127,6 +128,96 @@ test("les fenêtres de période suivent le calendrier de l'établissement", () =
   assert.equal(periodBounds("weekly", NOW).startDate, "2026-10-29");
   assert.equal(periodBounds("annual", NOW).startDate, "2026-01-01");
   assert.equal(periodBounds("quarterly", NOW).startDate, "2026-10-01");
+  const crossing = new Date("2026-11-04T23:30:00.000Z");
+  assert.equal(periodBounds("daily", crossing, "Africa/Kinshasa").today, "2026-11-05");
+  assert.equal(periodBounds("daily", crossing, "America/New_York").today, "2026-11-04");
+  assert.equal(periodBounds("monthly", crossing, "America/New_York").endDate, "2026-11-04");
+  assert.equal(periodBounds("monthly", crossing, "Pacific/Auckland").startDate, "2026-11-01");
+  assert.equal(periodBounds("monthly", crossing, "Pacific/Auckland").endDate, "2026-11-05");
+  assert.equal(periodBounds("daily", new Date("2026-11-04T22:30:00.000Z"), "Pacific/Auckland").today, "2026-11-05");
+  assert.equal(periodBounds("daily", new Date("2026-11-04T22:30:00.000Z"), "Africa/Kinshasa").today, "2026-11-04");
+});
+
+test("un enseignant sans affectation ne reçoit pas les agrégats de l'établissement", async () => {
+  const teacherId = "33333333-3333-4333-8333-333333333333";
+  const sql = [];
+  const repository = {
+    all: async (text, params) => {
+      sql.push({ text, params });
+      if (/profile_payload/.test(text)) return [{ timezone: "Europe/Paris" }];
+      if (/teacher_assignments/.test(text)) return [];
+      if (/AS students/.test(text)) return [{ students: 0, expected: 0, recorded: 0, attended: 0 }];
+      if (/AS teachers/.test(text)) return [{ teachers: 0 }];
+      if (/AS classes/.test(text)) return [{ classes: 0 }];
+      if (/SUM\(amount\)/.test(text)) return [];
+      if (/amount_due/.test(text)) return [{ rows: 0, currencies: 0, missing: false, expected: 0, collected: 0 }];
+      if (/AS announcements/.test(text)) {
+        return [{
+          notes: 0,
+          exams: 0,
+          bulletins: 0,
+          pending_bulletins: 0,
+          documents: 0,
+          active_users: 0,
+          announcements: 0,
+          active_students: 0,
+          period_classes: 0,
+        }];
+      }
+      return [];
+    },
+  };
+  const payload = await listSchoolDashboardKpis(
+    repository,
+    principal({
+      role: "Enseignant",
+      id: teacherId,
+      permissions: [
+        "Élèves:READ",
+        "Enseignants:READ",
+        "Classes:READ",
+        "Paiements:READ",
+        "Présences:READ",
+        "Utilisateurs:READ",
+        "Annonces:READ",
+      ],
+    }),
+    { period: "monthly" },
+    NOW,
+  );
+  const scoped = sql.filter((entry) => /\$2::uuid\[\]/.test(entry.text));
+  assert.ok(scoped.length > 0);
+  assert.ok(scoped.every((entry) => Array.isArray(entry.params[1]) && entry.params[1].length === 0));
+  assert.equal(sql.some((entry) => entry.text.includes("Africa/Kinshasa")), false);
+  assert.equal(sql.some((entry) => entry.text.includes("AT TIME ZONE 'Europe/Paris'")), true);
+  assert.equal(payload.timeZone, "Europe/Paris");
+  assert.equal(payload.cards.students, 0);
+  assert.equal(payload.cards.teachers, 0);
+  assert.equal(payload.cards.classes, 0);
+  assert.equal(payload.cards.revenue.display, "—");
+  assert.equal(payload.cards.paymentRate.value, "—");
+  assert.equal(payload.series.activeUsers, 0);
+  assert.equal(payload.series.announcements, 0);
+});
+
+test("un identifiant enseignant illisible ferme le périmètre sans lecture d'affectation", async () => {
+  const sql = [];
+  const repository = {
+    all: async (text, params) => {
+      sql.push({ text, params });
+      if (/profile_payload/.test(text)) return [{ timezone: "" }];
+      return [{ students: 0, expected: 0, recorded: 0, attended: 0 }];
+    },
+  };
+  await listSchoolDashboardKpis(
+    repository,
+    principal({ role: "Teacher", id: "pas-un-uuid", permissions: ["Élèves:READ"] }),
+    { period: "daily" },
+    NOW,
+  );
+  assert.equal(sql.some((entry) => /teacher_assignments/.test(entry.text)), false);
+  const scoped = sql.filter((entry) => /\$2::uuid\[\]/.test(entry.text));
+  assert.ok(scoped.every((entry) => Array.isArray(entry.params[1]) && entry.params[1].length === 0));
 });
 
 test("encaissement, taux et présence reprennent les règles déjà affichées", () => {
