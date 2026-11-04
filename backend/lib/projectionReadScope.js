@@ -4,9 +4,10 @@
  * PERF-PR1 — résout le périmètre de lecture des projections.
  * L'identifiant d'établissement vient du membership déjà validé
  * (présences / finance), jamais d'un school_id client non revérifié.
- * null = aucune lecture. { platform: true } uniquement pour le mode
- * présence « all » déjà défini (superadmin hors request-scope).
- * La finance scolaire ne reçoit jamais ce mode.
+ * null = aucune lecture. Ce module ne produit jamais de lecture plateforme.
+ * Le Superadmin plateforme ne reçoit aucune projection scolaire,
+ * quels que soient les modes all, country, school ou none.
+ * La finance scolaire ne reçoit jamais une lecture plateforme.
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -21,6 +22,7 @@ const {
   attachFinanceFixtureScope,
   resolveFinanceSchoolScope,
 } = require("./financeSchoolScope");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 function isUuid(value) {
   return UUID_RE.test(String(value ?? "").trim());
@@ -32,8 +34,7 @@ function countryScope(countryCode) {
 }
 
 function pedagogyScopeFromResolved(scope, { memory = false } = {}) {
-  if (!scope || scope.mode === "none") return null;
-  if (scope.mode === "all") return { platform: true };
+  if (!scope || scope.mode === "none" || scope.mode === "all") return null;
   if (scope.mode === "country") return countryScope(scope.countryCode);
   if (scope.mode !== "school") return null;
   if (memory) {
@@ -68,7 +69,7 @@ async function lookupSchoolIdByLoginCode(loginCode, one) {
 }
 
 async function resolvePedagogyProjectionScope(principal, { one, memory = false } = {}) {
-  if (!principal) return null;
+  if (!principal || isSuperAdminPrincipal(principal)) return null;
   const attached = memory || typeof one !== "function"
     ? attachPresenceFixtureScope(principal)
     : await attachPresenceMembershipScope(principal, one);
@@ -76,7 +77,7 @@ async function resolvePedagogyProjectionScope(principal, { one, memory = false }
 }
 
 async function resolveFinanceProjectionScope(principal, { one, memory = false } = {}) {
-  if (!principal) return null;
+  if (!principal || isSuperAdminPrincipal(principal)) return null;
   const attached = memory || typeof one !== "function"
     ? attachFinanceFixtureScope(principal)
     : await attachFinanceMembershipScope(principal, one);

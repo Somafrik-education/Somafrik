@@ -18,7 +18,7 @@ Aucune migration. Aucun déploiement. `main` non modifié. PERF-PR2 non commenc�
 - `backend/db/postgresRepository.js` — transmet le scope.
 - `backend/db/fallbackRepository.js` — le moteur mémoire filtre après coup, ou renvoie des tableaux vides sans scope. Pas de lecture globale par défaut.
 - `backend/server.js` — chargeurs canoniques des routes scolaires, et `GET /api/courses` lorsqu'un établissement ou un pays est résolu.
-- Tests : `backend/lib/projectionSchoolScope.test.js`, `backend/lib/perfPr1SchoolScope.pg.test.js`, appel `{ platform: true }` dans `backend/lib/pedagogyRepository.pg.test.js`.
+- Tests : `backend/lib/projectionSchoolScope.test.js`, `backend/lib/perfPr1SchoolScope.pg.test.js`, `backend/lib/perfPr1DisposableDatabase.js`, appel `{ platform: true }` dans `backend/lib/pedagogyRepository.pg.test.js`.
 
 Web, Mobile, RBAC, abonnements, cache, carte élève, bulletins, Render : non modifiés.
 
@@ -38,30 +38,30 @@ L'identifiant ne vient pas d'un paramètre client.
 
 - Pédagogie : `attachPresenceMembershipScope` (`users.school_id` → `schools.id`). En mémoire, le `login_code` du fixture, pas un UUID forgé sur le principal.
 - Finance : `login_code` émis par `attachFinanceMembershipScope`, puis `SELECT id FROM schools WHERE upper(btrim(login_code)) = $1`. Un `schoolId` présent sur le principal est ignoré.
-- Superadmin finance : `resolveFinanceSchoolScope` reste `none`. Aucune projection, pas de `{ platform: true }`.
-- Superadmin présences / notes / cours, sans request-scope : mode présence `all` déjà en place. La projection plateforme est alors explicite. Ce n'est pas un nouvel accès finance.
-- Admin Pays sans request-scope : filtre pays, pas la plateforme entière.
+- Superadmin plateforme (`isSuperAdminPrincipal`) : les deux résolveurs renvoient `null` avant le mode, y compris avec un request-scope ou un `schoolId` forgé. Modes `all`, `country`, `school` et `none` : aucune projection scolaire. Le mode `all` de `pedagogyScopeFromResolved` renvoie aussi `null`.
+- Finance : `resolveFinanceSchoolScope` reste `none` pour ce rôle (P1-01). Le résolveur de projection ne le transforme pas en lecture.
+- Admin Pays : inchangé. Pays sans request-scope, ou `loginCode` d'établissement si le request-scope existant est déjà posé. Ce n'est pas une lecture plateforme.
 - Établissement absent, session sans membership, école inconnue : tableaux vides ou 403. Pas de repli global.
 
-`GET /api/presences`, `GET /api/notes`, `GET /api/payments`, `GET /api/students/:id/presences|notes|payments` passent par ces chargeurs, puis par les filtres de rôle déjà en place (`filterPresenceRows`, `filterNotesForPrincipal`, `filterRows`). `GET /api/course-schedules` était déjà scopé par `listCourseSchedules`. `GET /api/courses` charge la projection scopée puis `filterRows`, sauf le mode plateforme explicite.
+`GET /api/courses` charge la projection scopée puis `filterRows`. Scope absent ou drapeau plateforme résiduel : tableau vide, sans `getAuthoritativeBackOfficeState()`. `GET /api/presences`, `GET /api/notes`, `GET /api/payments` et les sous-routes élève passent par les chargeurs canoniques, puis par les filtres de rôle déjà en place. Ces routes personnelles restent dans `SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM` : Superadmin et Admin Pays y reçoivent 403 avant le handler. `GET /api/courses` n'est pas dans cette liste ; le résolveur ferme quand même la lecture scolaire du Superadmin.
 
 ## 4. Règles conservées
 
 Champs, tris, coefficients de cours, statuts de présence, notes, périodes, allocations, soldes et identifiants publics des lignes autorisées. Les permissions ne sont pas recalculées ici : elles s'appliquent après la lecture SQL de l'établissement. Parent et enseignant ne reçoivent pas l'autre école ; le filtre élève / classe reste celui d'aujourd'hui.
 
-`getAuthoritativeBackOfficeState()` n'est pas réécrit. Ses surcouches appellent explicitement `{ platform: true }`. Beaucoup de routes (tableau de bord, bulletin PDF, etc.) chargent donc encore toute la plateforme. Chantier séparé, hors PERF-PR1.
+`getAuthoritativeBackOfficeState()` n'est pas réécrit. Ses deux surcouches, pédagogie et finance, sont les deux seuls `{ platform: true }` du produit (`server.js`). Les routes qui l'appellent encore sont inventoriées plus bas. Leur optimisation reste hors PERF-PR1.
 
-Écart assumé, hors contrat de `GET /api/payments` (la route ne renvoie que les paiements) : une projection financière scopée omet les `payment_statuses` dont `school_id` est NULL. La lecture `{ platform: true }` les conserve.
+`payment_statuses.school_id` est nullable. Le contrat déjà en production, `listFinancePaymentStatuses`, est `WHERE ps.school_id IS NULL OR <prédicat d'établissement>`. Ces lignes sont le catalogue partagé : elles sont nécessaires. La projection scolaire les conserve (`includeGlobalCatalog` uniquement sur cette lecture) et continue d'exclure le statut d'un autre établissement. Les huit autres lectures finance et les cinq lectures pédagogie restent strictes. Le filtre mémoire garde un statut sans `schoolId` et sans code d'établissement, et continue d'écarter un paiement sans établissement ainsi que la ligne d'une autre école. `GET /api/payments` ne renvoie toujours que les paiements.
 
 ## 5. Tests
 
 Exécutés sur cette VM, le 4 novembre 2026 (heure de Paris, UTC+1).
 
-- `node --test backend/lib/projectionSchoolScope.test.js` — 7/7. Prédicat, sous-requête des notes, fail-closed, erreur SQL sans seconde lecture globale, filtre mémoire, school_id forgé ignoré, rôles (admin, enseignant, parent, superadmin finance vide, superadmin pédagogie plateforme, admin pays), gardes de routes.
-- `backend/lib/perfPr1SchoolScope.pg.test.js` — OK. PostgreSQL 16 local, base jetable. Écoles A et B, élèves, enseignants, présences, notes, cours, créneaux, paiements, items, allocations, obligations, rappels, grilles. A ne contient pas B, B ne contient pas A. Parité `deepEqual` avec la lecture plateforme filtrée sur les mêmes objets (notes, présences, évaluations, cours, créneaux, paiements, obligations, grilles, rappels). Coefficient de cours 3, coefficient d'évaluation 2, présence Présent / Absent, allocation 40, solde 60. École vide et UUID inconnu : tableaux vides. Scope manquant ou code école à la place d'un UUID : 403, pas de lecture globale. Table `attendance` supprimée : erreur `42P01` aussi sur `{ platform: true }`.
+- `node --test backend/lib/projectionSchoolScope.test.js` — 9/9. Prédicat, catalogue `IS NULL` limité aux statuts, sous-requête des notes, fail-closed, filtre mémoire (catalogue conservé, paiement orphelin et autre établissement écartés), modes `all` / `country` / `school` / `none` sans lecture plateforme, school_id forgé ignoré, Superadmin `null` (rôle, alias `super_admin`, request-scope), Admin Pays inchangé, exactement deux `{ platform: true }` dans `server.js`, noms de base réservés refusés.
+- `backend/lib/perfPr1SchoolScope.pg.test.js` — OK. PostgreSQL 16 local. Base témoin déjà présente : `PERF_PR1_DATABASE_EXISTS`, puis `DROP DATABASE` du helper avec un jeton étranger refusé (`PERF_PR1_DATABASE_NOT_OWNED`), sentinelle toujours à 1, puis destruction par le test lui-même. Suite ensuite sur une base `somafrik_perf_pr1_<pid>_<hex>` créée par le processus, marquée, sans `DROP SCHEMA`. Écoles A et B. A ne contient pas B. Parité avec la lecture plateforme filtrée. Coefficient 3, évaluation 2, Présent / Absent, allocation 40, solde 60. Statuts : A reçoit `GLOBAL` et `A-PAID`, pas `B-PAID`. École vide : paiements vides, statuts = `GLOBAL` seul. Une seule des 14 requêtes contient `school_id IS NULL`, celle de `payment_statuses`. Scope manquant ou code école : 403. Table `attendance` supprimée : `42P01` aussi sur la lecture plateforme explicite. Base marquée supprimée en fin de test. Aucune base `somafrik_perf_pr1*` restante.
 - `backend/lib/pedagogyRepository.pg.test.js` — OK, avec `{ platform: true }`.
 - `financeRepository.test.js`, `financeUnallocatedMaeva.test.js` — OK (mémoire, `listProjection()` sans scope inchangé sur le store mémoire).
-- `node --test` présences GP-015, notes parent, finance superadmin P1-01 — 37/37.
+- `node --test` finance P1-01, périmètre finance, notes parent, présences GP-015 — 55/55. Le mode présence `all` du Superadmin historique n'est pas réécrit ; le résolveur de projection ne le convertit plus en lecture scolaire.
 - `node --check` sur les fichiers modifiés.
 
 Non exécutés.
@@ -113,12 +113,13 @@ Pas de migration dans cette PR. Un index `(school_id, attendance_date DESC)` év
 
 ## 8. Risques résiduels
 
-- `getAuthoritativeBackOfficeState()` lit encore toutes les écoles. Toute route qui l'utilise n'est pas couverte par PERF-PR1. C'est le chantier suivant, pas un correctif à glisser ici.
+- `getAuthoritativeBackOfficeState()` lit encore toutes les écoles pour les consommateurs historiques listés en section 10. Hors PERF-PR1.
 - Le filtre SQL est l'établissement (ou le pays). Le filtre élève, classe et enseignant reste en Node, sur le sous-ensemble déjà limité.
-- Superadmin hors finance : lecture plateforme conservée quand le mode présence historique est `all`.
-- Statuts de paiement globaux (`school_id` NULL) absents d'une projection scopée.
-- Moteur mémoire : le dataset est filtré en processus, pas en SQL.
+- Moteur mémoire : le dataset est filtré en processus, pas en SQL. Le catalogue de statuts sans établissement est conservé ; le reste suit le périmètre.
+- Pas de nouvel index. Le tri des présences peut encore passer par un spill disque.
 - Les temps locaux ne se transportent pas vers Render.
+- `GET /api/courses` pour un Superadmin plateforme renvoie `[]`. Réduction exigée par le contrôle. Les autres routes personnelles étaient déjà en 403 pour ce rôle.
+- Si l'insertion du marqueur échoue après `CREATE DATABASE`, la base vide au nom aléatoire reste en place. Le helper ne la détruit pas : elle n'est pas prouvée comme sienne.
 
 ## 9. Reporté
 
@@ -126,3 +127,39 @@ Pas de migration dans cette PR. Un index `(school_id, attendance_date DESC)` év
 - Filtre SQL élève / classe, au-delà de l'établissement.
 - Index `(school_id, attendance_date)` et, si un plan le justifie, `payment_allocations(school_id)`.
 - PERF-PR2, non démarré.
+
+## 10. Clôture des contrôles (HEAD audité `c646f3fd99e219dcdcbf52e0832403b7467d7e8a`)
+
+Le commit de clôture est le fils direct de ce HEAD, sur `perf/pr1-school-scoped-projections`. DRAFT / HOLD. Pas de merge.
+
+### Base jetable
+
+`backend/lib/perfPr1DisposableDatabase.js`. Nom `somafrik_perf_pr1_<pid>_<hex>`. Refus des noms réservés (`postgres`, `template0`, `template1`, `somafrik`, `somafrik_pedagogy_it`, `somafrik_finance_it`, `perf`) et de la base citée par l'URL de connexion. Si le nom existe déjà : `PERF_PR1_DATABASE_EXISTS`, aucune écriture. Marqueur `perf_pr1_disposable_marker`. `DROP DATABASE` seulement après `current_database()` et le jeton du processus. Pas de `DROP SCHEMA`. Une base sans marqueur, ou avec un autre jeton : `PERF_PR1_DATABASE_NOT_OWNED`.
+
+### Lectures `{ platform: true }`
+
+Sites produit restants, tous les deux dans `getAuthoritativeBackOfficeState` : `overlayPedagogyProjection`, `overlayFinanceProjection`. `projectionReadScope.js` n'en émet plus. `GET /api/courses` et les chargeurs `loadCanonicalPedagogyForPrincipal` / `loadCanonicalFinanceForPrincipal` ne l'appellent plus.
+
+### Consommateurs historiques, non modifiés
+
+Permissions laissées telles quelles. « Données personnelles interdites » = la route est dans `SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM` (Superadmin et Admin Pays, y compris `ALL_PRIVILEGES`). « Plateforme autorisée » = la route est dans `PLATFORM_ADMIN_ALLOWED`.
+
+| Consommateur | Garde | Données scolaires via cet appel |
+|---|---|---|
+| `POST /api/backoffice/login` | limiteur de login, pas `requireAuth` | enrichissement enseignant, et enfants parent via `attachCanonicalParentChildren` |
+| `POST /api/login` | limiteur de login | enfants parent seulement |
+| `POST /api/auth/refresh` | jeton de refresh | contrôle d'abonnement école, affectations enseignant |
+| `POST /api/auth/change-password` | `requireAuth` | affectations enseignant, recherche du compte |
+| `GET /api/auth/effective-permissions` | `requireAuth` | enfants parent |
+| middleware `requireAuth` | session | `hydrateParentPrincipal`, `principalMustChangePassword`, `assertActiveSchoolRequest` (les rôles plateforme en sortent avant le chargement) |
+| `requireSchoolSubscriptionFeature` | middleware d'écriture | Superadmin et Admin Pays passent avant le chargement |
+| `GET /api/course-schedules` | `requireAuth` + permission | repli seulement si `listCourseSchedules` manque. Route personnelle interdite |
+| `GET /api/students/:id/report` et `report.pdf` | `requireAuth` + permission | route personnelle interdite |
+| `GET /api/backoffice/subscription-access` | `requireAuth` + permission | plateforme autorisée |
+| établissements back-office (liste, fiche, abonnement, import, création, patch, logo, activation, suspension, suppression) | `requireAuth` + permission de la route | plateforme autorisée |
+| `POST /api/backoffice/import/students/validate` | `requireAuth` + permission | route personnelle interdite |
+| impayés et relances back-office | `requireAuth` + permission | route personnelle interdite |
+| `GET /api/v2/exams` | `requireAuth` + `GET /api/v2/exams` | route personnelle interdite. `GET /api/v2/documents` ne charge pas cet état |
+| `GET /api/mvp/readiness`, `snapshot`, `dashboard` | `requireAuth` + `assertMvpAccess` | état complet puis `scopeMvpDatasetForPrincipal` |
+
+Aucun de ces appelants n'est réécrit ici.

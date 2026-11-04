@@ -6,6 +6,7 @@
  * établissement vide, identifiant invalide, erreur SQL sans repli global.
  */
 const assert = require("node:assert/strict");
+const { randomBytes } = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
@@ -14,27 +15,76 @@ const { createPedagogyPgStore } = require("../db/pedagogyPgStore");
 const { createFinancePgStore } = require("../db/financePgStore");
 const { PEDAGOGY_SCHEMA_SQL } = require("../db/pedagogySchema");
 const { FINANCE_SCHEMA_SQL } = require("../db/financeSchema");
+const {
+  assertDisposableDatabaseName,
+  createOwnedDisposableDatabase,
+  assertOwnedDisposable,
+  dropOwnedDisposableDatabase,
+  withDatabaseName,
+  maintenanceUrl,
+} = require("./perfPr1DisposableDatabase");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
-const DATABASE_NAME = String(process.env.SOMAFRIK_PERF_PR1_DATABASE ?? "somafrik_perf_pr1")
-  .trim()
-  .replace(/[^a-zA-Z0-9_]/g, "");
 
-function withDatabaseName(databaseUrl, databaseName) {
-  const parsed = new URL(databaseUrl);
-  parsed.pathname = `/${databaseName}`;
-  return parsed.toString();
-}
-
-async function ensureIsolatedDatabase(databaseUrl, databaseName) {
-  const pool = new Pool({ connectionString: withDatabaseName(databaseUrl, "postgres") });
+async function dropForeignFixtureAfterProof(databaseUrl, databaseName) {
+  assertDisposableDatabaseName(databaseName, databaseUrl);
+  if (!/_foreign_/.test(databaseName)) {
+    throw new Error("Nettoyage réservé à la base témoin du test de refus.");
+  }
+  const pool = new Pool({ connectionString: withDatabaseName(databaseUrl, databaseName) });
   try {
-    const existing = await pool.query("SELECT 1 FROM pg_database WHERE datname = $1", [databaseName]);
-    if (!existing.rowCount) await pool.query(`CREATE DATABASE ${databaseName}`);
+    const sentinel = await pool.query("SELECT id FROM perf_pr1_foreign_sentinel");
+    if (sentinel.rowCount !== 1 || Number(sentinel.rows[0].id) !== 1) {
+      throw new Error("Sentinelle absente : la base témoin n'est pas détruite.");
+    }
   } finally {
     await pool.end();
   }
-  return withDatabaseName(databaseUrl, databaseName);
+  const admin = new Pool({ connectionString: maintenanceUrl(databaseUrl) });
+  try {
+    await admin.query(
+      "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+      [databaseName],
+    );
+    await admin.query(`DROP DATABASE ${databaseName}`);
+  } finally {
+    await admin.end();
+  }
+}
+
+async function provePreexistingDatabaseRefused(databaseUrl) {
+  const name = `somafrik_perf_pr1_foreign_${process.pid}_${randomBytes(4).toString("hex")}`;
+  assertDisposableDatabaseName(name, databaseUrl);
+  const admin = new Pool({ connectionString: maintenanceUrl(databaseUrl) });
+  try {
+    const existing = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]);
+    if (existing.rowCount) throw new Error("Le nom témoin existe déjà.");
+    await admin.query(`CREATE DATABASE ${name}`);
+  } finally {
+    await admin.end();
+  }
+  const pool = new Pool({ connectionString: withDatabaseName(databaseUrl, name) });
+  let proved = false;
+  try {
+    await pool.query("CREATE TABLE perf_pr1_foreign_sentinel (id int PRIMARY KEY)");
+    await pool.query("INSERT INTO perf_pr1_foreign_sentinel (id) VALUES (1)");
+    await assert.rejects(
+      () => createOwnedDisposableDatabase(databaseUrl, name),
+      (error) => error.code === "PERF_PR1_DATABASE_EXISTS",
+    );
+    await assert.rejects(
+      () => dropOwnedDisposableDatabase(databaseUrl, name, "not-the-owner"),
+      (error) => error.code === "PERF_PR1_DATABASE_NOT_OWNED",
+    );
+    const sentinel = await pool.query("SELECT id FROM perf_pr1_foreign_sentinel");
+    assert.equal(sentinel.rowCount, 1);
+    assert.equal(Number(sentinel.rows[0].id), 1);
+    proved = true;
+  } finally {
+    await pool.end();
+  }
+  if (!proved) return;
+  await dropForeignFixtureAfterProof(databaseUrl, name);
 }
 
 function idsOf(rows, field = "schoolId") {
@@ -180,16 +230,18 @@ async function main() {
     console.log("perfPr1SchoolScope.pg.test.js: SKIP (DATABASE_URL absent)");
     return;
   }
-  const isolatedUrl = await ensureIsolatedDatabase(DATABASE_URL, DATABASE_NAME);
-  const pool = new Pool({ connectionString: isolatedUrl });
-  const repo = createPostgresRepository(isolatedUrl);
-  repo.ready = true;
+  await provePreexistingDatabaseRefused(DATABASE_URL);
+  const owned = await createOwnedDisposableDatabase(DATABASE_URL);
+  const pool = owned.pool;
+  let repo;
   try {
-    await pool.query("DROP SCHEMA public CASCADE");
-    await pool.query("CREATE SCHEMA public");
+    await assertOwnedDisposable(pool, owned.databaseName, owned.token);
+    repo = createPostgresRepository(owned.connectionString);
+    repo.ready = true;
     await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
     await pool.query(FINANCE_SCHEMA_SQL);
     await pool.query(PEDAGOGY_SCHEMA_SQL);
+    await assertOwnedDisposable(pool, owned.databaseName, owned.token);
 
     const schoolA = await seedSchool(pool, {
       iso: "CD",
@@ -228,6 +280,10 @@ async function main() {
     const financeA = await finance.listProjection({ schoolId: schoolA.schoolId });
     const schoolSql = captured.splice(0, captured.length);
     assert.equal(schoolSql.length, 14);
+    const catalogSql = schoolSql.filter((call) => /school_id IS NULL/i.test(call.sql));
+    assert.equal(catalogSql.length, 1);
+    assert.match(catalogSql[0].sql, /payment_statuses/);
+    assert.match(catalogSql[0].sql, /ps\.school_id IS NULL OR ps\.school_id = \$1::uuid/);
     for (const call of schoolSql) {
       assert.match(call.sql, /\$1::uuid/);
       assert.deepEqual(call.params, [schoolA.schoolId]);
@@ -283,13 +339,16 @@ async function main() {
     assert.equal(financeA.studentFees[0].hasActiveEnrollment, true);
     assert.equal(financeA.payments[0].items?.length ?? financeA.payments[0].paymentItems?.length ?? 1, 1);
 
-    const globalStatus = financeAll.paymentStatuses.find((row) => row.code === "GLOBAL" || row.statusCode === "GLOBAL" || row.label === "Statut global");
-    assert.ok(globalStatus, "le statut global reste dans la lecture plateforme explicite");
-    assert.equal(
-      financeA.paymentStatuses.some((row) => row.label === "Statut global" || row.code === "GLOBAL"),
-      false,
-    );
-    assert.ok(financeA.paymentStatuses.some((row) => String(row.schoolId).toLowerCase() === schoolA.schoolId.toLowerCase()));
+    const statusCodes = (rows) => rows.map((row) => row.code);
+    assert.ok(statusCodes(financeAll.paymentStatuses).includes("GLOBAL"));
+    assert.ok(statusCodes(financeAll.paymentStatuses).includes("A-PAID"));
+    assert.ok(statusCodes(financeAll.paymentStatuses).includes("B-PAID"));
+    assert.ok(statusCodes(financeA.paymentStatuses).includes("GLOBAL"));
+    assert.ok(statusCodes(financeA.paymentStatuses).includes("A-PAID"));
+    assert.equal(statusCodes(financeA.paymentStatuses).includes("B-PAID"), false);
+    assert.ok(statusCodes(financeB.paymentStatuses).includes("GLOBAL"));
+    assert.ok(statusCodes(financeB.paymentStatuses).includes("B-PAID"));
+    assert.equal(statusCodes(financeB.paymentStatuses).includes("A-PAID"), false);
 
     const emptyPedagogy = await pedagogy.listProjection({ schoolId: empty.rows[0].id });
     const emptyFinance = await finance.listProjection({ schoolId: empty.rows[0].id });
@@ -297,6 +356,7 @@ async function main() {
     assert.equal(emptyPedagogy.presences.length, 0);
     assert.equal(emptyFinance.payments.length, 0);
     assert.equal(emptyFinance.studentFees.length, 0);
+    assert.deepEqual(emptyFinance.paymentStatuses.map((row) => row.code), ["GLOBAL"]);
 
     const unknown = "33333333-3333-4333-8333-333333333333";
     const unknownPedagogy = await pedagogy.listProjection({ schoolId: unknown });
@@ -322,7 +382,8 @@ async function main() {
     console.log("perfPr1SchoolScope.pg.test.js: OK");
   } finally {
     await pool.end();
-    if (typeof repo.pool?.end === "function") await repo.pool.end();
+    if (typeof repo?.pool?.end === "function") await repo.pool.end();
+    await dropOwnedDisposableDatabase(DATABASE_URL, owned.databaseName, owned.token);
   }
 }
 

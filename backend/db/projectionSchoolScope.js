@@ -48,8 +48,14 @@ function schoolColumn(alias) {
  * @param {string} sql
  * @param {string} alias alias SQL figé dans le code, jamais une entrée client
  * @param {{ platform?: boolean, schoolId?: string, countryCode?: string } | null | undefined} scope
+ * @param {{ includeGlobalCatalog?: boolean }} [options]
+ * includeGlobalCatalog conserve les lignes school_id NULL (catalogue partagé).
+ * Une ligne d'un autre établissement, school_id renseigné, reste exclue.
  */
-function projectionQuery(sql, alias, scope) {
+function projectionQuery(sql, alias, scope, options = {}) {
+  const column = schoolColumn(alias);
+  const withCatalog = (predicate) =>
+    options.includeGlobalCatalog === true ? `(${column} IS NULL OR ${predicate})` : predicate;
   if (scope?.platform === true) return { text: sql, params: [] };
   if (scope?.countryCode) {
     const country = String(scope.countryCode).trim().toUpperCase();
@@ -59,10 +65,10 @@ function projectionQuery(sql, alias, scope) {
     const predicate = `EXISTS (
       SELECT 1 FROM schools _perf_s
       JOIN countries _perf_c ON _perf_c.id = _perf_s.country_id
-      WHERE _perf_s.id = ${schoolColumn(alias)}
+      WHERE _perf_s.id = ${column}
         AND upper(btrim(_perf_c.iso_code)) = $1
     )`;
-    return { text: injectPredicate(sql, predicate), params: [country] };
+    return { text: injectPredicate(sql, withCatalog(predicate)), params: [country] };
   }
   const schoolId = String(scope?.schoolId ?? "").trim();
   if (!UUID_RE.test(schoolId)) {
@@ -72,7 +78,7 @@ function projectionQuery(sql, alias, scope) {
     );
   }
   return {
-    text: injectPredicate(sql, `${schoolColumn(alias)} = $1::uuid`),
+    text: injectPredicate(sql, withCatalog(`${column} = $1::uuid`)),
     params: [schoolId],
   };
 }
@@ -112,12 +118,23 @@ function rowMatchesProjectionScope(row, scope) {
   return false;
 }
 
+function isSharedPaymentCatalog(key, row) {
+  if (key !== "paymentStatuses") return false;
+  const schoolId = String(row?.schoolId ?? row?.school_id ?? "").trim();
+  const schoolCode = String(
+    row?.schoolCode ?? row?.loginCode ?? row?.school_code ?? row?.login_code ?? "",
+  ).trim();
+  return !schoolId && !schoolCode;
+}
+
 function filterProjectionRecord(record, scope) {
   const source = record && typeof record === "object" ? record : {};
   if (scope?.platform === true) return source;
   const next = {};
   for (const [key, value] of Object.entries(source)) {
-    next[key] = Array.isArray(value) ? value.filter((row) => rowMatchesProjectionScope(row, scope)) : value;
+    next[key] = Array.isArray(value)
+      ? value.filter((row) => isSharedPaymentCatalog(key, row) || rowMatchesProjectionScope(row, scope))
+      : value;
   }
   return next;
 }

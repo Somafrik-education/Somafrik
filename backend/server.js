@@ -1097,13 +1097,7 @@ app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POS
 app.get("/api/courses", requireAuth, requirePermission("GET /api/courses"), asyncHandler(async (req, res) => {
   const { resolvePedagogyProjectionScope } = require("./lib/projectionReadScope");
   const scope = await resolvePedagogyProjectionScope(req.principal, projectionScopeDeps());
-  if (scope?.platform === true) {
-    const state = await getAuthoritativeBackOfficeState();
-    const derived = deriveSchoolScope(req.principal, state);
-    res.json(tenantScopeService.filterRows(state.courses, req.principal, derived));
-    return;
-  }
-  if (!scope || typeof repository.listPedagogyProjection !== "function") {
+  if (!scope || scope.platform === true || typeof repository.listPedagogyProjection !== "function") {
     res.json([]);
     return;
   }

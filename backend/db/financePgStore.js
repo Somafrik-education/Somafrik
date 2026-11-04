@@ -864,8 +864,8 @@ function createFinancePgStore(repo) {
       }
     },
     async listProjection(scope) {
-      const read = (sql, alias) => {
-        const query = projectionQuery(sql, alias, scope);
+      const read = (sql, alias, options) => {
+        const query = projectionQuery(sql, alias, scope, options);
         return repo.all(query.text, query.params);
       };
       const [payments, statuses, grids, items, fees, history, reminders, paymentItems, allocations] = await Promise.all([
@@ -880,6 +880,7 @@ function createFinancePgStore(repo) {
         read(
           `SELECT ps.*, s.school_code, s.login_code FROM payment_statuses ps LEFT JOIN schools s ON s.id = ps.school_id`,
           "ps",
+          { includeGlobalCatalog: true },
         ),
         read(
           `SELECT g.*, s.school_code, s.login_code, cl.class_code
