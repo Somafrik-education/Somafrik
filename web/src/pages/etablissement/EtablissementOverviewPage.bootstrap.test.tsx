@@ -253,7 +253,8 @@ describe("EtablissementOverviewPage — bootstrap DataProvider + DomainRouteBoot
     expect(await screen.findByText("Chargement de la scolarité…")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Enseignants" })).not.toBeInTheDocument();
     expect(screen.queryByText(/enseignant\(s\) sans affectation/i)).not.toBeInTheDocument();
-    expect(apiGetMock).toHaveBeenCalledWith("/assignments");
+    // PERF-PR4 : la lecture de domaine porte le signal d'annulation de sa portée.
+    expect(apiGetMock).toHaveBeenCalledWith("/assignments", expect.objectContaining({ signal: expect.any(AbortSignal) }));
 
     resolveAssignments(store.assignments);
 

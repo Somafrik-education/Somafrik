@@ -1,4 +1,5 @@
-import { ApiError, api, getAccessToken } from "../api/client";
+import { ApiError, api, getAccessToken, type RequestArgs, type RequestOptions } from "../api/client";
+import { httpErrorKind, isAbortedRequest } from "./httpErrorKinds";
 import { clientsApi } from "./clientsApi";
 import { classesApi } from "./classesApi";
 import { establishmentsApi } from "./establishmentsApi";
@@ -60,7 +61,42 @@ export interface LoadDomainsResult {
   data: Partial<BackOfficeState>;
   loaded: DomainKey[];
   skipped: DomainKey[];
-  serverErrors: { domain: DomainKey; message: string; status?: number }[];
+  serverErrors: DomainLoadError[];
+  /** PERF-PR4 : domaines annulés volontairement (aucune donnée, aucune erreur visible). */
+  aborted: DomainKey[];
+}
+
+export type DomainLoadError = {
+  domain: DomainKey;
+  message: string;
+  status?: number;
+  /** http | network | timeout : nature de l'échec, pour l'affichage et le réessai. */
+  kind?: "http" | "network" | "timeout" | "unknown";
+};
+
+/** Issue d'un domaine, signalée dès qu'il se termine (chargement progressif). */
+export type DomainOutcome =
+  | { domain: DomainKey; status: "loaded"; slice: Partial<BackOfficeState> }
+  | { domain: DomainKey; status: "skipped" }
+  | { domain: DomainKey; status: "aborted" }
+  | { domain: DomainKey; status: "error"; error: DomainLoadError };
+
+export interface LoadDomainsRuntime {
+  /** Annule toutes les lectures du lot (déconnexion, changement d'établissement). */
+  signal?: AbortSignal;
+  /** Appelé dès qu'un domaine se termine, avant la fin du plus lent. */
+  onDomain?: (outcome: DomainOutcome) => void;
+}
+
+/**
+ * Domaines d'historique volumineux (PERF-PR3 : jusqu'à ~8 Mio compressés pour une école
+ * de 500 élèves) : délai de lecture explicite plus long que le défaut de 20 s.
+ */
+export const HEAVY_DOMAIN_TIMEOUT_MS = 60_000;
+const HEAVY_DOMAINS = new Set<DomainKey>(["presences", "notes", "payments", "studentFees", "bulletins"]);
+
+export function domainRequestTimeout(domain: DomainKey): number | undefined {
+  return HEAVY_DOMAINS.has(domain) ? HEAVY_DOMAIN_TIMEOUT_MS : undefined;
 }
 
 type DomainSlice = Partial<Pick<BackOfficeState, DomainKey>>;
@@ -78,66 +114,68 @@ function academicConfigPath(schoolCode?: string): string {
   return "/academic-config";
 }
 
-function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey, () => Promise<DomainSlice>> {
+type DomainLoader = (...init: RequestArgs) => Promise<DomainSlice>;
+
+function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey, DomainLoader> {
   return {
-    schools: async () => {
+    schools: async (...init) => {
       if (usesPlatformSchoolCatalog(options.role) || !options.role) {
-        return { schools: (await establishmentsApi.list()) as BackOfficeState["schools"] };
+        return { schools: (await establishmentsApi.list(...init)) as BackOfficeState["schools"] };
       }
       const scoped = String(options.schoolCode ?? "").trim();
       if (isInternalSchoolRole(options.role) && scoped && scoped !== "*") {
-        const school = await establishmentsApi.get(scoped);
+        const school = await establishmentsApi.get(scoped, ...init);
         return { schools: school ? [school] : [] };
       }
       return { schools: [] };
     },
-    countries: async () => ({ countries: (await platformApi.listCountries()) as BackOfficeState["countries"] }),
-    subscriptions: async () => ({
-      subscriptions: (await platformApi.listSubscriptions()) as BackOfficeState["subscriptions"],
+    countries: async (...init) => ({ countries: (await platformApi.listCountries(...init)) as BackOfficeState["countries"] }),
+    subscriptions: async (...init) => ({
+      subscriptions: (await platformApi.listSubscriptions(...init)) as BackOfficeState["subscriptions"],
     }),
-    notifications: async () => ({
-      notifications: (await platformApi.listNotifications()) as BackOfficeState["notifications"],
+    notifications: async (...init) => ({
+      notifications: (await platformApi.listNotifications(...init)) as BackOfficeState["notifications"],
     }),
-    rolePermissions: async () => ({
-      rolePermissions: (await platformApi.getRolePermissions()) as BackOfficeState["rolePermissions"],
+    rolePermissions: async (...init) => ({
+      rolePermissions: (await platformApi.getRolePermissions(...init)) as BackOfficeState["rolePermissions"],
     }),
-    dashboardChartConfig: async () => ({
-      dashboardChartConfig: (await platformApi.getDashboardChartConfig()) as unknown as BackOfficeState["dashboardChartConfig"],
+    dashboardChartConfig: async (...init) => ({
+      dashboardChartConfig: (await platformApi.getDashboardChartConfig(...init)) as unknown as BackOfficeState["dashboardChartConfig"],
     }),
-    users: async () => ({ users: (await clientsApi.listUsers()) as BackOfficeState["users"] }),
-    contacts: async () => ({ contacts: (await clientsApi.listContacts()) as BackOfficeState["contacts"] }),
-    relations: async () => ({ relations: (await clientsApi.listRelations()) as BackOfficeState["relations"] }),
-    messages: async () => ({ messages: (await clientsApi.listMessages()) as BackOfficeState["messages"] }),
-    announcements: async () => ({
-      announcements: (await clientsApi.listAnnouncements()) as BackOfficeState["announcements"],
+    users: async (...init) => ({ users: (await clientsApi.listUsers(...init)) as BackOfficeState["users"] }),
+    contacts: async (...init) => ({ contacts: (await clientsApi.listContacts(...init)) as BackOfficeState["contacts"] }),
+    relations: async (...init) => ({ relations: (await clientsApi.listRelations(...init)) as BackOfficeState["relations"] }),
+    messages: async (...init) => ({ messages: (await clientsApi.listMessages(...init)) as BackOfficeState["messages"] }),
+    announcements: async (...init) => ({
+      announcements: (await clientsApi.listAnnouncements(...init)) as BackOfficeState["announcements"],
     }),
-    students: async () => ({ students: (await studentsApi.list()) as unknown as BackOfficeState["students"] }),
-    teachers: async () => ({ teachers: (await teachersApi.list()) as BackOfficeState["teachers"] }),
-    classes: async () => ({ classes: (await classesApi.list()) as BackOfficeState["classes"] }),
-    courses: async () => ({ courses: (await pedagogyApi.listCourses()) as BackOfficeState["courses"] }),
-    courseSchedules: async () => ({
-      courseSchedules: (await pedagogyApi.listCourseSchedules()) as BackOfficeState["courseSchedules"],
+    students: async (...init) => ({ students: (await studentsApi.list(...init)) as unknown as BackOfficeState["students"] }),
+    teachers: async (...init) => ({ teachers: (await teachersApi.list(...init)) as BackOfficeState["teachers"] }),
+    classes: async (...init) => ({ classes: (await classesApi.list(...init)) as BackOfficeState["classes"] }),
+    courses: async (...init) => ({ courses: (await pedagogyApi.listCourses(...init)) as BackOfficeState["courses"] }),
+    courseSchedules: async (...init) => ({
+      courseSchedules: (await pedagogyApi.listCourseSchedules(...init)) as BackOfficeState["courseSchedules"],
     }),
-    assignments: async () => ({
-      assignments: (await api.get<unknown[]>("/assignments")) as BackOfficeState["assignments"],
+    assignments: async (...init) => ({
+      assignments: (await api.get<unknown[]>("/assignments", ...init)) as BackOfficeState["assignments"],
     }),
-    payments: async () => ({ payments: (await financeApi.listPayments()) as BackOfficeState["payments"] }),
-    paymentStatuses: async () => ({
-      paymentStatuses: (await financeApi.listPaymentStatuses()) as BackOfficeState["paymentStatuses"],
+    payments: async (...init) => ({ payments: (await financeApi.listPayments(...init)) as BackOfficeState["payments"] }),
+    paymentStatuses: async (...init) => ({
+      paymentStatuses: (await financeApi.listPaymentStatuses(...init)) as BackOfficeState["paymentStatuses"],
     }),
-    feeGrids: async () => ({ feeGrids: (await financeApi.listFeeGrids()) as BackOfficeState["feeGrids"] }),
-    schoolFeeItems: async () => ({
-      schoolFeeItems: (await financeApi.listSchoolFeeItems()) as BackOfficeState["schoolFeeItems"],
+    feeGrids: async (...init) => ({ feeGrids: (await financeApi.listFeeGrids(...init)) as BackOfficeState["feeGrids"] }),
+    schoolFeeItems: async (...init) => ({
+      schoolFeeItems: (await financeApi.listSchoolFeeItems(...init)) as BackOfficeState["schoolFeeItems"],
     }),
-    studentFees: async () => ({
-      studentFees: (await financeApi.listStudentFees()) as BackOfficeState["studentFees"],
+    studentFees: async (...init) => ({
+      studentFees: (await (init.length ? financeApi.listStudentFees(undefined, ...init) : financeApi.listStudentFees())) as BackOfficeState["studentFees"],
     }),
-    notes: async () => ({ notes: (await api.get<unknown[]>("/notes")) as BackOfficeState["notes"] }),
-    evaluations: async () => ({
-      evaluations: (await pedagogyApi.listEvaluations()) as BackOfficeState["evaluations"],
+    notes: async (...init) => ({ notes: (await api.get<unknown[]>("/notes", ...init)) as BackOfficeState["notes"] }),
+    evaluations: async (...init) => ({
+      evaluations: (await pedagogyApi.listEvaluations(...init)) as BackOfficeState["evaluations"],
     }),
-    presences: async () => ({ presences: (await api.get<unknown[]>("/presences")) as BackOfficeState["presences"] }),
-    academicConfigs: async () => {
+    presences: async (...init) => ({ presences: (await api.get<unknown[]>("/presences", ...init)) as BackOfficeState["presences"] }),
+    academicConfigs: async (...init) => {
       // BULLETIN-PREPROD-01 : un compte plateforme (Superadmin, Admin Pays) sans
       // établissement sélectionné n'a pas de configuration académique. L'API
       // non ciblée refuse alors l'appel (400 « schoolCode établissement requis »),
@@ -146,7 +184,7 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
       if (!hasConcreteSchool(options.schoolCode) && usesPlatformSchoolCatalog(options.role)) {
         return { academicConfigs: {} as BackOfficeState["academicConfigs"] };
       }
-      const config = await api.get<Record<string, unknown>>(academicConfigPath(options.schoolCode));
+      const config = await api.get<Record<string, unknown>>(academicConfigPath(options.schoolCode), ...init);
       const schoolCode = String(config?.schoolCode ?? options.schoolCode ?? "").trim();
       return {
         academicConfigs: schoolCode
@@ -154,16 +192,16 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
           : ({} as BackOfficeState["academicConfigs"]),
       };
     },
-    exams: async () => {
-      const payload = await api.get<{ exams?: unknown[] }>("/exams");
+    exams: async (...init) => {
+      const payload = await api.get<{ exams?: unknown[] }>("/exams", ...init);
       return { exams: (payload.exams ?? []) as BackOfficeState["exams"] };
     },
-    bulletins: async () => {
-      const payload = await api.get<{ bulletins?: unknown[] }>("/report-cards");
+    bulletins: async (...init) => {
+      const payload = await api.get<{ bulletins?: unknown[] }>("/report-cards", ...init);
       return { bulletins: (payload.bulletins ?? []) as BackOfficeState["bulletins"] };
     },
-    documents: async () => {
-      const payload = await api.get<{ documents?: unknown[] }>("/school-documents");
+    documents: async (...init) => {
+      const payload = await api.get<{ documents?: unknown[] }>("/school-documents", ...init);
       return { documents: (payload.documents ?? []) as BackOfficeState["documents"] };
     },
   };
@@ -177,13 +215,45 @@ export function domainCacheKey(domain: DomainKey, schoolCode?: string): string {
   return domain;
 }
 
+function classifyDomainError(domain: DomainKey, error: unknown): DomainOutcome {
+  if (isAbortedRequest(error)) return { domain, status: "aborted" };
+  if (error instanceof ApiError) {
+    if (error.status === 401 || error.status === 403) {
+      return {
+        domain,
+        status: "error",
+        error: {
+          domain,
+          status: error.status,
+          kind: "http",
+          message:
+            error.status === 401
+              ? `${domain}: session expirée. Reconnectez-vous.`
+              : `${domain}: accès refusé pour ce domaine.`,
+        },
+      };
+    }
+    if (error.status === 404) return { domain, status: "skipped" };
+    return { domain, status: "error", error: { domain, status: error.status, kind: "http", message: error.message } };
+  }
+  const detected = httpErrorKind(error);
+  const kind = detected === "timeout" || detected === "network" ? detected : "unknown";
+  const message = error instanceof Error ? error.message : "Erreur de chargement";
+  return { domain, status: "error", error: { domain, kind, message } };
+}
+
+/**
+ * Charge les domaines en parallèle. Chaque domaine est signalé à `onDomain` dès sa fin
+ * (fusion progressive) ; la promesse, elle, attend toujours tous les domaines.
+ */
 export async function loadDomains(
   keys: DomainKey[],
   options: LoadDomainsOptions = {},
+  runtime: LoadDomainsRuntime = {},
 ): Promise<LoadDomainsResult> {
   const unique = [...new Set(keys)];
   if (!unique.length) {
-    return { data: {}, loaded: [], skipped: [], serverErrors: [] };
+    return { data: {}, loaded: [], skipped: [], serverErrors: [], aborted: [] };
   }
 
   if (!getAccessToken()) {
@@ -191,6 +261,7 @@ export async function loadDomains(
       data: {},
       loaded: [],
       skipped: [],
+      aborted: [],
       serverErrors: unique.map((domain) => ({
         domain,
         message: `${domain}: accessToken absent — aucun fetch métier avant session prête.`,
@@ -199,50 +270,40 @@ export async function loadDomains(
   }
 
   const loaders = createDomainLoaders(options);
-  const results = await Promise.allSettled(
-    unique.map(async (domain) => ({ domain, slice: await loaders[domain]() })),
+  const outcomes = await Promise.all(
+    unique.map(async (domain): Promise<DomainOutcome> => {
+      let outcome: DomainOutcome;
+      try {
+        // Sans signal ni délai propre, l'appel reste identique à l'historique (aucun argument).
+        const init: RequestOptions = {};
+        if (runtime.signal) init.signal = runtime.signal;
+        const timeoutMs = domainRequestTimeout(domain);
+        if (timeoutMs) init.timeoutMs = timeoutMs;
+        const args: RequestArgs = Object.keys(init).length ? [init] : [];
+        outcome = { domain, status: "loaded", slice: await loaders[domain](...args) };
+      } catch (error) {
+        outcome = classifyDomainError(domain, error);
+      }
+      runtime.onDomain?.(outcome);
+      return outcome;
+    }),
   );
 
   const data: Partial<BackOfficeState> = {};
   const loaded: DomainKey[] = [];
   const skipped: DomainKey[] = [];
-  const serverErrors: { domain: DomainKey; message: string; status?: number }[] = [];
-
-  for (let index = 0; index < results.length; index += 1) {
-    const domain = unique[index];
-    const result = results[index];
-    if (result.status === "fulfilled") {
-      Object.assign(data, result.value.slice);
-      loaded.push(domain);
-      continue;
-    }
-
-    const error = result.reason;
-    if (error instanceof ApiError) {
-      if (error.status === 401 || error.status === 403) {
-        serverErrors.push({
-          domain,
-          status: error.status,
-          message:
-            error.status === 401
-              ? `${domain}: session expirée. Reconnectez-vous.`
-              : `${domain}: accès refusé pour ce domaine.`,
-        });
-        continue;
-      }
-      if (error.status === 404) {
-        skipped.push(domain);
-        continue;
-      }
-      serverErrors.push({ domain, message: error.message });
-      continue;
-    }
-
-    const message = error instanceof Error ? error.message : "Erreur de chargement";
-    serverErrors.push({ domain, message });
+  const aborted: DomainKey[] = [];
+  const serverErrors: DomainLoadError[] = [];
+  for (const outcome of outcomes) {
+    if (outcome.status === "loaded") {
+      Object.assign(data, outcome.slice);
+      loaded.push(outcome.domain);
+    } else if (outcome.status === "skipped") skipped.push(outcome.domain);
+    else if (outcome.status === "aborted") aborted.push(outcome.domain);
+    else serverErrors.push(outcome.error);
   }
 
-  return { data, loaded, skipped, serverErrors };
+  return { data, loaded, skipped, serverErrors, aborted };
 }
 
 export function domainsFromPatch(patch: Partial<BackOfficeState>): DomainKey[] {

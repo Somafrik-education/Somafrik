@@ -12,7 +12,14 @@ import { useAuth } from "./AuthContext";
 import { mergeRemoteSnapshot, presentActiveSchoolState, purgeInactiveSchoolFromState } from "../lib/backofficeStateMerge";
 import { SCHOOL_SCOPED_CANONICAL_KEYS } from "../lib/canonicalDomains";
 import { assertNoStrippedCanonicalWrites } from "../lib/canonicalStateWriteGuard";
-import { domainsFromPatch, domainCacheKey, loadDomains, type DomainKey } from "../lib/domainLoaders";
+import {
+  domainsFromPatch,
+  domainCacheKey,
+  loadDomains,
+  type DomainKey,
+  type DomainLoadError,
+  type DomainOutcome,
+} from "../lib/domainLoaders";
 import { logDomainSync } from "../lib/domainSyncTelemetry";
 import { getAccessToken } from "../api/client";
 import { applyClientScopeToState, projectScopedUsers } from "../lib/scope";
@@ -61,6 +68,15 @@ interface EnsureDomainsOptions {
   force?: boolean;
 }
 
+/** PERF-PR4 — état propre à chaque domaine (chargement progressif). */
+export type DomainLoadState = {
+  status: "loading" | "ready" | "error";
+  /** Message affichable ; absent pour une annulation volontaire. */
+  error?: string;
+  kind?: DomainLoadError["kind"];
+  httpStatus?: number;
+};
+
 interface DataContextValue {
   state: BackOfficeState;
   loading: boolean;
@@ -83,6 +99,10 @@ interface DataContextValue {
   scopeSwitching: boolean;
   update: (patch: Partial<BackOfficeState>, options?: UpdateOptions) => Promise<void>;
   retryFailedSync: () => Promise<void>;
+  /** PERF-PR4 — état par domaine de l'établissement courant (chargement, prêt, erreur). */
+  domainStatus: Partial<Record<DomainKey, DomainLoadState>>;
+  /** PERF-PR4 — relance les domaines en erreur (ou ceux passés en argument). */
+  retryDomains: (domains?: DomainKey[]) => Promise<void>;
 }
 
 const EMPTY_STATE: BackOfficeState = {
@@ -133,6 +153,28 @@ function sessionPrincipalKey(session: Session | null): string {
 
 const SCOPE_COMMIT_DOMAINS: DomainKey[] = ["students", "users", "classes", "teachers"];
 
+/** Domaines propres à un établissement : annulés et isolés au changement d'établissement. */
+const SCHOOL_BOUND_DOMAINS = new Set<DomainKey>([
+  ...(SCHOOL_SCOPED_CANONICAL_KEYS as readonly DomainKey[]),
+  "academicConfigs",
+]);
+
+/**
+ * PERF-PR4 — portée d'une lecture. `principal` = utilisateur (déconnexion, changement
+ * de compte) ; `school` = utilisateur + établissement. Une lecture n'est fusionnée que si
+ * sa portée est toujours la portée courante ; changer de portée annule ses requêtes.
+ */
+type ReadScope = { key: string; controller: AbortController };
+
+function newReadScope(key: string): ReadScope {
+  return { key, controller: new AbortController() };
+}
+
+function normalizeSchool(code?: string) {
+  const normalized = String(code ?? "").trim().toUpperCase();
+  return normalized === "*" ? "" : normalized;
+}
+
 function stateFromSession(session: Session): BackOfficeState {
   const base: BackOfficeState = {
     ...EMPTY_STATE,
@@ -157,6 +199,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const loadedDomainsRef = useRef<Set<string>>(new Set());
   const activeSchoolCodeRef = useRef("");
   const domainFetchGenerationRef = useRef(new Map<string, number>());
+  const principalScopeRef = useRef<ReadScope>(newReadScope(sessionPrincipalKey(session)));
+  const schoolScopeRef = useRef<ReadScope>(newReadScope(`${sessionPrincipalKey(session)}#`));
+  const [domainStatus, setDomainStatus] = useState<Partial<Record<DomainKey, DomainLoadState>>>({});
 
   const rememberSchoolCode = useCallback((schoolCode?: string) => {
     const normalized = String(schoolCode ?? "").trim().toUpperCase();
@@ -184,9 +229,53 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSyncJournal(listActiveOutboxEntries(entries));
   }, []);
 
-  const cacheKeysForDomains = useCallback((domains: DomainKey[], schoolCode?: string) => {
-    return domains.map((domain) => domainCacheKey(domain, schoolCode));
+  /**
+   * Aligne les portées de lecture sur l'utilisateur courant (lu pendant le rendu) et,
+   * si `schoolCode` est fourni, sur l'établissement. Toute portée quittée est annulée :
+   * ses requêtes s'arrêtent et leurs réponses ne seront jamais fusionnées.
+   */
+  const syncReadScopes = useCallback((schoolCode?: string) => {
+    const principal = sessionPrincipalKey(
+      sessionUserRef.current ? ({ user: sessionUserRef.current } as Session) : null,
+    );
+    if (principalScopeRef.current.key !== principal) {
+      principalScopeRef.current.controller.abort();
+      principalScopeRef.current = newReadScope(principal);
+      schoolScopeRef.current.controller.abort();
+      schoolScopeRef.current = newReadScope(`${principal}#`);
+      inFlightEnsureRef.current = new Map();
+      setDomainStatus({});
+    }
+    if (schoolCode !== undefined) {
+      const wanted = `${principal}#${normalizeSchool(schoolCode)}`;
+      if (schoolScopeRef.current.key !== wanted) {
+        schoolScopeRef.current.controller.abort();
+        schoolScopeRef.current = newReadScope(wanted);
+        for (const [cacheKey] of inFlightEnsureRef.current) {
+          if (SCHOOL_BOUND_DOMAINS.has(cacheKey.split(":")[0] as DomainKey)) {
+            inFlightEnsureRef.current.delete(cacheKey);
+          }
+        }
+        setDomainStatus((previous) =>
+          Object.fromEntries(
+            Object.entries(previous).filter(([domain]) => !SCHOOL_BOUND_DOMAINS.has(domain as DomainKey)),
+          ),
+        );
+      }
+    }
+    return { principal: principalScopeRef.current, school: schoolScopeRef.current };
   }, []);
+
+  const scopeForDomain = useCallback(
+    (domain: DomainKey, scopes: { principal: ReadScope; school: ReadScope }) =>
+      SCHOOL_BOUND_DOMAINS.has(domain) ? scopes.school : scopes.principal,
+    [],
+  );
+
+  const isCurrentScope = useCallback(
+    (scope: ReadScope) => scope === principalScopeRef.current || scope === schoolScopeRef.current,
+    [],
+  );
 
   const mergeLoadedDomains = useCallback(
     (
@@ -279,6 +368,81 @@ export function DataProvider({ children }: { children: ReactNode }) {
     invalidateDomains(domains, { schoolCode: normalized });
   }, [invalidateDomains]);
 
+  /**
+   * Lit des domaines et fusionne chacun dès sa réponse (PERF-PR4). Une réponse n'est
+   * fusionnée que si (1) sa portée (utilisateur, établissement) est toujours courante et
+   * (2) aucune lecture plus récente du même domaine n'a été lancée depuis.
+   * La promesse attend tous les domaines du lot, comme avant.
+   */
+  const fetchAndMergeDomains = useCallback(
+    async (keys: DomainKey[], schoolCode: string | undefined, role: string | undefined) => {
+      const scopes = syncReadScopes();
+      const generations = new Map<DomainKey, number>();
+      for (const domain of keys) {
+        const cacheKey = domainCacheKey(domain, schoolCode);
+        const next = (domainFetchGenerationRef.current.get(cacheKey) ?? 0) + 1;
+        domainFetchGenerationRef.current.set(cacheKey, next);
+        generations.set(domain, next);
+      }
+      const isLatest = (domain: DomainKey) =>
+        isCurrentScope(scopeForDomain(domain, scopes)) &&
+        domainFetchGenerationRef.current.get(domainCacheKey(domain, schoolCode)) === generations.get(domain);
+
+      setDomainStatus((previous) => {
+        const next = { ...previous };
+        for (const domain of keys) next[domain] = { status: "loading" };
+        return next;
+      });
+      logDomainSync("DOMAIN_FETCH_START", { domains: keys, schoolCode });
+
+      // Deux signaux : l'annulation d'établissement n'arrête pas les domaines plateforme.
+      const schoolKeys = keys.filter((domain) => SCHOOL_BOUND_DOMAINS.has(domain));
+      const platformKeys = keys.filter((domain) => !SCHOOL_BOUND_DOMAINS.has(domain));
+      const onDomain = (outcome: DomainOutcome) => {
+        if (!isLatest(outcome.domain)) return; // portée quittée ou lecture remplacée
+        if (outcome.status === "loaded") {
+          const applied = mergeLoadedDomains(
+            outcome.slice,
+            [domainCacheKey(outcome.domain, schoolCode)],
+            [outcome.domain],
+            schoolCode,
+          );
+          if (applied) logDomainSync("DOMAIN_FETCH_SUCCESS", { domains: [outcome.domain], schoolCode });
+        }
+        if (outcome.status === "error") {
+          logDomainSync("DOMAIN_FETCH_ERROR", { domain: outcome.domain, error: outcome.error.message });
+        }
+        setDomainStatus((previous) => {
+          const next = { ...previous };
+          if (outcome.status === "error") {
+            next[outcome.domain] = {
+              status: "error",
+              error: outcome.error.message,
+              kind: outcome.error.kind,
+              httpStatus: outcome.error.status,
+            };
+          } else if (outcome.status === "aborted") {
+            delete next[outcome.domain];
+          } else {
+            next[outcome.domain] = { status: "ready" };
+          }
+          return next;
+        });
+      };
+      const [schoolResult, platformResult] = await Promise.all([
+        loadDomains(schoolKeys, { schoolCode, role }, { signal: scopes.school.controller.signal, onDomain }),
+        loadDomains(platformKeys, { schoolCode, role }, { signal: scopes.principal.controller.signal, onDomain }),
+      ]);
+      // Erreurs d'un domaine encore d'actualité uniquement : une portée quittée est silencieuse.
+      const serverErrors = [...schoolResult.serverErrors, ...platformResult.serverErrors].filter((entry) =>
+        isLatest(entry.domain),
+      );
+      const stale = keys.every((domain) => !isCurrentScope(scopeForDomain(domain, scopes)));
+      return { serverErrors, stale };
+    },
+    [syncReadScopes, isCurrentScope, scopeForDomain, mergeLoadedDomains],
+  );
+
   const refreshDomains = useCallback(
     async (domains?: DomainKey[], options: EnsureDomainsOptions = {}) => {
       if (!session || !getAccessToken() || syncPausedRef.current) return;
@@ -300,39 +464,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       fetchInFlightCountRef.current += 1;
       setFetchLoading(true);
       try {
-        const cacheKeys = cacheKeysForDomains(keys, schoolCode);
-        const expectedGenerations = new Map<string, number>();
-        for (const key of cacheKeys) {
-          const nextGen = (domainFetchGenerationRef.current.get(key) ?? 0) + 1;
-          domainFetchGenerationRef.current.set(key, nextGen);
-          expectedGenerations.set(key, nextGen);
-        }
-        logDomainSync("DOMAIN_FETCH_START", { domains: keys, schoolCode });
-
-        const result = await loadDomains(keys, { schoolCode, role: session.user?.role });
-        if (result.loaded.length) {
-          const applied = mergeLoadedDomains(
-            result.data,
-            cacheKeysForDomains(result.loaded, schoolCode),
-            result.loaded,
-            schoolCode,
-            expectedGenerations,
-          );
-          if (applied) {
-            logDomainSync("DOMAIN_FETCH_SUCCESS", { domains: result.loaded, schoolCode });
-          }
-        }
-        if (result.serverErrors.length) {
-          for (const entry of result.serverErrors) {
-            logDomainSync("DOMAIN_FETCH_ERROR", { domain: entry.domain, error: entry.message });
-          }
-        }
+        const { serverErrors, stale } = await fetchAndMergeDomains(keys, schoolCode, session.user?.role);
+        // Lot entièrement hors portée (déconnexion, autre établissement) : rien à signaler.
+        if (stale) return;
 
         // Un 403 métier est fail-closed au loader (aucune donnée n'est fusionnée),
         // mais ne doit pas devenir une panne globale de session ni annuler les
         // domaines 200 du même batch. Les 401 et autres erreurs serveur restent
         // bloquantes et conservent le comportement historique.
-        const blockingErrors = result.serverErrors.filter((entry) => entry.status !== 403);
+        const blockingErrors = serverErrors.filter((entry) => entry.status !== 403);
         const failure = formatOutboxFailureMessage(loadSyncOutbox());
         const loadError = blockingErrors.map((entry) => `${entry.domain}: ${entry.message}`).join(" ; ");
         setError(failure || loadError || null);
@@ -350,7 +490,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [session, mergeLoadedDomains, cacheKeysForDomains, rememberSchoolCode],
+    [session, fetchAndMergeDomains, rememberSchoolCode],
   );
 
   const ensureDomains = useCallback(
@@ -371,6 +511,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (options.force) {
         invalidateDomains(pending, { schoolCode });
       }
+      // Une lecture partagée d'un ancien utilisateur n'est jamais réutilisée.
+      syncReadScopes();
 
       const waits: Promise<void>[] = [];
       const fresh: DomainKey[] = [];
@@ -399,12 +541,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
       await Promise.all(waits);
     },
-    [session, refreshDomains, invalidateDomains, rememberSchoolCode],
+    [session, refreshDomains, invalidateDomains, rememberSchoolCode, syncReadScopes],
   );
 
   const beginScopeTransition = useCallback((schoolCode: string) => {
     const normalized = String(schoolCode ?? "").trim().toUpperCase();
     if (!normalized || normalized === "*") {
+      syncReadScopes("");
       presentationSchoolCodeRef.current = "";
       scopeSwitchingRef.current = false;
       setPresentationSchoolCode("");
@@ -413,16 +556,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
     presentationSchoolCodeRef.current = normalized;
     scopeSwitchingRef.current = true;
+    // Changement d'établissement : les lectures de l'établissement quitté sont annulées.
+    syncReadScopes(normalized);
     rememberSchoolCode(normalized);
     setPresentationSchoolCode(normalized);
     setScopeSwitching(true);
-  }, [rememberSchoolCode]);
+  }, [rememberSchoolCode, syncReadScopes]);
 
   const principalKey = sessionPrincipalKey(session);
   useEffect(() => {
     const previousKey = previousPrincipalKeyRef.current;
     previousPrincipalKeyRef.current = principalKey;
     if (previousKey === principalKey) return;
+    // Déconnexion ou changement de compte : lectures en cours annulées, jamais fusionnées.
+    syncReadScopes();
     loadedDomainsRef.current = new Set();
     inFlightEnsureRef.current = new Map();
     setScopeErrors(EMPTY_DOMAIN_SCOPE_ERRORS);
@@ -433,7 +580,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } else {
       setState(EMPTY_STATE);
     }
-  }, [principalKey, session]);
+  }, [principalKey, session, syncReadScopes]);
 
   const update = useCallback(
     async (patch: Partial<BackOfficeState>, options: UpdateOptions = {}) => {
@@ -516,18 +663,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (refreshKeys.length) {
           const targetSchool =
             String(options.schoolCode ?? sessionUserRef.current?.schoolCode ?? "").trim().toUpperCase() || undefined;
-          const result = await loadDomains(refreshKeys, {
-            schoolCode: targetSchool,
-            role: sessionUserRef.current?.role,
-          });
-          if (result.loaded.length) {
-            mergeLoadedDomains(
-              result.data,
-              cacheKeysForDomains(result.loaded, targetSchool),
-              result.loaded,
-              targetSchool,
-            );
-          }
+          // Lecture postérieure à l'écriture : elle remplace toute lecture antérieure encore en vol.
+          await fetchAndMergeDomains(refreshKeys, targetSchool, sessionUserRef.current?.role);
         }
 
         workingOutbox = settleOutboxAfterHttpSave(workingOutbox, {
@@ -568,7 +705,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }, 1500);
       }
     },
-    [mergeLoadedDomains, persistJournal, cacheKeysForDomains],
+    [fetchAndMergeDomains, persistJournal],
   );
 
   const retryFailedSync = useCallback(async () => {
@@ -588,6 +725,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
     await update(patch);
   }, [update]);
+
+  const domainStatusRef = useRef(domainStatus);
+  domainStatusRef.current = domainStatus;
+  const retryDomains = useCallback(
+    async (domains?: DomainKey[]) => {
+      const failed =
+        domains ??
+        (Object.entries(domainStatusRef.current)
+          .filter(([, entry]) => entry?.status === "error")
+          .map(([domain]) => domain) as DomainKey[]);
+      if (!failed.length) return;
+      await refreshDomains(failed);
+    },
+    [refreshDomains],
+  );
 
   const presentedState = useMemo(
     () => presentActiveSchoolState(state, presentationSchoolCode, session?.user?.schoolId),
@@ -609,6 +761,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       scopeSwitching,
       update,
       retryFailedSync,
+      domainStatus,
+      retryDomains,
     }),
     [
       presentedState,
@@ -624,6 +778,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       scopeSwitching,
       update,
       retryFailedSync,
+      domainStatus,
+      retryDomains,
     ],
   );
 

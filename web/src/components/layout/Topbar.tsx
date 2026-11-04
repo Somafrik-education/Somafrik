@@ -58,7 +58,9 @@ function TopbarIcon({
 export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () => void }) {
   const location = useLocation();
   const { session, logout } = useAuth();
-  const { state, loading, error, refresh } = useData();
+  const { state, loading, error, refresh, domainStatus, retryDomains } = useData();
+  // PERF-PR4 : un domaine en échec se relance seul, sans recharger les autres.
+  const failedDomainCount = Object.values(domainStatus ?? {}).filter((entry) => entry?.status === "error").length;
   const { activeSchoolCode } = useActiveSchool();
   const ctx = usePermissionContext();
   const user = session?.user;
@@ -112,6 +114,15 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
           <p className="hidden max-w-xs truncate text-xs text-danger md:block" title={error}>
             {error}
           </p>
+        ) : null}
+        {failedDomainCount > 0 && !loading ? (
+          <button
+            type="button"
+            onClick={() => void retryDomains().catch(() => undefined)}
+            className="hidden text-xs font-semibold text-danger underline md:block"
+          >
+            Réessayer
+          </button>
         ) : null}
         <button
           type="button"
