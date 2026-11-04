@@ -639,3 +639,75 @@ test("16. contention : getActiveByPair ne verrouille pas les demandes des classe
     holder.release();
   }
 });
+
+// Revue CTO (HEAD 7d87e7a8) — le rollback refuse un objet MARQUÉ L1 dont la définition a changé.
+const MARK = "'somafrik:bulletin-classe-01-l1'";
+for (const scenario of [
+  {
+    id: "index aux colonnes modifiées",
+    alter: `DROP INDEX uq_report_card_active_bindings_school;
+            CREATE UNIQUE INDEX uq_report_card_active_bindings_school ON report_card_active_bindings (school_id) WHERE class_id IS NULL;
+            COMMENT ON INDEX uq_report_card_active_bindings_school IS ${MARK};`,
+    error: /CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : index uq_report_card_active_bindings_school/,
+  },
+  {
+    id: "index devenu non unique",
+    alter: `DROP INDEX uq_report_card_active_bindings_class;
+            CREATE INDEX uq_report_card_active_bindings_class ON report_card_active_bindings (school_id, model_key, academic_year_id, class_id) WHERE class_id IS NOT NULL;
+            COMMENT ON INDEX uq_report_card_active_bindings_class IS ${MARK};`,
+    error: /CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : index uq_report_card_active_bindings_class/,
+  },
+  {
+    id: "index invalide",
+    alter: `UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'uq_report_card_configuration_one_active_school'::regclass;`,
+    error: /CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : index uq_report_card_configuration_one_active_school/,
+  },
+  {
+    id: "index à expression",
+    alter: `DROP INDEX uq_report_card_configuration_one_active_school;
+            CREATE UNIQUE INDEX uq_report_card_configuration_one_active_school ON report_card_configuration_requests (school_id, lower(model_key)) WHERE status = 'ACTIVE' AND class_id IS NULL;
+            COMMENT ON INDEX uq_report_card_configuration_one_active_school IS ${MARK};`,
+    error: /CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : index uq_report_card_configuration_one_active_school/,
+  },
+  {
+    id: "index au prédicat modifié",
+    alter: `DROP INDEX uq_report_card_configuration_one_active_class;
+            CREATE UNIQUE INDEX uq_report_card_configuration_one_active_class ON report_card_configuration_requests (school_id, model_key, academic_year_id, class_id) WHERE class_id IS NOT NULL;
+            COMMENT ON INDEX uq_report_card_configuration_one_active_class IS ${MARK};`,
+    error: /CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : index uq_report_card_configuration_one_active_class/,
+  },
+  {
+    id: "colonne au type modifié",
+    alter: `ALTER TABLE report_card_configuration_requests DROP CONSTRAINT report_card_configuration_requests_class_tenant;
+            ALTER TABLE report_card_active_bindings DROP CONSTRAINT report_card_active_bindings_class_tenant;
+            ALTER TABLE report_card_configuration_requests ALTER COLUMN class_id TYPE text USING class_id::text;`,
+    error: /CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : colonne report_card_configuration_requests.class_id/,
+  },
+  {
+    id: "contrainte marquée modifiée",
+    alter: `ALTER TABLE report_card_active_bindings DROP CONSTRAINT report_card_active_bindings_scope_pair;
+            ALTER TABLE report_card_active_bindings ADD CONSTRAINT report_card_active_bindings_scope_pair CHECK (class_id IS NULL);
+            COMMENT ON CONSTRAINT report_card_active_bindings_scope_pair ON report_card_active_bindings IS ${MARK};`,
+    error: /CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : contrainte report_card_active_bindings_scope_pair/,
+  },
+]) {
+  test(`17. rollback refusé : objet marqué L1 mais modifié (${scenario.id}) ; rien n'est supprimé`, { skip }, async () => {
+    const db = await minimalDatabase(`rb_mod_${scenario.id.replace(/[^a-z]/gi, "").slice(0, 18).toLowerCase()}`);
+    try {
+      await inTx(db.pool, MIGRATION_SQL);
+      await db.pool.query(scenario.alter);
+      const before = await l1Footprint(db.pool);
+      const indexesBefore = (await db.pool.query("SELECT relname FROM pg_class WHERE relname LIKE 'uq_report_card%' ORDER BY relname")).rows;
+      await assert.rejects(inTx(db.pool, ROLLBACK_SQL), scenario.error);
+      assert.deepEqual(await l1Footprint(db.pool), before, "aucune suppression, aucune modification");
+      assert.deepEqual(
+        (await db.pool.query("SELECT relname FROM pg_class WHERE relname LIKE 'uq_report_card%' ORDER BY relname")).rows,
+        indexesBefore,
+        "index conservés"
+      );
+      assert.deepEqual(before.pk, ["id"], "clé primaire technique conservée");
+    } finally {
+      await db.pool.end();
+    }
+  });
+}

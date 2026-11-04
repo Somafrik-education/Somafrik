@@ -27,40 +27,60 @@ CREATE FUNCTION pg_temp.l1_owned_constraint(rel regclass, name text, expected te
 DECLARE
   con record;
 BEGIN
-  SELECT c.conrelid, pg_get_constraintdef(c.oid) AS def, obj_description(c.oid, 'pg_constraint') AS note
+  SELECT c.conrelid, c.convalidated, pg_get_constraintdef(c.oid) AS def, obj_description(c.oid, 'pg_constraint') AS note
     INTO con FROM pg_constraint c WHERE c.conname = name AND c.connamespace = 'public'::regnamespace;
   IF NOT FOUND THEN RETURN false; END IF;
-  IF con.note IS DISTINCT FROM pg_temp.l1_marker() OR con.conrelid <> rel OR pg_temp.l1_norm(con.def) <> pg_temp.l1_norm(expected) THEN
+  IF con.note IS DISTINCT FROM pg_temp.l1_marker() THEN
     RAISE EXCEPTION 'CLASS_SCOPE_ROLLBACK_FOREIGN_OBJECT : contrainte % (« % ») non créée par L1 : retour arrière refusé', name, con.def;
+  END IF;
+  IF con.conrelid <> rel OR NOT con.convalidated OR pg_temp.l1_norm(con.def) <> pg_temp.l1_norm(expected) THEN
+    RAISE EXCEPTION 'CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : contrainte % marquée L1 mais modifiée (« % » sur %) : retour arrière refusé', name, con.def, con.conrelid::regclass;
   END IF;
   RETURN true;
 END
 $$;
 
-CREATE FUNCTION pg_temp.l1_owned_index(rel regclass, name text, predicate text) RETURNS boolean LANGUAGE plpgsql AS $$
+-- Index L1 : absent → false ; marqué ET définition L1 exacte (table, colonnes ordonnées, unique,
+-- valide, sans expression, prédicat) → true ; sinon exception (modifié ou d'un autre chantier).
+CREATE FUNCTION pg_temp.l1_owned_index(rel regclass, name text, cols text[], predicate text) RETURNS boolean LANGUAGE plpgsql AS $$
 DECLARE
   idx record;
+  found_cols text[];
 BEGIN
-  SELECT i.indrelid, pg_get_expr(i.indpred, i.indrelid) AS pred, obj_description(i.indexrelid, 'pg_class') AS note
+  SELECT i.indexrelid, i.indrelid, i.indisunique, i.indisvalid, i.indexprs IS NULL AS plain,
+         pg_get_expr(i.indpred, i.indrelid) AS pred, obj_description(i.indexrelid, 'pg_class') AS note
     INTO idx FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
    WHERE c.relname = name AND c.relnamespace = 'public'::regnamespace;
   IF NOT FOUND THEN RETURN false; END IF;
-  IF idx.note IS DISTINCT FROM pg_temp.l1_marker() OR idx.indrelid <> rel OR pg_temp.l1_norm(idx.pred) <> pg_temp.l1_norm(predicate) THEN
+  SELECT array_agg(a.attname::text ORDER BY k.ord) INTO found_cols
+    FROM unnest((SELECT indkey::int2[] FROM pg_index WHERE indexrelid = idx.indexrelid)) WITH ORDINALITY AS k(attnum, ord)
+    JOIN pg_attribute a ON a.attrelid = idx.indrelid AND a.attnum = k.attnum;
+  IF idx.note IS DISTINCT FROM pg_temp.l1_marker() THEN
     RAISE EXCEPTION 'CLASS_SCOPE_ROLLBACK_FOREIGN_OBJECT : index % non créé par L1 : retour arrière refusé', name;
+  END IF;
+  IF idx.indrelid <> rel OR NOT idx.indisunique OR NOT idx.indisvalid OR NOT idx.plain
+     OR found_cols IS DISTINCT FROM cols OR pg_temp.l1_norm(idx.pred) <> pg_temp.l1_norm(predicate) THEN
+    RAISE EXCEPTION 'CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : index % marqué L1 mais modifié (% sur % WHERE %) : retour arrière refusé',
+      name, found_cols, idx.indrelid::regclass, idx.pred;
   END IF;
   RETURN true;
 END
 $$;
 
+-- Colonne L1 : absente → false ; marquée ET de type uuid → true ; sinon exception.
 CREATE FUNCTION pg_temp.l1_owned_column(rel regclass, col text) RETURNS boolean LANGUAGE plpgsql AS $$
 DECLARE
   note text;
+  found_type text;
 BEGIN
-  SELECT col_description(a.attrelid, a.attnum) INTO note
+  SELECT col_description(a.attrelid, a.attnum), format_type(a.atttypid, a.atttypmod) INTO note, found_type
     FROM pg_attribute a WHERE a.attrelid = rel AND a.attname = col AND NOT a.attisdropped;
   IF NOT FOUND THEN RETURN false; END IF;
   IF note IS DISTINCT FROM pg_temp.l1_marker() THEN
     RAISE EXCEPTION 'CLASS_SCOPE_ROLLBACK_FOREIGN_OBJECT : colonne %.% non créée par L1 : retour arrière refusé', rel, col;
+  END IF;
+  IF found_type <> 'uuid' THEN
+    RAISE EXCEPTION 'CLASS_SCOPE_ROLLBACK_DEFINITION_MISMATCH : colonne %.% marquée L1 mais de type % : retour arrière refusé', rel, col, found_type;
   END IF;
   RETURN true;
 END
@@ -112,16 +132,16 @@ BEGIN
   IF pg_temp.l1_owned_constraint(classes_rel, 'classes_id_year_school_unique', 'UNIQUE (id, academic_year_id, school_id)') THEN
     drop_constraints := drop_constraints || 'classes.classes_id_year_school_unique'::text;
   END IF;
-  IF pg_temp.l1_owned_index(bindings, 'uq_report_card_active_bindings_school', 'class_id IS NULL') THEN
+  IF pg_temp.l1_owned_index(bindings, 'uq_report_card_active_bindings_school', ARRAY['school_id', 'model_key'], 'class_id IS NULL') THEN
     drop_indexes := drop_indexes || 'uq_report_card_active_bindings_school'::text;
   END IF;
-  IF pg_temp.l1_owned_index(bindings, 'uq_report_card_active_bindings_class', 'class_id IS NOT NULL') THEN
+  IF pg_temp.l1_owned_index(bindings, 'uq_report_card_active_bindings_class', ARRAY['school_id', 'model_key', 'academic_year_id', 'class_id'], 'class_id IS NOT NULL') THEN
     drop_indexes := drop_indexes || 'uq_report_card_active_bindings_class'::text;
   END IF;
-  IF pg_temp.l1_owned_index(requests, 'uq_report_card_configuration_one_active_school', 'status = ''ACTIVE''::text AND class_id IS NULL') THEN
+  IF pg_temp.l1_owned_index(requests, 'uq_report_card_configuration_one_active_school', ARRAY['school_id', 'model_key'], 'status = ''ACTIVE''::text AND class_id IS NULL') THEN
     drop_indexes := drop_indexes || 'uq_report_card_configuration_one_active_school'::text;
   END IF;
-  IF pg_temp.l1_owned_index(requests, 'uq_report_card_configuration_one_active_class', 'status = ''ACTIVE''::text AND class_id IS NOT NULL') THEN
+  IF pg_temp.l1_owned_index(requests, 'uq_report_card_configuration_one_active_class', ARRAY['school_id', 'model_key', 'academic_year_id', 'class_id'], 'status = ''ACTIVE''::text AND class_id IS NOT NULL') THEN
     drop_indexes := drop_indexes || 'uq_report_card_configuration_one_active_class'::text;
   END IF;
   FOREACH item IN ARRAY ARRAY['report_card_active_bindings.class_id', 'report_card_active_bindings.academic_year_id',
@@ -184,7 +204,7 @@ END
 $class_scope_rollback$;
 
 DROP FUNCTION pg_temp.l1_owned_column(regclass, text);
-DROP FUNCTION pg_temp.l1_owned_index(regclass, text, text);
+DROP FUNCTION pg_temp.l1_owned_index(regclass, text, text[], text);
 DROP FUNCTION pg_temp.l1_owned_constraint(regclass, text, text);
 DROP FUNCTION pg_temp.l1_norm(text);
 DROP FUNCTION pg_temp.l1_marker();
