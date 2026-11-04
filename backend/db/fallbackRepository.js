@@ -3190,8 +3190,11 @@ class FallbackRepository {
     return this._financeStore;
   }
 
-  listFinanceProjection() {
-    return this.getFinanceStore().listProjection();
+  async listFinanceProjection(scope) {
+    const { filterProjectionRecord, emptyFinanceProjection, hasProjectionScope } = require("./projectionSchoolScope");
+    if (!hasProjectionScope(scope)) return emptyFinanceProjection();
+    const full = await this.getFinanceStore().listProjection();
+    return filterProjectionRecord(full, scope);
   }
 
   createSchoolPayment(payload, principal, auditMeta) {
@@ -3286,15 +3289,20 @@ class FallbackRepository {
     return this.getFinanceStore().getFinanceCatalog(principal);
   }
 
-  async listPedagogyProjection() {
+  async listPedagogyProjection(scope) {
+    const { filterProjectionRecord, emptyPedagogyProjection, hasProjectionScope } = require("./projectionSchoolScope");
+    if (!hasProjectionScope(scope)) return emptyPedagogyProjection();
     const state = (await this.getBackOfficeState()) ?? {};
-    return {
-      courses: state.courses ?? [],
-      courseSchedules: state.courseSchedules ?? [],
-      evaluations: state.evaluations ?? [],
-      notes: state.notes ?? [],
-      presences: state.presences ?? [],
-    };
+    return filterProjectionRecord(
+      {
+        courses: state.courses ?? [],
+        courseSchedules: state.courseSchedules ?? [],
+        evaluations: state.evaluations ?? [],
+        notes: state.notes ?? [],
+        presences: state.presences ?? [],
+      },
+      scope,
+    );
   }
 
   createSchoolCourse() {

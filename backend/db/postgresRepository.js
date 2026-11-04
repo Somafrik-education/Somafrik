@@ -1706,8 +1706,8 @@ class PostgresRepository {
     return this._pedagogyStore;
   }
 
-  listPedagogyProjection() {
-    return this.getPedagogyStore().listProjection();
+  listPedagogyProjection(scope) {
+    return this.getPedagogyStore().listProjection(scope);
   }
 
   createSchoolCourse(payload, principal, auditMeta) {
@@ -1870,8 +1870,8 @@ class PostgresRepository {
     return this._financeStore;
   }
 
-  listFinanceProjection() {
-    return this.getFinanceStore().listProjection();
+  listFinanceProjection(scope) {
+    return this.getFinanceStore().listProjection(scope);
   }
 
   createSchoolPayment(payload, principal, auditMeta) {
