@@ -122,6 +122,7 @@ function createReportCardCorrection({ publication, getFacts, getProfile, getSche
         model_key: unscoped.model_key,
         period_scope: unscoped.period_scope,
         content_sha256: recomputed.content_sha256,
+        ...(unscoped.official_identity ? { official_identity: unscoped.official_identity } : {}),
       };
       return publishCorrection({ tenant, actor, sourceVersion, reason, commandId, payload: subjectPayload });
     }

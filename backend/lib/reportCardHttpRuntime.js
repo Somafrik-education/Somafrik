@@ -226,6 +226,11 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
     });
   }
 
+  // BULLETIN-CLASSE-01 / L3 — identité de l'établissement (en-tête, logo figé).
+  const identityStore =
+    overrides.identityStore ||
+    (db ? require("../db/reportCardOfficialIdentityStore").createReportCardOfficialIdentityStore(db.pool || db) : null);
+
   const classPublication =
     overrides.classPublication ||
     (publication && factsStore && db
@@ -234,6 +239,7 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
           factsStore,
           configuration,
           catalogStore: overrides.catalogStore || createSubjectHierarchyPgStore(db.pool || db),
+          identityStore,
         })
       : null);
 
@@ -252,11 +258,13 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
       ? require("./reportCard/reportCardCatalog").createReportCardCatalog({
           store: overrides.reportCardCatalogStore || require("../db/reportCardCatalogPgStore").createReportCardCatalogPgStore(db.pool || db),
           configuration,
+          identityStore,
         })
       : null);
 
   return {
     catalog,
+    identityStore,
     configuration,
     publication,
     getFacts,
@@ -312,6 +320,7 @@ function createReportCardHttpBindings({
     publishInitial: (args) => getRuntime().publishInitial(args),
     getClassPublication: () => getRuntime().classPublication,
     getCatalog: () => getRuntime().catalog,
+    getIdentityStore: () => getRuntime().identityStore,
     getPresentationLabels: (args) =>
       getRuntime().getPresentationLabels ? getRuntime().getPresentationLabels(args) : {},
     resolveActor,
