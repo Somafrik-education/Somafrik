@@ -236,8 +236,8 @@ export function OverviewPage() {
             periodContext={periodContext}
             orderUserKey={orderUserKey}
             showTypeBadge={canConfigureCharts}
-            serverPeriod={kpiPeriod}
-            onServerPeriodChange={setKpiPeriod}
+            serverPeriod={liveKpis ? kpiPeriod : undefined}
+            onServerPeriodChange={liveKpis ? setKpiPeriod : undefined}
           />
         </EstablishmentDashboardLayout>
       ) : (

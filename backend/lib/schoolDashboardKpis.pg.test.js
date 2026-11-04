@@ -574,6 +574,42 @@ async function main() {
     assert.equal(foreignSchool.cards.revenue.amount, 500);
     assert.equal(foreignSchool.cards.students, 1);
 
+    // Droits partiels : aucune requête ne doit envoyer plus de paramètres que son SQL n'en lit.
+    const partialAdmin = (permissions) => ({ role: "Admin School", schoolId: fixture.schoolA, permissions });
+    const noPedagogy = await listSchoolDashboardKpis(
+      repository,
+      partialAdmin(["Paiements:READ", "Présences:READ", "Enseignants:READ", "Classes:READ"]),
+      { period: "monthly" },
+      NOW,
+    );
+    assert.equal(noPedagogy.cards.revenue.amount, 397);
+    assert.equal(noPedagogy.cards.teachers, adminFinance.cards.teachers);
+    assert.equal(noPedagogy.cards.classes, 2);
+    assert.equal(noPedagogy.cards.students, null);
+    assert.equal(noPedagogy.series.notes, null);
+    assert.equal(noPedagogy.series.exams, null);
+    assert.equal(noPedagogy.series.activeStudents, null);
+    assert.equal(noPedagogy.series.announcements, null);
+    assert.equal(noPedagogy.series.presence.total, 4);
+
+    const single = {
+      "Élèves:READ": (kpi) => kpi.cards.students === 4 && kpi.cards.revenue === null,
+      "Enseignants:READ": (kpi) => typeof kpi.cards.teachers === "number" && kpi.series.notes === null,
+      "Classes:READ": (kpi) => kpi.cards.classes === 2 && kpi.cards.students === null,
+      "Paiements:READ": (kpi) => kpi.cards.revenue.amount === 397 && kpi.series.notes === null,
+      "Présences:READ": (kpi) => kpi.series.presence.total === 4 && kpi.cards.revenue === null,
+      "Notes:READ": (kpi) => kpi.series.notes === 1 && kpi.series.exams === null,
+      "Examens:READ": (kpi) => kpi.series.exams === 1 && kpi.series.notes === null,
+      "Bulletins:READ": (kpi) => kpi.series.bulletins === 1 && kpi.series.documents === null,
+      "Documents:READ": (kpi) => kpi.series.documents === 1 && kpi.series.bulletins === null,
+      "Utilisateurs:READ": (kpi) => typeof kpi.series.activeUsers === "number" && kpi.series.notes === null,
+      "Annonces:READ": (kpi) => typeof kpi.series.announcements === "number" && kpi.cards.students === null,
+    };
+    for (const [permission, check] of Object.entries(single)) {
+      const kpi = await listSchoolDashboardKpis(repository, partialAdmin([permission]), { period: "monthly" }, NOW);
+      assert.ok(check(kpi), `droit seul ${permission} : ${JSON.stringify({ cards: kpi.cards, series: kpi.series })}`);
+    }
+
     const listBytes = Object.values(fixture.volumes).reduce((total, value) => total + Number(value), 0);
     const kpiBytes = Buffer.byteLength(JSON.stringify(monthly));
     console.log(JSON.stringify({

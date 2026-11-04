@@ -308,3 +308,63 @@ test("le sub du jeton suffit à retrouver les affectations de l'enseignant", asy
   assert.ok(lookup);
   assert.deepEqual(lookup.params, [SCHOOL, userId]);
 });
+
+test("les droits KPI sont relus en base, jamais ceux du JWT", async () => {
+  const { withLiveKpiPermissions } = require("./schoolDashboardKpis");
+  const jwt = principal({ permissions: ["Élèves:READ", "Paiements:READ"] });
+  const live = await withLiveKpiPermissions(
+    {
+      resolveEffectivePermissions: async () => ({ permissions: ["Élèves:READ"] }),
+      resolveFinanceLivePermissions: async () => ({ permissions: [] }),
+    },
+    jwt,
+  );
+  assert.deepEqual(live.permissions, ["Élèves:READ"]);
+  assert.deepEqual(live.financePermissions, []);
+  assert.equal(accessFor(live).students, true);
+  assert.equal(accessFor(live).payments, false);
+});
+
+test("une résolution illisible des droits ne retombe pas sur le JWT", async () => {
+  const { withLiveKpiPermissions } = require("./schoolDashboardKpis");
+  const live = await withLiveKpiPermissions(
+    {
+      resolveEffectivePermissions: async () => ({ permissions: null }),
+      resolveFinanceLivePermissions: async () => ({}),
+    },
+    principal({ permissions: ["ALL_PRIVILEGES"] }),
+  );
+  assert.deepEqual(live.permissions, []);
+  assert.deepEqual(live.financePermissions, []);
+  assert.equal(Object.values(accessFor(live)).some(Boolean), false);
+});
+
+test("la finance suit la primitive live stricte des routes finance", async () => {
+  const { withLiveKpiPermissions } = require("./schoolDashboardKpis");
+  const live = await withLiveKpiPermissions(
+    {
+      resolveEffectivePermissions: async () => ({ permissions: ["Paiements:READ", "Élèves:READ"] }),
+      resolveFinanceLivePermissions: async () => ({ permissions: [] }),
+    },
+    principal({ permissions: ["Paiements:READ"] }),
+  );
+  assert.equal(accessFor(live).payments, false);
+  assert.equal(accessFor(live).students, true);
+});
+
+test("sans champ pédagogique lisible, la requête pédagogique n'est pas envoyée", async () => {
+  const repository = recordingRepository([]);
+  const payload = await listSchoolDashboardKpis(
+    repository,
+    principal({ permissions: ["Paiements:READ", "Présences:READ", "Enseignants:READ", "Classes:READ"] }),
+    { period: "monthly" },
+    NOW,
+  );
+  assert.equal(repository.sql.some((entry) => /AS notes/.test(entry.text)), false);
+  for (const entry of repository.sql) {
+    const highest = Math.max(0, ...[...entry.text.matchAll(/\$(\d+)/g)].map((m) => Number(m[1])));
+    assert.equal(entry.params.length, highest, `requête avec ${entry.params.length} paramètres pour ${highest} emplacements`);
+  }
+  assert.equal(payload.series.notes, null);
+  assert.equal(payload.series.activeStudents, null);
+});

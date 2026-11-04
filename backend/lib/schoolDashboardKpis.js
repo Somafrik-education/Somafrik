@@ -124,7 +124,8 @@ function accessFor(principal) {
     students: canRead(principal, "Élèves"),
     teachers: canRead(principal, "Enseignants"),
     classes: canRead(principal, "Classes"),
-    payments: canRead(principal, "Paiements"),
+    // Finance : droits relus par la primitive live stricte, comme les routes finance.
+    payments: canRead({ permissions: principal?.financePermissions ?? principal?.permissions }, "Paiements"),
     presences: canRead(principal, "Présences"),
     notes: canRead(principal, "Notes"),
     exams: canRead(principal, "Examens"),
@@ -133,6 +134,26 @@ function accessFor(principal) {
     users: canRead(principal, "Utilisateurs"),
     announcements: canRead(principal, "Annonces") || canRead(principal, "Announcements"),
   };
+}
+
+/**
+ * Droits effectifs relus à chaque requête, jamais ceux figés dans le JWT.
+ * Même source que requirePermission : resolveEffectivePermissions pour les
+ * modules, resolveFinanceLivePermissions (rôles relus pour l'établissement)
+ * pour la finance. Résultat illisible : aucun droit (fail-closed).
+ */
+async function withLiveKpiPermissions(repository, principal) {
+  const general =
+    typeof repository?.resolveEffectivePermissions === "function"
+      ? await repository.resolveEffectivePermissions(principal)
+      : null;
+  const permissions = Array.isArray(general?.permissions) ? [...general.permissions] : [];
+  let financePermissions = permissions;
+  if (typeof repository?.resolveFinanceLivePermissions === "function") {
+    const finance = await repository.resolveFinanceLivePermissions(principal);
+    financePermissions = Array.isArray(finance?.permissions) ? [...finance.permissions] : [];
+  }
+  return { ...principal, permissions, financePermissions };
 }
 
 function assertReadable(access) {
@@ -564,7 +585,11 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
             rangeParams,
           )
         : Promise.resolve(null),
-      repository.all(
+      // Sans aucun champ lisible, la requête n'aurait aucun paramètre : ne pas l'exécuter.
+      !(access.notes || access.exams || access.bulletins || access.documents || access.users ||
+        access.announcements || access.students)
+        ? Promise.resolve([{}])
+        : repository.all(
         `SELECT
            ${access.notes ? `(SELECT COUNT(*)::int FROM grades g WHERE g.school_id = $1::uuid AND g.created_at >= ($3::timestamp AT TIME ZONE '${timeZone}') AND g.created_at <= (($4::date + TIME '23:59:59.999') AT TIME ZONE '${timeZone}') AND ($2::uuid[] IS NULL OR g.class_id = ANY($2::uuid[])))` : "NULL::int"} AS notes,
            ${access.exams ? `(SELECT COUNT(*)::int FROM exams e WHERE e.school_id = $1::uuid AND e.exam_date >= $3::date AND e.exam_date <= $4::date AND ($2::uuid[] IS NULL OR e.class_id = ANY($2::uuid[])))` : "NULL::int"} AS exams,
@@ -671,6 +696,7 @@ async function listSchoolDashboardKpis(repository, principal, query = {}, now = 
 
 module.exports = {
   PERIODS,
+  withLiveKpiPermissions,
   resolveSchoolKpiPrincipal,
   listSchoolDashboardKpis,
   periodBounds,
