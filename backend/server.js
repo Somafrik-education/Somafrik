@@ -774,6 +774,15 @@ app.get("/api/dashboard/school-activities", requireAuth, asyncHandler(async (req
   res.json(result);
 }));
 
+app.get("/api/dashboard/school-kpis", requireAuth, asyncHandler(async (req, res) => {
+  const { listSchoolDashboardKpis, resolveSchoolKpiPrincipal } = require("./lib/schoolDashboardKpis");
+  if (!requireCanonicalPg(res, "all", "Indicateurs du tableau de bord")) return;
+  const principal = await resolveSchoolKpiPrincipal(req.principal, lookupSchoolForEffectiveScope);
+  const result = await listSchoolDashboardKpis(repository, principal, { period: req.query?.period });
+  res.set("Cache-Control", "no-store");
+  res.json(result);
+}));
+
 app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
   if (!schoolCode || schoolCode === "*") {

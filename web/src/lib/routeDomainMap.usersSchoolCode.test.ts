@@ -64,8 +64,8 @@ describe("domainsForPath — /notes n'hydrate pas les domaines globaux d'affecta
   });
 });
 
-describe("domainsForPath — tableau de bord hydrate l'assiette de paiement", () => {
-  it("charge studentFees et presences pour un Admin établissement avec Paiements:READ", () => {
+describe("domainsForPath — tableau de bord ne recharge plus les listes KPI", () => {
+  it("laisse l'assiette de paiement aux écrans finances", () => {
     const ctx: PermissionContext = {
       user: {
         role: "Admin School",
@@ -82,9 +82,10 @@ describe("domainsForPath — tableau de bord hydrate l'assiette de paiement", ()
       rolePermissions: {},
     };
     const domains = domainsForPath("/tableau-de-bord", ctx);
-    expect(domains).toContain("studentFees");
-    expect(domains).toContain("presences");
-    expect(domains).toContain("payments");
+    expect(domains).not.toContain("studentFees");
+    expect(domains).not.toContain("presences");
+    expect(domains).not.toContain("payments");
+    expect(domainsForPath("/finances", ctx)).toEqual(expect.arrayContaining(["studentFees", "payments"]));
   });
 });
 

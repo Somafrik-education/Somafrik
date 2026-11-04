@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { formatDateTimeForDisplay } from "../../lib/dates";
-import { DASHBOARD_SYNC_EVENT, DASHBOARD_SYNC_INTERVAL_MS } from "../../lib/dashboardSync";
+import {
+  DASHBOARD_ACTIVITY_INTERVAL_MS,
+  DASHBOARD_SYNC_EVENT,
+  dashboardDataIsStale,
+} from "../../lib/dashboardSync";
 
 /** Libellé relatif français ; la date exacte reste accessible au survol. */
 function relativeActivityTime(value: string, now: number): string {
@@ -49,8 +53,24 @@ export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolea
   useEffect(() => {
     if (!enabled || !schoolKey) return;
     let cancelled = false;
-    const refresh = async () => {
-      if (typeof document !== "undefined" && document.hidden) return;
+    let inflight = false;
+    let queued = false;
+    let lastSuccessAt: number | null = null;
+    const refresh = async (reason: "mount" | "interval" | "visible" | "mutation") => {
+      if (cancelled) return;
+      const hidden = typeof document !== "undefined" && document.hidden;
+      if (hidden) {
+        if (reason === "mutation") queued = true;
+        return;
+      }
+      if (reason === "visible" && !dashboardDataIsStale(lastSuccessAt, Date.now(), DASHBOARD_ACTIVITY_INTERVAL_MS)) {
+        return;
+      }
+      if (inflight) {
+        queued = true;
+        return;
+      }
+      inflight = true;
       try {
         const page = await api.get<Page>("/dashboard/school-activities?limit=10");
         if (cancelled) return;
@@ -66,22 +86,45 @@ export function SchoolRecentActivities({ enabled, schoolKey }: { enabled: boolea
         });
         setCursor((previous) => previous ?? page.nextCursor);
         setError(false);
+        lastSuccessAt = Date.now();
       } catch {
         if (!cancelled) setError(true);
+      } finally {
+        inflight = false;
+        if (queued && !cancelled) {
+          queued = false;
+          void refresh("mutation");
+        }
       }
     };
-    void refresh();
-    // Same-tab attendance/planning writes trigger an immediate refresh.
-    // Short fallback covers updates made by other connected users.
-    const timer = window.setInterval(() => void refresh(), DASHBOARD_SYNC_INTERVAL_MS);
-    const onFocus = () => void refresh();
-    window.addEventListener(DASHBOARD_SYNC_EVENT, onFocus);
-    window.addEventListener("focus", onFocus);
+    let timer = 0;
+    const arm = () => {
+      window.clearInterval(timer);
+      if (typeof document !== "undefined" && document.hidden) return;
+      timer = window.setInterval(() => void refresh("interval"), DASHBOARD_ACTIVITY_INTERVAL_MS);
+    };
+    void refresh("mount");
+    arm();
+    const onVisible = () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        window.clearInterval(timer);
+        return;
+      }
+      const reason = queued ? "mutation" : "visible";
+      queued = false;
+      void refresh(reason);
+      arm();
+    };
+    const onMutation = () => void refresh("mutation");
+    window.addEventListener(DASHBOARD_SYNC_EVENT, onMutation);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener(DASHBOARD_SYNC_EVENT, onFocus);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(DASHBOARD_SYNC_EVENT, onMutation);
     };
   }, [enabled, schoolKey, revision]);
 

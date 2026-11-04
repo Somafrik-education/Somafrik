@@ -4,7 +4,7 @@ import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw, Settings2 } from "lucid
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
-import { getInitials } from "../../lib/format";
+import { getInitials, isInternalSchoolRole } from "../../lib/format";
 import { visibleRoleLabel } from "../../lib/roleDisplayLabels";
 import { scopedNotifications } from "../../lib/scope";
 import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
@@ -17,6 +17,8 @@ import {
 } from "../../lib/webSchoolDomainDeny";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { domainsForPath } from "../../lib/routeDomainMap";
+import { DASHBOARD_KPI_REFRESH_EVENT } from "../../lib/dashboardSync";
+import { demoRuntimeEnabled } from "../../lib/featureFlags";
 import { Button } from "../ui/Button";
 import { CommunicationPreferencesPanel } from "../account/CommunicationPreferencesPanel";
 
@@ -114,6 +116,11 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
         <button
           type="button"
           onClick={() => {
+            const dashboard = location.pathname === "/tableau-de-bord" || location.pathname.startsWith("/tableau-de-bord/");
+            if (!demoRuntimeEnabled && dashboard && isInternalSchoolRole(session?.user?.role)) {
+              window.dispatchEvent(new Event(DASHBOARD_KPI_REFRESH_EVENT));
+              return;
+            }
             const domains = domainsForPath(location.pathname, ctx);
             void refresh(domains.length > 0 ? domains : undefined);
           }}

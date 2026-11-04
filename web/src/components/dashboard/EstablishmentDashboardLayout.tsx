@@ -5,9 +5,9 @@ import type { TodayPresenceKpi } from "../../lib/presenceMetrics";
 
 type Metric = { label: string; value: string; icon: string; tone: string };
 type Props = {
-  students: number;
-  teachers: number;
-  classes: number;
+  students: number | null;
+  teachers: number | null;
+  classes: number | null;
   revenue: string;
   canReadStudents: boolean;
   canReadTeachers: boolean;
@@ -18,15 +18,20 @@ type Props = {
   schoolKey: string;
   levels: Array<{ name: string; value: number }>;
   attendance: TodayPresenceKpi;
+  indicatorsPending?: boolean;
   canReadPresences: boolean;
 };
 
 /** Establishment dashboard: central chart and compact secondary cards share the main column. */
-export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, canReadStudents, canReadTeachers, canReadClasses, canReadPayments, activitiesEnabled, schoolKey, levels, attendance, canReadPresences, children }: Props) {
+function metricValue(value: number | null) {
+  return value == null ? "—" : value.toLocaleString("fr-FR");
+}
+
+export function EstablishmentDashboardLayout({ students, teachers, classes, revenue, canReadStudents, canReadTeachers, canReadClasses, canReadPayments, activitiesEnabled, schoolKey, levels, attendance, indicatorsPending = false, canReadPresences, children }: Props) {
   const metrics: Metric[] = [
-    ...(canReadStudents ? [{ label: "Élèves", value: students.toLocaleString("fr-FR"), icon: "👥", tone: "bg-blue-50 border-blue-100" }] : []),
-    ...(canReadTeachers ? [{ label: "Enseignants", value: teachers.toLocaleString("fr-FR"), icon: "▣", tone: "bg-emerald-50 border-emerald-100" }] : []),
-    ...(canReadClasses ? [{ label: "Classes", value: classes.toLocaleString("fr-FR"), icon: "▤", tone: "bg-violet-50 border-violet-100" }] : []),
+    ...(canReadStudents ? [{ label: "Élèves", value: metricValue(students), icon: "👥", tone: "bg-blue-50 border-blue-100" }] : []),
+    ...(canReadTeachers ? [{ label: "Enseignants", value: metricValue(teachers), icon: "▣", tone: "bg-emerald-50 border-emerald-100" }] : []),
+    ...(canReadClasses ? [{ label: "Classes", value: metricValue(classes), icon: "▤", tone: "bg-violet-50 border-violet-100" }] : []),
     ...(canReadPayments ? [{ label: "Recettes", value: revenue, icon: "◉", tone: "bg-orange-50 border-orange-100" }] : []),
   ];
   return (
@@ -48,7 +53,7 @@ export function EstablishmentDashboardLayout({ students, teachers, classes, reve
           </div>
           <div className="min-w-0 space-y-2">
             {children}
-            <SchoolDashboardSecondaryWidgets levels={levels} attendance={attendance} showLevels={canReadStudents} showAttendance={canReadPresences} />
+            <SchoolDashboardSecondaryWidgets levels={levels} attendance={attendance} showLevels={canReadStudents} showAttendance={canReadPresences} pending={indicatorsPending} />
           </div>
         </div>
         <aside aria-label="Activités récentes" className="min-w-0 self-stretch rounded-xl border border-line bg-white p-3 shadow-sm">
