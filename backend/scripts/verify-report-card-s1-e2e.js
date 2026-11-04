@@ -157,6 +157,7 @@ async function prepareDatabase(databaseUrl) {
   let schoolAId = "";
   let schoolBId = "";
   let countryCdId = "";
+  const classIds = {};
   try {
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
@@ -213,6 +214,26 @@ async function prepareDatabase(databaseUrl) {
           [schoolId, code, name, order + 1],
         );
       }
+      if (schoolId !== schoolAId) continue;
+      // Deux classes aux matières différentes : la configuration ne propose que les matières enseignées.
+      const teacher = await pool.query(`INSERT INTO teachers (school_id, teacher_code) VALUES ($1, 'E2E-T1') RETURNING id`, [schoolId]);
+      for (const [key, name, codes] of [
+        ["A", "6e A", ["MATHEMATIQUES", "FRANCAIS", "CIVISME"]],
+        ["B", "6e B", ["MATHEMATIQUES", "SCIENCES"]],
+      ]) {
+        const cls = await pool.query(
+          `INSERT INTO classes (school_id, academic_year_id, class_code, name) VALUES ($1, $2, $3, $4) RETURNING id`,
+          [schoolId, year.rows[0].id, `E2E-6${key}`, name],
+        );
+        classIds[key] = cls.rows[0].id;
+        for (const code of codes) {
+          await pool.query(
+            `INSERT INTO school_courses (school_id, class_id, subject_id, teacher_id, course_code)
+             SELECT $1, $2, id, $3, $4 FROM subjects WHERE school_id = $1 AND subject_code = $5`,
+            [schoolId, cls.rows[0].id, teacher.rows[0].id, `E2E-6${key}-${code}`, code],
+          );
+        }
+      }
     }
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status, must_change_password)
@@ -247,7 +268,24 @@ async function prepareDatabase(databaseUrl) {
   } finally {
     await pool.end();
   }
-  return { isolatedUrl, schoolAId, schoolBId, countryCdId };
+  return { isolatedUrl, schoolAId, schoolBId, countryCdId, classIds };
+}
+
+/**
+ * BULLETIN-CLASSE-01 : migrations manuelles L1 (portée classe) et L3 (identité officielle figée),
+ * appliquées APRÈS le démarrage du serveur (tables LOT 6 créées au boot) — même ordre qu'en
+ * préproduction : code déployé, puis migration explicite en transaction unique.
+ */
+async function applyClassScopeMigrations(databaseUrl) {
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    for (const file of ["20261105_report_card_class_scope.sql", "20261106_report_card_official_assets.sql"]) {
+      const sql = fs.readFileSync(path.join(ROOT, "backend/db/migrations", file), "utf8");
+      await pool.query(`BEGIN;\n${sql}\nCOMMIT;`);
+    }
+  } finally {
+    await pool.end();
+  }
 }
 
 async function seedSecretaryReadOnly(databaseUrl) {
@@ -431,7 +469,7 @@ async function saveFailureEvidence(page, label) {
 }
 
 
-async function runBrowserScenarios({ countryCdId }) {
+async function runBrowserScenarios({ countryCdId, classIds }) {
   const { chromium } = require("playwright");
   const browser = await chromium.launch(LAUNCH);
   const context = await browser.newContext({ viewport: DESKTOP });
@@ -496,10 +534,14 @@ async function runBrowserScenarios({ countryCdId }) {
       assert.equal(await page.getByTestId("catalog-school-model-berceau").count(), 0, "modèle non autorisé dans le pays : invisible");
       await captureBoth(page, "05-ecole-galerie");
       await page.getByTestId("catalog-school-choose-colombiere").click();
+      await page.getByTestId("catalog-class-picker").waitFor();
+      assert.equal(await page.getByTestId("catalog-step-structure").count(), 0, "classe obligatoire avant toute configuration");
+      await page.getByLabel("Classe à configurer").selectOption({ label: `6e A — ${ACADEMIC_YEAR_NAME}` });
       await page.getByTestId("catalog-step-structure").waitFor();
       await captureBoth(page, "06-ecole-assistant-structure");
       await page.getByTestId("catalog-next").click();
       await page.getByTestId("catalog-step-subjects").waitFor();
+      assert.equal(await page.getByLabel("Sciences", { exact: true }).count(), 0, "matière non enseignée en 6e A : non proposée");
       await page.getByLabel("Mathématiques", { exact: true }).check();
       await page.getByLabel("Français", { exact: true }).check();
       await page.getByLabel("Éducation civique", { exact: true }).check();
@@ -516,19 +558,25 @@ async function runBrowserScenarios({ countryCdId }) {
       const ex = page.locator("fieldset", { has: page.getByText("Examen (EX)", { exact: true }) });
       await ex.getByLabel("Examen").check();
       await capture(page, "09-ecole-assistant-calcul");
+      await page.getByTestId("catalog-next").click();
+      await page.getByTestId("catalog-step-header").waitFor();
+      await page.getByLabel("Ligne d'en-tête 1").fill("République démocratique du Congo");
+      await page.getByLabel("Signature 1").fill("Le titulaire");
+      await page.getByLabel("Signature 2").fill("Le chef d'établissement");
+      await page.getByLabel("Signature 3").fill("Le parent");
+      await captureBoth(page, "09b-ecole-assistant-en-tete");
       const previewCall = page.waitForResponse(isCatalogCall("POST", "/preview"));
       await page.getByTestId("catalog-next").click();
       assert.equal((await previewCall).status(), 200, "aperçu");
       await page.getByTestId("catalog-preview").waitFor();
       assert.ok((await page.getByTestId("catalog-preview").locator("[data-failing]").count()) > 0, "notes en échec signalées dans l'aperçu");
-      await page.getByLabel("Signature 1").fill("Le titulaire");
-      await page.getByLabel("Signature 2").fill("Le chef d'établissement");
-      await page.getByLabel("Signature 3").fill("Le parent");
-      await page.getByTestId("catalog-preview-refresh").click();
       await page.getByTestId("catalog-preview").getByText("Le chef d'établissement").waitFor();
+      await page.getByTestId("catalog-preview").getByTestId("report-card-header").getByText("République démocratique du Congo").waitFor();
+      await page.getByTestId("catalog-preview").getByText("6e A", { exact: true }).first().waitFor();
       await captureBoth(page, "10-ecole-apercu");
       await page.getByTestId("catalog-next").click();
       await page.getByTestId("catalog-step-summary").waitFor();
+      await page.getByTestId("catalog-summary-class").getByText(`6e A — ${ACADEMIC_YEAR_NAME}`).waitFor();
       assert.equal(await page.getByTestId("catalog-activate").isDisabled(), true, "activation impossible avant enregistrement");
       const saved = await clickAndWaitHttp(page, page.getByTestId("catalog-save"), isCatalogCall("PUT", "/configuration"));
       assert.equal(saved.status(), 200, "enregistrement");
@@ -540,13 +588,20 @@ async function runBrowserScenarios({ countryCdId }) {
       const activated = await clickAndWaitHttp(page, page.getByTestId("catalog-activate-confirm"), isCatalogCall("POST", "/activate"));
       assert.equal(activated.status(), 200, "activation");
       await page.getByTestId("catalog-school-notice").waitFor();
+      await page.getByTestId("catalog-school-model-colombiere").getByText("Actif pour cette classe").waitFor();
       await page.reload({ waitUntil: "domcontentloaded" });
-      await page.getByTestId("catalog-school-model-colombiere").getByText("Actif dans l'établissement").waitFor();
+      await page.getByTestId("catalog-school-model-colombiere").waitFor();
+      await page.getByLabel("Afficher l'état pour").selectOption({ label: `6e A — ${ACADEMIC_YEAR_NAME}` });
+      await page.getByTestId("catalog-school-model-colombiere").getByText("Actif pour cette classe").waitFor();
       await captureBoth(page, "13-ecole-modele-actif");
       const token = await sessionToken(page);
-      const binding = await request("/report-card/bindings/catalog-colombiere", { token });
-      assert.equal(binding.status, 200, JSON.stringify(binding.data));
-      assert.ok(binding.data?.binding, "liaison ACTIVE absente après rechargement");
+      const classA = await request(`/report-card/catalog?classId=${encodeURIComponent(classIds.A)}`, { token });
+      assert.equal(classA.status, 200, JSON.stringify(classA.data));
+      assert.equal(classA.data.models.find((m) => m.model_id === "colombiere")?.configuration, "ACTIVE", "6e A : configuration active après rechargement");
+      const classB = await request(`/report-card/catalog?classId=${encodeURIComponent(classIds.B)}`, { token });
+      assert.equal(classB.data.models.find((m) => m.model_id === "colombiere")?.configuration, "NONE", "6e B : non affectée par l'activation de 6e A");
+      const ctxB = await request(`/report-card/catalog/models/colombiere/configuration?classId=${encodeURIComponent(classIds.B)}`, { token });
+      assert.deepEqual(ctxB.data.subjects.map((s) => s.code).sort(), ["MATHEMATIQUES", "SCIENCES"], "6e B : seules ses matières");
       const admin = await request("/report-card/catalog/admin", { token });
       assert.equal(admin.status, 403, "Admin School : pas de gestion nationale");
       const put = await request(`/report-card/catalog/admin/models/berceau/countries/${countryCdId}`, {
@@ -641,6 +696,7 @@ async function main() {
     await waitForUrl(`${apiBase()}/health`, "backend");
     await waitForUrl(WEB_URL, "web");
     await seedSecretaryReadOnly(prepared.isolatedUrl);
+    await applyClassScopeMigrations(prepared.isolatedUrl);
     await runBrowserScenarios(prepared);
     console.log(`OK report-card-s1-e2e (${Date.now() - startedAt}ms)`);
   } catch (error) {

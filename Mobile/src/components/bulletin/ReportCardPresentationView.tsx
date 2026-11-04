@@ -3,9 +3,11 @@
  * Une période à la fois (sélecteur), toutes les matières, sous-matières et
  * maxima conservés. Aucun calcul : données du serveur (snapshot figé).
  */
-import { useMemo, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { MIN_TOUCH_TARGET_DP } from "../../lib/mobileUsability";
+import { getApiBaseUrl } from "../../services/api";
+import { getAccessToken } from "../../services/secureStorage";
 import {
   defaultPhoneView,
   phoneReportCard,
@@ -17,6 +19,8 @@ export function ReportCardPresentationView({ view }: { view: ReportCardPresentat
   const options = useMemo(() => phoneViewOptions(view), [view]);
   const [selected, setSelected] = useState(() => defaultPhoneView(view));
   const card = useMemo(() => phoneReportCard(view, selected), [view, selected]);
+  const logoSource = useFrozenLogo(card.header?.logoPath ?? null);
+  const header = card.header;
 
   return (
     <View style={styles.wrapper} testID="report-card-presentation">
@@ -25,8 +29,23 @@ export function ReportCardPresentationView({ view }: { view: ReportCardPresentat
           BROUILLON — document non officiel
         </Text>
       ) : null}
-      <View style={styles.identity}>
-        {card.identity.map((item) => (
+      {header ? (
+        <View style={[styles.header, header.layout === "logo_center" && styles.headerCenter]} testID="report-card-header">
+          {logoSource ? (
+            <Image source={logoSource} style={styles.logo} resizeMode="contain" accessibilityLabel="Logo de l'établissement" testID="report-card-header-logo" />
+          ) : null}
+          <View style={styles.headerText}>
+            {header.lines.map((line, index) => (
+              <Text key={`${index}-${line}`} style={[styles.headerLine, header.layout === "logo_center" && styles.textCenter]}>{line}</Text>
+            ))}
+            {header.title ? (
+              <Text style={[styles.headerTitle, header.layout === "logo_center" && styles.textCenter]} testID="report-card-header-title">{header.title}</Text>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+      <View style={styles.identity} testID="report-card-identity">
+        {(header ? header.items : card.identity).map((item) => (
           <View key={item.label} style={styles.identityItem}>
             <Text style={styles.identityLabel}>{item.label}</Text>
             <Text style={styles.identityValue}>{item.value}</Text>
@@ -86,13 +105,52 @@ export function ReportCardPresentationView({ view }: { view: ReportCardPresentat
           </View>
         ))}
       </View>
+      {card.signatures.length ? (
+        <View style={styles.signatures} testID="report-card-signatures">
+          {card.signatures.map((label, index) => (
+            <View key={`${index}-${label}`} style={styles.signature}>
+              <View style={styles.signatureLine} />
+              <Text style={styles.identityLabel}>{label}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
+}
+
+/** Logo figé d'un bulletin publié : requête authentifiée (Bearer), jamais d'URL publique. */
+function useFrozenLogo(path: string | null) {
+  const [source, setSource] = useState<{ uri: string; headers: Record<string, string> } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setSource(null);
+    if (!path) return undefined;
+    void getAccessToken()
+      .then((token) => {
+        if (alive && token) setSource({ uri: `${getApiBaseUrl()}${path}`, headers: { Authorization: `Bearer ${token}` } });
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+  return source;
 }
 
 const styles = StyleSheet.create({
   wrapper: { gap: 8, marginBottom: 12 },
   draft: { color: "#92400E", backgroundColor: "#FEF3C7", padding: 8, borderRadius: 10, fontWeight: "900" },
+  header: { flexDirection: "row", alignItems: "center", gap: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: "#E2E8F0" },
+  headerCenter: { flexDirection: "column" },
+  headerText: { flexShrink: 1, gap: 2 },
+  headerLine: { color: "#334155", fontSize: 11, fontWeight: "800" },
+  headerTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900" },
+  textCenter: { textAlign: "center" },
+  logo: { width: 56, height: 56 },
+  signatures: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 8 },
+  signature: { flex: 1, minWidth: "40%", gap: 4 },
+  signatureLine: { height: 28, borderBottomWidth: 1, borderBottomColor: "#94A3B8" },
   identity: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   identityItem: { minWidth: "45%" },
   identityLabel: { color: "#64748B", fontSize: 11, fontWeight: "900" },
