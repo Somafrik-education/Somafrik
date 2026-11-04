@@ -32,7 +32,14 @@ function mapRequest(row) {
     last_permission: row.last_permission,
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
+    ...scopeFields(row),
   };
+}
+
+/** BULLETIN-CLASSE-01 / L2 — portée exposée uniquement pour une configuration de classe. */
+function scopeFields(row) {
+  if (!row || row.class_id == null) return {};
+  return { class_id: row.class_id, academic_year_id: row.academic_year_id };
 }
 
 function mapTemplateVersion(row) {
@@ -81,6 +88,7 @@ function mapBinding(row) {
     rendering_template_version: Number(row.rendering_template_version),
     rendering_template_spec_sha256: row.rendering_template_spec_sha256,
     activated_at: iso(row.activated_at),
+    ...scopeFields(row),
   };
 }
 
@@ -107,6 +115,14 @@ function mapImmutable(err) {
  * n'existe pas (valeur `undefined`, traitée comme NULL) ; après migration, les lignes
  * de classe éventuelles sont ignorées ici et ne peuvent pas être confondues.
  */
+function classScopeRequired() {
+  return new ReportCardConfigurationError("CLASS_SCOPE_UNAVAILABLE");
+}
+
+function hasScope(scope) {
+  return Boolean(scope && scope.classId);
+}
+
 function isSchoolScoped(row) {
   return row != null && row.class_id == null && row.academic_year_id == null;
 }
@@ -158,6 +174,21 @@ function createReportCardConfigurationPgStore(db) {
         ]);
       },
       async insertRequest(row) {
+        if (row.class_id) {
+          if (!(await tableHasClassScope(client, "report_card_configuration_requests"))) throw classScopeRequired();
+          const inserted = await queryOne(
+            `INSERT INTO report_card_configuration_requests (
+               id, school_id, model_key, status, concurrency_version, description,
+               engine_id, last_actor_id, last_permission, created_at, updated_at, class_id, academic_year_id
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+            [
+              row.id, row.school_id, row.model_key, row.status, row.concurrency_version, row.description,
+              row.engine_id, row.last_actor_id, row.last_permission, row.created_at, row.updated_at,
+              row.class_id, row.academic_year_id,
+            ]
+          );
+          return mapRequest(inserted);
+        }
         const inserted = await queryOne(
           `INSERT INTO report_card_configuration_requests (
              id, school_id, model_key, status, concurrency_version, description,
@@ -255,7 +286,19 @@ function createReportCardConfigurationPgStore(db) {
         if (!updated) throw new ReportCardConfigurationError("REQUEST_NOT_FOUND");
         return mapRequest(updated);
       },
-      async getActiveByPair(schoolId, modelKey) {
+      async getActiveByPair(schoolId, modelKey, scope) {
+        if (hasScope(scope)) {
+          if (!(await tableHasClassScope(client, "report_card_configuration_requests"))) return null;
+          return mapRequest(
+            await queryOne(
+              `SELECT * FROM report_card_configuration_requests
+               WHERE school_id = $1 AND model_key = $2 AND status = 'ACTIVE'
+                 AND class_id = $3 AND academic_year_id = $4
+               FOR UPDATE`,
+              [schoolId, modelKey, scope.classId, scope.academicYearId]
+            )
+          );
+        }
         // Demande ACTIVE de portée établissement uniquement (L1). Après migration, le filtre
         // est appliqué EN SQL : FOR UPDATE ne verrouille jamais les demandes des classes.
         const scoped = await tableHasClassScope(client, "report_card_configuration_requests");
@@ -268,6 +311,40 @@ function createReportCardConfigurationPgStore(db) {
         return mapRequest(firstSchoolScoped(result.rows));
       },
       async upsertBinding(row) {
+        if (row.class_id) {
+          if (!(await bindingsHaveClassScope(client))) throw classScopeRequired();
+          const saved = await queryOne(
+            `INSERT INTO report_card_active_bindings (
+               school_id, model_key, request_id, engine_id,
+               profile_id, profile_version, profile_spec_sha256,
+               schema_id, schema_version, schema_spec_sha256,
+               rendering_template_id, rendering_template_version, rendering_template_spec_sha256,
+               activated_at, academic_year_id, class_id
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+             ON CONFLICT (school_id, model_key, academic_year_id, class_id) WHERE class_id IS NOT NULL DO UPDATE SET
+               request_id = EXCLUDED.request_id,
+               engine_id = EXCLUDED.engine_id,
+               profile_id = EXCLUDED.profile_id,
+               profile_version = EXCLUDED.profile_version,
+               profile_spec_sha256 = EXCLUDED.profile_spec_sha256,
+               schema_id = EXCLUDED.schema_id,
+               schema_version = EXCLUDED.schema_version,
+               schema_spec_sha256 = EXCLUDED.schema_spec_sha256,
+               rendering_template_id = EXCLUDED.rendering_template_id,
+               rendering_template_version = EXCLUDED.rendering_template_version,
+               rendering_template_spec_sha256 = EXCLUDED.rendering_template_spec_sha256,
+               activated_at = EXCLUDED.activated_at
+             RETURNING *`,
+            [
+              row.school_id, row.model_key, row.request_id, row.engine_id,
+              row.profile_id, row.profile_version, row.profile_spec_sha256,
+              row.schema_id, row.schema_version, row.schema_spec_sha256,
+              row.rendering_template_id, row.rendering_template_version, row.rendering_template_spec_sha256,
+              row.activated_at, row.academic_year_id, row.class_id,
+            ]
+          );
+          return mapBinding(saved);
+        }
         // Ancien schéma : PK (school_id, model_key). Nouveau schéma (L1) : index unique
         // partiel des liaisons établissement. Détection à chaque appel (activation rare),
         // et nouvelle détection si la migration est appliquée pendant l'exécution (42P10).
@@ -322,7 +399,17 @@ function createReportCardConfigurationPgStore(db) {
         if (inTx) await client.query("RELEASE SAVEPOINT report_card_binding_upsert");
         return mapBinding(saved);
       },
-      async getBinding(schoolId, modelKey) {
+      async getBinding(schoolId, modelKey, scope) {
+        if (hasScope(scope)) {
+          if (!(await bindingsHaveClassScope(client))) return null;
+          return mapBinding(
+            await queryOne(
+              `SELECT * FROM report_card_active_bindings
+               WHERE school_id = $1 AND model_key = $2 AND class_id = $3 AND academic_year_id = $4`,
+              [schoolId, modelKey, scope.classId, scope.academicYearId]
+            )
+          );
+        }
         // Liaison établissement uniquement (L1), jamais une liaison de classe.
         const result = await client.query(
           `SELECT * FROM report_card_active_bindings WHERE school_id = $1 AND model_key = $2`,
