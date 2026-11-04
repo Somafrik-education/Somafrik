@@ -150,7 +150,12 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
       announcements: (await clientsApi.listAnnouncements(...init)) as BackOfficeState["announcements"],
     }),
     students: async (...init) => ({ students: (await studentsApi.list(...init)) as unknown as BackOfficeState["students"] }),
-    teachers: async (...init) => ({ teachers: (await teachersApi.list(...init)) as BackOfficeState["teachers"] }),
+    teachers: async (...init) => ({
+      // teachersApi.list() reste sans paramètre (contrat PARITY-028) : options passées à api.get.
+      teachers: (init.length
+        ? await api.get<unknown[]>("/teachers", init[0])
+        : await teachersApi.list()) as BackOfficeState["teachers"],
+    }),
     classes: async (...init) => ({ classes: (await classesApi.list(...init)) as BackOfficeState["classes"] }),
     courses: async (...init) => ({ courses: (await pedagogyApi.listCourses(...init)) as BackOfficeState["courses"] }),
     courseSchedules: async (...init) => ({
@@ -172,7 +177,10 @@ function createDomainLoaders(options: LoadDomainsOptions = {}): Record<DomainKey
     }),
     notes: async (...init) => ({ notes: (await api.get<unknown[]>("/notes", ...init)) as BackOfficeState["notes"] }),
     evaluations: async (...init) => ({
-      evaluations: (await pedagogyApi.listEvaluations(...init)) as BackOfficeState["evaluations"],
+      // pedagogyApi.listEvaluations() reste sans paramètre (contrat verify-teacher-login-scope).
+      evaluations: (init.length
+        ? await api.get<unknown[]>("/evaluations", init[0])
+        : await pedagogyApi.listEvaluations()) as BackOfficeState["evaluations"],
     }),
     presences: async (...init) => ({ presences: (await api.get<unknown[]>("/presences", ...init)) as BackOfficeState["presences"] }),
     academicConfigs: async (...init) => {

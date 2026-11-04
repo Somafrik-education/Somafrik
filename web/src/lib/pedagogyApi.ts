@@ -74,7 +74,7 @@ export const pedagogyApi = {
     api.delete(`/course-schedules/${encodeURIComponent(scheduleId)}`),
 
   createEvaluation: (payload: Record<string, unknown>) => api.post("/evaluations", payload),
-  listEvaluations: (...init: RequestArgs) => api.get<unknown[]>("/evaluations", ...init),
+  listEvaluations: () => api.get<unknown[]>("/evaluations"),
   updateEvaluation: (evaluationId: string, payload: Record<string, unknown>) =>
     api.patch(`/evaluations/${encodeURIComponent(evaluationId)}`, payload),
 

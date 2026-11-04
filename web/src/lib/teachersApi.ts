@@ -1,4 +1,4 @@
-import { api, type RequestArgs } from "../api/client";
+import { api } from "../api/client";
 
 export interface TeacherAssignmentSummary {
   id?: string | null;
@@ -46,7 +46,7 @@ export interface UpdateTeacherPayload {
 }
 
 export const teachersApi = {
-  list: (...init: RequestArgs) => api.get<SchoolTeacher[]>("/teachers", ...init),
+  list: () => api.get<SchoolTeacher[]>("/teachers"),
 
   get: (teacherCode: string) =>
     api.get<SchoolTeacher>(`/teachers/${encodeURIComponent(teacherCode)}`),
