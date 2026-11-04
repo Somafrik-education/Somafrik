@@ -148,8 +148,12 @@ function createInMemoryConfigurationPersistence() {
     return versions.get(templateId);
   }
 
-  function bindingKey(schoolId, modelKey) {
-    return `${schoolId}::${modelKey}`;
+  function bindingKey(schoolId, modelKey, classId) {
+    return `${schoolId}::${modelKey}::${classId || ""}`;
+  }
+
+  function sameScope(row, scope) {
+    return (row.class_id || null) === ((scope && scope.classId) || null);
   }
 
   const api = {
@@ -178,18 +182,19 @@ function createInMemoryConfigurationPersistence() {
       requests.set(row.id, clone(row));
       return freezeRequest(requests.get(row.id));
     },
-    async getActiveByPair(schoolId, modelKey) {
+    async getActiveByPair(schoolId, modelKey, scope) {
       const row = [...requests.values()].find(
-        (item) => item.school_id === schoolId && item.model_key === modelKey && item.status === "ACTIVE"
+        (item) => item.school_id === schoolId && item.model_key === modelKey && item.status === "ACTIVE" && sameScope(item, scope)
       );
       return row ? freezeRequest(row) : null;
     },
     async upsertBinding(row) {
-      bindings.set(bindingKey(row.school_id, row.model_key), clone(row));
-      return clone(bindings.get(bindingKey(row.school_id, row.model_key)));
+      const key = bindingKey(row.school_id, row.model_key, row.class_id);
+      bindings.set(key, clone(row));
+      return clone(bindings.get(key));
     },
-    async getBinding(schoolId, modelKey) {
-      const row = bindings.get(bindingKey(schoolId, modelKey));
+    async getBinding(schoolId, modelKey, scope) {
+      const row = bindings.get(bindingKey(schoolId, modelKey, scope && scope.classId));
       return row ? clone(row) : null;
     },
     async insertAudit(entry) {
@@ -688,7 +693,8 @@ function createReportCardConfiguration({
     ) {
       throw new ReportCardConfigurationError("BUNDLE_VERSION_MUTABLE");
     }
-    const previous = await store.getActiveByPair(schoolId, request.model_key);
+    const scope = scopeOf(request);
+    const previous = await store.getActiveByPair(schoolId, request.model_key, scope);
     if (previous && previous.id !== request.id) {
       await applyTransition(store, previous, "ARCHIVED", actor, permission, {
         at,
@@ -722,6 +728,7 @@ function createReportCardConfiguration({
       rendering_template_version: active.rendering_template_version,
       rendering_template_spec_sha256: active.rendering_template_spec_sha256,
       activated_at: at,
+      ...(scope ? { class_id: scope.classId, academic_year_id: scope.academicYearId } : {}),
     });
     return active;
   }
@@ -787,15 +794,43 @@ function createReportCardConfiguration({
   const CATALOG_MODEL_KEY_RE = /^catalog-[a-z][a-z0-9-]{0,39}$/;
   const CATALOG_OPEN_STATES = new Set(["CONFIGURING"]);
 
+  /**
+   * BULLETIN-CLASSE-01 / L2 — portée d'une configuration du catalogue.
+   * Absente : configuration établissement (historique). Présente : configuration
+   * propre à une classe et à son année scolaire (vérifiées par l'appelant et par la base).
+   */
+  function normalizeScope(scope) {
+    if (scope == null) return null;
+    const classId = String(scope.classId || "").trim();
+    const academicYearId = String(scope.academicYearId || "").trim();
+    if (!classId && !academicYearId) return null;
+    if (!classId || !academicYearId) throw new ReportCardConfigurationError("CLASS_SCOPE_INVALID");
+    return { classId, academicYearId };
+  }
+
+  function scopeOf(row) {
+    return row && row.class_id ? { classId: row.class_id, academicYearId: row.academic_year_id } : null;
+  }
+
+  function lockKey(key, scope) {
+    return scope ? `${key}#${scope.classId}` : key;
+  }
+
+  /** Clés de versions propres à la classe : l'activation d'une classe ne touche jamais une autre. */
+  function versionKey(key, scope) {
+    return scope ? `${key}.${scope.classId}` : key;
+  }
+
   function requireCatalogModelKey(modelKey) {
     const key = requireModelKey(modelKey);
     if (!CATALOG_MODEL_KEY_RE.test(key)) throw new ReportCardConfigurationError("CATALOG_MODEL_REQUIRED");
     return key;
   }
 
-  async function latestOpenCatalogRequest(store, schoolId, modelKey) {
+  async function latestOpenCatalogRequest(store, schoolId, modelKey, scope = null) {
+    const classId = scope ? scope.classId : null;
     const rows = (await store.listRequests(schoolId)).filter(
-      (row) => row.model_key === modelKey && CATALOG_OPEN_STATES.has(row.status)
+      (row) => row.model_key === modelKey && CATALOG_OPEN_STATES.has(row.status) && (row.class_id || null) === classId
     );
     rows.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
     return rows[0] || null;
@@ -836,9 +871,10 @@ function createReportCardConfiguration({
    * gabarit, les lie à la demande ouverte du modèle (CONFIGURING) sans
    * l'activer. La liaison active existante, s'il y en a une, reste inchangée.
    */
-  async function saveCatalogConfiguration({ actor, schoolId, modelKey, description, profileSpec, schemaSpec, templateSpec } = {}) {
+  async function saveCatalogConfiguration({ actor, schoolId, modelKey, description, profileSpec, schemaSpec, templateSpec, scope: rawScope } = {}) {
     assertCanApprove(actor, schoolId);
     const key = requireCatalogModelKey(modelKey);
+    const scope = normalizeScope(rawScope);
     let normalizedTemplate;
     try {
       normalizedTemplate = normalizeRenderingTemplate(templateSpec);
@@ -849,16 +885,16 @@ function createReportCardConfiguration({
     let profileRef;
     let schemaRef;
     try {
-      profileRef = await freezeVersionedSpec(profileStore, "profile", schoolId, key, profileSpec);
-      schemaRef = await freezeVersionedSpec(schemaStore, "schema", schoolId, key, schemaSpec);
+      profileRef = await freezeVersionedSpec(profileStore, "profile", schoolId, versionKey(key, scope), profileSpec);
+      schemaRef = await freezeVersionedSpec(schemaStore, "schema", schoolId, versionKey(key, scope), schemaSpec);
     } catch (err) {
       throw wrapSpecError(err);
     }
     const sha = specSha256(normalizedTemplate);
     const at = nowIso(clock);
     return inTx(async (store) => {
-      await store.lockPair(schoolId, key);
-      let request = await latestOpenCatalogRequest(store, schoolId, key);
+      await store.lockPair(schoolId, lockKey(key, scope));
+      let request = await latestOpenCatalogRequest(store, schoolId, key, scope);
       if (!request) {
         request = await store.insertRequest({
           id: crypto.randomUUID(),
@@ -881,6 +917,7 @@ function createReportCardConfiguration({
           last_permission: PERM_APPROVE,
           created_at: at,
           updated_at: at,
+          ...(scope ? { class_id: scope.classId, academic_year_id: scope.academicYearId } : {}),
         });
         await writeAudit(store, {
           request,
@@ -939,13 +976,14 @@ function createReportCardConfiguration({
   }
 
   /** « Activer » : la configuration enregistrée devient la liaison ACTIVE du modèle. */
-  async function activateCatalogConfiguration({ actor, schoolId, modelKey, commandId } = {}) {
+  async function activateCatalogConfiguration({ actor, schoolId, modelKey, commandId, scope: rawScope } = {}) {
     assertCanApprove(actor, schoolId);
     const key = requireCatalogModelKey(modelKey);
+    const scope = normalizeScope(rawScope);
     const at = nowIso(clock);
     return inTx(async (store) => {
-      await store.lockPair(schoolId, key);
-      const request = await latestOpenCatalogRequest(store, schoolId, key);
+      await store.lockPair(schoolId, lockKey(key, scope));
+      const request = await latestOpenCatalogRequest(store, schoolId, key, scope);
       if (!request) throw new ReportCardConfigurationError("CATALOG_CONFIGURATION_REQUIRED");
       return freezeRequest(
         await activateBoundRequest(store, { schoolId, request, actor, permission: PERM_APPROVE, commandId, at })
@@ -954,11 +992,14 @@ function createReportCardConfiguration({
   }
 
   /** État d'un modèle du catalogue pour l'établissement (aucune donnée d'élève). */
-  async function catalogConfigurationState({ actor, schoolId, modelKey } = {}) {
+  async function catalogConfigurationState({ actor, schoolId, modelKey, scope: rawScope } = {}) {
     assertCanRead(actor, schoolId);
     const key = requireCatalogModelKey(modelKey);
-    const binding = await persistence.getBinding(schoolId, key);
-    const pending = await latestOpenCatalogRequest(persistence, schoolId, key);
+    const scope = normalizeScope(rawScope);
+    const binding = await persistence.getBinding(schoolId, key, scope);
+    const pending = await latestOpenCatalogRequest(persistence, schoolId, key, scope);
+    // Classe : la configuration établissement éventuelle est HÉRITÉE (lecture seule).
+    const inheritedBinding = scope && !binding ? await persistence.getBinding(schoolId, key, null) : null;
     let draftProfile = null;
     if (pending && pending.profile_id) {
       try {
@@ -985,9 +1026,21 @@ function createReportCardConfiguration({
       const row = await persistence.getTemplateVersion(schoolId, binding.rendering_template_id, binding.rendering_template_version);
       activeTemplate = row ? row.spec : null;
     }
+    let inherited = null;
+    if (inheritedBinding) {
+      let profile = null;
+      try {
+        profile = (await loadProfileVersion(schoolId, inheritedBinding.profile_id, Number(inheritedBinding.profile_version))).spec;
+      } catch {
+        profile = null;
+      }
+      const row = await persistence.getTemplateVersion(schoolId, inheritedBinding.rendering_template_id, inheritedBinding.rendering_template_version);
+      inherited = { activated_at: inheritedBinding.activated_at, profile, template: row ? row.spec : null };
+    }
     return {
       active: binding ? { activated_at: binding.activated_at, profile: activeProfile, template: activeTemplate } : null,
       saved: pending && pending.profile_id ? { updated_at: pending.updated_at, profile: draftProfile, template: draftTemplate } : null,
+      inherited,
     };
   }
 
@@ -1022,7 +1075,11 @@ function createReportCardConfiguration({
     return clone(row);
   }
 
-  async function lookupActiveBinding({ schoolId, modelKey } = {}) {
+  /**
+   * Liaison utilisée pour publier : celle de la classe (et de son année) si elle existe,
+   * sinon la liaison établissement (héritage, D2), sinon aucune.
+   */
+  async function lookupActiveBinding({ schoolId, modelKey, classId, academicYearId } = {}) {
     requireSchoolId(schoolId);
     let key;
     try {
@@ -1030,7 +1087,13 @@ function createReportCardConfiguration({
     } catch {
       return null;
     }
-    const row = await persistence.getBinding(schoolId, key);
+    let scope = null;
+    try {
+      scope = normalizeScope({ classId, academicYearId });
+    } catch {
+      return null;
+    }
+    const row = (scope && (await persistence.getBinding(schoolId, key, scope))) || (await persistence.getBinding(schoolId, key, null));
     if (!row) return null;
     if (
       !row.profile_id ||

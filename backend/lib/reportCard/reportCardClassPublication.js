@@ -82,9 +82,9 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     if (!catalogStore || typeof catalogStore.listSchoolSubjectCatalog !== "function") fail("FACTS_REQUIRED");
   }
 
-  async function loadBundle({ schoolId, modelKey, pinned }) {
+  async function loadBundle({ schoolId, modelKey, pinned, classId, academicYearId }) {
     if (pinned) return pinned;
-    const bundle = await resolveBoundBundle(configuration, schoolId, modelKey);
+    const bundle = await resolveBoundBundle(configuration, schoolId, modelKey, { classId, academicYearId });
     if (!bundle) fail("MODEL_NOT_BOUND");
     return bundle;
   }
@@ -100,7 +100,8 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     const periodId = requireText(period, "INVALID_PERIOD_SCOPE");
     const cohortRow = await factsStore.resolveCohort({ schoolId, classId: cls, academicYearId: year });
     if (!cohortRow) fail("CLASS_NOT_FOUND");
-    const bundle = await loadBundle({ schoolId, modelKey: key, pinned });
+    // Classe et année validées par resolveCohort (établissement du jeton) : résolution par classe.
+    const bundle = await loadBundle({ schoolId, modelKey: key, pinned, classId: cohortRow.classId, academicYearId: cohortRow.academicYearId });
     const profile = bundle.profile.spec;
     if (!Array.isArray(profile.subjects) || !profile.fact_sources) fail("PROFILE_NOT_PUBLISHABLE");
     const scope = resolvePeriodScope(profile, periodId);

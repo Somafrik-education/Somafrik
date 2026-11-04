@@ -56,6 +56,8 @@ const HTTP_STATUS = Object.freeze({
   PUBLICATION_ALREADY_EXISTS: 409,
   MODEL_NOT_BOUND: 409,
   CLASS_NOT_FOUND: 404,
+  CLASS_SCOPE_INVALID: 400,
+  CLASS_SCOPE_UNAVAILABLE: 503,
   // BULLETIN-CATALOG-01
   CONFIGURATION_INVALID: 422,
   CATALOG_MODEL_UNKNOWN: 404,
@@ -487,7 +489,7 @@ function registerReportCardHttp(app, deps = {}) {
     route(async (req, res) => {
       const actor = await actorFrom(req);
       res.setHeader("Cache-Control", "no-store");
-      res.json({ ok: true, ...(await catalogService().schoolCatalog({ actor })) });
+      res.json({ ok: true, ...(await catalogService().schoolCatalog({ actor, classId: req.query?.classId })) });
     })
   );
 
@@ -497,7 +499,7 @@ function registerReportCardHttp(app, deps = {}) {
     route(async (req, res) => {
       const actor = await actorFrom(req);
       res.setHeader("Cache-Control", "no-store");
-      res.json({ ok: true, ...(await catalogService().configurationContext({ actor, modelId: req.params.modelId })) });
+      res.json({ ok: true, ...(await catalogService().configurationContext({ actor, modelId: req.params.modelId, classId: req.query?.classId })) });
     })
   );
 
@@ -506,7 +508,7 @@ function registerReportCardHttp(app, deps = {}) {
     auth,
     route(async (req, res) => {
       const actor = await actorFrom(req);
-      const preview = await catalogService().preview({ actor, modelId: req.params.modelId, input: req.body?.input });
+      const preview = await catalogService().preview({ actor, modelId: req.params.modelId, input: req.body?.input, classId: req.body?.classId });
       res.setHeader("Cache-Control", "no-store");
       res.json({ ok: true, preview });
     })
@@ -517,7 +519,7 @@ function registerReportCardHttp(app, deps = {}) {
     auth,
     route(async (req, res) => {
       const actor = await actorFrom(req);
-      res.json({ ok: true, ...(await catalogService().save({ actor, modelId: req.params.modelId, input: req.body?.input })) });
+      res.json({ ok: true, ...(await catalogService().save({ actor, modelId: req.params.modelId, input: req.body?.input, classId: req.body?.classId })) });
     })
   );
 
@@ -531,6 +533,7 @@ function registerReportCardHttp(app, deps = {}) {
         modelId: req.params.modelId,
         confirm: req.body?.confirm,
         commandId: req.body?.commandId,
+        classId: req.body?.classId,
       });
       res.json({ ok: true, ...result });
     })
