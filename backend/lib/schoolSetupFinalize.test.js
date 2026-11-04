@@ -8,7 +8,10 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const http = require("node:http");
 const path = require("node:path");
+const vm = require("node:vm");
+const express = require("express");
 const {
   createMemoryProgressStore,
   finalizeSchoolSetupGuided,
@@ -258,4 +261,73 @@ test("Web et Mobile appellent le même POST canonique, sans schoolId", () => {
   assert.match(block, /requirePermission\("POST \/api\/v2\/school-setup\/guided\/complete"\)/);
   assert.match(rbac, /"POST \/api\/v2\/school-setup\/guided\/complete": \["Paramètres Établissement:UPDATE"\]/);
   assert.doesNotMatch(fs.readFileSync(path.join(ROOT, "backend/db/schoolSetupGuidedSchema.js"), "utf8"), /setup_status/);
+});
+
+function loadProductionErrorMiddleware() {
+  const source = fs.readFileSync(path.join(ROOT, "backend/server.js"), "utf8");
+  const start = source.indexOf("app.use((error, _req, res, _next) => {");
+  const end = source.indexOf("\nconst PORT =", start);
+  assert.ok(start >= 0 && end > start);
+  const block = source.slice(start, end).trim();
+  assert.match(block, /error\.statusCode/);
+  assert.match(block, /code: error\.code/);
+  assert.match(block, /details: error\.details/);
+  let middleware;
+  vm.runInNewContext(block, {
+    app: {
+      use(fn) {
+        middleware = fn;
+      },
+    },
+    console,
+    process,
+  });
+  assert.equal(middleware.length, 4);
+  return middleware;
+}
+
+test("réponse HTTP : les étapes obligatoires manquantes sont exposées", async () => {
+  const app = express();
+  app.use(express.json());
+  app.post("/api/v2/school-setup/guided/complete", async (req, res, next) => {
+    try {
+      const payload = await finalizeSchoolSetupGuided(
+        input({
+          progressStore: countingStore(),
+          loadSnapshot: async () => snapshot({ subjectCount: 0, enrolledStudentCount: 0 }),
+          body: req.body,
+        }),
+      );
+      res.json(payload);
+    } catch (error) {
+      next(error);
+    }
+  });
+  app.use(loadProductionErrorMiddleware());
+
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address();
+    const response = await fetch(`http://127.0.0.1:${port}/api/v2/school-setup/guided/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schoolId: SCHOOL_B }),
+    });
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "SETUP_INCOMPLETE");
+    assert.match(body.message, /Matières/);
+    assert.match(body.message, /Élèves/);
+    assert.equal(body.message.includes("Finance"), false);
+    assert.equal(body.message.includes("Communication"), false);
+    const keys = body.details.missingSteps.map((step) => step.key);
+    assert.deepEqual(keys, ["subjects", "students"]);
+    assert.equal(
+      body.details.missingSteps.every((step) => step.key && step.label),
+      true,
+    );
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
 });
