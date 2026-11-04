@@ -410,3 +410,232 @@ test("12. migration refusée si les prérequis manquent (aucun effet partiel)", 
     await pool.end();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Revue CTO — objets homonymes préexistants, provenance du rollback, contention.
+// ---------------------------------------------------------------------------
+
+const { execFileSync } = require("node:child_process");
+const PREFLIGHT_PATH = path.join(MIGRATIONS, "20261105_report_card_class_scope.preflight.sql");
+
+function psqlAvailable() {
+  try {
+    execFileSync("psql", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function preflight(url, dbName) {
+  const out = execFileSync(
+    "psql",
+    [url, "-X", "-A", "-t", "-F", "|", "-v", "ON_ERROR_STOP=1", "-v", `expected_db=${dbName}`, "-v", "expected_env=preprod", "-f", PREFLIGHT_PATH],
+    { encoding: "utf8" }
+  );
+  return Object.fromEntries(
+    out.split("\n").map((line) => line.split("|")).filter((cols) => /^(P\d\d|VERDICT)/.test(cols[0] || ""))
+      .map(([check, status, detail]) => [check.startsWith("VERDICT") ? "VERDICT" : check.slice(0, 3), { status, detail }])
+  );
+}
+
+/** Base minimale jetable (schéma de démarrage LOT 6 + classes), pour les scénarios négatifs. */
+async function minimalDatabase(suffix) {
+  const name = `${IT_DATABASE}_${suffix}`;
+  const admin = new Pool({ connectionString: withDatabase(DATABASE_URL, "postgres") });
+  try {
+    const existing = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [name]);
+    if (!existing.rowCount) await admin.query(`CREATE DATABASE ${name}`);
+  } finally {
+    await admin.end();
+  }
+  const url = withDatabase(DATABASE_URL, name);
+  const pool = new Pool({ connectionString: url });
+  await pool.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+  await pool.query(`
+    CREATE TABLE schools (id UUID PRIMARY KEY DEFAULT gen_random_uuid());
+    CREATE TABLE academic_years (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), school_id UUID NOT NULL REFERENCES schools(id));
+    CREATE TABLE classes (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), school_id UUID NOT NULL REFERENCES schools(id),
+                          academic_year_id UUID NOT NULL REFERENCES academic_years(id));
+  `);
+  await pool.query(REPORT_CARD_CONFIGURATION_SQL);
+  return { pool, url, name };
+}
+
+async function inTx(pool, sql) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(sql);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** État complet de la portée L1 : prouve qu'un échec n'a laissé aucun effet partiel. */
+async function l1Footprint(pool) {
+  const q = async (sql) => (await pool.query(sql)).rows;
+  return {
+    pk: (await q(`SELECT a.attname FROM pg_constraint c CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY k(attnum, ord)
+                  JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+                  WHERE c.conrelid = 'report_card_active_bindings'::regclass AND c.contype = 'p' ORDER BY k.ord`)).map((r) => r.attname),
+    columns: (await q(`SELECT attrelid::regclass::text || '.' || attname AS c FROM pg_attribute
+                       WHERE attrelid IN ('report_card_active_bindings'::regclass, 'report_card_configuration_requests'::regclass)
+                         AND attname IN ('id', 'class_id', 'academic_year_id') AND NOT attisdropped
+                         AND NOT (attrelid = 'report_card_configuration_requests'::regclass AND attname = 'id') ORDER BY 1`)).map((r) => r.c),
+    marked: (await q(`SELECT count(*)::int AS n FROM (
+                        SELECT obj_description(oid, 'pg_constraint') AS d FROM pg_constraint
+                        UNION ALL SELECT obj_description(oid, 'pg_class') FROM pg_class) x
+                      WHERE d = 'somafrik:bulletin-classe-01-l1'`))[0].n,
+    historicalIndex: (await q("SELECT count(*)::int AS n FROM pg_class WHERE relname = 'uq_report_card_configuration_one_active'"))[0].n,
+  };
+}
+
+const PRISTINE = { pk: ["school_id", "model_key"], columns: [], marked: 0, historicalIndex: 1 };
+
+for (const scenario of [
+  {
+    id: "index homonyme sans prédicat",
+    setup: "CREATE UNIQUE INDEX uq_report_card_active_bindings_school ON report_card_active_bindings (school_id, model_key)",
+    error: /CLASS_SCOPE_DEFINITION_MISMATCH : index uq_report_card_active_bindings_school/,
+    p16: /uq_report_card_active_bindings_school=MISMATCH/,
+  },
+  {
+    id: "index homonyme sur une autre table",
+    setup: "CREATE UNIQUE INDEX uq_report_card_active_bindings_class ON classes (id) WHERE id IS NOT NULL",
+    error: /CLASS_SCOPE_DEFINITION_MISMATCH : index uq_report_card_active_bindings_class/,
+    p16: /uq_report_card_active_bindings_class=MISMATCH/,
+  },
+  {
+    id: "contrainte homonyme aux mauvaises colonnes",
+    setup: "ALTER TABLE classes ADD CONSTRAINT classes_id_year_school_unique UNIQUE (id, school_id)",
+    error: /CLASS_SCOPE_DEFINITION_MISMATCH : contrainte classes_id_year_school_unique/,
+    p16: /classes_id_year_school_unique=MISMATCH/,
+  },
+  {
+    id: "contrainte identique d'un autre chantier (sans marqueur)",
+    setup: "ALTER TABLE classes ADD CONSTRAINT classes_id_year_school_unique UNIQUE (id, academic_year_id, school_id)",
+    error: /CLASS_SCOPE_FOREIGN_OBJECT : contrainte classes_id_year_school_unique/,
+    p16: /classes_id_year_school_unique=FOREIGN/,
+  },
+  {
+    id: "colonne préexistante d'un autre chantier",
+    setup: "ALTER TABLE report_card_configuration_requests ADD COLUMN class_id UUID",
+    error: /CLASS_SCOPE_FOREIGN_OBJECT : colonne report_card_configuration_requests.class_id/,
+    p16: null,
+  },
+  {
+    id: "index historique de définition inattendue",
+    setup: "DROP INDEX uq_report_card_configuration_one_active; CREATE UNIQUE INDEX uq_report_card_configuration_one_active ON report_card_configuration_requests (school_id) WHERE status = 'ACTIVE'",
+    error: /CLASS_SCOPE_DEFINITION_MISMATCH : index uq_report_card_configuration_one_active/,
+    p16: null,
+    historicalReplaced: true,
+  },
+]) {
+  test(`13. objet préexistant incompatible (${scenario.id}) : migration annulée intégralement, préflight NO-GO`, { skip }, async () => {
+    const db = await minimalDatabase(`neg_${scenario.id.replace(/[^a-z]/gi, "").slice(0, 20).toLowerCase()}`);
+    try {
+      await db.pool.query(scenario.setup);
+      const before = await l1Footprint(db.pool);
+      await assert.rejects(inTx(db.pool, MIGRATION_SQL), scenario.error);
+      assert.deepEqual(await l1Footprint(db.pool), before, "aucun effet partiel");
+      if (!scenario.historicalReplaced && scenario.p16 !== null) {
+        assert.deepEqual(before, PRISTINE, "schéma LOT 6 d'origine intact");
+      }
+      if (psqlAvailable()) {
+        const report = preflight(db.url, db.name);
+        assert.equal(report.VERDICT.status, "NO-GO");
+        if (scenario.p16) {
+          assert.equal(report.P16.status, "NO-GO");
+          assert.match(report.P16.detail, scenario.p16);
+        }
+      }
+    } finally {
+      await db.pool.end();
+    }
+  });
+}
+
+test("14. rollback : refusé si un objet nommé L1 n'a pas la provenance L1 ; rien n'est supprimé", { skip }, async () => {
+  const db = await minimalDatabase("rollback_foreign");
+  try {
+    await inTx(db.pool, MIGRATION_SQL);
+    const migrated = await l1Footprint(db.pool);
+    // Un autre chantier « reprend » la contrainte unique de classes : marqueur L1 retiré.
+    await db.pool.query("COMMENT ON CONSTRAINT classes_id_year_school_unique ON classes IS 'autre-chantier'");
+    await assert.rejects(inTx(db.pool, ROLLBACK_SQL), /CLASS_SCOPE_ROLLBACK_FOREIGN_OBJECT : contrainte classes_id_year_school_unique/);
+    const after = await l1Footprint(db.pool);
+    assert.deepEqual(after.pk, ["id"]);
+    assert.deepEqual(after.columns, migrated.columns);
+    assert.equal(after.marked, migrated.marked - 1);
+    const kept = (await db.pool.query("SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conname = 'classes_id_year_school_unique'")).rows;
+    assert.equal(kept.length, 1, "contrainte de l'autre chantier conservée");
+    // Restitution du marqueur : rollback complet, aucun objet L1 restant, contraintes d'autres chantiers intactes.
+    await db.pool.query("COMMENT ON CONSTRAINT classes_id_year_school_unique ON classes IS 'somafrik:bulletin-classe-01-l1'");
+    await db.pool.query("ALTER TABLE classes ADD CONSTRAINT classes_other_project_unique UNIQUE (id, school_id)");
+    await inTx(db.pool, ROLLBACK_SQL);
+    assert.deepEqual(await l1Footprint(db.pool), PRISTINE);
+    assert.equal((await db.pool.query("SELECT count(*)::int AS n FROM pg_constraint WHERE conname = 'classes_other_project_unique'")).rows[0].n, 1);
+  } finally {
+    await db.pool.end();
+  }
+});
+
+test("15. rollback : une contrainte homonyme créée hors L1 avant migration n'est jamais supprimée", { skip }, async () => {
+  const db = await minimalDatabase("rollback_preexisting");
+  try {
+    // Contrainte homonyme préexistante (autre chantier) : la migration refuse ; le rollback ne la supprime pas.
+    await db.pool.query("ALTER TABLE classes ADD CONSTRAINT classes_id_year_school_unique UNIQUE (id, academic_year_id, school_id)");
+    await assert.rejects(inTx(db.pool, MIGRATION_SQL), /CLASS_SCOPE_FOREIGN_OBJECT/);
+    await assert.rejects(inTx(db.pool, ROLLBACK_SQL), /CLASS_SCOPE_ROLLBACK_FOREIGN_OBJECT/);
+    assert.equal((await db.pool.query("SELECT count(*)::int AS n FROM pg_constraint WHERE conname = 'classes_id_year_school_unique'")).rows[0].n, 1);
+    assert.deepEqual((await l1Footprint(db.pool)).pk, ["school_id", "model_key"]);
+  } finally {
+    await db.pool.end();
+  }
+});
+
+test("16. contention : getActiveByPair ne verrouille pas les demandes des classes", { skip }, async () => {
+  // Base principale migrée (tests 10–11). Demande ACTIVE de classe C1 verrouillée par une autre transaction.
+  const classRequest = await newRequest(state.a.schoolId, { classId: state.a.classes.C1, yearId: state.a.year1 });
+  const holder = await state.pool.connect();
+  try {
+    await holder.query("BEGIN");
+    await holder.query("SELECT id FROM report_card_configuration_requests WHERE id = $1 FOR UPDATE", [classRequest]);
+    const store = createReportCardConfigurationPgStore(state.pool);
+    const active = await store.withTx(async (tx) => {
+      await tx.lockPair(state.a.schoolId, "lock-timeout-probe");
+      return tx.getActiveByPair(state.a.schoolId, MODEL);
+    });
+    assert.equal(active.id, state.requestA, "demande établissement obtenue sans attendre le verrou de la classe");
+    // Inversement, la demande établissement verrouillée bloque bien un second lecteur (garde conservée).
+    const school = await state.pool.connect();
+    try {
+      await school.query("BEGIN");
+      await school.query("SET LOCAL lock_timeout = '300ms'");
+      await school.query("SELECT 1 FROM report_card_configuration_requests WHERE id = $1 FOR UPDATE", [state.requestA]);
+      const blocked = await state.pool.connect();
+      try {
+        await blocked.query("BEGIN");
+        await blocked.query("SET LOCAL lock_timeout = '300ms'");
+        await assert.rejects(
+          blocked.query("SELECT 1 FROM report_card_configuration_requests WHERE school_id = $1 AND model_key = $2 AND status = 'ACTIVE' AND class_id IS NULL FOR UPDATE", [state.a.schoolId, MODEL]),
+          (err) => err.code === "55P03"
+        );
+      } finally {
+        await blocked.query("ROLLBACK").catch(() => {});
+        blocked.release();
+      }
+    } finally {
+      await school.query("ROLLBACK").catch(() => {});
+      school.release();
+    }
+  } finally {
+    await holder.query("ROLLBACK").catch(() => {});
+    holder.release();
+  }
+});

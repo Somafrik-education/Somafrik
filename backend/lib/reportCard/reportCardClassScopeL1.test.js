@@ -17,6 +17,10 @@ const MIGRATION = fs.readFileSync(path.join(MIGRATIONS, "20261105_report_card_cl
 const ROLLBACK = fs.readFileSync(path.join(MIGRATIONS, "20261105_report_card_class_scope.rollback.sql"), "utf8");
 const PREFLIGHT = fs.readFileSync(path.join(MIGRATIONS, "20261105_report_card_class_scope.preflight.sql"), "utf8");
 
+function noComments(sql) {
+  return sql.split("\n").filter((line) => !line.trim().startsWith("--")).join("\n");
+}
+
 function executable(sql) {
   return sql
     .split("\n")
@@ -43,23 +47,36 @@ test("démarrage : l'index historique n'est recréé que tant que class_id n'exi
   assert.match(boot, /IF NOT EXISTS \([\s\S]{0,200}attname = 'class_id'[\s\S]{0,200}CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_configuration_one_active/);
 });
 
-test("migration : garanties créées avant retrait, aucun privilège accordé, aucune suppression de ligne", () => {
+test("migration : garanties créées et validées avant retrait, provenance, aucun privilège, aucune suppression", () => {
   const sql = executable(MIGRATION);
-  const createSchool = sql.indexOf("uq_report_card_active_bindings_school\n");
-  const dropPk = sql.indexOf("DROP CONSTRAINT report_card_active_bindings_pkey");
-  assert.ok(createSchool > 0 && dropPk > createSchool, "index partiel établissement créé avant le retrait de la PK");
-  assert.ok(sql.indexOf("CLASS_SCOPE_UNIQUE_INDEXES_INVALID") < dropPk, "contrôle de validité avant le retrait");
-  assert.ok(sql.indexOf("uq_report_card_configuration_one_active_school") < sql.indexOf("DROP INDEX IF EXISTS uq_report_card_configuration_one_active;"));
-  assert.doesNotMatch(sql, /\bGRANT\b|\bREVOKE\b|\bDELETE\s+FROM\b|\bTRUNCATE\b|\bDROP\s+TABLE\b/i);
-  assert.doesNotMatch(sql, /DROP\s+COLUMN/i);
+  const text = noComments(MIGRATION);
+  const createSchool = text.indexOf("CREATE UNIQUE INDEX uq_report_card_active_bindings_school");
+  const finalCheck = text.indexOf("CLASS_SCOPE_UNIQUE_INDEXES_INVALID");
+  const dropPk = text.indexOf("DROP CONSTRAINT report_card_active_bindings_pkey");
+  const dropHistorical = text.indexOf("DROP INDEX uq_report_card_configuration_one_active");
+  assert.ok(createSchool > 0 && finalCheck > createSchool && dropPk > finalCheck && dropHistorical > finalCheck,
+    "index partiels créés puis validés avant tout retrait");
+  // Validation structurelle (et non un simple comptage) de tout objet homonyme.
+  for (const token of ["pg_get_constraintdef", "pg_get_expr(i.indpred, i.indrelid)", "indkey", "conrelid", "CLASS_SCOPE_DEFINITION_MISMATCH", "CLASS_SCOPE_FOREIGN_OBJECT"]) {
+    assert.ok(MIGRATION.includes(token), token);
+  }
+  assert.doesNotMatch(sql, /IF NOT EXISTS uq_report_card|ADD COLUMN IF NOT EXISTS/, "pas d'adoption silencieuse d'un objet homonyme");
+  assert.ok((MIGRATION.match(/COMMENT ON (COLUMN|CONSTRAINT|INDEX)/g) || []).length >= 12, "provenance posée sur chaque objet créé");
+  assert.doesNotMatch(sql, /\bGRANT\b|\bREVOKE\b|\bDELETE\s+FROM\b|\bTRUNCATE\b|\bDROP\s+TABLE\b|DROP\s+COLUMN/i);
 });
 
-test("rollback : refus si données de classe, garanties historiques rétablies avant retrait", () => {
+test("rollback : refus si données de classe ou objet étranger, garanties historiques rétablies avant retrait", () => {
   const sql = executable(ROLLBACK);
-  assert.match(ROLLBACK, /CLASS_SCOPE_ROLLBACK_REFUSED/);
-  const guard = sql.indexOf("RAISE EXCEPTION");
-  assert.ok(guard > 0 && guard < sql.indexOf("CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_configuration_one_active"), "refus vérifié en premier");
-  assert.ok(sql.indexOf("PRIMARY KEY (school_id, model_key)") < sql.indexOf("DROP INDEX IF EXISTS uq_report_card_active_bindings_school"));
+  const text = noComments(ROLLBACK);
+  const refuse = text.indexOf("CLASS_SCOPE_ROLLBACK_REFUSED");
+  const inventory = text.indexOf("pg_temp.l1_owned_constraint(bindings");
+  const restore = text.indexOf("CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_configuration_one_active");
+  const firstDrop = text.indexOf("FOREACH item IN ARRAY drop_constraints");
+  assert.ok(refuse > 0 && inventory > refuse && restore > inventory && firstDrop > restore, "refus, inventaire de provenance, restauration, puis retraits");
+  assert.ok(text.indexOf("PRIMARY KEY (school_id, model_key)") < firstDrop);
+  assert.match(ROLLBACK, /CLASS_SCOPE_ROLLBACK_FOREIGN_OBJECT/);
+  // Aucun retrait inconditionnel d'un objet nommé L1 : uniquement les listes validées par marqueur.
+  assert.doesNotMatch(sql, /DROP CONSTRAINT IF EXISTS|DROP INDEX IF EXISTS|DROP COLUMN IF EXISTS/);
   assert.doesNotMatch(sql, /\bDELETE\s+FROM\b|\bTRUNCATE\b|\bDROP\s+TABLE\b|report_card_published_snapshots/i);
 });
 

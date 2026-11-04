@@ -115,15 +115,20 @@ function firstSchoolScoped(rows) {
   return rows.find(isSchoolScoped) || null;
 }
 
-async function bindingsHaveClassScope(client) {
+async function tableHasClassScope(client, table) {
   const result = await client.query(
     `SELECT EXISTS (
        SELECT 1 FROM pg_attribute
-        WHERE attrelid = to_regclass('report_card_active_bindings')
+        WHERE attrelid = to_regclass($1)
           AND attname = 'class_id' AND NOT attisdropped
-     ) AS scoped`
+     ) AS scoped`,
+    [table]
   );
   return result.rows[0] && result.rows[0].scoped === true;
+}
+
+function bindingsHaveClassScope(client) {
+  return tableHasClassScope(client, "report_card_active_bindings");
 }
 
 function createReportCardConfigurationPgStore(db) {
@@ -251,11 +256,12 @@ function createReportCardConfigurationPgStore(db) {
         return mapRequest(updated);
       },
       async getActiveByPair(schoolId, modelKey) {
-        // Demande ACTIVE de portée établissement uniquement (L1) ; requête compatible
-        // avec l'ancien et le nouveau schéma.
+        // Demande ACTIVE de portée établissement uniquement (L1). Après migration, le filtre
+        // est appliqué EN SQL : FOR UPDATE ne verrouille jamais les demandes des classes.
+        const scoped = await tableHasClassScope(client, "report_card_configuration_requests");
         const result = await client.query(
           `SELECT * FROM report_card_configuration_requests
-           WHERE school_id = $1 AND model_key = $2 AND status = 'ACTIVE'
+           WHERE school_id = $1 AND model_key = $2 AND status = 'ACTIVE'${scoped ? " AND class_id IS NULL" : ""}
            FOR UPDATE`,
           [schoolId, modelKey]
         );

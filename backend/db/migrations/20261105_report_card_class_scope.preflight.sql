@@ -65,18 +65,66 @@ binding_pk AS (
     JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum
    WHERE con.conrelid = 'public.report_card_active_bindings'::regclass AND con.contype = 'p'
 ),
-indexes AS (
-  SELECT c.relname, i.indisunique AND i.indisvalid AS ok
-    FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-   WHERE c.relname IN ('uq_report_card_configuration_one_active', 'uq_report_card_active_bindings_school',
-                       'uq_report_card_active_bindings_class', 'uq_report_card_configuration_one_active_school',
-                       'uq_report_card_configuration_one_active_class')
+-- Définitions attendues (colonnes ordonnées, prédicat normalisé) et provenance L1.
+expected_indexes(name, rel, cols, pred, l1) AS (
+  VALUES ('uq_report_card_configuration_one_active', 'report_card_configuration_requests', 'school_id,model_key', 'status=''active''::text', false),
+         ('uq_report_card_active_bindings_school', 'report_card_active_bindings', 'school_id,model_key', 'class_idisnull', true),
+         ('uq_report_card_active_bindings_class', 'report_card_active_bindings', 'school_id,model_key,academic_year_id,class_id', 'class_idisnotnull', true),
+         ('uq_report_card_configuration_one_active_school', 'report_card_configuration_requests', 'school_id,model_key', 'status=''active''::textandclass_idisnull', true),
+         ('uq_report_card_configuration_one_active_class', 'report_card_configuration_requests', 'school_id,model_key,academic_year_id,class_id', 'status=''active''::textandclass_idisnotnull', true)
 ),
-new_indexes AS (
-  SELECT count(*) FILTER (WHERE ok AND relname <> 'uq_report_card_configuration_one_active') AS n FROM indexes
+index_state AS (
+  SELECT e.name, e.l1,
+         CASE WHEN c.oid IS NULL THEN 'ABSENT'
+              WHEN i.indrelid <> to_regclass('public.' || e.rel) OR NOT i.indisunique OR NOT i.indisvalid OR i.indexprs IS NOT NULL
+                   OR (SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+                         FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
+                         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum) IS DISTINCT FROM e.cols
+                   OR regexp_replace(replace(lower(coalesce(pg_get_expr(i.indpred, i.indrelid), '')), 'public.', ''), '[[:space:]()"]', '', 'g') <> e.pred
+                THEN 'MISMATCH'
+              WHEN e.l1 AND obj_description(c.oid, 'pg_class') IS DISTINCT FROM 'somafrik:bulletin-classe-01-l1' THEN 'FOREIGN'
+              ELSE 'OK' END AS status
+    FROM expected_indexes e
+    LEFT JOIN pg_class c ON c.relname = e.name AND c.relnamespace = 'public'::regnamespace
+    LEFT JOIN pg_index i ON i.indexrelid = c.oid
 ),
-old_index AS (
-  SELECT count(*) FILTER (WHERE relname = 'uq_report_card_configuration_one_active') AS n FROM indexes
+expected_constraints(name, rel, def) AS (
+  VALUES ('classes_id_year_school_unique', 'classes', 'uniqueid,academic_year_id,school_id'),
+         ('report_card_active_bindings_scope_pair', 'report_card_active_bindings', 'checkclass_idisnull=academic_year_idisnull'),
+         ('report_card_active_bindings_class_tenant', 'report_card_active_bindings', 'foreignkeyclass_id,academic_year_id,school_idreferencesclassesid,academic_year_id,school_id'),
+         ('report_card_configuration_requests_scope_pair', 'report_card_configuration_requests', 'checkclass_idisnull=academic_year_idisnull'),
+         ('report_card_configuration_requests_class_tenant', 'report_card_configuration_requests', 'foreignkeyclass_id,academic_year_id,school_idreferencesclassesid,academic_year_id,school_id')
+),
+constraint_state AS (
+  SELECT e.name,
+         CASE WHEN con.oid IS NULL THEN 'ABSENT'
+              WHEN con.conrelid <> to_regclass('public.' || e.rel) OR NOT con.convalidated
+                   OR regexp_replace(replace(lower(pg_get_constraintdef(con.oid)), 'public.', ''), '[[:space:]()"]', '', 'g') <> e.def THEN 'MISMATCH'
+              WHEN obj_description(con.oid, 'pg_constraint') IS DISTINCT FROM 'somafrik:bulletin-classe-01-l1' THEN 'FOREIGN'
+              ELSE 'OK' END AS status
+    FROM expected_constraints e
+    LEFT JOIN pg_constraint con ON con.conname = e.name AND con.connamespace = 'public'::regnamespace
+),
+column_state AS (
+  SELECT attr.rel || '.' || attr.col AS name,
+         CASE WHEN a.attname IS NULL THEN 'ABSENT'
+              WHEN format_type(a.atttypid, a.atttypmod) <> 'uuid' THEN 'MISMATCH'
+              WHEN col_description(a.attrelid, a.attnum) IS DISTINCT FROM 'somafrik:bulletin-classe-01-l1' THEN 'FOREIGN'
+              ELSE 'OK' END AS status
+    FROM attr LEFT JOIN pg_attribute a
+      ON a.attrelid = to_regclass('public.' || attr.rel) AND a.attname = attr.col AND NOT a.attisdropped
+),
+l1_objects AS (
+  SELECT name, status FROM index_state WHERE l1
+  UNION ALL SELECT name, status FROM constraint_state
+  UNION ALL SELECT name, status FROM column_state
+),
+historical_index AS (
+  SELECT status FROM index_state WHERE name = 'uq_report_card_configuration_one_active'
+),
+pk_note AS (
+  SELECT obj_description(oid, 'pg_constraint') AS note FROM pg_constraint
+   WHERE conrelid = 'public.report_card_active_bindings'::regclass AND contype = 'p'
 ),
 bindings AS (
   SELECT count(*) AS n, count(DISTINCT school_id) AS schools FROM report_card_active_bindings
@@ -185,17 +233,23 @@ checks(ord, "check", status, detail) AS (
   UNION ALL
   SELECT 6, 'P06 clé primaire des liaisons',
          CASE WHEN (SELECT value FROM state) = 'TO_APPLY' AND (SELECT cols FROM binding_pk) = 'school_id,model_key' THEN 'GO'
-              WHEN (SELECT value FROM state) = 'APPLIED' AND (SELECT cols FROM binding_pk) = 'id' THEN 'GO'
+              WHEN (SELECT value FROM state) = 'APPLIED' AND (SELECT cols FROM binding_pk) = 'id'
+                   AND (SELECT note FROM pk_note) = 'somafrik:bulletin-classe-01-l1' THEN 'GO'
               ELSE 'NO-GO' END,
          'PK actuelle : (' || coalesce((SELECT cols FROM binding_pk), 'aucune') || ')'
+         || CASE WHEN (SELECT cols FROM binding_pk) = 'id' AND (SELECT note FROM pk_note) IS DISTINCT FROM 'somafrik:bulletin-classe-01-l1'
+                 THEN ' — clé (id) non créée par L1' ELSE '' END
   UNION ALL
-  SELECT 7, 'P07 index d''unicité',
-         CASE WHEN (SELECT value FROM state) = 'TO_APPLY' AND (SELECT n FROM old_index) = 1 AND (SELECT n FROM new_indexes) = 0 THEN 'GO'
-              WHEN (SELECT value FROM state) = 'APPLIED' AND (SELECT n FROM old_index) = 0 AND (SELECT n FROM new_indexes) = 4 THEN 'GO'
+  SELECT 7, 'P07 définitions des index d''unicité',
+         CASE WHEN (SELECT value FROM state) = 'TO_APPLY' AND (SELECT status FROM historical_index) = 'OK'
+                   AND NOT EXISTS (SELECT 1 FROM index_state WHERE l1 AND status <> 'ABSENT') THEN 'GO'
+              WHEN (SELECT value FROM state) = 'APPLIED' AND (SELECT status FROM historical_index) = 'ABSENT'
+                   AND NOT EXISTS (SELECT 1 FROM index_state WHERE l1 AND status <> 'OK') THEN 'GO'
               ELSE 'NO-GO' END,
-         'index historique : ' || (SELECT n FROM old_index) || ' ; nouveaux index partiels valides : ' || (SELECT n FROM new_indexes) || '/4'
-         || CASE WHEN (SELECT value FROM state) = 'APPLIED' AND (SELECT n FROM old_index) = 1
-                 THEN ' — index historique recréé (ancien code redémarré après migration ?)' ELSE '' END
+         'index historique : ' || (SELECT status FROM historical_index) || ' ; '
+         || (SELECT string_agg(name || '=' || status, ', ' ORDER BY name) FROM index_state WHERE l1)
+         || CASE WHEN (SELECT value FROM state) = 'APPLIED' AND (SELECT status FROM historical_index) <> 'ABSENT'
+                 THEN ' — index historique présent après migration (ancien code redémarré ?)' ELSE '' END
   UNION ALL
   SELECT 8, 'P08 liaisons existantes', 'GO',
          (SELECT n FROM bindings) || ' liaison(s) active(s) pour ' || (SELECT schools FROM bindings) || ' établissement(s) : conservées telles quelles'
@@ -232,6 +286,16 @@ checks(ord, "check", status, detail) AS (
          CASE WHEN (SELECT n FROM public_exposure) > 0 THEN 'WARN' ELSE 'GO' END,
          coalesce('privilèges préexistants (non modifiés par L1, à traiter séparément) : ' || (SELECT names FROM public_exposure),
                   'aucun privilège anon/authenticated sur les liaisons et demandes')
+  UNION ALL
+  SELECT 16, 'P16 provenance et définitions des objets L1',
+         CASE WHEN EXISTS (SELECT 1 FROM l1_objects WHERE status IN ('MISMATCH', 'FOREIGN')) THEN 'NO-GO'
+              WHEN (SELECT value FROM state) = 'TO_APPLY' AND EXISTS (SELECT 1 FROM l1_objects WHERE status <> 'ABSENT') THEN 'NO-GO'
+              WHEN (SELECT value FROM state) = 'APPLIED' AND EXISTS (SELECT 1 FROM l1_objects WHERE status <> 'OK') THEN 'NO-GO'
+              ELSE 'GO' END,
+         coalesce('objets en conflit (définition différente ou absence du marqueur L1, appartiennent à un autre chantier) : '
+                  || (SELECT string_agg(name || '=' || status, ', ' ORDER BY name) FROM l1_objects WHERE status IN ('MISMATCH', 'FOREIGN')),
+                  CASE (SELECT value FROM state) WHEN 'APPLIED' THEN 'tous les objets L1 présents, marqués et conformes'
+                       ELSE 'aucun objet homonyme préexistant' END)
   UNION ALL
   SELECT 15, 'P15 migrations précédentes',
          CASE WHEN to_regclass('public.report_card_rendering_template_versions') IS NULL OR to_regclass('public.report_card_published_snapshots') IS NULL THEN 'NO-GO' ELSE 'GO' END,
