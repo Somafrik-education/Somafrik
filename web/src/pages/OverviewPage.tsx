@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EstablishmentDashboardLayout } from "../components/dashboard/EstablishmentDashboardLayout";
 import { EstablishmentChartSwitcher } from "../components/dashboard/EstablishmentChartSwitcher";
 import { getEstablishmentMetrics } from "../lib/establishment";
@@ -29,15 +29,16 @@ import {
   dashboardDeferredDomainsForDemo,
 } from "../lib/dashboardDemoHydration";
 import { filterDomainsByPermissions } from "../lib/domainPermissions";
-import { DASHBOARD_METRIC_DOMAINS, DASHBOARD_SYNC_EVENT, DASHBOARD_SYNC_INTERVAL_MS } from "../lib/dashboardSync";
 import { hasWebInternalNotificationScope } from "../lib/webSchoolDomainDeny";
+import { DEFAULT_CHART_PERIOD, type ChartPeriod } from "../lib/chartPeriod";
+import { buildEstablishmentChartsFromKpis } from "../lib/schoolDashboardKpi";
+import { useSchoolDashboardKpis } from "../lib/useSchoolDashboardKpis";
 
 type DemoCriticalStatus = "idle" | "loading" | "ready" | "error";
 
 export function OverviewPage() {
   const { session } = useAuth();
-  const { state, ensureDomains, refresh } = useData();
-  const [metricSyncError, setMetricSyncError] = useState(false);
+  const { state, ensureDomains } = useData();
   const ctx = usePermissionContext();
   const user = session?.user ?? null;
   const internalSchool = isInternalSchoolRole(user?.role);
@@ -49,6 +50,9 @@ export function OverviewPage() {
     demoRuntimeEnabled ? "idle" : "ready",
   );
   const [guidedPayload, setGuidedPayload] = useState<GuidedSetupPayload | null>(null);
+  const [kpiPeriod, setKpiPeriod] = useState<ChartPeriod>(DEFAULT_CHART_PERIOD);
+  const liveKpis = internalSchool && !demoRuntimeEnabled;
+  const schoolKpis = useSchoolDashboardKpis(liveKpis, kpiPeriod);
 
   useEffect(() => {
     if (!session?.accessToken) return;
@@ -110,50 +114,6 @@ export function OverviewPage() {
     };
   }, [session?.accessToken, internalSchool, activeSchoolCode, ensureDomains, ctx]);
 
-  const metricRefreshBusy = useRef(false);
-  const metricRefreshAgain = useRef(false);
-  const refreshMetrics = useCallback(() => {
-    if (!internalSchool) return;
-    if (typeof document !== "undefined" && document.hidden) return;
-    if (metricRefreshBusy.current) {
-      metricRefreshAgain.current = true;
-      return;
-    }
-    const domains = filterDomainsByPermissions([...DASHBOARD_METRIC_DOMAINS], ctx);
-    if (!domains.length) return;
-    const options =
-      activeSchoolCode && activeSchoolCode !== "*" ? { schoolCode: activeSchoolCode } : undefined;
-    metricRefreshBusy.current = true;
-    void refresh(domains, options)
-      .then(() => setMetricSyncError(false))
-      .catch(() => setMetricSyncError(true))
-      .finally(() => {
-        metricRefreshBusy.current = false;
-        if (metricRefreshAgain.current) {
-          metricRefreshAgain.current = false;
-          refreshMetrics();
-        }
-      });
-  }, [internalSchool, activeSchoolCode, ctx, refresh]);
-
-  const refreshMetricsRef = useRef(refreshMetrics);
-  refreshMetricsRef.current = refreshMetrics;
-
-  useEffect(() => {
-    if (!internalSchool) return;
-    const run = () => refreshMetricsRef.current();
-    run();
-    const timer = window.setInterval(run, DASHBOARD_SYNC_INTERVAL_MS);
-    const onFocus = () => run();
-    window.addEventListener(DASHBOARD_SYNC_EVENT, onFocus);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener(DASHBOARD_SYNC_EVENT, onFocus);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [internalSchool, activeSchoolCode]);
-
   const hasInternalNotificationScope = hasWebInternalNotificationScope(user, activeSchoolCode);
   const schoolUnreadCount = useInternalNotificationsUnreadCount(
     Boolean(
@@ -165,14 +125,21 @@ export function OverviewPage() {
   );
 
   const users = scopedUsers(scopedUser, state);
-  const establishmentMetrics = useMemo(() => internalSchool ? getEstablishmentMetrics(scopedUser, state, users) : null, [internalSchool, scopedUser, state, users]);
-  const secondaryMetrics = useMemo(() => internalSchool ? buildSchoolDashboardSecondaryMetrics(scopedUser, state) : null, [internalSchool, scopedUser, state]);
+  const establishmentMetrics = useMemo(
+    () => (!liveKpis && internalSchool ? getEstablishmentMetrics(scopedUser, state, users) : null),
+    [liveKpis, internalSchool, scopedUser, state, users],
+  );
+  const secondaryMetrics = useMemo(
+    () => (!liveKpis && internalSchool ? buildSchoolDashboardSecondaryMetrics(scopedUser, state) : null),
+    [liveKpis, internalSchool, scopedUser, state],
+  );
   const revenue = useMemo(() => {
     if (!internalSchool || !hasBackOfficePermission(ctx, "Paiements", "READ")) return "—";
+    if (liveKpis) return schoolKpis.payload?.cards.revenue?.display ?? "—";
     const buckets = getPaymentCashBreakdown(scopedPayments(scopedUser, state));
     if (buckets.length !== 1 || !buckets[0].currencyKey) return "—";
     return `${new Intl.NumberFormat("fr-FR").format(buckets[0].collectedAmount)} ${buckets[0].currencyLabel}`;
-  }, [internalSchool, scopedUser, state, ctx]);
+  }, [internalSchool, liveKpis, schoolKpis.payload, scopedUser, state, ctx]);
 
   const platformCharts = useMemo(() => {
     if (internalSchool) return [];
@@ -184,11 +151,18 @@ export function OverviewPage() {
 
   const establishmentCharts = useMemo(() => {
     if (!internalSchool) return [];
+    if (liveKpis) {
+      if (!schoolKpis.payload) return [];
+      return filterEstablishmentDashboardCharts(
+        buildEstablishmentChartsFromKpis(schoolKpis.payload, scopedUser?.role, schoolUnreadCount),
+        ctx,
+      );
+    }
     return filterEstablishmentDashboardCharts(
       buildEstablishmentDashboardCharts(scopedUser, state, users, { schoolUnreadCount }).charts,
       ctx,
     );
-  }, [internalSchool, scopedUser, state, users, ctx, schoolUnreadCount]);
+  }, [internalSchool, liveKpis, schoolKpis.payload, scopedUser, state, users, ctx, schoolUnreadCount]);
 
   const charts = internalSchool ? establishmentCharts : platformCharts;
   const canConfigureCharts = canManageRolePermissions(ctx);
@@ -224,16 +198,16 @@ export function OverviewPage() {
       {guidedPayload ? (
         <GuidedSchoolSetupDashboardCard payload={guidedPayload} role={user?.role} />
       ) : null}
-      {metricSyncError ? (
+      {schoolKpis.error ? (
         <p role="alert" className="text-sm text-rose-700">
           Actualisation des indicateurs indisponible. Nouvelle tentative automatique.
         </p>
       ) : null}
-      {internalSchool && establishmentMetrics && secondaryMetrics ? (
+      {internalSchool && (liveKpis || (establishmentMetrics && secondaryMetrics)) ? (
         <EstablishmentDashboardLayout
-          students={establishmentMetrics.students}
-          teachers={establishmentMetrics.teachers}
-          classes={establishmentMetrics.classes}
+          students={liveKpis ? (schoolKpis.payload?.cards.students ?? null) : establishmentMetrics!.students}
+          teachers={liveKpis ? (schoolKpis.payload?.cards.teachers ?? null) : establishmentMetrics!.teachers}
+          classes={liveKpis ? (schoolKpis.payload?.cards.classes ?? null) : establishmentMetrics!.classes}
           revenue={revenue}
           canReadStudents={hasBackOfficePermission(ctx, "Élèves", "READ")}
           canReadTeachers={hasBackOfficePermission(ctx, "Enseignants", "READ")}
@@ -241,8 +215,20 @@ export function OverviewPage() {
           canReadPayments={hasBackOfficePermission(ctx, "Paiements", "READ")}
           activitiesEnabled={!demoRuntimeEnabled && user?.role === "Admin School"}
           schoolKey={activeSchoolCode ?? ""}
-          levels={secondaryMetrics.levels}
-          attendance={secondaryMetrics.attendance}
+          levels={liveKpis ? (schoolKpis.payload?.cards.levels ?? []) : secondaryMetrics!.levels}
+          attendance={
+            liveKpis
+              ? (schoolKpis.payload?.cards.attendance ?? {
+                  label: "Présence du jour",
+                  value: "—",
+                  rate: null,
+                  expected: 0,
+                  attended: 0,
+                  recorded: 0,
+                })
+              : secondaryMetrics!.attendance
+          }
+          indicatorsPending={liveKpis && !schoolKpis.payload}
           canReadPresences={hasBackOfficePermission(ctx, "Présences", "READ")}
         >
           <EstablishmentChartSwitcher
@@ -250,6 +236,8 @@ export function OverviewPage() {
             periodContext={periodContext}
             orderUserKey={orderUserKey}
             showTypeBadge={canConfigureCharts}
+            serverPeriod={liveKpis ? kpiPeriod : undefined}
+            onServerPeriodChange={liveKpis ? setKpiPeriod : undefined}
           />
         </EstablishmentDashboardLayout>
       ) : (

@@ -7,11 +7,13 @@ export function SchoolDashboardSecondaryWidgets({
   attendance,
   showLevels,
   showAttendance,
+  pending = false,
 }: {
   levels: Array<{ name: string; value: number }>;
   attendance: TodayPresenceKpi;
   showLevels: boolean;
   showAttendance: boolean;
+  pending?: boolean;
 }) {
   if (!showLevels && !showAttendance) return null;
   return (
@@ -40,7 +42,7 @@ export function SchoolDashboardSecondaryWidgets({
                 ))}
               </ul>
             </>
-          ) : <p className="mt-6 text-sm text-muted">Aucun élève à répartir.</p>}
+          ) : <p className="mt-6 text-sm text-muted">{pending ? "Chargement des indicateurs…" : "Aucun élève à répartir."}</p>}
         </article>
       ) : null}
       {showAttendance ? (
@@ -53,10 +55,14 @@ export function SchoolDashboardSecondaryWidgets({
                 <p className="text-xl font-black tabular-nums text-ink sm:text-2xl">{attendance.value}</p>
               </div>
             </div>
+            {pending ? null : (
             <p className="text-xs text-muted">
               {attendance.recorded.toLocaleString("fr-FR")} appels enregistrés sur {attendance.expected.toLocaleString("fr-FR")} élèves attendus
             </p>
-            {attendance.rate !== null ? (
+            )}
+              {pending ? (
+              <p className="max-w-xs text-sm text-muted">Chargement des indicateurs…</p>
+            ) : attendance.rate !== null ? (
               <div className="w-full max-w-sm">
                 <div role="progressbar" aria-label="Taux de présence du jour" aria-valuemin={0} aria-valuemax={100} aria-valuenow={attendance.rate} className="h-2 overflow-hidden rounded-full bg-slate-100">
                   <div className="h-full rounded-full bg-emerald-600" style={{ width: `${attendance.rate}%` }} />

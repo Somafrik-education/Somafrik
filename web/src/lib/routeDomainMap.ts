@@ -13,12 +13,6 @@ const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
       "subscriptions",
       "dashboardChartConfig",
       "rolePermissions",
-      "students",
-      "teachers",
-      "classes",
-      "payments",
-      "studentFees",
-      "presences",
     ],
   },
   {
