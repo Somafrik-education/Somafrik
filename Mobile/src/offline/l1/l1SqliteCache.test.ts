@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { generateL1DbKeyHex, loadOrCreateL1DbKey, openEncryptedL1Database, runNativeSqlCipherBootProbe, type L1SqliteLike } from "./database";
+import { resolveL1EnvironmentStorage } from "./environment";
 import {
   adoptL1Runtime,
   beginL1Session,
@@ -980,6 +981,83 @@ async function run() {
   assert.equal((await reloginStore.getRow("classes", partitionA, "new-a"))?.name, "apres-relogin");
   assert.equal((await reloginStore.getMeta(partitionA, "classes"))?.cursor, "new-c");
   assert.equal((await reloginStore.getMeta(partitionA, "classes"))?.state, "ready");
+
+  // PERF-PR5 — séparation des environnements : fichier et clé SQLCipher propres, aucune contamination.
+  {
+    const files = new Map<string, FakeSqlCipherOpen>();
+    const fileFor = (name: string) => {
+      if (!files.has(name)) files.set(name, createFakeSqlCipherOpen());
+      return files.get(name)!;
+    };
+    const secureStore = new Map<string, string>();
+    let keySeq = 0;
+    const openFor = (storage?: { fileName: string; keyName: string }) =>
+      openEncryptedL1Database({
+        platform: "android",
+        openDatabase: (name, options) => fileFor(name).openDatabase(name, options),
+        keyStore: {
+          getItem: async (key) => secureStore.get(key) ?? null,
+          setItem: async (key, value) => {
+            secureStore.set(key, value);
+          },
+        },
+        generateKey: async () =>
+          generateL1DbKeyHex(() => Uint8Array.from({ length: 32 }, (_, i) => (i * 7 + (keySeq += 1)) % 256)),
+        ...(storage ? { storage } : {}),
+      });
+    const prodEnv = resolveL1EnvironmentStorage({ releaseProfile: "production", apiRoot: "https://api.somafrik.app" });
+    const preprodEnv = resolveL1EnvironmentStorage({ releaseProfile: "preproduction", apiRoot: "https://api-preprod.somafrik.app/" });
+    assert.notEqual(prodEnv.fileName, preprodEnv.fileName, "fichiers distincts");
+    assert.notEqual(prodEnv.keyName, preprodEnv.keyName, "clés SQLCipher distinctes");
+    for (const env of [prodEnv, preprodEnv]) {
+      assert.notEqual(env.fileName, L1_DB_FILENAME, "l'ancien fichier commun n'est jamais rouvert");
+      assert.match(env.keyName, /^somafrik\.l1DbKeyV1\./);
+    }
+    assert.deepEqual(
+      resolveL1EnvironmentStorage({ releaseProfile: "production", apiRoot: "https://API.somafrik.app/" }),
+      prodEnv,
+      "même environnement → même stockage",
+    );
+    assert.throws(() => resolveL1EnvironmentStorage({ releaseProfile: "", apiRoot: "https://api.somafrik.app" }));
+    assert.throws(() => resolveL1EnvironmentStorage({ releaseProfile: "production", apiRoot: "" }));
+
+    const metaFor = (state: "ready" | "reconciling") => ({
+      userId: partitionA.userId,
+      schoolId: partitionA.schoolId,
+      schoolCode: partitionA.schoolCode,
+      resource: "classes" as const,
+      cursor: "c",
+      scopeHash: "s",
+      state,
+      schemaVersion: L1_LOCAL_SCHEMA_VERSION,
+      lastSuccessAt: "2026-11-04T10:35:00.000Z",
+    });
+
+    // Ancien fichier commun (avant PERF-PR5), d'environnement inconnu, contenant une partition.
+    const legacy = await openFor();
+    assert.equal(legacy.ok, true);
+    if (!legacy.ok) throw new Error("legacy");
+    await legacy.store.withExclusiveTransaction(async (txn) => txn.putMeta(metaFor("ready")));
+
+    const preprod = await openFor(preprodEnv);
+    assert.equal(preprod.ok, true);
+    if (!preprod.ok) throw new Error("preprod");
+    await preprod.store.withExclusiveTransaction(async (txn) => txn.putMeta(metaFor("reconciling")));
+
+    // Production, même userId + schoolId : ne voit ni la préproduction ni l'ancien fichier.
+    const prod = await openFor(prodEnv);
+    assert.equal(prod.ok, true);
+    if (!prod.ok) throw new Error("prod");
+    assert.equal(await prod.store.getMeta(partitionA, "classes"), null, "aucune contamination préprod → prod");
+    await prod.store.withExclusiveTransaction(async (txn) => txn.putMeta(metaFor("ready")));
+    assert.equal((await preprod.store.getMeta(partitionA, "classes"))?.state, "reconciling", "préprod intacte");
+    assert.equal(secureStore.get(prodEnv.keyName) === secureStore.get(preprodEnv.keyName), false, "clés différentes");
+
+    // Le fichier d'un environnement ne s'ouvre pas avec la clé d'un autre.
+    const crossKey = await fileFor(prodEnv.fileName).openDatabase(prodEnv.fileName, { useNewConnection: true });
+    await crossKey.execAsync(`PRAGMA key = '${secureStore.get(preprodEnv.keyName)}'`).catch(() => undefined);
+    await assert.rejects(() => crossKey.getFirstAsync("SELECT * FROM l1_sync_meta"), "clé préprod refusée sur le fichier prod");
+  }
 
   console.log("l1SqliteCache.test.ts: OK key/sqlcipher/partition/atomic/tombstone/protocol/fail-closed");
 }

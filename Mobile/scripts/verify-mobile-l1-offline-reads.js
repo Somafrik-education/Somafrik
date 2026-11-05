@@ -79,6 +79,12 @@ function main() {
   process.stderr.write(tests.stderr || "");
   assert.equal(tests.status, 0, "l1OfflineReads.test.ts");
 
+  // PERF-PR5 — repli transport, cache-first, fraîcheur, déduplication, isolation, refus d'accès.
+  const resilience = run("npx", ["--yes", "tsx", "src/offline/l1/l1Resilience.perfPr5.test.ts"]);
+  process.stdout.write(resilience.stdout || "");
+  process.stderr.write(resilience.stderr || "");
+  assert.equal(resilience.status, 0, "l1Resilience.perfPr5.test.ts");
+
   const adb = run("adb", ["devices"]);
   const deviceLines = String(adb.stdout || "")
     .trim()

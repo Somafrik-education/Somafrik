@@ -3,6 +3,7 @@
  * La clé vit uniquement dans SecureStore (`somafrik.l1DbKeyV1`).
  */
 import { L1_DB_FILENAME, L1_DB_KEY_SECURESTORE, L1_ERROR, type L1OpenResult, type L1Store, type L1Txn } from "./types";
+import { resolveL1EnvironmentStorage } from "./environment";
 import { applyL1Migrations } from "./migrations";
 import { L1_RESOURCE_COLUMNS, L1_TABLE_BY_RESOURCE } from "./schema";
 import type { L1Partition, L1Resource, L1SyncMeta, SqlValue } from "./types";
@@ -77,11 +78,15 @@ export async function generateL1DbKeyHex(getRandomBytes: (size: number) => Uint8
   return bytesToHex(bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes));
 }
 
-export async function loadOrCreateL1DbKey(keyStore: L1KeyStore, generateKey: () => Promise<string>): Promise<string> {
-  const existing = String((await keyStore.getItem(L1_DB_KEY_SECURESTORE)) ?? "").trim();
+export async function loadOrCreateL1DbKey(
+  keyStore: L1KeyStore,
+  generateKey: () => Promise<string>,
+  keyName: string = L1_DB_KEY_SECURESTORE,
+): Promise<string> {
+  const existing = String((await keyStore.getItem(keyName)) ?? "").trim();
   if (existing) return existing;
   const created = await generateKey();
-  await keyStore.setItem(L1_DB_KEY_SECURESTORE, created);
+  await keyStore.setItem(keyName, created);
   return created;
 }
 
@@ -268,6 +273,7 @@ function createSqliteStore(
   cipherVersion: string,
   key: string,
   openDatabase: L1OpenDatabase,
+  fileName: string = L1_DB_FILENAME,
 ): L1Store {
   const writeTail = { current: Promise.resolve() };
   const root = createSqliteOps(db);
@@ -286,7 +292,7 @@ function createSqliteStore(
     },
     async withExclusiveTransaction<T>(fn: (txn: L1Txn) => Promise<T>): Promise<T> {
       return enqueueWrite(writeTail, async () => {
-        const txnDb = await openDatabase(L1_DB_FILENAME, { useNewConnection: true });
+        const txnDb = await openDatabase(fileName, { useNewConnection: true });
         try {
           await applySqlCipherKey(txnDb, key);
           await txnDb.execAsync("BEGIN EXCLUSIVE TRANSACTION");
@@ -322,6 +328,8 @@ export async function openEncryptedL1Database(deps: {
   openDatabase: L1OpenDatabase;
   keyStore: L1KeyStore;
   generateKey: () => Promise<string>;
+  /** PERF-PR5 — fichier et clé propres à l'environnement (défaut : noms historiques, tests). */
+  storage?: { fileName: string; keyName: string };
 }): Promise<L1OpenResult> {
   if (deps.platform === "web") {
     return {
@@ -331,8 +339,9 @@ export async function openEncryptedL1Database(deps: {
     };
   }
 
-  const key = await loadOrCreateL1DbKey(deps.keyStore, deps.generateKey);
-  const db = await deps.openDatabase(L1_DB_FILENAME);
+  const fileName = deps.storage?.fileName ?? L1_DB_FILENAME;
+  const key = await loadOrCreateL1DbKey(deps.keyStore, deps.generateKey, deps.storage?.keyName ?? L1_DB_KEY_SECURESTORE);
+  const db = await deps.openDatabase(fileName);
   try {
     const cipherVersion = await applySqlCipherKey(db, key);
     try {
@@ -341,7 +350,7 @@ export async function openEncryptedL1Database(deps: {
       safeLogger.warn("l1_sqlcipher_probe_failed", error);
     }
 
-    const store = createSqliteStore(db, cipherVersion, key, deps.openDatabase);
+    const store = createSqliteStore(db, cipherVersion, key, deps.openDatabase, fileName);
     await store.migrate();
     return { ok: true, store };
   } catch (error) {
@@ -394,7 +403,21 @@ async function openNativeL1DatabaseUncached(): Promise<L1OpenResult> {
     getRandomBytesAsync: (size: number) => Promise<Uint8Array>;
   };
 
+  // PERF-PR5 — un fichier et une clé par environnement (profil + API) ; sinon aucun cache.
+  let storage: { fileName: string; keyName: string };
+  try {
+    const { getReleaseProfile, resolveApiRootUrl } = require("../../config/env") as typeof import("../../config/env");
+    storage = resolveL1EnvironmentStorage({ releaseProfile: getReleaseProfile(), apiRoot: resolveApiRootUrl() });
+  } catch {
+    return {
+      ok: false,
+      code: L1_ERROR.SQLCIPHER_REQUIRED,
+      message: "Environnement indéterminé : aucun cache L1 ouvert.",
+    };
+  }
+
   return openEncryptedL1Database({
+    storage,
     platform,
     openDatabase: (name, options) => SQLite.openDatabaseAsync(name, options),
     keyStore: {
