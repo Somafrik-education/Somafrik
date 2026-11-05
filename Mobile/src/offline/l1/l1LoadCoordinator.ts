@@ -83,6 +83,7 @@ export function isCurrentL1ReadAuthorization(input: {
   return (
     input.startScope === input.currentScope &&
     input.startPermissionsBootstrap === input.currentPermissionsBootstrap &&
+    (input.currentPermissionsBootstrap === "ready" || input.currentPermissionsBootstrap === "ready_offline") &&
     input.generationCurrent
   );
 }
