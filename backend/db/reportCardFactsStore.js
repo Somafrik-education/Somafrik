@@ -272,7 +272,32 @@ function createReportCardFactsPgStore(db) {
     });
   }
 
-  return { listFacts, resolveCohort, listClassCohort, listClassGradeSources };
+  /** Évaluations publiées de cette classe/année, y compris celles sans aucune note.
+   * Lecture bornée par le tenant, la classe et l'année ; aucune mutation.
+   */
+  async function listClassEvaluationSources({ schoolId, classId, academicYearId } = {}) {
+    if (!schoolId || !classId || !academicYearId) return [];
+    return withClient(async (client) => {
+      const result = await client.query(
+        `SELECT e.id::text AS evaluation_id, e.school_id::text AS evaluation_school_id,
+                e.title AS evaluation_title, e.status AS evaluation_status, e.active AS evaluation_active,
+                sub.subject_code, sub.school_id::text AS subject_school_id,
+                t.name AS term_name, t.academic_year_id::text AS term_year_id,
+                et.code AS evaluation_type_code, e.evaluation_type AS evaluation_type_text
+           FROM evaluations e
+           JOIN classes c ON c.id = e.class_id AND c.school_id = e.school_id AND c.academic_year_id = $3
+           JOIN subjects sub ON sub.id = e.subject_id AND sub.school_id = e.school_id
+           JOIN terms t ON t.id = e.term_id AND t.academic_year_id = c.academic_year_id
+           LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id AND et.school_id = e.school_id
+          WHERE e.school_id = $1 AND e.class_id = $2 AND e.status = 'published' AND e.active IS TRUE
+          ORDER BY e.id`,
+        [schoolId, classId, academicYearId]
+      );
+      return result.rows;
+    });
+  }
+
+  return { listFacts, resolveCohort, listClassCohort, listClassGradeSources, listClassEvaluationSources };
 }
 
 function createMemoryFactsStore(seed = []) {
