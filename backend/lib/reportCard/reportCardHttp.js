@@ -268,7 +268,7 @@ function requestedSchoolId(req) {
   return req.body?.schoolId || req.query?.schoolId || req.query?.school_id || null;
 }
 
-async function handleVerify(req, res, { publication, logger }) {
+async function handleVerify(req, res, { publication, logger, officialPresentation }) {
   applyVerifyHeaders(res);
   const raw =
     typeof req.body?.capability === "string"
@@ -303,10 +303,15 @@ async function handleVerify(req, res, { publication, logger }) {
     if (!verification_status) {
       return res.status(409).json({ ok: false, reason: "not_verifiable" });
     }
+    // Render strictly from the verified signed snapshot, never live grades.
+    const display = typeof officialPresentation === "function"
+      ? await officialPresentation(result.payload, verification_status)
+      : {};
     return res.status(200).json({
       ok: true,
       payload: result.payload,
       verification_status,
+      ...display,
     });
   } catch (err) {
     return res.status(409).json({ ok: false, reason: err.code || "not_verifiable" });
@@ -569,8 +574,37 @@ function registerReportCardHttp(app, deps = {}) {
   );
 
   app.post("/api/public/report-cards/verify", (req, res) => {
-    const { publication } = services();
-    return handleVerify(req, res, { publication, logger });
+    const { publication, getTemplate } = services();
+    return handleVerify(req, res, {
+      publication,
+      logger,
+      async officialPresentation(payload, verificationStatus) {
+        const schoolId = payload.school_id;
+        if (!schoolId || !hasSubjectTotals(payload)) return { presentation: null };
+        const template = await resolvePublishedTemplate(payload, schoolId, getTemplate);
+        const presentation = await presentationFor({
+          payload,
+          schoolId,
+          template,
+          meta: {
+            official: true,
+            report_card_id: payload.report_card_id,
+            version: payload.published_snapshot_version,
+            published_at: payload.published_at,
+            verification_status: verificationStatus,
+          },
+        });
+        if (!presentation) return { presentation: null };
+        const hasLogo = presentation.some((view) => view.header && view.header.logo);
+        const logo = hasLogo ? await frozenLogo(schoolId, payload) : null;
+        if (hasLogo && !logo) throw coded("OFFICIAL_ASSETS_UNAVAILABLE");
+        if (logo && !["image/png", "image/jpeg"].includes(logo.media_type)) throw coded("OFFICIAL_ASSET_INTEGRITY");
+        return {
+          presentation,
+          ...(logo ? { logo_data_uri: `data:${logo.media_type};base64,${Buffer.from(logo.bytes).toString("base64")}` } : {}),
+        };
+      },
+    });
   });
 
   app.get(

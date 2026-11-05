@@ -18,7 +18,7 @@ import {
  * BULLETIN-CLASSE-01 / L3 — logo de l'en-tête : bulletin publié → logo FIGÉ (requête
  * authentifiée) ; brouillon → logo actuel de l'établissement (fourni par la page).
  */
-function useHeaderLogo(view: ReportCardPresentation, currentLogoSrc: string | null | undefined) {
+function useHeaderLogo(view: ReportCardPresentation, currentLogoSrc: string | null | undefined, verifiedLogoDataUri: string | null | undefined) {
   const [src, setSrc] = useState<string | null>(null);
   const sha = view.header?.logo?.sha256 ?? null;
   const reportCardId = view.official ? view.report_card_id : null;
@@ -26,6 +26,10 @@ function useHeaderLogo(view: ReportCardPresentation, currentLogoSrc: string | nu
   useEffect(() => {
     if (!sha) {
       setSrc(null);
+      return undefined;
+    }
+    if (verifiedLogoDataUri) {
+      setSrc(verifiedLogoDataUri);
       return undefined;
     }
     if (!reportCardId || version == null) {
@@ -48,7 +52,7 @@ function useHeaderLogo(view: ReportCardPresentation, currentLogoSrc: string | nu
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [sha, reportCardId, version, currentLogoSrc]);
+  }, [sha, reportCardId, version, currentLogoSrc, verifiedLogoDataUri]);
   return src;
 }
 
@@ -162,12 +166,15 @@ function SubjectRow({ view, row }: { view: ReportCardPresentation; row: Presenta
 export function ReportCardPresentationTable({
   view,
   currentLogoSrc = null,
+  verifiedLogoDataUri = null,
 }: {
   view: ReportCardPresentation;
   /** Logo actuel de l'établissement, pour un brouillon / aperçu. */
   currentLogoSrc?: string | null;
+  /** Logo figé renvoyé par une vérification publique cryptographiquement validée. */
+  verifiedLogoDataUri?: string | null;
 }) {
-  const logoSrc = useHeaderLogo(view, currentLogoSrc);
+  const logoSrc = useHeaderLogo(view, currentLogoSrc, verifiedLogoDataUri);
   const identityItems: [string, string | null][] = view.header
     ? view.header.items.map((item) => [item.label, item.value])
     : [
