@@ -63,6 +63,9 @@ export type ReportCardIssue = {
   subject_id?: string;
   period_id?: string;
   score_component_id?: string;
+  evaluation_id?: string;
+  evaluation_title?: string;
+  evaluation_type?: string;
 };
 
 export type DraftStudent = {
@@ -194,12 +197,17 @@ export function issueLabel(issue: ReportCardIssue): string {
   };
   const codes: Record<string, string> = {
     MISSING_SCORE: "Note manquante",
+    EVALUATION_GRADE_MISSING: "Aucune note enregistrée pour cette évaluation",
+    EVALUATION_TYPE_UNMAPPED: "Type d'évaluation non associé au bulletin",
     SUBJECT_NOT_CONFIGURED: "Matière non configurée",
     CATALOG_MISMATCH: "Matière absente du catalogue",
   };
   const base = codes[issue.code] ?? issue.code;
   const reason = issue.reason ? reasons[issue.reason] ?? issue.reason : "";
-  return [base, reason ? `(${reason})` : "", where ? `— ${where}` : ""].filter(Boolean).join(" ");
+  const evaluation = issue.evaluation_title
+    ? `Évaluation : ${issue.evaluation_title}${issue.evaluation_type ? ` (type : ${issue.evaluation_type})` : ""}`
+    : issue.evaluation_type ? `Type : ${issue.evaluation_type}` : "";
+  return [base, evaluation ? `— ${evaluation}` : "", reason ? `(${reason})` : "", where ? `— ${where}` : ""].filter(Boolean).join(" ");
 }
 
 /** Message d'erreur sans fuite : seuls les codes métier connus sont traduits. */
