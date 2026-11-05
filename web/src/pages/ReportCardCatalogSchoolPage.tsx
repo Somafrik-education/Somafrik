@@ -51,8 +51,8 @@ const STRUCTURE_HELP: Record<StructureId, string> = {
 
 const AGGREGATION_OPTIONS = [
   { value: "", label: "Choisir…" },
-  { value: "sum", label: "Somme des évaluations" },
-  { value: "weighted_average", label: "Moyenne pondérée des évaluations" },
+  { value: "sum", label: "Somme des évaluations (barèmes cumulés exacts, coefficients = 1)" },
+  { value: "weighted_average", label: "Moyenne pondérée (normalisation des barèmes et coefficients)" },
 ];
 
 const DEFAULT_MAX = 20;
@@ -85,7 +85,7 @@ function initialInput(ctx: ConfigurationContext): ConfigurationInput {
   }
   const structure = ctx.suggestedStructure;
   const factSources: ConfigurationInput["factSources"] = {};
-  for (const component of componentsFor(ctx, structure)) factSources[component.id] = { evaluationTypes: [], aggregation: "sum" };
+  for (const component of componentsFor(ctx, structure)) factSources[component.id] = { evaluationTypes: [], aggregation: "weighted_average" };
   const periods: ConfigurationInput["periods"] = {};
   ctx.periods.forEach((period, index) => {
     const exact = ctx.terms.find((term) => term.trim().toLowerCase() === period.label.toLowerCase());
@@ -513,7 +513,7 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
       ...current,
       structure,
       subjects: current.subjects.map((s) => ({ code: s.code, components: Object.fromEntries(nextComponents.map((c) => [c.id, { max: DEFAULT_MAX }])) })),
-      factSources: Object.fromEntries(nextComponents.map((c) => [c.id, current.factSources[c.id] ?? { evaluationTypes: [], aggregation: "sum" }])),
+      factSources: Object.fromEntries(nextComponents.map((c) => [c.id, current.factSources[c.id] ?? { evaluationTypes: [], aggregation: "weighted_average" }])),
     }));
   }
 
@@ -715,6 +715,8 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
                     }
                   />
                 </Field>
+                <p className="mt-2 text-xs text-muted">La moyenne pondérée transforme chaque note selon son barème (ex. 14/20 → 7/10) et applique le coefficient déclaré ; elle ne modifie jamais la note enregistrée. La somme exige que les maxima cumulés soient exactement égaux au maximum du bulletin et que tous les coefficients valent 1.</p>
+                {source.aggregation === "sum" ? <p className="mt-1 text-xs font-semibold text-amber-700" role="note">Attention : des évaluations sur /20 pour une colonne /10, plusieurs évaluations sur /20 ou un coefficient différent de 1 produisent des anomalies bloquantes avec ce calcul.</p> : null}
                 <ErrorText issues={issuesFor(`factSources.${c.id}.aggregation`, true)} />
               </div>
             </fieldset>

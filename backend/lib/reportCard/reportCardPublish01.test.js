@@ -149,6 +149,60 @@ test("faits : agrégation explicite — somme contrôlée par les maxima, moyenn
   close(avgFact.raw_score, 21, "(0,8 + 0,6) / 2 × 30");
 });
 
+test("BULLETIN-NOTES-01 : barèmes /20 vers /10 et coefficients pris en compte sans toucher aux notes sources", () => {
+  const profile = support.simpleProfile();
+  const subject = profile.subjects.find((entry) => entry.id === "GEOGRAPHIE");
+  subject.components.TJ.max = 10;
+  subject.components.EX.max = 10;
+  profile.fact_sources.components.TJ.aggregation = "weighted_average";
+  profile.fact_sources.components.EX.aggregation = "weighted_average";
+  const spec = validateSpec(profile);
+  const baseRow = simpleRows().find((row) =>
+    row.student_code === "STU1" &&
+    row.subject_code === "GEOGRAPHIE" &&
+    row.term_name === "Trimestre 1" &&
+    row.evaluation_type_code === "interrogation");
+  assert.ok(baseRow);
+  const row = (grade_id, evaluation_type_code, score, coefficient = 1) => ({
+    ...baseRow, grade_id, evaluation_id: "evaluation-" + grade_id,
+    evaluation_type_code, evaluation_type_text: evaluation_type_code,
+    score, max_score: 20, coefficient,
+  });
+  const sourceRows = [
+    row("tech-test-14", "interrogation", 14),
+    row("tech-test-10", "devoir", 10, 3),
+    row("history-test-16", "examen", 16),
+  ];
+  const originalRows = clone(sourceRows);
+  const result = build(sourceRows, { profile: spec, periods: ["T1"] });
+  assert.deepEqual(result.issues, []);
+  const tj = result.facts.find((item) => item.student_id === "STU1" && item.subject_id === "GEOGRAPHIE" && item.score_component_id === "TJ");
+  const ex = result.facts.find((item) => item.student_id === "STU1" && item.subject_id === "GEOGRAPHIE" && item.score_component_id === "EX");
+  close(tj.raw_score, 5.5, "TJ : ((14/20 × 1)+(10/20 × 3))/4 × 10");
+  close(ex.raw_score, 8, "EX : 16/20 normalisé sur /10");
+  assert.deepEqual(sourceRows, originalRows, "les notes source restent inchangées");
+
+  const strict = support.simpleProfile();
+  strict.subjects.find((entry) => entry.id === "GEOGRAPHIE").components.TJ.max = 10;
+  strict.subjects.find((entry) => entry.id === "GEOGRAPHIE").components.EX.max = 10;
+  const strictResult = build(sourceRows, { profile: validateSpec(strict), periods: ["T1"] });
+  assert.ok(codes(strictResult.issues).includes("blocking:COEFFICIENT_NOT_SUPPORTED"), "sum refuse coefficient 3");
+  assert.ok(codes(strictResult.issues).includes("blocking:MAX_INCONSISTENT"), "sum refuse /20 sur /10");
+});
+
+test("BULLETIN-NOTES-01 : une évaluation sans note ne devient jamais zéro en moyenne pondérée", () => {
+  const profile = support.simpleProfile();
+  profile.fact_sources.components.EX.aggregation = "weighted_average";
+  const original = simpleRows();
+  const target = original.find((row) => row.student_code === "STU1" && row.subject_code === "GEOGRAPHIE" && row.term_name === "Trimestre 1" && row.evaluation_type_code === "examen");
+  assert.ok(target);
+  const rows = original.map((row) =>
+    row === target ? { ...row, score: null, grade_status: "not_submitted" } : row);
+  const result = build(rows, { profile: validateSpec(profile) });
+  const fact = result.facts.find((item) => item.student_id === "STU1" && item.subject_id === "GEOGRAPHIE" && item.period_id === "T1" && item.score_component_id === "EX");
+  assert.equal(fact.raw_score, null, "une note non saisie n'est ni zéro ni un résultat surévalué");
+});
+
 test("faits : notes brouillon exclues, évaluations annulées signalées", () => {
   const rows = simpleRows();
   const cell = (r) => r.student_code === "STU1" && r.subject_code === "MATHEMATIQUES" && r.term_name === "Trimestre 1";
