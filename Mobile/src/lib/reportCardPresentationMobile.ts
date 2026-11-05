@@ -35,6 +35,7 @@ export type PresentationRow = {
 export type PresentationHeader = {
   layout: "logo_left" | "logo_center" | "no_logo";
   title: string | null;
+  title_align?: "left" | "center";
   lines: string[];
   items: { id: string; label: string; value: string | null }[];
   logo: { sha256: string; media_type: string | null } | null;
@@ -88,6 +89,7 @@ export type PhoneSubjectLine = {
 export type PhoneHeader = {
   layout: PresentationHeader["layout"];
   title: string | null;
+  title_align?: "left" | "center";
   lines: string[];
   items: { id: string; label: string; value: string }[];
   /** Logo figé d'un bulletin publié (chemin authentifié) ; jamais d'URL externe. */
@@ -203,6 +205,7 @@ function phoneHeader(view: ReportCardPresentation): PhoneHeader | null {
   return {
     layout: header.layout,
     title: header.title || null,
+    title_align: header.title_align ?? (header.layout === "logo_center" ? "center" : "left"),
     lines: (header.lines ?? []).filter(Boolean),
     items: (header.items ?? []).map((item) => ({ id: item.id, label: item.label, value: show(item.value) })),
     logoPath,

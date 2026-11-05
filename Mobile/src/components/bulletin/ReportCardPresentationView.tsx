@@ -39,7 +39,7 @@ export function ReportCardPresentationView({ view }: { view: ReportCardPresentat
               <Text key={`${index}-${line}`} style={[styles.headerLine, header.layout === "logo_center" && styles.textCenter]}>{line}</Text>
             ))}
             {header.title ? (
-              <Text style={[styles.headerTitle, header.layout === "logo_center" && styles.textCenter]} testID="report-card-header-title">{header.title}</Text>
+              <Text style={[styles.headerTitle, (header.title_align === "center" || (!header.title_align && header.layout === "logo_center")) ? styles.textCenter : styles.textLeft]} testID="report-card-header-title">{header.title}</Text>
             ) : null}
           </View>
         </View>
@@ -147,6 +147,7 @@ const styles = StyleSheet.create({
   headerLine: { color: "#334155", fontSize: 11, fontWeight: "800" },
   headerTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900" },
   textCenter: { textAlign: "center" },
+  textLeft: { textAlign: "left" },
   logo: { width: 56, height: 56 },
   signatures: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 8 },
   signature: { flex: 1, minWidth: "40%", gap: 4 },

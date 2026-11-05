@@ -182,3 +182,5 @@ table.results span.failing {
 .report-header .header-text { flex: 1; }
 .report-header .header-line { margin: 0; font-size: 9pt; }
 .report-header .header-title { margin: 4px 0 0; font-size: 13pt; letter-spacing: 0.02em; }
+.report-header .header-title.title-left { text-align: left; }
+.report-header .header-title.title-center { text-align: center; }

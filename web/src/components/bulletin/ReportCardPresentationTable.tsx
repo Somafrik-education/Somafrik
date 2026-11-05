@@ -73,7 +73,7 @@ function BulletinHeader({ header, logoSrc }: { header: PresentationHeader; logoS
         {header.lines.map((line) => (
           <p key={line} className="text-xs font-semibold text-ink">{line}</p>
         ))}
-        {header.title ? <h2 className="mt-1 text-base font-black uppercase tracking-wide text-ink" data-testid="report-card-header-title">{header.title}</h2> : null}
+        {header.title ? <h2 className={`mt-1 text-base font-black uppercase tracking-wide text-ink ${header.title_align === "center" || (!header.title_align && centered) ? "text-center" : "text-left"}`} data-testid="report-card-header-title">{header.title}</h2> : null}
       </div>
     </header>
   );

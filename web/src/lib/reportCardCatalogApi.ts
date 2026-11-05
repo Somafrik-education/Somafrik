@@ -71,7 +71,7 @@ export type HeaderElement =
   | "period"
   | "student_name"
   | "student_code";
-export type HeaderInput = { layout: HeaderLayout; show: HeaderElement[]; lines: string[]; title: string };
+export type HeaderInput = { layout: HeaderLayout; show: HeaderElement[]; lines: string[]; title: string; title_align?: "left" | "center" };
 
 export type ConfigurationInput = {
   structure: StructureId;

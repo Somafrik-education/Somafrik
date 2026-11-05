@@ -305,6 +305,7 @@ function buildHeader(spec, values) {
   return {
     layout: spec.layout || "logo_left",
     title: text(spec.title) || null,
+    title_align: spec.title_align === "center" || spec.title_align === "left" ? spec.title_align : (spec.layout === "logo_center" ? "center" : "left"),
     lines: (Array.isArray(spec.lines) ? spec.lines : []).map(text).filter(Boolean),
     items,
     logo,

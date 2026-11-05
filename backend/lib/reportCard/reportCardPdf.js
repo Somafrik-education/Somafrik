@@ -320,7 +320,7 @@ function renderHeader(view, logoDataUri) {
     ? `<img class="header-logo" data-header-logo src="${logoDataUri}" alt="Logo de l'établissement" />`
     : "";
   const lines = header.lines.map((line) => `<p class="header-line">${escapeHtml(line)}</p>`).join("");
-  const title = header.title ? `<h2 class="header-title" data-header-title>${escapeHtml(header.title)}</h2>` : "";
+  const title = header.title ? `<h2 class="header-title title-${header.title_align === "center" ? "center" : "left"}" data-header-title>${escapeHtml(header.title)}</h2>` : "";
   const items = header.items
     .map((item) => `<div data-header-item="${escapeHtml(item.id)}"><dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(display(item.value))}</dd></div>`)
     .join("");
