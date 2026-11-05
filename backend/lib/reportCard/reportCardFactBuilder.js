@@ -145,7 +145,7 @@ function buildPublicationFacts({ profile, schoolId, classAcademicYearId, periods
     const evaluationId = asKey(row.evaluation_id);
     const where = { evaluation_id: evaluationId, evaluation_title: row.evaluation_title, subject_id: row.subject_code };
     if (asKey(row.evaluation_school_id) !== tenant || asKey(row.subject_school_id) !== tenant) {
-      issues.push(issue("FOREIGN_SCHOOL_DATA", BLOCKING, where));
+      issues.push(issue("FOREIGN_SCHOOL_DATA", BLOCKING, { evaluation_id: evaluationId }));
       continue;
     }
     if (asKey(row.term_year_id) !== asKey(classAcademicYearId)) {
