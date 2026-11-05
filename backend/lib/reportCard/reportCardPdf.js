@@ -410,15 +410,13 @@ async function resolveEmbeddedFont(page) {
 
 async function renderPdfAfterCommit({ html, qr } = {}) {
   const documentHtml = assertHtmlString(html);
-  // Render native Node runtime: resolve the browser from the packaged backend cache.
-  // Preserve explicit Docker/admin overrides when configured.
-  if (!process.env.PUPPETEER_EXECUTABLE_PATH) {
-    process.env.PUPPETEER_CACHE_DIR = path.resolve(__dirname, "../../.cache/puppeteer");
-  }
+  const { findPdfBrowserExecutable } = require("./pdfBrowserExecutable");
+  const executablePath = findPdfBrowserExecutable();
+  if (!executablePath) throw new ReportCardPdfError("PDF_BROWSER_UNAVAILABLE");
   const puppeteer = require("puppeteer");
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    executablePath,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--font-render-hinting=none"],
   });
   try {
