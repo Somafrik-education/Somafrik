@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
   draft: { color: "#92400E", backgroundColor: "#FEF3C7", padding: 8, borderRadius: 10, fontWeight: "900" },
   header: { flexDirection: "row", alignItems: "center", gap: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: "#E2E8F0" },
   headerCenter: { flexDirection: "column" },
-  headerText: { flexShrink: 1, gap: 2 },
+  headerText: { flexShrink: 1, width: "100%", gap: 2 },
   headerLine: { color: "#334155", fontSize: 11, fontWeight: "800" },
   headerTitle: { color: "#0F172A", fontSize: 16, fontWeight: "900" },
   textCenter: { textAlign: "center" },
