@@ -1,7 +1,8 @@
 import { API_URL } from "./apiUrl";
+import type { ReportCardPresentation } from "./reportCardManagementApi";
 
 export type VerifyResult =
-  | { ok: true; payload: unknown; verification_status?: string }
+  | { ok: true; payload: unknown; verification_status?: string; presentation?: ReportCardPresentation[] | null; logo_data_uri?: string }
   | { ok: false; reason: string };
 
 export async function verifyReportCardCapability(capability: string): Promise<VerifyResult> {
