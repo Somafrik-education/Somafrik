@@ -586,9 +586,9 @@ test("public QR: same pinned official presentation as PDF, without live template
     const payload = snapshotPayload({
       students: computed.students.filter((student) => student.student_id === "STU1"),
       provenance: {
-        profile: { id: "profile-signed", version: 1 },
-        schema: { id: "schema-signed", version: 1 },
-        template: { id: "template-signed", version: 1 },
+        profile: { id: "profile-signed", version: 1, spec_sha256: "a".repeat(64) },
+        schema: { id: "schema-signed", version: 1, spec_sha256: "b".repeat(64) },
+        template: { id: "template-signed", version: 1, spec_sha256: "c".repeat(64) },
       },
     });
     h.publication.publish({ tenant: TENANT_A, payload });
