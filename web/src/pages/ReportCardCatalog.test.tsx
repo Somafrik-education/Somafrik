@@ -315,6 +315,31 @@ describe("Établissement — Configurer un bulletin", () => {
     expect(screen.queryByLabelText("Maximum TJ — Français")).not.toBeInTheDocument();
   });
 
+  it("BULLETIN-NOTES-01 : une configuration existante en somme n'est pas modifiée automatiquement", async () => {
+    await openWizard({
+      ...CONTEXT,
+      current: {
+        structure: "TJ_EX",
+        subjects: [{ code: "MATH", components: { TJ: { max: 10 }, EX: { max: 10 } } }],
+        factSources: {
+          TJ: { evaluationTypes: ["interrogation"], aggregation: "sum" },
+          EX: { evaluationTypes: ["examen"], aggregation: "sum" },
+        },
+        periods: {
+          T1: { termNames: ["Trimestre 1"] },
+          T2: { termNames: ["Trimestre 2"] },
+          T3: { termNames: ["Trimestre 3"] },
+        },
+        signatures: [],
+      },
+    });
+    fireEvent.click(screen.getByTestId("catalog-next"));
+    fireEvent.click(screen.getByTestId("catalog-next"));
+    const tj = screen.getByText("Travail journalier (TJ)").closest("fieldset") as HTMLElement;
+    expect(within(tj).getByLabelText("Mode de calcul")).toHaveValue("sum");
+    expect(within(tj).getByText(/anomalies bloquantes/)).toBeInTheDocument();
+  });
+
   it("parcours complet : sources, aperçu réel, enregistrer (non activé), activer avec confirmation", async () => {
     await openWizard();
     fireEvent.click(screen.getByTestId("catalog-next"));
@@ -331,7 +356,7 @@ describe("Établissement — Configurer un bulletin", () => {
     expect(await screen.findByTestId("catalog-preview")).toBeInTheDocument();
     const sent = api.preview.mock.calls[0][1];
     expect(sent.subjects).toEqual([{ code: "MATH", components: { TJ: { max: 20 }, EX: { max: 20 } } }]);
-    expect(sent.factSources).toEqual({ TJ: { evaluationTypes: ["interrogation"], aggregation: "sum" }, EX: { evaluationTypes: ["examen"], aggregation: "sum" } });
+    expect(sent.factSources).toEqual({ TJ: { evaluationTypes: ["interrogation"], aggregation: "weighted_average" }, EX: { evaluationTypes: ["examen"], aggregation: "weighted_average" } });
     expect(sent.periods.T2).toEqual({ termNames: ["Trimestre 2"] });
     expect(screen.getByTestId("catalog-preview").querySelectorAll("[data-failing]").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByTestId("catalog-next"));
