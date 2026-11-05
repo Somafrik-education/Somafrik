@@ -352,7 +352,7 @@ function buildConfiguration(model, input, context) {
  * produit la vue — mêmes règles, mêmes totaux, même signalisation des notes en
  * échec que les bulletins publiés. Jamais officiel, jamais enregistré.
  */
-function samplePresentation(built, { school, identity = null } = {}) {
+function samplePresentation(built, { school, identity = null, scope = null } = {}) {
   const profile = built.profile;
   const facts = [];
   let index = 0;
@@ -386,8 +386,8 @@ function samplePresentation(built, { school, identity = null } = {}) {
     labels: {
       ...built.labels,
       school: school || "Établissement d'exemple",
-      className: "Classe d'exemple",
-      academicYear: "Année d'exemple",
+      className: (scope && scope.className) || "Classe d'exemple",
+      academicYear: (scope && scope.academicYearName) || "Année d'exemple",
       students: { EXEMPLE: { name: "Élève d'exemple" } },
     },
     presentation: built.templateSpec.presentation,
@@ -676,8 +676,8 @@ function createReportCardCatalog({ store, configuration, clock, identityStore = 
   }
 
   async function preview({ actor, modelId, input, classId }) {
-    const { built, schoolId } = await buildFor(actor, modelId, input, classId);
-    return samplePresentation(built, { identity: await currentIdentity(schoolId) });
+    const { built, schoolId, scope } = await buildFor(actor, modelId, input, classId);
+    return samplePresentation(built, { identity: await currentIdentity(schoolId), scope });
   }
 
   async function save({ actor, modelId, input, classId }) {
@@ -692,7 +692,7 @@ function createReportCardCatalog({ store, configuration, clock, identityStore = 
       templateSpec: built.templateSpec,
       scope: configurationScope(scope),
     });
-    return { status: "SAVED", request_status: request.status, class: publicClass(scope), preview: samplePresentation(built, { identity: await currentIdentity(schoolId) }) };
+    return { status: "SAVED", request_status: request.status, class: publicClass(scope), preview: samplePresentation(built, { identity: await currentIdentity(schoolId), scope }) };
   }
 
   async function activate({ actor, modelId, confirm, commandId, classId }) {
