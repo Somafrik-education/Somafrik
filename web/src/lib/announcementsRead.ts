@@ -30,7 +30,11 @@ export function useAnnouncementsUnreadCount(
     }
     let cancelled = false;
 
+    // P0-WEB-01 : focus + visibilitychange arrivent ensemble ; un seul appel en vol.
+    let inFlight = false;
     async function refresh() {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const [school, platform] = await Promise.all([
           schoolScope ? announcementsApi.unreadCount(schoolScope) : Promise.resolve({ count: 0 }),
@@ -39,6 +43,8 @@ export function useAnnouncementsUnreadCount(
         if (!cancelled) setCount((Number(school?.count) || 0) + (Number(platform?.count) || 0));
       } catch {
         /* erreur transport : conserver la dernière valeur connue, jamais un zéro métier */
+      } finally {
+        inFlight = false;
       }
     }
 

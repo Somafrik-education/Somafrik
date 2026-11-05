@@ -3595,6 +3595,16 @@ class FallbackRepository {
     return this.getPlatformStore().listProjection();
   }
 
+  /** P0-WEB-01 — mêmes écoles et abonnements que l'état autoritatif (dépôt mémoire). */
+  async listSubscriptionAccessState() {
+    const dataset = await this.getDataset();
+    const platform = await this.listPlatformProjection();
+    return {
+      schools: Array.isArray(dataset?.platformSchools) ? dataset.platformSchools : [],
+      subscriptions: Array.isArray(platform?.subscriptions) ? platform.subscriptions : [],
+    };
+  }
+
   getPlatformSchoolByCode(code) {
     return this.getPlatformStore().getSchoolByCode(code);
   }

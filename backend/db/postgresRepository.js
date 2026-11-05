@@ -12,6 +12,7 @@ const { hashSeedUserSecrets } = require("../lib/superadminSeedSecret");
 const { isPlatformScopePrincipal } = require("../lib/platformScopePrincipal");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
+const { SCHOOLS_WITH_COUNTRY_SQL, SUBSCRIPTIONS_WITH_SCHOOL_SQL } = require("./subscriptionAccessSql");
 const { mapAssignment } = require("./teacherAssignmentsRepository");
 const {
   sqlTeacherIdentityEquals,
@@ -1293,6 +1294,25 @@ class PostgresRepository {
     return this.getPlatformStore().listProjection();
   }
 
+  /**
+   * P0-WEB-01 — écoles et abonnements, lus en direct, pour le contrôle d'abonnement de
+   * chaque requête. Mêmes requêtes et mêmes transformations que `getDataset().platformSchools`
+   * et `listPlatformProjection().subscriptions` ; aucune donnée élève, présence, note ou paiement.
+   */
+  async listSubscriptionAccessState() {
+    await this.init();
+    const [schoolRows, subscriptions] = await Promise.all([
+      this.all(SCHOOLS_WITH_COUNTRY_SQL),
+      this.getPlatformStore().listSubscriptionsWithRows(),
+    ]);
+    return {
+      schools: schoolRows.map((row) =>
+        this.mapSchool(row, subscriptions.rows.find((sub) => sub.school_code === row.school_code)),
+      ),
+      subscriptions: subscriptions.subscriptions,
+    };
+  }
+
   getPlatformSchoolByCode(code) {
     return this.getPlatformStore().getSchoolByCode(code);
   }
@@ -2087,19 +2107,8 @@ class PostgresRepository {
       notificationRows,
     ] = await Promise.all([
       this.all("SELECT * FROM countries ORDER BY created_at, iso_code"),
-      this.all(`
-        SELECT s.*, c.name AS country_name, c.iso_code, c.currency AS country_currency, c.phone_code
-        FROM schools s
-        JOIN countries c ON c.id = s.country_id
-        ORDER BY s.created_at, s.school_code
-      `),
-      this.all(`
-        SELECT sub.*, s.school_code, c.iso_code AS country_code, c.name AS country_name
-        FROM subscriptions sub
-        JOIN schools s ON s.id = sub.school_id
-        JOIN countries c ON c.id = s.country_id
-        ORDER BY sub.created_at
-      `),
+      this.all(SCHOOLS_WITH_COUNTRY_SQL),
+      this.all(SUBSCRIPTIONS_WITH_SCHOOL_SQL),
       this.all(`
         SELECT u.*, s.school_code, c.name AS country_name
         FROM users u
