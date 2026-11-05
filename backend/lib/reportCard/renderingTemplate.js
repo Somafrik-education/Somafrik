@@ -116,7 +116,7 @@ function normalizePresentation(raw) {
     throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
   }
   const unknown = Object.keys(raw).filter(
-    (key) => !["style", "signatures", "failing_ratio", "period_labels", "component_labels"].includes(key)
+    (key) => !["style", "signatures", "failing_ratio", "period_labels", "component_labels", "header"].includes(key)
   );
   if (unknown.length) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID", `unknown presentation key ${unknown[0]}`);
   const style = raw.style == null || raw.style === "" ? "auto" : String(raw.style);
@@ -142,7 +142,54 @@ function normalizePresentation(raw) {
   // BULLETIN-CATALOG-01 — intitulés d'affichage des périodes et des composantes (optionnels).
   if (raw.period_labels !== undefined) out.period_labels = normalizeLabelMap(raw.period_labels);
   if (raw.component_labels !== undefined) out.component_labels = normalizeLabelMap(raw.component_labels);
+  // BULLETIN-CLASSE-01 / L3 — en-tête : éléments et disposition en listes fermées, texte limité.
+  if (raw.header !== undefined) out.header = normalizeHeader(raw.header);
   return Object.freeze(out);
+}
+
+const HEADER_LAYOUTS = Object.freeze(["logo_left", "logo_center", "no_logo"]);
+const HEADER_ELEMENTS = Object.freeze([
+  "logo",
+  "establishment_name",
+  "establishment_address",
+  "country",
+  "academic_year",
+  "class",
+  "period",
+  "student_name",
+  "student_code",
+]);
+const MAX_HEADER_LINES = 4;
+const MAX_HEADER_LINE_LENGTH = 80;
+const MAX_HEADER_TITLE_LENGTH = 60;
+
+function normalizeHeader(raw) {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  }
+  const unknown = Object.keys(raw).filter((key) => !["layout", "show", "lines", "title"].includes(key));
+  if (unknown.length) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID", `unknown header key ${unknown[0]}`);
+  const layout = raw.layout == null || raw.layout === "" ? "logo_left" : String(raw.layout);
+  if (!HEADER_LAYOUTS.includes(layout)) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  const showIn = raw.show == null ? [] : raw.show;
+  if (!Array.isArray(showIn) || showIn.length > HEADER_ELEMENTS.length) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  const show = [];
+  for (const item of showIn) {
+    const id = typeof item === "string" ? item.trim() : "";
+    if (!HEADER_ELEMENTS.includes(id) || show.includes(id)) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+    show.push(id);
+  }
+  if (layout === "no_logo" && show.includes("logo")) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  const linesIn = raw.lines == null ? [] : raw.lines;
+  if (!Array.isArray(linesIn) || linesIn.length > MAX_HEADER_LINES) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  const lines = linesIn.map((line) => {
+    const value = typeof line === "string" ? line.trim() : "";
+    if (!value || value.length > MAX_HEADER_LINE_LENGTH) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+    return value;
+  });
+  const title = raw.title == null ? "" : typeof raw.title === "string" ? raw.title.trim() : null;
+  if (title === null || title.length > MAX_HEADER_TITLE_LENGTH) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  return Object.freeze({ layout, show: Object.freeze(show), lines: Object.freeze(lines), title });
 }
 
 const MAX_LABELS = 12;
@@ -176,4 +223,6 @@ module.exports = {
   specSha256,
   SECTION_SOURCES,
   PRESENTATION_STYLES,
+  HEADER_LAYOUTS,
+  HEADER_ELEMENTS,
 };

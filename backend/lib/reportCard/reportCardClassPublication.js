@@ -73,7 +73,25 @@ function engineError(err) {
   fail("INVALID_PEDAGOGICAL_DATA", [{ code: err && err.code ? String(err.code) : "ENGINE_ERROR", severity: BLOCKING }]);
 }
 
-function createReportCardClassPublication({ publication, factsStore, configuration, catalogStore } = {}) {
+function createReportCardClassPublication({ publication, factsStore, configuration, catalogStore, identityStore } = {}) {
+  /**
+   * BULLETIN-CLASSE-01 / L3 — identité figée dans le contenu signé, uniquement si le gabarit
+   * épinglé définit un en-tête (gabarits existants : contenu et empreinte inchangés).
+   * Correction : identité d'origine du bulletin (épinglée), jamais l'identité actuelle.
+   */
+  async function officialIdentityFor(schoolId, bundle) {
+    if (bundle && bundle.identity !== undefined) return { identity: bundle.identity, logo: null };
+    const header = bundle && bundle.template && bundle.template.spec && bundle.template.spec.presentation
+      ? bundle.template.spec.presentation.header
+      : null;
+    if (!header) return { identity: null, logo: null };
+    if (!identityStore || typeof identityStore.currentIdentity !== "function") fail("OFFICIAL_IDENTITY_UNAVAILABLE");
+    const current = await identityStore.currentIdentity(schoolId);
+    if (!current) fail("OFFICIAL_IDENTITY_UNAVAILABLE");
+    const { publicIdentity } = require("../../db/reportCardOfficialIdentityStore");
+    return { identity: publicIdentity(current), logo: current.logo };
+  }
+
   function requireDeps() {
     if (!publication || typeof publication.publishBatch !== "function") fail("PUBLICATION_REQUIRED");
     for (const name of ["resolveCohort", "listClassCohort", "listClassGradeSources"]) {
@@ -104,6 +122,7 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     const bundle = await loadBundle({ schoolId, modelKey: key, pinned, classId: cohortRow.classId, academicYearId: cohortRow.academicYearId });
     const profile = bundle.profile.spec;
     if (!Array.isArray(profile.subjects) || !profile.fact_sources) fail("PROFILE_NOT_PUBLISHABLE");
+    const official = await officialIdentityFor(schoolId, bundle);
     const scope = resolvePeriodScope(profile, periodId);
     const catalog = await catalogStore.listSchoolSubjectCatalog(schoolId);
     try {
@@ -158,6 +177,7 @@ function createReportCardClassPublication({ publication, factsStore, configurati
         model_key: key,
         period_scope: scope.id,
         student,
+        ...(official.identity ? { official_identity: official.identity } : {}),
       };
       const studentIssues = built.issues.filter((item) => item.student_id === String(student.student_id));
       const complete = student.subject_totals.status === "COMPLETE" && !studentIssues.some((item) => item.severity === BLOCKING);
@@ -166,7 +186,7 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     const blocking = built.issues.filter((item) => item.severity === BLOCKING);
     const publishable = students.length > 0 && blocking.length === 0 && students.every((item) => item.complete);
     const draftSha256 = sha256(students.map((item) => [item.report_card_id, item.content_sha256]));
-    return { schoolId, cohortRow, scope, modelKey: key, provenance, students, issues: built.issues, publishable, draftSha256 };
+    return { schoolId, cohortRow, scope, modelKey: key, provenance, students, issues: built.issues, publishable, draftSha256, officialLogo: official.logo };
   }
 
   function draftView(result) {
@@ -179,6 +199,9 @@ function createReportCardClassPublication({ publication, factsStore, configurati
       academic_year_id: result.cohortRow.academicYearId,
       model_key: result.modelKey,
       provenance: result.provenance,
+      ...(result.students[0] && result.students[0].content.official_identity
+        ? { official_identity: result.students[0].content.official_identity }
+        : {}),
       issues: result.issues,
       students: result.students.map((item) => ({
         report_card_id: item.report_card_id,
@@ -257,6 +280,11 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     const publishedAt = new Date().toISOString();
     const actorId = actor && actor.actorId ? String(actor.actorId) : null;
     if (!actorId) fail("RBAC_DENIED");
+    // Logo figé AVANT la publication : copie immuable adressée par empreinte (idempotente).
+    if (result.officialLogo && toPublish.length) {
+      if (!identityStore || typeof identityStore.freezeLogo !== "function") fail("OFFICIAL_ASSETS_UNAVAILABLE");
+      await identityStore.freezeLogo(result.schoolId, result.officialLogo);
+    }
     const payloads = toPublish.map(({ item }) => ({
       report_card_id: item.report_card_id,
       published_snapshot_version: 1,
@@ -271,6 +299,7 @@ function createReportCardClassPublication({ publication, factsStore, configurati
       model_key: item.content.model_key,
       period_scope: item.content.period_scope,
       content_sha256: item.content_sha256,
+      ...(item.content.official_identity ? { official_identity: item.content.official_identity } : {}),
     }));
     let records;
     try {
@@ -299,6 +328,8 @@ function createReportCardClassPublication({ publication, factsStore, configurati
       profile: { spec: profile, ref: payload.provenance.profile },
       schema: { spec: schema, ref: payload.provenance.schema },
       template: { ref: payload.provenance.template },
+      // Identité d'origine (en-tête) : null pour un bulletin sans identité figée.
+      identity: payload.official_identity || null,
     };
     const result = await computeClass({
       tenant,
