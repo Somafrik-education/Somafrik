@@ -441,6 +441,7 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
       return;
     }
     setBusy("preview");
+    setPreview(null);
     setPreviewError("");
     try {
       setPreview(await reportCardCatalogApi.preview(model.model_id, serverInput()));
