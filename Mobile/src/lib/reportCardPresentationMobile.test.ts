@@ -156,3 +156,38 @@ test("notes en échec : la valeur seule est marquée (jamais le maximum ni une n
   const component = readFileSync(path.join(ROOT, "Mobile/src/components/bulletin/ReportCardPresentationView.tsx"), "utf8");
   assert.match(component, /failing: \{ color: "#B91C1C", textDecorationLine: "underline" \}/);
 });
+
+test("BULLETIN-CLASSE-01 — en-tête figé, logo publié authentifié, signatures", () => {
+  const header = {
+    layout: "logo_center" as const,
+    title: "Bulletin scolaire",
+    lines: ["République démocratique du Congo", "Ministère de l'EPST"],
+    items: [
+      { id: "establishment_name", label: "Établissement", value: "École figée" },
+      { id: "class", label: "Classe", value: "6ème A" },
+      { id: "student_code", label: "Matricule", value: null },
+    ],
+    logo: { sha256: "a".repeat(64), media_type: "image/png" },
+  };
+  const card = phoneReportCard(berceau({ report_card_id: "rc/1", version: 2, header, signatures: ["Le titulaire", " ", "Le préfet"] }), "T1");
+  assert.equal(card.header?.title, "Bulletin scolaire");
+  assert.deepEqual(card.header?.lines, header.lines);
+  assert.deepEqual(card.header?.items.map((i) => [i.label, i.value]), [["Établissement", "École figée"], ["Classe", "6ème A"], ["Matricule", "—"]]);
+  assert.equal(card.header?.logoPath, "/report-card/publications/rc%2F1/logo?version=2");
+  assert.deepEqual(card.signatures, ["Le titulaire", "Le préfet"]);
+
+  // Brouillon, empreinte invalide ou disposition sans logo : aucun logo demandé.
+  assert.equal(phoneReportCard(berceau({ official: false, report_card_id: "rc", version: 1, header }), "T1").header?.logoPath, null);
+  assert.equal(phoneReportCard(berceau({ report_card_id: "rc", version: 1, header: { ...header, logo: { sha256: "../x", media_type: null } } }), "T1").header?.logoPath, null);
+  assert.equal(phoneReportCard(berceau({ report_card_id: "rc", version: 1, header: { ...header, layout: "no_logo" } }), "T1").header?.logoPath, null);
+
+  // Ancien bulletin sans en-tête : identité standard inchangée, aucune signature.
+  const legacy = phoneReportCard(berceau(), "T1");
+  assert.equal(legacy.header, null);
+  assert.deepEqual(legacy.signatures, []);
+
+  const component = readFileSync(path.join(ROOT, "Mobile/src/components/bulletin/ReportCardPresentationView.tsx"), "utf8");
+  assert.match(component, /Authorization: `Bearer \$\{token\}`/);
+  assert.match(component, /testID="report-card-signatures"/);
+  assert.doesNotMatch(component, /\/api\/schools\/[^"']*\/logo/, "jamais le logo actuel pour un bulletin publié");
+});

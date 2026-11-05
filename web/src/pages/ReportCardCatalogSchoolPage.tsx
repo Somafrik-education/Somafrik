@@ -18,7 +18,9 @@ import { Badge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
 import { ReportCardPresentationTable } from "../components/bulletin/ReportCardPresentationTable";
 import { ReportCardModelThumbnail } from "../components/bulletin/ReportCardModelThumbnail";
-import type { ReportCardPresentation } from "../lib/reportCardManagementApi";
+import { reportCardManagementApi, type ManagedClass, type ReportCardPresentation } from "../lib/reportCardManagementApi";
+import { useOptionalActiveSchool } from "../context/ActiveSchoolContext";
+import { schoolLogoSrc } from "../lib/schoolLogo";
 import {
   catalogErrorMessage,
   catalogUnavailability,
@@ -30,18 +32,46 @@ import {
   type ConfigurationContext,
   type ConfigurationInput,
   type FieldIssue,
+  type HeaderElement,
+  type HeaderInput,
+  type HeaderLayout,
   type SchoolCatalog,
   type SchoolCatalogModel,
   type StructureId,
 } from "../lib/reportCardCatalogApi";
 
 const STEPS = [
-  { id: "structure", label: "Structure d'évaluation" },
+  { id: "structure", label: "Classe et structure d'évaluation" },
   { id: "subjects", label: "Matières et maxima" },
   { id: "sources", label: "Calcul des notes" },
+  { id: "header", label: "En-têtes et signatures" },
   { id: "preview", label: "Aperçu" },
-  { id: "summary", label: "Récapitulatif" },
+  { id: "summary", label: "Récapitulatif et activation" },
 ] as const;
+
+/** BULLETIN-CLASSE-01 / L4 — éléments d'en-tête proposés (liste fermée, ordre d'affichage). */
+const HEADER_ELEMENTS: { id: HeaderElement; label: string }[] = [
+  { id: "logo", label: "Logo de l'établissement" },
+  { id: "establishment_name", label: "Nom de l'établissement" },
+  { id: "establishment_address", label: "Adresse" },
+  { id: "country", label: "Pays" },
+  { id: "academic_year", label: "Année scolaire" },
+  { id: "class", label: "Classe" },
+  { id: "period", label: "Période" },
+  { id: "student_name", label: "Nom de l'élève" },
+  { id: "student_code", label: "Matricule" },
+];
+const HEADER_LAYOUTS: { id: HeaderLayout; label: string }[] = [
+  { id: "logo_left", label: "Logo à gauche" },
+  { id: "logo_center", label: "Logo centré" },
+  { id: "no_logo", label: "Sans logo" },
+];
+const DEFAULT_HEADER: HeaderInput = {
+  layout: "logo_left",
+  show: ["logo", "establishment_name", "academic_year", "class", "period", "student_name", "student_code"],
+  lines: [],
+  title: "Bulletin scolaire",
+};
 type StepId = (typeof STEPS)[number]["id"];
 
 const STRUCTURE_HELP: Record<StructureId, string> = {
@@ -66,7 +96,7 @@ function stepOfField(field: string): StepId {
   if (field.startsWith("structure")) return "structure";
   if (field.startsWith("subjects") || field === "profile") return "subjects";
   if (field.startsWith("factSources") || field.startsWith("periods")) return "sources";
-  if (field.startsWith("signatures")) return "preview";
+  if (field.startsWith("signatures") || field.startsWith("header")) return "header";
   return "summary";
 }
 
@@ -79,6 +109,7 @@ function initialInput(ctx: ConfigurationContext): ConfigurationInput {
   if (ctx.current) {
     return {
       ...ctx.current,
+      header: ctx.current.header ?? DEFAULT_HEADER,
       signatures: ctx.current.signatures ?? [],
       subjects: ctx.current.subjects.map((s) => ({ code: s.code, components: { ...s.components } })),
     };
@@ -93,12 +124,13 @@ function initialInput(ctx: ConfigurationContext): ConfigurationInput {
     const pick = exact ?? byOrder;
     periods[period.id] = { termNames: pick ? [pick] : [] };
   });
-  return { structure, subjects: [], factSources, periods, signatures: [] };
+  return { structure, subjects: [], factSources, periods, signatures: [], header: DEFAULT_HEADER };
 }
 
-function stateBadge(model: SchoolCatalogModel) {
-  if (model.configuration === "ACTIVE") return <Badge tone="success">Actif dans l'établissement</Badge>;
+function stateBadge(model: SchoolCatalogModel, forClass = false) {
+  if (model.configuration === "ACTIVE") return <Badge tone="success">{forClass ? "Actif pour cette classe" : "Actif dans l'établissement"}</Badge>;
   if (!model.available) return <Badge tone="neutral">Non disponible</Badge>;
+  if (model.configuration === "INHERITED") return <Badge tone="info">Hérité de l'établissement</Badge>;
   if (model.configuration === "SAVED") return <Badge tone="warning">Configuration enregistrée, non activée</Badge>;
   return <Badge tone="info">Disponible</Badge>;
 }
@@ -134,17 +166,31 @@ export function ReportCardCatalogSchoolPage() {
   const [error, setError] = useState<unknown>(null);
   const [selected, setSelected] = useState<SchoolCatalogModel | null>(null);
   const [notice, setNotice] = useState("");
+  // BULLETIN-CLASSE-01 / L4 — état des modèles affiché pour une classe (vide : établissement).
+  const [galleryClassId, setGalleryClassId] = useState("");
+  const [galleryClasses, setGalleryClasses] = useState<ManagedClass[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setCatalog(await reportCardCatalogApi.schoolCatalog());
+      setCatalog(await reportCardCatalogApi.schoolCatalog(galleryClassId || undefined));
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
+  }, [galleryClassId]);
+
+  useEffect(() => {
+    let alive = true;
+    reportCardManagementApi
+      .listClasses()
+      .then((rows) => alive && setGalleryClasses(rows))
+      .catch(() => alive && setGalleryClasses([]));
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -156,10 +202,12 @@ export function ReportCardCatalogSchoolPage() {
       <PageShell>
         <ConfigurationWizard
           model={selected}
-          onExit={(message) => {
+          initialClassId={galleryClassId}
+          onExit={(message, classId) => {
             setSelected(null);
             if (message) setNotice(message);
-            void load();
+            if (classId && classId !== galleryClassId) setGalleryClassId(classId);
+            else void load();
           }}
         />
       </PageShell>
@@ -244,6 +292,24 @@ export function ReportCardCatalogSchoolPage() {
           Consultation seule : seule l'administration de l'établissement peut configurer un bulletin.
         </p>
       ) : null}
+      {galleryClasses.length && catalog.models.length ? (
+        <div className="max-w-sm" data-testid="catalog-school-class-filter">
+          <Field label="Afficher l'état pour" htmlFor="catalog-gallery-class">
+            <Select
+              id="catalog-gallery-class"
+              value={galleryClassId}
+              onChange={(event) => setGalleryClassId(event.target.value)}
+              options={[
+                { value: "", label: "L'établissement (toutes classes)" },
+                ...galleryClasses.map((item) => ({
+                  value: item.id,
+                  label: item.academicYearName ? `${item.name} — ${item.academicYearName}` : item.name,
+                })),
+              ]}
+            />
+          </Field>
+        </div>
+      ) : null}
       {catalog.models.length === 0 ? (
         <Card className="p-6">
           <div data-testid="catalog-school-empty">
@@ -261,7 +327,7 @@ export function ReportCardCatalogSchoolPage() {
                   <div className="flex flex-1 flex-col gap-3 p-5">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <h2 className="text-lg font-bold text-ink">{model.name}</h2>
-                      {stateBadge(model)}
+                      {stateBadge(model, Boolean(galleryClassId))}
                     </div>
                     <div><Badge tone="info">{modelTypeLabel(model.presentation_style)}</Badge></div>
                     {model.description ? <p className="text-sm text-muted">{model.description}</p> : null}
@@ -288,7 +354,15 @@ export function ReportCardCatalogSchoolPage() {
   );
 }
 
-function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onExit: (message?: string) => void }) {
+function ConfigurationWizard({
+  model,
+  initialClassId = "",
+  onExit,
+}: {
+  model: SchoolCatalogModel;
+  initialClassId?: string;
+  onExit: (message?: string, classId?: string) => void;
+}) {
   const [ctx, setCtx] = useState<ConfigurationContext | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [input, setInput] = useState<ConfigurationInput | null>(null);
@@ -303,22 +377,57 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
   const [actionNotice, setActionNotice] = useState("");
   const [confirmActivate, setConfirmActivate] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  // BULLETIN-CLASSE-01 / L4 — classe obligatoire avant toute configuration.
+  const [classes, setClasses] = useState<ManagedClass[] | null>(null);
+  const [classesError, setClassesError] = useState<unknown>(null);
+  const [classId, setClassId] = useState(initialClassId);
+  const [pendingClassId, setPendingClassId] = useState<string | null>(null);
+  const activeSchool = useOptionalActiveSchool();
+  const currentLogoSrc = activeSchool?.activeSchool ? schoolLogoSrc(activeSchool.activeSchool) : null;
+
+  const loadClasses = useCallback(async () => {
+    setClassesError(null);
+    try {
+      setClasses(await reportCardManagementApi.listClasses());
+    } catch (err) {
+      setClassesError(err);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadClasses();
+  }, [loadClasses]);
 
   const load = useCallback(async () => {
+    if (!classId) return;
     setLoadError(null);
+    setCtx(null);
+    setInput(null);
     try {
-      const data = await reportCardCatalogApi.configurationContext(model.model_id);
+      const data = await reportCardCatalogApi.configurationContext(model.model_id, classId);
       setCtx(data);
       setInput(initialInput(data));
-      setSavedState(data.pendingSaved ? "SAVED" : data.configuration);
+      setSavedState(data.pendingSaved ? "SAVED" : data.configuration === "INHERITED" ? "NONE" : data.configuration);
+      setDirty(false);
+      setPreview(null);
+      setIssues([]);
     } catch (err) {
       setLoadError(err);
     }
-  }, [model.model_id]);
+  }, [model.model_id, classId]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  function chooseClass(next: string) {
+    if (next === classId) return;
+    if (dirty) {
+      setPendingClassId(next);
+      return;
+    }
+    setClassId(next);
+  }
 
   const update = (next: (current: ConfigurationInput) => ConfigurationInput) => {
     setInput((current) => (current ? next(current) : current));
@@ -343,9 +452,53 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
       </Card>
     );
   }
-  if (!ctx || !input) {
-    return <Card className="p-6"><p role="status" className="text-sm text-muted">Chargement de la configuration…</p></Card>;
+  const classPicker = (
+    <div className="space-y-2" data-testid="catalog-class-picker">
+      <Field label="Classe à configurer" htmlFor="catalog-class" required>
+        <Select
+          id="catalog-class"
+          value={classId}
+          onChange={(event) => chooseClass(event.target.value)}
+          options={[
+            { value: "", label: classes === null ? "Chargement des classes…" : "Choisir une classe" },
+            ...(classes ?? []).map((item) => ({
+              value: item.id,
+              label: item.academicYearName ? `${item.name} — ${item.academicYearName}` : item.name,
+            })),
+          ]}
+        />
+      </Field>
+      {classesError ? (
+        <p role="alert" className="text-sm font-semibold text-red-800">
+          Impossible de charger les classes. <button type="button" className="underline" onClick={() => void loadClasses()}>Réessayer</button>
+        </p>
+      ) : null}
+      {classes && classes.length === 0 ? <p className="text-sm text-muted" data-testid="catalog-no-class">Aucune classe dans l'établissement : créez d'abord les classes.</p> : null}
+      <p className="text-xs text-muted">Chaque classe a sa propre configuration pour son année scolaire ; les autres classes ne sont jamais modifiées.</p>
+    </div>
+  );
+
+  if (!classId || !ctx || !input) {
+    return (
+      <div className="space-y-5" data-testid="catalog-wizard">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-ink">{model.name}</h1>
+            <p className="mt-1 text-sm text-muted">{modelTypeLabel(model.presentation_style)} · étape 1 : choisissez la classe</p>
+          </div>
+          <Button variant="ghost" onClick={() => onExit()}>← Retour aux modèles</Button>
+        </div>
+        <Card className="p-5 md:p-6">
+          {classPicker}
+          {classId && !ctx ? <p role="status" className="mt-4 text-sm text-muted">Chargement de la configuration de la classe…</p> : null}
+        </Card>
+      </div>
+    );
   }
+  const classLabel = ctx.class
+    ? `${ctx.class.name ?? "Classe"} — ${ctx.class.academic_year_name ?? "année scolaire"}`
+    : "";
+  const header = input.header ?? DEFAULT_HEADER;
 
   const components = componentsFor(ctx, input.structure);
   const stepIndex = STEPS.findIndex((entry) => entry.id === step);
@@ -419,7 +572,16 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
         ),
       })),
       signatures: current.signatures.map((s) => s.trim()).filter(Boolean),
+      header: {
+        ...(current.header ?? DEFAULT_HEADER),
+        lines: (current.header?.lines ?? []).map((line) => line.trim()).filter(Boolean),
+        title: (current.header?.title ?? "").trim(),
+      },
     };
+  }
+
+  function updateHeader(change: (current: HeaderInput) => HeaderInput) {
+    update((current) => ({ ...current, header: change(current.header ?? DEFAULT_HEADER) }));
   }
 
   function handleServerError(err: unknown, setter: (message: string) => void) {
@@ -444,7 +606,7 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
     setPreview(null);
     setPreviewError("");
     try {
-      setPreview(await reportCardCatalogApi.preview(model.model_id, serverInput()));
+      setPreview(await reportCardCatalogApi.preview(model.model_id, serverInput(), classId));
       setIssues([]);
     } catch (err) {
       const termsChanged = fieldIssues(err).some((issue) => issue.code === "TERM_UNKNOWN");
@@ -452,7 +614,7 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
         // La référence des périodes a pu changer depuis l'ouverture de l'assistant.
         // Recharger uniquement les choix canoniques, sans effacer les saisies de l'utilisateur.
         try {
-          const latest = await reportCardCatalogApi.configurationContext(model.model_id);
+          const latest = await reportCardCatalogApi.configurationContext(model.model_id, classId);
           setCtx(latest);
         } catch {
           // Conserver l'erreur métier initiale, jamais remplacer par une liste vide.
@@ -469,7 +631,7 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
     setActionError("");
     setActionNotice("");
     try {
-      const result = await reportCardCatalogApi.save(model.model_id, serverInput());
+      const result = await reportCardCatalogApi.save(model.model_id, serverInput(), classId);
       setPreview(result.preview ?? preview);
       setIssues([]);
       setDirty(false);
@@ -486,9 +648,9 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
     setBusy("activate");
     setActionError("");
     try {
-      await reportCardCatalogApi.activate(model.model_id, newCommandId());
+      await reportCardCatalogApi.activate(model.model_id, newCommandId(), classId);
       setConfirmActivate(false);
-      onExit(`${model.name} est activé : il sera utilisé pour les prochains aperçus et publications. Les bulletins déjà publiés ne changent pas.`);
+      onExit(`${model.name} est activé pour ${classLabel} : il sera utilisé pour les prochains aperçus et publications de cette classe. Les autres classes et les bulletins déjà publiés ne changent pas.`, classId);
     } catch (err) {
       setConfirmActivate(false);
       setActionError(`Activation refusée. ${catalogErrorMessage(err)}`);
@@ -532,6 +694,13 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
 
   const stepContent: Record<StepId, ReactNode> = {
     structure: (
+      <div className="space-y-6">
+      {classPicker}
+      {ctx.configuration === "INHERITED" ? (
+        <p className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-ink" data-testid="catalog-inherited-note">
+          Cette classe utilise actuellement la configuration de l'établissement (lecture seule). Enregistrer et activer créeront sa configuration propre.
+        </p>
+      ) : null}
       <fieldset className="space-y-3" data-testid="catalog-step-structure">
         <legend className="text-base font-bold text-ink">Comment les notes sont-elles organisées ?</legend>
         <div className="grid gap-3 md:grid-cols-2">
@@ -564,6 +733,7 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
         <ErrorText issues={issuesFor("structure")} />
         {input.subjects.length ? <p className="text-xs text-muted">Changer de structure réinitialise les maxima saisis.</p> : null}
       </fieldset>
+      </div>
     ),
     subjects: (
       <div className="space-y-5" data-testid="catalog-step-subjects">
@@ -767,8 +937,94 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
         </fieldset>
       </div>
     ),
-    preview: (
-      <div className="space-y-5" data-testid="catalog-step-preview">
+    header: (
+      <div className="space-y-6" data-testid="catalog-step-header">
+        <fieldset className="space-y-2">
+          <legend className="text-base font-bold text-ink">Disposition de l'en-tête</legend>
+          <div className="flex flex-wrap gap-2">
+            {HEADER_LAYOUTS.map((layout) => (
+              <label key={layout.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${header.layout === layout.id ? "border-brand bg-brand-50" : "border-line bg-white"}`}>
+                <input
+                  type="radio"
+                  name="catalog-header-layout"
+                  checked={header.layout === layout.id}
+                  onChange={() =>
+                    updateHeader((current) => ({
+                      ...current,
+                      layout: layout.id,
+                      show: layout.id === "no_logo" ? current.show.filter((id) => id !== "logo") : current.show,
+                    }))
+                  }
+                />
+                {layout.label}
+              </label>
+            ))}
+          </div>
+          <ErrorText issues={issuesFor("header.layout", true)} />
+        </fieldset>
+        <fieldset className="space-y-2">
+          <legend className="text-base font-bold text-ink">Informations affichées</legend>
+          <p className="text-sm text-muted">Brouillon : informations actuelles de l'établissement. Bulletin publié : informations figées au moment de la publication.</p>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {HEADER_ELEMENTS.map((element) => {
+              const disabled = element.id === "logo" && header.layout === "no_logo";
+              return (
+                <label key={element.id} className={`flex items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm ${disabled ? "opacity-50" : ""}`}>
+                  <input
+                    type="checkbox"
+                    disabled={disabled}
+                    checked={header.show.includes(element.id)}
+                    onChange={(event) =>
+                      updateHeader((current) => ({
+                        ...current,
+                        show: event.target.checked
+                          ? HEADER_ELEMENTS.map((e) => e.id).filter((id) => id === element.id || current.show.includes(id))
+                          : current.show.filter((id) => id !== element.id),
+                      }))
+                    }
+                  />
+                  {element.label}
+                </label>
+              );
+            })}
+          </div>
+          <ErrorText issues={issuesFor("header.show", true)} />
+        </fieldset>
+        <fieldset className="space-y-2">
+          <legend className="text-base font-bold text-ink">Texte de l'en-tête</legend>
+          <div className="max-w-md">
+            <Field label="Titre du document" htmlFor="catalog-header-title" hint="60 caractères au maximum.">
+              <Input
+                id="catalog-header-title"
+                maxLength={60}
+                value={header.title}
+                onChange={(event) => updateHeader((current) => ({ ...current, title: event.target.value }))}
+              />
+            </Field>
+            <ErrorText issues={issuesFor("header.title", true)} />
+          </div>
+          <p className="text-sm text-muted">Jusqu'à quatre lignes officielles (exemple : République, ministère, province).</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[0, 1, 2, 3].map((i) => (
+              <Input
+                key={i}
+                aria-label={`Ligne d'en-tête ${i + 1}`}
+                maxLength={80}
+                placeholder={`Ligne ${i + 1}`}
+                value={header.lines[i] ?? ""}
+                onChange={(event) =>
+                  updateHeader((current) => {
+                    const lines = [...current.lines];
+                    while (lines.length <= i) lines.push("");
+                    lines[i] = event.target.value;
+                    return { ...current, lines };
+                  })
+                }
+              />
+            ))}
+          </div>
+          <ErrorText issues={issuesFor("header.lines", true)} />
+        </fieldset>
         <fieldset className="space-y-2">
           <legend className="text-base font-bold text-ink">Signatures en bas du bulletin</legend>
           <p className="text-sm text-muted">Jusqu'à quatre intitulés (exemple : Le titulaire, Le chef d'établissement, Le parent).</p>
@@ -793,6 +1049,10 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
           </div>
           <ErrorText issues={issuesFor("signatures", true)} />
         </fieldset>
+      </div>
+    ),
+    preview: (
+      <div className="space-y-5" data-testid="catalog-step-preview">
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="secondary" onClick={() => void runPreview()} disabled={busy === "preview"} data-testid="catalog-preview-refresh">
             {busy === "preview" ? "Calcul de l'aperçu…" : preview ? "Actualiser l'aperçu" : "Afficher l'aperçu"}
@@ -802,7 +1062,7 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
         {previewError ? <p role="alert" className="text-sm font-bold text-red-800">{previewError}</p> : null}
         {preview ? (
           <div className="overflow-x-auto rounded-xl border border-line bg-white p-3" data-testid="catalog-preview">
-            <ReportCardPresentationTable view={preview} />
+            <ReportCardPresentationTable view={preview} currentLogoSrc={currentLogoSrc} />
           </div>
         ) : null}
       </div>
@@ -811,6 +1071,8 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
       <div className="space-y-5" data-testid="catalog-step-summary">
         <h2 className="text-base font-bold text-ink">Récapitulatif</h2>
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
+          <dt className="text-muted">Classe</dt>
+          <dd className="font-semibold text-ink" data-testid="catalog-summary-class">{classLabel}</dd>
           <dt className="text-muted">Modèle</dt>
           <dd className="font-semibold text-ink">{model.name}</dd>
           <dt className="text-muted">Structure</dt>
@@ -834,6 +1096,12 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
           <dt className="text-muted">Périodes</dt>
           <dd className="text-ink">
             {ctx.periods.map((p) => `${p.label} : ${(input.periods[p.id]?.termNames ?? []).join(", ") || "—"}`).join(" · ")}
+          </dd>
+          <dt className="text-muted">En-tête</dt>
+          <dd className="text-ink" data-testid="catalog-summary-header">
+            {[header.title, ...header.lines].filter((v) => v && v.trim()).join(" · ") || "Sans texte"}
+            {" — "}
+            {HEADER_ELEMENTS.filter((e) => header.show.includes(e.id)).map((e) => e.label).join(", ") || "aucun élément"}
           </dd>
           <dt className="text-muted">Signatures</dt>
           <dd className="text-ink">{input.signatures.filter((s) => s.trim()).join(" · ") || "Aucune"}</dd>
@@ -880,7 +1148,8 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-ink">{model.name}</h1>
-          <p className="mt-1 text-sm text-muted">{modelTypeLabel(model.presentation_style)} · configuration de votre établissement</p>
+          <p className="mt-1 text-sm text-muted">{modelTypeLabel(model.presentation_style)} · configuration de la classe</p>
+          <p className="mt-1"><Badge tone="info">{classLabel}</Badge></p>
         </div>
         <Button variant="ghost" onClick={() => (dirty ? setConfirmLeave(true) : onExit())}>← Retour aux modèles</Button>
       </div>
@@ -934,6 +1203,7 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
         }
       >
         <div className="space-y-2 text-sm" data-testid="catalog-activate-summary">
+          <p><span className="text-muted">Classe :</span> <span className="font-semibold">{classLabel}</span></p>
           <p><span className="text-muted">Modèle :</span> <span className="font-semibold">{model.name}</span></p>
           <p><span className="text-muted">Matières :</span> <span className="font-semibold">{input.subjects.length}</span></p>
           <p><span className="text-muted">Structure :</span> <span className="font-semibold">{ctx.structures.find((s) => s.id === input.structure)?.label}</span></p>
@@ -954,6 +1224,23 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
         }
       >
         <p className="text-sm text-muted">Vous pouvez aussi revenir au récapitulatif et cliquer sur « Enregistrer ».</p>
+      </Modal>
+
+      <Modal
+        open={pendingClassId !== null}
+        title="Changer de classe ?"
+        description="Les modifications non enregistrées pour la classe actuelle seront perdues."
+        onClose={() => setPendingClassId(null)}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPendingClassId(null)}>Rester sur cette classe</Button>
+            <Button variant="danger" onClick={() => { const next = pendingClassId ?? ""; setPendingClassId(null); setDirty(false); setStep("structure"); setClassId(next); }}>
+              Changer de classe
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-muted">La configuration des autres classes n'est jamais modifiée.</p>
       </Modal>
     </div>
   );

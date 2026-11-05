@@ -19,6 +19,12 @@ vi.mock("../lib/reportCardCatalogApi", async (importOriginal) => {
   return { ...actual, reportCardCatalogApi: api };
 });
 
+const classesApi = vi.hoisted(() => ({ listClasses: vi.fn() }));
+vi.mock("../lib/reportCardManagementApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/reportCardManagementApi")>();
+  return { ...actual, reportCardManagementApi: { ...actual.reportCardManagementApi, listClasses: classesApi.listClasses } };
+});
+
 import { ReportCardCatalogAdminPage } from "./ReportCardCatalogAdminPage";
 import { ReportCardCatalogSchoolPage } from "./ReportCardCatalogSchoolPage";
 
@@ -68,6 +74,11 @@ function renderPage(node: JSX.Element) {
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
+  classesApi.listClasses.mockReset();
+  classesApi.listClasses.mockResolvedValue([
+    { id: "cls-6a", name: "6e A", academicYearId: "y1", academicYearName: "2026-2027" },
+    { id: "cls-6b", name: "6e B", academicYearId: "y1", academicYearName: "2026-2027" },
+  ]);
 });
 
 describe("Superadmin — Catalogue des bulletins", () => {
@@ -229,6 +240,7 @@ const CONTEXT = {
   evaluationTypes: [{ code: "interrogation", name: "Interrogation" }, { code: "examen", name: "Examen" }],
   terms: ["Trimestre 1", "Trimestre 2", "Trimestre 3"],
   configuration: "NONE",
+  class: { id: "cls-6a", name: "6e A", academic_year_id: "y1", academic_year_name: "2026-2027" },
   current: null,
 };
 
@@ -282,7 +294,12 @@ describe("Établissement — Configurer un bulletin", () => {
     api.configurationContext.mockResolvedValue(context);
     renderPage(<ReportCardCatalogSchoolPage />);
     fireEvent.click(await screen.findByTestId("catalog-school-choose-colombiere"));
+    expect(screen.getByTestId("catalog-class-picker")).toBeInTheDocument();
+    expect(api.configurationContext).not.toHaveBeenCalled();
+    await screen.findByRole("option", { name: "6e A — 2026-2027" });
+    fireEvent.change(screen.getByLabelText(/Classe à configurer/), { target: { value: "cls-6a" } });
     await screen.findByTestId("catalog-step-structure");
+    expect(api.configurationContext).toHaveBeenCalledWith("colombiere", "cls-6a");
   }
 
   it("assistant : structure suggérée, matières simples seulement, maxima, retour sans perte", async () => {
@@ -351,6 +368,11 @@ describe("Établissement — Configurer un bulletin", () => {
     const [tjBox] = within(screen.getByText("Travail journalier (TJ)").closest("fieldset") as HTMLElement).getAllByLabelText("Interrogation");
     fireEvent.click(tjBox);
     fireEvent.click(within(screen.getByText("Examen (EX)").closest("fieldset") as HTMLElement).getByLabelText("Examen"));
+    fireEvent.click(screen.getByTestId("catalog-next"));
+    expect(screen.getByTestId("catalog-step-header")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Logo centré"));
+    fireEvent.click(screen.getByLabelText("Matricule"));
+    fireEvent.change(screen.getByLabelText("Ligne d'en-tête 1"), { target: { value: " République démocratique du Congo " } });
     api.preview.mockResolvedValue(preview);
     fireEvent.click(screen.getByTestId("catalog-next"));
     expect(await screen.findByTestId("catalog-preview")).toBeInTheDocument();
@@ -358,6 +380,13 @@ describe("Établissement — Configurer un bulletin", () => {
     expect(sent.subjects).toEqual([{ code: "MATH", components: { TJ: { max: 20 }, EX: { max: 20 } } }]);
     expect(sent.factSources).toEqual({ TJ: { evaluationTypes: ["interrogation"], aggregation: "weighted_average" }, EX: { evaluationTypes: ["examen"], aggregation: "weighted_average" } });
     expect(sent.periods.T2).toEqual({ termNames: ["Trimestre 2"] });
+    expect(sent.header).toEqual({
+      layout: "logo_center",
+      show: ["logo", "establishment_name", "academic_year", "class", "period", "student_name"],
+      lines: ["République démocratique du Congo"],
+      title: "Bulletin scolaire",
+    });
+    expect(api.preview.mock.calls[0][2]).toBe("cls-6a");
     expect(screen.getByTestId("catalog-preview").querySelectorAll("[data-failing]").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByTestId("catalog-next"));
     expect(screen.getByTestId("catalog-activate")).toBeDisabled();
@@ -365,14 +394,22 @@ describe("Établissement — Configurer un bulletin", () => {
     fireEvent.click(screen.getByTestId("catalog-save"));
     expect(await screen.findByTestId("catalog-saved")).toHaveTextContent("pas encore utilisée");
     expect(screen.getByTestId("catalog-summary-state")).toHaveTextContent("Enregistrée, non activée");
+    expect(screen.getByTestId("catalog-summary-class")).toHaveTextContent("6e A — 2026-2027");
+    expect(screen.getByTestId("catalog-summary-header")).toHaveTextContent("République démocratique du Congo");
+    expect(api.save.mock.calls[0][2]).toBe("cls-6a");
     fireEvent.click(screen.getByTestId("catalog-activate"));
     expect(screen.getByTestId("catalog-activate-summary")).toHaveTextContent("Modèle Colombière");
+    expect(screen.getByTestId("catalog-activate-summary")).toHaveTextContent("6e A");
     expect(api.activate).not.toHaveBeenCalled();
     api.activate.mockResolvedValue({ status: "ACTIVE", model_key: "catalog-colombiere" });
     api.schoolCatalog.mockResolvedValue(schoolCatalog([{ ...colombiere, available: true, configuration: "ACTIVE", activated_at: "x", saved_at: null }]));
     fireEvent.click(screen.getByTestId("catalog-activate-confirm"));
     expect(await screen.findByTestId("catalog-school-notice")).toHaveTextContent("est activé");
     expect(api.activate.mock.calls[0][0]).toBe("colombiere");
+    expect(api.activate.mock.calls[0][2]).toBe("cls-6a");
+    await waitFor(() => expect(api.schoolCatalog).toHaveBeenLastCalledWith("cls-6a"));
+    expect(await screen.findByText("Actif pour cette classe")).toBeInTheDocument();
+    expect(screen.getByLabelText("Afficher l'état pour")).toHaveValue("cls-6a");
   });
 
   it("erreurs serveur par champ : affichées à côté du champ, étape signalée ; activation refusée", async () => {
@@ -388,7 +425,7 @@ describe("Établissement — Configurer un bulletin", () => {
         signatures: ["Le titulaire"],
       },
     } as unknown as typeof CONTEXT);
-    fireEvent.click(screen.getByText("Récapitulatif"));
+    fireEvent.click(screen.getByText("Récapitulatif et activation"));
     expect(screen.getByTestId("catalog-summary-state")).toHaveTextContent("Enregistrée, non activée");
     api.activate.mockRejectedValueOnce(new ApiErr(409, "CATALOG_CONFIGURATION_REQUIRED"));
     fireEvent.click(screen.getByTestId("catalog-activate"));
@@ -437,5 +474,16 @@ describe("Établissement — Configurer un bulletin", () => {
     expect(screen.getByText("Quitter sans enregistrer ?")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Continuer la configuration"));
     expect(screen.getByLabelText(/Note unique par période/)).toBeChecked();
+  });
+
+  it("classe : changement confirmé si modifications ; configuration héritée signalée", async () => {
+    await openWizard({ ...CONTEXT, configuration: "INHERITED" });
+    expect(screen.getByTestId("catalog-inherited-note")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Note unique par période/));
+    fireEvent.change(screen.getByLabelText(/Classe à configurer/), { target: { value: "cls-6b" } });
+    expect(screen.getByText("Changer de classe ?")).toBeInTheDocument();
+    expect(api.configurationContext).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByText("Changer de classe"));
+    await waitFor(() => expect(api.configurationContext).toHaveBeenLastCalledWith("colombiere", "cls-6b"));
   });
 });
