@@ -62,6 +62,14 @@ describe("BULLETIN-CLASSE-01 / L3 — en-tête du bulletin", () => {
     expect(screen.getByTestId("report-card-signatures")).toHaveTextContent("Le titulaire");
   });
 
+  it("vérification QR publique : logo figé vérifié, sans appel d'API authentifiée", async () => {
+    const png = "data:image/png;base64,aGVsbG8=";
+    render(<ReportCardPresentationTable view={base} verifiedLogoDataUri={png} />);
+    await waitFor(() => expect(screen.getByTestId("report-card-header-logo")).toHaveAttribute("src", png));
+    expect(logo).not.toHaveBeenCalled();
+    expect(screen.getByTestId("report-card-header-title")).toHaveTextContent("Bulletin scolaire");
+  });
+
   it("titre centré indépendamment du logo à gauche", () => {
     logo.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
     render(<ReportCardPresentationTable view={{ ...base, header: { ...base.header!, title_align: "center" } }} />);
