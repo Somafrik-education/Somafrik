@@ -382,8 +382,11 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
         if (!source?.evaluationTypes.length) out.push({ field: `factSources.${c.id}.evaluationTypes`, code: "EVALUATION_TYPES_REQUIRED" });
         if (!source?.aggregation) out.push({ field: `factSources.${c.id}.aggregation`, code: "AGGREGATION_REQUIRED" });
       }
+      const currentTerms = new Set(ctx!.terms);
       for (const period of ctx!.periods) {
-        if (!input.periods[period.id]?.termNames.length) out.push({ field: `periods.${period.id}`, code: "TERM_REQUIRED" });
+        const names = input.periods[period.id]?.termNames ?? [];
+        if (!names.length) out.push({ field: `periods.${period.id}`, code: "TERM_REQUIRED" });
+        if (names.some((name) => !currentTerms.has(name))) out.push({ field: `periods.${period.id}`, code: "TERM_UNKNOWN" });
       }
     }
     return out;
@@ -429,12 +432,31 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
   }
 
   async function runPreview() {
+    const invalid = localIssues("sources");
+    if (invalid.length) {
+      setPreview(null);
+      setIssues(invalid);
+      setPreviewError("Vérifiez les types d'évaluation et les périodes scolaires avant l'aperçu.");
+      goTo("sources");
+      return;
+    }
     setBusy("preview");
     setPreviewError("");
     try {
       setPreview(await reportCardCatalogApi.preview(model.model_id, serverInput()));
       setIssues([]);
     } catch (err) {
+      const termsChanged = fieldIssues(err).some((issue) => issue.code === "TERM_UNKNOWN");
+      if (termsChanged) {
+        // La référence des périodes a pu changer depuis l'ouverture de l'assistant.
+        // Recharger uniquement les choix canoniques, sans effacer les saisies de l'utilisateur.
+        try {
+          const latest = await reportCardCatalogApi.configurationContext(model.model_id);
+          setCtx(latest);
+        } catch {
+          // Conserver l'erreur métier initiale, jamais remplacer par une liste vide.
+        }
+      }
       handleServerError(err, setPreviewError);
     } finally {
       setBusy("");
@@ -723,6 +745,18 @@ function ConfigurationWizard({ model, onExit }: { model: SchoolCatalogModel; onE
                     </label>
                   ))}
                 </div>
+                {(input.periods[period.id]?.termNames ?? []).filter((name) => !ctx.terms.includes(name)).map((name) => (
+                  <div key={name} className="mt-2 flex items-center gap-2 text-sm text-red-800">
+                    <span>Référence enregistrée indisponible : {name}</span>
+                    <Button size="sm" variant="secondary" onClick={() => update((current) => ({
+                      ...current,
+                      periods: {
+                        ...current.periods,
+                        [period.id]: { termNames: (current.periods[period.id]?.termNames ?? []).filter((n) => n !== name) },
+                      },
+                    }))}>Retirer</Button>
+                  </div>
+                ))}
                 <ErrorText issues={issuesFor(`periods.${period.id}`, true)} />
               </div>
             ))}
