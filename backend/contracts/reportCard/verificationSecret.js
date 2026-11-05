@@ -71,8 +71,13 @@ function unwrapToken(tokenCiphertext, wrapping, binding) {
   }
 }
 
+// Restricted, explicit environment binding. A published capability remains the same
+// across reprints; only the public Web origin depends on the deployment.
+const VERIFY_ORIGINS = new Set(["https://somafrik.app", "https://preprod.somafrik.app"]);
 function verificationUrl(publicId, token) {
-  return `https://somafrik.app/verify/rc/${publicId}.${token}`;
+  const origin = process.env.REPORT_CARD_VERIFY_ORIGIN || "https://somafrik.app";
+  if (!VERIFY_ORIGINS.has(origin)) throw new Error("REPORT_CARD_VERIFY_ORIGIN_INVALID");
+  return `${origin}/verify/rc/${publicId}.${token}`;
 }
 
 module.exports = {

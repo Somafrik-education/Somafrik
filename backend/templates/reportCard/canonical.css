@@ -24,11 +24,6 @@ h1 {
   margin: 0 0 8px;
 }
 
-.meta {
-  margin: 0 0 16px;
-  font-size: 10pt;
-}
-
 table.cells {
   width: 100%;
   border-collapse: collapse;
@@ -70,10 +65,10 @@ table.slots {
   image-rendering: pixelated;
 }
 
-.verify-url {
+.verify-label {
+  margin: 2mm 0 0;
   font-size: 8pt;
-  word-break: break-all;
-  max-width: 70mm;
+  text-align: center;
 }
 
 /* BULLETIN-UI-01 — présentation par matières (modèles A et B). */
@@ -108,7 +103,7 @@ table.results {
 
 table.results th,
 table.results td {
-  border: 1px solid #111;
+  border: 1px solid #dbe3ee;
   padding: 1.2mm 1mm;
   text-align: center;
 }
@@ -143,11 +138,6 @@ table.results td.missing {
 .incomplete {
   font-weight: 700;
   margin: 0 0 3mm;
-}
-
-.appreciation .lines {
-  border-bottom: 1px solid #111;
-  height: 12mm;
 }
 
 .signatures {

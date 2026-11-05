@@ -359,7 +359,7 @@ function renderPresentationStudent(view, logoDataUri = null) {
         <tbody>${view.rows.map((row) => presentationRow(view, row)).join("\n")}
         ${summaryRows(view)}</tbody>
       </table>
-      <div class="appreciation" data-appreciation><h3>Appréciations</h3>${decision}<div class="lines"></div></div>
+      ${decision}
       ${signatures}
     </section>`;
 }
@@ -387,15 +387,11 @@ function buildHtml(payload, qr, template, presentation = null, logoDataUri = nul
   const css = `${embeddedFontCss()}${fs.readFileSync(path.join(TEMPLATE_DIR, "canonical.css"), "utf8")}`;
   return htmlTemplate
     .replaceAll("{{INLINE_CSS}}", css)
-    .replaceAll("{{REPORT_CARD_ID}}", escapeHtml(payload.report_card_id))
-    .replaceAll("{{VERSION}}", escapeHtml(payload.published_snapshot_version))
-    .replaceAll("{{PUBLISHED_AT}}", escapeHtml(payload.published_at))
     .replaceAll(
       "{{STUDENTS}}",
       presentation ? presentation.map((view) => renderPresentationStudent(view, logoDataUri)).join("\n") : renderStudentTables(payload, template)
     )
-    .replaceAll("{{QR_DATA_URL}}", qr.dataUrl)
-    .replaceAll("{{QR_URL}}", escapeHtml(qr.url));
+    .replaceAll("{{QR_DATA_URL}}", qr.dataUrl);
 }
 
 function assertHtmlString(html) {
