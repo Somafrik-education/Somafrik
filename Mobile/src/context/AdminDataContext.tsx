@@ -85,7 +85,7 @@ import {
 } from "../lib/studentsScope";
 import { loadL1BackedSnapshot } from "../offline/l1/readModel";
 import type { L1Resource } from "../offline/l1/types";
-import { applyCacheFirst, createL1LoadCoordinator, settleL1Snapshot } from "../offline/l1/l1LoadCoordinator";
+import { applyCacheFirst, createL1LoadCoordinator, isCurrentL1ReadAuthorization, settleL1Snapshot } from "../offline/l1/l1LoadCoordinator";
 
 /**
  * PERF-PR5 — options de lecture des 5 ressources L1.
@@ -379,6 +379,10 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const resourceScopeKeyRef = useRef(resourceScopeKey);
   // PERF-PR5 — déduplication, fraîcheur et générations des lectures L1.
   const l1CoordinatorRef = useRef(createL1LoadCoordinator());
+  const permissionsBootstrapRef = useRef(permissionsBootstrap);
+  // Ref synchronisée au rendu : une promesse résolue avant l'effet de purge reste invalidée.
+  permissionsBootstrapRef.current = permissionsBootstrap;
+  const previousPermissionsBootstrapRef = useRef(permissionsBootstrap);
   resourceScopeKeyRef.current = resourceScopeKey;
   const principalScopeKeyRef = useRef(principalScopeKey);
   principalScopeKeyRef.current = principalScopeKey;
@@ -421,6 +425,25 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setAnnouncementsSnapshot(emptyResourceSnapshot());
     setMessagesSnapshot(emptyResourceSnapshot());
   }, []);
+
+  // Une transition d'autorisations invalide les lectures et la fraîcheur, même lorsque
+  // l'utilisateur et l'établissement ne changent pas (ready -> refus -> ready).
+  useEffect(() => {
+    if (previousPermissionsBootstrapRef.current === permissionsBootstrap) return;
+    previousPermissionsBootstrapRef.current = permissionsBootstrap;
+    l1CoordinatorRef.current.reset();
+    if (permissionsBootstrap === "ready" || permissionsBootstrap === "ready_offline") return;
+    // Au refus, ne conserver aucune copie L1 précédemment affichée.
+    setStudentsData([]);
+    setClassesData([]);
+    setAssignmentsData([]);
+    setCoursesData([]);
+    setStudentsSnapshot(emptyResourceSnapshot());
+    setClassesSnapshot(emptyResourceSnapshot());
+    setAssignmentsSnapshot(emptyResourceSnapshot());
+    setSchoolCoursesSnapshot(emptyResourceSnapshot());
+    setCourseSchedulesSnapshot(emptyResourceSnapshot());
+  }, [permissionsBootstrap]);
 
   const markTenantResourcesSwitching = useCallback(() => {
     // PERF-PR5 : changement d'établissement — lectures en cours obsolètes, fraîcheurs effacées
@@ -753,14 +776,20 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }): Promise<void> => {
       if (!session || shouldSkipSchoolTenantHydration(session)) return Promise.resolve();
       const scope = resourceScopeKeyRef.current;
-      // La clé porte la portée et l'état des droits : un changement d'établissement, de compte
-      // ou de droits n'hérite ni d'une lecture en cours ni d'une fraîcheur.
-      const key = `${scope}|${permissionsBootstrap ?? ""}|${input.resource}`;
+      const readPermissionsBootstrap = permissionsBootstrap;
+      // La clé porte la portée et l’état des droits ; aucun héritage entre états.
+      const key = `${scope}|${readPermissionsBootstrap ?? ""}|${input.resource}`;
       const ticket = l1CoordinatorRef.current.begin(key, input.options?.maxAgeMs);
       if (ticket.kind === "join") return ticket.promise;
       if (ticket.kind === "skip") return Promise.resolve();
       // Une réponse plus ancienne (lecture remplacée, autre portée) n'est jamais appliquée.
-      const isCurrent = () => resourceScopeKeyRef.current === scope && ticket.isCurrent();
+      const isCurrent = () => isCurrentL1ReadAuthorization({
+        startScope: scope,
+        currentScope: resourceScopeKeyRef.current,
+        startPermissionsBootstrap: readPermissionsBootstrap,
+        currentPermissionsBootstrap: permissionsBootstrapRef.current,
+        generationCurrent: ticket.isCurrent(),
+      });
 
       input.setSnapshot((current) => ({ ...current, status: "loading" }));
       return ticket.track(
