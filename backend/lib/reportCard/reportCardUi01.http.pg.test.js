@@ -356,10 +356,11 @@ test("modèle A publié : présentation officielle fidèle au snapshot, PDF offi
   assert.equal(pdf.status, 200);
   assert.match(pdf.contentType, /pdf/);
   const text = pdfText(pdf.raw, "modele-A-la-colombiere-annuel");
-  for (const expected of ["Lycée La Colombière", "Ndayishimiye Ama", "6ème A", "2026-2027", "Géographie", "Mathématiques", "Éducation physique", "Total annuel", "Pourcentage", "Rang", "Appréciations", "Le titulaire", "Le directeur", "Le parent"]) {
+  for (const expected of ["Lycée La Colombière", "Ndayishimiye Ama", "6ème A", "2026-2027", "Géographie", "Mathématiques", "Éducation physique", "Total annuel", "Pourcentage", "Rang", "Le titulaire", "Le directeur", "Le parent"]) {
     assert.ok(text.includes(expected), `PDF A : « ${expected} » absent`);
   }
   assert.ok(text.includes(`${view.totals.annual.percentage} %`), "pourcentage du snapshot dans le PDF");
+  assert.doesNotMatch(text, /Appréciations|https?:\/\/[^\s]+\/verify\/rc\/|rc-[a-f0-9]{32}\s*·\s*v\d+/i, "aucune appréciation vide ni référence technique/QR imprimée");
   assert.equal(/BROUILLON/i.test(text), false, "un bulletin publié n'est jamais marqué brouillon");
   const snapshotAfter = await request("GET", `/api/report-card/publications/${own.report_card_id}/snapshot?version=1`, "adminA");
   assert.deepEqual(snapshotAfter.data.payload, snapshotBefore.data.payload, "snapshot inchangé après présentation et PDF");
@@ -434,6 +435,6 @@ test("compatibilité : bulletin historique sans totaux par matière (présentati
   const pdf = await request("GET", `/api/report-card/publications/${state.legacyPayload.report_card_id}/pdf?version=1`, "adminA", undefined, { binary: true });
   assert.equal(pdf.status, 200);
   const text = pdfText(pdf.raw, "historique-generique");
-  assert.ok(text.includes("rc-legacy-ui01"), "rendu générique d'origine");
+  assert.doesNotMatch(text, /rc-legacy-ui01/, "identifiant technique masqué même en mode générique");
   assert.ok(text.includes("GEOGRAPHIE"));
 });

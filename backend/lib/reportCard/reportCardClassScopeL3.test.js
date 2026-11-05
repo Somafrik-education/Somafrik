@@ -76,6 +76,7 @@ test("PDF : en-tête, lignes échappées, logo uniquement en data URI vérifiée
   assert.match(html, /République &lt;démocratique&gt; du Congo/);
   assert.match(html, /data-header-item="establishment_name"><dt>Établissement<\/dt><dd>Lycée Lumière/);
   assert.match(html, /data-signatures/);
+  assert.doesNotMatch(html, /data-appreciation|Appréciations/);
   for (const unsafe of ["https://evil.example/logo.png", "data:text/html;base64,PHNjcmlwdD4=", "javascript:alert(1)"]) {
     assert.doesNotMatch(renderPresentationStudent(v, unsafe), /data-header-logo/, unsafe);
   }
