@@ -775,6 +775,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       toFailure: (error: unknown, current: ResourceSnapshot<T>) => ResourceSnapshot<T>;
     }): Promise<void> => {
       if (!session || shouldSkipSchoolTenantHydration(session)) return Promise.resolve();
+      // Aucun GET ni cache L1 lorsque les droits ne sont pas encore validés.
+      if (permissionsBootstrap !== "ready" && permissionsBootstrap !== "ready_offline") return Promise.resolve();
       const scope = resourceScopeKeyRef.current;
       const readPermissionsBootstrap = permissionsBootstrap;
       // La clé porte la portée et l’état des droits ; aucun héritage entre états.
