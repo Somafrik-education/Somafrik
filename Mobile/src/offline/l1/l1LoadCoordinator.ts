@@ -72,6 +72,21 @@ export function createL1LoadCoordinator(clock: () => number = () => Date.now()) 
   return { begin, reset, stats };
 }
 
+/** Une lecture initiée sous un ancien état d'autorisation ne peut plus appliquer de résultat. */
+export function isCurrentL1ReadAuthorization(input: {
+  startScope: string;
+  currentScope: string;
+  startPermissionsBootstrap: string | null | undefined;
+  currentPermissionsBootstrap: string | null | undefined;
+  generationCurrent: boolean;
+}): boolean {
+  return (
+    input.startScope === input.currentScope &&
+    input.startPermissionsBootstrap === input.currentPermissionsBootstrap &&
+    input.generationCurrent
+  );
+}
+
 /** Cache-first : la copie L1 ne remplace jamais une donnée déjà affichée pour la portée. */
 export function applyCacheFirst<T>(current: ResourceSnapshot<T>, cached: ResourceSnapshot<T>): ResourceSnapshot<T> {
   return current.data.length ? current : cached;
