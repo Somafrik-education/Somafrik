@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { snapshotFromFailure, type ResourceSnapshot } from "../../lib/dataTruth";
 import { formatL1SyncMoment, L1_FRESHNESS_COPY, l1FreshnessLabel } from "../../lib/l1Freshness";
-import { applyCacheFirst, createL1LoadCoordinator, settleL1Snapshot } from "./l1LoadCoordinator";
+import { applyCacheFirst, createL1LoadCoordinator, isCurrentL1ReadAuthorization, settleL1Snapshot } from "./l1LoadCoordinator";
 import { resetL1LifecycleForTests } from "./lifecycle";
 import { createMemoryL1Store } from "./memoryStore";
 import {
@@ -383,6 +383,69 @@ async function run() {
     assert.equal(applied.length, 0, "copie de A non affichée dans B");
     assert.equal(currentScope === scopeAtStart, false, "la réponse réseau de A est aussi écartée par la garde");
     assert.equal(result.source, "network");
+  });
+
+  // ---------- PERF-PR5 clôture CTO : transition des autorisations sur la même portée ----------
+  await test("ready -> ready_offline : la lecture ready en cours est obsolète, même école", () => {
+    const coordinator = createL1LoadCoordinator();
+    const old = coordinator.begin("A|ready|students");
+    assert.equal(old.kind, "run");
+    if (old.kind !== "run") return;
+    assert.equal(isCurrentL1ReadAuthorization({
+      startScope: "A", currentScope: "A",
+      startPermissionsBootstrap: "ready", currentPermissionsBootstrap: "ready_offline",
+      generationCurrent: old.isCurrent(),
+    }), false, "une réponse réseau sous ready ne remplace pas la copie du mode hors ligne");
+    coordinator.reset();
+    const offline = coordinator.begin("A|ready_offline|students");
+    assert.equal(offline.kind, "run");
+    if (offline.kind !== "run") return;
+    assert.equal(isCurrentL1ReadAuthorization({
+      startScope: "A", currentScope: "A",
+      startPermissionsBootstrap: "ready_offline", currentPermissionsBootstrap: "ready_offline",
+      generationCurrent: offline.isCurrent(),
+    }), true);
+  });
+
+  await test("ready -> refus : ni cache-first ni réponse réseau ancienne ne repeuplent les lignes", async () => {
+    const coordinator = createL1LoadCoordinator();
+    let currentPermission = "ready";
+    const run = coordinator.begin("A|ready|classes");
+    assert.equal(run.kind, "run");
+    if (run.kind !== "run") return;
+    const canApply = () => isCurrentL1ReadAuthorization({
+      startScope: "A", currentScope: "A",
+      startPermissionsBootstrap: "ready", currentPermissionsBootstrap: currentPermission,
+      generationCurrent: run.isCurrent(),
+    });
+    assert.equal(canApply(), true);
+    currentPermission = "blocked_authorization";
+    assert.equal(canApply(), false, "garde synchrone avant l'effet React de purge");
+    coordinator.reset();
+    assert.equal(canApply(), false, "génération invalidée après purge");
+    const shown: Row[] = [];
+    await Promise.resolve();
+    if (canApply()) shown.push({ id: "stale" });
+    assert.deepEqual(shown, [], "ancienne réponse asynchrone jamais affichée");
+  });
+
+  await test("ready -> refus -> ready : retour à ready relit, sans ancienne génération ni fraîcheur", () => {
+    const coordinator = createL1LoadCoordinator(() => 1_000);
+    const original = coordinator.begin("A|ready|classes");
+    assert.equal(original.kind, "run");
+    if (original.kind !== "run") return;
+    original.markFresh();
+    coordinator.reset(); // refus : aucune donnée L1 présentée
+    coordinator.reset(); // retour ready : revalidation
+    assert.equal(original.isCurrent(), false);
+    const next = coordinator.begin("A|ready|classes", 30_000);
+    assert.equal(next.kind, "run", "30 s de fraîcheur antérieure ne sautent pas la relecture");
+    if (next.kind !== "run") return;
+    assert.equal(isCurrentL1ReadAuthorization({
+      startScope: "A", currentScope: "A",
+      startPermissionsBootstrap: "ready", currentPermissionsBootstrap: "ready",
+      generationCurrent: next.isCurrent(),
+    }), true);
   });
 
   // ---------- Fraîcheur affichée ----------
