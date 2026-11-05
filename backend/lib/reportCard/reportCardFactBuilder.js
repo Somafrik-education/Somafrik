@@ -170,11 +170,6 @@ function buildPublicationFacts({ profile, schoolId, classAcademicYearId, periods
   }
   const studentsWithGrades = new Map();
   for (const row of gradeRows) {
-    const evaluationId = asKey(row.evaluation_id);
-    if (mappedEvaluations.has(evaluationId)) {
-      if (!studentsWithGrades.has(evaluationId)) studentsWithGrades.set(evaluationId, new Set());
-      studentsWithGrades.get(evaluationId).add(asKey(row.student_uuid));
-    }
     const where = { grade_id: row.grade_id, evaluation_id: row.evaluation_id, subject_id: row.subject_code };
     const foreign = [row.grade_school_id, row.student_school_id, row.subject_school_id]
       .concat(row.evaluation_id ? [row.evaluation_school_id] : [])
@@ -192,6 +187,13 @@ function buildPublicationFacts({ profile, schoolId, classAcademicYearId, periods
     if (asKey(row.term_year_id) !== asKey(classAcademicYearId)) {
       issues.push(issue("TERM_NOT_IN_ACADEMIC_YEAR", BLOCKING, where));
       continue;
+    }
+    const evaluationId = asKey(row.evaluation_id);
+    if (mappedEvaluations.has(evaluationId)) {
+      // Une note d'un autre tenant, année ou élève non inscrit ne valide
+      // jamais la présence d'une note pour cet élève.
+      if (!studentsWithGrades.has(evaluationId)) studentsWithGrades.set(evaluationId, new Set());
+      studentsWithGrades.get(evaluationId).add(asKey(row.student_uuid));
     }
     const periodId = periodByTerm.get(normalizeTermName(row.term_name));
     if (!periodId) {
