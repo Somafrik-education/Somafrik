@@ -1,4 +1,5 @@
 const puppeteer = require("puppeteer");
+const { findPdfBrowserExecutable } = require("../lib/reportCard/pdfBrowserExecutable");
 const QRCode = require("qrcode");
 const { buildVerificationPayload, renderReportCardHtml } = require("../lib/bulletinTemplate");
 const { resolveSchoolLogoPath } = require("../lib/schoolLogo");
@@ -77,7 +78,7 @@ function isChromiumSandboxEnabled(env = process.env) {
 function buildChromiumLaunchOptions(env = process.env) {
   return {
     headless: true,
-    executablePath: env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    executablePath: findPdfBrowserExecutable({ env }) || undefined,
     args: [
       ...(isChromiumSandboxEnabled(env) ? [] : NO_SANDBOX_ARGS),
       ...NETWORK_HARDENING_ARGS,

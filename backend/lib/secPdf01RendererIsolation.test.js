@@ -19,6 +19,7 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const puppeteer = require("puppeteer");
+const { findPdfBrowserExecutable } = require("./reportCard/pdfBrowserExecutable");
 const QRCode = require("qrcode");
 
 const renderer = require("../services/bulletinPdfRenderer");
@@ -163,7 +164,7 @@ test("HARNESS — le serveur fictif reçoit bien les requêtes d'un Chromium non
   try {
     browser = await puppeteer.launch({
       headless: true,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      executablePath: findPdfBrowserExecutable() || undefined,
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-background-networking", "--disable-component-update"],
     });
     const page = await browser.newPage();

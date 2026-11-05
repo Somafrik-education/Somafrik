@@ -410,10 +410,13 @@ async function resolveEmbeddedFont(page) {
 
 async function renderPdfAfterCommit({ html, qr } = {}) {
   const documentHtml = assertHtmlString(html);
+  const { findPdfBrowserExecutable } = require("./pdfBrowserExecutable");
+  const executablePath = findPdfBrowserExecutable();
+  if (!executablePath) throw new ReportCardPdfError("PDF_BROWSER_UNAVAILABLE");
   const puppeteer = require("puppeteer");
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    executablePath,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--font-render-hinting=none"],
   });
   try {
