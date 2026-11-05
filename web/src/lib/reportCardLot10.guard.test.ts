@@ -39,13 +39,12 @@ describe("LOT 10 web guards", () => {
       expect(existsSync(path.join(ROOT, rel)), `missing ${rel}`).toBe(true);
       const src = readRel(rel);
       expect(src.includes("computeReportCard")).toBe(false);
-      expect(src).not.toMatch(/computeReportCard\\s*\\(/);
     }
     const view = readRel("web/src/components/bulletin/ReportCardSnapshotView.tsx");
     expect(view).toMatch(/payload\.students/);
     const verificationPage = readRel("web/src/pages/VerifyReportCardPage.tsx");
     expect(verificationPage).toMatch(/ReportCardPresentationTable/);
-    expect(verificationPage).toMatch(/result\\.presentation/);
+    expect(verificationPage).toMatch(/result\.presentation/);
     expect(verificationPage).not.toMatch(/<ReportCardSnapshotView/);
     expect(existsSync(path.join(ROOT, "backend/lib/reportCard/reportCardQualification.js"))).toBe(true);
   });
