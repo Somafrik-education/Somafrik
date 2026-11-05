@@ -76,7 +76,7 @@ function engineError(err) {
 function createReportCardClassPublication({ publication, factsStore, configuration, catalogStore } = {}) {
   function requireDeps() {
     if (!publication || typeof publication.publishBatch !== "function") fail("PUBLICATION_REQUIRED");
-    for (const name of ["resolveCohort", "listClassCohort", "listClassGradeSources"]) {
+    for (const name of ["resolveCohort", "listClassCohort", "listClassGradeSources", "listClassEvaluationSources"]) {
       if (!factsStore || typeof factsStore[name] !== "function") fail("FACTS_REQUIRED");
     }
     if (!catalogStore || typeof catalogStore.listSchoolSubjectCatalog !== "function") fail("FACTS_REQUIRED");
@@ -111,9 +111,10 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     } catch (err) {
       fail("INVALID_PEDAGOGICAL_DATA", [{ code: err.code || "CATALOG_MISMATCH", severity: BLOCKING }]);
     }
-    const [cohort, gradeRows] = await Promise.all([
+    const [cohort, gradeRows, evaluationRows] = await Promise.all([
       factsStore.listClassCohort({ schoolId, classId: cohortRow.classId, academicYearId: cohortRow.academicYearId }),
       factsStore.listClassGradeSources({ schoolId, classId: cohortRow.classId, academicYearId: cohortRow.academicYearId }),
+      factsStore.listClassEvaluationSources({ schoolId, classId: cohortRow.classId, academicYearId: cohortRow.academicYearId }),
     ]);
     const built = buildPublicationFacts({
       profile,
@@ -122,6 +123,7 @@ function createReportCardClassPublication({ publication, factsStore, configurati
       periods: scope.periods,
       cohort,
       gradeRows,
+      evaluationRows,
     });
     let computed;
     try {
