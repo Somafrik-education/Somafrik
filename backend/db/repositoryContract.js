@@ -137,6 +137,7 @@ const REPOSITORY_METHODS = Object.freeze([
   "listDocumentsExamsProjection",
   // Plateforme métier (LOT 6 — PostgreSQL canonique)
   "listPlatformProjection",
+  "listSubscriptionAccessState",
   "getPlatformSchoolByCode",
   "getRolePermissionsMap",
   "resolveEffectivePermissions",

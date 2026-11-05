@@ -27,12 +27,18 @@ export function useMessagesUnreadCount(
     }
     let cancelled = false;
 
+    // P0-WEB-01 : focus + visibilitychange arrivent ensemble ; un seul appel en vol.
+    let inFlight = false;
     async function refresh() {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const result = await messagesApi.unreadCount(schoolScope ?? undefined);
         if (!cancelled) setCount(Math.max(0, Number(result?.count) || 0));
       } catch {
         /* erreur transport : conserver la dernière valeur connue, jamais un zéro métier */
+      } finally {
+        inFlight = false;
       }
     }
 

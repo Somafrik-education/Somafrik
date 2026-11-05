@@ -4505,7 +4505,8 @@ app.get("/api/backoffice/establishments/:code/subscription", requireAuth, requir
 }));
 
 app.get("/api/backoffice/establishments/:code", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
+  // P0-WEB-01 : establishmentService.get ne lit que state.schools (mêmes lignes, lues en direct).
+  const state = await getSubscriptionAccessState();
   res.json(presentSchoolLogoFields(establishmentService.get(req.params.code, state, req.principal)));
 }));
 
@@ -5616,6 +5617,23 @@ async function getAuthoritativeBackOfficeState() {
       ),
     ),
   );
+}
+
+/**
+ * P0-WEB-01 — état minimal du contrôle d'abonnement : écoles et abonnements, lus en direct.
+ * `assertSchoolCanConnect` ne lit que `schools` et `subscriptions`. Recharger tout l'état
+ * back-office (présences, notes, paiements de tous les établissements) à chaque requête
+ * scolaire faisait attendre chaque requête plusieurs dizaines de secondes.
+ */
+async function getSubscriptionAccessState() {
+  if (typeof repository.listSubscriptionAccessState !== "function") {
+    return getAuthoritativeBackOfficeState();
+  }
+  const state = await repository.listSubscriptionAccessState();
+  return {
+    schools: Array.isArray(state?.schools) ? state.schools : [],
+    subscriptions: Array.isArray(state?.subscriptions) ? state.subscriptions : [],
+  };
 }
 
 async function listResidualDomainForPrincipal(principal, domain) {
@@ -7214,7 +7232,7 @@ async function issueRefreshedAccessToken(session, payload) {
   const { isPlatformScopePrincipal, isSchoolRolePrincipal } = require("./lib/platformScopePrincipal");
   if (!isPlatformScopePrincipal({ role: sessionRole, roleKeys }) &&
       isSchoolRolePrincipal({ role: sessionRole, roleKeys })) {
-    const state = await getAuthoritativeBackOfficeState();
+    const state = await getSubscriptionAccessState();
     const { assertSchoolCanConnect } = require("./services/schoolSubscriptionAccessService");
     try {
       assertSchoolCanConnect(refreshedSchoolCode, state);
@@ -7789,7 +7807,7 @@ function requireAuth(req, res, next) {
     // Les rôles plateforme ne sont pas soumis à l'abonnement d'une école.
     // Logout/revoke-all restent accessibles pour terminer une session.
     const { assertActiveSchoolRequest } = require("./lib/schoolAccessRequestGuard");
-    await assertActiveSchoolRequest(req.principal, req.path, getAuthoritativeBackOfficeState);
+    await assertActiveSchoolRequest(req.principal, req.path, getSubscriptionAccessState);
 
     const passwordChangeExemptPaths = new Set([
       "/api/auth/change-password",
