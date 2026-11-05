@@ -69,7 +69,7 @@ function BulletinHeader({ header, logoSrc }: { header: PresentationHeader; logoS
           </span>
         )
       ) : null}
-      <div className="flex-1">
+      <div className="w-full flex-1">
         {header.lines.map((line) => (
           <p key={line} className="text-xs font-semibold text-ink">{line}</p>
         ))}
