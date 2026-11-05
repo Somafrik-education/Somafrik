@@ -41,6 +41,11 @@ test("gabarit : en-tête optionnel, empreinte inchangée sans en-tête", () => {
   const withHeader = normalizeRenderingTemplate({ ...baseSpec, presentation: { ...baseSpec.presentation, header: HEADER } });
   assert.deepEqual(withHeader.presentation.header.show, HEADER.show);
   assert.notEqual(specSha256(withHeader), before);
+  assert.equal(withHeader.presentation.header.title_align, undefined, "legacy spec must remain byte-compatible");
+  const aligned = normalizeRenderingTemplate({ ...baseSpec, presentation: { ...baseSpec.presentation, header: { ...HEADER, title_align: "center" } } });
+  assert.equal(aligned.presentation.header.title_align, "center");
+  assert.notEqual(specSha256(aligned), specSha256(withHeader));
+  assert.throws(() => normalizeRenderingTemplate({ ...baseSpec, presentation: { ...baseSpec.presentation, header: { ...HEADER, title_align: "right" } } }), /RENDERING_TEMPLATE_INVALID/);
 });
 
 test("présentation : éléments choisis dans l'ordre, identité utilisée, logo par empreinte", () => {
@@ -50,6 +55,9 @@ test("présentation : éléments choisis dans l'ordre, identité utilisée, logo
   assert.equal(v.header.items[1].value, "RDC");
   assert.equal(v.header.items[3].value, "Bilan annuel");
   assert.equal(v.header.logo.sha256, "a".repeat(64));
+  assert.equal(v.header.title_align, "left");
+  assert.equal(view({ header: { ...HEADER, layout: "logo_center" } }).header.title_align, "center");
+  assert.equal(view({ header: { ...HEADER, layout: "logo_center", title_align: "left" } }).header.title_align, "left");
   assert.equal(v.school.name, "Lycée Lumière");
   const noLogo = view({ header: { ...HEADER, layout: "no_logo", show: HEADER.show.filter((id) => id !== "logo") } });
   assert.equal(noLogo.header.logo, null);
@@ -63,6 +71,8 @@ test("PDF : en-tête, lignes échappées, logo uniquement en data URI vérifiée
   const html = renderPresentationStudent(v, logo);
   assert.match(html, /data-header-logo src="data:image\/png;base64,/);
   assert.match(html, /data-header-title>Bulletin scolaire</);
+  assert.match(renderPresentationStudent(view({ header: { ...HEADER, title_align: "center" } }), logo), /class="header-title title-center"/);
+  assert.match(renderPresentationStudent(view({ header: { ...HEADER, layout: "logo_center", title_align: "left" } }), logo), /class="header-title title-left"/);
   assert.match(html, /République &lt;démocratique&gt; du Congo/);
   assert.match(html, /data-header-item="establishment_name"><dt>Établissement<\/dt><dd>Lycée Lumière/);
   assert.match(html, /data-signatures/);
