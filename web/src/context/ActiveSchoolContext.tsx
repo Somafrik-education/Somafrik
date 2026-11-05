@@ -17,7 +17,7 @@ import {
   withSchoolScope,
   writeStoredSchoolCode,
 } from "../lib/activeSchool";
-import { normalize } from "../lib/format";
+import { isInternalSchoolRole, isSchoolAdminRole, normalize } from "../lib/format";
 import { scopedSchools } from "../lib/scope";
 import { getAccessToken } from "../api/client";
 import { demoRuntimeEnabled } from "../lib/featureFlags";
@@ -84,6 +84,9 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!session?.accessToken || !getAccessToken()) return;
+    // La fiche établissement est administrative : éviter son GET 403 pour
+    // les rôles scolaires non administrateurs (enseignants notamment).
+    if (isInternalSchoolRole(user?.role) && !isSchoolAdminRole(user?.role)) return;
     if (demoRuntimeEnabled && demoSession?.demo === true && exchangedSchool) {
       return;
     }
@@ -96,6 +99,7 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
   }, [
     session?.accessToken,
     user?.schoolCode,
+    user?.role,
     ensureDomains,
     demoSession?.demo,
     exchangedSchool,
@@ -111,11 +115,13 @@ export function ActiveSchoolProvider({ children }: { children: ReactNode }) {
     writeStoredSchoolCode(activeSchoolCode);
 
     invalidateDomains(["academicConfigs"], { schoolCode: activeSchoolCode });
+    // Ces rôles n’ont pas accès à l’API de configuration académique.
+    if (isInternalSchoolRole(user?.role) && !isSchoolAdminRole(user?.role)) return;
     if (!activeSchoolCode || activeSchoolCode === "*") return;
     void ensureDomains(["academicConfigs"], { schoolCode: activeSchoolCode, force: true }).catch(
       () => undefined,
     );
-  }, [activeSchoolCode, ensureDomains, invalidateDomains]);
+  }, [activeSchoolCode, user?.role, ensureDomains, invalidateDomains]);
 
   useEffect(() => {
     setActiveSchoolCodeState((current) => {

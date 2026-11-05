@@ -1,6 +1,7 @@
 import type { DomainKey } from "./domainLoaders";
 import { userRequiresSchoolSelection } from "./activeSchool";
 import { isPlatformCommunicationUser } from "./establishmentCommunication";
+import { isInternalSchoolRole, isSchoolAdminRole } from "./format";
 import {
   canManageRolePermissions,
   canReadView,
@@ -41,6 +42,8 @@ const DOMAIN_VIEW_MAP: Partial<Record<DomainKey, string>> = {
 
 export function canLoadDomain(ctx: PermissionContext, domain: DomainKey): boolean {
   if (domain === "schools") {
+    // L’API GET /backoffice/establishments/:code est administrative.
+    if (isInternalSchoolRole(ctx.user?.role) && !isSchoolAdminRole(ctx.user?.role)) return false;
     if (userRequiresSchoolSelection(ctx.user)) return true;
     if (canReadView(ctx, "schools")) return true;
     // SCHOOL_ADMIN : profil mono-tenant (GET /establishments/:code), pas le catalogue.
