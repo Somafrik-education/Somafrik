@@ -169,8 +169,10 @@ function orderedRows(rows, style) {
  * @param {object} [input.labels] { school, className, academicYear, subjects:{code:libellé}, students:{code:{name}} }
  * @param {object} [input.presentation] { style, signatures } du gabarit de rendu
  * @param {object} [input.meta] { official, report_card_id, version, period_scope, published_at, verification_status }
+ * @param {object} [input.identity] BULLETIN-CLASSE-01 / L3 — identité de l'établissement pour l'en-tête :
+ *   figée dans le bulletin publié (official_identity) ou actuelle pour un brouillon.
  */
-function buildStudentPresentation({ student, profile, labels = {}, presentation = {}, meta = {} } = {}) {
+function buildStudentPresentation({ student, profile, labels = {}, presentation = {}, meta = {}, identity = null } = {}) {
   if (!student || typeof student !== "object") throw new ReportCardPresentationError("STUDENT_REQUIRED");
   const totals = student.subject_totals;
   if (!totals || !Array.isArray(totals.rows)) throw new ReportCardPresentationError("SUBJECT_TOTALS_REQUIRED");
@@ -218,6 +220,17 @@ function buildStudentPresentation({ student, profile, labels = {}, presentation 
   const studentLabel = labels.students ? labels.students[studentCode] : null;
   const decision = (Array.isArray(student.slots) ? student.slots : []).find((slot) => slot && slot.kind === "DECISION");
   const signatures = (Array.isArray(presentation.signatures) ? presentation.signatures : []).map(text).filter(Boolean);
+  const schoolName = text(identity && identity.establishment_name) || text(labels.school) || null;
+  const studentName = text(studentLabel && studentLabel.name) || null;
+  const header = buildHeader(presentation && presentation.header, {
+    identity,
+    schoolName,
+    className: text(labels.className) || null,
+    academicYear: text(labels.academicYear) || null,
+    periodLabel: periodScopeLabel(meta.period_scope, periods),
+    studentName,
+    studentCode,
+  });
 
   return {
     official: meta.official === true,
@@ -227,10 +240,10 @@ function buildStudentPresentation({ student, profile, labels = {}, presentation 
     published_at: meta.published_at ?? null,
     period_scope: meta.period_scope ?? null,
     style,
-    school: { name: text(labels.school) || null },
+    school: { name: schoolName },
     class_name: text(labels.className) || null,
     academic_year: text(labels.academicYear) || null,
-    student: { code: studentCode, name: text(studentLabel && studentLabel.name) || null },
+    student: { code: studentCode, name: studentName },
     periods,
     components,
     rows,
@@ -244,6 +257,58 @@ function buildStudentPresentation({ student, profile, labels = {}, presentation 
     issues: Array.isArray(totals.issues) ? totals.issues.map((issue) => ({ ...issue })) : [],
     decision: decision ? { passed: decision.passed === true ? true : decision.passed === false ? false : null } : null,
     signatures,
+    ...(header ? { header } : {}),
+  };
+}
+
+const HEADER_LABELS = Object.freeze({
+  establishment_name: "Établissement",
+  establishment_address: "Adresse",
+  country: "Pays",
+  academic_year: "Année scolaire",
+  class: "Classe",
+  period: "Période",
+  student_name: "Élève",
+  student_code: "Matricule",
+});
+
+function periodScopeLabel(scope, periods) {
+  const id = text(scope);
+  if (!id) return null;
+  if (id === "ANNUAL") return "Bilan annuel";
+  const entry = periods.find((period) => period.id === id);
+  return (entry && entry.label) || id;
+}
+
+/** En-tête calculé : seuls les éléments choisis, dans l'ordre choisi ; logo par empreinte. */
+function buildHeader(spec, values) {
+  if (!spec || typeof spec !== "object") return null;
+  const identity = values.identity || {};
+  const show = Array.isArray(spec.show) ? spec.show : [];
+  const byId = {
+    establishment_name: values.schoolName,
+    establishment_address: text(identity.establishment_address) || null,
+    country: text(identity.establishment_country) || null,
+    academic_year: values.academicYear,
+    class: values.className,
+    period: values.periodLabel,
+    student_name: values.studentName,
+    student_code: values.studentCode || null,
+  };
+  const items = show
+    .filter((id) => id !== "logo")
+    .map((id) => ({ id, label: HEADER_LABELS[id] || id, value: byId[id] ?? null }));
+  const wantsLogo = spec.layout !== "no_logo" && show.includes("logo");
+  const logo = wantsLogo && identity.logo_sha256
+    ? { sha256: text(identity.logo_sha256), media_type: text(identity.logo_media_type) || null }
+    : null;
+  return {
+    layout: spec.layout || "logo_left",
+    title: text(spec.title) || null,
+    lines: (Array.isArray(spec.lines) ? spec.lines : []).map(text).filter(Boolean),
+    items,
+    logo,
+    logo_requested: wantsLogo,
   };
 }
 

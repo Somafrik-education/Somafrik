@@ -1,6 +1,6 @@
 {
   "generatedBy": "scripts/mono-t1-route-inventory.js",
-  "total": 387,
+  "total": 388,
   "routes": [
     {
       "method": "POST",
@@ -7373,6 +7373,38 @@
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js"
       ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/report-card/publications/:reportCardId/logo",
+      "pathIsRegExp": false,
+      "file": "backend/lib/reportCard/reportCardHttp.js",
+      "line": 883,
+      "family": "D. Notes et présences",
+      "authenticated": true,
+      "middlewares": [
+        "internalAuth"
+      ],
+      "permissionKeys": [],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [],
+      "allowedRoles": null,
+      "subscriptionFeatures": [],
+      "tenantSignals": [
+        "resolveSchoolId (actor)",
+        "schoolId"
+      ],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
+        "level": "MOYEN",
+        "reason": "lecture de données d'un domaine critique"
+      },
+      "existingTests": [],
+      "existingHttpTests": [],
       "monoT1Tests": []
     },
     {

@@ -4,13 +4,80 @@
  * moteur : aucun calcul ici. Un aperçu (official=false) porte le bandeau
  * BROUILLON et ne peut pas être présenté comme un bulletin publié.
  */
-import type { ReactNode } from "react";
-import type {
-  PresentationCell,
-  PresentationRow,
-  PresentationTotal,
-  ReportCardPresentation,
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  reportCardManagementApi,
+  type PresentationCell,
+  type PresentationHeader,
+  type PresentationRow,
+  type PresentationTotal,
+  type ReportCardPresentation,
 } from "../../lib/reportCardManagementApi";
+
+/**
+ * BULLETIN-CLASSE-01 / L3 — logo de l'en-tête : bulletin publié → logo FIGÉ (requête
+ * authentifiée) ; brouillon → logo actuel de l'établissement (fourni par la page).
+ */
+function useHeaderLogo(view: ReportCardPresentation, currentLogoSrc: string | null | undefined) {
+  const [src, setSrc] = useState<string | null>(null);
+  const sha = view.header?.logo?.sha256 ?? null;
+  const reportCardId = view.official ? view.report_card_id : null;
+  const version = view.official ? view.version : null;
+  useEffect(() => {
+    if (!sha) {
+      setSrc(null);
+      return undefined;
+    }
+    if (!reportCardId || version == null) {
+      setSrc(currentLogoSrc ?? null);
+      return undefined;
+    }
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    reportCardManagementApi
+      .logo(reportCardId, version)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSrc(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setSrc(null);
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [sha, reportCardId, version, currentLogoSrc]);
+  return src;
+}
+
+function BulletinHeader({ header, logoSrc }: { header: PresentationHeader; logoSrc: string | null }) {
+  const centered = header.layout === "logo_center";
+  return (
+    <header
+      className={`flex gap-3 border-b border-line pb-3 ${centered ? "flex-col items-center text-center" : "items-center"}`}
+      data-testid="report-card-header"
+      data-layout={header.layout}
+    >
+      {header.logo ? (
+        logoSrc ? (
+          <img src={logoSrc} alt="Logo de l'établissement" className="h-16 max-w-[120px] object-contain" data-testid="report-card-header-logo" />
+        ) : (
+          <span className="flex h-16 w-16 items-center justify-center rounded border border-dashed border-line text-[10px] text-muted" data-testid="report-card-header-logo-pending">
+            Logo
+          </span>
+        )
+      ) : null}
+      <div className="flex-1">
+        {header.lines.map((line) => (
+          <p key={line} className="text-xs font-semibold text-ink">{line}</p>
+        ))}
+        {header.title ? <h2 className="mt-1 text-base font-black uppercase tracking-wide text-ink" data-testid="report-card-header-title">{header.title}</h2> : null}
+      </div>
+    </header>
+  );
+}
 
 function show(value: number | string | null | undefined) {
   return value == null || value === "" ? "—" : String(value);
@@ -92,7 +159,24 @@ function SubjectRow({ view, row }: { view: ReportCardPresentation; row: Presenta
   );
 }
 
-export function ReportCardPresentationTable({ view }: { view: ReportCardPresentation }) {
+export function ReportCardPresentationTable({
+  view,
+  currentLogoSrc = null,
+}: {
+  view: ReportCardPresentation;
+  /** Logo actuel de l'établissement, pour un brouillon / aperçu. */
+  currentLogoSrc?: string | null;
+}) {
+  const logoSrc = useHeaderLogo(view, currentLogoSrc);
+  const identityItems: [string, string | null][] = view.header
+    ? view.header.items.map((item) => [item.label, item.value])
+    : [
+        ["Établissement", view.school.name],
+        ["Élève", view.student.name],
+        ["Matricule", view.student.code],
+        ["Classe", view.class_name],
+        ["Année scolaire", view.academic_year],
+      ];
   const span = view.components.length * 2 + 1;
   const summary = (
     label: string,
@@ -133,14 +217,9 @@ export function ReportCardPresentationTable({ view }: { view: ReportCardPresenta
           BROUILLON — document non officiel, ne vaut pas bulletin publié
         </p>
       ) : null}
-      <dl className="grid gap-2 text-sm sm:grid-cols-3 lg:grid-cols-5">
-        {[
-          ["Établissement", view.school.name],
-          ["Élève", view.student.name],
-          ["Matricule", view.student.code],
-          ["Classe", view.class_name],
-          ["Année scolaire", view.academic_year],
-        ].map(([label, value]) => (
+      {view.header ? <BulletinHeader header={view.header} logoSrc={logoSrc} /> : null}
+      <dl className="grid gap-2 text-sm sm:grid-cols-3 lg:grid-cols-5" data-testid="report-card-identity">
+        {identityItems.map(([label, value]) => (
           <div key={label as string}>
             <dt className="text-xs font-bold uppercase tracking-wide text-muted">{label}</dt>
             <dd className="font-semibold text-ink">{show(value)}</dd>

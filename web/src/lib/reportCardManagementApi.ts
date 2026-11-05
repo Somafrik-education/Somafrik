@@ -32,6 +32,16 @@ export type PresentationRow = {
   annual: PresentationTotal | null;
 };
 
+/** BULLETIN-CLASSE-01 / L3 — en-tête configuré : éléments choisis, logo figé (publié) ou actuel (brouillon). */
+export type PresentationHeader = {
+  layout: "logo_left" | "logo_center" | "no_logo";
+  title: string | null;
+  lines: string[];
+  items: { id: string; label: string; value: string | null }[];
+  logo: { sha256: string; media_type: string | null } | null;
+  logo_requested?: boolean;
+};
+
 export type ReportCardPresentation = {
   official: boolean;
   report_card_id: string | null;
@@ -53,6 +63,7 @@ export type ReportCardPresentation = {
   issues: ReportCardIssue[];
   decision: { passed: boolean | null } | null;
   signatures: string[];
+  header?: PresentationHeader;
 };
 
 export type ReportCardIssue = {
@@ -180,6 +191,9 @@ export const reportCardManagementApi = {
     );
     return { presentation: data?.presentation ?? null, verificationStatus: data?.verification_status ?? null };
   },
+  /** Logo FIGÉ d'un bulletin publié (requête authentifiée). */
+  logo: (reportCardId: string, version: number) =>
+    requestBlob(publicationPath(reportCardId) + "/logo?version=" + encodeURIComponent(String(version))),
   pdf: (reportCardId: string, version: number) =>
     requestBlob(publicationPath(reportCardId) + "/pdf?version=" + encodeURIComponent(String(version))),
 };
