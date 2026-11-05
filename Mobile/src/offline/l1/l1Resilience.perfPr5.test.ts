@@ -448,6 +448,20 @@ async function run() {
     }), true);
   });
 
+  await test("état de droits non validé : même portée et génération ne permettent aucun affichage", () => {
+    const coordinator = createL1LoadCoordinator();
+    for (const current of ["loading", "blocked_authorization", "error"]) {
+      const ticket = coordinator.begin(`A|${current}|classes`);
+      assert.equal(ticket.kind, "run");
+      if (ticket.kind !== "run") continue;
+      assert.equal(isCurrentL1ReadAuthorization({
+        startScope: "A", currentScope: "A",
+        startPermissionsBootstrap: current, currentPermissionsBootstrap: current,
+        generationCurrent: ticket.isCurrent(),
+      }), false, `l'état ${current} n'autorise jamais une réponse L1`);
+    }
+  });
+
   // ---------- Fraîcheur affichée ----------
   await test("libellés de fraîcheur : date des métadonnées, jamais inventée", () => {
     const now = new Date(2026, 10, 4, 12, 0);
