@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { establishmentsApi, type SubscriptionAccessInfo } from "../lib/establishmentsApi";
-import { isInternalSchoolRole } from "../lib/format";
+import { isSchoolAdminRole } from "../lib/format";
 import type { Session } from "../types";
 
 type DemoSession = Session & { demo?: boolean };
@@ -17,7 +17,7 @@ export function SubscriptionAccessBanner() {
   const isDemoSession = (session as DemoSession | null)?.demo === true;
 
   useEffect(() => {
-    if (isDemoSession || !session?.accessToken || !isInternalSchoolRole(role) || !schoolCode) {
+    if (isDemoSession || !session?.accessToken || !isSchoolAdminRole(role) || !schoolCode) {
       setAccess(null);
       return;
     }
