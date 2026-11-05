@@ -180,6 +180,33 @@ describe("BULLETIN-UI-01 — gestion des bulletins (Web)", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Publication officielle effectuée (2 bulletin(s))");
   });
 
+  it("BULLETIN-NOTES-02 : l'anomalie commune donne le titre de l'évaluation une seule fois", async () => {
+    api.preview.mockResolvedValue(draft({
+      publishable: false,
+      issues: [{
+        code: "EVALUATION_TYPE_UNMAPPED",
+        severity: "blocking",
+        evaluation_id: "oral-001",
+        evaluation_title: "LES ADVERBES",
+        evaluation_type: "orale",
+        subject_id: "001",
+        period_id: "T1",
+      }],
+      students: [
+        { report_card_id: "rc-1", student_id: "COL-001", status: "INCOMPLETE", issues: [], presentation: view("COL-001", "Ndayishimiye Ama") },
+        { report_card_id: "rc-2", student_id: "COL-002", status: "INCOMPLETE", issues: [], presentation: view("COL-002", "Irakoze Bo") },
+      ],
+    }));
+    await renderPage();
+    await selectClassAndPreview();
+    const classIssues = screen.getByTestId("rc-class-issues");
+    expect(classIssues).toHaveTextContent("LES ADVERBES");
+    expect(classIssues).toHaveTextContent("orale");
+    expect(classIssues).toHaveTextContent("001");
+    expect(within(classIssues).getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.queryByText(/Anomalies \(1\)/)).not.toBeInTheDocument();
+  });
+
   it("anomalies : brouillon incomplet non publiable ; refus serveur traduit sans fuite", async () => {
     api.preview.mockResolvedValue(
       draft({
