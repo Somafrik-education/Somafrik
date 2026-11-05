@@ -311,6 +311,10 @@ async function harness(overrides = {}) {
   lot7.registerReportCardHttp(app, {
     configuration: api,
     publication: pub.publication,
+    getTemplate: overrides.getTemplate,
+    getProfile: overrides.getProfile,
+    getPresentationLabels: overrides.getPresentationLabels,
+    identityStore: overrides.identityStore,
     resolveActor: () => actor,
     logger: {
       info: (...args) => logs.push(args.map(String).join(" ")),
@@ -537,6 +541,73 @@ test("report-card-lot7-verify-valid-capability", async () => {
     assert.equal(res.data.payload.engine_id, ENGINE_ID);
     assert.equal(res.data.payload.published_snapshot_version, published.published_snapshot_version);
     assert.ok(["authentic", "ACTIVE"].includes(res.data.verification_status));
+  } finally {
+    await h.close();
+  }
+});
+
+
+test("public QR: same pinned official presentation as PDF, without live template or token leak", async () => {
+  const fixture = require("./fixtures/model-01/subjects-simple.json");
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+  const computed = computeReportCard({
+    profile: clone(fixture.profile),
+    schema: clone(fixture.schema),
+    facts: clone(fixture.facts),
+    tenant: TENANT_A,
+    cohort: clone(fixture.facts),
+    provenance: { profile: { id: "profile-signed", version: 1 }, schema: { id: "schema-signed", version: 1 } },
+  });
+  const template = {
+    presentation: {
+      style: "simple",
+      header: {
+        layout: "no_logo",
+        show: ["establishment_name", "student_name"],
+        lines: ["République Démocratique du Congo"],
+        title: "Bulletin scolaire",
+        title_align: "center",
+      },
+      signatures: ["Parent", "Directeur"],
+    },
+  };
+  const h = await harness({
+    getTemplate: () => ({ spec: template }),
+    getProfile: () => validateProfileSpec(clone(fixture.profile)),
+    getPresentationLabels: () => ({
+      school: "Institut Nuruyetu",
+      className: "2ème A",
+      academicYear: "2026-2027",
+      students: { STU1: { name: "Matayo Papy" } },
+      subjects: { GEOGRAPHIE: "Géographie" },
+    }),
+  });
+  try {
+    const payload = snapshotPayload({
+      students: computed.students.filter((student) => student.student_id === "STU1"),
+      provenance: {
+        profile: { id: "profile-signed", version: 1 },
+        schema: { id: "schema-signed", version: 1 },
+        template: { id: "template-signed", version: 1 },
+      },
+    });
+    h.publication.publish({ tenant: TENANT_A, payload });
+    const capability = capabilityFromUrl(h.publication.reprintUrl({ tenant: TENANT_A, reportCardId: payload.report_card_id, version: 1 }));
+    const verified = await h.json("POST", "/api/public/report-cards/verify", { capability });
+    assert.equal(verified.status, 200, JSON.stringify(verified.data).slice(0, 350));
+    assert.equal(verified.data.verification_status, "authentic");
+    assert.equal(verified.data.presentation.length, 1);
+    const view = verified.data.presentation[0];
+    assert.equal(view.official, true);
+    assert.equal(view.header.title, "Bulletin scolaire");
+    assert.equal(view.header.title_align, "center");
+    assert.equal(view.header.lines[0], "République Démocratique du Congo");
+    assert.equal(view.student.name, "Matayo Papy");
+    assert.deepEqual(view.signatures, ["Parent", "Directeur"]);
+    assert.equal(view.totals.periods.T1.points, payload.students[0].subject_totals.periods.T1.points.exposed);
+    assert.equal(verified.data.logo_data_uri, undefined);
+    assert.equal(JSON.stringify(verified.data).includes(capability), false, "public response never repeats bearer token");
+    assert.deepEqual(h.publication.payloadForRender({ tenant: TENANT_A, reportCardId: payload.report_card_id, version: 1 }), payload);
   } finally {
     await h.close();
   }
