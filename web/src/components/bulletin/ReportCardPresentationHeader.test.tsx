@@ -63,11 +63,13 @@ describe("BULLETIN-CLASSE-01 / L3 — en-tête du bulletin", () => {
   });
 
   it("titre centré indépendamment du logo à gauche", () => {
+    logo.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
     render(<ReportCardPresentationTable view={{ ...base, header: { ...base.header!, title_align: "center" } }} />);
     expect(screen.getByTestId("report-card-header-title")).toHaveClass("text-center");
   });
 
   it("titre à gauche malgré logo centré", () => {
+    logo.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
     render(<ReportCardPresentationTable view={{ ...base, header: { ...base.header!, layout: "logo_center", title_align: "left" } }} />);
     expect(screen.getByTestId("report-card-header-title")).toHaveClass("text-left");
   });
