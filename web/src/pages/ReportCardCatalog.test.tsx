@@ -371,6 +371,7 @@ describe("Établissement — Configurer un bulletin", () => {
     fireEvent.click(screen.getByTestId("catalog-next"));
     expect(screen.getByTestId("catalog-step-header")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Logo centré"));
+    fireEvent.click(screen.getByLabelText("Au centre"));
     fireEvent.click(screen.getByLabelText("À gauche"));
     fireEvent.click(screen.getByLabelText("Matricule"));
     fireEvent.change(screen.getByLabelText("Ligne d'en-tête 1"), { target: { value: " République démocratique du Congo " } });
