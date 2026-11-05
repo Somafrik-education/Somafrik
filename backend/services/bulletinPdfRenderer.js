@@ -2,6 +2,7 @@ const puppeteer = require("puppeteer");
 const QRCode = require("qrcode");
 const { buildVerificationPayload, renderReportCardHtml } = require("../lib/bulletinTemplate");
 const { resolveSchoolLogoPath } = require("../lib/schoolLogo");
+const { PDF_SANDBOX_MODES, resolvePdfChromiumSandboxPolicy } = require("../lib/pdfChromiumSandboxPolicy");
 
 /**
  * SEC-PDF-01 — moteur PDF historique des bulletins.
@@ -18,6 +19,9 @@ const { resolveSchoolLogoPath } = require("../lib/schoolLogo");
  * 2. Page : JavaScript du document désactivé, mode hors ligne, interception de
  *    toute requête autre que `data:` / `about:blank` (http, https, ws, file, ...).
  * 3. Contexte de navigation dédié par rendu (cache, cookies, stockage isolés).
+ * 4. SEC-PDF-02 — sandbox Chromium exigée par défaut (voir
+ *    `lib/pdfChromiumSandboxPolicy.js`). Si elle ne peut pas démarrer, la
+ *    génération PDF échoue (503) : jamais de relance avec `--no-sandbox`.
  *
  * Les ressources légitimes (logo, QR code, polices) sont préparées par le serveur
  * et incorporées en `data:`. Une ressource externe n'est jamais téléchargée : elle
@@ -63,26 +67,44 @@ function renderFailed() {
   return new PdfRenderError(500, "La génération du bulletin PDF a échoué.", "BULLETIN_PDF_RENDER_FAILED");
 }
 
-/**
- * La sandbox Chromium reste désactivée par défaut : l'image backend s'exécute en
- * root (backend/Dockerfile, aucune directive USER) et Chromium refuse alors de
- * démarrer avec la sandbox. `SOMAFRIK_PDF_CHROMIUM_SANDBOX=enabled` la réactive
- * sur un déploiement non-root compatible. L'isolation réseau ci-dessus ne
- * remplace pas la sandbox.
- */
-function isChromiumSandboxEnabled(env = process.env) {
-  return String(env.SOMAFRIK_PDF_CHROMIUM_SANDBOX ?? "").trim().toLowerCase() === "enabled";
+function pdfUnavailable(reason) {
+  const error = new PdfRenderError(
+    503,
+    "La génération des bulletins PDF est temporairement indisponible.",
+    "BULLETIN_PDF_UNAVAILABLE",
+  );
+  Object.defineProperty(error, "reason", { value: reason, enumerable: false });
+  return error;
 }
 
+/** Journal interne, sans chemin absolu ni détail système dans le message. */
+function logPdfUnavailable(reason, cause) {
+  const detail = cause
+    ? String(cause.message ?? cause)
+        .split("\n")[0]
+        .replace(/(?:[A-Za-z]:)?[\\/][^\s'"]+/g, "<chemin>")
+        .slice(0, 200)
+    : "";
+  console.error(`[SEC-PDF-02] Génération PDF indisponible (${reason})${detail ? ` : ${detail}` : ""}`);
+}
+
+/**
+ * SEC-PDF-02 — options de lancement Chromium selon la politique de sandbox.
+ * Lève une erreur 503 si la génération PDF est désactivée ou mal configurée.
+ */
 function buildChromiumLaunchOptions(env = process.env) {
+  const policy = resolvePdfChromiumSandboxPolicy(env);
+  if (policy.mode === PDF_SANDBOX_MODES.PDF_DISABLED) {
+    throw pdfUnavailable("pdf_disabled");
+  }
+  if (policy.mode === PDF_SANDBOX_MODES.INVALID) {
+    throw pdfUnavailable(`sandbox_config_${policy.reason}`);
+  }
+  const insecure = policy.mode === PDF_SANDBOX_MODES.INSECURE_LOCAL;
   return {
     headless: true,
     executablePath: env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    args: [
-      ...(isChromiumSandboxEnabled(env) ? [] : NO_SANDBOX_ARGS),
-      ...NETWORK_HARDENING_ARGS,
-      "--font-render-hinting=none",
-    ],
+    args: [...(insecure ? NO_SANDBOX_ARGS : []), ...NETWORK_HARDENING_ARGS, "--font-render-hinting=none"],
   };
 }
 
@@ -92,9 +114,28 @@ function resolveLogoPath(school) {
   return resolveSchoolLogoPath(school);
 }
 
+async function launchBrowser() {
+  let options;
+  try {
+    options = buildChromiumLaunchOptions();
+  } catch (error) {
+    logPdfUnavailable(error.reason ?? "sandbox_config", null);
+    throw error;
+  }
+  try {
+    // Un seul essai, avec la configuration de la politique : aucun repli.
+    return await puppeteer.launch(options);
+  } catch (error) {
+    const sandboxRequired = !options.args.includes("--no-sandbox");
+    const reason = sandboxRequired ? "chromium_launch_failed_sandbox_required" : "chromium_launch_failed";
+    logPdfUnavailable(reason, error);
+    throw pdfUnavailable(reason);
+  }
+}
+
 async function getBrowser() {
   if (!browserPromise) {
-    const launching = puppeteer.launch(buildChromiumLaunchOptions());
+    const launching = launchBrowser();
     browserPromise = launching;
     launching.then(
       (browser) => {
@@ -240,6 +281,8 @@ module.exports = {
   PdfRenderError,
   buildChromiumLaunchOptions,
   closeBrowser,
+  // Diagnostic et tests uniquement (processus Chromium courant).
+  getBrowser,
   isInlineResourceUrl,
   renderHtmlToPdf,
   renderReportCardPdf,

@@ -59,6 +59,13 @@ jobs:
         run: npm run ci:install
       - name: Dependency audit
         run: npm run audit:ci
+      - name: Chromium sandbox prerequisites (SEC-PDF-02)
+        # Profil AppArmor limité au binaire Chromium de Puppeteer ;
+        # la restriction globale des espaces de noms du runner reste active.
+        run: |
+          set -euo pipefail
+          id -u
+          bash scripts/ci/chromium-userns-apparmor.sh
       - name: Security invariants
         run: |
           set -euo pipefail
