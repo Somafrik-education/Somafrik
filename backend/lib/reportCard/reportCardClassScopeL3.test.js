@@ -103,6 +103,8 @@ test("assistant : en-tête et signatures conservés dans le gabarit de la config
   const built = buildConfiguration(MODEL, input, context);
   assert.deepEqual(built.templateSpec.presentation.header, { layout: "logo_left", show: HEADER.show, lines: HEADER.lines, title: "Bulletin scolaire" });
   assert.deepEqual(built.templateSpec.presentation.signatures, ["Le titulaire", "Le parent"]);
+  const aligned = buildConfiguration(MODEL, { ...input, header: { ...HEADER, title_align: "center" } }, context);
+  assert.equal(aligned.templateSpec.presentation.header.title_align, "center", "le catalogue doit conserver le choix du titre");
   assert.doesNotThrow(() => normalizeRenderingTemplate(built.templateSpec));
 });
 
