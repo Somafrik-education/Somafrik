@@ -14,6 +14,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import QueryStateView from "../components/QueryStateView";
+import L1FreshnessNote from "../components/L1FreshnessNote";
 import { hasSecurityPermission } from "../domain/security/permissions";
 import { DATA_TRUTH_TEST_IDS } from "../lib/dataTruth";
 import { OFFLINE_COPY } from "../lib/offlineModeSpec";
@@ -634,6 +635,7 @@ export default function TimetableScreen() {
           </Text>
         </View>
       ) : null}
+      <L1FreshnessNote snapshot={courseSchedulesSnapshot} permissionsBootstrap={permissionsBootstrap} />
 
       {canWrite && !mutationsBlocked ? (
         <TouchableOpacity style={styles.primaryButton} onPress={openCreate} testID={PLANNING_V2_TEST_IDS.createButton}>

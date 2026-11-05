@@ -97,6 +97,8 @@
     "test:school-setup-guided-red": "npx --yes tsx src/lib/schoolSetupGuidedMobile.red.test.ts",
     "verify:parite-l0-l1-red": "node scripts/verify-parite-l0-l1-red.js",
     "test:l1-offline-reads": "npx --yes tsx src/offline/l1/l1OfflineReads.test.ts",
+    "test:l1-resilience-perf-pr5": "npx --yes tsx src/offline/l1/l1Resilience.perfPr5.test.ts",
+    "bench:l1-perf-pr5": "npx --yes tsx src/offline/l1/perfPr5.benchmark.ts",
     "verify:mobile-l1-sqlite-cache": "node scripts/verify-mobile-l1-sqlite-cache.js",
     "verify:mobile-l1-offline-reads": "node scripts/verify-mobile-l1-offline-reads.js",
     "verify:mobile-l1-native-sqlcipher-smoke": "node scripts/run-native-sqlcipher-smoke.js",

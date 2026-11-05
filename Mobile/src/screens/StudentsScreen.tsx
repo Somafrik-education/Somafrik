@@ -10,7 +10,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
-import { useAdminData } from "../context/AdminDataContext";
+import { L1_FOCUS_MAX_AGE_MS, useAdminData } from "../context/AdminDataContext";
+import L1FreshnessNote from "../components/L1FreshnessNote";
 import { getPresenceStats, normalizePresenceStatus } from "../domain/metrics/schoolMetrics";
 import { canReadRoute } from "../domain/security/permissions";
 import {
@@ -61,13 +62,15 @@ export default function StudentsScreen({ route, navigation }: any) {
 
   useFocusEffect(
     useCallback(() => {
-      void loadStudents();
+      // PERF-PR5 : retour d'écran — lectures L1 partagées, pas de relecture si réponse récente (30 s).
+      const focus = { maxAgeMs: L1_FOCUS_MAX_AGE_MS };
+      void loadStudents(focus);
       void loadPresences();
       void loadPayments();
       void loadStudentFees();
       void loadTeachers();
-      void loadClasses();
-      void loadAssignments();
+      void loadClasses(focus);
+      void loadAssignments(focus);
     }, [loadStudents, loadPresences, loadPayments, loadStudentFees, loadTeachers, loadClasses, loadAssignments, resourceScopeKey]),
   );
 
@@ -271,6 +274,8 @@ export default function StudentsScreen({ route, navigation }: any) {
               : ""}
           </Text>
         ) : null}
+
+        <L1FreshnessNote snapshot={studentsSnapshot} permissionsBootstrap={permissionsBootstrap} />
 
         <FormField
           label="Recherche"

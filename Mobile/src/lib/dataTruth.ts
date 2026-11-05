@@ -16,6 +16,12 @@ export type ResourceSnapshot<T> = {
   /** Provenance. `l1-cache` + empty = vide métier confirmé ; `offline` = cache indisponible. */
   source?: ResourceSnapshotSource;
   cachedAt?: string | null;
+  /** PERF-PR5 — copie L1 affichée pendant qu'une actualisation réseau est en cours. */
+  refreshing?: boolean;
+  /** PERF-PR5 — actualisation réseau impossible (délai, réseau, serveur injoignable) : dernière copie L1. */
+  refreshFailed?: boolean;
+  /** PERF-PR5 — refus d'accès (401/403) : aucune copie locale ne doit rester affichée. */
+  accessDenied?: boolean;
 };
 
 export function unwrapList(payload: unknown): unknown[] {
