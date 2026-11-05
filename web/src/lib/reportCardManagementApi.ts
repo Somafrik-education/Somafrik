@@ -36,6 +36,7 @@ export type PresentationRow = {
 export type PresentationHeader = {
   layout: "logo_left" | "logo_center" | "no_logo";
   title: string | null;
+  title_align?: "left" | "center";
   lines: string[];
   items: { id: string; label: string; value: string | null }[];
   logo: { sha256: string; media_type: string | null } | null;

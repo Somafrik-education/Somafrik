@@ -52,6 +52,7 @@ describe("BULLETIN-CLASSE-01 / L3 — en-tête du bulletin", () => {
     logo.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
     render(<ReportCardPresentationTable view={base} currentLogoSrc="https://api/schools/X/logo" />);
     expect(screen.getByTestId("report-card-header-title")).toHaveTextContent("Bulletin scolaire");
+    expect(screen.getByTestId("report-card-header-title")).toHaveClass("text-left");
     expect(screen.getByTestId("report-card-header")).toHaveTextContent("République démocratique du Congo");
     const identity = screen.getByTestId("report-card-identity");
     expect(identity).toHaveTextContent("Période");
@@ -59,6 +60,18 @@ describe("BULLETIN-CLASSE-01 / L3 — en-tête du bulletin", () => {
     await waitFor(() => expect(screen.getByTestId("report-card-header-logo")).toHaveAttribute("src", "blob:figé"));
     expect(logo).toHaveBeenCalledWith("rc-1", 1);
     expect(screen.getByTestId("report-card-signatures")).toHaveTextContent("Le titulaire");
+  });
+
+  it("titre centré indépendamment du logo à gauche", () => {
+    logo.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+    render(<ReportCardPresentationTable view={{ ...base, header: { ...base.header!, title_align: "center" } }} />);
+    expect(screen.getByTestId("report-card-header-title")).toHaveClass("text-center");
+  });
+
+  it("titre à gauche malgré logo centré", () => {
+    logo.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+    render(<ReportCardPresentationTable view={{ ...base, header: { ...base.header!, layout: "logo_center", title_align: "left" } }} />);
+    expect(screen.getByTestId("report-card-header-title")).toHaveClass("text-left");
   });
 
   it("brouillon : logo ACTUEL de l'établissement, aucune requête de logo figé", async () => {

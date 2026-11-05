@@ -71,6 +71,7 @@ const DEFAULT_HEADER: HeaderInput = {
   show: ["logo", "establishment_name", "academic_year", "class", "period", "student_name", "student_code"],
   lines: [],
   title: "Bulletin scolaire",
+  title_align: "left",
 };
 type StepId = (typeof STEPS)[number]["id"];
 
@@ -1002,6 +1003,18 @@ function ConfigurationWizard({
               />
             </Field>
             <ErrorText issues={issuesFor("header.title", true)} />
+            <fieldset className="mt-3 space-y-2">
+              <legend className="text-sm font-semibold text-ink">Position du titre</legend>
+              <div className="flex flex-wrap gap-4">
+                {([{ value: "left", label: "À gauche" }, { value: "center", label: "Au centre" }] as const).map((option) => (
+                  <label key={option.value} className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="catalog-header-title-align" checked={(header.title_align ?? (header.layout === "logo_center" ? "center" : "left")) === option.value} onChange={() => updateHeader((current) => ({ ...current, title_align: option.value }))} />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+              <ErrorText issues={issuesFor("header.title_align", true)} />
+            </fieldset>
           </div>
           <p className="text-sm text-muted">Jusqu'à quatre lignes officielles (exemple : République, ministère, province).</p>
           <div className="grid gap-2 sm:grid-cols-2">

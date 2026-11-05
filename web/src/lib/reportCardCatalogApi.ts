@@ -71,7 +71,7 @@ export type HeaderElement =
   | "period"
   | "student_name"
   | "student_code";
-export type HeaderInput = { layout: HeaderLayout; show: HeaderElement[]; lines: string[]; title: string };
+export type HeaderInput = { layout: HeaderLayout; show: HeaderElement[]; lines: string[]; title: string; title_align?: "left" | "center" };
 
 export type ConfigurationInput = {
   structure: StructureId;
@@ -157,6 +157,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   HEADER_LOGO_WITHOUT_PLACE: "La disposition « sans logo » ne peut pas afficher le logo.",
   HEADER_LINES_INVALID: "Quatre lignes au maximum, 80 caractères chacune.",
   HEADER_TITLE_INVALID: "Titre de 60 caractères au maximum.",
+  HEADER_TITLE_ALIGN_INVALID: "Position du titre inconnue (gauche ou centre).",
 };
 
 export function fieldIssueMessage(code: string): string {

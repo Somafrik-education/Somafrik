@@ -371,6 +371,8 @@ describe("Établissement — Configurer un bulletin", () => {
     fireEvent.click(screen.getByTestId("catalog-next"));
     expect(screen.getByTestId("catalog-step-header")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Logo centré"));
+    fireEvent.click(screen.getByLabelText("Au centre"));
+    fireEvent.click(screen.getByLabelText("À gauche"));
     fireEvent.click(screen.getByLabelText("Matricule"));
     fireEvent.change(screen.getByLabelText("Ligne d'en-tête 1"), { target: { value: " République démocratique du Congo " } });
     api.preview.mockResolvedValue(preview);
@@ -385,6 +387,7 @@ describe("Établissement — Configurer un bulletin", () => {
       show: ["logo", "establishment_name", "academic_year", "class", "period", "student_name"],
       lines: ["République démocratique du Congo"],
       title: "Bulletin scolaire",
+      title_align: "left",
     });
     expect(api.preview.mock.calls[0][2]).toBe("cls-6a");
     expect(screen.getByTestId("catalog-preview").querySelectorAll("[data-failing]").length).toBeGreaterThan(0);

@@ -203,7 +203,11 @@ function headerFromInput(raw, errors) {
   if (lines.length > 4 || lines.some((line) => line.length > 80)) errors.push(fieldError("header.lines", "HEADER_LINES_INVALID"));
   const title = text(raw.title);
   if (title.length > 60) errors.push(fieldError("header.title", "HEADER_TITLE_INVALID"));
-  return { layout, show, lines, title };
+  const titleAlign = raw.title_align;
+  if (titleAlign !== undefined && titleAlign !== "left" && titleAlign !== "center") {
+    errors.push(fieldError("header.title_align", "HEADER_TITLE_ALIGN_INVALID"));
+  }
+  return { layout, show, lines, title, ...(titleAlign === undefined ? {} : { title_align: titleAlign }) };
 }
 
 function fieldError(field, code) {

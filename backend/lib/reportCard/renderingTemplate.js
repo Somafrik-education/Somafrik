@@ -167,7 +167,7 @@ function normalizeHeader(raw) {
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
     throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
   }
-  const unknown = Object.keys(raw).filter((key) => !["layout", "show", "lines", "title"].includes(key));
+  const unknown = Object.keys(raw).filter((key) => !["layout", "show", "lines", "title", "title_align"].includes(key));
   if (unknown.length) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID", `unknown header key ${unknown[0]}`);
   const layout = raw.layout == null || raw.layout === "" ? "logo_left" : String(raw.layout);
   if (!HEADER_LAYOUTS.includes(layout)) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
@@ -189,7 +189,10 @@ function normalizeHeader(raw) {
   });
   const title = raw.title == null ? "" : typeof raw.title === "string" ? raw.title.trim() : null;
   if (title === null || title.length > MAX_HEADER_TITLE_LENGTH) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
-  return Object.freeze({ layout, show: Object.freeze(show), lines: Object.freeze(lines), title });
+  const titleAlign = raw.title_align;
+  if (titleAlign !== undefined && !["left", "center"].includes(titleAlign)) throw new RenderingTemplateError("RENDERING_TEMPLATE_INVALID");
+  // Do not add missing optional keys to historical signed templates.
+  return Object.freeze({ layout, show: Object.freeze(show), lines: Object.freeze(lines), title, ...(titleAlign === undefined ? {} : { title_align: titleAlign }) });
 }
 
 const MAX_LABELS = 12;

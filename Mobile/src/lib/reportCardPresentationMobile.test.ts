@@ -171,6 +171,8 @@ test("BULLETIN-CLASSE-01 — en-tête figé, logo publié authentifié, signatur
   };
   const card = phoneReportCard(berceau({ report_card_id: "rc/1", version: 2, header, signatures: ["Le titulaire", " ", "Le préfet"] }), "T1");
   assert.equal(card.header?.title, "Bulletin scolaire");
+  assert.equal(card.header?.title_align, "center");
+  assert.equal(phoneReportCard(berceau({ report_card_id: "rc", version: 1, header: { ...header, title_align: "left" } }), "T1").header?.title_align, "left");
   assert.deepEqual(card.header?.lines, header.lines);
   assert.deepEqual(card.header?.items.map((i) => [i.label, i.value]), [["Établissement", "École figée"], ["Classe", "6ème A"], ["Matricule", "—"]]);
   assert.equal(card.header?.logoPath, "/report-card/publications/rc%2F1/logo?version=2");
