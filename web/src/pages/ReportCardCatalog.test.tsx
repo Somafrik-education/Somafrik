@@ -377,6 +377,34 @@ describe("Établissement — Configurer un bulletin", () => {
     expect(screen.getByRole("button", { name: /Matières et maxima.*à corriger/ })).toBeInTheDocument();
   });
 
+  it("référence de trimestre d'une autre année : aperçu bloqué, référence visible et retirable", async () => {
+    await openWizard({
+      ...CONTEXT,
+      current: {
+        structure: "TJ_EX",
+        subjects: [{ code: "MATH", components: { TJ: { max: 20 }, EX: { max: 20 } } }],
+        factSources: {
+          TJ: { evaluationTypes: ["interrogation"], aggregation: "sum" },
+          EX: { evaluationTypes: ["examen"], aggregation: "sum" },
+        },
+        periods: {
+          T1: { termNames: ["Trimestre 1 - ancienne année"] },
+          T2: { termNames: ["Trimestre 2"] },
+          T3: { termNames: ["Trimestre 3"] },
+        },
+        signatures: [],
+      },
+    } as unknown as typeof CONTEXT);
+    fireEvent.click(screen.getByText("Calcul des notes"));
+    expect(screen.getByText(/Référence enregistrée indisponible : Trimestre 1 - ancienne année/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("catalog-next"));
+    expect(api.preview).not.toHaveBeenCalled();
+    expect(screen.getByText("Période scolaire inconnue pour l'année en cours.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retirer" }));
+    expect(screen.queryByText(/Référence enregistrée indisponible/)).not.toBeInTheDocument();
+    expect(api.save).not.toHaveBeenCalled();
+  });
+
   it("quitter avec des modifications : confirmation, aucune perte silencieuse", async () => {
     await openWizard();
     fireEvent.click(screen.getByLabelText(/Note unique par période/));

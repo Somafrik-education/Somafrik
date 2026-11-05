@@ -229,8 +229,8 @@ function createReportCardCatalogPgStore(db) {
       pool.query(
         `SELECT t.name
            FROM terms t JOIN academic_years y ON y.id = t.academic_year_id
-          WHERE y.school_id::text = $1
-          ORDER BY y.is_current DESC NULLS LAST, t.start_date NULLS LAST, t.name`,
+          WHERE y.school_id::text = $1 AND y.is_current = TRUE
+          ORDER BY t.start_date NULLS LAST, t.name`,
         [tenant],
       ),
     ]);
