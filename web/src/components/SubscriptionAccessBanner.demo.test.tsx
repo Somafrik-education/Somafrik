@@ -45,6 +45,24 @@ describe("SubscriptionAccessBanner — Démo", () => {
     expect(screen.queryByText(/Accès limité/i)).toBeNull();
   });
 
+  it("RBAC-WEB-ENSEIGNANT-01 : un Enseignant ne sollicite pas le statut d'abonnement administratif", () => {
+    useAuthMock.mockReturnValue({
+      session: {
+        accessToken: "teacher-token",
+        user: {
+          id: "teacher-1",
+          identifier: "teacher-1",
+          role: "Enseignant",
+          schoolCode: "CD-2026-0001",
+        },
+      } as Session,
+    });
+
+    render(<SubscriptionAccessBanner />);
+    expect(getSubscriptionAccessMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Accès suspendu/i)).toBeNull();
+  });
+
   it("conserve le contrôle d'abonnement pour une session établissement normale", async () => {
     useAuthMock.mockReturnValue({
       session: {
