@@ -614,7 +614,7 @@ function ConfigurationWizard({
         // La référence des périodes a pu changer depuis l'ouverture de l'assistant.
         // Recharger uniquement les choix canoniques, sans effacer les saisies de l'utilisateur.
         try {
-          const latest = await reportCardCatalogApi.configurationContext(model.model_id);
+          const latest = await reportCardCatalogApi.configurationContext(model.model_id, classId);
           setCtx(latest);
         } catch {
           // Conserver l'erreur métier initiale, jamais remplacer par une liste vide.
