@@ -1,0 +1,81 @@
+name: NOTIF + Planning Android composite QA (temporary)
+
+on:
+  push:
+    branches:
+      - build/notif-planning-calendar-qa-1092-1097
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      EXPO_PUBLIC_RELEASE_PROFILE: "preview"
+      EAS_BUILD_PROFILE: "preview"
+      EXPO_PUBLIC_API_URL: "https://api-preprod.somafrik.app"
+      EXPO_PUBLIC_API_URL_PREVIEW: "https://api-preprod.somafrik.app"
+      EXPO_PUBLIC_DEMO_MODE: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Assert intended test candidate unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD a8935314497ddfa5ab634076ca2d838b8a7f2b2a)" = "a8935314497ddfa5ab634076ca2d838b8a7f2b2a"
+          test "$(git diff --name-only a8935314497ddfa5ab634076ca2d838b8a7f2b2a HEAD | wc -l)" -eq 6
+          git diff --name-only a8935314497ddfa5ab634076ca2d838b8a7f2b2a HEAD | grep -Fx ".github/workflows/notif-mobile-qa-apk.yml"
+          git diff --name-only a8935314497ddfa5ab634076ca2d838b8a7f2b2a HEAD | grep -Fx "Mobile/src/screens/TimetableScreen.tsx"
+          echo "Composite QA: #1092 with isolated #1097 calendar overlay; not a merge candidate"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: Mobile/package-lock.json
+      - name: Install Mobile dependencies
+        working-directory: Mobile
+        run: npm ci
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Check preinstalled Android SDK
+        shell: bash
+        run: |
+          test -d /usr/local/lib/android/sdk
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+      - name: Prepare Expo native Android
+        working-directory: Mobile
+        run: npx expo prebuild --platform android --clean --non-interactive
+      - name: Build standalone QA release APK (embedded JS, no Play signing)
+        working-directory: Mobile/android
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+      - name: Validate artifact and publish SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=Mobile/android/app/build/outputs/apk/release/app-release.apk
+          test -s "$apk"
+          if command -v unzip >/dev/null; then
+            unzip -l "$apk" | grep -E "assets/index.android.bundle" || { echo "Embedded JS bundle missing"; exit 1; }
+          fi
+          mkdir -p apk-output
+          cp "$apk" apk-output/somafrik-notif-planning-combined-qa.apk
+          sha256sum apk-output/*.apk | tee apk-output/SHA256SUMS.txt
+          printf 'PUSH_HEAD=a8935314497ddfa5ab634076ca2d838b8a7f2b2a\nCALENDAR_HEAD=b9d485d419917fbc45209cd77519a3119f422768\nAPI=https://api-preprod.somafrik.app\nBUILD=Android release variant, standalone JS (not Google Play signing)\n' > apk-output/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: somafrik-notif-planning-combined-qa-apk
+          path: apk-output/
+          if-no-files-found: error
+          retention-days: 7
