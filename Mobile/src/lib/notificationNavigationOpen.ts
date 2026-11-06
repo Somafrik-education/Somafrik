@@ -22,7 +22,7 @@ import {
 
 type SessionLike = {
   role?: string | null;
-  user?: { schoolCode?: string | null; children?: unknown } | null;
+  user?: { id?: string | null; schoolCode?: string | null; children?: unknown } | null;
   school?: { code?: string | null } | null;
 } | null | undefined;
 
@@ -66,6 +66,7 @@ function contextSchoolCode(session: SessionLike, override?: string | null): stri
 }
 
 function schoolAllowed(meta: NotificationNavigationMeta, current: string): boolean {
+  if (meta.invalidSchoolCode) return false;
   if (!meta.schoolCode) return true; // ancien Push sans contexte : le serveur reste juge
   return Boolean(current) && current === meta.schoolCode;
 }
@@ -116,6 +117,8 @@ export type NotificationOpenDeps = {
   /** Établissement de contexte (centre in-app : établissement actif). Défaut : session. */
   schoolCode?: string | null;
   markRead?: (notificationId: string, schoolCode: string) => Promise<unknown>;
+  /** L'identité compte doit isoler la déduplication entre deux sessions. */
+  accountId?: string | null;
   onReadChanged?: () => void;
   selectStudent?: (studentId: string) => void;
 };
@@ -136,7 +139,7 @@ async function markReadOnce(
   deps: NotificationOpenDeps,
 ): Promise<void> {
   if (typeof deps.markRead !== "function") return;
-  const key = `${target.schoolCode}:${target.notificationId}`;
+  const key = `${deps.accountId || "legacy-session"}:${target.schoolCode}:${target.notificationId}`;
   if (readRequested.has(key)) return;
   readRequested.add(key);
   try {
@@ -171,6 +174,11 @@ export function openResolvedNotification(
   }
   if (decision.selectStudentId) deps.selectStudent?.(decision.selectStudentId);
   dispatchRegisteredPushNavigation(navigation, decision.destination, decision.params);
-  if (decision.markRead) void markReadOnce(decision.markRead, deps);
+  if (decision.markRead) {
+    void markReadOnce(decision.markRead, {
+      ...deps,
+      accountId: session?.user?.id || deps.accountId,
+    });
+  }
   return decision;
 }
