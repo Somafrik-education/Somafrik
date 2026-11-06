@@ -76,7 +76,7 @@ function world() {
   };
   const getTemplate = async () => ({ spec: { presentation: { header: { title: "Bulletin scolaire" }, signatures: ["Directeur"] } } });
   const svc = createReportCardReissuePublisher({ publication, classPublication, getTemplate });
-  return { state, source, draft, classPublication, svc };
+  return { state, source, draft, publication, classPublication, getTemplate, svc };
 }
 
 test("PR1: creates signed v2 intent without ever mutating v1 source; idempotent command replay", async () => {
@@ -106,6 +106,34 @@ test("PR1: creates signed v2 intent without ever mutating v1 source; idempotent 
   assert.equal(w.state.writes.length, 1);
   await assert.rejects(w.svc.publish({ ...args, reason: "different reason" }), { code: "REISSUE_COMMAND_CONFLICT" });
 });
+
+test("PR1: concurrent same command returns persisted result; unrelated conflict remains fatal", async () => {
+  const w = world();
+  const { createReportCardReissuePreview } = require("./reportCardReissue");
+  const proposal = await createReportCardReissuePreview(w).preview({ tenant, reportCardId: "rc-1", sourceVersion: 1 });
+  w.publication.publish = async ({ command: operation }) => {
+    w.state.commands.set(operation.commandId, { reason: operation.reason, source_version: operation.sourceVersion });
+    w.state.records.push({
+      commandId: operation.commandId,
+      record: { published_snapshot_version: 2, public_id: "concurrent-qr" },
+    });
+    const error = new Error("concurrent publisher committed first");
+    error.code = "CONCURRENCY_CONFLICT";
+    throw error;
+  };
+  const response = await w.svc.publish({ ...command, expectedDraftSha256: proposal.expected_draft_sha256 });
+  assert.equal(response.status, "ALREADY_REISSUED");
+  assert.equal(response.public_id, "concurrent-qr");
+  const different = world();
+  const proposal2 = await createReportCardReissuePreview(different).preview({ tenant, reportCardId: "rc-1", sourceVersion: 1 });
+  different.publication.publish = async () => {
+    const error = new Error("another publisher");
+    error.code = "CONCURRENCY_CONFLICT";
+    throw error;
+  };
+  await assert.rejects(different.svc.publish({ ...command, expectedDraftSha256: proposal2.expected_draft_sha256 }), { code: "CONCURRENCY_CONFLICT" });
+});
+
 test("PR1: stale draft hash is rejected before write", async () => {
   const w = world();
   await assert.rejects(w.svc.publish({ ...command, expectedDraftSha256: "stale" }), { code: "DRAFT_CHANGED" });
