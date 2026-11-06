@@ -126,6 +126,8 @@ export default function TeacherGradesScreen() {
   const [creating, setCreating] = useState(false);
   const [periodFilter, setPeriodFilter] = useState(ALL_PERIODS_FILTER);
   const [statusFilter, setStatusFilter] = useState(ALL_STATUSES_FILTER);
+  const [classFilter, setClassFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const createLockRef = useRef(createInFlightLock());
   const saveLockRef = useRef(createInFlightLock());
   const createIntentionRef = useRef(createIntentionStore());
@@ -136,9 +138,41 @@ export default function TeacherGradesScreen() {
     [academicConfigData.periods],
   );
 
+  // Les options et données proviennent exclusivement du snapshot déjà autorisé.
+  const classOptions = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const evaluation of evaluationsSnapshot.data ?? []) {
+      if (evaluation.classId && !byId.has(evaluation.classId)) {
+        byId.set(evaluation.classId, evaluation.className || evaluation.classCode || "Classe");
+      }
+    }
+    return [...byId.entries()].map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "fr"));
+  }, [evaluationsSnapshot.data]);
+  const classEvaluations = useMemo(
+    () => (evaluationsSnapshot.data ?? []).filter((evaluation) => !classFilter || evaluation.classId === classFilter),
+    [evaluationsSnapshot.data, classFilter],
+  );
+  const typeOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const evaluation of classEvaluations) {
+      const key = evaluation.evaluationTypeId || evaluation.evaluationTypeCode || evaluation.evaluationType || "";
+      if (key && !options.has(key)) {
+        options.set(key, evaluation.evaluationType || evaluation.evaluationTypeCode || key);
+      }
+    }
+    return [...options.entries()].map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "fr"));
+  }, [classEvaluations]);
+  useEffect(() => {
+    if (classFilter && !classOptions.some((item) => item.id === classFilter)) setClassFilter("");
+    if (typeFilter && !typeOptions.some((item) => item.id === typeFilter)) setTypeFilter("");
+  }, [classFilter, classOptions, typeFilter, typeOptions]);
   const visibleEvaluations = useMemo(
-    () => filterEvaluationsForQueue(evaluationsSnapshot.data ?? [], periodFilter, statusFilter),
-    [evaluationsSnapshot.data, periodFilter, statusFilter],
+    () => filterEvaluationsForQueue(classEvaluations, periodFilter, statusFilter)
+      .filter((evaluation) => !typeFilter ||
+        (evaluation.evaluationTypeId || evaluation.evaluationTypeCode || evaluation.evaluationType || "") === typeFilter),
+    [classEvaluations, periodFilter, statusFilter, typeFilter],
   );
 
   const scopedAssignments = useMemo(
@@ -784,6 +818,33 @@ export default function TeacherGradesScreen() {
             </TouchableOpacity>
           ) : null}
 
+          <Text style={styles.label}>Classe</Text>
+          <View style={styles.typeRow}>
+            <TouchableOpacity style={[styles.typePill, !classFilter && styles.typePillActive]}
+              onPress={() => setClassFilter("")} accessibilityRole="button" accessibilityState={{ selected: !classFilter }}>
+              <Text style={[styles.typeText, !classFilter && styles.typeTextActive]}>Toutes les classes</Text>
+            </TouchableOpacity>
+            {classOptions.map((item) => (
+              <TouchableOpacity key={item.id} style={[styles.typePill, classFilter === item.id && styles.typePillActive]}
+                onPress={() => { setClassFilter(item.id); setTypeFilter(""); }}
+                accessibilityRole="button" accessibilityState={{ selected: classFilter === item.id }}>
+                <Text style={[styles.typeText, classFilter === item.id && styles.typeTextActive]}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.label}>Type de note</Text>
+          <View style={styles.typeRow}>
+            <TouchableOpacity style={[styles.typePill, !typeFilter && styles.typePillActive]}
+              onPress={() => setTypeFilter("")} accessibilityRole="button" accessibilityState={{ selected: !typeFilter }}>
+              <Text style={[styles.typeText, !typeFilter && styles.typeTextActive]}>Tous les types</Text>
+            </TouchableOpacity>
+            {typeOptions.map((item) => (
+              <TouchableOpacity key={item.id} style={[styles.typePill, typeFilter === item.id && styles.typePillActive]}
+                onPress={() => setTypeFilter(item.id)} accessibilityRole="button" accessibilityState={{ selected: typeFilter === item.id }}>
+                <Text style={[styles.typeText, typeFilter === item.id && styles.typeTextActive]}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           <Text style={styles.label}>{PEDAGOGY_COPY.period}</Text>
           <View style={styles.typeRow}>
             <TouchableOpacity
