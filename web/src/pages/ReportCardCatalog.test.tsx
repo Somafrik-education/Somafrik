@@ -259,7 +259,7 @@ describe("Établissement — Configurer un bulletin", () => {
     renderPage(<ReportCardCatalogSchoolPage />);
     const card = await screen.findByTestId("catalog-school-model-colombiere");
     expect(within(card).getByText("Disponible")).toBeInTheDocument();
-    expect(within(card).getByText("Choisir ce modèle")).toBeInTheDocument();
+    expect(within(card).getByText("Configurer ce modèle pour une classe")).toBeInTheDocument();
     const retired = screen.getByTestId("catalog-school-model-berceau");
     expect(within(retired).getByText("Actif dans l'établissement")).toBeInTheDocument();
     expect(within(retired).getByText(/restent valides/)).toBeInTheDocument();
@@ -282,7 +282,7 @@ describe("Établissement — Configurer un bulletin", () => {
     api.schoolCatalog.mockResolvedValueOnce(schoolCatalog([{ ...colombiere, available: true, configuration: "NONE", activated_at: null, saved_at: null }], { canConfigure: false }));
     fireEvent.click(screen.getByText("Réessayer"));
     expect(await screen.findByTestId("catalog-school-readonly")).toBeInTheDocument();
-    expect(screen.queryByText("Choisir ce modèle")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configurer ce modèle pour une classe")).not.toBeInTheDocument();
     third.unmount();
     api.schoolCatalog.mockRejectedValueOnce(new ApiErr(403, "RBAC_DENIED"));
     renderPage(<ReportCardCatalogSchoolPage />);
