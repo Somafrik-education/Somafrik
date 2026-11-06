@@ -276,16 +276,14 @@ describe("BULLETIN-UI-01 — gestion des bulletins (Web)", () => {
     expect(api.publish).not.toHaveBeenCalled();
   });
 
-  it("V2 : sans permission, affiche un diagnostic explicite et ne permet aucune écriture", async () => {
+  it("V2 : Directeur en lecture seule ne peut ni prévisualiser ni publier", async () => {
     session.current = { user: { role: "Directeur", permissions: ["Bulletins:READ"] } };
     api.listPublications.mockResolvedValue([{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }]);
-    api.presentation.mockResolvedValue({ presentation: [view("COL-001", "Ndayishimiye Ama", true)], verificationStatus: "ACTIVE" });
-    listHistory.mockResolvedValue({ ok: true, versions: [{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }] });
     await renderPage();
-    await selectClassAndPreview();
-    fireEvent.click(screen.getByText("Bulletin publié"));
-    expect(await screen.findByTestId("rc-reissue-no-permission")).toHaveTextContent("Modifier les bulletins");
+    expect(screen.queryByTestId("rc-preview")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rc-publish")).not.toBeInTheDocument();
     expect(screen.queryByTestId("rc-reissue-v2-link")).not.toBeInTheDocument();
+    expect(api.preview).not.toHaveBeenCalled();
     expect(api.publish).not.toHaveBeenCalled();
   });
 
