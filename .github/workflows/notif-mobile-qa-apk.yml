@@ -23,13 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - name: Assert intended test candidate unchanged
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "e9050f4a619584b12c716b4130bcb715ac37ac3f"
-          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/notif-mobile-qa-apk.yml"
+          test "$(git merge-base HEAD e9050f4a619584b12c716b4130bcb715ac37ac3f)" = "e9050f4a619584b12c716b4130bcb715ac37ac3f"
+          test "$(git diff --name-only e9050f4a619584b12c716b4130bcb715ac37ac3f HEAD)" = ".github/workflows/notif-mobile-qa-apk.yml"
           echo "NOTIF QA: candidate source is exact #1092 HEAD; temporary workflow only"
       - uses: actions/setup-node@v4
         with:
