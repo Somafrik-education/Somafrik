@@ -1,7 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, FlatList, RefreshControl } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import QueryStateView from "../components/QueryStateView";
+import FormField from "../components/FormField";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import TeacherMutationControls from "../components/TeacherMutationControls";
 import AssignmentMutationControls from "../components/AssignmentMutationControls";
@@ -29,6 +30,7 @@ export default function TeachersScreen() {
     resourceScopeKey,
   } = useAdminData();
   const [subjects, setSubjects] = useState<SchoolSubject[]>([]);
+  const [search, setSearch] = useState("");
   const [expandedTeacherId, setExpandedTeacherId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -43,6 +45,16 @@ export default function TeachersScreen() {
     }, [load, resourceScopeKey]),
   );
 
+  const normalizedSearch = search.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const filteredTeachers = useMemo(() => {
+    if (snapshot.status !== "success") return [];
+    if (!normalizedSearch) return snapshot.data;
+    return snapshot.data.filter((teacher) =>
+      [teacher.name, teacher.teacherCode, teacher.publicId]
+        .some((value) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(normalizedSearch)),
+    );
+  }, [snapshot, normalizedSearch]);
+
   const showQueryState = snapshot.status !== "success";
   const listHydrated = snapshot.status === "success" && snapshot.data.length > 0;
 
@@ -52,7 +64,7 @@ export default function TeachersScreen() {
       style={styles.list}
       contentContainerStyle={contentStyle}
       testID={listHydrated ? "teachers-list" : undefined}
-      data={showQueryState ? [] : snapshot.data}
+      data={filteredTeachers}
       extraData={expandedTeacherId}
       keyExtractor={(teacher) => teacher.id}
       refreshControl={<RefreshControl refreshing={snapshot.status === "loading"} onRefresh={() => void load()} />}
@@ -62,6 +74,18 @@ export default function TeachersScreen() {
             Enseignants
           </Text>
           <Text style={styles.subtitle}>Équipe pédagogique chargée depuis PostgreSQL</Text>
+          <FormField
+            label="Recherche"
+            type="search"
+            placeholder="Nom ou identifiant enseignant"
+            value={search}
+            onChangeText={setSearch}
+            accessibilityLabel="Rechercher un enseignant"
+            testID="teachers-search-input"
+          />
+          {!showQueryState && search.trim() && filteredTeachers.length === 0 ? (
+            <Text style={styles.emptySearch} testID="teachers-search-empty">Aucun enseignant ne correspond à votre recherche.</Text>
+          ) : null}
           <TeacherMutationControls onChanged={() => load()} />
           <AssignmentMutationControls
             teachers={snapshot.status === "success" ? snapshot.data : []}
@@ -130,6 +154,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "900", color: "#0F172A" },
   subtitle: { marginTop: 6, marginBottom: 20, color: "#64748B", fontWeight: "700" },
   meta: { marginTop: 4, color: "#64748B", fontWeight: "600" },
+  emptySearch: { marginTop: 12, color: "#64748B", fontWeight: "600" },
   phone: { color: "#2563EB", fontWeight: "800", marginTop: 4 },
   lifecycleHint: { color: "#64748B", fontWeight: "700", lineHeight: 20, marginTop: 8 },
 });
