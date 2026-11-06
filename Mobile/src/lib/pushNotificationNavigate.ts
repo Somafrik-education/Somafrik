@@ -61,7 +61,12 @@ export function dispatchRegisteredPushNavigation(
 ) {
   if (typeof navigation.isReady === "function" && !navigation.isReady()) return;
   navigateRegisteredPushDestination(
-    (name, nextParams) => callPushNavigationRef(navigation.navigate, name, nextParams),
+    // Conserver le receveur du ref React Navigation pour les méthodes sensibles au contexte.
+    (name, nextParams) => callPushNavigationRef(
+      ((...args: never[]) => navigation.navigate(...args)) as (...args: never[]) => unknown,
+      name,
+      nextParams,
+    ),
     destination,
     params,
     collectRegisteredRouteNames(navigation.getRootState?.() as NavigationStateLike | undefined),
