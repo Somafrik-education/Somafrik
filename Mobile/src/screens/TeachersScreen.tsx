@@ -16,6 +16,7 @@ import { displayStatusName } from "../lib/format";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { NAVIGATION_TEST_IDS } from "../lib/mobileNavigationSpec";
 import { getSubjects, type SchoolSubject } from "../services/api";
+import { filterTeachersForSearch } from "../lib/teacherDirectorySearch";
 
 export default function TeachersScreen() {
   const { scrollContentPaddingBottom } = useFloatingTabBarLayout();
@@ -45,15 +46,10 @@ export default function TeachersScreen() {
     }, [load, resourceScopeKey]),
   );
 
-  const normalizedSearch = search.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  const filteredTeachers = useMemo(() => {
-    if (snapshot.status !== "success") return [];
-    if (!normalizedSearch) return snapshot.data;
-    return snapshot.data.filter((teacher) =>
-      [teacher.name, teacher.teacherCode, teacher.publicId]
-        .some((value) => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(normalizedSearch)),
-    );
-  }, [snapshot, normalizedSearch]);
+  const filteredTeachers = useMemo(() =>
+    snapshot.status === "success" ? filterTeachersForSearch(snapshot.data, search) : [],
+    [snapshot, search],
+  );
 
   const showQueryState = snapshot.status !== "success";
   const listHydrated = snapshot.status === "success" && snapshot.data.length > 0;
