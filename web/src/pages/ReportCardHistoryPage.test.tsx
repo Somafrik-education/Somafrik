@@ -22,7 +22,7 @@ import { ReportCardHistoryPage } from "./ReportCardHistoryPage";
 
 describe("BULLETIN-REEMISSION-01 / PR2 — confirmation explicite Web", () => {
   beforeEach(() => {
-    authMocks.useAuth.mockReturnValue({ session: { permissions: ["REPORT_CARD_PUBLISH"] }, permissionsReady: true });
+    authMocks.useAuth.mockReturnValue({ session: { user: { role: "Directeur", permissions: ["Bulletins:UPDATE"] } }, permissionsReady: true, permissionsBootstrap: "ready" });
     Object.values(apiMocks).forEach((mock) => mock.mockReset());
     apiMocks.listHistory.mockResolvedValue({
       ok: true,
@@ -45,6 +45,33 @@ describe("BULLETIN-REEMISSION-01 / PR2 — confirmation explicite Web", () => {
       changes: { template: true, identity: true, grades: false },
     });
     apiMocks.reissue.mockResolvedValue({ ok: true, status: "REISSUED", published_snapshot_version: 2, public_id: "new-public-id" });
+  });
+
+  it("charge automatiquement la V1 depuis la gestion sans action de publication", async () => {
+    const previousUrl = window.location.href;
+    try {
+      window.history.replaceState({}, "", "/bulletins/historique?reportCardId=rc-1");
+      render(<ReportCardHistoryPage />);
+      expect(screen.getByLabelText("Identifiant bulletin")).toHaveValue("rc-1");
+      await waitFor(() => expect(apiMocks.listHistory).toHaveBeenCalledWith("rc-1"));
+      expect(await screen.findByText("v1")).toBeInTheDocument();
+      expect(apiMocks.previewReissue).not.toHaveBeenCalled();
+      expect(apiMocks.reissue).not.toHaveBeenCalled();
+    } finally {
+      window.history.replaceState({}, "", previousUrl);
+    }
+  });
+
+  it("affiche la raison métier d'un refus de prévisualisation", async () => {
+    const { ApiError } = await import("../api/client");
+    apiMocks.previewReissue.mockRejectedValue(new ApiError("message interne", 409, "REISSUE_GRADES_CHANGED"));
+    render(<ReportCardHistoryPage />);
+    fireEvent.change(screen.getByLabelText("Identifiant bulletin"), { target: { value: "rc-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Charger l’historique" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Réémettre avec le modèle actif" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("notes ou les résultats ont changé");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("message interne");
+    expect(apiMocks.reissue).not.toHaveBeenCalled();
   });
 
   it("ne publie pas en consultant un historique ou en ouvrant un aperçu ; motif et confirmation requis", async () => {
@@ -73,7 +100,7 @@ describe("BULLETIN-REEMISSION-01 / PR2 — confirmation explicite Web", () => {
   });
 
   it("cache la réémission si la permission effective est absente", async () => {
-    authMocks.useAuth.mockReturnValue({ session: { permissions: ["REPORT_CARD_READ"] }, permissionsReady: true });
+    authMocks.useAuth.mockReturnValue({ session: { user: { role: "Directeur", permissions: ["Bulletins:READ"] } }, permissionsReady: true, permissionsBootstrap: "ready" });
     render(<ReportCardHistoryPage />);
     fireEvent.change(screen.getByLabelText("Identifiant bulletin"), { target: { value: "rc-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Charger l’historique" }));
@@ -84,7 +111,34 @@ describe("BULLETIN-REEMISSION-01 / PR2 — confirmation explicite Web", () => {
   });
 
   it("cache la réémission pendant le chargement des permissions", async () => {
-    authMocks.useAuth.mockReturnValue({ session: { permissions: ["REPORT_CARD_PUBLISH"] }, permissionsReady: false });
+    authMocks.useAuth.mockReturnValue({ session: { user: { role: "Directeur", permissions: ["Bulletins:UPDATE"] } }, permissionsReady: false, permissionsBootstrap: "loading" });
+    render(<ReportCardHistoryPage />);
+    fireEvent.change(screen.getByLabelText("Identifiant bulletin"), { target: { value: "rc-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Charger l’historique" }));
+    await screen.findByText("v1");
+    expect(screen.queryByRole("button", { name: "Réémettre avec le modèle actif" })).not.toBeInTheDocument();
+    expect(apiMocks.reissue).not.toHaveBeenCalled();
+  });
+
+  it("autorise la validation métier sans token interne REPORT_CARD_PUBLISH", async () => {
+    authMocks.useAuth.mockReturnValue({
+      session: { user: { role: "Directeur", permissions: ["Valider bulletins"] } },
+      permissionsReady: true,
+      permissionsBootstrap: "ready",
+    });
+    render(<ReportCardHistoryPage />);
+    fireEvent.change(screen.getByLabelText("Identifiant bulletin"), { target: { value: "rc-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Charger l’historique" }));
+    expect(await screen.findByRole("button", { name: "Réémettre avec le modèle actif" })).toBeInTheDocument();
+    expect(apiMocks.reissue).not.toHaveBeenCalled();
+  });
+
+  it("refuse la réémission au profil élève même avec un droit incohérent", async () => {
+    authMocks.useAuth.mockReturnValue({
+      session: { user: { role: "Élève / Étudiant", permissions: ["Bulletins:UPDATE"] } },
+      permissionsReady: true,
+      permissionsBootstrap: "ready",
+    });
     render(<ReportCardHistoryPage />);
     fireEvent.change(screen.getByLabelText("Identifiant bulletin"), { target: { value: "rc-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Charger l’historique" }));
@@ -109,7 +163,7 @@ describe("BULLETIN-REEMISSION-01 / PR2 — confirmation explicite Web", () => {
     fireEvent.click(screen.getByRole("button", { name: "Charger l’historique" }));
     fireEvent.click(await screen.findByRole("button", { name: "Réémettre avec le modèle actif" }));
     await screen.findByTestId("report-card-reissue-header");
-    authMocks.useAuth.mockReturnValue({ session: { permissions: [] }, permissionsReady: true });
+    authMocks.useAuth.mockReturnValue({ session: { user: { role: "Directeur", permissions: [] } }, permissionsReady: true, permissionsBootstrap: "ready" });
     rerender(<ReportCardHistoryPage />);
     expect(screen.queryByRole("button", { name: "Publier la nouvelle version" })).not.toBeInTheDocument();
     expect(apiMocks.reissue).not.toHaveBeenCalled();

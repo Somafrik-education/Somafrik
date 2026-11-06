@@ -1,17 +1,41 @@
 import { reportCardStatusLabel } from "../lib/reportCardStatus";
-import { FormEvent, useState } from "react";
-import { useAuth } from "../context/AuthContext";
+import { FormEvent, useEffect, useState } from "react";
+import { ApiError } from "../api/client";
+import { canPublishOfficialReportCard } from "../lib/permissions";
+import { usePermissionContext } from "../lib/usePermissionContext";
 import {
   reportCardHistoryApi,
   type PublishedVersionRow,
   type ReissuePreview,
 } from "../lib/reportCardHistoryApi";
 
+const REISSUE_ERRORS: Record<string, string> = {
+  RBAC_DENIED: "Votre compte ne possède pas le droit « Modifier les bulletins » ou « Valider bulletins ».",
+  REISSUE_SOURCE_NOT_ACTIVE: "La version sélectionnée n'est plus active. Chargez la dernière version publiée.",
+  REISSUE_GRADES_CHANGED: "Les notes ou les résultats ont changé depuis la V1. La réémission avec notes inchangées est refusée.",
+  REPORT_CARD_INCOMPLETE: "Le nouveau brouillon est incomplet. Corrigez d'abord les anomalies de la classe.",
+  REISSUE_HEADER_MISSING: "Le nouveau modèle actif n'a pas d'en-tête officiel.",
+  REISSUE_TEMPLATE_MISSING: "Aucun modèle actif exploitable pour cette classe.",
+  MODEL_NOT_BOUND: "Aucun modèle actif n'est lié à cette classe.",
+  OFFICIAL_IDENTITY_UNAVAILABLE: "Les informations officielles de l'établissement sont indisponibles.",
+  REISSUE_STUDENT_MISMATCH: "Le bulletin de cet élève est introuvable dans le brouillon actuel.",
+  REISSUE_SCOPE_MISMATCH: "La classe, l'année scolaire, le modèle ou la période ne correspond plus à la V1.",
+  DRAFT_CHANGED: "Le modèle ou les données ont changé depuis l'aperçu. Rechargez le bulletin et recommencez.",
+  PUBLICATION_NOT_FOUND: "Ce bulletin est introuvable pour cet établissement.",
+};
+
+function reissueErrorText(error: unknown): string {
+  if (error instanceof ApiError) {
+    return REISSUE_ERRORS[error.code ?? ""] ??
+      (error.status === 403 ? REISSUE_ERRORS.RBAC_DENIED : "Réémission refusée par le serveur. Vérifiez le modèle actif et le bulletin.");
+  }
+  return "Connexion indisponible ou réponse incertaine. Vérifiez l'historique avant toute nouvelle tentative.";
+}
+
 export function ReportCardHistoryPage() {
-  const { session, permissionsReady } = useAuth();
-  const canReissue = permissionsReady &&
-    (session?.permissions ?? session?.user?.permissions)?.includes("REPORT_CARD_PUBLISH") === true;
-  const [reportCardId, setReportCardId] = useState("");
+  const permissionCtx = usePermissionContext();
+  const canReissue = canPublishOfficialReportCard(permissionCtx);
+  const [reportCardId, setReportCardId] = useState(() => new URLSearchParams(window.location.search).get("reportCardId")?.trim() ?? "");
   const [versions, setVersions] = useState<PublishedVersionRow[]>([]);
   const [reason, setReason] = useState("");
   const [sourceVersion, setSourceVersion] = useState("1");
@@ -23,6 +47,18 @@ export function ReportCardHistoryPage() {
   const [reissueConfirmed, setReissueConfirmed] = useState(false);
   const [reissueCommandId, setReissueCommandId] = useState("");
   const [reissueBusy, setReissueBusy] = useState(false);
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("reportCardId")?.trim();
+    if (!id) return;
+    let cancelled = false;
+    reportCardHistoryApi.listHistory(id).then((data) => {
+      if (!cancelled) setVersions(data.versions || []);
+    }).catch((error: unknown) => {
+      if (!cancelled) setError(reissueErrorText(error));
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   async function reload(id: string) {
     const data = await reportCardHistoryApi.listHistory(id);
@@ -89,8 +125,8 @@ export function ReportCardHistoryPage() {
       setReissueConfirmed(false);
       // Conservé pour les relances après erreur réseau : même commande idempotente.
       setReissueCommandId(`web-reissue-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-    } catch {
-      setError("Réémission indisponible : contrôlez le modèle actif, l’en-tête, les droits et les notes publiées.");
+    } catch (error) {
+      setError(reissueErrorText(error));
     } finally {
       setReissueBusy(false);
     }
@@ -112,9 +148,9 @@ export function ReportCardHistoryPage() {
       setMessage(`Version v${result.published_snapshot_version} créée. Téléchargez son PDF et contrôlez le nouveau QR.`);
       setReissuePreview(null);
       setReissueConfirmed(false);
-    } catch {
+    } catch (error) {
       // Le même commandId reste présent pour un rejeu sécurisé, pas de deuxième publication.
-      setError("Réémission refusée ou non confirmée. Vérifiez l’historique avant de réessayer.");
+      setError(reissueErrorText(error));
     } finally {
       setReissueBusy(false);
     }
@@ -124,6 +160,7 @@ export function ReportCardHistoryPage() {
     <main className="mx-auto max-w-4xl space-y-5 p-6">
       <h1 className="text-xl font-bold">Historique des bulletins publiés</h1>
       {loading ? <p>Chargement…</p> : null}
+      {!canReissue ? <p role="note">La création d’une nouvelle version nécessite l’autorisation « Modifier les bulletins » ou « Valider bulletins ». Contactez l’administrateur si le bouton n’apparaît pas.</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
       <form onSubmit={(event) => void onLoad(event)}>

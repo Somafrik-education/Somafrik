@@ -152,6 +152,20 @@ export function getCurrentRolePermissions(ctx: PermissionContext): string[] {
   return resolveEffectivePermissions(ctx.user?.role, ctx.user?.permissions, ctx.rolePermissions);
 }
 
+/**
+ * Correspondance UI avec reportCardHttpActor.resolveReportCardActorFromPrincipal :
+ * REPORT_CARD_PUBLISH est un droit interne calculé à partir des permissions
+ * effectives Bulletins:UPDATE ou « Valider bulletins », pas un jeton de session.
+ * Le serveur effectue toujours l'autorisation finale.
+ */
+export function canPublishOfficialReportCard(ctx: PermissionContext): boolean {
+  if (!ctx.permissionsReady || !ctx.user || isSuperAdminRole(ctx.user.role)) return false;
+  const role = String(ctx.user.role ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (role.includes("parent") || role.includes("eleve") || role.includes("student")) return false;
+  return hasBackOfficePermission(ctx, "Bulletins", "UPDATE") ||
+    getCurrentRolePermissions(ctx).includes("Valider bulletins");
+}
+
 /** Superadmin, ou jeton effectif classes / affectations (révocations explicites honorées). */
 export function canAssignClassHeadTeacher(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;
