@@ -77,16 +77,36 @@ function createReportCardReissuePublisher({ publication, classPublication, getTe
       content_sha256: candidate.item.content_sha256,
       official_identity: content.official_identity,
     };
-    const record = await publication.publish({
-      tenant, payload,
-      lineage: {
-        corrected_from_version: sourceVersion,
-        correction_reason: why,
-        actor_id: actorId,
-        command_id: id,
-      },
-      command: { commandId: id, reason: why, sourceVersion },
-    });
+    let record;
+    try {
+      record = await publication.publish({
+        tenant, payload,
+        lineage: {
+          corrected_from_version: sourceVersion,
+          correction_reason: why,
+          actor_id: actorId,
+          command_id: id,
+        },
+        command: { commandId: id, reason: why, sourceVersion },
+      });
+    } catch (error) {
+      // A concurrent identical command may have committed first. Resolve only
+      // the SAME persisted command; never swallow an unrelated conflict.
+      if (["CONCURRENCY_CONFLICT", "IDEMPOTENCY_CONFLICT"].includes(error?.code) ||
+          error?.name === "IdempotencyConflict") {
+        const saved = await publication.findCommand({ tenant, reportCardId, commandId: id });
+        if (saved?.reason === why && Number(saved?.source_version) === sourceVersion) {
+          const current = await publication.findByCommand({ tenant, reportCardId, commandId: id });
+          if (current) return {
+            status: "ALREADY_REISSUED",
+            report_card_id: reportCardId,
+            published_snapshot_version: current.published_snapshot_version,
+            public_id: current.public_id,
+          };
+        }
+      }
+      throw error;
+    }
     return { status: "REISSUED", report_card_id: reportCardId, published_snapshot_version: record.published_snapshot_version, public_id: record.public_id };
   }
   return { publish };
