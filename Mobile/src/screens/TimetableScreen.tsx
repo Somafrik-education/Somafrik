@@ -100,6 +100,7 @@ export default function TimetableScreen() {
   const [selectedDay, setSelectedDay] = useState(todayDayOfWeek() === 7 ? 1 : todayDayOfWeek());
   const [calendarView, setCalendarView] = useState<NativePlanningView>("week");
   const [calendarAnchor, setCalendarAnchor] = useState(() => new Date());
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [expandedSlotId, setExpandedSlotId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("list");
   const [editing, setEditing] = useState<CanonicalWeeklySlot | null>(null);
@@ -152,17 +153,34 @@ export default function TimetableScreen() {
         showUnavailableWarning: true,
       }
     : resolveReplacementProjection(replacementsSnapshot, canReadReplacements);
+  // Uniquement les classes renvoyées par l'API de la session courante.
+  // Aucun chargement transversal, aucune identité d'établissement envoyée par le client.
+  const scopedClasses = useMemo(() => {
+    const classes = new Map<string, string>();
+    for (const slot of courseSchedulesSnapshot.data) {
+      if (slot.classId && !classes.has(slot.classId)) {
+        classes.set(slot.classId, slot.className || slot.classCode || "Classe");
+      }
+    }
+    return [...classes.entries()].map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  }, [courseSchedulesSnapshot.data]);
+  const filteredSlots = useMemo(
+    () => courseSchedulesSnapshot.data.filter((slot) => !selectedClassId || slot.classId === selectedClassId),
+    [courseSchedulesSnapshot.data, selectedClassId],
+  );
+
   const occurrences = useMemo(
     () =>
       displayedOccurrencesForDay({
-        slots: courseSchedulesSnapshot.data,
+        slots: filteredSlots,
         replacements: replacementProjection.replacements,
         dayOfWeek: canonicalWeekday(calendarAnchor),
         occurrenceDate: occurrenceDateForDay,
         unverified: replacementProjection.unverified,
       }),
     [
-      courseSchedulesSnapshot.data,
+      filteredSlots,
       replacementProjection.replacements,
       replacementProjection.unverified,
       calendarAnchor,
@@ -469,7 +487,7 @@ export default function TimetableScreen() {
           {days.map((date) => {
             const selected = civilDate(date) === civilDate(calendarAnchor);
             const inMonth = date.getMonth() === calendarAnchor.getMonth();
-            const count = countByWeekday(courseSchedulesSnapshot.data, date);
+            const count = countByWeekday(filteredSlots, date);
             return (
               <TouchableOpacity
                 key={civilDate(date)}
@@ -689,6 +707,18 @@ export default function TimetableScreen() {
         </TouchableOpacity>
       ) : null}
 
+      {scopedClasses.length > 1 ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.classFilterRow} testID="planning-native-class-filter">
+          <TouchableOpacity style={[styles.classFilter, selectedClassId === null && styles.classFilterActive]} onPress={() => setSelectedClassId(null)} accessibilityRole="button" accessibilityState={{ selected: selectedClassId === null }}>
+            <Text style={[styles.classFilterLabel, selectedClassId === null && styles.calendarViewLabelActive]}>Toutes les classes</Text>
+          </TouchableOpacity>
+          {scopedClasses.map((classe) => (
+            <TouchableOpacity key={classe.id} style={[styles.classFilter, selectedClassId === classe.id && styles.classFilterActive]} onPress={() => setSelectedClassId(classe.id)} accessibilityRole="button" accessibilityState={{ selected: selectedClassId === classe.id }}>
+              <Text style={[styles.classFilterLabel, selectedClassId === classe.id && styles.calendarViewLabelActive]}>{classe.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      ) : null}
       {renderNativeCalendar()}
 
       {replacementProjection.showUnavailableWarning ? (
@@ -737,6 +767,10 @@ export default function TimetableScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F8FAFC" },
+  classFilterRow: { gap: 8, marginBottom: 12 },
+  classFilter: { minHeight: 44, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: "#E2E8F0", borderRadius: 12, justifyContent: "center" },
+  classFilterActive: { backgroundColor: "#2563EB" },
+  classFilterLabel: { fontWeight: "800", color: "#334155" },
   nativeCalendar: { padding: 12, backgroundColor: "#FFFFFF", borderRadius: 16, marginBottom: 14, borderColor: "#E2E8F0", borderWidth: 1 },
   calendarToolbar: { flexDirection: "row", gap: 6, justifyContent: "space-between", marginBottom: 10 },
   calendarView: { flex: 1, borderRadius: 8, backgroundColor: "#E2E8F0", paddingVertical: 10, alignItems: "center", minHeight: 44, justifyContent: "center" },
