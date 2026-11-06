@@ -44,6 +44,11 @@ import {
   type ReplacementTeacherOption,
 } from "../lib/planningV2";
 import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
+import {
+  canonicalWeekday, civilDate, countByWeekday, planningDayLabel,
+  planningPeriodLabel, planningVisibleDays, shiftPlanningAnchor,
+  type NativePlanningView,
+} from "../lib/planningNativeCalendar";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY, executeMutation } from "../lib/networkResilience";
@@ -57,7 +62,7 @@ function todayDayOfWeek(): number {
 
 export default function TimetableScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
-  const { isTablet, horizontalPadding, contentMaxWidth } = useResponsiveLayout();
+  const { horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const contentStyle = [
     styles.content,
     {
@@ -93,6 +98,8 @@ export default function TimetableScreen() {
   const l1ReadOnly = mutationsBlocked || courseSchedulesSnapshot.source === "l1-cache";
 
   const [selectedDay, setSelectedDay] = useState(todayDayOfWeek() === 7 ? 1 : todayDayOfWeek());
+  const [calendarView, setCalendarView] = useState<NativePlanningView>("week");
+  const [calendarAnchor, setCalendarAnchor] = useState(() => new Date());
   const [expandedSlotId, setExpandedSlotId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("list");
   const [editing, setEditing] = useState<CanonicalWeeklySlot | null>(null);
@@ -135,7 +142,7 @@ export default function TimetableScreen() {
     }, [refreshPlanning]),
   );
 
-  const occurrenceDateForDay = nearestOccurrenceDate(selectedDay);
+  const occurrenceDateForDay = civilDate(calendarAnchor);
   const replacementProjection = l1ReadOnly
     ? {
         replacements: [] as CanonicalReplacement[],
@@ -150,7 +157,7 @@ export default function TimetableScreen() {
       displayedOccurrencesForDay({
         slots: courseSchedulesSnapshot.data,
         replacements: replacementProjection.replacements,
-        dayOfWeek: selectedDay,
+        dayOfWeek: canonicalWeekday(calendarAnchor),
         occurrenceDate: occurrenceDateForDay,
         unverified: replacementProjection.unverified,
       }),
@@ -158,7 +165,7 @@ export default function TimetableScreen() {
       courseSchedulesSnapshot.data,
       replacementProjection.replacements,
       replacementProjection.unverified,
-      selectedDay,
+      calendarAnchor,
       occurrenceDateForDay,
     ],
   );
@@ -424,29 +431,67 @@ export default function TimetableScreen() {
     </ExpandableEntityCard>
   );
 
-  const renderWeekColumns = () => (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekRow}>
-      {PLANNING_WEEKDAY_CHIPS.map((chip) => {
-        const items = displayedOccurrencesForDay({
-          slots: courseSchedulesSnapshot.data,
-          replacements: replacementProjection.replacements,
-          dayOfWeek: chip.dayOfWeek,
-          occurrenceDate: nearestOccurrenceDate(chip.dayOfWeek),
-          unverified: replacementProjection.unverified,
-        });
-        return (
-          <View key={chip.dayOfWeek} style={styles.weekCol}>
-            <Text style={styles.dayTitle}>{chip.short}</Text>
-            {items.length === 0 ? (
-              <Text style={styles.muted}>—</Text>
-            ) : (
-              items.map((item) => renderSlotCard(item, true))
-            )}
-          </View>
-        );
-      })}
-    </ScrollView>
-  );
+  // Reprise native de la navigation calendrier Web, sans WebView et sans recréer les données.
+  const renderNativeCalendar = () => {
+    const days = planningVisibleDays(calendarView, calendarAnchor);
+    return (
+      <View style={styles.nativeCalendar} testID="planning-native-calendar">
+        <View style={styles.calendarToolbar}>
+          {(["day", "week", "month"] as NativePlanningView[]).map((view) => (
+            <TouchableOpacity
+              key={view}
+              style={[styles.calendarView, calendarView === view && styles.calendarViewActive]}
+              onPress={() => setCalendarView(view)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: calendarView === view }}
+              testID={`planning-native-view-${view}`}
+            >
+              <Text style={[styles.calendarViewLabel, calendarView === view && styles.calendarViewLabelActive]}>
+                {{ day: "Jour", week: "Semaine", month: "Mois" }[view]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={styles.calendarPeriod}>{planningPeriodLabel(calendarView, calendarAnchor)}</Text>
+        <View style={styles.calendarToolbar}>
+          <TouchableOpacity style={styles.calendarNav} onPress={() => setCalendarAnchor((date) => shiftPlanningAnchor(calendarView, date, -1))} accessibilityRole="button" accessibilityLabel="Période précédente">
+            <Text style={styles.calendarNavLabel}>‹ Précédent</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.calendarNav} onPress={() => setCalendarAnchor(new Date())} accessibilityRole="button" accessibilityLabel="Aujourd'hui">
+            <Text style={styles.calendarNavLabel}>Aujourd'hui</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.calendarNav} onPress={() => setCalendarAnchor((date) => shiftPlanningAnchor(calendarView, date, 1))} accessibilityRole="button" accessibilityLabel="Période suivante">
+            <Text style={styles.calendarNavLabel}>Suivant ›</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.calendarDays}>
+          {days.map((date) => {
+            const selected = civilDate(date) === civilDate(calendarAnchor);
+            const inMonth = date.getMonth() === calendarAnchor.getMonth();
+            const count = countByWeekday(courseSchedulesSnapshot.data, date);
+            return (
+              <TouchableOpacity
+                key={civilDate(date)}
+                style={[styles.calendarDay, calendarView === "month" && styles.calendarMonthDay, selected && styles.calendarDayActive, calendarView === "month" && !inMonth && styles.calendarDayOutside]}
+                onPress={() => {
+                  setCalendarAnchor(date);
+                  setSelectedDay(canonicalWeekday(date));
+                  if (calendarView === "month") setCalendarView("day");
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`${planningDayLabel(date)}, ${count} créneaux hebdomadaires`}
+                accessibilityState={{ selected }}
+                testID={`planning-native-date-${civilDate(date)}`}
+              >
+                <Text style={[styles.calendarDayLabel, selected && styles.calendarDayLabelActive]}>{calendarView === "month" ? date.getDate() : planningDayLabel(date)}</Text>
+                {count > 0 ? <Text style={[styles.calendarDayCount, selected && styles.calendarDayLabelActive]}>{count}</Text> : null}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
 
   if (mode === "create" || mode === "edit") {
     return (
@@ -643,7 +688,7 @@ export default function TimetableScreen() {
         </TouchableOpacity>
       ) : null}
 
-      {!isTablet ? renderDayChips(selectedDay, setSelectedDay) : null}
+      {renderNativeCalendar()}
 
       {replacementProjection.showUnavailableWarning ? (
         <View style={styles.warningBanner} testID={PLANNING_V2_TEST_IDS.replacementsWarning} accessibilityRole="alert">
@@ -663,7 +708,7 @@ export default function TimetableScreen() {
         </View>
       ) : null}
 
-      {showQueryState && !(isTablet && courseSchedulesSnapshot.status === "success") ? (
+      {showQueryState ? (
         <QueryStateView
           snapshot={
             courseSchedulesSnapshot.status === "success" && occurrences.length === 0
@@ -677,13 +722,9 @@ export default function TimetableScreen() {
           errorTestId={DATA_TRUTH_TEST_IDS.planningError}
           onRetry={() => void refreshPlanning()}
         />
-      ) : isTablet && courseSchedulesSnapshot.status === "success" ? (
-        <View testID={DATA_TRUTH_TEST_IDS.planningList}>{renderWeekColumns()}</View>
       ) : (
         <View testID={DATA_TRUTH_TEST_IDS.planningList}>
-          <Text style={styles.dayTitle}>
-            {PLANNING_WEEKDAY_CHIPS.find((chip) => chip.dayOfWeek === selectedDay)?.short ?? ""} · {occurrenceDateForDay}
-          </Text>
+          <Text style={styles.dayTitle}>{planningDayLabel(calendarAnchor)} · {occurrenceDateForDay}</Text>
           {occurrences.map((item) => renderSlotCard(item))}
         </View>
       )}
@@ -693,6 +734,23 @@ export default function TimetableScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#F8FAFC" },
+  nativeCalendar: { padding: 12, backgroundColor: "#FFFFFF", borderRadius: 16, marginBottom: 14, borderColor: "#E2E8F0", borderWidth: 1 },
+  calendarToolbar: { flexDirection: "row", gap: 6, justifyContent: "space-between", marginBottom: 10 },
+  calendarView: { flex: 1, borderRadius: 8, backgroundColor: "#E2E8F0", paddingVertical: 10, alignItems: "center", minHeight: 44, justifyContent: "center" },
+  calendarViewActive: { backgroundColor: "#2563EB" },
+  calendarViewLabel: { color: "#334155", fontWeight: "800" },
+  calendarViewLabelActive: { color: "#FFFFFF" },
+  calendarPeriod: { fontSize: 16, fontWeight: "800", color: "#0F172A", textAlign: "center", marginBottom: 10, textTransform: "capitalize" },
+  calendarNav: { flex: 1, minHeight: 44, justifyContent: "center", alignItems: "center" },
+  calendarNavLabel: { color: "#1D4ED8", fontSize: 12, fontWeight: "800" },
+  calendarDays: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-start" },
+  calendarDay: { flex: 1, minHeight: 55, margin: 2, padding: 4, borderRadius: 8, alignItems: "center", justifyContent: "center", backgroundColor: "#F1F5F9" },
+  calendarMonthDay: { flexBasis: "12%", flexGrow: 1 },
+  calendarDayOutside: { opacity: 0.45 },
+  calendarDayActive: { backgroundColor: "#2563EB" },
+  calendarDayLabel: { fontSize: 12, color: "#334155", fontWeight: "800" },
+  calendarDayLabelActive: { color: "#FFFFFF" },
+  calendarDayCount: { color: "#2563EB", fontSize: 11, fontWeight: "700" },
   content: { padding: 20 },
   title: { color: "#0F172A", fontSize: 28, fontWeight: "900" },
   subtitle: { color: "#64748B", fontWeight: "800", marginTop: 4, marginBottom: 18 },
