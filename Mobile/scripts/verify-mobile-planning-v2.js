@@ -49,6 +49,7 @@ function run(command, args, cwd) {
 
 function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "planningV2.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "planningNativeCalendar.test.ts")], MOBILE);
   run("node", ["--test", path.join("lib", "planningWeekly.test.js")], BACKEND);
   run("node", ["--test", path.join("lib", "courseSchedulesRbacLive.test.js")], BACKEND);
   run("node", ["--test", path.join("lib", "planningCourseOptions.test.js")], BACKEND);
