@@ -49,6 +49,7 @@ function run(command, args, cwd) {
 
 function main() {
   run("npx", ["--yes", "tsx", path.join("src", "lib", "evaluationsV2.test.ts")], MOBILE);
+  run("npx", ["--yes", "tsx", path.join("src", "lib", "evaluationListFilters.test.ts")], MOBILE);
   run("node", ["--test", path.join("lib", "evaluationGradeEntry.test.js")], BACKEND);
   run("node", ["--test", path.join("lib", "notesEvaluationsRbacLive.test.js")], BACKEND);
 
