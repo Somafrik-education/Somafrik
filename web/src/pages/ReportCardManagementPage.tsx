@@ -526,10 +526,7 @@ export function ReportCardManagementPage() {
               >
                 Imprimer
               </button>
-              {canReissue && official.history.some((version) =>
-                version.published_snapshot_version === Number(official.row.published_snapshot_version) &&
-                version.verification_status === "ACTIVE"
-              ) ? (
+              {canReissue && official.row.verification_status === "ACTIVE" ? (
                 <Link
                   to={`/bulletins/historique?reportCardId=${encodeURIComponent(official.row.report_card_id)}`}
                   className="rounded-lg border border-brand px-3 py-2 text-sm font-bold text-brand"
@@ -537,6 +534,11 @@ export function ReportCardManagementPage() {
                 >
                   Créer une nouvelle version (V{Number(official.row.published_snapshot_version) + 1})
                 </Link>
+              ) : null}
+              {!canReissue && permissionCtx.permissionsReady ? (
+                <p className="text-xs text-muted" data-testid="rc-reissue-no-permission">
+                  Réémission indisponible : droit REPORT_CARD_PUBLISH non attribué. Contactez l'administrateur de l'établissement.
+                </p>
               ) : null}
             </div>
           </div>
