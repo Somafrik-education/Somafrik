@@ -4,9 +4,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { navigationRef } from "./rootNavigation";
 import { flushPendingPushNavigation } from "../lib/pushNotificationTap";
-import { dispatchRegisteredPushNavigation } from "../lib/pushNotificationNavigate";
-import { constrainParentPushNavigation } from "../lib/pushNotificationDestinations";
-import { constrainPlatformSchoolNavigation } from "../lib/platformSchoolDomainDeny";
+import { createPushNotificationOpener } from "../lib/pushNotificationOpener";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -260,13 +258,7 @@ export default function AppNavigator() {
         key={session ? "authenticated" : "public"}
         onReady={() => {
         flushPendingPushNavigation(
-          (destination, params) => {
-            const scoped = constrainPlatformSchoolNavigation(
-              constrainParentPushNavigation({ destination, params }, session),
-              session,
-            );
-            dispatchRegisteredPushNavigation(navigationRef, scoped.destination, scoped.params);
-          },
+          createPushNotificationOpener(() => session),
           {
             isReady: () => navigationRef.isReady(),
             isAuthenticated: () => Boolean(session) && canPersistFullSession(session),

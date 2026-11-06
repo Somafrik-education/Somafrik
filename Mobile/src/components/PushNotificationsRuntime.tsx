@@ -9,9 +9,7 @@ import {
   type PushTapGate,
   type PushTapResponse,
 } from "../lib/pushNotificationTap";
-import { constrainParentPushNavigation, type AllowedPushNavigationParams } from "../lib/pushNotificationDestinations";
-import { constrainPlatformSchoolNavigation } from "../lib/platformSchoolDomainDeny";
-import { dispatchRegisteredPushNavigation } from "../lib/pushNotificationNavigate";
+import { createPushNotificationOpener, registerPushStudentSelector } from "../lib/pushNotificationOpener";
 import {
   observePushRegistrationFailure,
   observePushRuntimeEvent,
@@ -29,20 +27,25 @@ Notifications.setNotificationHandler({
   }),
 });
 
-function navigateTo(
-  destination: string,
-  params?: AllowedPushNavigationParams,
-  session?: { role?: string | null; user?: { children?: unknown } | null } | null,
-) {
-  const scoped = constrainPlatformSchoolNavigation(
-    constrainParentPushNavigation({ destination: destination as never, params }, session),
-    session,
-  );
-  dispatchRegisteredPushNavigation(navigationRef, scoped.destination, scoped.params);
-}
-
 function isNavigationReady() {
   return navigationRef.isReady();
+}
+
+/** Évite qu'un ancien clic soit rejoué à un démarrage à froid ultérieur. */
+function clearLastNotificationResponse() {
+  const api = Notifications as {
+    clearLastNotificationResponse?: () => void;
+    clearLastNotificationResponseAsync?: () => Promise<void>;
+  };
+  try {
+    if (typeof api.clearLastNotificationResponse === "function") {
+      api.clearLastNotificationResponse();
+    } else if (typeof api.clearLastNotificationResponseAsync === "function") {
+      void api.clearLastNotificationResponseAsync().catch(() => undefined);
+    }
+  } catch {
+    // best effort : la déduplication en mémoire reste active
+  }
 }
 
 async function readLastNotificationResponse(): Promise<PushTapResponse> {
@@ -59,7 +62,7 @@ async function readLastNotificationResponse(): Promise<PushTapResponse> {
 }
 
 export default function PushNotificationsRuntime() {
-  const { session, bootstrapping } = useAuth();
+  const { session, bootstrapping, setSelectedStudentId } = useAuth();
   const canonical = !bootstrapping && Boolean(session) && canPersistFullSession(session);
   const canonicalRef = useRef(canonical);
   const sessionRef = useRef(session);
@@ -71,13 +74,13 @@ export default function PushNotificationsRuntime() {
     isReady: isNavigationReady,
     isAuthenticated: () => canonicalRef.current,
   };
-  const navigateScoped = (destination: string, params?: AllowedPushNavigationParams) => {
-    navigateTo(destination, params, sessionRef.current);
-  };
+  const navigateScoped = createPushNotificationOpener(() => sessionRef.current);
 
   useEffect(() => {
     observePushRuntimeEvent("mounted");
   }, []);
+
+  useEffect(() => registerPushStudentSelector(setSelectedStudentId), [setSelectedStudentId]);
 
   useEffect(() => {
     const from = previousCanonicalRef.current;
@@ -88,9 +91,15 @@ export default function PushNotificationsRuntime() {
   }, [canonical]);
 
   useEffect(() => {
-    void consumeInitialPushResponse(readLastNotificationResponse, navigateScoped, gate).catch(() => undefined);
+    void consumeInitialPushResponse(readLastNotificationResponse, navigateScoped, gate)
+      .then((outcome) => {
+        if (outcome !== "ignored") clearLastNotificationResponse();
+      })
+      .catch(() => undefined);
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      consumePushTapResponse(response as PushTapResponse, navigateScoped, gate);
+      if (consumePushTapResponse(response as PushTapResponse, navigateScoped, gate) !== "ignored") {
+        clearLastNotificationResponse();
+      }
     });
     return () => sub.remove();
     // Intentionally once: the gate reads canonicalRef for later session changes.

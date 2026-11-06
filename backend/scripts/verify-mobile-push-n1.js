@@ -37,6 +37,8 @@ function sourceGuards() {
   const tap = read("Mobile/src/lib/pushNotificationTap.ts");
   const destinations = read("Mobile/src/lib/pushNotificationDestinations.ts");
   const navigateLib = read("Mobile/src/lib/pushNotificationNavigate.ts");
+  const opener = read("Mobile/src/lib/pushNotificationOpener.ts");
+  const openLib = read("Mobile/src/lib/notificationNavigationOpen.ts");
   const navigator = read("Mobile/src/navigation/AppNavigator.tsx");
   const auth = read("Mobile/src/context/AuthContext.tsx");
   const api = read("Mobile/src/services/api.ts");
@@ -152,7 +154,9 @@ function sourceGuards() {
   assert.match(tap, /consumeInitialPushResponse/);
   assert.match(tap, /isAuthenticated/);
   assert.match(tap, /dismissPendingPushNavigation/);
-  assert.match(tap, /resolvePushNavigationData/);
+  // NOTIF-MOBILE-NAV : résolveur canonique unique (contrat #1090 + anciennes clés).
+  assert.match(tap, /resolveNotificationPushData/);
+  assert.match(destinations, /export function resolvePushNavigationData/);
   assert.match(destinations, /StudentPayments/);
   assert.match(destinations, /"Messages"/);
   assert.match(destinations, /"Announcements"/);
@@ -161,8 +165,15 @@ function sourceGuards() {
   assert.match(destinations, /somafrikConversationId/);
   assert.match(destinations, /return \{ destination: "Home" \}/);
   assert.match(navigator, /session == null|Boolean\(session\) && canPersistFullSession/);
-  assert.match(navigator, /dispatchRegisteredPushNavigation/);
-  assert.match(runtime, /dispatchRegisteredPushNavigation/);
+  // NOTIF-MOBILE-NAV : runtime et onReady passent par l'ouvreur commun,
+  // qui ne navigue que via une route enregistrée pour la session.
+  assert.match(navigator, /createPushNotificationOpener/);
+  assert.match(runtime, /createPushNotificationOpener/);
+  assert.match(opener, /openResolvedNotification/);
+  assert.match(openLib, /dispatchRegisteredPushNavigation/);
+  assert.match(openLib, /school_mismatch/);
+  assert.doesNotMatch(opener, /navigate\(\{\s*name/);
+  assert.doesNotMatch(openLib, /navigate\(\{\s*name/);
   assert.doesNotMatch(runtime, /navigate\(\{\s*name/);
   assert.doesNotMatch(navigator, /navigate\(\{\s*name/);
   assert.match(navigateLib, /export function callPushNavigationRef/);
@@ -223,6 +234,7 @@ function main() {
   run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationTap.test.ts"], "mobile cold-start tap");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/pushNotificationRuntime.tap.test.ts"], "mobile push tap runtime");
   run("npx", ["--yes", "tsx", "Mobile/src/lib/financeNotificationNavigation.test.ts"], "mobile finance notification navigation");
+  run("npx", ["--yes", "tsx", "Mobile/src/lib/notificationMobileNav.test.ts"], "mobile notification navigation (NOTIF-MOBILE-NAV)");
   run(process.execPath, ["backend/db/clientsCanonicalBootstrap.test.js"], "clientsCanonicalBootstrap");
   assert.ok(String(process.env.DATABASE_URL ?? "").trim(), "DATABASE_URL requis pour PUSH-N1");
   run(process.execPath, ["backend/db/mobilePushDevicesSchema.upgrade.pg.test.js"], "upgrade schéma PUSH-N1 legacy");
