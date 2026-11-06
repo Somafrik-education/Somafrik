@@ -46,9 +46,11 @@ test("materializeAccountSecretHashes ne réécrit pas un hash scrypt existant", 
   assert.equal(verifySecret("1234", user.passwordHash), false);
 });
 
-test("materializeAccountSecretHashes migrate un hash-field resté en clair", () => {
-  const user = { passwordHash: "1234" };
+test("materializeAccountSecretHashes ne promeut pas un hash-field resté en clair", () => {
+  const user = { passwordHash: "1234", pinHash: "1234" };
   materializeAccountSecretHashes(user);
-  assert.equal(isHashedSecret(user.passwordHash), true);
-  assert.equal(verifySecret("1234", user.passwordHash), true);
+  assert.equal(user.passwordHash, "1234");
+  assert.equal(user.pinHash, "1234");
+  assert.equal(isHashedSecret(user.passwordHash), false);
+  assert.equal(verifySecret("1234", user.passwordHash), false);
 });
