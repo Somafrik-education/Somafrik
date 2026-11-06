@@ -367,6 +367,7 @@ async function main() {
     assert.match(messageN.publishedAt, /^\d{4}-\d{2}-\d{2}T/);
     assert.equal(messageN.navigationTarget?.type, "conversation", "C4-01 navigation conversation exacte");
     assert.ok(messageN.navigationTarget?.conversationId, "C4-01 conversationId présent");
+    assert.equal(messageN.navigationTarget?.messageId, message.data.id, "NOTIF-CONTRACT messageId source dans cible");
     const adminOwnMessageN = unwrap((await request("/backoffice/internal-notifications", { token: adminA })).data)
       .find((row) => row.sourceEntityId === message.data.id);
     assert.equal(adminOwnMessageN, undefined, "C4-01 expéditeur non destinataire");
