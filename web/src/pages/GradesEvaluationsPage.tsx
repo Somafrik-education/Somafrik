@@ -30,6 +30,7 @@ import {
 import { pedagogyApi } from "../lib/pedagogyApi";
 import { reportCardsApi } from "../lib/reportCardsApi";
 import { classNamesMatch } from "../lib/classRules";
+import { filterEvaluationsByClassAndType } from "../lib/notesEvaluationFilters";
 import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
 import {
   allGrades,
@@ -255,7 +256,7 @@ export function GradesEvaluationsPage() {
 
   const classEvaluations = useMemo(
     () => !parentMode && selectedClass
-      ? evaluations.filter((evaluation) => classNamesMatch(evaluation.className, selectedClass))
+      ? filterEvaluationsByClassAndType(evaluations, selectedClass, "")
       : [],
     [evaluations, parentMode, selectedClass],
   );
@@ -271,8 +272,11 @@ export function GradesEvaluationsPage() {
   }, [evaluationTypeFilter, evaluationTypeOptions]);
   const filteredEvaluations = parentMode
     ? parentEvaluations
-    : filterEvaluationsForQueue(classEvaluations, period, statusFilter)
-        .filter((evaluation) => !evaluationTypeFilter || String(evaluation.evaluationType ?? "").trim() === evaluationTypeFilter);
+    : filterEvaluationsForQueue(
+        filterEvaluationsByClassAndType(classEvaluations, selectedClass, evaluationTypeFilter),
+        period,
+        statusFilter,
+      );
   const gradeEntryEvaluations = useMemo(
     () =>
       evaluationsEligibleForGradeEntry(scopeUser, evaluations, state).filter(
