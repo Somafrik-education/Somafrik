@@ -485,6 +485,30 @@ const cases: Case[] = [
       assert.equal(flushPendingPushNavigation(opener, gate), false, "pas de doublon");
     },
   },
+  {
+    id: "NAV-17 diagnostic sécurisé distingue refus de route et ouverture",
+    run() {
+      const { ref } = makeRef(["Home", "Messages"]);
+      const events: Array<{ destination: string; reason: string }> = [];
+      const onDecision = (event: { destination: string; reason: string }) => { events.push(event); };
+      openResolvedNotification(
+        resolveNotificationPushData(pushData("announcement")),
+        staffSession,
+        { navigation: ref, onDecision },
+      );
+      openResolvedNotification(
+        resolveNotificationPushData(pushData("conversation")),
+        staffSession,
+        { navigation: ref, onDecision },
+      );
+      assert.deepEqual(events, [
+        { destination: "Announcements", reason: "route_unavailable" },
+        { destination: "Messages", reason: "opened" },
+      ]);
+      assert.equal(JSON.stringify(events).includes(NOTIF), false, "aucun identifiant de notification");
+      assert.equal(JSON.stringify(events).includes(CONV), false, "aucun identifiant métier");
+    },
+  },
 ];
 
 async function main() {
