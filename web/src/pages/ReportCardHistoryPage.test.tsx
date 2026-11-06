@@ -120,6 +120,33 @@ describe("BULLETIN-REEMISSION-01 / PR2 — confirmation explicite Web", () => {
     expect(apiMocks.reissue).not.toHaveBeenCalled();
   });
 
+  it("autorise la validation métier sans token interne REPORT_CARD_PUBLISH", async () => {
+    authMocks.useAuth.mockReturnValue({
+      session: { user: { role: "Directeur", permissions: ["Valider bulletins"] } },
+      permissionsReady: true,
+      permissionsBootstrap: "ready",
+    });
+    render(<ReportCardHistoryPage />);
+    fireEvent.change(screen.getByLabelText("Identifiant bulletin"), { target: { value: "rc-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Charger l’historique" }));
+    expect(await screen.findByRole("button", { name: "Réémettre avec le modèle actif" })).toBeInTheDocument();
+    expect(apiMocks.reissue).not.toHaveBeenCalled();
+  });
+
+  it("refuse la réémission au profil élève même avec un droit incohérent", async () => {
+    authMocks.useAuth.mockReturnValue({
+      session: { user: { role: "Élève / Étudiant", permissions: ["Bulletins:UPDATE"] } },
+      permissionsReady: true,
+      permissionsBootstrap: "ready",
+    });
+    render(<ReportCardHistoryPage />);
+    fireEvent.change(screen.getByLabelText("Identifiant bulletin"), { target: { value: "rc-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Charger l’historique" }));
+    await screen.findByText("v1");
+    expect(screen.queryByRole("button", { name: "Réémettre avec le modèle actif" })).not.toBeInTheDocument();
+    expect(apiMocks.reissue).not.toHaveBeenCalled();
+  });
+
   it("ne propose pas de réémission d'une version révoquée", async () => {
     apiMocks.listHistory.mockResolvedValue({ ok: true, versions: [{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "REVOKED" }] });
     render(<ReportCardHistoryPage />);
