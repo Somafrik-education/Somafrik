@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const flags = vi.hoisted(() => ({ demo: false }));
 const switcherProps = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+// Identité stable : sinon chaque render relance l’hydratation Démo et annule le précédent effet.
+const ensureDomains = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const permissionCtx = vi.hoisted(() => ({ user: null as unknown, rolePermissions: {}, permissionsReady: true }));
 
 vi.mock("../lib/featureFlags", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/featureFlags")>();
@@ -36,7 +39,7 @@ const state = {
 };
 
 vi.mock("../context/DataContext", () => ({
-  useData: () => ({ state, ensureDomains: () => Promise.resolve() }),
+  useData: () => ({ state, ensureDomains }),
 }));
 
 vi.mock("../context/ActiveSchoolContext", () => ({
@@ -44,7 +47,7 @@ vi.mock("../context/ActiveSchoolContext", () => ({
 }));
 
 vi.mock("../lib/usePermissionContext", () => ({
-  usePermissionContext: () => ({ user, rolePermissions: {}, permissionsReady: true }),
+  usePermissionContext: () => permissionCtx,
 }));
 
 vi.mock("../lib/useSchoolDashboardKpis", () => ({
@@ -84,6 +87,8 @@ async function renderPage() {
 
 describe("OverviewPage — période serveur", () => {
   beforeEach(() => {
+    permissionCtx.user = user;
+    ensureDomains.mockClear();
     switcherProps.length = 0;
   });
 
