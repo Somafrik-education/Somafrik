@@ -91,6 +91,61 @@ describe("EvaluationFormModal P0 vocabulaire Cours", () => {
     expect(screen.queryByRole("option", { name: "Aucun cours affecté" })).not.toBeInTheDocument();
   });
 
+  it("enseignant : sélection T2/T3 depuis les périodes configurées, sans saisie libre", async () => {
+    const onSave = vi.fn();
+    const schoolState = {
+      ...emptyCatalogState,
+      academicConfigs: {
+        "CD-2026-0001": {
+          periods: [
+            { name: "Trimestre 1" },
+            { name: "Trimestre 2" },
+            { name: "Trimestre 3" },
+          ],
+        },
+      },
+    } as unknown as BackOfficeState;
+    render(
+      <EvaluationFormModal open onClose={() => undefined} onSave={onSave}
+        state={schoolState} schoolCode="CD-2026-0001"
+        classNames={["2ème A"]}
+        classes={[{ id: "uuid-a", name: "2ème A", classCode: "CLS-2A" }]}
+        user={seke} />,
+    );
+    const period = screen.getByLabelText(/^Période/i);
+    expect(period.tagName).toBe("SELECT");
+    expect(screen.getByRole("option", { name: "Trimestre 2" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Trimestre 3" })).toBeInTheDocument();
+    fireEvent.change(period, { target: { value: "Trimestre 3" } });
+    fireEvent.change(screen.getByLabelText(/^Cours/i), { target: { value: "Mathématiques" } });
+    fireEvent.change(screen.getByLabelText(/^Titre/i), { target: { value: "Évaluation T3" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Enregistrer" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ period: "Trimestre 3" }));
+  });
+
+  it("cours : distingue deux classes homonymes par classId sans fuite interclasse", async () => {
+    const teacher = {
+      ...seke,
+      assignments: [
+        { classId: "uuid-a", classCode: "CLS-A", className: "2ème A", course: "Physique", status: "active" },
+        { classId: "uuid-b", classCode: "CLS-B", className: "2ème A", course: "Géographie", status: "active" },
+      ],
+    };
+    render(
+      <EvaluationFormModal open onClose={() => undefined} onSave={() => undefined}
+        state={emptyCatalogState} schoolCode="CD-2026-0001" classNames={["2ème A"]}
+        classes={[
+          { id: "uuid-a", name: "2ème A", classCode: "CLS-A" },
+          { id: "uuid-b", name: "2ème A", classCode: "CLS-B" },
+        ]}
+        user={teacher} />,
+    );
+    fireEvent.change(screen.getByLabelText(/^Classe/i), { target: { value: "uuid-b" } });
+    expect(screen.getByRole("option", { name: "Géographie" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Physique" })).not.toBeInTheDocument();
+  });
+
   it("enseignant sans affectation : liste vide explicite, pas de catalogue global", async () => {
     const poisoned = {
       ...emptyCatalogState,

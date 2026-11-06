@@ -9,6 +9,7 @@ import {
   SCALE_OPTIONS,
   createEvaluation,
   resolveDefaultPeriod,
+  getSchoolPeriodNames,
   courseOptionsForClass,
 } from "../../lib/evaluations";
 import { evaluationTypesApi, type CanonicalEvaluationType } from "../../lib/evaluationTypesApi";
@@ -57,6 +58,7 @@ export function EvaluationFormModal({
 }: EvaluationFormModalProps) {
   const teachers = scopedTeachers(user, state);
   const defaultPeriod = resolveDefaultPeriod(state, schoolCode);
+  const periodOptions = useMemo(() => getSchoolPeriodNames(state, schoolCode), [state, schoolCode]);
   const backoffice = isSuperAdminRole(user?.role);
 
   const [catalog, setCatalog] = useState<CanonicalEvaluationType[]>([]);
@@ -91,6 +93,13 @@ export function EvaluationFormModal({
   const [subject, setSubject] = useState(initial?.subject ?? "");
   const [teacherId, setTeacherId] = useState(initial?.teacherId ?? "");
   const [period, setPeriod] = useState(initial?.period ?? defaultPeriod);
+  useEffect(() => {
+    if (!open) return;
+    const initialPeriod = initial?.period;
+    setPeriod(initialPeriod && periodOptions.includes(initialPeriod)
+      ? initialPeriod
+      : periodOptions.includes(defaultPeriod) ? defaultPeriod : periodOptions[0] ?? "");
+  }, [open, initial?.id, initial?.period, defaultPeriod, periodOptions]);
   const [evaluationTypeId, setEvaluationTypeId] = useState(initial?.evaluationTypeId ?? "");
   const [title, setTitle] = useState(initial?.title ?? "");
   const [date, setDate] = useState(periodDateToInput(initial?.date));
@@ -134,14 +143,16 @@ export function EvaluationFormModal({
         state,
         user,
         schoolCode,
+        classId: selectedClass?.id,
+        classCode: selectedClass?.code,
         className,
       }),
-    [state, user, schoolCode, className],
+    [state, user, schoolCode, selectedClass?.id, selectedClass?.code, className],
   );
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!selectedClass || !subject || !title.trim()) return;
+    if (!selectedClass || !subject || !title.trim() || !periodOptions.includes(period)) return;
     if (!evaluationTypeId) {
       setCatalogError("Aucun type d'évaluation actif n'est disponible.");
       return;
@@ -187,7 +198,7 @@ export function EvaluationFormModal({
           <Button variant="secondary" onClick={onClose}>
             Annuler
           </Button>
-          <Button form="evaluation-form" type="submit" disabled={!catalog.length || !selectedClass}>
+          <Button form="evaluation-form" type="submit" disabled={!catalog.length || !selectedClass || !subject || !periodOptions.includes(period)}>
             Enregistrer
           </Button>
         </>
@@ -242,7 +253,15 @@ export function EvaluationFormModal({
           />
         </Field>
         <Field label="Période" htmlFor="eval-period" required>
-          <Input id="eval-period" value={period} onChange={(e) => setPeriod(e.target.value)} required />
+          <Select
+            id="eval-period"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            options={[
+              { value: "", label: "Choisir une période" },
+              ...periodOptions.map((name) => ({ value: name, label: name })),
+            ]}
+          />
         </Field>
         <Field label="Type" htmlFor="eval-type" required>
           <Select
