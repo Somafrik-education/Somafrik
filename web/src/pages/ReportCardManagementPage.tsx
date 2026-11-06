@@ -67,6 +67,8 @@ export function ReportCardManagementPage() {
     [permissionCtx],
   );
   const canPublish = canPreview;
+  const canReissue = permissionCtx.permissionsReady === true &&
+    (permissionCtx.user?.permissions ?? []).includes("REPORT_CARD_PUBLISH");
 
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ManagedClass[]>([]);
@@ -524,6 +526,18 @@ export function ReportCardManagementPage() {
               >
                 Imprimer
               </button>
+              {canReissue && official.history.some((version) =>
+                version.published_snapshot_version === Number(official.row.published_snapshot_version) &&
+                version.verification_status === "ACTIVE"
+              ) ? (
+                <Link
+                  to={`/bulletins/historique?reportCardId=${encodeURIComponent(official.row.report_card_id)}`}
+                  className="rounded-lg border border-brand px-3 py-2 text-sm font-bold text-brand"
+                  data-testid="rc-reissue-v2-link"
+                >
+                  Créer une nouvelle version (V2)
+                </Link>
+              ) : null}
             </div>
           </div>
           {official.view ? (
