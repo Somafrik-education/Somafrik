@@ -31,7 +31,6 @@ import {
 import {
   displayedOccurrencesForDay,
   mapPlanningConflictMessage,
-  nearestOccurrenceDate,
   PLANNING_V2_COPY,
   PLANNING_V2_TEST_IDS,
   PLANNING_WEEKDAY_CHIPS,
@@ -54,11 +53,6 @@ import { createInFlightLock, createIntentionStore } from "../lib/mutationGuard";
 import { NETWORK_COPY, executeMutation } from "../lib/networkResilience";
 
 type Mode = "list" | "create" | "edit" | "replace";
-
-function todayDayOfWeek(): number {
-  const js = new Date().getDay();
-  return js === 0 ? 7 : js;
-}
 
 export default function TimetableScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
@@ -97,7 +91,6 @@ export default function TimetableScreen() {
   });
   const l1ReadOnly = mutationsBlocked || courseSchedulesSnapshot.source === "l1-cache";
 
-  const [selectedDay, setSelectedDay] = useState(todayDayOfWeek() === 7 ? 1 : todayDayOfWeek());
   const [calendarView, setCalendarView] = useState<NativePlanningView>("week");
   const [calendarAnchor, setCalendarAnchor] = useState(() => new Date());
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
@@ -218,7 +211,7 @@ export default function TimetableScreen() {
     setMode("create");
     setEditing(null);
     setSchoolCourseId(courseOptions[0]?.schoolCourseId ?? "");
-    setDayOfWeek(selectedDay === 7 ? 1 : selectedDay);
+    setDayOfWeek(canonicalWeekday(calendarAnchor));
     setStartTime("08:00");
     setEndTime("09:00");
     setRoomId(null);
@@ -247,7 +240,7 @@ export default function TimetableScreen() {
       return;
     }
     if (!canReplace) return;
-    const date = nearestOccurrenceDate(slot.dayOfWeek);
+    const date = occurrenceDateForDay;
     setMode("replace");
     setEditing(slot);
     setOccurrenceDate(date);
@@ -499,7 +492,6 @@ export default function TimetableScreen() {
                 style={[styles.calendarDay, calendarView === "month" && styles.calendarMonthDay, selected && styles.calendarDayActive, calendarView === "month" && !inMonth && styles.calendarDayOutside]}
                 onPress={() => {
                   setCalendarAnchor(date);
-                  setSelectedDay(canonicalWeekday(date));
                   if (calendarView === "month") setCalendarView("day");
                 }}
                 accessibilityRole="button"
