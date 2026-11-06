@@ -56,6 +56,9 @@ const HTTP_STATUS = Object.freeze({
   REISSUE_GRADES_CHANGED: 409,
   REISSUE_TEMPLATE_MISSING: 409,
   REISSUE_HEADER_MISSING: 409,
+  REISSUE_REASON_REQUIRED: 400,
+  REISSUE_COMMAND_REQUIRED: 400,
+  REISSUE_COMMAND_CONFLICT: 409,
   INVALID_PEDAGOGICAL_DATA: 422,
   PROFILE_NOT_PUBLISHABLE: 422,
   INVALID_PERIOD_SCOPE: 400,
@@ -1092,6 +1095,33 @@ function registerReportCardHttp(app, deps = {}) {
       });
       res.setHeader("Cache-Control", "no-store");
       res.json(result);
+    })
+  );
+
+  // BULLETIN-REEMISSION-01 / PR1 : création explicite d'une vN+1, jamais d'écrasement.
+  app.post(
+    "/api/report-card/publications/:reportCardId/reissues",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_PUBLISH);
+      const { createReportCardReissuePublisher } = require("./reportCardReissuePublish");
+      const { publication, classPublication, getTemplate } = services();
+      const service = createReportCardReissuePublisher({
+        publication, classPublication, getTemplate, identityStore: identityStore(),
+      });
+      const result = await service.publish({
+        tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+        actor,
+        reportCardId: req.params.reportCardId,
+        sourceVersion: req.body?.sourceVersion,
+        reason: req.body?.reason,
+        commandId: req.body?.commandId,
+        expectedDraftSha256: req.body?.expectedDraftSha256,
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.status(result.status === "REISSUED" ? 201 : 200).json({ ok: true, ...result });
     })
   );
 
