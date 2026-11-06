@@ -263,6 +263,32 @@ describe("BULLETIN-UI-01 — gestion des bulletins (Web)", () => {
     await waitFor(() => expect(open).toHaveBeenCalledWith("blob:pdf", "_blank", "noopener"));
     open.mockRestore();
   });
+  it("V2 : lien direct depuis un bulletin V1 actif pour un compte avec REPORT_CARD_PUBLISH", async () => {
+    session.current = { user: { role: "Admin School", permissions: ["Bulletins:READ", "Bulletins:UPDATE", "REPORT_CARD_PUBLISH"] } };
+    api.listPublications.mockResolvedValue([{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }]);
+    api.presentation.mockResolvedValue({ presentation: [view("COL-001", "Ndayishimiye Ama", true)], verificationStatus: "ACTIVE" });
+    listHistory.mockResolvedValue({ ok: true, versions: [{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }] });
+    await renderPage();
+    await selectClassAndPreview();
+    fireEvent.click(screen.getByText("Bulletin publié"));
+    const link = await screen.findByTestId("rc-reissue-v2-link");
+    expect(link).toHaveAttribute("href", "/bulletins/historique?reportCardId=rc-1");
+    expect(api.publish).not.toHaveBeenCalled();
+  });
+
+  it("V2 : l'action est masquée sans droit de publication ou sur un bulletin révoqué", async () => {
+    api.listPublications.mockResolvedValue([{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }]);
+    api.presentation.mockResolvedValue({ presentation: [view("COL-001", "Ndayishimiye Ama", true)], verificationStatus: "ACTIVE" });
+    listHistory.mockResolvedValue({ ok: true, versions: [{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "REVOKED" }] });
+    await renderPage();
+    await selectClassAndPreview();
+    fireEvent.click(screen.getByText("Bulletin publié"));
+    await screen.findByTestId("rc-official");
+    await waitFor(() => expect(listHistory).toHaveBeenCalled());
+    expect(screen.queryByTestId("rc-reissue-v2-link")).not.toBeInTheDocument();
+    expect(api.publish).not.toHaveBeenCalled();
+  });
+
   it("aucun modèle configuré : message explicite et accès au parcours de demande", async () => {
     listModelRequests.mockResolvedValue([]);
     await renderPage();
