@@ -180,7 +180,8 @@ export default function TimetableScreen() {
     courseSchedulesSnapshot.status === "error" ||
     courseSchedulesSnapshot.status === "offline" ||
     courseSchedulesSnapshot.status === "empty" ||
-    (courseSchedulesSnapshot.status === "success" && occurrences.length === 0 && mode === "list");
+    // Une journée vide ne doit pas masquer les autres jours du calendrier.
+    (courseSchedulesSnapshot.status === "success" && courseSchedulesSnapshot.data.length === 0 && mode === "list");
 
   const refuseMutation = () => {
     Alert.alert("Hors ligne", OFFLINE_COPY.mutationRequiresConnection);
@@ -711,7 +712,7 @@ export default function TimetableScreen() {
       {showQueryState ? (
         <QueryStateView
           snapshot={
-            courseSchedulesSnapshot.status === "success" && occurrences.length === 0
+            courseSchedulesSnapshot.status === "success" && courseSchedulesSnapshot.data.length === 0
               ? { status: "empty", data: [] }
               : courseSchedulesSnapshot
           }
@@ -725,7 +726,9 @@ export default function TimetableScreen() {
       ) : (
         <View testID={DATA_TRUTH_TEST_IDS.planningList}>
           <Text style={styles.dayTitle}>{planningDayLabel(calendarAnchor)} · {occurrenceDateForDay}</Text>
-          {occurrences.map((item) => renderSlotCard(item))}
+          {occurrences.length === 0 ? (
+            <Text style={styles.muted}>Aucun créneau pour cette journée.</Text>
+          ) : occurrences.map((item) => renderSlotCard(item))}
         </View>
       )}
     </ScrollView>
