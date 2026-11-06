@@ -106,6 +106,7 @@ export const AnnouncementsPage = lazyPage(
 );
 export const CoursePlanningPage = lazyPage(() => import("./pages/CoursePlanningPage"), "CoursePlanningPage");
 export const PlanningLayout = lazyPage(() => import("./pages/planning/PlanningLayout"), "PlanningLayout");
+export const PlanningIndexRedirect = lazyPage(() => import("./pages/planning/PlanningLayout"), "PlanningIndexRedirect");
 export const TimetableLayout = lazyPage(() => import("./pages/planning/TimetableLayout"), "TimetableLayout");
 export const TimetableByClassPage = lazyPage(
   () => import("./pages/planning/TimetableByClassPage"),
