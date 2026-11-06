@@ -535,7 +535,7 @@ export function ReportCardManagementPage() {
                   className="rounded-lg border border-brand px-3 py-2 text-sm font-bold text-brand"
                   data-testid="rc-reissue-v2-link"
                 >
-                  Créer une nouvelle version (V2)
+                  Créer une nouvelle version (V{Number(official.row.published_snapshot_version) + 1})
                 </Link>
               ) : null}
             </div>
