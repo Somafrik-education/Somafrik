@@ -264,7 +264,7 @@ describe("BULLETIN-UI-01 — gestion des bulletins (Web)", () => {
     open.mockRestore();
   });
   it("V2 : lien direct depuis un bulletin V1 actif pour un compte avec REPORT_CARD_PUBLISH", async () => {
-    session.current = { user: { role: "Admin School", permissions: ["Bulletins:READ", "Bulletins:UPDATE", "REPORT_CARD_PUBLISH"] } };
+    session.current = { user: { role: "Admin School", permissions: ["Bulletins:READ", "Bulletins:UPDATE"] } };
     api.listPublications.mockResolvedValue([{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }]);
     api.presentation.mockResolvedValue({ presentation: [view("COL-001", "Ndayishimiye Ama", true)], verificationStatus: "ACTIVE" });
     listHistory.mockResolvedValue({ ok: true, versions: [{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }] });
@@ -277,19 +277,20 @@ describe("BULLETIN-UI-01 — gestion des bulletins (Web)", () => {
   });
 
   it("V2 : sans permission, affiche un diagnostic explicite et ne permet aucune écriture", async () => {
+    session.current = { user: { role: "Directeur", permissions: ["Bulletins:READ"] } };
     api.listPublications.mockResolvedValue([{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }]);
     api.presentation.mockResolvedValue({ presentation: [view("COL-001", "Ndayishimiye Ama", true)], verificationStatus: "ACTIVE" });
     listHistory.mockResolvedValue({ ok: true, versions: [{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }] });
     await renderPage();
     await selectClassAndPreview();
     fireEvent.click(screen.getByText("Bulletin publié"));
-    expect(await screen.findByTestId("rc-reissue-no-permission")).toHaveTextContent("REPORT_CARD_PUBLISH");
+    expect(await screen.findByTestId("rc-reissue-no-permission")).toHaveTextContent("Modifier les bulletins");
     expect(screen.queryByTestId("rc-reissue-v2-link")).not.toBeInTheDocument();
     expect(api.publish).not.toHaveBeenCalled();
   });
 
   it("V2 : version active permet le lien même si le chargement historique échoue", async () => {
-    session.current = { user: { role: "Admin School", permissions: ["Bulletins:READ", "Bulletins:UPDATE", "REPORT_CARD_PUBLISH"] } };
+    session.current = { user: { role: "Admin School", permissions: ["Bulletins:READ", "Bulletins:UPDATE"] } };
     api.listPublications.mockResolvedValue([{ report_card_id: "rc-1", published_snapshot_version: 1, verification_status: "ACTIVE" }]);
     api.presentation.mockResolvedValue({ presentation: [view("COL-001", "Ndayishimiye Ama", true)], verificationStatus: "ACTIVE" });
     listHistory.mockRejectedValue(new Error("history unavailable"));
