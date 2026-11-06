@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -165,6 +165,11 @@ export default function TimetableScreen() {
     return [...classes.entries()].map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, "fr"));
   }, [courseSchedulesSnapshot.data]);
+  useEffect(() => {
+    if (selectedClassId && !scopedClasses.some((classe) => classe.id === selectedClassId)) {
+      setSelectedClassId(null);
+    }
+  }, [scopedClasses, selectedClassId]);
   const filteredSlots = useMemo(
     () => courseSchedulesSnapshot.data.filter((slot) => !selectedClassId || slot.classId === selectedClassId),
     [courseSchedulesSnapshot.data, selectedClassId],
