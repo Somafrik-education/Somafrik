@@ -2,6 +2,7 @@ import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity,
 import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { filterCanonicalEvaluationsByClassAndType } from "../lib/evaluationListFilters";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
@@ -150,7 +151,7 @@ export default function TeacherGradesScreen() {
       .sort((a, b) => a.label.localeCompare(b.label, "fr"));
   }, [evaluationsSnapshot.data]);
   const classEvaluations = useMemo(
-    () => (evaluationsSnapshot.data ?? []).filter((evaluation) => !classFilter || evaluation.classId === classFilter),
+    () => filterCanonicalEvaluationsByClassAndType(evaluationsSnapshot.data ?? [], classFilter, ""),
     [evaluationsSnapshot.data, classFilter],
   );
   const typeOptions = useMemo(() => {
@@ -169,9 +170,11 @@ export default function TeacherGradesScreen() {
     if (typeFilter && !typeOptions.some((item) => item.id === typeFilter)) setTypeFilter("");
   }, [classFilter, classOptions, typeFilter, typeOptions]);
   const visibleEvaluations = useMemo(
-    () => filterEvaluationsForQueue(classEvaluations, periodFilter, statusFilter)
-      .filter((evaluation) => !typeFilter ||
-        (evaluation.evaluationTypeId || evaluation.evaluationTypeCode || evaluation.evaluationType || "") === typeFilter),
+     () => filterEvaluationsForQueue(
+      filterCanonicalEvaluationsByClassAndType(classEvaluations, classFilter, typeFilter),
+      periodFilter,
+      statusFilter,
+    ),
     [classEvaluations, periodFilter, statusFilter, typeFilter],
   );
 
