@@ -50,6 +50,7 @@ import {
   PlatformNotificationsPage,
   PlanningConflictsPage,
   PlanningLayout,
+  PlanningIndexRedirect,
   PlanningRoomsPage,
   PlanningSubstitutionsPage,
   PresencesPage,
@@ -251,23 +252,24 @@ export default function App() {
         <Route
           path="/planning"
           element={
-            <PermissionRoute view="planning">
+            <PermissionRoute view={["planning", "exams"]}>
               <PlanningLayout />
             </PermissionRoute>
           }
         >
-          <Route index element={<Navigate to="emploi-du-temps" replace />} />
+          <Route index element={<PlanningIndexRedirect />} />
           <Route path="affectations" element={<Navigate to="/etablissement/enseignants" replace />} />
-          <Route path="emploi-du-temps" element={<TimetableLayout />}>
+          <Route path="emploi-du-temps" element={<PermissionRoute view="planning"><TimetableLayout /></PermissionRoute>}>
             <Route index element={<Navigate to="calendrier" replace />} />
             <Route path="par-classe" element={<TimetableByClassPage />} />
             <Route path="par-enseignant" element={<TimetableByTeacherPage />} />
             <Route path="par-salle" element={<TimetableByRoomPage />} />
             <Route path="calendrier" element={<CoursePlanningPage />} />
           </Route>
-          <Route path="salles" element={<PlanningRoomsPage />} />
-          <Route path="remplacements" element={<PlanningSubstitutionsPage />} />
-          <Route path="conflits" element={<PlanningConflictsPage />} />
+          <Route path="salles" element={<PermissionRoute view="planning"><PlanningRoomsPage /></PermissionRoute>} />
+          <Route path="remplacements" element={<PermissionRoute view="planning"><PlanningSubstitutionsPage /></PermissionRoute>} />
+          <Route path="conflits" element={<PermissionRoute view="planning"><PlanningConflictsPage /></PermissionRoute>} />
+          <Route path="examens" element={<PermissionRoute view="exams"><EntityPage entity="exams" /></PermissionRoute>} />
         </Route>
         <Route path="/paiements" element={<Navigate to="/finances/paiements" replace />} />
         <Route
@@ -346,7 +348,7 @@ export default function App() {
           path="/examens"
           element={
             <PermissionRoute view="exams">
-              <EntityPage entity="exams" />
+              <Navigate to="/planning/examens" replace />
             </PermissionRoute>
           }
         />
