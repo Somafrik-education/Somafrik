@@ -119,7 +119,6 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "planning", path: "/planning", label: "Planning de cours", group: "pedagogie", schoolOnly: true },
   { view: "presences", path: "/presences", label: "Appels & présences", group: "pedagogie", schoolOnly: true },
   { view: "notes", path: "/notes", label: "Notes & évaluations", group: "pedagogie", schoolOnly: true },
-  { view: "exams", path: "/examens", label: "Examens", group: "pedagogie", schoolOnly: true },
   { view: "bulletins", path: "/bulletins", label: "Bulletins", group: "pedagogie", schoolOnly: true },
 
   // Finances (module à onglets : Paiements, Frais, Impayés)
