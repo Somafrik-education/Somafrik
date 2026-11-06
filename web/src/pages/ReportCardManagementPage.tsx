@@ -15,7 +15,7 @@ import { Card, SectionHeader } from "../components/ui/Card";
 import { Field, Select } from "../components/ui/Field";
 import { ReportCardPresentationTable } from "../components/bulletin/ReportCardPresentationTable";
 import { academicYearsApi, type AcademicYear } from "../lib/academicYearsApi";
-import { getCurrentRolePermissions, hasBackOfficePermission } from "../lib/permissions";
+import { canPublishOfficialReportCard, getCurrentRolePermissions, hasBackOfficePermission } from "../lib/permissions";
 import { usePermissionContext } from "../lib/usePermissionContext";
 import { reportCardHistoryApi, type PublishedVersionRow } from "../lib/reportCardHistoryApi";
 import { reportCardStatusLabel } from "../lib/reportCardStatus";
@@ -67,8 +67,7 @@ export function ReportCardManagementPage() {
     [permissionCtx],
   );
   const canPublish = canPreview;
-  const canReissue = permissionCtx.permissionsReady === true &&
-    (permissionCtx.user?.permissions ?? []).includes("REPORT_CARD_PUBLISH");
+  const canReissue = canPublishOfficialReportCard(permissionCtx);
 
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [classes, setClasses] = useState<ManagedClass[]>([]);
@@ -537,7 +536,7 @@ export function ReportCardManagementPage() {
               ) : null}
               {!canReissue && permissionCtx.permissionsReady ? (
                 <p className="text-xs text-muted" data-testid="rc-reissue-no-permission">
-                  Réémission indisponible : droit REPORT_CARD_PUBLISH non attribué. Contactez l'administrateur de l'établissement.
+                  Réémission indisponible : droit « Modifier les bulletins » ou « Valider bulletins » non attribué. Contactez l'administrateur de l'établissement.
                 </p>
               ) : null}
             </div>
