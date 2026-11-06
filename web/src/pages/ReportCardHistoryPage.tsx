@@ -1,5 +1,6 @@
 import { reportCardStatusLabel } from "../lib/reportCardStatus";
 import { FormEvent, useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import {
   reportCardHistoryApi,
   type PublishedVersionRow,
@@ -7,6 +8,9 @@ import {
 } from "../lib/reportCardHistoryApi";
 
 export function ReportCardHistoryPage() {
+  const { session, permissionsReady } = useAuth();
+  const canReissue = permissionsReady &&
+    (session?.permissions ?? session?.user?.permissions)?.includes("REPORT_CARD_PUBLISH") === true;
   const [reportCardId, setReportCardId] = useState("");
   const [versions, setVersions] = useState<PublishedVersionRow[]>([]);
   const [reason, setReason] = useState("");
@@ -29,6 +33,7 @@ export function ReportCardHistoryPage() {
     event.preventDefault();
     setLoading(true);
     setReissuePreview(null);
+    setReissueConfirmed(false);
     try {
       await reload(reportCardId);
       setError("");
@@ -69,6 +74,7 @@ export function ReportCardHistoryPage() {
   }
 
   async function prepareReissue(version: number) {
+    if (!canReissue) return;
     setReissueBusy(true);
     setError("");
     setMessage("");
@@ -92,7 +98,7 @@ export function ReportCardHistoryPage() {
 
   async function confirmReissue(event: FormEvent) {
     event.preventDefault();
-    if (!reissuePreview || !reissueConfirmed || !reissueReason.trim() || !reissueCommandId) return;
+    if (!canReissue || !reissuePreview || !reissueConfirmed || !reissueReason.trim() || !reissueCommandId) return;
     setReissueBusy(true);
     setError("");
     try {
@@ -135,16 +141,18 @@ export function ReportCardHistoryPage() {
             <strong data-status={row.verification_status}>{reportCardStatusLabel("canonical", row.verification_status)}</strong>
             {row.verification_status === "ACTIVE" ? (
               <>
-                <button type="button" onClick={() => void prepareReissue(row.published_snapshot_version)} disabled={reissueBusy}>
-                  Réémettre avec le modèle actif
-                </button>
+                {canReissue ? (
+                  <button type="button" onClick={() => void prepareReissue(row.published_snapshot_version)} disabled={reissueBusy}>
+                    Réémettre avec le modèle actif
+                  </button>
+                ) : null}
                 <button type="button" onClick={() => void onRevoke(row.published_snapshot_version)}>Révoquer</button>
               </>
             ) : null}
           </li>
         ))}
       </ul>
-      {reissuePreview ? (
+      {canReissue && reissuePreview ? (
         <form onSubmit={(event) => void confirmReissue(event)} className="space-y-3 rounded border p-4" data-testid="report-card-reissue-preview">
           <h2 className="font-semibold">Prévisualisation de réémission — non officielle</h2>
           <p>v{reissuePreview.source_version} → v{reissuePreview.proposed_version} · Un seul bulletin</p>
@@ -163,6 +171,7 @@ export function ReportCardHistoryPage() {
           </div>
           <p>Élève : {reissuePreview.student_id}</p>
           <p>Les notes, les maxima et les résultats doivent rester inchangés. L’ancien bulletin demeure consultable comme historique.</p>
+          <p>Ce panneau est un aperçu textuel, pas un PDF officiel. Après publication, contrôler le PDF signé, le logo, les signatures et le nouveau QR en préproduction.</p>
           <label className="block">
             Motif de réémission
             <input value={reissueReason} onChange={(event) => setReissueReason(event.target.value)} required className="block w-full rounded border p-2" />
@@ -171,7 +180,7 @@ export function ReportCardHistoryPage() {
             <input type="checkbox" checked={reissueConfirmed} onChange={(event) => setReissueConfirmed(event.target.checked)} />
             Je confirme la création d’une nouvelle version officielle avec le nouvel en-tête et un nouveau QR.
           </label>
-          <button type="submit" disabled={reissueBusy || !reissueReason.trim() || !reissueConfirmed}>Publier la nouvelle version</button>
+          <button type="submit" disabled={reissueBusy || !canReissue || !reissueReason.trim() || !reissueConfirmed}>Publier la nouvelle version</button>
           <button type="button" onClick={() => setReissuePreview(null)} disabled={reissueBusy}>Annuler</button>
         </form>
       ) : null}
