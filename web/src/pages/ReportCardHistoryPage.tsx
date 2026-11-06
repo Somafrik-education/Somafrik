@@ -1,7 +1,8 @@
 import { reportCardStatusLabel } from "../lib/reportCardStatus";
 import { FormEvent, useEffect, useState } from "react";
 import { ApiError } from "../api/client";
-import { useAuth } from "../context/AuthContext";
+import { canPublishOfficialReportCard } from "../lib/permissions";
+import { usePermissionContext } from "../lib/usePermissionContext";
 import {
   reportCardHistoryApi,
   type PublishedVersionRow,
@@ -9,7 +10,7 @@ import {
 } from "../lib/reportCardHistoryApi";
 
 const REISSUE_ERRORS: Record<string, string> = {
-  RBAC_DENIED: "Votre compte ne possède pas le droit de publier les bulletins (REPORT_CARD_PUBLISH).",
+  RBAC_DENIED: "Votre compte ne possède pas le droit « Modifier les bulletins » ou « Valider bulletins ».",
   REISSUE_SOURCE_NOT_ACTIVE: "La version sélectionnée n'est plus active. Chargez la dernière version publiée.",
   REISSUE_GRADES_CHANGED: "Les notes ou les résultats ont changé depuis la V1. La réémission avec notes inchangées est refusée.",
   REPORT_CARD_INCOMPLETE: "Le nouveau brouillon est incomplet. Corrigez d'abord les anomalies de la classe.",
@@ -32,9 +33,8 @@ function reissueErrorText(error: unknown): string {
 }
 
 export function ReportCardHistoryPage() {
-  const { session, permissionsReady } = useAuth();
-  const canReissue = permissionsReady &&
-    (session?.permissions ?? session?.user?.permissions)?.includes("REPORT_CARD_PUBLISH") === true;
+  const permissionCtx = usePermissionContext();
+  const canReissue = canPublishOfficialReportCard(permissionCtx);
   const [reportCardId, setReportCardId] = useState(() => new URLSearchParams(window.location.search).get("reportCardId")?.trim() ?? "");
   const [versions, setVersions] = useState<PublishedVersionRow[]>([]);
   const [reason, setReason] = useState("");
@@ -160,7 +160,7 @@ export function ReportCardHistoryPage() {
     <main className="mx-auto max-w-4xl space-y-5 p-6">
       <h1 className="text-xl font-bold">Historique des bulletins publiés</h1>
       {loading ? <p>Chargement…</p> : null}
-      {!canReissue ? <p role="note">La création d’une nouvelle version nécessite le droit REPORT_CARD_PUBLISH. Contactez l’administrateur de l’établissement si le bouton n’apparaît pas.</p> : null}
+      {!canReissue ? <p role="note">La création d’une nouvelle version nécessite l’autorisation « Modifier les bulletins » ou « Valider bulletins ». Contactez l’administrateur si le bouton n’apparaît pas.</p> : null}
       {error ? <p role="alert">{error}</p> : null}
       {message ? <p role="status">{message}</p> : null}
       <form onSubmit={(event) => void onLoad(event)}>
