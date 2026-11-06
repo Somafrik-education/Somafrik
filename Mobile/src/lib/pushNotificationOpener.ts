@@ -1,4 +1,5 @@
 import { navigationRef } from "../navigation/rootNavigation";
+import { safeLogger } from "../services/safeLogger";
 import { markInternalNotificationRead } from "../services/internalNotificationsApi";
 import { notifyInternalNotificationsChanged } from "./internalNotificationsRead";
 import { openResolvedNotification } from "./notificationNavigationOpen";
@@ -39,6 +40,10 @@ export function createPushNotificationOpener(getSession: SessionGetter) {
       markRead: (notificationId, schoolCode) => markInternalNotificationRead(notificationId, schoolCode),
       onReadChanged: notifyInternalNotificationsChanged,
       selectStudent: (studentId) => studentSelector?.(studentId),
+      onDecision: ({ destination, reason }) => {
+        // Ne jamais journaliser notificationId, schoolCode, identifiants métier ou texte.
+        safeLogger.warn("NOTIF_TAP_DECISION", { destination, reason });
+      },
     });
   };
 }
