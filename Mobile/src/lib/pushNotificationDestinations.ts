@@ -34,6 +34,8 @@ export type AllowedPushNavigationParams = {
 export type NotificationNavigationMeta = {
   notificationId?: string;
   schoolCode?: string;
+  /** Le champ était présent mais malformé : ne pas le traiter comme un ancien Push. */
+  invalidSchoolCode?: boolean;
 };
 
 export type ResolvedNotificationNavigation = {
@@ -103,8 +105,11 @@ function readMeta(record: Record<string, unknown>, notificationIdKey = "notifica
   const meta: NotificationNavigationMeta = {};
   const notificationId = readResourceUuid(record[notificationIdKey]);
   if (notificationId) meta.notificationId = notificationId;
-  const schoolCode = readSchoolCode(record.schoolCode);
-  if (schoolCode) meta.schoolCode = schoolCode;
+  if (Object.prototype.hasOwnProperty.call(record, "schoolCode")) {
+    const schoolCode = readSchoolCode(record.schoolCode);
+    if (schoolCode) meta.schoolCode = schoolCode;
+    else meta.invalidSchoolCode = true;
+  }
   return meta;
 }
 
@@ -156,7 +161,32 @@ function resolveLegacyPush(record: Record<string, unknown>): Pick<ResolvedNotifi
 export function resolveNotificationPushData(data: unknown): ResolvedNotificationNavigation {
   const record = asRecord(data);
   const meta = readMeta(record);
-  const target = resolveTarget(record) ?? resolveLegacyPush(record);
+  // Un contrat canonique présent fait autorité : ne jamais se rabattre sur
+  // une ancienne destination si ses identifiants ou son type sont invalides.
+  const hasCanonical = ["type", "resourceType", "resourceId"].some((key) =>
+    Object.prototype.hasOwnProperty.call(record, key));
+  let target: ReturnType<typeof resolveTarget> = null;
+  if (hasCanonical) {
+    const type = typeof record.type === "string" ? record.type.trim() : "";
+    const resourceType = typeof record.resourceType === "string" ? record.resourceType.trim() : "";
+    const hasResourceType = Object.prototype.hasOwnProperty.call(record, "resourceType");
+    const resolved = resolveTarget(record);
+    if (!resolved || (hasResourceType && resourceType !== type)) return fallback(meta);
+    const primaryId = readResourceUuid(record.resourceId);
+    if (Object.prototype.hasOwnProperty.call(record, "resourceId") && !primaryId) return fallback(meta);
+    // Si resourceId est fourni, il doit correspondre à l'identifiant primaire
+    // du backend. Les cibles 'Timetable' ne disposent pas de paramètre écran.
+    const primaryByType: Record<string, string> = {
+      conversation: "conversationId", announcement: "announcementId",
+      attendance: "attendanceId", grade: "gradeId", report_card: "reportCardId",
+      payment: "paymentId", finance_obligation: "obligationId",
+      timetable: "weeklySlotId", teacher_replacement: "replacementId",
+    };
+    if (primaryId && readResourceUuid(record[primaryByType[type]]) !== primaryId) return fallback(meta);
+    target = resolved;
+  } else {
+    target = resolveLegacyPush(record);
+  }
   if (target) return { ...target, resolved: true, meta };
   // Centre de notifications seulement pour une notification sans aucune cible
   // (notification manuelle). Une cible présente mais invalide reste fail-closed.
