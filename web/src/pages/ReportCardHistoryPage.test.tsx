@@ -47,6 +47,33 @@ describe("BULLETIN-REEMISSION-01 / PR2 — confirmation explicite Web", () => {
     apiMocks.reissue.mockResolvedValue({ ok: true, status: "REISSUED", published_snapshot_version: 2, public_id: "new-public-id" });
   });
 
+  it("charge automatiquement la V1 depuis la gestion sans action de publication", async () => {
+    const previousUrl = window.location.href;
+    try {
+      window.history.replaceState({}, "", "/bulletins/historique?reportCardId=rc-1");
+      render(<ReportCardHistoryPage />);
+      expect(screen.getByLabelText("Identifiant bulletin")).toHaveValue("rc-1");
+      await waitFor(() => expect(apiMocks.listHistory).toHaveBeenCalledWith("rc-1"));
+      expect(await screen.findByText("v1")).toBeInTheDocument();
+      expect(apiMocks.previewReissue).not.toHaveBeenCalled();
+      expect(apiMocks.reissue).not.toHaveBeenCalled();
+    } finally {
+      window.history.replaceState({}, "", previousUrl);
+    }
+  });
+
+  it("affiche la raison métier d'un refus de prévisualisation", async () => {
+    const { ApiError } = await import("../api/client");
+    apiMocks.previewReissue.mockRejectedValue(new ApiError("message interne", 409, "REISSUE_GRADES_CHANGED"));
+    render(<ReportCardHistoryPage />);
+    fireEvent.change(screen.getByLabelText("Identifiant bulletin"), { target: { value: "rc-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Charger l’historique" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Réémettre avec le modèle actif" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("notes ou les résultats ont changé");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("message interne");
+    expect(apiMocks.reissue).not.toHaveBeenCalled();
+  });
+
   it("ne publie pas en consultant un historique ou en ouvrant un aperçu ; motif et confirmation requis", async () => {
     render(<ReportCardHistoryPage />);
     fireEvent.change(screen.getByLabelText("Identifiant bulletin"), { target: { value: "rc-1" } });
