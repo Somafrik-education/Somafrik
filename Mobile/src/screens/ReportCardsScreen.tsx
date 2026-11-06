@@ -28,11 +28,13 @@ import {
 } from "../lib/reportCardPublicationApi";
 import {
   listPublishedVersionHistory,
+  type PublishedVersionRow,
+} from "../lib/reportCardHistoryApi";
+import {
   previewReportCardReissue,
   publishReportCardReissue,
   type ReissuePreview,
-  type PublishedVersionRow,
-} from "../lib/reportCardHistoryApi";
+} from "../lib/reportCardReissueApi";
 import { listReportCardRequests, type ReportCardWorkflowRequest } from "../lib/reportCardWorkflowApi";
 import {
   SNAPSHOT_SLOT_PERCENTAGE,
