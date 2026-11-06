@@ -16,7 +16,10 @@ describe("S1 / #659 CTA non-régression", () => {
     expect(entity).toMatch(/\/bulletins\/modele/);
     // BULLETIN-CATALOG-01 : le CTA mène à la galerie des modèles autorisés et à l'assistant.
     const school = readRel("web/src/pages/ReportCardCatalogSchoolPage.tsx");
-    // Libellé contextualisé, tout en garantissant la présence du CTA de configuration.\n    expect(school).toMatch(/Configurer ce modèle pour une classe/);\n    expect(school).toMatch(/Créer la configuration de cette classe/);\n    expect(school).toMatch(/catalog-school-choose-/);
+    // Libellé contextualisé, tout en garantissant la présence du CTA de configuration.
+    expect(school).toMatch(/Configurer ce modèle pour une classe/);
+    expect(school).toMatch(/Créer la configuration de cette classe/);
+    expect(school).toMatch(/catalog-school-choose-/);
     expect(school).toMatch(/catalog-save/);
     expect(school).toMatch(/catalog-activate-confirm/);
     expect(existsSync(path.join(ROOT, "backend/scripts/verify-report-card-s1-e2e.js"))).toBe(true);
