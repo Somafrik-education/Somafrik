@@ -65,7 +65,7 @@ function gradePublication(row) {
 
 function issue(code, severity, where = {}) {
   const out = { code, severity };
-  for (const key of ["student_id", "subject_id", "period_id", "score_component_id", "grade_id", "evaluation_id", "term_name", "evaluation_type"]) {
+  for (const key of ["student_id", "subject_id", "period_id", "score_component_id", "grade_id", "evaluation_id", "evaluation_title", "term_name", "evaluation_type"]) {
     if (where[key] != null && where[key] !== "") out[key] = String(where[key]);
   }
   return out;
@@ -119,8 +119,9 @@ function aggregateCell(rows, { aggregation, cellMax }) {
  * @param {string[]} input.periods périodes du périmètre (ordre du profil)
  * @param {Array<{student_uuid, student_code, student_school_id}>} input.cohort inscrits actifs
  * @param {object[]} input.gradeRows notes de la classe (listClassGradeSources)
+ * @param {object[]} input.evaluationRows évaluations publiées de la classe, y compris sans note
  */
-function buildPublicationFacts({ profile, schoolId, classAcademicYearId, periods, cohort = [], gradeRows = [] } = {}) {
+function buildPublicationFacts({ profile, schoolId, classAcademicYearId, periods, cohort = [], gradeRows = [], evaluationRows = [] } = {}) {
   const tenant = asKey(schoolId);
   if (!tenant) throw new ReportCardFactBuilderError("TENANT_REQUIRED");
   const { componentByType, periodByTerm, aggregationOf } = indexSources(profile);
@@ -137,6 +138,37 @@ function buildPublicationFacts({ profile, schoolId, classAcademicYearId, periods
     roster.push(asKey(student.student_code));
   }
   const cells = new Map();
+  // Vérification globale : même une évaluation publiée sans note doit être auditée.
+  const mappedEvaluations = new Map();
+  const unmappedEvaluations = new Set();
+  for (const row of evaluationRows) {
+    const evaluationId = asKey(row.evaluation_id);
+    const where = { evaluation_id: evaluationId, evaluation_title: row.evaluation_title, subject_id: row.subject_code };
+    if (asKey(row.evaluation_school_id) !== tenant || asKey(row.subject_school_id) !== tenant) {
+      issues.push(issue("FOREIGN_SCHOOL_DATA", BLOCKING, { evaluation_id: evaluationId }));
+      continue;
+    }
+    if (asKey(row.term_year_id) !== asKey(classAcademicYearId)) {
+      issues.push(issue("TERM_NOT_IN_ACADEMIC_YEAR", BLOCKING, where));
+      continue;
+    }
+    const periodId = periodByTerm.get(normalizeTermName(row.term_name));
+    if (!periodId) {
+      issues.push(issue("PERIOD_UNKNOWN", BLOCKING, { ...where, term_name: row.term_name }));
+      continue;
+    }
+    if (!inScope.has(periodId)) continue;
+    where.period_id = periodId;
+    const typeCode = normalizeEvaluationTypeCode(row.evaluation_type_code || row.evaluation_type_text);
+    const componentId = componentByType.get(typeCode);
+    if (!componentId) {
+      unmappedEvaluations.add(evaluationId);
+      issues.push(issue("EVALUATION_TYPE_UNMAPPED", BLOCKING, { ...where, evaluation_type: typeCode }));
+      continue;
+    }
+    mappedEvaluations.set(evaluationId, { ...where, componentId, typeCode });
+  }
+  const studentsWithGrades = new Map();
   for (const row of gradeRows) {
     const where = { grade_id: row.grade_id, evaluation_id: row.evaluation_id, subject_id: row.subject_code };
     const foreign = [row.grade_school_id, row.student_school_id, row.subject_school_id]
@@ -156,6 +188,13 @@ function buildPublicationFacts({ profile, schoolId, classAcademicYearId, periods
       issues.push(issue("TERM_NOT_IN_ACADEMIC_YEAR", BLOCKING, where));
       continue;
     }
+    const evaluationId = asKey(row.evaluation_id);
+    if (mappedEvaluations.has(evaluationId)) {
+      // Une note d'un autre tenant, année ou élève non inscrit ne valide
+      // jamais la présence d'une note pour cet élève.
+      if (!studentsWithGrades.has(evaluationId)) studentsWithGrades.set(evaluationId, new Set());
+      studentsWithGrades.get(evaluationId).add(asKey(row.student_uuid));
+    }
     const periodId = periodByTerm.get(normalizeTermName(row.term_name));
     if (!periodId) {
       issues.push(issue("PERIOD_UNKNOWN", BLOCKING, { ...where, term_name: row.term_name }));
@@ -170,7 +209,10 @@ function buildPublicationFacts({ profile, schoolId, classAcademicYearId, periods
     const typeCode = normalizeEvaluationTypeCode(row.evaluation_type_code || row.evaluation_type_text);
     const componentId = componentByType.get(typeCode);
     if (!componentId) {
-      issues.push(issue("EVALUATION_TYPE_UNMAPPED", BLOCKING, { ...where, evaluation_type: typeCode }));
+      // La classe voit déjà une anomalie nommée pour cette évaluation.
+      if (!unmappedEvaluations.has(asKey(row.evaluation_id))) {
+        issues.push(issue("EVALUATION_TYPE_UNMAPPED", BLOCKING, { ...where, evaluation_type: typeCode }));
+      }
       continue;
     }
     where.score_component_id = componentId;
@@ -195,6 +237,20 @@ function buildPublicationFacts({ profile, schoolId, classAcademicYearId, periods
     const key = `${studentCode}\0${row.subject_code}\0${periodId}\0${componentId}`;
     if (!cells.has(key)) cells.set(key, { studentCode, subjectId: asKey(row.subject_code), periodId, componentId, cellMax: rule.max, rows: [] });
     cells.get(key).rows.push(row);
+  }
+  // Comparer chaque évaluation publiée et mappée à tous les inscrits de la classe.
+  for (const [evaluationId, entry] of mappedEvaluations) {
+    const rule = resolveSubjectComponentRule(profile, asKey(entry.subject_id), entry.period_id, entry.componentId);
+    if (rule.state !== "APPLICABLE") continue;
+    const gradedStudents = studentsWithGrades.get(evaluationId) || new Set();
+    for (const [studentUuid, studentCode] of enrolled) {
+      if (!gradedStudents.has(studentUuid)) {
+        issues.push(issue("EVALUATION_GRADE_MISSING", BLOCKING, {
+          ...entry, student_id: studentCode, score_component_id: entry.componentId,
+          evaluation_type: entry.typeCode,
+        }));
+      }
+    }
   }
   const facts = [];
   for (const cell of [...cells.values()].sort((a, b) =>
