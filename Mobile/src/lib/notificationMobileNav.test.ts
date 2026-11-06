@@ -10,6 +10,7 @@ import {
   type AllowedPushDestination,
   type AllowedPushNavigationParams,
 } from "./pushNotificationDestinations";
+import { dispatchRegisteredPushNavigation } from "./pushNotificationNavigate";
 import {
   decideNotificationOpen,
   openResolvedNotification,
@@ -507,6 +508,22 @@ const cases: Case[] = [
       ]);
       assert.equal(JSON.stringify(events).includes(NOTIF), false, "aucun identifiant de notification");
       assert.equal(JSON.stringify(events).includes(CONV), false, "aucun identifiant métier");
+    },
+  },
+  {
+    id: "NAV-18 appel navigation conserve le receiver (Android ref)",
+    run() {
+      let receiverCorrect = false;
+      const navigation = {
+        isReady: () => true,
+        getRootState: () => ({ routeNames: ["Home", "Timetable"], routes: [{ name: "Home" }] }),
+        navigate(name: string) {
+          receiverCorrect = this === navigation;
+          assert.equal(name, "Timetable");
+        },
+      };
+      dispatchRegisteredPushNavigation(navigation as never, "Timetable");
+      assert.equal(receiverCorrect, true, "appel de la méthode navigate avec son contexte");
     },
   },
 ];
