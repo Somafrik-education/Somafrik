@@ -340,7 +340,11 @@ export function ReportCardCatalogSchoolPage() {
                     {catalog.canConfigure && model.available ? (
                       <div className="mt-auto pt-2">
                         <Button onClick={() => { setNotice(""); setSelected(model); }} data-testid={`catalog-school-choose-${model.model_id}`}>
-                          {model.configuration === "NONE" ? "Choisir ce modèle" : "Modifier la configuration"}
+                          {!galleryClassId
+                            ? "Configurer ce modèle pour une classe"
+                            : model.configuration === "NONE" || model.configuration === "INHERITED"
+                              ? "Créer la configuration de cette classe"
+                              : "Modifier la configuration de cette classe"}
                         </Button>
                       </div>
                     ) : null}
