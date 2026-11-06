@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
@@ -26,7 +26,15 @@ import {
   listReportCardPublications,
   type ReportCardPublicationRow,
 } from "../lib/reportCardPublicationApi";
-import { listPublishedVersionHistory, type PublishedVersionRow } from "../lib/reportCardHistoryApi";
+import {
+  listPublishedVersionHistory,
+  type PublishedVersionRow,
+} from "../lib/reportCardHistoryApi";
+import {
+  previewReportCardReissue,
+  publishReportCardReissue,
+  type ReissuePreview,
+} from "../lib/reportCardReissueApi";
 import { listReportCardRequests, type ReportCardWorkflowRequest } from "../lib/reportCardWorkflowApi";
 import {
   SNAPSHOT_SLOT_PERCENTAGE,
@@ -132,7 +140,9 @@ function periodScopeLabel(scope: string) {
 export default function ReportCardsScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const contentStyle = [styles.content, { paddingBottom: stackPaddingBottom }];
-  const { session, selectedStudentId } = useAuth();
+  const { session, selectedStudentId, permissionsBootstrap } = useAuth();
+  const canReissue = permissionsBootstrap === "ready" &&
+    (session?.permissions ?? session?.user?.permissions)?.includes("REPORT_CARD_PUBLISH") === true;
   const { studentsData, classesData } = useAdminData();
   const [periodFilter, setPeriodFilter] = useState(ALL_FILTER);
   const [classFilter, setClassFilter] = useState(ALL_FILTER);
@@ -148,6 +158,9 @@ export default function ReportCardsScreen() {
   );
   const [workflowMessage, setWorkflowMessage] = useState("");
   const [expandedWorkflowId, setExpandedWorkflowId] = useState<string | null>(null);
+  const [reissueDraft, setReissueDraft] = useState<{ cardId: string; reportCardId: string; preview: ReissuePreview; commandId: string } | null>(null);
+  const [reissueReason, setReissueReason] = useState("");
+  const [reissueBusy, setReissueBusy] = useState(false);
 
   const loadReportCards = useCallback(async () => {
     setReportCardsSnapshot((current) => ({ ...current, status: "loading" }));
@@ -288,6 +301,69 @@ export default function ReportCardsScreen() {
     }
   };
 
+  // La sélection du bulletin et l’aperçu ne publient rien : confirmation explicite après motif.
+  const prepareReissue = async (card: PublishedBulletinCard) => {
+    if (!canReissue || reissueBusy) return;
+    setReissueBusy(true);
+    setReissueDraft(null);
+    try {
+      const preview = await previewReportCardReissue(card.reportCardId, card.version);
+      if (!preview.expected_draft_sha256 || !preview.header?.title) throw new Error("En-tête manquant");
+      setReissueReason("");
+      setReissueDraft({
+        cardId: card.id,
+        reportCardId: card.reportCardId,
+        preview,
+        commandId: `mobile-reissue-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      });
+    } catch (error) {
+      Alert.alert("Réémission refusée", error instanceof Error ? error.message : "Vérifiez le modèle actif, vos droits et les notes.");
+    } finally {
+      setReissueBusy(false);
+    }
+  };
+
+  const confirmReissue = () => {
+    if (!canReissue || reissueBusy || !reissueDraft) return;
+    if (!reissueReason.trim()) {
+      Alert.alert("Motif obligatoire", "Indiquez pourquoi le bulletin doit être réémis.");
+      return;
+    }
+    const selected = reissueDraft;
+    const reason = reissueReason.trim();
+    Alert.alert(
+      "Publier une nouvelle version officielle",
+      `Remplacer v${selected.preview.source_version} par v${selected.preview.proposed_version} avec le nouvel en-tête et un nouveau QR ? L'ancienne version restera dans l'historique.`,
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Confirmer",
+          onPress: () => {
+            void (async () => {
+              setReissueBusy(true);
+              try {
+                const result = await publishReportCardReissue(selected.reportCardId, {
+                  sourceVersion: selected.preview.source_version,
+                  expectedDraftSha256: selected.preview.expected_draft_sha256,
+                  commandId: selected.commandId,
+                  reason,
+                });
+                setReissueDraft(null);
+                setReissueReason("");
+                await loadReportCards();
+                Alert.alert("Bulletin réémis", `Version v${result.published_snapshot_version} créée. Vérifiez son PDF et son QR.`);
+              } catch (error) {
+                Alert.alert("Réémission non confirmée", error instanceof Error ? error.message : "Vérifiez l'historique avant de réessayer.");
+              } finally {
+                setReissueBusy(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
   const showQueryState =
     reportCardsSnapshot.status !== "success" || rows.length === 0;
 
@@ -401,6 +477,46 @@ export default function ReportCardsScreen() {
                             : entry.verification_status || "ACTIVE"}
                       </Text>
                     ))}
+                  </View>
+                ) : null}
+
+                {canReissue && card.versionHistory.some((entry) =>
+                  entry.published_snapshot_version === card.version && entry.verification_status === "ACTIVE"
+                ) ? (
+                  <View style={styles.historyBlock}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      disabled={reissueBusy}
+                      onPress={() => void prepareReissue(card)}
+                      testID="report-card-reissue-preview-button"
+                    >
+                      <Text style={styles.historyTitle}>Réémettre avec le modèle actif</Text>
+                    </TouchableOpacity>
+                    {reissueDraft?.cardId === card.id ? (
+                      <View>
+                        {reissueDraft.preview.header.lines?.map((line) => <Text key={line} style={styles.historyRow}>{line}</Text>)}
+                        <Text style={styles.historyTitle}>{reissueDraft.preview.header.title}</Text>
+                        <Text style={styles.historyRow}>v{reissueDraft.preview.source_version} → v{reissueDraft.preview.proposed_version}</Text>
+                        <Text style={styles.hint}>Les notes restent inchangées. L'ancien bulletin restera dans l'historique.</Text>
+                        <Text style={styles.hint}>Aperçu textuel non officiel : contrôler le PDF signé et le QR après publication en préproduction.</Text>
+                        <TextInput
+                          accessibilityLabel="Motif de réémission"
+                          placeholder="Motif de réémission obligatoire"
+                          value={reissueReason}
+                          onChangeText={setReissueReason}
+                          style={{ borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8, padding: 10, marginVertical: 8 }}
+                        />
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          style={[styles.pdfButton, (reissueBusy || !reissueReason.trim()) && styles.pdfButtonDisabled]}
+                          disabled={reissueBusy || !canReissue || !reissueReason.trim()}
+                          onPress={confirmReissue}
+                          testID="report-card-reissue-confirm-button"
+                        >
+                          <Text style={styles.pdfText}>Confirmer la nouvelle version officielle</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
                   </View>
                 ) : null}
                 <TouchableOpacity
