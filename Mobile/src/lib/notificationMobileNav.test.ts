@@ -448,6 +448,43 @@ const cases: Case[] = [
       assert.deepEqual(marks, ["user-a", "user-b"], "aucun blocage entre comptes ; doublon même compte supprimé");
     },
   },
+  {
+    id: "NAV-16 réponse native tardive après onReady : reprise sans second login",
+    async run() {
+      resetPushTapStateForTests();
+      resetNotificationOpenStateForTests();
+      const { ref, calls } = makeRef();
+      const target = pushData("conversation");
+      const response = {
+        identifier: "late-response-16",
+        notification: { request: { identifier: "late-response-16", content: { data: target } } },
+      };
+      let allowNavigation = false;
+      const gate = { isReady: () => allowNavigation, isAuthenticated: () => true };
+      const opener = (destination: AllowedPushDestination, params?: AllowedPushNavigationParams, resolved?: ReturnType<typeof resolveNotificationPushData>) => {
+        openResolvedNotification(resolved!, staffSession, { navigation: ref });
+      };
+      // AppNavigator.onReady et l'effet canonical se produisent d'abord.
+      assert.equal(flushPendingPushNavigation(opener, gate), false);
+      allowNavigation = true;
+      assert.equal(flushPendingPushNavigation(opener, gate), false);
+      // La promesse expo-notifications s'achève plus tard, après les deux flush.
+      assert.equal(await consumeInitialPushResponse(async () => response, opener, gate), "navigated");
+      assert.deepEqual(calls, [["Messages", { conversationId: CONV }]]);
+      assert.equal(flushPendingPushNavigation(opener, gate), false);
+      // Cas réel à risque : le tap est en file quand le gate vient de se stabiliser.
+      resetPushTapStateForTests();
+      allowNavigation = false;
+      assert.equal(await consumeInitialPushResponse(async () => response, opener, gate), "queued");
+      allowNavigation = true;
+      assert.equal(flushPendingPushNavigation(opener, gate), true, "flush immédiatement après résolution native");
+      assert.deepEqual(calls, [
+        ["Messages", { conversationId: CONV }],
+        ["Messages", { conversationId: CONV }],
+      ]);
+      assert.equal(flushPendingPushNavigation(opener, gate), false, "pas de doublon");
+    },
+  },
 ];
 
 async function main() {
