@@ -93,12 +93,20 @@ export default function PushNotificationsRuntime() {
   useEffect(() => {
     void consumeInitialPushResponse(readLastNotificationResponse, navigateScoped, gate)
       .then((outcome) => {
-        if (outcome !== "ignored") clearLastNotificationResponse();
+        if (outcome !== "ignored") {
+          clearLastNotificationResponse();
+          // L'attente de la réponse native peut finir APRÈS AppNavigator.onReady
+          // et APRÈS l'effet canonical : rejouer immédiatement si tout est prêt.
+          // La file est vidée avant navigation pour éviter un double dispatch.
+          flushPendingPushNavigation(navigateScoped, gate);
+        }
       })
       .catch(() => undefined);
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       if (consumePushTapResponse(response as PushTapResponse, navigateScoped, gate) !== "ignored") {
         clearLastNotificationResponse();
+        // Même protection pour un clic reçu pendant l'initialisation.
+        flushPendingPushNavigation(navigateScoped, gate);
       }
     });
     return () => sub.remove();
