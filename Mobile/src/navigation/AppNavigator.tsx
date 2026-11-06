@@ -4,6 +4,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { navigationRef } from "./rootNavigation";
 import { flushPendingPushNavigation } from "../lib/pushNotificationTap";
+import { observePushNavigationState } from "../lib/pushNotificationNavigate";
 import { createPushNotificationOpener } from "../lib/pushNotificationOpener";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
@@ -255,6 +256,7 @@ export default function AppNavigator() {
     <HelpUiProvider>
       <NavigationContainer
         ref={navigationRef}
+        onStateChange={(state) => observePushNavigationState(state)}
         key={session ? "authenticated" : "public"}
         onReady={() => {
         flushPendingPushNavigation(
