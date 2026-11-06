@@ -1,0 +1,69 @@
+name: NOTIF Mobile Android QA APK (temporary)
+
+on:
+  push:
+    branches:
+      - build/notif-mobile-nav-apk-qa
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      EXPO_PUBLIC_RELEASE_PROFILE: "preview"
+      EAS_BUILD_PROFILE: "preview"
+      EXPO_PUBLIC_API_URL: "https://api-preprod.somafrik.app"
+      EXPO_PUBLIC_API_URL_PREVIEW: "https://api-preprod.somafrik.app"
+      EXPO_PUBLIC_DEMO_MODE: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert intended test candidate unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "e9050f4a619584b12c716b4130bcb715ac37ac3f"
+          test "$(git diff --name-only HEAD^ HEAD)" = ".github/workflows/notif-mobile-qa-apk.yml"
+          echo "NOTIF QA: candidate source is exact #1092 HEAD; temporary workflow only"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: Mobile/package-lock.json
+      - name: Install Mobile dependencies
+        working-directory: Mobile
+        run: npm ci
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Prepare Expo native Android
+        working-directory: Mobile
+        run: npx expo prebuild --platform android --clean --non-interactive
+      - name: Build QA debug APK (no Play signing)
+        working-directory: Mobile/android
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Validate artifact and publish SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk=Mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          mkdir -p apk-output
+          cp "$apk" apk-output/somafrik-notif-mobile-nav-1092-preprod-debug.apk
+          sha256sum apk-output/*.apk | tee apk-output/SHA256SUMS.txt
+          printf 'PR_HEAD=e9050f4a619584b12c716b4130bcb715ac37ac3f\nAPI=https://api-preprod.somafrik.app\nSIGNATURE=Android debug (not Google Play)\n' > apk-output/build-info.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: somafrik-notif-mobile-nav-1092-android-apk
+          path: apk-output/
+          if-no-files-found: error
+          retention-days: 7
