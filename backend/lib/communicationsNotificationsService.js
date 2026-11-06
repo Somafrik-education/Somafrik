@@ -74,15 +74,6 @@ function notFound() {
   return createClientsError(404, "Notification introuvable.", CLIENTS_ERROR.FORBIDDEN);
 }
 
-function principalPermissions(principal) {
-  return new Set(Array.isArray(principal?.permissions) ? principal.permissions.map(String) : []);
-}
-
-function canManage(principal) {
-  const perms = principalPermissions(principal);
-  return perms.has("Notifications:UPDATE") || perms.has("ALL_PRIVILEGES") || perms.has("COUNTRY_PRIVILEGES");
-}
-
 function normalizeKind(raw) {
   const value = asTrimmed(raw).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   if (["parent", "parents"].includes(value)) return "parent";
@@ -198,22 +189,21 @@ function mapNotification(row, extras = {}) {
   };
 }
 
-async function loadVisible(tx, notificationId, schoolId, userId, management = false) {
+async function loadVisible(tx, notificationId, schoolId, userId) {
   const row = await tx.one(
-    `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind, r.recipient_context
+    `SELECT n.*, s.school_code, r.user_id AS recipient_user_id,
+            r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind, r.recipient_context
      FROM communication_notifications n
      JOIN schools s ON s.id = n.school_id
-     LEFT JOIN notification_recipients r ON r.notification_id = n.id AND r.user_id = $2
+     LEFT JOIN notification_recipients r ON r.notification_id = n.id AND r.user_id = $2 AND r.school_id = n.school_id
      WHERE n.id::text = $1 AND n.school_id = $3::uuid`,
     [notificationId, userId, schoolId],
   );
-  if (!row || (!row.read_at && !row.recipient_archived_at && !management)) {
-    const recipient = row
-      ? await tx.one(`SELECT 1 FROM notification_recipients WHERE notification_id = $1 AND user_id = $2`, [row.id, userId])
-      : null;
-    if (!recipient && !management) throw notFound();
-  }
-  if (!row) throw notFound();
+  // Notifications:UPDATE n'autorise jamais la lecture des notifications privées d'autrui.
+  // Seul l'auteur d'une notification manuelle conserve le droit de consulter son propre envoi.
+  const authorOfManual = row?.event_type === "notification.manual"
+    && row?.sender_user_id != null && String(row.sender_user_id) === String(userId);
+  if (!row || (!row.recipient_user_id && !authorOfManual)) throw notFound();
   return row;
 }
 
@@ -331,7 +321,7 @@ async function get(store, notificationId, principal, query = {}) {
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const { school, schoolCode, tx } = await requireSchool(store, principal, query);
   if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) throw notFound();
-  const row = await loadVisible(tx, notificationId, school.id, userId, canManage(principal));
+  const row = await loadVisible(tx, notificationId, school.id, userId);
   const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
   if (!(await allowsInAppForRow(tx, school.id, row, true, viewerCategories))) throw notFound();
   const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
@@ -561,11 +551,15 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
   if (attachment.status === "uploaded" && !attachment.entity_id) {
     if (String(attachment.uploaded_by_user_id) !== String(userId)) throw notFound();
   } else {
-    const recipient = await tx.one(
-      `SELECT 1 FROM notification_recipients WHERE notification_id = $1::uuid AND user_id = $2::uuid AND school_id = $3::uuid`,
+    const authorized = await tx.one(
+      `SELECT 1 FROM communication_notifications n
+       LEFT JOIN notification_recipients r
+         ON r.notification_id = n.id AND r.user_id = $2::uuid AND r.school_id = n.school_id
+       WHERE n.id = $1::uuid AND n.school_id = $3::uuid
+         AND (r.user_id IS NOT NULL OR (n.event_type = 'notification.manual' AND n.sender_user_id = $2::uuid))`,
       [attachment.entity_id, userId, school.id],
     );
-    if (!recipient && !canManage(principal)) throw notFound();
+    if (!authorized) throw notFound();
   }
   const bytes = await readAttachmentBytes(attachment.storage_key);
   return { bytes, fileName: attachment.file_name, mimeType: attachment.mime_type };
