@@ -52,22 +52,25 @@ jobs:
       - name: Prepare Expo native Android
         working-directory: Mobile
         run: npx expo prebuild --platform android --clean --non-interactive
-      - name: Build QA debug APK (no Play signing)
+      - name: Build standalone QA release APK (embedded JS, no Play signing)
         working-directory: Mobile/android
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
       - name: Validate artifact and publish SHA256
         shell: bash
         run: |
           set -euo pipefail
-          apk=Mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          apk=Mobile/android/app/build/outputs/apk/release/app-release.apk
           test -s "$apk"
+          if command -v unzip >/dev/null; then
+            unzip -l "$apk" | grep -E "assets/index.android.bundle" || { echo "Embedded JS bundle missing"; exit 1; }
+          fi
           mkdir -p apk-output
-          cp "$apk" apk-output/somafrik-notif-mobile-nav-1092-preprod-debug.apk
+          cp "$apk" apk-output/somafrik-notif-mobile-nav-1092-preprod-standalone.apk
           sha256sum apk-output/*.apk | tee apk-output/SHA256SUMS.txt
-          printf 'PR_HEAD=e9050f4a619584b12c716b4130bcb715ac37ac3f\nAPI=https://api-preprod.somafrik.app\nSIGNATURE=Android debug (not Google Play)\n' > apk-output/build-info.txt
+          printf 'PR_HEAD=e9050f4a619584b12c716b4130bcb715ac37ac3f\nAPI=https://api-preprod.somafrik.app\nBUILD=Android release variant, standalone JS (not Google Play signing)\n' > apk-output/build-info.txt
       - uses: actions/upload-artifact@v4
         with:
           name: somafrik-notif-mobile-nav-1092-android-apk
