@@ -181,6 +181,41 @@ test("permissions : Superadmin hors parcours école ; école hors gestion nation
   await assert.rejects(catalog.activate({ actor: admin, modelId: "colombiere" }), "confirmation exigée");
 });
 
+test("classe : configuration héritée pré-remplie uniquement avec les cours actifs de la classe", async () => {
+  const built = buildConfiguration(COLOMBIERE, tjEx([
+    { code: "MATH", components: { TJ: { max: 20 } } },
+    { code: "SCI", components: { TJ: { max: 10 } } },
+  ]), CONTEXT);
+  const country = { id: "cccccccc-0000-4000-8000-000000000001", name: "Pays A" };
+  const store = {
+    ...fakeStore({ country, available: new Set([`colombiere:${country.id}`]) }),
+    classScope: async () => ({
+      class_id: "class-1", academic_year_id: "year-1", name: "1ère D",
+      academic_year_name: "2026-2027",
+    }),
+    classContext: async () => ({
+      ...CONTEXT,
+      subjects: [{ code: "SCI", name: "Sciences", status: "active", parent_code: null }],
+    }),
+  };
+  const inherited = { profile: built.profileSpec, template: built.templateSpec };
+  const catalog = createReportCardCatalog({
+    store,
+    configuration: {
+      catalogConfigurationState: async () => ({
+        active: null, saved: null, inherited,
+      }),
+    },
+  });
+  const context = await catalog.configurationContext({
+    actor: admin, modelId: "colombiere", classId: "class-1",
+  });
+  assert.deepEqual(context.subjects.map((row) => row.code), ["SCI"]);
+  assert.equal(context.configuration, "INHERITED");
+  assert.deepEqual(context.current.subjects.map((row) => row.code), ["SCI"]);
+  assert.equal(built.profileSpec.subjects.length, 2, "le gabarit établissement est inchangé");
+});
+
 test("migration : jamais exécutée au démarrage (aucune référence hors tests)", () => {
   const root = path.resolve(__dirname, "../..");
   for (const rel of ["db/postgresRepository.js", "server.js", "db/repositoryFactory.js"]) {
