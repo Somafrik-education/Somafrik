@@ -182,7 +182,7 @@ const cases: Case[] = [
         assert.equal(resolveNotificationRecord(record("conversation", { navigationTarget: { type: "conversation", conversationId: bad } })).resolved, false);
       }
       const badNotif = resolveNotificationPushData(pushData("grade", { notificationId: "x' OR 1=1", schoolCode: "S1;DROP" }));
-      assert.deepEqual(badNotif.meta, {}, "notificationId et schoolCode invalides ignorés");
+      assert.deepEqual(badNotif.meta, { invalidSchoolCode: true }, "schoolCode présent mais invalide est conservé comme motif de refus");
     },
   },
   {
@@ -387,6 +387,65 @@ const cases: Case[] = [
       assert.equal(decision.ok, false);
       assert.deepEqual(calls, []);
       assert.deepEqual(marks, []);
+    },
+  },
+  {
+    id: "NAV-13 schoolCode malformé est refusé, ancien Push sans schoolCode reste compatible",
+    run() {
+      for (const bad of ["https://evil.example", "", "*", "S1;DROP", 42, null]) {
+        const badPush = resolveNotificationPushData(pushData("conversation", { schoolCode: bad }));
+        assert.equal(badPush.meta.invalidSchoolCode, true, String(bad));
+        assert.deepEqual(
+          decideNotificationOpen(badPush, staffSession, ALL_ROUTES),
+          { ok: false, reason: "school_mismatch" },
+        );
+        const badInbox = resolveNotificationRecord(record("conversation", { schoolCode: bad }));
+        assert.equal(decideNotificationOpen(badInbox, staffSession, ALL_ROUTES).ok, false);
+      }
+      const old = resolveNotificationPushData(LEGACY.conversation);
+      assert.equal(decideNotificationOpen(old, staffSession, ALL_ROUTES).ok, true);
+    },
+  },
+  {
+    id: "NAV-14 canonique prioritaire : aucun downgrade sur legacy contradictoire",
+    run() {
+      const legacy = { somafrikDestination: "Messages", somafrikConversationId: CONV };
+      for (const bad of [
+        { type: "unknown" },
+        { type: "conversation", conversationId: "bad" },
+        { type: "conversation", conversationId: CONV, resourceType: "announcement" },
+        { type: "conversation", conversationId: CONV, resourceId: STUDENT },
+        { resourceType: "conversation" },
+        { type: "__proto__" },
+      ]) {
+        const result = resolveNotificationPushData({ ...legacy, ...bad, notificationId: NOTIF });
+        assert.equal(result.destination, "Home", JSON.stringify(bad));
+        assert.equal(result.resolved, false, JSON.stringify(bad));
+      }
+      assert.equal(resolveNotificationPushData(legacy).destination, "Messages");
+      assert.equal(resolveNotificationPushData(pushData("conversation")).destination, "Messages");
+    },
+  },
+  {
+    id: "NAV-15 même notification, comptes différents : marquage individuel",
+    async run() {
+      resetNotificationOpenStateForTests();
+      const { ref } = makeRef();
+      const accounts = ["user-a", "user-b", "user-a"];
+      const marks: string[] = [];
+      const target = resolveNotificationPushData(pushData("announcement"));
+      for (const account of accounts) {
+        openResolvedNotification(
+          target,
+          { role: "school_admin", user: { id: account, schoolCode: "S1" }, school: { code: "S1" } },
+          {
+            navigation: ref,
+            markRead: async () => { marks.push(account); },
+          },
+        );
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.deepEqual(marks, ["user-a", "user-b"], "aucun blocage entre comptes ; doublon même compte supprimé");
     },
   },
 ];
