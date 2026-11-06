@@ -347,7 +347,21 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     return { student: item.student, content_sha256: item.content_sha256 };
   }
 
-  return { computeClass, preview, publish, recomputeStudent };
+  /** Préparation interne sans écriture : la route de réémission est seule autorisée à publier. */
+  async function prepareReissueCandidate({ tenant, reportCardId, classId, academicYearId, modelKey, period } = {}) {
+    const result = await computeClass({ tenant, classId, academicYearId, modelKey, period });
+    const item = result.students.find((entry) => entry.report_card_id === reportCardId);
+    if (!item || !item.complete) fail("REISSUE_STUDENT_MISMATCH");
+    if (!result.publishable) fail("REPORT_CARD_INCOMPLETE");
+    return {
+      schoolId: result.schoolId,
+      draftSha256: result.draftSha256,
+      item,
+      officialLogo: result.officialLogo,
+    };
+  }
+
+  return { computeClass, preview, publish, recomputeStudent, prepareReissueCandidate };
 }
 
 module.exports = {
