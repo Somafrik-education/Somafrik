@@ -30,6 +30,8 @@ export function visibleNavItemsForRole(
       return false;
     }
     if (!parentRole && item.path === "/finances") return canReadFinanceModule(ctx);
+    // Examens est intégré au Planning : conserver entrée unique pour profils examens-only.
+    if (!parentRole && item.path === "/planning") return canReadView(ctx, "planning") || canReadView(ctx, "exams");
     return canReadView(ctx, item.view);
   });
 }
