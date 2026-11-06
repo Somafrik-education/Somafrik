@@ -48,6 +48,14 @@ const HTTP_STATUS = Object.freeze({
   ARTIFACT_NOT_FOUND: 404,
   // BULLETIN-PUBLISH-01
   REPORT_CARD_INCOMPLETE: 422,
+  REISSUE_UNAVAILABLE: 503,
+  REISSUE_SOURCE_NOT_ACTIVE: 409,
+  REISSUE_SOURCE_INVALID: 409,
+  REISSUE_SCOPE_MISMATCH: 409,
+  REISSUE_STUDENT_MISMATCH: 409,
+  REISSUE_GRADES_CHANGED: 409,
+  REISSUE_TEMPLATE_MISSING: 409,
+  REISSUE_HEADER_MISSING: 409,
   INVALID_PEDAGOGICAL_DATA: 422,
   PROFILE_NOT_PUBLISHABLE: 422,
   INVALID_PERIOD_SCOPE: 400,
@@ -1063,6 +1071,27 @@ function registerReportCardHttp(app, deps = {}) {
       if (!classPublication || typeof classPublication.publish !== "function") throw coded("REQUEST_NOT_FOUND");
       const result = await classPublication.publish(classPublicationArgs(actor, schoolId, req.body || {}));
       res.status(result.status === "PUBLISHED" ? 201 : 200).json({ ok: true, ...result });
+    })
+  );
+
+  // BULLETIN-REEMISSION-01 / PR0 : aperçu de réémission, aucune écriture.
+  app.post(
+    "/api/report-card/publications/:reportCardId/reissues/preview",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_PUBLISH);
+      const { createReportCardReissuePreview } = require("./reportCardReissue");
+      const { publication, classPublication, getTemplate } = services();
+      const reissue = createReportCardReissuePreview({ publication, classPublication, getTemplate });
+      const result = await reissue.preview({
+        tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+        reportCardId: req.params.reportCardId,
+        sourceVersion: req.body?.sourceVersion,
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.json(result);
     })
   );
 

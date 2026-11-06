@@ -2,7 +2,7 @@
 
 Généré par `node scripts/mono-t1-route-inventory.js` ; le contrat des routes est vérifié en CI par `--check`. Ne pas éditer à la main.
 
-Routes réellement enregistrées : **388** (relevé runtime d'Express, pas une recherche textuelle).
+Routes réellement enregistrées : **389** (relevé runtime d'Express, pas une recherche textuelle).
 
 Tous les routes authentifiées (hors expression régulière) sont aussi couvertes par les balayages A de `backend/lib/monoT1.authSessions.http.pg.test.js` (anonyme, en-tête invalide, signature étrangère, jeton expiré, session inconnue ⇒ 401 sans donnée) ; la matrice RBAC observée (`backend/lib/monoT1.rbacMatrix.http.pg.test.js`, référence `docs/project/MONO-T1-RBAC-MATRIX.json`) couvre chaque route sous `requirePermission` pour six comptes établissement ; la colonne « Tests MONO-T1 » ne liste que les tests ciblés qui appellent le chemin.
 
@@ -16,7 +16,7 @@ Limites : `allowedRoles` = matrice de rôles **par défaut** (seed), la matrice 
 | Autres | 10 | 0 | 0 | 3 | 7 | 8 / 8 | 1 |
 | B. Utilisateurs et rôles | 37 | 0 | 25 | 12 | 0 | 6 / 8 | 6 |
 | C. Élèves et inscriptions | 47 | 0 | 28 | 19 | 0 | 36 / 39 | 7 |
-| D. Notes et présences | 76 | 0 | 40 | 36 | 0 | 55 / 56 | 8 |
+| D. Notes et présences | 77 | 0 | 41 | 36 | 0 | 55 / 56 | 8 |
 | E. Finance | 26 | 0 | 13 | 13 | 0 | 18 / 18 | 9 |
 | F. Communication | 45 | 0 | 23 | 22 | 0 | 33 / 35 | 9 |
 | G. Pédagogie, planning et référentiels | 81 | 0 | 2 | 49 | 30 | 27 / 38 | 0 |
@@ -225,6 +225,7 @@ Limites : `allowedRoles` = matrice de rôles **par défaut** (seed), la matrice 
 | `GET /api/report-card/publications` | backend/lib/reportCard/reportCardHttp.js:713 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 6 | — |
 | `POST /api/report-card/publications` | backend/lib/reportCard/reportCardHttp.js:963 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | ÉLEVÉ | 6 | — |
 | `POST /api/report-card/publications/:reportCardId/corrections` | backend/lib/reportCard/reportCardHttp.js:977 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | ÉLEVÉ | 2 | — |
+| `POST /api/report-card/publications/:reportCardId/reissues/preview` | backend/lib/reportCard/reportCardHttp.js:1079 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | ÉLEVÉ | **0** | — |
 | `GET /api/report-card/publications/:reportCardId/history` | backend/lib/reportCard/reportCardHttp.js:851 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 2 | — |
 | `GET /api/report-card/publications/:reportCardId/pdf` | backend/lib/reportCard/reportCardHttp.js:754 | oui | — | — | — | resolveSchoolId (actor), schoolId, scope/tenant | — | — | — | MOYEN | 4 | — |
 | `GET /api/report-card/publications/:reportCardId/logo` | backend/lib/reportCard/reportCardHttp.js:883 | oui | — | — | — | resolveSchoolId (actor), schoolId | — | — | — | MOYEN | **0** | — |
