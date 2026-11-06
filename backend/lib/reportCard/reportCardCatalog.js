@@ -647,6 +647,22 @@ function createReportCardCatalog({ store, configuration, clock, identityStore = 
     return { ...(await store.classContext(schoolId, { class_id: scope.classId, academic_year_id: scope.academicYearId })), classScoped: true };
   }
 
+  /**
+   * Une configuration héritée de l'établissement ne pré-coche pas les
+   * matières sans cours actif dans la classe sélectionnée.
+   * Une configuration propre à la classe ne doit pas être réécrite.
+   */
+  function inheritedInputForClass(input, subjects) {
+    if (!input) return null;
+    const allowed = new Set((subjects || [])
+      .filter((row) => text(row.status || "active") === "active")
+      .map((row) => text(row.code)));
+    return {
+      ...input,
+      subjects: (input.subjects || []).filter((row) => allowed.has(text(row.code))),
+    };
+  }
+
   async function configurationContext({ actor, modelId, classId }) {
     const { schoolId, model } = await requireConfigurableModel(actor, modelId);
     const scope = await resolveClassScope(schoolId, classId);
@@ -667,7 +683,11 @@ function createReportCardCatalog({ store, configuration, clock, identityStore = 
       // Configuration enregistrée en attente d'activation (éventuellement au-dessus d'une configuration active).
       pendingSaved: Boolean(state.saved),
       class: publicClass(scope),
-      current: source ? inputFromProfile(source.profile, source.template) : null,
+      current: source
+        ? (scope && state.inherited && !state.active && !state.saved
+          ? inheritedInputForClass(inputFromProfile(source.profile, source.template), context.subjects)
+          : inputFromProfile(source.profile, source.template))
+        : null,
     };
   }
 
