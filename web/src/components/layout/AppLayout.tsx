@@ -53,6 +53,9 @@ const PAGE_NAV_ITEMS = [
 ];
 
 export function resolveAppNavigationTitle(pathname: string, parentRole: boolean) {
+  if (pathname === "/examens" || pathname.startsWith("/planning/examens")) {
+    return "Planning de cours";
+  }
   if (pathname === "/notifications" || pathname === "/notifications-plateforme") {
     return "Notifications";
   }
