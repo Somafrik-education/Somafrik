@@ -94,13 +94,13 @@ export default function StudentsScreen({ route, navigation }: any) {
   );
 
   const filteredStudents = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = query.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     if (!normalizedQuery) return classStudents;
 
-    return classStudents.filter(
-      (student) =>
-        student.name.toLowerCase().includes(normalizedQuery) ||
-        student.matricule.toLowerCase().includes(normalizedQuery),
+    return classStudents.filter((student) =>
+      [student.name, student.matricule].some((value) =>
+        String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(normalizedQuery),
+      ),
     );
   }, [classStudents, query]);
 

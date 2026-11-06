@@ -361,10 +361,10 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         scoped.filter((row) => normalize(String(row.status ?? "")) !== "archive"),
       );
     }
-    const q = search.trim().toLowerCase();
+    const q = normalize(search);
     if (!q) return scoped;
     return scoped.filter((row) =>
-      Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(q)),
+      Object.values(row).some((value) => normalize(value).includes(q)),
     );
   }, [module, search, scopeUser, state, isParentChildMode, classScope]);
 
