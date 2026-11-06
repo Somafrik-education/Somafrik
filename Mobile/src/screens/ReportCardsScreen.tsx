@@ -140,7 +140,9 @@ function periodScopeLabel(scope: string) {
 export default function ReportCardsScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const contentStyle = [styles.content, { paddingBottom: stackPaddingBottom }];
-  const { session, selectedStudentId } = useAuth();
+  const { session, selectedStudentId, permissionsBootstrap } = useAuth();
+  const canReissue = permissionsBootstrap === "ready" &&
+    (session?.permissions ?? session?.user?.permissions)?.includes("REPORT_CARD_PUBLISH") === true;
   const { studentsData, classesData } = useAdminData();
   const [periodFilter, setPeriodFilter] = useState(ALL_FILTER);
   const [classFilter, setClassFilter] = useState(ALL_FILTER);
@@ -301,6 +303,7 @@ export default function ReportCardsScreen() {
 
   // La sélection du bulletin et l’aperçu ne publient rien : confirmation explicite après motif.
   const prepareReissue = async (card: PublishedBulletinCard) => {
+    if (!canReissue || reissueBusy) return;
     setReissueBusy(true);
     setReissueDraft(null);
     try {
@@ -321,7 +324,7 @@ export default function ReportCardsScreen() {
   };
 
   const confirmReissue = () => {
-    if (!reissueDraft) return;
+    if (!canReissue || reissueBusy || !reissueDraft) return;
     if (!reissueReason.trim()) {
       Alert.alert("Motif obligatoire", "Indiquez pourquoi le bulletin doit être réémis.");
       return;
@@ -477,7 +480,7 @@ export default function ReportCardsScreen() {
                   </View>
                 ) : null}
 
-                {isBulletinStaff && card.versionHistory.some((entry) =>
+                {canReissue && card.versionHistory.some((entry) =>
                   entry.published_snapshot_version === card.version && entry.verification_status === "ACTIVE"
                 ) ? (
                   <View style={styles.historyBlock}>
@@ -495,6 +498,7 @@ export default function ReportCardsScreen() {
                         <Text style={styles.historyTitle}>{reissueDraft.preview.header.title}</Text>
                         <Text style={styles.historyRow}>v{reissueDraft.preview.source_version} → v{reissueDraft.preview.proposed_version}</Text>
                         <Text style={styles.hint}>Les notes restent inchangées. L'ancien bulletin restera dans l'historique.</Text>
+                        <Text style={styles.hint}>Aperçu textuel non officiel : contrôler le PDF signé et le QR après publication en préproduction.</Text>
                         <TextInput
                           accessibilityLabel="Motif de réémission"
                           placeholder="Motif de réémission obligatoire"
@@ -505,7 +509,7 @@ export default function ReportCardsScreen() {
                         <TouchableOpacity
                           activeOpacity={0.85}
                           style={[styles.pdfButton, (reissueBusy || !reissueReason.trim()) && styles.pdfButtonDisabled]}
-                          disabled={reissueBusy || !reissueReason.trim()}
+                          disabled={reissueBusy || !canReissue || !reissueReason.trim()}
                           onPress={confirmReissue}
                           testID="report-card-reissue-confirm-button"
                         >
