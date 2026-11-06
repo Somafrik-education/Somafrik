@@ -121,6 +121,8 @@ export type NotificationOpenDeps = {
   accountId?: string | null;
   onReadChanged?: () => void;
   selectStudent?: (studentId: string) => void;
+  /** Diagnostic sans données personnelles : destination/résultat uniquement. */
+  onDecision?: (event: { destination: AllowedPushDestination; reason: NotificationOpenRefusal | "opened" }) => void;
 };
 
 const readRequested = new Set<string>();
@@ -167,11 +169,13 @@ export function openResolvedNotification(
   const routeNames = registeredRouteNamesOf(navigation);
   const decision = decideNotificationOpen(resolved, session, routeNames, { schoolCode: deps.schoolCode });
   if (!decision.ok) {
+    deps.onDecision?.({ destination: resolved.destination, reason: decision.reason });
     if ((options.onRefused ?? "home") === "home") {
       dispatchRegisteredPushNavigation(navigation, "Home");
     }
     return decision;
   }
+  deps.onDecision?.({ destination: decision.destination, reason: "opened" });
   if (decision.selectStudentId) deps.selectStudent?.(decision.selectStudentId);
   dispatchRegisteredPushNavigation(navigation, decision.destination, decision.params);
   if (decision.markRead) {
