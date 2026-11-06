@@ -620,7 +620,7 @@ async function eventSpec(tx, event) {
     for (const row of rows) add(row.user_id, "participant", { conversationId: message.conversation_id });
     title = "Nouveau message";
     body = "Vous avez reçu un nouveau message.";
-    navigationTarget = { type: "conversation", conversationId: message.conversation_id };
+    navigationTarget = { type: "conversation", conversationId: message.conversation_id, messageId: message.id };
   } else if (eventType === "communication.announcement.published") {
     const announcement = await tx.one(`SELECT id, title FROM announcements WHERE id = $1 AND school_id = $2`, [sourceId, schoolId]);
     if (!announcement) throw new Error("Annonce source introuvable");
