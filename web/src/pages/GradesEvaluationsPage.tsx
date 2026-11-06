@@ -30,6 +30,7 @@ import {
 import { pedagogyApi } from "../lib/pedagogyApi";
 import { reportCardsApi } from "../lib/reportCardsApi";
 import { classNamesMatch } from "../lib/classRules";
+import { filterEvaluationsByClassAndType } from "../lib/notesEvaluationFilters";
 import { scopedClasses, scopedStudents, listTeacherScopedClassLabels } from "../lib/establishment";
 import {
   allGrades,
@@ -169,6 +170,7 @@ export function GradesEvaluationsPage() {
   const [tab, setTab] = useState<TabKey>(parentMode ? "notes" : "evaluations");
   const [period, setPeriod] = useState(queueDefaults.periodFilter ?? "");
   const [statusFilter, setStatusFilter] = useState(queueDefaults.statusFilter);
+  const [evaluationTypeFilter, setEvaluationTypeFilter] = useState("");
   const [queueDefaultsKey, setQueueDefaultsKey] = useState("");
   const [selectedClass, setSelectedClass] = useState(classNames[0] ?? "");
   const [selectedStudentId, setSelectedStudentId] = useState("");
@@ -252,9 +254,29 @@ export function GradesEvaluationsPage() {
   }, [parentMode, selectedChild, evaluations, selectedCourse, period]);
   const courseOptions = parentCourseOptions(grades.filter((grade) => String(grade.studentId) === selectedStudentId), parentEvaluations);
 
+  const classEvaluations = useMemo(
+    () => !parentMode && selectedClass
+      ? filterEvaluationsByClassAndType(evaluations, selectedClass, "")
+      : [],
+    [evaluations, parentMode, selectedClass],
+  );
+  const evaluationTypeOptions = useMemo(
+    () => [...new Set(classEvaluations.map((evaluation) => String(evaluation.evaluationType ?? "").trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "fr")),
+    [classEvaluations],
+  );
+  useEffect(() => {
+    if (evaluationTypeFilter && !evaluationTypeOptions.includes(evaluationTypeFilter)) {
+      setEvaluationTypeFilter("");
+    }
+  }, [evaluationTypeFilter, evaluationTypeOptions]);
   const filteredEvaluations = parentMode
     ? parentEvaluations
-    : filterEvaluationsForQueue(evaluations, period, statusFilter);
+    : filterEvaluationsForQueue(
+        filterEvaluationsByClassAndType(classEvaluations, selectedClass, evaluationTypeFilter),
+        period,
+        statusFilter,
+      );
   const gradeEntryEvaluations = useMemo(
     () =>
       evaluationsEligibleForGradeEntry(scopeUser, evaluations, state).filter(
@@ -774,6 +796,17 @@ export function GradesEvaluationsPage() {
                     requestContextChange(() => setSelectedClass(next));
                   }}
                   options={classNames.map((name) => ({ value: name, label: name }))}
+                />
+              </Field>
+            ) : null}
+            {!parentMode && tab === "evaluations" ? (
+              <Field label="Type de note">
+                <Select aria-label="Type de note" value={evaluationTypeFilter}
+                  onChange={(event) => setEvaluationTypeFilter(event.target.value)}
+                  options={[
+                    { value: "", label: "Tous les types" },
+                    ...evaluationTypeOptions.map((type) => ({ value: type, label: type })),
+                  ]}
                 />
               </Field>
             ) : null}
