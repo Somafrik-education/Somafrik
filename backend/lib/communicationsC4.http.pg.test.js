@@ -26,6 +26,7 @@ const STUDENT_USER_A = "a4000000-0000-4000-8000-000000000004";
 const ADMIN_B = "b4000000-0000-4000-8000-000000000001";
 const PARENT_B = "b4000000-0000-4000-8000-000000000002";
 const SUPER_SA = "c4000000-0000-4000-8000-000000000001";
+const SECRETARY_A = "a4000000-0000-4000-8000-000000000005";
 const CLASS_A = "d4000000-0000-4000-8000-000000000001";
 const TEACHER_ROW_A = "e4000000-0000-4000-8000-000000000001";
 const SUBJECT_A = "f4000000-0000-4000-8000-000000000001";
@@ -198,6 +199,17 @@ async function seed(pool) {
     [ADMIN_A,PARENT_A,PARENT_A2,ADMIN_B,PARENT_B,SUPER_SA,schoolA,schoolB],
   );
 
+  // SEC-NOTIF-P0-01 : gestionnaire autorisé à gérer les notifications mais NON destinataire.
+  await pool.query(
+    `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status,must_change_password)
+     VALUES ($1,$2,'SEC-C4-A','Secretaire','A','sec-c4-a@test.local','Secrétaire','active',FALSE)`,
+    [SECRETARY_A,schoolA],
+  );
+  await pool.query(
+    `INSERT INTO user_roles (user_id,school_id,role_key,status) VALUES ($1,$2,'SECRETARY','active')`,
+    [SECRETARY_A,schoolA],
+  );
+
   await pool.query(
     `INSERT INTO academic_years (id,school_id,name,status) VALUES ($1,$2,'2025-2026','open')`,
     [YEAR_A, schoolA],
@@ -263,6 +275,7 @@ async function seed(pool) {
   for (const role of ["SCHOOL_ADMIN","PARENT","STUDENT","SUPER_ADMIN"]) {
     await setRoleModuleGrant(pool, role, "notifications", { create: role === "SCHOOL_ADMIN" || role === "SUPER_ADMIN", read: true, update: role === "SCHOOL_ADMIN" || role === "SUPER_ADMIN" });
   }
+  await setRoleModuleGrant(pool, "SECRETARY", "notifications", { create: false, read: true, update: true });
   await setRoleModuleGrant(pool, "SCHOOL_ADMIN", "messages", { create: true, read: true, update: true });
   await setRoleModuleGrant(pool, "PARENT", "messages", { create: true, read: true, update: true });
   await setRoleModuleGrant(pool, "SCHOOL_ADMIN", "announcements", { create: true, read: true, update: true });
@@ -322,6 +335,7 @@ async function main() {
     const parentA2 = await mint({ tokens, repository: repo }, { sub: PARENT_A2, schoolCode: "SCH-C4-A", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
     const studentA = await mint({ tokens, repository: repo }, { sub: STUDENT_USER_A, schoolCode: "SCH-C4-A", role: "Élève / Étudiant", roleKeys: ["STUDENT"], permissions: ["Notifications:READ"] });
     const adminB = await mint({ tokens, repository: repo }, { sub: ADMIN_B, schoolCode: "SCH-C4-B", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
+    const secretaryA = await mint({ tokens, repository: repo }, { sub: SECRETARY_A, schoolCode: "SCH-C4-A", role: "Secrétaire", roleKeys: ["SECRETARY"] });
     const parentB = await mint({ tokens, repository: repo }, { sub: PARENT_B, schoolCode: "SCH-C4-B", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
     const superSa = await mint({ tokens, repository: repo }, { sub: SUPER_SA, schoolCode: "*", role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], permissions: ["ALL_PRIVILEGES"] });
 
@@ -356,6 +370,21 @@ async function main() {
     const adminOwnMessageN = unwrap((await request("/backoffice/internal-notifications", { token: adminA })).data)
       .find((row) => row.sourceEntityId === message.data.id);
     assert.equal(adminOwnMessageN, undefined, "C4-01 expéditeur non destinataire");
+
+    // SEC-NOTIF-P0-01 : GET ciblé refuse un manager non destinataire, même avec UPDATE.
+    // Sur develop avant correction, ces deux assertions sont attendues ROUGES (200 au lieu de 404).
+    const parentP0Get = await request(`/backoffice/internal-notifications/${messageN.id}`, { token: parentA });
+    assert.equal(parentP0Get.status, 200, "P0-01 destinataire parent peut lire le détail");
+    const adminP0Get = await request(`/backoffice/internal-notifications/${messageN.id}`, { token: adminA });
+    assert.equal(adminP0Get.status, 404, "P0-01 admin non destinataire refusé");
+    const secretaryP0Get = await request(`/backoffice/internal-notifications/${messageN.id}`, { token: secretaryA });
+    assert.equal(secretaryP0Get.status, 404, "P0-01 secrétaire Notifications:UPDATE non destinataire refusée");
+    const secretaryList = unwrap((await request("/backoffice/internal-notifications", { token: secretaryA })).data);
+    assert.equal(secretaryList.some((row) => row.id === messageN.id), false, "P0-01 notification privée absente de sa liste");
+    const secretaryRead = await request(`/backoffice/internal-notifications/${messageN.id}/read`, { method: "PATCH", token: secretaryA });
+    const secretaryArchive = await request(`/backoffice/internal-notifications/${messageN.id}/archive`, { method: "PATCH", token: secretaryA });
+    assert.equal(secretaryRead.status, 404, "P0-01 secrétaire ne peut marquer lu");
+    assert.equal(secretaryArchive.status, 404, "P0-01 secrétaire ne peut archiver");
     await drainOutbox(store, { limit: 20 });
     assert.equal(await notificationCount(`communication.message.created:${message.data.id}`), 1, "C4-13 retry dispatcher sans doublon");
 
@@ -562,6 +591,17 @@ async function main() {
     assert.ok([403,404].includes(studentDownload.status), "C4-10 même école non recipient bloqué");
     const bDownload = await downloadNotificationFile(parentB, upload.data.id);
     assert.ok([403,404].includes(bDownload.status), "C4-10 école B bloquée");
+    // SEC-NOTIF-P0-01 : l'auteur peut revoir son envoi, un autre manager ne peut lire ni détail ni PJ.
+    const manualAuthor = await request(`/backoffice/internal-notifications/${manual.data.id}`, { token: adminA });
+    assert.equal(manualAuthor.status, 200, "P0-01 auteur de sa propre notification manuelle");
+    const manualAuthorFile = await downloadNotificationFile(adminA, upload.data.id);
+    assert.equal(manualAuthorFile.status, 200, "P0-01 auteur télécharge sa propre pièce jointe");
+    const secretaryManual = await request(`/backoffice/internal-notifications/${manual.data.id}`, { token: secretaryA });
+    assert.equal(secretaryManual.status, 404, "P0-01 secrétaire ni auteur ni destinataire refusée");
+    const secretaryFile = await downloadNotificationFile(secretaryA, upload.data.id);
+    assert.equal(secretaryFile.status, 404, "P0-01 secrétaire ni auteur ni destinataire ne télécharge pas la PJ");
+    const parentManualDetail = await request(`/backoffice/internal-notifications/${manual.data.id}`, { token: parentA });
+    assert.equal(parentManualDetail.status, 200, "P0-01 destinataire de la notification manuelle autorisé");
 
     const exe = await uploadNotificationFile(adminA, { fileName: "virus.exe", mimeType: "application/pdf", body: Buffer.from("MZ executable") });
     assert.equal(exe.status, 400, "C4-10 .exe refusé");
