@@ -133,9 +133,11 @@ function createSqlDeliveryAdapter(store) {
       const key = asTrimmed(eventKey);
       if (!key || typeof all !== "function") return [];
       return all(
-        `SELECT n.id AS notification_id, n.event_key, n.event_type, n.school_id, n.title, n.body, n.navigation_target,
+        `SELECT n.id AS notification_id, n.event_key, n.event_type, n.school_id,
+                s.school_code, n.title, n.body, n.navigation_target,
                 r.user_id, r.recipient_kind, r.recipient_context
          FROM communication_notifications n
+         JOIN schools s ON s.id = n.school_id
          JOIN notification_recipients r
            ON r.notification_id = n.id AND r.school_id = n.school_id
          WHERE n.event_key = $1`,
@@ -337,6 +339,7 @@ function createMemoryDeliveryAdapter({ notifications = [], recipients = [], user
             event_key: note.event_key || note.eventKey,
             event_type: note.event_type || note.eventType,
             school_id: note.school_id,
+            school_code: note.school_code || note.schoolCode || "",
             title: note.title,
             body: note.body,
             navigation_target: note.navigation_target || note.navigationTarget || {},
@@ -516,6 +519,9 @@ async function enqueueChannelDeliveries(adapter, processed = [], channels = CHAN
           payload: {
             title: target.title,
             body: target.body,
+            notificationId: target.notification_id,
+            schoolCode: target.school_code || "",
+            eventType: target.event_type || "",
             navigationTarget: target.navigation_target || {},
           },
         });
@@ -569,6 +575,43 @@ function mobilePushDataForDelivery(row, payload) {
   return data;
 }
 
+// Version additive du contrat : les anciennes clés restent lisibles par l'app déjà installée.
+function canonicalPushData(row, payload) {
+  const data = { ...mobilePushDataForDelivery(row, payload) };
+  const target = asPayload(payload?.navigationTarget);
+  const { TARGET_RESOURCES } = require("./communicationsNavigationTargets");
+  const type = asTrimmed(target.type);
+  const resources = TARGET_RESOURCES[type];
+  const notificationId = uuidOrNull(payload?.notificationId || row.notification_id);
+  if (notificationId) data.notificationId = notificationId;
+  const schoolCode = asTrimmed(payload?.schoolCode);
+  if (/^[A-Za-z0-9_-]{1,80}$/.test(schoolCode)) data.schoolCode = schoolCode;
+  if (Array.isArray(resources)) {
+    const ids = {};
+    for (const { key } of resources) {
+      const id = uuidOrNull(target[key]);
+      if (id) ids[key] = id;
+    }
+    if (Object.keys(ids).length) {
+      data.type = type;
+      data.resourceType = type;
+      Object.assign(data, ids);
+      const primary = ids[resources[0].key];
+      if (primary) data.resourceId = primary;
+    }
+  }
+  return data;
+}
+
+function pushSafeCopy() {
+  // Le texte Push ne doit pas réutiliser un titre/corps interne sensible.
+  // L'aperçu enrichi demandera une préférence explicite et distincte (ARB-1).
+  return {
+    title: "Somafrik",
+    body: "Vous avez une nouvelle notification. Ouvrez Somafrik pour la consulter.",
+  };
+}
+
 function scopedDevices(devices, { userId, schoolId, backendEnvironment }) {
   return (devices || []).filter((row) => {
     return (
@@ -603,9 +646,8 @@ async function dispatchPush(row, { pushStore, pushClient, env = process.env }) {
   const result = await pushClient.sendToTokens(
     devices.map((device) => device.expo_push_token),
     {
-      title: payload.title || "Somafrik",
-      body: payload.body || "",
-      data: mobilePushDataForDelivery(row, payload),
+      ...pushSafeCopy(),
+      data: canonicalPushData(row, payload),
       channelId: "somafrik-default",
     },
   );
@@ -783,6 +825,7 @@ module.exports = {
   createMemoryDeliveryAdapter,
   enqueueChannelDeliveries,
   mobilePushDataForDelivery,
+  canonicalPushData,
   drainChannelDeliveries,
   fanOutNotificationChannels,
 };
