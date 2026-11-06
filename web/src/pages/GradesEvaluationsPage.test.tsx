@@ -186,7 +186,7 @@ const interrogation1 = {
   id: "EVAL-1",
   title: "Interrogation 1",
   subject: "Mathématiques",
-  className: "2ème A",
+  className: "6e A",
   period: "Trimestre 1",
   status: "Brouillon",
   schoolCode: "SCH-001",
