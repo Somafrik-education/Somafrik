@@ -91,49 +91,59 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
 
   return (
     <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesScreen}>
-      <TouchableOpacity
-        activeOpacity={0.85}
-        style={styles.backButton}
-        testID={STUDENT_SUB_SCREENS_TEST_IDS.subScreenBackButton}
-        onPress={() => navigation?.goBack()}
-      >
-        <Ionicons name="arrow-back" size={24} color="#0F172A" />
-      </TouchableOpacity>
-
-      <StudentSwitcher />
-      <Text style={styles.title} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesTitle}>
-        {STUDENT_SUB_SCREENS_COPY.presencesTitle}
-      </Text>
-      <Text style={styles.subtitle}>{presenceTitle}</Text>
-
-      <TouchableOpacity
-        activeOpacity={0.85}
-        style={[styles.summaryCard, { backgroundColor: "#0F172A" }]}
-        onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
-      >
-        <Text style={[styles.summaryLabel, { color: "#CBD5E1" }]}>Taux de présence</Text>
-        <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>{presenceRateLabel}</Text>
-        <Text style={[styles.summaryMeta, { color: "#CBD5E1" }]}>
-          {presenceMetaLabel}
-        </Text>
-      </TouchableOpacity>
-
-      {presencesSnapshot.status !== "success" ? (
-        <QueryStateView
-          snapshot={presencesSnapshot}
-          emptyMessage={DATA_TRUTH_COPY.emptyPresences}
-          errorMessage={DATA_TRUTH_COPY.errorPresences}
-          offlineMessage={DATA_TRUTH_COPY.offlinePresences}
-          emptyTestId={DATA_TRUTH_TEST_IDS.presencesEmpty}
-          errorTestId={DATA_TRUTH_TEST_IDS.presencesError}
-          onRetry={() => void loadPresences()}
-        />
-      ) : (
         <FlatList
-          data={presencesEleve}
+          style={{ flex: 1 }}
+          data={presencesSnapshot.status === "success" ? presencesEleve : []}
           keyExtractor={(item) => item.id}
           testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesList}
           contentContainerStyle={listContentStyle}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            <>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.backButton}
+              testID={STUDENT_SUB_SCREENS_TEST_IDS.subScreenBackButton}
+              onPress={() => navigation?.goBack()}
+            >
+              <Ionicons name="arrow-back" size={24} color="#0F172A" />
+            </TouchableOpacity>
+      
+            <StudentSwitcher />
+            <Text style={styles.title} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesTitle}>
+              {STUDENT_SUB_SCREENS_COPY.presencesTitle}
+            </Text>
+            <Text style={styles.subtitle}>{presenceTitle}</Text>
+      
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.summaryCard, { backgroundColor: "#0F172A" }]}
+              onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
+            >
+              <Text style={[styles.summaryLabel, { color: "#CBD5E1" }]}>Taux de présence</Text>
+              <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>{presenceRateLabel}</Text>
+              <Text style={[styles.summaryMeta, { color: "#CBD5E1" }]}>
+                {presenceMetaLabel}
+              </Text>
+            </TouchableOpacity>
+      
+                  </>
+          }
+          ListEmptyComponent={
+            presencesSnapshot.status !== "success" ? (
+              <QueryStateView
+                snapshot={presencesSnapshot}
+                emptyMessage={DATA_TRUTH_COPY.emptyPresences}
+                errorMessage={DATA_TRUTH_COPY.errorPresences}
+                offlineMessage={DATA_TRUTH_COPY.offlinePresences}
+                emptyTestId={DATA_TRUTH_TEST_IDS.presencesEmpty}
+                errorTestId={DATA_TRUTH_TEST_IDS.presencesError}
+                onRetry={() => void loadPresences()}
+              />
+            ) : (
+              <Text style={styles.empty}>{DATA_TRUTH_COPY.emptyPresences}</Text>
+            )
+          }
           renderItem={({ item }) => {
             const status = normalizePresenceStatus(item);
             return (
@@ -149,7 +159,6 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
             );
           }}
         />
-      )}
     </View>
   );
 }
