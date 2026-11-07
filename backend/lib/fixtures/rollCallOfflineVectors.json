@@ -1,0 +1,219 @@
+{
+  "_note": "NFC-PRES-LOCAL-PR0 — vecteurs de test FICTIFS (faible entropie), réservés aux tests. Aucune valeur réelle.",
+  "encoding": {
+    "LP": "pour chaque champ : uint32 big-endian de la longueur UTF-8, puis les octets UTF-8",
+    "base64url": "sans remplissage",
+    "K": "SHA-256(utf8(secret)) = hex_decode(token_hash)"
+  },
+  "inputs": {
+    "publicId": "AAAAAAAAAAAAAAAAAAAAAA",
+    "secret": "TEST-VECTOR-ONLY-00000000000000000000000000",
+    "schoolId": "00000000-0000-4000-8000-000000000001",
+    "actorUserId": "00000000-0000-4000-8000-000000000002",
+    "classId": "00000000-0000-4000-8000-000000000003",
+    "date": "2026-11-09",
+    "sessionId": "00000000-0000-4000-8000-000000000004",
+    "packId": "00000000-0000-4000-8000-000000000005",
+    "scanId": "00000000-0000-4000-8000-000000000006",
+    "contractVersion": "rc-offline-1",
+    "mode": "teacher"
+  },
+  "tags": {
+    "cardRef": "somafrik.rc-offline.cardref.v1",
+    "verifier": "somafrik.rc-offline.verifier.v1",
+    "proof": "somafrik.rc-offline.proof.v1",
+    "packMessagePrefix": "somafrik.rc-offline.pack.v1\\n"
+  },
+  "fields": {
+    "cardRef": [
+      "tag",
+      "schoolId",
+      "classId",
+      "packId",
+      "publicId"
+    ],
+    "verifier": [
+      "tag",
+      "schoolId",
+      "classId",
+      "packId",
+      "publicId"
+    ],
+    "proof": [
+      "tag",
+      "contractVersion",
+      "schoolId",
+      "actorUserId",
+      "classId",
+      "date",
+      "mode",
+      "sessionId",
+      "packId",
+      "scanId",
+      "publicId",
+      "medium"
+    ]
+  },
+  "expected": {
+    "V-1_K_hex": "7a66b11beabb2d88d8d2ac5a289fa136e3b436990a58f397561caa7caa352e0f",
+    "V-2_cardRef": "x8f3EcDGI48SI2LPP6CxbY0iQmt-OW6zDwa2UxYmXcQ",
+    "V-3_verifier": "msXEii9Kl0mBSoUYfDw5a3SZjrQLt-jvqrDoycDAaZg",
+    "V-4_proof_nfc": "6DuAdjcRC-Zd1VArIq0hYkQtyjp2vZjeba4BYZkr1gg",
+    "V-5_proof_qr": "PrtFtQE7qYUFSX22gK0vWIJr8_66U60htRB4vUrEmMY",
+    "V-6_lp_a|b,c": "00000003617c620000000163",
+    "V-6_lp_a,b|c": "000000016100000003627c63",
+    "V-7_lp_ab,empty,c": "000000026162000000000000000163",
+    "V-8_proof_nfc_noPack": "cGqNVh0qcoMt68upA4i5N6GI-jsBK2HzzGtbmbRugRw",
+    "V-9_ed25519_test_pub_raw": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+    "V-9_ed25519_test_seed": "32 octets 0x01 (clé de TEST uniquement)",
+    "V-10_pack_signature": "C-NE1ehClk-J-MYFfjqhHT0UWsFdbk-55knRbr36muPRS9PE029v3NeBoVM7NdpYxtAV3N4KQsETVzdP0rESCw",
+    "V-10_pack_canonical_sha256": "af60a554bf98f2a04cb10ebf7f9c59f5c8edd41448cc11740056b49199d2ba22",
+    "V-10_verifies": true,
+    "V-10_tampered_classId_verifies": false,
+    "V-11_payloadDigest": "50603c4e23b60e2665d647198900031184da5a00863196bf8e54d00ab706fbfb",
+    "V-12_payloadDigest_medium_qr": "e08c8218407451aa3a63d7584c908a91ce83567c26dc72e7ab70160b37f65d4c"
+  },
+  "testPack": {
+    "actorUserId": "00000000-0000-4000-8000-000000000002",
+    "cards": [
+      {
+        "cardRef": "x8f3EcDGI48SI2LPP6CxbY0iQmt-OW6zDwa2UxYmXcQ",
+        "matchKey": "MK-TEST-1",
+        "verifier": "msXEii9Kl0mBSoUYfDw5a3SZjrQLt-jvqrDoycDAaZg"
+      }
+    ],
+    "classId": "00000000-0000-4000-8000-000000000003",
+    "contractVersion": "rc-offline-1",
+    "date": "2026-11-09",
+    "expiresAt": "2026-11-09T23:00:00Z",
+    "notBefore": "2026-11-08T23:00:00Z",
+    "issuedAt": "2026-11-08T16:02:00Z",
+    "keyId": "rc-pack-test-1",
+    "mode": "teacher",
+    "packId": "00000000-0000-4000-8000-000000000005",
+    "packVersion": 1,
+    "schoolId": "00000000-0000-4000-8000-000000000001",
+    "students": [
+      {
+        "existingStatus": null,
+        "firstName": "Test",
+        "lastName": "Eleve",
+        "matchKey": "MK-TEST-1",
+        "studentCode": "T-001",
+        "studentId": "00000000-0000-4000-8000-000000000007"
+      }
+    ],
+    "syncDeadline": "2026-11-12T23:00:00Z",
+    "timeZone": "Africa/Kinshasa"
+  },
+  "testSyncBodyWithoutDigest": {
+    "classId": "00000000-0000-4000-8000-000000000003",
+    "complete": true,
+    "contractVersion": "rc-offline-1",
+    "date": "2026-11-09",
+    "manual": [],
+    "mode": "teacher",
+    "operationId": "00000000-0000-4000-8000-000000000008",
+    "packId": "00000000-0000-4000-8000-000000000005",
+    "revision": 1,
+    "schoolId": "00000000-0000-4000-8000-000000000001",
+    "scans": [
+      {
+        "medium": "nfc",
+        "proof": "6DuAdjcRC-Zd1VArIq0hYkQtyjp2vZjeba4BYZkr1gg",
+        "publicId": "AAAAAAAAAAAAAAAAAAAAAA",
+        "scanId": "00000000-0000-4000-8000-000000000006",
+        "scannedAt": "2026-11-09T07:31:02Z"
+      }
+    ],
+    "sessionId": "00000000-0000-4000-8000-000000000004"
+  },
+  "canonicalization": "JCS RFC 8785 via canonicalize@2.0.0 (bibliothèque unique Backend/Mobile). stableSerialize n'est pas utilisé pour le pack ni le digest.",
+  "revision": 4,
+  "jcs": {
+    "J-1": {
+      "input": {
+        "lastName": "Kabasélé",
+        "firstName": "Ngalula"
+      },
+      "canonical": "{\"firstName\":\"Ngalula\",\"lastName\":\"Kabasélé\"}",
+      "sha256": "758405076dbbec331910fdf8d34fed16bcb020bebf785b5bca075655ae2272cf"
+    },
+    "J-2": {
+      "input": {
+        "lastName": "Kabasélé"
+      },
+      "canonical": "{\"lastName\":\"Kabasélé\"}",
+      "sha256": "84df14cd3a944e7822523710b257899b29eb640db96b4fff049dd69d92d33ff6"
+    },
+    "J-3": {
+      "input": {
+        "v": "😀"
+      },
+      "canonical": "{\"v\":\"😀\"}",
+      "sha256": "d3e54b11635291b9829749f9fbbbf3f2c4a9590e8806464567f15416f188fc3b"
+    },
+    "J-4": {
+      "input": {
+        "v": "a\"b\\c\n\t\u0001\u001f  /"
+      },
+      "canonical": "{\"v\":\"a\\\"b\\\\c\\n\\t\\u0001\\u001f  /\"}",
+      "sha256": "fc2a3738f089a0c729fad95247e443bfa2b0f741b8e430bcf5d6291a9b073f9c"
+    },
+    "J-5": {
+      "input": {
+        "é": 1,
+        "z": 2,
+        "B": 3,
+        "a": 4,
+        "😀": 5,
+        "ﬁ": 6
+      },
+      "canonical": "{\"B\":3,\"a\":4,\"z\":2,\"é\":1,\"😀\":5,\"ﬁ\":6}",
+      "sha256": "4114f48a1dffa20708aec2e1ee94ecc91478504ffa67994dee091fdd9ff919a6"
+    },
+    "J-6": {
+      "input": {
+        "a": 0,
+        "b": -1,
+        "c": 9007199254740991,
+        "d": 300
+      },
+      "canonical": "{\"a\":0,\"b\":-1,\"c\":9007199254740991,\"d\":300}",
+      "sha256": "7d8de0381baef2d7802d0ca8a258972c1580e41501307a0f15b66b08a9815dd2"
+    },
+    "J-7": {
+      "input": {
+        "b": [
+          {
+            "y": null,
+            "x": true
+          },
+          []
+        ],
+        "a": {
+          "d": {},
+          "c": [
+            1,
+            "1"
+          ]
+        }
+      },
+      "canonical": "{\"a\":{\"c\":[1,\"1\"],\"d\":{}},\"b\":[{\"x\":true,\"y\":null},[]]}",
+      "sha256": "34ea9e93e556ed19cf1bc3f03f68c81156f9b63236010f0544d9f70e4559c79f"
+    },
+    "J-8": {
+      "input": "{ v: -0 }",
+      "rule": "refusé par le validateur (-0 interdit)"
+    },
+    "J-9": {
+      "input": "{ v: 0.1, w: 1e21 }",
+      "rule": "refusé par le validateur (flottants interdits)"
+    },
+    "J-10": {
+      "input": "{ a: undefined, b: 1 }",
+      "rule": "refusé par le validateur ; canonicalize donne {\"b\":1}, stableSerialize {\"a\":null,\"b\":1}"
+    }
+  },
+  "testPackNote": "Pack de la date 2026-11-09, Africa/Kinshasa, émis la veille à 17:02 locale ; fenêtre [notBefore ; expiresAt[ = jour local du 9 (révision 4)."
+}
