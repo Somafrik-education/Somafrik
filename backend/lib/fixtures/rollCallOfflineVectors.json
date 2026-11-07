@@ -128,8 +128,8 @@
     ],
     "sessionId": "00000000-0000-4000-8000-000000000004"
   },
-  "canonicalization": "JCS RFC 8785 via canonicalize@2.0.0 (bibliothèque unique Backend/Mobile). stableSerialize n'est pas utilisé pour le pack ni le digest.",
-  "revision": 4,
+  "canonicalization": "JCS RFC 8785 ; implémentation de référence unique : backend/contracts/reportCard/jcs.js (révision 5). Sorties identiques à canonicalize@2.0.0 sur ce domaine. stableSerialize n'est pas utilisé pour le pack ni le digest.",
+  "revision": 5,
   "jcs": {
     "J-1": {
       "input": {
@@ -213,6 +213,10 @@
     "J-10": {
       "input": "{ a: undefined, b: 1 }",
       "rule": "refusé par le validateur ; canonicalize donne {\"b\":1}, stableSerialize {\"a\":null,\"b\":1}"
+    },
+    "J-11": {
+      "input": "{ v: \"\\ud800\" } (surrogate isolé)",
+      "rule": "refusé (jcs.js et LP) ; sinon collision UTF-8 avec \\ufffd"
     }
   },
   "testPackNote": "Pack de la date 2026-11-09, Africa/Kinshasa, émis la veille à 17:02 locale ; fenêtre [notBefore ; expiresAt[ = jour local du 9 (révision 4)."

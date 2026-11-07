@@ -3,7 +3,7 @@
 /**
  * NFC-PRES-LOCAL-PR1a — conformité des primitives aux vecteurs partagés V-1 à V-12 et J-1 à J-10.
  * Fixture : copie octet pour octet de docs/audits/NFC-PRES-LOCAL-PR0-vectors.json (PR #1111,
- * HEAD 5a23d6555e8309a4f48aa9cf32f070c7ea18aaee). Valeurs fictives, réservées aux tests.
+ * HEAD 40239bcf15c390c0564dcf58ca0949d32baf006f, vecteurs révision 5). Valeurs fictives, réservées aux tests.
  */
 
 const test = require("node:test");
@@ -16,6 +16,8 @@ const {
   CONTRACT_VERSION,
   TAGS,
   OFFLINE_PROOF_ERROR,
+  MAX_CANONICAL_DEPTH,
+  MAX_CANONICAL_BYTES,
   lp,
   deriveCardKeyFromSecret,
   cardKeyFromTokenHash,
@@ -30,7 +32,7 @@ const {
 } = require("./rollCallOfflineProof");
 
 const FIXTURE_PATH = path.join(__dirname, "fixtures", "rollCallOfflineVectors.json");
-const FIXTURE_SHA256 = "c28fd639b6d7315fae05fe4f4ef9b0c064b6a475eaa9e1fd018e609bde2c9b93";
+const FIXTURE_SHA256 = "f6ee8286d2fac0f7e48e52115f65fa2d2708c2728a03bb8db16f61ab71a633de";
 const raw = fs.readFileSync(FIXTURE_PATH);
 const vectors = JSON.parse(raw.toString("utf8"));
 const input = vectors.inputs;
@@ -64,7 +66,7 @@ function assertFieldError(fn, field) {
 
 test("fixture identique au fichier de vecteurs de PR0 et constantes du contrat", () => {
   assert.equal(crypto.createHash("sha256").update(raw).digest("hex"), FIXTURE_SHA256);
-  assert.equal(vectors.revision, 4);
+  assert.equal(vectors.revision, 5);
   assert.equal(CONTRACT_VERSION, input.contractVersion);
   assert.equal(TAGS.cardRef, vectors.tags.cardRef);
   assert.equal(TAGS.verifier, vectors.tags.verifier);
@@ -258,4 +260,191 @@ test("aucun message d'erreur ne contient la valeur refusée", () => {
       return true;
     });
   }
+});
+
+// --- Renforcements demandés en revue CTO de PR1a (#1112) ---------------------------------------
+
+function deepFreeze(value) {
+  if (value && typeof value === "object") {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+test("aucune fonction ne modifie ses entrées (objets gelés et instantanés comparés)", () => {
+  const k = key();
+  const kBefore = Buffer.from(k);
+  const frozenScope = deepFreeze({ ...scope });
+  const frozenProof = deepFreeze(proofInput());
+  const body = deepFreeze(structuredClone({ ...vectors.testSyncBodyWithoutDigest, payloadDigest: "x" }));
+  const pack = deepFreeze(structuredClone(vectors.testPack));
+  const fields = deepFreeze(["a", "b"]);
+  const snapshots = [frozenScope, frozenProof, body, pack, fields].map((value) => JSON.stringify(value));
+  computeCardRef(frozenScope);
+  computeVerifier(k, frozenScope);
+  const proof = computeProof(k, frozenProof);
+  verifyProof(k, frozenProof, proof);
+  computePayloadDigest(body);
+  packSigningMessage(pack);
+  canonicalJson(pack);
+  lp(fields);
+  assert.deepEqual([frozenScope, frozenProof, body, pack, fields].map((value) => JSON.stringify(value)), snapshots);
+  assert.deepEqual(k, kBefore);
+  assert.equal(body.payloadDigest, "x");
+});
+
+test("LP : surrogates isolés refusés, paire valide acceptée, aucune collision avec U+FFFD", () => {
+  assert.equal(lp(["\ufffd"]).toString("hex"), "00000003efbfbd");
+  assert.equal(lp(["\ud83d\ude00"]).toString("hex"), "00000004f09f9880");
+  for (const [name, value] of Object.entries({
+    "haut isolé": "\ud800",
+    "bas isolé": "\udc00",
+    "haut en fin": "a\ud83d",
+    "paire inversée": "\ude00\ud83d",
+    "deux hauts": "\ud83d\ud83d",
+  })) {
+    assertFieldError(() => lp([value]), "LP[0]");
+    assert.equal(name.length > 0, true);
+  }
+  assertFieldError(() => lp(["ok", "\udfff"]), "LP[1]");
+  // Les champs de preuve étant validés en ASCII, un surrogate y est refusé en amont.
+  assertFieldError(() => computeProof(key(), proofInput({ publicId: "AAAAAAAAAAAAAAAAAAAA\ud800A" })), "publicId");
+  assert.throws(() => canonicalJson(vectors.jcs["J-11"] && { v: "\ud800" }), (error) => error.code === OFFLINE_PROOF_ERROR.VALUE_INVALID);
+});
+
+test("JCS (jcs.js) : exemple de tri de la RFC 8785 §3.2.3 et échappements du domaine admis", () => {
+  const input = {
+    "\u20ac": "Euro Sign",
+    "\r": "Carriage Return",
+    "\ufb33": "Hebrew Letter Dalet With Dagesh",
+    "1": "One",
+    "\ud83d\ude00": "Emoji: Grinning Face",
+    "\u0080": "Control",
+    "\u00f6": "Latin Small Letter O With Diaeresis",
+  };
+  assert.equal(
+    canonicalJson(input),
+    '{"\\r":"Carriage Return","1":"One","\u0080":"Control","\u00f6":"Latin Small Letter O With Diaeresis",' +
+      '"\u20ac":"Euro Sign","\ud83d\ude00":"Emoji: Grinning Face","\ufb33":"Hebrew Letter Dalet With Dagesh"}',
+  );
+  // Échappements : seuls " \\ et U+0000..U+001F ; formes courtes \\b \\f \\n \\r \\t, sinon \\u00xx minuscule.
+  assert.equal(canonicalJson({ v: "\b\f\n\r\t\u0000\u001f\u000b" }), '{"v":"\\b\\f\\n\\r\\t\\u0000\\u001f\\u000b"}');
+  // Restent littéraux : U+007F, U+2028, U+2029, « / », non-ASCII.
+  assert.equal(canonicalJson({ v: "\u007f\u2028\u2029/é" }), '{"v":"\u007f\u2028\u2029/é"}');
+  assert.equal(canonicalJson({ q: '"', b: "\\" }), '{"b":"\\\\","q":"\\""}');
+  // Entiers : forme décimale minimale, sans exposant ni zéro de tête.
+  assert.equal(canonicalJson([0, -1, 10, Number.MAX_SAFE_INTEGER, Number.MIN_SAFE_INTEGER]), "[0,-1,10,9007199254740991,-9007199254740991]");
+  assert.equal(canonicalJson({ a: [], b: {}, c: [{}], d: null, e: true, f: false, g: "" }), '{"a":[],"b":{},"c":[{}],"d":null,"e":true,"f":false,"g":""}');
+});
+
+function mulberry32(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const ALPHABET = ["a", "Z", "0", " ", "é", "ß", "\u0080", "\u00f6", "\u20ac", "\ufb33", "\ud83d\ude00", "\u2028", "\u007f", "\n", "\u0001", '"', "\\", "/", "\r", "1"];
+
+function randomString(rand) {
+  let out = "";
+  const length = Math.floor(rand() * 6);
+  for (let i = 0; i < length; i += 1) out += ALPHABET[Math.floor(rand() * ALPHABET.length)];
+  return out;
+}
+
+function randomValue(rand, depth) {
+  const pick = rand();
+  if (depth >= 4 || pick < 0.35) {
+    const leaf = Math.floor(rand() * 5);
+    if (leaf === 0) return null;
+    if (leaf === 1) return rand() < 0.5;
+    if (leaf === 2) return Math.floor((rand() - 0.5) * 2 * Number.MAX_SAFE_INTEGER) || 0;
+    return randomString(rand);
+  }
+  if (pick < 0.65) return Array.from({ length: Math.floor(rand() * 4) }, () => randomValue(rand, depth + 1));
+  const object = {};
+  for (let i = Math.floor(rand() * 5); i > 0; i -= 1) object[randomString(rand)] = randomValue(rand, depth + 1);
+  return object;
+}
+
+function shuffledCopy(value, rand) {
+  if (Array.isArray(value)) return value.map((item) => shuffledCopy(item, rand));
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value).sort(() => rand() - 0.5);
+    return Object.fromEntries(entries.map(([k, v]) => [k, shuffledCopy(v, rand)]));
+  }
+  return value;
+}
+
+function utf16Less(a, b) {
+  const length = Math.min(a.length, b.length);
+  for (let i = 0; i < length; i += 1) {
+    if (a.charCodeAt(i) !== b.charCodeAt(i)) return a.charCodeAt(i) < b.charCodeAt(i);
+  }
+  return a.length < b.length;
+}
+
+/**
+ * Oracle indépendant de jcs.js pour le domaine admis : tri par comparateur UTF-16 explicite
+ * (et non par Array.prototype.sort par défaut), chaînes et entiers via JSON.stringify.
+ */
+function referenceCanonical(value) {
+  if (value === null || typeof value === "boolean" || typeof value === "number" || typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(referenceCanonical).join(",")}]`;
+  const keys = Object.keys(value).sort((a, b) => (utf16Less(a, b) ? -1 : utf16Less(b, a) ? 1 : 0));
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${referenceCanonical(value[k])}`).join(",")}}`;
+}
+
+test("JCS (jcs.js) : propriétés sur 2 000 valeurs aléatoires du domaine admis (graine fixe)", () => {
+  const rand = mulberry32(0x5eed1098);
+  for (let i = 0; i < 2000; i += 1) {
+    const value = randomValue(rand, 0);
+    const canonical = canonicalJson(value);
+    const parsed = JSON.parse(canonical);
+    assert.deepEqual(parsed, value, "aller-retour");
+    assert.equal(canonicalJson(parsed), canonical, "idempotence");
+    assert.equal(canonicalJson(shuffledCopy(value, rand)), canonical, "indépendance de l'ordre d'insertion");
+    assert.equal(/[\u0000-\u001f]/.test(canonical), false, "aucun caractère de contrôle brut");
+    assert.equal(/^\s|\s$|[,:]\s/.test(canonical.replace(/"(?:[^"\\]|\\.)*"/g, '""')), false, "aucun espace hors chaînes");
+    assert.equal(canonical, referenceCanonical(value), "oracle indépendant (tri UTF-16 explicite)");
+  }
+});
+
+test("bornes : profondeur et taille du JSON canonique, lot réaliste de 300 scans", () => {
+  let nested = 1;
+  for (let i = 0; i < MAX_CANONICAL_DEPTH; i += 1) nested = [nested];
+  assert.equal(canonicalJson(nested).length, MAX_CANONICAL_DEPTH * 2 + 1, "profondeur maximale acceptée");
+  assert.throws(() => canonicalJson([nested]), (error) => error.code === OFFLINE_PROOF_ERROR.VALUE_INVALID, "profondeur + 1 refusée");
+
+  const base = vectors.testSyncBodyWithoutDigest;
+  const scans = Array.from({ length: 300 }, (_, index) => ({
+    ...base.scans[0],
+    scanId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  }));
+  const manual = Array.from({ length: 300 }, (_, index) => ({
+    studentId: `00000000-0000-4000-9000-${String(index).padStart(12, "0")}`,
+    status: "absent",
+  }));
+  const large = { ...base, scans, manual };
+  const started = process.hrtime.bigint();
+  const digest = computePayloadDigest(large);
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+  assert.match(digest, /^[0-9a-f]{64}$/);
+  assert.equal(computePayloadDigest(structuredClone(large)), digest);
+  assert.ok(Buffer.byteLength(canonicalJson(large)) < MAX_CANONICAL_BYTES);
+  assert.ok(elapsedMs < 1000, `digest d'un lot de 300 scans : ${elapsedMs} ms`);
+
+  const atLimit = { v: "a".repeat(MAX_CANONICAL_BYTES - '{"v":""}'.length) };
+  assert.equal(Buffer.byteLength(canonicalJson(atLimit)), MAX_CANONICAL_BYTES, "exactement 256 Kio acceptés");
+  assert.throws(() => canonicalJson({ v: `${atLimit.v}a` }), (error) => error.code === OFFLINE_PROOF_ERROR.VALUE_INVALID, "256 Kio + 1 octet refusés");
+  // Plafond mesuré en octets UTF-8, pas en unités UTF-16.
+  assert.throws(() => canonicalJson({ v: "é".repeat(MAX_CANONICAL_BYTES / 2) }), (error) => error.code === OFFLINE_PROOF_ERROR.VALUE_INVALID);
 });

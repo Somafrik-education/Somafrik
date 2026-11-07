@@ -9,8 +9,9 @@
  *  - LP : encodage canonique à longueurs préfixées (uint32 big-endian + octets UTF-8 par champ) ;
  *  - K : 32 octets de SHA-256(utf8(secret)), égal à hex_decode(student_access_cards.token_hash) ;
  *  - cardRef, verifier, proof : SHA-256 / HMAC-SHA256 sur LP(étiquette de domaine, champs) ;
- *  - JSON canonique (RFC 8785) via contracts/reportCard/jcs.js, précédé d'un validateur de types
- *    du contrat (entiers sûrs uniquement, pas de -0 ni de flottant) ;
+ *  - JSON canonique (RFC 8785) via contracts/reportCard/jcs.js, implémentation de référence unique
+ *    (PR0 révision 5), précédé d'un validateur de types du contrat (entiers sûrs uniquement, pas de
+ *    -0 ni de flottant, profondeur ≤ 32) et suivi d'un plafond de 256 Kio ;
  *  - payloadDigest du lot et message signé du pack.
  *
  * Aucun message d'erreur ne contient la valeur d'un champ (secret, clé, preuve, identifiant).
@@ -44,6 +45,8 @@ const DIGEST_B64URL = /^[A-Za-z0-9_-]{43}$/;
 const KEY_BYTES = 32;
 const MAX_FIELD_BYTES = 0xffffffff;
 const MAX_CANONICAL_DEPTH = 32;
+/** Plafond du JSON canonique (contrat : corps de synchronisation ≤ 256 Kio). */
+const MAX_CANONICAL_BYTES = 256 * 1024;
 
 function invalid(code, field) {
   const error = new TypeError(`Valeur invalide : ${field}.`);
@@ -56,12 +59,30 @@ function fieldError(field) {
   return invalid(OFFLINE_PROOF_ERROR.FIELD_INVALID, field);
 }
 
+/**
+ * Chaîne UTF-16 bien formée (aucun surrogate isolé). Sans ce contrôle, l'encodeur UTF-8 remplace
+ * un surrogate isolé par U+FFFD : "\ud800" et "\ufffd" donneraient les mêmes octets LP.
+ */
+function isWellFormedUtf16(value) {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      i += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** LP(f1, …, fn) : pour chaque champ, longueur UTF-8 sur 4 octets big-endian puis les octets. */
 function lp(fields) {
   if (!Array.isArray(fields) || fields.length === 0) throw fieldError("LP");
   const chunks = [];
   for (const [index, field] of fields.entries()) {
-    if (typeof field !== "string") throw fieldError(`LP[${index}]`);
+    if (typeof field !== "string" || !isWellFormedUtf16(field)) throw fieldError(`LP[${index}]`);
     const bytes = Buffer.from(field, "utf8");
     if (bytes.length > MAX_FIELD_BYTES) throw fieldError(`LP[${index}]`);
     const header = Buffer.alloc(4);
@@ -214,14 +235,17 @@ function assertContractValue(value, path = "$", depth = 0) {
   throw invalid(OFFLINE_PROOF_ERROR.VALUE_INVALID, path);
 }
 
-/** JSON canonique RFC 8785 d'une valeur du contrat (validateur puis jcs.js). */
+/** JSON canonique RFC 8785 d'une valeur du contrat (validateur, jcs.js, plafond de taille). */
 function canonicalJson(value) {
   assertContractValue(value);
+  let canonical;
   try {
-    return canonicalize(value);
+    canonical = canonicalize(value);
   } catch {
     throw invalid(OFFLINE_PROOF_ERROR.VALUE_INVALID, "$");
   }
+  if (Buffer.byteLength(canonical, "utf8") > MAX_CANONICAL_BYTES) throw invalid(OFFLINE_PROOF_ERROR.VALUE_INVALID, "$");
+  return canonical;
 }
 
 /** payloadDigest = hex(SHA-256(JCS(corps sans payloadDigest))). */
@@ -242,6 +266,8 @@ module.exports = {
   ROLL_CALL_MODE,
   MEDIA,
   TAGS,
+  MAX_CANONICAL_DEPTH,
+  MAX_CANONICAL_BYTES,
   OFFLINE_PROOF_ERROR,
   lp,
   deriveCardKeyFromSecret,
