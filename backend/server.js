@@ -2749,6 +2749,54 @@ app.get("/api/student-cards/roll-call/offline/v1/pack", requireAuth, requirePerm
   ));
 }));
 
+// NFC-PRES-LOCAL-PR1c — synchronisation transactionnelle d'un appel réalisé hors ligne.
+// Garde R (relire son propre ACK) dans la transaction AVANT toute lecture de rejeu ; garde W
+// (affectation, flags, abonnement, date, cartes) seulement si aucun appel n'est enregistré.
+// Pas de gate d'abonnement avant R : il fait partie de W.
+app.post("/api/student-cards/roll-call/offline/v1/sync", requireAuth, requirePermission("POST /api/student-cards/roll-call/offline/v1/sync"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const sync = require("./lib/rollCallOfflineSync");
+  const batch = sync.readSyncBody(req.body, req.get("Idempotency-Key"));
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = await presenceHttpPrincipal(req);
+  const scope = studentCardsHttpScope(principal);
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  // Gate d'abonnement évalué HORS transaction (comme les routes existantes : il charge l'état
+  // back-office), mais appliqué seulement par la garde W : il n'empêche jamais de relire un ACK.
+  let writePresenceRefusal = null;
+  try {
+    await new Promise((resolve, reject) => {
+      requireSchoolSubscriptionFeature("write_presence")(req, {}, (error) => (error ? reject(error) : resolve()));
+    });
+  } catch (error) {
+    writePresenceRefusal = error;
+  }
+  let actor = null;
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/student-cards/roll-call/offline/v1/sync",
+    principal,
+    replayStatusCode: 200,
+    guard: async () => {
+      actor = await sync.guardReplayAccess(repository, principal, scope, batch);
+    },
+    handler: () => sync.syncOfflineRollCall(repository, {
+      batch,
+      scope,
+      principal,
+      actor,
+      auditMeta: pedagogyAuditMetaFromRequest(req),
+      deps: {
+        assertWritePresence: async () => {
+          if (writePresenceRefusal) throw writePresenceRefusal;
+        },
+      },
+    }),
+  });
+}));
+
 // CARTE-PR3-A1 — contrôle d'entrée au portail : événement distinct des présences en classe.
 app.post("/api/student-cards/entry-scan", requireAuth, requirePermission("POST /api/student-cards/entry-scan"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
@@ -8174,6 +8222,8 @@ app.use((error, _req, res, _next) => {
       message: error.message,
       ...(error.code ? { code: error.code } : {}),
       ...(error.details ? { details: error.details } : {}),
+      // NFC-PRES-LOCAL-PR1c : attestation serveur de l'état de la session (seule la synchronisation hors ligne la pose).
+      ...(error.sessionState ? { sessionState: error.sessionState } : {}),
     });
   }
 

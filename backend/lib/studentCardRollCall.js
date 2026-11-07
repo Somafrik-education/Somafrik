@@ -525,18 +525,13 @@ async function rollCallCounts(repo, schoolId, classId, date) {
 }
 
 /**
- * Parcours enseignant : la présence est attribuée à l'enseignant authentifié lui-même ; aucun
- * identifiant d'enseignant envoyé par le client n'est jamais pris en compte. Les présences
- * existantes sont lues verrouillées puis classées par attendanceTransition ; seules les
- * créations et les corrections autorisées sont écrites, via upsertAttendance (établissement,
- * inscription, affectation et auteur revérifiés).
+ * Cœur d'écriture du parcours enseignant, partagé par l'appel en ligne (`/validate`) et la
+ * synchronisation hors ligne (NFC-PRES-LOCAL-PR1c) : verrou du jour, contrôle de l'appel complet
+ * sous verrou des inscriptions, transitions `attendanceTransition` et écritures gardées.
+ * `wanted` : marques { studentId, status, source, … } triées par élève (ordre des verrous).
+ * Aucune écriture du journal ni d'audit d'appel : chaque parcours les écrit lui-même.
  */
-async function writeTeacherRollCall(repo, { scope, principal, actor, userId, context, entries, cardEntries, manual, total, target, auditMeta, complete = false }) {
-  // Ordre déterministe (par élève) : verrous de lignes toujours pris dans le même ordre.
-  const wanted = [
-    ...entries.map((entry) => ({ studentId: entry.studentId, status: "present", source: "card" })),
-    ...manual.map((item) => ({ studentId: item.studentId, status: item.status, source: "manual", index: item.index })),
-  ].sort((a, b) => (a.studentId < b.studentId ? -1 : a.studentId > b.studentId ? 1 : 0));
+async function applyTeacherMarks(repo, { scope, principal, context, wanted, target, auditMeta, complete = false }) {
   await lockRollCallDay(repo, scope.schoolId, context.date);
   if (complete) {
     // Vérification atomique (sous le verrou du jour, inscriptions verrouillées en partage) :
@@ -616,6 +611,25 @@ async function writeTeacherRollCall(repo, { scope, principal, actor, userId, con
       else corrections.push({ attendanceId: String(row.id), studentId: item.studentId, from: row.status, to: item.status });
     });
   }
+  return { written, corrections, protectedRows, created, unchanged };
+}
+
+/**
+ * Parcours enseignant : la présence est attribuée à l'enseignant authentifié lui-même ; aucun
+ * identifiant d'enseignant envoyé par le client n'est jamais pris en compte. Les présences
+ * existantes sont lues verrouillées puis classées par attendanceTransition ; seules les
+ * créations et les corrections autorisées sont écrites, via upsertAttendance (établissement,
+ * inscription, affectation et auteur revérifiés).
+ */
+async function writeTeacherRollCall(repo, { scope, principal, actor, userId, context, entries, cardEntries, manual, total, target, auditMeta, complete = false }) {
+  // Ordre déterministe (par élève) : verrous de lignes toujours pris dans le même ordre.
+  const wanted = [
+    ...entries.map((entry) => ({ studentId: entry.studentId, status: "present", source: "card" })),
+    ...manual.map((item) => ({ studentId: item.studentId, status: item.status, source: "manual", index: item.index })),
+  ].sort((a, b) => (a.studentId < b.studentId ? -1 : a.studentId > b.studentId ? 1 : 0));
+  const { written, corrections, protectedRows, created, unchanged } = await applyTeacherMarks(repo, {
+    scope, principal, context, wanted, target, auditMeta, complete,
+  });
   const authorRoleKeys = [...principalRoleKeys(actor)].sort();
   const journal = await recordRollCallJournal(repo, {
     schoolId: scope.schoolId,
@@ -902,6 +916,12 @@ module.exports = {
   liveRollCallActor,
   assertRollCallEnabled,
   assertRollCallClass,
+  // NFC-PRES-LOCAL-PR1c : primitives réutilisées par la synchronisation hors ligne.
+  applyTeacherMarks,
+  lockRollCallDay,
+  rollCallCounts,
+  principalRoleKeys,
+  ROSTER_ENROLLMENT_SQL,
   readJustification,
   scanRollCallDraft,
   validateRollCall,
