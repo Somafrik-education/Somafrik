@@ -22,13 +22,15 @@ const { TokenService } = require("../services/tokenService");
 const { mintSessionAccessToken } = require("./testAccessSession");
 const { packSigningMessage, revocationsSigningMessage, computeCardRef, computeVerifier, cardKeyFromTokenHash } = require("./rollCallOfflineProof");
 const { parseKeyring, verifySignature } = require("./rollCallOfflinePackSigner");
-const { computePackWindow, isoSeconds, wallTime } = require("./rollCallOfflinePack");
+const { computePackWindow, isoSeconds, wallTime, computeMatchKey, deriveMatchKeySecret } = require("./rollCallOfflinePack");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = "somafrik_roll_call_offline_pack_it";
 const ROOT = path.resolve(__dirname, "../..");
 const HTTP_PORT = Number(process.env.SOMAFRIK_OFFLINE_PACK_HTTP_PORT ?? 19894);
 const JWT_SECRET = process.env.JWT_SECRET || "ci-test-secret-with-enough-length-for-production-checks";
+// Secret de rapprochement dédié, distinct de JWT_SECRET (valeur de test construite à l'exécution).
+const MATCH_SECRET = "pr1b-test-only-match-".repeat(3);
 
 const LOGIN_A = "CD-LAC-26-001";
 const LOGIN_B = "BI-BUJ-26-001";
@@ -62,8 +64,8 @@ async function ensureIsolatedDatabase(databaseUrl, databaseName) {
   return withDatabaseName(databaseUrl, databaseName);
 }
 
-async function request(pathname, { method = "GET", token, body, headers = {} } = {}) {
-  const response = await fetch(`http://127.0.0.1:${HTTP_PORT}/api${pathname}`, {
+async function request(pathname, { method = "GET", token, body, headers = {}, port = HTTP_PORT } = {}) {
+  const response = await fetch(`http://127.0.0.1:${port}/api${pathname}`, {
     method,
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -78,13 +80,13 @@ async function request(pathname, { method = "GET", token, body, headers = {} } =
   return { status: response.status, data, text, cacheControl: response.headers.get("cache-control") };
 }
 
-async function startServer(isolatedUrl, extraEnv) {
+async function startServer(isolatedUrl, extraEnv, port = HTTP_PORT) {
   const child = spawn(process.execPath, ["backend/server.js"], {
     cwd: ROOT,
     env: {
       ...process.env,
       NODE_ENV: "test",
-      PORT: String(HTTP_PORT),
+      PORT: String(port),
       DATABASE_URL: isolatedUrl,
       JWT_SECRET,
       SOMAFRIK_DB_REQUIRED: "true",
@@ -92,6 +94,7 @@ async function startServer(isolatedUrl, extraEnv) {
       SOMAFRIK_API_ONLY: "true",
       ROLL_CALL_PACK_SIGNING_KEY: "",
       ROLL_CALL_PACK_KEYRING: "",
+      ROLL_CALL_PACK_MATCH_SECRET: "",
       ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -102,7 +105,7 @@ async function startServer(isolatedUrl, extraEnv) {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (child.exitCode != null) throw new Error(`Backend exited early: ${child.exitCode}\n${output.value}`);
     try {
-      if ((await fetch(`http://127.0.0.1:${HTTP_PORT}/api/health`)).ok) return { child, output };
+      if ((await fetch(`http://127.0.0.1:${port}/api/health`)).ok) return { child, output };
     } catch {
       /* retry */
     }
@@ -206,6 +209,7 @@ async function main() {
   const mint = (payload) => mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   const pool = new Pool({ connectionString: isolatedUrl });
   let server = null;
+  let serverNext = null;
   const keyA = newKey();
   const keyB = newKey();
   const keyC = newKey();
@@ -361,8 +365,18 @@ async function main() {
     assert.equal(server.output.value.includes(malformedKey), false, "ni journalisée");
     await stopServer(server);
 
-    // ---------- Démarrage 2 : clé A active ----------
+    // ---------- Démarrage 1b : clé valide mais secret de rapprochement absent → 503 ----------
     server = await startServer(isolatedUrl, { ROLL_CALL_PACK_SIGNING_KEY: keyA.privateB64, ROLL_CALL_PACK_KEYRING: JSON.stringify(ringV1) });
+    const noMatchSecret = await pack(tokenTeacher, { classId: classA1, date: today });
+    assert.equal(noMatchSecret.status, 503, noMatchSecret.text);
+    assert.equal(noMatchSecret.data?.code, "ROLL_CALL_PACK_MATCH_SECRET_UNAVAILABLE");
+    assert.equal(noMatchSecret.data?.pack, undefined);
+    await stopServer(server);
+
+    // ---------- Démarrage 2 : clé A active ----------
+    server = await startServer(isolatedUrl, {
+      ROLL_CALL_PACK_SIGNING_KEY: keyA.privateB64, ROLL_CALL_PACK_KEYRING: JSON.stringify(ringV1), ROLL_CALL_PACK_MATCH_SECRET: MATCH_SECRET,
+    });
     const tokenTeacherFree = await mint({ sub: USER.TEACHER_FREE, role: "Enseignant", roleKeys: ["TEACHER"], schoolCode: CODE_A, permissions: ["Présences:CREATE", "Présences:UPDATE"] });
     const tokenTeacherB = await mint({ sub: USER.TEACHER_B, role: "Enseignant", roleKeys: ["TEACHER"], schoolCode: CODE_B, permissions: ["Présences:CREATE", "Présences:UPDATE"] });
     const tokenTeacherC = await mint({ sub: USER.TEACHER_C, role: "Enseignant", roleKeys: ["TEACHER"], schoolCode: CODE_C, permissions: ["Présences:CREATE", "Présences:UPDATE"] });
@@ -460,6 +474,12 @@ async function main() {
     assert.deepEqual(p.students.map((s) => s.matchKey), [...p.students.map((s) => s.matchKey)].sort());
     assert.equal(p.students.find((s) => s.studentId === S.S2).existingStatus, "excused");
     assert.equal(p.students.find((s) => s.studentId === S.S1).existingStatus, null);
+    // matchKey dérivé du secret dédié, jamais de JWT_SECRET.
+    for (const entry of p.students) {
+      assert.equal(entry.matchKey, computeMatchKey(deriveMatchKeySecret(MATCH_SECRET), p.packId, entry.studentId));
+      assert.notEqual(entry.matchKey, computeMatchKey(deriveMatchKeySecret(JWT_SECRET), p.packId, entry.studentId));
+    }
+    assert.equal(nominal.text.includes(MATCH_SECRET), false);
     // Cartes : S1 (deux cartes), S2, S5 ; exclues S3 (en attente), S4 (révoquée), S6 (non activée), S7 (autre classe).
     const expectCards = (packBody, keys) => {
       const expected = keys.map((key) => {
@@ -590,12 +610,27 @@ async function main() {
     assert.equal(roster.status, 200, roster.text);
     const scan = await request("/student-cards/roll-call/scan", { method: "POST", token: tokenTeacher, body: { sessionId, classId: classA1, date: today, cardToken: cards.S1nfc.cardToken } });
     assert.equal(scan.status, 200, scan.text);
-    await stopServer(server);
 
-    // ---------- Démarrage 3 : rotation d'urgence (A révoquée, B active) ----------
-    server = await startServer(isolatedUrl, { ROLL_CALL_PACK_SIGNING_KEY: keyB.privateB64, ROLL_CALL_PACK_KEYRING: JSON.stringify(ringV2) });
+    // ---------- Démarrage 3 : rotation d'urgence (A révoquée, B active), deux instances en parallèle ----------
+    // Pendant un redéploiement, l'ancienne instance (non redémarrée) signe encore avec A ; la nouvelle
+    // instance signe avec B et publie la révocation de A. Aucune rotation à chaud n'a lieu dans le
+    // processus de l'ancienne instance : seul le redémarrage la met à jour.
+    const NEXT_PORT = HTTP_PORT + 1;
+    serverNext = await startServer(isolatedUrl, {
+      ROLL_CALL_PACK_SIGNING_KEY: keyB.privateB64, ROLL_CALL_PACK_KEYRING: JSON.stringify(ringV2), ROLL_CALL_PACK_MATCH_SECRET: MATCH_SECRET,
+    }, NEXT_PORT);
     const keyring2 = parseKeyring(JSON.stringify(ringV2));
-    const rotated = await pack(tokenTeacher, { classId: classA1, date: today });
+    const rotated = await request(`/student-cards/roll-call/offline/v1/pack?${new URLSearchParams({ classId: classA1, date: today })}`, { token: tokenTeacher, port: NEXT_PORT });
+    const stale = await pack(tokenTeacher, { classId: classA1, date: today });
+    assert.equal(stale.status, 200, stale.text);
+    assert.equal(stale.data.pack.keyId, "rc-pack-it-a", "ancienne instance non redémarrée : toujours la clé A");
+    assert.equal(stale.data.revocations.list.sequence, 0);
+    assert.equal(verifySignature({ message: packSigningMessage(stale.data.pack), signature: stale.data.signature, keyring: keyring1 }), true);
+    // Un téléphone qui a reçu la révocation (séquence 1) refuse ce pack de l'ancienne instance.
+    assert.equal(verifySignature({ message: packSigningMessage(stale.data.pack), signature: stale.data.signature, keyring: keyring2 }), false, "pack de l'ancienne instance refusé après révocation");
+    await stopServer(server);
+    server = serverNext;
+    serverNext = null;
     assert.equal(rotated.status, 200, rotated.text);
     assert.equal(rotated.data.pack.keyId, "rc-pack-it-b");
     assert.equal(rotated.data.signature.keyId, "rc-pack-it-b");
@@ -613,6 +648,7 @@ async function main() {
     console.log("rollCallOfflinePack.http.pg.test.js OK");
   } finally {
     await stopServer(server);
+    await stopServer(serverNext);
     await pool.end().catch(() => {});
     await repo.close?.().catch?.(() => {});
   }

@@ -2731,16 +2731,7 @@ app.get("/api/student-cards/roll-call/overview", requireAuth, requirePermission(
 
 // NFC-PRES-LOCAL-PR1b — pack signé Ed25519 pour l'appel hors ligne (lecture seule, indicatif).
 // Mêmes gardes que la liste d'appel : rôle TEACHER et affectation relus en base, flags, abonnement.
-let rollCallOfflinePackSigner = null;
-function rollCallPackSigner() {
-  // Mis en cache seulement après une configuration valide ; sinon 503 à chaque requête.
-  if (!rollCallOfflinePackSigner) {
-    const { createPackSigner } = require("./lib/rollCallOfflinePackSigner");
-    rollCallOfflinePackSigner = createPackSigner(process.env);
-  }
-  return rollCallOfflinePackSigner;
-}
-
+// Signataire et secret de rapprochement réévalués à chaque requête depuis l'environnement (fail-closed).
 app.get("/api/student-cards/roll-call/offline/v1/pack", requireAuth, requirePermission("GET /api/student-cards/roll-call/offline/v1/pack"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
@@ -2751,7 +2742,10 @@ app.get("/api/student-cards/roll-call/offline/v1/pack", requireAuth, requirePerm
     req.query ?? {},
     studentCardsHttpScope(principal),
     principal,
-    { signer: rollCallPackSigner, masterSecret: tokenService.secret },
+    {
+      signer: () => require("./lib/rollCallOfflinePackSigner").packSignerFromEnv(process.env),
+      masterSecret: () => require("./lib/rollCallOfflinePackSigner").resolvePackMatchSecret(process.env),
+    },
   ));
 }));
 

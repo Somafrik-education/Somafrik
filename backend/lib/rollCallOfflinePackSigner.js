@@ -9,6 +9,8 @@
  * Configuration (aucune valeur par défaut, aucune clé dans le dépôt) :
  *  - ROLL_CALL_PACK_SIGNING_KEY : SECRET. Clé privée Ed25519 active, PKCS#8 DER encodé en base64
  *    ou base64url (une ligne) ;
+ *  - ROLL_CALL_PACK_MATCH_SECRET : SECRET. Secret dédié (≥ 32 caractères, distinct de JWT_SECRET)
+ *    de dérivation des `matchKey` ;
  *  - ROLL_CALL_PACK_KEYRING : PUBLIC. JSON
  *    { "revocationSequence": <entier ≥ 0>, "keys": [{ "keyId", "publicKey" (32 octets base64url),
  *      "status": "active" | "standby" | "retired" | "revoked" }] }.
@@ -27,6 +29,13 @@ const { CONTRACT_VERSION, packSigningMessage, revocationsSigningMessage } = requ
 
 const SIGNING_KEY_ENV = "ROLL_CALL_PACK_SIGNING_KEY";
 const KEYRING_ENV = "ROLL_CALL_PACK_KEYRING";
+const MATCH_SECRET_ENV = "ROLL_CALL_PACK_MATCH_SECRET";
+const MIN_MATCH_SECRET_LENGTH = 32;
+const KNOWN_WEAK_SECRETS = new Set([
+  "change-this-long-random-secret-before-use",
+  "somafrik-dev-secret-change-me",
+  "GENERER-SECRET-JWT-32-CARACTERES-MINIMUM-ICI",
+]);
 const KEY_STATUSES = Object.freeze(["active", "standby", "retired", "revoked"]);
 const KEY_ID = /^rc-pack-[a-z0-9][a-z0-9-]{0,47}$/;
 const PUBLIC_KEY_B64URL = /^[A-Za-z0-9_-]{43}$/;
@@ -37,6 +46,7 @@ const MAX_KEYS = 16;
 
 const PACK_SIGNER_ERROR = Object.freeze({
   UNAVAILABLE: "ROLL_CALL_PACK_SIGNING_UNAVAILABLE",
+  MATCH_SECRET_UNAVAILABLE: "ROLL_CALL_PACK_MATCH_SECRET_UNAVAILABLE",
 });
 
 function unavailable(reason) {
@@ -150,6 +160,51 @@ function createPackSigner(env = process.env) {
 }
 
 /**
+ * Signataire à jour de l'environnement, réévalué à CHAQUE appel.
+ *
+ * Le signataire construit est réutilisé tant que les deux variables gardent exactement la même
+ * valeur ; toute modification de l'une d'elles produit un nouveau signataire, et une configuration
+ * devenue invalide lève 503 (jamais de signataire périmé servi depuis le cache).
+ *
+ * Exploitation : sur Render, les variables d'environnement d'un processus ne changent pas pendant
+ * sa vie ; une rotation n'est donc effective qu'après le redéploiement (redémarrage) de CHAQUE
+ * instance. Aucune rotation « à chaud » n'est promise (docs/student-card/NFC-PRES-LOCAL-PR1b-cles-pack.md §4).
+ */
+let cachedSigner = null;
+function packSignerFromEnv(env = process.env) {
+  const signingKey = String(env[SIGNING_KEY_ENV] ?? "");
+  const keyring = String(env[KEYRING_ENV] ?? "");
+  if (cachedSigner && cachedSigner.signingKey === signingKey && cachedSigner.keyring === keyring) {
+    return cachedSigner.signer;
+  }
+  cachedSigner = null;
+  const signer = createPackSigner(env);
+  cachedSigner = { signingKey, keyring, signer };
+  return signer;
+}
+
+function resetPackSignerCacheForTests() {
+  cachedSigner = null;
+}
+
+/**
+ * Secret dédié de dérivation des `matchKey` (HKDF), distinct de JWT_SECRET et par environnement.
+ * Fail-closed : absent, < 32 caractères, valeur d'exemple connue ou égal à JWT_SECRET → 503.
+ */
+function resolvePackMatchSecret(env = process.env) {
+  const secret = String(env[MATCH_SECRET_ENV] ?? "").trim();
+  const jwtSecret = String(env.JWT_SECRET ?? "").trim();
+  if (secret.length < MIN_MATCH_SECRET_LENGTH || KNOWN_WEAK_SECRETS.has(secret) || (jwtSecret && secret === jwtSecret)) {
+    throw createHttpError(
+      503,
+      "Pack hors ligne indisponible : secret de rapprochement non configuré.",
+      PACK_SIGNER_ERROR.MATCH_SECRET_UNAVAILABLE,
+    );
+  }
+  return secret;
+}
+
+/**
  * Vérification de référence (tests, outillage d'exploitation, oracle du Mobile en PR2) :
  * `keyId` inconnu, révoqué, statut inattendu, algorithme ou signature mal formés → false.
  */
@@ -171,9 +226,13 @@ function verifySignature({ message, signature, keyring }) {
 module.exports = {
   SIGNING_KEY_ENV,
   KEYRING_ENV,
+  MATCH_SECRET_ENV,
   KEY_STATUSES,
   PACK_SIGNER_ERROR,
   parseKeyring,
   createPackSigner,
+  packSignerFromEnv,
+  resetPackSignerCacheForTests,
+  resolvePackMatchSecret,
   verifySignature,
 };

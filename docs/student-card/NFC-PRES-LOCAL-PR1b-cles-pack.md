@@ -17,6 +17,7 @@ La route `GET /api/student-cards/roll-call/offline/v1/pack` renvoie un pack sign
 | --- | --- | --- |
 | `ROLL_CALL_PACK_SIGNING_KEY` | **secret** | Clé privée Ed25519 **active**, PKCS#8 DER encodé en base64 ou base64url, sur une ligne |
 | `ROLL_CALL_PACK_KEYRING` | public | JSON du trousseau (ci-dessous) |
+| `ROLL_CALL_PACK_MATCH_SECRET` | **secret** | Secret dédié de dérivation des `matchKey` (HKDF), ≥ 32 caractères, **distinct de `JWT_SECRET`** et propre à chaque environnement |
 
 ```json
 {
@@ -28,13 +29,19 @@ La route `GET /api/student-cards/roll-call/offline/v1/pack` renvoie un pack sign
 }
 ```
 
-Règles vérifiées au démarrage de chaque émission (fail-closed, réponse `503 ROLL_CALL_PACK_SIGNING_UNAVAILABLE`, aucun pack) :
+Règles vérifiées à **chaque** requête de pack (fail-closed, réponse `503 ROLL_CALL_PACK_SIGNING_UNAVAILABLE`, aucun pack) :
 - `keyId` de la forme `rc-pack-<a-z0-9->`, unique ; clé publique Ed25519 de 32 octets, unique ;
 - `status` ∈ `active`, `standby`, `retired`, `revoked` ; **exactement une** clé `active` ;
 - la clé privée doit correspondre à la clé publique `active` ;
 - `revocationSequence` entier ≥ 0, et ≥ 1 dès qu'une clé est `revoked`.
 
-Aucune valeur par défaut. Sans ces deux variables, la route répond 503 ; les autres routes ne sont pas concernées.
+Secret de rapprochement : absent, de moins de 32 caractères, égal à une valeur d'exemple connue ou égal à `JWT_SECRET` → `503 ROLL_CALL_PACK_MATCH_SECRET_UNAVAILABLE`, aucun pack.
+
+Aucune valeur par défaut. Sans ces trois variables, la route répond 503 ; les autres routes ne sont pas concernées.
+
+**Cache et rotation.** Le signataire construit est réutilisé tant que `ROLL_CALL_PACK_SIGNING_KEY` et `ROLL_CALL_PACK_KEYRING` gardent exactement la même valeur dans le processus ; toute autre valeur produit un nouveau signataire, et une configuration devenue invalide est refusée (aucun signataire périmé n'est servi depuis le cache). En revanche, les variables d'environnement d'un processus Node ne changent pas pendant sa vie : sur Render, modifier une variable déclenche un **redéploiement**, et chaque instance ne prend la nouvelle configuration qu'à son **redémarrage**. **Aucune rotation à chaud n'est possible ni promise.** Pendant un redéploiement multi-instances, une instance non encore redémarrée continue de signer avec l'ancienne clé : c'est sans danger en rotation planifiée (ancienne clé `retired`, encore vérifiable), et maîtrisé en rotation d'urgence par la liste de révocation (§5, §6), testée avec deux instances simultanées dans `rollCallOfflinePack.http.pg.test.js`.
+
+**Secret de rapprochement.** Le `matchKey` n'est qu'une clé de jointure locale entre `students` et `cards` **à l'intérieur d'un même pack** (dérivée de `LP(packId, studentId)`) ; il n'est ni envoyé au serveur lors de la synchronisation, ni vérifié ensuite. Changer `ROLL_CALL_PACK_MATCH_SECRET` n'invalide donc aucun pack déjà téléchargé : les nouveaux packs ont simplement d'autres `matchKey`. Il est dissocié de `JWT_SECRET` pour qu'une rotation du secret JWT (ou une fuite de celui-ci) n'ait aucun lien avec les packs, et réciproquement. Génération : `openssl rand -base64 48`, une valeur différente par environnement (préproduction ≠ production).
 
 Les clés de **préproduction et de production sont distinctes** ; l'APK de chaque environnement n'embarque que les clés publiques de son environnement.
 
@@ -62,15 +69,16 @@ La clé `standby` est générée de la même façon ; sa clé **privée** est co
 
 1. Générer une nouvelle clé `standby` (clé N+1) ; publier une APK dont le trousseau embarqué contient les clés `active`, `standby` et N+1.
 2. Attendre que cette APK soit la version minimale supportée.
-3. Déployer la clé privée `standby` dans `ROLL_CALL_PACK_SIGNING_KEY` et mettre à jour le trousseau : ancienne `active` → `retired`, `standby` → `active`, N+1 → `standby`. `revocationSequence` inchangée.
-4. Les packs déjà signés par la clé retirée restent vérifiables jusqu'à leur expiration (au plus 37 h).
+3. Déployer la clé privée `standby` dans `ROLL_CALL_PACK_SIGNING_KEY` et mettre à jour le trousseau : ancienne `active` → `retired`, `standby` → `active`, N+1 → `standby`. `revocationSequence` inchangée. Les deux variables sont modifiées **dans le même redéploiement** (une clé privée qui ne correspond pas à la clé `active` du trousseau donne 503).
+4. **Redéployer** le service et vérifier que **toutes** les instances ont redémarré (tableau de bord Render), puis qu'un pack récent porte le nouveau `keyId`.
+5. Les packs déjà signés par la clé retirée restent vérifiables jusqu'à leur expiration (au plus 37 h).
 
 ## 5. Rotation d'urgence (clé compromise)
 
 Aucune hypothèse de mise à jour instantanée des APK :
 
 1. Déployer immédiatement la clé privée `standby` (déjà présente dans toutes les APK supportées) comme `active`.
-2. Passer la clé compromise à `revoked` et **incrémenter** `revocationSequence`.
+2. Passer la clé compromise à `revoked` et **incrémenter** `revocationSequence`, dans le même redéploiement ; vérifier que **toutes** les instances ont redémarré : tant qu'une ancienne instance tourne, elle signe encore avec la clé compromise (ces packs sont refusés par tout téléphone ayant déjà reçu la révocation).
 3. Chaque pack émis transporte désormais la liste de révocation signée par la nouvelle clé active. Une APK qui la reçoit refuse tout pack signé par la clé révoquée, y compris un pack déjà stocké (comportement PR2).
 4. Une APK restée hors ligne peut encore accepter un pack frauduleux signé par la clé compromise : effet limité à l'affichage, aucun droit (risque P1-9 du contrat).
 5. Générer une nouvelle clé `standby`, la livrer dans une APK.

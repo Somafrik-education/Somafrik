@@ -239,7 +239,7 @@ Réponse de `GET /api/student-cards/roll-call/offline/v1/pack?classId&date` :
 - Types admis avant canonicalisation (validateur strict, sinon refus) : chaînes, entiers sûrs (`Number.isSafeInteger`, `-0` interdit), booléens, `null`, tableaux, objets à clés chaînes. Interdits : flottants, `undefined`, `NaN`/`Infinity`, `Date`, `BigInt`, objets à `toJSON`.
 - **Pas de normalisation Unicode** : les chaînes sont signées telles qu'émises par le serveur (J-2 montre que NFC et NFD donnent deux empreintes différentes) ; le Mobile ne modifie jamais une chaîne reçue avant vérification.
 - Domaine JSON admis, conformité exigée : chaînes UTF-16 bien formées, entiers sûrs, booléens, `null`, tableaux denses, objets simples, profondeur ≤ 32, JSON canonique ≤ 256 Kio. PR1a teste `jcs.js` sur ce domaine côté Node (vecteurs J, échappements RFC 8785, tri UTF-16, idempotence, aller-retour) ; PR2 rejoue les mêmes tests sous Hermes.
-- `matchKey` = HMAC serveur (clé dérivée HKDF du secret roll-call existant, étiquette `student-card-roll-call:offline-match:v1`) sur `LP(packId, studentId)` : pas de corrélation d'un pack à l'autre.
+- `matchKey` = HMAC serveur (clé dérivée HKDF d'un secret **dédié** `ROLL_CALL_PACK_MATCH_SECRET` depuis la révision 6 / PR1b, et non plus du secret roll-call ou JWT ; étiquette `student-card-roll-call:offline-match:v1`) sur `LP(packId, studentId)` : pas de corrélation d'un pack à l'autre.
 
 ### 4.2 Algorithme, clés et rotation
 

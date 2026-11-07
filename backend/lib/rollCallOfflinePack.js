@@ -327,7 +327,7 @@ async function loadEligibleCards(repo, schoolId, studentIds, media) {
 }
 
 /**
- * Émet un pack signé. `deps` : { signer (createPackSigner), masterSecret, nowMs, randomUUID? }.
+ * Émet un pack signé. `deps` : { signer, masterSecret (valeurs ou fonctions), nowMs, randomUUID? }.
  * Ordre : entrée → acteur et rôle live → flags → classe et affectation → signataire → fuseau et
  * fenêtre → lectures → construction → contrôle de taille → signature.
  */
@@ -341,6 +341,7 @@ async function issueOfflinePack(repo, query, scope, principal, deps) {
   const media = await enabledMedia(repo, scope.schoolId);
   await assertRollCallClass(repo, scope, principal, classId, "teacher");
   const signer = typeof deps.signer === "function" ? deps.signer() : deps.signer;
+  const masterSecret = typeof deps.masterSecret === "function" ? deps.masterSecret() : deps.masterSecret;
   const timeZone = await schoolTimeZone(repo, scope.schoolId);
   const window = computePackWindow(timeZone, date);
   const nowMs = deps.nowMs ?? Date.now();
@@ -359,7 +360,7 @@ async function issueOfflinePack(repo, query, scope, principal, deps) {
     nowMs,
     students,
     cards,
-    matchSecret: deriveMatchKeySecret(deps.masterSecret),
+    matchSecret: deriveMatchKeySecret(masterSecret),
   });
   try {
     canonicalJson(pack); // types du contrat et plafond de 256 Kio

@@ -15,8 +15,12 @@ const {
   SIGNING_KEY_ENV,
   KEYRING_ENV,
   PACK_SIGNER_ERROR,
+  MATCH_SECRET_ENV,
   parseKeyring,
   createPackSigner,
+  packSignerFromEnv,
+  resetPackSignerCacheForTests,
+  resolvePackMatchSecret,
   verifySignature,
 } = require("./rollCallOfflinePackSigner");
 const { packSigningMessage, revocationsSigningMessage } = require("./rollCallOfflineProof");
@@ -192,4 +196,41 @@ test("aucun message d'erreur ne contient de matériel de clé", () => {
     assert.equal(rendered.includes(leaked), false);
     assert.equal(rendered.includes(A.publicRaw), false);
   }
+});
+
+test("signataire réévalué à chaque appel : même configuration réutilisée, changement pris en compte, jamais de signataire périmé", () => {
+  resetPackSignerCacheForTests();
+  const ringA = [{ keyId: "rc-pack-a", publicKey: A.publicRaw, status: "active" }, { keyId: "rc-pack-b", publicKey: B.publicRaw, status: "standby" }];
+  const ringB = [{ keyId: "rc-pack-a", publicKey: A.publicRaw, status: "retired" }, { keyId: "rc-pack-b", publicKey: B.publicRaw, status: "active" }];
+  const process1 = env({ signing: A.privateDer, keys: ringA });
+  const first = packSignerFromEnv(process1);
+  assert.equal(first.keyId, "rc-pack-a");
+  assert.equal(packSignerFromEnv({ ...process1 }), first, "même configuration : même signataire");
+  // Nouvelle configuration (rotation) : nouveau signataire, nouvelle clé.
+  const rotated = packSignerFromEnv(env({ signing: B.privateDer, keys: ringB }));
+  assert.equal(rotated.keyId, "rc-pack-b");
+  assert.notEqual(rotated, first);
+  // Configuration devenue invalide après une configuration valide : 503, l'ancien signataire n'est pas servi.
+  assertUnavailable(() => packSignerFromEnv(env({ signing: A.privateDer, keys: ringB })), "signing_key_mismatch");
+  assertUnavailable(() => packSignerFromEnv({ ...process1, [SIGNING_KEY_ENV]: "" }), "signing_key_missing");
+  // Retour à une configuration valide : de nouveau disponible.
+  assert.equal(packSignerFromEnv(process1).keyId, "rc-pack-a");
+  resetPackSignerCacheForTests();
+});
+
+test("secret de rapprochement dédié : fail-closed si absent, faible ou égal à JWT_SECRET", () => {
+  const strong = "pr1b-test-only-match-".repeat(3);
+  const unavailable = (envValue) => assert.throws(() => resolvePackMatchSecret(envValue), (error) => {
+    assert.equal(error.statusCode, 503);
+    assert.equal(error.code, PACK_SIGNER_ERROR.MATCH_SECRET_UNAVAILABLE);
+    assert.equal(String(error.message).includes(strong), false);
+    return true;
+  });
+  assert.equal(MATCH_SECRET_ENV, "ROLL_CALL_PACK_MATCH_SECRET");
+  assert.equal(resolvePackMatchSecret({ [MATCH_SECRET_ENV]: strong, JWT_SECRET: "jwt-secret-different-of-at-least-32-chars" }), strong);
+  unavailable({});
+  unavailable({ [MATCH_SECRET_ENV]: "   " });
+  unavailable({ [MATCH_SECRET_ENV]: "trop-court" });
+  unavailable({ [MATCH_SECRET_ENV]: "change-this-long-random-secret-before-use" });
+  unavailable({ [MATCH_SECRET_ENV]: strong, JWT_SECRET: strong });
 });
