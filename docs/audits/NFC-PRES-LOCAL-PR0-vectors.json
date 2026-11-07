@@ -70,8 +70,8 @@
     "V-10_pack_canonical_sha256": "c8c18bb94c668641a1c003b10de80f45286bc1da6f921e968445ed39e336af54",
     "V-10_verifies": true,
     "V-10_tampered_classId_verifies": false,
-    "V-11_payloadDigest": "cf9d63b448edef12309b47f9e3b2e0dd26c94c54ee5562aa1d6633bd82d88b50",
-    "V-12_payloadDigest_medium_qr": "5fb1951cc9284c0508a17adbaf3f4d8b0633d2dc58eda325be2396c26ba0370a"
+    "V-11_payloadDigest": "50603c4e23b60e2665d647198900031184da5a00863196bf8e54d00ab706fbfb",
+    "V-12_payloadDigest_medium_qr": "e08c8218407451aa3a63d7584c908a91ce83567c26dc72e7ab70160b37f65d4c"
   },
   "testPack": {
     "actorUserId": "00000000-0000-4000-8000-000000000002",
@@ -115,6 +115,7 @@
     "operationId": "00000000-0000-4000-8000-000000000008",
     "packId": "00000000-0000-4000-8000-000000000005",
     "revision": 1,
+    "schoolId": "00000000-0000-4000-8000-000000000001",
     "scans": [
       {
         "medium": "nfc",
@@ -126,5 +127,91 @@
     ],
     "sessionId": "00000000-0000-4000-8000-000000000004"
   },
-  "canonicalization": "JCS (RFC 8785) ; pour ces types, identique à stableSerialize (backend/services/idempotencyService.js)"
+  "canonicalization": "JCS RFC 8785 via canonicalize@2.0.0 (bibliothèque unique Backend/Mobile). stableSerialize n'est pas utilisé pour le pack ni le digest.",
+  "revision": 3,
+  "jcs": {
+    "J-1": {
+      "input": {
+        "lastName": "Kabasélé",
+        "firstName": "Ngalula"
+      },
+      "canonical": "{\"firstName\":\"Ngalula\",\"lastName\":\"Kabasélé\"}",
+      "sha256": "758405076dbbec331910fdf8d34fed16bcb020bebf785b5bca075655ae2272cf"
+    },
+    "J-2": {
+      "input": {
+        "lastName": "Kabasélé"
+      },
+      "canonical": "{\"lastName\":\"Kabasélé\"}",
+      "sha256": "84df14cd3a944e7822523710b257899b29eb640db96b4fff049dd69d92d33ff6"
+    },
+    "J-3": {
+      "input": {
+        "v": "😀"
+      },
+      "canonical": "{\"v\":\"😀\"}",
+      "sha256": "d3e54b11635291b9829749f9fbbbf3f2c4a9590e8806464567f15416f188fc3b"
+    },
+    "J-4": {
+      "input": {
+        "v": "a\"b\\c\n\t\u0001\u001f  /"
+      },
+      "canonical": "{\"v\":\"a\\\"b\\\\c\\n\\t\\u0001\\u001f  /\"}",
+      "sha256": "fc2a3738f089a0c729fad95247e443bfa2b0f741b8e430bcf5d6291a9b073f9c"
+    },
+    "J-5": {
+      "input": {
+        "é": 1,
+        "z": 2,
+        "B": 3,
+        "a": 4,
+        "😀": 5,
+        "ﬁ": 6
+      },
+      "canonical": "{\"B\":3,\"a\":4,\"z\":2,\"é\":1,\"😀\":5,\"ﬁ\":6}",
+      "sha256": "4114f48a1dffa20708aec2e1ee94ecc91478504ffa67994dee091fdd9ff919a6"
+    },
+    "J-6": {
+      "input": {
+        "a": 0,
+        "b": -1,
+        "c": 9007199254740991,
+        "d": 300
+      },
+      "canonical": "{\"a\":0,\"b\":-1,\"c\":9007199254740991,\"d\":300}",
+      "sha256": "7d8de0381baef2d7802d0ca8a258972c1580e41501307a0f15b66b08a9815dd2"
+    },
+    "J-7": {
+      "input": {
+        "b": [
+          {
+            "y": null,
+            "x": true
+          },
+          []
+        ],
+        "a": {
+          "d": {},
+          "c": [
+            1,
+            "1"
+          ]
+        }
+      },
+      "canonical": "{\"a\":{\"c\":[1,\"1\"],\"d\":{}},\"b\":[{\"x\":true,\"y\":null},[]]}",
+      "sha256": "34ea9e93e556ed19cf1bc3f03f68c81156f9b63236010f0544d9f70e4559c79f"
+    },
+    "J-8": {
+      "input": "{ v: -0 }",
+      "rule": "refusé par le validateur (-0 interdit)"
+    },
+    "J-9": {
+      "input": "{ v: 0.1, w: 1e21 }",
+      "rule": "refusé par le validateur (flottants interdits)"
+    },
+    "J-10": {
+      "input": "{ a: undefined, b: 1 }",
+      "rule": "refusé par le validateur ; canonicalize donne {\"b\":1}, stableSerialize {\"a\":null,\"b\":1}"
+    }
+  }
 }

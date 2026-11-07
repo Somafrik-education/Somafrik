@@ -6,7 +6,7 @@ Document seul : aucun code produit, aucune migration exécutée, aucun déploiem
 | Élément | Valeur |
 | --- | --- |
 | Dépôt | `Somafrik-education/Somafrik` |
-| Base lue | `develop@4185c88bc813d50cd71bd9e2466287e4290833fb` (HEAD courant au 2026-11-07) |
+| Base lue | `develop@4185c88bc813d50cd71bd9e2466287e4290833fb` (audit du code) ; branche mise à jour avec `develop@604a0eb6` en révision 3 |
 | Références | #1098 (mandat), #921 (physique NFC), #911 (transactionnel), PR #1099 (audit physique), PR #1100 (audit offline) |
 | Anciennes PR | #912, #922, #925 : Draft/HOLD, divergentes, **non réutilisées** |
 
@@ -24,6 +24,19 @@ Ce document **complète** les audits #1099 et #1100 sans les répéter : il pren
 | P1-6 Tests | Tests pack falsifié/cross-tenant, altération du support, ACK/digest contradictoires, timeout après COMMIT, concurrence, droits révoqués, corruption, `token_hash` jamais exposé | §10 |
 
 Aucun test PostgreSQL ni Android n'est exécuté ou revendiqué pour la nouvelle architecture.
+
+### Révision 3 — corrections demandées par la revue CTO R2 (HEAD revu `fb81473e`)
+
+| Point de revue | Correction | Section |
+| --- | --- | --- |
+| P0 Rejeu avant autorisation | Deux gardes distinctes : **R** (lire son propre résultat : identité, établissement résolu en base et égal au `schoolId` authentifié du lot, rôle `TEACHER` actif, permission live) exécutée **avant toute lecture** d'`idempotency_keys` ou du journal, via une option additive `guard` de `withIdempotency` ; **W** (nouvel enregistrement : en plus affectation, flags, abonnement, date). Réponses exactes ; refus R indépendant de l'existence de la session | §6.2, §6.3, §6.4, §6.5 |
+| Refus après succès historique | `sessionState: "not_recorded"` émis seulement après lecture du journal sous verrou ; seule condition d'une nouvelle révision ; état Mobile `unconfirmable` (« État serveur non confirmable actuellement ») sans révision ; protocole R-1 à R-10 | §6.8, §6.9, §7 |
+| P1-1 JCS | Bibliothèque unique `canonicalize@2.0.0`, validateur de types, pas de normalisation Unicode ; équivalence générale avec `stableSerialize` retirée (divergence démontrée, J-10) ; vecteurs J-1 à J-10 | §4.1, §9 |
+| P1-2 Rotation | Clés `active` + `standby` dès la première APK, liste de révocation monotone, rotation urgente sans mise à jour instantanée des APK, refus fail-closed, récupération | §4.2 |
+| P1-3 Déconnexion | Clé conservée seulement pour le même compte ; compte retiré ; purge par échéance sans ouvrir la base | §5.3, §5.5 |
+| P1-4 403/404 | Séparation `403 REPLAY_FORBIDDEN` (incertain) / codes W avec `not_recorded` (définitif) | §6.5, §6.8 |
+
+Le lot de synchronisation porte désormais `schoolId` (comparé, jamais utilisé pour résoudre l'établissement) : V-11 et V-12 sont recalculés. Aucun test PostgreSQL ni Android n'est exécuté ou revendiqué.
 
 ---
 
@@ -101,7 +114,7 @@ Lecture directe sur `develop@4185c88`.
 
  SYNCHRONISATION
  Mobile ──POST /roll-call/offline/v1/sync  (Idempotency-Key = operationId)──▶ Backend
-        une transaction PostgreSQL, ordre de verrous fixe (§6.2)
+        une transaction PostgreSQL, gardes R/W et ordre de verrous fixe (§6.2, §6.3)
         ◀── 201 ACK (ou 200 ACK rejoué) : mêmes champs pour une même opération
         ▶ « Synchronisé » + purge des preuves ; aucun autre chemin vers « Synchronisé »
 ```
@@ -197,15 +210,29 @@ Réponse de `GET /api/student-cards/roll-call/offline/v1/pack?classId&date` :
 ```
 
 - `students` triés par `matchKey`, `cards` par `cardRef`. Tout le contenu de `pack` est signé : établissement, acteur, mode, classe, date, `packId`, versions, horodatages et listes complètes.
-- Message signé : `utf8("somafrik.rc-offline.pack.v1\n") || utf8(JCS(pack))`, JCS = RFC 8785. Pour les types du contrat (chaînes, entiers, booléens, `null`, tableaux, objets), JCS coïncide avec `stableSerialize` de `idempotencyService.js` ; les flottants sont interdits dans le pack.
+- Message signé : `utf8("somafrik.rc-offline.pack.v1\n") || utf8(JCS(pack))`, JCS = RFC 8785.
+- **Canonicalisation (révision 3)** : une bibliothèque unique, `canonicalize@2.0.0` (implémentation de référence RFC 8785, pure JS, version exacte figée), utilisée **telle quelle** côté Backend (Node) et côté Mobile (React Native/Hermes). `stableSerialize` n'est **pas** utilisé pour le pack ni pour `payloadDigest` : il diverge de JCS au moins sur `undefined` (vecteur J-10), et l'absence d'autres écarts n'est pas démontrée en général.
+- Types admis avant canonicalisation (validateur strict, sinon refus) : chaînes, entiers sûrs (`Number.isSafeInteger`, `-0` interdit), booléens, `null`, tableaux, objets à clés chaînes. Interdits : flottants, `undefined`, `NaN`/`Infinity`, `Date`, `BigInt`, objets à `toJSON`.
+- **Pas de normalisation Unicode** : les chaînes sont signées telles qu'émises par le serveur (J-2 montre que NFC et NFD donnent deux empreintes différentes) ; le Mobile ne modifie jamais une chaîne reçue avant vérification.
+- Les octets canoniques doivent être identiques entre Node et Hermes : les vecteurs J-1 à J-9 (Unicode, paires de substitution, échappements, tri des clés en unités UTF-16, entiers, objets imbriqués) sont exécutés des deux côtés en PR1a et PR2.
 - `matchKey` = HMAC serveur (clé dérivée HKDF du secret roll-call existant, étiquette `student-card-roll-call:offline-match:v1`) sur `LP(packId, studentId)` : pas de corrélation d'un pack à l'autre.
 
-### 4.2 Algorithme et clés
+### 4.2 Algorithme, clés et rotation
 
-- Ed25519 (signature déterministe, clé publique de 32 octets). Côté Mobile : vérification par une bibliothèque pure JS auditée (`@noble/curves`), choix à confirmer en PR2.
-- Clé privée : secret Render par environnement (`ROLL_CALL_PACK_SIGNING_KEY`, PKCS#8), jamais dans le dépôt, les logs ni les réponses. Absente ou invalide → la route pack répond 503 et le mode dégradé s'applique.
-- Clés publiques : trousseau `{ keyId → clé publique }` embarqué dans l'APK **par environnement** (préprod ≠ production), via la configuration de build.
-- Rotation : publier la nouvelle clé publique dans une version de l'application, puis basculer le serveur ; l'ancienne reste dans le trousseau jusqu'à la version minimale suivante. Compromission de la clé privée : impact limité (le pack n'autorise rien), retrait par mise à jour de l'application.
+- Ed25519 (signature déterministe, clé publique de 32 octets). Côté Mobile : vérification par une bibliothèque pure JS auditée (`@noble/curves`), version figée en PR2.
+- Clés privées : secrets Render par environnement, jamais dans le dépôt, les logs ni les réponses. Absente ou invalide → la route pack répond 503 et le mode dégradé s'applique.
+- Trousseau embarqué dans l'APK **par environnement** : `{ keyId → { publicKey, status } }`, avec **dès la première version deux clés** : `active` (signe) et `standby` (clé de secours, privée conservée hors ligne dans un coffre distinct, jamais déployée tant qu'elle n'est pas activée).
+- Liste de révocation : `revokedPackKeyIds`, servie par une route authentifiée en ligne (configuration mobile existante ou route dédiée, à fixer en PR1b), mise en cache dans la base du compte, **monotone** (une révocation n'est jamais annulée par une réponse ultérieure).
+
+Rotation planifiée : (1) publier une APK dont le trousseau contient la nouvelle clé ; (2) attendre l'adoption (version minimale) ; (3) basculer la signature serveur ; (4) l'ancienne clé passe `retired` à la version minimale suivante.
+
+Rotation urgente (clé compromise), **sans supposer de mise à jour instantanée des APK** :
+1. le serveur cesse immédiatement de signer avec la clé compromise et signe avec la clé `standby` déjà présente dans toutes les APK supportées ;
+2. le `keyId` compromis est ajouté à `revokedPackKeyIds` ;
+3. une APK qui a reçu la révocation refuse tout pack signé par ce `keyId`, y compris un pack déjà stocké : suppression puis nouveau téléchargement ;
+4. une APK hors ligne qui n'a pas encore reçu la révocation peut accepter un pack frauduleux signé par la clé compromise : conséquence limitée à un affichage « reconnu » erroné, car le pack n'accorde aucun droit (§4.4) et tout est revalidé au sync ;
+5. une APK dont toutes les clés connues sont révoquées ou retirées refuse tous les packs : mode dégradé (« à vérifier »), jamais d'acceptation par défaut ; la récupération passe par la mise à jour de l'APK ;
+6. une nouvelle clé `standby` est générée et livrée par APK.
 
 ### 4.3 Vérification et rejet fail-closed
 
@@ -264,13 +291,18 @@ Un cloisonnement cryptographique contre l'application elle-même exigerait une c
 
 | Événement | Comportement |
 | --- | --- |
-| Connexion | ouverture de la base du compte, si elle existe ; reprise des sessions |
-| Changement de compte ou d'établissement | fermeture de la base courante, ouverture de celle du nouveau compte ; rien n'est déplacé |
+| Connexion | dérivation de `accountId` à partir de l'identité **authentifiée** (`environmentId`, `userId`, `schoolId` renvoyés par le serveur) ; ouverture de la base de ce compte seulement, si elle existe |
+| Changement de compte ou d'établissement | fermeture de la base courante, ouverture de celle du nouveau compte ; aucune donnée déplacée ni affichée d'un compte à l'autre ; aucune mention de l'existence d'appels d'un autre compte |
 | Déconnexion sans appel en attente | crypto-effacement (clé puis fichier) |
-| Déconnexion avec appel en attente | confirmation explicite ; base **fermée et conservée** (`blocked_logout`), rouverte seulement par le même compte |
-| Échéance dépassée sur une base fermée | au démarrage, purge des sessions expirées (§5.5) ; base vide → crypto-effacement |
+| Déconnexion avec appel en attente | confirmation explicite ; base **fermée**, clé **conservée uniquement pour une reconnexion du même compte** (`blocked_logout`) ; aucun autre compte ne peut calculer son `accountId` ni ouvrir sa base par l'interface |
+| Reconnexion du même compte | réouverture, reprise des envois (mêmes octets, §6.8) |
+| Compte retiré, désactivé ou ayant perdu l'établissement (constaté par le serveur à la connexion de ce compte : 401/403 de compte) | sessions passées en `unconfirmable` (« État serveur non confirmable actuellement ») ; aucune nouvelle révision ; purge à l'échéance ci-dessous |
+| Compte qui ne se reconnecte jamais | le téléphone ne peut pas l'apprendre sans ses identifiants : purge **par échéance**, au démarrage de l'application quel que soit le compte connecté, sans ouvrir la base (métadonnée d'échéance non sensible stockée hors base : `accountId`, date de purge) |
+| Échéance de purge d'une base fermée | `max(syncDeadline des sessions) + 7 jours` ; puis crypto-effacement |
 | Clé absente (réinstallation, SecureStore effacé) ou base illisible ou corrompue | aucune recréation par-dessus : fichier renommé en `.quarantine`, message « N appel(s) local(aux) illisible(s) : saisissez-les manuellement », journal d'incident sans PII, quarantaine supprimée après 7 jours |
 | Échec d'écriture (disque plein, `SQLITE_FULL`, `SQLITE_CORRUPT`) | scan refusé visiblement, compteur inchangé, aucune confirmation |
+
+Limite (rappel §5.1, P1-3) : la clé d'une base conservée reste dans le SecureStore de l'application ; l'isolation entre comptes est applicative et par fichier, pas cryptographique contre une application modifiée.
 
 ### 5.4 Tables (migration locale v1)
 
@@ -281,7 +313,7 @@ rc_sessions (
   session_id PRIMARY KEY, user_id, school_id, class_id, roll_call_date,
   mode CHECK (mode = 'teacher'), pack_id NULL,
   state CHECK (state IN ('draft','closed','syncing','synced','failed_retryable',
-                         'failed_action_required','expired','blocked_logout')),
+                         'failed_action_required','unconfirmable','expired','blocked_logout')),
   revision INTEGER NOT NULL DEFAULT 1, operation_id NULL, payload_digest NULL,
   frozen_body BLOB NULL,                               -- corps exact envoyé, immuable une fois écrit
   opened_at, closed_at, synced_at, server_roll_call_id, ack_digest, last_error_code,
@@ -300,7 +332,7 @@ Règles :
 - une transaction par scan (`BEGIN IMMEDIATE … COMMIT`) ; retour visuel/sonore seulement après `COMMIT` ;
 - plusieurs cartes d'un même élève → plusieurs `rc_scans`, une seule `rc_marks` ;
 - un seul appel `draft` par `(class_id, roll_call_date)` dans la base du compte (index unique partiel) ;
-- un trigger `BEFORE UPDATE` refuse toute modification de `frozen_body`, `operation_id` et `payload_digest` tant que `state ∈ ('closed','syncing','failed_retryable')`.
+- un trigger `BEFORE UPDATE` refuse toute modification de `frozen_body`, `operation_id` et `payload_digest` tant que `state ∈ ('closed','syncing','failed_retryable','unconfirmable')` ; le passage à `draft` (nouvelle révision) n'est accepté que si `last_session_state = 'not_recorded'` (colonne ajoutée, recopiée de la dernière réponse serveur).
 
 ### 5.5 Données personnelles et purge
 
@@ -312,7 +344,7 @@ Le pack contient des **données nominatives** (nom, prénom, code élève, ident
 | Preuves (`rc_scans.proof`) | dans la transaction locale qui passe la session à `synced` |
 | `frozen_body` | idem |
 | Session `synced` | résumé de compteurs conservé 7 jours, puis suppression |
-| Session non synchronisée après `syncDeadline` | état `expired` : preuves, corps figé et noms supprimés ; compteurs conservés jusqu'à acquittement par l'utilisateur, au plus 7 jours |
+| Session non synchronisée après `syncDeadline` | état `expired` : preuves, corps figé et noms supprimés ; compteurs conservés jusqu'à acquittement par l'utilisateur, au plus 7 jours. **Exception** : une session `unconfirmable` garde son `frozen_body` jusqu'à la purge de la base (§5.3), pour qu'un renvoi identique puisse encore retrouver l'ACK |
 | Brouillon | jamais purgé silencieusement avant l'échéance |
 
 ---
@@ -326,53 +358,92 @@ En-tête `Idempotency-Key: <operationId>` obligatoire, égal au champ du corps.
 ```json
 {
   "contractVersion": "rc-offline-1",
-  "operationId": "uuid", "sessionId": "uuid", "revision": 1,
+  "operationId": "uuid", "sessionId": "uuid", "revision": 1, "schoolId": "uuid",
   "classId": "uuid", "date": "YYYY-MM-DD", "mode": "teacher", "packId": "uuid|null",
   "complete": true,
   "scans":  [{ "scanId": "uuid", "publicId": "…", "proof": "…", "medium": "nfc|qr", "scannedAt": "…" }],
   "manual": [{ "studentId": "uuid", "status": "present|late|absent" }],
-  "payloadDigest": "hex(SHA-256(JCS(corps sans payloadDigest)))"
+  "payloadDigest": "hex(SHA-256(JCS(corps sans payloadDigest)))  — JCS = canonicalize@2.0.0"
 }
 ```
 
-`scans` triés par `scanId`, `manual` par `studentId` (ordre canonique, digest stable). Limites : 300 scans, 300 marques, corps ≤ 256 Ko, limiteur de débit par utilisateur. `scannedAt` est informatif.
+`scans` triés par `scanId`, `manual` par `studentId` (ordre canonique, digest stable). `schoolId` n'est **jamais** utilisé pour déterminer l'établissement : il est seulement comparé à l'établissement résolu en base (garde R, §6.2) ; il est déjà authentifié dans chaque preuve. Limites : 300 scans, 300 marques, corps ≤ 256 Ko, limiteur de débit par utilisateur. `scannedAt` est informatif.
 
-### 6.2 Ordre d'exécution et des verrous
+### 6.2 Deux autorisations distinctes
 
-Le gestionnaire s'exécute dans `withIdempotency` → `withIdempotencyTransaction` (une seule transaction PostgreSQL, isolation READ COMMITTED). Ordre **fixe** :
+| | Garde **R** — lire le résultat de son propre appel | Garde **W** — effectuer un nouvel enregistrement |
+| --- | --- | --- |
+| Quand | **avant toute lecture** d'`idempotency_keys` ou du journal | après la lecture du journal, si aucun appel n'est enregistré pour la session |
+| Identité | JWT valide ; `userId` canonique (`resolveCanonicalUserIdForSchool`) | idem |
+| Établissement | `schoolId` résolu **en base** (`users.school_id` via `attachEnrollmentMembershipScope`, relu sans réutiliser une valeur déjà attachée au principal) ; jamais dérivé d'un champ du client ; rôles plateforme refusés. Le `schoolId` du lot (authentifié par les preuves et le digest) doit être **égal** à l'établissement résolu, sinon refus R | idem |
+| Appartenance | rôles actifs relus en base pour cet établissement (`listActiveUserRoleKeysForSchool`, `status = 'active'`, `revoked_at IS NULL`) : **au moins `TEACHER`** | `TEACHER` |
+| Permission | permission effective live de la route (`requirePermission`, `resolveEffectivePermissions`) | idem |
+| Affectation à la classe | **non requise** (un enseignant désaffecté peut confirmer ce qu'il a déjà enregistré) | **requise** (affectation active) |
+| Flags établissement | **non requis** (la confirmation d'un enregistrement passé ne crée rien) | maître, présences, NFC/QR selon `medium` |
+| Gate abonnement `write_presence` | non requis | requis |
+| Fenêtre de date | non requise | requise |
+| Échec | `403 ROLL_CALL_REPLAY_FORBIDDEN`, corps sans détail, **identique que la session existe ou non** | code W + `"sessionState": "not_recorded"` (§6.5) |
 
-| # | Étape | Hors / dans transaction | Échec |
+Le refus de R ne dit rien de l'existence d'un appel : R ne dépend que du principal, jamais de la session.
+
+### 6.3 Ordre d'exécution et des verrous
+
+Le gestionnaire s'exécute dans `withIdempotency` → `withIdempotencyTransaction` (une seule transaction PostgreSQL, READ COMMITTED). PR1c ajoute à `withIdempotency` une option **additive** `guard`, exécutée dans la transaction **avant** `findReplay` ; sans cette option, le comportement des routes existantes est inchangé (tests de non-régression de `idempotencyService`).
+
+| # | Étape | Où | Échec |
 | --- | --- | --- | --- |
-| 0 | Authentification JWT, format, `contractVersion`, `Idempotency-Key = operationId`, recalcul de `payloadDigest` | hors | 400 `INPUT_INVALID` / `DIGEST_MISMATCH` |
-| 1 | `pg_advisory_xact_lock(cacheId)` de `withIdempotencyTransaction` (clé, route, principal, établissement) | dans | — |
-| 2 | Rejeu `idempotency_keys` (< 24 h) : même hash → ACK stocké ; hash différent → 409 `IDEMPOTENCY_KEY_REUSED` | dans | — |
-| 3 | `pg_advisory_xact_lock(hashtext('rc-offline-session'), hashtext(schoolId ‖ ':' ‖ sessionId))` | dans | — |
-| 4 | **Lecture du journal** `attendance_roll_calls (school_id, session_id)`, après le verrou 3 (nouvel instantané READ COMMITTED) | dans | voir §6.3 |
-| 5 | Autorisation **live** : rôle TEACHER relu en base, affectation active, gate `write_presence`, flags (maître, présences, NFC/QR selon `medium`) | dans | 403 / 404, rien n'est écrit |
-| 6 | Fenêtre de date recalculée (fuseau courant) | dans | 409 `OFFLINE_EXPIRED` |
-| 7 | `lockRollCallDay(schoolId, date)` (verrou existant, partagé avec `/validate`) | dans | — |
-| 8 | Cartes `FOR SHARE` triées par `id` ; preuves ; statut ; support ; propriétaire | dans | 409 `CARD_INVALID` / 400 `PROOF_INVALID` |
-| 9 | `lockEnrolledRoster` `FOR SHARE` ; contrôle de liste complète | dans | 409 `ROSTER_CHANGED` |
-| 10 | Présences `FOR UPDATE` triées par élève ; `attendanceTransition` ; `upsertSchoolAttendanceBatch` avec gardes | dans | 409 `CONCURRENT_UPDATE` après 3 essais |
-| 11 | Insertion journal (`source = 'offline'`, `operation_id`, `payload_digest`, `ack_body`) ; absence de ligne insérée = erreur interne (impossible sous le verrou 3) | dans | 500, ROLLBACK |
-| 12 | Audit ; puis `service.store` de `withIdempotency` (même transaction) | dans | ROLLBACK |
-| 13 | COMMIT ; réponse | — | — |
+| 0 | `requireAuth`, `requirePermission` (permission live), format, `contractVersion`, `Idempotency-Key = operationId`, recalcul de `payloadDigest` | hors transaction | 401 / 403 générique / 400 `INPUT_INVALID` / `DIGEST_MISMATCH` |
+| 1 | `pg_advisory_xact_lock(cacheId)` (clé, route, principal, établissement) | transaction | — |
+| 2 | **Garde R** (`guard`) | transaction | 403 `REPLAY_FORBIDDEN`, ROLLBACK, aucune lecture effectuée |
+| 3 | Rejeu `idempotency_keys` (< 24 h) : même hash → ACK stocké ; hash différent → 409 `IDEMPOTENCY_KEY_REUSED` | transaction | — |
+| 4 | `pg_advisory_xact_lock(hashtext('rc-offline-session'), hashtext(schoolId ‖ ':' ‖ sessionId))` | transaction | — |
+| 5 | Lecture du journal `(school_id, session_id)` après le verrou 4 (nouvel instantané) — §6.4 | transaction | — |
+| 6 | **Garde W** | transaction | code W + `not_recorded` |
+| 7 | Fenêtre de date recalculée (fuseau courant) | transaction | 409 `OFFLINE_EXPIRED` + `not_recorded` |
+| 8 | `lockRollCallDay(schoolId, date)` (partagé avec `/validate`) | transaction | — |
+| 9 | Cartes `FOR SHARE` triées par `id` ; preuves ; statut ; support ; propriétaire | transaction | 409 `CARD_INVALID` / 400 `PROOF_INVALID` + `not_recorded` |
+| 10 | `lockEnrolledRoster` `FOR SHARE` ; liste complète | transaction | 409 `ROSTER_CHANGED` + `not_recorded` |
+| 11 | Présences `FOR UPDATE` triées par élève ; `attendanceTransition` ; `upsertSchoolAttendanceBatch` avec gardes | transaction | 409 `CONCURRENT_UPDATE` + `not_recorded` |
+| 12 | Insertion journal (`source = 'offline'`, `operation_id`, `payload_digest`, `ack_body`) ; aucune ligne insérée = erreur interne | transaction | 500, ROLLBACK |
+| 13 | Audit ; `service.store` de `withIdempotency` | transaction | ROLLBACK |
+| 14 | COMMIT ; réponse | — | — |
 
-Ordre global des verrous : idempotence (1) → session (3) → jour (7) → cartes (8) → inscriptions (9) → présences (10). La route `/validate` en ligne prend 1 → 7 → 8 → 9 → 10 : ordre compatible, sans inversion. Toute erreur levée aux étapes 2 à 12 annule la transaction : **un 4xx garantit l'absence de COMMIT**.
+Ordre global des verrous : idempotence (1) → session (4) → jour (8) → cartes (9) → inscriptions (10) → présences (11). La route `/validate` en ligne prend 1 → 8 → 9 → 10 → 11 : ordre compatible. Toute erreur levée aux étapes 2 à 13 annule la transaction.
 
-### 6.3 Décision à l'étape 4 (journal)
+`not_recorded` n'est émis qu'aux étapes 6 à 11, c'est-à-dire **après** avoir constaté sous le verrou de session qu'aucun appel n'est enregistré pour ce `sessionId` : c'est une attestation serveur, pas une déduction du code HTTP.
+
+### 6.4 Décision à l'étape 5 (journal)
 
 | Journal trouvé | Condition | Réponse |
 | --- | --- | --- |
-| Non | — | poursuivre (étapes 5 à 13), 201 |
-| Oui | même `operation_id` et même `payload_digest`, même auteur canonique | **200 + `ack_body` stocké**, sans écriture ni revalidation des droits |
-| Oui | même `operation_id`, auteur différent | 404 (aucune information divulguée) |
-| Oui | `operation_id` ou `payload_digest` différent | 409 `ROLL_CALL_SESSION_CONFLICT` (session déjà validée avec un autre contenu) |
+| Non | — | étapes 6 à 14, 201 |
+| Oui | même `operation_id`, même `payload_digest`, même auteur canonique | **200 + `ack_body`**, sans écriture (garde R déjà passée) |
+| Oui | auteur différent | 409 `ROLL_CALL_SESSION_CONFLICT`, sans ACK ni détail |
+| Oui | `operation_id` ou `payload_digest` différent | 409 `ROLL_CALL_SESSION_CONFLICT` |
 | Oui | `source = 'online'` | 409 `ROLL_CALL_SESSION_CONFLICT` |
 
-Pourquoi l'étape 4 précède l'autorisation : après un timeout où la première tentative a été validée, un enseignant dont l'affectation ou un flag a changé entre-temps doit recevoir l'ACK, pas un 403 qui ferait croire que rien n'est enregistré.
+Le rejeu `idempotency_keys` (étape 3) passe par la même garde R. Il est en outre limité par construction au même principal et au même établissement (`cacheId`).
 
-### 6.4 ACK
+### 6.5 Réponses d'échec exactes
+
+| Statut | Code | `sessionState` | Signification pour le Mobile |
+| --- | --- | --- | --- |
+| 400 | `ROLL_CALL_INPUT_INVALID`, `ROLL_CALL_DIGEST_MISMATCH` | absent | anomalie locale (corps invalide) |
+| 401 | — | absent | incertain : se reconnecter puis renvoyer à l'identique |
+| 403 | générique `requirePermission` | absent | incertain |
+| 403 | `ROLL_CALL_REPLAY_FORBIDDEN` | absent | **incertain** : « État serveur non confirmable actuellement » |
+| 403 | `ROLL_CALL_ROLE_FORBIDDEN`, `ROLL_CALL_CLASS_FORBIDDEN`, abonnement | `not_recorded` | définitif : rien n'est enregistré |
+| 404 | `STUDENT_CARD_DISABLED`, `STUDENT_CARD_ATTENDANCE_DISABLED`, flag NFC/QR | `not_recorded` | définitif |
+| 404 | autre (route inconnue, proxy) | absent | incertain |
+| 409 | `OFFLINE_EXPIRED`, `CARD_INVALID`, `ROSTER_CHANGED`, `CONCURRENT_UPDATE` | `not_recorded` | définitif |
+| 400 | `ROLL_CALL_PROOF_INVALID` | `not_recorded` | définitif |
+| 409 | `ROLL_CALL_SESSION_CONFLICT` | `conflict` | anomalie : session déjà enregistrée autrement |
+| 409 | `IDEMPOTENCY_KEY_REUSED` | absent | anomalie |
+| 408, 429, 5xx, réseau, timeout, réponse illisible | — | absent | incertain |
+
+Corps d'erreur : `{ "code", "message", "sessionState"?, "details"? }`. `details` ne contient que des `scanId` ou des index du lot, jamais d'identifiant d'élève ni d'information sur un autre utilisateur.
+
+### 6.6 ACK
 
 ```json
 { "rollCallId": "uuid", "sessionId": "uuid", "operationId": "uuid", "revision": 1,
@@ -382,10 +453,10 @@ Pourquoi l'étape 4 précède l'autorisation : après un timeout où la premièr
 ```
 
 - Aucun identifiant d'élève dans l'ACK : seulement des `scanId` et des index du lot.
-- `ack_body` est figé au COMMIT et renvoyé à l'identique par toute relecture (étape 2 ou 4) : les compteurs ne sont pas recalculés après coup. Une relecture ajoute seulement `idempotentReplay: true` (comportement existant de `withIdempotency`) ; le Mobile compare les champs de l'ACK, pas les octets de la réponse.
-- Le Mobile ne passe `synced` que si `operationId`, `revision` et `payloadDigest` de l'ACK égalent ceux du lot figé ; sinon `failed_action_required` (`ACK_MISMATCH`), jamais `synced`.
+- `ack_body` est figé au COMMIT et renvoyé à l'identique par toute relecture (étapes 3 ou 5) ; une relecture ajoute seulement `idempotentReplay: true` (comportement existant). Le Mobile compare les champs de l'ACK, pas les octets de la réponse.
+- Le Mobile ne passe `synced` que si `operationId`, `revision` et `payloadDigest` de l'ACK égalent ceux du lot figé ; sinon anomalie `ACK_MISMATCH`, jamais `synced`.
 
-### 6.5 Migration additive (PR1c)
+### 6.7 Migration additive (PR1c)
 
 ```sql
 ALTER TABLE attendance_roll_calls
@@ -396,18 +467,42 @@ ALTER TABLE attendance_roll_calls
 -- contrainte : source IN ('online','offline') ; offline ⇒ operation_id, payload_digest, ack_body NOT NULL
 ```
 
-Pas de suppression, pas de réécriture des lignes existantes, pas de durée de rétention nouvelle sur `idempotency_keys`.
+Pas de suppression, pas de réécriture des lignes existantes, pas de nouvelle durée de rétention sur `idempotency_keys`.
 
-### 6.6 Règles Mobile : révision ou renvoi à l'identique
+### 6.8 Règles Mobile : révision ou renvoi à l'identique
 
-| Réponse reçue | Classe | Action |
+| Réponse | Action |
+| --- | --- |
+| 2xx + ACK conforme | `synced` |
+| Erreur portant `sessionState: "not_recorded"` | `failed_action_required` ; correction possible → `revision + 1`, **nouvel** `operationId`, même `sessionId` |
+| 403 `REPLAY_FORBIDDEN`, 401, 403/404 sans `sessionState` | `unconfirmable` : « État serveur non confirmable actuellement » (jamais « non enregistré ») ; **aucune révision** ; renvoi du `frozen_body` à l'identique après reconnexion ou rétablissement des droits |
+| Réseau, timeout, 408, 429, 5xx, réponse illisible | `failed_retryable` ; renvoi à l'identique avec backoff |
+| `SESSION_CONFLICT`, `IDEMPOTENCY_KEY_REUSED`, `ACK_MISMATCH`, 400 sans `sessionState` | `failed_action_required` **sans révision possible** ; incident journalisé ; orientation vers la direction (supervision `/overview`) |
+
+**Règle unique** : une nouvelle révision n'est autorisée que si la dernière réponse reçue pour l'`operationId` courant porte `sessionState: "not_recorded"`. Un refus d'accès ne l'autorise jamais : il ne peut donc pas produire une seconde écriture après un enregistrement réussi.
+
+Deux appareils du même enseignant sur la même classe et le même jour produisent deux `sessionId` différents ; chacun passe par `attendanceTransition`, le second voit les statuts du premier comme existants (protégés ou inchangés), jamais écrasés.
+
+### 6.9 Protocole de test du rejet et du rejeu de l'ACK (PR1c, PostgreSQL réel)
+
+Préparation commune : enseignant T affecté à la classe C de l'établissement E ; flags actifs ; envoi du lot L (`operationId` O) → 201, ACK A. Pour chaque cas, deux variantes : **< 24 h** (ligne `idempotency_keys` présente) et **> 24 h** (ligne supprimée ou `expires_at` dépassé).
+
+| # | Changement après le 201, puis renvoi de L à l'identique | Attendu (les deux variantes) |
 | --- | --- | --- |
-| 201 / 200 avec ACK conforme | définitive, succès | `synced` |
-| 400, 403, 404 (flag), 409 `CARD_INVALID` / `ROSTER_CHANGED` / `OFFLINE_EXPIRED` / `SESSION_CONFLICT` / `PROOF_INVALID` | **définitive, sans COMMIT garanti** | `failed_action_required` ; correction possible → `revision + 1`, **nouvel** `operationId`, même `sessionId` |
-| Erreur réseau, timeout, 408, 429, 5xx, réponse illisible | **incertaine** | `failed_retryable` ; renvoi du `frozen_body` **octet pour octet**, même `operationId` ; modification, réouverture et nouvelle révision interdites |
-| 2xx avec ACK non conforme, ou 409 `IDEMPOTENCY_KEY_REUSED` | anomalie (ACK incohérent ou corps altéré localement) | `failed_action_required`, incident journalisé, pas de nouvel envoi automatique |
+| R-1 | aucun | 200, ACK = A |
+| R-2 | désaffectation de T de C | 200, ACK = A (garde R n'exige pas l'affectation) |
+| R-3 | flag présences ou NFC coupé | 200, ACK = A |
+| R-4 | rôle `TEACHER` révoqué dans E (T garde un compte) | 403 `REPLAY_FORBIDDEN`, aucun ACK, aucune écriture |
+| R-5 | T retiré de E (tous rôles révoqués, `users.school_id` changé vers E2) | 403 `REPLAY_FORBIDDEN` (lot `schoolId = E` ≠ E2), aucun ACK, aucune écriture, jamais `not_recorded` |
+| R-6 | R-4 puis rôle rétabli | 200, ACK = A |
+| R-7 | même O et même corps envoyés par l'enseignant T2 de E | 409 `SESSION_CONFLICT` sans ACK (> 24 h) ; < 24 h : `cacheId` différent, même résultat |
+| R-8 | même O et même corps envoyés par un principal d'un autre établissement | 403 tenant ou `REPLAY_FORBIDDEN`, aucune lecture du journal de E |
+| R-9 | réponse de R-4 comparée à celle d'un principal identique sans aucun appel enregistré | réponses identiques (statut, code, corps) |
+| R-10 | 5 renvois concurrents identiques pendant le premier envoi | une écriture ; 1×201 + 4×200, mêmes champs ACK ; aucun 409 |
 
-Une révision n'est possible qu'à partir d'un état dont la dernière réponse est définitive. Deux appareils du même enseignant sur la même classe et le même jour produisent deux `sessionId` différents : chacun est traité par `attendanceTransition` ; le second voit les statuts du premier comme existants (protégés ou inchangés), jamais écrasés.
+Contrôles de chaque cas : nombre de lignes `attendance` et `attendance_roll_calls` inchangé après le 201 initial ; audit sans nouvelle entrée d'écriture ; corps de refus sans `rollCallId`, compteurs, `scanId` ni nom.
+
+Côté Mobile (PR4, unitaire) : R-4 → `unconfirmable`, révision refusée ; R-6 → `synced` ; erreur W avec `not_recorded` → révision autorisée ; 403 sans `sessionState` → `unconfirmable`.
 
 ---
 
@@ -415,14 +510,16 @@ Une révision n'est possible qu'à partir d'un état dont la dernière réponse 
 
 ```
 draft ──clôture explicite──▶ closed (frozen_body, operationId, digest) ──▶ syncing
-syncing ──2xx + ACK conforme──▶ synced                (seul chemin vers « Synchronisé »)
-syncing ──réponse incertaine──▶ failed_retryable ──backoff──▶ syncing (même octets)
-syncing ──4xx définitif──▶ failed_action_required ──correction──▶ draft (revision + 1)
-{draft, closed, failed_*} ──syncDeadline dépassée──▶ expired
-{closed, failed_*} ──déconnexion confirmée──▶ blocked_logout ──reconnexion même compte──▶ état précédent
+syncing ──2xx + ACK conforme──────────────▶ synced          (seul chemin vers « Synchronisé »)
+syncing ──réseau / timeout / 5xx / 429────▶ failed_retryable ──backoff──▶ syncing (mêmes octets)
+syncing ──401 / 403 / 404 sans sessionState▶ unconfirmable ──reconnexion / droits──▶ syncing (mêmes octets)
+syncing ──erreur avec not_recorded────────▶ failed_action_required ──correction──▶ draft (revision + 1)
+syncing ──conflit / anomalie──────────────▶ failed_action_required (sans révision)
+{draft, closed, failed_*, unconfirmable} ──syncDeadline dépassée──▶ expired
+{closed, failed_*, unconfirmable} ──déconnexion confirmée──▶ blocked_logout ──même compte──▶ état précédent
 ```
 
-Libellés : « Brouillon local », « À synchroniser », « Synchronisé », « Échec à résoudre ». Aucune clôture automatique, même à 0 restant. Le runner de synchronisation réutilise `networkResilience` (`executeMutation`, `classifyMutationFailure`), `connectivity` et le cycle de vie d'`OutboxRuntime` ; seul le stockage diffère (SQLCipher par compte).
+Libellés : « Brouillon local », « À synchroniser », « Synchronisé », « État serveur non confirmable actuellement », « Échec à résoudre ». Aucune clôture automatique, même à 0 restant. Une session `expired` qui était `unconfirmable` garde son `frozen_body` jusqu'à la purge de la base (§5.3) : un renvoi reste possible, le journal étant lu avant la fenêtre de date. Le runner de synchronisation réutilise `networkResilience`, `connectivity` et le cycle de vie d'`OutboxRuntime` ; seul le stockage diffère.
 
 ---
 
@@ -430,7 +527,7 @@ Libellés : « Brouillon local », « À synchroniser », « Synchronisé », «
 
 - **Présence journalière** : une présence par élève et par jour (`uq_attendance_school_student_date`), comme aujourd'hui. Pas d'appel par séance en V1.
 - **« Justifié » (`excused`)** : reste exclusivement dans le flux de justification existant ; non saisissable dans l'appel ; jamais écrasé.
-- Durées de conservation : proposées en §4.5 et §5.5, **à valider**.
+- Durées : plafonds V1 **acceptés** par le CTO (pack ≤ 18 h, synchronisation jusqu'à la fin de J+3), sous réserve des tests de fuseau, de changement d'heure et de dates (S12) et du refus serveur des états obsolètes.
 
 ---
 
@@ -452,10 +549,27 @@ Entrées : `publicId = "AAAAAAAAAAAAAAAAAAAAAA"`, `secret = "TEST-VECTOR-ONLY-00
 | V-8 | `proof`, `medium = nfc`, `packId = ""` (dégradé) | `cGqNVh0qcoMt68upA4i5N6GI-jsBK2HzzGtbmbRugRw` |
 | V-9 | pack de test, clé Ed25519 de test (graine = 32 octets `0x01`), clé publique brute | `iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w` |
 | V-10 | signature du pack de test | `F95JTgvkGrVWytegiJRIoMkghgEQGjCRd4LVBQJTMgjlUPRLhisAUc6Qxsoel_oZcP-sT9_l4fCQ7l5W8f2vDw` ; vérifie = `true` ; même signature sur pack dont `classId` est modifié = `false` |
-| V-11 | `payloadDigest` du lot de test | `cf9d63b448edef12309b47f9e3b2e0dd26c94c54ee5562aa1d6633bd82d88b50` |
-| V-12 | `payloadDigest` du même lot, `medium` passé à `qr` | `5fb1951cc9284c0508a17adbaf3f4d8b0633d2dc58eda325be2396c26ba0370a` ≠ V-11 |
+| V-11 | `payloadDigest` du lot de test (avec `schoolId`, révision 3) | `50603c4e23b60e2665d647198900031184da5a00863196bf8e54d00ab706fbfb` |
+| V-12 | `payloadDigest` du même lot, `medium` passé à `qr` | `e08c8218407451aa3a63d7584c908a91ce83567c26dc72e7ab70160b37f65d4c` ≠ V-11 |
 
-Ces valeurs ont été calculées avec `node:crypto` (Node 22) dans l'environnement de rédaction. Le pack de test et le lot de test complets figurent dans le JSON ; V-10 et V-11 ont été recalculés depuis ce JSON avec `stableSerialize` de `backend/services/idempotencyService.js` (résultat identique), ce qui confirme l'équivalence JCS / `stableSerialize` pour ces types. Elles ne prouvent rien sur le code Backend ou Mobile, qui n'existe pas encore : elles en seront l'oracle.
+Ces valeurs ont été calculées avec `node:crypto` (Node 22) dans l'environnement de rédaction. Le pack de test et le lot de test complets figurent dans le JSON. V-10 et V-11 ont été recalculés depuis ce JSON avec `canonicalize@2.0.0` (résultat identique). Elles ne prouvent rien sur le code Backend ou Mobile, qui n'existe pas encore : elles en seront l'oracle.
+
+**Vecteurs JCS (révision 3)** — sortie de `canonicalize@2.0.0` et SHA-256 des octets UTF-8 ; entrées et sorties complètes dans le JSON (`jcs`).
+
+| # | Cas | SHA-256 attendu | `stableSerialize` identique ? |
+| --- | --- | --- | --- |
+| J-1 | accents NFC | `758405076dbbec331910fdf8d34fed16bcb020bebf785b5bca075655ae2272cf` | oui |
+| J-2 | mêmes accents en NFD (non normalisés) | `84df14cd3a944e7822523710b257899b29eb640db96b4fff049dd69d92d33ff6` (≠ J-1) | oui |
+| J-3 | emoji (paire de substitution) | `d3e54b11635291b9829749f9fbbbf3f2c4a9590e8806464567f15416f188fc3b` | oui |
+| J-4 | guillemet, barre oblique inverse, `\n`, `\t`, U+0001, U+001F, U+007F, U+2028, U+2029 | `fc2a3738f089a0c729fad95247e443bfa2b0f741b8e430bcf5d6291a9b073f9c` | oui |
+| J-5 | tri des clés en unités UTF-16 (`B`, `a`, `z`, `é`, emoji, `ﬁ`) | `4114f48a1dffa20708aec2e1ee94ecc91478504ffa67994dee091fdd9ff919a6` | oui |
+| J-6 | entiers 0, −1, 2^53−1, 300 | `7d8de0381baef2d7802d0ca8a258972c1580e41501307a0f15b66b08a9815dd2` | oui |
+| J-7 | objets et tableaux imbriqués, vides | `34ea9e93e556ed19cf1bc3f03f68c81156f9b63236010f0544d9f70e4559c79f` | oui |
+| J-8 | `-0` (interdit par le validateur) | — | — |
+| J-9 | flottants (interdits par le validateur) | — | — |
+| J-10 | `undefined` dans un objet (interdit) | — | **non** (`{"b":1}` contre `{"a":null,"b":1}`) |
+
+J-8 à J-10 ne sont pas des vecteurs de conformité : ils documentent pourquoi ces types sont refusés avant canonicalisation.
 
 ---
 
@@ -479,7 +593,8 @@ Aucun de ces tests n'est exécuté dans PR0. Les tests « PG réel » s'exécute
 | 10 | Changement de classe / d'établissement | PR1b/PR1c/PR2 | PG réel + unitaire | `CLASS_FORBIDDEN` ; autre compte n'ouvre pas la base |
 | 11 | Révocation / remplacement avant synchro | PR1c | PG réel | `CARD_INVALID` + `invalidScanIds` |
 | 12 | Rôle, affectation ou flag révoqué **avant** sync | PR1c | PG réel | 403/404, rien n'est écrit |
-| 12b | Rôle ou flag révoqué **après** COMMIT puis renvoi | PR1c | PG réel | ACK rejoué (étape 4 avant étape 5) |
+| 12b | Droits modifiés **après** COMMIT puis renvoi (< 24 h et > 24 h) | PR1c | PG réel | protocole R-1 à R-10 (§6.9) |
+| 12c | Refus d'accès après succès historique | PR4 | unitaire | `unconfirmable`, révision refusée ; renvoi identique après rétablissement → `synced` |
 | 13 | Conflit avec un autre appareil (deux sessions, même classe, même jour) | PR1c | PG réel concurrent | statuts protégés conservés et signalés, aucun écrasement |
 | 14 | Échec SQLite, disque plein, corruption, clé absente | PR2 | unitaire + natif | fail-closed visible, quarantaine, compteur non incrémenté |
 | 15 | Non-régression manuel, QR, routes en ligne `/scan` `/validate` | PR1–PR5 | suites existantes | inchangées |
@@ -494,7 +609,10 @@ Aucun de ces tests n'est exécuté dans PR0. Les tests « PG réel » s'exécute
 | S9 | **`token_hash` jamais exposé** | PR1a–PR1c | test HTTP sur toutes les routes Carte Élève + test statique | 0 occurrence |
 | S10 | Aucun secret, `K`, preuve ou jeton dans logs, fixtures, PR | PR1–PR4 | test statique + `safeLogger` | 0 occurrence |
 | S11 | Deux comptes sur un même téléphone | PR2 | unitaire + natif | fichiers et clés distincts ; aucun brouillon visible de l'autre compte |
-| S12 | Échéances aux bornes (fuseau ≠ UTC, minuit, J+1, J+3) | PR1b/PR1c | unitaire + PG réel | conformes à §4.5 |
+| S12 | Échéances aux bornes (fuseau ≠ UTC, minuit, J+1, J+3, changement d'heure dans un fuseau à DST, fuseau modifié entre pack et sync, date invalide) | PR1b/PR1c | unitaire + PG réel | conformes à §4.5 ; état obsolète refusé par le serveur |
+| S13 | Canonicalisation J-1 à J-7 identique Node / Hermes ; J-8 à J-10 refusés par le validateur | PR1a/PR2 | unitaire des deux côtés | octets identiques |
+| S14 | `keyId` révoqué (pack neuf et pack déjà stocké) ; trousseau entièrement révoqué ; liste de révocation non monotone | PR1b/PR2 | unitaire | pack refusé, mode dégradé ; révocation jamais annulée |
+| S15 | Purge par échéance d'une base `blocked_logout` d'un compte qui ne se reconnecte pas, sans l'ouvrir | PR2 | unitaire + natif | crypto-effacement à l'échéance ; aucun autre compte n'y accède |
 
 Physique (#921, PR5) : NTAG213 et NTAG216, 30+ scans, `active/encoded`, présence vérifiée dans PostgreSQL — **NOT RUN** depuis l'environnement Claude ; procédure opérateur fournie en PR5.
 
@@ -504,7 +622,7 @@ Physique (#921, PR5) : NTAG213 et NTAG216, 30+ scans, `active/encoded`, présenc
 
 **P0**
 - **P0-1** Sans pack, pas de retour « reconnu » hors ligne : préchargement J/J+1 dès que le réseau est présent ; sinon mode dégradé explicite.
-- **P0-2** Faux « Synchronisé » : seul un ACK conforme y mène (§6.4) ; tests S7 et 7 bloquants en PR4.
+- **P0-2** Faux « Synchronisé » : seul un ACK conforme y mène (§6.6) ; tests S7 et 7 bloquants en PR4.
 - **P0-3** Perte de lots au logout ou à la purge L1 : base séparée par compte + `blocked_logout` (§5.3).
 - **P0-4** Secrets sur disque : interdits par construction (§3.4) ; test S10.
 - **P0-5** Dépendance #921 : aucune recette physique de présence tant que l'encodage n'est pas prouvé.
@@ -517,7 +635,9 @@ Physique (#921, PR5) : NTAG213 et NTAG216, 30+ scans, `active/encoded`, présenc
 - **P1-5** Anti-clonage NDEF absent, inchangé par l'offline (§3.6).
 - **P1-6** Révocation après le scan refusée : un élève présent peut être refusé ; l'enseignant le repointe manuellement (révision + 1).
 - **P1-7** Données nominatives stockées localement (pack) : minimisées et purgées (§5.5).
-- **P1-8** Dépendances cryptographiques Mobile (`@noble/hashes`, `@noble/curves`) à valider ; les vecteurs §9 sont l'oracle commun.
+- **P1-8** Dépendances cryptographiques Mobile (`@noble/hashes`, `@noble/curves`) et `canonicalize@2.0.0` à valider (versions exactes, audit, licence) ; les vecteurs §9 sont l'oracle commun.
+- **P1-9** Fenêtre d'acceptation d'un pack signé par une clé compromise sur une APK hors ligne qui n'a pas encore reçu la révocation (§4.2) : effet limité à l'affichage, aucun droit.
+- **P1-10** Un enseignant désaffecté peut encore relire l'ACK de **son** appel passé (garde R) : choix assumé, sans écriture ni donnée d'un autre utilisateur.
 
 ---
 
@@ -527,25 +647,27 @@ Chaque PR : branche issue du `develop` courant, Draft/HOLD, base/HEAD/merge-base
 
 | PR | Branche | Contenu | Dépend de |
 | --- | --- | --- | --- |
-| **PR1a** | `feat/nfc-pres-local-pr1a-proof` | Module pur Backend : `LP`, `cardRef`, `verifier`, `proof`, digest JCS ; tests sur vecteurs §9 ; aucune route | PR0 accepté |
-| **PR1b** | `feat/nfc-pres-local-pr1b-pack` | `GET …/offline/v1/pack`, signature Ed25519, échéances par fuseau, RBAC/flags/tenant ; tests PG S5, S6, S12 | PR1a |
-| **PR1c** | `feat/nfc-pres-local-pr1c-sync` | Migration additive ; `POST …/offline/v1/sync` selon §6.2 ; extraction sans changement de comportement du moteur `writeTeacherRollCall` ; tests PG 3, 8–13, S1–S4, S8, S9 | PR1a |
+| **PR1a** | `feat/nfc-pres-local-pr1a-proof` | Module pur Backend : `LP`, `cardRef`, `verifier`, `proof`, validateur de types + `canonicalize@2.0.0`, digest ; tests sur vecteurs V et J ; aucune route | PR0 accepté |
+| **PR1b** | `feat/nfc-pres-local-pr1b-pack` | `GET …/offline/v1/pack`, signature Ed25519, clés `active`/`standby`, liste de révocation, échéances par fuseau, RBAC/flags/tenant ; tests PG S5, S6, S12, S14 | PR1a |
+| **PR1c** | `feat/nfc-pres-local-pr1c-sync` | Migration additive ; option additive `guard` de `withIdempotency` ; `POST …/offline/v1/sync` selon §6.2–§6.5 ; extraction sans changement de comportement du moteur `writeTeacherRollCall` ; tests PG 3, 8–13, protocole R-1 à R-10, S1–S4, S8, S9 | PR1a |
 | **PR2** | `feat/nfc-pres-local-pr2-store` | Base SQLCipher par compte, migrations, triggers d'immutabilité, purge, quarantaine ; vérification de pack ; tests 2, 5, 6, 14, S5, S11 | PR1a (vecteurs) |
 | **PR3** | `feat/nfc-pres-local-pr3-scan` | Boucle NFC/QR locale, HMAC Mobile, compteurs, corrections, UX, flag d'établissement `studentCardOfflineRollCallEnabled` (défaut off) | PR2, PR1b |
-| **PR4** | `feat/nfc-pres-local-pr4-sync` | Runner de synchronisation, machine d'état, règles §6.6, ACK, `blocked_logout` ; tests 7, S7 | PR1c, PR3 |
+| **PR4** | `feat/nfc-pres-local-pr4-sync` | Runner de synchronisation, machine d'état, règles §6.8, état `unconfirmable`, ACK, `blocked_logout` ; tests 7, S7 | PR1c, PR3 |
 | **PR5** | `test/nfc-pres-local-pr5-recette` | Intégration, APK préprod, Maestro, procédure opérateur NTAG213/216, preuves | PR4, #921 |
 
 Le flag d'établissement (PR3) est le seul nouveau flag : le parcours en ligne actuel reste le comportement par défaut.
 
 ---
 
-## 13. Décisions demandées au CTO (révision 2)
+## 13. Décisions demandées au CTO (révision 3)
 
-1. Valider l'encodage `LP`, les étiquettes et le support authentifié (§3.2, §3.3) à partir des vecteurs §9.
-2. Valider la spécification du pack signé (§4) et la distribution des clés.
-3. Valider l'ordre d'exécution et des verrous (§6.2), la règle « journal avant autorisation » (§6.3) et l'`ack_body` figé.
-4. Valider le cloisonnement par compte et les risques résiduels P1-3 (§5).
-5. Valider les durées (§4.5, §5.5).
+Acquis en principe (revue R2) : preuves HMAC liées à la session et au support, pack Ed25519, SQLCipher par compte, synchronisation transactionnelle, V1 journalière, `excused` hors appel, plafonds 18 h / fin de J+3 sous tests de fuseau.
+
+1. Valider les deux gardes R et W (§6.2), l'ordre en 15 étapes avec la garde R avant toute lecture d'ACK (§6.3), les réponses exactes (§6.5) et le protocole R-1 à R-10 (§6.9).
+2. Valider la règle « révision uniquement après `sessionState: not_recorded` » et l'état `unconfirmable` (§6.8, §7).
+3. Valider le périmètre de la garde R : affectation et flags non requis pour relire son propre ACK (P1-10).
+4. Valider `canonicalize@2.0.0` comme bibliothèque JCS unique et le validateur de types (§4.1).
+5. Valider la rotation planifiée et urgente des clés (§4.2) et la purge par échéance des bases conservées (§5.3).
 
 ---
 
