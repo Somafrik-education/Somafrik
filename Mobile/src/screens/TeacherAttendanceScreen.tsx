@@ -13,7 +13,7 @@ import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
 import StudentCardClassRollCallModal from "../components/StudentCardClassRollCallModal";
 import { CLASS_ROLL_CALL_COPY, type ClassRollCallDraft } from "../lib/studentCardClassRollCall";
 import StudentCardRollCallOverview from "../components/StudentCardRollCallOverview";
-import { rollCallActor } from "../lib/studentCardRollCallRoles";
+import { canShowRollCallSupervisionOnAttendance, rollCallActor } from "../lib/studentCardRollCallRoles";
 import {
   COLLECTIVE_ROLL_CALL_COPY,
   rollCallScopeKey,
@@ -1109,7 +1109,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
             {!directionRollCall && actor.direction && canOpenQrScanner
               ? rollCallButton("attendance-roll-call-direction-qr", COLLECTIVE_ROLL_CALL_COPY.startDirectionQr, () => openRollCall("qr", "direction"))
               : null}
-            {actor.supervision ? <StudentCardRollCallOverview date={isoAttendanceDate()} /> : null}
+            {canShowRollCallSupervisionOnAttendance(session) ? <StudentCardRollCallOverview date={isoAttendanceDate()} /> : null}
             {outboxUnavailable ? (
               <Text testID="attendance-outbox-unavailable" style={styles.unavailable}>
                 {ROLL_CALL_COPY.outboxUnavailable} — {ROLL_CALL_COPY.outboxUnavailableBody}
