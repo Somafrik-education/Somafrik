@@ -13,7 +13,7 @@ import {
   validateRollCallDraft,
   type RollCallDraft,
 } from "./studentCardRollCall";
-import { parseRollCallOverview, rollCallActor } from "./studentCardRollCallRoles";
+import { canShowRollCallSupervisionOnAttendance, parseRollCallOverview, rollCallActor } from "./studentCardRollCallRoles";
 
 const SESSION = "11111111-1111-4111-8111-111111111111";
 const CLASS = "22222222-2222-4222-8222-222222222222";
@@ -38,6 +38,15 @@ test("acteur : enseignant, direction autorisée, rôles secondaires, multi-rôle
   for (const keys of [["SUPER_ADMIN"], ["COUNTRY_ADMIN"], ["TEACHER", "SUPER_ADMIN"], ["PARENT"], ["STUDENT"], ["CUSTOM_ROLE"], []]) {
     assert.deepEqual(rollCallActor(session(keys, UPDATE)), { teacher: false, direction: false, supervision: false, verify: false }, keys.join("+"));
   }
+});
+
+test("supervision cachée uniquement pour Administrateur établissement, y compris multirôle", () => {
+  assert.equal(canShowRollCallSupervisionOnAttendance(session(["SCHOOL_ADMIN"], UPDATE)), false);
+  assert.equal(canShowRollCallSupervisionOnAttendance(session(["SCHOOL_ADMIN", "PRINCIPAL"], UPDATE)), false);
+  assert.equal(canShowRollCallSupervisionOnAttendance(session(["PRINCIPAL"], UPDATE)), true);
+  assert.equal(canShowRollCallSupervisionOnAttendance(session(["PROVISEUR"], ["Présences:READ"])), true);
+  assert.equal(canShowRollCallSupervisionOnAttendance(session(["TEACHER"], UPDATE)), false);
+  assert.equal(canShowRollCallSupervisionOnAttendance(session(["SUPER_ADMIN"], UPDATE)), false);
 });
 
 test("bouton « Enregistrer l'appel (N) » actif uniquement avec au moins un scan, et justification pour la direction", () => {
@@ -120,6 +129,7 @@ test("écran Appel : parcours affichés selon le rôle canonique, sans enseignan
   assert.match(screen, /actor\.direction/);
   assert.match(screen, /attendance-roll-call-direction-nfc/);
   assert.match(screen, /StudentCardRollCallOverview/);
+  assert.match(screen, /canShowRollCallSupervisionOnAttendance\(session\)/, "supervision réservée hors SCHOOL_ADMIN");
   assert.match(screen, /actor\.verify && \(nfcControl === "ready" \|\| canOpenQrScanner\)/);
   assert.doesNotMatch(screen, /teacherId=\{rollCallTeacherId\}/, "plus d'attribution à un enseignant choisi");
   assert.match(modal, /roll-call-justification/);
