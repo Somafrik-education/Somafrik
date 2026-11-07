@@ -23,6 +23,8 @@ import {
   type BulletinEditorExport,
 } from "../components/bulletin/BulletinGrapesEditor";
 import { reportCardTemplatesApi } from "../lib/reportCardsApi";
+import { BulletinPreviewFrame } from "../components/bulletin/BulletinPreviewFrame";
+import { MAX_BULLETIN_PREVIEW_CHARS } from "../lib/bulletinPreviewIsolation";
 
 export function BulletinDesignPage() {
   const { session } = useAuth();
@@ -35,6 +37,7 @@ export function BulletinDesignPage() {
   const [className, setClassName] = useState("");
   const [draft, setDraft] = useState<BulletinClassDesign | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const designKey = `${schoolCode}::${className}`;
@@ -148,8 +151,17 @@ export function BulletinDesignPage() {
         `/backoffice/bulletin-design/preview?format=${format}`,
         { schoolCode, className, design: draft },
       );
-      const mime = format === "pdf" ? "application/pdf" : "text/html;charset=utf-8";
-      const url = URL.createObjectURL(new Blob([blob], { type: mime }));
+      if (format === "html") {
+        // SEC-XSS-01 : jamais d'URL blob: HTML (même origine que l'application) ;
+        // l'aperçu est rendu dans une iframe sandbox sans permission.
+        if (blob.size > MAX_BULLETIN_PREVIEW_CHARS) {
+          throw new Error("Aperçu trop volumineux.");
+        }
+        setPreviewHtml(await blob.text());
+        return;
+      }
+      // PDF généré par le moteur isolé SEC-PDF-01, affiché par le lecteur PDF.
+      const url = URL.createObjectURL(new Blob([blob], { type: "application/pdf" }));
       window.open(url, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
@@ -161,6 +173,10 @@ export function BulletinDesignPage() {
       setDownloadingPdf(false);
     }
   }
+
+  useEffect(() => {
+    setPreviewHtml(null);
+  }, [designKey]);
 
   function resetDesign() {
     if (!className) return;
@@ -340,6 +356,22 @@ export function BulletinDesignPage() {
             <p className="mt-4 text-sm font-semibold text-muted">Sélectionnez une classe.</p>
           )}
         </Card>
+        {previewHtml !== null ? (
+          <Card className="p-6">
+            <div className="flex items-center justify-between gap-3">
+              <SectionHeader
+                title="Aperçu HTML"
+                description="Aperçu isolé : sans script ni ressource externe. Pour imprimer, utilisez l'aperçu PDF."
+              />
+              <Button variant="secondary" onClick={() => setPreviewHtml(null)}>
+                Fermer l'aperçu
+              </Button>
+            </div>
+            <div className="mt-4">
+              <BulletinPreviewFrame html={previewHtml} />
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );
