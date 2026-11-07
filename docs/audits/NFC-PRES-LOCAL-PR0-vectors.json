@@ -1,0 +1,130 @@
+{
+  "_note": "NFC-PRES-LOCAL-PR0 — vecteurs de test FICTIFS (faible entropie), réservés aux tests. Aucune valeur réelle.",
+  "encoding": {
+    "LP": "pour chaque champ : uint32 big-endian de la longueur UTF-8, puis les octets UTF-8",
+    "base64url": "sans remplissage",
+    "K": "SHA-256(utf8(secret)) = hex_decode(token_hash)"
+  },
+  "inputs": {
+    "publicId": "AAAAAAAAAAAAAAAAAAAAAA",
+    "secret": "TEST-VECTOR-ONLY-00000000000000000000000000",
+    "schoolId": "00000000-0000-4000-8000-000000000001",
+    "actorUserId": "00000000-0000-4000-8000-000000000002",
+    "classId": "00000000-0000-4000-8000-000000000003",
+    "date": "2026-11-09",
+    "sessionId": "00000000-0000-4000-8000-000000000004",
+    "packId": "00000000-0000-4000-8000-000000000005",
+    "scanId": "00000000-0000-4000-8000-000000000006",
+    "contractVersion": "rc-offline-1",
+    "mode": "teacher"
+  },
+  "tags": {
+    "cardRef": "somafrik.rc-offline.cardref.v1",
+    "verifier": "somafrik.rc-offline.verifier.v1",
+    "proof": "somafrik.rc-offline.proof.v1",
+    "packMessagePrefix": "somafrik.rc-offline.pack.v1\\n"
+  },
+  "fields": {
+    "cardRef": [
+      "tag",
+      "schoolId",
+      "classId",
+      "packId",
+      "publicId"
+    ],
+    "verifier": [
+      "tag",
+      "schoolId",
+      "classId",
+      "packId",
+      "publicId"
+    ],
+    "proof": [
+      "tag",
+      "contractVersion",
+      "schoolId",
+      "actorUserId",
+      "classId",
+      "date",
+      "mode",
+      "sessionId",
+      "packId",
+      "scanId",
+      "publicId",
+      "medium"
+    ]
+  },
+  "expected": {
+    "V-1_K_hex": "7a66b11beabb2d88d8d2ac5a289fa136e3b436990a58f397561caa7caa352e0f",
+    "V-2_cardRef": "x8f3EcDGI48SI2LPP6CxbY0iQmt-OW6zDwa2UxYmXcQ",
+    "V-3_verifier": "msXEii9Kl0mBSoUYfDw5a3SZjrQLt-jvqrDoycDAaZg",
+    "V-4_proof_nfc": "6DuAdjcRC-Zd1VArIq0hYkQtyjp2vZjeba4BYZkr1gg",
+    "V-5_proof_qr": "PrtFtQE7qYUFSX22gK0vWIJr8_66U60htRB4vUrEmMY",
+    "V-6_lp_a|b,c": "00000003617c620000000163",
+    "V-6_lp_a,b|c": "000000016100000003627c63",
+    "V-7_lp_ab,empty,c": "000000026162000000000000000163",
+    "V-8_proof_nfc_noPack": "cGqNVh0qcoMt68upA4i5N6GI-jsBK2HzzGtbmbRugRw",
+    "V-9_ed25519_test_pub_raw": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+    "V-9_ed25519_test_seed": "32 octets 0x01 (clé de TEST uniquement)",
+    "V-10_pack_signature": "F95JTgvkGrVWytegiJRIoMkghgEQGjCRd4LVBQJTMgjlUPRLhisAUc6Qxsoel_oZcP-sT9_l4fCQ7l5W8f2vDw",
+    "V-10_pack_canonical_sha256": "c8c18bb94c668641a1c003b10de80f45286bc1da6f921e968445ed39e336af54",
+    "V-10_verifies": true,
+    "V-10_tampered_classId_verifies": false,
+    "V-11_payloadDigest": "cf9d63b448edef12309b47f9e3b2e0dd26c94c54ee5562aa1d6633bd82d88b50",
+    "V-12_payloadDigest_medium_qr": "5fb1951cc9284c0508a17adbaf3f4d8b0633d2dc58eda325be2396c26ba0370a"
+  },
+  "testPack": {
+    "actorUserId": "00000000-0000-4000-8000-000000000002",
+    "cards": [
+      {
+        "cardRef": "x8f3EcDGI48SI2LPP6CxbY0iQmt-OW6zDwa2UxYmXcQ",
+        "matchKey": "MK-TEST-1",
+        "verifier": "msXEii9Kl0mBSoUYfDw5a3SZjrQLt-jvqrDoycDAaZg"
+      }
+    ],
+    "classId": "00000000-0000-4000-8000-000000000003",
+    "contractVersion": "rc-offline-1",
+    "date": "2026-11-09",
+    "expiresAt": "2026-11-09T22:59:59Z",
+    "issuedAt": "2026-11-09T05:00:00Z",
+    "keyId": "rc-pack-test-1",
+    "mode": "teacher",
+    "packId": "00000000-0000-4000-8000-000000000005",
+    "packVersion": 1,
+    "schoolId": "00000000-0000-4000-8000-000000000001",
+    "students": [
+      {
+        "existingStatus": null,
+        "firstName": "Test",
+        "lastName": "Eleve",
+        "matchKey": "MK-TEST-1",
+        "studentCode": "T-001",
+        "studentId": "00000000-0000-4000-8000-000000000007"
+      }
+    ],
+    "syncDeadline": "2026-11-12T22:59:59Z",
+    "timeZone": "Africa/Kinshasa"
+  },
+  "testSyncBodyWithoutDigest": {
+    "classId": "00000000-0000-4000-8000-000000000003",
+    "complete": true,
+    "contractVersion": "rc-offline-1",
+    "date": "2026-11-09",
+    "manual": [],
+    "mode": "teacher",
+    "operationId": "00000000-0000-4000-8000-000000000008",
+    "packId": "00000000-0000-4000-8000-000000000005",
+    "revision": 1,
+    "scans": [
+      {
+        "medium": "nfc",
+        "proof": "6DuAdjcRC-Zd1VArIq0hYkQtyjp2vZjeba4BYZkr1gg",
+        "publicId": "AAAAAAAAAAAAAAAAAAAAAA",
+        "scanId": "00000000-0000-4000-8000-000000000006",
+        "scannedAt": "2026-11-09T07:31:02Z"
+      }
+    ],
+    "sessionId": "00000000-0000-4000-8000-000000000004"
+  },
+  "canonicalization": "JCS (RFC 8785) ; pour ces types, identique à stableSerialize (backend/services/idempotencyService.js)"
+}
