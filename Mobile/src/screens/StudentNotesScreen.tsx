@@ -104,59 +104,58 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.backButton}
-              testID={STUDENT_SUB_SCREENS_TEST_IDS.subScreenBackButton}
-              onPress={() => navigation?.goBack()}
-            >
-              <Ionicons name="arrow-back" size={24} color="#0F172A" />
-            </TouchableOpacity>
-      
-            <StudentSwitcher />
-            <Text style={styles.title} testID={STUDENT_SUB_SCREENS_TEST_IDS.notesTitle}>
-              {STUDENT_SUB_SCREENS_COPY.notesTitle}
-            </Text>
-            <Text style={styles.subtitle}>{notesIdentity}</Text>
-      
-            <View style={[styles.summaryCard, { backgroundColor: "#2563EB" }]}>
-              <Text style={[styles.summaryLabel, { color: "#DBEAFE" }]}>
-                {courseFilter ? `Moyenne ${courseFilter}` : "Moyenne générale"}
-              </Text>
-              <Text
-                style={[styles.summaryValue, { color: "#FFFFFF" }]}
-                testID={EVALUATIONS_V2_TEST_IDS.average}
-              >
-                {average.available ? `${average.average?.toFixed(1)}/20` : EVALUATIONS_V2_COPY.averageUnavailable}
-              </Text>
-              <Text style={[styles.summaryMeta, { color: "#DBEAFE" }]}>
-                {average.available
-                  ? "totalCourseCoefficients" in average
-                    ? `Coef. cours ${average.totalCourseCoefficients}`
-                    : `Coef. évaluations ${average.totalCoefficients}`
-                  : "Notes publiées uniquement"}
-              </Text>
-            </View>
-      
-            <View style={chipStyles.chips}>
               <TouchableOpacity
-                style={[chipStyles.chip, !courseFilter && chipStyles.chipActive]}
-                onPress={() => setCourseFilter("")}
+                activeOpacity={0.85}
+                style={styles.backButton}
+                testID={STUDENT_SUB_SCREENS_TEST_IDS.subScreenBackButton}
+                onPress={() => navigation?.goBack()}
               >
-                <Text style={[chipStyles.chipText, !courseFilter && chipStyles.chipTextActive]}>Tous les cours</Text>
+                <Ionicons name="arrow-back" size={24} color="#0F172A" />
               </TouchableOpacity>
-              {courseOptions.map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[chipStyles.chip, courseFilter === option && chipStyles.chipActive]}
-                  onPress={() => setCourseFilter(option)}
+
+              <StudentSwitcher />
+              <Text style={styles.title} testID={STUDENT_SUB_SCREENS_TEST_IDS.notesTitle}>
+                {STUDENT_SUB_SCREENS_COPY.notesTitle}
+              </Text>
+              <Text style={styles.subtitle}>{notesIdentity}</Text>
+
+              <View style={[styles.summaryCard, { backgroundColor: "#2563EB" }]}>
+                <Text style={[styles.summaryLabel, { color: "#DBEAFE" }]}>
+                  {courseFilter ? `Moyenne ${courseFilter}` : "Moyenne générale"}
+                </Text>
+                <Text
+                  style={[styles.summaryValue, { color: "#FFFFFF" }]}
+                  testID={EVALUATIONS_V2_TEST_IDS.average}
                 >
-                  <Text style={[chipStyles.chipText, courseFilter === option && chipStyles.chipTextActive]}>{option}</Text>
+                  {average.available ? `${average.average?.toFixed(1)}/20` : EVALUATIONS_V2_COPY.averageUnavailable}
+                </Text>
+                <Text style={[styles.summaryMeta, { color: "#DBEAFE" }]}>
+                  {average.available
+                    ? "totalCourseCoefficients" in average
+                      ? `Coef. cours ${average.totalCourseCoefficients}`
+                      : `Coef. évaluations ${average.totalCoefficients}`
+                    : "Notes publiées uniquement"}
+                </Text>
+              </View>
+
+              <View style={chipStyles.chips}>
+                <TouchableOpacity
+                  style={[chipStyles.chip, !courseFilter && chipStyles.chipActive]}
+                  onPress={() => setCourseFilter("")}
+                >
+                  <Text style={[chipStyles.chipText, !courseFilter && chipStyles.chipTextActive]}>Tous les cours</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-      
-                  </>
+                {courseOptions.map((option) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={[chipStyles.chip, courseFilter === option && chipStyles.chipActive]}
+                    onPress={() => setCourseFilter(option)}
+                  >
+                    <Text style={[chipStyles.chipText, courseFilter === option && chipStyles.chipTextActive]}>{option}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
           }
           ListEmptyComponent={
             notesSnapshot.status !== "success" ? (
