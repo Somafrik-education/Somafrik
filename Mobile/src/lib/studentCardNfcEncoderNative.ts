@@ -3,10 +3,25 @@ import NfcManager, { Ndef, NdefStatus, NfcAdapter, NfcTech } from "react-native-
 import { identifyNtag, normalizeNtagUid, nfcFailure, type NfcEncoderHardware, type NtagIdentity } from "./studentCardNfcEncoding";
 import { createNativeNfcSession } from "./nfcSessionNative";
 
+const ENCODER_READER_MODE = {
+  isReaderModeEnabled: true,
+  readerModeFlags: NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B,
+};
+
 /** Only GET_VERSION is sent raw. Programming never commands a physical lock. */
 export function createNfcEncoderHardware(onPrompt?: (message: string) => void): NfcEncoderHardware {
   const session = createNativeNfcSession();
   let supportedIdentity: NtagIdentity | null = null;
+  // RC-6 : le Reader Mode est tenu de la 1re lecture jusqu'à end(). Laissé à requestTechnology,
+  // chaque close()/reset() le coupait ~1 s plus tard (cancelTechnologyRequest → unregisterTagEvent) :
+  // une puce maintenue ou représentée était redistribuée à com.android.apps.tag, l'application
+  // passait en arrière-plan et l'opération était interrompue. Chaque étape ne rend que son bail.
+  let readerModeHeld = false;
+  async function holdReaderMode() {
+    if (readerModeHeld) return;
+    readerModeHeld = true; // marqué avant l'appel : end() désinscrit même un enregistrement interrompu
+    await session.run(() => NfcManager.registerTagEvent(ENCODER_READER_MODE));
+  }
   async function close() {
     await session.close();
   }
@@ -20,7 +35,8 @@ export function createNfcEncoderHardware(onPrompt?: (message: string) => void): 
       await ready();
       if (!supportedIdentity || supportedIdentity.uid !== normalizeNtagUid(expectedUid)) throw nfcFailure("NFC_SAME_CARD");
       onPrompt?.(prompt || "Retirez la carte puis présentez la même carte pour l’encodage ou la relecture.");
-      const tech = await session.request(() => NfcManager.requestTechnology([NfcTech.Ndef, NfcTech.NfcA, NfcTech.NfcB, NfcTech.IsoDep], { isReaderModeEnabled: true, readerModeFlags: NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B }));
+      await holdReaderMode();
+      const tech = await session.request(() => NfcManager.requestTechnology([NfcTech.Ndef, NfcTech.NfcA, NfcTech.NfcB, NfcTech.IsoDep], ENCODER_READER_MODE));
       if (tech !== NfcTech.Ndef) throw nfcFailure("NFC_NDEF");
       const tag = await session.run(() => NfcManager.getTag());
       if (normalizeNtagUid(tag?.id) !== expectedUid) throw nfcFailure("NFC_SAME_CARD");
@@ -33,10 +49,8 @@ export function createNfcEncoderHardware(onPrompt?: (message: string) => void): 
         await ready();
         // Include foreign technologies for an explicit refusal (Navigo), never a write.
         onPrompt?.("Présentez la carte pour lire son UID et son modèle.");
-        const tech = await session.request(() => NfcManager.requestTechnology([NfcTech.NfcA, NfcTech.NfcB, NfcTech.IsoDep], {
-          isReaderModeEnabled: true,
-          readerModeFlags: NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B,
-        }));
+        await holdReaderMode();
+        const tech = await session.request(() => NfcManager.requestTechnology([NfcTech.NfcA, NfcTech.NfcB, NfcTech.IsoDep], ENCODER_READER_MODE));
         if (tech !== NfcTech.NfcA) throw nfcFailure("NFC_FOREIGN");
         const tag = await session.run(() => NfcManager.getTag());
         let version: number[];
@@ -76,5 +90,12 @@ export function createNfcEncoderHardware(onPrompt?: (message: string) => void): 
       return status.status === NdefStatus.ReadOnly;
     },
     close,
+    /** Fermeture du panneau, du lot ou passage en arrière-plan : bail puis Reader Mode rendus à Android. */
+    async end() {
+      await close();
+      if (!readerModeHeld) return;
+      readerModeHeld = false;
+      await NfcManager.unregisterTagEvent();
+    },
   };
 }

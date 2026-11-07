@@ -214,13 +214,15 @@ function StudentCardNfcBatchSession({
     })().catch((e) => {
       if (live.current) setError(nfcErrorCopy(e));
     });
+    // RC-6 : après pause ou fermeture du lot, Reader Mode rendu à Android.
+    const release = () => { void hardware.current?.end?.().catch(() => {}); };
     const sub = AppState.addEventListener("change", (s) => {
-      if (s !== "active") void controller.current?.pause().catch(() => {});
+      if (s !== "active") void controller.current?.pause().catch(() => {}).finally(release);
     });
     return () => {
       live.current = false;
       sub.remove();
-      void controller.current?.dispose().catch(() => {});
+      void (controller.current?.dispose() ?? Promise.resolve()).catch(() => {}).finally(release);
     };
   }, []);
   async function act(action: () => unknown | Promise<unknown>) {

@@ -40,6 +40,8 @@ export interface NfcEncoderHardware {
   writeText(value: string): Promise<void>;
   isReadOnly(): Promise<boolean>;
   close(): Promise<void>;
+  /** Libération complète (Reader Mode compris) à la fermeture de l'écran d'encodage. */
+  end?(): Promise<void>;
 }
 /** CARTE-FIX-QR-NFC (#974) — begin : défi serveur ; rejeu si la même puce est déjà enregistrée. */
 export type NfcProvisionBegin = { cardId: string; alreadyProvisioned: boolean; challenge?: string; expiresAt?: string; card?: EnrollmentCard };
