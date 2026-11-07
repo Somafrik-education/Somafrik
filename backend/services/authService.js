@@ -382,7 +382,7 @@ class AuthService {
   resolveLoginSecret({ role, password, pin } = {}) {
     const passwordValue = String(password ?? "");
     const pinValue = String(pin ?? "");
-    if (role === "parent_student") {
+    if (role === "parent_student" || role === "student") {
       return passwordValue;
     }
     return pinValue || passwordValue;
@@ -848,13 +848,13 @@ class AuthService {
     if (isPlatformSuperadminAccount(user, options) && rejectsKnownSuperadminSecret(normalizedSecret)) {
       return false;
     }
-    const parentOnly = options.role === "parent_student";
+    const passwordOnly = options.role === "parent_student" || options.role === "student";
 
     if (user.passwordHash && verifySecret(normalizedSecret, user.passwordHash)) {
       return true;
     }
 
-    if (!parentOnly && user.pinHash && verifySecret(normalizedSecret, user.pinHash)) {
+    if (!passwordOnly && user.pinHash && verifySecret(normalizedSecret, user.pinHash)) {
       return true;
     }
 
