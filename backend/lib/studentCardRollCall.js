@@ -898,6 +898,10 @@ module.exports = {
   assertCardsStillValid,
   assertOperationKey,
   authorizeRollCallActor,
+  // NFC-PRES-LOCAL-PR1b : gardes réutilisées par le pack hors ligne (aucun changement de comportement).
+  liveRollCallActor,
+  assertRollCallEnabled,
+  assertRollCallClass,
   readJustification,
   scanRollCallDraft,
   validateRollCall,

@@ -258,6 +258,8 @@ Rotation urgente (clé compromise), **sans supposer de mise à jour instantanée
 5. une APK dont toutes les clés connues sont révoquées ou retirées refuse tous les packs : mode dégradé (« à vérifier »), jamais d'acceptation par défaut ; la récupération passe par la mise à jour de l'APK ;
 6. une nouvelle clé `standby` est générée et livrée par APK.
 
+**Révision 6 (PR1b, implémentation)** : la réponse HTTP du pack contient un troisième champ, `revocations` = `{ list: { contractVersion, sequence, revokedKeyIds, issuedAt }, signature }`, signé par la clé active avec l'étiquette `somafrik.rc-offline.revocations.v1\n`. Il remplace la route de révocation envisagée en §4.2 : la liste parvient au téléphone avec chaque pack, sans nouvelle surface d'accès. Configuration, génération des clés et procédures : `docs/student-card/NFC-PRES-LOCAL-PR1b-cles-pack.md`. Constat d'implémentation : la base n'admet qu'**une carte active par élève** (`student_access_cards_one_active_per_student`) et une carte NFC `pending` n'est jamais active ; « plusieurs cartes d'un élève » désigne donc une carte active (éventuellement `nfc_qr`, deux supports) et des cartes remplacées, perdues ou révoquées, toujours exclues.
+
 ### 4.3 Vérification et rejet fail-closed
 
 Le Mobile vérifie au téléchargement **et à chaque chargement depuis SQLCipher** (détection de corruption) :

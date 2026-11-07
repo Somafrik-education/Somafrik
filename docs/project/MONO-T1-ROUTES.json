@@ -1,6 +1,6 @@
 {
   "generatedBy": "scripts/mono-t1-route-inventory.js",
-  "total": 390,
+  "total": 391,
   "routes": [
     {
       "method": "POST",
@@ -84,7 +84,8 @@
         "backend/lib/secAuth04SessionBinding.http.pg.test.js",
         "backend/lib/secAuth05RoleRevocation.http.pg.test.js",
         "backend/lib/secTenant01Attachment.http.pg.test.js",
-        "backend/lib/secTenant02SchoolIdentity.http.pg.test.js"
+        "backend/lib/secTenant02SchoolIdentity.http.pg.test.js",
+        "backend/lib/subscriptionAccessState.http.pg.test.js"
       ],
       "existingHttpTests": [
         "backend/lib/financeLiveRbac.http.pg.test.js",
@@ -93,7 +94,8 @@
         "backend/lib/secAuth04SessionBinding.http.pg.test.js",
         "backend/lib/secAuth05RoleRevocation.http.pg.test.js",
         "backend/lib/secTenant01Attachment.http.pg.test.js",
-        "backend/lib/secTenant02SchoolIdentity.http.pg.test.js"
+        "backend/lib/secTenant02SchoolIdentity.http.pg.test.js",
+        "backend/lib/subscriptionAccessState.http.pg.test.js"
       ],
       "monoT1Tests": [
         "backend/lib/monoT1.authSessions.http.pg.test.js",
@@ -748,7 +750,7 @@
       "path": "/api/public/report-cards/verify",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 542,
+      "line": 587,
       "family": "Autres",
       "authenticated": false,
       "middlewares": [],
@@ -757,7 +759,9 @@
       "requiredPermissions": [],
       "allowedRoles": null,
       "subscriptionFeatures": [],
-      "tenantSignals": [],
+      "tenantSignals": [
+        "schoolId"
+      ],
       "validationSignals": [],
       "handlerAuthz": [],
       "repositoryCalls": [],
@@ -783,7 +787,7 @@
       "path": "/api/v2/notes",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4958,
+      "line": 4985,
       "family": "Autres",
       "authenticated": true,
       "middlewares": [
@@ -831,7 +835,7 @@
       "path": "/api/v2/payments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4970,
+      "line": 4997,
       "family": "Autres",
       "authenticated": true,
       "middlewares": [
@@ -884,7 +888,7 @@
       "path": "/api/v2/presences",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4941,
+      "line": 4968,
       "family": "Autres",
       "authenticated": true,
       "middlewares": [
@@ -936,7 +940,7 @@
       "path": "/api/backoffice/contacts",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4024,
+      "line": 4050,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -982,7 +986,7 @@
       "path": "/api/backoffice/contacts",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4029,
+      "line": 4055,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1023,7 +1027,7 @@
       "path": "/api/backoffice/contacts/:contactId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4034,
+      "line": 4060,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1064,7 +1068,7 @@
       "path": "/api/backoffice/contacts/:contactId/provision-account",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4039,
+      "line": 4065,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1261,7 +1265,7 @@
       "path": "/api/backoffice/rbac/catalog",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3803,
+      "line": 3829,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1299,7 +1303,7 @@
       "path": "/api/backoffice/rbac/history",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3897,
+      "line": 3923,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1335,7 +1339,7 @@
       "path": "/api/backoffice/rbac/permissions",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3808,
+      "line": 3834,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1373,7 +1377,7 @@
       "path": "/api/backoffice/rbac/permissions",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3818,
+      "line": 3844,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1411,7 +1415,7 @@
       "path": "/api/backoffice/rbac/permissions/effective",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3813,
+      "line": 3839,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1449,7 +1453,7 @@
       "path": "/api/backoffice/rbac/permissions/reset",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3828,
+      "line": 3854,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1485,7 +1489,7 @@
       "path": "/api/backoffice/rbac/role-display-labels",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3860,
+      "line": 3886,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1531,7 +1535,7 @@
       "path": "/api/backoffice/rbac/roles",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3839,
+      "line": 3865,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1570,7 +1574,7 @@
       "path": "/api/backoffice/rbac/roles/:roleId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3849,
+      "line": 3875,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1609,7 +1613,7 @@
       "path": "/api/backoffice/rbac/roles/:roleId/archive",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3886,
+      "line": 3912,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1646,7 +1650,7 @@
       "path": "/api/backoffice/rbac/roles/:roleId/display-label",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3865,
+      "line": 3891,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1684,7 +1688,7 @@
       "path": "/api/backoffice/rbac/roles/:roleId/display-label/reset",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3876,
+      "line": 3902,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1722,7 +1726,7 @@
       "path": "/api/backoffice/relations",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4047,
+      "line": 4073,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1768,7 +1772,7 @@
       "path": "/api/backoffice/relations",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4052,
+      "line": 4078,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1809,7 +1813,7 @@
       "path": "/api/backoffice/relations/:relationId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4059,
+      "line": 4085,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1850,7 +1854,7 @@
       "path": "/api/backoffice/relations/:relationId/archive",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4069,
+      "line": 4095,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1892,7 +1896,7 @@
       "path": "/api/backoffice/role-permissions",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3793,
+      "line": 3819,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1930,7 +1934,7 @@
       "path": "/api/backoffice/role-permissions",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3798,
+      "line": 3824,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -1966,7 +1970,7 @@
       "path": "/api/backoffice/users",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3952,
+      "line": 3978,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2027,7 +2031,7 @@
       "path": "/api/backoffice/users",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3965,
+      "line": 3991,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2084,7 +2088,7 @@
       "path": "/api/backoffice/users/:userId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3995,
+      "line": 4021,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2138,7 +2142,7 @@
       "path": "/api/backoffice/users/:userId/reassign-school",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4001,
+      "line": 4027,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2183,7 +2187,7 @@
       "path": "/api/backoffice/users/:userId/roles/grant",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4012,
+      "line": 4038,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2233,7 +2237,7 @@
       "path": "/api/backoffice/users/:userId/roles/revoke",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4018,
+      "line": 4044,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2278,7 +2282,7 @@
       "path": "/api/backoffice/users/assignable-roles",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3960,
+      "line": 3986,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2333,7 +2337,7 @@
       "path": "/api/backoffice/users/create-teacher",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3977,
+      "line": 4003,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2374,7 +2378,7 @@
       "path": "/api/backoffice/users/provision",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3971,
+      "line": 3997,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2468,7 +2472,7 @@
       "path": "/api/users/:id/reset-password",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3370,
+      "line": 3396,
       "family": "B. Utilisateurs et rôles",
       "authenticated": true,
       "middlewares": [
@@ -2654,7 +2658,7 @@
       "path": "/api/parents/identity",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4078,
+      "line": 4104,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -2695,7 +2699,7 @@
       "path": "/api/parents/link",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4100,
+      "line": 4126,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -2736,7 +2740,7 @@
       "path": "/api/parents/relations",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4086,
+      "line": 4112,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -2796,7 +2800,7 @@
       "path": "/api/parents/relations/:relationId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4108,
+      "line": 4134,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -2871,6 +2875,7 @@
       },
       "existingTests": [
         "backend/lib/platformPersonalDataGuard.test.js",
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentAccessCards.attendance.pg.test.js",
         "backend/lib/studentAccessCards.finance.pg.test.js",
         "backend/lib/studentAccessCards.http.pg.test.js",
@@ -2883,6 +2888,7 @@
         "backend/scripts/verify-student-access-cards.js"
       ],
       "existingHttpTests": [
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentAccessCards.attendance.pg.test.js",
         "backend/lib/studentAccessCards.finance.pg.test.js",
         "backend/lib/studentAccessCards.http.pg.test.js",
@@ -3246,6 +3252,7 @@
       },
       "existingTests": [
         "backend/lib/platformPersonalDataGuard.test.js",
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentAccessCards.attendance.pg.test.js",
         "backend/lib/studentAccessCards.finance.pg.test.js",
         "backend/lib/studentAccessCards.http.pg.test.js",
@@ -3256,6 +3263,7 @@
         "backend/scripts/verify-student-access-cards.js"
       ],
       "existingHttpTests": [
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentAccessCards.attendance.pg.test.js",
         "backend/lib/studentAccessCards.finance.pg.test.js",
         "backend/lib/studentAccessCards.http.pg.test.js",
@@ -3301,12 +3309,14 @@
       },
       "existingTests": [
         "backend/lib/platformPersonalDataGuard.test.js",
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentAccessCards.finance.pg.test.js",
         "backend/lib/studentCardEntry.http.pg.test.js",
         "backend/lib/studentCardRollCall.http.pg.test.js",
         "backend/lib/studentCardVerification.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentAccessCards.finance.pg.test.js",
         "backend/lib/studentCardEntry.http.pg.test.js",
         "backend/lib/studentCardRollCall.http.pg.test.js",
@@ -3367,7 +3377,7 @@
       "path": "/api/student-cards/entries",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2775,
+      "line": 2801,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -3405,7 +3415,7 @@
       "path": "/api/student-cards/entry-scan",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2733,
+      "line": 2759,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -3486,6 +3496,51 @@
       ],
       "existingHttpTests": [
         "backend/lib/studentAccessCards.http.pg.test.js"
+      ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/student-cards/roll-call/offline/v1/pack",
+      "pathIsRegExp": false,
+      "file": "backend/server.js",
+      "line": 2744,
+      "family": "C. Élèves et inscriptions",
+      "authenticated": true,
+      "middlewares": [
+        "requireAuth",
+        "<anonyme>"
+      ],
+      "permissionKeys": [
+        "GET /api/student-cards/roll-call/offline/v1/pack"
+      ],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [
+        "Présences:CREATE",
+        "Présences:UPDATE"
+      ],
+      "allowedRoles": [
+        "PREFET_ETUDES",
+        "PROVISEUR",
+        "SECRETARY",
+        "SUPERVISOR",
+        "TEACHER"
+      ],
+      "subscriptionFeatures": [],
+      "tenantSignals": [],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
+        "level": "MOYEN",
+        "reason": "lecture de données d'un domaine critique"
+      },
+      "existingTests": [
+        "backend/lib/rollCallOfflinePack.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/rollCallOfflinePack.http.pg.test.js"
       ],
       "monoT1Tests": []
     },
@@ -3574,9 +3629,11 @@
         "reason": "lecture de données d'un domaine critique"
       },
       "existingTests": [
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentCardRollCall.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentCardRollCall.http.pg.test.js"
       ],
       "monoT1Tests": []
@@ -3619,9 +3676,11 @@
         "reason": "écriture sur un domaine critique"
       },
       "existingTests": [
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentCardRollCall.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/rollCallOfflinePack.http.pg.test.js",
         "backend/lib/studentCardRollCall.http.pg.test.js"
       ],
       "monoT1Tests": []
@@ -3846,6 +3905,7 @@
         "backend/lib/secAuth04SessionBinding.http.pg.test.js",
         "backend/lib/secTenant01Attachment.http.pg.test.js",
         "backend/lib/studentAdministrativeNotes.http.pg.test.js",
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/lib/tenantRevalidation.guard.test.js",
         "backend/scripts/verify-demo-runtime-data.js",
         "backend/scripts/verify-enrollment-tenant.js",
@@ -3858,6 +3918,7 @@
         "backend/lib/secAuth04SessionBinding.http.pg.test.js",
         "backend/lib/secTenant01Attachment.http.pg.test.js",
         "backend/lib/studentAdministrativeNotes.http.pg.test.js",
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-runtime-data.js",
         "backend/scripts/verify-preprod-503.js"
       ],
@@ -3872,7 +3933,7 @@
       "path": "/api/students/:id",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2905,
+      "line": 2931,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4013,7 +4074,7 @@
       "path": "/api/students/:id",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2867,
+      "line": 2893,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4131,7 +4192,7 @@
       "path": "/api/students/:id/notes",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2938,
+      "line": 2964,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4180,7 +4241,7 @@
       "path": "/api/students/:id/payments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3206,
+      "line": 3232,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4231,7 +4292,7 @@
       "path": "/api/students/:id/presences",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3191,
+      "line": 3217,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4284,7 +4345,7 @@
       "path": "/api/students/:id/report",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3155,
+      "line": 3181,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4341,7 +4402,7 @@
       "path": "/api/students/:id/report.pdf",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3167,
+      "line": 3193,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4648,7 +4709,7 @@
       "path": "/api/students/:studentId/enrollments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2784,
+      "line": 2810,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4705,7 +4766,7 @@
       "path": "/api/students/:studentId/enrollments/:enrollmentId/assign-class",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2817,
+      "line": 2843,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4750,7 +4811,7 @@
       "path": "/api/students/:studentId/enrollments/:enrollmentId/close",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2851,
+      "line": 2877,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4795,7 +4856,7 @@
       "path": "/api/students/:studentId/enrollments/:enrollmentId/transfer",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2834,
+      "line": 2860,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -4840,7 +4901,7 @@
       "path": "/api/students/:studentId/enrollments/:enrollmentId/validate",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2802,
+      "line": 2828,
       "family": "C. Élèves et inscriptions",
       "authenticated": true,
       "middlewares": [
@@ -5967,7 +6028,7 @@
       "path": "/api/notes",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2951,
+      "line": 2977,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6027,7 +6088,7 @@
       "path": "/api/notes",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3028,
+      "line": 3054,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6089,7 +6150,7 @@
       "path": "/api/presences",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 2987,
+      "line": 3013,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6166,7 +6227,7 @@
       "path": "/api/presences",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3068,
+      "line": 3094,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6385,7 +6446,7 @@
       "path": "/api/report-card/admin/bindings/:modelKey",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1108,
+      "line": 1259,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6421,7 +6482,7 @@
       "path": "/api/report-card/admin/catalog",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1080,
+      "line": 1231,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6457,7 +6518,7 @@
       "path": "/api/report-card/admin/queue",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1024,
+      "line": 1175,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6493,7 +6554,7 @@
       "path": "/api/report-card/admin/requests/:requestId",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1038,
+      "line": 1189,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6529,7 +6590,7 @@
       "path": "/api/report-card/admin/requests/:requestId/activate",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1268,
+      "line": 1419,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6565,7 +6626,7 @@
       "path": "/api/report-card/admin/requests/:requestId/bind-bundle",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1165,
+      "line": 1316,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6601,7 +6662,7 @@
       "path": "/api/report-card/admin/requests/:requestId/bundle",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1092,
+      "line": 1243,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6637,7 +6698,7 @@
       "path": "/api/report-card/admin/requests/:requestId/configure",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1136,
+      "line": 1287,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6673,7 +6734,7 @@
       "path": "/api/report-card/admin/requests/:requestId/ready-for-review",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1211,
+      "line": 1362,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6709,7 +6770,7 @@
       "path": "/api/report-card/admin/requests/:requestId/reject",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1251,
+      "line": 1402,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6741,7 +6802,7 @@
       "path": "/api/report-card/admin/requests/:requestId/review",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1124,
+      "line": 1275,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6777,7 +6838,7 @@
       "path": "/api/report-card/admin/requests/:requestId/save-template",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1148,
+      "line": 1299,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6813,7 +6874,7 @@
       "path": "/api/report-card/admin/requests/:requestId/source-artifact",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1050,
+      "line": 1201,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6849,7 +6910,7 @@
       "path": "/api/report-card/admin/requests/:requestId/source-artifact/content",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1062,
+      "line": 1213,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6885,7 +6946,7 @@
       "path": "/api/report-card/bindings/:modelKey",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 681,
+      "line": 755,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6923,7 +6984,7 @@
       "path": "/api/report-card/catalog",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 486,
+      "line": 531,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6962,7 +7023,7 @@
       "path": "/api/report-card/catalog/admin",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 450,
+      "line": 495,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -6997,7 +7058,7 @@
       "path": "/api/report-card/catalog/admin/audit",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 476,
+      "line": 521,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7032,7 +7093,7 @@
       "path": "/api/report-card/catalog/admin/models/:modelId/countries/:countryId",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 460,
+      "line": 505,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7056,11 +7117,13 @@
       },
       "existingTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
-        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js"
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js"
       ],
       "existingHttpTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
-        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js"
+        "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js"
       ],
       "monoT1Tests": []
     },
@@ -7069,7 +7132,7 @@
       "path": "/api/report-card/catalog/models/:modelId/activate",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 526,
+      "line": 571,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7104,7 +7167,7 @@
       "path": "/api/report-card/catalog/models/:modelId/configuration",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 496,
+      "line": 541,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7139,7 +7202,7 @@
       "path": "/api/report-card/catalog/models/:modelId/configuration",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 517,
+      "line": 562,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7174,7 +7237,7 @@
       "path": "/api/report-card/catalog/models/:modelId/preview",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 506,
+      "line": 551,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7209,7 +7272,7 @@
       "path": "/api/report-card/publications",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 713,
+      "line": 787,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7236,6 +7299,7 @@
       "existingTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
         "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
@@ -7244,6 +7308,7 @@
       "existingHttpTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
         "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
@@ -7256,7 +7321,7 @@
       "path": "/api/report-card/publications",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 963,
+      "line": 1066,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7282,6 +7347,7 @@
       "existingTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
         "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
@@ -7290,6 +7356,7 @@
       "existingHttpTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
         "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
@@ -7302,7 +7369,7 @@
       "path": "/api/report-card/publications/:reportCardId/corrections",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 977,
+      "line": 1128,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7341,7 +7408,7 @@
       "path": "/api/report-card/publications/:reportCardId/history",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 851,
+      "line": 953,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7380,7 +7447,7 @@
       "path": "/api/report-card/publications/:reportCardId/logo",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 883,
+      "line": 928,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7403,8 +7470,12 @@
         "level": "MOYEN",
         "reason": "lecture de données d'un domaine critique"
       },
-      "existingTests": [],
-      "existingHttpTests": [],
+      "existingTests": [
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js"
+      ],
       "monoT1Tests": []
     },
     {
@@ -7412,7 +7483,7 @@
       "path": "/api/report-card/publications/:reportCardId/pdf",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 754,
+      "line": 828,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7437,12 +7508,14 @@
         "reason": "lecture de données d'un domaine critique"
       },
       "existingTests": [
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardLot9.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
@@ -7455,7 +7528,7 @@
       "path": "/api/report-card/publications/:reportCardId/presentation",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 817,
+      "line": 893,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7480,10 +7553,12 @@
       },
       "existingTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "monoT1Tests": []
@@ -7493,7 +7568,7 @@
       "path": "/api/report-card/publications/:reportCardId/reissues",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1103,
+      "line": 1102,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7526,7 +7601,7 @@
       "path": "/api/report-card/publications/:reportCardId/reissues/preview",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1079,
+      "line": 1081,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7559,7 +7634,7 @@
       "path": "/api/report-card/publications/:reportCardId/snapshot",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 795,
+      "line": 871,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7584,12 +7659,14 @@
       },
       "existingTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardLot8.http.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
@@ -7601,7 +7678,7 @@
       "path": "/api/report-card/publications/:reportCardId/versions/:version",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 897,
+      "line": 999,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7640,7 +7717,7 @@
       "path": "/api/report-card/publications/:reportCardId/versions/:version/revoke",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 1000,
+      "line": 1151,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7679,7 +7756,7 @@
       "path": "/api/report-card/publications/preview",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 932,
+      "line": 1034,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7705,12 +7782,14 @@
       "existingTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
         "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
       "existingHttpTests": [
         "backend/lib/reportCard/reportCardCatalog01.http.pg.test.js",
         "backend/lib/reportCard/reportCardClassScopeL2.http.pg.test.js",
+        "backend/lib/reportCard/reportCardClassScopeL3.http.pg.test.js",
         "backend/lib/reportCard/reportCardPublish01.http.pg.test.js",
         "backend/lib/reportCard/reportCardUi01.http.pg.test.js"
       ],
@@ -7721,7 +7800,7 @@
       "path": "/api/report-card/requests",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 547,
+      "line": 621,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7759,7 +7838,7 @@
       "path": "/api/report-card/requests",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 559,
+      "line": 633,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7797,7 +7876,7 @@
       "path": "/api/report-card/requests/:requestId",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 628,
+      "line": 702,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7833,7 +7912,7 @@
       "path": "/api/report-card/requests/:requestId/approve",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 640,
+      "line": 714,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7869,7 +7948,7 @@
       "path": "/api/report-card/requests/:requestId/audit",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 669,
+      "line": 743,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7905,7 +7984,7 @@
       "path": "/api/report-card/requests/:requestId/bundle",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 697,
+      "line": 771,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7941,7 +8020,7 @@
       "path": "/api/report-card/requests/:requestId/request-changes",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 652,
+      "line": 726,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -7973,7 +8052,7 @@
       "path": "/api/report-card/requests/:requestId/source-artifact",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 598,
+      "line": 672,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -8005,7 +8084,7 @@
       "path": "/api/report-card/requests/:requestId/source-artifact",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 576,
+      "line": 650,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -8038,7 +8117,7 @@
       "path": "/api/report-card/requests/:requestId/source-artifact/content",
       "pathIsRegExp": false,
       "file": "backend/lib/reportCard/reportCardHttp.js",
-      "line": 610,
+      "line": 684,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -8254,7 +8333,7 @@
       "path": "/api/v2/exams",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4911,
+      "line": 4938,
       "family": "D. Notes et présences",
       "authenticated": true,
       "middlewares": [
@@ -8306,7 +8385,7 @@
       "path": "/api/backoffice/finance/unpaid",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4643,
+      "line": 4670,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8361,7 +8440,7 @@
       "path": "/api/backoffice/finance/unpaid/:studentId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4655,
+      "line": 4682,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8408,7 +8487,7 @@
       "path": "/api/backoffice/finance/unpaid/:studentId/reminders",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4661,
+      "line": 4688,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8459,7 +8538,7 @@
       "path": "/api/backoffice/finance/unpaid/:studentId/reminders",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4668,
+      "line": 4695,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8506,7 +8585,7 @@
       "path": "/api/finance/catalog",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3561,
+      "line": 3587,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8560,7 +8639,7 @@
       "path": "/api/finance/fee-grids",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3644,
+      "line": 3670,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8620,7 +8699,7 @@
       "path": "/api/finance/fee-grids",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3650,
+      "line": 3676,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8671,7 +8750,7 @@
       "path": "/api/finance/fee-grids/:gridId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3656,
+      "line": 3682,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8726,7 +8805,7 @@
       "path": "/api/finance/fee-grids/:gridId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3667,
+      "line": 3693,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8771,7 +8850,7 @@
       "path": "/api/finance/fee-grids/:gridId/activate",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3673,
+      "line": 3699,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8816,7 +8895,7 @@
       "path": "/api/finance/fee-grids/:gridId/apply",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3685,
+      "line": 3711,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8861,7 +8940,7 @@
       "path": "/api/finance/fee-grids/:gridId/deactivate",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3679,
+      "line": 3705,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8906,7 +8985,7 @@
       "path": "/api/finance/payment-methods",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3566,
+      "line": 3592,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8957,7 +9036,7 @@
       "path": "/api/finance/payment-methods",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3571,
+      "line": 3597,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -8999,7 +9078,7 @@
       "path": "/api/finance/payment-statuses",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3577,
+      "line": 3603,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9052,7 +9131,7 @@
       "path": "/api/finance/payment-statuses",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3583,
+      "line": 3609,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9098,7 +9177,7 @@
       "path": "/api/finance/payment-statuses/:statusId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3591,
+      "line": 3617,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9154,7 +9233,7 @@
       "path": "/api/finance/payment-student-options",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3556,
+      "line": 3582,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9208,7 +9287,7 @@
       "path": "/api/finance/reconcile-payment-allocations",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3709,
+      "line": 3735,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9249,7 +9328,7 @@
       "path": "/api/finance/student-fees",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3699,
+      "line": 3725,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9311,7 +9390,7 @@
       "path": "/api/finance/student-fees/:obligationId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3719,
+      "line": 3745,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9365,7 +9444,7 @@
       "path": "/api/finance/student-fees/:obligationId/adjust",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3725,
+      "line": 3751,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9408,7 +9487,7 @@
       "path": "/api/payments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3499,
+      "line": 3525,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9478,7 +9557,7 @@
       "path": "/api/payments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3516,
+      "line": 3542,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9542,7 +9621,7 @@
       "path": "/api/payments/:paymentId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3531,
+      "line": 3557,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9601,7 +9680,7 @@
       "path": "/api/payments/:paymentId/cancel",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3537,
+      "line": 3563,
       "family": "E. Finance",
       "authenticated": true,
       "middlewares": [
@@ -9653,7 +9732,7 @@
       "path": "/api/backoffice/announcements",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4250,
+      "line": 4276,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -9713,7 +9792,7 @@
       "path": "/api/backoffice/announcements",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4255,
+      "line": 4281,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -9770,7 +9849,7 @@
       "path": "/api/backoffice/announcements/:announcementId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4286,
+      "line": 4312,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -9823,7 +9902,7 @@
       "path": "/api/backoffice/announcements/:announcementId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4301,
+      "line": 4327,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -9873,7 +9952,7 @@
       "path": "/api/backoffice/announcements/:announcementId/archive",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4306,
+      "line": 4332,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -9923,7 +10002,7 @@
       "path": "/api/backoffice/announcements/:announcementId/read",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4291,
+      "line": 4317,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -9974,7 +10053,7 @@
       "path": "/api/backoffice/announcements/attachments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4268,
+      "line": 4294,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10019,7 +10098,7 @@
       "path": "/api/backoffice/announcements/audience-options",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4245,
+      "line": 4271,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10067,7 +10146,7 @@
       "path": "/api/backoffice/announcements/unread-count",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4240,
+      "line": 4266,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10118,7 +10197,7 @@
       "path": "/api/backoffice/communications/attachments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4215,
+      "line": 4241,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10166,7 +10245,7 @@
       "path": "/api/backoffice/communications/attachments/:attachmentId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4233,
+      "line": 4259,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10217,7 +10296,7 @@
       "path": "/api/backoffice/communications/deliveries/health",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4396,
+      "line": 4422,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10267,7 +10346,7 @@
       "path": "/api/backoffice/conversations",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4165,
+      "line": 4191,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10322,7 +10401,7 @@
       "path": "/api/backoffice/conversations",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4170,
+      "line": 4196,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10375,7 +10454,7 @@
       "path": "/api/backoffice/conversations/:conversationId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4187,
+      "line": 4213,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10430,7 +10509,7 @@
       "path": "/api/backoffice/conversations/:conversationId/messages",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4192,
+      "line": 4218,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10483,7 +10562,7 @@
       "path": "/api/backoffice/conversations/:conversationId/messages",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4197,
+      "line": 4223,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10534,7 +10613,7 @@
       "path": "/api/backoffice/internal-notifications",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4408,
+      "line": 4434,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10586,7 +10665,7 @@
       "path": "/api/backoffice/internal-notifications",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4413,
+      "line": 4439,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10635,7 +10714,7 @@
       "path": "/api/backoffice/internal-notifications/:notificationId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4457,
+      "line": 4483,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10686,7 +10765,7 @@
       "path": "/api/backoffice/internal-notifications/:notificationId/archive",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4471,
+      "line": 4497,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10737,7 +10816,7 @@
       "path": "/api/backoffice/internal-notifications/:notificationId/read",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4464,
+      "line": 4490,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10788,7 +10867,7 @@
       "path": "/api/backoffice/internal-notifications/attachments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4424,
+      "line": 4450,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10833,7 +10912,7 @@
       "path": "/api/backoffice/internal-notifications/attachments/:attachmentId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4443,
+      "line": 4469,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10880,7 +10959,7 @@
       "path": "/api/backoffice/internal-notifications/unread-count",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4391,
+      "line": 4417,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10931,7 +11010,7 @@
       "path": "/api/backoffice/messages",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4133,
+      "line": 4159,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -10992,7 +11071,7 @@
       "path": "/api/backoffice/messages",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4138,
+      "line": 4164,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11051,7 +11130,7 @@
       "path": "/api/backoffice/messages/:messageId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4128,
+      "line": 4154,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11108,7 +11187,7 @@
       "path": "/api/backoffice/messages/:messageId/read",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4155,
+      "line": 4181,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11163,7 +11242,7 @@
       "path": "/api/backoffice/messages/recipients",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4123,
+      "line": 4149,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11214,7 +11293,7 @@
       "path": "/api/backoffice/messages/unread-count",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4118,
+      "line": 4144,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11267,7 +11346,7 @@
       "path": "/api/backoffice/notifications",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3752,
+      "line": 3778,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11315,7 +11394,7 @@
       "path": "/api/backoffice/notifications",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3781,
+      "line": 3807,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11361,7 +11440,7 @@
       "path": "/api/backoffice/notifications/:notificationId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3787,
+      "line": 3813,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11401,7 +11480,7 @@
       "path": "/api/backoffice/platform-announcements",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4321,
+      "line": 4347,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11453,7 +11532,7 @@
       "path": "/api/backoffice/platform-announcements",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4326,
+      "line": 4352,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11496,7 +11575,7 @@
       "path": "/api/backoffice/platform-announcements/:announcementId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4368,
+      "line": 4394,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11547,7 +11626,7 @@
       "path": "/api/backoffice/platform-announcements/:announcementId/archive",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4382,
+      "line": 4408,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11585,7 +11664,7 @@
       "path": "/api/backoffice/platform-announcements/:announcementId/read",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4373,
+      "line": 4399,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11636,7 +11715,7 @@
       "path": "/api/backoffice/platform-announcements/attachments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4343,
+      "line": 4369,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11675,7 +11754,7 @@
       "path": "/api/backoffice/platform-announcements/attachments/:attachmentId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4361,
+      "line": 4387,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -11722,7 +11801,7 @@
       "path": "/api/backoffice/platform-announcements/unread-count",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4316,
+      "line": 4342,
       "family": "F. Communication",
       "authenticated": true,
       "middlewares": [
@@ -12043,7 +12122,7 @@
       "path": "/api/backoffice/bulletin-design/preview",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4704,
+      "line": 4731,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -12609,7 +12688,7 @@
       "path": "/api/backoffice/import/students/validate",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4546,
+      "line": 4573,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -12745,7 +12824,7 @@
       "path": "/api/backoffice/state",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4694,
+      "line": 4721,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -12778,7 +12857,7 @@
       "path": "/api/backoffice/state",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4699,
+      "line": 4726,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -12867,12 +12946,14 @@
       "existingTests": [
         "backend/lib/parentAttendanceIsolation.http.pg.test.js",
         "backend/lib/secTenant02SchoolIdentity.http.pg.test.js",
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-entry-api.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
       "existingHttpTests": [
         "backend/lib/parentAttendanceIsolation.http.pg.test.js",
         "backend/lib/secTenant02SchoolIdentity.http.pg.test.js",
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-entry-api.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
@@ -12930,12 +13011,14 @@
       "existingTests": [
         "backend/lib/parentAttendanceIsolation.http.pg.test.js",
         "backend/lib/secTenant02SchoolIdentity.http.pg.test.js",
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-entry-api.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
       "existingHttpTests": [
         "backend/lib/parentAttendanceIsolation.http.pg.test.js",
         "backend/lib/secTenant02SchoolIdentity.http.pg.test.js",
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-entry-api.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
@@ -14878,7 +14961,7 @@
       "path": "/api/teachers",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3216,
+      "line": 3242,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -14945,7 +15028,7 @@
       "path": "/api/teachers",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3277,
+      "line": 3303,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -14997,7 +15080,7 @@
       "path": "/api/teachers/:teacherCode",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3319,
+      "line": 3345,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15049,7 +15132,7 @@
       "path": "/api/teachers/:teacherCode",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3248,
+      "line": 3274,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15104,7 +15187,7 @@
       "path": "/api/teachers/:teacherCode",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3284,
+      "line": 3310,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15155,7 +15238,7 @@
       "path": "/api/v2/academic-years",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4859,
+      "line": 4886,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15209,7 +15292,7 @@
       "path": "/api/v2/academic-years",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4871,
+      "line": 4898,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15260,7 +15343,7 @@
       "path": "/api/v2/academic-years/:id",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4893,
+      "line": 4920,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15313,7 +15396,7 @@
       "path": "/api/v2/documents",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4917,
+      "line": 4944,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15364,7 +15447,7 @@
       "path": "/api/v2/reports/advanced",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4982,
+      "line": 5009,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15416,7 +15499,7 @@
       "path": "/api/v2/school-setup/guided",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4820,
+      "line": 4847,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15457,7 +15540,7 @@
       "path": "/api/v2/school-setup/guided/complete",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4849,
+      "line": 4876,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15498,7 +15581,7 @@
       "path": "/api/v2/school-setup/guided/steps/:stepKey/complete",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4834,
+      "line": 4861,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15537,7 +15620,7 @@
       "path": "/api/v2/school-setup/status",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4807,
+      "line": 4834,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15582,7 +15665,7 @@
       "path": "/api/v2/subjects",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4748,
+      "line": 4775,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15651,7 +15734,7 @@
       "path": "/api/v2/subjects",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4775,
+      "line": 4802,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15708,7 +15791,7 @@
       "path": "/api/v2/subjects/:code",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4787,
+      "line": 4814,
       "family": "G. Pédagogie, planning et référentiels",
       "authenticated": true,
       "middlewares": [
@@ -15761,7 +15844,7 @@
       "path": "/api/audit",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4736,
+      "line": 4763,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -15805,7 +15888,7 @@
       "path": "/api/backoffice/countries",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3732,
+      "line": 3758,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -15857,7 +15940,7 @@
       "path": "/api/backoffice/countries",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3757,
+      "line": 3783,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -15905,7 +15988,7 @@
       "path": "/api/backoffice/countries/:code",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3763,
+      "line": 3789,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -15944,7 +16027,7 @@
       "path": "/api/backoffice/dashboard-chart-config",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3903,
+      "line": 3929,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -15982,7 +16065,7 @@
       "path": "/api/backoffice/dashboard-chart-config",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3908,
+      "line": 3934,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16112,7 +16195,7 @@
       "path": "/api/backoffice/establishments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4496,
+      "line": 4522,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16143,8 +16226,12 @@
         "level": "FAIBLE",
         "reason": "lecture hors domaines critiques"
       },
-      "existingTests": [],
-      "existingHttpTests": [],
+      "existingTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js"
+      ],
       "monoT1Tests": []
     },
     {
@@ -16152,7 +16239,7 @@
       "path": "/api/backoffice/establishments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4512,
+      "line": 4539,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16186,8 +16273,12 @@
         "level": "MOYEN",
         "reason": "écriture hors domaines critiques"
       },
-      "existingTests": [],
-      "existingHttpTests": [],
+      "existingTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js"
+      ],
       "monoT1Tests": []
     },
     {
@@ -16195,7 +16286,7 @@
       "path": "/api/backoffice/establishments/:code",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4632,
+      "line": 4659,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16228,9 +16319,11 @@
         "reason": "écriture hors domaines critiques"
       },
       "existingTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
       "existingHttpTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
       "monoT1Tests": []
@@ -16240,7 +16333,7 @@
       "path": "/api/backoffice/establishments/:code",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4507,
+      "line": 4533,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16276,9 +16369,11 @@
         "reason": "lecture hors domaines critiques"
       },
       "existingTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
       "existingHttpTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
       "monoT1Tests": []
@@ -16288,7 +16383,7 @@
       "path": "/api/backoffice/establishments/:code",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4554,
+      "line": 4581,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16325,9 +16420,11 @@
         "reason": "écriture hors domaines critiques"
       },
       "existingTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
       "existingHttpTests": [
+        "backend/lib/subscriptionAccessState.http.pg.test.js",
         "backend/scripts/verify-demo-runtime-data.js"
       ],
       "monoT1Tests": []
@@ -16337,7 +16434,7 @@
       "path": "/api/backoffice/establishments/:code/activate",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4612,
+      "line": 4639,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16382,7 +16479,7 @@
       "path": "/api/backoffice/establishments/:code/logo",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4592,
+      "line": 4619,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16427,7 +16524,7 @@
       "path": "/api/backoffice/establishments/:code/logo",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4565,
+      "line": 4592,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16473,7 +16570,7 @@
       "path": "/api/backoffice/establishments/:code/subscription",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4502,
+      "line": 4528,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -16517,7 +16614,7 @@
       "path": "/api/backoffice/establishments/:code/suspend",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4622,
+      "line": 4649,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17251,7 +17348,7 @@
       "path": "/api/backoffice/establishments/import",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4525,
+      "line": 4552,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17294,7 +17391,7 @@
       "path": "/api/backoffice/platform-compliance",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3747,
+      "line": 3773,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17333,7 +17430,7 @@
       "path": "/api/backoffice/subscription-access",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4478,
+      "line": 4504,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17388,7 +17485,7 @@
       "path": "/api/backoffice/subscription-discounts",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3938,
+      "line": 3964,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17429,7 +17526,7 @@
       "path": "/api/backoffice/subscription-discounts/:discountId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3944,
+      "line": 3970,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17470,7 +17567,7 @@
       "path": "/api/backoffice/subscription-offers",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3914,
+      "line": 3940,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17509,7 +17606,7 @@
       "path": "/api/backoffice/subscription-offers/:offerId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3920,
+      "line": 3946,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17548,7 +17645,7 @@
       "path": "/api/backoffice/subscription-payments",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3926,
+      "line": 3952,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17589,7 +17686,7 @@
       "path": "/api/backoffice/subscription-payments/:paymentId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3932,
+      "line": 3958,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17630,7 +17727,7 @@
       "path": "/api/backoffice/subscriptions",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3737,
+      "line": 3763,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17673,7 +17770,7 @@
       "path": "/api/backoffice/subscriptions",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3769,
+      "line": 3795,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17714,7 +17811,7 @@
       "path": "/api/backoffice/subscriptions/:subscriptionId",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3775,
+      "line": 3801,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17759,7 +17856,7 @@
       "path": "/api/backoffice/trial-requests",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 3742,
+      "line": 3768,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17909,7 +18006,7 @@
       "path": "/api/mvp/dashboard",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 5003,
+      "line": 5030,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17949,7 +18046,7 @@
       "path": "/api/mvp/readiness",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4991,
+      "line": 5018,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [
@@ -17983,7 +18080,7 @@
       "path": "/api/mvp/snapshot",
       "pathIsRegExp": false,
       "file": "backend/server.js",
-      "line": 4997,
+      "line": 5024,
       "family": "H. Plateforme, établissements et abonnements",
       "authenticated": true,
       "middlewares": [

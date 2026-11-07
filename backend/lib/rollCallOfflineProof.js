@@ -29,6 +29,8 @@ const TAGS = Object.freeze({
   verifier: "somafrik.rc-offline.verifier.v1",
   proof: "somafrik.rc-offline.proof.v1",
   pack: "somafrik.rc-offline.pack.v1\n",
+  // PR1b : liste de révocation des clés de pack, signée par la clé active.
+  revocations: "somafrik.rc-offline.revocations.v1\n",
 });
 
 const OFFLINE_PROOF_ERROR = Object.freeze({
@@ -261,6 +263,12 @@ function packSigningMessage(pack) {
   return Buffer.concat([Buffer.from(TAGS.pack, "utf8"), Buffer.from(canonicalJson(pack), "utf8")]);
 }
 
+/** Message signé de la liste de révocation : utf8(étiquette) ‖ utf8(JCS(revocations)). */
+function revocationsSigningMessage(revocations) {
+  if (!revocations || typeof revocations !== "object" || Array.isArray(revocations)) throw invalid(OFFLINE_PROOF_ERROR.VALUE_INVALID, "$");
+  return Buffer.concat([Buffer.from(TAGS.revocations, "utf8"), Buffer.from(canonicalJson(revocations), "utf8")]);
+}
+
 module.exports = {
   CONTRACT_VERSION,
   ROLL_CALL_MODE,
@@ -281,4 +289,5 @@ module.exports = {
   canonicalJson,
   computePayloadDigest,
   packSigningMessage,
+  revocationsSigningMessage,
 };

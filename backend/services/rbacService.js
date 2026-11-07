@@ -121,6 +121,8 @@ const routePermissions = {
   // CARTE-PR3-B : liste d'appel nominative, mêmes droits que la saisie de l'appel.
   "GET /api/student-cards/roll-call/roster": ["Présences:CREATE", "Présences:UPDATE"],
   "GET /api/student-cards/roll-call/overview": ["Présences:READ"],
+  // NFC-PRES-LOCAL-PR1b : pack hors ligne nominatif, mêmes droits que la liste d'appel.
+  "GET /api/student-cards/roll-call/offline/v1/pack": ["Présences:CREATE", "Présences:UPDATE"],
   // CARTE-PR3-A1 : contrôle d'entrée au portail, permission dédiée (aucun droit implicite).
   "POST /api/student-cards/entry-scan": ["Contrôle d'entrée:CREATE"],
   "GET /api/student-cards/entries": ["Contrôle d'entrée:READ"],
