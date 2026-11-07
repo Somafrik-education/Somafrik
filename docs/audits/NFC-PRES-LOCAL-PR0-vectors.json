@@ -66,8 +66,8 @@
     "V-8_proof_nfc_noPack": "cGqNVh0qcoMt68upA4i5N6GI-jsBK2HzzGtbmbRugRw",
     "V-9_ed25519_test_pub_raw": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
     "V-9_ed25519_test_seed": "32 octets 0x01 (clé de TEST uniquement)",
-    "V-10_pack_signature": "F95JTgvkGrVWytegiJRIoMkghgEQGjCRd4LVBQJTMgjlUPRLhisAUc6Qxsoel_oZcP-sT9_l4fCQ7l5W8f2vDw",
-    "V-10_pack_canonical_sha256": "c8c18bb94c668641a1c003b10de80f45286bc1da6f921e968445ed39e336af54",
+    "V-10_pack_signature": "C-NE1ehClk-J-MYFfjqhHT0UWsFdbk-55knRbr36muPRS9PE029v3NeBoVM7NdpYxtAV3N4KQsETVzdP0rESCw",
+    "V-10_pack_canonical_sha256": "af60a554bf98f2a04cb10ebf7f9c59f5c8edd41448cc11740056b49199d2ba22",
     "V-10_verifies": true,
     "V-10_tampered_classId_verifies": false,
     "V-11_payloadDigest": "50603c4e23b60e2665d647198900031184da5a00863196bf8e54d00ab706fbfb",
@@ -85,8 +85,9 @@
     "classId": "00000000-0000-4000-8000-000000000003",
     "contractVersion": "rc-offline-1",
     "date": "2026-11-09",
-    "expiresAt": "2026-11-09T22:59:59Z",
-    "issuedAt": "2026-11-09T05:00:00Z",
+    "expiresAt": "2026-11-09T23:00:00Z",
+    "notBefore": "2026-11-08T23:00:00Z",
+    "issuedAt": "2026-11-08T16:02:00Z",
     "keyId": "rc-pack-test-1",
     "mode": "teacher",
     "packId": "00000000-0000-4000-8000-000000000005",
@@ -102,7 +103,7 @@
         "studentId": "00000000-0000-4000-8000-000000000007"
       }
     ],
-    "syncDeadline": "2026-11-12T22:59:59Z",
+    "syncDeadline": "2026-11-12T23:00:00Z",
     "timeZone": "Africa/Kinshasa"
   },
   "testSyncBodyWithoutDigest": {
@@ -128,7 +129,7 @@
     "sessionId": "00000000-0000-4000-8000-000000000004"
   },
   "canonicalization": "JCS RFC 8785 via canonicalize@2.0.0 (bibliothèque unique Backend/Mobile). stableSerialize n'est pas utilisé pour le pack ni le digest.",
-  "revision": 3,
+  "revision": 4,
   "jcs": {
     "J-1": {
       "input": {
@@ -213,5 +214,6 @@
       "input": "{ a: undefined, b: 1 }",
       "rule": "refusé par le validateur ; canonicalize donne {\"b\":1}, stableSerialize {\"a\":null,\"b\":1}"
     }
-  }
+  },
+  "testPackNote": "Pack de la date 2026-11-09, Africa/Kinshasa, émis la veille à 17:02 locale ; fenêtre [notBefore ; expiresAt[ = jour local du 9 (révision 4)."
 }

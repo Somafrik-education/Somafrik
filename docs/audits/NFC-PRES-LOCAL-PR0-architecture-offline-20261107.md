@@ -38,6 +38,16 @@ Aucun test PostgreSQL ni Android n'est exécuté ou revendiqué pour la nouvelle
 
 Le lot de synchronisation porte désormais `schoolId` (comparé, jamais utilisé pour résoudre l'établissement) : V-11 et V-12 sont recalculés. Aucun test PostgreSQL ni Android n'est exécuté ou revendiqué.
 
+### Révision 4 — correction demandée par la revue CTO R3 (HEAD revu `9e1a9066`)
+
+| Point de revue | Correction | Section |
+| --- | --- | --- |
+| Pack préchargé expirant avant la fin de la journée scolaire | `expiresAt = min(issuedAt + 18 h ; fin du jour local)` remplacé par une fenêtre d'utilisation = jour local de l'appel (`notBefore` = `D 00:00`, `expiresAt` = `D+1 00:00`, instants UTC signés) ; émission bornée à `[D−1 12:00 ; D+1 00:00[` ; détention ≤ 36 h (35–37 h au changement d'heure) ; rafraîchissement à l'ouverture si en ligne ; alternative du rafraîchissement obligatoire le matin documentée et écartée | §4.1, §4.3, §4.5 |
+| Horloge fausse | `lastTrustedTime` (issu des réponses serveur), refus au-delà de 10 min de recul, fuseau de l'appareil sans effet, aucune prolongation possible | §4.5 |
+| Tests | S12 (bornes serveur, deux changements d'heure, fuseau modifié) et S16 (fenêtre locale, horloge en avance, en retard, reculée) | §10 |
+
+Le pack de test contient désormais `notBefore` : V-10 (signature) est recalculé. Le changement de durée est **explicite** et soumis à validation ; aucun smoke offline n'est déclaré PASS.
+
 ---
 
 ## 1. Audit du code actuel — matrice existant / réutilisable / manquant
@@ -200,7 +210,8 @@ Réponse de `GET /api/student-cards/roll-call/offline/v1/pack?classId&date` :
     "date": "YYYY-MM-DD",
     "timeZone": "IANA, fuseau de l'établissement",
     "issuedAt": "ISO-8601 UTC",
-    "expiresAt": "ISO-8601 UTC",
+    "notBefore": "ISO-8601 UTC (début du jour local D)",
+    "expiresAt": "ISO-8601 UTC (début du jour local D+1, exclusif)",
     "syncDeadline": "ISO-8601 UTC (indicatif ; le serveur recalcule au sync)",
     "students": [{ "matchKey": "…", "studentId": "uuid", "studentCode": "…", "firstName": "…", "lastName": "…", "existingStatus": null }],
     "cards": [{ "cardRef": "…", "matchKey": "…", "verifier": "…" }]
@@ -241,7 +252,7 @@ Le Mobile vérifie au téléchargement **et à chaque chargement depuis SQLCiphe
 2. signature valide sur le message exact ;
 3. `contractVersion` et `packVersion` supportés ;
 4. `schoolId` et `actorUserId` égaux au compte ouvert ; `classId`, `date`, `mode` égaux à la session ;
-5. horloge appareil dans `[issuedAt − 10 min ; expiresAt]`.
+5. horloge appareil dans `[notBefore ; expiresAt[` et non antérieure à `lastTrustedTime − 10 min` (§4.5).
 
 Un échec à n'importe quelle étape → pack supprimé, message « Liste hors ligne indisponible », **mode dégradé** : scans conservés en `unknown_local` (« à vérifier »), aucune carte présentée comme reconnue. Jamais d'utilisation partielle d'un pack.
 
@@ -249,19 +260,45 @@ Un échec à n'importe quelle étape → pack supprimé, message « Liste hors l
 
 Le pack est **indicatif uniquement**. Il sert au retour visuel, au compteur provisoire et à l'affichage des noms. Il n'accorde aucun droit : le serveur ne lit pas le pack au sync et revalide rôle, affectation, flags, tenant, cartes et inscriptions. La signature protège contre la corruption et l'altération du stockage par un tiers, pas contre une application compromise (même conclusion que §3.3).
 
-### 4.5 Durées (fuseau de l'établissement)
+### 4.5 Durées et fenêtre d'utilisation (révision 4)
 
-Fuseau : `schools.profile_payload->>'timezone'`, résolu par `resolveSchoolTimeZone` (déjà utilisé par `studentCardEntry.js`). Toutes les échéances sont calculées par le serveur.
+Fuseau : `schools.profile_payload->>'timezone'`, résolu par `resolveSchoolTimeZone` (déjà utilisé par `studentCardEntry.js`). Toutes les bornes sont calculées **par le serveur**, puis transmises dans le pack signé sous forme d'**instants UTC** : le téléphone compare des instants, il ne fait aucun calcul de fuseau et son propre fuseau n'a aucun effet.
 
-| Échéance | Règle | Justification |
+**Correction de la révision 3.** La règle `expiresAt = min(issuedAt + 18 h ; fin du jour local)` était incohérente avec le préchargement : un pack du lendemain téléchargé à 17 h expirait à 11 h le jour de l'appel. La durée depuis l'émission est remplacée par une **fenêtre d'utilisation** égale au jour local de l'appel, et l'émission est bornée. Ce changement est explicite et soumis à validation ; il remplace le plafond « 18 h » accepté en R2.
+
+| Borne | Règle | Justification |
 | --- | --- | --- |
-| Dates de pack acceptées | `date ∈ {J, J+1}` en heure locale de l'établissement | préchargement la veille au soir, quand le réseau est disponible |
-| `expiresAt` | `min(issuedAt + 18 h ; fin du jour local date)` (pour J+1, `issuedAt` est la veille) | un pack ne sert que le jour de l'appel ; 18 h couvre une journée scolaire sans dépasser le jour |
-| Scans | uniquement si la date locale de l'appareil = `date` (contrôle UX ; le serveur ne fait pas confiance à l'horloge) | — |
-| `syncDeadline` | fin du jour local `date + 3` | couvre un week-end (appel du vendredi synchronisé le lundi) et une coupure réseau de plusieurs jours |
-| Contrôle au sync | le serveur recalcule l'échéance à partir de `date` et du fuseau **courant** ; il ignore la valeur envoyée | le serveur fait foi |
+| Émission autorisée | pack pour la date `D` émis seulement si l'heure locale serveur ∈ `[D−1 12:00 ; D+1 00:00[`, sinon `409 ROLL_CALL_PACK_DATE_OUT_OF_RANGE` | préchargement la veille après-midi ou soir, ou le jour même ; pas de pack plus ancien |
+| `notBefore` | `D 00:00` local, en UTC | aucun scan sous ce pack avant le jour de l'appel |
+| `expiresAt` (exclusif) | `D+1 00:00` local, en UTC | le pack couvre **toute** la journée scolaire `D`, y compris l'après-midi |
+| Fenêtre d'utilisation | `[notBefore ; expiresAt[` = 1 jour local : 24 h, **23 h ou 25 h** les jours de changement d'heure | jamais plus d'un jour d'appel |
+| Durée de détention maximale | de `D−1 12:00` à `D+1 00:00` : **36 h** (35 h ou 37 h avec changement d'heure) | plafond borné et vérifiable |
+| Rafraîchissement | à l'ouverture d'une session, si le réseau est disponible, un pack neuf est téléchargé et remplace le pack préchargé ; une session déjà ouverte garde son pack | limite l'ancienneté de la liste quand c'est possible, sans en dépendre |
+| Hors ligne le jour `D` | le pack préchargé est utilisé ; l'écran affiche « Liste préparée le <date> à <heure> » | le scénario principal (pas de réseau à l'école le matin) reste couvert |
+| `syncDeadline` | `D+4 00:00` local (fin du jour `D+3`) | couvre un week-end et une coupure de plusieurs jours |
+| Contrôle au sync | fenêtre recalculée par le serveur à partir de `D` et du fuseau **courant** ; la valeur du pack est ignorée | le serveur fait foi |
 
-Ces durées sont des valeurs par défaut à valider par le CTO ; elles seront des constantes serveur, testées aux bornes (fuseau ≠ UTC, passage de minuit).
+Alternative écartée : imposer un rafraîchissement le matin du jour `D`. Elle ferait échouer précisément le cas visé (école sans réseau le matin). Elle reste possible par établissement si le CTO la préfère : il suffit de restreindre l'émission à `[D 00:00 ; D+1 00:00[`.
+
+Exemples calculés (instants UTC) :
+
+| Fuseau | `D` | `notBefore` | `expiresAt` | Utilisation | Émission dès | Détention max | `syncDeadline` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Africa/Kinshasa | 2026-11-09 | 2026-11-08T23:00Z | 2026-11-09T23:00Z | 24 h | 2026-11-08T11:00Z | 36 h | 2026-11-12T23:00Z |
+| Africa/Lubumbashi | 2026-11-09 | 2026-11-08T22:00Z | 2026-11-09T22:00Z | 24 h | 2026-11-08T10:00Z | 36 h | 2026-11-12T22:00Z |
+| Europe/Paris (passage à l'heure d'été) | 2026-03-29 | 2026-03-28T23:00Z | 2026-03-29T22:00Z | 23 h | 2026-03-28T11:00Z | 35 h | 2026-04-01T22:00Z |
+| Europe/Paris (passage à l'heure d'hiver) | 2026-10-25 | 2026-10-24T22:00Z | 2026-10-25T23:00Z | 25 h | 2026-10-24T10:00Z | 37 h | 2026-10-28T23:00Z |
+
+Cas concret corrigé : pack du 9 novembre téléchargé le 8 à 17 h (Kinshasa) → utilisable du 9 à 00:00 au 10 à 00:00, donc pour un appel à 15 h le 9.
+
+**Horloge de l'appareil** (jamais une source d'autorité ; ces contrôles ne protègent que l'interface, le serveur revalide tout) :
+- le téléphone conserve `lastTrustedTime` = maximum des `issuedAt` des packs vérifiés et des en-têtes `Date` des réponses HTTPS du serveur, dans la base du compte ;
+- horloge en retard (`now < lastTrustedTime − 10 min`) ou recul détecté → pack inutilisable, mode dégradé, message « Heure de l'appareil incorrecte » ;
+- `now < notBefore` → « Liste pas encore valide » ; `now ≥ expiresAt` → « Liste expirée » ; dans les deux cas, mode dégradé ;
+- une horloge en avance ou en retard ne peut ni prolonger un pack (bornes signées) ni étendre la synchronisation (calculée par le serveur) ;
+- le fuseau de l'appareil n'intervient dans aucune borne.
+
+Risque assumé (P1-11) : un pack préchargé peut avoir jusqu'à 36 h (37 h au changement d'heure). Une carte révoquée après l'émission peut donc apparaître « reconnue » localement. C'est sans conséquence sur les droits : le pack reste indicatif et la révocation est appliquée au sync (§6.3, étape 9 ; test 11).
 
 ---
 
@@ -527,7 +564,7 @@ Libellés : « Brouillon local », « À synchroniser », « Synchronisé », «
 
 - **Présence journalière** : une présence par élève et par jour (`uq_attendance_school_student_date`), comme aujourd'hui. Pas d'appel par séance en V1.
 - **« Justifié » (`excused`)** : reste exclusivement dans le flux de justification existant ; non saisissable dans l'appel ; jamais écrasé.
-- Durées : plafonds V1 **acceptés** par le CTO (pack ≤ 18 h, synchronisation jusqu'à la fin de J+3), sous réserve des tests de fuseau, de changement d'heure et de dates (S12) et du refus serveur des états obsolètes.
+- Durées : synchronisation jusqu'à la fin de J+3 **acceptée** par le CTO comme plafond V1. Pack : fenêtre d'utilisation = jour local de l'appel, émission dès la veille 12:00, détention ≤ 36 h (35–37 h au changement d'heure) — **révision 4, à valider** (remplace le plafond 18 h, incohérent avec le préchargement). Sous réserve des tests S12/S16 et du refus serveur des états obsolètes.
 
 ---
 
@@ -548,7 +585,7 @@ Entrées : `publicId = "AAAAAAAAAAAAAAAAAAAAAA"`, `secret = "TEST-VECTOR-ONLY-00
 | V-7 | `LP("ab","","c")` | `000000026162000000000000000163` |
 | V-8 | `proof`, `medium = nfc`, `packId = ""` (dégradé) | `cGqNVh0qcoMt68upA4i5N6GI-jsBK2HzzGtbmbRugRw` |
 | V-9 | pack de test, clé Ed25519 de test (graine = 32 octets `0x01`), clé publique brute | `iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w` |
-| V-10 | signature du pack de test | `F95JTgvkGrVWytegiJRIoMkghgEQGjCRd4LVBQJTMgjlUPRLhisAUc6Qxsoel_oZcP-sT9_l4fCQ7l5W8f2vDw` ; vérifie = `true` ; même signature sur pack dont `classId` est modifié = `false` |
+| V-10 | signature du pack de test (avec `notBefore`, révision 4) | `C-NE1ehClk-J-MYFfjqhHT0UWsFdbk-55knRbr36muPRS9PE029v3NeBoVM7NdpYxtAV3N4KQsETVzdP0rESCw` ; vérifie = `true` ; même signature sur pack dont `classId` est modifié = `false` |
 | V-11 | `payloadDigest` du lot de test (avec `schoolId`, révision 3) | `50603c4e23b60e2665d647198900031184da5a00863196bf8e54d00ab706fbfb` |
 | V-12 | `payloadDigest` du même lot, `medium` passé à `qr` | `e08c8218407451aa3a63d7584c908a91ce83567c26dc72e7ab70160b37f65d4c` ≠ V-11 |
 
@@ -609,7 +646,8 @@ Aucun de ces tests n'est exécuté dans PR0. Les tests « PG réel » s'exécute
 | S9 | **`token_hash` jamais exposé** | PR1a–PR1c | test HTTP sur toutes les routes Carte Élève + test statique | 0 occurrence |
 | S10 | Aucun secret, `K`, preuve ou jeton dans logs, fixtures, PR | PR1–PR4 | test statique + `safeLogger` | 0 occurrence |
 | S11 | Deux comptes sur un même téléphone | PR2 | unitaire + natif | fichiers et clés distincts ; aucun brouillon visible de l'autre compte |
-| S12 | Échéances aux bornes (fuseau ≠ UTC, minuit, J+1, J+3, changement d'heure dans un fuseau à DST, fuseau modifié entre pack et sync, date invalide) | PR1b/PR1c | unitaire + PG réel | conformes à §4.5 ; état obsolète refusé par le serveur |
+| S12 | Bornes serveur du pack : émission à `D−1 11:59:59` refusée et `D−1 12:00` acceptée ; émission à `D+1 00:00` refusée ; `notBefore`/`expiresAt` exacts pour Africa/Kinshasa, Africa/Lubumbashi, Europe/Paris aux deux changements d'heure 2026 (table §4.5) ; `syncDeadline` exact ; fuseau modifié entre pack et sync (le serveur applique le fuseau courant) ; date invalide | PR1b/PR1c | unitaire + PG réel | conformes à §4.5 ; état obsolète refusé par le serveur |
+| S16 | Fenêtre locale du pack : pack D téléchargé la veille à 17 h utilisable à `D 15:00` ; refusé à `notBefore − 1 s` et à `expiresAt` ; horloge de l'appareil en avance (après `expiresAt`), en retard (avant `notBefore`), reculée sous `lastTrustedTime − 10 min` ; fuseau de l'appareil ≠ fuseau de l'établissement sans effet ; rafraîchissement à l'ouverture si en ligne, pack conservé pour une session ouverte | PR2/PR3 | unitaire (horloge injectée) + Android | mode dégradé avec le message prévu dans chaque cas de refus ; jamais de prolongation |
 | S13 | Canonicalisation J-1 à J-7 identique Node / Hermes ; J-8 à J-10 refusés par le validateur | PR1a/PR2 | unitaire des deux côtés | octets identiques |
 | S14 | `keyId` révoqué (pack neuf et pack déjà stocké) ; trousseau entièrement révoqué ; liste de révocation non monotone | PR1b/PR2 | unitaire | pack refusé, mode dégradé ; révocation jamais annulée |
 | S15 | Purge par échéance d'une base `blocked_logout` d'un compte qui ne se reconnecte pas, sans l'ouvrir | PR2 | unitaire + natif | crypto-effacement à l'échéance ; aucun autre compte n'y accède |
@@ -621,7 +659,7 @@ Physique (#921, PR5) : NTAG213 et NTAG216, 30+ scans, `active/encoded`, présenc
 ## 11. Risques
 
 **P0**
-- **P0-1** Sans pack, pas de retour « reconnu » hors ligne : préchargement J/J+1 dès que le réseau est présent ; sinon mode dégradé explicite.
+- **P0-1** Sans pack, pas de retour « reconnu » hors ligne : préchargement dès la veille 12:00 et rafraîchissement à l'ouverture si le réseau est présent ; sinon mode dégradé explicite.
 - **P0-2** Faux « Synchronisé » : seul un ACK conforme y mène (§6.6) ; tests S7 et 7 bloquants en PR4.
 - **P0-3** Perte de lots au logout ou à la purge L1 : base séparée par compte + `blocked_logout` (§5.3).
 - **P0-4** Secrets sur disque : interdits par construction (§3.4) ; test S10.
@@ -637,7 +675,8 @@ Physique (#921, PR5) : NTAG213 et NTAG216, 30+ scans, `active/encoded`, présenc
 - **P1-7** Données nominatives stockées localement (pack) : minimisées et purgées (§5.5).
 - **P1-8** Dépendances cryptographiques Mobile (`@noble/hashes`, `@noble/curves`) et `canonicalize@2.0.0` à valider (versions exactes, audit, licence) ; les vecteurs §9 sont l'oracle commun.
 - **P1-9** Fenêtre d'acceptation d'un pack signé par une clé compromise sur une APK hors ligne qui n'a pas encore reçu la révocation (§4.2) : effet limité à l'affichage, aucun droit.
-- **P1-10** Un enseignant désaffecté peut encore relire l'ACK de **son** appel passé (garde R) : choix assumé, sans écriture ni donnée d'un autre utilisateur.
+- **P1-10** Un enseignant désaffecté peut encore relire l'ACK de **son** appel passé (garde R) : validé par le CTO en R3, sans écriture ni donnée d'un autre utilisateur.
+- **P1-11** Ancienneté d'un pack préchargé jusqu'à 36 h (37 h au changement d'heure) : une carte révoquée après l'émission peut apparaître « reconnue » localement ; aucun effet sur les droits, révocation appliquée au sync (§4.5).
 
 ---
 
@@ -659,9 +698,11 @@ Le flag d'établissement (PR3) est le seul nouveau flag : le parcours en ligne a
 
 ---
 
-## 13. Décisions demandées au CTO (révision 3)
+## 13. Décisions demandées au CTO (révision 4)
 
-Acquis en principe (revue R2) : preuves HMAC liées à la session et au support, pack Ed25519, SQLCipher par compte, synchronisation transactionnelle, V1 journalière, `excused` hors appel, plafonds 18 h / fin de J+3 sous tests de fuseau.
+Acquis en principe (revues R2 et R3) : preuves HMAC liées à la session et au support, LP + `canonicalize@2.0.0`, pack Ed25519, SQLCipher par compte, synchronisation transactionnelle, gardes R/W, révision seulement après `not_recorded`, ACK relisible après désaffectation ou flag coupé tant que le rôle `TEACHER` et la permission sont conservés, V1 journalière, `excused` hors appel, synchronisation jusqu'à la fin de J+3.
+
+**Révision 4 — décision restante** : valider la fenêtre du pack (§4.5) : utilisation = jour local `D`, émission dès `D−1 12:00`, détention ≤ 36 h (35–37 h au changement d'heure), rafraîchissement à l'ouverture si en ligne, alternative « rafraîchissement obligatoire le matin » écartée. Les points 1 à 5 ci-dessous sont ceux de la révision 3, validés en R3.
 
 1. Valider les deux gardes R et W (§6.2), l'ordre en 15 étapes avec la garde R avant toute lecture d'ACK (§6.3), les réponses exactes (§6.5) et le protocole R-1 à R-10 (§6.9).
 2. Valider la règle « révision uniquement après `sessionState: not_recorded` » et l'état `unconfirmable` (§6.8, §7).
