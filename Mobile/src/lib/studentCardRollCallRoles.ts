@@ -27,6 +27,14 @@ export function rollCallActor(session: unknown): RollCallActor {
   };
 }
 
+/** Écran Appel : la supervision direction reste disponible, sauf pour l'Administrateur établissement. */
+export function canShowRollCallSupervisionOnAttendance(session: unknown): boolean {
+  const identity = resolveCanonicalRoleIdentity(session);
+  // Le rôle canonique est la seule autorité UI : aucun libellé personnalisé utilisé.
+  if (identity.roleKeys.some((key) => String(key).trim().toUpperCase() === "SCHOOL_ADMIN")) return false;
+  return rollCallActor(session).supervision;
+}
+
 export type RollCallOverviewClass = {
   classId: string;
   classCode: string;
