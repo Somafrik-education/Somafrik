@@ -502,6 +502,14 @@
       "cdTeacher": "refusé",
       "cdParent": "refusé"
     },
+    "GET /api/student-cards/roll-call/offline/v1/pack": {
+      "cdAdmin": "accès",
+      "cdProviseur": "accès",
+      "cdPrefet": "accès",
+      "cdSecretary": "accès",
+      "cdTeacher": "accès",
+      "cdParent": "refusé"
+    },
     "GET /api/student-cards/roll-call/overview": {
       "cdAdmin": "accès",
       "cdProviseur": "accès",

@@ -711,6 +711,40 @@ function isLot4ExclusiveChantierFile(file: string) {
   );
 }
 
+// NFC-PRES-LOCAL-PR1b (#1114) : exception STRICTEMENT ancrée, propre au pack signé.
+// La présence d'un module unique PR1b déclenche la garde, même si une ancre manque.
+// Les chemins partagés (server/RBAC/guard) ne suffisent jamais à activer l'exception.
+const NFC_PRES_LOCAL_PR1B_ANCHORS = Object.freeze([
+  "backend/lib/rollCallOfflinePack.js",
+  "backend/lib/rollCallOfflinePackSigner.js",
+]);
+const NFC_PRES_LOCAL_PR1B_EXACT = new Set([
+  "backend/lib/platformPersonalDataGuard.js",
+  "backend/lib/rollCallOfflinePack.http.pg.test.js",
+  "backend/lib/rollCallOfflinePack.js",
+  "backend/lib/rollCallOfflinePack.test.js",
+  "backend/lib/rollCallOfflinePackSigner.js",
+  "backend/lib/rollCallOfflinePackSigner.test.js",
+  "backend/lib/rollCallOfflineProof.js",
+  "backend/lib/studentCardRollCall.js",
+  "backend/server.js",
+  "backend/services/rbacService.js",
+  "docs/audits/NFC-PRES-LOCAL-PR0-architecture-offline-20261107.md",
+  "docs/project/MONO-T1-RBAC-MATRIX.json",
+  "docs/project/MONO-T1-ROUTES.json",
+  "docs/project/MONO-T1-ROUTES.md",
+  "docs/student-card/NFC-PRES-LOCAL-PR1b-cles-pack.md",
+  "scripts/verify-school-setup-lot4-red.ts",
+]);
+const NFC_PRES_LOCAL_PR1B_UNIQUE = new Set([
+  "backend/lib/rollCallOfflinePack.http.pg.test.js",
+  "backend/lib/rollCallOfflinePack.js",
+  "backend/lib/rollCallOfflinePack.test.js",
+  "backend/lib/rollCallOfflinePackSigner.js",
+  "backend/lib/rollCallOfflinePackSigner.test.js",
+  "docs/student-card/NFC-PRES-LOCAL-PR1b-cles-pack.md",
+]);
+
 function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
   // Un changement isolé du menu n'est jamais classé hors périmètre / N/A.
   const navChanged = changed.includes(STUDENT_CARD_PR3_M1_NAV_FILE);
@@ -728,6 +762,18 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
       message:
         "L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.",
     };
+  }
+  // Exception limitée au lot PR1b : aucune autorisation par préfixe, ni par fichiers partagés.
+  if (changed.some((file) => NFC_PRES_LOCAL_PR1B_UNIQUE.has(file))) {
+    const complete = NFC_PRES_LOCAL_PR1B_ANCHORS.every((file) => changed.includes(file));
+    const outside = changed.filter((file) => !NFC_PRES_LOCAL_PR1B_EXACT.has(file));
+    if (!complete || outside.length > 0 || exclusiveLot4.length > 0) {
+      return {
+        kind: "fail",
+        message: `L4-09: NFC-PRES-LOCAL-PR1b hors liste/ancres : ${!complete ? "ancres manquantes ; " : ""}${[...new Set([...outside, ...exclusiveLot4])].join(", ")}`,
+      };
+    }
+    return { kind: "na", message: "L4-09 N/A: NFC-PRES-LOCAL-PR1b pack signé, ancres et liste fermée vérifiées." };
   }
   if (changed.some(isStudentCardPr6Signal)) {
     const pr3EntryControl = changed.includes(STUDENT_CARD_PR3_A1_ANCHOR);
@@ -1820,6 +1866,37 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         lot4PlusStudentCard.kind,
         "fail",
         "un vrai chantier LOT 4 exclusif reste FAIL même s'il embarque la Carte élève",
+      );
+
+      // PR1b : exception nominative. Toute ancre manquante ou fichier externe reste FAIL.
+      const pr1bFiles = [...NFC_PRES_LOCAL_PR1B_EXACT];
+      assert.equal(evaluateLot4Scope(pr1bFiles).kind, "na", "PR1b exact + script de gate admis");
+      for (const anchor of NFC_PRES_LOCAL_PR1B_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(pr1bFiles.filter((file) => file !== anchor)).kind,
+          "fail",
+          `PR1b sans ancre ${anchor} FAIL`,
+        );
+      }
+      for (const added of [
+        "backend/lib/financeManagement.js",
+        "backend/db/migrations/20261107_unrelated.sql",
+        "web/src/components/schoolSetup/SchoolSetupOptionalCompleteness.tsx",
+        "web/src/pages/StudentsPage.tsx",
+        "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+        ".github/workflows/pr-gates.yml",
+      ]) {
+        assert.equal(evaluateLot4Scope([...pr1bFiles, added]).kind, "fail", `PR1b + ${added} FAIL`);
+      }
+      assert.equal(
+        evaluateLot4Scope(["backend/server.js", "backend/services/rbacService.js", "backend/lib/platformPersonalDataGuard.js"]).kind,
+        "na",
+        "fichiers partagés seuls n'activent pas l'exception PR1b",
+      );
+      assert.equal(
+        evaluateLot4Scope(["backend/lib/rollCallOfflinePack.js", "backend/server.js"]).kind,
+        "fail",
+        "module PR1b isolé, sans signataire, FAIL",
       );
 
       const live = evaluateLot4Scope(lot4ChangedFiles());

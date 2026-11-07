@@ -239,7 +239,7 @@ Réponse de `GET /api/student-cards/roll-call/offline/v1/pack?classId&date` :
 - Types admis avant canonicalisation (validateur strict, sinon refus) : chaînes, entiers sûrs (`Number.isSafeInteger`, `-0` interdit), booléens, `null`, tableaux, objets à clés chaînes. Interdits : flottants, `undefined`, `NaN`/`Infinity`, `Date`, `BigInt`, objets à `toJSON`.
 - **Pas de normalisation Unicode** : les chaînes sont signées telles qu'émises par le serveur (J-2 montre que NFC et NFD donnent deux empreintes différentes) ; le Mobile ne modifie jamais une chaîne reçue avant vérification.
 - Domaine JSON admis, conformité exigée : chaînes UTF-16 bien formées, entiers sûrs, booléens, `null`, tableaux denses, objets simples, profondeur ≤ 32, JSON canonique ≤ 256 Kio. PR1a teste `jcs.js` sur ce domaine côté Node (vecteurs J, échappements RFC 8785, tri UTF-16, idempotence, aller-retour) ; PR2 rejoue les mêmes tests sous Hermes.
-- `matchKey` = HMAC serveur (clé dérivée HKDF du secret roll-call existant, étiquette `student-card-roll-call:offline-match:v1`) sur `LP(packId, studentId)` : pas de corrélation d'un pack à l'autre.
+- `matchKey` = HMAC serveur (clé dérivée HKDF d'un secret **dédié** `ROLL_CALL_PACK_MATCH_SECRET` depuis la révision 6 / PR1b, et non plus du secret roll-call ou JWT ; étiquette `student-card-roll-call:offline-match:v1`) sur `LP(packId, studentId)` : pas de corrélation d'un pack à l'autre.
 
 ### 4.2 Algorithme, clés et rotation
 
@@ -257,6 +257,8 @@ Rotation urgente (clé compromise), **sans supposer de mise à jour instantanée
 4. une APK hors ligne qui n'a pas encore reçu la révocation peut accepter un pack frauduleux signé par la clé compromise : conséquence limitée à un affichage « reconnu » erroné, car le pack n'accorde aucun droit (§4.4) et tout est revalidé au sync ;
 5. une APK dont toutes les clés connues sont révoquées ou retirées refuse tous les packs : mode dégradé (« à vérifier »), jamais d'acceptation par défaut ; la récupération passe par la mise à jour de l'APK ;
 6. une nouvelle clé `standby` est générée et livrée par APK.
+
+**Révision 6 (PR1b, implémentation)** : la réponse HTTP du pack contient un troisième champ, `revocations` = `{ list: { contractVersion, sequence, revokedKeyIds, issuedAt }, signature }`, signé par la clé active avec l'étiquette `somafrik.rc-offline.revocations.v1\n`. Il remplace la route de révocation envisagée en §4.2 : la liste parvient au téléphone avec chaque pack, sans nouvelle surface d'accès. Configuration, génération des clés et procédures : `docs/student-card/NFC-PRES-LOCAL-PR1b-cles-pack.md`. Constat d'implémentation : la base n'admet qu'**une carte active par élève** (`student_access_cards_one_active_per_student`) et une carte NFC `pending` n'est jamais active ; « plusieurs cartes d'un élève » désigne donc une carte active (éventuellement `nfc_qr`, deux supports) et des cartes remplacées, perdues ou révoquées, toujours exclues.
 
 ### 4.3 Vérification et rejet fail-closed
 

@@ -2729,6 +2729,26 @@ app.get("/api/student-cards/roll-call/overview", requireAuth, requirePermission(
   res.status(200).json(await rollCallOverview(repository, req.query ?? {}, studentCardsHttpScope(principal), principal));
 }));
 
+// NFC-PRES-LOCAL-PR1b — pack signé Ed25519 pour l'appel hors ligne (lecture seule, indicatif).
+// Mêmes gardes que la liste d'appel : rôle TEACHER et affectation relus en base, flags, abonnement.
+// Signataire et secret de rapprochement réévalués à chaque requête depuis l'environnement (fail-closed).
+app.get("/api/student-cards/roll-call/offline/v1/pack", requireAuth, requirePermission("GET /api/student-cards/roll-call/offline/v1/pack"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { issueOfflinePack } = require("./lib/rollCallOfflinePack");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await issueOfflinePack(
+    repository,
+    req.query ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    {
+      signer: () => require("./lib/rollCallOfflinePackSigner").packSignerFromEnv(process.env),
+      masterSecret: () => require("./lib/rollCallOfflinePackSigner").resolvePackMatchSecret(process.env),
+    },
+  ));
+}));
+
 // CARTE-PR3-A1 — contrôle d'entrée au portail : événement distinct des présences en classe.
 app.post("/api/student-cards/entry-scan", requireAuth, requirePermission("POST /api/student-cards/entry-scan"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
