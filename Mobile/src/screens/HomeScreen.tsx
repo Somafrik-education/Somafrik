@@ -314,7 +314,7 @@ export default function HomeScreen({ navigation }: any) {
         linkedCount: parentLinkedCount,
       })
     : isParentLike
-      ? selectedStudent?.name ?? "Élève"
+      ? selectedStudent?.name ?? (session?.role === "student" ? userName : "Élève")
       : userName;
   const identityContext = isTeacher
     ? assignedClasses.join(", ") || currentSchool.name
