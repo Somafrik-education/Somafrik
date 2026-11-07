@@ -100,34 +100,33 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             <>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.backButton}
-              testID={STUDENT_SUB_SCREENS_TEST_IDS.subScreenBackButton}
-              onPress={() => navigation?.goBack()}
-            >
-              <Ionicons name="arrow-back" size={24} color="#0F172A" />
-            </TouchableOpacity>
-      
-            <StudentSwitcher />
-            <Text style={styles.title} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesTitle}>
-              {STUDENT_SUB_SCREENS_COPY.presencesTitle}
-            </Text>
-            <Text style={styles.subtitle}>{presenceTitle}</Text>
-      
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={[styles.summaryCard, { backgroundColor: "#0F172A" }]}
-              onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
-            >
-              <Text style={[styles.summaryLabel, { color: "#CBD5E1" }]}>Taux de présence</Text>
-              <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>{presenceRateLabel}</Text>
-              <Text style={[styles.summaryMeta, { color: "#CBD5E1" }]}>
-                {presenceMetaLabel}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.backButton}
+                testID={STUDENT_SUB_SCREENS_TEST_IDS.subScreenBackButton}
+                onPress={() => navigation?.goBack()}
+              >
+                <Ionicons name="arrow-back" size={24} color="#0F172A" />
+              </TouchableOpacity>
+
+              <StudentSwitcher />
+              <Text style={styles.title} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesTitle}>
+                {STUDENT_SUB_SCREENS_COPY.presencesTitle}
               </Text>
-            </TouchableOpacity>
-      
-                  </>
+              <Text style={styles.subtitle}>{presenceTitle}</Text>
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[styles.summaryCard, { backgroundColor: "#0F172A" }]}
+                onPress={() => studentId && navigation?.navigate("StudentDetail", { studentId })}
+              >
+                <Text style={[styles.summaryLabel, { color: "#CBD5E1" }]}>Taux de présence</Text>
+                <Text style={[styles.summaryValue, { color: "#FFFFFF" }]}>{presenceRateLabel}</Text>
+                <Text style={[styles.summaryMeta, { color: "#CBD5E1" }]}>
+                  {presenceMetaLabel}
+                </Text>
+              </TouchableOpacity>
+            </>
           }
           ListEmptyComponent={
             presencesSnapshot.status !== "success" ? (
