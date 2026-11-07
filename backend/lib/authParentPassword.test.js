@@ -56,6 +56,7 @@ function createService() {
     schoolCode: SCHOOL.code,
     accessChannel: "Application",
     status: "Actif",
+    passwordHash: hashSecret("student-test-pass"),
     pin: "123456",
   };
   const admin = {
@@ -145,7 +146,7 @@ test("Parent mauvais mot de passe → 401 standard", async () => {
   );
 });
 
-test("Teacher / Admin / Student auth inchangés via pin", async () => {
+test("Teacher/Admin gardent PIN; Student exige password", async () => {
   const service = createService();
   const teacher = await service.login({
     role: "teacher",
@@ -165,7 +166,11 @@ test("Teacher / Admin / Student auth inchangés via pin", async () => {
     role: "student",
     schoolCode: "CD-IN-26-001",
     identifier: "eleve1",
-    pin: "123456",
+    password: "student-test-pass",
   });
   assert.equal(student.role, "student");
+  await assert.rejects(
+    () => service.login({ role: "student", schoolCode: "CD-IN-26-001", identifier: "eleve1", pin: "123456" }),
+    (error) => error instanceof BusinessError && error.statusCode === 400,
+  );
 });
