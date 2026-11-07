@@ -120,7 +120,7 @@ export default function StudentPaymentsScreen({ route, navigation }: Partial<Pro
         }),
         linkedCount: countLinkedParentChildren(session?.user),
       })
-    : student?.name ?? "Élève";
+    : student?.name ?? session?.user?.name ?? "Élève";
   const showQueryState = paymentsSnapshot.status !== "success" || sortedPayments.length === 0;
 
   const financeHeader = (
