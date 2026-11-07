@@ -31,7 +31,7 @@ Aucun test PostgreSQL ni Android n'est exécuté ou revendiqué pour la nouvelle
 | --- | --- | --- |
 | P0 Rejeu avant autorisation | Deux gardes distinctes : **R** (lire son propre résultat : identité, établissement résolu en base et égal au `schoolId` authentifié du lot, rôle `TEACHER` actif, permission live) exécutée **avant toute lecture** d'`idempotency_keys` ou du journal, via une option additive `guard` de `withIdempotency` ; **W** (nouvel enregistrement : en plus affectation, flags, abonnement, date). Réponses exactes ; refus R indépendant de l'existence de la session | §6.2, §6.3, §6.4, §6.5 |
 | Refus après succès historique | `sessionState: "not_recorded"` émis seulement après lecture du journal sous verrou ; seule condition d'une nouvelle révision ; état Mobile `unconfirmable` (« État serveur non confirmable actuellement ») sans révision ; protocole R-1 à R-10 | §6.8, §6.9, §7 |
-| P1-1 JCS | Bibliothèque unique `canonicalize@2.0.0`, validateur de types, pas de normalisation Unicode ; équivalence générale avec `stableSerialize` retirée (divergence démontrée, J-10) ; vecteurs J-1 à J-10 | §4.1, §9 |
+| P1-1 JCS | Bibliothèque unique `canonicalize@2.0.0` (remplacée en révision 5 par `jcs.js`), validateur de types, pas de normalisation Unicode ; équivalence générale avec `stableSerialize` retirée (divergence démontrée, J-10) ; vecteurs J-1 à J-10 | §4.1, §9 |
 | P1-2 Rotation | Clés `active` + `standby` dès la première APK, liste de révocation monotone, rotation urgente sans mise à jour instantanée des APK, refus fail-closed, récupération | §4.2 |
 | P1-3 Déconnexion | Clé conservée seulement pour le même compte ; compte retiré ; purge par échéance sans ouvrir la base | §5.3, §5.5 |
 | P1-4 403/404 | Séparation `403 REPLAY_FORBIDDEN` (incertain) / codes W avec `not_recorded` (définitif) | §6.5, §6.8 |
@@ -47,6 +47,17 @@ Le lot de synchronisation porte désormais `schoolId` (comparé, jamais utilisé
 | Tests | S12 (bornes serveur, deux changements d'heure, fuseau modifié) et S16 (fenêtre locale, horloge en avance, en retard, reculée) | §10 |
 
 Le pack de test contient désormais `notBefore` : V-10 (signature) est recalculé. Le changement de durée est **explicite** et soumis à validation ; aucun smoke offline n'est déclaré PASS.
+
+### Révision 5 — alignement sur la revue CTO de PR1a (#1112)
+
+| Point | Correction | Section |
+| --- | --- | --- |
+| Écart JCS | `backend/contracts/reportCard/jcs.js` devient l'unique implémentation de référence, à la place de `canonicalize@2.0.0` ; justification mesurée (octets identiques sur le domaine admis, plus strict hors domaine) | §4.1, §9 |
+| Parité Node / Hermes | Pas de copie sans audit vers le Mobile, ni `Buffer` ni `node:crypto` sous Hermes ; parité exécutée sous Hermes = gate bloquant PR2 | §4.1, §10 (S13), §12 |
+| LP et surrogates | `LP` refuse les chaînes UTF-16 mal formées (collision `\ud800` / `\ufffd` constatée) | §3.2 |
+| Domaine JSON | Domaine admis précisé : profondeur ≤ 32, JSON canonique ≤ 256 Kio ; J-11 ajouté | §4.1, §9 |
+
+Le fichier de vecteurs passe en révision 5 (champ `canonicalization`, cas J-11) ; aucune valeur V-1 à V-12 ni J-1 à J-7 ne change.
 
 ---
 
@@ -155,6 +166,7 @@ La concaténation par `|` est abandonnée : elle est ambiguë (`"a|b" + "|" + "c
 - Nombre et ordre des champs **fixes** par étiquette ; le premier champ est toujours l'étiquette de domaine versionnée.
 - Normalisation avant encodage : UUID en minuscules, date `YYYY-MM-DD`, `medium ∈ {"nfc","qr"}`, `mode = "teacher"`, `packId = ""` (longueur 0) en mode dégradé sans pack.
 - Tout champ hors format → refus, jamais de normalisation silencieuse côté serveur.
+- `LP` refuse toute chaîne UTF-16 mal formée (surrogate isolé) : sinon `"\ud800"` et `"\ufffd"` produiraient les mêmes octets UTF-8 (`efbfbd`), donc la même preuve pour deux entrées différentes (constaté en revue de PR1a, corrigé).
 
 Étiquettes de domaine (aucune ne peut produire la sortie d'une autre) :
 
@@ -222,10 +234,11 @@ Réponse de `GET /api/student-cards/roll-call/offline/v1/pack?classId&date` :
 
 - `students` triés par `matchKey`, `cards` par `cardRef`. Tout le contenu de `pack` est signé : établissement, acteur, mode, classe, date, `packId`, versions, horodatages et listes complètes.
 - Message signé : `utf8("somafrik.rc-offline.pack.v1\n") || utf8(JCS(pack))`, JCS = RFC 8785.
-- **Canonicalisation (révision 3)** : une bibliothèque unique, `canonicalize@2.0.0` (implémentation de référence RFC 8785, pure JS, version exacte figée), utilisée **telle quelle** côté Backend (Node) et côté Mobile (React Native/Hermes). `stableSerialize` n'est **pas** utilisé pour le pack ni pour `payloadDigest` : il diverge de JCS au moins sur `undefined` (vecteur J-10), et l'absence d'autres écarts n'est pas démontrée en général.
+- **Canonicalisation (révision 5, dérogation CTO acceptée sur #1112)** : l'**unique implémentation de référence** est `backend/contracts/reportCard/jcs.js`, implémentation RFC 8785 déjà présente dans le dépôt et utilisée par les bulletins. Elle remplace `canonicalize@2.0.0` prévu en révision 3, pour ne pas créer une seconde infrastructure JCS ni ajouter de dépendance. Justification mesurée : sur le domaine admis (pack de test, lot de test, J-1 à J-7), ses octets sont identiques à ceux de `canonicalize@2.0.0` ; hors domaine, elle est **plus stricte** (elle refuse `undefined`, les surrogates isolés, les tableaux creux et les objets non simples, que `canonicalize` accepte ou transforme en silence). `stableSerialize` n'est **pas** utilisé pour le pack ni pour `payloadDigest` : il diverge de JCS au moins sur `undefined` (J-10).
+- **Mobile (gate PR2)** : `jcs.js` n'est **pas** copié tel quel dans le Mobile sans audit. Le Mobile reçoit une implémentation dédiée, relue, qui ne dépend ni de `node:crypto` ni de `Buffer` (absents sous Hermes) ; l'encodage UTF-8, SHA-256, HMAC et base64url y passent par des primitives auditées choisies en PR2. Sa parité avec `jcs.js` est un **gate bloquant de PR2** : mêmes chaînes canoniques et mêmes octets UTF-8 sur J-1 à J-7, le pack et le lot de test, mêmes refus sur J-8 à J-11, exécutés **sous Hermes** (moteur réel de l'APK, pas Node) et sous Node, sur le même fichier de vecteurs.
 - Types admis avant canonicalisation (validateur strict, sinon refus) : chaînes, entiers sûrs (`Number.isSafeInteger`, `-0` interdit), booléens, `null`, tableaux, objets à clés chaînes. Interdits : flottants, `undefined`, `NaN`/`Infinity`, `Date`, `BigInt`, objets à `toJSON`.
 - **Pas de normalisation Unicode** : les chaînes sont signées telles qu'émises par le serveur (J-2 montre que NFC et NFD donnent deux empreintes différentes) ; le Mobile ne modifie jamais une chaîne reçue avant vérification.
-- Les octets canoniques doivent être identiques entre Node et Hermes : les vecteurs J-1 à J-9 (Unicode, paires de substitution, échappements, tri des clés en unités UTF-16, entiers, objets imbriqués) sont exécutés des deux côtés en PR1a et PR2.
+- Domaine JSON admis, conformité exigée : chaînes UTF-16 bien formées, entiers sûrs, booléens, `null`, tableaux denses, objets simples, profondeur ≤ 32, JSON canonique ≤ 256 Kio. PR1a teste `jcs.js` sur ce domaine côté Node (vecteurs J, échappements RFC 8785, tri UTF-16, idempotence, aller-retour) ; PR2 rejoue les mêmes tests sous Hermes.
 - `matchKey` = HMAC serveur (clé dérivée HKDF du secret roll-call existant, étiquette `student-card-roll-call:offline-match:v1`) sur `LP(packId, studentId)` : pas de corrélation d'un pack à l'autre.
 
 ### 4.2 Algorithme, clés et rotation
@@ -400,7 +413,7 @@ En-tête `Idempotency-Key: <operationId>` obligatoire, égal au champ du corps.
   "complete": true,
   "scans":  [{ "scanId": "uuid", "publicId": "…", "proof": "…", "medium": "nfc|qr", "scannedAt": "…" }],
   "manual": [{ "studentId": "uuid", "status": "present|late|absent" }],
-  "payloadDigest": "hex(SHA-256(JCS(corps sans payloadDigest)))  — JCS = canonicalize@2.0.0"
+  "payloadDigest": "hex(SHA-256(JCS(corps sans payloadDigest)))  — JCS = jcs.js (révision 5)"
 }
 ```
 
@@ -589,9 +602,9 @@ Entrées : `publicId = "AAAAAAAAAAAAAAAAAAAAAA"`, `secret = "TEST-VECTOR-ONLY-00
 | V-11 | `payloadDigest` du lot de test (avec `schoolId`, révision 3) | `50603c4e23b60e2665d647198900031184da5a00863196bf8e54d00ab706fbfb` |
 | V-12 | `payloadDigest` du même lot, `medium` passé à `qr` | `e08c8218407451aa3a63d7584c908a91ce83567c26dc72e7ab70160b37f65d4c` ≠ V-11 |
 
-Ces valeurs ont été calculées avec `node:crypto` (Node 22) dans l'environnement de rédaction. Le pack de test et le lot de test complets figurent dans le JSON. V-10 et V-11 ont été recalculés depuis ce JSON avec `canonicalize@2.0.0` (résultat identique). Elles ne prouvent rien sur le code Backend ou Mobile, qui n'existe pas encore : elles en seront l'oracle.
+Ces valeurs ont été calculées avec `node:crypto` (Node 22) dans l'environnement de rédaction. Le pack de test et le lot de test complets figurent dans le JSON. V-10 et V-11 ont été recalculés depuis ce JSON avec `canonicalize@2.0.0` puis avec `jcs.js` (résultats identiques) ; depuis la révision 5, `jcs.js` est la référence. Elles ne prouvent rien sur le code Backend ou Mobile, qui n'existe pas encore : elles en seront l'oracle.
 
-**Vecteurs JCS (révision 3)** — sortie de `canonicalize@2.0.0` et SHA-256 des octets UTF-8 ; entrées et sorties complètes dans le JSON (`jcs`).
+**Vecteurs JCS (révision 3, référence `jcs.js` depuis la révision 5)** — chaîne canonique et SHA-256 des octets UTF-8, identiques avec `canonicalize@2.0.0` et `jcs.js` ; entrées et sorties complètes dans le JSON (`jcs`). J-11 (surrogate isolé) est ajouté en révision 5 comme cas de refus.
 
 | # | Cas | SHA-256 attendu | `stableSerialize` identique ? |
 | --- | --- | --- | --- |
@@ -648,7 +661,7 @@ Aucun de ces tests n'est exécuté dans PR0. Les tests « PG réel » s'exécute
 | S11 | Deux comptes sur un même téléphone | PR2 | unitaire + natif | fichiers et clés distincts ; aucun brouillon visible de l'autre compte |
 | S12 | Bornes serveur du pack : émission à `D−1 11:59:59` refusée et `D−1 12:00` acceptée ; émission à `D+1 00:00` refusée ; `notBefore`/`expiresAt` exacts pour Africa/Kinshasa, Africa/Lubumbashi, Europe/Paris aux deux changements d'heure 2026 (table §4.5) ; `syncDeadline` exact ; fuseau modifié entre pack et sync (le serveur applique le fuseau courant) ; date invalide | PR1b/PR1c | unitaire + PG réel | conformes à §4.5 ; état obsolète refusé par le serveur |
 | S16 | Fenêtre locale du pack : pack D téléchargé la veille à 17 h utilisable à `D 15:00` ; refusé à `notBefore − 1 s` et à `expiresAt` ; horloge de l'appareil en avance (après `expiresAt`), en retard (avant `notBefore`), reculée sous `lastTrustedTime − 10 min` ; fuseau de l'appareil ≠ fuseau de l'établissement sans effet ; rafraîchissement à l'ouverture si en ligne, pack conservé pour une session ouverte | PR2/PR3 | unitaire (horloge injectée) + Android | mode dégradé avec le message prévu dans chaque cas de refus ; jamais de prolongation |
-| S13 | Canonicalisation J-1 à J-7 identique Node / Hermes ; J-8 à J-10 refusés par le validateur | PR1a/PR2 | unitaire des deux côtés | octets identiques |
+| S13 | Parité de canonicalisation : J-1 à J-7, pack et lot de test identiques ; J-8 à J-11 refusés ; Node (`jcs.js`, PR1a) et **Hermes** (implémentation Mobile, PR2, gate bloquant) | PR1a/PR2 | unitaire Node + exécution sous Hermes | chaînes et octets UTF-8 identiques |
 | S14 | `keyId` révoqué (pack neuf et pack déjà stocké) ; trousseau entièrement révoqué ; liste de révocation non monotone | PR1b/PR2 | unitaire | pack refusé, mode dégradé ; révocation jamais annulée |
 | S15 | Purge par échéance d'une base `blocked_logout` d'un compte qui ne se reconnecte pas, sans l'ouvrir | PR2 | unitaire + natif | crypto-effacement à l'échéance ; aucun autre compte n'y accède |
 
@@ -673,7 +686,7 @@ Physique (#921, PR5) : NTAG213 et NTAG216, 30+ scans, `active/encoded`, présenc
 - **P1-5** Anti-clonage NDEF absent, inchangé par l'offline (§3.6).
 - **P1-6** Révocation après le scan refusée : un élève présent peut être refusé ; l'enseignant le repointe manuellement (révision + 1).
 - **P1-7** Données nominatives stockées localement (pack) : minimisées et purgées (§5.5).
-- **P1-8** Dépendances cryptographiques Mobile (`@noble/hashes`, `@noble/curves`) et `canonicalize@2.0.0` à valider (versions exactes, audit, licence) ; les vecteurs §9 sont l'oracle commun.
+- **P1-8** Dépendances cryptographiques Mobile (`@noble/hashes`, `@noble/curves`) à valider (versions exactes, audit, licence) ; implémentation JCS Mobile à auditer et à prouver en parité avec `jcs.js` sous Hermes ; les vecteurs §9 sont l'oracle commun.
 - **P1-9** Fenêtre d'acceptation d'un pack signé par une clé compromise sur une APK hors ligne qui n'a pas encore reçu la révocation (§4.2) : effet limité à l'affichage, aucun droit.
 - **P1-10** Un enseignant désaffecté peut encore relire l'ACK de **son** appel passé (garde R) : validé par le CTO en R3, sans écriture ni donnée d'un autre utilisateur.
 - **P1-11** Ancienneté d'un pack préchargé jusqu'à 36 h (37 h au changement d'heure) : une carte révoquée après l'émission peut apparaître « reconnue » localement ; aucun effet sur les droits, révocation appliquée au sync (§4.5).
@@ -686,10 +699,10 @@ Chaque PR : branche issue du `develop` courant, Draft/HOLD, base/HEAD/merge-base
 
 | PR | Branche | Contenu | Dépend de |
 | --- | --- | --- | --- |
-| **PR1a** | `feat/nfc-pres-local-pr1a-proof` | Module pur Backend : `LP`, `cardRef`, `verifier`, `proof`, validateur de types + `canonicalize@2.0.0`, digest ; tests sur vecteurs V et J ; aucune route | PR0 accepté |
+| **PR1a** | `feat/nfc-pres-local-pr1a-proof` | Module pur Backend : `LP`, `cardRef`, `verifier`, `proof`, validateur de types + `jcs.js` existant, digest ; tests sur vecteurs V et J ; aucune route | PR0 accepté |
 | **PR1b** | `feat/nfc-pres-local-pr1b-pack` | `GET …/offline/v1/pack`, signature Ed25519, clés `active`/`standby`, liste de révocation, échéances par fuseau, RBAC/flags/tenant ; tests PG S5, S6, S12, S14 | PR1a |
 | **PR1c** | `feat/nfc-pres-local-pr1c-sync` | Migration additive ; option additive `guard` de `withIdempotency` ; `POST …/offline/v1/sync` selon §6.2–§6.5 ; extraction sans changement de comportement du moteur `writeTeacherRollCall` ; tests PG 3, 8–13, protocole R-1 à R-10, S1–S4, S8, S9 | PR1a |
-| **PR2** | `feat/nfc-pres-local-pr2-store` | Base SQLCipher par compte, migrations, triggers d'immutabilité, purge, quarantaine ; vérification de pack ; tests 2, 5, 6, 14, S5, S11 | PR1a (vecteurs) |
+| **PR2** | `feat/nfc-pres-local-pr2-store` | Base SQLCipher par compte, migrations, triggers d'immutabilité, purge, quarantaine ; vérification de pack ; JCS Mobile sans `Buffer` ni `node:crypto` ; **gate de parité Hermes S13** ; tests 2, 5, 6, 14, S5, S11, S13 | PR1a (vecteurs) |
 | **PR3** | `feat/nfc-pres-local-pr3-scan` | Boucle NFC/QR locale, HMAC Mobile, compteurs, corrections, UX, flag d'établissement `studentCardOfflineRollCallEnabled` (défaut off) | PR2, PR1b |
 | **PR4** | `feat/nfc-pres-local-pr4-sync` | Runner de synchronisation, machine d'état, règles §6.8, état `unconfirmable`, ACK, `blocked_logout` ; tests 7, S7 | PR1c, PR3 |
 | **PR5** | `test/nfc-pres-local-pr5-recette` | Intégration, APK préprod, Maestro, procédure opérateur NTAG213/216, preuves | PR4, #921 |
@@ -700,14 +713,14 @@ Le flag d'établissement (PR3) est le seul nouveau flag : le parcours en ligne a
 
 ## 13. Décisions demandées au CTO (révision 4)
 
-Acquis en principe (revues R2 et R3) : preuves HMAC liées à la session et au support, LP + `canonicalize@2.0.0`, pack Ed25519, SQLCipher par compte, synchronisation transactionnelle, gardes R/W, révision seulement après `not_recorded`, ACK relisible après désaffectation ou flag coupé tant que le rôle `TEACHER` et la permission sont conservés, V1 journalière, `excused` hors appel, synchronisation jusqu'à la fin de J+3.
+Acquis en principe (revues R2 et R3) : preuves HMAC liées à la session et au support, LP + JCS (`jcs.js` comme référence unique depuis la révision 5), pack Ed25519, SQLCipher par compte, synchronisation transactionnelle, gardes R/W, révision seulement après `not_recorded`, ACK relisible après désaffectation ou flag coupé tant que le rôle `TEACHER` et la permission sont conservés, V1 journalière, `excused` hors appel, synchronisation jusqu'à la fin de J+3.
 
 **Révision 4 — décision restante** : valider la fenêtre du pack (§4.5) : utilisation = jour local `D`, émission dès `D−1 12:00`, détention ≤ 36 h (35–37 h au changement d'heure), rafraîchissement à l'ouverture si en ligne, alternative « rafraîchissement obligatoire le matin » écartée. Les points 1 à 5 ci-dessous sont ceux de la révision 3, validés en R3.
 
 1. Valider les deux gardes R et W (§6.2), l'ordre en 15 étapes avec la garde R avant toute lecture d'ACK (§6.3), les réponses exactes (§6.5) et le protocole R-1 à R-10 (§6.9).
 2. Valider la règle « révision uniquement après `sessionState: not_recorded` » et l'état `unconfirmable` (§6.8, §7).
 3. Valider le périmètre de la garde R : affectation et flags non requis pour relire son propre ACK (P1-10).
-4. Valider `canonicalize@2.0.0` comme bibliothèque JCS unique et le validateur de types (§4.1).
+4. ~~Valider `canonicalize@2.0.0`~~ — remplacé en révision 5 : `jcs.js` comme référence unique, dérogation acceptée en principe sur #1112 ; parité Hermes en gate PR2 (§4.1).
 5. Valider la rotation planifiée et urgente des clés (§4.2) et la purge par échéance des bases conservées (§5.3).
 
 ---
