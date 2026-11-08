@@ -78,7 +78,13 @@ assert.deepEqual(await store.counts(session.sessionId), {scans:3,marks:0},
 assert.deepEqual(await store.recordMark(session.sessionId,"student-1","absent","manual",
   "2026-11-09T07:31:00Z"), {scans:3,marks:1});
 assert.deepEqual(await store.recordMark(session.sessionId,"student-1","present","manual",
-  "2026-11-09T07:32:00Z"), {scans:1,marks:1});
+  "2026-11-09T07:32:00Z"), {scans:3,marks:1});
+const concurrentMarks = await Promise.all([
+  store.recordMark(session.sessionId,"student-2","present","manual","2026-11-09T07:32:01Z"),
+  store.recordMark(session.sessionId,"student-3","late","manual","2026-11-09T07:32:02Z"),
+]);
+assert.deepEqual(concurrentMarks.map((item) => item.marks), [2,3],
+  "mark feedback must reflect its own transaction snapshot");
 
 await store.freeze(session.sessionId,"operation-1","a".repeat(64),
   new Uint8Array([12,34,56]),"2026-11-09T07:33:00Z");
@@ -90,6 +96,6 @@ await assert.rejects(store.recordMark(session.sessionId,"student-2","absent","de
   "2026-11-09T07:34:00Z"), /RC_MARK_SESSION_NOT_DRAFT/);
 await assert.rejects(store.freeze(session.sessionId,"operation-2","b".repeat(64),
   new Uint8Array([99]),"2026-11-09T07:35:00Z"), /RC_SESSION_NOT_DRAFT/);
-assert.deepEqual(await store.counts(session.sessionId), {scans:1,marks:1});
+assert.deepEqual(await store.counts(session.sessionId), {scans:3,marks:3});
 database.close();
 console.log("PASS: local store transactions / duplicates / frozen state / SQLCipher fail closed (native NOT tested)");
