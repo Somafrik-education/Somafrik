@@ -36,7 +36,7 @@ export default function UsersScreen() {
       ListHeaderComponent={
         <>
           <Text style={styles.title}>Utilisateurs</Text>
-          <Text style={styles.subtitle}>Identités et rôles actifs chargés depuis PostgreSQL</Text>
+          <Text style={styles.subtitle}>Consultez les utilisateurs et leurs rôles dans votre établissement</Text>
           <UserMutationControls onChanged={() => load()} />
           {snapshot.status !== "success" ? (
             <QueryStateView
