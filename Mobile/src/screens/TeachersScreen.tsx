@@ -6,6 +6,7 @@ import FormField from "../components/FormField";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import TeacherMutationControls from "../components/TeacherMutationControls";
 import AssignmentMutationControls from "../components/AssignmentMutationControls";
+import TeacherAssignmentRemovalControls from "../components/TeacherAssignmentRemovalControls";
 import { useAdminData } from "../context/AdminDataContext";
 import {
   resolveTeacherClassesForRecord,
@@ -130,6 +131,11 @@ export default function TeachersScreen() {
             </Text>
             {teacher.phone ? <Text style={styles.phone}>{teacher.phone}</Text> : null}
             <TeacherMutationControls row={teacher} onChanged={() => load()} />
+            <TeacherAssignmentRemovalControls
+              teacherCode={teacher.teacherCode}
+              assignments={assignmentsData}
+              onChanged={() => load()}
+            />
           </ExpandableEntityCard>
         );
       }}
