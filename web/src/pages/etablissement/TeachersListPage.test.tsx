@@ -628,7 +628,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
 
   it("conserve les choix de classe et cours lorsque la lecture des affectations échoue", async () => {
     const user = userEvent.setup();
-    teacherAssignmentsApiMock.list.mockRejectedValue(new Error("Liste indisponible"));
+    teacherAssignmentsApiMock.list.mockRejectedValue(new ApiError("Liste indisponible", 500));
     renderPage();
     await screen.findByText("Ndiaye");
     await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
