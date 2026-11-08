@@ -195,7 +195,7 @@ export default function SchoolYearSettingsScreen() {
     >
       <Text style={styles.title}>Année scolaire</Text>
       <Text style={styles.subtitle}>
-        Années, périodes, barème et types d’évaluation. Les écritures passent par les API PostgreSQL, jamais par la configuration académique héritée.
+        Gérez les années scolaires, les périodes, les barèmes et les types d’évaluation de votre établissement.
       </Text>
 
       {loading ? <Text style={styles.meta}>Chargement…</Text> : null}
