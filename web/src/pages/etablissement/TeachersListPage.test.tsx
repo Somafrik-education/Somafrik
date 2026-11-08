@@ -609,7 +609,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
       status: "active",
     }]);
     teacherAssignmentsApiMock.remove.mockResolvedValue({ id: "asg-1", deleted: true });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const browserConfirm = vi.spyOn(window, "confirm");
     try {
       renderPage();
       await screen.findByText("Ndiaye");
@@ -618,11 +618,20 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
       expect(within(section).getByText("6ème A · Mathématiques")).toBeInTheDocument();
       expect(within(section).queryByText("5ème A · Français")).not.toBeInTheDocument();
       await user.click(within(section).getByRole("button", { name: "Retirer" }));
+      const confirmation = within(section).getByRole("group", { name: "Confirmer le retrait du cours" });
+      expect(within(confirmation).getByText("Retirer ce cours ?")).toBeInTheDocument();
+      expect(within(confirmation).getByText(/Les notes et les présences déjà enregistrées seront conservées/)).toBeInTheDocument();
+      expect(teacherAssignmentsApiMock.remove).not.toHaveBeenCalled();
+      await user.click(within(confirmation).getByRole("button", { name: "Annuler le retrait" }));
+      expect(teacherAssignmentsApiMock.remove).not.toHaveBeenCalled();
+      await user.click(within(section).getByRole("button", { name: "Retirer" }));
+      await user.click(within(section).getByRole("button", { name: "Confirmer le retrait" }));
       await waitFor(() => expect(teacherAssignmentsApiMock.remove).toHaveBeenCalledWith("asg-1"));
       await waitFor(() => expect(within(section).queryByText("6ème A · Mathématiques")).not.toBeInTheDocument());
+      expect(browserConfirm).not.toHaveBeenCalled();
       expect(screen.getByLabelText(/Classe/i)).toHaveValue("");
     } finally {
-      confirm.mockRestore();
+      browserConfirm.mockRestore();
     }
   });
 
