@@ -140,7 +140,9 @@ export function createRollCallSyncRunner(deps: SyncRunnerDeps) {
 
     let candidates: RcSessionRow[];
     try {
-      // Seule une demande explicite avance une tentative différée, avec un délai minimal.
+      // Seule une demande explicite avance une tentative différée par le backoff CLIENT (dernier
+      // échec sans réponse HTTP), avec un délai minimal ; une échéance serveur (Retry-After,
+      // 408/429/5xx, refus) n'est jamais avancée (voir listSyncCandidates).
       candidates = await listSyncCandidates(ctx, manual ? { ignoreBackoff: true, cooldownMs: RC_MANUAL_COOLDOWN_MS } : {});
     } catch (error) {
       log("rc_sync_list_failed", codeOf(error));

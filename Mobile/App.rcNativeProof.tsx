@@ -194,7 +194,8 @@ async function runPr3PipelineProof(): Promise<string> {
  * PR4 — synchronisation sous Hermes avec SQLCipher réel. Transport SIMULÉ (aucun serveur
  * PostgreSQL n'est joignable depuis l'émulateur de CI) : réseau coupé, puis réponse conforme au
  * contrat PR1c. La preuve PostgreSQL réelle est backend/lib/rollCallOfflineSync.http.pg.test.js (D).
- *  lancement 1 : appel clôturé → réseau coupé → failed_retryable, corps figé conservé → transmission
+ *  lancement 1 : appel clôturé → réseau coupé → failed_retryable, corps figé conservé → réseau revenu
+ *                avant l'échéance : rien n'est envoyé (backoff) → échéance réelle atteinte → transmission
  *                contrôlée (corps reçu identique octet pour octet) → ACK vérifié → synced, purge ;
  *  lancement 2 (après force-stop) : synced relu, corps figé et preuves toujours absents.
  */
@@ -233,7 +234,9 @@ async function runPr4SyncProof(): Promise<string> {
     const closed = await closeSession(ctx, draft.session_id, null);
     let network = false;
     let receivedIdentical = true;
+    let sent = 0;
     const transport: SyncTransport = async ({ operationId, body }) => {
+      sent += 1;
       if (!network) return { kind: "network", code: "NETWORK" };
       receivedIdentical = receivedIdentical && body === closed.frozenBody && operationId === closed.operationId;
       const parsed = JSON.parse(body);
@@ -249,12 +252,19 @@ async function runPr4SyncProof(): Promise<string> {
     const offline = await getSession(ctx, draft.session_id);
     const kept = offline.frozen_body === closed.frozenBody && (await proofsLeft(draft.session_id)) === 3;
     network = true;
+    // Réseau revenu AVANT l'échéance du backoff : aucune tentative (correctif CTO PR4).
+    const sentBefore = sent;
+    await runner.run({ trigger: "online" });
+    const held = sent === sentBefore && (await getSession(ctx, draft.session_id)).state === "failed_retryable";
+    // Attente réelle jusqu'à next_attempt_at, puis retour du réseau : tentative due, envoyée.
+    const dueAt = Date.parse(String(offline.next_attempt_at));
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, dueAt - Date.now()) + 1000));
     await runner.run({ trigger: "online" });
     const online = await getSession(ctx, draft.session_id);
     const purged = online.frozen_body === null && (await proofsLeft(draft.session_id)) === 0;
     const trusted = ((await loadLastTrustedTime(ctx)) ?? 0) > 0;
-    const verdict = offline.state === "failed_retryable" && kept && online.state === "synced" && purged && receivedIdentical && trusted;
-    return `pr4=${verdict ? "ok" : "MISMATCH"} offline=${offline.state} kept=${kept ? "yes" : "no"} online=${online.state} identical=${receivedIdentical ? "yes" : "no"} purged=${purged ? "yes" : "no"}`;
+    const verdict = offline.state === "failed_retryable" && kept && held && online.state === "synced" && purged && receivedIdentical && trusted;
+    return `pr4=${verdict ? "ok" : "MISMATCH"} offline=${offline.state} kept=${kept ? "yes" : "no"} early=${held ? "held" : "SENT"} online=${online.state} identical=${receivedIdentical ? "yes" : "no"} purged=${purged ? "yes" : "no"}`;
   } finally {
     await manager.close();
   }

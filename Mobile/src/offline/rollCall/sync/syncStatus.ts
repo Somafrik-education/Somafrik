@@ -65,7 +65,18 @@ export type SyncStatusInput = {
   sync_deadline: string;
   next_attempt_at: string | null;
   attempt_count: number;
+  last_http_status?: number | null;
 };
+
+/**
+ * Le bouton « Synchroniser maintenant » n'est proposé que si `listSyncCandidates` accepterait la
+ * demande : tentative due, ou dernier échec sans réponse HTTP (backoff client). Une échéance
+ * serveur (réponse HTTP reçue, dont Retry-After) n'est jamais contournable.
+ */
+export function manualSyncAllowed(row: Pick<SyncStatusInput, "next_attempt_at" | "last_http_status">, nowMs: number): boolean {
+  const due = !row.next_attempt_at || Date.parse(row.next_attempt_at) <= nowMs;
+  return due || row.last_http_status == null;
+}
 
 export type SyncStatusView = {
   label: string;
@@ -77,7 +88,8 @@ export type SyncStatusView = {
 
 export function describeSyncStatus(row: SyncStatusInput, nowMs: number): SyncStatusView {
   const beforeDeadline = Date.parse(row.sync_deadline) > nowMs;
-  const sendable = (row.state === "closed" || row.state === "failed_retryable" || row.state === "unconfirmable") && beforeDeadline;
+  const sendable =
+    (row.state === "closed" || row.state === "failed_retryable" || row.state === "unconfirmable") && beforeDeadline && manualSyncAllowed(row, nowMs);
   const error = syncErrorMessage(row.last_error_code);
   switch (row.state) {
     case "draft":
@@ -89,7 +101,10 @@ export function describeSyncStatus(row: SyncStatusInput, nowMs: number): SyncSta
     case "synced":
       return { label: SYNC_COPY.synced, tone: "ok", message: SYNC_COPY.syncedSuccess, canSyncNow: false, canCorrect: false };
     case "failed_retryable": {
-      const at = row.next_attempt_at ? ` Prochaine tentative vers ${row.next_attempt_at.slice(11, 16)} UTC.` : "";
+      const serverDelay = row.last_http_status != null && !!row.next_attempt_at && Date.parse(row.next_attempt_at) > nowMs;
+      const at = row.next_attempt_at
+        ? ` Prochaine tentative vers ${row.next_attempt_at.slice(11, 16)} UTC${serverDelay ? " (délai demandé par le serveur)" : ""}.`
+        : "";
       return { label: SYNC_COPY.failed_retryable, tone: "warn", message: `${error ?? ""}${at}`.trim() || null, canSyncNow: sendable, canCorrect: false };
     }
     case "unconfirmable":

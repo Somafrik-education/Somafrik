@@ -21,7 +21,7 @@ Un appel clôturé sur le téléphone n'est **jamais** considéré comme enregis
 
 Une tentative, toujours dans cet ordre, avec les fonctions PR2 :
 
-1. `listSyncCandidates` (ajout PR4) : sessions du compte en `closed`, `failed_retryable` ou `unconfirmable`, corps figé présent, `sync_deadline` non dépassée, `next_attempt_at` atteinte. Seule l'action explicite « Synchroniser maintenant » avance une tentative différée, et au plus une fois toutes les 30 s par appel (aucune tentative de la session dans les 30 dernières secondes) ;
+1. `listSyncCandidates` (ajout PR4) : sessions du compte en `closed`, `failed_retryable` ou `unconfirmable`, corps figé présent, `sync_deadline` non dépassée, `next_attempt_at` atteinte. Seule l'action explicite « Synchroniser maintenant » peut avancer une tentative, et uniquement le **backoff client** : dernier échec **sans réponse HTTP** (réseau, timeout, envoi interrompu), au plus une fois toutes les 30 s par appel. Dès que le serveur a répondu (408, 429, 5xx, 401/403/404…), `next_attempt_at` porte **son** échéance (dont `Retry-After`) : aucun déclencheur, pas même manuel, ne l'avance. Le bouton est alors masqué et l'écran indique « délai demandé par le serveur » ;
 2. `beginSyncAttempt` : COMMIT de `syncing`, lecture du corps figé ;
 3. envoi de **la chaîne lue en base**, octet pour octet, `Idempotency-Key = operationId` (`sendOfflineRollCallSync`, route `POST /api/student-cards/roll-call/offline/v1/sync`) ; rien n'est recalculé ni re-sérialisé ;
 4. `recordTrustedTime` avec l'en-tête `Date` (monotone : jamais de recul) ;
@@ -59,7 +59,9 @@ Backoff borné : 30 s, 2 min, 5 min, 15 min, 30 min, puis 1 h (±10 %). Non conf
 | retour du même compte (`login`, `onSessionChanged`) | respecté |
 | reprise de l'application (`resume`) | respecté |
 | minuterie au premier plan, toutes les 60 s (`timer`) | respecté |
-| « Synchroniser maintenant » (`manual`) | avancé, au plus une fois par 30 s et par appel |
+| « Synchroniser maintenant » (`manual`) | backoff client seulement (échec sans réponse HTTP), au plus une fois par 30 s et par appel ; échéance serveur jamais avancée |
+
+Correction CTO (revue du HEAD `f2ec234b`) : le bouton manuel pouvait avancer une tentative 30 s après un `Retry-After` serveur de plusieurs heures. La garde repose désormais sur des colonnes existantes (`last_http_status` + `next_attempt_at`). **Schéma local v1 inchangé** : empreinte vérifiée par test, aucune migration, et les bases SQLCipher déjà créées s'ouvrent et se synchronisent sans quarantaine.
 
 Correction CTO (revue du HEAD `c1688b82`) : la première version ignorait `next_attempt_at` sur `online` et `login`. Sur un réseau instable avec des 429 / 5xx, cela aurait pu solliciter le serveur malgré le backoff. Ces événements n'effacent plus aucun délai.
 
@@ -77,7 +79,7 @@ Correction du runtime : `requestSync` et `refreshLogoutGuard` n'agissent plus qu
 
 ## 5. Fichiers
 
-- `sync/syncRunner.ts`, `sync/syncStatus.ts` et leurs tests (`syncRunner.test.ts`, 24 tests) ;
+- `sync/syncRunner.ts`, `sync/syncStatus.ts` et leurs tests (`syncRunner.test.ts`, 28 tests) ;
 - `store/repository.ts` (ajouts) : `listSyncCandidates`, `listSyncStatus`, option `nextAttemptAt` de `recordSyncOutcome`, refus d'un ACK portant un autre `sessionId` dans `decideSyncOutcome` ;
 - `runtime/rollCallRuntime.ts` : runner unique, `requestSync`, `subscribeSync`, arrêt à la déconnexion et au changement de compte ;
 - `runtime/RollCallOfflineRuntime.tsx` : connexion retrouvée, reprise, minuterie ;
@@ -105,10 +107,13 @@ Correction du runtime : `requestSync` et `refreshLogoutGuard` n'agissent plus qu
 | 35 élèves hors connexion | « appel de 35 élèves » (transport simulé) |
 | Bascules répétées du réseau, reconnexions, 503 | « bascules répétées du réseau et reconnexions » |
 | 429 / 503 avec Retry-After | « 429 et 503 avec Retry-After » |
+| Retry-After 6 h jamais contourné (appuis à +30 s, bascules, reconnexion, reprise, minuterie) | « Retry-After 429 / 503 (6 h) » |
+| Réponse HTTP = échéance serveur ; seul un échec sans réponse est avançable | « toute réponse HTTP fixe une échéance serveur » |
+| Compatibilité des bases existantes | « compatibilité des bases SQLCipher existantes » (empreinte du schéma v1, réouverture, envoi) |
 | Action explicite plafonnée | « Synchroniser maintenant : … 30 s » |
 | Borne de tentatives sur J+3 | « borne de tentatives » (minuterie chaque minute, 503 permanent) |
 | Réponse tardive après fermeture SQLCipher, changement de compte | « réponse tardive après fermeture de la base » (3 variantes : avec et sans en-tête Date, autre compte ouvert) |
-| Hermes + SQLCipher Android | recette native `pr4=ok …` / `pr4_persist=ok` (**transport simulé** : aucun PostgreSQL joignable depuis l'émulateur) |
+| Hermes + SQLCipher Android | recette native `pr4=ok … early=held …` (réseau revenu avant l'échéance : rien envoyé ; attente réelle du backoff, puis envoi) / `pr4_persist=ok` (**transport simulé** : aucun PostgreSQL joignable depuis l'émulateur) |
 
 ## 7. Limites et hors périmètre
 

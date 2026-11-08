@@ -665,8 +665,12 @@ export function listSyncCandidates(
 ): Promise<RcSessionRow[]> {
   const nowMs = ctx.nowMs();
   const now = iso(nowMs);
-  // Demande explicite (ignoreBackoff) : jamais deux tentatives d'une session à moins de
-  // `cooldownMs` d'intervalle, quel que soit le nombre d'appuis.
+  // Demande explicite (ignoreBackoff) : elle ne peut avancer que le backoff CLIENT, c'est-à-dire
+  // une tentative dont le dernier échec n'a reçu aucune réponse HTTP (réseau, timeout, envoi
+  // interrompu). Dès que le serveur a répondu (408, 429, 5xx, refus d'accès…), `next_attempt_at`
+  // porte son échéance (dont Retry-After) : aucun déclencheur ne la contourne. Jamais deux
+  // tentatives d'une session à moins de `cooldownMs`, quel que soit le nombre d'appuis.
+  // Garde fondée sur des colonnes existantes : schéma inchangé, bases déjà créées compatibles.
   const cooldownSince = iso(nowMs - Math.max(0, options.cooldownMs ?? 0));
   return ctx.connection.read((db) =>
     db.getAllAsync<RcSessionRow>(
@@ -676,7 +680,8 @@ export function listSyncCandidates(
           AND s.sync_deadline > ?
           AND (
             s.next_attempt_at IS NULL OR s.next_attempt_at <= ?
-            OR (? = 1 AND NOT EXISTS (SELECT 1 FROM rc_sync_attempts a WHERE a.session_id = s.session_id AND a.started_at > ?))
+            OR (? = 1 AND s.last_http_status IS NULL
+                AND NOT EXISTS (SELECT 1 FROM rc_sync_attempts a WHERE a.session_id = s.session_id AND a.started_at > ?))
           )
         ORDER BY s.closed_at, s.session_id`,
       [ctx.identity.userId, ctx.identity.schoolId, now, now, options.ignoreBackoff ? 1 : 0, cooldownSince],

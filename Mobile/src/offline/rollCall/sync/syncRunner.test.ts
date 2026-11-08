@@ -55,6 +55,8 @@ const DATE = "2026-11-09";
 const ENV = { environmentId: "production-3f2a9c1d", releaseProfile: "production" };
 const IDENTITY = { environmentId: ENV.environmentId, userId: TEACHER, schoolId: SCHOOL };
 const START = "2026-11-09T08:00:00Z";
+/** sha256(RC_SCHEMA_V1) sur develop 76520633 (PR3 fusionnée). */
+const RC_SCHEMA_V1_SHA256_PR3 = "444c7d64f2ce90d2e478b166471044ce05bd4591c430a306cc32bbc15bd20a46";
 const session = (userId = TEACHER) => ({ user: { id: userId, schoolId: SCHOOL }, school: { id: SCHOOL } });
 
 type Behavior = "ok" | "lose" | "timeout" | { status: number; body: unknown } | ((body: Record<string, unknown>) => SyncTransportResult);
@@ -325,9 +327,16 @@ test("erreurs HTTP et réseau : classification PR0, backoff, unconfirmable conse
       assert.equal(Date.parse(String(row.next_attempt_at)) - platform.now.ms, RC_UNCONFIRMABLE_DELAY_MS);
       await assert.rejects(reviseSession(ctx, closed.sessionId), /RC_REVISION_FORBIDDEN|Révision interdite/, `${label} : aucune nouvelle révision`);
       // Droits rétablis : même opération, même corps.
-      platform.now.ms += RC_MANUAL_COOLDOWN_MS; // délai minimal entre deux demandes explicites
+      // Refus HTTP : échéance serveur, non avançable même manuellement.
+      platform.now.ms += RC_MANUAL_COOLDOWN_MS;
+      const early = fakeServer();
+      await runnerFor(manager, early.transport).run({ trigger: "manual" });
+      assert.equal(early.calls.length, 0, `${label} : refus serveur, pas de contournement manuel`);
+      assert.equal(describeSyncStatus(await getSession(ctx, closed.sessionId), platform.now.ms).canSyncNow, false, `${label} : bouton masqué`);
+      // Droits rétablis, échéance atteinte, reconnexion du compte : même opération, même corps.
+      platform.now.ms = Date.parse(String(row.next_attempt_at));
       const again = fakeServer();
-      await runnerFor(manager, again.transport).run({ trigger: "manual" });
+      await runnerFor(manager, again.transport).run({ trigger: "login" });
       assert.equal(again.calls[0].body, closed.frozenBody, `${label} : renvoi identique`);
       assert.equal((await getSession(ctx, closed.sessionId)).state, "synced");
     }
@@ -587,11 +596,11 @@ test("429 et 503 avec Retry-After : délai serveur respecté (borné), jamais ra
   }
 });
 
-test("« Synchroniser maintenant » : avance la tentative, mais au plus une fois toutes les 30 s par appel", async () => {
+test("« Synchroniser maintenant » : avance le backoff client (réseau), au plus une fois toutes les 30 s par appel", async () => {
   const { ctx, manager, platform } = await setup("manual");
   const closed = await closedRollCall(ctx);
   const server = fakeServer();
-  for (let i = 0; i < 5; i += 1) server.queue.push({ status: 503, body: null });
+  for (let i = 0; i < 5; i += 1) server.queue.push("timeout");
   const runner = runnerFor(manager, server.transport);
   await runner.run({ trigger: "closed" });
   for (let i = 0; i < 10; i += 1) await runner.run({ trigger: "manual" }); // appuis répétés
@@ -679,3 +688,87 @@ for (const variant of ["date-header", "no-date-header", "account-switch"] as con
     assert.ok(server.calls.every((call) => call.body === closed.frozenBody && call.operationId === closed.operationId));
   });
 }
+
+// ------------------------ Échéance serveur : jamais contournée, même manuellement ------------------------
+
+for (const status of [429, 503] as const) {
+  test(`Retry-After ${status} (6 h) : appuis manuels à +30 s, bascules réseau, reconnexion, reprise → aucun envoi avant la borne serveur`, async () => {
+    const { ctx, manager, platform } = await setup(`server-floor-${status}`);
+    const closed = await closedRollCall(ctx);
+    const server = fakeServer();
+    server.queue.push((() => ({ kind: "http", status, body: { code: "RATE_LIMITED" }, dateHeader: null, retryAfterMs: 21_600_000 })) as Behavior);
+    const runner = runnerFor(manager, server.transport);
+    await runner.run({ trigger: "closed" });
+    const row = await getSession(ctx, closed.sessionId);
+    const floor = Date.parse(String(row.next_attempt_at));
+    assert.equal(floor - platform.now.ms, 21_600_000, "Retry-After 6 h enregistré");
+    assert.equal(row.last_http_status, status);
+    const view = describeSyncStatus(row, platform.now.ms + 31_000);
+    assert.equal(view.canSyncNow, false, "bouton « Synchroniser maintenant » masqué pendant le délai serveur");
+    assert.match(String(view.message), /délai demandé par le serveur/);
+    // Pendant 6 h : appuis manuels répétés (dès +30 s), bascules réseau, reconnexions, reprises, minuterie.
+    const triggers = ["manual", "online", "login", "resume", "timer", "manual", "closed"] as const;
+    for (let elapsed = 31_000, i = 0; platform.now.ms + 31_000 < floor; elapsed += 31_000, i += 1) {
+      platform.now.ms += 31_000;
+      await runner.run({ trigger: triggers[i % triggers.length] });
+    }
+    assert.equal(server.calls.length, 1, "aucun envoi avant la borne serveur, quel que soit le déclencheur");
+    platform.now.ms = floor;
+    await runner.run({ trigger: "manual" });
+    assert.equal(server.calls.length, 2, "envoi seulement à la borne serveur");
+    assert.equal((await getSession(ctx, closed.sessionId)).state, "synced");
+    assert.ok(server.calls.every((call) => call.body === closed.frozenBody));
+  });
+}
+
+test("toute réponse HTTP fixe une échéance serveur non avançable ; seul un échec sans réponse est avançable", async () => {
+  const cases: [Behavior, boolean][] = [
+    [{ status: 503, body: null }, false],
+    [{ status: 500, body: null }, false],
+    [{ status: 408, body: null }, false],
+    [{ status: 429, body: null }, false],
+    [{ status: 403, body: null }, false],
+    ["timeout", true],
+  ];
+  for (const [behavior, advanceable] of cases) {
+    const name = typeof behavior === "string" ? behavior : typeof behavior === "object" ? String(behavior.status) : "fn";
+    const { ctx, manager, platform } = await setup(`floor-${name}`);
+    const closed = await closedRollCall(ctx);
+    const server = fakeServer();
+    server.queue.push(behavior, behavior);
+    const runner = runnerFor(manager, server.transport);
+    await runner.run({ trigger: "closed" });
+    // Deuxième échec à l'échéance : le délai suivant (≥ 2 min) dépasse largement le cooldown manuel.
+    platform.now.ms = Date.parse(String((await getSession(ctx, closed.sessionId)).next_attempt_at));
+    await runner.run({ trigger: "timer" });
+    assert.equal(server.calls.length, 2, name);
+    platform.now.ms += RC_MANUAL_COOLDOWN_MS + 1;
+    assert.ok(Date.parse(String((await getSession(ctx, closed.sessionId)).next_attempt_at)) > platform.now.ms, `${name} : tentative non due`);
+    await runner.run({ trigger: "manual" });
+    assert.equal(server.calls.length, advanceable ? 3 : 2, `${name} : ${advanceable ? "backoff client avancé" : "échéance serveur respectée"}`);
+    if (!advanceable) assert.notEqual((await getSession(ctx, closed.sessionId)).state, "synced");
+  }
+});
+
+test("compatibilité des bases SQLCipher existantes : schéma v1 inchangé, appel clôturé avant PR4 synchronisé", async () => {
+  // Empreinte du schéma local PR2/PR3 (develop 76520633) : PR4 n'ajoute ni colonne ni migration.
+  const { RC_SCHEMA_V1, RC_LOCAL_SCHEMA_VERSION } = await import("../store/schema");
+  assert.equal(RC_LOCAL_SCHEMA_VERSION, 1);
+  assert.equal(crypto.createHash("sha256").update(RC_SCHEMA_V1).digest("hex"), RC_SCHEMA_V1_SHA256_PR3);
+  // Base créée et appel clôturé « avant PR4 » (aucune tentative, next_attempt_at NULL), base fermée,
+  // puis rouverte par l'application mise à jour : lecture, envoi, synced.
+  const { ctx, manager, platform } = await setup("legacy");
+  const closed = await closedRollCall(ctx);
+  await manager.close();
+  const updated = createRollCallAccountManager(platform);
+  const reopened = await updated.activate(IDENTITY);
+  assert.ok(reopened.ok, "base existante rouverte sans quarantaine");
+  const ctx2 = (reopened as { account: RcActiveAccount }).account.ctx;
+  const legacy = await getSession(ctx2, closed.sessionId);
+  assert.equal(legacy.next_attempt_at, null);
+  assert.equal(legacy.last_http_status, null);
+  const server = fakeServer();
+  await runnerFor(updated, server.transport).run({ trigger: "resume" });
+  assert.equal((await getSession(ctx2, closed.sessionId)).state, "synced");
+  assert.equal(server.calls[0].body, closed.frozenBody);
+});
