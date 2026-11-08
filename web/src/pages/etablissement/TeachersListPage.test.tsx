@@ -500,7 +500,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
     expect(await screen.findByText(/Catalogue de cours indisponible/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Erreur interne catalogue/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/Aucun cours canonique/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Aucun cours n.est disponible pour cet établissement/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeDisabled();
   });
 
@@ -510,7 +510,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     renderPage();
     await screen.findByText("Ndiaye");
     await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
-    expect(await screen.findByText(/Aucun cours canonique/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Aucun cours n.est disponible pour cet établissement/i)).toBeInTheDocument();
     expect(screen.queryByText(/Catalogue de cours indisponible/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Mathématiques" })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Français" })).not.toBeInTheDocument();
