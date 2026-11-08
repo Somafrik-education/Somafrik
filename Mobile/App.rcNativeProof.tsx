@@ -88,7 +88,7 @@ async function runSqlCipherProof(): Promise<string> {
 
   const sessions = await listSessions(account.ctx);
   if (sessions.length === 0) {
-    const { session } = await openDraftSession(account.ctx, { classId: CLASS, date: "2026-11-09", packId: null, syncDeadline: null });
+    const { session } = await openDraftSession(account.ctx, { classId: CLASS, date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10), packId: null, syncDeadline: null });
     for (let i = 0; i < SCANS; i += 1) {
       await recordScan(account.ctx, {
         sessionId: session.session_id,
