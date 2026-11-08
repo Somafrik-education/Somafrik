@@ -25,6 +25,7 @@ const teachersApiMock = vi.hoisted(() => ({
 }));
 
 const teacherAssignmentsApiMock = vi.hoisted(() => ({
+  list: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
@@ -150,7 +151,10 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     teachersApiMock.list.mockReset();
     teachersApiMock.update.mockReset();
     teachersApiMock.remove.mockReset();
+    teacherAssignmentsApiMock.list.mockReset();
+    teacherAssignmentsApiMock.list.mockResolvedValue([]);
     teacherAssignmentsApiMock.create.mockReset();
+    teacherAssignmentsApiMock.remove.mockReset();
     classesApiMock.list.mockReset();
     classesApiMock.list.mockResolvedValue([
       { classCode: "CLS-6A", name: "6ème A", status: "active" },
@@ -586,6 +590,52 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     await user.selectOptions(screen.getByLabelText(/^Cours/), "SUB-MATH");
     await user.click(screen.getByRole("button", { name: /Enregistrer l'affectation/i }));
     expect(await screen.findByText("6ème A · Mathématiques")).toBeInTheDocument();
+  });
+
+  it("retire une affectation depuis la fenêtre Affecter un cours sans bloquer la création", async () => {
+    const user = userEvent.setup();
+    assignmentPermissions.canDelete = true;
+    teacherAssignmentsApiMock.list.mockResolvedValue([{
+      id: "asg-1",
+      teacherId: "CD-2026-0001-ENS-0001",
+      className: "6ème A",
+      course: "Mathématiques",
+      status: "active",
+    }, {
+      id: "asg-other",
+      teacherId: "CD-2026-0001-ENS-0002",
+      className: "5ème A",
+      course: "Français",
+      status: "active",
+    }]);
+    teacherAssignmentsApiMock.remove.mockResolvedValue({ id: "asg-1", deleted: true });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      renderPage();
+      await screen.findByText("Ndiaye");
+      await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
+      const section = await screen.findByRole("region", { name: "Affectations actuelles" });
+      expect(within(section).getByText("6ème A · Mathématiques")).toBeInTheDocument();
+      expect(within(section).queryByText("5ème A · Français")).not.toBeInTheDocument();
+      await user.click(within(section).getByRole("button", { name: "Retirer" }));
+      await waitFor(() => expect(teacherAssignmentsApiMock.remove).toHaveBeenCalledWith("asg-1"));
+      await waitFor(() => expect(within(section).queryByText("6ème A · Mathématiques")).not.toBeInTheDocument());
+      expect(screen.getByLabelText(/Classe/i)).toHaveValue("");
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  it("conserve les choix de classe et cours lorsque la lecture des affectations échoue", async () => {
+    const user = userEvent.setup();
+    teacherAssignmentsApiMock.list.mockRejectedValue(new Error("Liste indisponible"));
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
+    expect(await screen.findByText("Liste indisponible")).toBeInTheDocument();
+    await user.selectOptions(await screen.findByLabelText(/Classe/i), "CLS-6A");
+    await user.selectOptions(screen.getByLabelText(/^Cours/), "SUB-MATH");
+    expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeEnabled();
   });
 
   it("affiche les erreurs 409 de suppression", async () => {
