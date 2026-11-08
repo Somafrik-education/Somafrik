@@ -25,7 +25,8 @@ import {
   type RcActiveAccount,
 } from "./src/offline/rollCall/store/accountManager";
 import { createNativeRollCallPlatform } from "./src/offline/rollCall/store/nativePlatform";
-import { getSession, listSessions, openDraftSession, readCounts, recordScan, type RcContext } from "./src/offline/rollCall/store/repository";
+import { closeSession, getSession, listSessions, openDraftSession, readCounts, recordScan, type RcContext } from "./src/offline/rollCall/store/repository";
+import { createRollCallSyncRunner, type SyncTransport } from "./src/offline/rollCall/sync/syncRunner";
 import { validatePackKeyring } from "./src/offline/rollCall/pack/keyring";
 import { acceptDownloadedPack } from "./src/offline/rollCall/pack/packService";
 import {
@@ -189,6 +190,86 @@ async function runPr3PipelineProof(): Promise<string> {
   }
 }
 
+/**
+ * PR4 — synchronisation sous Hermes avec SQLCipher réel. Transport SIMULÉ (aucun serveur
+ * PostgreSQL n'est joignable depuis l'émulateur de CI) : réseau coupé, puis réponse conforme au
+ * contrat PR1c. La preuve PostgreSQL réelle est backend/lib/rollCallOfflineSync.http.pg.test.js (D).
+ *  lancement 1 : appel clôturé → réseau coupé → failed_retryable, corps figé conservé → réseau revenu
+ *                avant l'échéance : rien n'est envoyé (backoff) → échéance réelle atteinte → transmission
+ *                contrôlée (corps reçu identique octet pour octet) → ACK vérifié → synced, purge ;
+ *  lancement 2 (après force-stop) : synced relu, corps figé et preuves toujours absents.
+ */
+const PR4_IDENTITY = { environmentId: "nativeproof-00000000", userId: "00000000-0000-4000-8000-0000000000b1", schoolId: IDENTITY.schoolId };
+const PR4_CLASS = "00000000-0000-4000-8000-0000000000b3";
+
+async function runPr4SyncProof(): Promise<string> {
+  const platform = createNativeRollCallPlatform();
+  if (!platform) return "pr4=platform_unavailable";
+  const manager = createRollCallAccountManager(platform);
+  const opened = await manager.activate(PR4_IDENTITY);
+  if (!opened.ok) return `pr4=open_failed code=${opened.code}`;
+  const ctx = (opened as { account: RcActiveAccount }).account.ctx;
+  const proofsLeft = async (sessionId: string) =>
+    (await ctx.connection.read((db) => db.getFirstAsync<{ n: number }>("SELECT count(*) AS n FROM rc_scans WHERE session_id = ? AND proof IS NOT NULL", [sessionId])))?.n ?? -1;
+  try {
+    const existing = (await listSessions(ctx)).find((row) => row.class_id === PR4_CLASS);
+    if (existing) {
+      const row = await getSession(ctx, existing.session_id);
+      const ok = row.state === "synced" && row.frozen_body === null && (await proofsLeft(row.session_id)) === 0 && row.server_roll_call_id !== null;
+      return `pr4_persist=${ok ? "ok" : "MISMATCH"}`;
+    }
+    const date = new Date().toISOString().slice(0, 10);
+    const { session: draft } = await openDraftSession(ctx, { classId: PR4_CLASS, date, packId: null, syncDeadline: null });
+    for (let i = 0; i < 3; i += 1) {
+      await recordScan(ctx, {
+        sessionId: draft.session_id,
+        scanId: `00000000-0000-4000-8000-0000000001b${i}`,
+        publicId: `${"B".repeat(21)}${i}`,
+        proof: `${"Q".repeat(42)}${i}`,
+        medium: i % 2 ? "qr" : "nfc",
+        scannedAt: new Date().toISOString(),
+        match: null,
+      });
+    }
+    const closed = await closeSession(ctx, draft.session_id, null);
+    let network = false;
+    let receivedIdentical = true;
+    let sent = 0;
+    const transport: SyncTransport = async ({ operationId, body }) => {
+      sent += 1;
+      if (!network) return { kind: "network", code: "NETWORK" };
+      receivedIdentical = receivedIdentical && body === closed.frozenBody && operationId === closed.operationId;
+      const parsed = JSON.parse(body);
+      return {
+        kind: "http",
+        status: 201,
+        dateHeader: new Date().toUTCString(),
+        body: { rollCallId: "00000000-0000-4000-8000-0000000001bf", sessionId: parsed.sessionId, operationId, revision: parsed.revision, payloadDigest: parsed.payloadDigest, counts: { present: 3, late: 0, absent: 0, excused: 0, enrolled: 3 } },
+      };
+    };
+    const runner = createRollCallSyncRunner({ currentAccount: () => (manager.current() ? { ctx } : null), transport, random: () => 0.5 });
+    await runner.run({ trigger: "closed" });
+    const offline = await getSession(ctx, draft.session_id);
+    const kept = offline.frozen_body === closed.frozenBody && (await proofsLeft(draft.session_id)) === 3;
+    network = true;
+    // Réseau revenu AVANT l'échéance du backoff : aucune tentative (correctif CTO PR4).
+    const sentBefore = sent;
+    await runner.run({ trigger: "online" });
+    const held = sent === sentBefore && (await getSession(ctx, draft.session_id)).state === "failed_retryable";
+    // Attente réelle jusqu'à next_attempt_at, puis retour du réseau : tentative due, envoyée.
+    const dueAt = Date.parse(String(offline.next_attempt_at));
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, dueAt - Date.now()) + 1000));
+    await runner.run({ trigger: "online" });
+    const online = await getSession(ctx, draft.session_id);
+    const purged = online.frozen_body === null && (await proofsLeft(draft.session_id)) === 0;
+    const trusted = ((await loadLastTrustedTime(ctx)) ?? 0) > 0;
+    const verdict = offline.state === "failed_retryable" && kept && held && online.state === "synced" && purged && receivedIdentical && trusted;
+    return `pr4=${verdict ? "ok" : "MISMATCH"} offline=${offline.state} kept=${kept ? "yes" : "no"} early=${held ? "held" : "SENT"} online=${online.state} identical=${receivedIdentical ? "yes" : "no"} purged=${purged ? "yes" : "no"}`;
+  } finally {
+    await manager.close();
+  }
+}
+
 export default function App() {
   const [status, setStatus] = useState("NFC-PRES-LOCAL-PR2 — recette native en cours");
   useEffect(() => {
@@ -204,6 +285,7 @@ export default function App() {
         const sqlcipher = await runSqlCipherProof();
         log(sqlcipher);
         log(await runPr3PipelineProof());
+        log(await runPr4SyncProof());
         log("done");
         return `S13 ${report.passed}/${report.total} (${report.engine}) — ${sqlcipher}`;
       } catch (error) {

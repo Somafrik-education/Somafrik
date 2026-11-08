@@ -20,7 +20,7 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { mintSessionAccessToken } = require("./testAccessSession");
-const { deriveCardKeyFromSecret, computeProof, computePayloadDigest } = require("./rollCallOfflineProof");
+const { deriveCardKeyFromSecret, computeProof, computePayloadDigest, canonicalJson } = require("./rollCallOfflineProof");
 const { wallTime } = require("./rollCallOfflinePack");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
@@ -59,11 +59,12 @@ async function ensureIsolatedDatabase(databaseUrl, databaseName) {
   return withDatabaseName(databaseUrl, databaseName);
 }
 
-async function request(port, pathname, { method = "GET", token, body, headers = {}, signal } = {}) {
+async function request(port, pathname, { method = "GET", token, body, rawBody, headers = {}, signal } = {}) {
   const response = await fetch(`http://127.0.0.1:${port}/api${pathname}`, {
     method,
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    // `rawBody` : chaîne envoyée telle quelle (corps figé du Mobile, NFC-PRES-LOCAL-PR4).
+    body: rawBody !== undefined ? rawBody : body === undefined ? undefined : JSON.stringify(body),
     signal,
   });
   const text = await response.text();
@@ -859,6 +860,70 @@ async function main() {
     );
     sameAck(oldAck)(await sync(tokenTeacher, oldBody), "rejeu après échéance");
     await guarded("nouvelle opération après échéance", tokenTeacher, makeBody({ date: oldDate, scans: [], manual: [] }), 409, "ROLL_CALL_OFFLINE_EXPIRED");
+
+    // ================= D. Protocole Mobile PR4 : corps figé envoyé octet pour octet =================
+    // Le Mobile (closeSession) fige `canonicalJson({ ...lot, payloadDigest })` (JCS) et renvoie
+    // exactement cette chaîne à chaque tentative, avec Idempotency-Key = operationId.
+    const S9 = U(109);
+    const S10 = U(110);
+    // Le serveur démarré a installé l'identité permanente des élèves : fixture insérée hors trigger,
+    // comme les comptes du jeu d'essai initial.
+    await pool.query("ALTER TABLE students DISABLE TRIGGER students_permanent_identity_insert");
+    await pool.query(
+      `INSERT INTO students (id, school_id, student_code, login_code, identity_code, first_name, last_name, status) VALUES
+         ($1,$3,'CD-LAC-EL-26-909','CD-LAC-EL-26-909','CD-LAC-EL-26-909','Kim','Vita','active'),
+         ($2,$3,'CD-LAC-EL-26-910','CD-LAC-EL-26-910','CD-LAC-EL-26-910','Lea','Wazi','active')`,
+      [S9, S10, schoolA],
+    );
+    await pool.query("ALTER TABLE students ENABLE TRIGGER students_permanent_identity_insert");
+    const classA3 = await klass(schoolA, yearA, "SY-A3");
+    await enroll(schoolA, S9, classA3, yearA);
+    await enroll(schoolA, S10, classA3, yearA);
+    await assign(schoolA, teacherA, classA3, subjectA, yearA);
+    const card9 = await issue(S9, "nfc_qr");
+    const card10 = await issue(S10, "qr");
+    // S10 déjà justifié ce jour-là : statut protégé, jamais écrasé par le lot Mobile.
+    await pool.query("INSERT INTO attendance (school_id, student_id, class_id, attendance_date, status) VALUES ($1,$2,$3,$4::date,'excused')", [schoolA, S10, classA3, today]);
+    const mobileBody = makeBody({ classId: classA3, scans: [scanOf(card9, "qr"), scanOf(card10, "qr")], manual: [] });
+    const frozenText = canonicalJson(mobileBody);
+    const syncFrozen = (token, { port = PORT_A } = {}) =>
+      request(port, "/student-cards/roll-call/offline/v1/sync", { method: "POST", token, rawBody: frozenText, headers: { "Idempotency-Key": mobileBody.operationId } });
+    const conformAck = (data, label) => {
+      // Contrôle Mobile (decideSyncOutcome + runner) : sessionId, operationId, revision, payloadDigest.
+      assert.equal(data?.sessionId, mobileBody.sessionId, `${label} : sessionId`);
+      assert.equal(data?.operationId, mobileBody.operationId, `${label} : operationId`);
+      assert.equal(data?.revision, mobileBody.revision, `${label} : revision`);
+      assert.equal(data?.payloadDigest, mobileBody.payloadDigest, `${label} : payloadDigest`);
+    };
+    const beforeD = await counts();
+    // D-1 : rôle révoqué avant le premier envoi → 403 sans sessionState (Mobile : unconfirmable,
+    // opération et corps conservés, aucune révision), rien d'écrit.
+    await pool.query("UPDATE user_roles SET status = 'revoked', revoked_at = NOW() WHERE user_id = $1 AND role_key = 'TEACHER'", [USER.TEACHER]);
+    refused(await syncFrozen(tokenTeacher), "D-1 rôle révoqué avant envoi");
+    assert.deepEqual(await counts(), beforeD, "D-1 : aucune écriture");
+    await pool.query("UPDATE user_roles SET status = 'active', revoked_at = NULL WHERE user_id = $1 AND role_key = 'TEACHER'", [USER.TEACHER]);
+    // D-2 : droits rétablis, MÊME opération, MÊMES octets → enregistré ; ACK conforme ; statut protégé conservé.
+    const d2 = await syncFrozen(tokenTeacher);
+    assert.equal(d2.status, 201, `D-2 : ${d2.text}`);
+    conformAck(d2.data, "D-2");
+    assert.deepEqual(await attendance(today, classA3), { [S9]: "present", [S10]: "excused" });
+    // D-3 : réponse perdue côté téléphone → renvoi des mêmes octets → même ACK, aucune écriture.
+    const d3 = await syncFrozen(tokenTeacher);
+    sameAck(d2.data)(d3, "D-3 réponse perdue");
+    conformAck(d3.data, "D-3");
+    // D-4 : deux reconnexions simultanées → deux envois identiques, même ACK.
+    const d4 = await Promise.all([syncFrozen(tokenTeacher), syncFrozen(tokenTeacher, { port: PORT_B })]);
+    for (const out of d4) sameAck(d2.data)(out, "D-4 reconnexions simultanées");
+    // D-5 : renvoi au-delà de 24 h (cache d'idempotence purgé, autre instance) → ACK du journal.
+    await dropIdempotency();
+    sameAck(d2.data)(await syncFrozen(tokenTeacher, { port: PORT_B }), "D-5 > 24 h");
+    const afterD = await counts();
+    assert.deepEqual(
+      [afterD.journal - beforeD.journal, afterD.attendance - beforeD.attendance, afterD.audits - beforeD.audits],
+      [1, 1, 1],
+      "D : une seule écriture pour tous les envois identiques",
+    );
+    assert.deepEqual(await attendance(today, classA3), { [S9]: "present", [S10]: "excused" }, "D : statut justifié intact");
 
     // ================= E. Non-régression des routes existantes =================
     const rosterOut = await request(PORT_A, `/student-cards/roll-call/roster?${new URLSearchParams({ sessionId: crypto.randomUUID(), classId: classA1, date: today })}`, { token: tokenTeacher });

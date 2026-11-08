@@ -31,6 +31,7 @@ import {
   type OfflineRollCallSummary,
 } from "../offline/rollCall/session/offlineRollCall";
 import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
+import OfflineRollCallSyncList from "./OfflineRollCallSyncList";
 import { findLatestSession, type RcContext } from "../offline/rollCall/store/repository";
 import { downloadOfflineRollCallPack } from "../services/rollCallOfflineApi";
 
@@ -78,6 +79,8 @@ async function closeNfcReader(hardware: NfcHardware) {
 
 export default function OfflineRollCallModal({ visible, session, classId, className, date, nfcAvailable, qrAvailable, hardware, onClose }: Props) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
+  // NFC-PRES-LOCAL-PR4 : réouverture après « Corriger l'appel » (brouillon révisé).
+  const [reloadKey, setReloadKey] = useState(0);
   const [summary, setSummary] = useState<OfflineRollCallSummary | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [scanSource, setScanSource] = useState<"nfc" | "qr" | null>(null);
@@ -142,7 +145,7 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
     return () => {
       cancelled = true;
     };
-  }, [actorUserId, classId, date, refresh, session, visible]);
+  }, [actorUserId, classId, date, refresh, reloadKey, session, visible]);
 
   /** Une lecture : preuve locale, COMMIT, puis affichage. Jamais de requête réseau. */
   const submitToken = useCallback(
@@ -254,6 +257,8 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
               if (closed.ok) {
                 setPhase({ kind: "closed" });
                 setFeedback({ tone: "ok", message: closed.message });
+                // NFC-PRES-LOCAL-PR4 : transmission dès la clôture si le réseau le permet.
+                void rollCallRuntime().requestSync(sessionRef.current, "closed");
               } else setFeedback({ tone: "error", message: closed.message });
             } finally {
               setSaving(false);
@@ -284,9 +289,19 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
         ) : null}
         {phase.kind === "error" ? <Text style={[styles.feedback, TONE_STYLE.error]} testID="offline-roll-call-error">{phase.message}</Text> : null}
         {phase.kind === "pending_sync" || phase.kind === "closed" ? (
-          <Text style={[styles.feedback, TONE_STYLE.neutral]} testID="offline-roll-call-pending-sync">
-            {OFFLINE_ROLL_CALL_COPY.closed}
-          </Text>
+          <>
+            {phase.kind === "closed" ? (
+              <Text style={[styles.feedback, TONE_STYLE.neutral]} testID="offline-roll-call-pending-sync">
+                {OFFLINE_ROLL_CALL_COPY.closed}
+              </Text>
+            ) : null}
+            <OfflineRollCallSyncList
+              session={session}
+              filter={{ classId, date }}
+              classNameOf={() => className}
+              onCorrected={() => setReloadKey((value) => value + 1)}
+            />
+          </>
         ) : null}
 
         {ready ? (

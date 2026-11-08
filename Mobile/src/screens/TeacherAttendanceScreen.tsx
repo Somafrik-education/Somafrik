@@ -1,4 +1,4 @@
-import { Alert, ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ActivityIndicator, FlatList, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -12,6 +12,9 @@ import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal
 import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
 import StudentCardClassRollCallModal from "../components/StudentCardClassRollCallModal";
 import OfflineRollCallModal from "../components/OfflineRollCallModal";
+import OfflineRollCallSyncList from "../components/OfflineRollCallSyncList";
+import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
+import { SYNC_COPY } from "../offline/rollCall/sync/syncStatus";
 import { OFFLINE_ROLL_CALL_COPY } from "../offline/rollCall/session/offlineRollCall";
 import { CLASS_ROLL_CALL_COPY, type ClassRollCallDraft } from "../lib/studentCardClassRollCall";
 import StudentCardRollCallOverview from "../components/StudentCardRollCallOverview";
@@ -457,6 +460,20 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       && isStudentCardOfflineRollCallEnabled(visibleCardSettings)
       && (nfcControl === "ready" || canOpenQrScanner),
   );
+  // NFC-PRES-LOCAL-PR4 — appels hors connexion du compte (synchronisation, correction après not_recorded).
+  // Visible avec le flag, ou dès qu'une base d'appel existe déjà pour ce compte (appels en attente
+  // consultables même si le flag a été coupé depuis). Aucune base n'est créée pour l'afficher.
+  const [offlineSyncListOpen, setOfflineSyncListOpen] = useState(false);
+  const [offlineRollCallTarget, setOfflineRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
+  const canOpenOfflineSyncList = Boolean(
+    actor.teacher
+      && (Platform.OS === "android" || Platform.OS === "ios")
+      && (isStudentCardOfflineRollCallEnabled(visibleCardSettings) || rollCallRuntime().current()),
+  );
+  const offlineClassName = (classId: string) => {
+    const match = assignedClasses.find((entry) => String(entry.classId ?? "").toLowerCase() === classId);
+    return String(match?.className ?? match?.classCode ?? "Classe");
+  };
   const openedClassRollCall = classRollCallKey ? classRollCalls[classRollCallKey] : undefined;
   const openClassRollCall = () => {
     const key = rollCallKeyFor("teacher");
@@ -1113,6 +1130,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
             {canOpenOfflineRollCall
               ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setOfflineRollCallOpen(true))
               : null}
+            {canOpenOfflineSyncList
+              ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.listTitle, () => setOfflineSyncListOpen(true))
+              : null}
             {directionRollCall
               ? rollCallButton(
                   "attendance-roll-call-direction-resume",
@@ -1276,6 +1296,43 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         financeEnabled={canReadScanFinance}
         onClose={() => setScannerOpen(false)}
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    {offlineSyncListOpen ? (
+      <Modal visible animationType="slide" onRequestClose={() => setOfflineSyncListOpen(false)}>
+        <View style={styles.offlineSyncModal} testID="offline-sync-modal">
+          <View style={styles.offlineSyncHeader}>
+            <Text style={styles.offlineSyncTitle} accessibilityRole="header">{SYNC_COPY.listTitle}</Text>
+            <TouchableOpacity testID="offline-sync-close" onPress={() => setOfflineSyncListOpen(false)} accessibilityRole="button" accessibilityLabel="Fermer">
+              <Ionicons name="close" size={24} color="#0F172A" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView>
+            <OfflineRollCallSyncList
+              session={session}
+              classNameOf={offlineClassName}
+              onCorrected={(target) => {
+                setOfflineSyncListOpen(false);
+                setOfflineRollCallTarget({ ...target, className: offlineClassName(target.classId) });
+              }}
+            />
+          </ScrollView>
+        </View>
+      </Modal>
+    ) : null}
+    {offlineRollCallTarget && canOpenOfflineSyncList ? (
+      <OfflineRollCallModal
+        visible
+        session={session}
+        classId={offlineRollCallTarget.classId}
+        className={offlineRollCallTarget.className}
+        date={offlineRollCallTarget.date}
+        nfcAvailable={nfcControl === "ready"}
+        qrAvailable={canOpenQrScanner}
+        onClose={() => {
+          setOfflineRollCallTarget(null);
+          void loadPresences();
+        }}
       />
     ) : null}
     {selectedClass?.classId && canOpenOfflineRollCall && offlineRollCallOpen ? (
@@ -1445,6 +1502,9 @@ function normalizeAttendanceDateKey(value?: string) {
 }
 
 const styles = StyleSheet.create({
+  offlineSyncModal: { flex: 1, padding: 16, paddingTop: 48, backgroundColor: "#F8FAFC" },
+  offlineSyncHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  offlineSyncTitle: { fontSize: 20, fontWeight: "700", color: "#0F172A" },
   container: { flex: 1, backgroundColor: "#F8FAFC" },
   content: { padding: 20 },
   title: { fontSize: 32, fontWeight: "900", color: "#0F172A" },

@@ -210,6 +210,11 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
 export type HttpRequestOptions = RequestInit & {
   /** Ne pas envoyer / attendre de JSON (téléchargements bruts). */
   raw?: boolean;
+  /**
+   * Avec `raw` : renvoyer aussi la réponse d'un statut d'erreur (hors 401, traité par le
+   * rafraîchissement de session), pour lire son corps et ses en-têtes (NFC-PRES-LOCAL-PR4).
+   */
+  rawAnyStatus?: boolean;
   skipAuth?: boolean;
   timeoutMs?: number;
   /** UUID d'intention — rejoué tel quel après timeout / refresh. */
@@ -224,6 +229,7 @@ export async function httpRequest<T = Json>(
 ): Promise<T> {
   const {
     raw = false,
+    rawAnyStatus = false,
     skipAuth = false,
     timeoutMs = REQUEST_TIMEOUT_MS,
     idempotencyKey,
@@ -288,7 +294,7 @@ export async function httpRequest<T = Json>(
   }
 
   if (raw) {
-    if (!response.ok) {
+    if (!response.ok && !rawAnyStatus) {
       // Code métier conservé (JSON d'erreur), sans jamais recopier le message brut du serveur.
       let code: string | undefined;
       if ((response.headers.get("content-type") ?? "").includes("application/json")) {

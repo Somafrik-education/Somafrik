@@ -778,6 +778,40 @@ const NFC_PRES_LOCAL_PR1C_UNIQUE = new Set([
   "docs/student-card/NFC-PRES-LOCAL-PR1c-sync.md",
 ]);
 
+// NFC-PRES-LOCAL-PR4 (synchronisation Mobile des appels hors connexion) : exception distincte,
+// STRICTEMENT ancrée et évaluée avant PR3 et PR1c (PR4 modifie la modale d'appel PR3 et le test
+// PostgreSQL PR1c, section D). Déclenchée par un fichier propre à PR4 ; liste fermée exacte.
+const NFC_PRES_LOCAL_PR4_ANCHORS = Object.freeze([
+  "Mobile/src/offline/rollCall/sync/syncRunner.ts",
+  "Mobile/src/offline/rollCall/sync/syncRunner.test.ts",
+  "docs/student-card/NFC-PRES-LOCAL-PR4-sync.md",
+]);
+const NFC_PRES_LOCAL_PR4_EXACT = new Set([
+  "Mobile/App.rcNativeProof.tsx",
+  "Mobile/package.json",
+  "Mobile/scripts/run-rc-offline-native-proof.js",
+  "Mobile/src/components/OfflineRollCallModal.tsx",
+  "Mobile/src/components/OfflineRollCallSyncList.tsx",
+  "Mobile/src/offline/rollCall/runtime/RollCallOfflineRuntime.tsx",
+  "Mobile/src/offline/rollCall/runtime/rollCallRuntime.ts",
+  "Mobile/src/offline/rollCall/store/repository.ts",
+  "Mobile/src/offline/rollCall/sync/syncRunner.test.ts",
+  "Mobile/src/offline/rollCall/sync/syncRunner.ts",
+  "Mobile/src/offline/rollCall/sync/syncStatus.ts",
+  "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+  "Mobile/src/services/httpClient.ts",
+  "Mobile/src/services/rollCallOfflineApi.ts",
+  "backend/lib/rollCallOfflineSync.http.pg.test.js",
+  "docs/student-card/NFC-PRES-LOCAL-PR4-sync.md",
+  "scripts/verify-school-setup-lot4-red.ts",
+]);
+const NFC_PRES_LOCAL_PR4_UNIQUE = new Set([
+  "Mobile/src/components/OfflineRollCallSyncList.tsx",
+  "Mobile/src/offline/rollCall/sync/syncRunner.ts",
+  "Mobile/src/offline/rollCall/sync/syncStatus.ts",
+  "docs/student-card/NFC-PRES-LOCAL-PR4-sync.md",
+]);
+
 // NFC-PRES-LOCAL-PR3 (scanner hors connexion et interface d'appel) : exception distincte de PR1b et
 // PR1c, STRICTEMENT ancrée et évaluée avant elles (PR3 modifie aussi des fichiers propres à PR1b et
 // PR1c : le flag hors connexion est vérifié par la route pack et la garde W de synchronisation).
@@ -855,6 +889,18 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
       message:
         "L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.",
     };
+  }
+  // Exception limitée au lot PR4 : ancres complètes, liste fermée exacte, aucun fichier LOT 4.
+  if (changed.some((file) => NFC_PRES_LOCAL_PR4_UNIQUE.has(file))) {
+    const complete = NFC_PRES_LOCAL_PR4_ANCHORS.every((file) => changed.includes(file));
+    const outside = changed.filter((file) => !NFC_PRES_LOCAL_PR4_EXACT.has(file));
+    if (!complete || outside.length > 0 || exclusiveLot4.length > 0) {
+      return {
+        kind: "fail",
+        message: `L4-09: NFC-PRES-LOCAL-PR4 hors liste/ancres : ${!complete ? "ancres manquantes ; " : ""}${[...new Set([...outside, ...exclusiveLot4])].join(", ")}`,
+      };
+    }
+    return { kind: "na", message: "L4-09 N/A: NFC-PRES-LOCAL-PR4 synchronisation Mobile, ancres et liste fermée vérifiées." };
   }
   // Exception limitée au lot PR3 : ancres complètes, liste fermée exacte, aucun fichier LOT 4.
   if (changed.some((file) => NFC_PRES_LOCAL_PR3_UNIQUE.has(file))) {

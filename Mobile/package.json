@@ -113,7 +113,7 @@
     "test:student-card-nfc-performance": "npx --yes tsx --test src/lib/studentCardNfcPerformance.test.ts",
     "test:student-card-nfc-diagnosis": "npx --yes tsx --test src/lib/studentCardNfcDiagnosis.test.ts",
     "test:student-card-nfc-security": "npx --yes tsx --test src/lib/studentCardNfcSecurity.test.ts",
-    "test:rollcall-offline": "npx --yes tsx --test src/offline/rollCall/crypto/rollCallCrypto.test.ts src/offline/rollCall/pack/rollCallPack.test.ts src/offline/rollCall/store/rollCallStore.test.ts src/offline/rollCall/store/rollCallLocalState.test.ts src/offline/rollCall/store/rollCallCrash.test.ts src/offline/rollCall/session/offlineRollCall.test.ts src/offline/rollCall/runtime/rollCallRuntime.test.ts src/offline/rollCall/runtime/logoutFlow.test.ts",
+    "test:rollcall-offline": "npx --yes tsx --test src/offline/rollCall/crypto/rollCallCrypto.test.ts src/offline/rollCall/pack/rollCallPack.test.ts src/offline/rollCall/store/rollCallStore.test.ts src/offline/rollCall/store/rollCallLocalState.test.ts src/offline/rollCall/store/rollCallCrash.test.ts src/offline/rollCall/session/offlineRollCall.test.ts src/offline/rollCall/runtime/rollCallRuntime.test.ts src/offline/rollCall/runtime/logoutFlow.test.ts src/offline/rollCall/sync/syncRunner.test.ts",
     "verify:rollcall-native-proof": "node scripts/run-rc-offline-native-proof.js"
   },
   "dependencies": {

@@ -21,6 +21,7 @@ import { createRollCallAccountManager, type RcActivateResult, type RollCallAccou
 import { accountDatabaseExists, type RcIdentity, type RcPlatformDeps } from "../store/database";
 import { countPendingSessions } from "../store/repository";
 import { createNativeRollCallPlatform } from "../store/nativePlatform";
+import { createRollCallSyncRunner, type SyncRunReport, type SyncTransport, type SyncTrigger } from "../sync/syncRunner";
 
 type SessionLike = {
   user?: { id?: string; schoolId?: string } | null;
@@ -38,7 +39,17 @@ type RuntimeDeps = {
   platform: RcPlatformDeps | null;
   environment: () => { environmentId: string; releaseProfile: string } | null;
   log?: (event: string, code?: string) => void;
+  /** Envoi HTTP du lot figé (NFC-PRES-LOCAL-PR4) ; par défaut la route PR1c via httpClient. */
+  transport?: SyncTransport;
+  random?: () => number;
 };
+
+function defaultTransport(): SyncTransport {
+  return (input) => {
+    const { sendOfflineRollCallSync } = require("../../../services/rollCallOfflineApi") as typeof import("../../../services/rollCallOfflineApi");
+    return sendOfflineRollCallSync(input);
+  };
+}
 
 function defaultEnvironment(): { environmentId: string; releaseProfile: string } | null {
   try {
@@ -66,6 +77,21 @@ export function createRollCallRuntime(deps: RuntimeDeps) {
   function sameIdentity(a: RcIdentity | null, b: RcIdentity | null): boolean {
     return !!a && !!b && a.environmentId === b.environmentId && a.userId === b.userId && a.schoolId === b.schoolId;
   }
+
+  // NFC-PRES-LOCAL-PR4 : un seul runner, lié à la base ouverte du compte courant.
+  const syncListeners = new Set<() => void>();
+  const runner = createRollCallSyncRunner({
+    currentAccount: () => {
+      const account = manager?.current();
+      return account ? { ctx: account.ctx } : null;
+    },
+    transport: deps.transport ?? defaultTransport(),
+    random: deps.random,
+    log,
+    onChange: () => {
+      for (const listener of syncListeners) listener();
+    },
+  });
 
   // Dernier état vérifié par compte, pour une décision de déconnexion synchrone.
   const guards = new Map<string, LogoutGuard>();
@@ -99,6 +125,9 @@ export function createRollCallRuntime(deps: RuntimeDeps) {
   async function refreshLogoutGuard(session: SessionLike): Promise<LogoutGuard | null> {
     const identity = manager ? identityOf(session) : null;
     if (!identity) return null;
+    // Une autre base est ouverte (autre compte) : on ne la ferme pas pour vérifier celui-ci.
+    const open = manager?.current();
+    if (open && !sameIdentity(open.identity, identity)) return guardFor(identity);
     const key = keyOf(identity);
     const seq = (guardSeqs.get(key) ?? 0) + 1;
     guardSeqs.set(key, seq);
@@ -148,9 +177,43 @@ export function createRollCallRuntime(deps: RuntimeDeps) {
     async onSessionChanged(session: SessionLike): Promise<void> {
       if (!manager) return;
       const current = manager.current();
-      if (current && !sameIdentity(current.identity, identityOf(session))) await manager.close();
+      if (current && !sameIdentity(current.identity, identityOf(session))) {
+        runner.stop(); // aucune réponse en vol appliquée à la base fermée
+        await manager.close();
+      }
       await refreshLogoutGuard(session);
+      // Retour du même compte : la base existante a été rouverte par la vérification ; envoi des
+      // appels en attente (blocked_logout restaurés, syncing interrompus repris à l'identique).
+      if (manager.current() && sameIdentity(manager.current()?.identity ?? null, identityOf(session))) {
+        void runner.run({ trigger: "login" });
+      }
     },
+
+    /**
+     * Synchronisation des appels du compte authentifié : uniquement sur sa propre base ouverte,
+     * jamais sur celle d'un autre compte. `manual` ignore le backoff (pas l'échéance).
+     */
+    async requestSync(session: SessionLike, trigger: SyncTrigger): Promise<SyncRunReport | null> {
+      if (!manager) return null;
+      const identity = identityOf(session);
+      const current = manager.current();
+      if (!identity || !current || !sameIdentity(current.identity, identity)) return null;
+      const report = await runner.run({ trigger });
+      // État de déconnexion recalculé seulement si ce compte est toujours le compte courant : jamais
+      // de réouverture de sa base au détriment d'un autre compte connecté entre-temps.
+      if (sameIdentity(manager.current()?.identity ?? null, identity)) await refreshLogoutGuard(session).catch(() => undefined);
+      return report;
+    },
+
+    /** Actualisation de l'interface après chaque transition de synchronisation. */
+    subscribeSync(listener: () => void): () => void {
+      syncListeners.add(listener);
+      return () => {
+        syncListeners.delete(listener);
+      };
+    },
+
+    syncBusy: () => runner.busy(),
 
     /** Ouverture explicite par l'écran d'appel hors connexion, pour le compte authentifié uniquement. */
     async activate(session: SessionLike): Promise<RcActivateResult | { ok: false; code: string; message: string }> {
@@ -198,6 +261,7 @@ export function createRollCallRuntime(deps: RuntimeDeps) {
       if (!manager || !plan.identity) return "none";
       const identity = plan.identity;
       logoutEpoch += 1;
+      runner.stop();
       guards.delete(keyOf(identity));
       const current = manager.current();
       if (!current || !sameIdentity(current.identity, identity)) return "none";
@@ -239,6 +303,7 @@ export function createRollCallRuntime(deps: RuntimeDeps) {
     async forcedLogout(): Promise<void> {
       if (!manager) return;
       logoutEpoch += 1;
+      runner.stop();
       guards.clear();
       const result = await manager.logout({ confirmPending: true }).catch(() => null);
       if (!result) await manager.close().catch(() => undefined);
