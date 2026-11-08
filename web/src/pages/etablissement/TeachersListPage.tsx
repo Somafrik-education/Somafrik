@@ -214,21 +214,30 @@ export function TeachersListPage() {
     setRemovalError(null);
     setRemovalLoading(assignmentPermissions.canRead);
     try {
-      const [classRows, subjectRows, assignmentRows] = await Promise.all([
+      const [classResult, subjectResult, assignmentResult] = await Promise.allSettled([
         classesApi.list(),
         subjectsApi.list(),
         assignmentPermissions.canRead ? teacherAssignmentsApi.list() : Promise.resolve([]),
       ]);
-      const code = String(row.teacherCode ?? "").trim();
-      setRemovalRows(
-        code && Array.isArray(assignmentRows)
-          ? assignmentRows.filter((item) =>
-              Boolean(item.id) &&
-              String(item.teacherId ?? "").trim() === code &&
-              String(item.status ?? "active").toLowerCase() === "active",
-            )
-          : [],
-      );
+      if (classResult.status === "rejected") throw classResult.reason;
+      if (subjectResult.status === "rejected") throw subjectResult.reason;
+      const classRows = classResult.value;
+      const subjectRows = subjectResult.value;
+      if (assignmentResult.status === "rejected") {
+        setRemovalError(mapApiError(assignmentResult.reason, "Impossible de charger les affectations."));
+      } else {
+        const code = String(row.teacherCode ?? "").trim();
+        const assignmentRows = assignmentResult.value;
+        setRemovalRows(
+          code && Array.isArray(assignmentRows)
+            ? assignmentRows.filter((item) =>
+                Boolean(item.id) &&
+                String(item.teacherId ?? "").trim() === code &&
+                String(item.status ?? "active").toLowerCase() === "active",
+              )
+            : [],
+        );
+      }
       setClasses(
         Array.isArray(classRows)
           ? classRows.filter((item) => String(item.status ?? "active") === "active")
