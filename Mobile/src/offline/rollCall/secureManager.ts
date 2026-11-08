@@ -97,12 +97,14 @@ export function createRollCallSecureManager(deps: RollCallSecureDeps) {
           // Corrupt key never reinterpreted as a valid passphrase.
           throw fail("RC_DATABASE_KEY_INVALID");
         }
+        const createdKey = !key;
         if (!key) {
           key = await generateKey();
           await deps.secure.put(partition.keyName, key);
         }
-        const db = await deps.openDatabase(partition.fileName);
+        let db: SecureRollCallDb | null = null;
         try {
+          db = await deps.openDatabase(partition.fileName);
           // Strictly validated hex passphrase. SQLCipher must acknowledge cipher_version.
           await db.execAsync("PRAGMA key = '" + key + "'");
           const row = await db.getFirstAsync<{ cipher_version?: string }>("PRAGMA cipher_version");
@@ -121,7 +123,12 @@ export function createRollCallSecureManager(deps: RollCallSecureDeps) {
           current = opened;
           return opened;
         } catch (error) {
-          await db.closeAsync().catch(() => undefined);
+          await db?.closeAsync().catch(() => undefined);
+          // If a fresh database failed to initialize, never retain its orphan key.
+          // A subsequent open must start with a new random key, not reuse failed state.
+          if (!existed && createdKey) {
+            await deps.secure.remove(partition.keyName).catch(() => undefined);
+          }
           // Key existed and DB opened but schema failed: don't destroy / overwrite.
           // The caller will show a visible error and may quarantine by policy.
           if (!existed) await deps.files.remove(partition.fileName).catch(() => undefined);
