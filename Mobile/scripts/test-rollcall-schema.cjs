@@ -13,7 +13,7 @@ const schemaSource = fs.readFileSync(
   path.resolve(__dirname, "../src/offline/rollCall/schema.ts"),
   "utf8",
 );
-const match = schemaSource.match(/export const ROLL_CALL_SCHEMA_V1 = String\.raw\`([\s\S]*?)\`;/);
+const match = schemaSource.match(/export const ROLL_CALL_SCHEMA_V1 = String\.raw`([\s\S]*?)`;/);
 assert.ok(match, "Schema SQL must be declared as a literal (test cannot silently skip)");
 const db = new DatabaseSync(":memory:");
 db.exec("PRAGMA foreign_keys = ON");
@@ -27,20 +27,20 @@ const base = {
 function session(id, override = {}) {
   const s = { ...base, ...override };
   db.prepare(
-    \`INSERT INTO rc_sessions (
+    `INSERT INTO rc_sessions (
       session_id, user_id, school_id, class_id, roll_call_date,
       state, opened_at, sync_deadline
-    ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)\`
+    ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)`
   ).run(id, s.user, s.school, s.classId, s.date,
     "2026-11-09T07:00:00Z", "2026-11-12T23:00:00Z");
 }
 const scan = db.prepare(
-  \`INSERT INTO rc_scans (scan_id, session_id, public_id, proof, medium, scanned_at, local_status)
-   VALUES (?, ?, ?, ?, 'nfc', '2026-11-09T07:30:00Z', 'verified_local')\`
+  `INSERT INTO rc_scans (scan_id, session_id, public_id, proof, medium, scanned_at, local_status)
+   VALUES (?, ?, ?, ?, 'nfc', '2026-11-09T07:30:00Z', 'verified_local')`
 );
 const mark = db.prepare(
-  \`INSERT INTO rc_marks(session_id, match_key, status, source, updated_at)
-   VALUES (?, ?, ?, 'manual', '2026-11-09T07:30:00Z')\`
+  `INSERT INTO rc_marks(session_id, match_key, status, source, updated_at)
+   VALUES (?, ?, ?, 'manual', '2026-11-09T07:30:00Z')`
 );
 
 session("one");
@@ -54,7 +54,7 @@ assert.throws(() => mark.run("one", "student-1", "absent"), /UNIQUE constraint f
 assert.throws(() => mark.run("one", "student-2", "excused"), /CHECK constraint failed/);
 
 db.prepare(
-  \`UPDATE rc_sessions SET state = 'closed', operation_id = ?, payload_digest = ?, frozen_body = ? WHERE session_id = ?\`
+  `UPDATE rc_sessions SET state = 'closed', operation_id = ?, payload_digest = ?, frozen_body = ? WHERE session_id = ?`
 ).run("operation-1", DIGEST, new Uint8Array([1, 2, 3]), "one");
 assert.throws(
   () => db.exec("UPDATE rc_sessions SET payload_digest = '" + "b".repeat(64) + "' WHERE session_id = 'one'"),
