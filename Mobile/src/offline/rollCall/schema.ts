@@ -111,6 +111,12 @@ WHEN
    OLD.payload_digest IS NOT NEW.payload_digest OR
    OLD.revision IS NOT NEW.revision)
   AND NOT (
+    OLD.state = 'draft' AND NEW.state = 'closed' AND
+    NEW.revision = OLD.revision AND
+    OLD.operation_id IS NULL AND OLD.payload_digest IS NULL AND OLD.frozen_body IS NULL AND
+    NEW.operation_id IS NOT NULL AND NEW.payload_digest IS NOT NULL AND NEW.frozen_body IS NOT NULL
+  )
+  AND NOT (
     OLD.state = 'failed_action_required' AND
     OLD.last_session_state = 'not_recorded' AND
     NEW.state = 'draft' AND
