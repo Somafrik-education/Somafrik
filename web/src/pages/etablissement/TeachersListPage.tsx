@@ -14,7 +14,7 @@ import { Field, Input, Select } from "../../components/ui/Field";
 import { useToast } from "../../components/ui/Toast";
 import { ApiError } from "../../api/client";
 import { teachersApi, type SchoolTeacher } from "../../lib/teachersApi";
-import { teacherAssignmentsApi } from "../../lib/teacherAssignmentsApi";
+import { teacherAssignmentsApi, type TeacherAssignmentRecord } from "../../lib/teacherAssignmentsApi";
 import { classesApi, type SchoolClass } from "../../lib/classesApi";
 import { isArchivedSubjectStatus, subjectsApi, type SchoolSubject } from "../../lib/subjectsApi";
 import { usePermissionContext } from "../../lib/usePermissionContext";
@@ -147,6 +147,11 @@ export function TeachersListPage() {
   const [deleting, setDeleting] = useState<SchoolTeacher | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
+  const [removingFor, setRemovingFor] = useState<SchoolTeacher | null>(null);
+  const [removalRows, setRemovalRows] = useState<TeacherAssignmentRecord[]>([]);
+  const [removalLoading, setRemovalLoading] = useState(false);
+  const [removalSavingId, setRemovalSavingId] = useState<string | null>(null);
+  const [removalError, setRemovalError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -217,6 +222,50 @@ export function TeachersListPage() {
       logSubjectsCatalogFailure(err);
       const message = formatCaughtApiError(err, "Impossible de charger les classes ou cours.");
       setSubjectsCatalogError(message);
+    }
+  }
+
+  async function openRemoveCourse(row: SchoolTeacher) {
+    setRemovingFor(row);
+    setRemovalRows([]);
+    setRemovalError(null);
+    setRemovalLoading(true);
+    try {
+      const rows = await teacherAssignmentsApi.list();
+      const code = String(row.teacherCode ?? "").trim();
+      setRemovalRows(
+        code && Array.isArray(rows)
+          ? rows.filter((item) =>
+              Boolean(item.id) &&
+              String(item.teacherId ?? "").trim() === code &&
+              String(item.status ?? "active").toLowerCase() === "active",
+            )
+          : [],
+      );
+    } catch (err) {
+      setRemovalError(mapApiError(err, "Impossible de charger les affectations."));
+    } finally {
+      setRemovalLoading(false);
+    }
+  }
+
+  async function onRemoveCourse(assignmentId: string) {
+    if (removalSavingId || !assignmentId) return;
+    setRemovalSavingId(assignmentId);
+    setRemovalError(null);
+    try {
+      await teacherAssignmentsApi.remove(assignmentId);
+      setRemovalRows((rows) => rows.filter((item) => item.id !== assignmentId));
+      showToast("Affectation retirée.", "success");
+      try {
+        await load();
+      } catch {
+        setRemovalError("Retrait effectué, mais actualisation impossible.");
+      }
+    } catch (err) {
+      setRemovalError(mapApiError(err, "Retrait impossible."));
+    } finally {
+      setRemovalSavingId(null);
     }
   }
 
@@ -344,6 +393,11 @@ export function TeachersListPage() {
                 Affecter un cours
               </Button>
             ) : null}
+            {permissionsReady && assignmentPermissions.canRead && assignmentPermissions.canDelete ? (
+              <Button type="button" variant="secondary" size="sm" onClick={() => void openRemoveCourse(row)}>
+                Retirer un cours
+              </Button>
+            ) : null}
             {permissions.canDelete ? (
               <Button type="button" variant="danger" size="sm" onClick={() => openDelete(row)}>
                 Supprimer
@@ -353,7 +407,7 @@ export function TeachersListPage() {
         ),
       },
     ],
-    [assignmentPermissions.canCreate, permissions.canDelete, permissions.canUpdate, permissionsReady],
+    [assignmentPermissions.canCreate, assignmentPermissions.canRead, assignmentPermissions.canDelete, permissions.canDelete, permissions.canUpdate, permissionsReady],
   );
 
   if (permissionCtx.permissionsBootstrap === "loading" || permissionCtx.permissionsBootstrap === "idle") {
@@ -616,6 +670,43 @@ export function TeachersListPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(removingFor)}
+        onClose={() => { if (!removalSavingId) setRemovingFor(null); }}
+        title={removingFor ? `Retirer un cours — ${removingFor.name || removingFor.lastName}` : "Retirer un cours"}
+      >
+        <div className="space-y-3">
+          {removalError ? <InlineAlert tone="danger" title="Erreur">{removalError}</InlineAlert> : null}
+          {removalLoading ? <p className="text-sm">Chargement des affectations…</p> : null}
+          {!removalLoading && !removalError && removalRows.length === 0 ? (
+            <p className="text-sm">Aucune affectation active à retirer.</p>
+          ) : null}
+          {removalRows.map((assignment) => (
+            <div key={assignment.id} className="flex items-center justify-between gap-3">
+              <span className="text-sm">{assignment.className} · {assignment.course || assignment.subject}</span>
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                disabled={Boolean(removalSavingId)}
+                onClick={() => {
+                  if (window.confirm(`Retirer le cours « ${assignment.course || assignment.subject} » pour la classe ${assignment.className} ? Les données historiques sont conservées.`)) {
+                    void onRemoveCourse(assignment.id);
+                  }
+                }}
+              >
+                {removalSavingId === assignment.id ? "Retrait…" : "Retirer"}
+              </Button>
+            </div>
+          ))}
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" disabled={Boolean(removalSavingId)} onClick={() => setRemovingFor(null)}>
+              Fermer
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       <Modal
