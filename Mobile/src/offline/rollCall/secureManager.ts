@@ -93,6 +93,11 @@ export function createRollCallSecureManager(deps: RollCallSecureDeps) {
           await deps.files.quarantine(partition.fileName);
           throw fail("RC_DATABASE_KEY_LOST");
         }
+        if (key && !existed) {
+          // A key without its database may mean external deletion or a crash
+          // between key creation and first open. Never silently recreate it.
+          throw fail("RC_DATABASE_FILE_LOST");
+        }
         if (key && !HEX64.test(key)) {
           // Corrupt key never reinterpreted as a valid passphrase.
           throw fail("RC_DATABASE_KEY_INVALID");
