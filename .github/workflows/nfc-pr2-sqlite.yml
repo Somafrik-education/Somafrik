@@ -4,6 +4,8 @@ on:
     paths:
       - 'Mobile/src/offline/rollCall/schema.ts'
       - 'Mobile/scripts/test-rollcall-schema.cjs'
+      - 'Mobile/scripts/test-rollcall-local-store.mjs'
+      - 'Mobile/src/offline/rollCall/localStore.ts'
       - '.github/workflows/nfc-pr2-sqlite.yml'
   workflow_dispatch:
 jobs:
@@ -17,4 +19,6 @@ jobs:
         with:
           node-version: '22'
       - name: SQLite constraints / rollback / immutability
-        run: node Mobile/scripts/test-rollcall-schema.cjs
+        run: |
+          node Mobile/scripts/test-rollcall-schema.cjs
+          node --experimental-strip-types Mobile/scripts/test-rollcall-local-store.mjs
