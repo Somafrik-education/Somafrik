@@ -86,10 +86,12 @@ export function createRollCallLocalStore(db: LocalRollCallHandle) {
       required(sessionId,"sessionId"); required(matchKey,"matchKey"); required(updatedAt,"updatedAt");
       if (!["present","late","absent"].includes(status) ||
           !["card","manual","existing","default"].includes(source)) throw new Error("RC_MARK_INVALID");
-      await transact(() => db.runAsync(
-        "INSERT INTO rc_marks(session_id,match_key,status,source,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(session_id,match_key) DO UPDATE SET status=excluded.status,source=excluded.source,updated_at=excluded.updated_at",
-        [sessionId,matchKey,status,source,updatedAt]));
-      return counts(sessionId);
+      return transact(async () => {
+        await db.runAsync(
+          "INSERT INTO rc_marks(session_id,match_key,status,source,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(session_id,match_key) DO UPDATE SET status=excluded.status,source=excluded.source,updated_at=excluded.updated_at",
+          [sessionId,matchKey,status,source,updatedAt]);
+        return counts(sessionId);
+      });
     },
     async freeze(
       sessionId: string, operationId: string, payloadDigest: string,
