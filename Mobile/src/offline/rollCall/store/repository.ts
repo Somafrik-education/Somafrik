@@ -541,7 +541,7 @@ export type SyncOutcome =
       httpStatus: number;
       errorCode?: string | null;
       sessionState?: string | null;
-      ack?: { operationId?: unknown; revision?: unknown; payloadDigest?: unknown; rollCallId?: unknown; counts?: unknown } | null;
+      ack?: { operationId?: unknown; revision?: unknown; payloadDigest?: unknown; sessionId?: unknown; rollCallId?: unknown; counts?: unknown } | null;
     };
 
 export type SyncDecision = {
@@ -554,7 +554,10 @@ export type SyncDecision = {
  * Règles Mobile de PR0 §6.8 (pures). Une nouvelle révision n'est permise que si la réponse porte
  * `sessionState: "not_recorded"` ; un refus d'accès, un timeout ou une erreur 5xx ne l'autorisent jamais.
  */
-export function decideSyncOutcome(session: Pick<RcSessionRow, "operation_id" | "revision" | "payload_digest">, outcome: SyncOutcome): SyncDecision {
+export function decideSyncOutcome(
+  session: Pick<RcSessionRow, "operation_id" | "revision" | "payload_digest"> & { session_id?: string },
+  outcome: SyncOutcome,
+): SyncDecision {
   if (outcome.kind === "network") return { state: "failed_retryable", lastSessionState: null, errorCode: "NETWORK_ERROR" };
   const status = outcome.httpStatus;
   const code = sanitizeErrorCode(outcome.errorCode ?? null);
@@ -565,7 +568,9 @@ export function decideSyncOutcome(session: Pick<RcSessionRow, "operation_id" | "
       !!ack &&
       ack.operationId === session.operation_id &&
       ack.revision === Number(session.revision) &&
-      ack.payloadDigest === session.payload_digest;
+      ack.payloadDigest === session.payload_digest &&
+      // NFC-PRES-LOCAL-PR4 : un ACK portant une autre session n'est jamais accepté.
+      (ack.sessionId === undefined || session.session_id === undefined || ack.sessionId === session.session_id);
     return matches
       ? { state: "synced", lastSessionState: null, errorCode: null }
       : { state: "failed_action_required", lastSessionState: null, errorCode: "ACK_MISMATCH" };
@@ -581,7 +586,13 @@ export function decideSyncOutcome(session: Pick<RcSessionRow, "operation_id" | "
  * Enregistre la réponse de la tentative en cours. `synced` efface, dans la même transaction, les
  * preuves, le corps figé et le pack (données personnelles), et conserve un résumé de compteurs.
  */
-export function recordSyncOutcome(ctx: RcContext, sessionId: string, operationId: string, outcome: SyncOutcome): Promise<SyncDecision> {
+export function recordSyncOutcome(
+  ctx: RcContext,
+  sessionId: string,
+  operationId: string,
+  outcome: SyncOutcome,
+  options: { nextAttemptAt?: (decision: SyncDecision, attempt: number) => string | null } = {},
+): Promise<SyncDecision> {
   return ctx.connection.transaction(async (db) => {
     const session = await sessionFor(ctx, db, sessionId);
     if (session.state !== "syncing") fail(RC_REPO_ERROR.STATE_INVALID, "Aucune tentative en cours.");
@@ -601,18 +612,21 @@ export function recordSyncOutcome(ctx: RcContext, sessionId: string, operationId
       const summary = counts ? canonicalJson(pickCounts(counts as Record<string, unknown>)) : null;
       await db.runAsync(
         `UPDATE rc_sessions SET state = 'synced', synced_at = ?, frozen_body = NULL, last_error_code = NULL,
-                last_http_status = ?, last_session_state = NULL, server_roll_call_id = ?, summary_counts = ?
+                last_http_status = ?, last_session_state = NULL, server_roll_call_id = ?, summary_counts = ?, next_attempt_at = NULL
           WHERE session_id = ?`,
         [now, httpStatus, typeof ack?.rollCallId === "string" && UUID.test(ack.rollCallId) ? ack.rollCallId : null, summary, sessionId],
       );
       await db.runAsync("UPDATE rc_scans SET proof = NULL WHERE session_id = ?", [sessionId]);
       await purgePackIfUnused(db, session.pack_id);
     } else {
+      // NFC-PRES-LOCAL-PR4 : prochaine tentative (backoff) écrite dans la même transaction.
+      const next = options.nextAttemptAt ? options.nextAttemptAt(decision, Number(session.attempt_count)) : null;
       await db.runAsync(
         `UPDATE rc_sessions SET state = ?, last_error_code = ?, last_http_status = ?, last_session_state = ?,
-                ever_unconfirmable = CASE WHEN ? = 'unconfirmable' THEN 1 ELSE ever_unconfirmable END
+                ever_unconfirmable = CASE WHEN ? = 'unconfirmable' THEN 1 ELSE ever_unconfirmable END,
+                next_attempt_at = ?
           WHERE session_id = ?`,
-        [decision.state, decision.errorCode, httpStatus, decision.lastSessionState, decision.state, sessionId],
+        [decision.state, decision.errorCode, httpStatus, decision.lastSessionState, decision.state, next, sessionId],
       );
     }
     return decision;
@@ -635,6 +649,44 @@ async function purgePackIfUnused(db: L1SqliteLike, packId: string | null): Promi
     [packId],
   );
   if (!user) await db.runAsync("DELETE FROM rc_packs WHERE pack_id = ?", [packId]);
+}
+
+/** États à partir desquels `beginSyncAttempt` accepte un envoi. */
+export const RC_SENDABLE_STATES = ["closed", "failed_retryable", "unconfirmable"] as const;
+
+/**
+ * NFC-PRES-LOCAL-PR4 — appels du compte à transmettre maintenant : état envoyable, échéance de
+ * synchronisation non dépassée (jamais prolongée localement) et, sauf demande explicite, prochaine
+ * tentative atteinte.
+ */
+export function listSyncCandidates(ctx: RcContext, options: { ignoreBackoff?: boolean } = {}): Promise<RcSessionRow[]> {
+  const now = iso(ctx.nowMs());
+  return ctx.connection.read((db) =>
+    db.getAllAsync<RcSessionRow>(
+      `SELECT * FROM rc_sessions
+        WHERE user_id = ? AND school_id = ? AND state IN ('closed','failed_retryable','unconfirmable')
+          AND frozen_body IS NOT NULL AND operation_id IS NOT NULL
+          AND sync_deadline > ?
+          AND (? = 1 OR next_attempt_at IS NULL OR next_attempt_at <= ?)
+        ORDER BY closed_at, session_id`,
+      [ctx.identity.userId, ctx.identity.schoolId, now, options.ignoreBackoff ? 1 : 0, now],
+    ),
+  );
+}
+
+export type RcSyncStatusRow = RcSessionRow & { last_attempt_at: string | null };
+
+/** Vue des appels locaux du compte, avec la date de la dernière tentative (aucune preuve lue). */
+export function listSyncStatus(ctx: RcContext): Promise<RcSyncStatusRow[]> {
+  return ctx.connection.read((db) =>
+    db.getAllAsync<RcSyncStatusRow>(
+      `SELECT s.*, (SELECT max(a.started_at) FROM rc_sync_attempts a WHERE a.session_id = s.session_id) AS last_attempt_at
+         FROM rc_sessions s
+        WHERE s.user_id = ? AND s.school_id = ?
+        ORDER BY s.roll_call_date DESC, s.opened_at DESC`,
+      [ctx.identity.userId, ctx.identity.schoolId],
+    ),
+  );
 }
 
 /**
