@@ -1,0 +1,20 @@
+name: NFC PR2 SQLite schema invariants
+on:
+  pull_request:
+    paths:
+      - 'Mobile/src/offline/rollCall/schema.ts'
+      - 'Mobile/scripts/test-rollcall-schema.cjs'
+      - '.github/workflows/nfc-pr2-sqlite.yml'
+  workflow_dispatch:
+jobs:
+  sqlite-schema:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: SQLite constraints / rollback / immutability
+        run: node Mobile/scripts/test-rollcall-schema.cjs
