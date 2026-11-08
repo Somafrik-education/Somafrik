@@ -39,13 +39,32 @@ export function isKeyRevoked(keyring: PackKeyring, state: RevocationState, keyId
   return entry?.status === "revoked" || state.revokedKeyIds.includes(keyId);
 }
 
-export function normalizeRevocationState(raw: unknown): RevocationState {
-  const value = raw as { sequence?: unknown; revokedKeyIds?: unknown } | null;
-  const sequence = Number.isSafeInteger(value?.sequence) && (value?.sequence as number) >= 0 ? (value?.sequence as number) : 0;
-  const ids = Array.isArray(value?.revokedKeyIds)
-    ? (value?.revokedKeyIds as unknown[]).filter((id): id is string => typeof id === "string" && PACK_KEY_ID.test(id))
-    : [];
-  return Object.freeze({ sequence, revokedKeyIds: Object.freeze([...new Set(ids)].sort()) });
+/**
+ * Lecture STRICTE d'un état de révocation (stocké ou calculé). Toute forme inattendue donne null :
+ * l'appelant doit alors refuser (fail-closed) et ne JAMAIS substituer un état vide, qui
+ * réautoriserait une clé déjà révoquée.
+ *  - objet avec exactement `sequence` et `revokedKeyIds` ;
+ *  - `sequence` entier sûr ≥ 0, et ≥ 1 dès qu'une clé est révoquée ;
+ *  - `revokedKeyIds` : `keyId` valides, triés strictement (donc sans doublon).
+ */
+export function parseRevocationState(value: unknown): RevocationState | null {
+  if (!hasExactKeys(value, ["sequence", "revokedKeyIds"])) return null;
+  const { sequence, revokedKeyIds } = value;
+  if (!Number.isSafeInteger(sequence) || (sequence as number) < 0) return null;
+  if (!Array.isArray(revokedKeyIds)) return null;
+  for (let i = 0; i < revokedKeyIds.length; i += 1) {
+    const id = revokedKeyIds[i];
+    if (typeof id !== "string" || !PACK_KEY_ID.test(id)) return null;
+    if (i > 0 && !(revokedKeyIds[i - 1] < id)) return null;
+  }
+  if (revokedKeyIds.length > 0 && (sequence as number) < 1) return null;
+  return Object.freeze({ sequence: sequence as number, revokedKeyIds: Object.freeze([...(revokedKeyIds as string[])]) });
+}
+
+/** Union monotone de deux états VALIDES (séquence maximale, aucune révocation perdue). */
+export function mergeRevocationStates(stored: RevocationState, next: RevocationState): RevocationState {
+  const ids = [...new Set([...stored.revokedKeyIds, ...next.revokedKeyIds])].sort();
+  return Object.freeze({ sequence: Math.max(stored.sequence, next.sequence), revokedKeyIds: Object.freeze(ids) });
 }
 
 /**

@@ -76,6 +76,13 @@ Aucun appel réseau, aucun écran, aucun flag. Le module n'est importé par aucu
   - l'en-tête du fichier ne doit pas être `SQLite format 3\0`, sinon la base est supprimée et l'erreur est `RC_SQLCIPHER_PLAINTEXT_FILE` ;
   - `allowBackup="false"` (plugin `withSomafrikAndroidSecurity`), SecureStore `WHEN_UNLOCKED_THIS_DEVICE_ONLY`.
 
+- **État local de sécurité (correctif de la revue CTO sur `b2a3a3ef`)** : la liste de révocation conservée (`pack_revocations`) et l'horloge de confiance (`last_trusted_time_ms`) sont des protections monotones. Elles ne sont jamais remplacées par un état vide.
+  - Les deux valeurs sont écrites **à la création** de la base (`{"sequence":0,"revokedKeyIds":[]}` et `"0"`). Leur absence ultérieure est donc une corruption, jamais une base neuve.
+  - Lecture stricte : forme exacte, séquence entière ≥ 0 (≥ 1 dès qu'une clé est révoquée), identifiants valides triés sans doublon, horloge en entier décimal canonique. Toute autre valeur produit un refus explicite : `RC_PACK_REVOCATIONS_STATE_CORRUPT` ou `RC_TRUSTED_TIME_STATE_CORRUPT`.
+  - En cas de refus, aucun pack n'est utilisable ni téléchargeable. Rien n'est écrit, la valeur corrompue n'est pas écrasée et le pack stocké n'est pas supprimé.
+  - Chaque mise à jour (union des révocations, avance de l'horloge) lit, fusionne et écrit dans **une seule transaction** : aucun état intermédiaire après un arrêt brutal ou un `COMMIT` refusé.
+  - Triggers SQLite sur `rc_meta`, vérifiés aussi sur SQLCipher Android par la recette native : suppression interdite ; identité du compte immuable ; séquence jamais en recul ; aucune clé révoquée retirée ; horloge jamais en recul.
+
 ## 5. Écarts et interprétations du contrat PR0, soumis au CTO
 
 1. **`accountId` de 23 caractères** : `[0..22]` est lu comme un intervalle inclusif. Convention publiée avant cette session et conservée.
@@ -88,10 +95,10 @@ Aucun appel réseau, aucun écran, aucun flag. Le module n'est importé par aucu
 
 | Gate | Moyen | État |
 | --- | --- | --- |
-| Tests unitaires et SQLite (Node) | `npm --prefix Mobile run test:rollcall-offline` : 49 tests (crypto 12, pack 11, store 25, arrêt brutal 1) | PASS |
+| Tests unitaires et SQLite (Node) | `npm --prefix Mobile run test:rollcall-offline` : 76 tests (crypto 12, pack 11, stockage 25, état local de sécurité 27, arrêt brutal 1) | PASS |
 | Parité Backend (Node) | 27 cas S13, 3 000 valeurs JCS aléatoires, preuves et digest aléatoires contre le code Backend | PASS |
 | Arrêt brutal | processus fils tué par `SIGKILL` dans une transaction, fichier SQLite réel | PASS |
-| Mutation | 9 mutants (voir le commentaire de PR) | 9 KILLED |
+| Mutation | 17 mutants (voir les commentaires de PR) | 17 KILLED |
 | Hermes S13 **sous Android** | `.github/workflows/nfc-pr2-native-proof.yml` : APK de recette x86_64, émulateur API 34 (KVM), `scripts/run-rc-offline-native-proof.js` | voir le commentaire de PR, au HEAD exact |
 | SQLCipher **Android** | même workflow : `cipher_version`, écriture, fermeture, `force-stop`, relecture, mauvaise clé et sans clé refusées, en-tête chiffré | idem |
 

@@ -37,6 +37,9 @@ export const PACK_ERROR = Object.freeze({
   CLOCK_BEHIND: "RC_PACK_DEVICE_CLOCK_BEHIND",
   NOT_YET_VALID: "RC_PACK_NOT_YET_VALID",
   EXPIRED: "RC_PACK_EXPIRED",
+  /** État local de sécurité (révocations, horloge) illisible : aucun pack utilisable. */
+  REVOCATIONS_STATE_CORRUPT: "RC_PACK_REVOCATIONS_STATE_CORRUPT",
+  TRUSTED_TIME_STATE_CORRUPT: "RC_TRUSTED_TIME_STATE_CORRUPT",
 });
 export type PackErrorCode = (typeof PACK_ERROR)[keyof typeof PACK_ERROR];
 

@@ -294,6 +294,9 @@ async function initialize(db: L1SqliteLike, identity: RcIdentity, accountId: str
         ["account_id", accountId],
         ["environment_id", identity.environmentId],
         ["created_at", nowIso],
+        // État de sécurité initial écrit à la création : son absence ultérieure est une corruption.
+        ["pack_revocations", JSON.stringify({ sequence: 0, revokedKeyIds: [] })],
+        ["last_trusted_time_ms", "0"],
       ]) {
         await db.runAsync("INSERT INTO rc_meta (key, value) VALUES (?, ?)", [key, value]);
       }

@@ -16,7 +16,14 @@
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { runRollCallParitySuite } from "./src/offline/rollCall/crypto/parity";
-import { createRollCallAccountManager, type RcActiveAccount } from "./src/offline/rollCall/store/accountManager";
+import {
+  createRollCallAccountManager,
+  loadLastTrustedTime,
+  loadRevocationState,
+  recordTrustedTime,
+  saveRevocationState,
+  type RcActiveAccount,
+} from "./src/offline/rollCall/store/accountManager";
 import { createNativeRollCallPlatform } from "./src/offline/rollCall/store/nativePlatform";
 import { listSessions, openDraftSession, readCounts, recordScan } from "./src/offline/rollCall/store/repository";
 import { safeLogger } from "./src/services/safeLogger";
@@ -85,12 +92,34 @@ async function runSqlCipherProof(): Promise<string> {
       });
     }
     const counts = await readCounts(account.ctx, session.session_id);
+    // État de sécurité (révocations, horloge) : écritures monotones, puis tentatives de recul
+    // refusées par les triggers SQL (fonctions JSON du SQLCipher natif).
+    await saveRevocationState(account.ctx, { sequence: 1, revokedKeyIds: ["rc-pack-nativeproof-1"] });
+    await recordTrustedTime(account.ctx, 1_800_000_000_000);
+    const regressions = [
+      "UPDATE rc_meta SET value = '{\"sequence\":0,\"revokedKeyIds\":[]}' WHERE key = 'pack_revocations'",
+      "UPDATE rc_meta SET value = '1' WHERE key = 'last_trusted_time_ms'",
+      "DELETE FROM rc_meta WHERE key = 'pack_revocations'",
+    ];
+    let refused = 0;
+    for (const sql of regressions) {
+      try {
+        await account.ctx.connection.transaction((db) => db.execAsync(sql));
+      } catch (error) {
+        if (/^RC_(REVOCATIONS_REGRESSION|TRUSTED_TIME_REGRESSION|META_PROTECTED)$/.test(String((error as { code?: string })?.code))) refused += 1;
+      }
+    }
+    log(`meta_guard=${refused === regressions.length ? "refused" : `ACCEPTED_${regressions.length - refused}`}`);
     await manager.close();
     log(`closed=ok`);
     return `persist=init scans=${counts.scans}`;
   }
   const draft = sessions[0];
   const counts = await readCounts(account.ctx, draft.session_id);
+  const revocations = await loadRevocationState(account.ctx);
+  const trusted = await loadLastTrustedTime(account.ctx);
+  const metaOk = revocations.sequence === 1 && revocations.revokedKeyIds.join(",") === "rc-pack-nativeproof-1" && trusted === 1_800_000_000_000;
+  log(`meta_persist=${metaOk ? "ok" : "MISMATCH"}`);
   await manager.close();
   // Mauvaise clé, puis aucune clé : le fichier doit rester illisible (aucun SQLite en clair).
   const SQLite = require("expo-sqlite") as typeof import("expo-sqlite");

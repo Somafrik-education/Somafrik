@@ -59,6 +59,47 @@ CREATE TABLE IF NOT EXISTS rc_meta (
   value TEXT NOT NULL
 );
 
+-- Métadonnées d'identité et de sécurité : jamais supprimées (une absence = corruption, jamais
+-- une base neuve). L'identité du compte est immuable.
+CREATE TRIGGER IF NOT EXISTS rc_meta_protected_delete BEFORE DELETE ON rc_meta
+WHEN OLD.key IN ('schema_version','account_id','environment_id','created_at','pack_revocations','last_trusted_time_ms')
+BEGIN
+  SELECT RAISE(ABORT, 'RC_META_PROTECTED');
+END;
+
+CREATE TRIGGER IF NOT EXISTS rc_meta_identity_immutable BEFORE UPDATE ON rc_meta
+WHEN NEW.key IS NOT OLD.key OR OLD.key IN ('schema_version','account_id','environment_id','created_at')
+BEGIN
+  SELECT RAISE(ABORT, 'RC_META_PROTECTED');
+END;
+
+-- Horloge de confiance : entier décimal, jamais en recul.
+CREATE TRIGGER IF NOT EXISTS rc_meta_trusted_time_monotone BEFORE UPDATE ON rc_meta
+WHEN OLD.key = 'last_trusted_time_ms' AND (
+  NEW.value IS NULL OR NEW.value = '' OR NEW.value GLOB '*[^0-9]*' OR length(NEW.value) > 16
+  OR CAST(NEW.value AS INTEGER) < CAST(OLD.value AS INTEGER)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'RC_TRUSTED_TIME_REGRESSION');
+END;
+
+-- Révocations : séquence jamais en recul, aucune clé révoquée retirée. Une ancienne valeur
+-- illisible fait échouer json_each : la mise à jour est alors refusée (fail-closed).
+CREATE TRIGGER IF NOT EXISTS rc_meta_revocations_monotone BEFORE UPDATE ON rc_meta
+WHEN OLD.key = 'pack_revocations' AND (
+  json_valid(NEW.value) IS NOT 1
+  OR json_type(NEW.value, '$.sequence') IS NOT 'integer'
+  OR json_type(NEW.value, '$.revokedKeyIds') IS NOT 'array'
+  OR json_extract(NEW.value, '$.sequence') < json_extract(OLD.value, '$.sequence')
+  OR EXISTS (
+    SELECT 1 FROM json_each(OLD.value, '$.revokedKeyIds') AS o
+    WHERE o.value NOT IN (SELECT n.value FROM json_each(NEW.value, '$.revokedKeyIds') AS n)
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'RC_REVOCATIONS_REGRESSION');
+END;
+
 CREATE TABLE IF NOT EXISTS rc_packs (
   pack_id TEXT PRIMARY KEY NOT NULL CHECK (length(pack_id) = 36),
   class_id TEXT NOT NULL CHECK (length(class_id) = 36),

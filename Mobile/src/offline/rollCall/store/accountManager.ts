@@ -13,7 +13,7 @@
  * à la connexion, à la déconnexion et au démarrage. Aucune journalisation de clé ou d'identifiant.
  */
 import { advanceTrustedTime } from "../pack/clock";
-import { EMPTY_REVOCATION_STATE, normalizeRevocationState, type RevocationState } from "../pack/revocations";
+import { mergeRevocationStates, parseRevocationState, type RevocationState } from "../pack/revocations";
 import {
   RC_REGISTRY_FILE,
   keyNameForQuarantineFile,
@@ -26,6 +26,7 @@ import {
   type RcRegistry,
 } from "./accountFiles";
 import {
+  RollCallStorageError,
   deleteDatabaseFiles,
   openRollCallAccountDatabase,
   quarantinePurgeAt,
@@ -37,11 +38,9 @@ import {
   blockSessionsForLogout,
   computeAccountPurgeAt,
   countPendingSessions,
-  readMetaValue,
   recoverInterruptedSyncs,
   restoreSessionsAfterLogin,
   runPurge,
-  writeMetaValue,
   type RcContext,
 } from "./repository";
 
@@ -265,35 +264,87 @@ export type RollCallAccountManager = ReturnType<typeof createRollCallAccountMana
 // État conservé dans la base du compte : révocations (monotones) et horloge de confiance.
 // ---------------------------------------------------------------------------------------------
 
-export async function loadRevocationState(ctx: RcContext): Promise<RevocationState> {
-  const raw = await readMetaValue(ctx, "pack_revocations");
-  if (!raw) return EMPTY_REVOCATION_STATE;
-  try {
-    return normalizeRevocationState(JSON.parse(raw));
-  } catch {
-    return EMPTY_REVOCATION_STATE;
-  }
+export const RC_LOCAL_STATE_ERROR = Object.freeze({
+  REVOCATIONS_CORRUPT: "RC_PACK_REVOCATIONS_STATE_CORRUPT",
+  TRUSTED_TIME_CORRUPT: "RC_TRUSTED_TIME_STATE_CORRUPT",
+});
+
+export const RC_META_PACK_REVOCATIONS = "pack_revocations";
+export const RC_META_TRUSTED_TIME = "last_trusted_time_ms";
+/** Valeurs écrites à la création de la base : leur absence ultérieure est une corruption. */
+export const RC_INITIAL_PACK_REVOCATIONS = JSON.stringify({ sequence: 0, revokedKeyIds: [] });
+export const RC_INITIAL_TRUSTED_TIME = "0";
+
+const TRUSTED_TIME_TEXT = /^(0|[1-9][0-9]{0,15})$/;
+
+type MetaReader = { getFirstAsync<T>(sql: string, params?: unknown[]): Promise<T | null> };
+
+async function readMeta(db: MetaReader, key: string): Promise<string | null> {
+  const row = await db.getFirstAsync<{ value: string }>("SELECT value FROM rc_meta WHERE key = ?", [key]);
+  return row ? String(row.value) : null;
 }
 
-/** N'écrit jamais un état moins révoqué que l'état conservé (union, séquence maximale). */
+/**
+ * État de révocation conservé. Absent, JSON invalide ou forme inattendue → erreur explicite
+ * (fail-closed) : jamais d'état vide de remplacement, qui réautoriserait une clé révoquée.
+ */
+function parseStoredRevocations(raw: string | null): RevocationState {
+  let parsed: unknown;
+  try {
+    parsed = raw == null ? undefined : JSON.parse(raw);
+  } catch {
+    parsed = undefined;
+  }
+  const state = parseRevocationState(parsed);
+  if (!state) {
+    throw new RollCallStorageError(RC_LOCAL_STATE_ERROR.REVOCATIONS_CORRUPT, "État local des révocations illisible : liste hors ligne refusée.");
+  }
+  return state;
+}
+
+/**
+ * Horloge de confiance conservée (ms UTC, « 0 » = jamais reçue). Absente ou mal formée → erreur
+ * explicite : la protection contre le recul de l'horloge n'est jamais désactivée en silence.
+ */
+function parseStoredTrustedTime(raw: string | null): number | null {
+  if (raw == null || !TRUSTED_TIME_TEXT.test(raw) || !Number.isSafeInteger(Number(raw))) {
+    throw new RollCallStorageError(RC_LOCAL_STATE_ERROR.TRUSTED_TIME_CORRUPT, "Horloge de confiance locale illisible : liste hors ligne refusée.");
+  }
+  const value = Number(raw);
+  return value === 0 ? null : value;
+}
+
+export async function loadRevocationState(ctx: RcContext): Promise<RevocationState> {
+  return ctx.connection.read(async (db) => parseStoredRevocations(await readMeta(db, RC_META_PACK_REVOCATIONS)));
+}
+
+/**
+ * Union monotone avec l'état conservé, lue et écrite dans UNE transaction (aucun état
+ * intermédiaire après un arrêt brutal). État conservé illisible → erreur, rien n'est écrasé.
+ */
 export async function saveRevocationState(ctx: RcContext, next: RevocationState): Promise<RevocationState> {
-  const stored = await loadRevocationState(ctx);
-  const merged = normalizeRevocationState({
-    sequence: Math.max(stored.sequence, next.sequence),
-    revokedKeyIds: [...stored.revokedKeyIds, ...next.revokedKeyIds],
+  const incoming = parseRevocationState(next);
+  if (!incoming) throw new RollCallStorageError(RC_LOCAL_STATE_ERROR.REVOCATIONS_CORRUPT, "État de révocation à enregistrer invalide.");
+  return ctx.connection.transaction(async (db) => {
+    const stored = parseStoredRevocations(await readMeta(db, RC_META_PACK_REVOCATIONS));
+    const merged = mergeRevocationStates(stored, incoming);
+    await db.runAsync("UPDATE rc_meta SET value = ? WHERE key = ?", [JSON.stringify(merged), RC_META_PACK_REVOCATIONS]);
+    return merged;
   });
-  await writeMetaValue(ctx, "pack_revocations", JSON.stringify(merged));
-  return merged;
 }
 
 export async function loadLastTrustedTime(ctx: RcContext): Promise<number | null> {
-  const raw = await readMetaValue(ctx, "last_trusted_time_ms");
-  const value = raw == null ? NaN : Number(raw);
-  return Number.isSafeInteger(value) ? value : null;
+  return ctx.connection.read(async (db) => parseStoredTrustedTime(await readMeta(db, RC_META_TRUSTED_TIME)));
 }
 
+/** Avance monotone de l'horloge de confiance, lue et écrite dans UNE transaction. */
 export async function recordTrustedTime(ctx: RcContext, candidateMs: number | null): Promise<number | null> {
-  const next = advanceTrustedTime(await loadLastTrustedTime(ctx), candidateMs);
-  if (next != null) await writeMetaValue(ctx, "last_trusted_time_ms", String(Math.trunc(next)));
-  return next;
+  return ctx.connection.transaction(async (db) => {
+    const current = parseStoredTrustedTime(await readMeta(db, RC_META_TRUSTED_TIME));
+    const next = advanceTrustedTime(current, candidateMs == null ? null : Math.trunc(candidateMs));
+    if (next != null && next !== current && Number.isSafeInteger(next) && next > 0) {
+      await db.runAsync("UPDATE rc_meta SET value = ? WHERE key = ?", [String(next), RC_META_TRUSTED_TIME]);
+    }
+    return next;
+  });
 }

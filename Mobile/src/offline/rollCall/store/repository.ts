@@ -216,7 +216,7 @@ export function readMetaValue(ctx: RcContext, key: string): Promise<string | nul
 }
 
 export function writeMetaValue(ctx: RcContext, key: string, value: string): Promise<void> {
-  if (!/^[a-z_]{1,64}$/.test(key) || ["schema_version", "account_id", "environment_id", "created_at"].includes(key)) {
+  if (!/^[a-z_]{1,64}$/.test(key) || ["schema_version", "account_id", "environment_id", "created_at", "pack_revocations", "last_trusted_time_ms"].includes(key)) {
     fail(RC_REPO_ERROR.INPUT_INVALID, "Clé de métadonnée protégée.");
   }
   return ctx.connection.transaction(async (db) => {

@@ -129,6 +129,7 @@ function main() {
   const cipher = expectLine(first, new RegExp(`^${TAG} cipher_version=`), "lancement 1 cipher_version");
   if (/=EMPTY$/.test(cipher)) throw new Error("cipher_version vide : SQLCipher absent");
   expectLine(first, new RegExp(`^${TAG} header=encrypted$`), "lancement 1 en-tête chiffré");
+  expectLine(first, new RegExp(`^${TAG} meta_guard=refused$`), "lancement 1 gardes SQL des révocations et de l'horloge");
   expectLine(first, new RegExp(`^${TAG} closed=ok$`), "lancement 1 fermeture");
   expectLine(first, new RegExp(`^${TAG} persist=init scans=3$`), "lancement 1 écriture");
 
@@ -143,11 +144,20 @@ function main() {
   expectLine(second, new RegExp(`^${TAG} header=encrypted$`), "lancement 2 en-tête chiffré");
   expectLine(second, new RegExp(`^${TAG} persist=ok scans=3 state=draft$`), "lancement 2 relecture après arrêt forcé");
   expectLine(second, new RegExp(`^${TAG} wrong_key=refused no_key=refused$`), "lancement 2 refus mauvaise clé / sans clé");
+  expectLine(second, new RegExp(`^${TAG} meta_persist=ok$`), "lancement 2 révocations et horloge relues après force-stop");
 
   const evidence = {
     device: { model, sdk, abi },
     hermesS13: { launch1: s13First, launch2: s13Second },
-    sqlcipher: { cipherVersion: cipher.slice(`${TAG} cipher_version=`.length), header: "encrypted", persistAfterForceStop: true, wrongKey: "refused", noKey: "refused" },
+    sqlcipher: {
+      cipherVersion: cipher.slice(`${TAG} cipher_version=`.length),
+      header: "encrypted",
+      persistAfterForceStop: true,
+      wrongKey: "refused",
+      noKey: "refused",
+      securityStateGuards: "refused",
+      securityStatePersisted: true,
+    },
     logcat: { launch1: first, launch2: second },
   };
   if (evidenceDir) {
@@ -155,7 +165,7 @@ function main() {
     fs.writeFileSync(path.join(evidenceDir, "rc-offline-native-proof.json"), `${JSON.stringify(evidence, null, 2)}\n`);
   }
   console.log(`HERMES_S13_PASSED: engine=hermes ${s13Second.passed}/${s13Second.total} (deux lancements)`);
-  console.log(`ANDROID_SQLCIPHER_PASSED: ${evidence.sqlcipher.cipherVersion} ; écriture → fermeture → force-stop → relecture ; mauvaise clé et absence de clé refusées ; en-tête chiffré`);
+  console.log(`ANDROID_SQLCIPHER_PASSED: ${evidence.sqlcipher.cipherVersion} ; écriture → fermeture → force-stop → relecture ; mauvaise clé et absence de clé refusées ; en-tête chiffré ; recul des révocations et de l'horloge refusé par SQLite natif`);
 }
 
 try {
