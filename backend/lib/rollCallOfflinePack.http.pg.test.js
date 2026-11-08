@@ -313,10 +313,11 @@ async function main() {
     await assign(schoolB, teacherB, classB1, subjectB, yearB);
     await assign(schoolC, teacherC, classC1, subjectC, yearC);
     await pool.query(
-      `INSERT INTO school_settings (school_id, student_card_enabled, student_card_qr_enabled, student_card_nfc_enabled, student_card_attendance_enabled)
-       VALUES ($1, TRUE, TRUE, TRUE, TRUE), ($2, TRUE, TRUE, TRUE, TRUE), ($3, TRUE, TRUE, TRUE, TRUE)
+      `INSERT INTO school_settings (school_id, student_card_enabled, student_card_qr_enabled, student_card_nfc_enabled, student_card_attendance_enabled,
+                                    student_card_offline_roll_call_enabled)
+       VALUES ($1, TRUE, TRUE, TRUE, TRUE, TRUE), ($2, TRUE, TRUE, TRUE, TRUE, TRUE), ($3, TRUE, TRUE, TRUE, TRUE, TRUE)
        ON CONFLICT (school_id) DO UPDATE SET student_card_enabled = TRUE, student_card_qr_enabled = TRUE,
-         student_card_nfc_enabled = TRUE, student_card_attendance_enabled = TRUE`,
+         student_card_nfc_enabled = TRUE, student_card_attendance_enabled = TRUE, student_card_offline_roll_call_enabled = TRUE`,
       [schoolA, schoolB, schoolC],
     );
     await pool.query("UPDATE school_settings SET student_card_holder_kind = 'eleve' WHERE school_id = ANY($1::uuid[])", [[schoolA, schoolB, schoolC]]);
@@ -569,10 +570,17 @@ async function main() {
     // ---------- Flags ----------
     const setFlags = (flags) => pool.query(
       `UPDATE school_settings SET student_card_enabled = $2, student_card_attendance_enabled = $3,
-              student_card_nfc_enabled = $4, student_card_qr_enabled = $5 WHERE school_id = $1`,
-      [schoolA, flags.master, flags.attendance, flags.nfc, flags.qr],
+              student_card_nfc_enabled = $4, student_card_qr_enabled = $5,
+              student_card_offline_roll_call_enabled = $6 WHERE school_id = $1`,
+      [schoolA, flags.master, flags.attendance, flags.nfc, flags.qr, flags.offline ?? true],
     );
-    const all = { master: true, attendance: true, nfc: true, qr: true };
+    const all = { master: true, attendance: true, nfc: true, qr: true, offline: true };
+    // NFC-PRES-LOCAL-PR3 : flag de l'appel hors connexion coupé, tout le reste activé → aucun pack.
+    await setFlags({ ...all, offline: false });
+    const offlineOff = await pack(tokenTeacher, { classId: classA1, date: today });
+    assert.equal(offlineOff.status, 404, "flag appel hors connexion coupé");
+    assert.equal(offlineOff.data?.code, "ROLL_CALL_OFFLINE_DISABLED");
+    assert.equal(JSON.stringify(offlineOff.data).includes("students"), false, "aucune donnée d'élève sans flag");
     await setFlags({ ...all, master: false });
     assert.equal((await pack(tokenTeacher, { classId: classA1, date: today })).status, 404, "flag maître coupé");
     await setFlags({ ...all, attendance: false });

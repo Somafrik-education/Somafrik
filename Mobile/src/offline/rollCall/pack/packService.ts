@@ -111,7 +111,9 @@ export async function loadUsablePack(
           purpose: "use",
         })
       : parsed;
-    if (!result.ok) await deletePack(ctx, input.packId);
+    // Pack préchargé (PR0 §4.5) : « pas encore valide » n'est pas une altération, il est conservé
+    // pour son jour. Tout autre refus (signature, révocation, expiration…) le supprime.
+    if (!result.ok && result.code !== PACK_ERROR.NOT_YET_VALID) await deletePack(ctx, input.packId);
     return result;
   });
 }

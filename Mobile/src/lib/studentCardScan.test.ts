@@ -28,6 +28,7 @@ import {
   isStudentCardScanFinanceEnabled,
   reduceQrScannerUi,
   sanitizeStudentCardCapabilities,
+  isStudentCardOfflineRollCallEnabled,
   isoAttendanceDate,
   releaseCardToken,
   runStudentCardScanFlow,
@@ -328,8 +329,28 @@ assert.deepEqual(
     studentCardNfcEnabled: false,
     studentCardAttendanceEnabled: false,
     studentCardFinanceCheckEnabled: false,
+    studentCardOfflineRollCallEnabled: false,
   },
 );
+// NFC-PRES-LOCAL-PR3 — appel hors connexion : maître + présences + flag + au moins un support.
+{
+  const on = {
+    studentCardEnabled: true,
+    studentCardAttendanceEnabled: true,
+    studentCardOfflineRollCallEnabled: true,
+    studentCardNfcEnabled: true,
+    studentCardQrEnabled: false,
+  };
+  assert.equal(isStudentCardOfflineRollCallEnabled(on), true);
+  assert.equal(isStudentCardOfflineRollCallEnabled({ ...on, studentCardNfcEnabled: false, studentCardQrEnabled: true }), true);
+  assert.equal(isStudentCardOfflineRollCallEnabled({ ...on, studentCardOfflineRollCallEnabled: false }), false, "flag hors connexion coupé");
+  assert.equal(isStudentCardOfflineRollCallEnabled({ ...on, studentCardEnabled: false }), false, "maître coupé");
+  assert.equal(isStudentCardOfflineRollCallEnabled({ ...on, studentCardAttendanceEnabled: false }), false, "pointage coupé");
+  assert.equal(isStudentCardOfflineRollCallEnabled({ ...on, studentCardNfcEnabled: false }), false, "aucun support");
+  assert.equal(isStudentCardOfflineRollCallEnabled({ ...on, studentCardOfflineRollCallEnabled: "true" as never }), false, "fail-closed");
+  assert.equal(isStudentCardOfflineRollCallEnabled(null), false);
+  assert.equal(sanitizeStudentCardCapabilities({ ...on, studentCardOfflineRollCallEnabled: "true" })?.studentCardOfflineRollCallEnabled, false);
+}
 assert.equal(
   isStudentCardScanFinanceEnabled({
     studentCardEnabled: true,

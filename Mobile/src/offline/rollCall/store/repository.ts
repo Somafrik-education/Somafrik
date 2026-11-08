@@ -190,6 +190,58 @@ export function storePack(
   });
 }
 
+/** PR3 — packs stockés pour une classe et une date, le plus récent d'abord. */
+export function listStoredPackIds(ctx: RcContext, classId: string, date: string): Promise<string[]> {
+  return ctx.connection.read(async (db) => {
+    const rows = await db.getAllAsync<{ pack_id: string }>(
+      "SELECT pack_id FROM rc_packs WHERE class_id = ? AND roll_call_date = ? ORDER BY stored_at DESC, pack_id",
+      [classId, date],
+    );
+    return rows.map((row) => String(row.pack_id));
+  });
+}
+
+/** PR3 — scans actifs d'une session (sans preuve) : affichage et compteurs. */
+export function listActiveScans(
+  ctx: RcContext,
+  sessionId: string,
+): Promise<Array<{ scanId: string; medium: "nfc" | "qr"; localStatus: "verified_local" | "unknown_local"; matchKey: string | null; scannedAt: string }>> {
+  return ctx.connection.read(async (db) => {
+    await sessionFor(ctx, db, sessionId);
+    const rows = await db.getAllAsync<{ scan_id: string; medium: "nfc" | "qr"; local_status: "verified_local" | "unknown_local"; match_key: string | null; scanned_at: string }>(
+      "SELECT scan_id, medium, local_status, match_key, scanned_at FROM rc_scans WHERE session_id = ? AND removed_at IS NULL ORDER BY scanned_at, scan_id",
+      [sessionId],
+    );
+    return rows.map((row) => ({ scanId: row.scan_id, medium: row.medium, localStatus: row.local_status, matchKey: row.match_key, scannedAt: row.scanned_at }));
+  });
+}
+
+/** PR3 — marques d'une session : élève (matchKey), statut, origine. */
+export function listMarks(
+  ctx: RcContext,
+  sessionId: string,
+): Promise<Array<{ matchKey: string; studentId: string; status: "present" | "late" | "absent"; source: "card" | "manual" | "existing" | "default" }>> {
+  return ctx.connection.read(async (db) => {
+    await sessionFor(ctx, db, sessionId);
+    const rows = await db.getAllAsync<{ match_key: string; student_id: string; status: "present" | "late" | "absent"; source: "card" | "manual" | "existing" | "default" }>(
+      "SELECT match_key, student_id, status, source FROM rc_marks WHERE session_id = ? ORDER BY match_key",
+      [sessionId],
+    );
+    return rows.map((row) => ({ matchKey: row.match_key, studentId: row.student_id, status: row.status, source: row.source }));
+  });
+}
+
+/** PR3 — dernier appel (tout état) de la classe et du jour pour ce compte. */
+export function findLatestSession(ctx: RcContext, classId: string, date: string): Promise<RcSessionRow | null> {
+  return ctx.connection.read(async (db) =>
+    (await db.getFirstAsync<RcSessionRow>(
+      `SELECT * FROM rc_sessions WHERE class_id = ? AND roll_call_date = ? AND user_id = ? AND school_id = ?
+        ORDER BY opened_at DESC, session_id LIMIT 1`,
+      [classId, date, ctx.identity.userId, ctx.identity.schoolId],
+    )) ?? null,
+  );
+}
+
 export function readStoredPackText(ctx: RcContext, packId: string): Promise<string | null> {
   return ctx.connection.read(async (db) => {
     const row = await db.getFirstAsync<{ signed_payload: string }>("SELECT signed_payload FROM rc_packs WHERE pack_id = ?", [packId]);
@@ -270,6 +322,12 @@ export type RecordScanInput = {
   scannedAt: string;
   /** Rapprochement par un pack vérifié ; null en mode dégradé (« à vérifier »). */
   match: { matchKey: string; studentId: string } | null;
+  /**
+   * PR3 — false pour un élève dont le statut du jour est déjà enregistré et protégé (présent,
+   * retard ou justifié) : le scan est conservé et vérifié, mais aucune marque locale ne vient
+   * remplacer ce statut. Défaut : true.
+   */
+  markPresent?: boolean;
 };
 export type RecordScanResult = { status: "recorded" | "duplicate"; counts: RcCounts };
 
@@ -313,7 +371,7 @@ export async function recordScan(ctx: RcContext, input: RecordScanInput): Promis
         input.match?.matchKey ?? null,
       ],
     );
-    if (input.match) {
+    if (input.match && input.markPresent !== false) {
       // Le pointage manuel fait foi : un scan ne l'écrase pas.
       await db.runAsync(
         `INSERT INTO rc_marks (session_id, match_key, student_id, status, source, updated_at)

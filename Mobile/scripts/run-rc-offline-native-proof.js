@@ -132,6 +132,7 @@ function main() {
   expectLine(first, new RegExp(`^${TAG} meta_guard=refused$`), "lancement 1 gardes SQL des révocations et de l'horloge");
   expectLine(first, new RegExp(`^${TAG} closed=ok$`), "lancement 1 fermeture");
   expectLine(first, new RegExp(`^${TAG} persist=init scans=3$`), "lancement 1 écriture");
+  expectLine(first, new RegExp(`^${TAG} pr3=ok first=recorded again=duplicate proof=V-4$`), "lancement 1 parcours PR3 (preuve V-4, doublon, clôture)");
 
   adb(["shell", "am", "force-stop", ANDROID_PACKAGE]);
   sleep(2000);
@@ -145,6 +146,7 @@ function main() {
   expectLine(second, new RegExp(`^${TAG} persist=ok scans=3 state=draft$`), "lancement 2 relecture après arrêt forcé");
   expectLine(second, new RegExp(`^${TAG} wrong_key=refused no_key=refused$`), "lancement 2 refus mauvaise clé / sans clé");
   expectLine(second, new RegExp(`^${TAG} meta_persist=ok$`), "lancement 2 révocations et horloge relues après force-stop");
+  expectLine(second, new RegExp(`^${TAG} pr3_persist=ok$`), "lancement 2 appel PR3 clôturé relu après force-stop");
 
   const evidence = {
     device: { model, sdk, abi },
@@ -158,6 +160,7 @@ function main() {
       securityStateGuards: "refused",
       securityStatePersisted: true,
     },
+    pr3Pipeline: { proofMatchesV4: true, duplicateRefused: true, closedSurvivesForceStop: true },
     logcat: { launch1: first, launch2: second },
   };
   if (evidenceDir) {
@@ -166,6 +169,7 @@ function main() {
   }
   console.log(`HERMES_S13_PASSED: engine=hermes ${s13Second.passed}/${s13Second.total} (deux lancements)`);
   console.log(`ANDROID_SQLCIPHER_PASSED: ${evidence.sqlcipher.cipherVersion} ; écriture → fermeture → force-stop → relecture ; mauvaise clé et absence de clé refusées ; en-tête chiffré ; recul des révocations et de l'horloge refusé par SQLite natif`);
+  console.log("PR3_PIPELINE_PASSED: carte vecteur → preuve V-4 sous Hermes → rapprochement → COMMIT → doublon refusé → clôture → relue après force-stop");
 }
 
 try {

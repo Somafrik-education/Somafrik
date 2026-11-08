@@ -11,6 +11,8 @@ export type SchoolSettings = {
   studentCardNfcEnabled?: boolean;
   studentCardAttendanceEnabled?: boolean;
   studentCardFinanceCheckEnabled?: boolean;
+  /** NFC-PRES-LOCAL-PR3 — appel hors connexion par carte (false par défaut). */
+  studentCardOfflineRollCallEnabled?: boolean;
   /** CARTE-CYCLE-01 — titulaire explicite (null = non configuré) et surcharges par niveau d'enseignement. */
   studentCardHolderKind?: "eleve" | "etudiant" | null;
   studentCardHolderLevels?: Record<string, "eleve" | "etudiant">;

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS school_settings (
   student_card_nfc_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_offline_roll_call_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT school_settings_period_mode_check CHECK (period_mode IN ('trimestre', 'semestre', 'periode')),
@@ -32,7 +33,8 @@ ALTER TABLE school_settings
   ADD COLUMN IF NOT EXISTS student_card_qr_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS student_card_nfc_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+  ADD COLUMN IF NOT EXISTS student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_offline_roll_call_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 `;
 
 /** CARTE-CYCLE-01 — titulaire de carte (NULL = non configuré) + surcharges par niveau d'enseignement. */

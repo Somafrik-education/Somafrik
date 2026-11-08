@@ -12,6 +12,7 @@ const STUDENT_CARD_CAPABILITY_HTTP_KEYS = Object.freeze([
   "studentCardNfcEnabled",
   "studentCardAttendanceEnabled",
   "studentCardFinanceCheckEnabled",
+  "studentCardOfflineRollCallEnabled",
 ]);
 
 function projectStudentCardCapabilitiesHttp(row) {
@@ -22,6 +23,7 @@ function projectStudentCardCapabilitiesHttp(row) {
     studentCardNfcEnabled: coerceFailClosedBoolean(flags.studentCardNfcEnabled),
     studentCardAttendanceEnabled: coerceFailClosedBoolean(flags.studentCardAttendanceEnabled),
     studentCardFinanceCheckEnabled: coerceFailClosedBoolean(flags.studentCardFinanceCheckEnabled),
+    studentCardOfflineRollCallEnabled: coerceFailClosedBoolean(flags.studentCardOfflineRollCallEnabled),
   };
 }
 

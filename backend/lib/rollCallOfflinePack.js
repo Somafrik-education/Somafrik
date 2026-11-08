@@ -10,7 +10,8 @@
  * aucun droit. Aucune écriture : ni présence, ni journal, ni audit de mutation.
  *
  * Autorisations relues à chaque appel (fail-closed) : établissement résolu en base, rôle TEACHER
- * actif relu en base, affectation active à la classe, flags maître + présences, au moins un support
+ * actif relu en base, affectation active à la classe, flags maître + présences + appel hors
+ * connexion (`studentCardOfflineRollCallEnabled`, PR3), au moins un support
  * (NFC ou QR) activé, gate d'abonnement `write_presence` et permission effective (route).
  *
  * Le pack ne contient jamais `token_hash`, secret de carte, `publicId`, UID NFC ni identifiant de
@@ -48,6 +49,7 @@ const OFFLINE_PACK_ERROR = Object.freeze({
   MEDIA_DISABLED: "ROLL_CALL_OFFLINE_MEDIA_DISABLED",
   TIMEZONE_INVALID: "ROLL_CALL_OFFLINE_TIMEZONE_INVALID",
   PACK_TOO_LARGE: "ROLL_CALL_PACK_TOO_LARGE",
+  OFFLINE_DISABLED: "ROLL_CALL_OFFLINE_DISABLED",
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -275,6 +277,18 @@ async function enabledMedia(repo, schoolId) {
 }
 
 /**
+ * NFC-PRES-LOCAL-PR3 — flag établissement `studentCardOfflineRollCallEnabled` (false par défaut,
+ * sous le flag maître). Désactivé → 404 : ni pack émis, ni lot hors connexion enregistré.
+ */
+async function assertOfflineRollCallEnabled(repo, schoolId) {
+  const store = settingsStore(repo);
+  const settings = mapSettingsRow(typeof store.getSettings === "function" ? await store.getSettings(schoolId) : null);
+  if (!isStudentCardCapabilityEnabled(settings, "studentCardOfflineRollCallEnabled")) {
+    throw createHttpError(404, "Appel hors connexion désactivé pour cet établissement.", OFFLINE_PACK_ERROR.OFFLINE_DISABLED);
+  }
+}
+
+/**
  * Fuseau IANA canonique de l'établissement : vide → fuseau par défaut existant
  * (resolveSchoolTimeZone) ; renseigné mais invalide → refus, jamais de repli silencieux.
  */
@@ -338,6 +352,7 @@ async function issueOfflinePack(repo, query, scope, principal, deps) {
   const actor = await liveRollCallActor(repo, principal, scope.schoolId);
   authorizeRollCallActor(actor, "teacher");
   await assertRollCallEnabled(repo, scope.schoolId);
+  await assertOfflineRollCallEnabled(repo, scope.schoolId);
   const media = await enabledMedia(repo, scope.schoolId);
   await assertRollCallClass(repo, scope, principal, classId, "teacher");
   const signer = typeof deps.signer === "function" ? deps.signer() : deps.signer;
@@ -375,6 +390,7 @@ module.exports = {
   MATCH_KEY_LABEL,
   OFFLINE_PACK_ERROR,
   readPackQuery,
+  assertOfflineRollCallEnabled,
   canonicalTimeZone,
   wallTime,
   firstInstantAtOrAfterWall,

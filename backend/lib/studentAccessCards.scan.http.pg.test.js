@@ -373,6 +373,7 @@ async function main() {
       "studentCardEnabled",
       "studentCardFinanceCheckEnabled",
       "studentCardNfcEnabled",
+      "studentCardOfflineRollCallEnabled",
       "studentCardQrEnabled",
     ]);
     assert.equal(capUpdate.data.studentCardEnabled, true);

@@ -33,7 +33,7 @@ const {
   verifyProof,
   computePayloadDigest,
 } = require("./rollCallOfflineProof");
-const { canonicalTimeZone, computePackWindow } = require("./rollCallOfflinePack");
+const { assertOfflineRollCallEnabled, canonicalTimeZone, computePackWindow } = require("./rollCallOfflinePack");
 const { getIdempotencyTx } = require("./idempotencyTxContext");
 const {
   ROLL_CALL_ERROR,
@@ -389,6 +389,8 @@ async function writeOfflineRollCall(repo, { batch, scope, principal, actor, audi
   try {
     authorizeRollCallActor(actor, "teacher");
     await assertRollCallEnabled(repo, scope.schoolId);
+    // PR3 : flag de l'appel hors connexion ; désactivé → 404 + not_recorded (garde W).
+    await assertOfflineRollCallEnabled(repo, scope.schoolId);
     await assertUsedMediaEnabled(repo, scope.schoolId, batch.scans);
     const target = await assertRollCallClass(repo, scope, principal, batch.classId, "teacher");
     const nowMs = typeof deps.nowMs === "function" ? deps.nowMs() : (deps.nowMs ?? Date.now());

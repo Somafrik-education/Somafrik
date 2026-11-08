@@ -32,15 +32,20 @@ function assertAllFlagsFalse(payload, label) {
   }
 }
 
-test("CARTE-PR0 — les cinq flags existent et restent indépendants", () => {
-  assert.equal(STUDENT_CARD_FLAG_FIELDS.length, 5);
+test("CARTE-PR0 / NFC-PRES-LOCAL-PR3 — les six flags existent et restent indépendants", () => {
+  assert.equal(STUDENT_CARD_FLAG_FIELDS.length, 6);
   assert.deepEqual(STUDENT_CARD_FLAG_API_KEYS, [
     "studentCardEnabled",
     "studentCardQrEnabled",
     "studentCardNfcEnabled",
     "studentCardAttendanceEnabled",
     "studentCardFinanceCheckEnabled",
+    "studentCardOfflineRollCallEnabled",
   ]);
+  assert.deepEqual(STUDENT_CARD_FLAG_FIELDS[5], {
+    column: "student_card_offline_roll_call_enabled",
+    api: "studentCardOfflineRollCallEnabled",
+  });
 });
 
 test("CARTE-PR0 — mapSettingsRow : colonnes absentes = false", () => {
@@ -258,5 +263,6 @@ test("CARTE-PR0 — resolveStudentCardFlags conserve l'existant et fail-closed s
     studentCardNfcEnabled: false,
     studentCardAttendanceEnabled: false,
     studentCardFinanceCheckEnabled: false,
+    studentCardOfflineRollCallEnabled: false,
   });
 });
