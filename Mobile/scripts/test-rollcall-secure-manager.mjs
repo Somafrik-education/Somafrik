@@ -102,10 +102,6 @@ try {
   const eraseFileIndex = events.findIndex((x)=>x==="file-delete:"+first.fileName);
   assert.ok(eraseKeyIndex>=0 && eraseFileIndex>eraseKeyIndex,
     "crypto-erase removes SecureStore key before file");
-  keys.delete("somafrik.rollCallDeviceSaltV1");
-  fs.writeFileSync(mockFile("somafrik-rollcall-v1-orphan.db"),"unreadable");
-  await assert.rejects(manager.open(A),(e) => e.code === "RC_ACCOUNT_SALT_LOST");
-  assert.equal(keys.has("somafrik.rollCallDeviceSaltV1"),false,"no silent salt regeneration");
   // Initial database-open failure must not strand a freshly generated encryption key.
   const C = {...A,userId:"00000000-0000-4000-8000-000000000004"};
   const failing = createRollCallSecureManager({
@@ -116,6 +112,10 @@ try {
   await assert.rejects(failing.open(C), /SIMULATED_OPEN_FAILURE/);
   assert.deepEqual(new Set(keys.keys()), keysBeforeFailure,
     "failed initial open must remove its newly generated account key");
+  keys.delete("somafrik.rollCallDeviceSaltV1");
+  fs.writeFileSync(mockFile("somafrik-rollcall-v1-orphan.db"),"unreadable");
+  await assert.rejects(manager.open(A),(e) => e.code === "RC_ACCOUNT_SALT_LOST");
+  assert.equal(keys.has("somafrik.rollCallDeviceSaltV1"),false,"no silent salt regeneration");
   console.log("PASS: account SQLCipher manager lifecycle simulated; NATIVE SQLCIPHER NOT VERIFIED");
 } finally {
   fs.rmSync(generatedManager,{force:true});
