@@ -87,7 +87,7 @@ export default function StudentPresencesScreen({ route, navigation }: Partial<Pr
         }),
         linkedCount: parentLinkedCount,
       })
-    : student?.name ?? "Élève";
+    : student?.name ?? session?.user?.name ?? "Élève";
 
   return (
     <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.presencesScreen}>

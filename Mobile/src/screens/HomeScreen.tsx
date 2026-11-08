@@ -236,13 +236,22 @@ export default function HomeScreen({ navigation }: any) {
       const focus = { maxAgeMs: L1_FOCUS_MAX_AGE_MS };
       if (canReadEntity(session, "students")) void loadStudents(focus);
       if (canReadEntity(session, "classes") || canReadRoute(session, "Classes")) void loadClasses(focus);
-      if (canReadRoute(session, "TeacherAttendance") || canReadEntity(session, "students")) void loadPresences();
+      if (
+        canReadRoute(session, "TeacherAttendance") ||
+        canReadEntity(session, "students") ||
+        ((session?.role === "parent_student" || session?.role === "student") &&
+          canReadRoute(session, "StudentPresences"))
+      ) void loadPresences();
       if (session?.role === "teacher" || canReadEntity(session, "teachers")) {
         void loadTeachers();
         void loadClasses(focus);
       }
       if (session?.role === "teacher") void loadAssignments(focus);
-      if (canReadEntity(session, "payments")) {
+      if (
+        canReadEntity(session, "payments") ||
+        ((session?.role === "parent_student" || session?.role === "student") &&
+          canReadRoute(session, "StudentPayments"))
+      ) {
         void loadPayments();
         void loadStudentFees();
       }
@@ -314,7 +323,7 @@ export default function HomeScreen({ navigation }: any) {
         linkedCount: parentLinkedCount,
       })
     : isParentLike
-      ? selectedStudent?.name ?? "Élève"
+      ? selectedStudent?.name ?? (session?.role === "student" ? userName : "Élève")
       : userName;
   const identityContext = isTeacher
     ? assignedClasses.join(", ") || currentSchool.name
