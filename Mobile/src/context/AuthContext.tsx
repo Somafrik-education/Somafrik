@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import { Alert, AppState, type AppStateStatus } from "react-native";
 import {
   LoginResponse,
   getEffectivePermissions,
@@ -14,6 +14,7 @@ import { canRestorePersistedSession } from "../lib/dataTruth";
 import { dismissPendingPushNavigation } from "../lib/pushNotificationTap";
 import { blockOutboxOnLogout } from "../lib/outbox";
 import { invalidateL1CacheSession } from "../offline/l1/lifecycle";
+import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
 import {
   parseEffectivePermissionsSnapshotV1,
   persistOfflineSnapshotIfCurrent,
@@ -265,6 +266,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setSessionExpiredHandler(() => {
+      // NFC-PRES-LOCAL-PR3 : fin de session forcée, aucun effacement des appels en attente.
+      void rollCallRuntime().forcedLogout();
       clearAuthenticatedState();
     });
     return () => setSessionExpiredHandler(null);
@@ -345,7 +348,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSelectedStudentId(studentId);
   }, []);
 
-  const logout = useCallback(() => {
+  const performLogout = useCallback(() => {
     clearRequestSchoolScope();
     clearStoredSchoolCode();
     clearAuthenticatedState();
@@ -353,6 +356,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void logoutSession().catch(() => undefined);
     });
   }, [clearAuthenticatedState]);
+
+  /**
+   * NFC-PRES-LOCAL-PR3 — déconnexion et appels hors connexion (contrat PR0 §5.3) :
+   *  - aucun appel en attente : crypto-effacement de la base du compte, puis déconnexion ;
+   *  - appel(s) en attente : confirmation explicite ; confirmée → base fermée en `blocked_logout`
+   *    (reprise au retour du même compte) ; annulée → l'utilisateur reste connecté.
+   * Une erreur du stockage local ne bloque jamais la déconnexion et n'efface rien.
+   */
+  const logout = useCallback(() => {
+    const current = sessionRef.current;
+    void (async () => {
+      const runtime = rollCallRuntime();
+      let pending = 0;
+      try {
+        pending = await runtime.pendingForLogout(current);
+      } catch {
+        pending = 0;
+      }
+      if (pending > 0) {
+        const confirmed = await new Promise<boolean>((resolve) => {
+          Alert.alert(
+            "Appel non synchronisé",
+            `${pending} appel(s) enregistré(s) sur ce téléphone ne sont pas encore synchronisés. Ils seront conservés, fermés, et repris à votre prochaine connexion avec ce compte.`,
+            [
+              { text: "Rester connecté", style: "cancel", onPress: () => resolve(false) },
+              { text: "Se déconnecter", style: "destructive", onPress: () => resolve(true) },
+            ],
+            { cancelable: true, onDismiss: () => resolve(false) },
+          );
+        });
+        if (!confirmed) return;
+        await runtime.logout({ confirmPending: true }).catch(() => undefined);
+      } else {
+        await runtime.logout({ confirmPending: false }).catch(() => undefined);
+      }
+      performLogout();
+    })();
+  }, [performLogout]);
 
   const value = useMemo(
     () => ({

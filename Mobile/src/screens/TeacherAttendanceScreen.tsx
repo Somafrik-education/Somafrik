@@ -11,6 +11,8 @@ import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
 import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal";
 import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
 import StudentCardClassRollCallModal from "../components/StudentCardClassRollCallModal";
+import OfflineRollCallModal from "../components/OfflineRollCallModal";
+import { OFFLINE_ROLL_CALL_COPY } from "../offline/rollCall/session/offlineRollCall";
 import { CLASS_ROLL_CALL_COPY, type ClassRollCallDraft } from "../lib/studentCardClassRollCall";
 import StudentCardRollCallOverview from "../components/StudentCardRollCallOverview";
 import { canShowRollCallSupervisionOnAttendance, rollCallActor } from "../lib/studentCardRollCallRoles";
@@ -33,6 +35,7 @@ import {
   isAttendanceAuthorReady,
   classifyStudentCardCapabilitiesFailure,
   isStudentCardNfcFinanceEnabled,
+  isStudentCardOfflineRollCallEnabled,
   isStudentCardQrScannerVisible,
   isStudentCardScanFinanceEnabled,
   isoAttendanceDate,
@@ -443,6 +446,17 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         })
       : "";
   const classRollCall = actor.teacher ? classRollCalls[rollCallKeyFor("teacher")] : undefined;
+  // NFC-PRES-LOCAL-PR3 — appel hors connexion : enseignant affecté, droit de modifier les présences,
+  // flag établissement et au moins un support utilisable. Masqué sinon ; l'appel en ligne reste inchangé.
+  const [offlineRollCallOpen, setOfflineRollCallOpen] = useState(false);
+  const canOpenOfflineRollCall = Boolean(
+    actor.teacher
+      && canUpdatePresences
+      && selectedClass?.classId
+      && (Platform.OS === "android" || Platform.OS === "ios")
+      && isStudentCardOfflineRollCallEnabled(visibleCardSettings)
+      && (nfcControl === "ready" || canOpenQrScanner),
+  );
   const openedClassRollCall = classRollCallKey ? classRollCalls[classRollCallKey] : undefined;
   const openClassRollCall = () => {
     const key = rollCallKeyFor("teacher");
@@ -1096,6 +1110,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                   openClassRollCall,
                 )
               : null}
+            {canOpenOfflineRollCall
+              ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setOfflineRollCallOpen(true))
+              : null}
             {directionRollCall
               ? rollCallButton(
                   "attendance-roll-call-direction-resume",
@@ -1259,6 +1276,21 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         financeEnabled={canReadScanFinance}
         onClose={() => setScannerOpen(false)}
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    {selectedClass?.classId && canOpenOfflineRollCall && offlineRollCallOpen ? (
+      <OfflineRollCallModal
+        visible
+        session={session}
+        classId={String(selectedClass.classId).toLowerCase()}
+        className={String(selectedClass.className ?? selectedClass.classCode ?? "")}
+        date={isoAttendanceDate()}
+        nfcAvailable={nfcControl === "ready"}
+        qrAvailable={canOpenQrScanner}
+        onClose={() => {
+          setOfflineRollCallOpen(false);
+          void loadPresences();
+        }}
       />
     ) : null}
     {selectedClass && openedClassRollCall ? (
