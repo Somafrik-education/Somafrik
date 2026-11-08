@@ -167,9 +167,41 @@ jobs:
       - name: Generate Android from candidate sources (preview only)
         working-directory: Mobile
         run: npx expo prebuild --platform android --clean --no-install
+      - name: Configure Gradle Wrapper network timeout (CI only)
+        working-directory: Mobile/android
+        run: |
+          set -euo pipefail
+          properties="gradle/wrapper/gradle-wrapper.properties"
+          test -f "$properties"
+          # Expo prebuild generated this file: keep the distribution and SHA unchanged.
+          sed -i '/^networkTimeout=/d' "$properties"
+          printf '\nnetworkTimeout=120000\n' >> "$properties"
       - name: Compile self-contained APK for ARM64 smoke (test signature only)
         working-directory: Mobile/android
-        run: ./gradlew :app:assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Retry only transient errors when fetching the official Gradle distribution;
+          # never bypass or retry product compilation failures.
+          for attempt in 1 2 3; do
+            log=$(mktemp)
+            if ./gradlew :app:assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a 2>&1 | tee "$log"; then
+              rm -f "$log"
+              exit 0
+            fi
+            if ! grep -Eq 'Downloading .*gradle-[0-9.]+-bin\.zip failed: timeout|Server returned HTTP response code: (429|502|503|504) for URL: .*gradle-[0-9.]+-bin\.zip' "$log"; then
+              rm -f "$log"
+              echo "Non-network Gradle build failure: no retry" >&2
+              exit 1
+            fi
+            rm -f "$log"
+            if [ "$attempt" -eq 3 ]; then
+              echo "Gradle distribution network failure after 3 attempts" >&2
+              exit 1
+            fi
+            echo "Transient Gradle download failure; retrying ($attempt/3)" >&2
+            sleep $((attempt * 10))
+          done
       - name: Verify packaged API, native permissions, signature and secret patterns
         run: python3 Mobile/scripts/verify-student-card-nfc-apk.py Mobile/android/app/build/outputs/apk/release/app-release.apk --output Mobile/dist/nfc-evidence
       - name: Upload sanitized signature diagnostic when verification fails
