@@ -189,7 +189,7 @@ jobs:
               rm -f "$log"
               exit 0
             fi
-            if ! grep -Eq 'Downloading .*gradle-[0-9.]+-bin\\.zip failed: timeout|Server returned HTTP response code: (429|502|503|504) for URL: .*gradle-[0-9.]+-bin\\.zip' "$log"; then
+            if ! grep -Eq 'Downloading .*gradle-[0-9.]+-bin\.zip failed: timeout|Server returned HTTP response code: (429|502|503|504) for URL: .*gradle-[0-9.]+-bin\.zip' "$log"; then
               rm -f "$log"
               echo "Non-network Gradle build failure: no retry" >&2
               exit 1
