@@ -778,6 +778,64 @@ const NFC_PRES_LOCAL_PR1C_UNIQUE = new Set([
   "docs/student-card/NFC-PRES-LOCAL-PR1c-sync.md",
 ]);
 
+// NFC-PRES-LOCAL-PR3 (scanner hors connexion et interface d'appel) : exception distincte de PR1b et
+// PR1c, STRICTEMENT ancrée et évaluée avant elles (PR3 modifie aussi des fichiers propres à PR1b et
+// PR1c : le flag hors connexion est vérifié par la route pack et la garde W de synchronisation).
+// Déclenchée par un fichier propre à PR3 ; liste fermée exacte, aucune autorisation par préfixe.
+const NFC_PRES_LOCAL_PR3_ANCHORS = Object.freeze([
+  "backend/db/migrations/20261109_school_settings_student_card_offline_roll_call.sql",
+  "Mobile/src/offline/rollCall/session/offlineRollCall.ts",
+  "docs/student-card/NFC-PRES-LOCAL-PR3-scan.md",
+]);
+const NFC_PRES_LOCAL_PR3_EXACT = new Set([
+  "Mobile/App.rcNativeProof.tsx",
+  "Mobile/App.tsx",
+  "Mobile/package.json",
+  "Mobile/scripts/run-rc-offline-native-proof.js",
+  "Mobile/src/components/OfflineRollCallModal.tsx",
+  "Mobile/src/context/AuthContext.tsx",
+  "Mobile/src/lib/studentCardScan.test.ts",
+  "Mobile/src/lib/studentCardScan.ts",
+  "Mobile/src/offline/rollCall/pack/packService.ts",
+  "Mobile/src/offline/rollCall/runtime/RollCallOfflineRuntime.tsx",
+  "Mobile/src/offline/rollCall/runtime/rollCallRuntime.test.ts",
+  "Mobile/src/offline/rollCall/runtime/rollCallRuntime.ts",
+  "Mobile/src/offline/rollCall/session/offlineRollCall.test.ts",
+  "Mobile/src/offline/rollCall/session/offlineRollCall.ts",
+  "Mobile/src/offline/rollCall/session/offlineRollCallProofHelpers.ts",
+  "Mobile/src/offline/rollCall/store/database.ts",
+  "Mobile/src/offline/rollCall/store/repository.ts",
+  "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+  "Mobile/src/services/httpClient.ts",
+  "Mobile/src/services/rollCallOfflineApi.ts",
+  "Mobile/src/services/schoolSettingsApi.ts",
+  "Mobile/src/services/studentCardScanApi.ts",
+  "backend/db/migrations/20261109_school_settings_student_card_offline_roll_call.sql",
+  "backend/db/schema.sql",
+  "backend/db/schoolSettingsMemoryStore.js",
+  "backend/db/schoolSettingsPgStore.js",
+  "backend/db/schoolSettingsSchema.js",
+  "backend/lib/rollCallOfflinePack.http.pg.test.js",
+  "backend/lib/rollCallOfflinePack.js",
+  "backend/lib/rollCallOfflineSync.http.pg.test.js",
+  "backend/lib/rollCallOfflineSync.js",
+  "backend/lib/schoolSettings.studentCard.test.js",
+  "backend/lib/schoolSettingsManagement.js",
+  "backend/lib/studentAccessCards.scan.http.pg.test.js",
+  "backend/lib/studentCardCapabilities.js",
+  "backend/lib/studentCardCapabilities.test.js",
+  "docs/student-card/NFC-PRES-LOCAL-PR3-scan.md",
+  "scripts/verify-school-setup-lot4-red.ts",
+  "web/src/components/students/StudentCardSettingsSection.tsx",
+  "web/src/lib/schoolSettingsApi.ts",
+]);
+const NFC_PRES_LOCAL_PR3_UNIQUE = new Set([
+  "backend/db/migrations/20261109_school_settings_student_card_offline_roll_call.sql",
+  "Mobile/src/components/OfflineRollCallModal.tsx",
+  "Mobile/src/offline/rollCall/session/offlineRollCall.ts",
+  "docs/student-card/NFC-PRES-LOCAL-PR3-scan.md",
+]);
+
 function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
   // Un changement isolé du menu n'est jamais classé hors périmètre / N/A.
   const navChanged = changed.includes(STUDENT_CARD_PR3_M1_NAV_FILE);
@@ -795,6 +853,18 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
       message:
         "L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.",
     };
+  }
+  // Exception limitée au lot PR3 : ancres complètes, liste fermée exacte, aucun fichier LOT 4.
+  if (changed.some((file) => NFC_PRES_LOCAL_PR3_UNIQUE.has(file))) {
+    const complete = NFC_PRES_LOCAL_PR3_ANCHORS.every((file) => changed.includes(file));
+    const outside = changed.filter((file) => !NFC_PRES_LOCAL_PR3_EXACT.has(file));
+    if (!complete || outside.length > 0 || exclusiveLot4.length > 0) {
+      return {
+        kind: "fail",
+        message: `L4-09: NFC-PRES-LOCAL-PR3 hors liste/ancres : ${!complete ? "ancres manquantes ; " : ""}${[...new Set([...outside, ...exclusiveLot4])].join(", ")}`,
+      };
+    }
+    return { kind: "na", message: "L4-09 N/A: NFC-PRES-LOCAL-PR3 appel hors connexion, ancres et liste fermée vérifiées." };
   }
   // Exception limitée au lot PR1b : aucune autorisation par préfixe, ni par fichiers partagés.
   if (changed.some((file) => NFC_PRES_LOCAL_PR1B_UNIQUE.has(file))) {

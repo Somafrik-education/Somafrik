@@ -25,7 +25,16 @@ import {
   type RcActiveAccount,
 } from "./src/offline/rollCall/store/accountManager";
 import { createNativeRollCallPlatform } from "./src/offline/rollCall/store/nativePlatform";
-import { listSessions, openDraftSession, readCounts, recordScan } from "./src/offline/rollCall/store/repository";
+import { getSession, listSessions, openDraftSession, readCounts, recordScan, type RcContext } from "./src/offline/rollCall/store/repository";
+import { validatePackKeyring } from "./src/offline/rollCall/pack/keyring";
+import { acceptDownloadedPack } from "./src/offline/rollCall/pack/packService";
+import {
+  closeOfflineRollCall,
+  findLatestSessionForProof,
+  openOfflineRollCall,
+  prepareOfflinePack,
+  processCard,
+} from "./src/offline/rollCall/session/offlineRollCallProofHelpers";
 import { safeLogger } from "./src/services/safeLogger";
 
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -130,6 +139,56 @@ async function runSqlCipherProof(): Promise<string> {
   return `persist=ok scans=${counts.scans} state=${draft.state}`;
 }
 
+/**
+ * PR3 — parcours d'appel complet sous Hermes, sur les vecteurs du contrat : pack de test signé
+ * (clé de TEST V-9, recette uniquement), carte vecteur, preuve HMAC, rapprochement, COMMIT,
+ * doublon, clôture. La preuve calculée sur l'appareil doit être exactement V-4.
+ */
+async function runPr3PipelineProof(): Promise<string> {
+  const platform = createNativeRollCallPlatform();
+  if (!platform) return "pr3=platform_unavailable";
+  const input = vectors.inputs as Record<string, string>;
+  const manager = createRollCallAccountManager(platform);
+  const opened = await manager.activate({ environmentId: "nativeproof-00000000", userId: input.actorUserId, schoolId: input.schoolId });
+  if (!opened.ok) return `pr3=open_failed code=${opened.code}`;
+  const base = (opened as { account: RcActiveAccount }).account.ctx;
+  try {
+    const latest = await findLatestSessionForProof(base, input.classId, input.date);
+    if (latest) {
+      // Lancement 2 : l'appel clôturé (corps figé, preuve V-4) a survécu à l'arrêt forcé.
+      const body = JSON.parse(String((await getSession(base, latest.session_id)).frozen_body ?? "{}"));
+      const proofOk = body?.scans?.[0]?.proof === vectors.expected["V-4_proof_nfc"];
+      return `pr3_persist=${latest.state === "closed" && proofOk ? "ok" : "MISMATCH"}`;
+    }
+    // Horloge et identifiants déterministes = ceux des vecteurs (sessionId …0004, scanId …0006, operationId …0008).
+    const ids = [input.sessionId, input.scanId, "00000000-0000-4000-8000-000000000008"];
+    const ctx: RcContext = { ...base, nowMs: () => Date.parse("2026-11-09T07:31:02Z"), randomUUID: () => ids.shift() ?? "00000000-0000-4000-8000-0000000000ff" };
+    const keyring = validatePackKeyring("recette", [{ keyId: "rc-pack-test-1", publicKey: vectors.expected["V-9_ed25519_test_pub_raw"], status: "active" }]);
+    const envelopeText = JSON.stringify({
+      pack: vectors.testPack,
+      signature: { alg: "Ed25519", keyId: "rc-pack-test-1", value: vectors.expected["V-10_pack_signature"] },
+      revocations: { list: pr2Vectors.revocations.list, signature: pr2Vectors.revocations.signature },
+    });
+    const expected = { schoolId: input.schoolId, actorUserId: input.actorUserId, classId: input.classId, date: input.date };
+    const accepted = await acceptDownloadedPack(ctx, { keyring, envelopeText, expected });
+    if (!accepted.ok) return `pr3=pack_refused code=${accepted.code}`;
+    const pack = await prepareOfflinePack(ctx, { keyring, ...expected });
+    if (pack.status !== "verified") return `pr3=pack_unusable code=${pack.reason}`;
+    const rollCall = await openOfflineRollCall(ctx, { classId: input.classId, date: input.date, pack: pack.verified });
+    const token = `somafrik:card:${input.publicId}.${input.secret}`;
+    const first = await processCard(ctx, rollCall, { token, medium: "nfc", actorUserId: input.actorUserId });
+    const again = await processCard(ctx, rollCall, { token, medium: "qr", actorUserId: input.actorUserId });
+    const closed = await closeOfflineRollCall(ctx, rollCall);
+    if (!closed.ok) return `pr3=close_failed`;
+    const body = JSON.parse(String((await getSession(ctx, rollCall.session.session_id)).frozen_body));
+    const proofOk = body.scans?.[0]?.proof === vectors.expected["V-4_proof_nfc"];
+    const verdict = first.kind === "recorded" && again.kind === "duplicate" && proofOk && /^[0-9a-f]{64}$/.test(closed.payloadDigest);
+    return `pr3=${verdict ? "ok" : "MISMATCH"} first=${first.kind} again=${again.kind} proof=${proofOk ? "V-4" : "DIFF"}`;
+  } finally {
+    await manager.close();
+  }
+}
+
 export default function App() {
   const [status, setStatus] = useState("NFC-PRES-LOCAL-PR2 — recette native en cours");
   useEffect(() => {
@@ -144,6 +203,7 @@ export default function App() {
         log(`S13 engine=${report.engine} passed=${report.passed} total=${report.total} failed=${report.failed.join(",") || "none"}`);
         const sqlcipher = await runSqlCipherProof();
         log(sqlcipher);
+        log(await runPr3PipelineProof());
         log("done");
         return `S13 ${report.passed}/${report.total} (${report.engine}) — ${sqlcipher}`;
       } catch (error) {
