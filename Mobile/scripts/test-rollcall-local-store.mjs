@@ -62,14 +62,21 @@ assert.deepEqual(await store.recordScan(scan), {
 assert.deepEqual(await store.recordScan({...scan, scanId:"scan-2"}), {
   duplicate: true, counts: {scans:1,marks:0},
 });
+// Concurrent scans must return the count at their own COMMIT, not a later
+// transaction's count (the UI uses this snapshot for its scan feedback).
+const concurrent = await Promise.all([
+  store.recordScan({...scan, scanId:"scan-concurrent-1", publicId:"public-concurrent-1"}),
+  store.recordScan({...scan, scanId:"scan-concurrent-2", publicId:"public-concurrent-2"}),
+]);
+assert.deepEqual(concurrent.map((item) => item.counts.scans), [2,3]);
 rejectScan = true;
 await assert.rejects(store.recordScan({...scan, scanId:"scan-3", publicId:"public-3"}),
   /SIMULATED_DISK_FULL/);
 rejectScan = false;
-assert.deepEqual(await store.counts(session.sessionId), {scans:1,marks:0},
+assert.deepEqual(await store.counts(session.sessionId), {scans:3,marks:0},
   "no counter increase before committed scan");
 assert.deepEqual(await store.recordMark(session.sessionId,"student-1","absent","manual",
-  "2026-11-09T07:31:00Z"), {scans:1,marks:1});
+  "2026-11-09T07:31:00Z"), {scans:3,marks:1});
 assert.deepEqual(await store.recordMark(session.sessionId,"student-1","present","manual",
   "2026-11-09T07:32:00Z"), {scans:1,marks:1});
 
