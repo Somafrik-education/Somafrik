@@ -35,6 +35,10 @@ jobs:
         run: node Mobile/scripts/generate-rc-offline-pr2-vectors.js --check
       - name: Crypto parity, pack verification, SQLite store, crash recovery
         working-directory: Mobile
+        # Node 22.12 expose node:sqlite uniquement avec ce drapeau expérimental.
+        # Le sous-processus du test SIGKILL hérite également de NODE_OPTIONS.
+        env:
+          NODE_OPTIONS: --experimental-sqlite
         run: npm run test:rollcall-offline
       - name: Mobile typecheck
         run: npm --prefix Mobile run typecheck
