@@ -422,8 +422,15 @@ export function TeachersListPage() {
                 Affecter un cours
               </Button>
             ) : null}
-            {permissionsReady && assignmentPermissions.canRead && assignmentPermissions.canDelete ? (
-              <Button type="button" variant="secondary" size="sm" onClick={() => void openRemoveCourse(row)}>
+            {permissionsReady && assignmentPermissions.canRead ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!assignmentPermissions.canDelete}
+                title={!assignmentPermissions.canDelete ? "Autorisation nécessaire : retirer les affectations" : undefined}
+                onClick={() => void openRemoveCourse(row)}
+              >
                 Retirer un cours
               </Button>
             ) : null}
@@ -457,7 +464,7 @@ export function TeachersListPage() {
           </InlineAlert>
         }
       >
-        <p className="text-sm text-muted">Les écrans métier restent masqués tant que les droits live ne sont pas chargés.</p>
+        <p className="text-sm text-muted">La page reste indisponible tant que vos autorisations ne sont pas chargées.</p>
       </EntityListShell>
     );
   }
@@ -520,9 +527,8 @@ export function TeachersListPage() {
               {formError}
             </InlineAlert>
           ) : (
-            <InlineAlert tone="info" title="Identité canonique">
-              L&apos;établissement, le rôle et les identifiants techniques restent imposés par le serveur.
-              La création d&apos;un compte se fait depuis Comptes utilisateurs.
+            <InlineAlert tone="info" title="Modifier un enseignant">
+              Vous pouvez modifier les informations personnelles ici. Pour créer un nouvel enseignant, utilisez Comptes utilisateurs.
             </InlineAlert>
           )}
           <Field label="Prénom" htmlFor="teacher-first-name" required>
@@ -618,12 +624,7 @@ export function TeachersListPage() {
             <InlineAlert tone="danger" title="Erreur">
               {assignError}
             </InlineAlert>
-          ) : (
-            <InlineAlert tone="info" title="Références canoniques">
-              Classe et cours de l&apos;établissement. L&apos;année académique active est imposée
-              côté serveur. Aucun schoolCode n&apos;est envoyé.
-            </InlineAlert>
-          )}
+          ) : null}
           {assigning ? (
             <Field label="Enseignant" htmlFor="teacher-assign-name">
               <Input
@@ -641,15 +642,19 @@ export function TeachersListPage() {
               {!removalLoading && !removalError && removalRows.length === 0 ? (
                 <p className="text-sm">Aucune affectation active.</p>
               ) : null}
+              {!assignmentPermissions.canDelete && removalRows.length > 0 ? (
+                <p className="text-sm text-muted">
+                  Vous pouvez consulter ces cours, mais vous n&apos;avez pas l&apos;autorisation de les retirer. Demandez l&apos;accès à la gestion des affectations.
+                </p>
+              ) : null}
               {removalRows.map((assignment) => (
                 <div key={assignment.id} className="flex items-center justify-between gap-3">
                   <span className="text-sm">{assignment.className} · {assignment.course || assignment.subject}</span>
-                  {assignmentPermissions.canDelete ? (
-                    <Button
+                  <Button
                       type="button"
                       variant="danger"
                       size="sm"
-                      disabled={Boolean(removalSavingId)}
+                      disabled={!assignmentPermissions.canDelete || Boolean(removalSavingId)}
                       onClick={() => {
                         if (window.confirm(`Retirer le cours « ${assignment.course || assignment.subject} » pour la classe ${assignment.className} ? Les données historiques sont conservées.`)) {
                           void onRemoveCourse(assignment.id);
@@ -658,7 +663,6 @@ export function TeachersListPage() {
                     >
                       {removalSavingId === assignment.id ? "Retrait…" : "Retirer"}
                     </Button>
-                  ) : null}
                 </div>
               ))}
             </section>
@@ -674,8 +678,7 @@ export function TeachersListPage() {
             </InlineAlert>
           ) : subjects.length === 0 ? (
             <InlineAlert tone="warning" title="Aucun cours">
-              Aucun cours canonique n&apos;est disponible pour cet établissement. Créez-les dans
-              Paramètres → Configuration (référentiel PostgreSQL).
+              Aucun cours n&apos;est disponible pour cet établissement. Ajoutez-en dans Paramètres → Configuration.
             </InlineAlert>
           ) : null}
           <Field label="Classe" htmlFor="teacher-assign-class" required>
@@ -734,6 +737,9 @@ export function TeachersListPage() {
           {!removalLoading && !removalError && removalRows.length === 0 ? (
             <p className="text-sm">Aucune affectation active à retirer.</p>
           ) : null}
+          {!assignmentPermissions.canDelete && removalRows.length > 0 ? (
+            <p className="text-sm text-muted">Vous n&apos;avez pas l&apos;autorisation de retirer ces cours. Demandez l&apos;accès à la gestion des affectations.</p>
+          ) : null}
           {removalRows.map((assignment) => (
             <div key={assignment.id} className="flex items-center justify-between gap-3">
               <span className="text-sm">{assignment.className} · {assignment.course || assignment.subject}</span>
@@ -741,7 +747,7 @@ export function TeachersListPage() {
                 type="button"
                 variant="danger"
                 size="sm"
-                disabled={Boolean(removalSavingId)}
+                disabled={!assignmentPermissions.canDelete || Boolean(removalSavingId)}
                 onClick={() => {
                   if (window.confirm(`Retirer le cours « ${assignment.course || assignment.subject} » pour la classe ${assignment.className} ? Les données historiques sont conservées.`)) {
                     void onRemoveCourse(assignment.id);
