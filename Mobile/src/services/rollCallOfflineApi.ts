@@ -6,6 +6,7 @@
  * vérification Ed25519 est faite par Mobile/src/offline/rollCall/pack.
  */
 import { ApiClientError, httpRequest } from "./httpClient";
+import { parseRetryAfter } from "../offline/rollCall/sync/syncRunner";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,7 +29,7 @@ export const ROLL_CALL_SYNC_TIMEOUT_MS = 30_000;
 
 export type OfflineRollCallSyncResponse =
   | { kind: "network"; code: "TIMEOUT" | "NETWORK" }
-  | { kind: "http"; status: number; body: unknown; dateHeader: string | null };
+  | { kind: "http"; status: number; body: unknown; dateHeader: string | null; retryAfterMs?: number | null };
 
 /**
  * NFC-PRES-LOCAL-PR4 — envoi d'un lot clôturé (route PR1c). `body` est la chaîne figée lue dans la
@@ -74,5 +75,7 @@ export async function sendOfflineRollCallSync(input: { operationId: string; body
       body = null;
     }
   }
-  return { kind: "http", status: response.status, body, dateHeader };
+  // Retry-After (429 / 503) : respecté par le backoff du runner.
+  const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"), Date.now());
+  return { kind: "http", status: response.status, body, dateHeader, retryAfterMs };
 }

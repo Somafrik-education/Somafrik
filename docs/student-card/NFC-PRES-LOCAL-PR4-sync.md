@@ -21,7 +21,7 @@ Un appel clôturé sur le téléphone n'est **jamais** considéré comme enregis
 
 Une tentative, toujours dans cet ordre, avec les fonctions PR2 :
 
-1. `listSyncCandidates` (ajout PR4) : sessions du compte en `closed`, `failed_retryable` ou `unconfirmable`, corps figé présent, `sync_deadline` non dépassée, `next_attempt_at` atteinte (sauf demande explicite, réseau retrouvé, retour du même compte) ;
+1. `listSyncCandidates` (ajout PR4) : sessions du compte en `closed`, `failed_retryable` ou `unconfirmable`, corps figé présent, `sync_deadline` non dépassée, `next_attempt_at` atteinte. Seule l'action explicite « Synchroniser maintenant » avance une tentative différée, et au plus une fois toutes les 30 s par appel (aucune tentative de la session dans les 30 dernières secondes) ;
 2. `beginSyncAttempt` : COMMIT de `syncing`, lecture du corps figé ;
 3. envoi de **la chaîne lue en base**, octet pour octet, `Idempotency-Key = operationId` (`sendOfflineRollCallSync`, route `POST /api/student-cards/roll-call/offline/v1/sync`) ; rien n'est recalculé ni re-sérialisé ;
 4. `recordTrustedTime` avec l'en-tête `Date` (monotone : jamais de recul) ;
@@ -48,22 +48,26 @@ Garanties :
 | `sessionState: "not_recorded"` | `failed_action_required`, révision possible |
 | `sessionState: "conflict"` | `failed_action_required`, aucune révision |
 
-Backoff borné : 30 s, 2 min, 5 min, 15 min, 30 min, puis 1 h (±10 %). Non confirmable : au moins 15 min. Intervention et succès : aucune tentative automatique. L'échéance J+3 n'est jamais prolongée : après `sync_deadline`, plus aucun envoi ; `runPurge` passe la session en `expired` (avec l'exception PR2 de conservation du corps figé après un état non confirmable).
+Backoff borné : 30 s, 2 min, 5 min, 15 min, 30 min, puis 1 h (±10 %). Non confirmable : au moins 15 min. `Retry-After` (secondes ou date HTTP, sur 429 / 503) est respecté : le délai effectif n'est jamais plus court, borné à 6 h. Sur toute la fenêtre J+3, une erreur permanente donne au plus ≈ une tentative par heure. Intervention et succès : aucune tentative automatique. L'échéance J+3 n'est jamais prolongée : après `sync_deadline`, plus aucun envoi ; `runPurge` passe la session en `expired` (avec l'exception PR2 de conservation du corps figé après un état non confirmable).
 
 ## 3. Déclencheurs et cycle de vie
 
 | Déclencheur | Backoff |
 | --- | --- |
-| clôture locale (`closed`) | respecté (aucune tentative antérieure) |
-| connexion retrouvée (`online`, transition `subscribeConnectivity`) | ignoré |
-| retour du même compte (`login`, `onSessionChanged`) | ignoré |
+| clôture locale (`closed`) | respecté |
+| connexion retrouvée (`online`, transition `subscribeConnectivity`) | respecté : évaluation des tentatives **dues** uniquement |
+| retour du même compte (`login`, `onSessionChanged`) | respecté |
 | reprise de l'application (`resume`) | respecté |
 | minuterie au premier plan, toutes les 60 s (`timer`) | respecté |
-| « Synchroniser maintenant » (`manual`) | ignoré |
+| « Synchroniser maintenant » (`manual`) | avancé, au plus une fois par 30 s et par appel |
+
+Correction CTO (revue du HEAD `c1688b82`) : la première version ignorait `next_attempt_at` sur `online` et `login`. Sur un réseau instable avec des 429 / 5xx, cela aurait pu solliciter le serveur malgré le backoff. Ces événements n'effacent plus aucun délai.
 
 Aucune tâche d'arrière-plan : une application suspendue ou tuée reprend à la prochaine occasion. Le runner n'ouvre jamais la base d'un autre compte. Il n'en crée aucune : la liste des appels n'affiche que la base déjà ouverte du compte.
 
 **Déconnexion** (PR3 inchangé, MP-011 préservé) : le runner est arrêté avant tout traitement du stockage. Un envoi en cours est isolé : sa réponse n'est jamais appliquée. L'appel reste en attente (`blocked_logout`) et il est renvoyé à l'identique au retour du même compte. **Changement de compte** : runner arrêté, base fermée, ACK tardif ignoré. **Session expirée (401)** : gestion existante (`notifySessionExpired` → `forcedLogout`, aucun effacement).
+
+**Réponse tardive** : l'appartenance au compte est vérifiée après la réponse, de nouveau juste avant `recordSyncOutcome`, et les écritures portent sur la connexion SQLCipher du compte émetteur (contexte capturé). Si cette base a été fermée dans l'intervalle (déconnexion, changement de compte), toute écriture est refusée (`RC_STORAGE_CLOSED`) : aucune confirmation, aucune horloge ni aucun état écrit, et rien ne peut atteindre la base d'un autre compte. La session reste `syncing`, puis elle est reprise en `failed_retryable` (INTERRUPTED) et rejouée à l'identique.
 
 Correction du runtime : `requestSync` et `refreshLogoutGuard` n'agissent plus que sur le compte dont la base est ouverte. Un recalcul tardif ne rouvre jamais l'ancienne base au détriment du compte connecté entre-temps (course trouvée par les tests PR4).
 
@@ -73,7 +77,7 @@ Correction du runtime : `requestSync` et `refreshLogoutGuard` n'agissent plus qu
 
 ## 5. Fichiers
 
-- `sync/syncRunner.ts`, `sync/syncStatus.ts` et leurs tests (`syncRunner.test.ts`, 17 tests) ;
+- `sync/syncRunner.ts`, `sync/syncStatus.ts` et leurs tests (`syncRunner.test.ts`, 24 tests) ;
 - `store/repository.ts` (ajouts) : `listSyncCandidates`, `listSyncStatus`, option `nextAttemptAt` de `recordSyncOutcome`, refus d'un ACK portant un autre `sessionId` dans `decideSyncOutcome` ;
 - `runtime/rollCallRuntime.ts` : runner unique, `requestSync`, `subscribeSync`, arrêt à la déconnexion et au changement de compte ;
 - `runtime/RollCallOfflineRuntime.tsx` : connexion retrouvée, reprise, minuterie ;
@@ -99,9 +103,20 @@ Correction du runtime : `requestSync` et `refreshLogoutGuard` n'agissent plus qu
 | Déconnexion, changement de compte, reconnexion | trois tests runtime |
 | Statut protégé | PostgreSQL D-2 (justifié conservé), A |
 | 35 élèves hors connexion | « appel de 35 élèves » (transport simulé) |
+| Bascules répétées du réseau, reconnexions, 503 | « bascules répétées du réseau et reconnexions » |
+| 429 / 503 avec Retry-After | « 429 et 503 avec Retry-After » |
+| Action explicite plafonnée | « Synchroniser maintenant : … 30 s » |
+| Borne de tentatives sur J+3 | « borne de tentatives » (minuterie chaque minute, 503 permanent) |
+| Réponse tardive après fermeture SQLCipher, changement de compte | « réponse tardive après fermeture de la base » (3 variantes : avec et sans en-tête Date, autre compte ouvert) |
 | Hermes + SQLCipher Android | recette native `pr4=ok …` / `pr4_persist=ok` (**transport simulé** : aucun PostgreSQL joignable depuis l'émulateur) |
 
 ## 7. Limites et hors périmètre
+
+**NOT RUN : HTTP de bout en bout téléphone → Backend → PostgreSQL.** Les deux preuves sont complémentaires, mais aucune ne couvre ce trajet complet :
+- le test PostgreSQL réel (section D) envoie les octets du Mobile depuis Node, sans l'application ;
+- la recette Android exécute l'application (Hermes, SQLCipher) avec un transport simulé.
+
+**PR5** : recette d'intégration en préproduction. Elle doit couvrir l'APK de recette contre l'API de préproduction, un appel réel clôturé hors connexion, la coupure et le rétablissement du réseau, l'ACK du serveur, la vérification en base, la relance de l'application, ainsi que le rejeu après une réponse perdue.
 
 - La recette Android utilise un **transport simulé**. La preuve PostgreSQL réelle passe par le Backend (section D, octets JCS identiques à ceux du Mobile). Aucune transmission réelle d'un téléphone vers un serveur n'est présentée comme acquise.
 - Les clés de pack ne sont pas configurées : en préproduction comme en production, les appels sont en mode dégradé (PR3 §4). Le serveur répondra donc vraisemblablement `ROLL_CALL_ROSTER_CHANGED` + `not_recorded` à un lot sans liste, ce qui mène à « Corriger l'appel ».

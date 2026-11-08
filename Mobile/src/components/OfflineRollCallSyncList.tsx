@@ -58,6 +58,7 @@ export default function OfflineRollCallSyncList({ session, filter, classNameOf, 
     try {
       const report = await rollCallRuntime().requestSync(session, "manual");
       if (report && report.synced > 0) setNotice(SYNC_COPY.syncedSuccess);
+      else if (report && report.attempted === 0) setNotice(SYNC_COPY.cooldown);
       await load();
     } finally {
       setBusy(false);

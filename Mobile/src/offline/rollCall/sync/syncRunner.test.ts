@@ -32,8 +32,12 @@ import { describeSyncStatus, SYNC_COPY } from "./syncStatus";
 import {
   createRollCallSyncRunner,
   nextAttemptDelayMs,
+  RC_MANUAL_COOLDOWN_MS,
+  RC_MAX_RETRY_AFTER_MS,
   RC_RETRY_DELAYS_MS,
   RC_UNCONFIRMABLE_DELAY_MS,
+  effectiveDelayMs,
+  parseRetryAfter,
   type SyncTransport,
   type SyncTransportResult,
 } from "./syncRunner";
@@ -305,7 +309,7 @@ test("erreurs HTTP et réseau : classification PR0, backoff, unconfirmable conse
     const closed = await closedRollCall(ctx, 1);
     const server = fakeServer();
     server.queue.push(behavior);
-    await runnerFor(manager, server.transport).run({ trigger: "manual", ignoreBackoff: true });
+    await runnerFor(manager, server.transport).run({ trigger: "manual" });
     const row = await getSession(ctx, closed.sessionId);
     assert.equal(row.state, state, label);
     assert.equal(row.last_session_state, lastSessionState, label);
@@ -321,6 +325,7 @@ test("erreurs HTTP et réseau : classification PR0, backoff, unconfirmable conse
       assert.equal(Date.parse(String(row.next_attempt_at)) - platform.now.ms, RC_UNCONFIRMABLE_DELAY_MS);
       await assert.rejects(reviseSession(ctx, closed.sessionId), /RC_REVISION_FORBIDDEN|Révision interdite/, `${label} : aucune nouvelle révision`);
       // Droits rétablis : même opération, même corps.
+      platform.now.ms += RC_MANUAL_COOLDOWN_MS; // délai minimal entre deux demandes explicites
       const again = fakeServer();
       await runnerFor(manager, again.transport).run({ trigger: "manual" });
       assert.equal(again.calls[0].body, closed.frozenBody, `${label} : renvoi identique`);
@@ -506,18 +511,22 @@ test("changement de compte pendant une requête : l'ACK n'est jamais appliqué �
   assert.equal(row.frozen_body, closed.frozenBody);
 });
 
-test("retour du même compte : la reconnexion relance automatiquement les envois en attente", async () => {
+test("retour du même compte : la reconnexion évalue les envois dus, sans contourner le backoff", async () => {
   const server = fakeServer();
-  const { runtime } = runtimeSetup("relogin", server.transport);
+  const { runtime, platform } = runtimeSetup("relogin", server.transport);
   const opened = await runtime.activate(session());
   const closed = await closedRollCall((opened as { account: RcActiveAccount }).account.ctx);
   server.queue.push("timeout");
   await runtime.requestSync(session(), "closed");
   const plan = (await runtime.refreshLogoutGuard(session()), runtime.planLogout(session()));
   assert.equal(await runtime.finishLogout(plan, { confirmed: true }), "blocked_logout");
-  await runtime.onSessionChanged(session()); // reconnexion : base rouverte, envoi relancé
-  await waitFor(() => server.calls.length === 2);
+  await runtime.onSessionChanged(session()); // reconnexion : base rouverte, évaluation lancée
   await waitFor(() => !runtime.syncBusy());
+  assert.equal(server.calls.length, 1, "tentative différée : la reconnexion ne la force pas");
+  const restored = await getSession(runtime.current()!.ctx, closed.sessionId);
+  assert.equal(restored.state, "failed_retryable");
+  platform.now.ms = Date.parse(String(restored.next_attempt_at));
+  await runtime.requestSync(session(), "login");
   assert.equal((await getSession(runtime.current()!.ctx, closed.sessionId)).state, "synced");
   assert.equal(server.calls[1].body, closed.frozenBody);
 });
@@ -531,3 +540,142 @@ test("profil sans appel (Parent) : aucune base ouverte ni créée par la synchro
   assert.deepEqual(fs.readdirSync(dir), []);
   assert.equal(server.calls.length, 0);
 });
+
+// ------------------------- Backoff : reconnexions, Retry-After, borne -------------------------
+
+test("bascules répétées du réseau et reconnexions : aucune tentative avant next_attempt_at (503)", async () => {
+  const { ctx, manager, platform } = await setup("flap");
+  const closed = await closedRollCall(ctx);
+  const server = fakeServer();
+  server.queue.push({ status: 503, body: null });
+  const runner = runnerFor(manager, server.transport);
+  await runner.run({ trigger: "closed" });
+  const due = Date.parse(String((await getSession(ctx, closed.sessionId)).next_attempt_at));
+  // Vingt alternances hors ligne / en ligne, reconnexions du compte, reprises, minuterie.
+  for (let i = 0; i < 20; i += 1) {
+    platform.now.ms += 1000;
+    await runner.run({ trigger: (["online", "login", "resume", "timer"] as const)[i % 4] });
+  }
+  assert.ok(platform.now.ms < due);
+  assert.equal(server.calls.length, 1, "le backoff enregistré est respecté");
+  platform.now.ms = due;
+  await runner.run({ trigger: "online" });
+  assert.equal(server.calls.length, 2, "tentative due : envoyée au retour du réseau");
+  assert.equal((await getSession(ctx, closed.sessionId)).state, "synced");
+});
+
+test("429 et 503 avec Retry-After : délai serveur respecté (borné), jamais raccourci", async () => {
+  assert.equal(parseRetryAfter("120", 0), 120_000);
+  assert.equal(parseRetryAfter("Mon, 09 Nov 2026 08:10:00 GMT", Date.parse(START)), 600_000);
+  assert.equal(parseRetryAfter("bientôt", 0), null);
+  assert.equal(parseRetryAfter(null, 0), null);
+  assert.equal(effectiveDelayMs(30_000, 120_000), 120_000);
+  assert.equal(effectiveDelayMs(300_000, 10_000), 300_000, "jamais plus court que le backoff");
+  assert.equal(effectiveDelayMs(30_000, 10 * 24 * 3_600_000), RC_MAX_RETRY_AFTER_MS, "borné");
+  assert.equal(effectiveDelayMs(null, 120_000), null, "intervention : aucune tentative automatique");
+  for (const status of [429, 503]) {
+    const { ctx, manager, platform } = await setup(`retry-after-${status}`);
+    const closed = await closedRollCall(ctx);
+    const transport: SyncTransport = async () => ({ kind: "http", status, body: null, dateHeader: null, retryAfterMs: 600_000 });
+    const runner = runnerFor(manager, transport);
+    await runner.run({ trigger: "closed" });
+    const row = await getSession(ctx, closed.sessionId);
+    assert.equal(row.state, "failed_retryable");
+    assert.equal(Date.parse(String(row.next_attempt_at)) - platform.now.ms, 600_000, `${status} : Retry-After appliqué`);
+    platform.now.ms += 599_000;
+    assert.equal((await runner.run({ trigger: "online" })).attempted, 0, `${status} : pas avant Retry-After`);
+  }
+});
+
+test("« Synchroniser maintenant » : avance la tentative, mais au plus une fois toutes les 30 s par appel", async () => {
+  const { ctx, manager, platform } = await setup("manual");
+  const closed = await closedRollCall(ctx);
+  const server = fakeServer();
+  for (let i = 0; i < 5; i += 1) server.queue.push({ status: 503, body: null });
+  const runner = runnerFor(manager, server.transport);
+  await runner.run({ trigger: "closed" });
+  for (let i = 0; i < 10; i += 1) await runner.run({ trigger: "manual" }); // appuis répétés
+  assert.equal(server.calls.length, 1, "cooldown : appuis répétés sans effet");
+  platform.now.ms += RC_MANUAL_COOLDOWN_MS + 1;
+  await runner.run({ trigger: "manual" });
+  assert.equal(server.calls.length, 2, "après le délai minimal : tentative avancée");
+  assert.ok(server.calls.every((call) => call.body === closed.frozenBody));
+});
+
+test("borne de tentatives : 503 permanent sur toute la fenêtre J+3 avec minuterie chaque minute", async () => {
+  const { ctx, manager, platform } = await setup("bound");
+  const closed = await closedRollCall(ctx);
+  const starts: number[] = [];
+  const transport: SyncTransport = async () => {
+    starts.push(platform.now.ms);
+    return { kind: "http", status: 503, body: null, dateHeader: null };
+  };
+  const runner = runnerFor(manager, transport);
+  await runner.run({ trigger: "closed" });
+  const deadline = Date.parse((await getSession(ctx, closed.sessionId)).sync_deadline);
+  while (platform.now.ms < deadline + 3_600_000) {
+    platform.now.ms += 60_000;
+    await runner.run({ trigger: (platform.now.ms / 60_000) % 2 ? "timer" : "online" });
+  }
+  const hours = (deadline - Date.parse(START)) / 3_600_000;
+  assert.ok(starts.length <= Math.ceil(hours) + RC_RETRY_DELAYS_MS.length, `${starts.length} tentatives pour ${hours} h`);
+  for (let i = 1; i < starts.length; i += 1) {
+    const planned = RC_RETRY_DELAYS_MS[Math.min(i, RC_RETRY_DELAYS_MS.length) - 1];
+    assert.ok(starts[i] - starts[i - 1] >= planned * 0.9, `intervalle ${i} respecté`);
+  }
+  assert.ok(starts.every((at) => at < deadline), "aucune tentative après l'échéance");
+  const row = await getSession(ctx, closed.sessionId);
+  assert.equal(row.frozen_body, closed.frozenBody, "lot conservé jusqu'à l'échéance");
+});
+
+// ------------------- Réponses tardives : fermeture SQLCipher et changement de compte -------------------
+
+/**
+ * Course réelle : la vérification d'appartenance est passée (le runner « croit » encore que la base
+ * est la sienne) puis la base est fermée — voire un autre compte ouvert — AVANT les écritures.
+ * `currentAccount` renvoie volontairement l'ancien contexte pour placer la fermeture dans cet
+ * intervalle. La connexion fermée refuse toute écriture : ni fausse confirmation, ni écriture
+ * dans la base d'un autre compte ; l'opération figée reste rejouable à l'identique.
+ */
+for (const variant of ["date-header", "no-date-header", "account-switch"] as const) {
+  test(`réponse tardive après fermeture de la base (${variant}) : rien d'écrit, rejeu idempotent`, async () => {
+    const { ctx, manager, platform } = await setup(`late-${variant}`);
+    const closed = await closedRollCall(ctx);
+    const server = fakeServer(variant === "no-date-header" ? "" : "Mon, 09 Nov 2026 08:00:05 GMT");
+    const trustedBefore = await loadLastTrustedTime(ctx);
+    let otherCtx: RcContext | null = null;
+    const racing: SyncTransport = async (input) => {
+      const result = await server.transport(input); // le serveur a enregistré (COMMIT)
+      await manager.close(); // fermeture SQLCipher pendant que la réponse est en vol
+      if (variant === "account-switch") {
+        const other = await manager.activate({ ...IDENTITY, userId: OTHER });
+        assert.ok(other.ok);
+        otherCtx = (other as { account: RcActiveAccount }).account.ctx;
+      }
+      return variant === "no-date-header" && result.kind === "http" ? { ...result, dateHeader: null } : result;
+    };
+    const stale = createRollCallSyncRunner({ currentAccount: () => ({ ctx }), transport: racing, random: () => 0.5 });
+    const report = await stale.run({ trigger: "closed" });
+    assert.equal(report.synced, 0, "aucune fausse confirmation");
+    assert.equal(report.isolated, 1);
+    if (otherCtx) {
+      assert.deepEqual(await listSessions(otherCtx), [], "rien dans la base de l'autre compte");
+      assert.ok(!(await loadLastTrustedTime(otherCtx)), "horloge de l'autre compte intacte (jamais écrite)");
+      await manager.close();
+    }
+    // Retour du compte : `syncing` repris en failed_retryable (INTERRUPTED), lot intact, rejeu identique.
+    const reopened = await manager.activate(IDENTITY);
+    const ctx2 = (reopened as { account: RcActiveAccount }).account.ctx;
+    const row = await getSession(ctx2, closed.sessionId);
+    assert.equal(row.state, "failed_retryable");
+    assert.equal(row.last_error_code, "INTERRUPTED");
+    assert.equal(row.frozen_body, closed.frozenBody);
+    assert.equal(row.operation_id, closed.operationId);
+    assert.equal(await loadLastTrustedTime(ctx2), trustedBefore, "aucune écriture d'horloge après fermeture");
+    platform.now.ms += 1000;
+    await runnerFor(manager, server.transport).run({ trigger: "resume" });
+    assert.equal((await getSession(ctx2, closed.sessionId)).state, "synced");
+    assert.equal(server.writes(), 1, "aucun doublon serveur");
+    assert.ok(server.calls.every((call) => call.body === closed.frozenBody && call.operationId === closed.operationId));
+  });
+}

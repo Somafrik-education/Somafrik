@@ -659,17 +659,27 @@ export const RC_SENDABLE_STATES = ["closed", "failed_retryable", "unconfirmable"
  * synchronisation non dépassée (jamais prolongée localement) et, sauf demande explicite, prochaine
  * tentative atteinte.
  */
-export function listSyncCandidates(ctx: RcContext, options: { ignoreBackoff?: boolean } = {}): Promise<RcSessionRow[]> {
-  const now = iso(ctx.nowMs());
+export function listSyncCandidates(
+  ctx: RcContext,
+  options: { ignoreBackoff?: boolean; cooldownMs?: number } = {},
+): Promise<RcSessionRow[]> {
+  const nowMs = ctx.nowMs();
+  const now = iso(nowMs);
+  // Demande explicite (ignoreBackoff) : jamais deux tentatives d'une session à moins de
+  // `cooldownMs` d'intervalle, quel que soit le nombre d'appuis.
+  const cooldownSince = iso(nowMs - Math.max(0, options.cooldownMs ?? 0));
   return ctx.connection.read((db) =>
     db.getAllAsync<RcSessionRow>(
-      `SELECT * FROM rc_sessions
-        WHERE user_id = ? AND school_id = ? AND state IN ('closed','failed_retryable','unconfirmable')
-          AND frozen_body IS NOT NULL AND operation_id IS NOT NULL
-          AND sync_deadline > ?
-          AND (? = 1 OR next_attempt_at IS NULL OR next_attempt_at <= ?)
-        ORDER BY closed_at, session_id`,
-      [ctx.identity.userId, ctx.identity.schoolId, now, options.ignoreBackoff ? 1 : 0, now],
+      `SELECT * FROM rc_sessions s
+        WHERE s.user_id = ? AND s.school_id = ? AND s.state IN ('closed','failed_retryable','unconfirmable')
+          AND s.frozen_body IS NOT NULL AND s.operation_id IS NOT NULL
+          AND s.sync_deadline > ?
+          AND (
+            s.next_attempt_at IS NULL OR s.next_attempt_at <= ?
+            OR (? = 1 AND NOT EXISTS (SELECT 1 FROM rc_sync_attempts a WHERE a.session_id = s.session_id AND a.started_at > ?))
+          )
+        ORDER BY s.closed_at, s.session_id`,
+      [ctx.identity.userId, ctx.identity.schoolId, now, now, options.ignoreBackoff ? 1 : 0, cooldownSince],
     ),
   );
 }

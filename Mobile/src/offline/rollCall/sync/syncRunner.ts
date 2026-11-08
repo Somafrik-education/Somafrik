@@ -30,7 +30,7 @@ import {
 
 export type SyncTransportResult =
   | { kind: "network"; code: "TIMEOUT" | "NETWORK" }
-  | { kind: "http"; status: number; body: unknown; dateHeader: string | null };
+  | { kind: "http"; status: number; body: unknown; dateHeader: string | null; retryAfterMs?: number | null };
 
 /** Envoi HTTP : `body` est transmis octet pour octet, `operationId` en Idempotency-Key. */
 export type SyncTransport = (input: { operationId: string; body: string }) => Promise<SyncTransportResult>;
@@ -53,6 +53,26 @@ export type SyncRunReport = {
 export const RC_RETRY_DELAYS_MS = [30_000, 120_000, 300_000, 900_000, 1_800_000, 3_600_000] as const;
 /** Refus d'accès (401/403/404) : on attend un rétablissement, sans insister. */
 export const RC_UNCONFIRMABLE_DELAY_MS = 900_000;
+/** « Synchroniser maintenant » : au plus une tentative par appel toutes les 30 s. */
+export const RC_MANUAL_COOLDOWN_MS = 30_000;
+/** `Retry-After` du serveur respecté, borné à 6 h (l'échéance J+3 reste la limite absolue). */
+export const RC_MAX_RETRY_AFTER_MS = 6 * 3_600_000;
+
+/** Délai effectif : jamais plus court que `Retry-After` (borné). */
+export function effectiveDelayMs(computed: number | null, retryAfterMs: number | null | undefined): number | null {
+  if (computed === null) return null;
+  if (typeof retryAfterMs !== "number" || !Number.isFinite(retryAfterMs) || retryAfterMs <= 0) return computed;
+  return Math.max(computed, Math.min(retryAfterMs, RC_MAX_RETRY_AFTER_MS));
+}
+
+/** En-tête Retry-After (secondes ou date HTTP) → millisecondes, null si absent ou illisible. */
+export function parseRetryAfter(value: string | null | undefined, nowMs: number): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (/^\d{1,9}$/.test(trimmed)) return Number(trimmed) * 1000;
+  const at = Date.parse(trimmed);
+  return Number.isFinite(at) && at > nowMs ? at - nowMs : null;
+}
 
 export function nextAttemptDelayMs(decision: SyncDecision, attempt: number, random: () => number = Math.random): number | null {
   if (decision.state === "failed_retryable") {
@@ -108,9 +128,9 @@ export function createRollCallSyncRunner(deps: SyncRunnerDeps) {
   const log = deps.log ?? (() => undefined);
   let epoch = 0;
   let running: Promise<SyncRunReport> | null = null;
-  let queued: { trigger: SyncTrigger; ignoreBackoff: boolean } | null = null;
+  let queued: { trigger: SyncTrigger; manual: boolean } | null = null;
 
-  async function runOnce(trigger: SyncTrigger, ignoreBackoff: boolean): Promise<SyncRunReport> {
+  async function runOnce(trigger: SyncTrigger, manual: boolean): Promise<SyncRunReport> {
     const report: SyncRunReport = { trigger, attempted: 0, synced: 0, retryable: 0, actionRequired: 0, unconfirmable: 0, isolated: 0 };
     const account = deps.currentAccount();
     if (!account) return { ...report, skipped: "no_account" };
@@ -120,7 +140,8 @@ export function createRollCallSyncRunner(deps: SyncRunnerDeps) {
 
     let candidates: RcSessionRow[];
     try {
-      candidates = await listSyncCandidates(ctx, { ignoreBackoff });
+      // Seule une demande explicite avance une tentative différée, avec un délai minimal.
+      candidates = await listSyncCandidates(ctx, manual ? { ignoreBackoff: true, cooldownMs: RC_MANUAL_COOLDOWN_MS } : {});
     } catch (error) {
       log("rc_sync_list_failed", codeOf(error));
       return report;
@@ -150,14 +171,35 @@ export function createRollCallSyncRunner(deps: SyncRunnerDeps) {
       }
       if (result.kind === "http" && result.dateHeader) {
         const serverMs = Date.parse(result.dateHeader);
-        if (Number.isFinite(serverMs)) await recordTrustedTime(ctx, serverMs).catch((error) => log("rc_trusted_time_refused", codeOf(error)));
+        if (Number.isFinite(serverMs)) {
+          try {
+            await recordTrustedTime(ctx, serverMs);
+          } catch (error) {
+            // Base fermée dans l'intervalle (déconnexion, changement de compte) : rien n'est écrit,
+            // la session reste `syncing` et sera renvoyée à l'identique.
+            log("rc_trusted_time_refused", codeOf(error));
+            if (!stillMine() || codeOf(error) === "RC_STORAGE_CLOSED") {
+              report.isolated += 1;
+              return { ...report, skipped: "stopped" };
+            }
+          }
+        }
+      }
+      // Revérification juste avant l'écriture : une fermeture survenue pendant l'horloge isole la réponse.
+      if (!stillMine()) {
+        report.isolated += 1;
+        log("rc_sync_response_isolated");
+        return { ...report, skipped: "stopped" };
       }
       const outcome = toSyncOutcome(result);
+      const retryAfterMs = result.kind === "http" ? result.retryAfterMs ?? null : null;
       let decision: SyncDecision;
       try {
+        // La transaction porte sur la connexion de CE compte (ctx capturé) : fermée, elle refuse
+        // toute écriture ; elle ne peut jamais atteindre la base d'un autre compte.
         decision = await recordSyncOutcome(ctx, session.session_id, attempt.operationId, outcome, {
           nextAttemptAt: (planned, n) => {
-            const delay = nextAttemptDelayMs(planned, n, deps.random);
+            const delay = effectiveDelayMs(nextAttemptDelayMs(planned, n, deps.random), retryAfterMs);
             return delay === null ? null : new Date(ctx.nowMs() + delay).toISOString();
           },
         });
@@ -184,21 +226,21 @@ export function createRollCallSyncRunner(deps: SyncRunnerDeps) {
      * Lance un passage. Si un passage est en cours, la demande est mise en file (un seul passage
      * supplémentaire, avec l'option la plus large) : jamais deux envois concurrents d'une base.
      */
-    run(input: { trigger: SyncTrigger; ignoreBackoff?: boolean }): Promise<SyncRunReport> {
-      // Événements qui changent les conditions (demande explicite, réseau retrouvé, retour du même
-      // compte) : tentative immédiate. Minuterie et reprise respectent le backoff. L'échéance J+3
-      // s'applique toujours.
-      const ignoreBackoff = input.trigger === "manual" || input.trigger === "online" || input.trigger === "login" || input.ignoreBackoff === true;
+    run(input: { trigger: SyncTrigger }): Promise<SyncRunReport> {
+      // Réseau retrouvé, reconnexion, reprise, minuterie, clôture : évaluation des tentatives DUES
+      // uniquement (`next_attempt_at` respecté). Seule l'action explicite « Synchroniser
+      // maintenant » avance une tentative, avec un délai minimal par appel (RC_MANUAL_COOLDOWN_MS).
+      const manual = input.trigger === "manual";
       if (running) {
-        queued = { trigger: input.trigger, ignoreBackoff: ignoreBackoff || (queued?.ignoreBackoff ?? false) };
+        queued = { trigger: manual ? "manual" : input.trigger, manual: manual || (queued?.manual ?? false) };
         return running; // le passage en cours traite la file avant de se terminer
       }
       const loop = async (): Promise<SyncRunReport> => {
-        let last = await runOnce(input.trigger, ignoreBackoff);
+        let last = await runOnce(input.trigger, manual);
         while (queued) {
           const next = queued;
           queued = null;
-          last = await runOnce(next.trigger, next.ignoreBackoff);
+          last = await runOnce(next.trigger, next.manual);
         }
         return last;
       };

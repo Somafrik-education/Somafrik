@@ -22,6 +22,7 @@ export const SYNC_COPY = {
   blocked_logout: "En attente de reconnexion",
   syncedSuccess: "Appel synchronisé avec succès.",
   syncNow: "Synchroniser maintenant",
+  cooldown: "Tentative trop récente : réessayez dans quelques secondes.",
   correct: "Corriger l'appel",
   listTitle: "Appels hors connexion",
   empty: "Aucun appel hors connexion sur ce téléphone.",
