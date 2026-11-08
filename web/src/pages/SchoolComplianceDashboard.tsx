@@ -313,7 +313,7 @@ export function SchoolComplianceDashboard() {
           <CardHeader>
             <CardTitle className="text-base">Export des données</CardTitle>
             <CardDescription>
-              Télécharge un fichier JSON de votre établissement. L’export n’est pas chargé automatiquement.
+              Téléchargez les données de votre établissement dans un fichier à conserver.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
