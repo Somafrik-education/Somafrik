@@ -17,6 +17,11 @@
  *    affectation, flags (maître, présences, support réellement utilisé), abonnement, fenêtre de date,
  *    cartes et inscriptions. Toute erreur W porte `sessionState: "not_recorded"`.
  *
+ * NFC-APPEL-PARTIEL-01 — couverture (`complete`) : `true` = appel complet historique (tout inscrit
+ * couvert, sinon 409 ROSTER_CHANGED) ; `false` = appel partiel : seuls les élèves transmis sont
+ * écrits, chacun devant être inscrit (sinon 409 CARD_INVALID ou ROSTER_CHANGED) ; les autres restent
+ * « non pointés », jamais absents. Un lot partiel vide est refusé.
+ *
  * Une réponse perdue ne provoque jamais une seconde écriture : la session est unique en base, l'ACK
  * est figé dans le journal (`ack_body`) et rejoué à l'identique, y compris au-delà des 24 h du cache.
  */
@@ -121,7 +126,10 @@ function readSyncBody(body, idempotencyKey) {
   assertExactKeys(body, BODY_KEYS, "Lot de synchronisation");
   if (body.contractVersion !== CONTRACT_VERSION) throw inputError("Version de contrat non prise en charge.");
   if (body.mode !== ROLL_CALL_MODE) throw inputError("Mode d'appel invalide.");
-  if (body.complete !== true) throw inputError("Seul un appel complet confirmé peut être synchronisé.");
+  // NFC-APPEL-PARTIEL-01 — `complete` décrit la COUVERTURE de la classe, pas la clôture (un lot
+  // n'existe qu'après clôture) : `true` = appel complet (contrat historique, corps figés existants),
+  // `false` = appel partiel (élèves non pointés laissés sans statut). Aucune autre valeur.
+  if (typeof body.complete !== "boolean") throw inputError("Couverture de l'appel invalide.");
   if (!Number.isSafeInteger(body.revision) || body.revision < 1) throw inputError("Révision invalide.");
   for (const key of ["operationId", "sessionId", "schoolId", "classId"]) {
     if (typeof body[key] !== "string" || !UUID.test(body[key])) throw inputError(`Identifiant invalide : ${key}.`);
@@ -146,6 +154,9 @@ function readSyncBody(body, idempotencyKey) {
     assertExactKeys(mark, MANUAL_KEYS, "Pointage manuel");
     if (typeof mark.studentId !== "string" || !UUID.test(mark.studentId)) throw inputError("Élève invalide dans le pointage manuel.");
     if (!MANUAL_STATUSES.includes(mark.status)) throw inputError("Statut de pointage manuel invalide.");
+  }
+  if (body.complete === false && body.scans.length === 0 && body.manual.length === 0) {
+    throw inputError("Appel vide : aucune présence ni aucun statut à enregistrer.");
   }
   if (!strictlySorted(body.scans, "scanId")) throw inputError("Scans non triés ou en double (scanId).");
   if (!strictlySorted(body.manual, "studentId")) throw inputError("Pointage manuel non trié ou en double (studentId).");
@@ -406,7 +417,7 @@ async function writeOfflineRollCall(repo, { batch, scope, principal, actor, audi
     const scansByStudent = await verifyScans(repo, { schoolId: scope.schoolId, batch, actorUserId: actor.canonicalUserId, enrolled });
     const wanted = buildWanted(scansByStudent, batch.manual);
     const { corrections, protectedRows, created, unchanged } = await applyTeacherMarks(repo, {
-      scope, principal, context, wanted, target, auditMeta, complete: true,
+      scope, principal, context, wanted, target, auditMeta, complete: batch.complete, requireSentEnrolled: true,
     });
     const counts = await rollCallCounts(repo, scope.schoolId, batch.classId, batch.date);
     const clock = await repo.one("SELECT clock_timestamp() AS now");
@@ -458,6 +469,7 @@ async function writeOfflineRollCall(repo, { batch, scope, principal, actor, audi
       newValue: {
         mode: "teacher",
         source: "offline",
+        coverage: batch.complete ? "full" : "partial",
         sessionId: batch.sessionId,
         operationId: batch.operationId,
         revision: batch.revision,

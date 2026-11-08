@@ -419,6 +419,8 @@ En-tête `Idempotency-Key: <operationId>` obligatoire, égal au champ du corps.
 }
 ```
 
+**Couverture (NFC-APPEL-PARTIEL-01, 08/11/2026)** : `complete` est un booléen strict. `true` = appel complet (contrat d'origine, toujours accepté pour les corps figés existants : tout inscrit doit être couvert, sinon `ROSTER_CHANGED`). `false` = appel partiel : seuls les élèves transmis sont écrits, les autres restent sans statut (« non pointés »), jamais absents ; un lot partiel sans scan ni pointage est refusé. Détail : `docs/audits/NFC-APPEL-PARTIEL-01-appel-partiel-20261108.md`.
+
 `scans` triés par `scanId`, `manual` par `studentId` (ordre canonique, digest stable). `schoolId` n'est **jamais** utilisé pour déterminer l'établissement : il est seulement comparé à l'établissement résolu en base (garde R, §6.2) ; il est déjà authentifié dans chaque preuve. Limites : 300 scans, 300 marques, corps ≤ 256 Ko, limiteur de débit par utilisateur. `scannedAt` est informatif.
 
 ### 6.2 Deux autorisations distinctes
@@ -454,7 +456,7 @@ Le gestionnaire s'exécute dans `withIdempotency` → `withIdempotencyTransactio
 | 7 | Fenêtre de date recalculée (fuseau courant) | transaction | 409 `OFFLINE_EXPIRED` + `not_recorded` |
 | 8 | `lockRollCallDay(schoolId, date)` (partagé avec `/validate`) | transaction | — |
 | 9 | Cartes `FOR SHARE` triées par `id` ; preuves ; statut ; support ; propriétaire | transaction | 409 `CARD_INVALID` / 400 `PROOF_INVALID` + `not_recorded` |
-| 10 | `lockEnrolledRoster` `FOR SHARE` ; liste complète | transaction | 409 `ROSTER_CHANGED` + `not_recorded` |
+| 10 | `lockEnrolledRoster` `FOR SHARE` ; liste complète si `complete: true`, élèves transmis seulement si `complete: false` | transaction | 409 `ROSTER_CHANGED` + `not_recorded` |
 | 11 | Présences `FOR UPDATE` triées par élève ; `attendanceTransition` ; `upsertSchoolAttendanceBatch` avec gardes | transaction | 409 `CONCURRENT_UPDATE` + `not_recorded` |
 | 12 | Insertion journal (`source = 'offline'`, `operation_id`, `payload_digest`, `ack_body`) ; aucune ligne insérée = erreur interne | transaction | 500, ROLLBACK |
 | 13 | Audit ; `service.store` de `withIdempotency` | transaction | ROLLBACK |

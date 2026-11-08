@@ -206,7 +206,7 @@ test("aucun secret dans le SQL, le registre ou le schéma ; colonnes interdites 
   const manager = createRollCallAccountManager(platform);
   const account = await activate(manager, identity());
   const session = await draftWithScans(account.ctx, 2, true);
-  await closeSession(account.ctx, session.session_id, null);
+  await closeSession(account.ctx, session.session_id);
   const dbKey = platform.keyStore.dump()[account.keyName];
   const salt = platform.keyStore.dump()[RC_DEVICE_SALT_KEY];
   for (const sql of sqlLog) {
@@ -253,7 +253,7 @@ test("compteurs : chaque opération concurrente renvoie l'instantané de SON com
     [4, 5].map((i) => setManualMark(ctx, { sessionId: session.session_id, matchKey: `MK-${i}`, studentId: crypto.randomUUID(), status: "absent" })),
   );
   assert.deepEqual(marks.map((m) => m.absent), [1, 2]);
-  await closeSession(ctx, session.session_id, null);
+  await closeSession(ctx, session.session_id);
   // Après clôture : scan, doublon et marque refusés, compteurs inchangés.
   const frozen = await readCounts(ctx, session.session_id);
   await assert.rejects(scan(9), /RC_SESSION_NOT_DRAFT/);
@@ -271,7 +271,7 @@ test("schéma : déplacement de scans ou de marques entre sessions refusé, stat
   const manager = createRollCallAccountManager(createTestPlatform({ dir: tmpDir("schema") }));
   const { ctx } = await activate(manager, identity());
   const closedOne = await draftWithScans(ctx, 1, true);
-  await closeSession(ctx, closedOne.session_id, null);
+  await closeSession(ctx, closedOne.session_id);
   const { session: draft } = await openDraftSession(ctx, { classId: "99999999-9999-4999-8999-999999999999", date: DATE, packId: null, syncDeadline: null });
   await recordScan(ctx, { sessionId: draft.session_id, scanId: crypto.randomUUID(), publicId: publicId(), proof: proof(), medium: "nfc", scannedAt: "2026-11-09T07:31:00Z", match: { matchKey: "MK-D", studentId: STUDENT_2 } });
   const attempts: Array<[string, unknown[]]> = [
@@ -433,12 +433,15 @@ test("clôture : corps figé conforme au contrat PR1c, digest identique au Backe
     { matchKey: "MK-B", studentId: STUDENT_2, existingStatus: null },
     { matchKey: "MK-C", studentId: "77777777-7777-4777-8777-777777777777", existingStatus: "excused" },
   ];
-  const frozen = await closeSession(ctx, session.session_id, roster);
+  void roster; // NFC-APPEL-PARTIEL-01 : la liste n'intervient plus dans la clôture
+  const frozen = await closeSession(ctx, session.session_id);
   const body = JSON.parse(frozen.frozenBody);
   assert.deepEqual(Object.keys(body).sort(), ["classId", "complete", "contractVersion", "date", "manual", "mode", "operationId", "packId", "payloadDigest", "revision", "scans", "schoolId", "sessionId"]);
-  assert.equal(body.complete, true);
+  assert.equal(body.complete, false, "couverture partielle (NFC-APPEL-PARTIEL-01)");
   assert.equal(body.operationId, frozen.operationId);
-  assert.deepEqual(body.manual, [{ studentId: STUDENT_2, status: "absent" }], "absent déduit pour l'inscrit non scanné sans statut");
+  assert.deepEqual(body.manual, [], "aucune absence déduite pour l'inscrit non scanné : il reste non pointé");
+  const defaults = await ctx.connection.transaction((db) => db.getAllAsync("SELECT 1 FROM rc_marks WHERE session_id = ? AND source = 'default'", [session.session_id]));
+  assert.equal(defaults.length, 0, "aucune marque default créée à la clôture");
   assert.equal(body.scans.length, 2);
   assert.ok(body.scans[0].scanId < body.scans[1].scanId, "scans triés par scanId");
   assert.equal(frozen.payloadDigest, backendDigest(body), "digest recalculé à l'identique par le Backend");
@@ -468,7 +471,7 @@ test("révision refusée sans not_recorded (timeout, 5xx, 401, 403, ACK divergen
   const manager = createRollCallAccountManager(createTestPlatform({ dir: tmpDir("revision") }));
   const { ctx } = await activate(manager, identity());
   const session = await draftWithScans(ctx, 1);
-  const first = await closeSession(ctx, session.session_id, null);
+  const first = await closeSession(ctx, session.session_id);
   const outcomes = [
     { kind: "network" as const },
     { kind: "http" as const, httpStatus: 504 },
@@ -501,14 +504,14 @@ test("révision refusée sans not_recorded (timeout, 5xx, 401, 403, ACK divergen
 
   // Autre session : erreur W attestée not_recorded → révision autorisée, même sessionId, nouvel operationId.
   const other = await draftWithScans(ctx, 1);
-  const closed = await closeSession(ctx, other.session_id, null);
+  const closed = await closeSession(ctx, other.session_id);
   const attempt = await beginSyncAttempt(ctx, other.session_id);
   await recordSyncOutcome(ctx, other.session_id, attempt.operationId, { kind: "http", httpStatus: 409, errorCode: "ROLL_CALL_ROSTER_CHANGED", sessionState: "not_recorded" });
   const revised = await reviseSession(ctx, other.session_id);
   assert.equal(revised.state, "draft");
   assert.equal(revised.revision, 2);
   assert.equal(revised.session_id, other.session_id);
-  const reclosed = await closeSession(ctx, other.session_id, null);
+  const reclosed = await closeSession(ctx, other.session_id);
   assert.notEqual(reclosed.operationId, closed.operationId);
   assert.equal(JSON.parse(reclosed.frozenBody).revision, 2);
   // Une révision ne peut pas être « rejouée » sur une réponse plus ancienne : après un nouvel envoi
@@ -529,7 +532,7 @@ test("synchronisation confirmée : preuves, corps figé et pack purgés ; résum
   await storePack(ctx, { packId, classId: CLASS, date: DATE, expiresAt: "2026-11-09T23:00:00Z", envelopeText: '{"pack":{}}' });
   const { session } = await openDraftSession(ctx, { classId: CLASS, date: DATE, packId, syncDeadline: "2026-11-12T23:00:00Z" });
   await recordScan(ctx, { sessionId: session.session_id, scanId: crypto.randomUUID(), publicId: publicId(), proof: proof(), medium: "nfc", scannedAt: "2026-11-09T07:31:00Z", match: { matchKey: "MK-A", studentId: STUDENT_1 } });
-  const frozen = await closeSession(ctx, session.session_id, null);
+  const frozen = await closeSession(ctx, session.session_id);
   const attempt = await beginSyncAttempt(ctx, session.session_id);
   const decision = await recordSyncOutcome(ctx, session.session_id, attempt.operationId, {
     kind: "http",
@@ -559,7 +562,7 @@ test("échéance J+3 : brouillon expiré et données purgées ; session non conf
   const draft = await draftWithScans(ctx, 2);
   const { session: other } = await openDraftSession(ctx, { classId: "99999999-9999-4999-8999-999999999999", date: DATE, packId: null, syncDeadline: "2026-11-12T23:00:00Z" });
   await recordScan(ctx, { sessionId: other.session_id, scanId: crypto.randomUUID(), publicId: publicId(), proof: proof(), medium: "nfc", scannedAt: "2026-11-09T07:31:00Z", match: null });
-  const frozen = await closeSession(ctx, other.session_id, null);
+  const frozen = await closeSession(ctx, other.session_id);
   const attempt = await beginSyncAttempt(ctx, other.session_id);
   await recordSyncOutcome(ctx, other.session_id, attempt.operationId, { kind: "http", httpStatus: 403 });
   platform.now.ms = Date.parse("2026-11-12T22:59:59Z");

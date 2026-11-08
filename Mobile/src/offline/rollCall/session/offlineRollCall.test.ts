@@ -141,8 +141,8 @@ test("appel complet avec pack : compteurs par élève, doublons, cartes multiple
 
   let summary = await summarizeOfflineRollCall(ctx, rollCall);
   assert.deepEqual(
-    { total: summary.total, present: summary.present, late: summary.late, absent: summary.absent, excused: summary.excused, remaining: summary.remaining, unknownScans: summary.unknownScans, scans: summary.scans },
-    { total: 4, present: 2, late: 0, absent: 0, excused: 1, remaining: 1, unknownScans: 1, scans: 5 },
+    { total: summary.total, present: summary.present, late: summary.late, absent: summary.absent, excused: summary.excused, notRecorded: summary.notRecorded, unknownScans: summary.unknownScans, scans: summary.scans },
+    { total: 4, present: 2, late: 0, absent: 0, excused: 1, notRecorded: 1, unknownScans: 1, scans: 5 },
     "5 lectures acceptées, 2 élèves présents : le compteur suit les élèves, pas les scans",
   );
 
@@ -155,14 +155,14 @@ test("appel complet avec pack : compteurs par élève, doublons, cartes multiple
   assert.equal((await setOfflineMark(ctx, rollCall, { matchKey: C.matchKey, status: "excused" as never })).ok, false, "« Justifié » jamais saisissable");
   summary = await summarizeOfflineRollCall(ctx, rollCall);
   assert.equal(summary.late, 1);
-  assert.equal(summary.remaining, 0);
+  assert.equal(summary.notRecorded, 0);
   assert.equal(summary.rows.find((r) => r.student.studentId === STUDENTS.D)?.status, "excused");
 
   // Clôture explicite : lot conforme au contrat serveur (readSyncBody du Backend).
   const closed = await closeOfflineRollCall(ctx, rollCall);
   assert.ok(closed.ok);
   if (!closed.ok) return;
-  assert.equal(closed.message, "Appel enregistré sur ce téléphone — en attente de synchronisation.");
+  assert.equal(closed.message, "Appel enregistré localement — à synchroniser.");
   const session = await getSession(ctx, rollCall.session.session_id);
   assert.equal(session.state, "closed");
   const body = JSON.parse(String(session.frozen_body));
@@ -188,16 +188,43 @@ test("appel complet avec pack : compteurs par élève, doublons, cartes multiple
   assert.equal((await scan(CARDS.B)).kind, "refused");
 });
 
-test("absents déduits à la clôture : tout élève du pack sans statut", async () => {
-  const { ctx } = await setup("absents");
+test("NFC-APPEL-PARTIEL-01 : appel partiel, élèves non scannés laissés non pointés (jamais absents)", async () => {
+  const { ctx } = await setup("partial");
   const pack = await prepareOfflinePack(ctx, { ...prepareInput, download: async () => packResponse() });
   const rollCall = await openOfflineRollCall(ctx, { classId: CLASS, date: DATE, pack: (pack as Extract<OfflinePackState, { status: "verified" }>).verified });
   await processCard(ctx, rollCall, { token: token(CARDS.A1), medium: "nfc", actorUserId: TEACHER });
   const summary = await summarizeOfflineRollCall(ctx, rollCall);
-  assert.equal(summary.absentAtClose, 2, "B et C sans statut");
+  assert.deepEqual(
+    { total: summary.total, present: summary.present, late: summary.late, absent: summary.absent, excused: summary.excused, notRecorded: summary.notRecorded },
+    { total: 4, present: 1, late: 0, absent: 0, excused: 1, notRecorded: 2 },
+    "B et C non pointés ; D déjà justifié",
+  );
+  assert.match(OFFLINE_ROLL_CALL_COPY.closeBody(summary), /2 élève\(s\) non pointé\(s\)/);
+  assert.doesNotMatch(OFFLINE_ROLL_CALL_COPY.closeBody(summary), /[1-9]\d* absent\(s\) saisi/, "aucun absent annoncé sans saisie");
   assert.ok((await closeOfflineRollCall(ctx, rollCall)).ok);
   const body = JSON.parse(String((await getSession(ctx, rollCall.session.session_id)).frozen_body));
-  assert.deepEqual(body.manual.map((m: { studentId: string; status: string }) => `${m.studentId}:${m.status}`).sort(), [`${STUDENTS.B}:absent`, `${STUDENTS.C}:absent`].sort());
+  assert.equal(body.complete, false);
+  assert.deepEqual(body.manual, [], "aucune absence par défaut dans le lot");
+  assert.equal(body.scans.length, 1);
+  readSyncBody(body, body.operationId);
+});
+
+test("NFC-APPEL-PARTIEL-01 : absence explicite conservée ; appel vide refusé sans rien inventer", async () => {
+  const { ctx } = await setup("explicit");
+  const pack = await prepareOfflinePack(ctx, { ...prepareInput, download: async () => packResponse() });
+  const verified = (pack as Extract<OfflinePackState, { status: "verified" }>).verified;
+  const rollCall = await openOfflineRollCall(ctx, { classId: CLASS, date: DATE, pack: verified });
+  const empty = await closeOfflineRollCall(ctx, rollCall);
+  assert.deepEqual(empty, { ok: false, message: OFFLINE_ROLL_CALL_COPY.emptyRollCall }, "zéro carte, zéro statut : clôture refusée");
+  assert.equal((await getSession(ctx, rollCall.session.session_id)).state, "draft", "le brouillon reste ouvert");
+  const B = verified.pack.students.find((s) => s.studentId === STUDENTS.B)!;
+  assert.equal((await setOfflineMark(ctx, rollCall, { matchKey: B.matchKey, status: "absent" })).ok, true);
+  const summary = await summarizeOfflineRollCall(ctx, rollCall);
+  assert.deepEqual([summary.present, summary.absent, summary.notRecorded], [0, 1, 2]);
+  assert.ok((await closeOfflineRollCall(ctx, rollCall)).ok, "une absence explicite suffit à clôturer");
+  const body = JSON.parse(String((await getSession(ctx, rollCall.session.session_id)).frozen_body));
+  assert.deepEqual(body.manual, [{ studentId: STUDENTS.B, status: "absent" }], "seule l'absence saisie est transmise");
+  assert.equal(body.complete, false);
   readSyncBody(body, body.operationId);
 });
 

@@ -64,8 +64,10 @@ test("validation stricte : champs exacts, valeurs du contrat, aucune normalisati
     "champ manquant": (({ packId, ...rest }) => rest)(body()),
     "version": { ...body(), contractVersion: "rc-offline-2" },
     "mode direction": { ...body(), mode: "direction" },
-    "complete false": { ...body(), complete: false },
-    "complete absent → chaîne": { ...body(), complete: "true" },
+    "complete chaîne": { ...body(), complete: "true" },
+    "complete null": { ...body(), complete: null },
+    "complete partiel en texte": { ...body(), complete: "partial" },
+    "appel partiel vide": { ...body(), complete: false, scans: [], manual: [] },
     "révision 0": { ...body(), revision: 0 },
     "révision flottante": { ...body(), revision: 1.5 },
     "UUID majuscule": { ...body(), classId: "0000000A-0000-4000-8000-000000000003" },
@@ -94,6 +96,13 @@ test("validation stricte : champs exacts, valeurs du contrat, aucune normalisati
     }
     rejects(() => readSyncBody(payload, payload.operationId ?? base.operationId), OFFLINE_SYNC_ERROR.INPUT_INVALID, name);
   }
+  // NFC-APPEL-PARTIEL-01 : couverture partielle (`complete: false`) acceptée dès qu'un élément est transmis.
+  const partial = withDigest({ ...body(), complete: false });
+  assert.equal(readSyncBody(partial, partial.operationId).complete, false);
+  const partialManualOnly = withDigest({ ...body(), complete: false, scans: [], manual: [{ studentId: uuid(1, "9000"), status: "absent" }] });
+  assert.equal(readSyncBody(partialManualOnly, partialManualOnly.operationId).manual.length, 1);
+  // Appel complet historique (`complete: true`) toujours accepté (corps figés existants).
+  assert.equal(readSyncBody(withDigest({ ...body(), complete: true }), base.operationId).complete, true);
   // packId null (mode dégradé) accepté.
   const degraded = withDigest({ ...body(), packId: null });
   assert.equal(readSyncBody(degraded, degraded.operationId).packId, null);

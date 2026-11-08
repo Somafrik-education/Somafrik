@@ -129,7 +129,7 @@ async function closedRollCall(ctx: RcContext, scans = 2, date = DATE, classId = 
       match: null,
     });
   }
-  const closed = await closeSession(ctx, draft.session_id, null);
+  const closed = await closeSession(ctx, draft.session_id);
   return { sessionId: draft.session_id, ...closed };
 }
 
@@ -356,7 +356,7 @@ test("not_recorded : « Corriger l'appel » → même sessionId, révision + 1, 
   assert.equal(revised.revision, 2);
   assert.equal(revised.state, "draft");
   assert.equal(revised.operation_id, null);
-  const reclosed = await closeSession(ctx, closed.sessionId, null);
+  const reclosed = await closeSession(ctx, closed.sessionId);
   assert.notEqual(reclosed.operationId, closed.operationId, "nouvel operationId");
   assert.notEqual(reclosed.payloadDigest, closed.payloadDigest, "nouveau digest (révision 2)");
   await runner.run({ trigger: "closed" });

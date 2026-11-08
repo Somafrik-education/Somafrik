@@ -31,13 +31,48 @@ export const SYNC_COPY = {
   expiredHint: "Le délai de synchronisation (fin de J+3) est dépassé. Les présences doivent être saisies par la direction.",
 } as const;
 
+/**
+ * NFC-APPEL-PARTIEL-01 — bandeau supérieur de l'écran d'appel, dérivé UNIQUEMENT de l'état stocké
+ * de la session (jamais d'un message figé à la clôture) : « Synchronisé » n'apparaît qu'en `synced`,
+ * c'est-à-dire après un ACK conforme enregistré par `recordSyncOutcome`.
+ */
+export const SYNC_BANNER = {
+  closed: "Appel enregistré localement — à synchroniser",
+  syncing: "Synchronisation en cours",
+  failed_retryable: "Enregistré localement — nouvelle tentative prévue",
+  unconfirmable: "État serveur non confirmable",
+  failed_action_required: "Échec à résoudre",
+  synced: "Appel synchronisé avec succès",
+  expired: "Appel expiré — intervention nécessaire",
+  blocked_logout: "Enregistré localement — en attente de reconnexion",
+} as const;
+
+export function syncBanner(state: RcSessionState): { message: string; tone: "ok" | "neutral" | "warn" | "error" } | null {
+  switch (state) {
+    case "closed":
+    case "syncing":
+    case "blocked_logout":
+      return { message: SYNC_BANNER[state], tone: "neutral" };
+    case "failed_retryable":
+    case "unconfirmable":
+      return { message: SYNC_BANNER[state], tone: "warn" };
+    case "failed_action_required":
+    case "expired":
+      return { message: SYNC_BANNER[state], tone: "error" };
+    case "synced":
+      return { message: SYNC_BANNER.synced, tone: "ok" };
+    default:
+      return null;
+  }
+}
+
 const ERROR_MESSAGES: Record<string, string> = {
   NETWORK_ERROR: "Pas de connexion au serveur.",
   INTERRUPTED: "Envoi interrompu : il sera renvoyé à l'identique.",
   RESPONSE_UNREADABLE: "Réponse du serveur illisible.",
   ACK_MISMATCH: "Accusé de réception du serveur non conforme. L'appel est conservé ; contactez le support.",
   ACCOUNT_UNCONFIRMABLE: "Compte non reconnu par le serveur pour le moment.",
-  ROLL_CALL_ROSTER_CHANGED: "La liste de la classe a changé depuis l'appel.",
+  ROLL_CALL_ROSTER_CHANGED: "La liste de la classe a changé depuis l'appel (élève désinscrit ou appel enregistré avec l'ancienne règle des absences).",
   ROLL_CALL_CARD_INVALID: "Une carte n'est plus valide (révoquée, remplacée ou élève désinscrit).",
   ROLL_CALL_PROOF_INVALID: "Une lecture de carte n'a pas pu être vérifiée par le serveur.",
   ROLL_CALL_OFFLINE_EXPIRED: "Date hors de la fenêtre de synchronisation.",
