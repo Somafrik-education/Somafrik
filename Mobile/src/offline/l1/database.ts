@@ -53,8 +53,9 @@ function sqlcipherRequiredError(): Error & { code: string } {
 /**
  * Applique la clé SQLCipher sur une connexion, puis exige `cipher_version` non vide.
  * Jamais de fallback plaintext. La clé n'est pas loggée.
+ * Exportée pour la base d'appel hors ligne (NFC-PRES-LOCAL-PR2) : même primitive, pas de second moteur.
  */
-async function applySqlCipherKey(db: L1SqliteLike, key: string): Promise<string> {
+export async function applySqlCipherKey(db: L1SqliteLike, key: string): Promise<string> {
   await db.execAsync(`PRAGMA key = '${escapeSqlLiteral(key)}'`);
   const pragma = await db.getFirstAsync<{ cipher_version?: string }>("PRAGMA cipher_version");
   const cipherVersion = String(pragma?.cipher_version ?? "").trim();
