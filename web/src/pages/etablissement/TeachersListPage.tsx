@@ -151,6 +151,7 @@ export function TeachersListPage() {
   const [removalRows, setRemovalRows] = useState<TeacherAssignmentRecord[]>([]);
   const [removalLoading, setRemovalLoading] = useState(false);
   const [removalSavingId, setRemovalSavingId] = useState<string | null>(null);
+  const [confirmingRemoval, setConfirmingRemoval] = useState<TeacherAssignmentRecord | null>(null);
   const [removalError, setRemovalError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -206,6 +207,7 @@ export function TeachersListPage() {
 
   async function openAssign(row: SchoolTeacher) {
     setAssigning(row);
+    setConfirmingRemoval(null);
     setAssignForm({ classCode: "", subjectCode: "" });
     setAssignError(null);
     setSubjectsCatalogError(null);
@@ -256,6 +258,7 @@ export function TeachersListPage() {
 
   async function openRemoveCourse(row: SchoolTeacher) {
     setRemovingFor(row);
+    setConfirmingRemoval(null);
     setRemovalRows([]);
     setRemovalError(null);
     setRemovalLoading(true);
@@ -285,6 +288,7 @@ export function TeachersListPage() {
     try {
       await teacherAssignmentsApi.remove(assignmentId);
       setRemovalRows((rows) => rows.filter((item) => item.id !== assignmentId));
+      setConfirmingRemoval(null);
       showToast("Affectation retirée.", "success");
       try {
         await load();
@@ -655,16 +659,29 @@ export function TeachersListPage() {
                       variant="danger"
                       size="sm"
                       disabled={!assignmentPermissions.canDelete || Boolean(removalSavingId)}
-                      onClick={() => {
-                        if (window.confirm(`Retirer le cours « ${assignment.course || assignment.subject} » pour la classe ${assignment.className} ? Les données historiques sont conservées.`)) {
-                          void onRemoveCourse(assignment.id);
-                        }
-                      }}
+                      onClick={() => setConfirmingRemoval(assignment)}
                     >
                       {removalSavingId === assignment.id ? "Retrait…" : "Retirer"}
                     </Button>
                 </div>
               ))}
+              {confirmingRemoval && removalRows.some((item) => item.id === confirmingRemoval.id) ? (
+                <div role="group" aria-label="Confirmer le retrait du cours" className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
+                  <p className="text-sm font-semibold">Retirer ce cours ?</p>
+                  <p className="text-sm">
+                    {confirmingRemoval.className} · {confirmingRemoval.course || confirmingRemoval.subject}
+                  </p>
+                  <p className="text-sm">Les notes et les présences déjà enregistrées seront conservées.</p>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="secondary" size="sm" disabled={Boolean(removalSavingId)} onClick={() => setConfirmingRemoval(null)}>
+                      Annuler le retrait
+                    </Button>
+                    <Button type="button" variant="danger" size="sm" disabled={Boolean(removalSavingId) || !assignmentPermissions.canDelete} onClick={() => void onRemoveCourse(confirmingRemoval.id)}>
+                      {removalSavingId ? "Retrait…" : "Confirmer le retrait"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </section>
           ) : null}
           {classes.length === 0 ? (
@@ -748,18 +765,29 @@ export function TeachersListPage() {
                 variant="danger"
                 size="sm"
                 disabled={!assignmentPermissions.canDelete || Boolean(removalSavingId)}
-                onClick={() => {
-                  if (window.confirm(`Retirer le cours « ${assignment.course || assignment.subject} » pour la classe ${assignment.className} ? Les données historiques sont conservées.`)) {
-                    void onRemoveCourse(assignment.id);
-                  }
-                }}
+                onClick={() => setConfirmingRemoval(assignment)}
               >
                 {removalSavingId === assignment.id ? "Retrait…" : "Retirer"}
               </Button>
             </div>
           ))}
+          {confirmingRemoval && removalRows.some((item) => item.id === confirmingRemoval.id) ? (
+            <div role="group" aria-label="Confirmer le retrait du cours" className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
+              <p className="text-sm font-semibold">Retirer ce cours ?</p>
+              <p className="text-sm">{confirmingRemoval.className} · {confirmingRemoval.course || confirmingRemoval.subject}</p>
+              <p className="text-sm">Les notes et les présences déjà enregistrées seront conservées.</p>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="secondary" size="sm" disabled={Boolean(removalSavingId)} onClick={() => setConfirmingRemoval(null)}>
+                  Annuler le retrait
+                </Button>
+                <Button type="button" variant="danger" size="sm" disabled={Boolean(removalSavingId) || !assignmentPermissions.canDelete} onClick={() => void onRemoveCourse(confirmingRemoval.id)}>
+                  {removalSavingId ? "Retrait…" : "Confirmer le retrait"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <div className="flex justify-end">
-            <Button type="button" variant="secondary" disabled={Boolean(removalSavingId)} onClick={() => setRemovingFor(null)}>
+            <Button type="button" variant="secondary" disabled={Boolean(removalSavingId)} onClick={() => { setConfirmingRemoval(null); setRemovingFor(null); }}>
               Fermer
             </Button>
           </div>
