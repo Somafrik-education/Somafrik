@@ -112,10 +112,14 @@
     "test:student-card-entry-control-integration": "npx --yes tsx --test src/lib/studentCardEntryControl.integration.pg.test.ts",
     "test:student-card-nfc-performance": "npx --yes tsx --test src/lib/studentCardNfcPerformance.test.ts",
     "test:student-card-nfc-diagnosis": "npx --yes tsx --test src/lib/studentCardNfcDiagnosis.test.ts",
-    "test:student-card-nfc-security": "npx --yes tsx --test src/lib/studentCardNfcSecurity.test.ts"
+    "test:student-card-nfc-security": "npx --yes tsx --test src/lib/studentCardNfcSecurity.test.ts",
+    "test:rollcall-offline": "npx --yes tsx --test src/offline/rollCall/crypto/rollCallCrypto.test.ts src/offline/rollCall/pack/rollCallPack.test.ts src/offline/rollCall/store/rollCallStore.test.ts src/offline/rollCall/store/rollCallCrash.test.ts",
+    "verify:rollcall-native-proof": "node scripts/run-rc-offline-native-proof.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1",
     "@react-navigation/bottom-tabs": "^7.16.2",
     "@react-navigation/native": "^7.2.5",
     "@react-navigation/native-stack": "^7.16.0",
