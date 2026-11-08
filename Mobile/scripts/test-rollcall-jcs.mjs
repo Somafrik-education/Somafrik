@@ -70,6 +70,6 @@ for (let i = 0; i < 120; i++) {
   assertions += 2;
 }
 const source = fs.readFileSync(path.join(repoRoot, "Mobile/src/offline/rollCall/jcs.ts"), "utf8");
-assert.ok(!/node:crypto|Buffer\s*[.(]/.test(source), "native module has no Node-only dependencies");
+assert.ok(!/^\s*import\s+.*(?:node:crypto|node:buffer)/m.test(source) && !/\bBuffer\s*[.(]/.test(source), "native implementation must avoid Node-only runtime APIs");
 assertions++;
 console.log("PASS: JCS/UTF8/LP Node parity " + assertions + " assertions; HERMES S13 NOT RUN");
