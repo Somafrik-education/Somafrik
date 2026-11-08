@@ -51,7 +51,9 @@ const session = {
   syncDeadline: "2026-11-12T23:00:00Z",
 };
 assert.deepEqual(await store.openDraft(session), {scans:0, marks:0});
-const secondSession = {...session, sessionId: "session-concurrent-open"};
+// The schema permits only one roll-call per class and day; use another class
+// to isolate the concurrency snapshot test from that uniqueness invariant.
+const secondSession = {...session, sessionId: "session-concurrent-open", classId: "class-concurrent-open"};
 const opening = store.openDraft(secondSession);
 const queuedFirstScan = store.recordScan({
   scanId: "scan-opening", sessionId: secondSession.sessionId, publicId: "public-opening",
