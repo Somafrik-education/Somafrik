@@ -45,7 +45,7 @@ const mark = db.prepare(
 
 session("one");
 assert.throws(() => session("two"), /UNIQUE constraint failed/, "one draft per class per date");
-assert.throws(() => scan.run("scan-X", "nonexistent", "card-X", "proof-X"), /FOREIGN KEY/);
+assert.throws(() => scan.run("scan-X", "nonexistent", "card-X", "proof-X"), /RC_SCAN_SESSION_NOT_DRAFT|FOREIGN KEY/, "unknown session must fail closed");
 scan.run("scan-A", "one", "card-A", "proof-A");
 assert.throws(() => scan.run("scan-B", "one", "card-A", "proof-B"), /UNIQUE constraint failed/,
   "same card must not be scanned twice while active");
