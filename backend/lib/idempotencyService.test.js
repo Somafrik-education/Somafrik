@@ -382,3 +382,91 @@ test("crash avant stockage : rollback mutation, retry même clé = une seule éc
     setIdempotencyBeforeStoreHook(null);
   }
 });
+
+// NFC-PRES-LOCAL-PR1c — options additives `guard` et `replayStatusCode`.
+test("guard : appelée avant toute lecture de rejeu ; un refus n'exécute ni lecture, ni handler, ni stockage", async () => {
+  const repo = createMemoryRepo();
+  let reads = 0;
+  const findIdempotencyRecord = repo.findIdempotencyRecord.bind(repo);
+  repo.findIdempotencyRecord = async (cacheId) => {
+    reads += 1;
+    return findIdempotencyRecord(cacheId);
+  };
+  const service = new IdempotencyService(repo);
+  const principal = { sub: "teacher-1", schoolCode: "CD-2026-0001" };
+  const order = [];
+  let runs = 0;
+  const handler = async () => {
+    runs += 1;
+    order.push("handler");
+    return { statusCode: 201, body: { id: "rc-1" } };
+  };
+  const first = mockHttp("key-guard", { sessionId: "s-1" }, service);
+  await withIdempotency({
+    req: first.req, res: first.res, routeKey: "POST /api/x", principal, handler,
+    guard: async () => { order.push(`guard:${reads}`); },
+  });
+  assert.deepEqual(order, ["guard:0", "handler"], "garde avant la première lecture");
+  assert.equal(first.res.statusCode, 201);
+  const readsAfterFirst = reads;
+  const denied = mockHttp("key-guard", { sessionId: "s-1" }, service);
+  const refusal = Object.assign(new Error("refus R"), { statusCode: 403, code: "ROLL_CALL_REPLAY_FORBIDDEN" });
+  await assert.rejects(
+    () => withIdempotency({ req: denied.req, res: denied.res, routeKey: "POST /api/x", principal, handler, guard: async () => { throw refusal; } }),
+    (error) => error === refusal,
+  );
+  assert.equal(reads, readsAfterFirst, "aucune lecture d'idempotence après un refus de la garde");
+  assert.equal(denied.res.payload, null, "aucun ACK restitué");
+  assert.equal(runs, 1);
+  // Mémoire du processus : même un rejeu déjà en cache mémoire passe par la garde.
+  const deniedAgain = mockHttp("key-guard", { sessionId: "s-1" }, service);
+  await assert.rejects(() => withIdempotency({ req: deniedAgain.req, res: deniedAgain.res, routeKey: "POST /api/x", principal, handler, guard: async () => { throw refusal; } }));
+  assert.equal(deniedAgain.res.payload, null);
+});
+
+test("replayStatusCode : rejeu en 200 avec le même corps ; sans l'option, statut stocké inchangé", async () => {
+  const service = new IdempotencyService(createMemoryRepo());
+  const principal = { sub: "teacher-1", schoolCode: "CD-2026-0001" };
+  let runs = 0;
+  const handler = async () => {
+    runs += 1;
+    return { statusCode: 201, body: { rollCallId: "rc-1", created: 3 } };
+  };
+  const first = mockHttp("key-replay-200", { sessionId: "s-2" }, service);
+  await withIdempotency({ req: first.req, res: first.res, routeKey: "POST /api/x", principal, handler, replayStatusCode: 200 });
+  const second = mockHttp("key-replay-200", { sessionId: "s-2" }, service);
+  await withIdempotency({ req: second.req, res: second.res, routeKey: "POST /api/x", principal, handler, replayStatusCode: 200 });
+  assert.equal(runs, 1);
+  assert.equal(first.res.statusCode, 201);
+  assert.equal(second.res.statusCode, 200);
+  assert.deepEqual(second.res.payload, { rollCallId: "rc-1", created: 3, idempotentReplay: true });
+  const third = mockHttp("key-replay-200", { sessionId: "s-2" }, service);
+  await withIdempotency({ req: third.req, res: third.res, routeKey: "POST /api/x", principal, handler });
+  assert.equal(third.res.statusCode, 201, "sans replayStatusCode : statut stocké");
+});
+
+test("guard sans service d'idempotence : toujours appelée avant le handler", async () => {
+  const order = [];
+  const http = mockHttp("", { a: 1 }, undefined);
+  await withIdempotency({
+    req: http.req, res: http.res, routeKey: "POST /api/x", principal: { sub: "u" },
+    guard: async () => order.push("guard"),
+    handler: async () => { order.push("handler"); return { statusCode: 200, body: {} }; },
+  });
+  assert.deepEqual(order, ["guard", "handler"]);
+});
+
+test("runOutsideIdempotencyTx : sort du contexte transactionnel, sans le modifier", async () => {
+  const { getIdempotencyTx, runWithIdempotencyTx, runOutsideIdempotencyTx } = require("./idempotencyTxContext");
+  const store = { tx: { marker: "tx" } };
+  await runWithIdempotencyTx(store, async () => {
+    assert.equal(getIdempotencyTx(), store);
+    const inside = await runOutsideIdempotencyTx(async () => {
+      await Promise.resolve();
+      return getIdempotencyTx();
+    });
+    assert.equal(inside, null, "aucune transaction visible à l'extérieur");
+    assert.equal(getIdempotencyTx(), store, "contexte rétabli après la sortie");
+  });
+  assert.equal(getIdempotencyTx(), null);
+});

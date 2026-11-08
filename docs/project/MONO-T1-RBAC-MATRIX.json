@@ -510,6 +510,14 @@
       "cdTeacher": "accès",
       "cdParent": "refusé"
     },
+    "POST /api/student-cards/roll-call/offline/v1/sync": {
+      "cdAdmin": "écriture autorisée (non envoyée)",
+      "cdProviseur": "écriture autorisée (non envoyée)",
+      "cdPrefet": "écriture autorisée (non envoyée)",
+      "cdSecretary": "écriture autorisée (non envoyée)",
+      "cdTeacher": "écriture autorisée (non envoyée)",
+      "cdParent": "refusé"
+    },
     "GET /api/student-cards/roll-call/overview": {
       "cdAdmin": "accès",
       "cdProviseur": "accès",

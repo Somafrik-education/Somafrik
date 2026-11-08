@@ -160,7 +160,13 @@ function readIdempotencyKey(req) {
   return normalizeKey(req.get("Idempotency-Key") ?? req.get("idempotency-key"));
 }
 
-async function withIdempotency({ req, res, routeKey, principal, handler }) {
+/**
+ * Options additives (NFC-PRES-LOCAL-PR1c), sans effet lorsqu'elles sont absentes :
+ *  - `guard` : fonction asynchrone appelée DANS la transaction (ou le verrou), AVANT toute lecture
+ *    de rejeu ; une erreur levée interrompt l'opération sans rien lire ni écrire ;
+ *  - `replayStatusCode` : statut HTTP renvoyé lors d'un rejeu (par défaut, le statut stocké).
+ */
+async function withIdempotency({ req, res, routeKey, principal, handler, guard, replayStatusCode }) {
   const idempotencyKey = readIdempotencyKey(req);
   const service = req.app?.locals?.idempotencyService;
   const schoolScope = String(principal?.schoolCode ?? "").trim().toUpperCase();
@@ -173,18 +179,22 @@ async function withIdempotency({ req, res, routeKey, principal, handler }) {
   };
 
   if (!idempotencyKey || !service) {
+    if (typeof guard === "function") await guard();
     const result = await runHandler();
     return res.status(result.statusCode).json(result.body);
   }
 
   const execute = async () => {
+    if (typeof guard === "function") await guard();
     const replay = await service.findReplay(idempotencyKey, routeKey, principalId, schoolScope);
     if (replay) {
       if (replay.requestHash && replay.requestHash !== requestHash) {
         throw createIdempotencyConflictError();
       }
       return {
-        statusCode: replay.statusCode,
+        statusCode: Number.isInteger(replayStatusCode) ? replayStatusCode : replay.statusCode,
+        // Statut d'origine conservé pour le cache mémoire : l'option ne modifie que la réponse.
+        storedStatusCode: replay.statusCode,
         body: attachReplayFlag(replay.body),
       };
     }
@@ -216,7 +226,7 @@ async function withIdempotency({ req, res, routeKey, principal, handler }) {
         : result.body;
     service.memory.set(cacheId, {
       requestHash,
-      statusCode: result.statusCode,
+      statusCode: result.storedStatusCode ?? result.statusCode,
       body: replayBody,
       expiresAt: Date.now() + ttlForRoute(routeKey),
     });

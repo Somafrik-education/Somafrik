@@ -2749,6 +2749,66 @@ app.get("/api/student-cards/roll-call/offline/v1/pack", requireAuth, requirePerm
   ));
 }));
 
+// NFC-PRES-LOCAL-PR1c — synchronisation transactionnelle d'un appel réalisé hors ligne.
+// Garde R (relire son propre ACK) dans la transaction AVANT toute lecture de rejeu ; garde W
+// (affectation, flags, abonnement, date, cartes) seulement si aucun appel n'est enregistré.
+// Pas de gate d'abonnement avant R : il fait partie de W.
+app.post("/api/student-cards/roll-call/offline/v1/sync", requireAuth, requirePermission("POST /api/student-cards/roll-call/offline/v1/sync"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const sync = require("./lib/rollCallOfflineSync");
+  // Fail-closed : exclusivement dans une transaction PostgreSQL d'idempotence (aucun repli sans transaction).
+  if (typeof repository?.withIdempotencyTransaction !== "function" || !req.app?.locals?.idempotencyService) {
+    const { createHttpError } = require("./lib/classesManagement");
+    throw createHttpError(503, "Synchronisation hors ligne indisponible : transaction PostgreSQL requise.", sync.OFFLINE_SYNC_ERROR.TRANSACTION_UNAVAILABLE);
+  }
+  const batch = sync.readSyncBody(req.body, req.get("Idempotency-Key"));
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = await presenceHttpPrincipal(req);
+  const scope = studentCardsHttpScope(principal);
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  let actor = null;
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/student-cards/roll-call/offline/v1/sync",
+    principal,
+    replayStatusCode: 200,
+    guard: async () => {
+      actor = await sync.guardReplayAccess(repository, principal, scope, batch);
+    },
+    handler: () => sync.syncOfflineRollCall(repository, {
+      batch,
+      scope,
+      principal,
+      actor,
+      auditMeta: pedagogyAuditMetaFromRequest(req),
+      deps: {
+        // Abonnement (garde W uniquement, jamais la garde R) : lignes de l'établissement et de ses
+        // abonnements verrouillées en partage dans la transaction — une suspension (UPDATE) attend
+        // le COMMIT — puis évaluation EN DIRECT (règles existantes) sur une autre connexion : elle voit
+        // tout changement validé avant le verrou, sans requête concurrente sur le client de la transaction.
+        assertWritePresence: async () => {
+          const schoolCode = String(principal?.schoolCode ?? "").trim();
+          if (!schoolCode || schoolCode === "*") {
+            throw Object.assign(new Error(schoolSubscriptionAccessService.BLOCKED_MESSAGE), { statusCode: 403 });
+          }
+          // Établissement SANS abonnement (accès « Actif » par défaut) : la création concurrente d'un premier
+          // abonnement (INSERT, verrou FOR KEY SHARE de clé étrangère sur la ligne `schools`) est bloquée par
+          // FOR UPDATE jusqu'au COMMIT. Avec au moins un abonnement : FOR SHARE suffit (les mises à jour
+          // attendent ; une ligne ajoutée ensuite n'est jamais retenue, la règle lit la plus ancienne).
+          const existing = await repository.all("SELECT id FROM subscriptions WHERE school_id = $1::uuid LIMIT 1", [scope.schoolId]);
+          await repository.one(`SELECT id FROM schools WHERE id = $1::uuid ${existing.length ? "FOR SHARE" : "FOR UPDATE"}`, [scope.schoolId]);
+          await repository.all("SELECT id FROM subscriptions WHERE school_id = $1::uuid ORDER BY id FOR SHARE", [scope.schoolId]);
+          const { runOutsideIdempotencyTx } = require("./lib/idempotencyTxContext");
+          const state = await runOutsideIdempotencyTx(() => getSubscriptionAccessState());
+          schoolSubscriptionAccessService.assertSchoolFeature(schoolCode, state, "write_presence");
+        },
+      },
+    }),
+  });
+}));
+
 // CARTE-PR3-A1 — contrôle d'entrée au portail : événement distinct des présences en classe.
 app.post("/api/student-cards/entry-scan", requireAuth, requirePermission("POST /api/student-cards/entry-scan"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
@@ -8174,6 +8234,8 @@ app.use((error, _req, res, _next) => {
       message: error.message,
       ...(error.code ? { code: error.code } : {}),
       ...(error.details ? { details: error.details } : {}),
+      // NFC-PRES-LOCAL-PR1c : attestation serveur de l'état de la session (seule la synchronisation hors ligne la pose).
+      ...(error.sessionState ? { sessionState: error.sessionState } : {}),
     });
   }
 

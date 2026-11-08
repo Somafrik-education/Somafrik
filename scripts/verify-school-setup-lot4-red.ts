@@ -745,6 +745,39 @@ const NFC_PRES_LOCAL_PR1B_UNIQUE = new Set([
   "docs/student-card/NFC-PRES-LOCAL-PR1b-cles-pack.md",
 ]);
 
+// NFC-PRES-LOCAL-PR1c (synchronisation hors ligne) : exception distincte de PR1b, STRICTEMENT ancrée.
+// Déclenchée par un fichier propre à PR1c ; les chemins partagés seuls ne l'activent jamais.
+const NFC_PRES_LOCAL_PR1C_ANCHORS = Object.freeze([
+  "backend/lib/rollCallOfflineSync.js",
+  "backend/db/migrations/20261108_attendance_roll_calls_offline_sync.sql",
+]);
+const NFC_PRES_LOCAL_PR1C_EXACT = new Set([
+  "backend/db/attendanceRollCallsSchema.js",
+  "backend/db/migrations/20261108_attendance_roll_calls_offline_sync.sql",
+  "backend/lib/idempotencyService.test.js",
+  "backend/lib/idempotencyTxContext.js",
+  "backend/lib/platformPersonalDataGuard.js",
+  "backend/lib/rollCallOfflineSync.http.pg.test.js",
+  "backend/lib/rollCallOfflineSync.js",
+  "backend/lib/rollCallOfflineSync.test.js",
+  "backend/lib/studentCardRollCall.js",
+  "backend/server.js",
+  "backend/services/idempotencyService.js",
+  "backend/services/rbacService.js",
+  "docs/project/MONO-T1-RBAC-MATRIX.json",
+  "docs/project/MONO-T1-ROUTES.json",
+  "docs/project/MONO-T1-ROUTES.md",
+  "docs/student-card/NFC-PRES-LOCAL-PR1c-sync.md",
+  "scripts/verify-school-setup-lot4-red.ts",
+]);
+const NFC_PRES_LOCAL_PR1C_UNIQUE = new Set([
+  "backend/db/migrations/20261108_attendance_roll_calls_offline_sync.sql",
+  "backend/lib/rollCallOfflineSync.http.pg.test.js",
+  "backend/lib/rollCallOfflineSync.js",
+  "backend/lib/rollCallOfflineSync.test.js",
+  "docs/student-card/NFC-PRES-LOCAL-PR1c-sync.md",
+]);
+
 function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
   // Un changement isolé du menu n'est jamais classé hors périmètre / N/A.
   const navChanged = changed.includes(STUDENT_CARD_PR3_M1_NAV_FILE);
@@ -774,6 +807,18 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
       };
     }
     return { kind: "na", message: "L4-09 N/A: NFC-PRES-LOCAL-PR1b pack signé, ancres et liste fermée vérifiées." };
+  }
+  // Exception limitée au lot PR1c : aucune autorisation par préfixe, ni par fichiers partagés.
+  if (changed.some((file) => NFC_PRES_LOCAL_PR1C_UNIQUE.has(file))) {
+    const complete = NFC_PRES_LOCAL_PR1C_ANCHORS.every((file) => changed.includes(file));
+    const outside = changed.filter((file) => !NFC_PRES_LOCAL_PR1C_EXACT.has(file));
+    if (!complete || outside.length > 0 || exclusiveLot4.length > 0) {
+      return {
+        kind: "fail",
+        message: `L4-09: NFC-PRES-LOCAL-PR1c hors liste/ancres : ${!complete ? "ancres manquantes ; " : ""}${[...new Set([...outside, ...exclusiveLot4])].join(", ")}`,
+      };
+    }
+    return { kind: "na", message: "L4-09 N/A: NFC-PRES-LOCAL-PR1c synchronisation hors ligne, ancres et liste fermée vérifiées." };
   }
   if (changed.some(isStudentCardPr6Signal)) {
     const pr3EntryControl = changed.includes(STUDENT_CARD_PR3_A1_ANCHOR);
@@ -1898,6 +1943,44 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "fail",
         "module PR1b isolé, sans signataire, FAIL",
       );
+
+      // PR1c : exception nominative distincte. Ancre manquante, fichier externe ou fichier PR1b → FAIL.
+      const pr1cFiles = [...NFC_PRES_LOCAL_PR1C_EXACT];
+      assert.equal(evaluateLot4Scope(pr1cFiles).kind, "na", "PR1c exact + script de gate admis");
+      for (const anchor of NFC_PRES_LOCAL_PR1C_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(pr1cFiles.filter((file) => file !== anchor)).kind,
+          "fail",
+          `PR1c sans ancre ${anchor} FAIL`,
+        );
+      }
+      for (const added of [
+        "backend/lib/financeManagement.js",
+        "backend/db/migrations/20261108_unrelated.sql",
+        "backend/db/migrations/20261016_attendance_roll_calls.sql",
+        "web/src/components/schoolSetup/SchoolSetupOptionalCompleteness.tsx",
+        "web/src/pages/StudentsPage.tsx",
+        "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+        "Mobile/src/offline/l1/database.ts",
+        ".github/workflows/pr-gates.yml",
+        ".gitleaksignore",
+        "backend/lib/rollCallOfflinePack.js",
+        "backend/lib/rollCallOfflinePackSigner.js",
+      ]) {
+        assert.equal(evaluateLot4Scope([...pr1cFiles, added]).kind, "fail", `PR1c + ${added} FAIL`);
+      }
+      assert.equal(
+        evaluateLot4Scope(["backend/server.js", "backend/services/idempotencyService.js", "backend/services/rbacService.js"]).kind,
+        "na",
+        "fichiers partagés seuls n'activent pas l'exception PR1c",
+      );
+      assert.equal(
+        evaluateLot4Scope(["backend/lib/rollCallOfflineSync.js", "backend/server.js"]).kind,
+        "fail",
+        "module PR1c sans migration ancrée FAIL",
+      );
+      // L'exception PR1b reste inchangée et ne couvre pas PR1c.
+      assert.equal(evaluateLot4Scope([...NFC_PRES_LOCAL_PR1B_EXACT, "backend/lib/rollCallOfflineSync.js"]).kind, "fail", "PR1b + module PR1c FAIL");
 
       const live = evaluateLot4Scope(lot4ChangedFiles());
       console.log(live.message);
