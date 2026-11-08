@@ -106,6 +106,16 @@ try {
   fs.writeFileSync(mockFile("somafrik-rollcall-v1-orphan.db"),"unreadable");
   await assert.rejects(manager.open(A),(e) => e.code === "RC_ACCOUNT_SALT_LOST");
   assert.equal(keys.has("somafrik.rollCallDeviceSaltV1"),false,"no silent salt regeneration");
+  // Initial database-open failure must not strand a freshly generated encryption key.
+  const C = {...A,userId:"00000000-0000-4000-8000-000000000004"};
+  const failing = createRollCallSecureManager({
+    ...deps,
+    openDatabase: async () => { throw new Error("SIMULATED_OPEN_FAILURE"); },
+  });
+  const keysBeforeFailure = new Set(keys.keys());
+  await assert.rejects(failing.open(C), /SIMULATED_OPEN_FAILURE/);
+  assert.deepEqual(new Set(keys.keys()), keysBeforeFailure,
+    "failed initial open must remove its newly generated account key");
   console.log("PASS: account SQLCipher manager lifecycle simulated; NATIVE SQLCIPHER NOT VERIFIED");
 } finally {
   fs.rmSync(generatedManager,{force:true});
