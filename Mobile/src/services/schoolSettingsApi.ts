@@ -19,6 +19,8 @@ export type SchoolSettings = {
   studentCardNfcEnabled?: boolean;
   studentCardAttendanceEnabled?: boolean;
   studentCardFinanceCheckEnabled?: boolean;
+  /** NFC-PRES-LOCAL-PR3 — appel hors connexion par carte (false par défaut). */
+  studentCardOfflineRollCallEnabled?: boolean;
   schoolYear?: string;
   periods?: Array<Record<string, unknown>>;
 };

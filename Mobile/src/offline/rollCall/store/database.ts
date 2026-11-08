@@ -235,6 +235,21 @@ export async function resolveRcAccount(deps: RcPlatformDeps, identity: RcIdentit
   return resolveRollCallAccount(identity, await loadOrCreateDeviceSalt(deps));
 }
 
+/**
+ * PR3 — ce compte a-t-il déjà une base d'appel sur l'appareil ? Lecture seule : ne crée ni sel, ni
+ * clé, ni fichier (utilisé à la déconnexion d'un compte qui n'a jamais ouvert l'appel hors ligne).
+ */
+export async function accountDatabaseExists(deps: RcPlatformDeps, identity: RcIdentity): Promise<boolean> {
+  const stored = String((await deps.keyStore.getItem(RC_DEVICE_SALT_KEY)) ?? "").trim();
+  if (!HEX64.test(stored)) return false;
+  try {
+    const { fileName } = resolveRollCallAccount(identity, hexToBytes(stored));
+    return deps.fs.exists(fileName);
+  } catch {
+    return false;
+  }
+}
+
 /** Renomme la base et ses fichiers compagnons ; ne supprime jamais rien. */
 export async function quarantineDatabaseFile(deps: RcPlatformDeps, fileName: string): Promise<string> {
   // Nom unique : une seconde quarantaine dans la même milliseconde n'écrase jamais la première.

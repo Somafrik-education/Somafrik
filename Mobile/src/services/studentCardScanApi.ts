@@ -10,6 +10,8 @@ export type StudentCardCapabilities = {
   studentCardNfcEnabled: boolean;
   studentCardAttendanceEnabled: boolean;
   studentCardFinanceCheckEnabled: boolean;
+  /** NFC-PRES-LOCAL-PR3 — appel hors connexion (false par défaut). */
+  studentCardOfflineRollCallEnabled: boolean;
 };
 
 export function getStudentCardCapabilities() {

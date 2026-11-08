@@ -62,6 +62,7 @@ export type StudentCardScanSettings = {
   studentCardNfcEnabled?: boolean;
   studentCardAttendanceEnabled?: boolean;
   studentCardFinanceCheckEnabled?: boolean;
+  studentCardOfflineRollCallEnabled?: boolean;
 };
 
 export function isStudentCardQrScanEnabled(
@@ -106,6 +107,22 @@ export function isStudentCardNfcFinanceEnabled(
   return isStudentCardNfcScanEnabled(settings) && settings?.studentCardFinanceCheckEnabled === true;
 }
 
+/**
+ * NFC-PRES-LOCAL-PR3 — appel hors connexion disponible : flag maître, pointage présence, flag
+ * `studentCardOfflineRollCallEnabled` et au moins un support (NFC ou QR). Fail-closed : toute
+ * valeur absente ou non booléenne vaut « désactivé ». Le serveur revérifie tout.
+ */
+export function isStudentCardOfflineRollCallEnabled(
+  settings: StudentCardScanSettings | null | undefined,
+): boolean {
+  return (
+    settings?.studentCardEnabled === true
+    && settings?.studentCardAttendanceEnabled === true
+    && settings?.studentCardOfflineRollCallEnabled === true
+    && (settings?.studentCardNfcEnabled === true || settings?.studentCardQrEnabled === true)
+  );
+}
+
 export function sanitizeStudentCardCapabilities(
   row: unknown,
 ): StudentCardScanSettings | null {
@@ -117,6 +134,7 @@ export function sanitizeStudentCardCapabilities(
     studentCardNfcEnabled: source.studentCardNfcEnabled === true,
     studentCardAttendanceEnabled: source.studentCardAttendanceEnabled === true,
     studentCardFinanceCheckEnabled: source.studentCardFinanceCheckEnabled === true,
+    studentCardOfflineRollCallEnabled: source.studentCardOfflineRollCallEnabled === true,
   };
 }
 

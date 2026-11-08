@@ -289,7 +289,17 @@ export async function httpRequest<T = Json>(
 
   if (raw) {
     if (!response.ok) {
-      throw new ApiClientError("La requête a échoué.", response.status);
+      // Code métier conservé (JSON d'erreur), sans jamais recopier le message brut du serveur.
+      let code: string | undefined;
+      if ((response.headers.get("content-type") ?? "").includes("application/json")) {
+        try {
+          const payload = (await response.json()) as { code?: unknown };
+          code = typeof payload?.code === "string" ? payload.code : undefined;
+        } catch {
+          code = undefined;
+        }
+      }
+      throw new ApiClientError("La requête a échoué.", response.status, code);
     }
     return response as unknown as T;
   }
