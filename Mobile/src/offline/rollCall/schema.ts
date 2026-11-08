@@ -12,7 +12,7 @@ export interface RollCallSqlite {
 
 export const ROLL_CALL_SCHEMA_VERSION = 1;
 
-export const ROLL_CALL_SCHEMA_V1 = String.raw\`
+export const ROLL_CALL_SCHEMA_V1 = String.raw`
 CREATE TABLE IF NOT EXISTS rc_meta (
   key TEXT PRIMARY KEY NOT NULL,
   value TEXT NOT NULL
@@ -181,7 +181,7 @@ WHEN (SELECT state FROM rc_sessions WHERE session_id = NEW.session_id) IS NOT 'd
 BEGIN
   SELECT RAISE(ABORT, 'RC_MARK_SESSION_NOT_DRAFT');
 END;
-\`;
+`;
 
 /**
  * Caller must supply an ALREADY KEYED SQLCipher connection.
