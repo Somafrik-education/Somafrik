@@ -64,7 +64,7 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
           }),
           linkedCount: countLinkedParentChildren(session?.user),
         })
-      : student?.name ?? "Élève";
+      : student?.name ?? session?.user?.name ?? "Élève";
 
   useFocusEffect(
     useCallback(() => {
