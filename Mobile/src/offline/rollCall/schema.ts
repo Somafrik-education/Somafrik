@@ -155,7 +155,8 @@ END;
 
 CREATE TRIGGER IF NOT EXISTS rc_session_marks_draft_only
 BEFORE INSERT ON rc_marks FOR EACH ROW
-WHEN (SELECT state FROM rc_sessions WHERE session_id = NEW.session_id) IS NOT 'draft'
+WHEN (SELECT state FROM rc_sessions WHERE session_id = OLD.session_id) IS NOT 'draft'
+  OR (SELECT state FROM rc_sessions WHERE session_id = NEW.session_id) IS NOT 'draft'
 BEGIN
   SELECT RAISE(ABORT, 'RC_MARK_SESSION_NOT_DRAFT');
 END;
@@ -163,6 +164,7 @@ END;
 CREATE TRIGGER IF NOT EXISTS rc_session_scans_update_draft_only
 BEFORE UPDATE ON rc_scans FOR EACH ROW
 WHEN (SELECT state FROM rc_sessions WHERE session_id = OLD.session_id) IS NOT 'draft'
+  OR (SELECT state FROM rc_sessions WHERE session_id = NEW.session_id) IS NOT 'draft'
 BEGIN
   SELECT RAISE(ABORT, 'RC_SCAN_SESSION_NOT_DRAFT');
 END;
