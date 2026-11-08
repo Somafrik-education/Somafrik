@@ -35,6 +35,12 @@ const IDENTITY = {
 const CLASS = "00000000-0000-4000-8000-0000000000a3";
 const SCANS = 3;
 
+/**
+ * Une seule exécution par processus JS : un double montage de l'effet ou une recréation de
+ * l'activité ne doit jamais lancer deux preuves concurrentes sur la même base.
+ */
+let proofRun: Promise<string> | null = null;
+
 function log(line: string) {
   safeLogger.warn(`${TAG} ${line}`);
 }
@@ -98,7 +104,11 @@ async function runSqlCipherProof(): Promise<string> {
 export default function App() {
   const [status, setStatus] = useState("NFC-PRES-LOCAL-PR2 — recette native en cours");
   useEffect(() => {
-    void (async () => {
+    if (proofRun) {
+      void proofRun.then(setStatus, () => setStatus("Erreur de recette"));
+      return;
+    }
+    proofRun = (async () => {
       try {
         const report = runRollCallParitySuite(vectors, pr2Vectors);
         for (const entry of report.cases) log(`S13_CASE ${entry.id} ${entry.ok ? "ok" : "FAIL"}`);
@@ -106,12 +116,13 @@ export default function App() {
         const sqlcipher = await runSqlCipherProof();
         log(sqlcipher);
         log("done");
-        setStatus(`S13 ${report.passed}/${report.total} (${report.engine}) — ${sqlcipher}`);
+        return `S13 ${report.passed}/${report.total} (${report.engine}) — ${sqlcipher}`;
       } catch (error) {
         log(`error=${(error as Error)?.name ?? "Error"}:${String((error as { code?: string })?.code ?? "")}`);
-        setStatus("Erreur de recette");
+        return "Erreur de recette";
       }
     })();
+    void proofRun.then(setStatus);
   }, []);
   return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>

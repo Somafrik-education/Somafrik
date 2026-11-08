@@ -86,10 +86,21 @@ function checkS13(lines, label) {
   if (Number(total) !== EXPECTED_CASES || Number(passed) !== EXPECTED_CASES || failed !== "none") {
     throw new Error(`${label} : S13 ${passed}/${total}, échecs ${failed}`);
   }
+  // Un même cas peut être journalisé plusieurs fois (relecture du tampon logcat) : on exige les
+  // 27 identifiants distincts, chacun uniquement « ok », jamais un résultat contradictoire.
   const cases = lines.filter((line) => line.startsWith(`${TAG} S13_CASE `));
-  if (cases.length !== EXPECTED_CASES || cases.some((line) => !line.endsWith(" ok"))) {
-    throw new Error(`${label} : cas S13 incomplets ou en échec\n${cases.join("\n")}`);
+  const outcomes = new Map();
+  for (const line of cases) {
+    const [, id, outcome] = /S13_CASE (\S+) (\S+)$/.exec(line) || [];
+    if (!id) throw new Error(`${label} : ligne S13 illisible : ${line}`);
+    outcomes.set(id, new Set([...(outcomes.get(id) || []), outcome]));
   }
+  const bad = [...outcomes].filter(([, set]) => set.size !== 1 || !set.has("ok")).map(([id]) => id);
+  if (outcomes.size !== EXPECTED_CASES || bad.length > 0) {
+    throw new Error(`${label} : cas S13 incomplets ou en échec (${outcomes.size} distincts, échecs : ${bad.join(",") || "aucun"})\n${cases.join("\n")}`);
+  }
+  const summaries = lines.filter((line) => line.startsWith(`${TAG} S13 `));
+  if (new Set(summaries).size !== 1) throw new Error(`${label} : résumés S13 divergents\n${summaries.join("\n")}`);
   return { engine, passed: Number(passed), total: Number(total) };
 }
 
