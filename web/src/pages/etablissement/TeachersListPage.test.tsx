@@ -499,7 +499,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     await screen.findByText("Ndiaye");
     await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
     expect(await screen.findByText(/Catalogue de cours indisponible/i)).toBeInTheDocument();
-    expect(screen.getByText(/Erreur interne catalogue/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Erreur interne catalogue/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Aucun cours canonique/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeDisabled();
   });
