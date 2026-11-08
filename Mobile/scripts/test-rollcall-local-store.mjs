@@ -51,6 +51,18 @@ const session = {
   syncDeadline: "2026-11-12T23:00:00Z",
 };
 assert.deepEqual(await store.openDraft(session), {scans:0, marks:0});
+const secondSession = {...session, sessionId: "session-concurrent-open"};
+const opening = store.openDraft(secondSession);
+const queuedFirstScan = store.recordScan({
+  scanId: "scan-opening", sessionId: secondSession.sessionId, publicId: "public-opening",
+  proof: "fake-proof-for-test", medium: "nfc",
+  scannedAt: "2026-11-09T07:30:00Z", localStatus: "unknown_local",
+});
+assert.deepEqual(await opening, {scans:0, marks:0},
+  "openDraft must not observe a later queued scan");
+assert.deepEqual(await queuedFirstScan, {
+  duplicate: false, counts: {scans:1,marks:0},
+});
 const scan = {
   scanId: "scan-1", sessionId: session.sessionId, publicId: "public-1",
   proof: "fake-proof-for-test", medium: "nfc",
