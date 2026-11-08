@@ -53,6 +53,8 @@ type Props = {
   qrAvailable: boolean;
   hardware?: NfcHardware;
   onClose: () => void;
+  /** NFC-STATUT-PRESENCE-01 : appelé après chaque écriture locale (COMMIT), pour l'écran des présences. */
+  onLocalChange?: () => void;
 };
 
 type Feedback = { tone: "ok" | "neutral" | "warn" | "error"; message: string };
@@ -80,7 +82,7 @@ async function closeNfcReader(hardware: NfcHardware) {
   }
 }
 
-export default function OfflineRollCallModal({ visible, session, classId, className, date, nfcAvailable, qrAvailable, hardware, onClose }: Props) {
+export default function OfflineRollCallModal({ visible, session, classId, className, date, nfcAvailable, qrAvailable, hardware, onClose, onLocalChange }: Props) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   // NFC-PRES-LOCAL-PR4 : réouverture après « Corriger l'appel » (brouillon révisé).
   const [reloadKey, setReloadKey] = useState(0);
@@ -101,11 +103,14 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const onLocalChangeRef = useRef(onLocalChange);
+  onLocalChangeRef.current = onLocalChange;
 
   // Après chaque écriture locale : compteurs, et état vérifié utilisé par la déconnexion.
   const refresh = useCallback(async (ctx: RcContext, rollCall: OfflineRollCall) => {
     setSummary(await summarizeOfflineRollCall(ctx, rollCall));
     void rollCallRuntime().refreshLogoutGuard(sessionRef.current);
+    onLocalChangeRef.current?.();
   }, []);
 
   // Ouverture : base du compte authentifié, pack (réseau si possible), reprise du brouillon.
@@ -272,33 +277,39 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
   const confirmClose = useCallback(() => {
     const current = phaseRef.current;
     if (current.kind !== "ready" || !summary) return;
-    // Zéro lecture et zéro pointage : rien à enregistrer, aucune absence inventée.
-    if (summary.scans === 0 && !summary.rows.some((row) => row.source === "manual")) {
+    const provisional = summary.notRecorded ?? 0;
+    const hasExplicit = summary.scans > 0 || summary.rows.some((row) => row.source === "manual");
+    // Zéro lecture, zéro pointage et aucune absence à confirmer : rien à enregistrer.
+    if (!hasExplicit && provisional === 0) {
       setFeedback({ tone: "warn", message: OFFLINE_ROLL_CALL_COPY.emptyRollCall });
       return;
     }
+    // NFC-STATUT-PRESENCE-01 : les absences provisoires ne deviennent des absences que sur
+    // décision explicite ; sinon les élèves restent sans statut (aucune absence écrite).
+    const closeWith = (confirmAbsences: boolean) =>
+      void (async () => {
+        setSaving(true);
+        await stopScan();
+        try {
+          const closed = await closeOfflineRollCall(current.ctx, current.rollCall, { confirmAbsences });
+          void rollCallRuntime().refreshLogoutGuard(sessionRef.current);
+          if (closed.ok) {
+            setPhase({ kind: "closed" });
+            setFeedback(null);
+            onLocalChangeRef.current?.();
+            // NFC-PRES-LOCAL-PR4 : transmission dès la clôture si le réseau le permet.
+            void rollCallRuntime().requestSync(sessionRef.current, "closed");
+          } else setFeedback({ tone: "error", message: closed.message });
+        } finally {
+          setSaving(false);
+        }
+      })();
     Alert.alert(OFFLINE_ROLL_CALL_COPY.closeTitle, OFFLINE_ROLL_CALL_COPY.closeBody(summary), [
       { text: OFFLINE_ROLL_CALL_COPY.keepEditing, style: "cancel" },
-      {
-        text: OFFLINE_ROLL_CALL_COPY.confirmClose,
-        onPress: () =>
-          void (async () => {
-            setSaving(true);
-            await stopScan();
-            try {
-              const closed = await closeOfflineRollCall(current.ctx, current.rollCall);
-              void rollCallRuntime().refreshLogoutGuard(sessionRef.current);
-              if (closed.ok) {
-                setPhase({ kind: "closed" });
-                setFeedback(null);
-                // NFC-PRES-LOCAL-PR4 : transmission dès la clôture si le réseau le permet.
-                void rollCallRuntime().requestSync(sessionRef.current, "closed");
-              } else setFeedback({ tone: "error", message: closed.message });
-            } finally {
-              setSaving(false);
-            }
-          })(),
-      },
+      ...(hasExplicit
+        ? [{ text: provisional > 0 ? OFFLINE_ROLL_CALL_COPY.closeWithoutAbsences : OFFLINE_ROLL_CALL_COPY.confirmClose, onPress: () => closeWith(false) }]
+        : []),
+      ...(provisional > 0 ? [{ text: OFFLINE_ROLL_CALL_COPY.closeConfirmAbsences(provisional), onPress: () => closeWith(true) }] : []),
     ]);
   }, [stopScan, summary]);
 
@@ -356,7 +367,7 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
                   ["En retard", String(summary.late)],
                   ["Absents saisis", String(summary.absent)],
                   ["Justifiés", String(summary.excused)],
-                  ["Non pointés", summary.notRecorded === null ? "—" : String(summary.notRecorded)],
+                  ["Absents provisoires", summary.notRecorded === null ? "—" : String(summary.notRecorded)],
                   ["À vérifier", String(summary.unknownScans)],
                 ].map(([label, value]) => (
                   <View key={label} style={styles.counterBox}>
@@ -410,7 +421,7 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
                 <View style={styles.rowHeader}>
                   <Text style={styles.rowName}>{`${row.student.firstName} ${row.student.lastName}`.trim() || row.student.studentCode}</Text>
                   <Text style={styles.badge}>
-                    {row.status ? STATUS_LABEL[row.status] : "Non pointé"}
+                    {row.status ? STATUS_LABEL[row.status] : OFFLINE_ROLL_CALL_COPY.provisionalAbsent}
                     {row.source === "card" ? " (carte)" : row.protected ? " (déjà enregistré)" : ""}
                   </Text>
                 </View>

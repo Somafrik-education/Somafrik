@@ -70,7 +70,7 @@ export const OFFLINE_ROLL_CALL_COPY = {
       s.total !== null ? `${s.total} élève(s) inscrit(s)` : "Liste de classe indisponible",
       `${s.present} présent(s), ${s.late} retard(s), ${s.absent} absent(s) saisi(s)${s.excused ? `, ${s.excused} justifié(s)` : ""}.`,
       s.notRecorded !== null && s.notRecorded > 0
-        ? `${s.notRecorded} élève(s) non pointé(s) : ils restent sans statut, aucune absence n'est enregistrée pour eux.`
+        ? `${s.notRecorded} élève(s) affiché(s) « Absent » de façon provisoire (ni carte, ni statut saisi). Confirmez leur absence, ou clôturez sans eux : ils resteront sans statut.`
         : "",
       s.unknownScans ? `${s.unknownScans} scan(s) à vérifier.` : "",
       s.degraded ? "Mode dégradé : liste de classe inconnue ; les cartes seront vérifiées par le serveur à la synchronisation." : "",
@@ -79,6 +79,9 @@ export const OFFLINE_ROLL_CALL_COPY = {
       .join("\n"),
   emptyRollCall: "Aucune carte scannée ni aucun statut saisi : il n'y a rien à enregistrer.",
   confirmClose: "Confirmer la clôture",
+  closeWithoutAbsences: "Clôturer sans les absences",
+  closeConfirmAbsences: (count: number) => `Confirmer ${count} absence(s) et clôturer`,
+  provisionalAbsent: "Absent (provisoire)",
   keepEditing: "Continuer l'appel",
   closed: "Appel enregistré localement — à synchroniser.",
 } as const;
@@ -395,9 +398,20 @@ export async function summarizeOfflineRollCall(ctx: RcContext, rollCall: Offline
 export async function closeOfflineRollCall(
   ctx: RcContext,
   rollCall: OfflineRollCall,
+  options: { confirmAbsences?: boolean } = {},
 ): Promise<{ ok: true; operationId: string; payloadDigest: string; message: string } | { ok: false; message: string }> {
+  // NFC-STATUT-PRESENCE-01 : absences provisoires confirmées EXPLICITEMENT par l'enseignant →
+  // pointages `manual` absents, écrits dans la transaction de clôture. Jamais pour un élève déjà
+  // pointé, scanné ou au statut protégé (justifié, présent, retard déjà enregistrés).
+  let confirmedAbsent: Array<{ matchKey: string; studentId: string }> = [];
+  if (options.confirmAbsences && rollCall.pack) {
+    const summary = await summarizeOfflineRollCall(ctx, rollCall);
+    confirmedAbsent = summary.rows
+      .filter((row) => row.status === null && !row.protected && !row.student.existingStatus)
+      .map((row) => ({ matchKey: row.student.matchKey, studentId: row.student.studentId }));
+  }
   try {
-    const frozen = await closeSession(ctx, rollCall.session.session_id);
+    const frozen = await closeSession(ctx, rollCall.session.session_id, { confirmedAbsent });
     return { ok: true, operationId: frozen.operationId, payloadDigest: frozen.payloadDigest, message: OFFLINE_ROLL_CALL_COPY.closed };
   } catch (error) {
     return { ok: false, message: storageMessage(error instanceof RollCallStorageError ? String(error.code) : "") };
