@@ -112,6 +112,16 @@ try {
   await assert.rejects(failing.open(C), /SIMULATED_OPEN_FAILURE/);
   assert.deepEqual(new Set(keys.keys()), keysBeforeFailure,
     "failed initial open must remove its newly generated account key");
+  // Existing key + missing database must fail closed: never create an empty replacement.
+  const D = {...A,userId:"00000000-0000-4000-8000-000000000005"};
+  const d = await manager.open(D);
+  await manager.close();
+  const dKey = [...keys.keys()].find((name) => name.includes(d.accountId));
+  assert.ok(dKey);
+  fs.rmSync(mockFile(d.fileName)); // Simulate external deletion / lost database file.
+  await assert.rejects(manager.open(D),(e) => e.code === "RC_DATABASE_FILE_LOST");
+  assert.equal(keys.has(dKey),true,"existing key is preserved for incident recovery");
+  assert.equal(await files.exists(d.fileName),false,"missing database is never silently recreated");
   keys.delete("somafrik.rollCallDeviceSaltV1");
   fs.writeFileSync(mockFile("somafrik-rollcall-v1-orphan.db"),"unreadable");
   await assert.rejects(manager.open(A),(e) => e.code === "RC_ACCOUNT_SALT_LOST");
