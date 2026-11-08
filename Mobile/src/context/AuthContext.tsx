@@ -15,6 +15,7 @@ import { dismissPendingPushNavigation } from "../lib/pushNotificationTap";
 import { blockOutboxOnLogout } from "../lib/outbox";
 import { invalidateL1CacheSession } from "../offline/l1/lifecycle";
 import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
+import { createLogoutFlow, LOGOUT_COPY } from "../offline/rollCall/runtime/logoutFlow";
 import {
   parseEffectivePermissionsSnapshotV1,
   persistOfflineSnapshotIfCurrent,
@@ -348,52 +349,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSelectedStudentId(studentId);
   }, []);
 
-  const performLogout = useCallback(() => {
-    clearRequestSchoolScope();
-    clearStoredSchoolCode();
-    clearAuthenticatedState();
-    void blockOutboxOnLogout().finally(() => {
-      void logoutSession().catch(() => undefined);
-    });
-  }, [clearAuthenticatedState]);
-
   /**
-   * NFC-PRES-LOCAL-PR3 — déconnexion et appels hors connexion (contrat PR0 §5.3) :
-   *  - aucun appel en attente : crypto-effacement de la base du compte, puis déconnexion ;
-   *  - appel(s) en attente : confirmation explicite ; confirmée → base fermée en `blocked_logout`
-   *    (reprise au retour du même compte) ; annulée → l'utilisateur reste connecté.
-   * Une erreur du stockage local ne bloque jamais la déconnexion et n'efface rien.
+   * NFC-PRES-LOCAL-PR3 — déconnexion et appels hors connexion (contrat PR0 §5.3), voir
+   * `offline/rollCall/runtime/logoutFlow.ts` :
+   *  - aucun appel en attente connu (tous les profils sans appel NFC, dont Parent) : session vidée
+   *    immédiatement, sans attendre SQLite ; le stockage est traité ensuite, sans jamais effacer
+   *    un appel en attente ;
+   *  - appel(s) en attente vérifié(s), ou lecture SQLCipher en échec : confirmation explicite
+   *    AVANT la déconnexion ; annulée → l'utilisateur reste connecté ; rien n'est effacé.
    */
-  const logout = useCallback(() => {
-    const current = sessionRef.current;
-    void (async () => {
-      const runtime = rollCallRuntime();
-      let pending = 0;
-      try {
-        pending = await runtime.pendingForLogout(current);
-      } catch {
-        pending = 0;
-      }
-      if (pending > 0) {
-        const confirmed = await new Promise<boolean>((resolve) => {
+  const logoutFlowRef = useRef<ReturnType<typeof createLogoutFlow> | null>(null);
+  if (!logoutFlowRef.current) {
+    logoutFlowRef.current = createLogoutFlow({
+      runtime: rollCallRuntime(),
+      getSession: () => sessionRef.current,
+      confirm: (request) =>
+        new Promise<boolean>((resolve) => {
+          const pending = request.kind === "pending";
           Alert.alert(
-            "Appel non synchronisé",
-            `${pending} appel(s) enregistré(s) sur ce téléphone ne sont pas encore synchronisés. Ils seront conservés, fermés, et repris à votre prochaine connexion avec ce compte.`,
+            pending ? LOGOUT_COPY.pendingTitle : LOGOUT_COPY.unverifiedTitle,
+            pending ? LOGOUT_COPY.pendingMessage(request.pending) : LOGOUT_COPY.unverifiedMessage,
             [
-              { text: "Rester connecté", style: "cancel", onPress: () => resolve(false) },
-              { text: "Se déconnecter", style: "destructive", onPress: () => resolve(true) },
+              { text: LOGOUT_COPY.stay, style: "cancel", onPress: () => resolve(false) },
+              { text: LOGOUT_COPY.leave, style: "destructive", onPress: () => resolve(true) },
             ],
             { cancelable: true, onDismiss: () => resolve(false) },
           );
-        });
-        if (!confirmed) return;
-        await runtime.logout({ confirmPending: true }).catch(() => undefined);
-      } else {
-        await runtime.logout({ confirmPending: false }).catch(() => undefined);
-      }
-      performLogout();
-    })();
-  }, [performLogout]);
+        }),
+    });
+  }
+
+  const logout = useCallback(() => {
+    logoutFlowRef.current?.request(() => {
+      clearRequestSchoolScope();
+      clearStoredSchoolCode();
+      clearAuthenticatedState();
+      void blockOutboxOnLogout().finally(() => {
+        void logoutSession().catch(() => undefined);
+      });
+    });
+  }, [clearAuthenticatedState]);
 
   const value = useMemo(
     () => ({

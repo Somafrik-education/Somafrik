@@ -91,8 +91,13 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
   const hardwareRef = useRef<NfcHardware | null>(hardware ?? null);
   const actorUserId = String(session?.user?.id ?? "").toLowerCase();
 
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
+  // Après chaque écriture locale : compteurs, et état vérifié utilisé par la déconnexion.
   const refresh = useCallback(async (ctx: RcContext, rollCall: OfflineRollCall) => {
     setSummary(await summarizeOfflineRollCall(ctx, rollCall));
+    void rollCallRuntime().refreshLogoutGuard(sessionRef.current);
   }, []);
 
   // Ouverture : base du compte authentifié, pack (réseau si possible), reprise du brouillon.
@@ -245,6 +250,7 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
             await stopScan();
             try {
               const closed = await closeOfflineRollCall(current.ctx, current.rollCall);
+              void rollCallRuntime().refreshLogoutGuard(sessionRef.current);
               if (closed.ok) {
                 setPhase({ kind: "closed" });
                 setFeedback({ tone: "ok", message: closed.message });

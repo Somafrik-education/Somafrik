@@ -46,10 +46,12 @@ PR3 réalise l'**acquisition et la clôture locales**. La transmission au serveu
 
 - **Démarrage et reprise** : `runStartupMaintenance` (purges, quarantaines), sans ouvrir de base.
 - **Changement de compte ou d'établissement** : la base ouverte est fermée immédiatement. Aucune base n'est créée pour un compte qui n'ouvre pas l'appel hors connexion.
-- **Déconnexion** :
-  - rien en attente → crypto-effacement ;
-  - appel en attente → confirmation (« Rester connecté » / « Se déconnecter ») puis `blocked_logout`, reprise par le même compte uniquement ;
-  - session expirée → aucun effacement.
+- **Déconnexion** (`runtime/logoutFlow.ts`) — contrat MP-011 préservé : la décision est **synchrone** et ne lit pas SQLite ; elle s'appuie sur le dernier état vérifié du compte (calculé au changement de session, à l'ouverture de l'appel et après chaque écriture locale) :
+  - aucun appel en attente connu (Parent et tout profil sans appel NFC, enseignant sans appel, vérification en cours) → session vidée **immédiatement** (`clearAuthenticatedState`, `logoutSession` / SecureStore), puis traitement du stockage : effacement uniquement si le gestionnaire compte 0 appel sous son verrou ; un appel apparu entre-temps est conservé en `blocked_logout` ;
+  - appel en attente vérifié → confirmation **avant** la déconnexion (« Rester connecté » / « Se déconnecter »), puis `blocked_logout`, reprise par le même compte uniquement ;
+  - lecture ou ouverture SQLCipher en échec → jamais interprétée comme « 0 en attente » : confirmation « Vérification impossible », rien n'est effacé, base fermée ;
+  - une seule demande à la fois (double clic) ; une confirmation donnée après un changement de session est ignorée ; une vérification terminée après la déconnexion referme la base ;
+  - session expirée → aucun effacement d'appel en attente.
 - Rien n'est stocké dans l'Outbox JSON.
 
 ## 4. Clés de pack : état réel
@@ -68,7 +70,7 @@ Les trousseaux embarqués de préproduction et de production sont **vides**. Les
 | Fermeture, arrêt forcé, redémarrage, reprise | « fermeture puis réouverture », `rollCallCrash.test.ts` (SIGKILL), recette Android (`pr3_persist=ok`) |
 | Carte scannée deux fois, cartes multiples, carte inconnue | « appel complet avec pack » |
 | Pack expiré ou falsifié, trousseau vide | « pack falsifié ou expiré » |
-| Changement de compte, déconnexion avec brouillon | `rollCallRuntime.test.ts` |
+| Changement de compte, déconnexion avec brouillon | `rollCallRuntime.test.ts`, `logoutFlow.test.ts` (Parent immédiat, enseignant sans / avec appel, annuler / valider, échec de lecture et d'ouverture SQLCipher, session forcée, changement de compte, double clic, course) |
 | COMMIT refusé (disque plein) | « échec d'écriture » : carte non comptée, message explicite |
 | Lot accepté par le serveur | `readSyncBody` (PR1c) valide chaque lot clôturé ; `verifyProof` (PR1a) vérifie chaque preuve et refuse la permutation NFC/QR |
 | Hermes Android | recette native : carte vecteur → preuve **V-4** calculée sous Hermes → rapprochement → COMMIT → doublon refusé → clôture → relue après `force-stop` |

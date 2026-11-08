@@ -798,6 +798,8 @@ const NFC_PRES_LOCAL_PR3_EXACT = new Set([
   "Mobile/src/lib/studentCardScan.ts",
   "Mobile/src/offline/rollCall/pack/packService.ts",
   "Mobile/src/offline/rollCall/runtime/RollCallOfflineRuntime.tsx",
+  "Mobile/src/offline/rollCall/runtime/logoutFlow.test.ts",
+  "Mobile/src/offline/rollCall/runtime/logoutFlow.ts",
   "Mobile/src/offline/rollCall/runtime/rollCallRuntime.test.ts",
   "Mobile/src/offline/rollCall/runtime/rollCallRuntime.ts",
   "Mobile/src/offline/rollCall/session/offlineRollCall.test.ts",
