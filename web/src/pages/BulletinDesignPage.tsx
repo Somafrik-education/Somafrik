@@ -228,7 +228,7 @@ export function BulletinDesignPage() {
         <Card className="p-6">
           <SectionHeader
             title="Cours inclus"
-            description={`Notes calculées côté backend pour ${className || "—"}.`}
+            description={`Résultats calculés pour la classe ${className || "sélectionnée"}.`}
           />
           {!subjects.length ? (
             <p className="mt-4 text-sm font-semibold text-muted">
