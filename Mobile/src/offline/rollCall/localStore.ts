@@ -63,7 +63,7 @@ export function createRollCallLocalStore(db: LocalRollCallHandle) {
       for (const k of ["scanId","sessionId","publicId","proof","scannedAt"] as const) required(s[k], k);
       if (!["nfc","qr"].includes(s.medium) ||
           !["verified_local","unknown_local"].includes(s.localStatus)) throw new Error("RC_SCAN_INVALID");
-      const duplicate = await transact(async () => {
+      return transact(async () => {
         // A duplicate is not a successful scan once the session is frozen.
         // Check state before the duplicate fast path, not only in INSERT triggers.
         const session = await db.getFirstAsync<{ state: string }>(
@@ -72,13 +72,12 @@ export function createRollCallLocalStore(db: LocalRollCallHandle) {
         const found = await db.getFirstAsync<{ scan_id: string }>(
           "SELECT scan_id FROM rc_scans WHERE session_id = ? AND public_id = ? AND removed_at IS NULL",
           [s.sessionId,s.publicId]);
-        if (found) return true;
+        if (found) return { duplicate: true, counts: await counts(s.sessionId) };
         await db.runAsync(
           "INSERT INTO rc_scans(scan_id,session_id,public_id,proof,medium,scanned_at,local_status,match_key) VALUES (?,?,?,?,?,?,?,?)",
           [s.scanId,s.sessionId,s.publicId,s.proof,s.medium,s.scannedAt,s.localStatus,s.matchKey??null]);
-        return false;
+        return { duplicate: false, counts: await counts(s.sessionId) };
       });
-      return { duplicate, counts: await counts(s.sessionId) };
     },
     async recordMark(
       sessionId: string, matchKey: string, status: RollCallStatus,
