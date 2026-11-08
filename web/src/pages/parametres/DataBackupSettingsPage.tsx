@@ -117,7 +117,7 @@ export function SettingsDataPage() {
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
       const school = String(payload.schoolCode ?? exportSchoolCode ?? "etablissement");
       downloadJson(`somafrik-export-${school}-${stamp}`, payload);
-      showToast("Export JSON versionné téléchargé.", "success");
+      showToast("Le fichier de vos données a été téléchargé.", "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Échec de l'export.", "error");
     } finally {
@@ -140,8 +140,7 @@ export function SettingsDataPage() {
       <DashboardLayout.Content>
       <div className="space-y-5">
       <InlineAlert tone="info">
-        La restauration complète n&apos;est pas disponible. L&apos;export JSON versionné provient
-        des APIs PostgreSQL (pas d&apos;une copie du state client).
+        Vous pouvez télécharger vos données. La restauration complète de l&apos;établissement n&apos;est pas encore disponible.
       </InlineAlert>
 
       <Card className="p-6">
@@ -152,7 +151,7 @@ export function SettingsDataPage() {
           <div>
             <h2 className="text-lg font-bold text-ink">Aperçu des données</h2>
             <p className="text-sm text-muted">
-              Volume affiché à l&apos;écran{exportSchoolCode ? ` (${exportSchoolCode})` : ""}.
+              Nombre d&apos;éléments affichés{exportSchoolCode ? ` pour votre établissement` : ""}.
               Ce n&apos;est pas une sauvegarde complète.
             </p>
           </div>
@@ -174,7 +173,7 @@ export function SettingsDataPage() {
       <Card className="p-6">
         <SectionHeader
           title="Exports Excel / CSV"
-          description="Extrait affiché des lignes déjà chargées. Ce n'est pas une sauvegarde PostgreSQL complète."
+          description="Téléchargez les informations affichées sous forme de tableau. Cela ne constitue pas une sauvegarde complète."
         />
         <div className="mt-4 flex flex-wrap gap-2">
           {DATASETS.map((dataset) => {
@@ -197,8 +196,8 @@ export function SettingsDataPage() {
 
       <Card className="p-6">
         <SectionHeader
-          title="Export JSON versionné"
-          description="Sauvegarde/export disponible. Domaines canoniques PostgreSQL uniquement (élèves, classes, enseignants, paramètres)."
+          title="Télécharger les données de l’établissement"
+          description="Téléchargez les informations de votre établissement : élèves, classes, enseignants et paramètres."
         />
         <div className="mt-4 rounded-xl border border-line p-5">
           <div className="flex items-center gap-2 text-brand">
@@ -206,8 +205,7 @@ export function SettingsDataPage() {
             <h3 className="text-sm font-black uppercase tracking-wide">Export établissement</h3>
           </div>
           <p className="mt-2 text-sm text-muted">
-            Génère un fichier <code>somafrik-export</code> horodaté, avec la liste explicite des
-            domaines inclus. Aucun secret (hash, jeton, mot de passe) n&apos;est exporté.
+            Téléchargez un fichier daté contenant les informations de votre établissement. Les mots de passe et les informations confidentielles ne sont pas inclus.
           </p>
           <Button type="button" className="mt-4" onClick={() => void handleCanonicalExport()} disabled={busy}>
             <Download className="h-4 w-4" />
