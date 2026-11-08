@@ -54,10 +54,13 @@ export function createRollCallLocalStore(db: LocalRollCallHandle) {
       for (const k of ["sessionId","userId","schoolId","classId","date","openedAt","syncDeadline"] as const) {
         required(s[k], k);
       }
-      await transact(() => db.runAsync(
-        "INSERT INTO rc_sessions(session_id,user_id,school_id,class_id,roll_call_date,pack_id,state,opened_at,sync_deadline) VALUES (?,?,?,?,?,?,'draft',?,?)",
-        [s.sessionId,s.userId,s.schoolId,s.classId,s.date,s.packId??null,s.openedAt,s.syncDeadline]));
-      return counts(s.sessionId);
+      return transact(async () => {
+        await db.runAsync(
+          "INSERT INTO rc_sessions(session_id,user_id,school_id,class_id,roll_call_date,pack_id,state,opened_at,sync_deadline) VALUES (?,?,?,?,?,?,'draft',?,?)",
+          [s.sessionId,s.userId,s.schoolId,s.classId,s.date,s.packId??null,s.openedAt,s.syncDeadline]);
+        // Snapshot belongs to this committed operation, not a later queued scan.
+        return counts(s.sessionId);
+      });
     },
     async recordScan(s: LocalScan): Promise<{ duplicate: boolean; counts: RollCallCounts }> {
       for (const k of ["scanId","sessionId","publicId","proof","scannedAt"] as const) required(s[k], k);
