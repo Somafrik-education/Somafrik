@@ -2757,6 +2757,11 @@ app.post("/api/student-cards/roll-call/offline/v1/sync", requireAuth, requirePer
   res.setHeader("Cache-Control", "no-store");
   requireStudentCardsPg();
   const sync = require("./lib/rollCallOfflineSync");
+  // Fail-closed : exclusivement dans une transaction PostgreSQL d'idempotence (aucun repli sans transaction).
+  if (typeof repository?.withIdempotencyTransaction !== "function" || !req.app?.locals?.idempotencyService) {
+    const { createHttpError } = require("./lib/classesManagement");
+    throw createHttpError(503, "Synchronisation hors ligne indisponible : transaction PostgreSQL requise.", sync.OFFLINE_SYNC_ERROR.TRANSACTION_UNAVAILABLE);
+  }
   const batch = sync.readSyncBody(req.body, req.get("Idempotency-Key"));
   req.principal = await enrollmentHttpPrincipal(req);
   const principal = await presenceHttpPrincipal(req);
@@ -2788,7 +2793,12 @@ app.post("/api/student-cards/roll-call/offline/v1/sync", requireAuth, requirePer
           if (!schoolCode || schoolCode === "*") {
             throw Object.assign(new Error(schoolSubscriptionAccessService.BLOCKED_MESSAGE), { statusCode: 403 });
           }
-          await repository.one("SELECT id FROM schools WHERE id = $1::uuid FOR SHARE", [scope.schoolId]);
+          // Établissement SANS abonnement (accès « Actif » par défaut) : la création concurrente d'un premier
+          // abonnement (INSERT, verrou FOR KEY SHARE de clé étrangère sur la ligne `schools`) est bloquée par
+          // FOR UPDATE jusqu'au COMMIT. Avec au moins un abonnement : FOR SHARE suffit (les mises à jour
+          // attendent ; une ligne ajoutée ensuite n'est jamais retenue, la règle lit la plus ancienne).
+          const existing = await repository.all("SELECT id FROM subscriptions WHERE school_id = $1::uuid LIMIT 1", [scope.schoolId]);
+          await repository.one(`SELECT id FROM schools WHERE id = $1::uuid ${existing.length ? "FOR SHARE" : "FOR UPDATE"}`, [scope.schoolId]);
           await repository.all("SELECT id FROM subscriptions WHERE school_id = $1::uuid ORDER BY id FOR SHARE", [scope.schoolId]);
           const { runOutsideIdempotencyTx } = require("./lib/idempotencyTxContext");
           const state = await runOutsideIdempotencyTx(() => getSubscriptionAccessState());

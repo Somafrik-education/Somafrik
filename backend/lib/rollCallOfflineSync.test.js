@@ -183,3 +183,27 @@ test("garde R : établissement relu en base, compte actif, rôle TEACHER, jamais
   // Le rôle du JWT ne compte jamais : seuls les rôles relus en base sont retenus.
   await forbidden(fakeRepo({ roles: ["PARENT"] }), { sub: USER, roleKeys: ["TEACHER"], roleKey: "TEACHER" }, scope, batch, "JWT TEACHER, base PARENT");
 });
+
+test("transaction obligatoire : hors withIdempotencyTransaction → 503, aucune requête exécutée", async () => {
+  const { syncOfflineRollCall, assertInsideTransaction } = require("./rollCallOfflineSync");
+  const { runWithIdempotencyTx } = require("./idempotencyTxContext");
+  const calls = [];
+  const spyRepo = new Proxy({}, { get: (_t, name) => async (...args) => { calls.push(name); return null; } });
+  const body = valid();
+  const batch = readSyncBody(body, body.operationId);
+  const args = { batch, scope: { schoolId: batch.schoolId }, principal: { sub: "u" }, actor: { canonicalUserId: "00000000-0000-4000-8000-000000000002", roleKeys: ["TEACHER"] }, auditMeta: {}, deps: {} };
+  const unavailable = (error) => {
+    assert.equal(error.statusCode, 503);
+    assert.equal(error.code, OFFLINE_SYNC_ERROR.TRANSACTION_UNAVAILABLE);
+    assert.equal(error.sessionState, undefined, "jamais d'attestation sans transaction");
+    return true;
+  };
+  assert.throws(() => assertInsideTransaction(), unavailable);
+  await assert.rejects(() => syncOfflineRollCall(spyRepo, args), unavailable);
+  assert.deepEqual(calls, [], "aucune lecture ni écriture hors transaction");
+  // Contexte présent mais sans client transactionnel : refus identique.
+  await runWithIdempotencyTx({}, () => assert.rejects(() => syncOfflineRollCall(spyRepo, args), unavailable));
+  // Dans la transaction mais sans acteur issu de la garde R : refus, aucune requête.
+  await runWithIdempotencyTx({ tx: {} }, () => assert.rejects(() => syncOfflineRollCall(spyRepo, { ...args, actor: null }), unavailable));
+  assert.deepEqual(calls, []);
+});

@@ -406,7 +406,11 @@ async function main() {
     // Élève non scanné ni pointé : jamais d'absence créée en silence → ROSTER_CHANGED, rien d'écrit.
     const before0 = await counts();
     const missing = makeBody({ scans: [scanOf(card.S1, "nfc")], manual: rosterManual([[S.S2, "absent"], [S.S3, "absent"], [S.S4, "absent"], [S.S5, "absent"]]) });
-    notRecorded(await sync(tokenTeacher, missing), 409, "ROLL_CALL_ROSTER_CHANGED", "élève S6 absent du lot");
+    // Contrat des absences : tout inscrit non scanné et SANS statut antérieur ce jour-là doit être transmis
+    // explicitement en `absent` ; sinon refus attesté, aucune absence créée par le serveur.
+    const missingOut = await sync(tokenTeacher, missing);
+    notRecorded(missingOut, 409, "ROLL_CALL_ROSTER_CHANGED", "élève S6 absent du lot");
+    assert.deepEqual(missingOut.data.details, { missing: 1, unexpected: 0, enrolled: 6 });
     assert.deepEqual(await counts(), before0);
 
     // S6 déjà justifié ce jour-là (excused) : jamais écrasé.
@@ -471,6 +475,11 @@ async function main() {
       assert.equal(out.data?.rollCallId, undefined, label);
       assert.equal(out.data?.counts, undefined, label);
     };
+    // Élèves ayant déjà un statut ce jour-là : non renvoyés, conservés tels quels (couverts), rien écrit.
+    const alreadyRecorded = await sync(tokenTeacher, makeBody({ scans: [], manual: [] }));
+    assert.equal(alreadyRecorded.status, 201, `élèves déjà pointés non renvoyés : ${alreadyRecorded.text}`);
+    assert.deepEqual([alreadyRecorded.data.created, alreadyRecorded.data.corrected, alreadyRecorded.data.unchanged, alreadyRecorded.data.protected], [0, 0, 0, 0]);
+    assert.deepEqual(await attendance(today), { [S.S1]: "present", [S.S2]: "present", [S.S3]: "late", [S.S4]: "absent", [S.S5]: "late", [S.S6]: "excused" });
     const frozen = await counts();
     // R-1 : rejeu normal.
     await replayBoth(tokenTeacher, nominal, sameAck(ack), "R-1");
@@ -686,6 +695,63 @@ async function main() {
     // Rejeu de l'appel de la course 1 : garde R indépendante de l'abonnement… mais l'authentification
     // de la plateforme refuse toute requête d'un établissement suspendu ; abonnement rétabli : même ACK.
     sameAck(race1Result.out.data)(await sync(tokenTeacher, race1), "course 1 : rejeu après rétablissement");
+
+    // Courses 3 et 4 : établissement B SANS abonnement (accès « Actif » par défaut) et création
+    // concurrente d'un PREMIER abonnement bloquant (INSERT, non bloqué par un simple FOR SHARE).
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM subscriptions WHERE school_id = $1", [schoolB])).rows[0].n, 0);
+    const insertSuspendedB = () => pool.query(
+      `INSERT INTO subscriptions (school_id, plan_name, billing_currency, status, start_date, end_date)
+       VALUES ($1, 'Standard', 'BIF', 'suspended', CURRENT_DATE - 1, CURRENT_DATE + 300)`, [schoolB],
+    );
+    const dropSubscriptionB = () => pool.query("DELETE FROM subscriptions WHERE school_id = $1", [schoolB]);
+    const bodyB = (status) => makeBody({ schoolId: schoolB, classId: classB1, actor: USER.TEACHER_B, scans: [], manual: rosterManual([[STUDENT_B, status]]) });
+    // Course 3 : la synchronisation verrouille la ligne de l'établissement (FOR UPDATE) : l'INSERT attend le COMMIT.
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION pr1c_hold_journal_b() RETURNS trigger AS $$
+      BEGIN IF NEW.source = 'offline' THEN PERFORM pg_sleep(2); END IF; RETURN NEW; END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER pr1c_hold_journal_b AFTER INSERT ON attendance_roll_calls FOR EACH ROW EXECUTE FUNCTION pr1c_hold_journal_b();
+    `);
+    const race3 = bodyB("present");
+    const race3Promise = sync(tokenTeacherB, race3);
+    let lockedB = 0;
+    for (let i = 0; i < 300 && lockedB === 0; i += 1) {
+      lockedB = (await pool.query(
+        `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+          WHERE c.relname = 'subscriptions' AND l.mode = 'RowShareLock' AND l.granted AND l.pid <> pg_backend_pid()`,
+      )).rows[0].n;
+      if (lockedB === 0) await sleep(10);
+    }
+    assert.ok(lockedB > 0, "course 3 : garde W en cours (verrous pris)");
+    const insertStarted = Date.now();
+    await insertSuspendedB();
+    const insertWaited = Date.now() - insertStarted;
+    const race3Out = await race3Promise;
+    await pool.query("DROP TRIGGER pr1c_hold_journal_b ON attendance_roll_calls");
+    assert.equal(race3Out.status, 201, `course 3 : ${race3Out.text}`);
+    assert.ok(insertWaited >= 800, `création du premier abonnement bloquée jusqu'au COMMIT (${insertWaited} ms)`);
+    const afterInsertB = await sync(tokenTeacherB, bodyB("late"));
+    assert.equal(afterInsertB.status, 403, `après création de l'abonnement bloquant : ${afterInsertB.text}`);
+    await dropSubscriptionB();
+    // Course 4 : premier abonnement bloquant créé APRÈS l'authentification mais AVANT la garde W.
+    const race4 = bodyB("late");
+    const holderB = await pool.connect();
+    await holderB.query("SELECT pg_advisory_lock(hashtext('rc-offline-session'), hashtext($1::text || ':' || $2::text))", [schoolB, race4.sessionId]);
+    const beforeRace4 = await counts();
+    const race4Promise = sync(tokenTeacherB, race4);
+    let waitingB = 0;
+    for (let i = 0; i < 200 && waitingB === 0; i += 1) {
+      waitingB = (await pool.query("SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted")).rows[0].n;
+      if (waitingB === 0) await sleep(25);
+    }
+    assert.ok(waitingB > 0, "course 4 : synchronisation en attente du verrou de session");
+    await insertSuspendedB();
+    await holderB.query("SELECT pg_advisory_unlock(hashtext('rc-offline-session'), hashtext($1::text || ':' || $2::text))", [schoolB, race4.sessionId]);
+    holderB.release();
+    const race4Out = await race4Promise;
+    assert.equal(race4Out.status, 403, `course 4 : ${race4Out.text}`);
+    assert.equal(race4Out.data?.sessionState, "not_recorded");
+    assert.deepEqual(await counts(), beforeRace4, "course 4 : aucune écriture");
+    await dropSubscriptionB();
 
     // ================= D. Concurrence et résilience =================
     // Deux appareils, deux sessions, même classe, même jour (A2, aujourd'hui) : aucune présence écrasée.

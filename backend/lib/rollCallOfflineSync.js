@@ -34,6 +34,7 @@ const {
   computePayloadDigest,
 } = require("./rollCallOfflineProof");
 const { canonicalTimeZone, computePackWindow } = require("./rollCallOfflinePack");
+const { getIdempotencyTx } = require("./idempotencyTxContext");
 const {
   ROLL_CALL_ERROR,
   ROSTER_ENROLLMENT_SQL,
@@ -57,6 +58,7 @@ const OFFLINE_SYNC_ERROR = Object.freeze({
   PROOF_INVALID: "ROLL_CALL_PROOF_INVALID",
   CARD_INVALID: ROLL_CALL_ERROR.CARD_INVALID,
   MEDIA_DISABLED: "ROLL_CALL_OFFLINE_MEDIA_DISABLED",
+  TRANSACTION_UNAVAILABLE: "ROLL_CALL_OFFLINE_TRANSACTION_UNAVAILABLE",
 });
 
 const SESSION_STATE = Object.freeze({ NOT_RECORDED: "not_recorded", CONFLICT: "conflict" });
@@ -389,11 +391,15 @@ async function writeOfflineRollCall(repo, { batch, scope, principal, actor, audi
     await assertRollCallEnabled(repo, scope.schoolId);
     await assertUsedMediaEnabled(repo, scope.schoolId, batch.scans);
     const target = await assertRollCallClass(repo, scope, principal, batch.classId, "teacher");
-    if (typeof deps.assertWritePresence === "function") await deps.assertWritePresence();
     const nowMs = typeof deps.nowMs === "function" ? deps.nowMs() : (deps.nowMs ?? Date.now());
     assertSyncWindow(await schoolTimeZone(repo, scope.schoolId), batch.date, nowMs);
     const context = { classId: batch.classId, date: batch.date, sessionId: batch.sessionId };
+    // Verrou du jour AVANT l'abonnement : même ordre que /validate (cartes partagées → jour), ce qui
+    // évite tout interblocage avec un appel en ligne qui écrit des présences sous ce verrou.
     await lockRollCallDay(repo, scope.schoolId, batch.date);
+    // Abonnement (garde W uniquement) : obligatoire, fail-closed si le contrôle n'est pas fourni.
+    if (typeof deps.assertWritePresence !== "function") throw transactionUnavailable();
+    await deps.assertWritePresence();
     const enrolled = await enrolledStudents(repo, scope.schoolId, batch.classId);
     const scansByStudent = await verifyScans(repo, { schoolId: scope.schoolId, batch, actorUserId: actor.canonicalUserId, enrolled });
     const wanted = buildWanted(scansByStudent, batch.manual);
@@ -481,7 +487,18 @@ async function writeOfflineRollCall(repo, { batch, scope, principal, actor, audi
  * Corps du traitement, appelé par withIdempotency APRÈS la garde R (option `guard`) et après la
  * recherche de rejeu : verrou de session → journal → garde W et écriture.
  */
+function transactionUnavailable() {
+  return createHttpError(503, "Synchronisation hors ligne indisponible : transaction PostgreSQL requise.", OFFLINE_SYNC_ERROR.TRANSACTION_UNAVAILABLE);
+}
+
+/** Fail-closed : la synchronisation ne s'exécute QUE dans la transaction de withIdempotencyTransaction. */
+function assertInsideTransaction() {
+  if (!getIdempotencyTx()?.tx) throw transactionUnavailable();
+}
+
 async function syncOfflineRollCall(repo, { batch, scope, principal, actor, auditMeta, deps }) {
+  assertInsideTransaction(); // avant toute lecture ou écriture
+  if (!actor?.canonicalUserId) throw transactionUnavailable(); // garde R non exécutée : jamais de traitement
   await lockSession(repo, scope.schoolId, batch.sessionId);
   const replay = await readJournalDecision(repo, scope.schoolId, batch, actor.canonicalUserId);
   if (replay) return replay;
@@ -499,5 +516,6 @@ module.exports = {
   assertSyncWindow,
   cardSupportsMedium,
   buildWanted,
+  assertInsideTransaction,
   syncOfflineRollCall,
 };
