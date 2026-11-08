@@ -67,16 +67,20 @@ export const OFFLINE_ROLL_CALL_COPY = {
   closeTitle: "Clôturer l'appel",
   closeBody: (s: OfflineRollCallSummary) =>
     [
-      s.total !== null ? `${s.total} élève(s)` : "Liste de classe indisponible",
-      `${s.present} présent(s), ${s.late} retard(s), ${s.absentAtClose} absent(s)${s.excused ? `, ${s.excused} justifié(s)` : ""}.`,
+      s.total !== null ? `${s.total} élève(s) inscrit(s)` : "Liste de classe indisponible",
+      `${s.present} présent(s), ${s.late} retard(s), ${s.absent} absent(s) saisi(s)${s.excused ? `, ${s.excused} justifié(s)` : ""}.`,
+      s.notRecorded !== null && s.notRecorded > 0
+        ? `${s.notRecorded} élève(s) non pointé(s) : ils restent sans statut, aucune absence n'est enregistrée pour eux.`
+        : "",
       s.unknownScans ? `${s.unknownScans} scan(s) à vérifier.` : "",
-      s.degraded ? "Mode dégradé : les absences ne peuvent pas être déduites sans liste ; le serveur pourra demander une correction." : "",
+      s.degraded ? "Mode dégradé : liste de classe inconnue ; les cartes seront vérifiées par le serveur à la synchronisation." : "",
     ]
       .filter(Boolean)
       .join("\n"),
+  emptyRollCall: "Aucune carte scannée ni aucun statut saisi : il n'y a rien à enregistrer.",
   confirmClose: "Confirmer la clôture",
   keepEditing: "Continuer l'appel",
-  closed: "Appel enregistré sur ce téléphone — en attente de synchronisation.",
+  closed: "Appel enregistré localement — à synchroniser.",
 } as const;
 
 export const STATUS_LABEL = { present: "Présent", late: "Retard", absent: "Absent", excused: "Justifié" } as const;
@@ -217,6 +221,7 @@ function storageMessage(code: string): string {
   if (code === "RC_STORAGE_FULL") return OFFLINE_ROLL_CALL_COPY.storageFull;
   if (code === "RC_SESSION_NOT_DRAFT") return OFFLINE_ROLL_CALL_COPY.sessionClosed;
   if (code === "RC_SCAN_LIMIT") return OFFLINE_ROLL_CALL_COPY.scanLimit;
+  if (code === "RC_ROLL_CALL_EMPTY") return OFFLINE_ROLL_CALL_COPY.emptyRollCall;
   return OFFLINE_ROLL_CALL_COPY.storageError;
 }
 
@@ -329,9 +334,11 @@ export type OfflineRollCallSummary = {
   late: number;
   absent: number;
   excused: number;
-  /** Élèves sans aucun statut : ils seront absents à la clôture. */
-  remaining: number;
-  absentAtClose: number;
+  /**
+   * Élèves du pack sans aucun statut : « non pointés ». Ils le restent après la clôture (jamais
+   * absents par défaut). null en mode dégradé : l'effectif n'est pas connu hors connexion.
+   */
+  notRecorded: number | null;
   /** Lectures non reconnues (mode dégradé ou carte hors liste) : « à vérifier ». */
   unknownScans: number;
   scans: number;
@@ -354,8 +361,7 @@ export async function summarizeOfflineRollCall(ctx: RcContext, rollCall: Offline
     late: 0,
     absent: 0,
     excused: 0,
-    remaining: 0,
-    absentAtClose: 0,
+    notRecorded: rollCall.pack ? 0 : null,
     unknownScans,
     scans: scans.length,
     degraded: !rollCall.pack,
@@ -371,9 +377,8 @@ export async function summarizeOfflineRollCall(ctx: RcContext, rollCall: Offline
     else if (status === "late") summary.late += 1;
     else if (status === "excused") summary.excused += 1;
     else if (status === "absent") summary.absent += 1;
-    else summary.remaining += 1;
+    else summary.notRecorded = (summary.notRecorded ?? 0) + 1;
   }
-  summary.absentAtClose = summary.absent + summary.remaining;
   return summary;
 }
 
@@ -382,19 +387,17 @@ export async function summarizeOfflineRollCall(ctx: RcContext, rollCall: Offline
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Clôture confirmée par l'enseignant : lot construit (contrat PR0 §6.1), absents déduits pour les
- * élèves du pack sans statut, `operationId` et `payloadDigest` générés, corps figé — dans UNE
- * transaction SQLCipher (draft → closed). Aucune transmission ici (PR4).
+ * Clôture confirmée par l'enseignant : lot construit (contrat PR0 §6.1) avec les seules lectures et
+ * corrections explicites, couverture partielle admise (NFC-APPEL-PARTIEL-01) ; aucun absent déduit.
+ * `operationId` et `payloadDigest` générés, corps figé — dans UNE transaction SQLCipher
+ * (draft → closed). La transmission relève du moteur de synchronisation (PR4).
  */
 export async function closeOfflineRollCall(
   ctx: RcContext,
   rollCall: OfflineRollCall,
 ): Promise<{ ok: true; operationId: string; payloadDigest: string; message: string } | { ok: false; message: string }> {
-  const roster = rollCall.pack
-    ? rollCall.pack.pack.students.map((student) => ({ matchKey: student.matchKey, studentId: student.studentId, existingStatus: student.existingStatus }))
-    : null;
   try {
-    const frozen = await closeSession(ctx, rollCall.session.session_id, roster);
+    const frozen = await closeSession(ctx, rollCall.session.session_id);
     return { ok: true, operationId: frozen.operationId, payloadDigest: frozen.payloadDigest, message: OFFLINE_ROLL_CALL_COPY.closed };
   } catch (error) {
     return { ok: false, message: storageMessage(error instanceof RollCallStorageError ? String(error.code) : "") };

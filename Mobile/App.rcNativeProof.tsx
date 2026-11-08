@@ -231,7 +231,7 @@ async function runPr4SyncProof(): Promise<string> {
         match: null,
       });
     }
-    const closed = await closeSession(ctx, draft.session_id, null);
+    const closed = await closeSession(ctx, draft.session_id);
     let network = false;
     let receivedIdentical = true;
     let sent = 0;

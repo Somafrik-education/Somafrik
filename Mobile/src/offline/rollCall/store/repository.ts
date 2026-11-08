@@ -33,6 +33,7 @@ export const RC_REPO_ERROR = Object.freeze({
   STATE_INVALID: "RC_SESSION_STATE_INVALID",
   REVISION_FORBIDDEN: "RC_REVISION_FORBIDDEN",
   OPERATION_MISMATCH: "RC_OPERATION_MISMATCH",
+  ROLL_CALL_EMPTY: "RC_ROLL_CALL_EMPTY",
 });
 
 export type RcContext = {
@@ -436,50 +437,39 @@ export async function setManualMark(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Clôture : corps figé, opération et digest (PR0 §6.1, contrat des absences PR1c §3 ter).
+// Clôture : corps figé, opération et digest (PR0 §6.1, appel partiel NFC-APPEL-PARTIEL-01).
 // ---------------------------------------------------------------------------------------------
 
-export type RosterEntry = { matchKey: string; studentId: string; existingStatus: string | null };
-
 /**
- * Clôture explicite du brouillon. Dans UNE transaction :
- *  1. chaque inscrit du pack non scanné, non pointé et sans statut antérieur reçoit une marque
- *     `default` = absent (le serveur ne crée jamais d'absence lui-même) ;
- *  2. le corps du lot est construit (scans triés par scanId, pointages triés par studentId) ;
+ * Clôture explicite du brouillon (NFC-APPEL-PARTIEL-01). Dans UNE transaction :
+ *  1. le corps du lot est construit avec UNIQUEMENT les lectures et les pointages explicites
+ *     (scans triés par scanId, pointages `manual` triés par studentId) ; aucune absence n'est
+ *     déduite : un élève non scanné et non pointé reste « non pointé » ;
+ *  2. `complete: false` = couverture partielle (contrat NFC-APPEL-PARTIEL-01) ; le serveur n'exige
+ *     pas que tous les inscrits soient transmis ;
  *  3. `operationId`, `payloadDigest` (JCS + SHA-256) et `frozen_body` sont écrits ; les triggers
  *     les rendent immuables.
- * `roster` = élèves du pack VÉRIFIÉ ; null en mode dégradé (aucune absence déduite).
+ * Un appel sans aucune lecture ni aucun pointage n'est pas clôturable (RC_ROLL_CALL_EMPTY) : rien
+ * à enregistrer, et jamais d'absences inventées.
+ * Les corps figés antérieurs (`complete: true`, absences `default`) ne sont jamais réécrits.
  */
 export async function closeSession(
   ctx: RcContext,
   sessionId: string,
-  roster: readonly RosterEntry[] | null,
 ): Promise<{ operationId: string; payloadDigest: string; frozenBody: string }> {
   return ctx.connection.transaction(async (db) => {
     const session = await sessionFor(ctx, db, sessionId);
     if (session.state !== "draft") fail(RC_REPO_ERROR.SESSION_NOT_DRAFT, "Appel déjà clôturé.");
     const now = iso(ctx.nowMs());
-    if (roster) {
-      const marked = new Set(
-        (await db.getAllAsync<{ match_key: string }>("SELECT match_key FROM rc_marks WHERE session_id = ?", [sessionId])).map((row) => row.match_key),
-      );
-      for (const student of roster) {
-        if (marked.has(student.matchKey) || student.existingStatus !== null) continue;
-        assertUuid(student.studentId, "studentId");
-        await db.runAsync(
-          "INSERT INTO rc_marks (session_id, match_key, student_id, status, source, updated_at) VALUES (?, ?, ?, 'absent', 'default', ?)",
-          [sessionId, student.matchKey, student.studentId, now],
-        );
-      }
-    }
     const scans = await db.getAllAsync<{ scan_id: string; public_id: string; proof: string; medium: string; scanned_at: string }>(
       "SELECT scan_id, public_id, proof, medium, scanned_at FROM rc_scans WHERE session_id = ? AND removed_at IS NULL",
       [sessionId],
     );
     const marks = await db.getAllAsync<{ student_id: string; status: string }>(
-      "SELECT student_id, status FROM rc_marks WHERE session_id = ? AND source IN ('manual','default')",
+      "SELECT student_id, status FROM rc_marks WHERE session_id = ? AND source = 'manual'",
       [sessionId],
     );
+    if (scans.length === 0 && marks.length === 0) fail(RC_REPO_ERROR.ROLL_CALL_EMPTY, "Aucune carte ni aucun statut saisi.");
     if (scans.length > RC_MAX_SCANS || marks.length > RC_MAX_MANUAL) fail(RC_REPO_ERROR.SCAN_LIMIT, "Lot trop volumineux.");
     const byCodeUnits = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
     const operationId = assertUuid(ctx.randomUUID(), "operationId");
@@ -493,7 +483,7 @@ export async function closeSession(
       date: session.roll_call_date,
       mode: ROLL_CALL_MODE,
       packId: session.pack_id,
-      complete: true,
+      complete: false,
       scans: scans
         .map((scan) => ({ scanId: scan.scan_id, publicId: scan.public_id, proof: scan.proof, medium: scan.medium, scannedAt: scan.scanned_at }))
         .sort((a, b) => byCodeUnits(a.scanId, b.scanId)),

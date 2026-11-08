@@ -531,8 +531,23 @@ async function rollCallCounts(repo, schoolId, classId, date) {
  * `wanted` : marques { studentId, status, source, … } triées par élève (ordre des verrous).
  * Aucune écriture du journal ni d'audit d'appel : chaque parcours les écrit lui-même.
  */
-async function applyTeacherMarks(repo, { scope, principal, context, wanted, target, auditMeta, complete = false }) {
+async function applyTeacherMarks(repo, { scope, principal, context, wanted, target, auditMeta, complete = false, requireSentEnrolled = false }) {
   await lockRollCallDay(repo, scope.schoolId, context.date);
+  if (!complete && requireSentEnrolled) {
+    // NFC-APPEL-PARTIEL-01 — appel partiel : les élèves non pointés restent sans statut (jamais
+    // d'absence déduite) ; seuls les élèves TRANSMIS doivent être inscrits, sous le même verrou.
+    const enrolled = await lockEnrolledRoster(repo, scope.schoolId, context.classId);
+    const unexpected = wanted.filter((item) => !enrolled.has(item.studentId)).length;
+    if (unexpected > 0) {
+      const error = createHttpError(
+        409,
+        "La liste de la classe a changé depuis l'ouverture de l'appel : rechargez-la puis validez à nouveau.",
+        ROLL_CALL_ERROR.ROSTER_CHANGED,
+      );
+      error.details = { missing: 0, unexpected, enrolled: enrolled.size };
+      throw error;
+    }
+  }
   if (complete) {
     // Vérification atomique (sous le verrou du jour, inscriptions verrouillées en partage) :
     // l'appel doit couvrir exactement les inscrits actuels, sinon aucune écriture.

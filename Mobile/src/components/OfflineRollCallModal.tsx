@@ -4,7 +4,8 @@
  * Réutilise le lecteur NFC natif existant (`createRollCallNfcLoop`, `scanNfcCardToken`, adaptateur
  * `react-native-nfc-manager`, mode lecteur conservé entre deux cartes) et la caméra QR existante.
  * Aucun appel HTTP par scan : chaque lecture est enregistrée dans SQLCipher et le résultat n'est
- * affiché qu'après COMMIT. Aucune clôture automatique. Aucun état « Synchronisé » (PR4).
+ * affiché qu'après COMMIT. Aucune clôture automatique. Après clôture, le bandeau suit l'état stocké
+ * (NFC-APPEL-PARTIEL-01) : « Synchronisé » seulement après ACK conforme.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -33,6 +34,8 @@ import {
 import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
 import OfflineRollCallSyncList from "./OfflineRollCallSyncList";
 import { findLatestSession, type RcContext } from "../offline/rollCall/store/repository";
+import type { RcSessionState } from "../offline/rollCall/store/schema";
+import { syncBanner } from "../offline/rollCall/sync/syncStatus";
 import { downloadOfflineRollCallPack } from "../services/rollCallOfflineApi";
 
 const QR_REPEAT_COOLDOWN_MS = 3_000;
@@ -86,6 +89,8 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
   const [scanSource, setScanSource] = useState<"nfc" | "qr" | null>(null);
   const [listening, setListening] = useState(false);
   const [saving, setSaving] = useState(false);
+  // NFC-APPEL-PARTIEL-01 : état stocké de l'appel clôturé, relu à chaque changement de synchronisation.
+  const [storedState, setStoredState] = useState<RcSessionState | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
@@ -146,6 +151,30 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
       cancelled = true;
     };
   }, [actorUserId, classId, date, refresh, reloadKey, session, visible]);
+
+  // Bandeau de l'appel clôturé : dérivé de l'état stocké, mis à jour sans fermer l'écran.
+  const awaitingSync = phase.kind === "closed" || phase.kind === "pending_sync";
+  useEffect(() => {
+    if (!visible || !awaitingSync) {
+      setStoredState(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      const account = rollCallRuntime().current();
+      if (!account) return;
+      const latest = await findLatestSession(account.ctx, classId, date);
+      if (!cancelled) setStoredState(latest ? latest.state : null);
+    };
+    void load().catch(() => undefined);
+    const unsubscribe = rollCallRuntime().subscribeSync(() => {
+      void load().catch(() => undefined);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [awaitingSync, classId, date, visible]);
 
   /** Une lecture : preuve locale, COMMIT, puis affichage. Jamais de requête réseau. */
   const submitToken = useCallback(
@@ -243,6 +272,11 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
   const confirmClose = useCallback(() => {
     const current = phaseRef.current;
     if (current.kind !== "ready" || !summary) return;
+    // Zéro lecture et zéro pointage : rien à enregistrer, aucune absence inventée.
+    if (summary.scans === 0 && !summary.rows.some((row) => row.source === "manual")) {
+      setFeedback({ tone: "warn", message: OFFLINE_ROLL_CALL_COPY.emptyRollCall });
+      return;
+    }
     Alert.alert(OFFLINE_ROLL_CALL_COPY.closeTitle, OFFLINE_ROLL_CALL_COPY.closeBody(summary), [
       { text: OFFLINE_ROLL_CALL_COPY.keepEditing, style: "cancel" },
       {
@@ -256,7 +290,7 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
               void rollCallRuntime().refreshLogoutGuard(sessionRef.current);
               if (closed.ok) {
                 setPhase({ kind: "closed" });
-                setFeedback({ tone: "ok", message: closed.message });
+                setFeedback(null);
                 // NFC-PRES-LOCAL-PR4 : transmission dès la clôture si le réseau le permet.
                 void rollCallRuntime().requestSync(sessionRef.current, "closed");
               } else setFeedback({ tone: "error", message: closed.message });
@@ -290,11 +324,14 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
         {phase.kind === "error" ? <Text style={[styles.feedback, TONE_STYLE.error]} testID="offline-roll-call-error">{phase.message}</Text> : null}
         {phase.kind === "pending_sync" || phase.kind === "closed" ? (
           <>
-            {phase.kind === "closed" ? (
-              <Text style={[styles.feedback, TONE_STYLE.neutral]} testID="offline-roll-call-pending-sync">
-                {OFFLINE_ROLL_CALL_COPY.closed}
-              </Text>
-            ) : null}
+            {(() => {
+              const banner = storedState ? syncBanner(storedState) : null;
+              return banner ? (
+                <Text style={[styles.feedback, TONE_STYLE[banner.tone]]} testID={`offline-roll-call-banner-${storedState}`} accessibilityLiveRegion="polite">
+                  {banner.message}
+                </Text>
+              ) : null;
+            })()}
             <OfflineRollCallSyncList
               session={session}
               filter={{ classId, date }}
@@ -314,9 +351,12 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
             {summary ? (
               <View style={styles.counters} testID="offline-roll-call-counters" accessibilityLiveRegion="polite">
                 {[
-                  ["Élèves", summary.total === null ? "—" : String(summary.total)],
+                  ["Inscrits", summary.total === null ? "—" : String(summary.total)],
                   ["Présents", String(summary.present)],
-                  ["Restants", summary.total === null ? "—" : String(summary.remaining)],
+                  ["En retard", String(summary.late)],
+                  ["Absents saisis", String(summary.absent)],
+                  ["Justifiés", String(summary.excused)],
+                  ["Non pointés", summary.notRecorded === null ? "—" : String(summary.notRecorded)],
                   ["À vérifier", String(summary.unknownScans)],
                 ].map(([label, value]) => (
                   <View key={label} style={styles.counterBox}>
@@ -416,8 +456,8 @@ const styles = StyleSheet.create({
   panel: { padding: 12, borderRadius: 12, backgroundColor: "#FFFFFF", gap: 8, alignItems: "center" },
   panelText: { fontSize: 14, color: "#0F172A", textAlign: "center" },
   feedback: { padding: 12, borderRadius: 10, fontSize: 15, fontWeight: "600", overflow: "hidden" },
-  counters: { flexDirection: "row", gap: 8 },
-  counterBox: { flex: 1, padding: 10, borderRadius: 10, backgroundColor: "#FFFFFF", alignItems: "center" },
+  counters: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  counterBox: { flexBasis: "30%", flexGrow: 1, padding: 10, borderRadius: 10, backgroundColor: "#FFFFFF", alignItems: "center" },
   counterValue: { fontSize: 22, fontWeight: "700", color: "#0F172A" },
   counterLabel: { fontSize: 12, color: "#475569" },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
