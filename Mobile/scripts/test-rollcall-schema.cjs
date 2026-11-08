@@ -77,6 +77,24 @@ assert.throws(() => mark.run("one", "student-2", "absent"), /RC_MARK_SESSION_NOT
 assert.throws(() => db.exec("UPDATE rc_marks SET status = 'late' WHERE session_id = 'one'"),
   /RC_MARK_SESSION_NOT_DRAFT/);
 
+// Cross-session reassignment must not bypass the frozen-session guards.
+// Both OLD and NEW session states must be checked on UPDATE.
+session("other-draft", { classId: "class-2" });
+scan.run("scan-other", "other-draft", "card-other", "proof-other");
+mark.run("other-draft", "student-other", "present");
+assert.throws(() => db.exec("UPDATE rc_scans SET session_id = 'one' WHERE scan_id = 'scan-other'"),
+  /RC_SCAN_SESSION_NOT_DRAFT/, "cannot move a scan into a closed session");
+assert.throws(() => db.exec("UPDATE rc_marks SET session_id = 'one' WHERE match_key = 'student-other'"),
+  /RC_MARK_SESSION_NOT_DRAFT/, "cannot move a mark into a closed session");
+assert.throws(() => db.exec("UPDATE rc_scans SET session_id = 'other-draft' WHERE scan_id = 'scan-A'"),
+  /RC_SCAN_SESSION_NOT_DRAFT/, "cannot move a scan out of a closed session");
+assert.throws(() => db.exec("UPDATE rc_marks SET session_id = 'other-draft' WHERE match_key = 'student-1'"),
+  /RC_MARK_SESSION_NOT_DRAFT/, "cannot move a mark out of a closed session");
+assert.equal(db.prepare("SELECT session_id FROM rc_scans WHERE scan_id = 'scan-other'").get().session_id,
+  "other-draft", "rejected reassignment must preserve original scan");
+assert.equal(db.prepare("SELECT session_id FROM rc_marks WHERE match_key = 'student-other'").get().session_id,
+  "other-draft", "rejected reassignment must preserve original mark");
+
 db.exec("UPDATE rc_sessions SET state = 'failed_action_required' WHERE session_id = 'one'");
 assert.throws(
   () => db.exec("UPDATE rc_sessions SET state = 'draft', revision = 2, frozen_body = NULL, operation_id = NULL, payload_digest = NULL WHERE session_id = 'one'"),
