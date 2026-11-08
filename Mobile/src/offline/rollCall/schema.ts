@@ -118,7 +118,7 @@ WHEN
   )
   AND NOT (
     OLD.state = 'failed_action_required' AND
-    OLD.last_session_state = 'not_recorded' AND
+    OLD.last_session_state IS 'not_recorded' AND
     NEW.state = 'draft' AND
     NEW.revision = OLD.revision + 1 AND
     NEW.frozen_body IS NULL AND
@@ -134,12 +134,12 @@ BEFORE UPDATE OF state, revision ON rc_sessions
 FOR EACH ROW
 WHEN NEW.state = 'draft' AND OLD.state IS NOT 'draft' AND NOT (
   (OLD.state = 'failed_action_required' AND
-   OLD.last_session_state = 'not_recorded' AND
+   OLD.last_session_state IS 'not_recorded' AND
    NEW.revision = OLD.revision + 1 AND
    NEW.frozen_body IS NULL AND
    NEW.operation_id IS NULL AND
    NEW.payload_digest IS NULL) OR
-  (OLD.state = 'blocked_logout' AND OLD.state_before_logout = 'draft' AND
+  (OLD.state = 'blocked_logout' AND OLD.state_before_logout IS 'draft' AND
    NEW.revision = OLD.revision)
 )
 BEGIN
