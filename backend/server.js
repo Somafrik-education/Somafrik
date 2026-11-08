@@ -2762,16 +2762,6 @@ app.post("/api/student-cards/roll-call/offline/v1/sync", requireAuth, requirePer
   const principal = await presenceHttpPrincipal(req);
   const scope = studentCardsHttpScope(principal);
   const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
-  // Gate d'abonnement évalué HORS transaction (comme les routes existantes : il charge l'état
-  // back-office), mais appliqué seulement par la garde W : il n'empêche jamais de relire un ACK.
-  let writePresenceRefusal = null;
-  try {
-    await new Promise((resolve, reject) => {
-      requireSchoolSubscriptionFeature("write_presence")(req, {}, (error) => (error ? reject(error) : resolve()));
-    });
-  } catch (error) {
-    writePresenceRefusal = error;
-  }
   let actor = null;
   await withIdempotency({
     req,
@@ -2789,8 +2779,20 @@ app.post("/api/student-cards/roll-call/offline/v1/sync", requireAuth, requirePer
       actor,
       auditMeta: pedagogyAuditMetaFromRequest(req),
       deps: {
+        // Abonnement (garde W uniquement, jamais la garde R) : lignes de l'établissement et de ses
+        // abonnements verrouillées en partage dans la transaction — une suspension (UPDATE) attend
+        // le COMMIT — puis évaluation EN DIRECT (règles existantes) sur une autre connexion : elle voit
+        // tout changement validé avant le verrou, sans requête concurrente sur le client de la transaction.
         assertWritePresence: async () => {
-          if (writePresenceRefusal) throw writePresenceRefusal;
+          const schoolCode = String(principal?.schoolCode ?? "").trim();
+          if (!schoolCode || schoolCode === "*") {
+            throw Object.assign(new Error(schoolSubscriptionAccessService.BLOCKED_MESSAGE), { statusCode: 403 });
+          }
+          await repository.one("SELECT id FROM schools WHERE id = $1::uuid FOR SHARE", [scope.schoolId]);
+          await repository.all("SELECT id FROM subscriptions WHERE school_id = $1::uuid ORDER BY id FOR SHARE", [scope.schoolId]);
+          const { runOutsideIdempotencyTx } = require("./lib/idempotencyTxContext");
+          const state = await runOutsideIdempotencyTx(() => getSubscriptionAccessState());
+          schoolSubscriptionAccessService.assertSchoolFeature(schoolCode, state, "write_presence");
         },
       },
     }),

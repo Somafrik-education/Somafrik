@@ -755,6 +755,7 @@ const NFC_PRES_LOCAL_PR1C_EXACT = new Set([
   "backend/db/attendanceRollCallsSchema.js",
   "backend/db/migrations/20261108_attendance_roll_calls_offline_sync.sql",
   "backend/lib/idempotencyService.test.js",
+  "backend/lib/idempotencyTxContext.js",
   "backend/lib/platformPersonalDataGuard.js",
   "backend/lib/rollCallOfflineSync.http.pg.test.js",
   "backend/lib/rollCallOfflineSync.js",

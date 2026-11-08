@@ -308,6 +308,11 @@ async function main() {
       `INSERT INTO subscriptions (school_id, plan_name, billing_currency, status, start_date, end_date)
        VALUES ($1, 'Standard', 'CDF', 'suspended', CURRENT_DATE - 30, CURRENT_DATE + 300)`, [schoolC],
     );
+    // Abonnement actif pour A : la garde W le relit en direct, sous verrou partagé.
+    await pool.query(
+      `INSERT INTO subscriptions (school_id, plan_name, billing_currency, status, start_date, end_date)
+       VALUES ($1, 'Standard', 'CDF', 'active', CURRENT_DATE - 30, CURRENT_DATE + 300)`, [schoolA],
+    );
     const zone = afternoonZone(Date.now());
     for (const id of [schoolA, schoolB]) {
       await pool.query("UPDATE schools SET profile_payload = COALESCE(profile_payload, '{}'::jsonb) || jsonb_build_object('timezone', $2::text) WHERE id = $1", [id, zone]);
@@ -620,6 +625,67 @@ async function main() {
     await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: false, read: true, update: false });
     refused(await sync(tokenTeacher, makeBody({ date: date2, scans: [], manual: [] })), "permission retirée");
     await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: true, read: true, update: true });
+
+    // ================= B'. Abonnement et synchronisation concurrentes (garde W uniquement) =================
+    const setSubscription = (status) => pool.query("UPDATE subscriptions SET status = $2, updated_at = NOW() WHERE school_id = $1", [schoolA, status]);
+    // Course 1 : suspension pendant l'écriture. La synchronisation tient les lignes école/abonnement en
+    // partage jusqu'au COMMIT : la suspension attend, aucune écriture n'a lieu APRÈS la suspension.
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION pr1c_hold_journal() RETURNS trigger AS $$
+      BEGIN IF NEW.source = 'offline' THEN PERFORM pg_sleep(2); END IF; RETURN NEW; END $$ LANGUAGE plpgsql;
+      CREATE TRIGGER pr1c_hold_journal AFTER INSERT ON attendance_roll_calls FOR EACH ROW EXECUTE FUNCTION pr1c_hold_journal();
+    `);
+    const race1 = makeBody({ classId: classA2, date: date3, scans: [], manual: rosterManual([[S.S7, "present"], [S.S8, "present"]]) });
+    const race1Promise = sync(tokenTeacher, race1).then((out) => ({ out, at: Date.now() }));
+    // Attendre que la synchronisation tienne le verrou partagé sur les abonnements (pris par la garde W).
+    let holding = 0;
+    for (let i = 0; i < 200 && holding === 0; i += 1) {
+      holding = (await pool.query(
+        `SELECT count(*)::int AS n FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+          WHERE c.relname = 'subscriptions' AND l.mode = 'RowShareLock' AND l.granted AND l.pid <> pg_backend_pid()`,
+      )).rows[0].n;
+      if (holding === 0) await sleep(10);
+    }
+    assert.ok(holding > 0, "course 1 : verrou partagé de la garde W observé");
+    const suspendStarted = Date.now();
+    await setSubscription("suspended");
+    const suspendDone = Date.now();
+    const race1Result = await race1Promise;
+    await pool.query("DROP TRIGGER pr1c_hold_journal ON attendance_roll_calls");
+    assert.equal(race1Result.out.status, 201, `course 1 : ${race1Result.out.text}`);
+    assert.ok(suspendDone - suspendStarted >= 800, `la suspension a attendu le COMMIT (${suspendDone - suspendStarted} ms)`);
+    const race1Row = (await pool.query("SELECT validated_at FROM attendance_roll_calls WHERE session_id = $1", [race1.sessionId])).rows[0];
+    assert.ok(race1Row, "course 1 : appel validé avant la suspension");
+    const suspendedNow = await sync(tokenTeacher, makeBody({ classId: classA2, date: date3, scans: [], manual: [] }));
+    assert.equal(suspendedNow.status, 403, `après suspension : ${suspendedNow.text}`);
+    await setSubscription("active");
+
+    // Course 2 : suspension validée APRÈS le contrôle d'authentification mais AVANT la garde W.
+    // La synchronisation est bloquée sur le verrou de session (tenu par le test) ; la suspension est
+    // validée ; le verrou est relâché : la garde W relit l'abonnement en direct et refuse.
+    const race2 = makeBody({ classId: classA2, date: date3, scans: [], manual: rosterManual([[S.S7, "late"], [S.S8, "late"]]) });
+    const holder = await pool.connect();
+    await holder.query("SELECT pg_advisory_lock(hashtext('rc-offline-session'), hashtext($1::text || ':' || $2::text))", [schoolA, race2.sessionId]);
+    const beforeRace2 = await counts();
+    const race2Promise = sync(tokenTeacher, race2);
+    let waiting = 0;
+    for (let i = 0; i < 200 && waiting === 0; i += 1) {
+      waiting = (await pool.query("SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted")).rows[0].n;
+      if (waiting === 0) await sleep(25);
+    }
+    assert.ok(waiting > 0, "la synchronisation attend bien le verrou de session (authentification et garde R passées)");
+    await setSubscription("suspended");
+    await holder.query("SELECT pg_advisory_unlock(hashtext('rc-offline-session'), hashtext($1::text || ':' || $2::text))", [schoolA, race2.sessionId]);
+    holder.release();
+    const race2Out = await race2Promise;
+    assert.equal(race2Out.status, 403, `course 2 : ${race2Out.text}`);
+    assert.equal(race2Out.data?.sessionState, "not_recorded", "refus de la garde W, attesté");
+    assert.match(String(race2Out.data?.message), /suspendu/);
+    assert.deepEqual(await counts(), beforeRace2, "course 2 : aucune écriture");
+    await setSubscription("active");
+    // Rejeu de l'appel de la course 1 : garde R indépendante de l'abonnement… mais l'authentification
+    // de la plateforme refuse toute requête d'un établissement suspendu ; abonnement rétabli : même ACK.
+    sameAck(race1Result.out.data)(await sync(tokenTeacher, race1), "course 1 : rejeu après rétablissement");
 
     // ================= D. Concurrence et résilience =================
     // Deux appareils, deux sessions, même classe, même jour (A2, aujourd'hui) : aucune présence écrasée.

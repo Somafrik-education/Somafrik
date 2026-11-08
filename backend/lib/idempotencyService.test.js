@@ -455,3 +455,18 @@ test("guard sans service d'idempotence : toujours appelée avant le handler", as
   });
   assert.deepEqual(order, ["guard", "handler"]);
 });
+
+test("runOutsideIdempotencyTx : sort du contexte transactionnel, sans le modifier", async () => {
+  const { getIdempotencyTx, runWithIdempotencyTx, runOutsideIdempotencyTx } = require("./idempotencyTxContext");
+  const store = { tx: { marker: "tx" } };
+  await runWithIdempotencyTx(store, async () => {
+    assert.equal(getIdempotencyTx(), store);
+    const inside = await runOutsideIdempotencyTx(async () => {
+      await Promise.resolve();
+      return getIdempotencyTx();
+    });
+    assert.equal(inside, null, "aucune transaction visible à l'extérieur");
+    assert.equal(getIdempotencyTx(), store, "contexte rétabli après la sortie");
+  });
+  assert.equal(getIdempotencyTx(), null);
+});
