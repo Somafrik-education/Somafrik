@@ -127,12 +127,14 @@ CREATE TRIGGER IF NOT EXISTS rc_session_revision_guard
 BEFORE UPDATE OF state, revision ON rc_sessions
 FOR EACH ROW
 WHEN NEW.state = 'draft' AND OLD.state IS NOT 'draft' AND NOT (
-  OLD.state = 'failed_action_required' AND
-  OLD.last_session_state = 'not_recorded' AND
-  NEW.revision = OLD.revision + 1 AND
-  NEW.frozen_body IS NULL AND
-  NEW.operation_id IS NULL AND
-  NEW.payload_digest IS NULL
+  (OLD.state = 'failed_action_required' AND
+   OLD.last_session_state = 'not_recorded' AND
+   NEW.revision = OLD.revision + 1 AND
+   NEW.frozen_body IS NULL AND
+   NEW.operation_id IS NULL AND
+   NEW.payload_digest IS NULL) OR
+  (OLD.state = 'blocked_logout' AND OLD.state_before_logout = 'draft' AND
+   NEW.revision = OLD.revision)
 )
 BEGIN
   SELECT RAISE(ABORT, 'RC_REVISION_NOT_ATTESTED');
@@ -148,6 +150,27 @@ END;
 CREATE TRIGGER IF NOT EXISTS rc_session_marks_draft_only
 BEFORE INSERT ON rc_marks FOR EACH ROW
 WHEN (SELECT state FROM rc_sessions WHERE session_id = NEW.session_id) IS NOT 'draft'
+BEGIN
+  SELECT RAISE(ABORT, 'RC_MARK_SESSION_NOT_DRAFT');
+END;
+
+CREATE TRIGGER IF NOT EXISTS rc_session_scans_update_draft_only
+BEFORE UPDATE ON rc_scans FOR EACH ROW
+WHEN (SELECT state FROM rc_sessions WHERE session_id = OLD.session_id) IS NOT 'draft'
+BEGIN
+  SELECT RAISE(ABORT, 'RC_SCAN_SESSION_NOT_DRAFT');
+END;
+
+CREATE TRIGGER IF NOT EXISTS rc_session_scans_delete_limited
+BEFORE DELETE ON rc_scans FOR EACH ROW
+WHEN (SELECT state FROM rc_sessions WHERE session_id = OLD.session_id) NOT IN ('draft', 'synced', 'expired')
+BEGIN
+  SELECT RAISE(ABORT, 'RC_SCAN_SESSION_FROZEN');
+END;
+
+CREATE TRIGGER IF NOT EXISTS rc_session_marks_delete_draft_only
+BEFORE DELETE ON rc_marks FOR EACH ROW
+WHEN (SELECT state FROM rc_sessions WHERE session_id = OLD.session_id) IS NOT 'draft'
 BEGIN
   SELECT RAISE(ABORT, 'RC_MARK_SESSION_NOT_DRAFT');
 END;
