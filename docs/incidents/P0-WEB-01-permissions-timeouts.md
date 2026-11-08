@@ -100,6 +100,33 @@ Sans correctif, le premier essai au même gros volume a fait tomber le serveur p
 
 **PostgreSQL :** pas de saturation ni de verrou démontré. Le coût vient de **lectures complètes répétées**, inutiles pour la décision, puis de leur transformation en mémoire par Node. Aucun index ni aucune requête SQL n'est modifié.
 
+### Avant le chantier NFC / aujourd'hui (mesures **locales**)
+
+Même banc, mêmes données (9 autres écoles, 544 000 présences, 4 700 élèves), même cluster PostgreSQL 16 jetable. Chaque version tourne avec **son propre** `backend/server.js` et son propre schéma, depuis une copie de travail détachée.
+
+Référence « avant chantier NFC » : `develop@f95c3f38` (05/10/2026), commit sur lequel AUDIT-CARTE-01 a été rejoué, avant CARTE-PR0.
+
+Méthode :
+- les versions sans `lib/testAccessSession.js` reçoivent un jeton d'accès simple (`createAccessToken`), qu'elles acceptent sans session liée ;
+- l'adresse PostgreSQL porte un mot de passe factice, que les anciennes versions exigent.
+
+| Version | Ouverture à froid | Ouverture à chaud | `effective-permissions` seule | Pic mémoire | SQL à froid (appels / lignes) |
+|---|---|---|---|---|---|
+| `f95c3f38`, avant chantier NFC | 9,6 s | 5,1 s | 6 ms | 1 279 – 1 457 Mio | 461 / 1,12 M |
+| `321c502b`, juste avant #1023 (43 des 46 commits NFC/carte inclus) | 9,5 s | 5,4 s | 7 ms | 1 318 – 1 480 Mio | 470 / 1,12 M |
+| `09ce7271`, #1023 | **serveur tombé** : mémoire saturée (`heap out of memory`, SIGABRT) dès la première rafale | — | — | — | — |
+| `7bfe1e46`, `develop` actuel | **serveur tombé** : même cause | — | — | — | — |
+| `8411d984`, correctif P0-WEB-01 | **157 ms** | **66 ms** | 10 ms | 123 Mio | 133 / 8 542 |
+
+Constats :
+- **Le chantier NFC ne crée pas la régression.** Avant le chantier et juste avant #1023, les chiffres sont les mêmes, et aucun commit NFC ne touche `requireAuth`, `assertActiveSchoolRequest`, `schoolSubscriptionAccessService` ni `getAuthoritativeBackOfficeState`.
+- **La rupture date de #1023.** Avec ce commit, le contrôle d'abonnement charge tout l'état plateforme à chaque requête, et le serveur sature sa mémoire.
+- **Un coût existait déjà avant NFC**, sur la seule fiche `GET /backoffice/establishments/:code` : 9,6 s à froid, 5,1 s à chaud.
+  - Cette fiche chargeait déjà tout l'état plateforme.
+  - À chaud, ce calcul bloque Node et retarde les autres requêtes de la rafale, d'environ 1,2 s chacune ; `effective-permissions` restait à environ 40 ms.
+  - Le correctif traite aussi cette fiche.
+- **Aujourd'hui, après correctif**, l'ouverture est environ 60 fois plus rapide qu'avant le chantier NFC, avec une mémoire environ 10 fois plus faible.
+
 ## 6. Phénomène 2 — connexion initiale de 19,97 s (non démontré en préproduction)
 
 - Une connexion initiale longue n'est pas un temps de traitement HTTP : c'est le temps d'établir TCP et TLS jusqu'à la terminaison Render.
