@@ -77,6 +77,8 @@ await store.freeze(session.sessionId,"operation-1","a".repeat(64),
   new Uint8Array([12,34,56]),"2026-11-09T07:33:00Z");
 await assert.rejects(store.recordScan({...scan,scanId:"scan-4",publicId:"public-4"}),
   /RC_SCAN_SESSION_NOT_DRAFT/);
+await assert.rejects(store.recordScan({...scan,scanId:"scan-5"}),
+  /RC_SCAN_SESSION_NOT_DRAFT/, "duplicate must not be acknowledged after freeze");
 await assert.rejects(store.recordMark(session.sessionId,"student-2","absent","default",
   "2026-11-09T07:34:00Z"), /RC_MARK_SESSION_NOT_DRAFT/);
 await assert.rejects(store.freeze(session.sessionId,"operation-2","b".repeat(64),
