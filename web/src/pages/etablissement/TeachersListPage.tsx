@@ -210,8 +210,25 @@ export function TeachersListPage() {
     setAssignError(null);
     setSubjectsCatalogError(null);
     setSubjects([]);
+    setRemovalRows([]);
+    setRemovalError(null);
+    setRemovalLoading(assignmentPermissions.canRead);
     try {
-      const [classRows, subjectRows] = await Promise.all([classesApi.list(), subjectsApi.list()]);
+      const [classRows, subjectRows, assignmentRows] = await Promise.all([
+        classesApi.list(),
+        subjectsApi.list(),
+        assignmentPermissions.canRead ? teacherAssignmentsApi.list() : Promise.resolve([]),
+      ]);
+      const code = String(row.teacherCode ?? "").trim();
+      setRemovalRows(
+        code && Array.isArray(assignmentRows)
+          ? assignmentRows.filter((item) =>
+              Boolean(item.id) &&
+              String(item.teacherId ?? "").trim() === code &&
+              String(item.status ?? "active").toLowerCase() === "active",
+            )
+          : [],
+      );
       setClasses(
         Array.isArray(classRows)
           ? classRows.filter((item) => String(item.status ?? "active") === "active")
@@ -220,8 +237,11 @@ export function TeachersListPage() {
       setSubjects(subjectRows.filter((item) => !isArchivedSubjectStatus(item.status)));
     } catch (err) {
       logSubjectsCatalogFailure(err);
-      const message = formatCaughtApiError(err, "Impossible de charger les classes ou cours.");
+      const message = formatCaughtApiError(err, "Impossible de charger les classes, cours ou affectations.");
       setSubjectsCatalogError(message);
+      setRemovalError(message);
+    } finally {
+      setRemovalLoading(false);
     }
   }
 
@@ -604,13 +624,35 @@ export function TeachersListPage() {
               />
             </Field>
           ) : null}
-          {assigning ? (
-            <p className="text-sm text-muted">
-              Affectations actuelles :{" "}
-              {formatAssignmentCell(assigning) === "—"
-                ? "aucune"
-                : formatAssignmentCell(assigning)}
-            </p>
+          {assigning && assignmentPermissions.canRead ? (
+            <section aria-label="Affectations actuelles" className="space-y-2 rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-semibold">Affectations actuelles</p>
+              {removalError ? <InlineAlert tone="danger" title="Affectations indisponibles">{removalError}</InlineAlert> : null}
+              {removalLoading ? <p className="text-sm">Chargement des affectations…</p> : null}
+              {!removalLoading && !removalError && removalRows.length === 0 ? (
+                <p className="text-sm">Aucune affectation active.</p>
+              ) : null}
+              {removalRows.map((assignment) => (
+                <div key={assignment.id} className="flex items-center justify-between gap-3">
+                  <span className="text-sm">{assignment.className} · {assignment.course || assignment.subject}</span>
+                  {assignmentPermissions.canDelete ? (
+                    <Button
+                      type="button"
+                      variant="danger"
+                      size="sm"
+                      disabled={Boolean(removalSavingId)}
+                      onClick={() => {
+                        if (window.confirm(`Retirer le cours « ${assignment.course || assignment.subject} » pour la classe ${assignment.className} ? Les données historiques sont conservées.`)) {
+                          void onRemoveCourse(assignment.id);
+                        }
+                      }}
+                    >
+                      {removalSavingId === assignment.id ? "Retrait…" : "Retirer"}
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </section>
           ) : null}
           {classes.length === 0 ? (
             <InlineAlert tone="warning" title="Aucune classe">
