@@ -28,13 +28,14 @@ function read(rel) {
   return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-test("CAP-09/10/12 — projection HTTP = 5 booléens fail-closed, sans PII", () => {
+test("CAP-09/10/12 — projection HTTP = 6 booléens fail-closed, sans PII", () => {
   assert.deepEqual([...STUDENT_CARD_CAPABILITY_HTTP_KEYS], [
     "studentCardEnabled",
     "studentCardQrEnabled",
     "studentCardNfcEnabled",
     "studentCardAttendanceEnabled",
     "studentCardFinanceCheckEnabled",
+    "studentCardOfflineRollCallEnabled",
   ]);
   const empty = projectStudentCardCapabilitiesHttp(null);
   assert.deepEqual(empty, {
@@ -43,6 +44,7 @@ test("CAP-09/10/12 — projection HTTP = 5 booléens fail-closed, sans PII", () 
     studentCardNfcEnabled: false,
     studentCardAttendanceEnabled: false,
     studentCardFinanceCheckEnabled: false,
+    studentCardOfflineRollCallEnabled: false,
   });
   const invalid = projectStudentCardCapabilitiesHttp({
     student_card_enabled: "true",
@@ -50,6 +52,7 @@ test("CAP-09/10/12 — projection HTTP = 5 booléens fail-closed, sans PII", () 
     student_card_nfc_enabled: "yes",
     student_card_attendance_enabled: null,
     student_card_finance_check_enabled: undefined,
+    student_card_offline_roll_call_enabled: "true",
     school_code: "CD-LAC-26-001",
     name: "Lycée Secret",
     card_token: "pub.secret",

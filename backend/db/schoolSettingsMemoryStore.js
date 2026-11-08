@@ -95,6 +95,7 @@ function createSchoolSettingsMemoryStore(seed = {}) {
         student_card_nfc_enabled: flags.studentCardNfcEnabled,
         student_card_attendance_enabled: flags.studentCardAttendanceEnabled,
         student_card_finance_check_enabled: flags.studentCardFinanceCheckEnabled,
+        student_card_offline_roll_call_enabled: flags.studentCardOfflineRollCallEnabled,
         student_card_holder_kind: holder.studentCardHolderKind,
         student_card_holder_levels: { ...holder.studentCardHolderLevels },
         created_at: current?.created_at ?? new Date().toISOString(),

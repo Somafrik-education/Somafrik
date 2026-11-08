@@ -46,6 +46,8 @@ const STUDENT_CARD_FLAG_FIELDS = Object.freeze([
   { column: "student_card_nfc_enabled", api: "studentCardNfcEnabled" },
   { column: "student_card_attendance_enabled", api: "studentCardAttendanceEnabled" },
   { column: "student_card_finance_check_enabled", api: "studentCardFinanceCheckEnabled" },
+  // NFC-PRES-LOCAL-PR3 — appel hors connexion par carte ; false par défaut, jamais activé d'office.
+  { column: "student_card_offline_roll_call_enabled", api: "studentCardOfflineRollCallEnabled" },
 ]);
 
 const STUDENT_CARD_FLAG_API_KEYS = Object.freeze(STUDENT_CARD_FLAG_FIELDS.map((field) => field.api));

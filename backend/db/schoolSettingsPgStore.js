@@ -135,9 +135,10 @@ function createSchoolSettingsPgStore(repo) {
          student_card_enabled, student_card_qr_enabled, student_card_nfc_enabled,
          student_card_attendance_enabled, student_card_finance_check_enabled,
          student_card_holder_kind, student_card_holder_levels,
+         student_card_offline_roll_call_enabled,
          updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW())
        ON CONFLICT (school_id) DO UPDATE SET
          period_mode = EXCLUDED.period_mode,
          default_scale = EXCLUDED.default_scale,
@@ -149,6 +150,7 @@ function createSchoolSettingsPgStore(repo) {
          student_card_finance_check_enabled = EXCLUDED.student_card_finance_check_enabled,
          student_card_holder_kind = EXCLUDED.student_card_holder_kind,
          student_card_holder_levels = EXCLUDED.student_card_holder_levels,
+         student_card_offline_roll_call_enabled = EXCLUDED.student_card_offline_roll_call_enabled,
          updated_at = NOW()
        RETURNING *`,
       [
@@ -163,6 +165,7 @@ function createSchoolSettingsPgStore(repo) {
         flags.studentCardFinanceCheckEnabled,
         holder.studentCardHolderKind,
         JSON.stringify(holder.studentCardHolderLevels),
+        flags.studentCardOfflineRollCallEnabled,
       ],
     );
     return row;

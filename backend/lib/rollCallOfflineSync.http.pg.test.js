@@ -297,10 +297,11 @@ async function main() {
     await assign(schoolC, teacherC, classC1, subjectC, yearC);
     void teacherFree;
     await pool.query(
-      `INSERT INTO school_settings (school_id, student_card_enabled, student_card_qr_enabled, student_card_nfc_enabled, student_card_attendance_enabled)
-       VALUES ($1, TRUE, TRUE, TRUE, TRUE), ($2, TRUE, TRUE, TRUE, TRUE), ($3, TRUE, TRUE, TRUE, TRUE)
+      `INSERT INTO school_settings (school_id, student_card_enabled, student_card_qr_enabled, student_card_nfc_enabled, student_card_attendance_enabled,
+                                    student_card_offline_roll_call_enabled)
+       VALUES ($1, TRUE, TRUE, TRUE, TRUE, TRUE), ($2, TRUE, TRUE, TRUE, TRUE, TRUE), ($3, TRUE, TRUE, TRUE, TRUE, TRUE)
        ON CONFLICT (school_id) DO UPDATE SET student_card_enabled = TRUE, student_card_qr_enabled = TRUE,
-         student_card_nfc_enabled = TRUE, student_card_attendance_enabled = TRUE`,
+         student_card_nfc_enabled = TRUE, student_card_attendance_enabled = TRUE, student_card_offline_roll_call_enabled = TRUE`,
       [schoolA, schoolB, schoolC],
     );
     await pool.query("UPDATE school_settings SET student_card_holder_kind = 'eleve' WHERE school_id = ANY($1::uuid[])", [[schoolA, schoolB, schoolC]]);
@@ -488,9 +489,9 @@ async function main() {
     await replayBoth(tokenTeacher, nominal, sameAck(ack), "R-2 désaffecté");
     await pool.query("UPDATE teacher_assignments SET status = 'active' WHERE id = $1", [assignmentA1]);
     // R-3 : flags coupés après succès.
-    await pool.query("UPDATE school_settings SET student_card_attendance_enabled = FALSE, student_card_nfc_enabled = FALSE WHERE school_id = $1", [schoolA]);
-    await replayBoth(tokenTeacher, nominal, sameAck(ack), "R-3 flags coupés");
-    await pool.query("UPDATE school_settings SET student_card_attendance_enabled = TRUE, student_card_nfc_enabled = TRUE WHERE school_id = $1", [schoolA]);
+    await pool.query("UPDATE school_settings SET student_card_attendance_enabled = FALSE, student_card_nfc_enabled = FALSE, student_card_offline_roll_call_enabled = FALSE WHERE school_id = $1", [schoolA]);
+    await replayBoth(tokenTeacher, nominal, sameAck(ack), "R-3 flags coupés (dont appel hors connexion)");
+    await pool.query("UPDATE school_settings SET student_card_attendance_enabled = TRUE, student_card_nfc_enabled = TRUE, student_card_offline_roll_call_enabled = TRUE WHERE school_id = $1", [schoolA]);
     // R-4 : rôle TEACHER révoqué après succès → refus, sans ACK.
     await pool.query("UPDATE user_roles SET status = 'revoked', revoked_at = NOW() WHERE user_id = $1 AND role_key = 'TEACHER'", [USER.TEACHER]);
     await replayBoth(tokenTeacher, nominal, refused, "R-4 rôle révoqué");
@@ -586,10 +587,14 @@ async function main() {
     assert.equal(superOut.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
     // Flags.
     const setFlags = (flags) => pool.query(
-      `UPDATE school_settings SET student_card_enabled = $2, student_card_attendance_enabled = $3, student_card_nfc_enabled = $4, student_card_qr_enabled = $5 WHERE school_id = $1`,
-      [schoolA, flags.master, flags.attendance, flags.nfc, flags.qr],
+      `UPDATE school_settings SET student_card_enabled = $2, student_card_attendance_enabled = $3, student_card_nfc_enabled = $4,
+              student_card_qr_enabled = $5, student_card_offline_roll_call_enabled = $6 WHERE school_id = $1`,
+      [schoolA, flags.master, flags.attendance, flags.nfc, flags.qr, flags.offline ?? true],
     );
-    const on = { master: true, attendance: true, nfc: true, qr: true };
+    const on = { master: true, attendance: true, nfc: true, qr: true, offline: true };
+    // NFC-PRES-LOCAL-PR3 : flag de l'appel hors connexion coupé → garde W, 404 + not_recorded, rien d'écrit.
+    await setFlags({ ...on, offline: false });
+    await guarded("flag appel hors connexion coupé", tokenTeacher, makeBody({ date: date2, scans: [], manual: roster2({ [S.S1]: "present" }) }), 404, "ROLL_CALL_OFFLINE_DISABLED");
     await setFlags({ ...on, master: false });
     await guarded("flag maître coupé", tokenTeacher, makeBody({ date: date2, scans: [], manual: roster2({ [S.S1]: "present" }) }), 404, "STUDENT_CARD_DISABLED");
     await setFlags({ ...on, attendance: false });

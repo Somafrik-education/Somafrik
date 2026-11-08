@@ -19,6 +19,8 @@ type CardSettingsDraft = {
   studentCardNfcEnabled: boolean;
   studentCardAttendanceEnabled: boolean;
   studentCardFinanceCheckEnabled: boolean;
+  /** NFC-PRES-LOCAL-PR3 — appel de classe hors connexion (NFC / QR), désactivé par défaut. */
+  studentCardOfflineRollCallEnabled: boolean;
   /** CARTE-CYCLE-01 — "" = automatique (type d'établissement exact). */
   studentCardHolderKind: StudentCardHolderKind | "";
   studentCardHolderLevels: Record<string, StudentCardHolderKind>;
@@ -46,6 +48,7 @@ function draftFromSettings(settings: SchoolSettings): CardSettingsDraft {
     studentCardNfcEnabled: settings.studentCardNfcEnabled === true,
     studentCardAttendanceEnabled: settings.studentCardAttendanceEnabled === true,
     studentCardFinanceCheckEnabled: settings.studentCardFinanceCheckEnabled === true,
+    studentCardOfflineRollCallEnabled: settings.studentCardOfflineRollCallEnabled === true,
   };
 }
 
@@ -113,6 +116,7 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
           studentCardNfcEnabled: draft.studentCardNfcEnabled,
           studentCardAttendanceEnabled: draft.studentCardAttendanceEnabled,
           studentCardFinanceCheckEnabled: draft.studentCardFinanceCheckEnabled,
+          studentCardOfflineRollCallEnabled: draft.studentCardOfflineRollCallEnabled,
           studentCardHolderKind: draft.studentCardHolderKind || null,
           // Remplacement complet, limité aux niveaux actifs affichés ; omis si la liste est indisponible.
           ...(levels
@@ -208,9 +212,23 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
               />
               Contrôle financier informatif
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={draft.studentCardOfflineRollCallEnabled}
+                disabled={!masterOn}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    studentCardOfflineRollCallEnabled: event.target.checked,
+                  })
+                }
+              />
+              Appel hors connexion (NFC / QR)
+            </label>
           </div>
           {!masterOn ? (
-            <p className="text-sm text-muted">Le master désactivé neutralise le QR, le NFC, le pointage et le contrôle financier.</p>
+            <p className="text-sm text-muted">Le master désactivé neutralise le QR, le NFC, le pointage, le contrôle financier et l’appel hors connexion.</p>
           ) : null}
           <p className="text-sm text-muted">{STUDENT_CARD_FINANCE_NOTICE}</p>
           <fieldset className="space-y-2 border-t border-line pt-3" aria-describedby="student-card-holder-help">
