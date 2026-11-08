@@ -64,6 +64,11 @@ export function createRollCallLocalStore(db: LocalRollCallHandle) {
       if (!["nfc","qr"].includes(s.medium) ||
           !["verified_local","unknown_local"].includes(s.localStatus)) throw new Error("RC_SCAN_INVALID");
       const duplicate = await transact(async () => {
+        // A duplicate is not a successful scan once the session is frozen.
+        // Check state before the duplicate fast path, not only in INSERT triggers.
+        const session = await db.getFirstAsync<{ state: string }>(
+          "SELECT state FROM rc_sessions WHERE session_id = ?", [s.sessionId]);
+        if (session?.state !== "draft") throw new Error("RC_SCAN_SESSION_NOT_DRAFT");
         const found = await db.getFirstAsync<{ scan_id: string }>(
           "SELECT scan_id FROM rc_scans WHERE session_id = ? AND public_id = ? AND removed_at IS NULL",
           [s.sessionId,s.publicId]);
