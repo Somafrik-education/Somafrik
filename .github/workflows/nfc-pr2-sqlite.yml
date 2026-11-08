@@ -8,6 +8,8 @@ on:
       - 'Mobile/src/offline/rollCall/localStore.ts'
       - 'Mobile/src/offline/rollCall/jcs.ts'
       - 'Mobile/scripts/test-rollcall-jcs.mjs'
+      - 'Mobile/src/offline/rollCall/accountPartition.ts'
+      - 'Mobile/scripts/test-rollcall-account.mjs'
       - '.github/workflows/nfc-pr2-sqlite.yml'
   workflow_dispatch:
 jobs:
@@ -25,3 +27,4 @@ jobs:
           node Mobile/scripts/test-rollcall-schema.cjs
           node --experimental-strip-types Mobile/scripts/test-rollcall-local-store.mjs
           node --experimental-strip-types Mobile/scripts/test-rollcall-jcs.mjs
+          node --experimental-strip-types Mobile/scripts/test-rollcall-account.mjs
