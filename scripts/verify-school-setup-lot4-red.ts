@@ -717,6 +717,7 @@ function isLot4ExclusiveChantierFile(file: string) {
 const NFC_ROLES_ACCESS_ANCHORS = Object.freeze(["backend/lib/functionalModulesCatalog.js","backend/lib/rollCallRbacMigration.js","Mobile/src/components/AuthorizedRollCallClassPicker.tsx"]);
 const NFC_ROLES_ACCESS_EXACT = new Set([
   "Mobile/src/components/AuthorizedRollCallClassPicker.tsx",
+  "Mobile/src/domain/security/permissions.ts",
   "Mobile/src/lib/authorizedRollCallClasses.test.ts",
   "Mobile/src/lib/authorizedRollCallClasses.ts",
   "Mobile/src/lib/nfcRolesFinal.test.ts",
