@@ -79,3 +79,29 @@ export async function sendOfflineRollCallSync(input: { operationId: string; body
   const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"), Date.now());
   return { kind: "http", status: response.status, body, dateHeader, retryAfterMs };
 }
+
+/** NFC-ROLES-ACCESS-01 — classe proposée au sélecteur d'appel (données minimales, aucune donnée d'élève). */
+export type RollCallClassOption = { classId: string; classCode: string | null; className: string; enrolled: number };
+
+/**
+ * Classes sur lesquelles le compte peut effectuer l'appel (même contrat serveur que le pack et la
+ * synchronisation). Toute entrée mal formée est écartée ; le serveur reste seul juge à la sync.
+ */
+export async function listOfflineRollCallClasses(): Promise<{ authority: "staff" | "teacher"; classes: RollCallClassOption[] }> {
+  const body = await httpRequest<{ authority?: unknown; classes?: unknown }>("/student-cards/roll-call/offline/v1/classes", {
+    headers: { Accept: "application/json" },
+  });
+  const classes = Array.isArray(body?.classes) ? body.classes : [];
+  return {
+    authority: body?.authority === "staff" ? "staff" : "teacher",
+    classes: classes
+      .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+      .map((row) => ({
+        classId: String(row.classId ?? "").toLowerCase(),
+        classCode: typeof row.classCode === "string" ? row.classCode : null,
+        className: String(row.className ?? row.classCode ?? "").trim() || "Classe",
+        enrolled: Number.isFinite(Number(row.enrolled)) ? Number(row.enrolled) : 0,
+      }))
+      .filter((row) => UUID.test(row.classId)),
+  };
+}

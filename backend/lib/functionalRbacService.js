@@ -128,6 +128,9 @@ async function ensureFunctionalRbacBootstrap(repo) {
   await reconcileCanonicalAnnouncementsGrants(store, repo);
   const { reconcileCanonicalSystemRoles } = require("./systemRolesReconciliation");
   await reconcileCanonicalSystemRoles(repo);
+  // NFC-ROLES-ACCESS-01 : droit dédié « Présences — Effectuer l'appel (NFC/QR) », copie UNIQUE des titulaires existants.
+  const { backfillRollCallGrantsFromAttendance } = require("./rollCallRbacCompat");
+  await backfillRollCallGrantsFromAttendance(repo);
 }
 
 async function ensurePlatformRolesInCatalog(repo) {
@@ -263,6 +266,10 @@ async function backfillGlobalGrantsFromLegacyMaps(repo, store) {
     const roleKey = toRoleKey(roleName);
     if (!roleKey) continue;
     const modulesCrud = parsePermissionStringsToModuleCrud(permissions);
+    // NFC-ROLES-ACCESS-01 : rôle sans grant, droit d'appel dérivé de ses propres présences (compatibilité).
+    const { legacyRollCallCrud, ROLL_CALL_MODULE_KEY } = require("./rollCallRbacCompat");
+    const rollCall = legacyRollCallCrud(roleKey, modulesCrud.attendance);
+    if (rollCall) modulesCrud[ROLL_CALL_MODULE_KEY] = rollCall;
     for (const module of listFunctionalModules()) {
       const crud = modulesCrud[module.moduleKey] || emptyCrud();
       if (!crud.canCreate && !crud.canRead && !crud.canUpdate && !crud.canDelete) continue;
@@ -801,6 +808,10 @@ function syntheticGrantsFromLegacyMap(roleKeys, legacyMap, grantedRoleKeys) {
       ? legacyMap[label]
       : permissionList(legacyMap[roleKey]);
     const modulesCrud = parsePermissionStringsToModuleCrud(permissions);
+    // NFC-ROLES-ACCESS-01 : rôle sans grant, droit d'appel dérivé de ses propres présences (compatibilité).
+    const { legacyRollCallCrud, ROLL_CALL_MODULE_KEY } = require("./rollCallRbacCompat");
+    const rollCall = legacyRollCallCrud(roleKey, modulesCrud.attendance);
+    if (rollCall) modulesCrud[ROLL_CALL_MODULE_KEY] = rollCall;
     for (const module of listFunctionalModules()) {
       const crud = modulesCrud[module.moduleKey] || emptyCrud();
       if (!crud.canCreate && !crud.canRead && !crud.canUpdate && !crud.canDelete) continue;
@@ -843,6 +854,15 @@ async function resolveEffectivePermissionsForPrincipal(repo, principal) {
     const legacyMap = await loadLegacyRolePermissionMaps(repo);
     const { mergePermissionsForRoles } = require("./userRoleLifecycle");
     const permissions = mergePermissionsForRoles(roleKeys, legacyMap);
+    // NFC-ROLES-ACCESS-01 : même dérivation, rôle par rôle (jamais par union des rôles).
+    const { legacyRollCallCrud, ROLL_CALL_PERMISSION } = require("./rollCallRbacCompat");
+    const rollCallFromOwnRole = roleKeys.some((roleKey) => legacyRollCallCrud(
+      roleKey,
+      parsePermissionStringsToModuleCrud(mergePermissionsForRoles([roleKey], legacyMap)).attendance,
+    ));
+    if (rollCallFromOwnRole) {
+      for (const token of [ROLL_CALL_PERMISSION, "Présences — Effectuer l'appel (NFC/QR):READ"]) if (!permissions.includes(token)) permissions.push(token);
+    }
     return {
       roleKeys,
       permissions,
