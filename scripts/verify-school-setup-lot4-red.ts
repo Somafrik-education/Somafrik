@@ -810,9 +810,12 @@ const NFC_ROLES_ACCESS_01_EXACT = new Set([
   "backend/lib/studentAccessCards.schema.test.js",
   "backend/lib/studentCardCapabilities.test.js",
   "backend/lib/studentCardRollCall.js",
+  "backend/scripts/verify-student-access-cards.js",
   "backend/server.js",
   "backend/services/rbacService.js",
   "docs/audits/NFC-ROLES-ACCESS-01-appel-direct-20261109.md",
+  "docs/project/MONO-T1-ROUTES.json",
+  "docs/project/MONO-T1-ROUTES.md",
   "scripts/verify-school-setup-lot4-red.ts",
   "web/src/lib/admin07AdministrationReplay.audit.test.ts",
 ]);

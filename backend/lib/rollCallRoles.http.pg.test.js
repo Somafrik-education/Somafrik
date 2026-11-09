@@ -465,6 +465,12 @@ async function main() {
     const bClasses = await classesOf(USER.ADMIN_B);
     assert.equal(bClasses.status, 200, bClasses.text);
     assert.deepEqual(bClasses.data.classes.map((c) => c.classId), [classB]);
+    // Réglages carte : lisibles avec le seul droit d'appel (drapeaux, aucune donnée d'élève) ; refusés sinon.
+    const caps = await get(USER.DIRECTOR, "/student-cards/capabilities");
+    assert.equal(caps.status, 200, `réglages carte, droit d'appel seul : ${caps.text}`);
+    for (const id of STUDENTS) assert.equal(caps.text.includes(id), false, "aucun élève dans les réglages carte");
+    refused(await get(USER.PARENT, "/student-cards/capabilities"), "parent : réglages carte");
+    refused(await get(USER.SUPER, "/student-cards/capabilities", { "X-Somafrik-School-Code": LOGIN_A }), "superadmin : réglages carte");
     refused(await classesOf(USER.PARENT), "parent : classes d'appel");
     refused(await get(USER.SUPER, "/student-cards/roll-call/offline/v1/classes", { "X-Somafrik-School-Code": LOGIN_A }), "superadmin : classes d'appel");
     // Cas D : droit Présences sans droit d'appel → aucun appel, même en appelant l'API directement.
