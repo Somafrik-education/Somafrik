@@ -2729,6 +2729,16 @@ app.get("/api/student-cards/roll-call/overview", requireAuth, requirePermission(
   res.status(200).json(await rollCallOverview(repository, req.query ?? {}, studentCardsHttpScope(principal), principal));
 }));
 
+// NFC-ROLES-ACCESS-01 — liste minimale des classes autorisées à l'appel direct.
+// Ne dépend ni de la consultation d'une fiche de classe ni des droits de lecture des élèves.
+app.get("/api/student-cards/roll-call/offline/v1/classes", requireAuth, requirePermission("GET /api/student-cards/roll-call/offline/v1/classes"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { listAuthorizedOfflineRollCallClasses } = require("./lib/studentCardRollCall");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await listAuthorizedOfflineRollCallClasses(repository, studentCardsHttpScope(principal), principal));
+}));
+
 // NFC-PRES-LOCAL-PR1b — pack signé Ed25519 pour l'appel hors ligne (lecture seule, indicatif).
 // NFC-ROLES-FINAL-01 : enseignant affecté ou responsable scolaire autorisé (rôles et droits relus en base), flags, abonnement.
 // Signataire et secret de rapprochement réévalués à chaque requête depuis l'environnement (fail-closed).
