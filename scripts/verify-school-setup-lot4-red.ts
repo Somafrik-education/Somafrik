@@ -735,6 +735,7 @@ const NFC_ROLES_ACCESS_EXACT = new Set([
   "backend/lib/studentCardRollCall.js",
   "backend/server.js",
   "backend/services/rbacService.js",
+  "package.json",
   "scripts/verify-school-setup-lot4-red.ts",
 ]);
 const NFC_ROLES_ACCESS_UNIQUE = new Set(["backend/lib/rollCallRbacMigration.js"]);
