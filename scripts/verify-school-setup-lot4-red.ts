@@ -362,6 +362,8 @@ const STUDENT_CARD_PR3_A1_EXACT = new Set([
   "backend/db/postgresRepository.js",
   "backend/lib/liveSchoolRoleKeys.js",
   "docs/audits/NFC-ROLES-ACCESS-01-20261109.md",
+  "backend/lib/admin07AdministrationReplay.test.js",
+  "docs/project/MONO-T1-ROUTES.json",
   "backend/lib/functionalModulesCatalog.js",
   "backend/lib/admin07AdministrationReplay.test.js",
   "web/src/lib/admin07AdministrationReplay.audit.test.ts",
