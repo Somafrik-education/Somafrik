@@ -263,9 +263,11 @@ function main() {
   assert.doesNotMatch(JSON.stringify(appJson), /usesCleartextTraffic/);
   assert.doesNotMatch(JSON.stringify(appJson), /SchoolLink|schoollink/i);
   const permissions = appJson.expo.android.permissions || [];
-  assert.deepStrictEqual(permissions, ["CAMERA"]);
+  // Liste exacte, alignée sur verify-android-release-readiness.js et verify-mobile-security.js :
+  // CAMERA (photo + QR) et NFC (appel par carte élève, #920). Tout ajout doit être justifié ici.
+  assert.deepStrictEqual(permissions, ["CAMERA", "android.permission.NFC"]);
   assert.ok(!permissions.includes("READ_MEDIA_IMAGES"), "app.json ne doit plus déclarer READ_MEDIA_IMAGES");
-  console.log("OK: app.json package/version/permissions/schema (CAMERA only)");
+  console.log("OK: app.json package/version/permissions/schema (CAMERA + NFC only)");
 
   const appConfig = read(path.join(MOBILE, "app.config.js"));
   assert.match(appConfig, /expo-build-properties/);
