@@ -352,8 +352,12 @@ async function main() {
     const cardOther = await issue(OTHER_CLASS_STUDENT, USER.DIRECTOR);
     void cardOther;
 
-    // Droits par rôle (module présences). Aucun droit n'est attribué par le code testé.
-    const grant = (roleKey, on) => setRoleModuleGrant(pool, roleKey, "attendance", { create: on, read: true, update: on });
+    // Les tests configurent explicitement le droit d'appel, indépendant de la saisie classique.
+    // Aucune élévation implicite n'est autorisée par le code produit.
+    const grant = async (roleKey, on) => {
+      await setRoleModuleGrant(pool, roleKey, "attendance", { create: on, read: true, update: on });
+      await setRoleModuleGrant(pool, roleKey, "roll_call", { create: on, read: false, update: false });
+    };
     for (const key of ["TEACHER", "SCHOOL_ADMIN", "SECRETARY", "PREFET_ETUDES", "PROVISEUR", "SUPERVISOR"]) await grant(key, true);
 
     const byKey = (key) => (a, b) => (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0);
@@ -510,12 +514,12 @@ async function main() {
     const schoolGrant = async (roleKey, schoolId, on) => {
       await pool.query(
         `UPDATE role_module_permissions SET status = 'archived', updated_at = NOW()
-          WHERE upper(role_key) = upper($1) AND scope_type = 'school' AND school_id = $2 AND module_key = 'attendance' AND status = 'active'`,
+          WHERE upper(role_key) = upper($1) AND scope_type = 'school' AND school_id = $2 AND module_key = 'roll_call' AND status = 'active'`,
         [roleKey, schoolId],
       );
       await pool.query(
         `INSERT INTO role_module_permissions (role_key, scope_type, school_id, module_key, can_create, can_read, can_update, can_delete, updated_by)
-         VALUES ($1, 'school', $2, 'attendance', $3, TRUE, $3, FALSE, 'nfc-roles-final-01')`,
+         VALUES ($1, 'school', $2, 'roll_call', $3, FALSE, FALSE, FALSE, 'nfc-roles-access-01')`,
         [roleKey, schoolId, on],
       );
     };
