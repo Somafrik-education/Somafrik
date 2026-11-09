@@ -128,6 +128,9 @@ async function ensureFunctionalRbacBootstrap(repo) {
   await reconcileCanonicalAnnouncementsGrants(store, repo);
   const { reconcileCanonicalSystemRoles } = require("./systemRolesReconciliation");
   await reconcileCanonicalSystemRoles(repo);
+  // NFC-ROLES-ACCESS-01 : transfert initial une seule fois après tous les grants hérités.
+  const { migrateRollCallGrantsOnce } = require("./rollCallRbacMigration");
+  await migrateRollCallGrantsOnce(repo);
 }
 
 async function ensurePlatformRolesInCatalog(repo) {
