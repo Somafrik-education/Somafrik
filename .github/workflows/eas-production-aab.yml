@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node -e 'const a=require("./app.json").expo; if(a.android.package!=="com.somafrik.app") process.exit(2); if((a.android.permissions||[]).join(",")!=="CAMERA") process.exit(3);'
+          node -e 'const a=require("./app.json").expo; if(a.android.package!=="com.somafrik.app") process.exit(2); if((a.android.permissions||[]).join(",")!=="CAMERA,android.permission.NFC") process.exit(3);'
           node -e 'const e=require("./eas.json"); const p=e.build.production; if(p.android.buildType!=="app-bundle") process.exit(4); if(p.env.EXPO_PUBLIC_API_URL!=="https://api.somafrik.app") process.exit(5); if(p.env.EXPO_PUBLIC_RELEASE_PROFILE!=="production") process.exit(6);'
           if grep -R --line-number -E 'READ_MEDIA_IMAGES|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|com.google.android.gms.permission.AD_ID' app.json eas.json android 2>/dev/null; then
             echo "Forbidden Android permission detected" >&2
