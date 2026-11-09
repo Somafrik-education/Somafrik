@@ -32,13 +32,25 @@ test("acteur : enseignant, direction autorisée, rôles secondaires, multi-rôle
   assert.deepEqual(rollCallActor(session(["TEACHER"], UPDATE)), { teacher: true, direction: false, supervision: false, verify: true, rollCall: true });
   assert.deepEqual(rollCallActor(session(["PRINCIPAL"], UPDATE)), { teacher: false, direction: true, supervision: true, verify: true, rollCall: true });
   assert.deepEqual(rollCallActor(session(["PROVISEUR"], ["Appel scolaire:CREATE"])),
-    { teacher: false, direction: false, supervision: true, verify: true, rollCall: true }, "direction avec CREATE : appel local-first (droit vérifié par le serveur)");
+    { teacher: false, direction: false, supervision: true, verify: false, rollCall: true }, "appel autorisé sans droit de vérifier une carte");
   assert.deepEqual(rollCallActor(session(["PRINCIPAL", "TEACHER"], UPDATE, "Directeur")),
     { teacher: true, direction: true, supervision: true, verify: true, rollCall: true });
   assert.deepEqual(rollCallActor(session(["SUPERVISOR"], UPDATE)), { teacher: false, direction: false, supervision: false, verify: true, rollCall: true }, "autre rôle : pas d'appel");
   for (const keys of [["SUPER_ADMIN"], ["COUNTRY_ADMIN"], ["TEACHER", "SUPER_ADMIN"], ["PARENT"], ["STUDENT"], ["CUSTOM_ROLE"], []]) {
     assert.deepEqual(rollCallActor(session(keys, UPDATE)), { teacher: false, direction: false, supervision: false, verify: false, rollCall: false }, keys.join("+"));
   }
+});
+
+test("NFC-ROLES-ACCESS-01 : vérification et appel ont des droits distincts", () => {
+  const callOnly = rollCallActor(session(["SECRETARY"], ["Appel scolaire:CREATE"]));
+  assert.equal(callOnly.rollCall, true);
+  assert.equal(callOnly.verify, false);
+  const verifyOnly = rollCallActor(session(["SECRETARY"], ["Élèves:READ"]));
+  assert.equal(verifyOnly.rollCall, false);
+  assert.equal(verifyOnly.verify, true);
+  const attendanceOnly = rollCallActor(session(["TEACHER"], ["Présences:UPDATE"]));
+  assert.equal(attendanceOnly.rollCall, false);
+  assert.equal(attendanceOnly.verify, true);
 });
 
 test("supervision cachée uniquement pour Administrateur établissement, y compris multirôle", () => {
