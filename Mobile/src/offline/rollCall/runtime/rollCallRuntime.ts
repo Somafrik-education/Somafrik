@@ -310,6 +310,9 @@ export function createRollCallRuntime(deps: RuntimeDeps) {
     },
 
     current: () => manager?.current() ?? null,
+
+    /** Identité authentifiée de la session (environnement, établissement, compte), sans ouvrir de base. */
+    identityFor: (session: SessionLike): RcIdentity | null => (manager ? identityOf(session) : null),
   };
 }
 

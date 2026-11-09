@@ -217,7 +217,7 @@ test("écran d'appel : bandeau dérivé de l'état stocké et relu à chaque syn
   assert.match(source, /syncBanner\(storedState\)/);
   assert.match(source, /subscribeSync\(/, "mise à jour sans fermer l'écran");
   assert.doesNotMatch(source, /\{OFFLINE_ROLL_CALL_COPY\.closed\}/, "aucun message figé de clôture affiché");
-  for (const label of ["Inscrits", "Présents", "En retard", "Absents saisis", "Justifiés", "Non pointés", "À vérifier"]) {
+  for (const label of ["Inscrits", "Présents", "En retard", "Absents saisis", "Justifiés", "Absents provisoires", "À vérifier"]) {
     assert.ok(source.includes(`["${label}"`), label);
   }
   assert.doesNotMatch(source, /"Restants"/);

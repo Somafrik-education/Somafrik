@@ -199,7 +199,8 @@ test("NFC-APPEL-PARTIEL-01 : appel partiel, élèves non scannés laissés non p
     { total: 4, present: 1, late: 0, absent: 0, excused: 1, notRecorded: 2 },
     "B et C non pointés ; D déjà justifié",
   );
-  assert.match(OFFLINE_ROLL_CALL_COPY.closeBody(summary), /2 élève\(s\) non pointé\(s\)/);
+  // NFC-STATUT-PRESENCE-01 : affichés « Absent » provisoire, jamais écrits sans confirmation.
+  assert.match(OFFLINE_ROLL_CALL_COPY.closeBody(summary), /2 élève\(s\) affiché\(s\) « Absent » de façon provisoire/);
   assert.doesNotMatch(OFFLINE_ROLL_CALL_COPY.closeBody(summary), /[1-9]\d* absent\(s\) saisi/, "aucun absent annoncé sans saisie");
   assert.ok((await closeOfflineRollCall(ctx, rollCall)).ok);
   const body = JSON.parse(String((await getSession(ctx, rollCall.session.session_id)).frozen_body));

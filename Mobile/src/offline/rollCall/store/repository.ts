@@ -450,17 +450,35 @@ export async function setManualMark(
  *  3. `operationId`, `payloadDigest` (JCS + SHA-256) et `frozen_body` sont écrits ; les triggers
  *     les rendent immuables.
  * Un appel sans aucune lecture ni aucun pointage n'est pas clôturable (RC_ROLL_CALL_EMPTY) : rien
- * à enregistrer, et jamais d'absences inventées.
+ * à enregistrer, et jamais d'absences inventées. `confirmedAbsent` (NFC-STATUT-PRESENCE-01) : absences
+ * provisoires confirmées explicitement par l'enseignant, écrites en pointage `manual`.
  * Les corps figés antérieurs (`complete: true`, absences `default`) ne sont jamais réécrits.
  */
 export async function closeSession(
   ctx: RcContext,
   sessionId: string,
+  options: { confirmedAbsent?: ReadonlyArray<{ matchKey: string; studentId: string }> } = {},
 ): Promise<{ operationId: string; payloadDigest: string; frozenBody: string }> {
   return ctx.connection.transaction(async (db) => {
     const session = await sessionFor(ctx, db, sessionId);
     if (session.state !== "draft") fail(RC_REPO_ERROR.SESSION_NOT_DRAFT, "Appel déjà clôturé.");
     const now = iso(ctx.nowMs());
+    // NFC-STATUT-PRESENCE-01 : absences confirmées explicitement à la clôture (pointage `manual`),
+    // uniquement pour un élève sans aucune marque dans cette session.
+    if (options.confirmedAbsent?.length) {
+      const marked = new Set(
+        (await db.getAllAsync<{ match_key: string }>("SELECT match_key FROM rc_marks WHERE session_id = ?", [sessionId])).map((row) => row.match_key),
+      );
+      for (const student of options.confirmedAbsent) {
+        if (marked.has(student.matchKey)) continue;
+        assertUuid(student.studentId, "studentId");
+        await db.runAsync(
+          "INSERT INTO rc_marks (session_id, match_key, student_id, status, source, updated_at) VALUES (?, ?, ?, 'absent', 'manual', ?)",
+          [sessionId, student.matchKey, student.studentId, now],
+        );
+        marked.add(student.matchKey);
+      }
+    }
     const scans = await db.getAllAsync<{ scan_id: string; public_id: string; proof: string; medium: string; scanned_at: string }>(
       "SELECT scan_id, public_id, proof, medium, scanned_at FROM rc_scans WHERE session_id = ? AND removed_at IS NULL",
       [sessionId],

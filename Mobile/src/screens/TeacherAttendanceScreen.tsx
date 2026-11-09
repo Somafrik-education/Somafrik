@@ -75,6 +75,7 @@ import { METRIC_PENDING_LABEL } from "../lib/dataTruth";
 import { savePresences } from "../services/api";
 import { clearConfirmedAttendanceDirty } from "../lib/attendanceDraft";
 import {
+  applyLocalRollCallMarks,
   applyRollCallStatus,
   assertRollCallReadyToSave,
   confirmRollCallEntries,
@@ -89,11 +90,18 @@ import {
   rollCallEntryFromPresence,
   rollCallQueuedAlertBody,
   rollCallSourceLabel,
+  provisionalStudentIds,
   shouldPreserveLocalAttendanceDraft,
   type AttendanceStatus,
   type RollCallEntry,
   ROLL_CALL_COPY,
 } from "../lib/attendanceTruth";
+import {
+  createLocalRollCallStatusLoader,
+  localRollCallScopeKey,
+  statusesForScope,
+  type LocalStatusesResult,
+} from "../offline/rollCall/session/localRollCallStatusLoader";
 import { attendanceStatusTheme } from "../lib/attendanceStatusTheme";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
@@ -549,9 +557,62 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     if (nfcControl !== "ready") setNfcScannerOpen(false);
   }, [nfcControl]);
 
+  // NFC-STATUT-PRESENCE-01 — présences enregistrées par l'appel NFC hors connexion (SQLCipher),
+  // superposées à l'affichage : un scan fait passer l'élève d'« Absent » provisoire à « Présent »
+  // immédiatement, sans réseau. Jamais écrites par l'appel manuel : l'appel NFC les synchronise.
+  // Revue CTO : portée stable environnement / établissement / compte / classe / date. Une lecture
+  // SQLCipher tardive d'un autre compte, d'une autre classe ou d'un autre jour n'est jamais affichée.
+  const localRollCallIdentity = rollCallRuntime().identityFor(session);
+  const localRollCallScope = localRollCallIdentity && selectedClass?.classId
+    ? { ...localRollCallIdentity, classId: String(selectedClass.classId).toLowerCase(), date: isoAttendanceDate() }
+    : null;
+  const localRollCallKey = localRollCallScopeKey(localRollCallScope);
+  const [localRollCallResult, setLocalRollCallResult] = useState<LocalStatusesResult | null>(null);
+  const classStudentsRef = useRef(classStudents);
+  classStudentsRef.current = classStudents;
+  const loadPresencesRef = useRef(loadPresences);
+  loadPresencesRef.current = loadPresences;
+  const localLoaderRef = useRef<ReturnType<typeof createLocalRollCallStatusLoader> | null>(null);
+  localLoaderRef.current ??= createLocalRollCallStatusLoader({
+    currentAccount: () => rollCallRuntime().current(),
+    // État remplacé seulement s'il change : aucune boucle de rendu.
+    apply: (result) => setLocalRollCallResult((current) => (
+      current && current.scopeKey === result.scopeKey && JSON.stringify(current.statuses) === JSON.stringify(result.statuses) ? current : result
+    )),
+  });
+  const reloadLocalRollCallStatuses = useCallback(async () => {
+    await localLoaderRef.current?.reload(classStudentsRef.current);
+  }, []);
+  const classStudentKeys = classStudents.map((student) => String(student.id ?? "")).join("|");
+  useEffect(() => {
+    // Purge synchrone : rien de l'ancienne portée ne reste affiché, puis lecture de la nouvelle.
+    setLocalRollCallResult(null);
+    localLoaderRef.current?.setScope(localRollCallScope);
+    void reloadLocalRollCallStatuses().catch(() => undefined);
+    // Synchronisation d'un appel NFC : relecture locale, puis données serveur qui font foi.
+    const unsubscribe = rollCallRuntime().subscribeSync(() => {
+      void reloadLocalRollCallStatuses().catch(() => undefined);
+      void loadPresencesRef.current();
+    });
+    return () => {
+      unsubscribe();
+      localLoaderRef.current?.cancel();
+    };
+    // localRollCallScope est entièrement décrit par localRollCallKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localRollCallKey, classStudentKeys, reloadLocalRollCallStatuses]);
+  const localRollCallStatuses = useMemo(
+    () => statusesForScope(localRollCallResult, localRollCallKey),
+    [localRollCallResult, localRollCallKey],
+  );
+  const shownAttendance = useMemo(
+    () => applyLocalRollCallMarks(attendance, localRollCallStatuses),
+    [attendance, localRollCallStatuses],
+  );
+
   const dailyStats = useMemo(
-    () => getRollCallDraftStats(selectedIds, attendance),
-    [attendance, selectedIds],
+    () => getRollCallDraftStats(selectedIds, shownAttendance),
+    [shownAttendance, selectedIds],
   );
 
   const setAttendanceStatus = (studentId: string, nextStatus: AttendanceStatus) => {
@@ -596,7 +657,11 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     ));
   };
 
-  const saveCall = async (identity: AttendanceClassIdentity) => {
+  /**
+   * `provisional` : décision explicite de l'enseignant sur les absences provisoires
+   * (NFC-STATUT-PRESENCE-01). Sans décision, l'enregistrement demande confirmation et n'écrit rien.
+   */
+  const saveCall = async (identity: AttendanceClassIdentity, provisional?: "confirm" | "exclude") => {
     if (!saveLockRef.current.tryBegin()) return;
     if (!canUpdatePresences) {
       saveLockRef.current.end();
@@ -629,10 +694,33 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       return;
     }
 
-    const ready = assertRollCallReadyToSave(rows.map((student) => student.id), attendance);
+    const ready = assertRollCallReadyToSave(rows.map((student) => student.id), shownAttendance);
     if (!ready.ok) {
       saveLockRef.current.end();
       Alert.alert(ROLL_CALL_COPY.incompleteSave, ROLL_CALL_COPY.incompleteSaveBody);
+      return;
+    }
+
+    // Absences provisoires : jamais écrites sans confirmation explicite.
+    const provisionalIds = provisionalStudentIds(rows.map((student) => student.id), shownAttendance);
+    if (provisionalIds.length && !provisional) {
+      saveLockRef.current.end();
+      Alert.alert(ROLL_CALL_COPY.confirmAbsencesTitle, ROLL_CALL_COPY.confirmAbsencesBody(provisionalIds.length), [
+        { text: ROLL_CALL_COPY.cancel, style: "cancel" },
+        { text: ROLL_CALL_COPY.saveWithoutProvisional, onPress: () => void saveCall(identity, "exclude") },
+        { text: ROLL_CALL_COPY.confirmAbsences, onPress: () => void saveCall(identity, "confirm") },
+      ]);
+      return;
+    }
+    // Présences NFC locales : enregistrées et synchronisées par l'appel NFC, jamais renvoyées ici.
+    const provisionalSet = new Set(provisionalIds);
+    const sentRows = rows.filter((student) => {
+      if (shownAttendance[student.id]?.source === "nfc_local") return false;
+      return provisional === "confirm" || !provisionalSet.has(student.id);
+    });
+    if (!sentRows.length) {
+      saveLockRef.current.end();
+      Alert.alert(ROLL_CALL_COPY.incompleteSave, ROLL_CALL_COPY.nothingToSave);
       return;
     }
 
@@ -657,12 +745,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     if (authorTeacherId) {
       setAuthorByIntention((current) => persistAttendanceAuthorSelection(current, intentionId, authorTeacherId));
     }
-    const entries = Object.fromEntries(rows.map((student) => [student.id, attendance[student.id]]));
+    const entries = Object.fromEntries(sentRows.map((student) => [student.id, shownAttendance[student.id]]));
     const absentCount = Object.values(entries).filter((entry) => entry.status === "Absent").length;
     const lateCount = Object.values(entries).filter((entry) => entry.status === "Retard").length;
     const justifiedCount = Object.values(entries).filter((entry) => entry.status === "Justifié").length;
 
-    const presencePayload = rows.map((student) => {
+    const presencePayload = sentRows.map((student) => {
       const entry = entries[student.id];
       const status = entry.status as AttendanceStatus;
       const studentApiId = String(student.id ?? resolveStudentApiId(student));
@@ -712,7 +800,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         request: () => savePresences(payload, { idempotencyKey: key }),
       });
       if (submitted.outcome === "queued") {
-        const studentIds = rows.map((student) => student.id);
+        const studentIds = sentRows.map((student) => student.id);
         setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
         setSaveHint(ROLL_CALL_COPY.queued);
         const connectivityKind = submitted.error
@@ -728,7 +816,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         return;
       }
       if (submitted.outcome === "in_flight") {
-        const studentIds = rows.map((student) => student.id);
+        const studentIds = sentRows.map((student) => student.id);
         setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
         setReplaySending(true);
         replaySendingRef.current = true;
@@ -744,7 +832,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         return;
       }
       if (submitted.outcome !== "confirmed") {
-        const studentIds = rows.map((student) => student.id);
+        const studentIds = sentRows.map((student) => student.id);
         if (submitted.persistFailed) {
           setSaveHint(ROLL_CALL_COPY.persistFailedTitle);
           Alert.alert(ROLL_CALL_COPY.persistFailedTitle, ROLL_CALL_COPY.persistFailedBody);
@@ -779,7 +867,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       ]);
       applyConfirmedPresences(savedPresences);
       const refreshed = await loadPresences();
-      const studentIds = rows.map((student) => student.id);
+      const studentIds = sentRows.map((student) => student.id);
       setAttendance((current) => {
         const confirmed = confirmRollCallEntries(clearConfirmedAttendanceDirty(current, studentIds), studentIds);
         if (refreshed === false) return confirmed;
@@ -789,7 +877,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       setSaveHint("");
       Alert.alert(
         ROLL_CALL_COPY.syncedAlertTitle,
-        `${identity.className} • ${rows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\n${ROLL_CALL_COPY.postgres}.`
+        `${identity.className} • ${sentRows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\n${ROLL_CALL_COPY.postgres}.`
       );
     } catch (error) {
       if (isOutboxSendingLock(error)) {
@@ -1160,7 +1248,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </>
       }
       renderItem={({ item: student }) => {
-        const entry = attendance[student.id] ?? rollCallEntryFromPresence(undefined);
+        const entry = shownAttendance[student.id] ?? rollCallEntryFromPresence(undefined);
         const status = entry.status;
         const sourceLabel = outboxUnavailable
           ? ROLL_CALL_COPY.outboxUnavailable
@@ -1329,8 +1417,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         date={offlineRollCallTarget.date}
         nfcAvailable={nfcControl === "ready"}
         qrAvailable={canOpenQrScanner}
+        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
         onClose={() => {
           setOfflineRollCallTarget(null);
+          void reloadLocalRollCallStatuses().catch(() => undefined);
           void loadPresences();
         }}
       />
@@ -1344,8 +1434,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         date={isoAttendanceDate()}
         nfcAvailable={nfcControl === "ready"}
         qrAvailable={canOpenQrScanner}
+        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
         onClose={() => {
           setOfflineRollCallOpen(false);
+          void reloadLocalRollCallStatuses().catch(() => undefined);
           void loadPresences();
         }}
       />
