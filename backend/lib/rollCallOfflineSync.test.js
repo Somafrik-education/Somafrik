@@ -190,8 +190,12 @@ test("garde R : établissement relu en base, compte actif, rôle TEACHER ou resp
   for (const roles of [["PRINCIPAL"], ["SCHOOL_ADMIN"], ["SECRETARY"], ["PREFET_ETUDES"], ["PROVISEUR"], ["TEACHER", "SECRETARY"]]) {
     assert.equal((await guardReplayAccess(fakeRepo({ roles }), principal, scope, batch)).canonicalUserId, USER, roles.join("+"));
   }
-  await forbidden(fakeRepo({ roles: ["SUPERVISOR"] }), principal, scope, batch, "autre rôle scolaire");
-  await forbidden(fakeRepo({ roles: ["ACCOUNTANT"] }), principal, scope, batch, "comptable");
+  // NFC-ROLES-ACCESS-01 : tout rôle scolaire peut relire SON ACK (le droit d'appel est exigé par la route).
+  for (const roles of [["SUPERVISOR"], ["ACCOUNTANT"]]) {
+    assert.equal((await guardReplayAccess(fakeRepo({ roles }), principal, scope, batch)).canonicalUserId, USER, roles.join("+"));
+  }
+  await forbidden(fakeRepo({ roles: ["PARENT"] }), principal, scope, batch, "parent");
+  await forbidden(fakeRepo({ roles: ["STUDENT"] }), principal, scope, batch, "élève");
   await forbidden(fakeRepo({ roles: ["SECRETARY", "COUNTRY_ADMIN"] }), principal, scope, batch, "responsable + rôle plateforme");
   await forbidden(fakeRepo({ roles: ["TEACHER", "SUPER_ADMIN"] }), principal, scope, batch, "rôle plateforme");
   await forbidden(fakeRepo(), { roleKeys: ["TEACHER"] }, scope, batch, "sans identité");

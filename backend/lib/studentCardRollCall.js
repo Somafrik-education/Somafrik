@@ -75,17 +75,25 @@ const DIRECTION_ROLE_KEYS = Object.freeze(new Set(["PROVISEUR", "PRINCIPAL", "PR
 const PLATFORM_ROLE_KEYS = Object.freeze(new Set(["SUPER_ADMIN", "COUNTRY_ADMIN"]));
 const DIRECTION_PERMISSION = "Présences:UPDATE";
 /**
- * NFC-ROLES-FINAL-01 — appel de classe local-first (pack + synchronisation) :
- *  - « teacher » : clé TEACHER active ET affectation active à la classe ; présences attribuées à
- *    l'enseignant affecté (comportement historique) ;
- *  - « staff » : responsable scolaire dont le rôle, PRIS ISOLÉMENT, accorde l'écriture des
- *    présences ; périmètre = classes actives de SON établissement ; aucune attribution à un
- *    enseignant (teacher_id NULL), jamais d'affectation ni de rôle TEACHER fictif.
- * Tout autre rôle (surveillant, comptable, parent, élève…) et tout rôle plateforme : refus.
+ * Appel de classe local-first (pack, liste des classes, synchronisation) — NFC-ROLES-FINAL-01,
+ * droit dédié NFC-ROLES-ACCESS-01 :
+ *  - droit requis : `Présences — Effectuer l'appel (NFC/QR):CREATE` (module `roll_call`), indépendant de la consultation des
+ *    classes, des élèves et de l'écriture générale des présences ;
+ *  - « teacher » : clé TEACHER dont le rôle, PRIS ISOLÉMENT, accorde ce droit, ET affectation active
+ *    à la classe ; présences attribuées à l'enseignant affecté (comportement historique) ;
+ *  - « staff » : tout autre rôle scolaire (ni famille, ni plateforme, clé canonique connue) dont le
+ *    rôle, pris isolément, accorde ce droit ; périmètre = classes actives de SON établissement ;
+ *    aucune attribution à un enseignant (teacher_id NULL), jamais d'affectation ni de rôle fictif.
+ * Parent, élève, plateforme, clé inconnue : refus.
  */
-const SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS = Object.freeze(new Set(["SCHOOL_ADMIN", "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY"]));
-const ROLL_CALL_CAPABLE_ROLE_KEYS = Object.freeze(new Set(["TEACHER", ...SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS]));
-const ROLL_CALL_WRITE_PERMISSIONS = Object.freeze(["Présences:CREATE", "Présences:UPDATE"]);
+const FAMILY_ROLE_KEYS = Object.freeze(new Set(["PARENT", "STUDENT"]));
+const ROLL_CALL_PERMISSION = "Présences — Effectuer l'appel (NFC/QR):CREATE";
+
+/** Rôle scolaire pouvant porter le droit d'appel : clé canonique connue, ni plateforme, ni famille. */
+function isRollCallStaffKey(key) {
+  const value = String(key ?? "").trim().toUpperCase();
+  return Boolean(value) && isKnownRoleKey(value) && !PLATFORM_ROLE_KEYS.has(value) && !FAMILY_ROLE_KEYS.has(value);
+}
 const JUSTIFICATION_MIN = 10;
 const JUSTIFICATION_MAX = 500;
 
@@ -243,11 +251,12 @@ async function assertRollCallClass(repo, scope, principal, classId, mode = "teac
 }
 
 /**
- * Permissions d'UN rôle, pris isolément (même pipeline que les permissions effectives, évaluation
- * « sans sujet » d'un jeu de rôles explicite déjà relu en base). Fail-closed : erreur → aucun droit.
- * Évite qu'un compte multirôle obtienne le périmètre d'un rôle grâce aux droits d'un autre.
+ * Droit d'appel d'UN rôle, pris isolément (même pipeline que les permissions effectives, évaluation
+ * « sans sujet » d'un jeu de rôles explicite déjà relu en base, overrides pays / établissement
+ * compris). Fail-closed : erreur → aucun droit. Un compte multirôle n'obtient jamais le périmètre
+ * d'un rôle grâce aux droits d'un autre.
  */
-async function roleGrantsAttendanceWrite(repo, principal, roleKey) {
+async function roleGrantsRollCall(repo, principal, roleKey) {
   try {
     const { resolveEffectivePermissionsForPrincipal } = require("./functionalRbacService");
     const resolved = await resolveEffectivePermissionsForPrincipal(repo, {
@@ -255,62 +264,108 @@ async function roleGrantsAttendanceWrite(repo, principal, roleKey) {
       schoolCode: principal?.schoolCode,
       schoolId: principal?.schoolId,
     });
-    const permissions = new Set(Array.isArray(resolved?.permissions) ? resolved.permissions : []);
-    return ROLL_CALL_WRITE_PERMISSIONS.some((permission) => permissions.has(permission));
+    return Array.isArray(resolved?.permissions) && resolved.permissions.includes(ROLL_CALL_PERMISSION);
   } catch {
     return false;
   }
 }
 
 /**
- * Pré-contrôle sans lecture de base (même place que l'ancien `authorizeRollCallActor(…, "teacher")`) :
- * clés connues, aucun rôle plateforme, au moins un rôle capable d'appel. Le périmètre et les droits
- * du rôle sont ensuite vérifiés par resolveClassRollCallAuthority.
+ * Pré-contrôle sans lecture de base : clés connues, aucun rôle plateforme, au moins un rôle scolaire
+ * pouvant porter le droit d'appel. Droits et périmètre : resolveRollCallScope.
  */
 function assertRollCallCapableActor(actor) {
   const keys = principalRoleKeys(actor);
   if (keys.size === 0 || [...keys].some((key) => !isKnownRoleKey(key) || PLATFORM_ROLE_KEYS.has(key))) {
     throw roleForbidden("Appel réservé au personnel de l'établissement.");
   }
-  if (![...keys].some((key) => ROLL_CALL_CAPABLE_ROLE_KEYS.has(key))) {
-    throw roleForbidden("Appel réservé aux enseignants affectés et aux responsables scolaires autorisés.");
+  if (![...keys].some(isRollCallStaffKey)) {
+    throw roleForbidden("Appel réservé au personnel de l'établissement disposant du droit « Présences — Effectuer l'appel (NFC/QR) ».");
   }
 }
 
 /**
- * NFC-ROLES-FINAL-01 — autorité d'un appel de classe local-first, relue en base à chaque appel
- * (pack, synchronisation). `actor` = rôles actifs relus par liveRollCallActor ; `principal` =
- * permissions effectives live (requirePermission). Classe active de l'établissement exigée.
- * Renvoie { authority: "teacher" | "staff", classCode, teacherId }.
+ * Périmètre d'appel du compte, relu en base : `schoolWide` (rôle non enseignant autorisé) et/ou
+ * `teacher` (rôle TEACHER autorisé, limité aux classes affectées). Exige le droit effectif live.
+ */
+async function resolveRollCallScope(repo, principal, actor) {
+  assertRollCallCapableActor(actor);
+  const permissions = new Set(Array.isArray(principal?.permissions) ? principal.permissions : []);
+  if (!permissions.has(ROLL_CALL_PERMISSION)) {
+    throw roleForbidden("Droit « Présences — Effectuer l'appel (NFC/QR) » requis.");
+  }
+  const keys = principalRoleKeys(actor);
+  let staffRoleKey = null;
+  for (const key of [...keys].filter((value) => isRollCallStaffKey(value) && value !== "TEACHER").sort()) {
+    if (await roleGrantsRollCall(repo, principal, key)) {
+      staffRoleKey = key;
+      break;
+    }
+  }
+  const teacher = keys.has("TEACHER") && await roleGrantsRollCall(repo, principal, "TEACHER");
+  return { schoolWide: Boolean(staffRoleKey), staffRoleKey, teacher };
+}
+
+/**
+ * Autorité d'un appel de classe, relue en base à chaque appel (pack, synchronisation). Classe
+ * active de l'établissement exigée. Renvoie { authority: "teacher" | "staff", classCode, teacherId }.
  */
 async function resolveClassRollCallAuthority(repo, scope, principal, actor, classId) {
-  const keys = principalRoleKeys(actor);
-  if (keys.size === 0 || [...keys].some((key) => !isKnownRoleKey(key) || PLATFORM_ROLE_KEYS.has(key))) {
-    throw roleForbidden("Appel réservé au personnel de l'établissement.");
-  }
-  const permissions = new Set(Array.isArray(principal?.permissions) ? principal.permissions : []);
-  if (!ROLL_CALL_WRITE_PERMISSIONS.some((permission) => permissions.has(permission))) {
-    throw roleForbidden("Permission d'enregistrer les présences requise.");
-  }
+  const rollCallScope = await resolveRollCallScope(repo, principal, actor);
   const row = await repo.one(
     "SELECT id, class_code FROM classes WHERE id = $1::uuid AND school_id = $2::uuid AND lower(coalesce(status, 'active')) = 'active' LIMIT 1",
     [classId, scope.schoolId],
   );
   const classForbidden = () => createHttpError(403, "Accès refusé: classe hors de votre périmètre d'appel.", ROLL_CALL_ERROR.CLASS_FORBIDDEN);
   if (!row?.id) throw classForbidden();
-  // Enseignant affecté : parcours historique (attribution à l'enseignant), si son rôle l'autorise.
-  if (keys.has("TEACHER") && await roleGrantsAttendanceWrite(repo, principal, "TEACHER")) {
+  // Enseignant affecté : parcours historique (attribution à l'enseignant).
+  if (rollCallScope.teacher) {
     const teacherId = await teacherAssignedToClass(repo, principal, classId, scope.schoolId);
     if (teacherId) return { authority: "teacher", classCode: row.class_code, teacherId };
   }
-  // Responsable scolaire : son propre rôle doit accorder l'écriture des présences.
-  for (const key of [...keys].filter((value) => SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS.has(value)).sort()) {
-    if (await roleGrantsAttendanceWrite(repo, principal, key)) {
-      return { authority: "staff", classCode: row.class_code, teacherId: null, staffRoleKey: key };
-    }
+  if (rollCallScope.schoolWide) {
+    return { authority: "staff", classCode: row.class_code, teacherId: null, staffRoleKey: rollCallScope.staffRoleKey };
   }
-  if ([...keys].some((key) => ROLL_CALL_CAPABLE_ROLE_KEYS.has(key))) throw classForbidden();
-  throw roleForbidden("Appel réservé aux enseignants affectés et aux responsables scolaires autorisés.");
+  if (rollCallScope.teacher) throw classForbidden();
+  throw roleForbidden("Droit « Présences — Effectuer l'appel (NFC/QR) » non accordé à vos rôles.");
+}
+
+/**
+ * Classes sur lesquelles le compte peut effectuer l'appel (sélecteur Mobile) — même contrat que le
+ * pack et la synchronisation. Données minimales : identifiant, code, nom, effectif. Aucune donnée
+ * d'élève. Responsable autorisé : classes actives de l'établissement ; enseignant : ses classes.
+ */
+async function listRollCallClasses(repo, scope, principal, actor) {
+  const rollCallScope = await resolveRollCallScope(repo, principal, actor);
+  if (!rollCallScope.schoolWide && !rollCallScope.teacher) {
+    throw roleForbidden("Droit « Présences — Effectuer l'appel (NFC/QR) » non accordé à vos rôles.");
+  }
+  let teacherId = null;
+  if (!rollCallScope.schoolWide && typeof repo.resolveTeacherPgIdForPrincipal === "function") {
+    teacherId = await repo.resolveTeacherPgIdForPrincipal(principal, scope.schoolId);
+    if (!teacherId) return { authority: "teacher", classes: [] };
+  }
+  const rows = await repo.all(
+    `SELECT c.id::text AS class_id, c.class_code, c.name,
+            (SELECT count(DISTINCT e.student_id)::int FROM enrollments e
+              WHERE e.school_id = c.school_id AND e.class_id = c.id AND ${ROSTER_ENROLLMENT_SQL}) AS enrolled
+       FROM classes c
+      WHERE c.school_id = $1::uuid AND lower(coalesce(c.status, 'active')) = 'active'
+        AND ($2::uuid IS NULL OR EXISTS (
+          SELECT 1 FROM teacher_assignments ta
+           WHERE ta.teacher_id = $2::uuid AND ta.class_id = c.id AND ta.status = 'active'))
+      ORDER BY c.name, c.class_code`,
+    [scope.schoolId, teacherId],
+  );
+  return {
+    authority: rollCallScope.schoolWide ? "staff" : "teacher",
+    classes: rows.map((row) => ({
+      classId: String(row.class_id).toLowerCase(),
+      classCode: row.class_code ?? null,
+      className: row.name ?? row.class_code ?? "",
+      enrolled: Number(row.enrolled) || 0,
+    })),
+  };
 }
 
 /**
@@ -1021,12 +1076,15 @@ module.exports = {
   ROLL_CALL_ERROR,
   ROLL_CALL_MODES,
   DIRECTION_ROLE_KEYS,
-  // NFC-ROLES-FINAL-01 : contrat d'autorisation unique du pack et de la synchronisation.
-  SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS,
-  ROLL_CALL_CAPABLE_ROLE_KEYS,
+  // NFC-ROLES-FINAL-01 / NFC-ROLES-ACCESS-01 : contrat d'autorisation unique (pack, classes, sync).
+  ROLL_CALL_PERMISSION,
+  FAMILY_ROLE_KEYS,
+  isRollCallStaffKey,
   resolveClassRollCallAuthority,
+  resolveRollCallScope,
+  listRollCallClasses,
   assertRollCallCapableActor,
-  roleGrantsAttendanceWrite,
+  roleGrantsRollCall,
   JUSTIFICATION_MIN,
   JUSTIFICATION_MAX,
   RECEIPT_TTL_MS,
