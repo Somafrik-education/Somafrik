@@ -327,6 +327,7 @@ async function listAuthorizedOfflineRollCallClasses(repo, scope, principal) {
     throw roleForbidden("Permission d'effectuer l'appel requise.");
   }
   await assertRollCallEnabled(repo, scope.schoolId);
+  await require("./rollCallOfflinePack").assertOfflineRollCallEnabled(repo, scope.schoolId);
   const rows = await repo.all(
     "SELECT id::text AS class_id, class_code, name FROM classes WHERE school_id = $1::uuid AND lower(coalesce(status, 'active')) = 'active' ORDER BY name, id LIMIT 5001",
     [scope.schoolId],
