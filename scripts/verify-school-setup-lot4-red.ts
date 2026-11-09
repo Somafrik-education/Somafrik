@@ -361,9 +361,6 @@ const STUDENT_CARD_PR3_A1_EXACT = new Set([
   "backend/db/schoolEntryEventsSchema.js",
   "backend/db/postgresRepository.js",
   "backend/lib/liveSchoolRoleKeys.js",
-  "docs/audits/NFC-ROLES-ACCESS-01-20261109.md",
-  "backend/lib/admin07AdministrationReplay.test.js",
-  "docs/project/MONO-T1-ROUTES.json",
   "backend/lib/functionalModulesCatalog.js",
   "backend/lib/admin07AdministrationReplay.test.js",
   "web/src/lib/admin07AdministrationReplay.audit.test.ts",
@@ -719,6 +716,9 @@ function isLot4ExclusiveChantierFile(file: string) {
 // Un fichier unique déclenche le contrôle, les ancres sont toutes obligatoires.
 const NFC_ROLES_ACCESS_ANCHORS = Object.freeze(["backend/lib/functionalModulesCatalog.js","backend/lib/rollCallRbacMigration.js","Mobile/src/components/AuthorizedRollCallClassPicker.tsx"]);
 const NFC_ROLES_ACCESS_EXACT = new Set([
+  "docs/audits/NFC-ROLES-ACCESS-01-20261109.md",
+  "backend/lib/admin07AdministrationReplay.test.js",
+  "docs/project/MONO-T1-ROUTES.json",
   "Mobile/src/components/AuthorizedRollCallClassPicker.tsx",
   "Mobile/src/domain/security/permissions.ts",
   "Mobile/src/lib/authorizedRollCallClasses.test.ts",
