@@ -463,9 +463,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const classRollCall = actor.teacher ? classRollCalls[rollCallKeyFor("teacher")] : undefined;
   // NFC-PRES-LOCAL-PR3 — appel hors connexion : enseignant affecté, droit de modifier les présences,
   // flag établissement et au moins un support utilisable. Masqué sinon ; l'appel en ligne reste inchangé.
-  const [offlineRollCallOpen, setOfflineRollCallOpen] = useState(false);
   const [directClassPickerOpen, setDirectClassPickerOpen] = useState(false);
-  const [directCallTarget, setDirectCallTarget] = useState<{ classId: string; className: string } | null>(null);
+  const [directCallTarget, setDirectCallTarget] = useState<{ classId: string; className: string; scopeKey: string } | null>(null);
   // NFC-ROLES-FINAL-01 : parcours unique pour tout rôle autorisé (enseignant ou responsable
   // scolaire disposant de l'écriture des présences) ; le serveur vérifie classe et droits réels.
   // Droit d'appel indépendant de la consultation d'une classe ou de la saisie classique.
@@ -968,6 +967,88 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     )
   ) : null;
 
+  // NFC-ROLES-ACCESS-01 — fenêtres communes aux deux vues. Aucune ouverture de fiche de classe.
+  // Une cible d'un ancien compte est refusée au rendu ; SQLCipher contrôle aussi l'identité.
+  const callScopeKey = [resourceScopeKey, String(session?.user?.id ?? ""), String(session?.school?.id ?? "")].join("|");
+  const directCallModal = directCallTarget?.scopeKey === callScopeKey && canOpenOfflineRollCall ? (
+    <OfflineRollCallModal
+      visible
+      session={session}
+      classId={directCallTarget.classId}
+      className={directCallTarget.className}
+      date={isoAttendanceDate()}
+      nfcAvailable={directNfcAvailable}
+      qrAvailable={directQrAvailable}
+      onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
+      onClose={() => {
+        setDirectCallTarget(null);
+        void reloadLocalRollCallStatuses().catch(() => undefined);
+        void loadPresences();
+      }}
+    />
+  ) : null;
+  const classPickerModal = (
+    <AuthorizedRollCallClassPicker
+      visible={directClassPickerOpen && canOpenOfflineRollCall}
+      scopeKey={callScopeKey}
+      loadAuthorizedClasses={fetchAuthorizedOfflineRollCallClasses}
+      onSelect={(row) => {
+        setDirectClassPickerOpen(false);
+        setDirectCallTarget({ classId: row.classId, className: row.className, scopeKey: callScopeKey });
+      }}
+      onClose={() => setDirectClassPickerOpen(false)}
+    />
+  );
+  const offlineSyncModal = offlineSyncListOpen ? (
+      <Modal visible animationType="slide" onRequestClose={() => setOfflineSyncListOpen(false)}>
+        <View style={styles.offlineSyncModal} testID="offline-sync-modal">
+          <View style={styles.offlineSyncHeader}>
+            <Text style={styles.offlineSyncTitle} accessibilityRole="header">{SYNC_COPY.listTitle}</Text>
+            <TouchableOpacity testID="offline-sync-close" onPress={() => setOfflineSyncListOpen(false)} accessibilityRole="button" accessibilityLabel="Fermer">
+              <Ionicons name="close" size={24} color="#0F172A" />
+            </TouchableOpacity>
+          </View>
+          {/* NFC-ROLES-FINAL-01 : « Mes appels locaux » — base SQLCipher du compte connecté uniquement.
+              Les appels de l'établissement relèvent de la supervision serveur (aperçu de l'écran). */}
+          <Text style={styles.meta} testID="offline-sync-local-scope">{SYNC_COPY.localScope}</Text>
+          <ScrollView>
+            <OfflineRollCallSyncList
+              session={session}
+              classNameOf={offlineClassName}
+              onCorrected={(target) => {
+                setOfflineSyncListOpen(false);
+                setOfflineRollCallTarget({ ...target, className: offlineClassName(target.classId) });
+              }}
+            />
+          </ScrollView>
+        </View>
+      </Modal>
+     ) : null;
+  const correctedCallModal = offlineRollCallTarget && canOpenOfflineSyncList ? (
+      <OfflineRollCallModal
+        visible
+        session={session}
+        classId={offlineRollCallTarget.classId}
+        className={offlineRollCallTarget.className}
+        date={offlineRollCallTarget.date}
+        nfcAvailable={nfcControl === "ready"}
+        qrAvailable={canOpenQrScanner}
+        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
+        onClose={() => {
+          setOfflineRollCallTarget(null);
+          void reloadLocalRollCallStatuses().catch(() => undefined);
+          void loadPresences();
+        }}
+      />
+     ) : null;
+  const verificationModal = actor.verify && (directNfcAvailable || directQrAvailable) ? (
+      <StudentCardVerifyModal
+        visible={cardVerifyOpen}
+        source={directNfcAvailable ? "nfc" : "qr"}
+        onClose={() => setCardVerifyOpen(false)}
+      />
+     ) : null;
+
   if (!selectedClass) {
     return (
       <>
@@ -975,6 +1056,15 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         <StudentsScopeAlert />
         <Text style={styles.title}>Présences</Text>
         <Text style={styles.subtitle}>Sélectionnez une classe • {todayLabel} à {currentHour}</Text>
+        {actor.verify && (directNfcAvailable || directQrAvailable)
+          ? rollCallButton("attendance-card-verify", CARD_VERIFY_COPY.button, () => setCardVerifyOpen(true))
+          : null}
+        {canOpenOfflineRollCall
+          ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setDirectClassPickerOpen(true))
+          : null}
+        {canOpenOfflineSyncList
+          ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.checkCalls, () => setOfflineSyncListOpen(true))
+          : null}
         {canOpenEntryControl ? (
           <TouchableOpacity testID="attendance-entry-control" style={styles.scanButton} onPress={() => setEntryControlOpen(true)} accessibilityRole="button" accessibilityLabel={ENTRY_CONTROL_COPY.button} accessibilityHint={ENTRY_CONTROL_COPY.subtitle}>
             <Ionicons name="enter-outline" size={18} color="#0F172A" />
@@ -1020,6 +1110,11 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </View>
       </ScrollView>
       {canOpenEntryControl ? <StudentCardEntryControlModal visible={entryControlOpen} media={entryMedia} onClose={() => setEntryControlOpen(false)} /> : null}
+      {classPickerModal}
+      {directCallModal}
+      {offlineSyncModal}
+      {correctedCallModal}
+      {verificationModal}
       </>
     );
   }
@@ -1323,65 +1418,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
       />
     ) : null}
-    {offlineSyncListOpen ? (
-      <Modal visible animationType="slide" onRequestClose={() => setOfflineSyncListOpen(false)}>
-        <View style={styles.offlineSyncModal} testID="offline-sync-modal">
-          <View style={styles.offlineSyncHeader}>
-            <Text style={styles.offlineSyncTitle} accessibilityRole="header">{SYNC_COPY.listTitle}</Text>
-            <TouchableOpacity testID="offline-sync-close" onPress={() => setOfflineSyncListOpen(false)} accessibilityRole="button" accessibilityLabel="Fermer">
-              <Ionicons name="close" size={24} color="#0F172A" />
-            </TouchableOpacity>
-          </View>
-          {/* NFC-ROLES-FINAL-01 : « Mes appels locaux » — base SQLCipher du compte connecté uniquement.
-              Les appels de l'établissement relèvent de la supervision serveur (aperçu de l'écran). */}
-          <Text style={styles.meta} testID="offline-sync-local-scope">{SYNC_COPY.localScope}</Text>
-          <ScrollView>
-            <OfflineRollCallSyncList
-              session={session}
-              classNameOf={offlineClassName}
-              onCorrected={(target) => {
-                setOfflineSyncListOpen(false);
-                setOfflineRollCallTarget({ ...target, className: offlineClassName(target.classId) });
-              }}
-            />
-          </ScrollView>
-        </View>
-      </Modal>
-    ) : null}
-    {offlineRollCallTarget && canOpenOfflineSyncList ? (
-      <OfflineRollCallModal
-        visible
-        session={session}
-        classId={offlineRollCallTarget.classId}
-        className={offlineRollCallTarget.className}
-        date={offlineRollCallTarget.date}
-        nfcAvailable={nfcControl === "ready"}
-        qrAvailable={canOpenQrScanner}
-        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
-        onClose={() => {
-          setOfflineRollCallTarget(null);
-          void reloadLocalRollCallStatuses().catch(() => undefined);
-          void loadPresences();
-        }}
-      />
-    ) : null}
-    {selectedClass?.classId && canOpenOfflineRollCall && offlineRollCallOpen ? (
-      <OfflineRollCallModal
-        visible
-        session={session}
-        classId={String(selectedClass.classId).toLowerCase()}
-        className={String(selectedClass.className ?? selectedClass.classCode ?? "")}
-        date={isoAttendanceDate()}
-        nfcAvailable={nfcControl === "ready"}
-        qrAvailable={canOpenQrScanner}
-        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
-        onClose={() => {
-          setOfflineRollCallOpen(false);
-          void reloadLocalRollCallStatuses().catch(() => undefined);
-          void loadPresences();
-        }}
-      />
-    ) : null}
+    {offlineSyncModal}
+    {correctedCallModal}
+    {directCallModal}
     {selectedClass && openedClassRollCall ? (
       <StudentCardClassRollCallModal
         visible
@@ -1457,13 +1496,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
       />
     ) : null}
-    {actor.verify && (nfcControl === "ready" || canOpenQrScanner) ? (
-      <StudentCardVerifyModal
-        visible={cardVerifyOpen}
-        source={nfcControl === "ready" ? "nfc" : "qr"}
-        onClose={() => setCardVerifyOpen(false)}
-      />
-    ) : null}
+    {verificationModal}
+    {classPickerModal}
     </>
   );
 }
