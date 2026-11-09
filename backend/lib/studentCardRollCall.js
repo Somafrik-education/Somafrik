@@ -74,6 +74,18 @@ const ROLL_CALL_MODES = Object.freeze(["teacher", "direction"]);
 const DIRECTION_ROLE_KEYS = Object.freeze(new Set(["PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SCHOOL_ADMIN"]));
 const PLATFORM_ROLE_KEYS = Object.freeze(new Set(["SUPER_ADMIN", "COUNTRY_ADMIN"]));
 const DIRECTION_PERMISSION = "Présences:UPDATE";
+/**
+ * NFC-ROLES-FINAL-01 — appel de classe local-first (pack + synchronisation) :
+ *  - « teacher » : clé TEACHER active ET affectation active à la classe ; présences attribuées à
+ *    l'enseignant affecté (comportement historique) ;
+ *  - « staff » : responsable scolaire dont le rôle, PRIS ISOLÉMENT, accorde l'écriture des
+ *    présences ; périmètre = classes actives de SON établissement ; aucune attribution à un
+ *    enseignant (teacher_id NULL), jamais d'affectation ni de rôle TEACHER fictif.
+ * Tout autre rôle (surveillant, comptable, parent, élève…) et tout rôle plateforme : refus.
+ */
+const SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS = Object.freeze(new Set(["SCHOOL_ADMIN", "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY"]));
+const ROLL_CALL_CAPABLE_ROLE_KEYS = Object.freeze(new Set(["TEACHER", ...SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS]));
+const ROLL_CALL_WRITE_PERMISSIONS = Object.freeze(["Présences:CREATE", "Présences:UPDATE"]);
 const JUSTIFICATION_MIN = 10;
 const JUSTIFICATION_MAX = 500;
 
@@ -228,6 +240,102 @@ async function assertRollCallClass(repo, scope, principal, classId, mode = "teac
     throw createHttpError(403, "Accès refusé: classe hors de votre périmètre d'appel.", ROLL_CALL_ERROR.CLASS_FORBIDDEN);
   }
   return { classCode: row.class_code, teacherId };
+}
+
+/**
+ * Permissions d'UN rôle, pris isolément (même pipeline que les permissions effectives, évaluation
+ * « sans sujet » d'un jeu de rôles explicite déjà relu en base). Fail-closed : erreur → aucun droit.
+ * Évite qu'un compte multirôle obtienne le périmètre d'un rôle grâce aux droits d'un autre.
+ */
+async function roleGrantsAttendanceWrite(repo, principal, roleKey) {
+  try {
+    const { resolveEffectivePermissionsForPrincipal } = require("./functionalRbacService");
+    const resolved = await resolveEffectivePermissionsForPrincipal(repo, {
+      roleKeys: [roleKey],
+      schoolCode: principal?.schoolCode,
+      schoolId: principal?.schoolId,
+    });
+    const permissions = new Set(Array.isArray(resolved?.permissions) ? resolved.permissions : []);
+    return ROLL_CALL_WRITE_PERMISSIONS.some((permission) => permissions.has(permission));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pré-contrôle sans lecture de base (même place que l'ancien `authorizeRollCallActor(…, "teacher")`) :
+ * clés connues, aucun rôle plateforme, au moins un rôle capable d'appel. Le périmètre et les droits
+ * du rôle sont ensuite vérifiés par resolveClassRollCallAuthority.
+ */
+function assertRollCallCapableActor(actor) {
+  const keys = principalRoleKeys(actor);
+  if (keys.size === 0 || [...keys].some((key) => !isKnownRoleKey(key) || PLATFORM_ROLE_KEYS.has(key))) {
+    throw roleForbidden("Appel réservé au personnel de l'établissement.");
+  }
+  if (![...keys].some((key) => ROLL_CALL_CAPABLE_ROLE_KEYS.has(key))) {
+    throw roleForbidden("Appel réservé aux enseignants affectés et aux responsables scolaires autorisés.");
+  }
+}
+
+/**
+ * NFC-ROLES-FINAL-01 — autorité d'un appel de classe local-first, relue en base à chaque appel
+ * (pack, synchronisation). `actor` = rôles actifs relus par liveRollCallActor ; `principal` =
+ * permissions effectives live (requirePermission). Classe active de l'établissement exigée.
+ * Renvoie { authority: "teacher" | "staff", classCode, teacherId }.
+ */
+async function resolveClassRollCallAuthority(repo, scope, principal, actor, classId) {
+  const keys = principalRoleKeys(actor);
+  if (keys.size === 0 || [...keys].some((key) => !isKnownRoleKey(key) || PLATFORM_ROLE_KEYS.has(key))) {
+    throw roleForbidden("Appel réservé au personnel de l'établissement.");
+  }
+  const permissions = new Set(Array.isArray(principal?.permissions) ? principal.permissions : []);
+  if (!ROLL_CALL_WRITE_PERMISSIONS.some((permission) => permissions.has(permission))) {
+    throw roleForbidden("Permission d'enregistrer les présences requise.");
+  }
+  const row = await repo.one(
+    "SELECT id, class_code FROM classes WHERE id = $1::uuid AND school_id = $2::uuid AND lower(coalesce(status, 'active')) = 'active' LIMIT 1",
+    [classId, scope.schoolId],
+  );
+  const classForbidden = () => createHttpError(403, "Accès refusé: classe hors de votre périmètre d'appel.", ROLL_CALL_ERROR.CLASS_FORBIDDEN);
+  if (!row?.id) throw classForbidden();
+  // Enseignant affecté : parcours historique (attribution à l'enseignant), si son rôle l'autorise.
+  if (keys.has("TEACHER") && await roleGrantsAttendanceWrite(repo, principal, "TEACHER")) {
+    const teacherId = await teacherAssignedToClass(repo, principal, classId, scope.schoolId);
+    if (teacherId) return { authority: "teacher", classCode: row.class_code, teacherId };
+  }
+  // Responsable scolaire : son propre rôle doit accorder l'écriture des présences.
+  for (const key of [...keys].filter((value) => SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS.has(value)).sort()) {
+    if (await roleGrantsAttendanceWrite(repo, principal, key)) {
+      return { authority: "staff", classCode: row.class_code, teacherId: null, staffRoleKey: key };
+    }
+  }
+  if ([...keys].some((key) => ROLL_CALL_CAPABLE_ROLE_KEYS.has(key))) throw classForbidden();
+  throw roleForbidden("Appel réservé aux enseignants affectés et aux responsables scolaires autorisés.");
+}
+
+/**
+ * Écriture d'un responsable scolaire (« staff ») : mêmes gardes conditionnelles que
+ * upsertSchoolAttendanceBatch (création si aucune ligne, correction d'une absence seulement), sans
+ * attribution à un enseignant. L'inscription des élèves est déjà vérifiée sous verrou.
+ */
+async function writeStaffAttendance(repo, { scope, context, toWrite }) {
+  const saved = [];
+  for (const { item, guard } of toWrite) {
+    const sql = guard === "create"
+      ? `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, NULL, $4::date, $5, NULL)
+         ON CONFLICT (school_id, student_id, attendance_date) DO NOTHING
+         RETURNING id`
+      : `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, NULL, $4::date, $5, NULL)
+         ON CONFLICT (school_id, student_id, attendance_date) DO UPDATE SET
+           status = EXCLUDED.status, reason = NULL, class_id = EXCLUDED.class_id, updated_at = NOW()
+         WHERE attendance.status = 'absent'
+         RETURNING id`;
+    const row = await repo.one(sql, [scope.schoolId, item.studentId, context.classId, context.date, item.status]);
+    saved.push(row?.id ? { id: String(row.id) } : null);
+  }
+  return saved;
 }
 
 function readJustification(payload) {
@@ -605,7 +713,9 @@ async function applyTeacherMarks(repo, { scope, principal, context, wanted, targ
       else toWrite.push({ item, row, guard: transition === "create" ? "create" : "correct_absent" });
     }
     if (toWrite.length === 0) break;
-    const saved = await repo.upsertSchoolAttendanceBatch(
+    const saved = target.authority === "staff"
+      ? await writeStaffAttendance(repo, { scope, context, toWrite })
+      : await repo.upsertSchoolAttendanceBatch(
       {
         items: toWrite.map(({ item }) => ({
           studentId: item.studentId, classId: context.classId, date: context.date, status: item.status, ...ownTeacher,
@@ -911,6 +1021,12 @@ module.exports = {
   ROLL_CALL_ERROR,
   ROLL_CALL_MODES,
   DIRECTION_ROLE_KEYS,
+  // NFC-ROLES-FINAL-01 : contrat d'autorisation unique du pack et de la synchronisation.
+  SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS,
+  ROLL_CALL_CAPABLE_ROLE_KEYS,
+  resolveClassRollCallAuthority,
+  assertRollCallCapableActor,
+  roleGrantsAttendanceWrite,
   JUSTIFICATION_MIN,
   JUSTIFICATION_MAX,
   RECEIPT_TTL_MS,

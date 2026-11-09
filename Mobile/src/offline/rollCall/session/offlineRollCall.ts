@@ -34,7 +34,7 @@ import {
 export const OFFLINE_ROLL_CALL_COPY = {
   start: "Démarrer l'appel NFC/QR",
   resume: "Reprendre l'appel NFC/QR",
-  title: "Appel hors connexion",
+  title: "Appel NFC/QR",
   preparing: "Préparation de l'appel…",
   packReady: (issuedAt: string) => `Liste préparée le ${issuedAt} : les cartes sont reconnues localement.`,
   degraded:

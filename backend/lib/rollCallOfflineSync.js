@@ -12,9 +12,11 @@
  * Deux autorisations distinctes (§6.2) :
  *  - garde R (relire son propre ACK), AVANT toute lecture d'idempotence ou du journal : JWT,
  *    utilisateur canonique actif, établissement relu en base et égal au `schoolId` du lot, rôle
- *    TEACHER actif relu en base ; échec → 403 ROLL_CALL_REPLAY_FORBIDDEN, indépendant de la session ;
+ *    TEACHER ou de responsable scolaire (NFC-ROLES-FINAL-01) actif relu en base ; échec → 403
+ *    ROLL_CALL_REPLAY_FORBIDDEN, indépendant de la session ;
  *  - garde W (nouvel enregistrement), seulement si aucun appel n'est enregistré pour la session :
- *    affectation, flags (maître, présences, support réellement utilisé), abonnement, fenêtre de date,
+ *    autorité d'appel (enseignant affecté, ou responsable scolaire dont le rôle accorde l'écriture
+ *    des présences — NFC-ROLES-FINAL-01), flags (maître, présences, support réellement utilisé), abonnement, fenêtre de date,
  *    cartes et inscriptions. Toute erreur W porte `sessionState: "not_recorded"`.
  *
  * NFC-APPEL-PARTIEL-01 — couverture (`complete`) : `true` = appel complet historique (tout inscrit
@@ -43,10 +45,11 @@ const { getIdempotencyTx } = require("./idempotencyTxContext");
 const {
   ROLL_CALL_ERROR,
   ROSTER_ENROLLMENT_SQL,
+  ROLL_CALL_CAPABLE_ROLE_KEYS,
   liveRollCallActor,
-  authorizeRollCallActor,
+  assertRollCallCapableActor,
   assertRollCallEnabled,
-  assertRollCallClass,
+  resolveClassRollCallAuthority,
   applyTeacherMarks,
   lockRollCallDay,
   rollCallCounts,
@@ -202,7 +205,10 @@ async function guardReplayAccess(repo, principal, scope, batch) {
     throw replayForbidden();
   }
   const keys = principalRoleKeys(actor);
-  if (!keys.has("TEACHER") || [...keys].some((key) => PLATFORM_ROLE_KEYS.has(key))) throw replayForbidden();
+  // NFC-ROLES-FINAL-01 : enseignant ou responsable scolaire (rôle actif relu en base), jamais plateforme.
+  if (![...keys].some((key) => ROLL_CALL_CAPABLE_ROLE_KEYS.has(key)) || [...keys].some((key) => PLATFORM_ROLE_KEYS.has(key))) {
+    throw replayForbidden();
+  }
   return { ...actor, canonicalUserId };
 }
 
@@ -377,14 +383,14 @@ async function insertJournal(repo, row) {
        teacher_id, justification, scanned_count, manual_count, created_count, corrected_count,
        unchanged_count, protected_count, validated_at, source, operation_id, payload_digest, ack_body
      )
-     VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5::uuid, 'teacher', $6::uuid, $7::text[], $8::uuid, NULL,
+     VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5::uuid, $19, $6::uuid, $7::text[], $8::uuid, NULL,
              $9, $10, $11, $12, $13, $14, $15::timestamptz, 'offline', $16::uuid, $17, $18::jsonb)
      ON CONFLICT (school_id, session_id) DO NOTHING
      RETURNING id`,
     [
       row.id, row.schoolId, row.classId, row.date, row.sessionId, row.authorUserId, row.authorRoleKeys, row.teacherId,
       row.scanned, row.manual, row.created, row.corrected, row.unchanged, row.protectedCount, row.validatedAt,
-      row.operationId, row.payloadDigest, JSON.stringify(row.ack),
+      row.operationId, row.payloadDigest, JSON.stringify(row.ack), row.mode,
     ],
   );
   // Impossible sous le verrou de session : toute absence de ligne annule la transaction.
@@ -398,12 +404,14 @@ async function insertJournal(repo, row) {
  */
 async function writeOfflineRollCall(repo, { batch, scope, principal, actor, auditMeta, deps }) {
   try {
-    authorizeRollCallActor(actor, "teacher");
+    assertRollCallCapableActor(actor);
     await assertRollCallEnabled(repo, scope.schoolId);
     // PR3 : flag de l'appel hors connexion ; désactivé → 404 + not_recorded (garde W).
     await assertOfflineRollCallEnabled(repo, scope.schoolId);
     await assertUsedMediaEnabled(repo, scope.schoolId, batch.scans);
-    const target = await assertRollCallClass(repo, scope, principal, batch.classId, "teacher");
+    // NFC-ROLES-FINAL-01 : enseignant affecté (attribution à l'enseignant) ou responsable scolaire
+    // autorisé (aucun enseignant attribué) ; rôles et droits du rôle relus en base, fail-closed.
+    const target = await resolveClassRollCallAuthority(repo, scope, principal, actor, batch.classId);
     const nowMs = typeof deps.nowMs === "function" ? deps.nowMs() : (deps.nowMs ?? Date.now());
     assertSyncWindow(await schoolTimeZone(repo, scope.schoolId), batch.date, nowMs);
     const context = { classId: batch.classId, date: batch.date, sessionId: batch.sessionId };
@@ -449,6 +457,8 @@ async function writeOfflineRollCall(repo, { batch, scope, principal, actor, audi
       authorUserId: actor.canonicalUserId,
       authorRoleKeys,
       teacherId: target.teacherId,
+      // Journal : « teacher » (enseignant affecté) ou « staff » (responsable scolaire, sans enseignant).
+      mode: target.authority === "staff" ? "staff" : "teacher",
       scanned: scansByStudent.size,
       manual: batch.manual.length,
       created,
@@ -470,6 +480,7 @@ async function writeOfflineRollCall(repo, { batch, scope, principal, actor, audi
         mode: "teacher",
         source: "offline",
         coverage: batch.complete ? "full" : "partial",
+        authority: target.authority,
         sessionId: batch.sessionId,
         operationId: batch.operationId,
         revision: batch.revision,

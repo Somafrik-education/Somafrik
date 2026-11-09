@@ -460,8 +460,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   // NFC-PRES-LOCAL-PR3 — appel hors connexion : enseignant affecté, droit de modifier les présences,
   // flag établissement et au moins un support utilisable. Masqué sinon ; l'appel en ligne reste inchangé.
   const [offlineRollCallOpen, setOfflineRollCallOpen] = useState(false);
+  // NFC-ROLES-FINAL-01 : parcours unique pour tout rôle autorisé (enseignant ou responsable
+  // scolaire disposant de l'écriture des présences) ; le serveur vérifie classe et droits réels.
   const canOpenOfflineRollCall = Boolean(
-    actor.teacher
+    actor.rollCall
       && canUpdatePresences
       && selectedClass?.classId
       && (Platform.OS === "android" || Platform.OS === "ios")
@@ -474,7 +476,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [offlineSyncListOpen, setOfflineSyncListOpen] = useState(false);
   const [offlineRollCallTarget, setOfflineRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
   const canOpenOfflineSyncList = Boolean(
-    actor.teacher
+    actor.rollCall
       && (Platform.OS === "android" || Platform.OS === "ios")
       && (isStudentCardOfflineRollCallEnabled(visibleCardSettings) || rollCallRuntime().current()),
   );
@@ -1152,87 +1154,15 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 <Text style={styles.scanButtonText}>{CARD_VERIFY_COPY.button}</Text>
               </TouchableOpacity>
             ) : null}
-            {nfcControl === "ready" ? (
-              <TouchableOpacity
-                testID={USABILITY_TEST_IDS.attendanceScanNfc}
-                style={styles.scanButton}
-                onPress={() => {
-                  if (!scanAuthorReady.ok) {
-                    Alert.alert(
-                      STUDENT_CARD_NFC_COPY.button,
-                      authorDecision.status === "need_selection"
-                        ? ATTENDANCE_AUTHOR_COPY.needSelection
-                        : authorDecision.status === "blocked"
-                          ? authorDecision.message
-                          : ATTENDANCE_AUTHOR_COPY.needSelection,
-                    );
-                    return;
-                  }
-                  setScannerOpen(false);
-                  setNfcScannerOpen(true);
-                }}
-                disabled={actionsLocked}
-                accessibilityRole="button"
-                accessibilityLabel={STUDENT_CARD_NFC_COPY.button}
-                accessibilityState={{ disabled: actionsLocked }}
-              >
-                <Ionicons name="radio-outline" size={18} color="#0F172A" />
-                <Text style={styles.scanButtonText}>{STUDENT_CARD_NFC_COPY.button}</Text>
-              </TouchableOpacity>
-            ) : nfcStatus}
-            {canOpenQrScanner ? (
-              <TouchableOpacity
-                testID={USABILITY_TEST_IDS.attendanceScanQr}
-                style={styles.scanButton}
-                onPress={() => {
-                  if (!scanAuthorReady.ok) {
-                    Alert.alert(
-                      STUDENT_CARD_SCAN_COPY.button,
-                      authorDecision.status === "need_selection"
-                        ? ATTENDANCE_AUTHOR_COPY.needSelection
-                        : authorDecision.status === "blocked"
-                          ? authorDecision.message
-                          : ATTENDANCE_AUTHOR_COPY.needSelection,
-                    );
-                    return;
-                  }
-                  setNfcScannerOpen(false);
-                  setScannerOpen(true);
-                }}
-                disabled={actionsLocked}
-                accessibilityRole="button"
-                accessibilityLabel={STUDENT_CARD_SCAN_COPY.button}
-                accessibilityState={{ disabled: actionsLocked }}
-              >
-                <Ionicons name="qr-code-outline" size={18} color="#0F172A" />
-                <Text style={styles.scanButtonText}>{STUDENT_CARD_SCAN_COPY.button}</Text>
-              </TouchableOpacity>
-            ) : null}
-            {actor.teacher && (nfcControl === "ready" || canOpenQrScanner)
-              ? rollCallButton(
-                  "attendance-class-roll-call",
-                  classRollCall?.draft ? CLASS_ROLL_CALL_COPY.resume : CLASS_ROLL_CALL_COPY.start,
-                  openClassRollCall,
-                )
-              : null}
+            {/* NFC-ROLES-FINAL-01 : trois actions de carte seulement — Vérifier une carte (ci-dessus),
+                Démarrer l'appel NFC/QR (moteur local-first), Vérifier les appels. Les anciens boutons
+                (carte NFC, scanner QR, appel collectif et appel exceptionnel en ligne) sont retirés. */}
+            {nfcControl === "ready" ? null : nfcStatus}
             {canOpenOfflineRollCall
               ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setOfflineRollCallOpen(true))
               : null}
             {canOpenOfflineSyncList
-              ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.listTitle, () => setOfflineSyncListOpen(true))
-              : null}
-            {directionRollCall
-              ? rollCallButton(
-                  "attendance-roll-call-direction-resume",
-                  `${COLLECTIVE_ROLL_CALL_COPY.resume} — ${COLLECTIVE_ROLL_CALL_COPY.directionTitle} (${directionRollCall.draft.entries.length})`,
-                  () => openRollCall(directionRollCall.source, "direction"),
-                )
-              : null}
-            {!directionRollCall && actor.direction && nfcControl === "ready"
-              ? rollCallButton("attendance-roll-call-direction-nfc", COLLECTIVE_ROLL_CALL_COPY.startDirectionNfc, () => openRollCall("nfc", "direction"))
-              : null}
-            {!directionRollCall && actor.direction && canOpenQrScanner
-              ? rollCallButton("attendance-roll-call-direction-qr", COLLECTIVE_ROLL_CALL_COPY.startDirectionQr, () => openRollCall("qr", "direction"))
+              ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.checkCalls, () => setOfflineSyncListOpen(true))
               : null}
             {canShowRollCallSupervisionOnAttendance(session) ? <StudentCardRollCallOverview date={isoAttendanceDate()} /> : null}
             {outboxUnavailable ? (
@@ -1395,6 +1325,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
               <Ionicons name="close" size={24} color="#0F172A" />
             </TouchableOpacity>
           </View>
+          {/* NFC-ROLES-FINAL-01 : « Mes appels locaux » — base SQLCipher du compte connecté uniquement.
+              Les appels de l'établissement relèvent de la supervision serveur (aperçu de l'écran). */}
+          <Text style={styles.meta} testID="offline-sync-local-scope">{SYNC_COPY.localScope}</Text>
           <ScrollView>
             <OfflineRollCallSyncList
               session={session}
