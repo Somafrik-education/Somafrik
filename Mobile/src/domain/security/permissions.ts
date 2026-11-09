@@ -505,6 +505,11 @@ export function canReadRoute(session: any, routeName?: string) {
   if (isSuperAdminSessionRole(session?.role) || isSuperAdminPrincipalSession(session)) {
     return Boolean(routeName) && SUPER_ADMIN_ALLOWED_VIEWS.has(routeName as string);
   }
+  // NFC-ROLES-ACCESS-01 : accéder à l'écran Présences pour effectuer un appel
+  // ne confère aucun droit de consulter une classe ni la liste des élèves.
+  if (routeName === "TeacherAttendance" || routeName === "Presences") {
+    if (hasSecurityPermission(session, "Appel scolaire", "CREATE")) return true;
+  }
   if (routeName === "PlatformNotifications") {
     return hasPlatformBackofficePrivilege(session);
   }
