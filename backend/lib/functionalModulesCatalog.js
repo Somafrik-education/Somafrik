@@ -22,6 +22,8 @@ const FUNCTIONAL_MODULES = Object.freeze([
   { moduleKey: "attendance", moduleName: "Présences", appliesWeb: true, appliesMobile: true, displayOrder: 130 },
   // CARTE-PR3-A1 : passages au portail, distincts des présences en classe. Aucun droit par défaut.
   { moduleKey: "entry_control", moduleName: "Contrôle d'entrée", appliesWeb: true, appliesMobile: true, displayOrder: 135 },
+  // NFC-ROLES-ACCESS-01 : droit autonome, distinct de Présences et de la lecture des classes.
+  { moduleKey: "roll_call", moduleName: "Appel scolaire", appliesWeb: true, appliesMobile: true, displayOrder: 137 },
   { moduleKey: "grades", moduleName: "Notes", appliesWeb: true, appliesMobile: true, displayOrder: 140 },
   { moduleKey: "report_cards", moduleName: "Bulletins", appliesWeb: true, appliesMobile: true, displayOrder: 150 },
   { moduleKey: "payments", moduleName: "Paiements", appliesWeb: true, appliesMobile: true, displayOrder: 160 },
