@@ -2064,6 +2064,29 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         "un vrai chantier LOT 4 exclusif reste FAIL même s'il embarque la Carte élève",
       );
 
+      // NFC-ROLES-ACCESS-01 : le contrat exact est vérifié, y compris ses vrais fichiers RBAC.
+      const directCallFiles = [...NFC_ROLES_ACCESS_EXACT];
+      assert.equal(evaluateLot4Scope(directCallFiles).kind, "na", "PR accès direct exact + ancrée autorisée");
+      for (const anchor of NFC_ROLES_ACCESS_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(directCallFiles.filter((file) => file !== anchor)).kind,
+          "fail",
+          `NFC-ROLES-ACCESS-01 sans ancre ${anchor} doit être refusée`,
+        );
+      }
+      for (const added of [
+        "backend/lib/schoolSetupStatus.js",
+        "backend/lib/platformPersonalDataGuard.js",
+        "web/src/pages/StudentsPage.tsx",
+        "backend/db/migrations/20990101_extra.sql",
+      ]) {
+        assert.equal(
+          evaluateLot4Scope([...directCallFiles, added]).kind,
+          "fail",
+          `NFC-ROLES-ACCESS-01 + ${added} doit rester refusée`,
+        );
+      }
+
       // PR1b : exception nominative. Toute ancre manquante ou fichier externe reste FAIL.
       const pr1bFiles = [...NFC_PRES_LOCAL_PR1B_EXACT];
       assert.equal(evaluateLot4Scope(pr1bFiles).kind, "na", "PR1b exact + script de gate admis");
