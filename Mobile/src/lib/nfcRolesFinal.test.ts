@@ -50,7 +50,7 @@ test("écran Présences : trois actions de carte, aucun ancien bouton d'appel co
   const screen = readFileSync(path.join(__dirname, "../screens/TeacherAttendanceScreen.tsx"), "utf8");
   // 1. Vérifier une carte (contrôle individuel, sans écriture de présence).
   assert.match(screen, /testID="attendance-card-verify"/);
-  assert.match(screen, /actor\\.verify && \\(directNfcAvailable \\|\\| directQrAvailable\\)/);
+  assert.match(screen, /actor\.verify && \(directNfcAvailable \|\| directQrAvailable\)/);
   // 2. Démarrer l'appel NFC/QR — moteur local-first, pour tout rôle autorisé.
   assert.match(screen, /rollCallButton\("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY\.start/);
   assert.match(screen, /const canOpenOfflineRollCall = Boolean\(\s*\n\s*actor\.rollCall/);
