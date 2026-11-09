@@ -85,7 +85,8 @@ const DIRECTION_PERMISSION = "Présences:UPDATE";
  */
 const SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS = Object.freeze(new Set(["SCHOOL_ADMIN", "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY"]));
 const ROLL_CALL_CAPABLE_ROLE_KEYS = Object.freeze(new Set(["TEACHER", ...SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS]));
-const ROLL_CALL_WRITE_PERMISSIONS = Object.freeze(["Présences:CREATE", "Présences:UPDATE"]);
+// NFC-ROLES-ACCESS-01 : permission d’appel dédiée, sans droit de lire les classes ou les élèves.
+const ROLL_CALL_WRITE_PERMISSIONS = Object.freeze(["Appel scolaire:CREATE"]);
 const JUSTIFICATION_MIN = 10;
 const JUSTIFICATION_MAX = 500;
 
@@ -311,6 +312,37 @@ async function resolveClassRollCallAuthority(repo, scope, principal, actor, clas
   }
   if ([...keys].some((key) => ROLL_CALL_CAPABLE_ROLE_KEYS.has(key))) throw classForbidden();
   throw roleForbidden("Appel réservé aux enseignants affectés et aux responsables scolaires autorisés.");
+}
+
+/**
+ * NFC-ROLES-ACCESS-01 — liste minimale des classes que l'appelant peut réellement appeler.
+ * Même autorité que pack et sync ; aucune fiche élève, aucun droit de lecture des classes requis.
+ * Refus d'autorisation global = 403 ; une classe non autorisée n'apparaît pas.
+ */
+async function listAuthorizedOfflineRollCallClasses(repo, scope, principal) {
+  const actor = await liveRollCallActor(repo, principal, scope.schoolId);
+  assertRollCallCapableActor(actor);
+  const permissions = new Set(Array.isArray(principal?.permissions) ? principal.permissions : []);
+  if (!permissions.has("Appel scolaire:CREATE")) {
+    throw roleForbidden("Permission d'effectuer l'appel requise.");
+  }
+  await assertRollCallEnabled(repo, scope.schoolId);
+  const rows = await repo.all(
+    "SELECT id::text AS class_id, class_code, name FROM classes WHERE school_id = $1::uuid AND lower(coalesce(status, 'active')) = 'active' ORDER BY name, id LIMIT 5001",
+    [scope.schoolId],
+  );
+  if (rows.length > 5000) throw createHttpError(503, "Trop de classes pour sélectionner un appel.");
+  const classes = [];
+  for (const row of rows) {
+    try {
+      await resolveClassRollCallAuthority(repo, scope, principal, actor, row.class_id);
+      classes.push({ classId: row.class_id, classCode: String(row.class_code ?? ""), className: String(row.name ?? row.class_code ?? "") });
+    } catch (error) {
+      if (error?.status === 403 || error?.statusCode === 403) continue;
+      throw error;
+    }
+  }
+  return { classes };
 }
 
 /**
@@ -1025,6 +1057,7 @@ module.exports = {
   SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS,
   ROLL_CALL_CAPABLE_ROLE_KEYS,
   resolveClassRollCallAuthority,
+  listAuthorizedOfflineRollCallClasses,
   assertRollCallCapableActor,
   roleGrantsAttendanceWrite,
   JUSTIFICATION_MIN,
