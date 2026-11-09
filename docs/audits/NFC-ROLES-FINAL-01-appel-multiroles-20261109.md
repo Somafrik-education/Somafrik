@@ -143,3 +143,43 @@ Le nouveau test PostgreSQL couvre :
 6. Sur chaque compte : seuls les trois boutons s'affichent selon les droits ; la liste « Vérifier les appels » ne montre que les appels du compte connecté ; aucune donnée d'un autre compte.
 7. Appel partiel et absences provisoires : non scannés « Absent (provisoire) », jamais écrits sans confirmation.
 8. Enchaîner les cartes : aucune attente perceptible ; mode avion pendant le scan.
+
+## 11. Revue CTO du 09/11 — compléments
+
+### Migration et ordre de déploiement
+- `20261110_attendance_roll_calls_staff_mode.sql` fait partie de `ATTENDANCE_ROLL_CALLS_SCHEMA_SQL`.
+  - Elle est exécutée par `repository.init()` dans `initRepository()`, **avant** `app.listen`.
+  - Aucun backend « staff » ne sert de requête sans elle.
+  - En cas d'échec, le serveur ne démarre pas (`SOMAFRIK_DB_REQUIRED`) : aucun repli silencieux.
+- **Déploiement progressif** : les contraintes sont élargies. Une ancienne instance encore active n'écrit jamais `staff` et n'est pas gênée ; les lignes historiques restent valides.
+- **Test** (PostgreSQL réel) :
+  1. retour à l'ancien schéma ;
+  2. ligne `staff` refusée ;
+  3. migration appliquée puis rejouée, définitions identiques ;
+  4. lignes historiques (`teacher` en ligne et hors ligne, `direction`) strictement identiques ;
+  5. ligne `staff` acceptée.
+
+### Droits propres à l'établissement (override `school`)
+- `roleGrantsAttendanceWrite` évalue le rôle isolé avec le `schoolCode` / `schoolId` du principal HTTP. La précédence est celle du système : établissement > pays > global.
+- Prouvé en HTTP réel :
+  - **global refusé + établissement A accordé** : Directeur A autorisé, Directeur B refusé ;
+  - **global accordé + établissement A refusé** : Secrétaire A refusée ;
+  - **Enseignant + Secrétaire** avec `TEACHER` accordé et `SECRETARY` refusé dans A : une classe non affectée est refusée (`CLASS_FORBIDDEN`), donc **aucune union via `TEACHER`** ; sa classe d'enseignant reste accessible.
+
+### Écriture `staff` (`writeStaffAttendance`)
+- Prouvé en HTTP réel :
+  - création (`teacher_id` NULL) ;
+  - correction absent → présent, **l'enseignant d'origine conservé** ;
+  - Retard inchangé ;
+  - Justifié et Présent **protégés**, y compris contre un pointage manuel `late` / `absent` ;
+  - rejeu : même ACK, aucune écriture.
+- **Annulation** : un échec simulé au moment du journal, après les écritures de présences, annule toute la transaction (aucune présence, aucun journal).
+- **Concurrence** : deux appels `staff` simultanés (Directeur et Préfet, sessions différentes, mêmes 5 élèves). Résultat : 5 créations au total, 5 « inchangé », aucun doublon. Le verrou du jour et les écritures gardées sont ceux du parcours enseignant.
+
+### CI Web smoke GO-PROD
+- **Déclenchement** : ce workflow ne part que si `package.json` (racine) change ; la PR y ajoute le test Mobile.
+- **Échec n°1 (CI)** : depuis #1075, Chrome est installé dans `backend/.cache/puppeteer` (`backend/.puppeteerrc.cjs`). `scripts/verify-web-smoke.js` tourne depuis la racine et cherchait `~/.cache/puppeteer`.
+  - Correctif : réutilisation de `findPdfBrowserExecutable` (même résolution que le rendu PDF), avec repli sur le comportement par défaut.
+- **Échec n°2 (antérieur, hors périmètre)** : en local, une fois Chrome lancé, le smoke échoue sur `WS-UI-dashboard missing-outlet-proof (/tableau-de-bord)`, avec des réponses 501 et 500 du tableau de bord.
+  - **Échec identique sur `develop@624261be` sans cette PR** (vérifié localement sur une copie de travail de `develop`).
+  - Non corrigé ici : écran Web hors NFC. Il n'est pas présenté comme réussi ; à traiter par un ticket dédié.

@@ -443,8 +443,14 @@ async function collectSnapshot(page, spec) {
 async function browserSmoke(tokenIgnored) {
   const puppeteer = require(path.join(ROOT, "backend/node_modules/puppeteer"));
   fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+  // Depuis #1075, Chrome est installé dans backend/.cache/puppeteer (backend/.puppeteerrc.cjs) ;
+  // ce script tourne depuis la racine, où Puppeteer chercherait ~/.cache/puppeteer. Même
+  // résolution que le rendu PDF ; repli sur la résolution par défaut si rien n'est trouvé.
+  const { findPdfBrowserExecutable } = require(path.join(ROOT, "backend/lib/reportCard/pdfBrowserExecutable"));
+  const executablePath = findPdfBrowserExecutable() ?? undefined;
   const browser = await puppeteer.launch({
     headless: "new",
+    ...(executablePath ? { executablePath } : {}),
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   });
   const results = [];

@@ -505,6 +505,141 @@ async function main() {
     assert.equal(await duplicates(), 0);
     report.push("Révocations : droit retiré entre pack et sync, rôle révoqué, directeur sans droit → refus ; enseignant + secrétaire sans droit : pas d'élargissement");
 
+    // ===== Droits propres à l'établissement (override school) : principal HTTP exact =====
+    await pool.query("UPDATE user_roles SET status = 'active', revoked_at = NULL WHERE user_id = $1 AND role_key = 'SECRETARY'", [USER.SECRETARY]);
+    const schoolGrant = async (roleKey, schoolId, on) => {
+      await pool.query(
+        `UPDATE role_module_permissions SET status = 'archived', updated_at = NOW()
+          WHERE upper(role_key) = upper($1) AND scope_type = 'school' AND school_id = $2 AND module_key = 'attendance' AND status = 'active'`,
+        [roleKey, schoolId],
+      );
+      await pool.query(
+        `INSERT INTO role_module_permissions (role_key, scope_type, school_id, module_key, can_create, can_read, can_update, can_delete, updated_by)
+         VALUES ($1, 'school', $2, 'attendance', $3, TRUE, $3, FALSE, 'nfc-roles-final-01')`,
+        [roleKey, schoolId, on],
+      );
+    };
+    // Global refusé, établissement A accordé → autorisé dans A ; l'établissement B reste refusé.
+    await grant("SCHOOL_ADMIN", false);
+    await schoolGrant("SCHOOL_ADMIN", schoolA, true);
+    assert.equal((await pack(USER.DIRECTOR, class35)).status, 200, "override établissement accordé : directeur A");
+    refused(await pack(USER.ADMIN_B, classB), "override limité à A : directeur B refusé");
+    // Global accordé, établissement A refusé → refus (l'override d'établissement prime).
+    await grant("SECRETARY", true);
+    await schoolGrant("SECRETARY", schoolA, false);
+    refused(await pack(USER.SECRETARY, class35), "override établissement refusé : secrétaire A");
+    // Enseignant + Secrétaire : TEACHER accordé, SECRETARY refusé dans A → aucune union vers tout l'établissement.
+    const tsUnion = await pack(USER.TEACHER_SECRETARY, class35);
+    assert.equal(tsUnion.data?.code, "ROLL_CALL_CLASS_FORBIDDEN", `union TEACHER refusée : ${tsUnion.text}`);
+    assert.equal((await pack(USER.TEACHER_SECRETARY, classOther)).status, 200, "sa classe d'enseignant reste accessible");
+    await schoolGrant("SECRETARY", schoolA, true);
+    assert.equal((await pack(USER.SECRETARY, class35)).status, 200, "override établissement réaccordé");
+    report.push("Override d'établissement : accordé en A seulement (B refusé), refusé en A malgré le global, aucune union via TEACHER");
+
+    // ===== Écriture « staff » : création, correction d'absence, statuts protégés =====
+    const dayW = today;
+    const preset = [[22, "absent"], [23, "excused"], [24, "late"], [25, "present"]];
+    for (const [i, status] of preset) {
+      await pool.query(
+        "INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status) VALUES ($1,$2,$3,$4,$5::date,$6)",
+        [schoolA, STUDENTS[i], class35, teacherA, dayW, status],
+      );
+    }
+    const wBody = makeBody({
+      actor: USER.DIRECTOR, date: dayW, scanned: cards.slice(22, 27),
+      manual: [{ studentId: STUDENTS[25], status: "absent" }, { studentId: STUDENTS[23], status: "late" }],
+    });
+    const wOut = await sync(USER.DIRECTOR, wBody);
+    assert.equal(wOut.status, 201, wOut.text);
+    assert.deepEqual(
+      [wOut.data.created, wOut.data.corrected, wOut.data.unchanged, wOut.data.protected],
+      [1, 1, 1, 2],
+      "S26 créé, S22 absent→présent, S24 retard inchangé, S23 justifié et S25 présent protégés",
+    );
+    const after = Object.fromEntries((await statuses(dayW)).map((r) => [r.s, r]));
+    assert.deepEqual(
+      [22, 23, 24, 25, 26].map((i) => after[STUDENTS[i]].status),
+      ["present", "excused", "late", "present", "present"],
+    );
+    assert.equal(after[STUDENTS[22]].t, teacherA, "correction : enseignant d'origine conservé, jamais effacé");
+    assert.equal(after[STUDENTS[26]].t, null, "création staff : aucun enseignant attribué");
+    const wReplay = await sync(USER.DIRECTOR, wBody);
+    assert.equal(wReplay.status, 200);
+    assert.equal(wReplay.data.rollCallId, wOut.data.rollCallId, "rejeu : même ACK");
+    assert.deepEqual(Object.fromEntries((await statuses(dayW)).map((r) => [r.s, r.status])), Object.fromEntries(Object.entries(after).map(([k, v]) => [k, v.status])), "rejeu sans écriture");
+    report.push("Écriture staff : création, correction absent→présent (enseignant conservé), Justifié/Retard/Présent préservés, rejeu sans écriture");
+
+    // ===== Annulation de transaction : échec après les écritures → rien n'est conservé =====
+    const failingSession = crypto.randomUUID();
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION nfc_roles_test_fail() RETURNS trigger AS $f$
+      BEGIN
+        IF NEW.session_id = '${failingSession}'::uuid THEN RAISE EXCEPTION 'échec simulé après écriture'; END IF;
+        RETURN NEW;
+      END $f$ LANGUAGE plpgsql;
+      CREATE TRIGGER nfc_roles_test_fail BEFORE INSERT ON attendance_roll_calls FOR EACH ROW EXECUTE FUNCTION nfc_roles_test_fail();
+    `);
+    const failOut = await sync(USER.DIRECTOR, makeBody({ actor: USER.DIRECTOR, date: dayW, sessionId: failingSession, scanned: cards.slice(27, 30) }));
+    assert.ok(failOut.status >= 500, `échec simulé : ${failOut.status} ${failOut.text}`);
+    await pool.query("DROP TRIGGER nfc_roles_test_fail ON attendance_roll_calls; DROP FUNCTION nfc_roles_test_fail()");
+    const kept = (await statuses(dayW)).map((r) => r.s);
+    assert.ok(STUDENTS.slice(27, 30).every((id) => !kept.includes(id)), "ROLLBACK : aucune présence conservée");
+    assert.equal(await journalOf(failingSession), undefined, "ROLLBACK : aucun journal");
+    report.push("Échec après écriture (journal) : transaction annulée, aucune présence ni journal");
+
+    // ===== Écritures concurrentes : deux responsables, mêmes élèves, sessions différentes =====
+    const c1 = makeBody({ actor: USER.DIRECTOR, date: dayW, scanned: cards.slice(30, 35) });
+    const c2 = makeBody({ actor: USER.PREFET, date: dayW, scanned: cards.slice(30, 35) });
+    const [o1, o2] = await Promise.all([sync(USER.DIRECTOR, c1), sync(USER.PREFET, c2)]);
+    assert.equal(o1.status, 201, o1.text);
+    assert.equal(o2.status, 201, o2.text);
+    assert.equal(o1.data.created + o2.data.created, 5, "chaque élève créé une seule fois");
+    assert.equal(o1.data.unchanged + o2.data.unchanged, 5, "l'autre appel constate la présence existante");
+    assert.equal(await duplicates(), 0, "aucun doublon sous concurrence");
+    report.push("Concurrence : deux appels staff simultanés sur les mêmes élèves → 5 créations au total, 5 inchangés, aucun doublon");
+
+    // ===== Migration : ancien schéma, lignes historiques, puis migration rejouée =====
+    const legacySession = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO attendance_roll_calls (school_id, class_id, roll_call_date, session_id, mode, author_user_id, author_role_keys, teacher_id, justification)
+       VALUES ($1,$2,$3::date,$4,'direction',$5,ARRAY['SCHOOL_ADMIN'],NULL,'Appel exceptionnel historique de test')`,
+      [schoolA, class35, shift(today, -3), legacySession, USER.DIRECTOR],
+    );
+    const before = (await pool.query("SELECT id, mode, source, teacher_id, ack_body FROM attendance_roll_calls ORDER BY id")).rows;
+    // Rétablit les contraintes d'origine (sans « staff ») sur une table contenant déjà des lignes staff : refus attendu.
+    await pool.query("DELETE FROM attendance_roll_calls WHERE mode = 'staff'");
+    const legacyOnly = (await pool.query("SELECT id, mode, source, teacher_id, ack_body FROM attendance_roll_calls ORDER BY id")).rows;
+    await pool.query(`
+      ALTER TABLE attendance_roll_calls DROP CONSTRAINT attendance_roll_calls_mode_check;
+      ALTER TABLE attendance_roll_calls ADD CONSTRAINT attendance_roll_calls_mode_check CHECK (mode IN ('teacher', 'direction'));
+      ALTER TABLE attendance_roll_calls DROP CONSTRAINT attendance_roll_calls_mode_shape_check;
+      ALTER TABLE attendance_roll_calls ADD CONSTRAINT attendance_roll_calls_mode_shape_check CHECK (
+        (mode = 'teacher' AND teacher_id IS NOT NULL AND justification IS NULL)
+        OR (mode = 'direction' AND teacher_id IS NULL AND justification IS NOT NULL));
+    `);
+    const staffRow = [schoolA, class35, shift(today, -3), crypto.randomUUID(), USER.DIRECTOR];
+    const insertStaff = () => pool.query(
+      `INSERT INTO attendance_roll_calls (school_id, class_id, roll_call_date, session_id, mode, author_user_id, author_role_keys, teacher_id,
+         justification, source, operation_id, payload_digest, ack_body)
+       VALUES ($1,$2,$3::date,$4,'staff',$5,ARRAY['SCHOOL_ADMIN'],NULL,NULL,'offline',gen_random_uuid(),repeat('a',64),'{}'::jsonb)`,
+      staffRow,
+    );
+    await assert.rejects(insertStaff(), /attendance_roll_calls_mode_check|violates check constraint/, "sans migration, le mode staff est rejeté");
+    const fs = require("node:fs");
+    const migration = fs.readFileSync(path.join(__dirname, "../db/migrations/20261110_attendance_roll_calls_staff_mode.sql"), "utf8");
+    await pool.query(migration);
+    const once = await defs();
+    await pool.query(migration); // rejouée
+    assert.deepEqual(await defs(), once, "migration rejouée : définitions identiques");
+    assert.deepEqual(
+      (await pool.query("SELECT id, mode, source, teacher_id, ack_body FROM attendance_roll_calls ORDER BY id")).rows,
+      legacyOnly,
+      "lignes historiques (teacher en ligne et hors ligne, direction) intactes",
+    );
+    await insertStaff();
+    assert.ok(before.length > legacyOnly.length, "des lignes staff existaient avant la remise à l'ancien schéma");
+    report.push("Migration : staff rejeté sur l'ancien schéma, accepté après migration, rejouable, lignes historiques intactes");
+
     for (const line of report) console.log(`  ✔ ${line}`);
     console.log("rollCallRoles.http.pg.test.js OK");
   } catch (error) {
