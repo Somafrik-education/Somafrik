@@ -125,6 +125,7 @@ test("matrice RBAC : aucune cellule ne change par rapport à la référence ; re
   const observed = {};
   const cells = [];
   for (const route of routes) {
+    await refreshAccessTokens();
     const key = `${route.method} ${route.path}`;
     observed[key] = {};
     for (const [account, roleKey] of Object.entries(ACCOUNTS)) {
