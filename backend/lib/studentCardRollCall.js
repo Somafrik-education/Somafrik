@@ -83,7 +83,7 @@ const DIRECTION_PERMISSION = "Présences:UPDATE";
  *    enseignant (teacher_id NULL), jamais d'affectation ni de rôle TEACHER fictif.
  * Tout autre rôle (surveillant, comptable, parent, élève…) et tout rôle plateforme : refus.
  */
-const SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS = Object.freeze(new Set(["SCHOOL_ADMIN", "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY"]));
+const SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS = Object.freeze(new Set(["SCHOOL_ADMIN", "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY", "SUPERVISOR", "ACCOUNTANT"]));
 const ROLL_CALL_CAPABLE_ROLE_KEYS = Object.freeze(new Set(["TEACHER", ...SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS]));
 // NFC-ROLES-ACCESS-01 : permission d’appel dédiée, sans droit de lire les classes ou les élèves.
 const ROLL_CALL_WRITE_PERMISSIONS = Object.freeze(["Appel scolaire:CREATE"]);
