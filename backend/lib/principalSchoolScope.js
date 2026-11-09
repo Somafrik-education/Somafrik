@@ -9,12 +9,14 @@ const {
   normalizeSchoolCode,
   publicSchoolCodeFromRecord,
 } = require("./schoolCodeV2");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
+const {
+  isPlatformScopePrincipal,
+  isSchoolRolePrincipal,
+  hasConcreteSchoolCode,
+} = require("./platformScopePrincipal");
 
 const SCHOOL_SCOPE_HEADER = "X-Somafrik-School-Code";
-const SUPER_ADMIN_ROLES = new Set([
-  "Super Administrateur Somafrik",
-  "Super Administrateur OKAFRIK",
-]);
 
 function resolvePrincipalSchoolCode(principal) {
   const schoolCode = String(principal?.schoolCode ?? "").trim().toUpperCase();
@@ -65,17 +67,16 @@ function scopeError(statusCode, message, code) {
   return error;
 }
 
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(String(principal?.role ?? "").trim());
-}
-
 function isCountryAdminPrincipal(principal) {
   return String(principal?.role ?? "").trim() === "Admin Pays";
 }
 
+/**
+ * SEC-TENANT-01 — portée plateforme = rôle plateforme (Superadmin / Admin Pays)
+ * ET aucun rattachement concret. Un schoolCode vide ou "*" ne suffit jamais seul.
+ */
 function isPlatformSchoolScope(principal) {
-  const schoolCode = normalizeSchoolCode(principal?.schoolCode);
-  return !schoolCode || schoolCode === "*";
+  return isPlatformScopePrincipal(principal) && !hasConcreteSchoolCode(normalizeSchoolCode(principal?.schoolCode));
 }
 
 function canonicalSchoolCodeFromRecord(school) {
@@ -183,6 +184,26 @@ function resolveEffectiveSchoolScope({ principal, requestedSchoolCode, school } 
       "Code établissement public V2 invalide.",
       "SCHOOL_SCOPE_V2_REQUIRED",
     );
+  }
+
+  // SEC-TENANT-01 : un rôle non plateforme sans rattachement concret n'hérite jamais
+  // de la portée "*". Rôle scolaire → refus ; compte sans affectation → aucune école.
+  if (!isPlatformScopePrincipal(principal) && !hasConcreteSchoolCode(jwtSchool)) {
+    if (isSchoolRolePrincipal(principal)) {
+      throw scopeError(
+        403,
+        "Accès refusé: rattachement établissement requis pour ce compte.",
+        "SCHOOL_SCOPE_ATTACHMENT_REQUIRED",
+      );
+    }
+    if (requested) {
+      throw scopeError(
+        403,
+        "Accès refusé: établissement hors périmètre.",
+        "SCHOOL_SCOPE_OVERRIDE_FORBIDDEN",
+      );
+    }
+    return { ...principal, schoolCode: "" };
   }
 
   if (!isPlatformSchoolScope(principal)) {

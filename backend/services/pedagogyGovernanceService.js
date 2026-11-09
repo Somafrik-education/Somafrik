@@ -147,6 +147,29 @@ class PedagogyGovernanceService {
     return [...unscoped, ...byKey.values()];
   }
 
+  /**
+   * Clé de déduplication d'une affectation : établissement | classe | matière | enseignant.
+   *
+   * Correctif MONO-T1-A1 :
+   *   - la classe est identifiée par classId, sinon classCode, et seulement à
+   *     défaut par son nom : plusieurs classes d'un établissement peuvent
+   *     porter le même nom (ex. trois « 6ème A ») ;
+   *   - l'enseignant fait partie de la clé : plusieurs enseignants peuvent être
+   *     affectés à la même classe et à la même matière.
+   * Fusionner ces lignes produisait des affectations hybrides (classCode et
+   * teacherCode d'une ligne, teacherId d'une autre) et retirait des
+   * affectations réelles de la session enseignant.
+   */
+  assignmentScopeKey(row = {}) {
+    const school = normalize(row.schoolCode ?? "");
+    const classRef = String(row.classId ?? row.class_id ?? "").trim() || String(row.classCode ?? row.class_code ?? "").trim();
+    const classKey = classRef ? `ref:${classRef.toUpperCase()}` : `name:${normalize(row.className ?? "")}`;
+    const subject = normalize(row.subject ?? row.course ?? "");
+    const teacherRef = String(row.teacherId ?? "").trim() || String(row.teacherCode ?? "").trim();
+    const teacherKey = teacherRef ? `ref:${teacherRef.toUpperCase()}` : `name:${normalize(row.teacherName ?? "")}`;
+    return `${school}|${classKey}|${subject}|${teacherKey}`;
+  }
+
   dedupeAssignmentsBySchoolClassSubject(assignments = []) {
     const byKey = new Map();
     const unscoped = [];
@@ -157,7 +180,7 @@ class PedagogyGovernanceService {
         unscoped.push(assignment);
         continue;
       }
-      const key = this.pedagogyScopeKey(assignment);
+      const key = this.assignmentScopeKey(assignment);
       const existing = byKey.get(key);
       if (!existing) {
         byKey.set(key, assignment);

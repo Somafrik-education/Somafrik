@@ -16,9 +16,13 @@ export function notifyAnnouncementsUnreadChanged(): void {
  * C3 établissement + plateforme Superadmin agrégés.
  */
 
-export function useAnnouncementsUnreadCount(enabled: boolean, schoolCode?: string | null): number {
+export function useAnnouncementsUnreadCount(
+  enabled: boolean,
+  schoolCode?: string | null,
+  user?: { role?: string } | null,
+): number {
   const [count, setCount] = useState(0);
-  const schoolScope = hasCommunicationSchoolScope(schoolCode) ? schoolCode : undefined;
+  const schoolScope = hasCommunicationSchoolScope(schoolCode, user) ? schoolCode : undefined;
   useEffect(() => {
     if (!enabled) {
       setCount(0);
@@ -26,7 +30,11 @@ export function useAnnouncementsUnreadCount(enabled: boolean, schoolCode?: strin
     }
     let cancelled = false;
 
+    // P0-WEB-01 : focus + visibilitychange arrivent ensemble ; un seul appel en vol.
+    let inFlight = false;
     async function refresh() {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const [school, platform] = await Promise.all([
           schoolScope ? announcementsApi.unreadCount(schoolScope) : Promise.resolve({ count: 0 }),
@@ -35,6 +43,8 @@ export function useAnnouncementsUnreadCount(enabled: boolean, schoolCode?: strin
         if (!cancelled) setCount((Number(school?.count) || 0) + (Number(platform?.count) || 0));
       } catch {
         /* erreur transport : conserver la dernière valeur connue, jamais un zéro métier */
+      } finally {
+        inFlight = false;
       }
     }
 

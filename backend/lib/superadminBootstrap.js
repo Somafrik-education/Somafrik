@@ -1,4 +1,5 @@
 const { hashSecret } = require("../services/credentialService");
+const { assertAcceptableSuperadminPassword } = require("./superadminSeedSecret");
 
 const SUPER_ADMIN_ROLE = "Super Administrateur Somafrik";
 
@@ -46,6 +47,7 @@ async function syncSuperadminCredentials(pool, options = {}) {
   if (!password || password.length < 12) {
     throw new Error("BOOTSTRAP_SUPERADMIN_PASSWORD doit contenir au moins 12 caractères.");
   }
+  assertAcceptableSuperadminPassword(password);
 
   const secretHash = hashSecret(password);
 

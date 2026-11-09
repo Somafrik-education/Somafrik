@@ -9,8 +9,8 @@
 
 const { BusinessError } = require("../services/authService");
 const { TenantScopeService } = require("../services/tenantScopeService");
+const { isPlatformAdminPrincipal, isCountryAdminPrincipal } = require("./platformPersonalDataGuard");
 
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 const tenantScope = new TenantScopeService();
 
 function normalizeLoginCode(value) {
@@ -24,11 +24,7 @@ function sameId(left, right) {
 }
 
 function isPlatformPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(String(principal?.role ?? "").trim());
-}
-
-function isCountryAdminPrincipal(principal) {
-  return String(principal?.role ?? "").trim() === "Admin Pays";
+  return isPlatformAdminPrincipal(principal);
 }
 
 function failClosed(message) {
@@ -170,16 +166,12 @@ function attachPlanningFixtureScope(principal) {
 
 function resolvePlanningSchoolScope(principal) {
   if (!principal) {
-    return { mode: "all" };
+    return { mode: "none" };
   }
-  const platform = isPlatformPrincipal(principal);
-  if (platform && !tenantScope.hasEffectiveSchoolScope(principal)) {
-    return { mode: "all" };
-  }
-  if (isCountryAdminPrincipal(principal) && !tenantScope.hasEffectiveSchoolScope(principal)) {
-    const countryCode = String(principal.countryCode || "").trim().toUpperCase();
-    if (!countryCode) return { mode: "none" };
-    return { mode: "country", countryCode };
+  // P1-06 : Superadmin / Admin Pays ne sont pas un Admin School Planning.
+  // Un schoolCode request-scoped ne rouvre pas le planning scolaire.
+  if (isPlatformAdminPrincipal(principal)) {
+    return { mode: "none" };
   }
   const loginCode = normalizeLoginCode(principal.planningLoginCode);
   const schoolId = String(principal.planningSchoolId ?? "").trim();

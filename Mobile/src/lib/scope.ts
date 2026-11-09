@@ -6,6 +6,11 @@ import {
   sessionRoleToPlatformRole,
 } from "./orgHierarchy";
 import { ALL_SCHOOLS_CODE, isAllSchoolsSelection } from "./activeSchool";
+import {
+  isPlatformAdminSession,
+  shouldSkipSchoolTenantHydration,
+  stripSchoolDomainCollections,
+} from "./platformSchoolDomainDeny";
 
 export type PlatformNotification = {
   id?: string;
@@ -239,34 +244,21 @@ export function scopeBackOfficeForSession<T extends Record<string, unknown>>(
     notifications: (payload.notifications as any[]) ?? [],
   };
 
-  if (session.role === "country_admin") {
-    const scoped = {
-      ...payload,
-      countries: scopedCountries(user, scopeState),
-      schools: scopedSchools(user, scopeState),
-      subscriptions: scopedSubscriptions(user, scopeState),
-      users: scopedUsers(user, scopeState),
-      notifications: scopedNotifications(user, scopeState),
-    } as T;
-    if (activeSchoolCode && !isAllSchoolsSelection(activeSchoolCode)) {
-      return trustServerScopedPlatformTenant(payload, scoped);
-    }
-    return scoped;
-  }
-
-  if (session.role === "super_admin") {
-    const scoped = {
-      ...payload,
-      countries: scopedCountries(user, scopeState),
-      schools: scopedSchools(user, scopeState),
-      subscriptions: scopedSubscriptions(user, scopeState),
-      users: scopedUsers(user, scopeState),
-      notifications: scopedNotifications(user, scopeState),
-    } as T;
-    if (activeSchoolCode && !isAllSchoolsSelection(activeSchoolCode)) {
-      return trustServerScopedPlatformTenant(payload, scoped);
-    }
-    return scoped;
+  if (shouldSkipSchoolTenantHydration(session)) {
+    // Superadmin / Admin Pays : catalogues plateforme déjà scopés par rôle.
+    // ALL_PRIVILEGES seul / schoolCode "*" : ne pas refiltrer Users / écoles /
+    // abonnements sur un schoolCode vide (sinon la route Users ressort []).
+    const platformPayload = isPlatformAdminSession(session)
+      ? {
+          ...payload,
+          countries: scopedCountries(user, scopeState),
+          schools: scopedSchools(user, scopeState),
+          subscriptions: scopedSubscriptions(user, scopeState),
+          users: scopedUsers(user, scopeState),
+          notifications: scopedNotifications(user, scopeState),
+        }
+      : payload;
+    return stripSchoolDomainCollections(platformPayload as Record<string, unknown>) as T;
   }
 
   // Pour les comptes établissement, le JWT et les repositories PostgreSQL sont déjà

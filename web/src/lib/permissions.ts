@@ -24,6 +24,7 @@ import {
   isPlatformCommunicationFeature,
   isPlatformCommunicationUser,
 } from "./establishmentCommunication";
+import { isWebSchoolDomainFeature, shouldDenyWebSchoolDomain } from "./webSchoolDomainDeny";
 
 const SCHOOL_ADMIN_FORBIDDEN_FEATURES = new Set(["Établissements", "Abonnements"]);
 
@@ -149,6 +150,20 @@ export function resolveEffectivePermissions(
 
 export function getCurrentRolePermissions(ctx: PermissionContext): string[] {
   return resolveEffectivePermissions(ctx.user?.role, ctx.user?.permissions, ctx.rolePermissions);
+}
+
+/**
+ * Correspondance UI avec reportCardHttpActor.resolveReportCardActorFromPrincipal :
+ * REPORT_CARD_PUBLISH est un droit interne calculé à partir des permissions
+ * effectives Bulletins:UPDATE ou « Valider bulletins », pas un jeton de session.
+ * Le serveur effectue toujours l'autorisation finale.
+ */
+export function canPublishOfficialReportCard(ctx: PermissionContext): boolean {
+  if (!ctx.permissionsReady || !ctx.user || isSuperAdminRole(ctx.user.role)) return false;
+  const role = String(ctx.user.role ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (role.includes("parent") || role.includes("eleve") || role.includes("student")) return false;
+  return hasBackOfficePermission(ctx, "Bulletins", "UPDATE") ||
+    getCurrentRolePermissions(ctx).includes("Valider bulletins");
 }
 
 /** Superadmin, ou jeton effectif classes / affectations (révocations explicites honorées). */
@@ -280,6 +295,7 @@ export function canManageRolePermissions(ctx: PermissionContext): boolean {
 
 function superAdminAllowsFeature(features: string | (string | null)[] | null, action: string): boolean {
   const featureList = Array.isArray(features) ? features : [features];
+  if (featureList.includes("Messages")) return false;
   if (featureList.includes("Droits par rôle")) return action === "READ" || action === "UPDATE";
   if (featureList.includes("Paramètres graphiques")) return true;
   return featureList.every((feature) => isSuperAdminAllowedFeature(feature));
@@ -319,25 +335,23 @@ export function canManageNotes(ctx: PermissionContext): boolean {
   );
 }
 
-/** Liaison parent : mêmes jetons que POST /api/parents/link — pas la whitelist CRM. */
+/** Liaison parent : jetons établissement uniquement — pas SUPER_ADMIN / COUNTRY_ADMIN. */
 export function canLinkParent(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;
-  if (isSuperAdminRole(ctx.user.role)) return true;
-  if (ctx.user.role === COUNTRY_ADMIN_ROLE) return true;
+  if (isSuperAdminRole(ctx.user.role) || ctx.user.role === COUNTRY_ADMIN_ROLE) return false;
   const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
   return tokens.some(
     (permission) =>
-      permission === normalize("ALL_PRIVILEGES") ||
-      permission === normalize("COUNTRY_PRIVILEGES") ||
       permission === normalize("Gérer utilisateurs") ||
       permission === normalize("Relations:CREATE"),
   );
 }
 
-/** Archivage relation parent-enfant : mêmes jetons que PATCH /api/parents/relations/:id. */
+/** Archivage relation : rôles établissement uniquement. */
 export function canArchiveParentRelation(ctx: PermissionContext): boolean {
-  if (canLinkParent(ctx)) return true;
   if (!ctx.user) return false;
+  if (isSuperAdminRole(ctx.user.role) || ctx.user.role === COUNTRY_ADMIN_ROLE) return false;
+  if (canLinkParent(ctx)) return true;
   const tokens = getCurrentRolePermissions(ctx).map((permission) => normalize(permission));
   return tokens.some((permission) => permission === normalize("Relations:UPDATE"));
 }
@@ -347,9 +361,10 @@ export function canResetUserPassword(ctx: PermissionContext): boolean {
   if (!ctx.user) return false;
   if (isSuperAdminRole(ctx.user.role)) return true;
   if (hasBackOfficePermission(ctx, "Utilisateurs", "UPDATE")) return true;
-  return getCurrentRolePermissions(ctx).some(
-    (permission) => normalize(permission) === normalize("Gérer utilisateurs"),
-  );
+  return getCurrentRolePermissions(ctx).some((permission) => {
+    const token = normalize(permission);
+    return token === normalize("Gérer utilisateurs") || token === normalize("COUNTRY_PRIVILEGES");
+  });
 }
 
 export function canResetTargetUserPassword(
@@ -372,12 +387,21 @@ export function hasBackOfficePermission(
   action: string = "READ",
 ): boolean {
   if (!ctx.user) return false;
+  const featureList = Array.isArray(features) ? features : [features];
+  if (
+    shouldDenyWebSchoolDomain(ctx.user) &&
+    featureList.some((feature) => isWebSchoolDomainFeature(feature))
+  ) {
+    return false;
+  }
+  if (featureList.includes("Messages") && isPlatformCommunicationUser(ctx)) {
+    return false;
+  }
   if (isSuperAdminRole(ctx.user.role)) {
     return superAdminAllowsFeature(features, action);
   }
 
   const normalizedAction = action === "R" ? "READ" : action;
-  const featureList = Array.isArray(features) ? features : [features];
 
   if (
     isPlatformCommunicationUser(ctx) &&
@@ -434,6 +458,18 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
   if (viewName === "planning" && !PLANNING_WEB_UI_ENABLED) {
     return false;
   }
+  if (viewName === "messages" && isPlatformCommunicationUser(ctx)) {
+    return false;
+  }
+  if (viewName === "dataExport") {
+    if (shouldDenyWebSchoolDomain(ctx.user)) return false;
+    if (!isSchoolAdminRole(ctx.user?.role)) return false;
+    const permissions = getCurrentRolePermissions(ctx);
+    return (
+      permissions.includes("Paramètres Établissement:READ") ||
+      permissions.includes("Paramètres Établissement:UPDATE")
+    );
+  }
   // Accès au hub Paramètres : Super Admin, Admin School (établissement) et Admin Pays.
   // Le détail des cartes/pages reste filtré par les vues dédiées (configuration, subscriptions…).
   if (viewName === "settings") {
@@ -464,6 +500,7 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
     return hasBackOfficePermission(ctx, "Contacts", "READ");
   }
   if (viewName === "relations") {
+    if (isSuperAdminRole(ctx.user?.role) || ctx.user?.role === COUNTRY_ADMIN_ROLE) return false;
     return hasBackOfficePermission(ctx, "Relations", "READ");
   }
   if (viewName === "messages") {
@@ -482,7 +519,7 @@ export function canReadView(ctx: PermissionContext, viewName: string): boolean {
       return false;
     }
     const feature = VIEW_PERMISSION_FEATURES[viewName];
-    if (feature && !COUNTRY_SCOPE_MODULES.has(feature) && feature !== "Rapports") {
+    if (feature && !COUNTRY_SCOPE_MODULES.has(feature)) {
       return false;
     }
   }

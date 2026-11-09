@@ -28,6 +28,7 @@ const {
   expandWeeklyOccurrences,
   resolveSchoolTimeZone,
 } = require("./planningWeeklyOccurrences");
+const { assertAttendanceItemsStatuses } = require("./attendanceStatus");
 const { mergeAttendanceTeacherKey } = require("./presencesAttendanceAuthz");
 const {
   resolveActiveRoomId,
@@ -684,7 +685,11 @@ async function upsertGrade(store, payload, principal, auditMeta) {
   }
 }
 
-async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
+/**
+ * `options.writeGuards` (facultatif, serveur uniquement) : une garde d'écriture par élément, alignée
+ * sur `payload.items` (voir upsertAttendance). Sans option : comportement inchangé.
+ */
+async function upsertAttendanceBatch(store, payload, principal, auditMeta, options = {}) {
   const tenantCode = tenantSchoolCodeFromPrincipal(principal);
   try {
     return await store.withTransaction(async (tx) => {
@@ -699,17 +704,23 @@ async function upsertAttendanceBatch(store, payload, principal, auditMeta) {
             ...mergeAttendanceTeacherKey(item, payload),
           }))
         : [];
+      // MONO-FIX-A3 : statuts de TOUT le lot validés avant la première écriture
+      // (un seul statut invalide ⇒ 400, aucune présence écrite ni écrasée).
+      assertAttendanceItemsStatuses(items);
+      const guards = Array.isArray(options?.writeGuards) ? options.writeGuards : null;
       const saved = [];
-      for (const item of items) {
-        saved.push(await tx.upsertAttendance(item, principal));
+      for (const [index, item] of items.entries()) {
+        saved.push(guards?.[index]
+          ? await tx.upsertAttendance(item, principal, { writeGuard: guards[index] })
+          : await tx.upsertAttendance(item, principal));
       }
       await writePedagogyAudit(tx, principal, auditMeta, {
         action: "upsert_attendance_batch",
         entityType: "attendance",
-        entityId: String(saved.length),
+        entityId: String(saved.filter(Boolean).length),
         schoolId: asTrimmed(principal?.presenceSchoolId),
         schoolCode: asTrimmed(principal?.presenceLoginCode),
-        newValue: { count: saved.length },
+        newValue: { count: saved.filter(Boolean).length },
       });
       return saved;
     });

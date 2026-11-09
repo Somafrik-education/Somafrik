@@ -775,6 +775,44 @@ test("P1 — recipient_kind school applique la catégorie réelle, pas l'union d
   assert.equal(adapter.deliveries.some((row) => row.channel === "PUSH"), true);
 });
 
+test("P0 — expandSchoolWideRecipientKinds snapshotte PARENT et fail-closed sans rôle", async () => {
+  const policy = requirePolicy();
+  const store = {
+    async listActiveUserRoleKeysForSchool(userId, schoolId) {
+      assert.equal(String(schoolId), SCHOOL_A);
+      if (String(userId) === USER_A) return ["PARENT"];
+      return [];
+    },
+  };
+  assert.deepEqual(
+    await policy.expandSchoolWideRecipientKinds(store, {
+      userId: USER_A,
+      schoolId: SCHOOL_A,
+      kind: "school",
+      kinds: ["school"],
+    }),
+    ["PARENT"],
+  );
+  assert.deepEqual(
+    await policy.expandSchoolWideRecipientKinds(store, {
+      userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      schoolId: SCHOOL_A,
+      kind: "school",
+      kinds: ["school"],
+    }),
+    [],
+  );
+  assert.deepEqual(
+    await policy.expandSchoolWideRecipientKinds(store, {
+      userId: USER_A,
+      schoolId: SCHOOL_A,
+      kind: "parent",
+      kinds: ["parent"],
+    }),
+    ["PARENT"],
+  );
+});
+
 test("P1 — lecture politique 42501 n'enqueue pas les canaux établissement", async () => {
   const adapter = adapterWithParent();
   adapter.loadSchoolNotificationPolicy = async () => {

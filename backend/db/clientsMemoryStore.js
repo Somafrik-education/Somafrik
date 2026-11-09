@@ -85,14 +85,30 @@ function createClientsMemoryStore(seed = {}) {
 
   const auditLog = [];
   let transactionDepth = 0;
+  let store;
 
   function isActiveUserStatus(status) {
     const normalized = String(status ?? "active").toLowerCase();
     return normalized !== "deleted" && normalized !== "archived";
   }
 
+  function resolveEstablishmentRolesStore() {
+    const repo = store?.rootRepository || seed.rootRepository;
+    if (repo && typeof repo.getEstablishmentRolesStore === "function") {
+      return repo.getEstablishmentRolesStore();
+    }
+    if (typeof seed.getEstablishmentRolesStore === "function") {
+      return seed.getEstablishmentRolesStore();
+    }
+    return null;
+  }
+
   function bind() {
     return {
+      getEstablishmentRolesStore: resolveEstablishmentRolesStore,
+      get rootRepository() {
+        return store?.rootRepository || seed.rootRepository || null;
+      },
       async one(sql, params = []) {
         const query = String(sql ?? "");
         if (!query.includes("FROM users u")) {
@@ -276,6 +292,12 @@ function createClientsMemoryStore(seed = {}) {
         return tables.userRoles
           .filter((row) => row.user_id === userId && row.status === "active" && !row.revoked_at)
           .map((row) => row.role_key);
+      },
+      /** SEC-AUTH-05 — le compte a-t-il au moins un enregistrement user_roles (actif ou retiré) ? */
+      async userHasRoleHistory(userId) {
+        const id = String(userId ?? "").trim();
+        if (!id) return false;
+        return tables.userRoles.some((row) => String(row.user_id ?? "") === id);
       },
       async listActiveUserRoleKeysForSchool(userId, schoolId) {
         const uid = String(userId ?? "").trim();
@@ -699,6 +721,19 @@ function createClientsMemoryStore(seed = {}) {
         tables.relations[index] = {
           ...tables.relations[index],
           status: "archived",
+          updated_at: new Date(),
+        };
+        return this.getRelationById(id);
+      },
+      async updateRelation(id, patch) {
+        const index = tables.relations.findIndex((relation) => String(relation.id) === String(id));
+        if (index < 0) return null;
+        tables.relations[index] = {
+          ...tables.relations[index],
+          contact_id: patch.contactId ?? tables.relations[index].contact_id,
+          student_id: patch.studentId ?? tables.relations[index].student_id,
+          relation_type: patch.relationType ?? tables.relations[index].relation_type,
+          profile_payload: patch.profile ?? tables.relations[index].profile_payload,
           updated_at: new Date(),
         };
         return this.getRelationById(id);
@@ -1215,8 +1250,9 @@ function createClientsMemoryStore(seed = {}) {
   }
 
   const txApi = bind();
-  const store = {
+  store = {
     bind,
+    getEstablishmentRolesStore: resolveEstablishmentRolesStore,
     getSchoolByCode: (code) => txApi.getSchoolByCode(code),
     getSchoolById: (id) => txApi.getSchoolById(id),
     getCountryByCode: (code) => txApi.getCountryByCode(code),
@@ -1263,14 +1299,18 @@ function createClientsMemoryStore(seed = {}) {
           teacherRow: findActiveTeacherProfileForUser(tables.teachers, row.id, row.school_id),
           roleKeys,
         });
-        return userRoleLifecycleService.hydrateUser(
-          {
-            ...row,
-            ...schoolPublicProjectionFromSchool(school, "*"),
-            ...userCountryProjection(row, school),
-          },
-          roleKeys,
-          businessProfile,
+        const { decorateUserWithRoleDisplay } = require("../lib/roleDisplayLabels");
+        return decorateUserWithRoleDisplay(
+          userRoleLifecycleService.hydrateUser(
+            {
+              ...row,
+              ...schoolPublicProjectionFromSchool(school, "*"),
+              ...userCountryProjection(row, school),
+            },
+            roleKeys,
+            businessProfile,
+          ),
+          new Map(),
         );
       });
       const contacts = tables.contacts.map((row) => {
@@ -1421,6 +1461,8 @@ function createClientsMemoryStore(seed = {}) {
     updateContact: (...args) => clientsService.updateContact(store, ...args),
     provisionContactAccount: (...args) => clientsService.provisionContactAccount(store, ...args),
     createRelation: (...args) => clientsService.createRelation(store, ...args),
+    updateRelation: (...args) => clientsService.updateRelation(store, ...args),
+    archiveRelation: (...args) => clientsService.archiveRelation(store, ...args),
     linkParent: (...args) => {
       const { linkParent } = require("../lib/parentLinking");
       return linkParent(store, ...args);

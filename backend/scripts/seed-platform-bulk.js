@@ -17,6 +17,7 @@ const { buildDatabaseUrl } = require("../db/connectionConfig");
 const { buildEmptyBackOfficeState } = require("../lib/emptyBackOfficeState");
 const { buildBulkPlatformSeed } = require("../lib/bulkPlatformSeed");
 const { hashSecret } = require("../services/credentialService");
+const { hashSeedUserSecrets, assertAcceptableSuperadminPassword } = require("../lib/superadminSeedSecret");
 
 const ROLE_TO_DB = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -207,9 +208,9 @@ async function insertSubscriptions(client, subscriptions, schoolIds) {
 }
 
 async function insertUsers(client, userAccounts, schoolIds) {
-  const passwordHash = hashSecret("1234");
   for (const user of userAccounts) {
     const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode) ?? null;
+    const { passwordHash, pinHash } = hashSeedUserSecrets(user);
     await client.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', NOW(), NOW())
@@ -229,8 +230,8 @@ async function insertUsers(client, userAccounts, schoolIds) {
         user.lastName,
         user.email ?? "",
         user.phone ?? "",
-        user.password ? hashSecret(user.password) : passwordHash,
-        hashSecret(user.password ?? "1234"),
+        passwordHash,
+        pinHash,
         ROLE_TO_DB[user.role] ?? "SCHOOL_ADMIN",
       ],
     );
@@ -551,7 +552,9 @@ function buildBackOfficePayload(seed) {
 
 async function bootstrapSuperAdminOnly(pool) {
   const identifier = String(process.env.BOOTSTRAP_SUPERADMIN_ID ?? "superadmin").trim();
-  const password = String(process.env.BOOTSTRAP_SUPERADMIN_PASSWORD ?? "change-me-now").trim();
+  const password = assertAcceptableSuperadminPassword(
+    String(process.env.BOOTSTRAP_SUPERADMIN_PASSWORD ?? "").trim(),
+  );
   const email = String(process.env.BOOTSTRAP_SUPERADMIN_EMAIL ?? "superadmin@somafrik.app").trim();
   const userCode = String(process.env.BOOTSTRAP_SUPERADMIN_CODE ?? "USR-2026-000002").trim();
   await pool.query(

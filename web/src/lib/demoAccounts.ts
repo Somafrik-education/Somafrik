@@ -22,13 +22,6 @@ export const DEMO_ACCOUNT_GROUPS: DemoAccountGroup[] = [
     title: "Plateforme",
     accounts: [
       {
-        label: "Super administrateur",
-        role: "Super Administrateur Somafrik",
-        identifier: "superadmin",
-        password: DEMO_PASSWORD,
-        profile: "superadmin",
-      },
-      {
         label: "Administrateur pays RDC",
         role: "Admin Pays",
         identifier: "admin-rdc",

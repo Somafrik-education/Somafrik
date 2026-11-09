@@ -29,6 +29,12 @@ function financeObligationIdRequired() {
   return error;
 }
 
+function financeUnallocatedForbidden() {
+  const error = new Error("FINANCE_UNALLOCATED_FORBIDDEN");
+  error.code = "FINANCE_UNALLOCATED_FORBIDDEN";
+  return error;
+}
+
 function normalizeObligationStatus(status) {
   return trim(status)
     .normalize("NFD")
@@ -137,7 +143,7 @@ function buildFinancePaymentItems(lines) {
     const amount =
       typeof line.amount === "number" ? line.amount : parseFinanceAmount(line.amount);
     if (isUnallocatedTarget(line.obligationId)) {
-      return { feeType: UNALLOCATED_FEE_TYPE, amount };
+      throw financeUnallocatedForbidden();
     }
     const obligationId = trim(line.obligationId);
     if (!obligationId) {
@@ -159,7 +165,8 @@ function assertNoFeeTypeOnlyImputation(items) {
   for (const item of Array.isArray(items) ? items : []) {
     const obligationId = trim(item.obligationId);
     const feeType = trim(item.feeType || item.feeLabel || item.label);
-    if (!obligationId && feeType !== UNALLOCATED_FEE_TYPE) {
+    if (!obligationId) {
+      if (feeType === UNALLOCATED_FEE_TYPE) throw financeUnallocatedForbidden();
       throw financeObligationIdRequired();
     }
   }

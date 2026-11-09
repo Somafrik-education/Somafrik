@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import L1FreshnessNote from "../components/L1FreshnessNote";
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import FormField from "../components/FormField";
 import { SchoolSettingsDenied, useSchoolSettingsAccess } from "../components/SchoolSettingsGate";
@@ -356,6 +357,7 @@ export default function SchoolPedagogicalStructureScreen() {
             {schoolCoursesSnapshot.cachedAt ? ` : ${schoolCoursesSnapshot.cachedAt}` : ""}
           </Text>
         ) : null}
+        <L1FreshnessNote snapshot={schoolCoursesSnapshot} permissionsBootstrap={permissionsBootstrap} />
         <Text style={styles.sectionDescription}>
           Les cours créés ici sont les mêmes que sur le Web et sont enregistrés pour la classe sélectionnée.
         </Text>

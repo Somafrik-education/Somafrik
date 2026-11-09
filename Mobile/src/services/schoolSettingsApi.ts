@@ -14,6 +14,13 @@ export type SchoolSettings = {
   periodMode: "trimestre" | "semestre" | "periode" | string;
   defaultScale: number;
   reportCardMode: "period" | "annual" | "custom" | string;
+  studentCardEnabled?: boolean;
+  studentCardQrEnabled?: boolean;
+  studentCardNfcEnabled?: boolean;
+  studentCardAttendanceEnabled?: boolean;
+  studentCardFinanceCheckEnabled?: boolean;
+  /** NFC-PRES-LOCAL-PR3 — appel hors connexion par carte (false par défaut). */
+  studentCardOfflineRollCallEnabled?: boolean;
   schoolYear?: string;
   periods?: Array<Record<string, unknown>>;
 };
@@ -242,6 +249,17 @@ export function deleteEstablishmentLogo(code: string) {
 
 export function listAssignableEstablishmentRoles() {
   return httpRequest<{ roles: AssignableEstablishmentRole[] }>("/establishment-roles/assignable");
+}
+
+export function listRoleDisplayLabels() {
+  return httpRequest<{
+    items?: Array<{
+      roleKey: string;
+      defaultLabel: string;
+      displayLabel?: string | null;
+      effectiveLabel: string;
+    }>;
+  }>("/backoffice/rbac/role-display-labels");
 }
 
 /** Catalogue établissement canonique utilisé aussi par le Web (SchoolSubjectsPanel). */

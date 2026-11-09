@@ -290,6 +290,29 @@ class FallbackRepository {
     return this.sessions.get(sessionId) ?? null;
   }
 
+  /** SEC-TENANT-01 — rattachement canonique du compte (mémoire : schoolCode du compte). */
+  async findUserCanonicalSchool(userId) {
+    const id = String(userId ?? "").trim();
+    if (!id) return null;
+    // Même source que le runtime (applyClientsAuthOverlay) : comptes clients d'abord, puis jeu démo.
+    const clientAccounts =
+      typeof this.listClientsAuthAccounts === "function" ? (await this.listClientsAuthAccounts()) ?? [] : [];
+    const dataset = await this.getDataset();
+    const account = [...clientAccounts, ...(dataset?.userAccounts ?? [])].find(
+      (row) => String(row?.id ?? "") === id,
+    );
+    const schoolCode = String(account?.schoolCode ?? "").trim();
+    if (!schoolCode || schoolCode === "*") return null;
+    return { schoolId: String(account.schoolId ?? ""), schoolCode, loginCode: "" };
+  }
+
+  /** SEC-TENANT-01 — refresh : l'établissement de session doit rester celui du compte. */
+  async isUserAttachedToSessionSchool(session = {}) {
+    const canonical = await this.findUserCanonicalSchool(session.user_id);
+    const sessionSchool = String(session.school_code ?? "").trim().toUpperCase();
+    return Boolean(canonical) && Boolean(sessionSchool) && canonical.schoolCode.toUpperCase() === sessionSchool;
+  }
+
   async rotateSessionRefresh({
     sessionId,
     newHash,
@@ -319,6 +342,21 @@ class FallbackRepository {
         session.revoke_reason = reason;
         count += 1;
       }
+    }
+    return count;
+  }
+
+  /** SEC-AUTH-03 — révoque les sessions actives de l'utilisateur, sauf `keepSessionId`. */
+  async revokeOtherSessionsForUser(userId, keepSessionId, reason = "password_change") {
+    let count = 0;
+    const wanted = String(userId ?? "");
+    const keep = String(keepSessionId ?? "").trim();
+    for (const [code, session] of this.sessions.entries()) {
+      if (String(session.user_id ?? "") !== wanted || session.revoked_at) continue;
+      if (keep && String(code) === keep) continue;
+      session.revoked_at = new Date();
+      session.revoke_reason = reason;
+      count += 1;
     }
     return count;
   }
@@ -357,6 +395,20 @@ class FallbackRepository {
       if (status && row.status !== status) return false;
       return true;
     });
+  }
+
+  async getPlatformPrivacyRequestCounts() {
+    let pending = 0;
+    let processed = 0;
+    let rejected = 0;
+    let total = 0;
+    for (const row of this.privacyRequests.values()) {
+      total += 1;
+      if (row.status === "pending") pending += 1;
+      else if (row.status === "processed") processed += 1;
+      else if (row.status === "rejected") rejected += 1;
+    }
+    return { total, pending, processed, rejected };
   }
 
   async createTrialAccessRequest(row) {
@@ -471,12 +523,41 @@ class FallbackRepository {
     });
   }
 
-  async getAuditLogs({ schoolCode, userId, action, limit = 100 } = {}) {
+  async listSchoolAuditSummaries({ schoolCode, action, entityType, from, to, limit = 50, offset = 0 } = {}) {
+    const jwtSchool = String(schoolCode ?? "").trim().toUpperCase();
+    if (!jwtSchool || jwtSchool === "*") return [];
+    const start = Math.max(0, Number(offset) || 0);
+    const capped = Math.min(Math.max(Number(limit) || 50, 1), 100);
+    return this.auditLogs
+      .filter((row) => String(row.schoolCode ?? "").toUpperCase() === jwtSchool)
+      .filter((row) => !action || row.action === action)
+      .filter((row) => !entityType || row.entityType === entityType)
+      .filter((row) => !from || String(row.createdAt ?? "") >= String(from))
+      .filter((row) => !to || String(row.createdAt ?? "") <= String(to))
+      .slice()
+      .sort((left, right) => String(right.createdAt ?? "").localeCompare(String(left.createdAt ?? "")))
+      .slice(start, start + capped)
+      .map((row) => ({
+        id: row.id,
+        action: row.action,
+        entityType: row.entityType,
+        entityId: row.entityId ?? null,
+        actor:
+          [row.actorFirstName, row.actorLastName, row.first_name, row.last_name].filter(Boolean).join(" ") ||
+          "Système",
+        createdAt: row.createdAt,
+      }));
+  }
+
+  async getAuditLogs({ schoolCode, userId, action, actions, limit = 100, offset = 0 } = {}) {
+    const capped = Math.min(Number(limit) || 100, 500);
+    const start = Math.max(0, Number(offset) || 0);
     return this.auditLogs
       .filter((row) => !schoolCode || row.schoolCode === schoolCode)
       .filter((row) => !userId || row.userId === userId)
       .filter((row) => !action || row.action === action)
-      .slice(0, Math.min(Number(limit) || 100, 500));
+      .filter((row) => !Array.isArray(actions) || !actions.length || actions.includes(row.action))
+      .slice(start, start + capped);
   }
 
   async getBackOfficeState() {
@@ -939,6 +1020,8 @@ class FallbackRepository {
     if (!items.length) {
       return [];
     }
+    // MONO-FIX-A3 : tout le lot est validé avant la première écriture.
+    require("../lib/attendanceStatus").assertAttendanceItemsStatuses(items);
 
     const saved = [];
     for (const item of items) {
@@ -954,6 +1037,8 @@ class FallbackRepository {
       error.statusCode = 400;
       throw error;
     }
+    // MONO-FIX-A3 : statut hors catalogue ⇒ 400 (le libellé stocké reste celui reçu).
+    require("../lib/attendanceStatus").normalizeAttendanceStatus(payload.status, payload.present);
 
     const state = (await this.getBackOfficeState()) ?? {};
     const catalogStudents = Array.isArray(state.students) ? state.students : [];
@@ -1325,28 +1410,27 @@ class FallbackRepository {
     }));
   }
 
-  async getAdvancedReportsV2() {
-    const paid = seedData.payments.filter((payment) => payment.status === "PAYE").reduce((sum, payment) => sum + Number(payment.amount), 0);
-    const unpaid = seedData.payments.filter((payment) => payment.status !== "PAYE").reduce((sum, payment) => sum + Number(payment.amount), 0);
-    const present = seedData.presences.filter((presence) => presence.present || presence.status === "Retard").length;
-
-    return {
-      academic: seedData.classes.map((item) => ({ label: item.name, average: "12.50", grades: seedData.notes.length })),
-      financial: { paid, unpaid, payments: seedData.payments.length, forecast: paid + unpaid },
-      attendance: {
-        rate: seedData.presences.length ? Math.round((present / seedData.presences.length) * 100) : 0,
-        total: seedData.presences.length,
-        breakdown: [],
-      },
-      exams: [],
-      global: {
-        countries: seedData.countries.length,
-        schools: seedData.platformSchools.length,
-        students: seedData.students.length,
-        teachers: seedData.teachers.length,
-        activeSubscriptions: seedData.subscriptions.filter((item) => item.status === "Actif").length,
-      },
-    };
+  async getAdvancedReportsV2(schoolId) {
+    const { assertAdvancedReportsSchoolId, buildMemoryAdvancedReports, schoolIdFromRecord } = require("../lib/advancedReportsScope");
+    const scopedSchoolId = assertAdvancedReportsSchoolId(schoolId);
+    const school =
+      seedData.platformSchools.find((row) => schoolIdFromRecord(row) === scopedSchoolId) ??
+      (await this.getSchoolByCode(scopedSchoolId));
+    return buildMemoryAdvancedReports({
+      schoolId: scopedSchoolId,
+      school,
+      students: seedData.students,
+      teachers: seedData.teachers,
+      classes: seedData.classes.map((row) => ({
+        ...row,
+        schoolCode: row.schoolCode ?? seedData.school.code,
+      })),
+      notes: seedData.notes,
+      payments: seedData.payments,
+      presences: seedData.presences,
+      exams: seedData.exams,
+      subscriptions: seedData.subscriptions,
+    });
   }
 
   async listSchoolClasses(schoolCode) {
@@ -1729,6 +1813,12 @@ class FallbackRepository {
             student.birth_place = params[4];
             student.parent_phone = params[5];
             student.parent_email = params[6];
+            if (params[10] === true) {
+              student.administrative_notes = params[11] ?? null;
+            }
+            if (params[12] === true) student.preferred_name = params[13] ?? null;
+            if (params[14] === true) student.nationality = params[15] ?? null;
+            if (params[16] === true) student.address = params[17] ?? null;
         student.updated_at = new Date(Date.now() + 1).toISOString();
         return { id: student.id };
       }
@@ -3036,11 +3126,14 @@ class FallbackRepository {
         },
         findStudent: async (studentKey, principal) => {
           const dataset = await this.getDataset();
-          const scope = resolveFinanceSchoolScope(attachFinanceFixtureScope(principal));
-          if (scope.mode === "none") return null;
+          let scope = null;
+          if (principal) {
+            scope = resolveFinanceSchoolScope(attachFinanceFixtureScope(principal));
+            if (scope.mode === "none") return null;
+          }
           const student =
             (dataset.students ?? []).find((row) => {
-              if (principal && !schoolRecordInFinanceScope(fixtureSchoolRecord(row), scope)) {
+              if (scope && !schoolRecordInFinanceScope(fixtureSchoolRecord(row), scope)) {
                 return false;
               }
               return studentMatches(row, studentKey);
@@ -3097,8 +3190,11 @@ class FallbackRepository {
     return this._financeStore;
   }
 
-  listFinanceProjection() {
-    return this.getFinanceStore().listProjection();
+  async listFinanceProjection(scope) {
+    const { filterProjectionRecord, emptyFinanceProjection, hasProjectionScope } = require("./projectionSchoolScope");
+    if (!hasProjectionScope(scope)) return emptyFinanceProjection();
+    const full = await this.getFinanceStore().listProjection();
+    return filterProjectionRecord(full, scope);
   }
 
   createSchoolPayment(payload, principal, auditMeta) {
@@ -3120,6 +3216,10 @@ class FallbackRepository {
   upsertFinancePaymentStatus(payload, principal) {
     return this.getFinanceStore().upsertFinancePaymentStatus(payload, principal);
   }
+  updateFinancePaymentStatus(statusCode, patch, principal) {
+    return this.getFinanceStore().updateFinancePaymentStatus(statusCode, patch, principal);
+  }
+
 
   listFinanceFeeGrids(principal) {
     return this.getFinanceStore().listFinanceFeeGrids(principal);
@@ -3189,15 +3289,20 @@ class FallbackRepository {
     return this.getFinanceStore().getFinanceCatalog(principal);
   }
 
-  async listPedagogyProjection() {
+  async listPedagogyProjection(scope) {
+    const { filterProjectionRecord, emptyPedagogyProjection, hasProjectionScope } = require("./projectionSchoolScope");
+    if (!hasProjectionScope(scope)) return emptyPedagogyProjection();
     const state = (await this.getBackOfficeState()) ?? {};
-    return {
-      courses: state.courses ?? [],
-      courseSchedules: state.courseSchedules ?? [],
-      evaluations: state.evaluations ?? [],
-      notes: state.notes ?? [],
-      presences: state.presences ?? [],
-    };
+    return filterProjectionRecord(
+      {
+        courses: state.courses ?? [],
+        courseSchedules: state.courseSchedules ?? [],
+        evaluations: state.evaluations ?? [],
+        notes: state.notes ?? [],
+        presences: state.presences ?? [],
+      },
+      scope,
+    );
   }
 
   createSchoolCourse() {
@@ -3490,6 +3595,16 @@ class FallbackRepository {
     return this.getPlatformStore().listProjection();
   }
 
+  /** P0-WEB-01 — mêmes écoles et abonnements que l'état autoritatif (dépôt mémoire). */
+  async listSubscriptionAccessState() {
+    const dataset = await this.getDataset();
+    const platform = await this.listPlatformProjection();
+    return {
+      schools: Array.isArray(dataset?.platformSchools) ? dataset.platformSchools : [],
+      subscriptions: Array.isArray(platform?.subscriptions) ? platform.subscriptions : [],
+    };
+  }
+
   getPlatformSchoolByCode(code) {
     return this.getPlatformStore().getSchoolByCode(code);
   }
@@ -3638,6 +3753,8 @@ class FallbackRepository {
             }))
           : [],
       });
+      store.rootRepository = this;
+      store.getEstablishmentRolesStore = () => this.getEstablishmentRolesStore();
       store.assertEstablishmentRoleAssignable = (role, principal) =>
         this.assertEstablishmentRoleAssignable(role, principal);
       store.listEstablishmentAssignableRoles = (principal) =>
@@ -3704,12 +3821,18 @@ class FallbackRepository {
     return Promise.resolve(this.getClientsStore().listProjection());
   }
 
-  listClientsUsers(scope) {
-    return Promise.resolve(this.getClientsStore().listUsers(scope));
+  async listClientsUsers(scope) {
+    const { decorateUserWithRoleDisplay, loadRoleDisplayIndexFromRepo } = require("../lib/roleDisplayLabels");
+    const users = this.getClientsStore().listUsers(scope);
+    const index = await loadRoleDisplayIndexFromRepo(this);
+    return users.map((user) => decorateUserWithRoleDisplay(user, index));
   }
 
-  listClientsAuthAccounts() {
-    return Promise.resolve(this.getClientsStore().listAuthAccounts());
+  async listClientsAuthAccounts() {
+    const { decorateUserWithRoleDisplay, loadRoleDisplayIndexFromRepo } = require("../lib/roleDisplayLabels");
+    const accounts = this.getClientsStore().listAuthAccounts();
+    const index = await loadRoleDisplayIndexFromRepo(this);
+    return accounts.map((user) => decorateUserWithRoleDisplay(user, index));
   }
 
   createClientsUser(payload, principal, auditMeta) {
@@ -3759,6 +3882,15 @@ class FallbackRepository {
     return Promise.resolve([]);
   }
 
+  /** SEC-AUTH-05 — historique user_roles (voir lib/liveRoleState.js). */
+  userHasRoleHistory(userId) {
+    const store = this.getClientsStore();
+    const bound = store?.bind ? store.bind() : store;
+    // Pas de réponse « aucun historique » par défaut : l'absence doit être établie (fail-closed).
+    if (typeof bound?.userHasRoleHistory !== "function") return Promise.reject(new Error("userHasRoleHistory indisponible"));
+    return bound.userHasRoleHistory(userId);
+  }
+
   listActiveUserRoleKeysForSchool(userId, schoolId) {
     const uid = String(userId ?? "").trim();
     const sid = String(schoolId ?? "").trim();
@@ -3785,6 +3917,14 @@ class FallbackRepository {
 
   createClientsRelation(payload, principal, auditMeta) {
     return this.getClientsStore().createRelation(payload, principal, auditMeta);
+  }
+
+  updateClientsRelation(relationId, payload, principal, auditMeta) {
+    return this.getClientsStore().updateRelation(relationId, payload, principal, auditMeta);
+  }
+
+  archiveClientsRelation(relationId, principal, auditMeta) {
+    return this.getClientsStore().archiveRelation(relationId, principal, auditMeta);
   }
 
   linkParent(payload, principal, auditMeta) {
@@ -4012,6 +4152,21 @@ class FallbackRepository {
     return createRole(this, payload, principal, auditMeta);
   }
 
+  updateEstablishmentRoleDisplayLabel(roleId, patch, principal, auditMeta) {
+    const { updateRoleDisplayLabel } = require("../lib/establishmentRolesService");
+    return updateRoleDisplayLabel(this, roleId, patch, principal, auditMeta);
+  }
+
+  resetEstablishmentRoleDisplayLabel(roleId, principal, auditMeta) {
+    const { resetRoleDisplayLabel } = require("../lib/establishmentRolesService");
+    return resetRoleDisplayLabel(this, roleId, principal, auditMeta);
+  }
+
+  listEstablishmentRoleDisplayLabels(principal) {
+    const { listRoleDisplayLabels } = require("../lib/establishmentRolesService");
+    return listRoleDisplayLabels(this, principal);
+  }
+
   updateEstablishmentRole(roleId, patch, principal, auditMeta) {
     const { updateRole } = require("../lib/establishmentRolesService");
     return updateRole(this, roleId, patch, principal, auditMeta);
@@ -4116,6 +4271,25 @@ class FallbackRepository {
       });
       if (shouldSeedDemoData()) {
         const store = this._documentsExamsStore;
+        const seedSchool = (code) => {
+          const wanted = String(code ?? "").trim().toUpperCase();
+          const listed = [seedData.school, ...(seedData.platformSchools ?? [])];
+          const found = listed.find(
+            (item) => String(item.code ?? item.schoolCode ?? "").trim().toUpperCase() === wanted,
+          );
+          return store.registerSchool(found || { code });
+        };
+        for (const student of seedData.students ?? []) {
+          const school = seedSchool(student.schoolCode);
+          if (!school) continue;
+          store.registerStudent({
+            id: student.id,
+            school_id: school.id,
+            student_code: student.matricule ?? student.identifier ?? student.id,
+            first_name: student.firstName ?? "",
+            last_name: student.lastName ?? student.name ?? "",
+          });
+        }
         for (const exam of seedData.exams ?? []) {
           const school = store.registerSchool({ code: exam.schoolCode });
           if (school) void store.insertExam(school.id, exam);
@@ -4125,7 +4299,7 @@ class FallbackRepository {
           if (school) void store.generateReportCard(school.id, bulletin);
         }
         for (const document of seedData.documents ?? []) {
-          const school = store.registerSchool({ code: document.schoolCode });
+          const school = seedSchool(document.schoolCode);
           if (school) {
             void store.insertSchoolDocument(school.id, {
               ...document,

@@ -13,22 +13,32 @@ export function notifyMessagesUnreadChanged(): void {
  * Badge Messages : compteur PostgreSQL (GET unread-count).
  * Aucun snapshot BackOffice / DataContext comme source de vérité.
  */
-export function useMessagesUnreadCount(enabled: boolean, schoolCode?: string | null): number {
+export function useMessagesUnreadCount(
+  enabled: boolean,
+  schoolCode?: string | null,
+  user?: { role?: string } | null,
+): number {
   const [count, setCount] = useState(0);
-  const schoolScope = hasCommunicationSchoolScope(schoolCode) ? schoolCode : undefined;
+  const schoolScope = hasCommunicationSchoolScope(schoolCode, user) ? schoolCode : undefined;
   useEffect(() => {
+    setCount(0);
     if (!enabled) {
-      setCount(0);
       return;
     }
     let cancelled = false;
 
+    // P0-WEB-01 : focus + visibilitychange arrivent ensemble ; un seul appel en vol.
+    let inFlight = false;
     async function refresh() {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const result = await messagesApi.unreadCount(schoolScope ?? undefined);
         if (!cancelled) setCount(Math.max(0, Number(result?.count) || 0));
       } catch {
         /* erreur transport : conserver la dernière valeur connue, jamais un zéro métier */
+      } finally {
+        inFlight = false;
       }
     }
 

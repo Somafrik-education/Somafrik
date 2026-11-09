@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { FinancePaymentsOverview } from "./FinancePaymentsOverview";
 import { formatPaymentOverviewAmounts } from "../../lib/paymentAmountBreakdown";
 import type { StudentFeeObligation } from "../../lib/paymentRateKpi";
 
-function obligation(
-  studentId: string,
-  extras: Partial<StudentFeeObligation> = {},
-): StudentFeeObligation {
+function obligation(studentId: string, extras: Partial<StudentFeeObligation> = {}): StudentFeeObligation {
   return {
     studentId,
     amountDue: 1000,
@@ -18,8 +15,8 @@ function obligation(
   };
 }
 
-describe("FinancePaymentsOverview — FIN-L3", () => {
-  it("FIN-L3-01-A/B affiche CDF et USD, jamais un 0 USD artificiel", () => {
+describe("FinancePaymentsOverview — FIN-L3 / FIN-SIMPLE-02", () => {
+  it("FIN-L3-01-A/B conserve CDF et USD séparés, jamais un 0 USD artificiel", () => {
     const fees = [
       obligation("s-cdf", { amountDue: 100_000, amountPaid: 20_000, currency: "CDF" }),
       obligation("s-usd", { amountDue: 50, amountPaid: 10, currency: "USD" }),
@@ -35,14 +32,16 @@ describe("FinancePaymentsOverview — FIN-L3", () => {
         recentPaymentCount={0}
       />,
     );
-    expect(screen.queryByText(/^(0[\s\u00a0\u202f]+USD)$/m)).not.toBeInTheDocument();
-    expect(screen.getByText(/100[\s\u00a0\u202f]?000 CDF/)).toBeInTheDocument();
-    expect(screen.getByText(/50 USD/)).toBeInTheDocument();
-    expect(screen.getByText(/20[\s\u00a0\u202f]?000 CDF/)).toBeInTheDocument();
-    expect(screen.getByText(/80[\s\u00a0\u202f]?000 CDF/)).toBeInTheDocument();
+    const summary = screen.getByRole("region", { name: "Synthèse financière" });
+    expect(within(summary).queryByText(/^(0[\s\u00a0\u202f]+USD)$/m)).not.toBeInTheDocument();
+    expect(within(summary).getByText(/100[\s\u00a0\u202f]?000 CDF/)).toBeInTheDocument();
+    expect(within(summary).getByText(/50 USD/)).toBeInTheDocument();
+    expect(within(summary).getByText(/80[\s\u00a0\u202f]?000 CDF/)).toBeInTheDocument();
+    expect(within(summary).getByText(/40 USD/)).toBeInTheDocument();
+    expect(within(summary).queryByText(/20[\s\u00a0\u202f]?000 CDF/)).not.toBeInTheDocument();
   });
 
-  it("FIN-L3-03 libellé Obligations élèves, pas Obligations ni Tarifs", () => {
+  it("FIN-12 affiche exactement les trois KPI demandés, sans compteurs ni carte d'imputation", () => {
     render(
       <FinancePaymentsOverview
         expectedLabel="—"
@@ -50,17 +49,23 @@ describe("FinancePaymentsOverview — FIN-L3", () => {
         allocatedLabel="—"
         remainingLabel="—"
         obligationCount={41}
-        recentPaymentCount={0}
+        recentPaymentCount={7}
       />,
     );
-    expect(screen.getByText("Obligations élèves")).toBeInTheDocument();
-    expect(screen.queryByText(/^Obligations$/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Tarifs/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Frais configurés/)).not.toBeInTheDocument();
-    expect(screen.getByText("41")).toBeInTheDocument();
+    const summary = screen.getByRole("region", { name: "Synthèse financière" });
+    expect(within(summary).getAllByText(/^(Obligation|Encaissé|Reste à payer)$/).map((node) => node.textContent)).toEqual([
+      "Obligation",
+      "Encaissé",
+      "Reste à payer",
+    ]);
+    expect(within(summary).queryByText("Obligations élèves")).not.toBeInTheDocument();
+    expect(within(summary).queryByText("Paiements récents")).not.toBeInTheDocument();
+    expect(within(summary).queryByText(/imputé/i)).not.toBeInTheDocument();
+    expect(within(summary).queryByText("41")).not.toBeInTheDocument();
+    expect(within(summary).queryByText("7")).not.toBeInTheDocument();
   });
 
-  it("FIN-L3-04-C Montant encaissé ≠ Montant imputé aux obligations", () => {
+  it("FIN-L3-04-C Encaissé est le cash, jamais amountPaid d'obligation", () => {
     render(
       <FinancePaymentsOverview
         expectedLabel="100 000 CDF"
@@ -71,9 +76,9 @@ describe("FinancePaymentsOverview — FIN-L3", () => {
         recentPaymentCount={1}
       />,
     );
-    expect(screen.getByText("Montant imputé aux obligations")).toBeInTheDocument();
-    expect(screen.getByText("Montant encaissé")).toBeInTheDocument();
+    expect(screen.getByText("Encaissé")).toBeInTheDocument();
     expect(screen.getByText("150 CDF")).toBeInTheDocument();
-    expect(screen.getByText("20 000 CDF")).toBeInTheDocument();
+    expect(screen.getByText("80 000 CDF")).toBeInTheDocument();
+    expect(screen.queryByText("20 000 CDF")).not.toBeInTheDocument();
   });
 });

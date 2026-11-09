@@ -1,6 +1,7 @@
-import { api } from "../api/client";
+import { api, type RequestArgs } from "../api/client";
 import { readStoredSchoolCode } from "./activeSchool";
 import { COUNTRY_ADMIN_ROLE, SCHOOL_ADMIN_ROLE } from "./orgHierarchy";
+import { uniqueRolesByRoleKey } from "./roleDisplayLabels";
 import {
   readActiveCommunicationSchoolScope,
   withCommunicationSchoolPayload,
@@ -34,23 +35,16 @@ interface AssignableRole {
   roleName: string;
 }
 
-function withPlatformAssignableRoles(roles: AssignableRole[]): AssignableRole[] {
-  const merged = [
+export function withPlatformAssignableRoles(roles: AssignableRole[]): AssignableRole[] {
+  return uniqueRolesByRoleKey([
     ...roles,
     { roleKey: "COUNTRY_ADMIN", roleName: COUNTRY_ADMIN_ROLE },
     { roleKey: "SCHOOL_ADMIN", roleName: SCHOOL_ADMIN_ROLE },
-  ];
-  const seen = new Set<string>();
-  return merged.filter((entry) => {
-    const key = String(entry.roleName ?? "").trim().toLocaleLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  ]);
 }
 
 export const clientsApi = {
-  listUsers: () => api.get<unknown[]>("/backoffice/users"),
+  listUsers: (...init: RequestArgs) => api.get<unknown[]>("/backoffice/users", ...init),
   createUser: (payload: Record<string, unknown>) => api.post("/backoffice/users", buildCreateUserPayload(payload)),
   provisionUser: (payload: Record<string, unknown>) => api.post("/backoffice/users/provision", payload),
   createTeacherIdentity: (payload: Record<string, unknown>) =>
@@ -68,18 +62,25 @@ export const clientsApi = {
   revokeUserRole: (userId: string, role: string) =>
     api.post(`/backoffice/users/${encodeURIComponent(userId)}/roles/revoke`, { role }),
 
-  listContacts: () => api.get<unknown[]>("/backoffice/contacts"),
+  listContacts: (...init: RequestArgs) => api.get<unknown[]>("/backoffice/contacts", ...init),
   createContact: (payload: Record<string, unknown>) => api.post("/backoffice/contacts", payload),
   updateContact: (contactId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/contacts/${encodeURIComponent(contactId)}`, payload),
   provisionContactAccount: (contactId: string, payload: Record<string, unknown>) =>
     api.post(`/backoffice/contacts/${encodeURIComponent(contactId)}/provision-account`, payload),
 
-  listRelations: () => api.get<unknown[]>("/backoffice/relations"),
+  listRelations: (...init: RequestArgs) => api.get<unknown[]>("/backoffice/relations", ...init),
   createRelation: (payload: Record<string, unknown>) => api.post("/backoffice/relations", payload),
+  updateRelation: (relationId: string, payload: Record<string, unknown>) =>
+    api.patch(`/backoffice/relations/${encodeURIComponent(relationId)}`, payload),
+  archiveRelation: (relationId: string) =>
+    api.post(`/backoffice/relations/${encodeURIComponent(relationId)}/archive`, {}),
 
-  listMessages: () =>
-    api.get<unknown[]>(withCommunicationSchoolScope("/backoffice/messages", readActiveCommunicationSchoolScope())),
+  listMessages: (...init: RequestArgs) =>
+    api.get<unknown[]>(
+      withCommunicationSchoolScope("/backoffice/messages", readActiveCommunicationSchoolScope()),
+      ...init,
+    ),
   sendMessage: (payload: Record<string, unknown>) =>
     api.post("/backoffice/messages", withCommunicationSchoolPayload(payload), {
       headers: { "Idempotency-Key": crypto.randomUUID() },
@@ -93,9 +94,10 @@ export const clientsApi = {
       {},
     ),
 
-  listAnnouncements: async () => {
+  listAnnouncements: async (...init: RequestArgs) => {
     const data = await api.get<{ items?: unknown[] } | unknown[]>(
       withCommunicationSchoolScope("/backoffice/announcements", readActiveCommunicationSchoolScope()),
+      ...init,
     );
     return Array.isArray(data) ? data : data?.items ?? [];
   },

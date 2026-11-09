@@ -1,6 +1,6 @@
 /**
  * Contrat UI/UX — parcours connexion mobile (code établissement → identifiant → secret).
- * Parent (`parent_student`) : mot de passe standard. Élève : PIN numérique.
+ * Parent (`parent_student`) et Élève (`student`) : mot de passe standard.
  */
 
 export const ROLE_SELECTION_COPY = {
@@ -24,13 +24,13 @@ export const LOGIN_SCREEN_COPY = {
   rolePending: "En attente",
   loginButton: "Se connecter",
   pinLabel: "Mot de passe",
-  studentPinLabel: "PIN",
-  pinPlaceholder: "Ex. 1234",
+  studentPinLabel: "Mot de passe",
+  pinPlaceholder: "Ex. ••••••",
   passwordLabel: "Mot de passe",
   passwordPlaceholder: "Ex. ••••••",
   newPasswordLabel: "Nouveau mot de passe",
   confirmPasswordLabel: "Confirmation",
-  emptyFieldsError: "Veuillez saisir votre identifiant et votre code PIN.",
+  emptyFieldsError: "Veuillez saisir votre identifiant et votre mot de passe.",
   accountNotFoundError: "Identifiant invalide.",
   loginFailedTitle: "Connexion impossible",
 } as const;
@@ -42,7 +42,7 @@ export const ERROR_MESSAGES = {
   invalidPin: "PIN incorrect.",
   invalidCredentials: "Identifiant ou mot de passe incorrect.",
   emptySchoolCode: "Veuillez saisir le code établissement.",
-  emptyFields: "Veuillez saisir votre identifiant et votre code PIN.",
+  emptyFields: "Veuillez saisir votre identifiant et votre mot de passe.",
   networkError: "Connexion impossible. Vérifiez votre réseau et réessayez.",
 } as const;
 
@@ -67,8 +67,8 @@ export function mapSchoolCodeError(rawMessage = ""): string {
   return ERROR_MESSAGES.invalidSchoolCode;
 }
 
-export function usesNumericPinSecret(role?: string): boolean {
-  return role === "student";
+export function usesNumericPinSecret(_role?: string): boolean {
+  return false;
 }
 
 export function resolveSecretFieldCopy(role?: string): { label: string; placeholder: string } {

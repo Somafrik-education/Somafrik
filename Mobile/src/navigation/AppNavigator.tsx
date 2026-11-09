@@ -4,8 +4,8 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { navigationRef } from "./rootNavigation";
 import { flushPendingPushNavigation } from "../lib/pushNotificationTap";
-import { dispatchRegisteredPushNavigation } from "../lib/pushNotificationNavigate";
-import { constrainParentPushNavigation } from "../lib/pushNotificationDestinations";
+import { observePushNavigationState } from "../lib/pushNotificationNavigate";
+import { createPushNotificationOpener } from "../lib/pushNotificationOpener";
 
 import RoleSelectionScreen from "../screens/RoleSelectionScreen";
 import WelcomeScreen from "../screens/WelcomeScreen";
@@ -32,6 +32,10 @@ import ReportCardsScreen from "../screens/ReportCardsScreen";
 import ExamsScreen from "../screens/ExamsScreen";
 import ClassGradesStatsScreen from "../screens/ClassGradesStatsScreen";
 import TeacherAttendanceScreen from "../screens/TeacherAttendanceScreen";
+import StudentCardEntryControlScreen from "../screens/StudentCardEntryControlScreen";
+import StudentCardNfcDiagnosisScreen from "../screens/StudentCardNfcDiagnosisScreen";
+import { canDiagnoseNfc } from "../lib/studentCardNfcDiagnosis";
+import { entryControlActor } from "../lib/studentCardEntryControl";
 import TeacherGradesScreen from "../screens/TeacherGradesScreen";
 import {
   MobilePaymentScreen,
@@ -94,6 +98,8 @@ export type RootStackParamList = {
   Users: undefined;
   TeacherStudents: undefined;
   TeacherAttendance: undefined;
+  EntryControl: undefined;
+  NfcDiagnosis: undefined;
   TeacherGrades: undefined;
   ClassGradesStats: undefined;
   Exams: undefined;
@@ -250,13 +256,11 @@ export default function AppNavigator() {
     <HelpUiProvider>
       <NavigationContainer
         ref={navigationRef}
+        onStateChange={(state) => observePushNavigationState(state)}
         key={session ? "authenticated" : "public"}
         onReady={() => {
         flushPendingPushNavigation(
-          (destination, params) => {
-            const scoped = constrainParentPushNavigation({ destination, params }, session);
-            dispatchRegisteredPushNavigation(navigationRef, scoped.destination, scoped.params);
-          },
+          createPushNotificationOpener(() => session),
           {
             isReady: () => navigationRef.isReady(),
             isAuthenticated: () => Boolean(session) && canPersistFullSession(session),
@@ -307,6 +311,9 @@ export default function AppNavigator() {
         {canReadRoute(session, "Students") && <Stack.Screen name="Students" component={StudentsScreen} options={{ title: "Élèves" }} />}
         {canReadRoute(session, "TeacherStudents") && <Stack.Screen name="TeacherStudents" component={StudentsScreen} options={{ title: "Mes élèves" }} />}
         {canReadRoute(session, "TeacherAttendance") && <Stack.Screen name="TeacherAttendance" component={TeacherAttendanceScreen} options={{ title: "Appel" }} />}
+        {/* CARTE-PR3-M1 : clé admissible + permission Contrôle d'entrée:CREATE, indépendant des droits Présences. */}
+        {entryControlActor(session) && <Stack.Screen name="EntryControl" component={StudentCardEntryControlScreen} options={{ title: "Contrôle d'entrée" }} />}
+        {canDiagnoseNfc(session) && <Stack.Screen name="NfcDiagnosis" component={StudentCardNfcDiagnosisScreen} options={{ title: "Diagnostic NFC" }} />}
         {canReadRoute(session, "TeacherGrades") && <Stack.Screen name="TeacherGrades" component={TeacherGradesScreen} options={{ title: "Notes" }} />}
         {canReadRoute(session, "ClassGradesStats") && (
           <Stack.Screen name="ClassGradesStats" component={ClassGradesStatsScreen} options={{ title: "Statistiques de classe" }} />

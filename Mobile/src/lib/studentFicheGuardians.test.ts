@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   classifyGuardiansLoad,
+  filterActiveParentRelations,
   guardiansCardSubtitle,
 } from "./studentFicheGuardians";
 
@@ -42,4 +43,16 @@ test("PARITY-014 : offline → état offline + Indisponible", () => {
   });
   assert.equal(state, "offline");
   assert.equal(guardiansCardSubtitle(state, 0), "Indisponible");
+});
+
+test("FICHE-RESP : les relations archivées FR/EN et inactives ne reviennent jamais comme responsables", () => {
+  const rows = [
+    { id: "a", status: "Actif" },
+    { id: "b", status: "Archivé" },
+    { id: "c", status: "archived" },
+    { id: "d", status: "Inactif" },
+    { id: "e", status: "active" },
+    { id: "f", status: undefined },
+  ];
+  assert.deepEqual(filterActiveParentRelations(rows).map((x) => x.id), ["a", "e"]);
 });

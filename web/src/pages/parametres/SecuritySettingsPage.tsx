@@ -16,6 +16,7 @@ import { Table, type Column } from "../../design-system";
 import { PrintButton } from "../../components/ui/PrintButton";
 import { rowsToCsv, downloadCsv } from "../../lib/csv";
 import type { AuditEntry } from "../../lib/audit";
+import { formatVisibleRoleLabels, visibleRoleLabel } from "../../lib/roleDisplayLabels";
 
 const AUDIT_ACTION_LABELS: Record<string, string> = {
   "contact.create": "Contact créé",
@@ -187,7 +188,7 @@ export function SettingsSecurityPage() {
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <InfoRow label="Utilisateur" value={displayName} />
             <InfoRow label="Identifiant" value={user?.identifier} />
-            <InfoRow label="Rôle" value={user?.role} />
+            <InfoRow label="Rôle" value={formatVisibleRoleLabels(user) || visibleRoleLabel(user)} />
             <InfoRow label="Canal d'accès" value={user?.accessChannel} />
             <InfoRow label="Établissement" value={user?.schoolCode} />
             <InfoRow label="Portée" value={session?.scope?.label} />

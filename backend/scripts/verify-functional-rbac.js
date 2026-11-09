@@ -1,5 +1,6 @@
 "use strict";
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 
@@ -80,7 +81,7 @@ async function main() {
   });
   try {
     await waitForHealth(child, logs);
-    const superToken = await login("superadmin", "1234");
+    const superToken = await login("superadmin", superadminLoginPassword());
     const countryToken = await login("admin-rdc", "1234");
     const schoolToken = await login("admin", "1234", "CD-2026-0001");
     const prefetLogin = await request("/backoffice/login", {

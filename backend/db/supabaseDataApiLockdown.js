@@ -17,6 +17,7 @@ const SENSITIVE_BUSINESS_TABLES = Object.freeze([
   "audit_logs",
   "sessions",
   "mobile_push_devices",
+  "student_access_cards",
 ]);
 
 const DATA_API_PRIVILEGES = Object.freeze(["SELECT", "INSERT", "UPDATE", "DELETE"]);

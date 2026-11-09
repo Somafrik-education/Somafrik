@@ -1,7 +1,6 @@
 import type { StudentDocumentViewModel } from "../../lib/studentDocumentsViewModel";
 import { Card, SectionHeader } from "../../design-system";
 import { StudentDocumentBadges } from "./StudentDocumentBadges";
-import { cn } from "../../lib/utils";
 
 interface StudentDocumentsSummaryProps {
   documents: StudentDocumentViewModel;
@@ -13,13 +12,7 @@ export function StudentDocumentsSummary({
   const { summary } = documents;
 
   return (
-    <Card
-      className={cn(
-        "p-6",
-        summary.hasCriticalMissingDocument && "border-danger/30 bg-danger/5",
-      )}
-      data-testid="student-documents-summary"
-    >
+    <Card className="p-6" data-testid="student-documents-summary">
       <SectionHeader
         title="Documents"
         description="État de conformité administrative du dossier élève."
@@ -64,18 +57,6 @@ export function StudentDocumentsSummary({
         </div>
       </dl>
 
-      {documents.criticalAlerts.length > 0 ? (
-        <ul className="mt-6 space-y-2">
-          {documents.criticalAlerts.map((alert) => (
-            <li
-              key={alert}
-              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900"
-            >
-              {alert}
-            </li>
-          ))}
-        </ul>
-      ) : null}
     </Card>
   );
 }

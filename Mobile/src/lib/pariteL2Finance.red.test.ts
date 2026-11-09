@@ -93,7 +93,7 @@ const cases: { id: string; title: string; run: () => void }[] = [
       assert.match(unpaidScreen, /Montant alloué aux impayés ouverts/);
       assert.doesNotMatch(unpaidScreen, />Montant payé</);
       assert.match(unpaidScreen, /Montant attendu/);
-      assert.match(unpaidScreen, /Reste dû/);
+      assert.match(unpaidScreen, /Reste à payer/);
     },
   },
 ];

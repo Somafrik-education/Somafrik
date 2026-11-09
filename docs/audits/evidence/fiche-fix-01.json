@@ -1,0 +1,94 @@
+{
+  "fixture": {
+    "schoolLoginCode": "CD-LAC-26-001",
+    "studentCode": "CD-LAC-EL-26-901",
+    "passwordPublished": false,
+    "jwtPublished": false
+  },
+  "before": "—",
+  "form": "NOTE-UI-ALPHA",
+  "patch": {
+    "method": "PATCH",
+    "path": "/api/students/CD-LAC-EL-26-901",
+    "status": 200,
+    "payload": {
+      "administrativeNotes": "NOTE-UI-ALPHA",
+      "hasExpectedUpdatedAt": true,
+      "firstName": null
+    },
+    "administrativeNotes": "NOTE-UI-ALPHA"
+  },
+  "sqlAfterSave": "NOTE-UI-ALPHA",
+  "displayedAfterSave": "NOTE-UI-ALPHA",
+  "getAfterReload": {
+    "method": "GET",
+    "path": "/api/students/CD-LAC-EL-26-901",
+    "status": 304,
+    "administrativeNotes": "NOTE-UI-ALPHA"
+  },
+  "displayedAfterReload": "NOTE-UI-ALPHA",
+  "displayedAfterReconnect": "NOTE-UI-ALPHA",
+  "sqlAfterReconnect": "NOTE-UI-ALPHA",
+  "networkError": {
+    "successBanner": false,
+    "draft": "NOTE-UI-DRAFT",
+    "sql": "NOTE-UI-ALPHA"
+  },
+  "patches": [
+    {
+      "method": "PATCH",
+      "path": "/api/students/CD-LAC-EL-26-901",
+      "status": 200,
+      "payload": {
+        "administrativeNotes": "NOTE-UI-ALPHA",
+        "hasExpectedUpdatedAt": true,
+        "firstName": null
+      },
+      "administrativeNotes": "NOTE-UI-ALPHA"
+    }
+  ],
+  "gets": [
+    {
+      "method": "GET",
+      "path": "/api/students/CD-LAC-EL-26-901",
+      "status": 200,
+      "administrativeNotes": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/CD-LAC-EL-26-901",
+      "status": 304,
+      "administrativeNotes": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/CD-LAC-EL-26-901",
+      "status": 200,
+      "administrativeNotes": "NOTE-UI-ALPHA"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/CD-LAC-EL-26-901",
+      "status": 304,
+      "administrativeNotes": "NOTE-UI-ALPHA"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/CD-LAC-EL-26-901",
+      "status": 304,
+      "administrativeNotes": "NOTE-UI-ALPHA"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/CD-LAC-EL-26-901",
+      "status": 304,
+      "administrativeNotes": "NOTE-UI-ALPHA"
+    },
+    {
+      "method": "GET",
+      "path": "/api/students/CD-LAC-EL-26-901",
+      "status": 304,
+      "administrativeNotes": "NOTE-UI-ALPHA"
+    }
+  ]
+}

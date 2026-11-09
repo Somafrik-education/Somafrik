@@ -6,6 +6,7 @@
  * Prérequis : backend démarré (mode mémoire ou PostgreSQL).
  *   SOMAFRIK_API_URL=http://127.0.0.1:5057/api node scripts/verify-school-admin-validation.js
  */
+const { superadminLoginPassword } = require("../backend/lib/superadminSeedSecret");
 const assert = require("assert");
 
 const base = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
@@ -84,7 +85,7 @@ async function main() {
   });
 
   // 3) Le compte doit être stocké « En attente de validation » (et non Actif)
-  const superToken = await login("superadmin@somafrik.app", "1234");
+  const superToken = await login("superadmin@somafrik.app", superadminLoginPassword());
   let stored = (await getUsers(superToken)).find((u) => u.identifier === identifier);
   assert.ok(stored, "Compte créé introuvable côté Super Admin");
   results.push({

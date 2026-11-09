@@ -1,6 +1,7 @@
 "use strict";
 
 const { getCountryCodeFromScope } = require("./countryScope");
+const { isSuperAdminPrincipal, SUPER_ADMIN_ROLES } = require("./superadminPrincipal");
 
 const PLATFORM_ERROR = Object.freeze({
   TENANT_MISMATCH: "TENANT_MISMATCH",
@@ -14,8 +15,6 @@ const PLATFORM_ERROR = Object.freeze({
   DISCOUNT_NOT_FOUND: "DISCOUNT_NOT_FOUND",
   FORBIDDEN: "FORBIDDEN",
 });
-
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -34,10 +33,6 @@ function createPlatformError(status, message, code, details) {
   error.code = code;
   if (details) error.details = details;
   return error;
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
 
 function isCountryAdminPrincipal(principal) {
@@ -147,6 +142,8 @@ function mapSubscriptionRow(row) {
     cancellationEffectiveDate: profile.cancellationEffectiveDate,
     cancellationReason: profile.cancellationReason,
     ...profile,
+    // Statut stocké (colonne subscriptions.status) : jamais masqué par le profil JSON (MONO-FIX-O9).
+    dbStatus: row.status ?? null,
   };
 }
 

@@ -17,6 +17,13 @@ const {
 } = require("./platformPersonalDataGuard");
 const seedData = require("../data");
 
+require("./authOptionalFailClosed.test.js");
+require("./financeSuperadminScope.p1-01.test.js");
+require("./superadminPrincipal.p1-02.test.js");
+require("./communicationsMessages.p1-03.test.js");
+require("./planningSyncDeny.p1-06.test.js");
+require("./allPrivilegesSchoolDomainDeny.p1-12.test.js");
+
 const rbac = new RbacService();
 
 const SUPER = {
@@ -100,6 +107,28 @@ test("P0-2 : matching HTTP ignore query/header et paramétrage :id", () => {
     "GET /api/students",
   );
   assert.equal(matchForbiddenPersonalDataRouteKey("GET", "/api/students/abc-1"), "GET /api/students/:id");
+  assert.equal(
+    matchForbiddenPersonalDataRouteKey("GET", "/api/students/abc-1/cards"),
+    "GET /api/students/:id/cards",
+  );
+  assert.equal(matchForbiddenPersonalDataRouteKey("POST", "/api/student-cards"), "POST /api/student-cards");
+  assert.equal(
+    matchForbiddenPersonalDataRouteKey("POST", "/api/student-cards/abc-1/lost"),
+    "POST /api/student-cards/:id/lost",
+  );
+  assert.equal(
+    matchForbiddenPersonalDataRouteKey("POST", "/api/student-cards/abc-1/revoke"),
+    "POST /api/student-cards/:id/revoke",
+  );
+  assert.equal(
+    matchForbiddenPersonalDataRouteKey("POST", "/api/student-cards/abc-1/replace"),
+    "POST /api/student-cards/:id/replace",
+  );
+  assert.equal(matchForbiddenPersonalDataRouteKey("POST", "/api/student-cards/scan"), "POST /api/student-cards/scan");
+  assert.equal(
+    matchForbiddenPersonalDataRouteKey("GET", "/api/student-cards/capabilities"),
+    "GET /api/student-cards/capabilities",
+  );
   assert.equal(matchForbiddenPersonalDataRouteKey("GET", "/api/payments/pay-1"), "GET /api/payments/:paymentId");
   assert.equal(matchForbiddenPersonalDataRouteKey("POST", "/api/mobile/push-devices/test"), "");
   assert.equal(isPlatformPersonalDataForbiddenHttp(SUPER, "POST", "/api/mobile/push-devices/test"), false);
@@ -134,6 +163,14 @@ test("P0-2 : toutes les routes FORBIDDEN refusent SUPER_ADMIN et COUNTRY_ADMIN",
 test("P0-2 : rôles établissement autorisés restent positifs", () => {
   assert.equal(rbac.canAccess(SCHOOL_ADMIN, "GET /api/students"), true);
   assert.equal(rbac.canAccess(TEACHER, "GET /api/students"), true);
+  assert.equal(rbac.canAccess(SCHOOL_ADMIN, "GET /api/students/:id/cards"), true);
+  assert.equal(rbac.canAccess(TEACHER, "GET /api/students/:id/cards"), true);
+  assert.equal(rbac.canAccess(SCHOOL_ADMIN, "POST /api/student-cards"), true);
+  assert.equal(rbac.canAccess(TEACHER, "POST /api/student-cards"), false);
+  assert.equal(
+    rbac.canAccess({ ...SCHOOL_ADMIN, permissions: ["Élèves:READ"] }, "POST /api/student-cards"),
+    false,
+  );
   assert.equal(
     rbac.canAccess({ ...SCHOOL_ADMIN, permissions: ["Enseignants:READ", "Voir enseignants"] }, "GET /api/teachers"),
     true,

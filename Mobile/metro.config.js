@@ -23,7 +23,13 @@ const smokeApp =
       ? path.resolve(__dirname, "App.communicationUxSmoke.tsx")
       : process.env.SOMAFRIK_GUIDED_SETUP_UX_SMOKE_ENTRY === "1"
         ? path.resolve(__dirname, "App.guidedSetupUxSmoke.tsx")
-        : null;
+        : process.env.SOMAFRIK_RC_NATIVE_PROOF_ENTRY === "1"
+          ? path.resolve(__dirname, "App.rcNativeProof.tsx")
+          : null;
+// NFC-PRES-LOCAL-PR2 — la recette native lit les vecteurs partagés du contrat (docs/audits) tels quels.
+if (process.env.SOMAFRIK_RC_NATIVE_PROOF_ENTRY === "1") {
+  config.watchFolders = [...config.watchFolders, path.resolve(projectRoot, "../docs/audits")];
+}
 if (smokeApp) {
   const productionAppDir = path.resolve(__dirname);
   const previousResolve = config.resolver.resolveRequest;

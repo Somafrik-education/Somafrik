@@ -1,5 +1,7 @@
 "use strict";
 
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
+
 const EVALUATION_TYPES_ERROR = Object.freeze({
   FORBIDDEN: "FORBIDDEN",
   NOT_FOUND: "NOT_FOUND",
@@ -11,8 +13,6 @@ const EVALUATION_TYPES_ERROR = Object.freeze({
   LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN: "LEGACY_EVALUATION_TYPES_WRITE_FORBIDDEN",
   LEGACY_EVALUATION_TYPES_AMBIGUOUS: "LEGACY_EVALUATION_TYPES_AMBIGUOUS",
 });
-
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
 const DEFAULT_EVALUATION_TYPES = Object.freeze([
   { code: "interrogation", name: "Interrogation", displayOrder: 10 },
@@ -51,10 +51,6 @@ function createEvaluationTypesError(status, message, code, details) {
   error.code = code || EVALUATION_TYPES_ERROR.FORBIDDEN;
   if (details) error.details = details;
   return error;
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
 
 function isCountryAdminPrincipal(principal) {

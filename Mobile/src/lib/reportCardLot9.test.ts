@@ -86,3 +86,31 @@ test("report-card-lot9-no-lot10-plus", () => {
   });
   assert.deepEqual(hits, []);
 });
+
+
+test("bulletin reissue: Mobile fail-closed with hydrated REPORT_CARD_PUBLISH", () => {
+  const screen = readRel("Mobile/src/screens/ReportCardsScreen.tsx");
+  assert.match(screen, /permissionsBootstrap === "ready"/);
+  assert.match(screen, /\.includes\("REPORT_CARD_PUBLISH"\) === true/);
+  assert.match(screen, /if \(!canReissue \|\| reissueBusy\) return/);
+  assert.match(screen, /if \(!canReissue \|\| reissueBusy \|\| !reissueDraft\) return/);
+  assert.match(screen, /\{canReissue && card\.versionHistory\.some/);
+  assert.match(screen, /verification_status === "ACTIVE"/);
+});
+
+test("bulletin reissue: distinct preview and explicit confirmation, without auto-write", () => {
+  const screen = readRel("Mobile/src/screens/ReportCardsScreen.tsx");
+  const api = readRel("Mobile/src/lib/reportCardReissueApi.ts");
+  const history = readRel("Mobile/src/lib/reportCardHistoryApi.ts");
+  assert.match(api, /reissues`/);
+  assert.match(api, /previewReportCardReissue/);
+  assert.match(api, /publishReportCardReissue/);
+  assert.match(screen, /const preview = await previewReportCardReissue/);
+  assert.match(screen, /"Annuler", style: "cancel"/);
+  assert.match(screen, /"Confirmer"/);
+  assert.match(screen, /onPress: \(\) => \{/);
+  assert.match(screen, /commandId: selected\.commandId/);
+  assert.match(screen, /!reissueReason\.trim\(\)/);
+  assert.doesNotMatch(history, /method: "POST"/);
+  assert.doesNotMatch(history, /publishReportCardReissue/);
+});

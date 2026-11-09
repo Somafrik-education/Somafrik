@@ -11,6 +11,7 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_COM_C3_IT_DATABASE ?? "somafrik_com_c3_it")
@@ -167,8 +168,8 @@ async function stopChild(child) {
   });
 }
 
-function mintAccess(tokens, payload) {
-  return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+function mintAccess({ tokens, repository }, payload) {
+  return mintSessionAccessToken({ tokens, repository, payload: { mustChangePassword: false, ...payload } });
 }
 
 function claims(overrides) {
@@ -468,12 +469,12 @@ async function main() {
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
 
-    const adminA = mintAccess(
-      tokens,
+    const adminA = await mintAccess(
+      { tokens, repository: repo },
       claims({ sub: ADMIN_A, schoolCode: "SCH-COM-A", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
     );
-    const parentA = mintAccess(
-      tokens,
+    const parentA = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: PARENT_A,
         schoolCode: "SCH-COM-A",
@@ -482,8 +483,8 @@ async function main() {
         permissions: ANN_READ,
       }),
     );
-    const parentA2 = mintAccess(
-      tokens,
+    const parentA2 = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: PARENT_A2,
         schoolCode: "SCH-COM-A",
@@ -492,8 +493,8 @@ async function main() {
         permissions: ANN_READ,
       }),
     );
-    const teacherA = mintAccess(
-      tokens,
+    const teacherA = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: TEACHER_A,
         schoolCode: "SCH-COM-A",
@@ -502,8 +503,8 @@ async function main() {
         permissions: ANN_READ,
       }),
     );
-    const teacherA2 = mintAccess(
-      tokens,
+    const teacherA2 = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: TEACHER_A2,
         schoolCode: "SCH-COM-A",
@@ -512,8 +513,8 @@ async function main() {
         permissions: ANN_READ,
       }),
     );
-    const studentA = mintAccess(
-      tokens,
+    const studentA = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: STUDENT_A,
         schoolCode: "SCH-COM-A",
@@ -522,8 +523,8 @@ async function main() {
         permissions: ANN_READ,
       }),
     );
-    const studentA2 = mintAccess(
-      tokens,
+    const studentA2 = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: STUDENT_A2,
         schoolCode: "SCH-COM-A",
@@ -532,12 +533,12 @@ async function main() {
         permissions: ANN_READ,
       }),
     );
-    const adminB = mintAccess(
-      tokens,
+    const adminB = await mintAccess(
+      { tokens, repository: repo },
       claims({ sub: ADMIN_B, schoolCode: "SCH-COM-B", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
     );
-    const parentB = mintAccess(
-      tokens,
+    const parentB = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: PARENT_B,
         schoolCode: "SCH-COM-B",
@@ -546,8 +547,8 @@ async function main() {
         permissions: ANN_READ,
       }),
     );
-    const superSa = mintAccess(
-      tokens,
+    const superSa = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: SUPER_SA,
         schoolCode: "*",
@@ -956,8 +957,8 @@ async function main() {
        VALUES ($1, $2, 'parent_student', $3, $4, 'active')`,
       [fixtures.schoolA, fixtures.countryA, contactA3.id, fixtures.studentA],
     );
-    const parentA3 = mintAccess(
-      tokens,
+    const parentA3 = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: PARENT_A3,
         schoolCode: "SCH-COM-A",

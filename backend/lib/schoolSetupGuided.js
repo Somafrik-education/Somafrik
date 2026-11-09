@@ -134,6 +134,8 @@ function deriveGuidedProgress(snapshot = {}, persisted = {}, schoolId = "") {
       unlocked: index <= lastValidStep,
     })),
     updatedAt: persisted.updatedAt ?? null,
+    finalized: Boolean(persisted.finalizedAt),
+    finalizedAt: persisted.finalizedAt ?? null,
   };
 }
 
@@ -153,14 +155,21 @@ function createMemoryProgressStore(seed = {}) {
     async load(schoolId) {
       const row = rows[String(schoolId)];
       return row
-        ? { lastValidStep: row.lastValidStep, completedSteps: [...row.completedSteps], updatedAt: row.updatedAt }
-        : { lastValidStep: 0, completedSteps: [], updatedAt: null };
+        ? {
+            lastValidStep: row.lastValidStep,
+            completedSteps: [...row.completedSteps],
+            updatedAt: row.updatedAt,
+            finalizedAt: row.finalizedAt ?? null,
+          }
+        : { lastValidStep: 0, completedSteps: [], updatedAt: null, finalizedAt: null };
     },
     async save(schoolId, row) {
+      const current = rows[String(schoolId)];
       rows[String(schoolId)] = {
         lastValidStep: row.lastValidStep,
         completedSteps: [...row.completedSteps],
         updatedAt: row.updatedAt,
+        finalizedAt: current?.finalizedAt ?? row.finalizedAt ?? null,
       };
     },
   };
@@ -170,29 +179,37 @@ function createPgProgressStore(one, query) {
   return {
     async load(schoolId) {
       const row = await one(
-        `SELECT last_valid_step, completed_steps, updated_at
+        `SELECT last_valid_step, completed_steps, updated_at, finalized_at
          FROM school_setup_progress
          WHERE school_id::text = $1`,
         [String(schoolId)],
       );
-      if (!row) return { lastValidStep: 0, completedSteps: [], updatedAt: null };
+      if (!row) return { lastValidStep: 0, completedSteps: [], updatedAt: null, finalizedAt: null };
       const raw = row.completed_steps;
       const completedSteps = Array.isArray(raw) ? raw : [];
       return {
         lastValidStep: Number(row.last_valid_step) || 0,
         completedSteps,
         updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+        finalizedAt: row.finalized_at ? new Date(row.finalized_at).toISOString() : null,
       };
     },
     async save(schoolId, row) {
       await query(
-        `INSERT INTO school_setup_progress (school_id, last_valid_step, completed_steps, updated_at)
-         VALUES ($1::uuid, $2, $3::jsonb, $4::timestamptz)
+        `INSERT INTO school_setup_progress (school_id, last_valid_step, completed_steps, updated_at, finalized_at)
+         VALUES ($1::uuid, $2, $3::jsonb, $4::timestamptz, $5::timestamptz)
          ON CONFLICT (school_id) DO UPDATE SET
            last_valid_step = EXCLUDED.last_valid_step,
            completed_steps = EXCLUDED.completed_steps,
-           updated_at = EXCLUDED.updated_at`,
-        [String(schoolId), row.lastValidStep, JSON.stringify(row.completedSteps), row.updatedAt],
+           updated_at = EXCLUDED.updated_at,
+           finalized_at = COALESCE(school_setup_progress.finalized_at, EXCLUDED.finalized_at)`,
+        [
+          String(schoolId),
+          row.lastValidStep,
+          JSON.stringify(row.completedSteps ?? []),
+          row.updatedAt,
+          row.finalizedAt || null,
+        ],
       );
     },
   };
@@ -361,6 +378,53 @@ async function completeGuidedStep(input = {}) {
     lastValidStep: prefix.length,
     completedSteps,
     updatedAt: new Date().toISOString(),
+    finalizedAt: persisted.finalizedAt ?? null,
+  };
+  await progressStore.save(tenant.schoolId, nextPersisted);
+  return deriveGuidedProgress(snapshot, nextPersisted, tenant.schoolId);
+}
+
+function missingRequiredSteps(snapshot = {}) {
+  return REQUIRED_STEP_KEYS.filter((key) => !stepSatisfied(key, snapshot)).map((key) => ({
+    key,
+    label: GUIDED_STEP_LABELS[key],
+  }));
+}
+
+/**
+ * Finalisation explicite. Le tenant vient uniquement du rattachement users.school_id.
+ * Aucun schoolId client n'est lu. Une finalisation déjà enregistrée n'est pas réécrite.
+ */
+async function finalizeSchoolSetupGuided(input = {}) {
+  if (!input.principal) {
+    throw new BusinessError(401, "Authentification requise.");
+  }
+  if (!canUpdateGuided(input.principal)) {
+    throw new BusinessError(403, "Accès refusé: permission de configuration requise.");
+  }
+
+  const { tenant, snapshot, progressStore, persisted } = await resolveGuidedContext(input);
+  if (persisted.finalizedAt) {
+    return deriveGuidedProgress(snapshot, persisted, tenant.schoolId);
+  }
+
+  const missing = missingRequiredSteps(snapshot);
+  if (missing.length) {
+    const error = new BusinessError(
+      409,
+      `Étapes obligatoires incomplètes : ${missing.map((step) => step.label).join(", ")}.`,
+      { missingSteps: missing },
+    );
+    error.code = "SETUP_INCOMPLETE";
+    throw error;
+  }
+
+  const finalizedAt = new Date().toISOString();
+  const nextPersisted = {
+    lastValidStep: Number(persisted.lastValidStep) || 0,
+    completedSteps: normalizeCompleted(persisted.completedSteps),
+    updatedAt: finalizedAt,
+    finalizedAt,
   };
   await progressStore.save(tenant.schoolId, nextPersisted);
   return deriveGuidedProgress(snapshot, nextPersisted, tenant.schoolId);
@@ -375,6 +439,8 @@ module.exports = {
   stepSatisfied,
   getSchoolSetupGuided,
   completeGuidedStep,
+  finalizeSchoolSetupGuided,
+  missingRequiredSteps,
   loadSchoolSetupGuidedSnapshot,
   createMemoryProgressStore,
   createPgProgressStore,

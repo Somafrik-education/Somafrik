@@ -21,28 +21,24 @@ const path = require("node:path");
 
 const CORE = path.join(__dirname, "verify-release-governance-core.js");
 const EXPECTED_CORE_BLOB = "3d7b2381b5412bbc7395b61592ed2199a2ca3035";
-const CURRENT_MAIN = "9f4badc61e2ecee2b7564da1dec3acc8d6c5c518";
+const CURRENT_MAIN = "ef8bc9517ffc94aa770743713d0f561f92a9fc1e";
 
 // Historique explicitement autorisé présent sur origin/main mais absent de develop.
-// Inclut les anciennes promotions (#500/#501/#502), la promotion sécurité #506,
-// le workflow AAB #507, la correction documentaire/conformité #509 et la
-// promotion contrôlée PROD-DEMO #674.
+// L'ancien pin #674 (9f4badc6) et les promotions #500–#509 sont désormais
+// ancêtres de develop (réconciliation #800). Reste main-only : promotions
+// AAB v24 (#799/#801/#802/#803) et promotions contrôlées #823/#825/#827.
 const CURRENT_MAIN_ONLY = [
-  "33d4ddc31a83fcb1b9ddbd715d59214c6a4ad38b",
-  "fb37b9c3a4617f81e33b090824fd009fff1cbf63",
-  "f0cda3c3c64f21c320053e4c88bdf3fb15e39d8d",
-  "b91cf514dc7bd9d6a618a6baa8f508dc4fb5dd90",
-  "94da32bd46889898ed77d5269e0c6cde16425458",
-  "17a9bfbad8a19bcf1c4a29e5dd56fe91759c09f6",
-  "8c337c4798130ed7e8c1fa24c07630f6319f8c36",
-  "8056569f10420a0aecb57cf95dc569e61723f7ea",
-  "fa37ece5694d3eba22863c3379845c0491120bb9",
-  "14920f68fb5db77cbdf97fd1b11434ca71d57c2d",
-  "48e47f47648eec28c4ea804953dda875fd3bee92",
-  "ff5ae38857d6693b2724c12bbbf293d7441f543b",
-  "c102e253475263f6255708ea093c9327bd12fc3a",
-  "57f0075153ebddfbf764e074c7f2f49a6fdd5717",
-  "9f4badc61e2ecee2b7564da1dec3acc8d6c5c518",
+  "372b7aac11fb4b2fda7b8c45ae0a3f7d9f38e7c3",
+  "295c044e43dc5b50cd56d419aa24a34b62c8bebe",
+  "cb1b79c7104bcae78b68f0810b933522722cf14c",
+  "f1102d4709dd8cb74c9cd3100b0f561a8186fde5",
+  "a8af4bd2fd32e980c3872c8a2aa7bb077af0a528",
+  "aaf6e5ceb4ea7ca8879b5dfc5596f012f9af2fa3",
+  "60feff0415a19d2069853e07ff1cf9be6b8c175d",
+  "376f17a4da37d63af0e4db1122f4c11e5de75772",
+  "8d981efe651112957c32572acd44028d14881349",
+  "24e1eb8e923157d5b20100198643711664807c3b",
+  "ef8bc9517ffc94aa770743713d0f561f92a9fc1e",
 ];
 
 function replaceExactlyOnce(source, before, after, label) {
@@ -164,7 +160,7 @@ source = replaceExactlyOnce(
 source = replaceExactlyOnce(
   source,
   '    console.log("PASS RG-MAIN-ONLY 2 commits stale (6ff61106, b5074565) ; tree #109 ⊂ develop");',
-  '    console.log("PASS RG-MAIN-ONLY live pin 9f4badc6 ; 15 commits main-only explicitement autorisés");',
+  '    console.log("PASS RG-MAIN-ONLY live pin ef8bc951 ; 11 commits main-only explicitement autorisés");',
   "main-only log",
 );
 

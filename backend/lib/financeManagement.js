@@ -5,6 +5,8 @@ const {
   obligationStatusFromBalance,
   toMoney,
 } = require("./financeDomainInvariants");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
+const { readOptionalBoolean } = require("./studentIntegrity");
 
 const FINANCE_ERROR = Object.freeze({
   PAYMENT_NOT_FOUND: "PAYMENT_NOT_FOUND",
@@ -18,6 +20,7 @@ const FINANCE_ERROR = Object.freeze({
   FEE_ITEM_TENANT_MISMATCH: "FEE_ITEM_TENANT_MISMATCH",
   CANCEL_REASON_REQUIRED: "CANCEL_REASON_REQUIRED",
   STUDENT_NOT_FOUND: "STUDENT_NOT_FOUND",
+  CANONICAL_IDENTITY_REQUIRED: "CANONICAL_IDENTITY_REQUIRED",
   ENROLLMENT_REQUIRED: "ENROLLMENT_REQUIRED",
   CLASS_REQUIRED: "CLASS_REQUIRED",
   CLASS_NOT_FOUND: "CLASS_NOT_FOUND",
@@ -220,6 +223,10 @@ function mapObligationRow(row) {
     dbId: row.id,
     studentId: profile.studentId || row.student_code || row.student_id,
     studentDbId: row.student_id,
+    canonicalStudentId: row.student_id ? String(row.student_id) : "",
+    studentCode: String(row.student_code || profile.studentCode || "").trim(),
+    studentStatus: String(row.student_status || profile.studentStatus || "").trim(),
+    hasActiveEnrollment: readOptionalBoolean(row.has_active_enrollment),
     studentName: profile.studentName || "",
     schoolId: row.school_id,
     schoolCode: mappedSchoolCode(row, profile),
@@ -346,6 +353,9 @@ function studentMatches(student, key) {
     student.login_code,
     student.identityCode,
     student.identity_code,
+    student.dbId,
+    student.studentUuid,
+    student.student_uuid,
   ]
     .map((value) => asTrimmed(value))
     .filter(Boolean);
@@ -363,11 +373,6 @@ function permissionSet(principal) {
 function hasAnyPermission(principal, expected) {
   const permissions = permissionSet(principal);
   return expected.some((permission) => permissions.has(permission));
-}
-
-function isSuperAdminPrincipal(principal) {
-  const role = asTrimmed(principal?.role);
-  return role === "Super Administrateur Somafrik" || role === "Super Administrateur OKAFRIK";
 }
 
 function canManageFeeGrids(principal) {

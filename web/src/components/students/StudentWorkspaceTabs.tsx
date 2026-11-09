@@ -5,7 +5,11 @@ import type {
 } from "../../lib/studentWorkspace";
 import { buildStudentWorkspacePath } from "../../lib/studentWorkspaceNavigation";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
+import type { SchoolStudent } from "../../lib/studentsApi";
 import { ForbiddenState } from "../../design-system";
+import { canManageStudentCards } from "../../lib/studentCardPolicy";
+import { usePermissionContext } from "../../lib/usePermissionContext";
+import { StudentCardTab } from "./StudentCardTab";
 import { StudentDocumentsTab } from "./StudentDocumentsTab";
 import { StudentEnrollmentTab } from "./StudentEnrollmentTab";
 import { StudentGuardiansTab } from "./StudentGuardiansTab";
@@ -18,6 +22,8 @@ import { StudentWorkspaceNavigation } from "./StudentWorkspaceNavigation";
 
 interface StudentWorkspaceTabsProps {
   workspace: StudentWorkspaceViewModel;
+  dossier?: SchoolStudent | null;
+  onIdentityPersisted?: () => void | Promise<void>;
   modules: readonly StudentWorkspaceModule[];
   activeModuleId: StudentWorkspaceModuleId;
   accessDenied?: boolean;
@@ -27,22 +33,41 @@ function renderActiveTab(
   moduleId: StudentWorkspaceModuleId,
   workspace: StudentWorkspaceViewModel,
   module: StudentWorkspaceModule | undefined,
+  dossier?: SchoolStudent | null,
+  onIdentityPersisted?: () => void | Promise<void>,
+  cardContext?: { canManage: boolean },
 ) {
   switch (moduleId) {
     case "overview":
       return <StudentOverviewTab workspace={workspace} />;
     case "identity":
-      return <StudentIdentityTab workspace={workspace} />;
+      return (
+        <StudentIdentityTab
+          workspace={workspace}
+          dossier={dossier}
+          onIdentityPersisted={onIdentityPersisted}
+        />
+      );
     case "enrollments":
       return <StudentEnrollmentTab workspace={workspace} />;
     case "guardians":
-      return <StudentGuardiansTab workspace={workspace} />;
+      // Remonter le formulaire lors du changement d’élève : un secret temporaire
+      // affiché pour un parent ne doit pas persister dans une autre fiche.
+      return <StudentGuardiansTab key={workspace.studentId} workspace={workspace} />;
     case "health":
       return <StudentMedicalTab workspace={workspace} />;
     case "documents":
       return <StudentDocumentsTab workspace={workspace} />;
     case "history":
       return <StudentHistoryTab workspace={workspace} />;
+    case "card":
+      return (
+        <StudentCardTab
+          workspace={workspace}
+          dossier={dossier}
+          canManage={cardContext?.canManage === true}
+        />
+      );
     default:
       return module ? (
         <StudentWorkspaceComingSoonTab module={module} />
@@ -52,10 +77,13 @@ function renderActiveTab(
 
 export function StudentWorkspaceTabs({
   workspace,
+  dossier = null,
+  onIdentityPersisted,
   modules,
   activeModuleId,
   accessDenied = false,
 }: StudentWorkspaceTabsProps) {
+  const permissionCtx = usePermissionContext();
   const activeModule = modules.find((module) => module.id === activeModuleId);
 
   return (
@@ -79,7 +107,16 @@ export function StudentWorkspaceTabs({
           }
         />
       ) : (
-        renderActiveTab(activeModuleId, workspace, activeModule)
+        renderActiveTab(
+          activeModuleId,
+          workspace,
+          activeModule,
+          dossier,
+          onIdentityPersisted,
+          {
+            canManage: canManageStudentCards(permissionCtx),
+          },
+        )
       )}
     </div>
   );

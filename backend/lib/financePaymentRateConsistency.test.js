@@ -84,6 +84,15 @@ const admin = {
   permissions: ["Paiements:UPDATE"],
 };
 
+const adminB = {
+  role: "Admin School",
+  schoolCode: "BI-2026-0001",
+  firstName: "Admin",
+  lastName: "B",
+  sub: "USR-RATE-ADMIN-B",
+  permissions: ["Paiements:UPDATE"],
+};
+
 function canonicalRate(fees) {
   const active = fees.filter((fee) => String(fee.status) !== "Annulé");
   if (!active.length) return null;
@@ -152,11 +161,19 @@ async function payExplicit(store, obligationAmounts, { studentId = "CD-2026-0001
 
 function assertSourceGuards() {
   const pgStore = fs.readFileSync(path.join(ROOT, "backend/db/financePgStore.js"), "utf8");
+  const feesStart = pgStore.indexOf("listFinanceStudentFees:");
+  const feesFn = pgStore.slice(feesStart, pgStore.indexOf("getFinanceStudentFee:", feesStart));
   assert.match(pgStore, /projectObligationPaidAmounts/);
-  assert.match(pgStore, /listFinanceStudentFees: async \(principal\)/);
+  assert.match(
+    pgStore,
+    /listFinanceStudentFees:\s*async\s*\(principal,\s*options\s*=\s*\{\}\)/,
+  );
+  assert.match(pgStore, /resolveListedStudentKey\(principal,\s*options\)/);
+  assert.match(pgStore, /options\?\.studentId/);
+  assert.match(pgStore, /options\?\.studentKey/);
   assert.match(pgStore, /sqlSchoolPredicate/);
   assert.doesNotMatch(
-    pgStore.slice(pgStore.indexOf("listFinanceStudentFees")),
+    feesFn,
     /FROM payments p/,
     "GET student-fees ne doit pas reconstruire le taux depuis les reçus",
   );
@@ -174,7 +191,10 @@ function assertSourceGuards() {
   const cancelStart = service.indexOf("async function cancelPayment", createStart);
   const createPayment = service.slice(createStart, cancelStart);
   assert.doesNotMatch(createPayment, /reconcileUnallocatedPaymentsInTx/);
-  assert.match(createPayment, /obligationId est requis pour imputer un paiement/);
+  assert.match(createPayment, /obligationId est requis pour affecter un encaissement à un frais ouvert/);
+  assert.match(service, /FINANCE_UNALLOCATED_FORBIDDEN/);
+  assert.match(createPayment, /F4_ERROR\.UNALLOCATED_FORBIDDEN/);
+  assert.doesNotMatch(createPayment, /feeLabel = "Non imputé"/);
 
   const adminCtx = fs.readFileSync(path.join(ROOT, "Mobile/src/context/AdminDataContext.tsx"), "utf8");
   assert.match(adminCtx, /getStudentFees/);
@@ -182,9 +202,19 @@ function assertSourceGuards() {
   assert.doesNotMatch(adminCtx, /withCanonicalPaymentAllocations/);
 
   const paymentsScreen = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/PaymentsScreen.tsx"), "utf8");
-  assert.match(paymentsScreen, /getPaymentRateKpi|formatPaymentRateKpi/);
+  // FIN-SIMPLE-02: rate is still canonical in Home/Students but is no longer
+  // one of the three visible Payments KPI. Protect canonical obligations/cash
+  // and forbid the legacy payment-count-derived rate in this screen.
+  const homeScreen = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/HomeScreen.tsx"), "utf8");
+  const studentList = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/StudentsScreen.tsx"), "utf8");
+  assert.match(homeScreen, /formatHomePaymentRateKpi/);
+  assert.match(studentList, /formatPaymentRateKpi/);
+  assert.match(paymentsScreen, /formatPaymentOverviewAmounts/);
+  assert.match(paymentsScreen, /formatPaymentCashAmounts/);
   assert.match(paymentsScreen, /loadStudentFees/);
-  assert.doesNotMatch(paymentsScreen, /paymentStats\.rate/);
+  assert.match(paymentsScreen, /paymentAmountOverview\.remainingLabel/);
+  assert.match(paymentsScreen, /cashOverview\.collectedLabel/);
+  assert.doesNotMatch(paymentsScreen, /getPaymentRateKpi|formatPaymentRateKpi|paymentStats\.rate/);
 }
 
 async function main() {
@@ -304,7 +334,15 @@ async function main() {
   });
   const [isolatedTarget] = await studentFees(isolated);
   await payExplicit(isolated, [{ obligationId: isolatedTarget.id, amount: 100 }]);
-  const allFees = await isolated.listFinanceStudentFees({ role: "Super Administrateur Somafrik", schoolCode: "*" });
+  const superFees = await isolated.listFinanceStudentFees({
+    role: "Super Administrateur Somafrik",
+    schoolCode: "*",
+  });
+  assert.equal(superFees.length, 0, "P1-01 Superadmin ne lit pas les obligations scolaires");
+  const allFees = [
+    ...(await isolated.listFinanceStudentFees(admin)),
+    ...(await isolated.listFinanceStudentFees(adminB)),
+  ];
   const biFee = allFees.find((fee) => fee.schoolCode === "BI-2026-0001");
   assert.equal(Number(biFee.amountPaid), 0, "allocation CD n'alimente pas BI");
   assert.equal(canonicalRate(scopedCd(allFees)), 100);

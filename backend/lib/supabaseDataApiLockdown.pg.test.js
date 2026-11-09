@@ -127,6 +127,10 @@ async function main() {
       [SENSITIVE_BUSINESS_TABLES],
     );
     const presentNames = present.rows.map((row) => row.table_name);
+    assert.ok(
+      presentNames.includes("student_access_cards"),
+      `student_access_cards doit être dans sensitiveTablesProbed: ${JSON.stringify(presentNames)}`,
+    );
 
     for (const role of ["anon", "authenticated"]) {
       for (const table of presentNames) {

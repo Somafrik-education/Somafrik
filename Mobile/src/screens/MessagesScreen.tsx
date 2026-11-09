@@ -29,6 +29,7 @@ import {
   canShowStaffMessagesComposer,
   resolveMessagesRouteAccess,
 } from "../lib/mobileCtaRbacAlignment";
+import { formatMessageRoleLabel, isStudentMessageTarget } from "../lib/messagesRoleIdentity";
 import {
   buildConversationReplyPayload,
   buildMessagePayload,
@@ -73,26 +74,9 @@ function counterpartName(conversation: CanonicalConversation, selfId?: string) {
   return others.map((row) => row.name || row.userId).join(", ");
 }
 
-function normalizeMessagingRole(value: unknown): string {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toUpperCase();
-}
-
-function isStudentMessageTarget(value?: { kind?: string; roleLabel?: string }): boolean {
-  const kind = normalizeMessagingRole(value?.kind);
-  const roleLabel = normalizeMessagingRole(value?.roleLabel);
-  return (
-    kind === "STUDENT" ||
-    roleLabel === "STUDENT" ||
-    roleLabel.includes("ELEVE") ||
-    roleLabel.includes("ETUDIANT")
-  );
-}
-
-function hasStudentParticipant(participants?: Array<{ roleLabel?: string }>): boolean {
+function hasStudentParticipant(
+  participants?: Array<{ roleLabel?: string; roleKey?: string; kind?: string }>,
+): boolean {
   return (participants ?? []).some((participant) => isStudentMessageTarget(participant));
 }
 
@@ -578,7 +562,12 @@ export default function MessagesScreen() {
                 label="Destinataire"
                 values={recipientSnapshot.data.map((row) => ({
                   id: row.userId,
-                  label: row.studentName ? `${row.displayName} (${row.studentName})` : row.displayName || row.userId,
+                  label: [
+                    row.studentName ? `${row.displayName} (${row.studentName})` : row.displayName || row.userId,
+                    formatMessageRoleLabel(row),
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
                 }))}
                 selectedId={selectedRecipientUserId}
                 onSelect={setSelectedRecipientUserId}

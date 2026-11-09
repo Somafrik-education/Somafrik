@@ -160,6 +160,9 @@ function createClassStudentsRepository(db) {
       gender: row.gender ?? "",
       birthDate: row.birth_date ? formatDate(row.birth_date) : "",
       birthPlace: row.birth_place ?? "",
+      ...(Object.hasOwn(row, "preferred_name") ? { preferredName: row.preferred_name ?? null } : {}),
+      ...(Object.hasOwn(row, "nationality") ? { nationality: row.nationality ?? null } : {}),
+      ...(Object.hasOwn(row, "address") ? { address: row.address ?? null } : {}),
       photoUrl: row.photo_url ?? "",
       classId: row.class_id ?? row.classId ?? null,
       className: row.class_name ?? "",
@@ -168,6 +171,14 @@ function createClassStudentsRepository(db) {
       schoolCode: row.school_code,
       parentPhone: row.parent_phone ?? "",
       parentEmail: row.parent_email ?? "",
+      ...(Object.prototype.hasOwnProperty.call(row, "administrative_notes")
+        ? {
+            administrativeNotes:
+              row.administrative_notes == null || String(row.administrative_notes).trim() === ""
+                ? null
+                : String(row.administrative_notes),
+          }
+        : {}),
       status: row.status ?? "active",
       enrollmentId: row.enrollment_id ?? null,
       enrollmentDate: row.enrollment_date ? formatDate(row.enrollment_date) : "",
@@ -799,6 +810,8 @@ function createClassStudentsRepository(db) {
       const school = await requireSchool(schoolCode);
       const row = await db.one(
         `SELECT ${STUDENT_SELECT_COLUMNS},
+                st.administrative_notes,
+                st.preferred_name, st.nationality, st.address,
                 cl.id AS class_id,
                 cl.class_code,
                 cl.name AS class_name,
@@ -844,6 +857,7 @@ function createClassStudentsRepository(db) {
                   storage_key, generated_at, created_at, updated_at
            FROM student_documents
            WHERE student_id = $1 AND school_id = $2
+             AND COALESCE(metadata->>'source', '') <> 'administrative_upload'
            ORDER BY generated_at DESC NULLS LAST, created_at DESC NULLS LAST`,
           [row.student_uuid, school.id],
         );
@@ -903,9 +917,9 @@ function createClassStudentsRepository(db) {
       const current = await db.one(
         `SELECT st.id, st.student_code, st.first_name, st.last_name, st.gender,
                 st.birth_date, st.birth_place, st.parent_phone, st.parent_email,
-                st.updated_at
+                st.preferred_name, st.nationality, st.address, st.updated_at
          FROM students st
-         WHERE st.student_code = $1 AND st.school_id = $2
+         WHERE (st.student_code = $1 OR st.id::text = $1) AND st.school_id = $2
          LIMIT 1`,
         [studentCode, school.id],
       );
@@ -933,6 +947,10 @@ function createClassStudentsRepository(db) {
         patch.parentPhone !== undefined ? patch.parentPhone : current.parent_phone;
       const nextParentEmail =
         patch.parentEmail !== undefined ? patch.parentEmail : current.parent_email;
+      const notesProvided = Object.prototype.hasOwnProperty.call(patch, "administrativeNotes");
+      const preferredNameProvided = Object.prototype.hasOwnProperty.call(patch, "preferredName");
+      const nationalityProvided = Object.prototype.hasOwnProperty.call(patch, "nationality");
+      const addressProvided = Object.prototype.hasOwnProperty.call(patch, "address");
 
       const updated = await db.one(
         `UPDATE students
@@ -943,6 +961,10 @@ function createClassStudentsRepository(db) {
              birth_place = $5,
              parent_phone = $6,
              parent_email = $7,
+             administrative_notes = CASE WHEN $11::boolean THEN $12 ELSE administrative_notes END,
+             preferred_name = CASE WHEN $13::boolean THEN $14 ELSE preferred_name END,
+             nationality = CASE WHEN $15::boolean THEN $16 ELSE nationality END,
+             address = CASE WHEN $17::boolean THEN $18 ELSE address END,
              updated_at = GREATEST(
                date_trunc('milliseconds', clock_timestamp()),
                date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond'
@@ -962,6 +984,14 @@ function createClassStudentsRepository(db) {
           current.id,
           school.id,
           expected,
+          notesProvided,
+          notesProvided ? patch.administrativeNotes : null,
+          preferredNameProvided,
+          preferredNameProvided ? patch.preferredName : null,
+          nationalityProvided,
+          nationalityProvided ? patch.nationality : null,
+          addressProvided,
+          addressProvided ? patch.address : null,
         ],
       );
 

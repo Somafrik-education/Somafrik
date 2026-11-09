@@ -43,9 +43,12 @@ describe("LOT 9 web guards", () => {
     expect(api).toMatch(/corrections/);
     expect(api).toMatch(/revoke/);
     const page = readRel("web/src/pages/ReportCardHistoryPage.tsx");
-    expect(page).toMatch(/ACTIVE/);
-    expect(page).toMatch(/SUPERSEDED/);
-    expect(page).toMatch(/REVOKED/);
+    // LOT 9 canonical statuses are delegated to a single tested formatter.
+    expect(page).toMatch(/reportCardStatusLabel\(["']canonical["'],\s*row\.verification_status\)/);
+    const labels = readRel("web/src/lib/reportCardStatus.ts");
+    expect(labels).toMatch(/ACTIVE:\s*["']Publié["']/);
+    expect(labels).toMatch(/SUPERSEDED:\s*["']Remplacé["']/);
+    expect(labels).toMatch(/REVOKED:\s*["']Révoqué["']/);
     expect(page).toMatch(/Corriger/);
     expect(page).toMatch(/Révoquer/);
     expect(page).toMatch(/motif|reason/i);

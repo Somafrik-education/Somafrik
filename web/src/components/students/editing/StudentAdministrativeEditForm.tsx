@@ -46,7 +46,9 @@ export function StudentAdministrativeEditForm({
           id="preferredContactChannel"
           className="mt-1 w-full rounded-lg border border-line px-3 py-2 text-sm"
           value={merged.preferredContactChannel ?? ""}
-          disabled={disabled}
+          disabled
+          aria-disabled="true"
+          title="Ce canal n'est pas enregistré en base."
           onChange={(event) =>
             onChange({
               ...draft,
@@ -60,6 +62,9 @@ export function StudentAdministrativeEditForm({
           <option value="EMAIL">E-mail</option>
           <option value="SMS">SMS</option>
         </select>
+        <p className="mt-1 text-xs text-muted">
+          Ce canal n&apos;est pas enregistré. Seules les notes administratives sont persistées.
+        </p>
       </div>
       <div>
         <label

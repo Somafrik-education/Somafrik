@@ -1,8 +1,10 @@
+import { safeLogger } from "../services/safeLogger";
 import type { AllowedPushDestination, AllowedPushNavigationParams } from "./pushNotificationDestinations";
 
 type NavigationStateLike = {
-  routeNames?: string[];
-  routes?: Array<{ name?: string; state?: unknown }>;
+  routeNames?: readonly string[];
+  routes?: ReadonlyArray<{ name?: string; state?: unknown }>;
+  index?: number;
 };
 
 export function collectRegisteredRouteNames(
@@ -39,6 +41,19 @@ export function navigateRegisteredPushDestination(
   navigate(resolved, resolved === destination ? params : undefined);
 }
 
+let expectedPushRoute: AllowedPushDestination | null = null;
+
+export function observePushNavigationState(state: NavigationStateLike | undefined): void {
+  if (!expectedPushRoute || !state) return;
+  const index = typeof state.index === "number"
+    ? state.index
+    : (state.routes?.length ?? 1) - 1;
+  const active = state.routes?.[index]?.name || "unknown";
+  // Only route names, never school IDs, notification IDs or message contents.
+  safeLogger.warn("NOTIF_NAV_STATE", { expected: expectedPushRoute, active, matched: active === expectedPushRoute });
+  expectedPushRoute = null;
+}
+
 type PushNavigationRef = {
   isReady?: () => boolean;
   navigate: (...args: never[]) => unknown;
@@ -60,8 +75,15 @@ export function dispatchRegisteredPushNavigation(
   params?: AllowedPushNavigationParams,
 ) {
   if (typeof navigation.isReady === "function" && !navigation.isReady()) return;
+  expectedPushRoute = destination;
+  safeLogger.warn("NOTIF_NAV_DISPATCH", { destination });
   navigateRegisteredPushDestination(
-    (name, nextParams) => callPushNavigationRef(navigation.navigate, name, nextParams),
+    // Conserver le receveur du ref React Navigation pour les méthodes sensibles au contexte.
+    (name, nextParams) => callPushNavigationRef(
+      ((...args: never[]) => navigation.navigate(...args)) as (...args: never[]) => unknown,
+      name,
+      nextParams,
+    ),
     destination,
     params,
     collectRegisteredRouteNames(navigation.getRootState?.() as NavigationStateLike | undefined),

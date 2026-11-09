@@ -12,6 +12,7 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { PERMISSION_DENIED } = require("../services/rbacService");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_FINANCE_F6_RBAC_IT_DATABASE ?? "somafrik_finance_f6_rbac_it")
@@ -97,8 +98,8 @@ async function stopChild(child) {
   });
 }
 
-function mintAccess(tokens, payload) {
-  return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+function mintAccess({ tokens, repository }, payload) {
+  return mintSessionAccessToken({ tokens, repository, payload: { mustChangePassword: false, ...payload } });
 }
 
 function staleClaims(overrides) {
@@ -110,10 +111,10 @@ function staleClaims(overrides) {
   };
 }
 
-function paymentBody(studentCode) {
+function paymentBody(studentCode, obligationId) {
   return {
     studentId: studentCode,
-    items: [{ feeType: "Non imputé", amount: 1 }],
+    items: [{ obligationId, feeType: "Scolarité", amount: 1 }],
     method: "Espèces",
     date: "2026-08-28",
   };
@@ -233,11 +234,27 @@ async function seed(pool) {
   );
 
   await setRolePaymentsGrant(pool, "F6_PAY", { create: true, read: true, update: true });
+  const obligationA = await pool.query(
+    `INSERT INTO student_fee_obligations (
+       school_id, student_id, class_id, fee_type, label, currency,
+       initial_amount, amount_due, amount_paid, balance, status
+     ) VALUES ($1,$2,$3,'Scolarité','Scolarité','XOF',100000,100000,0,100000,'À payer') RETURNING id`,
+    [schoolA.id, student.rows[0].id, CLASS_A],
+  );
+  const obligationB = await pool.query(
+    `INSERT INTO student_fee_obligations (
+       school_id, student_id, class_id, fee_type, label, currency,
+       initial_amount, amount_due, amount_paid, balance, status
+     ) VALUES ($1,$2,$3,'Scolarité','Scolarité','XOF',100000,100000,0,100000,'À payer') RETURNING id`,
+    [schoolB.id, studentB.rows[0].id, CLASS_B],
+  );
   return {
     schoolA: schoolA.id,
     schoolB: schoolB.id,
     studentCodeA: student.rows[0].student_code,
     studentCodeB: studentB.rows[0].student_code,
+    obligationA: obligationA.rows[0].id,
+    obligationB: obligationB.rows[0].id,
   };
 }
 
@@ -287,20 +304,20 @@ async function main() {
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
 
-    const liveToken = mintAccess(
-      tokens,
+    const liveToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: LIVE_USER, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
-    const accountantToken = mintAccess(
-      tokens,
+    const accountantToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: ACCOUNTANT_A, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
-    const zeroToken = mintAccess(
-      tokens,
+    const zeroToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: ZERO_USER, schoolCode: "SCH-A" }),
     );
-    const namedToken = mintAccess(
-      tokens,
+    const namedToken = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({
         sub: NAMED_USER,
         schoolCode: "SCH-A",
@@ -308,19 +325,19 @@ async function main() {
         roleKeys: ["SCHOOL_ADMIN"],
       }),
     );
-    const dualOnA = mintAccess(
-      tokens,
+    const dualOnA = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: DUAL_USER, schoolCode: "SCH-A", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
-    const dualOnB = mintAccess(
-      tokens,
+    const dualOnB = await mintAccess(
+      { tokens, repository: repo },
       staleClaims({ sub: DUAL_USER, schoolCode: "SCH-B", role: "Comptable", roleKeys: ["ACCOUNTANT"] }),
     );
 
     const authorized = await request("/payments", {
       method: "POST",
       token: liveToken,
-      body: paymentBody(fixture.studentCodeA),
+      body: paymentBody(fixture.studentCodeA, fixture.obligationA),
     });
     assert.equal(authorized.status, 201, `scénario 1 avant revoke: ${JSON.stringify(authorized.data)}`);
     const liveBefore = await request("/auth/effective-permissions", { token: liveToken });
@@ -356,7 +373,7 @@ async function main() {
     const revoked = await request("/payments", {
       method: "POST",
       token: liveToken,
-      body: paymentBody(fixture.studentCodeA),
+      body: paymentBody(fixture.studentCodeA, fixture.obligationA),
     });
     assert.equal(revoked.status, 403, `scénario 1 revoke: ${JSON.stringify(revoked.data)}`);
     assert.equal(revoked.data?.code, PERMISSION_DENIED);
@@ -366,14 +383,14 @@ async function main() {
     const granted = await request("/payments", {
       method: "POST",
       token: liveToken,
-      body: paymentBody(fixture.studentCodeA),
+      body: paymentBody(fixture.studentCodeA, fixture.obligationA),
     });
     assert.equal(granted.status, 201, `scénario 2 grant: ${JSON.stringify(granted.data)}`);
 
     const zeroPay = await request("/payments", {
       method: "POST",
       token: zeroToken,
-      body: paymentBody(fixture.studentCodeA),
+      body: paymentBody(fixture.studentCodeA, fixture.obligationA),
     });
     assert.equal(zeroPay.status, 403, `scénario 3 zéro rôle: ${JSON.stringify(zeroPay.data)}`);
     assert.equal(zeroPay.data?.code, PERMISSION_DENIED);
@@ -384,7 +401,7 @@ async function main() {
     const accPay = await request("/payments", {
       method: "POST",
       token: accountantToken,
-      body: paymentBody(fixture.studentCodeA),
+      body: paymentBody(fixture.studentCodeA, fixture.obligationA),
     });
     assert.equal(accPay.status, 201, `scénario 4 avant changement: ${JSON.stringify(accPay.data)}`);
     await pool.query(
@@ -400,7 +417,7 @@ async function main() {
     const afterRoleChange = await request("/payments", {
       method: "POST",
       token: accountantToken,
-      body: paymentBody(fixture.studentCodeA),
+      body: paymentBody(fixture.studentCodeA, fixture.obligationA),
     });
     assert.equal(afterRoleChange.status, 403, `scénario 4 rôle B: ${JSON.stringify(afterRoleChange.data)}`);
     assert.equal(await countPayments(pool, "SCH-A"), beforeRoleChange + 1, "TEACHER n'écrit pas un paiement");
@@ -409,25 +426,25 @@ async function main() {
     const dualPayA = await request("/payments", {
       method: "POST",
       token: dualOnA,
-      body: paymentBody(fixture.studentCodeA),
+      body: paymentBody(fixture.studentCodeA, fixture.obligationA),
     });
-    assert.equal(dualReadA.status, 403, `scénario 5 lecture A: ${JSON.stringify(dualReadA.data)}`);
-    assert.equal(dualReadA.data?.code, PERMISSION_DENIED);
-    assert.equal(dualPayA.status, 403, `scénario 5 mutation A: ${JSON.stringify(dualPayA.data)}`);
-    assert.equal(dualPayA.data?.code, PERMISSION_DENIED);
+    // SEC-AUTH-04 : compte rattaché à B (users.school_id) avec un claim A → refusé par
+    // le garde de session (SEC-TENANT-01) avant le RBAC de la route ; session révoquée.
+    assertSessionRefused(dualReadA, "scénario 5 lecture A", "SESSION_SCHOOL_ATTACHMENT_MISSING");
+    assertSessionRefused(dualPayA, "scénario 5 mutation A", "SESSION_REVOKED");
     const dualReadB = await request("/payments", { token: dualOnB });
     assert.equal(dualReadB.status, 200, `scénario 5 lecture B: ${JSON.stringify(dualReadB.data)}`);
     const dualPayB = await request("/payments", {
       method: "POST",
       token: dualOnB,
-      body: paymentBody(fixture.studentCodeB),
+      body: paymentBody(fixture.studentCodeB, fixture.obligationB),
     });
     assert.equal(dualPayB.status, 201, `scénario 5 mutation B: ${JSON.stringify(dualPayB.data)}`);
 
     const namedPay = await request("/payments", {
       method: "POST",
       token: namedToken,
-      body: paymentBody(fixture.studentCodeA),
+      body: paymentBody(fixture.studentCodeA, fixture.obligationA),
     });
     const namedGrid = await request("/finance/fee-grids", {
       method: "POST",

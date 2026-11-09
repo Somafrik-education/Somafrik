@@ -1,13 +1,35 @@
 # Roadmap produit — Somafrik
 
 **Statut :** source de vérité officielle des développements  
-**Dernière mise à jour :** 2026-09-19
+**Dernière mise à jour :** 2026-10-26 (historique antérieur conservé)
 **Branche de référence :** `develop`  
 **Suivi Design System granulaire :** [../ux/design-system/SUIVI-MIGRATIONS.md](../ux/design-system/SUIVI-MIGRATIONS.md)
 
 **Pilotage :** produit ([ROADMAP](./ROADMAP.md)) · technique ([ARCHITECTURE](./ARCHITECTURE.md)) · décisions ([DECISIONS](./DECISIONS.md)) · tests ([TESTING](./TESTING.md)) · sécurité ([SECURITY](./SECURITY.md)) · ops ([OPERATIONS](./OPERATIONS.md)) · data ([DATABASE](./DATABASE.md)) · release ([GO-PRODUCTION.md](./GO-PRODUCTION.md), HOLD #720)
 
 **Freeze G0 (2026-09-19) :** aucune nouvelle fonctionnalité sur `develop` hors mandat CTO du chantier GO Production. G1 RC1 #722 **livrée / HOLD**. G2 interdite. **Aucune G8 — arrêt strict à G7.** La parité Web ↔ Mobile LOT 0–8 est **CLOSED GLOBAL**.
+
+### Mise à jour 2026-10-26 — AUDIT-REPO-2026 et R15
+
+**Historique.** Le freeze G0 du 2026-09-19 (#720) et les statuts de cette page datés du 19/09 sont conservés à titre d'**historique**. Ils ne décrivent plus l'activité réelle : 246 commits sont entrés dans `develop` depuis, dont le module Carte élève (QR/NFC).
+
+**État vérifié** (source : [AUDIT-REPO-2026](../audits/AUDIT-REPO-2026.md) et [R15](../governance/MERGE-AUTHORIZATION.md)) :
+- **`main` :** `ef8bc951` (27/09), Android `versionCode` 24. `develop` est à 246 commits d'avance et 11 de retard.
+- **Production :** aucune déclaration de déploiement Render ou Google Play n'est faite ici. L'état réel reste **[À VÉRIFIER]** par un opérateur.
+- **Ruleset `develop` :** aucune approbation ni aucun contrôle CI requis. Un seul collaborateur GitHub (`Somafrik`, administrateur), partagé avec les agents.
+- **CI de nuit :** elle s'exécute sur `main` uniquement et échoue sans interruption depuis le 03/09.
+
+**Décisions CTO (26/10) :**
+- AUDIT-REPO-2026 est fusionné (#999).
+- **R15** (gouvernance des fusions) est autorisé en développement **DRAFT / HOLD**, sans activation de Ruleset.
+- **R1 à R14 ne sont pas autorisés.**
+- Aucune fusion automatique de `main` vers `develop`.
+
+**Planifié (sans date) :**
+1. Séparer les identités (compte personnel du CTO, agents sans droit d'administration).
+2. Activer les Rulesets proposés par R15.
+3. Faire la démonstration de blocage (R15 §6.5).
+4. Ordonnancer ensuite R1 à R14.
 
 Toute PR fonctionnelle doit référencer une **phase** (A–J) et, si applicable, une **release** ([RELEASES.md](./RELEASES.md)). Voir aussi la règle doc dans [CONTRIBUTING.md](./CONTRIBUTING.md).
 

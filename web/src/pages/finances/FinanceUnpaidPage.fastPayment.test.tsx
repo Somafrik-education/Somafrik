@@ -109,8 +109,16 @@ vi.mock("../../lib/financeApi", () => ({
 }));
 
 function overlayFee(overrides: Partial<StudentFee> & Pick<StudentFee, "id" | "studentId" | "label">): StudentFee {
+  const identity =
+    overrides.studentId === OTHER_STUDENT_CODE
+      ? { studentDbId: OTHER_STUDENT_UUID, studentCode: OTHER_STUDENT_CODE }
+      : overrides.studentId === FOREIGN_TENANT_CODE
+        ? { studentDbId: FOREIGN_TENANT_UUID, studentCode: FOREIGN_TENANT_CODE }
+        : { studentDbId: STUDENT_UUID, studentCode: overrides.studentId };
   return {
     studentName: STUDENT_NAME,
+    hasActiveEnrollment: true,
+    ...identity,
     schoolId: SCHOOL_ID,
     schoolCode: SCHOOL_CODE,
     className: CLASS_NAME,

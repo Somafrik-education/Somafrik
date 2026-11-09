@@ -440,10 +440,13 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
     }
     const requestedCountry = requestedCountryCodeFromPayload(rawPayload);
     assertRequestedCountryMatchesSchool(school, requestedCountry);
-    if (roleKey === SCHOOL_ADMIN_KEY && !school && !locked.school_id) {
+    // SEC-TENANT-01 : tout rôle scolaire (non plateforme) exige un établissement.
+    if (!isPlatformRoleKey(roleKey) && !school && !locked.school_id) {
       throw createUserRoleError(
         400,
-        "Établissement obligatoire pour le rôle Admin School.",
+        roleKey === SCHOOL_ADMIN_KEY
+          ? "Établissement obligatoire pour le rôle Admin School."
+          : "Établissement obligatoire pour un rôle scolaire.",
         USER_ROLE_ERROR.INVALID_TENANT_SCOPE,
       );
     }

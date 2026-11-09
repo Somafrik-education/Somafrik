@@ -57,6 +57,37 @@ export function isStrictNetworkUnavailable(error: unknown): boolean {
   return code === "NETWORK_UNAVAILABLE";
 }
 
+/**
+ * PERF-PR5 — échecs de transport qui autorisent la lecture de la dernière copie L1.
+ * Aucune réponse HTTP n'a été reçue : ce n'est ni un refus d'accès ni une erreur serveur.
+ */
+export const L1_TRANSPORT_FALLBACK_CODES = ["NETWORK_UNAVAILABLE", "TIMEOUT", "BACKEND_UNREACHABLE"] as const;
+
+export function isL1TransportFallbackEligible(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const status =
+    "status" in error ? Number((error as { status?: number }).status) : Number.NaN;
+  if (Number.isFinite(status) && status > 0) return false;
+  const code = "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+  return (L1_TRANSPORT_FALLBACK_CODES as readonly string[]).includes(code);
+}
+
+/** 401/403 : refus d'accès. Jamais une autorisation de lire, ni de garder, le cache. */
+export function isAccessDenied(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const status = Number((error as { status?: number }).status);
+  return status === 401 || status === 403;
+}
+
+/**
+ * Lecture L1 avant le réseau (cache-first) uniquement si les droits de la session ont été
+ * établis par le serveur : en ligne (`ready`) ou par l'instantané hors ligne validé (`ready_offline`).
+ * Tout autre état (chargement, erreur, inconnu) échoue fermé.
+ */
+export function canReadL1BeforeNetwork(permissionsBootstrap?: string | null): boolean {
+  return permissionsBootstrap === "ready" || permissionsBootstrap === "ready_offline";
+}
+
 export function shouldSkipMetierGet(permissionsBootstrap?: string | null): boolean {
   return permissionsBootstrap === "ready_offline";
 }
@@ -184,6 +215,11 @@ export async function loadL1BackedSnapshot<T>(input: {
   fetchNetwork: () => Promise<T[]>;
   project: (read: L1ReadOk) => T[] | Promise<T[]>;
   deps?: L1ReadDeps;
+  /**
+   * PERF-PR5 — cache-first : appelé avec la copie L1 dès qu'elle est lue, si le réseau
+   * n'a pas encore répondu. Le résultat final (réseau ou repli) reste la valeur retournée.
+   */
+  onCacheSnapshot?: (snapshot: ResourceSnapshot<T>) => void;
 }): Promise<ResourceSnapshot<T>> {
   const readAndProject = async (): Promise<ResourceSnapshot<T>> => {
     const read = await readL1Resource({
@@ -203,12 +239,38 @@ export async function loadL1BackedSnapshot<T>(input: {
   if (shouldSkipMetierGet(input.permissionsBootstrap)) {
     snapshot = await readAndProject();
   } else {
+    // Cache-first : la lecture locale part en parallèle du réseau, droits établis uniquement.
+    let networkSettled = false;
+    const cacheFirst =
+      input.onCacheSnapshot && canReadL1BeforeNetwork(input.permissionsBootstrap)
+        ? readAndProject().then(
+            (cached) => {
+              if (!networkSettled && cached.source === "l1-cache") {
+                input.onCacheSnapshot?.({ ...cached, refreshing: true });
+              }
+              return cached;
+            },
+            () => snapshotL1Unavailable<T>(),
+          )
+        : null;
     try {
       const rows = await input.fetchNetwork();
+      networkSettled = true;
       snapshot = snapshotFromSuccess(rows, { source: "network" });
     } catch (error) {
-      if (isStrictNetworkUnavailable(error)) {
-        snapshot = await readAndProject();
+      networkSettled = true;
+      if (isL1TransportFallbackEligible(error)) {
+        // Timeout, réseau ou serveur injoignable : dernière copie autorisée, signalée comme telle.
+        const cached = await (cacheFirst ?? readAndProject());
+        if (cached.source === "l1-cache") {
+          snapshot = { ...cached, refreshing: false, refreshFailed: true };
+        } else if (isStrictNetworkUnavailable(error)) {
+          snapshot = cached; // historique : « Cache hors ligne indisponible ».
+        } else {
+          snapshot = snapshotFromFailure(error, []); // délai / serveur injoignable sans copie : erreur explicite.
+        }
+      } else if (isAccessDenied(error)) {
+        snapshot = { ...snapshotFromFailure<T>(error, []), accessDenied: true };
       } else {
         snapshot = snapshotFromFailure(error, []);
       }

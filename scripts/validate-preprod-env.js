@@ -4,6 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 const { collectProductionSecretViolations } = require("../backend/lib/productionSecrets");
+const { isForbiddenSuperadminSecret } = require("../backend/lib/superadminSeedSecret");
 const {
   collectProductionCorsViolations,
   PREPRODUCTION_FRONTEND_ORIGIN,
@@ -67,8 +68,11 @@ function validatePreprodEnv(env = process.env) {
   if (!bootstrapPassword || bootstrapPassword.length < 12) {
     errors.push("BOOTSTRAP_SUPERADMIN_PASSWORD doit contenir au moins 12 caractères.");
   }
-  if (bootstrapPassword === "GENERER-MOT-DE-PASSE-FORT-ICI") {
-    errors.push("BOOTSTRAP_SUPERADMIN_PASSWORD utilise encore le placeholder du modèle.");
+  if (
+    bootstrapPassword &&
+    (bootstrapPassword === "GENERER-MOT-DE-PASSE-FORT-ICI" || isForbiddenSuperadminSecret(bootstrapPassword))
+  ) {
+    errors.push("BOOTSTRAP_SUPERADMIN_PASSWORD utilise un secret interdit ou le placeholder du modèle.");
   }
 
   const appEnv = String(env.APP_ENV ?? env.SOMAFRIK_ENV ?? "").trim();

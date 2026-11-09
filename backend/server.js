@@ -7,7 +7,7 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env.local"), overr
 require("dotenv").config();
 const { AuthService, BusinessError } = require("./services/authService");
 const { BackOfficeAccessService } = require("./services/backOfficeAccessService");
-const { hashSecret } = require("./services/credentialService");
+const { materializeAccountSecretHashes } = require("./services/credentialService");
 const {
   validatePasswordPolicy,
   validateAccountSecret,
@@ -87,6 +87,7 @@ const {
   scopeMvpDatasetForPrincipal,
 } = require("./lib/mvpAccess");
 const { assertProductionSecurityConfiguration } = require("./lib/demoSeedPolicy");
+const { isSuperAdminPrincipal } = require("./lib/superadminPrincipal");
 const { createRateLimiter, loginRateLimitKey, trialRequestRateLimitKey } = require("./lib/rateLimit");
 const {
   assertPushSelfTestAllowed,
@@ -125,6 +126,13 @@ const pushSelfTestRateLimiter = createRateLimiter({
   max: Number(process.env.SOMAFRIK_PUSH_SELFTEST_RATE_MAX ?? 5),
   keyFn: (req) => `push-selftest:${String(req.principal?.sub || req.ip || "unknown")}`,
   message: "Trop de tests push. Réessayez dans une minute.",
+});
+// NFC-P0-R3-1: bound UID diagnosis per user (enumeration of physical UIDs).
+const nfcDiagnosisRateLimiter = createRateLimiter({
+  windowMs: Number(process.env.NFC_DIAGNOSIS_RATE_LIMIT_WINDOW_MS ?? 600_000),
+  max: Number(process.env.NFC_DIAGNOSIS_RATE_LIMIT_MAX ?? 30),
+  keyFn: (req) => `nfc-diagnosis:${String(req.principal?.sub || req.ip || "unknown")}`,
+  message: "Trop de diagnostics de cartes NFC. Réessayez dans quelques minutes.",
 });
 const trialRequestRateLimiter = createRateLimiter({
   windowMs: Number(process.env.TRIAL_REQUEST_RATE_LIMIT_WINDOW_MS ?? 60_000),
@@ -315,6 +323,7 @@ app.get("/", asyncHandler(async (req, res) => {
       "/api/v2/academic-years",
       "/api/v2/school-setup/status",
       "/api/v2/school-setup/guided",
+      "/api/v2/school-setup/guided/complete",
       "/api/v2/exams",
       "/api/v2/documents",
       "/api/v2/reports/advanced",
@@ -363,9 +372,8 @@ if (String(process.env.SOMAFRIK_AUTHZ_TRACE || "").trim() === "1") {
     requireAuth,
     asyncHandler(async (req, res) => {
       if (
-        !["Super Administrateur Somafrik", "Admin School", "Enseignant"].includes(
-          req.principal?.role,
-        )
+        !isSuperAdminPrincipal(req.principal) &&
+        !["Admin School", "Enseignant"].includes(req.principal?.role)
       ) {
         throw new BusinessError(403, "Accès debug refusé.");
       }
@@ -423,7 +431,9 @@ app.post("/api/backoffice/login", loginRateLimiter, asyncHandler(async (req, res
 
 app.post("/api/identify", loginRateLimiter, asyncHandler(async (req, res) => {
   const { authService } = await getRuntime();
-  handleBusinessResponse(res, () => authService.identify(req.body));
+  const { loadRoleDisplayIndexFromRepo } = require("./lib/roleDisplayLabels");
+  const displayIndex = await loadRoleDisplayIndexFromRepo(repository);
+  handleBusinessResponse(res, () => authService.identify(req.body, displayIndex));
 }));
 
 app.post("/api/login", loginRateLimiter, asyncHandler(async (req, res) => {
@@ -551,6 +561,8 @@ app.post("/api/privacy/erasure-requests", loginRateLimiter, asyncHandler(async (
   if (match?.[1]) {
     try {
       principal = tokenService.verify(match[1], "access");
+      // SEC-AUTH-04 : même liaison de session que les routes protégées ; sinon demande anonyme.
+      await assertBoundAccessSession(principal);
     } catch {
       principal = null;
     }
@@ -606,13 +618,8 @@ app.get(/^\/verify\/rc(\/.*)?$/, (req, res, next) => {
 });
 
 app.get("/api/privacy/erasure-requests", requireAuth, requirePermission("GET /api/privacy/erasure-requests"), asyncHandler(async (req, res) => {
-  const { sanitizePrivacyRequest } = require("./lib/privacyErasure");
-  const schoolCode = String(req.principal.schoolCode ?? "").trim().toUpperCase();
-  if (!schoolCode || schoolCode === "*") {
-    throw new BusinessError(403, "Périmètre établissement insuffisant.");
-  }
-  const rows = await repository.listPrivacyRequests({ schoolCode });
-  res.json(rows.map(sanitizePrivacyRequest));
+  const { listSchoolPrivacyRequests } = require("./lib/schoolCompliance");
+  res.json(await listSchoolPrivacyRequests(repository, req.principal));
 }));
 
 app.post("/api/privacy/erasure-requests/self/execute", requireAuth, asyncHandler(async (req, res) => {
@@ -688,8 +695,17 @@ app.post("/api/auth/change-password", requireAuth, asyncHandler(async (req, res)
   }
 
   const updatedUser = await repository.changeUserPassword(lookupKeys, newPassword);
+  // SEC-AUTH-03 : un nouveau mot de passe ferme toutes les autres sessions
+  // (autres appareils, refresh tokens éventuellement compromis). La session
+  // courante est conservée ; sans sessionId, toutes les sessions sont fermées.
+  const keepSessionId = String(req.principal.sessionId ?? "").trim() || null;
+  const revokedOtherSessions =
+    typeof repository.revokeOtherSessionsForUser === "function"
+      ? await repository.revokeOtherSessionsForUser(req.principal.sub, keepSessionId, "password_change")
+      : await repository.revokeAllSessionsForUser(req.principal.sub, "password_change");
   await auditService.record(req, "change_own_password", "user", req.principal.sub, {
     oldTemporaryPasswordInvalidated: true,
+    revokedOtherSessions,
   });
   const sanitizedUpdatedUser = sanitizeUserForResponse(updatedUser);
   let safeUser = {
@@ -754,6 +770,20 @@ app.get("/api/dashboard/school-activities", requireAuth, asyncHandler(async (req
   if (!requireCanonicalPg(res, "all", "Activités récentes")) return;
   const principal = await resolveSchoolDashboardPrincipal(req.principal, lookupSchoolForEffectiveScope);
   const result = await listSchoolDashboardActivities(repository, principal, req.query);
+  res.set("Cache-Control", "no-store");
+  res.json(result);
+}));
+
+app.get("/api/dashboard/school-kpis", requireAuth, asyncHandler(async (req, res) => {
+  const {
+    listSchoolDashboardKpis,
+    resolveSchoolKpiPrincipal,
+    withLiveKpiPermissions,
+  } = require("./lib/schoolDashboardKpis");
+  if (!requireCanonicalPg(res, "all", "Indicateurs du tableau de bord")) return;
+  const live = await withLiveKpiPermissions(repository, req.principal);
+  const principal = await resolveSchoolKpiPrincipal(live, lookupSchoolForEffectiveScope);
+  const result = await listSchoolDashboardKpis(repository, principal, { period: req.query?.period });
   res.set("Cache-Control", "no-store");
   res.json(result);
 }));
@@ -1016,6 +1046,18 @@ function enrollmentApiStudents(rows, loginCode) {
   );
 }
 
+function presentEnrollmentStudent(row, loginCode, principal) {
+  const { redactAdministrativeNotesForPrincipal } = require("./lib/classStudentsManagement");
+  return redactAdministrativeNotesForPrincipal(enrollmentApiStudent(row, loginCode), principal);
+}
+
+function presentEnrollmentStudents(rows, loginCode, principal) {
+  const { redactAdministrativeNotesForPrincipal } = require("./lib/classStudentsManagement");
+  return enrollmentApiStudents(rows, loginCode).map((row) =>
+    redactAdministrativeNotesForPrincipal(row, principal),
+  );
+}
+
 app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
   const principal = await enrollmentHttpPrincipal(req);
   const schoolCode = requireEnrollmentLoginCode(principal);
@@ -1039,7 +1081,7 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
     rows,
     resolveAuthorizedStudentForPrincipal,
   );
-  res.json(enrollmentApiStudents(scoped, schoolCode));
+  res.json(presentEnrollmentStudents(scoped, schoolCode, req.principal));
 }));
 
 app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POST /api/classes/:classCode/students"), asyncHandler(async (req, res) => {
@@ -1067,9 +1109,18 @@ app.post("/api/classes/:classCode/students", requireAuth, requirePermission("POS
 }));
 
 app.get("/api/courses", requireAuth, requirePermission("GET /api/courses"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
-  const scope = deriveSchoolScope(req.principal, state);
-  res.json(tenantScopeService.filterRows(state.courses, req.principal, scope));
+  const { resolvePedagogyProjectionScope } = require("./lib/projectionReadScope");
+  const scope = await resolvePedagogyProjectionScope(req.principal, projectionScopeDeps());
+  if (!scope || scope.platform === true || typeof repository.listPedagogyProjection !== "function") {
+    res.json([]);
+    return;
+  }
+  const [pedagogy, students] = await Promise.all([
+    repository.listPedagogyProjection(scope),
+    listCanonicalStudentsForPrincipal(req.principal),
+  ]);
+  const derived = deriveSchoolScope(req.principal, { students, courses: pedagogy.courses ?? [] });
+  res.json(tenantScopeService.filterRows(pedagogy.courses ?? [], req.principal, derived));
 }));
 
 async function planningHttpPrincipal(req) {
@@ -2061,8 +2112,131 @@ app.get("/api/students", requireAuth, requirePermission("GET /api/students"), as
     filtered,
     resolveAuthorizedStudentForPrincipal,
   );
-  const result = enrollmentApiStudents(scoped, schoolCode);
+  const { redactAdministrativeNotesForPrincipal } = require("./lib/classStudentsManagement");
+  const result = enrollmentApiStudents(scoped, schoolCode).map((student) =>
+    redactAdministrativeNotesForPrincipal(student, req.principal),
+  );
   sendList(res, result, req.query, ["name", "matricule", "studentCode", "className", "parentPhone"]);
+}));
+
+
+/**
+ * FICHE-DOC-01 : stockage privé des pièces administratives élève.
+ * Gate de lecture Élèves existant + permission Documents explicite ;
+ * aucune route n'accepte une portée pays ou plateforme.
+ */
+function studentDocumentsHttpService() {
+  const { createStudentDocumentsService } = require("./lib/studentAdministrativeDocuments");
+  return createStudentDocumentsService(repository);
+}
+
+app.get("/api/students/:studentId/documents", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const documents = await studentDocumentsHttpService().list({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+  });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ documents });
+}));
+
+app.post(
+  "/api/students/:studentId/documents",
+  requireAuth,
+  requirePermission("GET /api/students/:id"),
+  express.raw({ type: () => true, limit: "11mb" }),
+  asyncHandler(async (req, res) => {
+    const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+    if (!scope) return;
+    const result = await studentDocumentsHttpService().upload({
+      studentRef: req.params.studentId,
+      schoolCode: scope.schoolCode,
+      principal: scope.principal,
+      documentType: req.get("x-document-type"),
+      buffer: Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []),
+      fileName: req.get("x-filename") || req.get("x-file-name") || "",
+      mimeType: req.get("content-type") || "",
+    });
+    await auditService.record(req, "upload_student_document", "student_document", result.id, {
+      studentCode: scope.student.studentCode,
+      documentId: result.id,
+      documentType: result.documentType,
+    }, { schoolCode: scope.schoolCode });
+    res.setHeader("Cache-Control", "no-store");
+    res.status(201).json(result);
+  }),
+);
+
+app.post("/api/students/:studentId/documents/:documentId/verify", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const result = await studentDocumentsHttpService().verify({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+    documentId: req.params.documentId,
+  });
+  await auditService.record(req, "verify_student_document", "student_document", result.id, {
+    studentCode: scope.student.studentCode,
+    documentId: result.id,
+  }, { schoolCode: scope.schoolCode });
+  res.setHeader("Cache-Control", "no-store");
+  res.json(result);
+}));
+
+app.post("/api/students/:studentId/documents/:documentId/archive", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const result = await studentDocumentsHttpService().archive({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+    documentId: req.params.documentId,
+  });
+  await auditService.record(req, "archive_student_document", "student_document", result.id, {
+    studentCode: scope.student.studentCode,
+    documentId: result.id,
+  }, { schoolCode: scope.schoolCode });
+  res.setHeader("Cache-Control", "no-store");
+  res.json(result);
+}));
+
+app.get("/api/students/:studentId/documents/:documentId/file", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const file = await studentDocumentsHttpService().download({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+    documentId: req.params.documentId,
+  });
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Type", file.mimeType);
+  res.setHeader("Content-Disposition", 'attachment; filename="' + String(file.fileName).replace(/["\\\r\n]/g, "_") + '"');
+  res.send(file.bytes);
+}));
+
+/**
+ * CARTE-PHOTO-02 — photo d'identité de l'élève (pièce PHOTO canonique), pour la carte.
+ * Mêmes contrôles que le téléchargement d'une pièce : élève du tenant, Documents:READ.
+ * Réponse binaire, jamais mise en cache, aucun chemin de stockage exposé.
+ */
+app.get("/api/students/:studentId/photo", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
+  const scope = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
+  if (!scope) return;
+  const file = await studentDocumentsHttpService().photo({
+    studentRef: req.params.studentId,
+    schoolCode: scope.schoolCode,
+    principal: scope.principal,
+  });
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Type", file.mimeType);
+  res.setHeader("Content-Disposition", "inline");
+  res.send(file.bytes);
 }));
 
 app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:id"), asyncHandler(async (req, res) => {
@@ -2091,7 +2265,360 @@ app.get("/api/students/:id", requireAuth, requirePermission("GET /api/students/:
   if (!authorizedPg) {
     return res.status(404).json({ message: "Eleve introuvable" });
   }
-  return res.json(enrollmentApiStudent(authorizedPg, schoolCode));
+  return res.json(presentEnrollmentStudent(authorizedPg, schoolCode, req.principal));
+}));
+
+function requireStudentCardsPg() {
+  if (repository?.engine === "memory" || typeof repository?.one !== "function") {
+    const { createHttpError } = require("./lib/classesManagement");
+    throw createHttpError(501, "Cartes élèves : PostgreSQL canonique requis.");
+  }
+}
+
+function studentCardsHttpScope(principal) {
+  const { resolveEnrollmentSchoolScope } = require("./lib/enrollmentSchoolScope");
+  requireEnrollmentLoginCode(principal);
+  const scope = resolveEnrollmentSchoolScope(principal);
+  if (!scope?.schoolId || scope.mode !== "school") {
+    const { createHttpError } = require("./lib/classesManagement");
+    const { STUDENT_CARD_ERROR } = require("./lib/studentAccessCardsManagement");
+    throw createHttpError(403, "Accès refusé: établissement hors périmètre.", STUDENT_CARD_ERROR.TENANT_DENIED);
+  }
+  return scope;
+}
+
+// CARTE-PR2 — vérification de carte : sections filtrées par permissions effectives avant envoi.
+app.post("/api/student-cards/verify", requireAuth, requirePermission("POST /api/student-cards/verify"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { verifyStudentCard } = require("./lib/studentCardVerification");
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = req.principal;
+  // Même résolution que requirePermission : permissions Finance relues à part pour leurs routes.
+  const can = async (routeKey) => {
+    if (isFinanceLiveRbacRouteKey(routeKey) && typeof repository.resolveFinanceLivePermissions === "function") {
+      const live = await repository.resolveFinanceLivePermissions(principal);
+      return rbacService.canAccess({ ...principal, permissions: Array.isArray(live?.permissions) ? live.permissions : [] }, routeKey);
+    }
+    return rbacService.canAccess(principal, routeKey);
+  };
+  res.status(200).json(await verifyStudentCard(
+    repository,
+    req.body ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    can,
+  ));
+}));
+
+// CARTE-BATCH-API-01 : précontrôle en lecture seule, permission carte existante et scope école.
+app.get("/api/classes/:classCode/student-cards/preflight",
+  requireAuth, requirePermission("GET /api/students/:id/cards"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const principal = await enrollmentHttpPrincipal(req);
+    const { previewClassCardBatch } = require("./lib/studentCardBatchPreflight");
+    res.json(await previewClassCardBatch(repository, studentCardsHttpScope(principal), req.params.classCode));
+  }),
+);
+
+// CARTE-BATCH-API-02 — préparation QR sans activation. Le corps client est ignoré :
+// le plan vient du roster serveur. Les interruptions de test ne sont pas exposées.
+app.post("/api/classes/:classCode/student-cards/batches",
+  requireAuth, requirePermission("POST /api/classes/:classCode/student-cards/batches"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { prepareClassCardBatch } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    const result = await prepareClassCardBatch(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      principal,
+    );
+    res.status(result.batchId ? 201 : 200).json(result);
+  }),
+);
+
+app.get("/api/classes/:classCode/student-cards/batches/:batchId",
+  requireAuth, requirePermission("GET /api/classes/:classCode/student-cards/batches/:batchId"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { readClassCardBatch } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    res.json(await readClassCardBatch(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      req.params.batchId,
+      principal,
+    ));
+  }),
+);
+
+app.post("/api/classes/:classCode/student-cards/batches/:batchId/receipt",
+  requireAuth, requirePermission("POST /api/classes/:classCode/student-cards/batches/:batchId/receipt"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { recordBatchReceipt } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    res.json(await recordBatchReceipt(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      req.params.batchId,
+      req.body ?? {},
+      principal,
+    ));
+  }),
+);
+
+app.post("/api/classes/:classCode/student-cards/batches/:batchId/activate",
+  requireAuth, requirePermission("POST /api/classes/:classCode/student-cards/batches/:batchId/activate"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { activateClassCardBatch } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    res.json(await activateClassCardBatch(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      req.params.batchId,
+      req.body ?? {},
+      principal,
+    ));
+  }),
+);
+
+app.post("/api/classes/:classCode/student-cards/batches/:batchId/abort",
+  requireAuth, requirePermission("POST /api/classes/:classCode/student-cards/batches/:batchId/abort"),
+  asyncHandler(async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    requireStudentCardsPg();
+    const { abortClassCardBatch } = require("./lib/studentCardBatchIssue");
+    const principal = await enrollmentHttpPrincipal(req);
+    res.json(await abortClassCardBatch(
+      repository,
+      studentCardsHttpScope(principal),
+      req.params.classCode,
+      req.params.batchId,
+      principal,
+    ));
+  }),
+);
+
+app.get("/api/students/:id/cards", requireAuth, requirePermission("GET /api/students/:id/cards"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { listStudentCards, readStudentCardHolder } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const cards = await listStudentCards(repository, req.params.id, studentCardsHttpScope(principal), principal, auditMetaFromRequest(req));
+  const { readNfcEnabled } = require("./lib/studentCardsNfcEncoding");
+  // CARTE-CYCLE-01 : titulaire résolu (élève / étudiant / null) — lecture seule, aucun jeton.
+  const holder = await readStudentCardHolder(repository, req.params.id, studentCardsHttpScope(principal));
+  res.json({ cards, nfcEnabled: await readNfcEnabled(repository, studentCardsHttpScope(principal).schoolId), holder });
+}));
+
+app.post("/api/student-cards", requireAuth, requirePermission("POST /api/student-cards"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { issueStudentCard } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  const card = await issueStudentCard(
+    repository,
+    req.body ?? {},
+    principal,
+    auditMetaFromRequest(req),
+    schoolScope,
+  );
+  res.status(201).json(card);
+}));
+
+app.post("/api/student-cards/:id/nfc-retry", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-retry"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { retryStudentCardNfc } = require("./lib/studentCardsNfcEncoding");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await retryStudentCardNfc(repository, req.params.id, req.body ?? {}, principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+// NFC-P0-R2 — reopen an expired blank-card reservation (same row, same pupil).
+// Same permission as the canonical secret rotation; the new secret is returned once.
+app.post("/api/student-cards/:id/nfc-reencode", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-retry"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { reopenExpiredStudentCardNfc } = require("./lib/studentCardsNfcEncoding");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await reopenExpiredStudentCardNfc(repository, req.params.id, req.body ?? {},
+    principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+// Same permissions as NFC confirmation; never logs or echoes the capability.
+app.post("/api/student-cards/:id/nfc-recover", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-confirm"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { recoverExpiredStudentCardNfc } = require("./lib/studentCardsNfcEncoding");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await recoverExpiredStudentCardNfc(repository, req.params.id, req.body ?? {},
+    principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+// NFC-P0-R3-1 — read-only diagnosis of a physical card from its UID (no write, no
+// release, no reassignment). Same permission as NFC programming; school-bound details only.
+app.post("/api/student-cards/nfc-diagnose", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-confirm"), nfcDiagnosisRateLimiter, asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { diagnoseStudentCardNfc } = require("./lib/studentCardsNfcDiagnosis");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await diagnoseStudentCardNfc(repository, req.body ?? {}, principal,
+    auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+// CARTE-FIX-QR-NFC — puce NFC ajoutée à la carte ACTIVE existante (même carte, même secret).
+// Jamais d'émission ni de remplacement ; aucun secret journalisé ni renvoyé.
+app.post("/api/student-cards/:id/nfc-provision", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-provision"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { beginStudentCardNfcProvision } = require("./lib/studentCardsNfcLifecycle");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await beginStudentCardNfcProvision(repository, req.params.id, req.body ?? {},
+    principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+app.post("/api/student-cards/:id/nfc-provision/confirm", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-provision"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { confirmStudentCardNfcProvision } = require("./lib/studentCardsNfcLifecycle");
+  const principal = await enrollmentHttpPrincipal(req);
+  res.json(await confirmStudentCardNfcProvision(repository, req.params.id, req.body ?? {},
+    principal, auditMetaFromRequest(req), studentCardsHttpScope(principal)));
+}));
+
+app.post("/api/student-cards/:id/nfc-confirm", requireAuth, requirePermission("POST /api/student-cards/:id/nfc-confirm"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { confirmStudentCardNfc } = require("./lib/studentCardsNfcEncoding");
+  const principal = await enrollmentHttpPrincipal(req);
+  const card = await confirmStudentCardNfc(repository, req.params.id, req.body ?? {}, principal, auditMetaFromRequest(req), studentCardsHttpScope(principal));
+  res.json(card);
+}));
+
+app.post("/api/student-cards/:id/lost", requireAuth, requirePermission("POST /api/student-cards/:id/lost"), asyncHandler(async (req, res) => {
+  requireStudentCardsPg();
+  const { markStudentCardLost } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const card = await markStudentCardLost(
+    repository,
+    req.params.id,
+    principal,
+    auditMetaFromRequest(req),
+    studentCardsHttpScope(principal),
+    req.body?.reason,
+  );
+  res.json(card);
+}));
+
+app.post("/api/student-cards/:id/revoke", requireAuth, requirePermission("POST /api/student-cards/:id/revoke"), asyncHandler(async (req, res) => {
+  requireStudentCardsPg();
+  const { revokeStudentCard } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const card = await revokeStudentCard(
+    repository,
+    req.params.id,
+    principal,
+    auditMetaFromRequest(req),
+    studentCardsHttpScope(principal),
+    req.body?.reason,
+  );
+  res.json(card);
+}));
+
+app.get("/api/student-cards/capabilities", requireAuth, requirePermission("GET /api/student-cards/capabilities"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { readStudentCardCapabilities } = require("./lib/studentCardCapabilities");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  res.json(await readStudentCardCapabilities(repository, schoolScope.schoolId));
+}));
+
+app.post("/api/student-cards/scan", requireAuth, requirePermission("POST /api/student-cards/scan"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { scanStudentCard } = require("./lib/studentAccessCardsManagement");
+  const { hasAttendanceIntent, scanStudentCardHttp } = require("./lib/studentCardAttendance");
+  const {
+    hasFinanceIntent,
+    assertStudentCardScanIntents,
+    assertStudentCardFinanceEnabled,
+    scanStudentCardFinance,
+  } = require("./lib/studentCardFinance");
+  req.principal = await enrollmentHttpPrincipal(req);
+  assertStudentCardScanIntents(req.body);
+  if (hasAttendanceIntent(req.body)) {
+    req.principal = await presenceHttpPrincipal(req);
+    const gate = requireSchoolSubscriptionFeature("write_presence");
+    await new Promise((resolve, reject) => {
+      gate(req, res, (error) => (error ? reject(error) : resolve()));
+    });
+    const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+    await withIdempotency({
+      req,
+      res,
+      routeKey: "POST /api/student-cards/scan",
+      principal: req.principal,
+      handler: () => scanStudentCardHttp(
+        repository,
+        req.body,
+        studentCardsHttpScope(req.principal),
+        req.principal,
+        pedagogyAuditMetaFromRequest(req),
+      ),
+    });
+    return;
+  }
+  const resolved = await scanStudentCard(
+    repository,
+    { cardToken: req.body?.cardToken },
+    studentCardsHttpScope(req.principal),
+  );
+  if (hasFinanceIntent(req.body)) {
+    await new Promise((resolve, reject) => {
+      requirePermission("GET /api/finance/student-fees")(req, res, (error) => (error ? reject(error) : resolve()));
+    });
+    await assertStudentCardFinanceEnabled(repository, studentCardsHttpScope(req.principal).schoolId);
+    req.principal = await financeHttpPrincipal(req);
+    const finance = await scanStudentCardFinance(repository, resolved, req.principal);
+    res.json({ ...resolved, finance });
+    return;
+  }
+  res.json(resolved);
+}));
+
+app.post("/api/student-cards/:id/replace", requireAuth, requirePermission("POST /api/student-cards/:id/replace"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { replaceStudentCard } = require("./lib/studentAccessCardsManagement");
+  const principal = await enrollmentHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  const result = await replaceStudentCard(
+    repository,
+    req.params.id,
+    principal,
+    auditMetaFromRequest(req),
+    schoolScope,
+    req.body?.nfc !== undefined ? {
+      nfc: req.body.nfc, operationId: req.body.operationId,
+      studentId: req.body.studentId, medium: req.body.medium,
+    } : {},
+  );
+  res.status(200).json(result);
 }));
 
 async function authorizeEnrollmentStudentOr404(req, res, studentId) {
@@ -2121,6 +2648,228 @@ async function authorizeEnrollmentStudentOr404(req, res, studentId) {
   }
   return { principal, schoolCode, student: authorizedPg };
 }
+
+// CARTE-PR1 — appel collectif : scans brouillon sans écriture, puis validation unique.
+let studentCardRollCallKeys = null;
+function rollCallKeys() {
+  const { deriveRollCallKeys } = require("./lib/studentCardRollCall");
+  studentCardRollCallKeys ??= deriveRollCallKeys(tokenService.secret);
+  return studentCardRollCallKeys;
+}
+
+async function rollCallHttpPrincipal(req) {
+  req.principal = await enrollmentHttpPrincipal(req);
+  req.principal = await presenceHttpPrincipal(req);
+  const gate = requireSchoolSubscriptionFeature("write_presence");
+  await new Promise((resolve, reject) => {
+    gate(req, {}, (error) => (error ? reject(error) : resolve()));
+  });
+  return req.principal;
+}
+
+app.post("/api/student-cards/roll-call/scan", requireAuth, requirePermission("POST /api/student-cards/roll-call/scan"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { scanRollCallDraft } = require("./lib/studentCardRollCall");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await scanRollCallDraft(
+    repository,
+    req.body ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    rollCallKeys(),
+  ));
+}));
+
+app.get("/api/student-cards/roll-call/roster", requireAuth, requirePermission("GET /api/student-cards/roll-call/roster"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { rollCallRoster } = require("./lib/studentCardRollCall");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await rollCallRoster(
+    repository,
+    req.query ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    rollCallKeys(),
+  ));
+}));
+
+app.post("/api/student-cards/roll-call/validate", requireAuth, requirePermission("POST /api/student-cards/roll-call/validate"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { readContext, assertOperationKey, validateRollCall } = require("./lib/studentCardRollCall");
+  const principal = await rollCallHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  assertOperationKey(req.get("Idempotency-Key"), readContext(req.body ?? {}).sessionId);
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/student-cards/roll-call/validate",
+    principal,
+    handler: () => validateRollCall(
+      repository,
+      req.body ?? {},
+      schoolScope,
+      principal,
+      rollCallKeys(),
+      pedagogyAuditMetaFromRequest(req),
+    ),
+  });
+}));
+
+// CARTE-UX-ROLE-01 — supervision des appels par la direction : effectifs et compteurs par classe.
+app.get("/api/student-cards/roll-call/overview", requireAuth, requirePermission("GET /api/student-cards/roll-call/overview"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { rollCallOverview } = require("./lib/studentCardRollCall");
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = await presenceHttpPrincipal(req);
+  res.status(200).json(await rollCallOverview(repository, req.query ?? {}, studentCardsHttpScope(principal), principal));
+}));
+
+// NFC-PRES-LOCAL-PR1b — pack signé Ed25519 pour l'appel hors ligne (lecture seule, indicatif).
+// NFC-ROLES-FINAL-01 : enseignant affecté ou responsable scolaire autorisé (rôles et droits relus en base), flags, abonnement.
+// Signataire et secret de rapprochement réévalués à chaque requête depuis l'environnement (fail-closed).
+app.get("/api/student-cards/roll-call/offline/v1/pack", requireAuth, requirePermission("GET /api/student-cards/roll-call/offline/v1/pack"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { issueOfflinePack } = require("./lib/rollCallOfflinePack");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await issueOfflinePack(
+    repository,
+    req.query ?? {},
+    studentCardsHttpScope(principal),
+    principal,
+    {
+      signer: () => require("./lib/rollCallOfflinePackSigner").packSignerFromEnv(process.env),
+      masterSecret: () => require("./lib/rollCallOfflinePackSigner").resolvePackMatchSecret(process.env),
+    },
+  ));
+}));
+
+// NFC-ROLES-ACCESS-01 — classes sur lesquelles le compte peut effectuer l'appel NFC/QR (sélecteur
+// Mobile, sans fiche de classe) : même contrat que le pack et la synchronisation, données minimales.
+app.get("/api/student-cards/roll-call/offline/v1/classes", requireAuth, requirePermission("GET /api/student-cards/roll-call/offline/v1/classes"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { listOfflineRollCallClasses } = require("./lib/rollCallOfflinePack");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await listOfflineRollCallClasses(repository, studentCardsHttpScope(principal), principal));
+}));
+
+// NFC-PRES-LOCAL-PR1c — synchronisation transactionnelle d'un appel réalisé hors ligne.
+// Garde R (relire son propre ACK) dans la transaction AVANT toute lecture de rejeu ; garde W
+// (affectation, flags, abonnement, date, cartes) seulement si aucun appel n'est enregistré.
+// Pas de gate d'abonnement avant R : il fait partie de W.
+app.post("/api/student-cards/roll-call/offline/v1/sync", requireAuth, requirePermission("POST /api/student-cards/roll-call/offline/v1/sync"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const sync = require("./lib/rollCallOfflineSync");
+  // Fail-closed : exclusivement dans une transaction PostgreSQL d'idempotence (aucun repli sans transaction).
+  if (typeof repository?.withIdempotencyTransaction !== "function" || !req.app?.locals?.idempotencyService) {
+    const { createHttpError } = require("./lib/classesManagement");
+    throw createHttpError(503, "Synchronisation hors ligne indisponible : transaction PostgreSQL requise.", sync.OFFLINE_SYNC_ERROR.TRANSACTION_UNAVAILABLE);
+  }
+  const batch = sync.readSyncBody(req.body, req.get("Idempotency-Key"));
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = await presenceHttpPrincipal(req);
+  const scope = studentCardsHttpScope(principal);
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  let actor = null;
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/student-cards/roll-call/offline/v1/sync",
+    principal,
+    replayStatusCode: 200,
+    guard: async () => {
+      actor = await sync.guardReplayAccess(repository, principal, scope, batch);
+    },
+    handler: () => sync.syncOfflineRollCall(repository, {
+      batch,
+      scope,
+      principal,
+      actor,
+      auditMeta: pedagogyAuditMetaFromRequest(req),
+      deps: {
+        // Abonnement (garde W uniquement, jamais la garde R) : lignes de l'établissement et de ses
+        // abonnements verrouillées en partage dans la transaction — une suspension (UPDATE) attend
+        // le COMMIT — puis évaluation EN DIRECT (règles existantes) sur une autre connexion : elle voit
+        // tout changement validé avant le verrou, sans requête concurrente sur le client de la transaction.
+        assertWritePresence: async () => {
+          const schoolCode = String(principal?.schoolCode ?? "").trim();
+          if (!schoolCode || schoolCode === "*") {
+            throw Object.assign(new Error(schoolSubscriptionAccessService.BLOCKED_MESSAGE), { statusCode: 403 });
+          }
+          // Établissement SANS abonnement (accès « Actif » par défaut) : la création concurrente d'un premier
+          // abonnement (INSERT, verrou FOR KEY SHARE de clé étrangère sur la ligne `schools`) est bloquée par
+          // FOR UPDATE jusqu'au COMMIT. Avec au moins un abonnement : FOR SHARE suffit (les mises à jour
+          // attendent ; une ligne ajoutée ensuite n'est jamais retenue, la règle lit la plus ancienne).
+          const existing = await repository.all("SELECT id FROM subscriptions WHERE school_id = $1::uuid LIMIT 1", [scope.schoolId]);
+          await repository.one(`SELECT id FROM schools WHERE id = $1::uuid ${existing.length ? "FOR SHARE" : "FOR UPDATE"}`, [scope.schoolId]);
+          await repository.all("SELECT id FROM subscriptions WHERE school_id = $1::uuid ORDER BY id FOR SHARE", [scope.schoolId]);
+          const { runOutsideIdempotencyTx } = require("./lib/idempotencyTxContext");
+          const state = await runOutsideIdempotencyTx(() => getSubscriptionAccessState());
+          schoolSubscriptionAccessService.assertSchoolFeature(schoolCode, state, "write_presence");
+        },
+      },
+    }),
+  });
+}));
+
+// CARTE-PR3-A1 — contrôle d'entrée au portail : événement distinct des présences en classe.
+app.post("/api/student-cards/entry-scan", requireAuth, requirePermission("POST /api/student-cards/entry-scan"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { readEntryPayload, assertEntryOperationKey, recordEntryScan } = require("./lib/studentCardEntry");
+  const { assertStudentCardFinanceEnabled, scanStudentCardFinance } = require("./lib/studentCardFinance");
+  const principal = await rollCallHttpPrincipal(req);
+  const schoolScope = studentCardsHttpScope(principal);
+  assertEntryOperationKey(req.get("Idempotency-Key"), readEntryPayload(req.body ?? {}).operationId);
+  // Impayés : information non bloquante, seulement avec la permission finance et l'interrupteur.
+  const finance = async (resolved) => {
+    // Même résolution que requirePermission : permissions Finance relues à part (droits live).
+    const financeRoute = "GET /api/finance/student-fees";
+    const live = typeof repository.resolveFinanceLivePermissions === "function"
+      ? await repository.resolveFinanceLivePermissions(principal)
+      : null;
+    const permissions = Array.isArray(live?.permissions) ? live.permissions : [];
+    if (!rbacService.canAccess({ ...principal, permissions }, financeRoute)) return undefined;
+    try {
+      await assertStudentCardFinanceEnabled(repository, schoolScope.schoolId);
+    } catch {
+      return undefined;
+    }
+    const financePrincipal = await financeHttpPrincipal({ principal });
+    return scanStudentCardFinance(repository, resolved, financePrincipal);
+  };
+  const { pedagogyAuditMetaFromRequest } = require("./lib/pedagogyManagement");
+  await withIdempotency({
+    req,
+    res,
+    routeKey: "POST /api/student-cards/entry-scan",
+    principal,
+    handler: () => recordEntryScan(
+      repository,
+      req.body ?? {},
+      schoolScope,
+      principal,
+      pedagogyAuditMetaFromRequest(req),
+      { finance },
+    ),
+  });
+}));
+
+app.get("/api/student-cards/entries", requireAuth, requirePermission("GET /api/student-cards/entries"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { listEntriesOverview } = require("./lib/studentCardEntry");
+  req.principal = await enrollmentHttpPrincipal(req);
+  const principal = await presenceHttpPrincipal(req);
+  res.status(200).json(await listEntriesOverview(repository, req.query ?? {}, studentCardsHttpScope(principal), principal));
+}));
 
 app.get("/api/students/:studentId/enrollments", requireAuth, requirePermission("GET /api/students/:studentId/enrollments"), asyncHandler(async (req, res) => {
   const scoped = await authorizeEnrollmentStudentOr404(req, res, req.params.studentId);
@@ -2240,7 +2989,7 @@ app.patch("/api/students/:id", requireAuth, requirePermission("PATCH /api/studen
   await auditService.record(req, "update_student", "student", updated.studentCode, {
     studentCode: updated.studentCode,
   }, { schoolCode });
-  res.json(enrollmentApiStudent(updated, schoolCode));
+  res.json(presentEnrollmentStudent(updated, schoolCode, req.principal));
 }));
 
 app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/students/:id"), asyncHandler(async (req, res) => {
@@ -2270,7 +3019,7 @@ app.delete("/api/students/:id", requireAuth, requirePermission("DELETE /api/stud
     await auditService.record(req, "archive_student", "student", archived.studentCode || req.params.id, {
       studentCode: archived.studentCode || req.params.id,
     }, { schoolCode });
-    return res.json(enrollmentApiStudent(archived, schoolCode));
+    return res.json(presentEnrollmentStudent(archived, schoolCode, req.principal));
   }
   res.status(204).end();
 }));
@@ -2453,8 +3202,47 @@ app.post("/api/presences", requireAuth, requireSchoolSubscriptionFeature("write_
   });
 }));
 
+/**
+ * BULLETIN-SEC-01 — bulletin historique d'un élève dont l'accès a déjà été vérifié.
+ * Notes publiées uniquement, rang limité à l'établissement et à la classe,
+ * identité de l'établissement propriétaire (lib/studentBulletinScope.js).
+ * PostgreSQL : lecture fraîche limitée à l'établissement ; dépôt mémoire : jeu de données.
+ */
+async function buildStudentBulletinReport(student, period = "Trimestre 1") {
+  const { buildStudentBulletinScope, bulletinSchoolIdentity } = require("./lib/studentBulletinScope");
+  let scopeInput;
+  if (typeof repository.loadStudentBulletinSource === "function") {
+    const source = await repository.loadStudentBulletinSource(student);
+    if (!source) {
+      throw new BusinessError(404, "Eleve introuvable");
+    }
+    scopeInput = {
+      student,
+      schools: source.school ? [source.school] : [],
+      classId: source.classId,
+      students: source.students,
+      notes: source.notes,
+    };
+  } else {
+    const runtime = await getRuntime();
+    scopeInput = {
+      student,
+      schools: runtime.platformSchools ?? [],
+      students: runtime.students ?? [],
+      notes: runtime.notes ?? [],
+      evaluations: runtime.evaluations ?? [],
+    };
+  }
+  const scope = buildStudentBulletinScope(scopeInput);
+  const gradeBook = new GradeBookService({ students: scope.students, notes: scope.notes, courses: [] });
+  const report = {
+    ...gradeBook.generateReport(student.id, period, "Publié"),
+    school: bulletinSchoolIdentity(scope.school),
+  };
+  return { report, school: scope.school };
+}
+
 app.get("/api/students/:id/report", requireAuth, requirePermission("GET /api/students/:id/report"), asyncHandler(async (req, res) => {
-  const { gradeBookService } = await getRuntime();
   const { students } = await getAuthoritativeBackOfficeState();
   const student = findStudent(tenantScopeService.filterRows(students, req.principal), req.params.id);
 
@@ -2462,11 +3250,11 @@ app.get("/api/students/:id/report", requireAuth, requirePermission("GET /api/stu
     return res.status(404).json({ message: "Eleve introuvable" });
   }
 
-  res.json(stripSensitiveFieldsDeep(gradeBookService.generateReport(student.id)));
+  const { report } = await buildStudentBulletinReport(student);
+  res.json(stripSensitiveFieldsDeep(report));
 }));
 
 app.get("/api/students/:id/report.pdf", requireAuth, requirePermission("GET /api/students/:id/report.pdf"), asyncHandler(async (req, res) => {
-  const { gradeBookService, reportPdfService } = await getRuntime();
   const backOfficeState = await getAuthoritativeBackOfficeState();
   const { students } = backOfficeState;
   const student = findStudent(tenantScopeService.filterRows(students, req.principal), req.params.id);
@@ -2478,9 +3266,9 @@ app.get("/api/students/:id/report.pdf", requireAuth, requirePermission("GET /api
   const period = req.query.period ? String(req.query.period) : "Trimestre 1";
   const { resolveBulletinLayoutForStudent } = require("./lib/documentsExamsService");
   const design = await resolveBulletinLayoutForStudent(repository, student);
-  const baseReport = gradeBookService.generateReport(student.id, period, "Publié");
+  const { report: baseReport, school } = await buildStudentBulletinReport(student, period);
   const report = applyBulletinDesignToReport(baseReport, design);
-  const pdf = await reportPdfService.generateReportCardPdf(report);
+  const pdf = await new ReportPdfService({ school }).generateReportCardPdf(report);
   const filename = `bulletin-${student.matricule}-${period.replace(/\s+/g, "-").toLowerCase()}.pdf`;
 
   res.setHeader("Content-Type", "application/pdf");
@@ -2670,6 +3458,12 @@ function usersApiUsers(users) {
 }
 
 app.post("/api/users/:id/reset-password", requireAuth, asyncHandler(async (req, res) => {
+  // SEC-AUTH-05 : permissions effectives relues en base (comme requirePermission),
+  // jamais celles figées dans le jeton.
+  if (typeof repository.resolveEffectivePermissions === "function") {
+    const live = await repository.resolveEffectivePermissions(req.principal);
+    req.principal = { ...req.principal, permissions: Array.isArray(live?.permissions) ? live.permissions : [] };
+  }
   if (!canResetUserPassword(req.principal)) {
     throw new BusinessError(403, "Permission insuffisante pour réinitialiser le mot de passe.");
   }
@@ -2878,16 +3672,30 @@ app.get("/api/finance/payment-statuses", requireAuth, requirePermission("GET /ap
 
 app.post("/api/finance/payment-statuses", requireAuth, requirePermission("POST /api/finance/payment-statuses"), asyncHandler(async (req, res) => {
   assertCanManagePaymentStatuses(req.principal);
-  const row = await repository.upsertFinancePaymentStatus(req.body ?? {}, req.principal);
+  const { assertPaymentStatusPayload } = require("./lib/financePaymentStatusValidation");
+  assertPaymentStatusPayload(req.body, { create: true });
+  const row = await repository.upsertFinancePaymentStatus(req.body, req.principal);
   res.status(201).json(row);
 }));
 
 app.patch("/api/finance/payment-statuses/:statusId", requireAuth, requirePermission("PATCH /api/finance/payment-statuses/:statusId"), asyncHandler(async (req, res) => {
   assertCanManagePaymentStatuses(req.principal);
-  const row = await repository.upsertFinancePaymentStatus(
-    { ...(req.body ?? {}), code: req.params.statusId, id: req.params.statusId },
-    req.principal,
-  );
+  const { assertPaymentStatusPayload, assertKnownPaymentStatus } = require("./lib/financePaymentStatusValidation");
+  assertPaymentStatusPayload(req.body);
+  const principal = await financeHttpPrincipal(req);
+  // Vérifier l'existence dans le périmètre de l'établissement AVANT l'upsert.
+  const visible = await repository.listFinancePaymentStatuses(principal);
+  assertKnownPaymentStatus(visible, req.params.statusId);
+  if (req.body?.code !== undefined && req.body.code !== req.params.statusId) {
+    assertPaymentStatusPayload({ code: "" });
+  }
+  const row = await repository.updateFinancePaymentStatus(req.params.statusId, req.body, principal);
+  if (!row) {
+    const error = new Error("Statut de paiement introuvable.");
+    error.statusCode = 404;
+    error.code = "FINANCE_PAYMENT_STATUS_NOT_FOUND";
+    throw error;
+  }
   res.json(row);
 }));
 
@@ -3026,6 +3834,11 @@ app.get("/api/backoffice/trial-requests", requireAuth, requirePermission("GET /a
   res.json(await listTrialAccessRequests(repository, req.principal));
 }));
 
+app.get("/api/backoffice/platform-compliance", requireAuth, requirePermission("GET /api/backoffice/platform-compliance"), asyncHandler(async (req, res) => {
+  const { getPlatformCompliance } = require("./lib/platformCompliance");
+  res.json(await getPlatformCompliance(repository, req.principal));
+}));
+
 app.get("/api/backoffice/notifications", requireAuth, requirePermission("GET /api/backoffice/notifications"), asyncHandler(async (req, res) => {
   const platform = await repository.listPlatformProjection();
   sendList(res, tenantScopeService.filterRows(platform.notifications ?? [], req.principal), req.query, ["title", "message", "type", "status"]);
@@ -3102,6 +3915,17 @@ app.patch("/api/backoffice/rbac/permissions", requireAuth, requirePermission("PA
   res.json(saved);
 }));
 
+app.post("/api/backoffice/rbac/permissions/reset", requireAuth, requirePermission("POST /api/backoffice/rbac/permissions/reset"), asyncHandler(async (req, res) => {
+  const { resetConfiguredPermissionOverrides, functionalRbacAuditMetaFromRequest } = require("./lib/functionalRbacService");
+  const reset = await resetConfiguredPermissionOverrides(
+    repository,
+    req.body ?? {},
+    req.principal,
+    functionalRbacAuditMetaFromRequest(req),
+  );
+  res.json(reset);
+}));
+
 app.post("/api/backoffice/rbac/roles", requireAuth, requirePermission("POST /api/backoffice/rbac/roles"), asyncHandler(async (req, res) => {
   const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
   const created = await repository.createEstablishmentRole(
@@ -3123,6 +3947,32 @@ app.patch("/api/backoffice/rbac/roles/:roleId", requireAuth, requirePermission("
   res.json(updated);
 }));
 
+app.get("/api/backoffice/rbac/role-display-labels", requireAuth, requirePermission("GET /api/backoffice/rbac/role-display-labels"), asyncHandler(async (req, res) => {
+  const labels = await repository.listEstablishmentRoleDisplayLabels(req.principal);
+  res.json({ items: labels });
+}));
+
+app.patch("/api/backoffice/rbac/roles/:roleId/display-label", requireAuth, requirePermission("PATCH /api/backoffice/rbac/roles/:roleId/display-label"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const updated = await repository.updateEstablishmentRoleDisplayLabel(
+    req.params.roleId,
+    req.body ?? {},
+    req.principal,
+    establishmentRolesAuditMetaFromRequest(req),
+  );
+  res.json(updated);
+}));
+
+app.post("/api/backoffice/rbac/roles/:roleId/display-label/reset", requireAuth, requirePermission("POST /api/backoffice/rbac/roles/:roleId/display-label/reset"), asyncHandler(async (req, res) => {
+  const { establishmentRolesAuditMetaFromRequest } = require("./lib/establishmentRolesManagement");
+  const reset = await repository.resetEstablishmentRoleDisplayLabel(
+    req.params.roleId,
+    req.principal,
+    establishmentRolesAuditMetaFromRequest(req),
+  );
+  res.json(reset);
+}));
+
 app.post("/api/backoffice/rbac/roles/:roleId/archive", requireAuth, requirePermission("POST /api/backoffice/rbac/roles/:roleId/archive"), asyncHandler(async (req, res) => {
   const { archiveRbacRole, functionalRbacAuditMetaFromRequest } = require("./lib/functionalRbacService");
   const archived = await archiveRbacRole(
@@ -3132,6 +3982,12 @@ app.post("/api/backoffice/rbac/roles/:roleId/archive", requireAuth, requirePermi
     functionalRbacAuditMetaFromRequest(req),
   );
   res.json(archived);
+}));
+
+app.get("/api/backoffice/rbac/history", requireAuth, requirePermission("GET /api/backoffice/rbac/history"), asyncHandler(async (req, res) => {
+  const { listRbacAuditHistory } = require("./lib/functionalRbacService");
+  const history = await listRbacAuditHistory(repository, req.query ?? {}, req.principal);
+  res.json(history);
 }));
 
 app.get("/api/backoffice/dashboard-chart-config", requireAuth, requirePermission("GET /api/backoffice/dashboard-chart-config"), asyncHandler(async (req, res) => {
@@ -3288,6 +4144,25 @@ app.post("/api/backoffice/relations", requireAuth, requirePermission("POST /api/
   const created = Boolean(result?.created);
   const body = result?.relation ?? result;
   res.status(created ? 201 : 200).json(body);
+}));
+
+app.patch("/api/backoffice/relations/:relationId", requireAuth, requirePermission("PATCH /api/backoffice/relations/:relationId"), asyncHandler(async (req, res) => {
+  const row = await repository.updateClientsRelation(
+    req.params.relationId,
+    req.body ?? {},
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(row);
+}));
+
+app.post("/api/backoffice/relations/:relationId/archive", requireAuth, requirePermission("POST /api/backoffice/relations/:relationId/archive"), asyncHandler(async (req, res) => {
+  const result = await repository.archiveClientsRelation(
+    req.params.relationId,
+    req.principal,
+    clientsAuditMetaFromRequest(req),
+  );
+  res.json(result);
 }));
 
 app.get("/api/parents/identity", requireAuth, requirePermission("GET /api/parents/identity"), asyncHandler(async (req, res) => {
@@ -3720,7 +4595,8 @@ app.get("/api/backoffice/establishments/:code/subscription", requireAuth, requir
 }));
 
 app.get("/api/backoffice/establishments/:code", requireAuth, requirePermission("GET /api/backoffice/establishments/:code"), asyncHandler(async (req, res) => {
-  const state = await getAuthoritativeBackOfficeState();
+  // P0-WEB-01 : establishmentService.get ne lit que state.schools (mêmes lignes, lues en direct).
+  const state = await getSubscriptionAccessState();
   res.json(presentSchoolLogoFields(establishmentService.get(req.params.code, state, req.principal)));
 }));
 
@@ -3949,31 +4825,21 @@ app.post("/api/backoffice/bulletin-design/preview", requireAuth, asyncHandler(as
 }));
 
 app.get("/api/audit", requireAuth, requirePermission("GET /api/audit"), asyncHandler(async (req, res) => {
-  // P0-2 : Superadmin / Admin Pays sont déjà 403 dans requireAuth (données perso établissement).
-  // Ce filtre refuse les autres profils : GET /api/audit n'est pas un journal plateforme.
-  if (!["Super Administrateur Somafrik", "Admin Pays"].includes(req.principal.role)) {
-    throw new BusinessError(403, "Seuls les administrateurs habilités peuvent consulter l'audit.");
-  }
-  if (req.query.schoolCode) {
-    tenantScopeService.assertSchoolAccess(req.principal, req.query.schoolCode);
-  }
-  const rows = await repository.getAuditLogs({
-    schoolCode: req.query.schoolCode,
-    userId: req.query.userId,
+  const { listSchoolAuditSummaries } = require("./lib/schoolAudit");
+  res.json(await listSchoolAuditSummaries(repository, req.principal, {
     action: req.query.action,
+    entityType: req.query.entityType,
     from: req.query.from,
     to: req.query.to,
     limit: req.query.limit,
-  });
-  sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["actor", "action", "entityType", "entityId", "schoolCode"]);
+    offset: req.query.offset,
+  }));
 }));
 
 app.get("/api/v2/subjects", requireAuth, requirePermission("GET /api/v2/subjects"), asyncHandler(async (req, res) => {
   const schoolCode = String(req.principal?.schoolCode ?? "").trim();
   const isPlatform =
-    req.principal?.role === "Super Administrateur Somafrik" ||
-    req.principal?.role === "Super Administrateur OKAFRIK" ||
-    req.principal?.role === "Admin Pays";
+    isSuperAdminPrincipal(req.principal) || req.principal?.role === "Admin Pays";
   if (!isPlatform && (!schoolCode || schoolCode === "*")) {
     console.error(JSON.stringify({
       kind: "subjects_catalog_load_failure",
@@ -4071,6 +4937,16 @@ app.post("/api/v2/school-setup/guided/steps/:stepKey/complete", requireAuth, req
   res.json(payload);
 }));
 
+app.post("/api/v2/school-setup/guided/complete", requireAuth, requirePermission("POST /api/v2/school-setup/guided/complete"), asyncHandler(async (req, res) => {
+  const { finalizeSchoolSetupGuided } = require("./lib/schoolSetupGuided");
+  const payload = await finalizeSchoolSetupGuided({
+    principal: req.principal,
+    one: typeof repository.one === "function" ? repository.one.bind(repository) : null,
+    dbQuery: typeof repository.query === "function" ? repository.query.bind(repository) : null,
+  });
+  res.json(payload);
+}));
+
 app.get("/api/v2/academic-years", requireAuth, requirePermission("GET /api/v2/academic-years"), asyncHandler(async (req, res) => {
   const {
     assertAcademicYearReadable,
@@ -4134,8 +5010,73 @@ app.get("/api/v2/documents", requireAuth, requirePermission("GET /api/v2/documen
   sendList(res, tenantScopeService.filterRows(rows, req.principal), req.query, ["code", "type", "title", "studentCode", "studentName"]);
 }));
 
-app.get("/api/v2/reports/advanced", requireAuth, requirePermission("GET /api/v2/reports/advanced"), asyncHandler(async (_req, res) => {
-  res.json(await cacheService.remember("v2:reports:advanced", () => repository.getAdvancedReportsV2()));
+/**
+ * PERF-PR3 — listes paginées en SQL (keyset), personnel de l'établissement uniquement.
+ * Mêmes clés RBAC que les routes historiques ; les routes historiques restent inchangées.
+ */
+function paginatedReadHandler(label, resolvePrincipal, resolveScope, list) {
+  return asyncHandler(async (req, res) => {
+    if (!requireCanonicalPg(res, "all", label)) return;
+    const reads = require("./lib/paginatedSchoolReads");
+    const { teacherClassIds } = require("./lib/schoolDashboardKpis");
+    const principal = await resolvePrincipal(req);
+    reads.assertStaff(principal);
+    const scope = await resolveScope(principal, projectionScopeDeps());
+    const context = await reads.resolveReadContext(repository, principal, scope, teacherClassIds);
+    const page = await reads[list](repository, context, req.query ?? {});
+    res.set("Cache-Control", "no-store");
+    res.json(page);
+  });
+}
+
+app.get(
+  "/api/v2/presences",
+  requireAuth,
+  requirePermission("GET /api/presences"),
+  paginatedReadHandler(
+    "Liste paginée des présences",
+    async (req) => {
+      const { assertPresenceReadable } = require("./lib/presenceSchoolScope");
+      const principal = await presenceHttpPrincipal(req);
+      assertPresenceReadable(principal);
+      return principal;
+    },
+    (principal, deps) => require("./lib/projectionReadScope").resolvePedagogyProjectionScope(principal, deps),
+    "listPresencesPage",
+  ),
+);
+
+app.get(
+  "/api/v2/notes",
+  requireAuth,
+  requirePermission("GET /api/notes"),
+  paginatedReadHandler(
+    "Liste paginée des notes",
+    async (req) => presenceHttpPrincipal(req),
+    (principal, deps) => require("./lib/projectionReadScope").resolvePedagogyProjectionScope(principal, deps),
+    "listNotesPage",
+  ),
+);
+
+app.get(
+  "/api/v2/payments",
+  requireAuth,
+  requirePermission("GET /api/payments"),
+  paginatedReadHandler(
+    "Liste paginée des paiements",
+    async (req) => financeHttpPrincipal(req),
+    (principal, deps) => require("./lib/projectionReadScope").resolveFinanceProjectionScope(principal, deps),
+    "listPaymentsPage",
+  ),
+);
+
+app.get("/api/v2/reports/advanced", requireAuth, requirePermission("GET /api/v2/reports/advanced"), asyncHandler(async (req, res) => {
+  const { getAdvancedReportsForPrincipal } = require("./lib/advancedReportsScope");
+  res.json(await getAdvancedReportsForPrincipal({
+    repository,
+    cache: cacheService,
+    principal: req.principal,
+  }));
 }));
 
 app.get("/api/mvp/readiness", requireAuth, asyncHandler(async (req, res) => {
@@ -4310,14 +5251,11 @@ function normalizeBackOfficeUserCredentials(user = {}) {
   const temporaryPassword = String(next.temporaryPassword ?? "").trim();
 
   if (temporaryPassword && !next.passwordHash && !next.pinHash) {
-    const secretHash = hashSecret(temporaryPassword);
-    next.passwordHash = secretHash;
-    next.pinHash = secretHash;
     next.mustChangePassword = next.mustChangePassword ?? true;
     next.hasTemporaryPassword = true;
   }
 
-  return next;
+  return materializeAccountSecretHashes(next);
 }
 
 function isDbUserUuid(value) {
@@ -4712,12 +5650,22 @@ async function listCanonicalStudentsForPrincipal(principal) {
   return runtime.students ?? [];
 }
 
+function projectionScopeDeps() {
+  const memory = repository?.engine === "memory" || typeof repository?.one !== "function";
+  return {
+    memory,
+    one: memory ? null : repository.one.bind(repository),
+  };
+}
+
 async function loadCanonicalPedagogyForPrincipal(principal) {
-  const pedagogy =
-    typeof repository.listPedagogyProjection === "function"
-      ? await repository.listPedagogyProjection()
-      : { notes: [], presences: [], evaluations: [] };
+  const { resolvePedagogyProjectionScope } = require("./lib/projectionReadScope");
+  const scope = await resolvePedagogyProjectionScope(principal, projectionScopeDeps());
   const students = await listCanonicalStudentsForPrincipal(principal);
+  const pedagogy =
+    scope && typeof repository.listPedagogyProjection === "function"
+      ? await repository.listPedagogyProjection(scope)
+      : { notes: [], presences: [], evaluations: [] };
   return {
     notes: pedagogy.notes ?? [],
     presences: pedagogy.presences ?? [],
@@ -4727,11 +5675,13 @@ async function loadCanonicalPedagogyForPrincipal(principal) {
 }
 
 async function loadCanonicalFinanceForPrincipal(principal) {
-  const finance =
-    typeof repository.listFinanceProjection === "function"
-      ? await repository.listFinanceProjection()
-      : { payments: [] };
+  const { resolveFinanceProjectionScope } = require("./lib/projectionReadScope");
+  const scope = await resolveFinanceProjectionScope(principal, projectionScopeDeps());
   const students = await listCanonicalStudentsForPrincipal(principal);
+  const finance =
+    scope && typeof repository.listFinanceProjection === "function"
+      ? await repository.listFinanceProjection(scope)
+      : { payments: [] };
   return {
     payments: finance.payments ?? [],
     students,
@@ -4757,6 +5707,23 @@ async function getAuthoritativeBackOfficeState() {
       ),
     ),
   );
+}
+
+/**
+ * P0-WEB-01 — état minimal du contrôle d'abonnement : écoles et abonnements, lus en direct.
+ * `assertSchoolCanConnect` ne lit que `schools` et `subscriptions`. Recharger tout l'état
+ * back-office (présences, notes, paiements de tous les établissements) à chaque requête
+ * scolaire faisait attendre chaque requête plusieurs dizaines de secondes.
+ */
+async function getSubscriptionAccessState() {
+  if (typeof repository.listSubscriptionAccessState !== "function") {
+    return getAuthoritativeBackOfficeState();
+  }
+  const state = await repository.listSubscriptionAccessState();
+  return {
+    schools: Array.isArray(state?.schools) ? state.schools : [],
+    subscriptions: Array.isArray(state?.subscriptions) ? state.subscriptions : [],
+  };
 }
 
 async function listResidualDomainForPrincipal(principal, domain) {
@@ -4819,7 +5786,8 @@ async function overlayPlatformProjection(state) {
 }
 
 async function overlayPedagogyProjection(state) {
-  const pedagogy = await repository.listPedagogyProjection();
+  // Lecture plateforme explicite, réservée à getAuthoritativeBackOfficeState.
+  const pedagogy = await repository.listPedagogyProjection({ platform: true });
   return {
     ...state,
     courses: pedagogy.courses ?? [],
@@ -4831,7 +5799,8 @@ async function overlayPedagogyProjection(state) {
 }
 
 async function overlayFinanceProjection(state) {
-  const finance = await repository.listFinanceProjection();
+  // Lecture plateforme explicite, réservée à getAuthoritativeBackOfficeState.
+  const finance = await repository.listFinanceProjection({ platform: true });
   return {
     ...state,
     payments: finance.payments ?? [],
@@ -5209,10 +6178,6 @@ function mergeSchoolRows(dbSchools = [], storedSchools = []) {
   });
 
   return [...rows.values()];
-}
-
-function isSuperAdminPrincipal(principal) {
-  return principal?.role === "Super Administrateur Somafrik" || principal?.role === "Super Administrateur OKAFRIK";
 }
 
 /**
@@ -6334,27 +7299,52 @@ function isPlainObject(value) {
 
 async function issueRefreshedAccessToken(session, payload) {
   const rolePermissionsMap = await getRolePermissionsMap();
-  const { mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
+  const { displayRoles, mergePermissionsForRoles, principalHasRole, toRoleKey } = require("./lib/userRoleLifecycle");
   let roleKeys = session.role ? [toRoleKey(session.role)].filter(Boolean) : [];
-  if (typeof repository.listActiveUserRoleKeys === "function" && session.user_id) {
+  // SEC-AUTH-05 (fail-closed) : le refresh ne réémet jamais un rôle retiré. Rôles
+  // retirés ou validation impossible → aucun rôle, libellé « Sans affectation » et
+  // aucune permission. Rôle de connexion conservé uniquement pour un compte legacy
+  // dont l'absence d'historique user_roles est établie.
+  let sessionRole = session.role;
+  const { loadLiveRoleState } = require("./lib/liveRoleState");
+  // SEC-TENANT-02 : rôles de l'établissement de la session uniquement.
+  const liveRoles = await loadLiveRoleState(repository, session.user_id, { schoolId: session.school_id ?? "" });
+  if (liveRoles.status === "active") {
+    roleKeys = liveRoles.keys;
+  } else if (liveRoles.status !== "legacy") {
+    roleKeys = [];
+    sessionRole = "Sans affectation";
+  }
+  const { resolveRefreshSchoolCode } = require("./lib/refreshSchoolAttachment");
+  const refreshedSchoolCode = await resolveRefreshSchoolCode({ repository, session, payload, roleKeys });
+  // MONO-SEC-O9-R1 : une rotation JWT ne contourne pas la suspension SaaS.
+  // La validation utilise l'état autoritatif courant et non les claims du jeton.
+  const { isPlatformScopePrincipal, isSchoolRolePrincipal } = require("./lib/platformScopePrincipal");
+  if (!isPlatformScopePrincipal({ role: sessionRole, roleKeys }) &&
+      isSchoolRolePrincipal({ role: sessionRole, roleKeys })) {
+    const state = await getSubscriptionAccessState();
+    const { assertSchoolCanConnect } = require("./services/schoolSubscriptionAccessService");
     try {
-      const loaded = await repository.listActiveUserRoleKeys(session.user_id);
-      if (Array.isArray(loaded) && loaded.length) {
-        roleKeys = loaded;
-      } else if (Array.isArray(loaded) && (!session.role || session.role === "Sans affectation")) {
-        roleKeys = [];
+      assertSchoolCanConnect(refreshedSchoolCode, state);
+    } catch (error) {
+      // Révoquer l'ensemble des sessions de ce compte lorsqu'il est bloqué.
+      // Ne jamais réémettre de jeton après le refus.
+      if (typeof repository.revokeAllSessionsForUser === "function") {
+        await repository.revokeAllSessionsForUser(session.user_id, "subscription_blocked");
+      } else if (typeof repository.revokeSession === "function") {
+        await repository.revokeSession(payload.sessionId, "subscription_blocked");
       }
-    } catch {
-      /* fail-closed: keep session.role */
+      throw error;
     }
   }
   let permissions = mergePermissionsForRoles(roleKeys, rolePermissionsMap);
   if (typeof repository.resolveEffectivePermissions === "function") {
     const live = await repository.resolveEffectivePermissions({
       sub: session.user_id,
-      role: session.role,
+      schoolId: session.school_id ?? "",
+      role: sessionRole,
       roleKeys,
-      schoolCode: session.school_code ?? payload.schoolCode,
+      schoolCode: refreshedSchoolCode,
       countryCode: session.country_code ?? payload.countryCode,
     });
     if (Array.isArray(live?.permissions)) permissions = live.permissions;
@@ -6366,7 +7356,7 @@ async function issueRefreshedAccessToken(session, payload) {
   });
 
   let assignmentFields = {};
-  if (principalHasRole({ role: session.role, roleKeys }, "Enseignant")) {
+  if (principalHasRole({ role: sessionRole, roleKeys }, "Enseignant")) {
     const state = await getAuthoritativeBackOfficeState();
     const { teacherPrincipalAssignmentFields } = require("./lib/teacherSessionAssignments");
     assignmentFields = teacherPrincipalAssignmentFields(
@@ -6382,10 +7372,20 @@ async function issueRefreshedAccessToken(session, payload) {
     );
   }
 
+  // REFRESH-R1 : mêmes libellés/roleKeys que le principal de connexion.
+  // Les rôles restent relus en direct : aucune attribution révoquée n'est restaurée.
+  const liveDisplay = displayRoles(roleKeys);
+  const effectiveRole = liveDisplay.role === "Super Administrateur OKAFRIK"
+    ? "Super Administrateur Somafrik"
+    : liveDisplay.role;
   const accessToken = tokenService.createAccessToken({
     sub: session.user_id,
-    role: session.role,
-    schoolCode: session.school_code ?? "*",
+    userId: session.user_id,
+    schoolId: session.school_id ?? "",
+    role: effectiveRole,
+    roles: liveDisplay.roles,
+    roleKeys: liveDisplay.roleKeys,
+    schoolCode: refreshedSchoolCode,
     countryCode: session.country_code ?? payload.countryCode ?? "",
     authSource: payload.authSource ?? "mobile",
     sessionId: payload.sessionId,
@@ -6411,7 +7411,28 @@ async function sendAuthenticatedResponse(req, res, response, action) {
       /* fail-closed: keep the login projection */
     }
   }
-  const principal = buildPrincipal(response, rolePermissionsMap);
+  let principal = buildPrincipal(response, rolePermissionsMap);
+  // SEC-TENANT-02 : compte rattaché à un établissement → seuls les rôles de cet
+  // établissement entrent dans le jeton (jamais ceux détenus ailleurs).
+  {
+    const { isPlatformScopePrincipal } = require("./lib/platformScopePrincipal");
+    if (
+      userId &&
+      principal.schoolId &&
+      !isPlatformScopePrincipal(principal) &&
+      typeof repository.listActiveUserRoleKeysForSchool === "function"
+    ) {
+      try {
+        const scoped = await repository.listActiveUserRoleKeysForSchool(userId, principal.schoolId);
+        if (Array.isArray(scoped)) {
+          response.user = { ...response.user, roleKeys: scoped };
+          principal = buildPrincipal(response, rolePermissionsMap);
+        }
+      } catch {
+        /* fail-closed : les permissions effectives ci-dessous restent relues par établissement */
+      }
+    }
+  }
   if (typeof repository.resolveEffectivePermissions === "function") {
     const live = await repository.resolveEffectivePermissions(principal);
     if (Array.isArray(live?.permissions)) {
@@ -6458,16 +7479,21 @@ async function sendAuthenticatedResponse(req, res, response, action) {
   });
   await touchUserLastLogin(principal);
 
+  const { decorateUserWithRoleDisplay, loadRoleDisplayIndexFromRepo } = require("./lib/roleDisplayLabels");
+  const displayIndex = await loadRoleDisplayIndexFromRepo(repository);
   const safePayload = sanitizeAuthPayloadForResponse({
     ...response,
     user: response.user
-      ? {
-          ...response.user,
-          role: principal.role,
-          roles: principal.roles,
-          roleKeys: principal.roleKeys,
-          permissions: principal.permissions,
-        }
+      ? decorateUserWithRoleDisplay(
+          {
+            ...response.user,
+            role: principal.role,
+            roles: principal.roles,
+            roleKeys: principal.roleKeys,
+            permissions: principal.permissions,
+          },
+          displayIndex,
+        )
       : response.user,
   });
 
@@ -6510,7 +7536,22 @@ function buildPrincipal(response, rolePermissionsMap = null) {
       : display.role === "Super Administrateur OKAFRIK"
         ? "Super Administrateur Somafrik"
         : display.role;
-  const schoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "*";
+  // SEC-TENANT-01 : "*" réservé aux rôles plateforme. Un rôle scolaire sans
+  // rattachement concret est refusé, jamais promu en portée plateforme.
+  const {
+    isPlatformScopePrincipal,
+    isSchoolRolePrincipal,
+    hasConcreteSchoolCode,
+  } = require("./lib/platformScopePrincipal");
+  const scopeShape = { role, roleKeys: display.roleKeys };
+  const platformScope = isPlatformScopePrincipal(scopeShape);
+  const candidateSchoolCode = role === "Admin Pays" ? "*" : user.schoolCode ?? school.code ?? "";
+  if (!platformScope && isSchoolRolePrincipal(scopeShape) && !hasConcreteSchoolCode(candidateSchoolCode)) {
+    throw new BusinessError(403, "Rattachement établissement requis pour ce compte.");
+  }
+  const schoolCode = platformScope
+    ? candidateSchoolCode || "*"
+    : hasConcreteSchoolCode(candidateSchoolCode) ? candidateSchoolCode : "";
   const schoolId =
     !schoolCode || schoolCode === "*"
       ? ""
@@ -6773,6 +7814,18 @@ function rejectJwtInQueryString(req, res, next) {
   return next();
 }
 
+/**
+ * SEC-AUTH-04 — contrôle commun à tout access token (requireAuth et routes
+ * publiques qui attribuent une action à un jeton) : session liée au sujet
+ * (C-03, F3), puis état du compte et établissement canonique (SEC-TENANT-01).
+ */
+async function assertBoundAccessSession(principal) {
+  const { resolveBoundAccessSession } = require("./lib/accessSessionBinding");
+  const { assertAccessSessionAccount } = require("./lib/accessSessionAccountGuard");
+  const { sessionId, activeSession } = await resolveBoundAccessSession({ principal, repository });
+  return assertAccessSessionAccount({ principal, activeSession, repository, sessionId });
+}
+
 function requireAuth(req, res, next) {
   (async () => {
     // S2.1 — auth exclusivement via header Bearer (plus de fallback query).
@@ -6798,12 +7851,12 @@ function requireAuth(req, res, next) {
       throw new BusinessError(401, "Authentification JWT requise");
     }
 
-    const sessionId = String(req.principal?.sessionId ?? "").trim();
-    if (sessionId && typeof repository.findActiveAccessSession === "function") {
-      const activeSession = await repository.findActiveAccessSession(sessionId);
-      if (!activeSession) {
-        throw new BusinessError(401, "Session révoquée.");
-      }
+    // SEC-AUTH-04 : session obligatoire, active et appartenant au sujet du jeton.
+    // SEC-TENANT-02 : schoolCode et schoolId vérifiés contre l'établissement
+    // canonique ; seul l'identifiant canonique vérifié est conservé.
+    const verifiedSchool = await assertBoundAccessSession(req.principal);
+    if (verifiedSchool?.schoolId) {
+      req.principal = { ...req.principal, schoolId: String(verifiedSchool.schoolId) };
     }
 
     const {
@@ -6826,7 +7879,25 @@ function requireAuth(req, res, next) {
     }
 
     const { applyEffectiveSchoolScope } = require("./lib/principalSchoolScope");
-    await applyEffectiveSchoolScope(req, lookupSchoolForEffectiveScope);
+    const { hydrateCanonicalSchoolAttachment } = require("./lib/canonicalSchoolAttachment");
+    req.principal = await hydrateCanonicalSchoolAttachment(req.principal, repository);
+    try {
+      await applyEffectiveSchoolScope(req, lookupSchoolForEffectiveScope);
+    } catch (scopeError) {
+      // SEC-TENANT-01 : un compte scolaire sans rattachement reste refusé partout,
+      // sauf pour fermer ses propres sessions.
+      const sessionClosingPaths = new Set(["/api/auth/logout", "/api/auth/revoke-all"]);
+      if (scopeError?.code !== "SCHOOL_SCOPE_ATTACHMENT_REQUIRED" || !sessionClosingPaths.has(req.path)) {
+        throw scopeError;
+      }
+    }
+
+    // MONO-O9-R1b : contrôler l'abonnement à CHAQUE requête scolaire,
+    // y compris avec un access JWT émis avant la suspension.
+    // Les rôles plateforme ne sont pas soumis à l'abonnement d'une école.
+    // Logout/revoke-all restent accessibles pour terminer une session.
+    const { assertActiveSchoolRequest } = require("./lib/schoolAccessRequestGuard");
+    await assertActiveSchoolRequest(req.principal, req.path, getSubscriptionAccessState);
 
     const passwordChangeExemptPaths = new Set([
       "/api/auth/change-password",
@@ -7173,6 +8244,8 @@ app.use((error, _req, res, _next) => {
       message: error.message,
       ...(error.code ? { code: error.code } : {}),
       ...(error.details ? { details: error.details } : {}),
+      // NFC-PRES-LOCAL-PR1c : attestation serveur de l'état de la session (seule la synchronisation hors ligne la pose).
+      ...(error.sessionState ? { sessionState: error.sessionState } : {}),
     });
   }
 

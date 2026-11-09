@@ -125,6 +125,80 @@
   }
 }
 
+/*
+ * CARTE-UI-01 — le recto de la carte (maquette P1) est produit par studentCardFaceCss()
+ * (src/lib/studentCardDesign.ts) et injecté par StudentCardFace : référence unique pour la carte
+ * individuelle, le document HTML CR80 par classe et le PDF A4 (CARTE-BATCH-DESIGN-01).
+ */
+
+/* Aperçu écran agrandi ; l'impression revient à 100 %. */
+.student-card-preview {
+  display: inline-block;
+  zoom: 1.5;
+}
+
+/* Impression carte élève uniquement. Les autres documents conservent la page par défaut. */
+@page student-card-cr80 {
+  size: 85.6mm 53.98mm;
+  margin: 0;
+}
+
+@page student-card-a4 {
+  size: A4 portrait;
+  margin: 15mm;
+}
+
+@media print {
+  body.somafrik-print-student-card {
+    page: student-card-cr80;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  body.somafrik-print-student-card.somafrik-print-student-card-a4 {
+    page: student-card-a4;
+  }
+
+  body.somafrik-print-student-card * {
+    visibility: hidden !important;
+  }
+
+  /* Une seule page : le reste de l'application ne génère aucune page supplémentaire. */
+  body.somafrik-print-student-card #root {
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body.somafrik-print-student-card .student-card-preview {
+    zoom: 1 !important;
+  }
+
+  body.somafrik-print-student-card .student-card-sheet,
+  body.somafrik-print-student-card .student-card-sheet * {
+    visibility: visible !important;
+  }
+
+  body.somafrik-print-student-card .student-card-sheet {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 85.6mm !important;
+    height: 53.98mm !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: hidden;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* A4 : taille réelle, repère de découpe fin autour de la carte. */
+  body.somafrik-print-student-card.somafrik-print-student-card-a4 .student-card-sheet {
+    outline: 0.2mm dashed #94a3b8;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal {
     opacity: 1 !important;

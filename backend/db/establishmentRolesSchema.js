@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS establishment_roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   role_code TEXT NOT NULL,
   role_name TEXT NOT NULL,
+  display_label TEXT,
   scope TEXT NOT NULL DEFAULT 'school',
   display_order INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
@@ -20,6 +21,9 @@ CREATE TABLE IF NOT EXISTS establishment_roles (
   CONSTRAINT establishment_roles_role_code_unique UNIQUE (role_code),
   CONSTRAINT establishment_roles_role_name_unique UNIQUE (role_name)
 );
+
+ALTER TABLE establishment_roles
+  ADD COLUMN IF NOT EXISTS display_label TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_establishment_roles_status_order
   ON establishment_roles (status, display_order, role_name);

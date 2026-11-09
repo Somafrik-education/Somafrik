@@ -8,8 +8,11 @@ const {
   isStudentDemoAccount,
   resolveStudentDemoLoginIdentity,
 } = require("../lib/demoSeedPolicy");
+const { hashSeedUserSecrets } = require("../lib/superadminSeedSecret");
+const { isPlatformScopePrincipal } = require("../lib/platformScopePrincipal");
 const seedData = require("../data");
 const { createTxAdapter } = require("./txAdapter");
+const { SCHOOLS_WITH_COUNTRY_SQL, SUBSCRIPTIONS_WITH_SCHOOL_SQL } = require("./subscriptionAccessSql");
 const { mapAssignment } = require("./teacherAssignmentsRepository");
 const {
   sqlTeacherIdentityEquals,
@@ -105,6 +108,9 @@ function buildResetPasswordUser(account, secretHash, temporaryPassword) {
   return next;
 }
 
+/** Champs d'un corps d'évaluation qui désignent sa classe (MONO-FIX-A4). */
+const EVALUATION_CLASS_FIELDS = Object.freeze(["className", "class_name", "classId", "class_id", "classCode", "class_code"]);
+
 class PostgresRepository {
   constructor(databaseConfig) {
     const poolConfig =
@@ -121,11 +127,14 @@ class PostgresRepository {
 
     const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
     await this.query(schema);
+    await this.ensureStudentAccessCardsCanonicalSchema();
+    await this.ensureStudentCardBatchesCanonicalSchema();
     await this.ensureIdempotencySchema();
     await this.ensureLoginLockoutsCanonicalSchema();
     this.attachLoginLockoutStore();
     await this.ensureSchoolsCanonicalColumns();
     await this.ensureAttendanceCanonicalUniqueness();
+    await this.ensureAttendanceRollCallsSchema();
     await this.ensureNotesCanonicalPersistence();
     await this.ensureClassesDomainConstraints();
     await this.ensureClassHeadTeachersCanonicalSchema();
@@ -135,6 +144,7 @@ class PostgresRepository {
     await this.ensureFinanceCanonicalSchema();
     await this.ensureEnrollmentC18CanonicalSchema();
     await this.ensurePedagogyCanonicalSchema();
+    await this.ensureSubjectHierarchyCanonicalSchema();
     await this.ensureTeacherCourseCanonicalReconcile();
     await this.ensurePlatformCanonicalSchema();
     await this.ensurePlatformRolePermissionsBootstrap();
@@ -264,6 +274,25 @@ class PostgresRepository {
     for (const sql of statements) {
       await this.query(sql);
     }
+  }
+
+  async ensureStudentAccessCardsCanonicalSchema() {
+    const { STUDENT_ACCESS_CARDS_SCHEMA_SQL } = require("./studentAccessCardsSchema");
+    await this.query(STUDENT_ACCESS_CARDS_SCHEMA_SQL);
+    // CARTE-PR3-A1 : passages au portail, après les cartes (FK carte → élève → établissement).
+    const { SCHOOL_ENTRY_EVENTS_SCHEMA_SQL } = require("./schoolEntryEventsSchema");
+    await this.query(SCHOOL_ENTRY_EVENTS_SCHEMA_SQL);
+  }
+
+  /** BULLETIN-MODEL-01 — hiérarchie matière principale → sous-matières (additive). */
+  async ensureSubjectHierarchyCanonicalSchema() {
+    const { ensureSubjectHierarchySchema } = require("./subjectHierarchySchema");
+    await ensureSubjectHierarchySchema(this);
+  }
+
+  async ensureStudentCardBatchesCanonicalSchema() {
+    const { ensureStudentCardBatchesSchema } = require("./studentCardBatchesSchema");
+    await ensureStudentCardBatchesSchema(this);
   }
 
   async ensureLoginLockoutsCanonicalSchema() {
@@ -454,6 +483,12 @@ class PostgresRepository {
     );
     error.code = "LEGACY_BACKOFFICE_RUNTIME_MIGRATION_REMOVED";
     throw error;
+  }
+
+  // CARTE-PR3-B : journal des appels validés (après attendance, classes et teachers).
+  async ensureAttendanceRollCallsSchema() {
+    const { ATTENDANCE_ROLL_CALLS_SCHEMA_SQL } = require("./attendanceRollCallsSchema");
+    await this.query(ATTENDANCE_ROLL_CALLS_SCHEMA_SQL);
   }
 
   /**
@@ -933,6 +968,21 @@ class PostgresRepository {
     return updateRole(this, roleId, patch, principal, auditMeta);
   }
 
+  updateEstablishmentRoleDisplayLabel(roleId, patch, principal, auditMeta) {
+    const { updateRoleDisplayLabel } = require("../lib/establishmentRolesService");
+    return updateRoleDisplayLabel(this, roleId, patch, principal, auditMeta);
+  }
+
+  resetEstablishmentRoleDisplayLabel(roleId, principal, auditMeta) {
+    const { resetRoleDisplayLabel } = require("../lib/establishmentRolesService");
+    return resetRoleDisplayLabel(this, roleId, principal, auditMeta);
+  }
+
+  listEstablishmentRoleDisplayLabels(principal) {
+    const { listRoleDisplayLabels } = require("../lib/establishmentRolesService");
+    return listRoleDisplayLabels(this, principal);
+  }
+
   archiveEstablishmentRole(roleId, principal, auditMeta) {
     const { archiveRole } = require("../lib/establishmentRolesService");
     return archiveRole(this, roleId, principal, auditMeta);
@@ -1041,6 +1091,11 @@ class PostgresRepository {
   getSchoolSettingsStore() {
     const { createSchoolSettingsPgStore } = require("./schoolSettingsPgStore");
     return createSchoolSettingsPgStore(this);
+  }
+
+  getStudentAccessCardsStore() {
+    const { createStudentAccessCardsPgStore } = require("./studentAccessCardsPgStore");
+    return createStudentAccessCardsPgStore(this);
   }
 
   getSchoolSettings(principal, schoolCode) {
@@ -1239,6 +1294,25 @@ class PostgresRepository {
     return this.getPlatformStore().listProjection();
   }
 
+  /**
+   * P0-WEB-01 — écoles et abonnements, lus en direct, pour le contrôle d'abonnement de
+   * chaque requête. Mêmes requêtes et mêmes transformations que `getDataset().platformSchools`
+   * et `listPlatformProjection().subscriptions` ; aucune donnée élève, présence, note ou paiement.
+   */
+  async listSubscriptionAccessState() {
+    await this.init();
+    const [schoolRows, subscriptions] = await Promise.all([
+      this.all(SCHOOLS_WITH_COUNTRY_SQL),
+      this.getPlatformStore().listSubscriptionsWithRows(),
+    ]);
+    return {
+      schools: schoolRows.map((row) =>
+        this.mapSchool(row, subscriptions.rows.find((sub) => sub.school_code === row.school_code)),
+      ),
+      subscriptions: subscriptions.subscriptions,
+    };
+  }
+
   getPlatformSchoolByCode(code) {
     return this.getPlatformStore().getSchoolByCode(code);
   }
@@ -1259,8 +1333,12 @@ class PostgresRepository {
     return this.getPlatformStore().updateCountry(code, patch, principal, auditMeta);
   }
 
-  upsertPlatformSubscription(payload, principal, auditMeta) {
-    return this.getPlatformStore().upsertSubscription(payload, principal, auditMeta);
+  async upsertPlatformSubscription(payload, principal, auditMeta) {
+    const saved = await this.getPlatformStore().upsertSubscription(payload, principal, auditMeta);
+    // MONO-FIX-O9 : la connexion lit les abonnements du jeu de données en cache ;
+    // une suspension doit s'appliquer immédiatement, pas au prochain rechargement.
+    this.cachedDataset = null;
+    return saved;
   }
 
   createPlatformNotification(payload, principal, auditMeta) {
@@ -1399,7 +1477,14 @@ class PostgresRepository {
       LEFT JOIN countries c ON c.id = s.country_id
     `);
     const schoolByCode = new Map(schoolRows.map((school) => [school.school_code, school]));
-    return rows.map((row) => this.mapUser(row, schoolByCode, teacherLoginByUserId, rolesByUser.get(String(row.id)) ?? []));
+    const { decorateUserWithRoleDisplay, loadRoleDisplayIndexFromRepo } = require("../lib/roleDisplayLabels");
+    const displayIndex = await loadRoleDisplayIndexFromRepo(this);
+    return rows.map((row) =>
+      decorateUserWithRoleDisplay(
+        this.mapUser(row, schoolByCode, teacherLoginByUserId, rolesByUser.get(String(row.id)) ?? []),
+        displayIndex,
+      ),
+    );
   }
 
   createClientsUser(payload, principal, auditMeta) {
@@ -1434,6 +1519,15 @@ class PostgresRepository {
 
   listAssignableClientsUserRoles(principal) {
     return this.getClientsStore().listAssignableUserRoles(principal);
+  }
+
+  /** SEC-AUTH-05 — historique user_roles (voir lib/liveRoleState.js). */
+  userHasRoleHistory(userId) {
+    const store = this.getClientsStore();
+    const bound = typeof store.bind === "function" ? store.bind({}) : store;
+    // Pas de réponse « aucun historique » par défaut : l'absence doit être établie (fail-closed).
+    if (typeof bound?.userHasRoleHistory !== "function") return Promise.reject(new Error("userHasRoleHistory indisponible"));
+    return bound.userHasRoleHistory(userId);
   }
 
   listActiveUserRoleKeys(userId) {
@@ -1474,6 +1568,16 @@ class PostgresRepository {
 
   createClientsRelation(payload, principal, auditMeta) {
     return this.getClientsStore().createRelation(payload, principal, auditMeta);
+  }
+
+  updateClientsRelation(relationId, payload, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().updateRelation(relationId, payload, principal, auditMeta);
+  }
+
+  archiveClientsRelation(relationId, principal, auditMeta) {
+    this.cachedDataset = null;
+    return this.getClientsStore().archiveRelation(relationId, principal, auditMeta);
   }
 
   linkParent(payload, principal, auditMeta) {
@@ -1622,8 +1726,8 @@ class PostgresRepository {
     return this._pedagogyStore;
   }
 
-  listPedagogyProjection() {
-    return this.getPedagogyStore().listProjection();
+  listPedagogyProjection(scope) {
+    return this.getPedagogyStore().listProjection(scope);
   }
 
   createSchoolCourse(payload, principal, auditMeta) {
@@ -1774,8 +1878,8 @@ class PostgresRepository {
     return this.getPedagogyStore().upsertSchoolGrade(payload, principal, auditMeta);
   }
 
-  upsertSchoolAttendanceBatch(payload, principal, auditMeta) {
-    return this.getPedagogyStore().upsertSchoolAttendanceBatch(payload, principal, auditMeta);
+  upsertSchoolAttendanceBatch(payload, principal, auditMeta, options) {
+    return this.getPedagogyStore().upsertSchoolAttendanceBatch(payload, principal, auditMeta, options);
   }
 
   getFinanceStore() {
@@ -1786,8 +1890,8 @@ class PostgresRepository {
     return this._financeStore;
   }
 
-  listFinanceProjection() {
-    return this.getFinanceStore().listProjection();
+  listFinanceProjection(scope) {
+    return this.getFinanceStore().listProjection(scope);
   }
 
   createSchoolPayment(payload, principal, auditMeta) {
@@ -1808,6 +1912,9 @@ class PostgresRepository {
 
   upsertFinancePaymentStatus(payload, principal) {
     return this.getFinanceStore().upsertFinancePaymentStatus(payload, principal);
+  }
+  updateFinancePaymentStatus(statusCode, patch, principal) {
+    return this.getFinanceStore().updateFinancePaymentStatus(statusCode, patch, principal);
   }
 
   listFinanceFeeGrids(principal) {
@@ -1870,6 +1977,14 @@ class PostgresRepository {
 
   listFinanceStudentFees(principal, options) {
     return this.getFinanceStore().listFinanceStudentFees(principal, options);
+  }
+
+  listFinanceStudentPayments(principal, options) {
+    return this.getFinanceStore().listFinanceStudentPayments(principal, options);
+  }
+
+  hasApplicableActiveFeeGrid(principal, options) {
+    return this.getFinanceStore().hasApplicableActiveFeeGrid(principal, options);
   }
 
   reconcileFinancePaymentAllocations(principal, options, auditMeta) {
@@ -1992,19 +2107,8 @@ class PostgresRepository {
       notificationRows,
     ] = await Promise.all([
       this.all("SELECT * FROM countries ORDER BY created_at, iso_code"),
-      this.all(`
-        SELECT s.*, c.name AS country_name, c.iso_code, c.currency AS country_currency, c.phone_code
-        FROM schools s
-        JOIN countries c ON c.id = s.country_id
-        ORDER BY s.created_at, s.school_code
-      `),
-      this.all(`
-        SELECT sub.*, s.school_code, c.iso_code AS country_code, c.name AS country_name
-        FROM subscriptions sub
-        JOIN schools s ON s.id = sub.school_id
-        JOIN countries c ON c.id = s.country_id
-        ORDER BY sub.created_at
-      `),
+      this.all(SCHOOLS_WITH_COUNTRY_SQL),
+      this.all(SUBSCRIPTIONS_WITH_SCHOOL_SQL),
       this.all(`
         SELECT u.*, s.school_code, c.name AS country_name
         FROM users u
@@ -2273,12 +2377,21 @@ class PostgresRepository {
     await this.init();
     const code = String(sessionId ?? "").trim();
     if (!code) return null;
+    // SEC-TENANT-01 : même requête, état courant du compte (statut et établissement
+    // canonique users.school_id) pour refuser une session devenue non autorisée.
     return this.one(
-      `SELECT session_code, user_id, revoked_at, expires_at
-       FROM sessions
-       WHERE session_code = $1
-         AND revoked_at IS NULL
-         AND expires_at > NOW()`,
+      `SELECT sess.session_code, sess.user_id, sess.school_id, sess.revoked_at, sess.expires_at,
+              u.status AS user_status,
+              u.user_code AS user_code,
+              u.school_id AS user_school_id,
+              us.school_code AS user_school_code,
+              us.login_code AS user_school_login_code
+       FROM sessions sess
+       LEFT JOIN users u ON u.id = sess.user_id
+       LEFT JOIN schools us ON us.id = u.school_id AND us.deleted_at IS NULL
+       WHERE sess.session_code = $1
+         AND sess.revoked_at IS NULL
+         AND sess.expires_at > NOW()`,
       [code],
     );
   }
@@ -2291,12 +2404,49 @@ class PostgresRepository {
     );
   }
 
+  /**
+   * SEC-TENANT-01 — rattachement canonique GP-003 : users.id → users.school_id → schools.id.
+   * Aucun repli vers user_roles. null si l'utilisateur n'a pas d'établissement actif.
+   */
+  async findUserCanonicalSchool(userId) {
+    await this.init();
+    if (!isUuid(userId)) return null;
+    const row = await this.one(
+      `SELECT u.school_id::text AS school_id, s.school_code, s.login_code
+       FROM users u
+       JOIN schools s ON s.id = u.school_id
+       WHERE u.id = $1::uuid
+         AND s.deleted_at IS NULL`,
+      [userId],
+    );
+    if (!row?.school_id || !row.school_code) return null;
+    return { schoolId: row.school_id, schoolCode: row.school_code, loginCode: row.login_code ?? "" };
+  }
+
+  /**
+   * SEC-TENANT-01 — refresh : l'établissement de la session doit rester
+   * l'établissement canonique de l'utilisateur (users.school_id).
+   */
+  async isUserAttachedToSessionSchool(session = {}) {
+    await this.init();
+    if (!isUuid(session.user_id) || !isUuid(session.school_id)) return false;
+    const row = await this.one(
+      `SELECT EXISTS (
+         SELECT 1 FROM users WHERE id = $1::uuid AND school_id = $2::uuid
+       ) AS attached`,
+      [session.user_id, session.school_id],
+    );
+    return row?.attached === true;
+  }
+
   async findSessionByCode(sessionId) {
     await this.init();
     const code = String(sessionId ?? "").trim();
     if (!code) return null;
     return this.one(
-      `SELECT sess.*, u.user_code, u.role, s.school_code, c.iso_code AS country_code
+      `SELECT sess.*, u.user_code, u.role, u.status AS user_status,
+              s.school_code, s.login_code AS school_login_code,
+              c.iso_code AS country_code
        FROM sessions sess
        LEFT JOIN users u ON u.id = sess.user_id
        LEFT JOIN schools s ON s.id = sess.school_id
@@ -2340,6 +2490,21 @@ class PostgresRepository {
       `UPDATE sessions SET revoked_at = NOW(), revoke_reason = $2
        WHERE user_id = $1 AND revoked_at IS NULL`,
       [dbUserId, reason],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  /** SEC-AUTH-03 — révoque les sessions actives de l'utilisateur, sauf `keepSessionId`. */
+  async revokeOtherSessionsForUser(userId, keepSessionId, reason = "password_change") {
+    await this.init();
+    const dbUserId = await this.resolveDbUserId(userId);
+    if (!dbUserId) return 0;
+    const keep = String(keepSessionId ?? "").trim() || null;
+    const result = await this.query(
+      `UPDATE sessions SET revoked_at = NOW(), revoke_reason = $3
+       WHERE user_id = $1 AND revoked_at IS NULL
+         AND ($2::text IS NULL OR session_code::text <> $2::text)`,
+      [dbUserId, keep, reason],
     );
     return result.rowCount ?? 0;
   }
@@ -2402,6 +2567,24 @@ class PostgresRepository {
       `SELECT * FROM privacy_requests ${where} ORDER BY created_at DESC LIMIT 200`,
       params,
     );
+  }
+
+  async getPlatformPrivacyRequestCounts() {
+    await this.init();
+    const row = await this.one(
+      `SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+         COUNT(*) FILTER (WHERE status = 'processed')::int AS processed,
+         COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected
+       FROM privacy_requests`,
+    );
+    return {
+      total: Number(row?.total) || 0,
+      pending: Number(row?.pending) || 0,
+      processed: Number(row?.processed) || 0,
+      rejected: Number(row?.rejected) || 0,
+    };
   }
 
   async createTrialAccessRequest(row) {
@@ -2596,7 +2779,59 @@ class PostgresRepository {
     );
   }
 
-  async getAuditLogs({ schoolCode, userId, action, from, to, limit = 100 } = {}) {
+  async listSchoolAuditSummaries({ schoolCode, action, entityType, from, to, limit = 50, offset = 0 } = {}) {
+    await this.init();
+    const jwtSchool = String(schoolCode ?? "").trim().toUpperCase();
+    if (!jwtSchool || jwtSchool === "*") return [];
+    const school = await this.getSchoolByCode(jwtSchool);
+    if (!school?.id) return [];
+
+    const filters = ["a.school_id = $1"];
+    const params = [school.id];
+    if (action) {
+      params.push(action);
+      filters.push(`a.action = $${params.length}`);
+    }
+    if (entityType) {
+      params.push(entityType);
+      filters.push(`a.entity_type = $${params.length}`);
+    }
+    if (from) {
+      params.push(from);
+      filters.push(`a.created_at >= $${params.length}`);
+    }
+    if (to) {
+      params.push(to);
+      filters.push(`a.created_at <= $${params.length}`);
+    }
+    params.push(Math.min(Math.max(Number(limit) || 50, 1), 100));
+    const limitIdx = params.length;
+    params.push(Math.max(0, Number(offset) || 0));
+    const offsetIdx = params.length;
+
+    const rows = await this.all(
+      `SELECT a.id, a.action, a.entity_type, a.entity_id, a.created_at,
+              u.first_name, u.last_name
+       FROM audit_logs a
+       INNER JOIN schools s ON s.id = a.school_id
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE ${filters.join(" AND ")}
+       ORDER BY a.created_at DESC
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      params,
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      action: row.action,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      actor: [row.first_name, row.last_name].filter(Boolean).join(" ") || "Système",
+      createdAt: row.created_at,
+    }));
+  }
+
+  async getAuditLogs({ schoolCode, userId, action, actions, from, to, limit = 100, offset = 0 } = {}) {
     await this.init();
     const filters = [];
     const params = [];
@@ -2608,10 +2843,17 @@ class PostgresRepository {
     if (schoolCode) addFilter("s.school_code = ?", schoolCode);
     if (userId) addFilter("a.user_id = ?", userId);
     if (action) addFilter("a.action = ?", action);
+    if (Array.isArray(actions) && actions.length) {
+      params.push(actions);
+      filters.push(`a.action = ANY($${params.length}::text[])`);
+    }
     if (from) addFilter("a.created_at >= ?", from);
     if (to) addFilter("a.created_at <= ?", to);
 
     params.push(Math.min(Number(limit) || 100, 500));
+    const limitIdx = params.length;
+    params.push(Math.max(0, Number(offset) || 0));
+    const offsetIdx = params.length;
     const rows = await this.all(
       `SELECT a.*, s.school_code, u.user_code, u.first_name, u.last_name
        FROM audit_logs a
@@ -2619,7 +2861,7 @@ class PostgresRepository {
        LEFT JOIN users u ON u.id = a.user_id
        ${filters.length ? `WHERE ${filters.join(" AND ")}` : ""}
        ORDER BY a.created_at DESC
-       LIMIT $${params.length}`,
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       params
     );
 
@@ -2984,14 +3226,18 @@ class PostgresRepository {
       teacherId = sessionTeacherId;
     }
 
+    // Verrou optimiste atomique : la note existante est verrouillée jusqu'à la fin de la
+    // transaction (pedagogyService.upsertGrade) ; un upsert concurrent attend, relit la version
+    // à jour et reçoit 409 au lieu d'écraser silencieusement (perte de mise à jour).
     let existing = await this.one(
       `SELECT * FROM grades
        WHERE school_id = $1 AND evaluation_id = $2 AND student_id = $3
-       LIMIT 1`,
+       LIMIT 1
+       FOR UPDATE`,
       [evaluation.school_id, evaluation.id, student.id],
     );
     if (!existing && isUuid(payload.id)) {
-      existing = await this.one("SELECT * FROM grades WHERE id = $1", [payload.id]);
+      existing = await this.one("SELECT * FROM grades WHERE id = $1 FOR UPDATE", [payload.id]);
     }
 
     assertTeacherGradeMutationPermission(principal, existing);
@@ -3284,9 +3530,12 @@ class PostgresRepository {
          WHERE e.id = $1`,
         [existing.id],
       );
+      // MONO-FIX-A4 : sans changement de classe demandé, l'évaluation garde son
+      // class_id exact ; jamais de ré-identification par nom (homonymes).
+      const classTouched = evaluationPatchTouches(evaluation, EVALUATION_CLASS_FIELDS);
       attachmentEvaluation = {
         ...attachmentEvaluation,
-        className: attachmentEvaluation.className ?? attachmentEvaluation.class_name ?? refs?.class_name,
+        ...(classTouched ? {} : { classId: existing.class_id, className: undefined, class_name: undefined }),
         subject:
           attachmentEvaluation.subject ??
           attachmentEvaluation.subjectName ??
@@ -3304,7 +3553,19 @@ class PostgresRepository {
             schoolId,
             id,
           ]),
-        findClassByName: (schoolId, name) => this.findClassByNormalizedName(schoolId, name),
+        findClassByCode: (schoolId, code) =>
+          this.one(
+            `SELECT * FROM classes WHERE school_id = $1 AND LOWER(TRIM(class_code)) = LOWER(TRIM($2)) LIMIT 1`,
+            [schoolId, code],
+          ),
+        // MONO-FIX-A4 : TOUS les homonymes (aucun « premier résultat » implicite).
+        findClassesByName: async (schoolId, name) => {
+          const { normalizeText } = require("../lib/evaluationAttachment");
+          const target = normalizeText(name);
+          if (!target) return [];
+          const rows = await this.all(`SELECT * FROM classes WHERE school_id = $1 ORDER BY id`, [schoolId]);
+          return rows.filter((row) => normalizeText(row.name) === target);
+        },
         ensureClass: ensure
           ? async (schoolId, name) => {
               const classId = await this.ensureClassForSchool(schoolId, name);
@@ -3508,7 +3769,7 @@ class PostgresRepository {
       title = patchTouches(["title"])
         ? String(evaluation.title ?? "Évaluation").trim() || "Évaluation"
         : String(existing.title ?? "Évaluation").trim() || "Évaluation";
-      classId = patchTouches(["className", "class_name", "classId", "class_id"])
+      classId = patchTouches(EVALUATION_CLASS_FIELDS)
         ? schoolClass.id
         : existing.class_id;
       subjectId = patchTouches(["subject", "subjectName", "subjectCode", "subjectId", "subject_id"])
@@ -5138,6 +5399,8 @@ class PostgresRepository {
     if (!items.length) {
       return [];
     }
+    // MONO-FIX-A3 : tout le lot est validé avant la première écriture.
+    require("../lib/attendanceStatus").assertAttendanceItemsStatuses(items);
 
     const { mergeAttendanceClassIdentity, mergeAttendanceTeacherKey } = require("../lib/presencesAttendanceAuthz");
     const saved = [];
@@ -5158,7 +5421,14 @@ class PostgresRepository {
     return saved;
   }
 
-  async upsertAttendance(payload, principal = {}) {
+  /**
+   * `options.writeGuard` (facultatif, interne serveur, jamais lu dans le corps client) rend
+   * l'écriture conditionnelle et atomique pour l'appel en classe (CARTE-PR3-B) :
+   *  - { mode: "create" } : insère seulement si aucune présence n'existe (ON CONFLICT DO NOTHING) ;
+   *  - { mode: "correct_absent" } : ne remplace qu'une présence encore `absent`.
+   * Si la garde empêche l'écriture, retourne null. Sans option : comportement inchangé.
+   */
+  async upsertAttendance(payload, principal = {}, options = {}) {
     const attendanceDate = this.parseDate(payload.date);
     if (!payload.studentId || !attendanceDate) {
       const error = new Error("Présence invalide");
@@ -5206,7 +5476,11 @@ class PostgresRepository {
       throw error;
     }
 
-    const isEnseignant = principal.role === "Enseignant";
+    // MONO-REFRESH-R2 : un enseignant multirôle conserve le parcours enseignant
+    // même si son rôle principal est Préfet. Les contrôles d'affectation
+    // et d'isolement établissement sont déjà exécutés ci-dessus.
+    const { isAttendanceTeacherPrincipal } = require("../lib/attendanceTeacherRole");
+    const isEnseignant = isAttendanceTeacherPrincipal(principal);
     const teacherKey = isEnseignant
       ? String(principal.sub ?? "").trim()
       : this.extractExplicitTeacherKey(payload);
@@ -5220,7 +5494,7 @@ class PostgresRepository {
       student.school_id,
       teacherKey,
       targetClass.id,
-      principal.role,
+      isEnseignant ? "Enseignant" : principal.role,
     );
     // Enseignant : parcours inchangé (teacher_id nullable si pas de match fiche).
     // Admin/direction : refus 409 si non résolu / ambigu — jamais d'auteur inventé.
@@ -5234,16 +5508,23 @@ class PostgresRepository {
     // D3.5b : Justifié = absence justifiée (pas de justificatif documentaire)
     const reason =
       payload.reason ?? (status === "excused" ? "Absence justifiée" : null);
-    const row = await this.one(
-      `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (school_id, student_id, attendance_date)
-       DO UPDATE SET
+    const guardMode = options?.writeGuard?.mode;
+    if (guardMode !== undefined && guardMode !== "create" && guardMode !== "correct_absent") {
+      throw new Error("ATTENDANCE_WRITE_GUARD_INVALID");
+    }
+    const conflictClause = guardMode === "create"
+      ? "DO NOTHING"
+      : `DO UPDATE SET
          status = EXCLUDED.status,
          reason = EXCLUDED.reason,
          teacher_id = EXCLUDED.teacher_id,
          class_id = EXCLUDED.class_id,
-         updated_at = NOW()
+         updated_at = NOW()${guardMode === "correct_absent" ? "\n       WHERE attendance.status = 'absent'" : ""}`;
+    const row = await this.one(
+      `INSERT INTO attendance (school_id, student_id, class_id, teacher_id, attendance_date, status, reason)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (school_id, student_id, attendance_date)
+       ${conflictClause}
        RETURNING id`,
       [
         student.school_id,
@@ -5256,6 +5537,7 @@ class PostgresRepository {
       ],
     );
 
+    if (!row?.id && guardMode) return null;
     return this.getAttendanceById(row.id);
   }
 
@@ -5362,6 +5644,7 @@ class PostgresRepository {
     for (const user of seedData.userAccounts) {
       if (isStudentDemoAccount(user)) continue;
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
+      const { passwordHash, pinHash } = hashSeedUserSecrets(user);
       const row = await this.insertOne(
         client,
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, last_login_at)
@@ -5375,8 +5658,8 @@ class PostgresRepository {
           user.lastName,
           user.email ?? "",
           user.phone ?? "",
-          hashSecret(user.password),
-          hashSecret(user.temporaryPassword || "1234"),
+          passwordHash,
+          pinHash,
           canonicalPersistedRole(user.role),
           this.toDbStatus(user.status),
           this.parseDate(user.lastLoginAt),
@@ -5629,6 +5912,7 @@ class PostgresRepository {
 
     for (const user of seedData.userAccounts.filter((item) => platformRoles.has(item.role))) {
       const schoolId = user.schoolCode === "*" ? null : schoolIds.get(user.schoolCode);
+      const { passwordHash, pinHash } = hashSeedUserSecrets(user);
       await this.query(
         `INSERT INTO users (school_id, user_code, first_name, last_name, email, phone, password_hash, pin_hash, role, status, last_login_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -5650,8 +5934,8 @@ class PostgresRepository {
           user.lastName,
           user.email ?? "",
           user.phone ?? "",
-          hashSecret(user.password),
-          hashSecret(user.temporaryPassword || "1234"),
+          passwordHash,
+          pinHash,
           canonicalPersistedRole(user.role),
           this.toDbStatus(user.status),
           this.parseDate(user.lastLoginAt),
@@ -6307,47 +6591,68 @@ class PostgresRepository {
     }));
   }
 
-  async getAdvancedReportsV2() {
+  async getAdvancedReportsV2(schoolId) {
+    const { assertAdvancedReportsSchoolId } = require("../lib/advancedReportsScope");
+    const scopedSchoolId = assertAdvancedReportsSchoolId(schoolId);
     await this.init();
     const [academic, financial, attendance, exams, global] = await Promise.all([
-      this.all(`
+      this.all(
+        `
         SELECT cl.name AS label, AVG(g.score / NULLIF(g.max_score, 0) * 20) AS value, COUNT(g.id) AS count
         FROM grades g
-        JOIN classes cl ON cl.id = g.class_id
+        JOIN classes cl ON cl.id = g.class_id AND cl.school_id = $1
+        WHERE g.school_id = $1
         GROUP BY cl.name
         ORDER BY value DESC NULLS LAST
         LIMIT 10
-      `),
-      this.one(`
+      `,
+        [scopedSchoolId],
+      ),
+      this.one(
+        `
         SELECT
           COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN amount ELSE 0 END), 0) AS paid,
           COALESCE(SUM(CASE WHEN payment_status <> 'paid' THEN amount ELSE 0 END), 0) AS unpaid,
           COUNT(*) AS payments
         FROM payments
-      `),
-      this.all(`
+        WHERE school_id = $1
+      `,
+        [scopedSchoolId],
+      ),
+      this.all(
+        `
         SELECT status AS label, COUNT(*) AS count
         FROM attendance
+        WHERE school_id = $1
         GROUP BY status
         ORDER BY count DESC
-      `),
-      this.all(`
+      `,
+        [scopedSchoolId],
+      ),
+      this.all(
+        `
         SELECT ex.exam_type AS label,
                AVG(er.score / NULLIF(er.max_score, 0) * 20) AS average,
                AVG(CASE WHEN er.score >= er.max_score / 2 THEN 1 ELSE 0 END) * 100 AS success_rate
         FROM exams ex
-        LEFT JOIN exam_results er ON er.exam_id = ex.id
+        LEFT JOIN exam_results er ON er.exam_id = ex.id AND er.school_id = $1
+        WHERE ex.school_id = $1
         GROUP BY ex.exam_type
         ORDER BY ex.exam_type
-      `),
-      this.one(`
+      `,
+        [scopedSchoolId],
+      ),
+      this.one(
+        `
         SELECT
-          (SELECT COUNT(*) FROM countries) AS countries,
-          (SELECT COUNT(*) FROM schools) AS schools,
-          (SELECT COUNT(*) FROM students) AS students,
-          (SELECT COUNT(*) FROM teachers) AS teachers,
-          (SELECT COUNT(*) FROM subscriptions WHERE status = 'active') AS active_subscriptions
-      `),
+          1 AS countries,
+          1 AS schools,
+          (SELECT COUNT(*) FROM students WHERE school_id = $1) AS students,
+          (SELECT COUNT(*) FROM teachers WHERE school_id = $1) AS teachers,
+          (SELECT COUNT(*) FROM subscriptions WHERE school_id = $1 AND status = 'active') AS active_subscriptions
+      `,
+        [scopedSchoolId],
+      ),
     ]);
 
     const attendanceTotal = attendance.reduce((sum, row) => sum + Number(row.count), 0);
@@ -6427,6 +6732,8 @@ class PostgresRepository {
       annualPrice: Number(subscription.price_per_student ?? 0) * 10,
       currency: subscription.billing_currency,
       status: this.fromDbStatus(subscription.status === "active" ? "active" : subscription.status),
+      // Statut stocké brut : fromDbStatus ramène les valeurs non prévues à « Actif » (MONO-FIX-O9).
+      dbStatus: subscription.status ?? null,
       paymentStatus: subscription.status === "active" ? "À jour" : "En retard",
       startDate: this.formatDate(subscription.start_date),
       endDate: this.formatDate(subscription.end_date),
@@ -6481,7 +6788,11 @@ class PostgresRepository {
       scopeLevel: role === "Super Administrateur Somafrik" ? "Global" : role === "Admin Pays" ? "Pays" : "Établissement",
       countryScope,
       countryCode,
-      schoolCode: role === "Admin Pays" ? "*" : user.school_code ?? "*",
+      // SEC-TENANT-01 : "*" réservé aux rôles plateforme ; un compte scolaire sans
+      // établissement n'a aucun rattachement (""), jamais une portée plateforme.
+      schoolCode: role === "Admin Pays"
+        ? "*"
+        : user.school_code ?? (isPlatformScopePrincipal({ role, roleKeys: display.roleKeys }) ? "*" : ""),
       accessChannel: "Application",
       identifier,
       passwordHash: user.password_hash,
@@ -7216,6 +7527,107 @@ class PostgresRepository {
     return this.getCourseSchedulesRepository().listForMobileSync(schoolCode, options);
   }
 
+  /**
+   * BULLETIN-SEC-01 — source fraîche du bulletin historique d'un élève, lue dans
+   * PostgreSQL (pas le jeu de données en cache) et limitée à son établissement
+   * et à sa classe active : établissement propriétaire, camarades de la classe,
+   * notes de la classe avec leurs faits de publication. Le filtrage final est
+   * fait par lib/studentBulletinScope.js. `null` si l'élève est introuvable.
+   */
+  async loadStudentBulletinSource(student = {}) {
+    const studentUuid = String(student.studentUuid ?? "").trim();
+    const schoolId = String(student.schoolId ?? "").trim();
+    if (!studentUuid || !schoolId) return null;
+    const studentRow = await this.one(
+      `SELECT st.id, st.school_id, e.class_id
+       FROM students st
+       LEFT JOIN LATERAL (
+         SELECT en.class_id
+         FROM enrollments en
+         JOIN academic_years ay ON ay.id = en.academic_year_id
+         WHERE en.student_id = st.id
+           AND en.school_id = st.school_id
+           AND en.class_id IS NOT NULL
+           AND lower(btrim(en.status)) IN ('active', 'enrolled')
+         ORDER BY ay.is_current DESC, en.created_at DESC
+         LIMIT 1
+       ) e ON TRUE
+       WHERE st.id::text = $1 AND st.school_id::text = $2`,
+      [studentUuid, schoolId],
+    );
+    if (!studentRow) return null;
+    const classId = studentRow.class_id ? String(studentRow.class_id) : null;
+    const schoolRow = await this.one(
+      `SELECT s.*, c.name AS country_name, c.iso_code, c.currency AS country_currency, c.phone_code
+       FROM schools s
+       JOIN countries c ON c.id = s.country_id
+       WHERE s.id = $1`,
+      [studentRow.school_id],
+    );
+    if (!schoolRow || !classId) {
+      return { school: schoolRow ? this.mapSchool(schoolRow) : null, classId, students: [], notes: [] };
+    }
+    const [classmateRows, gradeRows] = await Promise.all([
+      this.all(
+        `SELECT st.*, s.school_code, e.class_id, cl.name AS class_name
+         FROM students st
+         JOIN schools s ON s.id = st.school_id
+         JOIN enrollments e ON e.student_id = st.id AND lower(btrim(e.status)) IN ('active', 'enrolled')
+         JOIN classes cl ON cl.id = e.class_id
+         WHERE st.school_id = $1 AND e.class_id = $2 AND cl.school_id = $1`,
+        [studentRow.school_id, classId],
+      ),
+      this.all(
+        `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,
+                COALESCE(
+                  (
+                    SELECT sc.coefficient
+                    FROM school_courses sc
+                    WHERE sc.school_id = g.school_id
+                      AND sc.class_id = g.class_id
+                      AND sc.subject_id = g.subject_id
+                      AND sc.status = 'active'
+                    ORDER BY sc.created_at ASC, sc.id ASC
+                    LIMIT 1
+                  ),
+                  sub.coefficient
+                ) AS subject_coefficient, t.teacher_code, term.name AS term_name,
+                ev.id AS evaluation_uuid, ev.legacy_json_id AS evaluation_legacy_id,
+                ev.title AS evaluation_title, ev.status AS evaluation_status, ev.active AS evaluation_active,
+                ev.max_score AS evaluation_max_score, ev.coefficient AS evaluation_coefficient,
+                ev.evaluation_type AS evaluation_type_pg, ev.evaluation_type_id,
+                et.name AS evaluation_type_name, et.code AS evaluation_type_code
+         FROM grades g
+         JOIN schools s ON s.id = g.school_id
+         JOIN students st ON st.id = g.student_id AND st.school_id = g.school_id
+         JOIN classes cl ON cl.id = g.class_id AND cl.school_id = g.school_id
+         JOIN subjects sub ON sub.id = g.subject_id
+         JOIN teachers t ON t.id = g.teacher_id
+         JOIN terms term ON term.id = g.term_id AND term.academic_year_id = cl.academic_year_id
+         LEFT JOIN evaluations ev ON ev.id = g.evaluation_id AND ev.school_id = g.school_id
+         LEFT JOIN evaluation_types et ON et.id = ev.evaluation_type_id
+         WHERE g.school_id = $1 AND g.class_id = $2
+         ORDER BY g.created_at`,
+        [studentRow.school_id, classId],
+      ),
+    ]);
+    const students = classmateRows.map((row) => ({ ...this.mapStudent(row), classId: String(row.class_id) }));
+    const studentIdByUuid = new Map(students.map((row) => [String(row.studentUuid), row.id]));
+    const notes = gradeRows.map((row) => ({
+      ...this.mapGrade(row),
+      // Clé élève alignée sur l'identifiant canonique de mapStudent (même élève, même UUID).
+      studentId: studentIdByUuid.get(String(row.student_id)) ?? row.student_code,
+      classId: String(row.class_id),
+      bulletinPublication: {
+        publicationStatus: row.publication_status,
+        hasEvaluation: Boolean(row.evaluation_id),
+        evaluationStatus: row.evaluation_status ?? null,
+        evaluationActive: row.evaluation_uuid ? row.evaluation_active !== false : false,
+      },
+    }));
+    return { school: this.mapSchool(schoolRow), classId, students, notes };
+  }
+
   async getGradeById(id) {
     const grade = await this.one(
       `SELECT g.*, st.student_code, s.school_code, cl.class_code, cl.name AS class_name, sub.name AS subject_name,
@@ -7483,24 +7895,10 @@ class PostgresRepository {
   }
 
   toAttendanceStatus(status, present) {
-    const normalized = String(status ?? "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim()
-      .toLowerCase();
-    if (normalized === "absent" || normalized === "absence") return "absent";
-    if (normalized === "retard" || normalized === "late") return "late";
-    // Justifié = absence justifiée (contrat D3.5b)
-    if (
-      normalized === "justifie" ||
-      normalized === "justifiee" ||
-      normalized === "excused" ||
-      normalized === "excuse"
-    ) {
-      return "excused";
-    }
-    if (normalized === "present" || normalized === "present.") return "present";
-    return present ? "present" : "absent";
+    // MONO-FIX-A3 : statut inconnu, vide sans booléen present, ou mal typé ⇒ 400
+    // ATTENDANCE_STATUS_INVALID (jamais de conversion silencieuse en « absent »).
+    const { normalizeAttendanceStatus } = require("../lib/attendanceStatus");
+    return normalizeAttendanceStatus(status, present);
   }
 
   fromAttendanceStatus(status) {

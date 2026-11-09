@@ -32,7 +32,7 @@ Preuve locale extras : **8 PASS / 0 FAIL**. Gates Planning / Présences / Sync L
 | PL-01 / PL-02 / PL-14 | Planning lecture | A jamais B ; leftover B jamais B ; projection `login_code` | **fermé** |
 | PL-04 / PL-05 | Planning write | 0 write B | **fermé** |
 | PL-06 / PL-07 / PL-08 | Planning fail-closed | sans `sub` / `school_id` / `login_code` vide | **fermé** |
-| PL-11 | Planning Admin Pays | CD jamais BI | **fermé** |
+| PL-11 | Planning Admin Pays | 403 fail-closed (P1-06) ; CD jamais BI | **fermé** |
 | PR-01 / PR-02 | Présences lecture | A jamais B ; leftover B jamais B ; projection `login_code` | **fermé** |
 | PR-04 / PR-05 / PR-11 | Présences write | 0 write B | **fermé** |
 | PR-06 / PR-07 / PR-08 | Présences fail-closed | sans `sub` / `school_id` / `login_code` vide | **fermé** |
@@ -41,7 +41,7 @@ Preuve locale extras : **8 PASS / 0 FAIL**. Gates Planning / Présences / Sync L
 | PR-scope-parent | Présences scope | parent sans élève GET **200 count=0** | **fermé** (#439) |
 | SY-01 / SY-06 / SY-07 / SY-08 | Sync L1 | A jamais B ; leftover B jamais B ; fail-closed | **fermé** |
 | SY-02 | Sync L1 students | B jamais A | **fermé** |
-| SY-09 | Sync L1 enseignant révoqué | 200 `items: []` (pas 403) ; `scopeKind` absent du body | **fermé** |
+| SY-09 | Sync L1 enseignant révoqué | SEC-AUTH-05 : 403 `PERMISSION_DENIED`, aucune donnée (avant : 200 `items: []` via le repli sur les rôles du jeton) ; le client Mobile purge la ressource sur 403 | **fermé** |
 | SY-10 | Sync L1 Admin Pays CD | 400 / jamais BI | **fermé** |
 
 Gate : `npm run verify:d-revalidation`.

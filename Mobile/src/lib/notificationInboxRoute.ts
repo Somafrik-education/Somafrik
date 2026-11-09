@@ -1,5 +1,6 @@
 import { canReadRoute } from "../domain/security/permissions";
 import { ALL_SCHOOLS_CODE } from "./activeSchool";
+import { shouldDenySchoolDomain } from "./platformSchoolDomainDeny";
 
 export type NotificationsInboxRoute = "InternalNotifications";
 
@@ -29,6 +30,7 @@ export function resolveNotificationsInboxRoute(
   session: unknown,
   activeSchoolCode?: string | null,
 ): NotificationsInboxRoute | null {
+  if (shouldDenySchoolDomain(session, "InternalNotifications")) return null;
   if (!hasSchoolNotificationContext(session, activeSchoolCode)) return null;
   return canReadRoute(session, "InternalNotifications") ? "InternalNotifications" : null;
 }

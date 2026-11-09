@@ -1,0 +1,11 @@
+{
+  "$comment": "MONO-T0 — exceptions de la baseline des tests backend. Chaque entrée est exécutée et vérifiée ; aucune n'est ignorée silencieusement. expectedFailures : défauts produit reproduits par MONO-T1 ; chaque fichier exprime le comportement CORRECT, doit échouer avec la cause documentée (expectedOutput), et fera échouer la baseline le jour où il passe (mettre alors le manifeste à jour avec la PR corrective). Voir docs/project/MONO-T1-CHARACTERIZATION.md.",
+  "expectedFailures": [],
+  "seededDatabase": [
+    {
+      "file": "backend/lib/backofficeStateRemoval.pg.test.js",
+      "mode": "pg",
+      "reason": "Suppose une base déjà initialisée par le schéma Somafrik (table schools, établissement CD-2026-0001). Exécuté dans une base de travail somafrik_test_run_seeded_* du cluster de test, amorcée par initializeRepository({ required: true }) puis supprimée."
+    }
+  ]
+}

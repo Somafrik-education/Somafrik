@@ -6,9 +6,10 @@ import type {
   RbacConfiguredQuery,
   RbacCrudGrant,
   RbacPatchPermissionsPayload,
+  RbacResetOverridePayload,
 } from "../lib/rbacApi";
 
-const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
+const { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, updateRoleDisplayLabelMock, resetRoleDisplayLabelMock, getHistoryMock } = vi.hoisted(() => {
   const catalog: RbacCatalog = {
     modules: [
       {
@@ -39,6 +40,25 @@ const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
         schoolAssignable: true,
         activeUserCount: 2,
         updatedAt: "2026-08-16T10:00:00.000Z",
+        roleKey: "PREFET_ETUDES",
+        defaultLabel: "Préfet des études",
+        displayLabel: null,
+        effectiveLabel: "Préfet des études",
+      },
+      {
+        id: "role-school",
+        roleCode: "SCHOOL_ADMIN",
+        roleName: "Admin School",
+        scope: "school",
+        displayOrder: 2,
+        status: "active",
+        schoolAssignable: false,
+        activeUserCount: 3,
+        updatedAt: "2026-08-16T10:00:00.000Z",
+        roleKey: "SCHOOL_ADMIN",
+        defaultLabel: "Admin School",
+        displayLabel: null,
+        effectiveLabel: "Admin School",
       },
       {
         id: "role-super",
@@ -50,9 +70,13 @@ const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
         schoolAssignable: false,
         activeUserCount: 1,
         updatedAt: "2026-08-16T10:00:00.000Z",
+        roleKey: "SUPER_ADMIN",
+        defaultLabel: "Super Administrateur Somafrik",
+        displayLabel: null,
+        effectiveLabel: "Super Administrateur Somafrik",
       },
     ],
-    protectedRoleKeys: ["SUPER_ADMIN"],
+    protectedRoleKeys: ["SUPER_ADMIN", "SCHOOL_ADMIN"],
     mandatoryByRole: {
       SUPER_ADMIN: {
         users: { create: true, read: true, update: true, delete: true },
@@ -93,10 +117,13 @@ const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
           moduleName: "Élèves",
           appliesWeb: true,
           appliesMobile: true,
-          canCreate: false,
-          canRead: true,
-          canUpdate: true,
-          canDelete: true,
+            canCreate: false,
+            canRead: true,
+            canUpdate: true,
+            canDelete: true,
+            configured: false,
+            source: "global",
+            inherited: true,
         },
       ],
     };
@@ -105,7 +132,68 @@ const { catalog, patchMock, getConfiguredMock } = vi.hoisted(() => {
     void payload;
     return { updatedAt: "2026-08-16T11:00:00.000Z" };
   });
-  return { catalog, patchMock, getConfiguredMock };
+  const resetMock = vi.fn(async (payload: RbacResetOverridePayload) => {
+    void payload;
+    return {
+      roleKey: "PREFET_ETUDES",
+      roleName: "Préfet des études",
+      scopeType: "school" as const,
+      updatedAt: null,
+      modules: [
+        {
+          moduleKey: "students",
+          moduleName: "Élèves",
+          appliesWeb: true,
+          appliesMobile: true,
+          canCreate: false,
+          canRead: true,
+          canUpdate: true,
+          canDelete: true,
+          configured: false,
+          source: "global" as const,
+          inherited: true,
+        },
+      ],
+    };
+  });
+  const updateRoleMock = vi.fn(async (roleId: string, payload: Record<string, unknown>) => {
+    void roleId;
+    void payload;
+    return catalog.roles[0];
+  });
+  const updateRoleDisplayLabelMock = vi.fn(async (roleId: string, displayLabel: string) => {
+    void roleId;
+    void displayLabel;
+    return { ...catalog.roles[1], displayLabel, effectiveLabel: displayLabel };
+  });
+  const resetRoleDisplayLabelMock = vi.fn(async (roleId: string) => {
+    void roleId;
+    return catalog.roles[1];
+  });
+  const getHistoryMock = vi.fn(async (query?: { limit?: number; offset?: number }) => {
+    void query;
+    return {
+      items: [
+        {
+          id: "aud-1",
+          createdAt: "2026-10-01T10:00:00.000Z",
+          actor: "superadmin",
+          action: "ROLE_RENAME",
+          role: "Préfet des études",
+          roleKey: "PREFET_ETUDES",
+          moduleKey: null,
+          scope: "school",
+          before: "Préfet des études",
+          after: "Préfet pédagogique",
+          summary: "Préfet des études → Préfet pédagogique",
+        },
+      ],
+      limit: 20,
+      offset: 0,
+      hasMore: false,
+    };
+  });
+  return { catalog, patchMock, getConfiguredMock, resetMock, updateRoleMock, updateRoleDisplayLabelMock, resetRoleDisplayLabelMock, getHistoryMock };
 });
 
 vi.mock("../lib/rbacApi", () => ({
@@ -113,9 +201,13 @@ vi.mock("../lib/rbacApi", () => ({
     getCatalog: vi.fn(async (): Promise<RbacCatalog> => catalog),
     getConfigured: (query: RbacConfiguredQuery) => getConfiguredMock(query),
     patchPermissions: (payload: RbacPatchPermissionsPayload) => patchMock(payload),
+    resetOverride: (payload: RbacResetOverridePayload) => resetMock(payload),
     createRole: vi.fn(),
-    updateRole: vi.fn(),
+    updateRole: (roleId: string, payload: Record<string, unknown>) => updateRoleMock(roleId, payload),
+    updateRoleDisplayLabel: (roleId: string, displayLabel: string) => updateRoleDisplayLabelMock(roleId, displayLabel),
+    resetRoleDisplayLabel: (roleId: string) => resetRoleDisplayLabelMock(roleId),
     archiveRole: vi.fn(),
+    getHistory: (query?: { limit?: number; offset?: number }) => getHistoryMock(query),
   },
 }));
 
@@ -163,7 +255,7 @@ const expectedGrant: RbacCrudGrant = {
   canDelete: false,
 };
 
-async function selectPath(roleKey: string, moduleKey: string) {
+async function selectPath(roleKey: string) {
   render(<PermissionsPage />);
   await screen.findByText("Rôles et droits");
   fireEvent.change(document.getElementById("rbac-country") as HTMLSelectElement, { target: { value: "CD" } });
@@ -182,22 +274,28 @@ async function selectPath(roleKey: string, moduleKey: string) {
     target: { value: roleKey },
   });
   await waitFor(() => expect(getConfiguredMock).toHaveBeenCalled());
-  fireEvent.change(document.getElementById("rbac-module") as HTMLSelectElement, {
-    target: { value: moduleKey },
-  });
+}
+
+function saveButtons() {
+  return screen.getAllByRole("button", { name: "Enregistrer les droits" });
 }
 
 describe("PermissionsPage — matrice CRUD Superadmin", () => {
   beforeEach(() => {
     patchMock.mockClear();
     getConfiguredMock.mockClear();
+    resetMock.mockClear();
+    updateRoleMock.mockClear();
+    updateRoleDisplayLabelMock.mockClear();
+    resetRoleDisplayLabelMock.mockClear();
+    getHistoryMock.mockClear();
   });
 
   it("enregistre uniquement le delta CRUD du module sélectionné", async () => {
-    await selectPath("PREFET_ETUDES", "students");
+    await selectPath("PREFET_ETUDES");
     const deleteBox = await screen.findByLabelText("Élèves Suppression");
     fireEvent.click(deleteBox);
-    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    fireEvent.click(saveButtons()[0]);
     await waitFor(() => expect(patchMock).toHaveBeenCalled());
     expect(patchMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -210,7 +308,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   });
 
   it("verrouille READ tant que UPDATE/DELETE sont actifs (dépendance)", async () => {
-    await selectPath("PREFET_ETUDES", "students");
+    await selectPath("PREFET_ETUDES");
     const readBox = await screen.findByLabelText("Élèves Lecture");
     expect(readBox).toBeChecked();
     expect(readBox).toBeDisabled();
@@ -219,7 +317,7 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   });
 
   it("cocher CREATE force et verrouille READ", async () => {
-    await selectPath("PREFET_ETUDES", "students");
+    await selectPath("PREFET_ETUDES");
     const createBox = await screen.findByLabelText("Élèves Création");
     const readBox = await screen.findByLabelText("Élèves Lecture");
     expect(createBox).not.toBeDisabled();
@@ -230,11 +328,103 @@ describe("PermissionsPage — matrice CRUD Superadmin", () => {
   });
 
   it("SUPER_ADMIN Utilisateurs : cases obligatoires checked + disabled", async () => {
-    await selectPath("SUPER_ADMIN", "users");
+    await selectPath("SUPER_ADMIN");
     for (const action of ["Création", "Lecture", "Modification", "Suppression"]) {
       const box = await screen.findByLabelText(`Utilisateurs ${action}`);
       expect(box).toBeChecked();
       expect(box).toBeDisabled();
     }
+  });
+
+  it("hydrate l'héritage global et n'enregistre pas sans modification", async () => {
+    await selectPath("PREFET_ETUDES");
+    expect(await screen.findByLabelText("Élèves Lecture")).toBeChecked();
+    expect(screen.getByLabelText("Élèves Modification")).toBeChecked();
+    expect(screen.getByLabelText("Élèves Suppression")).toBeChecked();
+    expect(screen.getByLabelText("Élèves Création")).not.toBeChecked();
+    expect(screen.getByText("Global")).toBeInTheDocument();
+    expect(saveButtons()[0]).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Réinitialiser Élèves" })).toBeNull();
+    fireEvent.click(saveButtons()[0]);
+    expect(patchMock).not.toHaveBeenCalled();
+  });
+
+  it("Réinitialiser à l'héritage appelle resetOverride", async () => {
+    getConfiguredMock.mockImplementationOnce(async () => ({
+      roleKey: "PREFET_ETUDES",
+      roleName: "Préfet des études",
+      scopeType: "school",
+      updatedAt: "2026-08-16T10:00:00.000Z",
+      modules: [
+        {
+          moduleKey: "students",
+          moduleName: "Élèves",
+          appliesWeb: true,
+          appliesMobile: true,
+          canCreate: false,
+          canRead: true,
+          canUpdate: false,
+          canDelete: false,
+          configured: true,
+          source: "school",
+          inherited: false,
+        },
+      ],
+    }));
+    await selectPath("PREFET_ETUDES");
+    fireEvent.click(await screen.findByRole("button", { name: "Réinitialiser Élèves" }));
+    await waitFor(() => expect(resetMock).toHaveBeenCalled());
+    expect(resetMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roleKey: "PREFET_ETUDES",
+        schoolCode: "CD-2026-0001",
+        moduleKey: "students",
+      }),
+    );
+    await waitFor(() => expect(screen.getByText("Global")).toBeInTheDocument());
+  });
+
+  it("permet de renommer un rôle métier sans toucher au code technique", async () => {
+    render(<PermissionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Rôles" }));
+    expect(screen.getByText("PREFET_ETUDES")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Renommer" }));
+    const input = await screen.findByLabelText("Libellé PREFET_ETUDES");
+    fireEvent.change(input, { target: { value: "Préfet pédagogique" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer le libellé" }));
+    await waitFor(() => expect(updateRoleMock).toHaveBeenCalled());
+    expect(updateRoleMock).toHaveBeenCalledWith("role-prefet", { roleName: "Préfet pédagogique" });
+    expect(screen.queryByRole("button", { name: "Renommer" })).not.toBeNull();
+    expect(screen.getAllByText("Protégé").length).toBeGreaterThan(0);
+  });
+
+  it("permet d'éditer le libellé affiché d'un rôle protégé sans rename ADMIN-02", async () => {
+    render(<PermissionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Rôles" }));
+    expect(screen.getByText("SCHOOL_ADMIN")).toBeInTheDocument();
+    expect(screen.getAllByText("Admin School").length).toBeGreaterThan(0);
+    expect(screen.getByText("Rôle technique")).toBeInTheDocument();
+    expect(screen.getByText("Libellé par défaut")).toBeInTheDocument();
+    expect(screen.getByText("Libellé affiché")).toBeInTheDocument();
+    expect(screen.getByText("Libellé effectif")).toBeInTheDocument();
+    const modifyButtons = screen.getAllByRole("button", { name: "Modifier" });
+    fireEvent.click(modifyButtons[1]);
+    const input = await screen.findByLabelText("Libellé affiché SCHOOL_ADMIN");
+    fireEvent.change(input, { target: { value: "Directeur" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer le libellé affiché SCHOOL_ADMIN" }));
+    await waitFor(() => expect(updateRoleDisplayLabelMock).toHaveBeenCalled());
+    expect(updateRoleDisplayLabelMock).toHaveBeenCalledWith("role-school", "Directeur");
+    expect(updateRoleMock).not.toHaveBeenCalled();
+  });
+
+  it("affiche l'historique paginé des modifications RBAC", async () => {
+    render(<PermissionsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Historique" }));
+    await waitFor(() => expect(getHistoryMock).toHaveBeenCalled());
+    expect(getHistoryMock).toHaveBeenCalledWith({ limit: 20, offset: 0 });
+    expect(await screen.findByText("Historique des modifications")).toBeInTheDocument();
+    expect(screen.getByText("ROLE_RENAME")).toBeInTheDocument();
+    expect(screen.getByText("Préfet des études → Préfet pédagogique")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Suivant" })).toBeDisabled();
   });
 });

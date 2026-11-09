@@ -1,6 +1,9 @@
 import { normalize } from "./format";
-import { isTeacherUserRole } from "./userTeacherSync";
-import { sessionRoleToPlatformRole } from "./orgHierarchy";
+import {
+  canonicalizeRoleKey,
+  hasAuthoritativeRoleKeys,
+  resolveCanonicalRoleIdentity,
+} from "./canonicalRoleIdentity";
 import type { Student, Teacher, TeacherAssignment, SchoolClass } from "../data/catalog";
 import { projectScopedStudentsForSession } from "./studentsScope";
 
@@ -18,10 +21,70 @@ export interface TeacherScopeState {
   assignmentsSource?: "network" | "l1-cache";
 }
 
-export function isTeacherSession(session: { role?: string; user?: { role?: string } } | null): boolean {
+export type TeacherSessionLike = {
+  role?: string | null;
+  roleKey?: string | null;
+  roleKeys?: Array<string | null | undefined> | null;
+  /** Affichage uniquement — ne pilote jamais isTeacherSession. */
+  roleLabel?: string | null;
+  /** Affichage uniquement — forme LoginResponse ; jamais une autorité RBAC. */
+  effectiveRoleLabel?: string | null;
+  user?: {
+    role?: string | null;
+    roleKey?: string | null;
+    roleKeys?: Array<string | null | undefined> | null;
+    /** Affichage uniquement — ne pilote jamais isTeacherSession. */
+    roleLabel?: string | null;
+    /** Affichage uniquement — ne pilote jamais isTeacherSession. */
+    effectiveRoleLabel?: string | null;
+  } | null;
+} | null | undefined;
+
+function isCanonicalTeacherKey(value?: string | null): boolean {
+  return canonicalizeRoleKey(value) === "TEACHER";
+}
+
+function sessionGrantsTeacherKey(session: Exclude<TeacherSessionLike, null | undefined>): boolean {
+  const identity = resolveCanonicalRoleIdentity(session);
+  return [
+    identity.roleKey,
+    ...identity.roleKeys,
+    session.roleKey,
+    session.user?.roleKey,
+    ...(Array.isArray(session.roleKeys) ? session.roleKeys : []),
+    ...(Array.isArray(session.user?.roleKeys) ? session.user.roleKeys : []),
+  ].some((value) => isCanonicalTeacherKey(value));
+}
+
+function activeRoleIsTeacher(session: Exclude<TeacherSessionLike, null | undefined>): boolean {
+  return [session.role, session.user?.role].some((value) => isCanonicalTeacherKey(value));
+}
+
+/**
+ * Identité enseignant = roleKey / roleKeys canoniques (TEACHER),
+ * alias de session `teacher`, ou libellé métier par défaut `Enseignant`.
+ * Un libellé d'affichage personnalisé (ex. « Professeur ») ne pilote jamais l'autorisation.
+ * Multi-rôle : TEACHER dans roleKeys + rôle actif Enseignant/teacher = session enseignant.
+ * Admin/Direction restent hors session enseignant même si TEACHER figure parmi les roleKeys.
+ */
+export function isTeacherSession(session: TeacherSessionLike): boolean {
   if (!session) return false;
-  if (session.role === "teacher") return true;
-  return isTeacherUserRole(session.user?.role) || isTeacherUserRole(sessionRoleToPlatformRole(session.role));
+  const identity = resolveCanonicalRoleIdentity(session);
+  if (hasAuthoritativeRoleKeys(session) && identity.roleKeys.length === 0) {
+    return false;
+  }
+  if (identity.roleKey === "TEACHER" || identity.sessionRole === "teacher") {
+    return true;
+  }
+  if (sessionGrantsTeacherKey(session) && activeRoleIsTeacher(session)) {
+    return true;
+  }
+  if (hasAuthoritativeRoleKeys(session)) {
+    return false;
+  }
+  return [session.roleKey, session.user?.roleKey, session.role, session.user?.role].some((value) =>
+    isCanonicalTeacherKey(value),
+  );
 }
 
 export function classNameMatches(left?: string, right?: string): boolean {

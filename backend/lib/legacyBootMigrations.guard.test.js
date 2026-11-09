@@ -52,26 +52,56 @@ describe("J2A — plus d'import backoffice_state au boot", () => {
     const factory = fs.readFileSync(path.join(__dirname, "../db/repositoryFactory.js"), "utf8");
     assert.doesNotMatch(factory, /async\s*\(\)\s*=>\s*undefined/);
 
+    const env = {
+      NODE_ENV: "production",
+      SOMAFRIK_DB_REQUIRED: "true",
+      SOMAFRIK_SKIP_DEMO_SEED: "true",
+      DB_HOST: "db.example.com",
+      DB_PORT: "5432",
+      DB_NAME: "somafrik",
+      DB_USER: "somafrik_app",
+      DB_PASSWORD: "unit-test-password-value",
+      DB_SSL: "require",
+    };
+    const logger = { warn() {}, error() {} };
+
+    // MONO-T0 — depuis #700 (2026-09-18), initializeRepository exige un
+    // allocateur canonique d'identifiants élèves prêt (assertStudentGeneralIdentityPg).
+    // Sans lui, le démarrage reste refusé (fail-closed) : on le vérifie d'abord.
+    const notReady = Object.create(PostgresRepository.prototype);
+    notReady.engine = "postgresql";
+    notReady.init = async () => undefined;
+    notReady.query = async () => ({ rows: [], rowCount: 0 });
+    await assert.rejects(
+      () => initializeRepository({ repository: notReady, required: true, logger, env }),
+      (error) => error?.cause?.code === "STUDENT_CANONICAL_POSTGRES_ALLOCATOR_NOT_READY",
+    );
+
+    // Prérequis du test : un allocateur prêt, tel que le vérifie le démarrage.
     const repository = Object.create(PostgresRepository.prototype);
     repository.engine = "postgresql";
     repository.init = async () => undefined;
-    repository.query = async () => ({ rows: [], rowCount: 0 });
+    repository.query = async (sql) => {
+      if (String(sql).includes("students_permanent_identity_insert")) {
+        return {
+          rows: [
+            {
+              trigger_enabled: true,
+              function_def:
+                "somafrik_student_identity_taken student_general_code_counters person_initials",
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    };
 
     const { repository: active } = await initializeRepository({
       repository,
       required: true,
-      logger: { warn() {}, error() {} },
-      env: {
-        NODE_ENV: "production",
-        SOMAFRIK_DB_REQUIRED: "true",
-        SOMAFRIK_SKIP_DEMO_SEED: "true",
-        DB_HOST: "db.example.com",
-        DB_PORT: "5432",
-        DB_NAME: "somafrik",
-        DB_USER: "somafrik_app",
-        DB_PASSWORD: "unit-test-password-value",
-        DB_SSL: "require",
-      },
+      logger,
+      env,
     });
 
     await assert.rejects(

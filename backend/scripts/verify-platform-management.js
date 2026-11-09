@@ -4,6 +4,7 @@
  * LOT 6 — parcours Plateforme HTTP (mémoire) : RBAC, isolation, legacy PUT refusé.
  */
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 
@@ -114,7 +115,7 @@ async function main() {
   });
   try {
     await waitForHealth(child);
-    const superToken = await login("superadmin", "1234");
+    const superToken = await login("superadmin", superadminLoginPassword());
 
     const legacyMixed = await request("/backoffice/state", {
       method: "PUT",

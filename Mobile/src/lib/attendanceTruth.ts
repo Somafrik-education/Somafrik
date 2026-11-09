@@ -1,8 +1,11 @@
 /**
  * Vérité d'appel Mobile.
- * Défaut produit : Présent + changement de statut simple.
+ * NFC-STATUT-PRESENCE-01 : défaut « Absent » PROVISOIRE (source `unset`) — valeur affichée,
+ * jamais écrite sans confirmation explicite de l'enseignant. Un scan NFC enregistré sur le
+ * téléphone (source `nfc_local`) affiche « Présent » immédiatement, sans réseau.
  * Justifié = absence justifiée (contrat D3.5b), non présent.
  * Source `unset` = défaut UI, pas une confirmation PostgreSQL.
+ * Divergence volontaire avec le Web (défaut « Présent ») : scripts/lot0-parity.test.ts PARITY-001.
  */
 
 import { getPresenceStats, normalizePresenceStatus, type PresenceStats } from "../domain/metrics/schoolMetrics";
@@ -11,7 +14,7 @@ import type { PresenceItem } from "../data/catalog";
 export type RollCallDraftStats = Omit<PresenceStats, "rate"> & { rate: number | null };
 
 export type AttendanceStatus = "Présent" | "Absent" | "Retard" | "Justifié";
-export type RollCallSource = "unset" | "postgres" | "draft" | "queued" | "failed";
+export type RollCallSource = "unset" | "postgres" | "draft" | "queued" | "failed" | "nfc_local";
 
 export type RollCallEntry = {
   status: AttendanceStatus | null;
@@ -81,18 +84,62 @@ export function findTodayPresenceForStudent(
 }
 
 /**
- * Aucune ligne du jour → Présent (workflow cible : défaut Présent + changement de statut simple).
- * Une ligne persistée conserve le statut PostgreSQL. Source `unset` ≠ confirmation serveur.
+ * Aucune ligne du jour → « Absent » provisoire (NFC-STATUT-PRESENCE-01) : affiché, jamais écrit
+ * sans confirmation. Une ligne persistée conserve le statut PostgreSQL.
  */
+export const PROVISIONAL_STATUS: AttendanceStatus = "Absent";
+
 export function hydrateRollCallStatus(
   presence?: Pick<PresenceItem, "present" | "status"> | null,
 ): AttendanceStatus | null {
-  if (!presence) return "Présent";
+  if (!presence) return PROVISIONAL_STATUS;
   return normalizePresenceStatus(presence);
 }
 
 export function emptyRollCallEntry(): RollCallEntry {
-  return { status: "Présent", source: "unset" };
+  return { status: PROVISIONAL_STATUS, source: "unset" };
+}
+
+/** Absence provisoire : valeur d'affichage, jamais une saisie ni une confirmation serveur. */
+export function isProvisionalEntry(entry?: Pick<RollCallEntry, "source"> | null): boolean {
+  return !entry || entry.source === "unset";
+}
+
+export function provisionalStudentIds(studentIds: string[], attendance: Record<string, RollCallEntry>) {
+  return studentIds.filter((studentId) => isProvisionalEntry(attendance[studentId]));
+}
+
+/**
+ * Présence enregistrée par l'appel NFC hors connexion (COMMIT SQLCipher), affichée sans attendre le
+ * serveur. Remplace uniquement une absence provisoire ou une valeur NFC locale précédente : jamais
+ * un statut confirmé par PostgreSQL (ex. Justifié), une saisie en cours ni un envoi en attente.
+ */
+export function applyLocalRollCallMarks(
+  attendance: Record<string, RollCallEntry>,
+  marks: Record<string, AttendanceStatus>,
+): Record<string, RollCallEntry> {
+  const next = { ...attendance };
+  for (const [studentId, status] of Object.entries(marks)) {
+    const entry = next[studentId];
+    if (entry && entry.source !== "unset" && entry.source !== "nfc_local") continue;
+    next[studentId] = { status, source: "nfc_local" };
+  }
+  for (const [studentId, entry] of Object.entries(next)) {
+    // Marque locale disparue (appel corrigé, purgé) : retour à l'absence provisoire.
+    if (entry?.source === "nfc_local" && !(studentId in marks)) next[studentId] = emptyRollCallEntry();
+  }
+  return next;
+}
+
+/**
+ * Réhydratation depuis PostgreSQL : une valeur NFC locale est conservée tant que le serveur n'a
+ * pas de ligne pour l'élève ; dès qu'il en a une (synchronisation réussie), le serveur fait foi.
+ */
+export function keepLocalRollCallMark(
+  entry: Pick<RollCallEntry, "source"> | undefined,
+  serverPresence: unknown,
+): boolean {
+  return entry?.source === "nfc_local" && !serverPresence;
 }
 
 export function rollCallEntryFromPresence(
@@ -138,6 +185,11 @@ export function applyRollCallStatus(
   };
 }
 
+/**
+ * « Tout présent » : déclaration explicite de l'enseignant. Ne remplace jamais un statut confirmé
+ * par PostgreSQL autre qu'une absence (Présent, Retard, Justifié conservés) ni une présence NFC
+ * locale (déjà « Présent », envoyée par l'appel NFC).
+ */
 export function markRosterPresent(
   studentIds: string[],
   current: Record<string, RollCallEntry>,
@@ -146,7 +198,10 @@ export function markRosterPresent(
 ): Record<string, RollCallEntry> {
   const next = { ...current };
   for (const studentId of studentIds) {
-    next[studentId] = applyRollCallStatus(current[studentId], "Présent", actor, now);
+    const entry = current[studentId];
+    if (entry?.source === "nfc_local") continue;
+    if (entry?.source === "postgres" && entry.status && entry.status !== "Absent") continue;
+    next[studentId] = applyRollCallStatus(entry, "Présent", actor, now);
   }
   return next;
 }
@@ -242,6 +297,8 @@ export function rollCallSourceLabel(source: RollCallSource | undefined) {
   if (source === "failed") return ROLL_CALL_COPY.syncError;
   if (source === "postgres") return ROLL_CALL_COPY.postgres;
   if (source === "draft") return ROLL_CALL_COPY.draft;
+  if (source === "nfc_local") return ROLL_CALL_COPY.nfcLocal;
+  if (source === "unset") return ROLL_CALL_COPY.provisional;
   return "";
 }
 
@@ -262,6 +319,15 @@ export function rollCallQueuedAlertBody(cause: RollCallQueuedCause) {
 
 export const ROLL_CALL_COPY = {
   unset: "Non saisi",
+  provisional: "Absent provisoire — non enregistré",
+  nfcLocal: "Carte scannée — enregistrée sur ce téléphone",
+  confirmAbsencesTitle: "Confirmer les absences",
+  confirmAbsencesBody: (count: number) =>
+    `${count} élève(s) n'ont ni carte scannée ni statut saisi : ils sont affichés « Absent » de façon provisoire.\nConfirmez-vous leur absence ?`,
+  confirmAbsences: "Confirmer les absences",
+  saveWithoutProvisional: "Enregistrer sans eux",
+  cancel: "Annuler",
+  nothingToSave: "Aucun statut à enregistrer : les élèves restent en absence provisoire.",
   draft: "Brouillon — non enregistré",
   queued: "En attente de synchronisation",
   syncError: "Erreur de synchronisation",

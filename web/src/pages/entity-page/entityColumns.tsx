@@ -1,3 +1,4 @@
+import { reportCardStatusLabel } from "../../lib/reportCardStatus";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Button, type Column } from "@/design-system";
@@ -9,7 +10,7 @@ import { getTeacherLoginIdentifier } from "../../lib/entityIdentifiers";
 import type { EntityModuleConfig } from "../../lib/entityModules";
 import { isPaymentCancelled, paymentItemsDetailLabel, type PaymentRecord } from "../../lib/quickPayment";
 import { formatFinanceAmount, formatFinanceDate } from "../../lib/financeCurrency";
-import { financePaymentStatusLabel } from "../../lib/financeObligationStatus";
+import { financePaymentStatusLabel, financeScreenFeeLabel } from "../../lib/financeObligationStatus";
 import {
   formatContactPersonName,
   formatStudentPersonName,
@@ -148,8 +149,12 @@ function renderDataCell(
   if (module.key === "payments" && key === "status") {
     return financePaymentStatusLabel(row.status);
   }
+  if (module.key === "bulletins" && key === "status") {
+    // Table historique report_cards : « generated » = Généré, jamais Publié.
+    return reportCardStatusLabel("legacy", row.status);
+  }
   if (module.key === "payments" && key === "itemsDetail") {
-    const label = paymentItemsDetailLabel(row.items) || String(row.itemsDetail ?? row.feeType ?? "—");
+    const label = financeScreenFeeLabel(paymentItemsDetailLabel(row.items) || String(row.itemsDetail ?? row.feeType ?? "")) || "—";
     return (
       <button
         type="button"
