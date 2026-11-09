@@ -13,6 +13,8 @@ import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
 import StudentCardClassRollCallModal from "../components/StudentCardClassRollCallModal";
 import OfflineRollCallModal from "../components/OfflineRollCallModal";
 import OfflineRollCallSyncList from "../components/OfflineRollCallSyncList";
+import AuthorizedRollCallClassPicker from "../components/AuthorizedRollCallClassPicker";
+import { fetchAuthorizedOfflineRollCallClasses } from "../services/rollCallOfflineApi";
 import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
 import { SYNC_COPY } from "../offline/rollCall/sync/syncStatus";
 import { OFFLINE_ROLL_CALL_COPY } from "../offline/rollCall/session/offlineRollCall";
@@ -38,6 +40,8 @@ import {
   isAttendanceAuthorReady,
   classifyStudentCardCapabilitiesFailure,
   isStudentCardNfcFinanceEnabled,
+  isStudentCardNfcAttendanceScanEnabled,
+  isStudentCardAttendanceScanEnabled,
   isStudentCardOfflineRollCallEnabled,
   isStudentCardQrScannerVisible,
   isStudentCardScanFinanceEnabled,
@@ -228,13 +232,13 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     setAppliedCapabilitiesScope(capabilitiesScopeKey);
     setCardSettings(null);
     setCardCapabilitiesFailure(null);
-    setCardCapabilitiesStatus(canManagePresences(session) ? "loading" : "ready");
+    setCardCapabilitiesStatus((canManagePresences(session) || rollCallActor(session).rollCall) ? "loading" : "ready");
   }
   const capabilitiesFresh = appliedCapabilitiesScope === capabilitiesScopeKey;
   const visibleCardSettings = capabilitiesFresh ? cardSettings : null;
   const visibleCapabilitiesStatus = capabilitiesFresh
     ? cardCapabilitiesStatus
-    : canManagePresences(session) ? "loading" : "ready";
+    : (canManagePresences(session) || rollCallActor(session).rollCall) ? "loading" : "ready";
   const visibleCapabilitiesFailure = capabilitiesFresh ? cardCapabilitiesFailure : null;
   const selectedClassScopeKey = attendanceClassScopeKey(selectedClass);
 
@@ -251,7 +255,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       let cancelled = false;
       setCardSettings(null);
       setCardCapabilitiesFailure(null);
-      if (!canManagePresences(session)) {
+      if (!(canManagePresences(session) || rollCallActor(session).rollCall)) {
         setCardCapabilitiesStatus("ready");
         return () => {
           cancelled = true;
@@ -460,15 +464,18 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   // NFC-PRES-LOCAL-PR3 — appel hors connexion : enseignant affecté, droit de modifier les présences,
   // flag établissement et au moins un support utilisable. Masqué sinon ; l'appel en ligne reste inchangé.
   const [offlineRollCallOpen, setOfflineRollCallOpen] = useState(false);
+  const [directClassPickerOpen, setDirectClassPickerOpen] = useState(false);
+  const [directCallTarget, setDirectCallTarget] = useState<{ classId: string; className: string } | null>(null);
   // NFC-ROLES-FINAL-01 : parcours unique pour tout rôle autorisé (enseignant ou responsable
   // scolaire disposant de l'écriture des présences) ; le serveur vérifie classe et droits réels.
+  // Droit d'appel indépendant de la consultation d'une classe ou de la saisie classique.
+  const directNfcAvailable = Platform.OS === "android" && isStudentCardNfcAttendanceScanEnabled(visibleCardSettings);
+  const directQrAvailable = (Platform.OS === "android" || Platform.OS === "ios") && isStudentCardAttendanceScanEnabled(visibleCardSettings);
   const canOpenOfflineRollCall = Boolean(
     actor.rollCall
-      && canUpdatePresences
-      && selectedClass?.classId
       && (Platform.OS === "android" || Platform.OS === "ios")
       && isStudentCardOfflineRollCallEnabled(visibleCardSettings)
-      && (nfcControl === "ready" || canOpenQrScanner),
+      && (directNfcAvailable || directQrAvailable),
   );
   // NFC-PRES-LOCAL-PR4 — appels hors connexion du compte (synchronisation, correction après not_recorded).
   // Visible avec le flag, ou dès qu'une base d'appel existe déjà pour ce compte (appels en attente
@@ -1159,7 +1166,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 (carte NFC, scanner QR, appel collectif et appel exceptionnel en ligne) sont retirés. */}
             {nfcControl === "ready" ? null : nfcStatus}
             {canOpenOfflineRollCall
-              ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setOfflineRollCallOpen(true))
+              ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setDirectClassPickerOpen(true))
               : null}
             {canOpenOfflineSyncList
               ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.checkCalls, () => setOfflineSyncListOpen(true))
