@@ -80,6 +80,7 @@ Décision CTO : l'édition du nouveau droit reste **Superadmin seul**, dans la m
 | `backend/lib/rollCallRoles.http.pg.test.js` (PostgreSQL 16 réel, 35 élèves) | vert : cas A, B, C, D, E et F ci-dessous, plus les sections de #1136 |
 | **Nouveau** `backend/lib/rollCallRbacCompat.pg.test.js` | vert : copie à l'identique des portées, aucun nouveau titulaire, rejouable, retrait jamais rétabli au redémarrage, repli rôle par rôle |
 | `rollCallOfflinePack` / `rollCallOfflineSync` / `rollCallOfflinePartial` / `studentCardRollCall` / `monoT1.rbacMatrix` (PG) | verts ; les tests de retrait portent désormais sur le droit dédié, et le retrait de Présences seul ne bloque plus l'appel |
+| Matrice RBAC de référence `docs/project/MONO-T1-RBAC-MATRIX.json` | régénérée par le générateur officiel (`MONO_T1_UPDATE_RBAC_MATRIX=1`) : **ajout seul** de la ligne `GET …/offline/v1/classes`, identique au pack (5 rôles scolaires « accès », parent « refusé ») ; aucune cellule existante modifiée ; contrôle relancé sans mise à jour : vert |
 | Base unitaire backend | 2 934 réussis, 0 échec, 3 ignorés. Comptage du catalogue 32 → 33 ; contrats RBAC des réglages carte ; garde de rejeu (tout rôle scolaire, famille refusée) |
 | Web `admin07AdministrationReplay.audit.test.ts` | vert (33 modules) |
 | Mobile `nfcRolesFinal.test.ts`, `studentCardRollCallRoles.test.ts` | verts : matrice de 16 profils sur le droit dédié ; actions communes aux deux vues ; lanceur indépendant de la classe ; jeton identique au serveur |

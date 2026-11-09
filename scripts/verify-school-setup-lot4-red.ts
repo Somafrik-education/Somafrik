@@ -814,6 +814,7 @@ const NFC_ROLES_ACCESS_01_EXACT = new Set([
   "backend/server.js",
   "backend/services/rbacService.js",
   "docs/audits/NFC-ROLES-ACCESS-01-appel-direct-20261109.md",
+  "docs/project/MONO-T1-RBAC-MATRIX.json",
   "docs/project/MONO-T1-ROUTES.json",
   "docs/project/MONO-T1-ROUTES.md",
   "scripts/verify-school-setup-lot4-red.ts",
