@@ -85,7 +85,8 @@ export function sessionStudentAliasKeys(input: {
   const children = input.children ?? user?.children ?? [];
 
   if (role === "student") {
-    const uuid = trim(input.selectedStudentId) || trim(linked?.studentId);
+    // A route/selection must never override the authenticated student identity.
+    const uuid = trim(linked?.studentId);
     if (!uuid) return [];
     return uniqueNonEmpty([
       uuid,
@@ -193,6 +194,11 @@ export function resolveParentSafeStudentId(input: {
 }): string | null {
   const selected = trim(input.selectedStudentId);
   const routed = trim(input.routeStudentId);
+  if (input.role === "student") {
+    // Only the canonical school identity issued by the backend is trusted.
+    // A forged route parameter or stale selection cannot change the student scope.
+    return trim(input.user?.linkedStudent?.studentId) || null;
+  }
   const requested = input.role === "parent_student" ? selected || routed : routed || selected;
   if (!requested) return null;
   if (input.role === "parent_student" && !isLinkedParentStudent({
