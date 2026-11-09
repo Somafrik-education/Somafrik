@@ -34,7 +34,8 @@ export function rollCallActor(session: unknown): RollCallActor {
     teacher,
     direction: isDirection && permissions.has("Présences:UPDATE"),
     supervision: isDirection,
-    verify: true,
+    // Vérification de carte : droit de lecture élève OU saisie des présences, jamais le droit d’appel seul.
+    verify: ["Élèves:READ", "Présences:CREATE", "Présences:UPDATE"].some((permission) => permissions.has(permission)),
     rollCall: canWritePresences && (teacher || keys.some((key) => SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS.has(key))),
   };
 }
