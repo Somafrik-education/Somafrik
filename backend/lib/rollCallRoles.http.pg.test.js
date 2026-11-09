@@ -360,6 +360,41 @@ async function main() {
     };
     for (const key of ["TEACHER", "SCHOOL_ADMIN", "SECRETARY", "PREFET_ETUDES", "PROVISEUR", "SUPERVISOR"]) await grant(key, true);
 
+    // ===== NFC-ROLES-ACCESS-01 : liste d'appel sans droit d'ouvrir une classe =====
+    const directClasses = (who) => request(PORT, "/student-cards/roll-call/offline/v1/classes", { token: token[who] });
+    // Les droits de consultation sont retirés, seul Appel scolaire:CREATE autorise le nouveau parcours.
+    await setRoleModuleGrant(pool, "SCHOOL_ADMIN", "classes", { create: false, read: false, update: false });
+    await setRoleModuleGrant(pool, "SCHOOL_ADMIN", "students", { create: false, read: false, update: false });
+    const directorClasses = await directClasses(USER.DIRECTOR);
+    assert.equal(directorClasses.status, 200, directorClasses.text);
+    assert.deepEqual(
+      directorClasses.data.classes.map((row) => row.classId).sort(),
+      [class35, classOther].sort(),
+      "directeur : classes de son établissement, sans droit de consulter une fiche",
+    );
+    for (const row of directorClasses.data.classes) {
+      assert.deepEqual(Object.keys(row).sort(), ["classCode", "classId", "className"], "aucune donnée élève exposée");
+    }
+    const teacherClasses = await directClasses(USER.TEACHER);
+    assert.equal(teacherClasses.status, 200, teacherClasses.text);
+    assert.deepEqual(teacherClasses.data.classes.map((row) => row.classId), [class35], "enseignant : affectation uniquement");
+    const secretaryClasses = await directClasses(USER.SECRETARY);
+    assert.equal(secretaryClasses.status, 200, secretaryClasses.text);
+    assert.equal(secretaryClasses.data.classes.length, 2);
+    assert.equal((await directClasses(USER.PARENT)).status, 403, "parent : jamais de liste d'appel");
+    assert.equal((await directClasses(USER.SUPER)).status, 403, "Superadmin plateforme : aucun accès scolaire");
+    await setRoleModuleGrant(pool, "SCHOOL_ADMIN", "roll_call", { create: false, read: false, update: false });
+    assert.equal((await directClasses(USER.DIRECTOR)).status, 403, "droit d'appel révoqué : liste refusée");
+    assert.equal((await request(PORT, `/student-cards/roll-call/offline/v1/pack?classId=${class35}&date=${today}`, { token: token[USER.DIRECTOR] })).status, 403, "droit révoqué : pack refusé");
+    // Redémarrage logique du bootstrap : jamais de résurrection du droit explicitement retiré.
+    await repo.init();
+    const revokedGrant = await pool.query(
+      "SELECT can_create FROM role_module_permissions WHERE upper(role_key) = 'SCHOOL_ADMIN' AND scope_type = 'global' AND module_key = 'roll_call' AND status = 'active' LIMIT 1",
+    );
+    assert.equal(revokedGrant.rows[0]?.can_create, false, "bootstrap n'accorde pas à nouveau le droit révoqué");
+    await setRoleModuleGrant(pool, "SCHOOL_ADMIN", "roll_call", { create: true, read: false, update: false });
+    console.log("NFC-ROLES-ACCESS-01 : liste minimale, indépendance classe, révocation et redémarrage validés");
+
     const byKey = (key) => (a, b) => (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0);
     function makeBody({ actor, date, classId = class35, scanned = [], manual = [], sessionId = crypto.randomUUID(), operationId = crypto.randomUUID() }) {
       const scans = scanned.map((c) => {
