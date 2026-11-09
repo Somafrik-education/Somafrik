@@ -1,6 +1,6 @@
 {
   "generatedBy": "scripts/mono-t1-route-inventory.js",
-  "total": 392,
+  "total": 393,
   "routes": [
     {
       "method": "POST",
@@ -3502,6 +3502,44 @@
       ],
       "existingHttpTests": [
         "backend/lib/studentAccessCards.http.pg.test.js"
+      ],
+      "monoT1Tests": []
+    },
+    {
+      "method": "GET",
+      "path": "/api/student-cards/roll-call/offline/v1/classes",
+      "pathIsRegExp": false,
+      "file": "backend/server.js",
+      "line": 2738,
+      "family": "C. Élèves et inscriptions",
+      "authenticated": true,
+      "middlewares": [
+        "requireAuth",
+        "<anonyme>"
+      ],
+      "permissionKeys": [
+        "GET /api/student-cards/roll-call/offline/v1/classes"
+      ],
+      "unknownPermissionKeys": [],
+      "requiredPermissions": [
+        "Appel scolaire:CREATE"
+      ],
+      "allowedRoles": [],
+      "subscriptionFeatures": [],
+      "tenantSignals": [],
+      "validationSignals": [],
+      "handlerAuthz": [],
+      "repositoryCalls": [],
+      "errorStatuses": [],
+      "risk": {
+        "level": "MOYEN",
+        "reason": "lecture de données d'un domaine critique"
+      },
+      "existingTests": [
+        "backend/lib/rollCallRoles.http.pg.test.js"
+      ],
+      "existingHttpTests": [
+        "backend/lib/rollCallRoles.http.pg.test.js"
       ],
       "monoT1Tests": []
     },
