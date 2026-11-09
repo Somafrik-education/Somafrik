@@ -114,7 +114,8 @@ const routePermissions = {
   "POST /api/student-cards/:id/lost": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/revoke": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/replace": ["Élèves:UPDATE", "Gérer élèves"],
-  "GET /api/student-cards/capabilities": ["Présences:CREATE", "Présences:UPDATE"],
+  // NFC-ROLES-ACCESS-01 : drapeaux carte (sans donnée d'élève), nécessaires aussi au droit d'appel dédié.
+  "GET /api/student-cards/capabilities": ["Présences:CREATE", "Présences:UPDATE", "Présences — Effectuer l'appel (NFC/QR):CREATE"],
   "POST /api/student-cards/scan": ["Présences:CREATE", "Présences:UPDATE"],
   "POST /api/student-cards/roll-call/scan": ["Présences:CREATE", "Présences:UPDATE"],
   "POST /api/student-cards/roll-call/validate": ["Présences:CREATE", "Présences:UPDATE"],
@@ -122,9 +123,11 @@ const routePermissions = {
   "GET /api/student-cards/roll-call/roster": ["Présences:CREATE", "Présences:UPDATE"],
   "GET /api/student-cards/roll-call/overview": ["Présences:READ"],
   // NFC-PRES-LOCAL-PR1b : pack hors ligne nominatif, mêmes droits que la liste d'appel.
-  "GET /api/student-cards/roll-call/offline/v1/pack": ["Présences:CREATE", "Présences:UPDATE"],
+  // NFC-ROLES-ACCESS-01 : droit dédié « Présences — Effectuer l'appel (NFC/QR) », indépendant de la consultation des classes.
+  "GET /api/student-cards/roll-call/offline/v1/pack": ["Présences — Effectuer l'appel (NFC/QR):CREATE"],
+  "GET /api/student-cards/roll-call/offline/v1/classes": ["Présences — Effectuer l'appel (NFC/QR):CREATE"],
   // NFC-PRES-LOCAL-PR1c : synchronisation d'un appel hors ligne, mêmes droits que la validation en ligne.
-  "POST /api/student-cards/roll-call/offline/v1/sync": ["Présences:CREATE", "Présences:UPDATE"],
+  "POST /api/student-cards/roll-call/offline/v1/sync": ["Présences — Effectuer l'appel (NFC/QR):CREATE"],
   // CARTE-PR3-A1 : contrôle d'entrée au portail, permission dédiée (aucun droit implicite).
   "POST /api/student-cards/entry-scan": ["Contrôle d'entrée:CREATE"],
   "GET /api/student-cards/entries": ["Contrôle d'entrée:READ"],

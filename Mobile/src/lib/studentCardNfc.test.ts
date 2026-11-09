@@ -638,11 +638,12 @@ assert.match(attendance, /StudentCardNfcScannerModal/);
 assert.match(attendance, /resolveStudentCardNfcAttendanceControl/);
 assert.match(attendance, /nfcControl === "ready"/);
 assert.match(attendance, /selectedClass && nfcControl === "ready"/);
-assert.match(attendance, /setNfcScannerOpen\(true\)/);
-assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanNfc/);
+// NFC-ROLES-FINAL-01 : boutons « Carte NFC » et « Scanner QR » de présence retirés de l'écran.
+assert.doesNotMatch(attendance, /setNfcScannerOpen\(true\)/);
+assert.doesNotMatch(attendance, /USABILITY_TEST_IDS\.attendanceScanNfc/);
 assert.match(attendance, /USABILITY_TEST_IDS\.attendanceMarkAllPresent/);
 assert.match(attendance, /USABILITY_TEST_IDS\.attendanceSave/);
-assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
+assert.doesNotMatch(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
 assert.match(attendance, /qrFallbackEnabled=\{canOpenQrScanner\}/);
 assert.match(attendance, /decideOpenQrFromNfcFallback/);
 assert.match(attendance, /selectedClass && canOpenQrScanner/);

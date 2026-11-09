@@ -2730,7 +2730,7 @@ app.get("/api/student-cards/roll-call/overview", requireAuth, requirePermission(
 }));
 
 // NFC-PRES-LOCAL-PR1b — pack signé Ed25519 pour l'appel hors ligne (lecture seule, indicatif).
-// Mêmes gardes que la liste d'appel : rôle TEACHER et affectation relus en base, flags, abonnement.
+// NFC-ROLES-FINAL-01 : enseignant affecté ou responsable scolaire autorisé (rôles et droits relus en base), flags, abonnement.
 // Signataire et secret de rapprochement réévalués à chaque requête depuis l'environnement (fail-closed).
 app.get("/api/student-cards/roll-call/offline/v1/pack", requireAuth, requirePermission("GET /api/student-cards/roll-call/offline/v1/pack"), asyncHandler(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
@@ -2747,6 +2747,16 @@ app.get("/api/student-cards/roll-call/offline/v1/pack", requireAuth, requirePerm
       masterSecret: () => require("./lib/rollCallOfflinePackSigner").resolvePackMatchSecret(process.env),
     },
   ));
+}));
+
+// NFC-ROLES-ACCESS-01 — classes sur lesquelles le compte peut effectuer l'appel NFC/QR (sélecteur
+// Mobile, sans fiche de classe) : même contrat que le pack et la synchronisation, données minimales.
+app.get("/api/student-cards/roll-call/offline/v1/classes", requireAuth, requirePermission("GET /api/student-cards/roll-call/offline/v1/classes"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { listOfflineRollCallClasses } = require("./lib/rollCallOfflinePack");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await listOfflineRollCallClasses(repository, studentCardsHttpScope(principal), principal));
 }));
 
 // NFC-PRES-LOCAL-PR1c — synchronisation transactionnelle d'un appel réalisé hors ligne.

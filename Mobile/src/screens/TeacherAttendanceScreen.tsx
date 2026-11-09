@@ -12,6 +12,8 @@ import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal
 import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
 import StudentCardClassRollCallModal from "../components/StudentCardClassRollCallModal";
 import OfflineRollCallModal from "../components/OfflineRollCallModal";
+import RollCallClassPickerModal from "../components/RollCallClassPickerModal";
+import { resolveRollCallLauncher } from "../lib/rollCallLauncher";
 import OfflineRollCallSyncList from "../components/OfflineRollCallSyncList";
 import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
 import { SYNC_COPY } from "../offline/rollCall/sync/syncStatus";
@@ -228,13 +230,13 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     setAppliedCapabilitiesScope(capabilitiesScopeKey);
     setCardSettings(null);
     setCardCapabilitiesFailure(null);
-    setCardCapabilitiesStatus(canManagePresences(session) ? "loading" : "ready");
+    setCardCapabilitiesStatus(canLoadCardCapabilities(session) ? "loading" : "ready");
   }
   const capabilitiesFresh = appliedCapabilitiesScope === capabilitiesScopeKey;
   const visibleCardSettings = capabilitiesFresh ? cardSettings : null;
   const visibleCapabilitiesStatus = capabilitiesFresh
     ? cardCapabilitiesStatus
-    : canManagePresences(session) ? "loading" : "ready";
+    : canLoadCardCapabilities(session) ? "loading" : "ready";
   const visibleCapabilitiesFailure = capabilitiesFresh ? cardCapabilitiesFailure : null;
   const selectedClassScopeKey = attendanceClassScopeKey(selectedClass);
 
@@ -251,7 +253,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       let cancelled = false;
       setCardSettings(null);
       setCardCapabilitiesFailure(null);
-      if (!canManagePresences(session)) {
+      if (!canLoadCardCapabilities(session)) {
         setCardCapabilitiesStatus("ready");
         return () => {
           cancelled = true;
@@ -457,28 +459,27 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         })
       : "";
   const classRollCall = actor.teacher ? classRollCalls[rollCallKeyFor("teacher")] : undefined;
-  // NFC-PRES-LOCAL-PR3 — appel hors connexion : enseignant affecté, droit de modifier les présences,
-  // flag établissement et au moins un support utilisable. Masqué sinon ; l'appel en ligne reste inchangé.
-  const [offlineRollCallOpen, setOfflineRollCallOpen] = useState(false);
-  const canOpenOfflineRollCall = Boolean(
-    actor.teacher
-      && canUpdatePresences
-      && selectedClass?.classId
-      && (Platform.OS === "android" || Platform.OS === "ios")
-      && isStudentCardOfflineRollCallEnabled(visibleCardSettings)
-      && (nfcControl === "ready" || canOpenQrScanner),
-  );
+  // NFC-ROLES-ACCESS-01 — actions de carte de l'écran Présences, SANS classe ouverte : chacune selon
+  // SA permission (droit dédié « Présences — Effectuer l'appel (NFC/QR) » pour l'appel et la liste
+  // des appels). Le serveur fixe le périmètre (classes affectées ou établissement) et revérifie tout.
+  const launcher = resolveRollCallLauncher({
+    session,
+    actor,
+    settings: visibleCardSettings,
+    platformOs: Platform.OS,
+    hasLocalRollCallStore: Boolean(rollCallRuntime().current()),
+  });
+  const canOpenOfflineSyncList = launcher.canCheckCalls;
+  const [rollCallPickerOpen, setRollCallPickerOpen] = useState(false);
+  const [rollCallTarget, setRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
+  const [rollCallClassNames, setRollCallClassNames] = useState<Record<string, string>>({});
+  const rollCallIdentity = rollCallRuntime().identityFor(session);
+  const rollCallPickerScope = rollCallIdentity ? [rollCallIdentity.environmentId, rollCallIdentity.schoolId, rollCallIdentity.userId].join("|") : "";
   // NFC-PRES-LOCAL-PR4 — appels hors connexion du compte (synchronisation, correction après not_recorded).
-  // Visible avec le flag, ou dès qu'une base d'appel existe déjà pour ce compte (appels en attente
-  // consultables même si le flag a été coupé depuis). Aucune base n'est créée pour l'afficher.
   const [offlineSyncListOpen, setOfflineSyncListOpen] = useState(false);
   const [offlineRollCallTarget, setOfflineRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
-  const canOpenOfflineSyncList = Boolean(
-    actor.teacher
-      && (Platform.OS === "android" || Platform.OS === "ios")
-      && (isStudentCardOfflineRollCallEnabled(visibleCardSettings) || rollCallRuntime().current()),
-  );
   const offlineClassName = (classId: string) => {
+    if (rollCallClassNames[classId]) return rollCallClassNames[classId];
     const match = assignedClasses.find((entry) => String(entry.classId ?? "").toLowerCase() === classId);
     return String(match?.className ?? match?.classCode ?? "Classe");
   };
@@ -959,6 +960,119 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     )
   ) : null;
 
+  // NFC-ROLES-ACCESS-01 : actions de carte et fenêtres communes à la liste des classes et à une classe.
+  const rollCallButtonLocked = actionsLocked;
+  const cardActions = (
+    <View testID="attendance-card-actions">
+      {launcher.canVerifyCard ? (
+        <TouchableOpacity
+          testID="attendance-card-verify"
+          style={styles.scanButton}
+          onPress={() => {
+            setScannerOpen(false);
+            setNfcScannerOpen(false);
+            setCardVerifyOpen(true);
+          }}
+          disabled={rollCallButtonLocked}
+          accessibilityRole="button"
+          accessibilityLabel={CARD_VERIFY_COPY.button}
+          accessibilityState={{ disabled: rollCallButtonLocked }}
+        >
+          <Ionicons name="shield-checkmark-outline" size={18} color="#0F172A" />
+          <Text style={styles.scanButtonText}>{CARD_VERIFY_COPY.button}</Text>
+        </TouchableOpacity>
+      ) : null}
+      {launcher.canStartRollCall
+        ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setRollCallPickerOpen(true))
+        : null}
+      {launcher.canCheckCalls
+        ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.checkCalls, () => setOfflineSyncListOpen(true))
+        : null}
+    </View>
+  );
+  const rollCallModals = (
+    <>
+    {offlineSyncListOpen ? (
+      <Modal visible animationType="slide" onRequestClose={() => setOfflineSyncListOpen(false)}>
+        <View style={styles.offlineSyncModal} testID="offline-sync-modal">
+          <View style={styles.offlineSyncHeader}>
+            <Text style={styles.offlineSyncTitle} accessibilityRole="header">{SYNC_COPY.listTitle}</Text>
+            <TouchableOpacity testID="offline-sync-close" onPress={() => setOfflineSyncListOpen(false)} accessibilityRole="button" accessibilityLabel="Fermer">
+              <Ionicons name="close" size={24} color="#0F172A" />
+            </TouchableOpacity>
+          </View>
+          {/* NFC-ROLES-FINAL-01 : « Mes appels locaux » — base SQLCipher du compte connecté uniquement.
+              Les appels de l'établissement relèvent de la supervision serveur (aperçu de l'écran). */}
+          <Text style={styles.meta} testID="offline-sync-local-scope">{SYNC_COPY.localScope}</Text>
+          <ScrollView>
+            <OfflineRollCallSyncList
+              session={session}
+              classNameOf={offlineClassName}
+              onCorrected={(target) => {
+                setOfflineSyncListOpen(false);
+                setOfflineRollCallTarget({ ...target, className: offlineClassName(target.classId) });
+              }}
+            />
+          </ScrollView>
+        </View>
+      </Modal>
+    ) : null}
+    {offlineRollCallTarget && canOpenOfflineSyncList ? (
+      <OfflineRollCallModal
+        visible
+        session={session}
+        classId={offlineRollCallTarget.classId}
+        className={offlineRollCallTarget.className}
+        date={offlineRollCallTarget.date}
+        nfcAvailable={launcher.nfcAvailable}
+        qrAvailable={launcher.qrAvailable}
+        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
+        onClose={() => {
+          setOfflineRollCallTarget(null);
+          void reloadLocalRollCallStatuses().catch(() => undefined);
+          void loadPresences();
+        }}
+      />
+    ) : null}
+    {launcher.canStartRollCall && rollCallPickerOpen ? (
+      <RollCallClassPickerModal
+        visible
+        scopeKey={rollCallPickerScope}
+        onClose={() => setRollCallPickerOpen(false)}
+        onSelect={(target) => {
+          setRollCallPickerOpen(false);
+          setRollCallClassNames((current) => ({ ...current, [target.classId]: target.className }));
+          setRollCallTarget({ ...target, date: isoAttendanceDate() });
+        }}
+      />
+    ) : null}
+    {rollCallTarget && launcher.canStartRollCall ? (
+      <OfflineRollCallModal
+        visible
+        session={session}
+        classId={rollCallTarget.classId}
+        className={rollCallTarget.className}
+        date={rollCallTarget.date}
+        nfcAvailable={launcher.nfcAvailable}
+        qrAvailable={launcher.qrAvailable}
+        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
+        onClose={() => {
+          setRollCallTarget(null);
+          void reloadLocalRollCallStatuses().catch(() => undefined);
+          void loadPresences();
+        }}
+      />
+    ) : null}
+    {launcher.canVerifyCard ? (
+      <StudentCardVerifyModal
+        visible={cardVerifyOpen}
+        source={launcher.nfcAvailable ? "nfc" : "qr"}
+        onClose={() => setCardVerifyOpen(false)}
+      />
+    ) : null}
+    </>
+  );
+
   if (!selectedClass) {
     return (
       <>
@@ -972,6 +1086,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
             <Text style={styles.scanButtonText}>{ENTRY_CONTROL_COPY.button}</Text>
           </TouchableOpacity>
         ) : null}
+        {cardActions}
         {nfcStatus}
         <Text style={styles.sectionTitle}>Mes classes</Text>
         <View testID="attendance-class-list" style={isTablet ? styles.classGridTablet : undefined}>
@@ -1011,6 +1126,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </View>
       </ScrollView>
       {canOpenEntryControl ? <StudentCardEntryControlModal visible={entryControlOpen} media={entryMedia} onClose={() => setEntryControlOpen(false)} /> : null}
+      {rollCallModals}
       </>
     );
   }
@@ -1134,106 +1250,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 </TouchableOpacity>
               </View>
             )}
-            {actor.verify && (nfcControl === "ready" || canOpenQrScanner) ? (
-              <TouchableOpacity
-                testID="attendance-card-verify"
-                style={styles.scanButton}
-                onPress={() => {
-                  setScannerOpen(false);
-                  setNfcScannerOpen(false);
-                  setCardVerifyOpen(true);
-                }}
-                disabled={actionsLocked}
-                accessibilityRole="button"
-                accessibilityLabel={CARD_VERIFY_COPY.button}
-                accessibilityState={{ disabled: actionsLocked }}
-              >
-                <Ionicons name="shield-checkmark-outline" size={18} color="#0F172A" />
-                <Text style={styles.scanButtonText}>{CARD_VERIFY_COPY.button}</Text>
-              </TouchableOpacity>
-            ) : null}
-            {nfcControl === "ready" ? (
-              <TouchableOpacity
-                testID={USABILITY_TEST_IDS.attendanceScanNfc}
-                style={styles.scanButton}
-                onPress={() => {
-                  if (!scanAuthorReady.ok) {
-                    Alert.alert(
-                      STUDENT_CARD_NFC_COPY.button,
-                      authorDecision.status === "need_selection"
-                        ? ATTENDANCE_AUTHOR_COPY.needSelection
-                        : authorDecision.status === "blocked"
-                          ? authorDecision.message
-                          : ATTENDANCE_AUTHOR_COPY.needSelection,
-                    );
-                    return;
-                  }
-                  setScannerOpen(false);
-                  setNfcScannerOpen(true);
-                }}
-                disabled={actionsLocked}
-                accessibilityRole="button"
-                accessibilityLabel={STUDENT_CARD_NFC_COPY.button}
-                accessibilityState={{ disabled: actionsLocked }}
-              >
-                <Ionicons name="radio-outline" size={18} color="#0F172A" />
-                <Text style={styles.scanButtonText}>{STUDENT_CARD_NFC_COPY.button}</Text>
-              </TouchableOpacity>
-            ) : nfcStatus}
-            {canOpenQrScanner ? (
-              <TouchableOpacity
-                testID={USABILITY_TEST_IDS.attendanceScanQr}
-                style={styles.scanButton}
-                onPress={() => {
-                  if (!scanAuthorReady.ok) {
-                    Alert.alert(
-                      STUDENT_CARD_SCAN_COPY.button,
-                      authorDecision.status === "need_selection"
-                        ? ATTENDANCE_AUTHOR_COPY.needSelection
-                        : authorDecision.status === "blocked"
-                          ? authorDecision.message
-                          : ATTENDANCE_AUTHOR_COPY.needSelection,
-                    );
-                    return;
-                  }
-                  setNfcScannerOpen(false);
-                  setScannerOpen(true);
-                }}
-                disabled={actionsLocked}
-                accessibilityRole="button"
-                accessibilityLabel={STUDENT_CARD_SCAN_COPY.button}
-                accessibilityState={{ disabled: actionsLocked }}
-              >
-                <Ionicons name="qr-code-outline" size={18} color="#0F172A" />
-                <Text style={styles.scanButtonText}>{STUDENT_CARD_SCAN_COPY.button}</Text>
-              </TouchableOpacity>
-            ) : null}
-            {actor.teacher && (nfcControl === "ready" || canOpenQrScanner)
-              ? rollCallButton(
-                  "attendance-class-roll-call",
-                  classRollCall?.draft ? CLASS_ROLL_CALL_COPY.resume : CLASS_ROLL_CALL_COPY.start,
-                  openClassRollCall,
-                )
-              : null}
-            {canOpenOfflineRollCall
-              ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setOfflineRollCallOpen(true))
-              : null}
-            {canOpenOfflineSyncList
-              ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.listTitle, () => setOfflineSyncListOpen(true))
-              : null}
-            {directionRollCall
-              ? rollCallButton(
-                  "attendance-roll-call-direction-resume",
-                  `${COLLECTIVE_ROLL_CALL_COPY.resume} — ${COLLECTIVE_ROLL_CALL_COPY.directionTitle} (${directionRollCall.draft.entries.length})`,
-                  () => openRollCall(directionRollCall.source, "direction"),
-                )
-              : null}
-            {!directionRollCall && actor.direction && nfcControl === "ready"
-              ? rollCallButton("attendance-roll-call-direction-nfc", COLLECTIVE_ROLL_CALL_COPY.startDirectionNfc, () => openRollCall("nfc", "direction"))
-              : null}
-            {!directionRollCall && actor.direction && canOpenQrScanner
-              ? rollCallButton("attendance-roll-call-direction-qr", COLLECTIVE_ROLL_CALL_COPY.startDirectionQr, () => openRollCall("qr", "direction"))
-              : null}
+            {nfcControl === "ready" ? null : nfcStatus}
+            {cardActions}
             {canShowRollCallSupervisionOnAttendance(session) ? <StudentCardRollCallOverview date={isoAttendanceDate()} /> : null}
             {outboxUnavailable ? (
               <Text testID="attendance-outbox-unavailable" style={styles.unavailable}>
@@ -1386,62 +1404,6 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
       />
     ) : null}
-    {offlineSyncListOpen ? (
-      <Modal visible animationType="slide" onRequestClose={() => setOfflineSyncListOpen(false)}>
-        <View style={styles.offlineSyncModal} testID="offline-sync-modal">
-          <View style={styles.offlineSyncHeader}>
-            <Text style={styles.offlineSyncTitle} accessibilityRole="header">{SYNC_COPY.listTitle}</Text>
-            <TouchableOpacity testID="offline-sync-close" onPress={() => setOfflineSyncListOpen(false)} accessibilityRole="button" accessibilityLabel="Fermer">
-              <Ionicons name="close" size={24} color="#0F172A" />
-            </TouchableOpacity>
-          </View>
-          <ScrollView>
-            <OfflineRollCallSyncList
-              session={session}
-              classNameOf={offlineClassName}
-              onCorrected={(target) => {
-                setOfflineSyncListOpen(false);
-                setOfflineRollCallTarget({ ...target, className: offlineClassName(target.classId) });
-              }}
-            />
-          </ScrollView>
-        </View>
-      </Modal>
-    ) : null}
-    {offlineRollCallTarget && canOpenOfflineSyncList ? (
-      <OfflineRollCallModal
-        visible
-        session={session}
-        classId={offlineRollCallTarget.classId}
-        className={offlineRollCallTarget.className}
-        date={offlineRollCallTarget.date}
-        nfcAvailable={nfcControl === "ready"}
-        qrAvailable={canOpenQrScanner}
-        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
-        onClose={() => {
-          setOfflineRollCallTarget(null);
-          void reloadLocalRollCallStatuses().catch(() => undefined);
-          void loadPresences();
-        }}
-      />
-    ) : null}
-    {selectedClass?.classId && canOpenOfflineRollCall && offlineRollCallOpen ? (
-      <OfflineRollCallModal
-        visible
-        session={session}
-        classId={String(selectedClass.classId).toLowerCase()}
-        className={String(selectedClass.className ?? selectedClass.classCode ?? "")}
-        date={isoAttendanceDate()}
-        nfcAvailable={nfcControl === "ready"}
-        qrAvailable={canOpenQrScanner}
-        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
-        onClose={() => {
-          setOfflineRollCallOpen(false);
-          void reloadLocalRollCallStatuses().catch(() => undefined);
-          void loadPresences();
-        }}
-      />
-    ) : null}
     {selectedClass && openedClassRollCall ? (
       <StudentCardClassRollCallModal
         visible
@@ -1517,15 +1479,17 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
       />
     ) : null}
-    {actor.verify && (nfcControl === "ready" || canOpenQrScanner) ? (
-      <StudentCardVerifyModal
-        visible={cardVerifyOpen}
-        source={nfcControl === "ready" ? "nfc" : "qr"}
-        onClose={() => setCardVerifyOpen(false)}
-      />
-    ) : null}
+    {rollCallModals}
     </>
   );
+}
+
+/**
+ * NFC-ROLES-ACCESS-01 : drapeaux carte (sans donnée d'élève) chargés pour la saisie des présences
+ * OU le droit d'appel dédié (route GET /api/student-cards/capabilities, mêmes droits côté serveur).
+ */
+function canLoadCardCapabilities(session: Parameters<typeof canManagePresences>[0]) {
+  return canManagePresences(session) || rollCallActor(session).rollCall;
 }
 
 function StatPill({

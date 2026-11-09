@@ -35,9 +35,10 @@ const {
 } = require("./rollCallOfflineProof");
 const {
   liveRollCallActor,
-  authorizeRollCallActor,
+  assertRollCallCapableActor,
   assertRollCallEnabled,
-  assertRollCallClass,
+  resolveClassRollCallAuthority,
+  listRollCallClasses,
 } = require("./studentCardRollCall");
 
 const PACK_VERSION = 1;
@@ -350,11 +351,13 @@ async function issueOfflinePack(repo, query, scope, principal, deps) {
   const userId = String(principal?.sub ?? principal?.id ?? "").trim();
   if (!userId) throw createHttpError(401, "Session invalide.");
   const actor = await liveRollCallActor(repo, principal, scope.schoolId);
-  authorizeRollCallActor(actor, "teacher");
+  assertRollCallCapableActor(actor);
   await assertRollCallEnabled(repo, scope.schoolId);
   await assertOfflineRollCallEnabled(repo, scope.schoolId);
   const media = await enabledMedia(repo, scope.schoolId);
-  await assertRollCallClass(repo, scope, principal, classId, "teacher");
+  // NFC-ROLES-FINAL-01 : même contrat que la synchronisation (enseignant affecté ou responsable
+  // scolaire autorisé), rôles et droits relus en base.
+  await resolveClassRollCallAuthority(repo, scope, principal, actor, classId);
   const signer = typeof deps.signer === "function" ? deps.signer() : deps.signer;
   const masterSecret = typeof deps.masterSecret === "function" ? deps.masterSecret() : deps.masterSecret;
   const timeZone = await schoolTimeZone(repo, scope.schoolId);
@@ -385,8 +388,20 @@ async function issueOfflinePack(repo, query, scope, principal, deps) {
   return { pack, signature: signer.signPack(pack), revocations: signer.signedRevocations(pack.issuedAt) };
 }
 
+/** NFC-ROLES-ACCESS-01 — classes autorisées pour l'appel (mêmes gardes que le pack, sans date). */
+async function listOfflineRollCallClasses(repo, scope, principal) {
+  const userId = String(principal?.sub ?? principal?.id ?? "").trim();
+  if (!userId) throw createHttpError(401, "Session invalide.");
+  const actor = await liveRollCallActor(repo, principal, scope.schoolId);
+  assertRollCallCapableActor(actor);
+  await assertRollCallEnabled(repo, scope.schoolId);
+  await assertOfflineRollCallEnabled(repo, scope.schoolId);
+  return listRollCallClasses(repo, scope, principal, actor);
+}
+
 module.exports = {
   PACK_VERSION,
+  listOfflineRollCallClasses,
   MATCH_KEY_LABEL,
   OFFLINE_PACK_ERROR,
   readPackQuery,

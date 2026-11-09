@@ -213,5 +213,6 @@ test("écran et modale : confirmation obligatoire, appel complet, aucun enseigna
   assert.match(api, /complete: true;/);
   assert.match(api, /idempotencyKey: options\.idempotencyKey/);
   assert.match(screen, /submitProtectedMutation/, "appel manuel classique (hors ligne) inchangé");
-  assert.match(screen, /attendance-roll-call-direction-nfc/, "appel exceptionnel de direction inchangé");
+  // NFC-ROLES-FINAL-01 : l'appel exceptionnel de direction n'est plus proposé (parcours unique local-first).
+  assert.doesNotMatch(screen, /attendance-roll-call-direction-nfc/);
 });

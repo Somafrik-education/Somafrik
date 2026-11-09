@@ -180,7 +180,8 @@ test("écran Présences : entrée « Contrôle d'entrée » sans choix de classe
   assert.doesNotMatch(modal, /AsyncStorage|SecureStore|console\.log/);
   assert.match(modal, /createRollCallNfcLoop/);
   assert.match(modal, /accessibilityLiveRegion="polite"/);
-  // Pointage individuel préservé.
-  assert.match(screen, /USABILITY_TEST_IDS\.attendanceScanNfc/);
+  // NFC-ROLES-FINAL-01 : l'ancien bouton de pointage individuel NFC est retiré de l'écran Présences ;
+  // le contrôle d'entrée (ce module) reste indépendant.
+  assert.doesNotMatch(screen, /USABILITY_TEST_IDS\.attendanceScanNfc/);
   assert.match(screen, /StudentCardQrScannerModal/);
 });

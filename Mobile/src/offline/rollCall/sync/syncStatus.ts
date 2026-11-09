@@ -25,6 +25,8 @@ export const SYNC_COPY = {
   cooldown: "Tentative trop récente : réessayez dans quelques secondes.",
   correct: "Corriger l'appel",
   listTitle: "Appels hors connexion",
+  checkCalls: "Vérifier les appels (Appels hors connexion)",
+  localScope: "Appels enregistrés sur ce téléphone par votre compte uniquement.",
   empty: "Aucun appel hors connexion sur ce téléphone.",
   unconfirmableHint: "Le serveur refuse l'accès pour le moment. L'appel est conservé tel quel et sera renvoyé à l'identique.",
   conflictHint: "Un autre appel est déjà enregistré pour cette session. Contactez la direction : aucune correction automatique.",

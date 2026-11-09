@@ -637,9 +637,10 @@ async function main() {
     await pool.query("UPDATE user_roles SET status = 'revoked', revoked_at = NOW() WHERE user_id = $1 AND role_key = 'TEACHER'", [USER.TEACHER]);
     refused(await sync(tokenTeacher, makeBody({ date: date2, scans: [], manual: [] })), "rôle révoqué (nouvelle session)");
     await pool.query("UPDATE user_roles SET status = 'active', revoked_at = NULL WHERE user_id = $1 AND role_key = 'TEACHER'", [USER.TEACHER]);
-    await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: false, read: true, update: false });
-    refused(await sync(tokenTeacher, makeBody({ date: date2, scans: [], manual: [] })), "permission retirée");
-    await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: true, read: true, update: true });
+    // NFC-ROLES-ACCESS-01 : la synchronisation dépend du droit dédié « Appel NFC/QR ».
+    await setRoleModuleGrant(pool, "TEACHER", "roll_call", { create: false, read: true, update: false });
+    refused(await sync(tokenTeacher, makeBody({ date: date2, scans: [], manual: [] })), "droit d'appel retiré");
+    await setRoleModuleGrant(pool, "TEACHER", "roll_call", { create: true, read: true, update: false });
 
     // ================= B'. Abonnement et synchronisation concurrentes (garde W uniquement) =================
     const setSubscription = (status) => pool.query("UPDATE subscriptions SET status = $2, updated_at = NOW() WHERE school_id = $1", [schoolA, status]);

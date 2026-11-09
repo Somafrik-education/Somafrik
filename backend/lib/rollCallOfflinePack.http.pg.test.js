@@ -529,9 +529,11 @@ async function main() {
       assert.equal(denied.status, 403, denied.text);
       assert.equal(denied.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
     }
+    // NFC-ROLES-FINAL-01 : responsable scolaire dont le rôle accorde déjà l'écriture des présences →
+    // pack de la classe de son établissement, sans affectation ni rôle TEACHER ; auteur = lui-même.
     const admin = await pack(tokenAdminA, { classId: classA1, date: today });
-    assert.equal(admin.status, 403, admin.text);
-    assert.equal(admin.data?.code, "ROLL_CALL_ROLE_FORBIDDEN", "direction : pas de pack enseignant");
+    assert.equal(admin.status, 200, admin.text);
+    assert.equal(admin.data.pack.actorUserId, USER.ADMIN_A, "pack lié au responsable, pas à un enseignant");
     const free = await pack(tokenTeacherFree, { classId: classA1, date: today });
     assert.equal(free.status, 403, free.text);
     assert.equal(free.data?.code, "ROLL_CALL_CLASS_FORBIDDEN", "enseignant non affecté");
@@ -559,13 +561,16 @@ async function main() {
     await pool.query("UPDATE teacher_assignments SET status = 'inactive' WHERE id = $1", [assignmentA1]);
     assert.equal((await pack(tokenTeacher, { classId: classA1, date: today })).data?.code, "ROLL_CALL_CLASS_FORBIDDEN", "affectation retirée");
     await pool.query("UPDATE teacher_assignments SET status = 'active' WHERE id = $1", [assignmentA1]);
-    // Permission effective absente (droits Présences retirés au rôle TEACHER).
-    await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: false, read: true, update: false });
+    // NFC-ROLES-ACCESS-01 : le pack dépend du droit dédié « Appel NFC/QR », pas des droits Présences.
+    await setRoleModuleGrant(pool, "TEACHER", "roll_call", { create: false, read: true, update: false });
     const noPermission = await pack(tokenTeacher, { classId: classA1, date: today });
-    assert.equal(noPermission.status, 403, `permission absente : ${noPermission.text}`);
+    assert.equal(noPermission.status, 403, `droit d'appel absent : ${noPermission.text}`);
     assert.equal(noPermission.data?.code, "PERMISSION_DENIED");
+    await setRoleModuleGrant(pool, "TEACHER", "roll_call", { create: true, read: true, update: false });
+    assert.equal((await pack(tokenTeacher, { classId: classA1, date: today })).status, 200, "droit d'appel rétabli");
+    await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: false, read: true, update: false });
+    assert.equal((await pack(tokenTeacher, { classId: classA1, date: today })).status, 200, "droits Présences retirés : le droit d'appel suffit");
     await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: true, read: true, update: true });
-    assert.equal((await pack(tokenTeacher, { classId: classA1, date: today })).status, 200, "permission rétablie");
 
     // ---------- Flags ----------
     const setFlags = (flags) => pool.query(

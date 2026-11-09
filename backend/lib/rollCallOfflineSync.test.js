@@ -154,7 +154,7 @@ test("fenêtre de synchronisation : [D 00:00 ; D+4 00:00[ dans le fuseau, journ�
   expired("Europe/Paris", "2026-10-25", "2026-10-28T23:00:00Z");
 });
 
-test("garde R : établissement relu en base, compte actif, rôle TEACHER, jamais de rôle plateforme", async () => {
+test("garde R : établissement relu en base, compte actif, rôle TEACHER ou responsable scolaire, jamais de rôle plateforme", async () => {
   const { guardReplayAccess } = require("./rollCallOfflineSync");
   const SCHOOL = "00000000-0000-4000-8000-000000000001";
   const OTHER = "00000000-0000-4000-8000-0000000000bb";
@@ -186,7 +186,17 @@ test("garde R : établissement relu en base, compte actif, rôle TEACHER, jamais
   await forbidden(fakeRepo({ userSchool: null }), principal, scope, batch, "utilisateur introuvable");
   await forbidden(fakeRepo({ status: "inactive" }), principal, scope, batch, "compte inactif");
   await forbidden(fakeRepo({ roles: [] }), principal, scope, batch, "aucun rôle actif");
-  await forbidden(fakeRepo({ roles: ["PRINCIPAL"] }), principal, scope, batch, "direction sans TEACHER");
+  // NFC-ROLES-FINAL-01 : un responsable scolaire relit son propre ACK sans rôle TEACHER fictif.
+  for (const roles of [["PRINCIPAL"], ["SCHOOL_ADMIN"], ["SECRETARY"], ["PREFET_ETUDES"], ["PROVISEUR"], ["TEACHER", "SECRETARY"]]) {
+    assert.equal((await guardReplayAccess(fakeRepo({ roles }), principal, scope, batch)).canonicalUserId, USER, roles.join("+"));
+  }
+  // NFC-ROLES-ACCESS-01 : tout rôle scolaire peut relire SON ACK (le droit d'appel est exigé par la route).
+  for (const roles of [["SUPERVISOR"], ["ACCOUNTANT"]]) {
+    assert.equal((await guardReplayAccess(fakeRepo({ roles }), principal, scope, batch)).canonicalUserId, USER, roles.join("+"));
+  }
+  await forbidden(fakeRepo({ roles: ["PARENT"] }), principal, scope, batch, "parent");
+  await forbidden(fakeRepo({ roles: ["STUDENT"] }), principal, scope, batch, "élève");
+  await forbidden(fakeRepo({ roles: ["SECRETARY", "COUNTRY_ADMIN"] }), principal, scope, batch, "responsable + rôle plateforme");
   await forbidden(fakeRepo({ roles: ["TEACHER", "SUPER_ADMIN"] }), principal, scope, batch, "rôle plateforme");
   await forbidden(fakeRepo(), { roleKeys: ["TEACHER"] }, scope, batch, "sans identité");
   // Le rôle du JWT ne compte jamais : seuls les rôles relus en base sont retenus.

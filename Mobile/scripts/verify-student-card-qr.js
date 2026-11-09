@@ -154,8 +154,9 @@ function main() {
   assert.match(attendance, /nfcControl === "ready"/);
   assert.match(attendance, /selectedClass && nfcControl === "ready"/);
   assert.match(attendance, /if \(nfcControl !== "ready"\) setNfcScannerOpen\(false\)/);
-  assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
-  assert.match(attendance, /STUDENT_CARD_SCAN_COPY\.button/);
+  // NFC-ROLES-FINAL-01 : bouton « Scanner QR » de présence retiré (parcours unique d'appel NFC/QR).
+  assert.doesNotMatch(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
+  assert.match(attendance, /OFFLINE_ROLL_CALL_COPY\.start/);
   assert.ok(appJson.expo.plugins.includes("./plugins/withSomafrikNfcAndroid"), "plugin NFC Android canonique");
   assert.ok(!appJson.expo.plugins.some((item) => Array.isArray(item) && item[0] === "react-native-nfc-manager"), "pas de plugin NFC iOS générique");
   assert.doesNotMatch(JSON.stringify(appJson.expo.ios), /NFCReaderUsageDescription|com\.apple\.developer\.nfc/);

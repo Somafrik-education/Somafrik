@@ -20,6 +20,10 @@ const FUNCTIONAL_MODULES = Object.freeze([
   { moduleKey: "teachers", moduleName: "Enseignants", appliesWeb: true, appliesMobile: true, displayOrder: 110 },
   { moduleKey: "assignments", moduleName: "Affectations", appliesWeb: true, appliesMobile: true, displayOrder: 120 },
   { moduleKey: "attendance", moduleName: "Présences", appliesWeb: true, appliesMobile: true, displayOrder: 130 },
+  // NFC-ROLES-ACCESS-01 : « Présences — Effectuer l'appel NFC/QR », indépendant de la consultation des
+  // classes et des élèves. CREATE = effectuer l'appel. Aucun droit par défaut (compatibilité : copie
+  // unique des titulaires existants, voir rollCallRbacCompat.js).
+  { moduleKey: "roll_call", moduleName: "Présences — Effectuer l'appel (NFC/QR)", appliesWeb: true, appliesMobile: true, displayOrder: 131 },
   // CARTE-PR3-A1 : passages au portail, distincts des présences en classe. Aucun droit par défaut.
   { moduleKey: "entry_control", moduleName: "Contrôle d'entrée", appliesWeb: true, appliesMobile: true, displayOrder: 135 },
   { moduleKey: "grades", moduleName: "Notes", appliesWeb: true, appliesMobile: true, displayOrder: 140 },

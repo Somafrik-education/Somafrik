@@ -28,15 +28,17 @@ const session = (roleKeys: string[] | undefined, permissions: string[] = [], rol
 const UPDATE = ["Présences:READ", "Présences:CREATE", "Présences:UPDATE"];
 
 test("acteur : enseignant, direction autorisée, rôles secondaires, multi-rôles, plateforme et parents", () => {
-  assert.deepEqual(rollCallActor(session(["TEACHER"], UPDATE)), { teacher: true, direction: false, supervision: false, verify: true });
-  assert.deepEqual(rollCallActor(session(["PRINCIPAL"], UPDATE)), { teacher: false, direction: true, supervision: true, verify: true });
+  // NFC-ROLES-ACCESS-01 : `rollCall` = droit dédié « Présences — Effectuer l'appel (NFC/QR) » (absent ici).
+  assert.deepEqual(rollCallActor(session(["TEACHER"], UPDATE)), { teacher: true, direction: false, supervision: false, verify: true, rollCall: false });
+  assert.deepEqual(rollCallActor(session(["PRINCIPAL"], UPDATE)), { teacher: false, direction: true, supervision: true, verify: true, rollCall: false });
   assert.deepEqual(rollCallActor(session(["PROVISEUR"], ["Présences:READ", "Présences:CREATE"])),
-    { teacher: false, direction: false, supervision: true, verify: true }, "direction sans UPDATE : supervision seule");
+    { teacher: false, direction: false, supervision: true, verify: true, rollCall: false }, "direction avec CREATE : appel local-first (droit vérifié par le serveur)");
   assert.deepEqual(rollCallActor(session(["PRINCIPAL", "TEACHER"], UPDATE, "Directeur")),
-    { teacher: true, direction: true, supervision: true, verify: true });
-  assert.deepEqual(rollCallActor(session(["SUPERVISOR"], UPDATE)), { teacher: false, direction: false, supervision: false, verify: true });
+    { teacher: true, direction: true, supervision: true, verify: true, rollCall: false });
+  assert.deepEqual(rollCallActor(session(["SUPERVISOR"], UPDATE)), { teacher: false, direction: false, supervision: false, verify: true, rollCall: false }, "sans droit dédié : pas d'appel");
+  assert.equal(rollCallActor(session(["SUPERVISOR"], ["Présences — Effectuer l'appel (NFC/QR):CREATE"])).rollCall, true, "autre rôle explicitement autorisé");
   for (const keys of [["SUPER_ADMIN"], ["COUNTRY_ADMIN"], ["TEACHER", "SUPER_ADMIN"], ["PARENT"], ["STUDENT"], ["CUSTOM_ROLE"], []]) {
-    assert.deepEqual(rollCallActor(session(keys, UPDATE)), { teacher: false, direction: false, supervision: false, verify: false }, keys.join("+"));
+    assert.deepEqual(rollCallActor(session(keys, UPDATE)), { teacher: false, direction: false, supervision: false, verify: false, rollCall: false }, keys.join("+"));
   }
 });
 
@@ -122,15 +124,16 @@ test("écran Appel : parcours affichés selon le rôle canonique, sans enseignan
   const screen = readFileSync(new URL("../screens/TeacherAttendanceScreen.tsx", import.meta.url), "utf8");
   const modal = readFileSync(new URL("../components/StudentCardRollCallModal.tsx", import.meta.url), "utf8");
   assert.match(screen, /rollCallActor\(session\)/);
-  // CARTE-PR3-M2 : l'enseignant affecté fait l'appel complet nominatif (carte NFC ou QR requise).
-  assert.match(screen, /actor\.teacher && \(nfcControl === "ready" \|\| canOpenQrScanner\)/);
-  assert.match(screen, /attendance-class-roll-call/);
-  assert.match(screen, /StudentCardClassRollCallModal/);
-  assert.match(screen, /actor\.direction/);
-  assert.match(screen, /attendance-roll-call-direction-nfc/);
+  // NFC-ROLES-FINAL-01 : un seul parcours d'appel collectif (local-first) pour tous les rôles autorisés ;
+  // l'appel collectif en ligne et l'appel exceptionnel ne sont plus proposés.
+  // NFC-ROLES-ACCESS-01 : le lancement dépend du droit dédié, pas du droit de modifier les présences.
+  assert.match(screen, /resolveRollCallLauncher\(\{/);
+  assert.doesNotMatch(screen, /actor\.rollCall\s*\n?\s*&& canUpdatePresences/);
+  assert.doesNotMatch(screen, /attendance-class-roll-call/);
+  assert.doesNotMatch(screen, /attendance-roll-call-direction-(nfc|qr|resume)/);
   assert.match(screen, /StudentCardRollCallOverview/);
   assert.match(screen, /canShowRollCallSupervisionOnAttendance\(session\)/, "supervision réservée hors SCHOOL_ADMIN");
-  assert.match(screen, /actor\.verify && \(nfcControl === "ready" \|\| canOpenQrScanner\)/);
+  assert.match(screen, /launcher\.canVerifyCard \?/, "vérification de carte sans classe ouverte, selon sa permission");
   assert.doesNotMatch(screen, /teacherId=\{rollCallTeacherId\}/, "plus d'attribution à un enseignant choisi");
   assert.match(modal, /roll-call-justification/);
   assert.match(modal, /rollCallCanSubmit\(draft, justification\)/);
