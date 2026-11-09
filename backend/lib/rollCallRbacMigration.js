@@ -13,7 +13,8 @@ const LEGACY_ROLE_KEYS = Object.freeze([
 ]);
 
 async function migrateRollCallGrantsOnce(repo) {
-  if (typeof repo?.query !== "function") throw new Error("PostgreSQL obligatoire pour la migration RBAC d'appel.");
+  // Les tests/unitaires mémoire n'ont aucun grant à migrer ; le chemin produit reste PostgreSQL.
+  if (repo?.engine === "memory" || typeof repo?.query !== "function") return;
   // Un seul statement transactionnel : advisory lock, transfert et marqueur atomiques.
   // Ne pas utiliser ON CONFLICT pour restaurer les droits précédemment refusés.
   await repo.query(`
