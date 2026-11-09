@@ -33,7 +33,7 @@
     ],
     "android": {
       "package": "com.somafrik.app",
-      "versionCode": 13,
+      "versionCode": 25,
       "permissions": [
         "CAMERA",
         "android.permission.NFC"
