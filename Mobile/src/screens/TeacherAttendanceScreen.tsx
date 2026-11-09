@@ -1031,8 +1031,8 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         classId={offlineRollCallTarget.classId}
         className={offlineRollCallTarget.className}
         date={offlineRollCallTarget.date}
-        nfcAvailable={nfcControl === "ready"}
-        qrAvailable={canOpenQrScanner}
+        nfcAvailable={directNfcAvailable}
+        qrAvailable={directQrAvailable}
         onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
         onClose={() => {
           setOfflineRollCallTarget(null);
@@ -1071,7 +1071,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
             <Text style={styles.scanButtonText}>{ENTRY_CONTROL_COPY.button}</Text>
           </TouchableOpacity>
         ) : null}
-        {nfcStatus}
+        {visibleCapabilitiesStatus === "error" ? nfcStatus : null}
         <Text style={styles.sectionTitle}>Mes classes</Text>
         <View testID="attendance-class-list" style={isTablet ? styles.classGridTablet : undefined}>
           {assignedClasses.length === 0 ? (
@@ -1238,7 +1238,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 </TouchableOpacity>
               </View>
             )}
-            {actor.verify && (nfcControl === "ready" || canOpenQrScanner) ? (
+            {actor.verify && (directNfcAvailable || directQrAvailable) ? (
               <TouchableOpacity
                 testID="attendance-card-verify"
                 style={styles.scanButton}
