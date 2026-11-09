@@ -164,6 +164,25 @@ source = replaceExactlyOnce(
   "main-only log",
 );
 
+// Release v25 : plus haut versionCode Play Console confirmé par le propriétaire = 24.
+// Le core historique fige 13 ; le pin vivant passe à 25 et doit rester égal à la
+// valeur canonique Mobile/config/releaseEnvironments.js.
+source = replaceExactlyOnce(
+  source,
+  "  assert.equal(appJson.expo.android.versionCode, 13);",
+  "  assert.equal(appJson.expo.android.versionCode, 25);\n"
+    + "  assert.equal(appJson.expo.android.versionCode, "
+    + "require(path.join(ROOT, \"Mobile/config/releaseEnvironments\")).ANDROID_VERSION_CODE);",
+  "versionCode v25 live pin",
+);
+
+source = replaceExactlyOnce(
+  source,
+  '  console.log("PASS RG-VERSION app.json 1.2.1 / 13 (npm drift documenté)");',
+  '  console.log("PASS RG-VERSION app.json 1.2.1 / 25 = ANDROID_VERSION_CODE (npm drift documenté)");',
+  "versionCode v25 log",
+);
+
 const compiled = new Module(CORE, module.parent);
 compiled.filename = CORE;
 compiled.paths = module.paths;
