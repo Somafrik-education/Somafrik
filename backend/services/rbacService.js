@@ -122,9 +122,11 @@ const routePermissions = {
   "GET /api/student-cards/roll-call/roster": ["Présences:CREATE", "Présences:UPDATE"],
   "GET /api/student-cards/roll-call/overview": ["Présences:READ"],
   // NFC-PRES-LOCAL-PR1b : pack hors ligne nominatif, mêmes droits que la liste d'appel.
-  "GET /api/student-cards/roll-call/offline/v1/pack": ["Présences:CREATE", "Présences:UPDATE"],
+  // NFC-ROLES-ACCESS-01 : droit autonome, indépendant de Présences et de la lecture des classes.
+  "GET /api/student-cards/roll-call/offline/v1/classes": ["Appel scolaire:CREATE"],
+  "GET /api/student-cards/roll-call/offline/v1/pack": ["Appel scolaire:CREATE"],
   // NFC-PRES-LOCAL-PR1c : synchronisation d'un appel hors ligne, mêmes droits que la validation en ligne.
-  "POST /api/student-cards/roll-call/offline/v1/sync": ["Présences:CREATE", "Présences:UPDATE"],
+  "POST /api/student-cards/roll-call/offline/v1/sync": ["Appel scolaire:CREATE"],
   // CARTE-PR3-A1 : contrôle d'entrée au portail, permission dédiée (aucun droit implicite).
   "POST /api/student-cards/entry-scan": ["Contrôle d'entrée:CREATE"],
   "GET /api/student-cards/entries": ["Contrôle d'entrée:READ"],
