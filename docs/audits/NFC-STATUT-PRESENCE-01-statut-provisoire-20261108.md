@@ -61,9 +61,41 @@ Exemple, classe de 35 élèves : 0 / 35 → 10 / 25 → 22 / 13 → 35 / 0 (pré
 - **Web** : il affiche toujours « Présent » par défaut (divergence documentée).
 - **Appels NFC en ligne** (lecture validée par le serveur) : leur mise à jour d'écran reste celle d'avant, après validation ; le critère du smoke porte sur l'appel hors connexion.
 
+## Revue CTO du 09/11 — isolation des statuts locaux (P1) et performance
+
+**Risque relevé :**
+- les statuts NFC locaux étaient un état React persistant, rechargé selon la seule classe ;
+- une lecture SQLCipher lancée pour le compte A pouvait se terminer après l'activation du compte B et y afficher les marques de A ;
+- c'était possible surtout si la classe et les identifiants d'élèves étaient identiques.
+
+**Correctif** (`Mobile/src/offline/rollCall/session/localRollCallStatusLoader.ts`) :
+- **Portée stable** `environnement | établissement | compte | classe | date`.
+  - L'identité vient de la session authentifiée (`rollCallRuntime().identityFor`) sans ouvrir de base.
+  - Une portée incomplète ne déclenche aucune lecture.
+- **Aucune base d'un autre compte n'est lue.** Si la base active n'a pas exactement l'identité de la portée, la lecture est refusée et la portée n'affiche rien.
+- **Génération** : un changement de portée, une fermeture d'écran (`cancel`) ou une lecture plus récente invalide les lectures en cours.
+- **Revérification après l'`await` SQLCipher**, juste avant l'application : génération, portée et compte actif (même connexion, même identité). Sinon, le résultat est jeté.
+- **Résultat étiqueté par sa clé de portée.** L'écran n'affiche que les statuts de la clé courante (`statusesForScope`) et purge l'ancien résultat de façon synchrone au changement de portée.
+- **Statut confirmé** : aucun scan local ne s'y superpose jamais (`applyLocalRollCallMarks`, inchangé).
+- **Performance** : la notification post-COMMIT est différée (`notifyWithoutBlocking`, `setTimeout 0`) et n'est jamais attendue par `submitToken`. La boucle NFC est réarmée sans attendre la relecture de l'écran.
+
+**Tests** (`localRollCallIsolation.test.ts`, 8/8) :
+- clé de portée : chaque composante la change ; une portée incomplète donne `null` ;
+- lecture de A retardée, puis activation de B avec la même classe et les mêmes élèves : A jeté, B appliqué depuis sa propre base, filtre d'affichage par clé ;
+- base B active alors que la portée est encore A : aucune lecture ;
+- déconnexion puis activation de B pendant la lecture : résultat jeté ;
+- réponse après fermeture de l'écran : jamais appliquée ;
+- lectures résolues dans le désordre : seule la plus récente s'applique ; reprise de A après B ;
+- **SQLCipher réel**, deux comptes et même classe : chaque base ne montre que ses scans (22 contre 3) ;
+- **performance** : relecture de 35 scans en médiane 0,23 ms et p95 0,47 ms (Node + SQLite de test, **pas un appareil Android**) ; notification non bloquante ; une erreur de l'écran n'interrompt pas l'appel.
+
+**Mesure sur appareil** : non réalisée (pas d'appareil dans la session). À vérifier au smoke : enchaîner les cartes sans attente perceptible entre deux lectures.
+
 ## Smoke
 1. Ouvrir l'appel d'une classe connue : tous les élèves sans statut affichés « Absent » provisoire.
 2. Mode avion, scanner une carte : l'élève passe à « Présent » immédiatement, dans la modale et sur l'écran des présences.
 3. Un élève justifié reste « Justifié ».
 4. Clôturer sans confirmer les absences, rétablir Internet, synchroniser : PostgreSQL contient les présences scannées et **aucune** absence non confirmée.
 5. Recommencer en confirmant les absences : elles sont écrites, sans écraser le justifié.
+6. Changer de compte (ou d'établissement) sur le même téléphone, ouvrir la même classe : aucun statut NFC de l'autre compte affiché.
+7. Enchaîner rapidement 10 cartes : aucune attente perceptible entre deux lectures.

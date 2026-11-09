@@ -96,7 +96,12 @@ import {
   type RollCallEntry,
   ROLL_CALL_COPY,
 } from "../lib/attendanceTruth";
-import { loadLocalRollCallStatuses } from "../offline/rollCall/session/localRollCallStatuses";
+import {
+  createLocalRollCallStatusLoader,
+  localRollCallScopeKey,
+  statusesForScope,
+  type LocalStatusesResult,
+} from "../offline/rollCall/session/localRollCallStatusLoader";
 import { attendanceStatusTheme } from "../lib/attendanceStatusTheme";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
@@ -555,29 +560,51 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   // NFC-STATUT-PRESENCE-01 — présences enregistrées par l'appel NFC hors connexion (SQLCipher),
   // superposées à l'affichage : un scan fait passer l'élève d'« Absent » provisoire à « Présent »
   // immédiatement, sans réseau. Jamais écrites par l'appel manuel : l'appel NFC les synchronise.
-  const [localRollCallStatuses, setLocalRollCallStatuses] = useState<Record<string, AttendanceStatus>>({});
-  const localRollCallClassId = String(selectedClass?.classId ?? "").toLowerCase();
+  // Revue CTO : portée stable environnement / établissement / compte / classe / date. Une lecture
+  // SQLCipher tardive d'un autre compte, d'une autre classe ou d'un autre jour n'est jamais affichée.
+  const localRollCallIdentity = rollCallRuntime().identityFor(session);
+  const localRollCallScope = localRollCallIdentity && selectedClass?.classId
+    ? { ...localRollCallIdentity, classId: String(selectedClass.classId).toLowerCase(), date: isoAttendanceDate() }
+    : null;
+  const localRollCallKey = localRollCallScopeKey(localRollCallScope);
+  const [localRollCallResult, setLocalRollCallResult] = useState<LocalStatusesResult | null>(null);
   const classStudentsRef = useRef(classStudents);
   classStudentsRef.current = classStudents;
   const loadPresencesRef = useRef(loadPresences);
   loadPresencesRef.current = loadPresences;
-  const classStudentKeys = classStudents.map((student) => String(student.id ?? "")).join("|");
-  const reloadLocalRollCallStatuses = useCallback(async () => {
-    const account = rollCallRuntime().current();
-    const statuses = account && localRollCallClassId
-      ? await loadLocalRollCallStatuses(account.ctx, { classId: localRollCallClassId, date: isoAttendanceDate(), students: classStudentsRef.current })
-      : {};
+  const localLoaderRef = useRef<ReturnType<typeof createLocalRollCallStatusLoader> | null>(null);
+  localLoaderRef.current ??= createLocalRollCallStatusLoader({
+    currentAccount: () => rollCallRuntime().current(),
     // État remplacé seulement s'il change : aucune boucle de rendu.
-    setLocalRollCallStatuses((current) => (JSON.stringify(current) === JSON.stringify(statuses) ? current : statuses));
-  }, [localRollCallClassId]);
+    apply: (result) => setLocalRollCallResult((current) => (
+      current && current.scopeKey === result.scopeKey && JSON.stringify(current.statuses) === JSON.stringify(result.statuses) ? current : result
+    )),
+  });
+  const reloadLocalRollCallStatuses = useCallback(async () => {
+    await localLoaderRef.current?.reload(classStudentsRef.current);
+  }, []);
+  const classStudentKeys = classStudents.map((student) => String(student.id ?? "")).join("|");
   useEffect(() => {
-    void reloadLocalRollCallStatuses().catch(() => setLocalRollCallStatuses({}));
+    // Purge synchrone : rien de l'ancienne portée ne reste affiché, puis lecture de la nouvelle.
+    setLocalRollCallResult(null);
+    localLoaderRef.current?.setScope(localRollCallScope);
+    void reloadLocalRollCallStatuses().catch(() => undefined);
     // Synchronisation d'un appel NFC : relecture locale, puis données serveur qui font foi.
-    return rollCallRuntime().subscribeSync(() => {
+    const unsubscribe = rollCallRuntime().subscribeSync(() => {
       void reloadLocalRollCallStatuses().catch(() => undefined);
       void loadPresencesRef.current();
     });
-  }, [classStudentKeys, reloadLocalRollCallStatuses]);
+    return () => {
+      unsubscribe();
+      localLoaderRef.current?.cancel();
+    };
+    // localRollCallScope est entièrement décrit par localRollCallKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localRollCallKey, classStudentKeys, reloadLocalRollCallStatuses]);
+  const localRollCallStatuses = useMemo(
+    () => statusesForScope(localRollCallResult, localRollCallKey),
+    [localRollCallResult, localRollCallKey],
+  );
   const shownAttendance = useMemo(
     () => applyLocalRollCallMarks(attendance, localRollCallStatuses),
     [attendance, localRollCallStatuses],

@@ -36,6 +36,7 @@ import OfflineRollCallSyncList from "./OfflineRollCallSyncList";
 import { findLatestSession, type RcContext } from "../offline/rollCall/store/repository";
 import type { RcSessionState } from "../offline/rollCall/store/schema";
 import { syncBanner } from "../offline/rollCall/sync/syncStatus";
+import { notifyWithoutBlocking } from "../offline/rollCall/session/localRollCallStatusLoader";
 import { downloadOfflineRollCallPack } from "../services/rollCallOfflineApi";
 
 const QR_REPEAT_COOLDOWN_MS = 3_000;
@@ -110,7 +111,7 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
   const refresh = useCallback(async (ctx: RcContext, rollCall: OfflineRollCall) => {
     setSummary(await summarizeOfflineRollCall(ctx, rollCall));
     void rollCallRuntime().refreshLogoutGuard(sessionRef.current);
-    onLocalChangeRef.current?.();
+    notifyWithoutBlocking(onLocalChangeRef.current);
   }, []);
 
   // Ouverture : base du compte authentifié, pack (réseau si possible), reprise du brouillon.
@@ -296,7 +297,7 @@ export default function OfflineRollCallModal({ visible, session, classId, classN
           if (closed.ok) {
             setPhase({ kind: "closed" });
             setFeedback(null);
-            onLocalChangeRef.current?.();
+            notifyWithoutBlocking(onLocalChangeRef.current);
             // NFC-PRES-LOCAL-PR4 : transmission dès la clôture si le réseau le permet.
             void rollCallRuntime().requestSync(sessionRef.current, "closed");
           } else setFeedback({ tone: "error", message: closed.message });

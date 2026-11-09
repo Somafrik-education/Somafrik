@@ -197,7 +197,7 @@ test("« Tout présent » : déclaration explicite, statuts confirmés (Justifi�
 test("écran des présences : superposition NFC, confirmation des absences, aucune présence NFC renvoyée par l'appel manuel", () => {
   const source = fs.readFileSync(path.join(__dirname, "../../../screens/TeacherAttendanceScreen.tsx"), "utf8");
   assert.match(source, /applyLocalRollCallMarks\(attendance, localRollCallStatuses\)/);
-  assert.match(source, /loadLocalRollCallStatuses\(/);
+  assert.match(source, /createLocalRollCallStatusLoader\(/, "lecture isolée par portée (revue CTO)");
   assert.match(source, /subscribeSync\(/, "synchronisation : relecture puis données serveur");
   assert.match(source, /onLocalChange=\{/, "mise à jour à chaque COMMIT pendant l'appel NFC");
   assert.match(source, /provisionalStudentIds\(/);
@@ -205,7 +205,7 @@ test("écran des présences : superposition NFC, confirmation des absences, aucu
   assert.match(source, /source === "nfc_local"\) return false/, "présences NFC exclues du lot manuel");
   assert.match(source, /presencePayload = sentRows\.map/);
   const modal = fs.readFileSync(path.join(__dirname, "../../../components/OfflineRollCallModal.tsx"), "utf8");
-  assert.match(modal, /onLocalChangeRef\.current\?\.\(\)/);
+  assert.match(modal, /notifyWithoutBlocking\(onLocalChangeRef\.current\)/);
   assert.match(modal, /closeConfirmAbsences/);
   assert.match(modal, /OFFLINE_ROLL_CALL_COPY\.provisionalAbsent/);
   assert.doesNotMatch(modal, /"Non pointé"/);
