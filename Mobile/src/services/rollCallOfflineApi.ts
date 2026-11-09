@@ -24,6 +24,17 @@ export async function downloadOfflineRollCallPack(input: { classId: string; date
   return { text, dateHeader: response.headers.get("date") };
 }
 
+/**
+ * NFC-ROLES-ACCESS-01 — liste des classes pour le sélecteur direct.
+ * L'API vérifie le droit Appel scolaire:CREATE et l'affectation/le périmètre réel.
+ * On ne déduit JAMAIS cette liste du cache Classes/Élèves de l'appareil.
+ */
+export async function fetchAuthorizedOfflineRollCallClasses(): Promise<unknown> {
+  return httpRequest<unknown>("/student-cards/roll-call/offline/v1/classes", {
+    headers: { Accept: "application/json" },
+  });
+}
+
 const MAX_SYNC_RESPONSE = 64 * 1024;
 export const ROLL_CALL_SYNC_TIMEOUT_MS = 30_000;
 
