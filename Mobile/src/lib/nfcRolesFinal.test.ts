@@ -14,7 +14,7 @@ import { rollCallActor } from "./studentCardRollCallRoles";
 import { SYNC_COPY } from "../offline/rollCall/sync/syncStatus";
 import { OFFLINE_ROLL_CALL_COPY } from "../offline/rollCall/session/offlineRollCall";
 
-const WRITE = ["Présences:READ", "Présences:CREATE", "Présences:UPDATE"];
+const WRITE = ["Appel scolaire:CREATE"];
 const READ_ONLY = ["Présences:READ"];
 const session = (roleKeys: string[], permissions: string[], role = "") => ({ user: { role, roleKeys, permissions }, permissions });
 
@@ -30,8 +30,8 @@ test("matrice : qui voit « Démarrer l'appel NFC/QR » (clés canoniques + perm
     ["Enseignant + Secrétaire", ["TEACHER", "SECRETARY"], WRITE, true, ""],
     ["Secrétaire sans droit d'écriture", ["SECRETARY"], READ_ONLY, false, ""],
     ["Directeur sans droit d'écriture", ["SCHOOL_ADMIN"], READ_ONLY, false, ""],
-    ["Surveillant (autre rôle)", ["SUPERVISOR"], WRITE, false, ""],
-    ["Comptable (autre rôle)", ["ACCOUNTANT"], WRITE, false, ""],
+    ["Surveillant explicitement autorisé", ["SUPERVISOR"], WRITE, true, ""],
+    ["Comptable explicitement autorisé", ["ACCOUNTANT"], WRITE, true, ""],
     ["Parent", ["PARENT"], WRITE, false, ""],
     ["Élève", ["STUDENT"], WRITE, false, ""],
     ["Superadmin", ["SUPER_ADMIN"], WRITE, false, ""],
@@ -42,7 +42,7 @@ test("matrice : qui voit « Démarrer l'appel NFC/QR » (clés canoniques + perm
     assert.equal(rollCallActor(session(keys, permissions, roleLabel)).rollCall, expected, label);
   }
   // Un libellé personnalisé ne change rien : seules les clés comptent.
-  assert.equal(rollCallActor(session(["SUPERVISOR"], WRITE, "Directeur")).rollCall, false);
+  assert.equal(rollCallActor(session(["SUPERVISOR"], READ_ONLY, "Directeur")).rollCall, false);
   assert.equal(rollCallActor(session(["SECRETARY"], WRITE, "Professeur")).rollCall, true);
 });
 
@@ -50,7 +50,7 @@ test("écran Présences : trois actions de carte, aucun ancien bouton d'appel co
   const screen = readFileSync(path.join(__dirname, "../screens/TeacherAttendanceScreen.tsx"), "utf8");
   // 1. Vérifier une carte (contrôle individuel, sans écriture de présence).
   assert.match(screen, /testID="attendance-card-verify"/);
-  assert.match(screen, /actor\.verify && \(nfcControl === "ready" \|\| canOpenQrScanner\)/);
+  assert.match(screen, /actor\\.verify && \\(directNfcAvailable \\|\\| directQrAvailable\\)/);
   // 2. Démarrer l'appel NFC/QR — moteur local-first, pour tout rôle autorisé.
   assert.match(screen, /rollCallButton\("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY\.start/);
   assert.match(screen, /const canOpenOfflineRollCall = Boolean\(\s*\n\s*actor\.rollCall/);
