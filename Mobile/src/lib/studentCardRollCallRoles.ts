@@ -16,7 +16,7 @@ const PLATFORM_ROLE_KEYS = new Set(["SUPER_ADMIN", "COUNTRY_ADMIN"]);
  * responsable → classes de son établissement si SON rôle accorde le droit.
  */
 export const SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS = new Set(["SCHOOL_ADMIN", "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY"]);
-const ROLL_CALL_WRITE_PERMISSIONS = ["Présences:CREATE", "Présences:UPDATE"];
+const ROLL_CALL_WRITE_PERMISSIONS = ["Appel scolaire:CREATE"];
 
 export type RollCallActor = { teacher: boolean; direction: boolean; supervision: boolean; verify: boolean; rollCall: boolean };
 
