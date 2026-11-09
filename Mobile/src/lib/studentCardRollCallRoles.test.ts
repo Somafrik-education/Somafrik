@@ -125,12 +125,12 @@ test("écran Appel : parcours affichés selon le rôle canonique, sans enseignan
   assert.match(screen, /rollCallActor\(session\)/);
   // NFC-ROLES-FINAL-01 : un seul parcours d'appel collectif (local-first) pour tous les rôles autorisés ;
   // l'appel collectif en ligne et l'appel exceptionnel ne sont plus proposés.
-  assert.match(screen, /actor\.rollCall\s*\n?\s*&& canUpdatePresences/);
+  assert.match(screen, /const canOpenOfflineRollCall = Boolean\(\s*\n\s*actor\.rollCall/);
   assert.doesNotMatch(screen, /attendance-class-roll-call/);
   assert.doesNotMatch(screen, /attendance-roll-call-direction-(nfc|qr|resume)/);
   assert.match(screen, /StudentCardRollCallOverview/);
   assert.match(screen, /canShowRollCallSupervisionOnAttendance\(session\)/, "supervision réservée hors SCHOOL_ADMIN");
-  assert.match(screen, /actor\.verify && \(nfcControl === "ready" \|\| canOpenQrScanner\)/);
+  assert.match(screen, /actor\.verify && \(directNfcAvailable \|\| directQrAvailable\)/);
   assert.doesNotMatch(screen, /teacherId=\{rollCallTeacherId\}/, "plus d'attribution à un enseignant choisi");
   assert.match(modal, /roll-call-justification/);
   assert.match(modal, /rollCallCanSubmit\(draft, justification\)/);
