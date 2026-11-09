@@ -20,7 +20,8 @@ type Props = {
 export default function AuthorizedRollCallClassPicker({
   visible, scopeKey, loadAuthorizedClasses, onSelect, onClose,
 }: Props) {
-  const [classes, setClasses] = useState<AuthorizedRollCallClass[] | null>(null);
+  const [loaded, setLoaded] = useState<{ scopeKey: string; rows: AuthorizedRollCallClass[] } | null>(null);
+  const classes = loaded?.scopeKey === scopeKey ? loaded.rows : null;
   const [error, setError] = useState(false);
   const [refreshIndex, setRefreshIndex] = useState(0);
   const generation = useRef(0);
@@ -30,15 +31,15 @@ export default function AuthorizedRollCallClassPicker({
   useEffect(() => {
     generation.current += 1;
     const ticket = generation.current;
-    setClasses(null);
+    setLoaded(null);
     setError(false);
     if (!visible || !scopeKey) return;
     void loadAuthorizedClasses().then((raw) => {
       if (ticket !== generation.current || scopeRef.current !== scopeKey) return;
-      setClasses(parseAuthorizedRollCallClasses(raw));
+      setLoaded({ scopeKey, rows: parseAuthorizedRollCallClasses(raw) });
     }).catch(() => {
       if (ticket !== generation.current || scopeRef.current !== scopeKey) return;
-      setClasses([]);
+      setLoaded({ scopeKey, rows: [] });
       setError(true);
     });
     return () => { generation.current += 1; };
