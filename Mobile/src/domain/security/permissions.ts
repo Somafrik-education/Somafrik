@@ -405,6 +405,10 @@ export function canReadView(session: any, viewName: string): boolean {
   if (isSuperAdminSessionRole(session?.role) || isSuperAdminPrincipalSession(session)) {
     return SUPER_ADMIN_ALLOWED_VIEWS.has(viewName);
   }
+  // Le drawer utilise parfois canReadView directement : même règle que canReadRoute.
+  if (viewName === "TeacherAttendance" || viewName === "Presences") {
+    if (hasSecurityPermission(session, "Appel scolaire", "CREATE")) return true;
+  }
   if (viewName === "PlatformNotifications") {
     return hasPlatformBackofficePrivilege(session);
   }
