@@ -711,6 +711,30 @@ function isLot4ExclusiveChantierFile(file: string) {
   );
 }
 
+// NFC-ROLES-ACCESS-01 (#1139) : exception ponctuelle et STRICTEMENT fermée pour
+// l'ajout du module RBAC d'appel, sans lever le garde-fou LOT4 général.
+// Un fichier unique déclenche le contrôle, les ancres sont toutes obligatoires.
+const NFC_ROLES_ACCESS_ANCHORS = Object.freeze(["backend/lib/functionalModulesCatalog.js","backend/lib/rollCallRbacMigration.js","Mobile/src/components/AuthorizedRollCallClassPicker.tsx"]);
+const NFC_ROLES_ACCESS_EXACT = new Set([
+  "Mobile/src/components/AuthorizedRollCallClassPicker.tsx",
+  "Mobile/src/lib/authorizedRollCallClasses.test.ts",
+  "Mobile/src/lib/authorizedRollCallClasses.ts",
+  "Mobile/src/lib/nfcRolesFinal.test.ts",
+  "Mobile/src/lib/studentCardRollCallRoles.test.ts",
+  "Mobile/src/lib/studentCardRollCallRoles.ts",
+  "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+  "Mobile/src/services/rollCallOfflineApi.ts",
+  "backend/lib/functionalModulesCatalog.js",
+  "backend/lib/functionalRbacService.js",
+  "backend/lib/rollCallRbacMigration.js",
+  "backend/lib/rollCallRoles.http.pg.test.js",
+  "backend/lib/studentCardRollCall.js",
+  "backend/server.js",
+  "backend/services/rbacService.js",
+  "scripts/verify-school-setup-lot4-red.ts",
+]);
+const NFC_ROLES_ACCESS_UNIQUE = new Set(["backend/lib/rollCallRbacMigration.js"]);
+
 // NFC-PRES-LOCAL-PR1b (#1114) : exception STRICTEMENT ancrée, propre au pack signé.
 // La présence d'un module unique PR1b déclenche la garde, même si une ancre manque.
 // Les chemins partagés (server/RBAC/guard) ne suffisent jamais à activer l'exception.
@@ -889,6 +913,15 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
       message:
         "L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.",
     };
+  }
+  if (changed.some((file) => NFC_ROLES_ACCESS_UNIQUE.has(file))) {
+    const complete = NFC_ROLES_ACCESS_ANCHORS.every((file) => changed.includes(file));
+    const outside = changed.filter((file) => !NFC_ROLES_ACCESS_EXACT.has(file));
+    const forbiddenLot4 = exclusiveLot4.filter((file) => file !== "backend/lib/functionalModulesCatalog.js");
+    if (!complete || outside.length > 0 || forbiddenLot4.length > 0) {
+      return { kind: "fail", message: `L4-09: NFC-ROLES-ACCESS-01 hors ancres/liste fermée : ${[...new Set([...outside, ...forbiddenLot4])].join(", ")}` };
+    }
+    return { kind: "na", message: "L4-09 N/A: NFC-ROLES-ACCESS-01 liste fermée, ancres RBAC et Mobile vérifiées." };
   }
   // Exception limitée au lot PR4 : ancres complètes, liste fermée exacte, aucun fichier LOT 4.
   if (changed.some((file) => NFC_PRES_LOCAL_PR4_UNIQUE.has(file))) {
