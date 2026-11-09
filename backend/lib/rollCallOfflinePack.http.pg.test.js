@@ -529,9 +529,11 @@ async function main() {
       assert.equal(denied.status, 403, denied.text);
       assert.equal(denied.data?.code, "PLATFORM_PERSONAL_DATA_DENIED");
     }
+    // NFC-ROLES-FINAL-01 : responsable scolaire dont le rôle accorde déjà l'écriture des présences →
+    // pack de la classe de son établissement, sans affectation ni rôle TEACHER ; auteur = lui-même.
     const admin = await pack(tokenAdminA, { classId: classA1, date: today });
-    assert.equal(admin.status, 403, admin.text);
-    assert.equal(admin.data?.code, "ROLL_CALL_ROLE_FORBIDDEN", "direction : pas de pack enseignant");
+    assert.equal(admin.status, 200, admin.text);
+    assert.equal(admin.data.pack.actorUserId, USER.ADMIN_A, "pack lié au responsable, pas à un enseignant");
     const free = await pack(tokenTeacherFree, { classId: classA1, date: today });
     assert.equal(free.status, 403, free.text);
     assert.equal(free.data?.code, "ROLL_CALL_CLASS_FORBIDDEN", "enseignant non affecté");

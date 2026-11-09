@@ -9,21 +9,33 @@ const DIRECTION_ROLE_KEYS = new Set(["PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", 
 const STAFF_ROLE_KEYS = new Set([...DIRECTION_ROLE_KEYS, "TEACHER", "SECRETARY", "SUPERVISOR", "ACCOUNTANT"]);
 const PLATFORM_ROLE_KEYS = new Set(["SUPER_ADMIN", "COUNTRY_ADMIN"]);
 
-export type RollCallActor = { teacher: boolean; direction: boolean; supervision: boolean; verify: boolean };
+/**
+ * NFC-ROLES-FINAL-01 — `rollCall` : accès au parcours unique « Démarrer l'appel NFC/QR »
+ * (local-first) : enseignant, ou responsable scolaire (même liste que le serveur) disposant de
+ * l'écriture des présences. Le serveur décide de la classe : enseignant → classes affectées ;
+ * responsable → classes de son établissement si SON rôle accorde le droit.
+ */
+export const SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS = new Set(["SCHOOL_ADMIN", "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY"]);
+const ROLL_CALL_WRITE_PERMISSIONS = ["Présences:CREATE", "Présences:UPDATE"];
+
+export type RollCallActor = { teacher: boolean; direction: boolean; supervision: boolean; verify: boolean; rollCall: boolean };
 
 export function rollCallActor(session: unknown): RollCallActor {
   const identity = resolveCanonicalRoleIdentity(session);
   const keys = identity.roleKeys.map((key) => String(key).trim().toUpperCase()).filter(Boolean);
-  const none = { teacher: false, direction: false, supervision: false, verify: false };
+  const none = { teacher: false, direction: false, supervision: false, verify: false, rollCall: false };
   // Clé inconnue, rôle plateforme ou famille : aucun parcours réservé au personnel.
   if (keys.length === 0 || keys.some((key) => !STAFF_ROLE_KEYS.has(key) || PLATFORM_ROLE_KEYS.has(key))) return none;
   const permissions = new Set(identity.permissions);
   const isDirection = keys.some((key) => DIRECTION_ROLE_KEYS.has(key));
+  const canWritePresences = ROLL_CALL_WRITE_PERMISSIONS.some((permission) => permissions.has(permission));
+  const teacher = keys.includes("TEACHER");
   return {
-    teacher: keys.includes("TEACHER"),
+    teacher,
     direction: isDirection && permissions.has("Présences:UPDATE"),
     supervision: isDirection,
     verify: true,
+    rollCall: canWritePresences && (teacher || keys.some((key) => SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS.has(key))),
   };
 }
 

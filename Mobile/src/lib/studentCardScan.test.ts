@@ -713,7 +713,8 @@ assert.match(attendance, /USABILITY_TEST_IDS\.attendanceMarkAllPresent/);
 assert.match(attendance, /ATTENDANCE_ACTIONS/);
 assert.match(attendance, /Tout présent/);
 assert.match(attendance, /Enregistrer l'appel/);
-assert.match(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
+// NFC-ROLES-FINAL-01 : bouton « Scanner QR » (ancien parcours de présence) retiré ; services conservés.
+assert.doesNotMatch(attendance, /USABILITY_TEST_IDS\.attendanceScanQr/);
 assert.match(attendance, /StudentCardQrScannerModal/);
 assert.match(attendance, /isStudentCardQrScannerVisible/);
 assert.match(attendance, /getStudentCardCapabilities/);
