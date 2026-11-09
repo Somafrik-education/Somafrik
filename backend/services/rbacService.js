@@ -114,7 +114,7 @@ const routePermissions = {
   "POST /api/student-cards/:id/lost": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/revoke": ["Élèves:UPDATE", "Gérer élèves"],
   "POST /api/student-cards/:id/replace": ["Élèves:UPDATE", "Gérer élèves"],
-  "GET /api/student-cards/capabilities": ["Présences:CREATE", "Présences:UPDATE"],
+  "GET /api/student-cards/capabilities": ["Présences:CREATE", "Présences:UPDATE", "Appel scolaire:CREATE"],
   "POST /api/student-cards/scan": ["Présences:CREATE", "Présences:UPDATE"],
   "POST /api/student-cards/roll-call/scan": ["Présences:CREATE", "Présences:UPDATE"],
   "POST /api/student-cards/roll-call/validate": ["Présences:CREATE", "Présences:UPDATE"],
