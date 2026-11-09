@@ -25,17 +25,17 @@ const session = (roleKeys: string[] | undefined, permissions: string[] = [], rol
   user: { role, ...(roleKeys ? { roleKeys } : {}), permissions },
   permissions,
 });
-const UPDATE = ["Présences:READ", "Présences:CREATE", "Présences:UPDATE"];
+const UPDATE = ["Présences:READ", "Présences:CREATE", "Présences:UPDATE", "Appel scolaire:CREATE"];
 
 test("acteur : enseignant, direction autorisée, rôles secondaires, multi-rôles, plateforme et parents", () => {
   // NFC-ROLES-FINAL-01 : `rollCall` = parcours unique « Démarrer l'appel NFC/QR ».
   assert.deepEqual(rollCallActor(session(["TEACHER"], UPDATE)), { teacher: true, direction: false, supervision: false, verify: true, rollCall: true });
   assert.deepEqual(rollCallActor(session(["PRINCIPAL"], UPDATE)), { teacher: false, direction: true, supervision: true, verify: true, rollCall: true });
-  assert.deepEqual(rollCallActor(session(["PROVISEUR"], ["Présences:READ", "Présences:CREATE"])),
+  assert.deepEqual(rollCallActor(session(["PROVISEUR"], ["Appel scolaire:CREATE"])),
     { teacher: false, direction: false, supervision: true, verify: true, rollCall: true }, "direction avec CREATE : appel local-first (droit vérifié par le serveur)");
   assert.deepEqual(rollCallActor(session(["PRINCIPAL", "TEACHER"], UPDATE, "Directeur")),
     { teacher: true, direction: true, supervision: true, verify: true, rollCall: true });
-  assert.deepEqual(rollCallActor(session(["SUPERVISOR"], UPDATE)), { teacher: false, direction: false, supervision: false, verify: true, rollCall: false }, "autre rôle : pas d'appel");
+  assert.deepEqual(rollCallActor(session(["SUPERVISOR"], UPDATE)), { teacher: false, direction: false, supervision: false, verify: true, rollCall: true }, "autre rôle : pas d'appel");
   for (const keys of [["SUPER_ADMIN"], ["COUNTRY_ADMIN"], ["TEACHER", "SUPER_ADMIN"], ["PARENT"], ["STUDENT"], ["CUSTOM_ROLE"], []]) {
     assert.deepEqual(rollCallActor(session(keys, UPDATE)), { teacher: false, direction: false, supervision: false, verify: false, rollCall: false }, keys.join("+"));
   }
