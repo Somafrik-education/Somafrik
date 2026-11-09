@@ -52,6 +52,8 @@ const BROWSER_PAGES = [
     outlet: [
       { anyOf: [
         { text: "Aucun graphique disponible pour votre rôle dans ce périmètre." },
+        // Vue établissement (EstablishmentChartSwitcher) : même état vide, libellé propre au périmètre établissement.
+        { text: "Aucun graphique disponible pour votre rôle dans cet établissement." },
         { text: "Glissez les poignées pour réorganiser les graphiques" },
         { selector: ".recharts-wrapper" },
       ] },

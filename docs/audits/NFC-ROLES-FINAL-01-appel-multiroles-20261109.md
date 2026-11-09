@@ -180,6 +180,7 @@ Le nouveau test PostgreSQL couvre :
 - **Déclenchement** : ce workflow ne part que si `package.json` (racine) change ; la PR y ajoute le test Mobile.
 - **Échec n°1 (CI)** : depuis #1075, Chrome est installé dans `backend/.cache/puppeteer` (`backend/.puppeteerrc.cjs`). `scripts/verify-web-smoke.js` tourne depuis la racine et cherchait `~/.cache/puppeteer`.
   - Correctif : réutilisation de `findPdfBrowserExecutable` (même résolution que le rendu PDF), avec repli sur le comportement par défaut.
-- **Échec n°2 (antérieur, hors périmètre)** : en local, une fois Chrome lancé, le smoke échoue sur `WS-UI-dashboard missing-outlet-proof (/tableau-de-bord)`, avec des réponses 501 et 500 du tableau de bord.
-  - **Échec identique sur `develop@624261be` sans cette PR** (vérifié localement sur une copie de travail de `develop`).
-  - Non corrigé ici : écran Web hors NFC. Il n'est pas présenté comme réussi ; à traiter par un ticket dédié.
+- **Échec n°2 (antérieur à cette PR, également présent sur `develop`)** : une fois Chrome lancé, `WS-UI-dashboard missing-outlet-proof (/tableau-de-bord)`.
+  - Cause : la vue établissement affiche l'état vide de `EstablishmentChartSwitcher` (« Aucun graphique disponible pour votre rôle dans cet établissement. »), alors que le smoke n'acceptait que le libellé de `DashboardChartGrid` (« … dans ce périmètre. »). Les deux libellés existent dans le Web.
+  - Correctif : ce second libellé est ajouté aux preuves acceptées. Aucun autre critère n'est assoupli : pathname, refus de permission, erreurs HTTP et contrôle négatif sont inchangés.
+  - Résultat local : `verify:web-smoke` passe (12 pages `WS-UI-*` PASS, contrôle négatif PASS). `WS-HOSTED` reste un HOLD manuel, comportement existant sans déploiement.
