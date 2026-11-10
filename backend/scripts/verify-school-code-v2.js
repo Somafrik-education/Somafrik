@@ -243,7 +243,7 @@ function scanRuntimeSurfaces() {
       if (approvedLines) {
         const expected = new Set(approvedLines);
         assert.equal(expected.size, approvedLines.length, `exception dupliquée : ${posix}`);
-        const actualLines = text.split("\\n").filter((line) => line.includes(LEGACY)).map((line) => line.trim());
+        const actualLines = text.split("\n").filter((line) => line.includes(LEGACY)).map((line) => line.trim());
         const seen = new Set(actualLines);
         for (const line of actualLines) {
           if (!expected.has(line)) hits.push(posix + " : ligne legacy non autorisée : " + line);
