@@ -82,6 +82,8 @@ jobs:
         run: npm run verify:mobile-usability
       - name: verify:mobile-network-resilience
         run: npm run verify:mobile-network-resilience
+      - name: verify:mobile-form-fields
+        run: npm run verify:mobile-form-fields
       - name: Runtime bootstrap security
         env:
           NODE_ENV: test
