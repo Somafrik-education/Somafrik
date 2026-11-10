@@ -84,6 +84,57 @@ const ALLOWLIST = new Map([
   ],
 ]);
 
+/**
+ * Exceptions **ligne par ligne** exclusivement pour les fixtures de rejet,
+ * le seed school_code interne et les audits hors runtime. Toute nouvelle ligne
+ * legacy (y compris dans ces fichiers) reste bloquante.
+ * Ne jamais placer ici une surface de login publique ou un écran produit.
+ */
+const LEGACY_TEST_CONTEXT_LINES = new Map([
+  [
+    "web/src/lib/financeL308PaymentStudent.fixture.ts",
+    [
+      "export const L308_LEFTOVER_SCHOOL_CODE = \"CD-2026-0001\";"
+    ]
+  ],
+  [
+    "backend/lib/monoT1HttpHarness.js",
+    [
+      "*   école CD-2026-0001 peuplée, école BI-2026-0002 (administrateur seul),",
+      "cdAdmin: { identifier: \"admin@unikin.somafrik\", school: \"CD-2026-0001\" },",
+      "cdProviseur: { identifier: \"proviseur@somafrik.app\", school: \"CD-2026-0001\" },",
+      "cdPrefet: { identifier: \"prefet@somafrik.app\", school: \"CD-2026-0001\" },",
+      "cdSecretary: { identifier: \"secretaire@somafrik.app\", school: \"CD-2026-0001\" },",
+      "cdParent: { identifier: \"parent.dupont@example.com\", school: \"CD-2026-0001\" },",
+      "cdTeacher: { identifier: \"patrick.ilunga@somafrik.cd\", school: \"CD-2026-0001\" },",
+      "* l'abonnement réel de la fixture CD-2026-0001 (fin 31-08-2027, données"
+    ]
+  ],
+  [
+    "scripts/audit-go-prod-baseline-400.js",
+    [
+      "const LEFTOVER = \"CD-2026-0001\";",
+      "const aliases = snippet(mapUser, '\"ADMIN-CD-2026-0001-01\": \"admin\"');",
+      "adminCdAliasPresent: mapUser.includes('\"ADMIN-CD-2026-0001-01\": \"admin\"') && mapUser.includes('\"ADMIN-BI-2026-0001-01\": \"admin-bi\"'),",
+      "\"Script HEAD login schoolCode leftover CD-2026-0001\","
+    ]
+  ],
+  [
+    "scripts/mono-t1-route-inventory.js",
+    [
+      "[\"SCHOOL_ADMIN\", \"Admin School\", \"CD-2026-0001\"],",
+      "[\"PROVISEUR\", \"Proviseur\", \"CD-2026-0001\"],",
+      "[\"PREFET_ETUDES\", \"Préfet des études\", \"CD-2026-0001\"],",
+      "[\"SECRETARY\", \"Secrétaire\", \"CD-2026-0001\"],",
+      "[\"ACCOUNTANT\", \"Comptable\", \"CD-2026-0001\"],",
+      "[\"SUPERVISOR\", \"Surveillant\", \"CD-2026-0001\"],",
+      "[\"TEACHER\", \"Enseignant\", \"CD-2026-0001\"],",
+      "[\"PARENT\", \"Parent\", \"CD-2026-0001\"],",
+      "[\"STUDENT\", \"Élève / Étudiant\", \"CD-2026-0001\"],"
+    ]
+  ]
+]);
+
 function rel(file) {
   return path.relative(ROOT, file).split(path.sep).join("/");
 }
@@ -174,6 +225,7 @@ function scanRuntimeSurfaces() {
     path.join(ROOT, "scripts"),
   ];
   const hits = [];
+  const approvedSeen = new Map();
   for (const root of roots) {
     for (const file of walk(root)) {
       if (!SOURCE_EXT.has(path.extname(file))) continue;
@@ -187,6 +239,21 @@ function scanRuntimeSurfaces() {
       if (posix.startsWith("scripts/repair-")) continue;
       const text = fs.readFileSync(file, "utf8");
       if (!text.includes(LEGACY)) continue;
+      const approvedLines = LEGACY_TEST_CONTEXT_LINES.get(posix);
+      if (approvedLines) {
+        const expected = new Set(approvedLines);
+        assert.equal(expected.size, approvedLines.length, `exception dupliquée : ${posix}`);
+        const actualLines = text.split("\\n").filter((line) => line.includes(LEGACY)).map((line) => line.trim());
+        const seen = new Set(actualLines);
+        for (const line of actualLines) {
+          if (!expected.has(line)) hits.push(posix + " : ligne legacy non autorisée : " + line);
+        }
+        for (const line of approvedLines) {
+          assert.ok(seen.has(line), `exception legacy obsolète : ${posix}`);
+        }
+        approvedSeen.set(posix, true);
+        continue;
+      }
       const reason = ALLOWLIST.get(posix);
       if (reason) {
         console.log(`allowlist: ${posix} — ${reason}`);
@@ -194,6 +261,11 @@ function scanRuntimeSurfaces() {
       }
       hits.push(posix);
     }
+  }
+
+
+  for (const [posix, approvedLines] of LEGACY_TEST_CONTEXT_LINES) {
+    assert.ok(approvedSeen.has(posix), `exceptions non contrôlées ou fichier absent : ${posix} (${approvedLines.length} lignes)`);
   }
 
   for (const [posix, reason] of ALLOWLIST) {
