@@ -76,6 +76,8 @@ jobs:
           npm run verify:function-search-path
           npm run verify:platform-personal-data-deny
           npm run verify:preprod-503-local
+      - name: verify:school-code-v2
+        run: npm run verify:school-code-v2
       - name: Runtime bootstrap security
         env:
           NODE_ENV: test
