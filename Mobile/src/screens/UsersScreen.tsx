@@ -6,8 +6,9 @@ import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import UserMutationControls from "../components/UserMutationControls";
 import { useAdminData } from "../context/AdminDataContext";
 import { nextExclusiveExpandedKey } from "../lib/expandableEntity";
-import { displayRoleName, displayStatusName } from "../lib/format";
-import { formatAccessRolesDisplay, formatBusinessProfileKind } from "../lib/businessProfile";
+import { displayStatusName } from "../lib/format";
+import { formatBusinessProfileKind } from "../lib/businessProfile";
+import { formatVisibleRoleLabels } from "../lib/roleDisplayLabels";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
 
 export default function UsersScreen() {
@@ -52,7 +53,7 @@ export default function UsersScreen() {
         </>
       }
       renderItem={({ item: user }) => {
-        const accessRoles = formatAccessRolesDisplay(user);
+        const accessRoles = formatVisibleRoleLabels(user);
         const statusLabel = user.status ? displayStatusName(user.status) : "";
         const statusKey = String(user.status ?? "").toLowerCase();
         const badgeTone =
@@ -72,7 +73,7 @@ export default function UsersScreen() {
               Type métier : {formatBusinessProfileKind(user)}
             </Text>
             <Text style={styles.meta} testID="user-access-roles">
-              Rôle(s) d'accès : {accessRoles.split(" · ").map((role) => displayRoleName(role)).join(" · ")}
+              Rôle(s) d'accès : {accessRoles}
             </Text>
             {user.schoolCode ? (
               <Text style={styles.meta} testID={`user-school-${user.schoolCode}`}>

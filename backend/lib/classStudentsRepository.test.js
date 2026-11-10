@@ -174,6 +174,12 @@ function createMemoryDb() {
         student.birth_place = params[4];
         student.parent_phone = params[5];
         student.parent_email = params[6];
+        if (params[10] === true) {
+          student.administrative_notes = params[11] ?? null;
+        }
+        if (params[12] === true) student.preferred_name = params[13] ?? null;
+        if (params[14] === true) student.nationality = params[15] ?? null;
+        if (params[16] === true) student.address = params[17] ?? null;
         student.updated_at = new Date(Math.max(Date.now(), storedMs + 1)).toISOString();
         return { id: student.id };
       }
@@ -426,9 +432,99 @@ async function main() {
     expectedUpdatedAt: fetched.updatedAt,
   });
   assert.equal(updated.parentPhone, "+243800000001");
+  assert.equal(updated.administrativeNotes, undefined);
   assert.ok(
     new Date(updated.updatedAt).getTime() > new Date(fetched.updatedAt).getTime(),
     "updated_at mémoire avance d'au moins 1 ms",
+  );
+
+  const noted = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    administrativeNotes: "  Note   interne  ",
+    expectedUpdatedAt: updated.updatedAt,
+  });
+  assert.equal(noted.administrativeNotes, "Note interne");
+  assert.equal(noted.firstName, "Awa");
+  assert.equal(noted.parentPhone, "+243800000001");
+
+  const renamed = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    firstName: "Awa",
+    expectedUpdatedAt: noted.updatedAt,
+  });
+  assert.equal(renamed.administrativeNotes, "Note interne");
+
+  const notesOnly = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    administrativeNotes: "Seconde",
+    expectedUpdatedAt: renamed.updatedAt,
+  });
+  assert.equal(notesOnly.firstName, "Awa");
+  assert.equal(notesOnly.administrativeNotes, "Seconde");
+
+  const clearedNotes = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    administrativeNotes: " ",
+    expectedUpdatedAt: notesOnly.updatedAt,
+  });
+  assert.equal(clearedNotes.administrativeNotes, null);
+
+  const notesPreviousOne = db.one.bind(db);
+  db.one = async (sql, params = []) => {
+    const text = String(sql).replace(/\s+/g, " ").trim().toUpperCase();
+    if (text.startsWith("UPDATE STUDENTS")) {
+      const error = new Error("simulated postgres write failure");
+      error.code = "57014";
+      throw error;
+    }
+    return notesPreviousOne(sql, params);
+  };
+  await assert.rejects(
+    () =>
+      repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+        administrativeNotes: "ne doit pas passer",
+        expectedUpdatedAt: clearedNotes.updatedAt,
+      }),
+    (error) => error.code === "57014",
+  );
+  db.one = notesPreviousOne;
+  const afterWriteFailure = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+  assert.equal(afterWriteFailure.administrativeNotes, null);
+  const extrasBefore = await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001");
+  const extrasSaved = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    preferredName: "Nana", nationality: "CD", address: "Avenue Test",
+    expectedUpdatedAt: extrasBefore.updatedAt,
+  });
+  assert.equal(extrasSaved.preferredName, "Nana");
+  assert.equal(extrasSaved.nationality, "CD");
+  assert.equal(extrasSaved.address, "Avenue Test");
+  assert.equal(extrasSaved.lastName, extrasBefore.lastName, "le nom légal reste inchangé");
+  const extrasCleared = await repo.updateByStudentCode(enrolled.student.studentCode, "CD-2026-0001", {
+    address: null, expectedUpdatedAt: extrasSaved.updatedAt,
+  });
+  assert.equal(extrasCleared.address, null);
+  assert.equal(extrasCleared.nationality, "CD");
+
+  // FICHE-FIX-04 : la sonde mémoire accepte l'ID technique comme le GET.
+  const uuidRead = await repo.getByStudentCode(storedStudent.id, "CD-2026-0001");
+  assert.equal(uuidRead.studentCode, enrolled.student.studentCode);
+  const uuidUpdated = await repo.updateByStudentCode(storedStudent.id, "CD-2026-0001", {
+    birthPlace: "Bujumbura", expectedUpdatedAt: uuidRead.updatedAt,
+  });
+  assert.equal(uuidUpdated.studentCode, enrolled.student.studentCode);
+  assert.equal(uuidUpdated.birthPlace, "Bujumbura");
+  assert.equal(
+    (await repo.getByStudentCode(enrolled.student.studentCode, "CD-2026-0001")).birthPlace,
+    "Bujumbura",
+    "une écriture par UUID est immédiatement lisible par student_code",
+  );
+  await assert.rejects(
+    () => repo.updateByStudentCode(storedStudent.id, "CD-2026-0001", {
+      birthPlace: "stale", expectedUpdatedAt: uuidRead.updatedAt,
+    }),
+    (error) => error.statusCode === 409,
+  );
+  await assert.rejects(
+    () => repo.updateByStudentCode(storedStudent.id, "BI-2026-0001", {
+      birthPlace: "interdit", expectedUpdatedAt: uuidUpdated.updatedAt,
+    }),
+    (error) => error.statusCode === 404,
   );
 
   await assert.rejects(

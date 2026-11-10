@@ -16,6 +16,8 @@ const {
   classifyLegacySchoolSettings,
   extractValidatedSchoolSettingsScalars,
   settingsPatchFromCaptured,
+  resolveStudentCardFlags,
+  resolveStudentCardHolderSettings,
 } = require("../lib/schoolSettingsManagement");
 
 function toIsoDate(value) {
@@ -48,7 +50,7 @@ function createSchoolSettingsPgStore(repo) {
 
   async function getSchoolByCode(schoolCode) {
     return one(
-      `SELECT s.id, s.school_code, s.country_id
+      `SELECT s.id, s.school_code, s.country_id, s.school_type
        FROM schools s
        WHERE upper(s.school_code) = upper($1)
           OR upper(coalesce(s.login_code, '')) = upper($1)`,
@@ -125,18 +127,61 @@ function createSchoolSettingsPgStore(repo) {
     const periodMode = patch.periodMode ?? current?.period_mode ?? "trimestre";
     const defaultScale = patch.defaultScale ?? Number(current?.default_scale ?? 20);
     const reportCardMode = patch.reportCardMode ?? current?.report_card_mode ?? "period";
+    const flags = resolveStudentCardFlags(patch, current);
+    const holder = resolveStudentCardHolderSettings(patch, current);
     const row = await one(
-      `INSERT INTO school_settings (school_id, period_mode, default_scale, report_card_mode, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO school_settings (
+         school_id, period_mode, default_scale, report_card_mode,
+         student_card_enabled, student_card_qr_enabled, student_card_nfc_enabled,
+         student_card_attendance_enabled, student_card_finance_check_enabled,
+         student_card_holder_kind, student_card_holder_levels,
+         student_card_offline_roll_call_enabled,
+         updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, NOW())
        ON CONFLICT (school_id) DO UPDATE SET
          period_mode = EXCLUDED.period_mode,
          default_scale = EXCLUDED.default_scale,
          report_card_mode = EXCLUDED.report_card_mode,
+         student_card_enabled = EXCLUDED.student_card_enabled,
+         student_card_qr_enabled = EXCLUDED.student_card_qr_enabled,
+         student_card_nfc_enabled = EXCLUDED.student_card_nfc_enabled,
+         student_card_attendance_enabled = EXCLUDED.student_card_attendance_enabled,
+         student_card_finance_check_enabled = EXCLUDED.student_card_finance_check_enabled,
+         student_card_holder_kind = EXCLUDED.student_card_holder_kind,
+         student_card_holder_levels = EXCLUDED.student_card_holder_levels,
+         student_card_offline_roll_call_enabled = EXCLUDED.student_card_offline_roll_call_enabled,
          updated_at = NOW()
        RETURNING *`,
-      [schoolId, periodMode, defaultScale, reportCardMode],
+      [
+        schoolId,
+        periodMode,
+        defaultScale,
+        reportCardMode,
+        flags.studentCardEnabled,
+        flags.studentCardQrEnabled,
+        flags.studentCardNfcEnabled,
+        flags.studentCardAttendanceEnabled,
+        flags.studentCardFinanceCheckEnabled,
+        holder.studentCardHolderKind,
+        JSON.stringify(holder.studentCardHolderLevels),
+        flags.studentCardOfflineRollCallEnabled,
+      ],
     );
     return row;
+  }
+
+  /**
+   * CARTE-CYCLE-01 — niveaux actifs de l'établissement (surcharges de titulaire autorisées).
+   * FOR SHARE : dans la transaction d'écriture des paramètres, les lignes lues ne peuvent être ni
+   * supprimées ni archivées avant le COMMIT (DELETE / UPDATE concurrents en attente).
+   */
+  async function listActiveSchoolLevelIds(schoolId) {
+    const rows = await all(
+      `SELECT level_id::text AS level_id FROM school_levels WHERE school_id = $1 AND status = 'active' FOR SHARE`,
+      [schoolId],
+    );
+    return rows.map((row) => String(row.level_id).toLowerCase());
   }
 
   async function seedDefaultSettingsIfEmpty(schoolId, defaults = {}) {
@@ -410,6 +455,7 @@ function createSchoolSettingsPgStore(repo) {
     listTermRows,
     getSettings,
     upsertSettings,
+    listActiveSchoolLevelIds,
     seedDefaultSettingsIfEmpty,
     ensureSettingsRow,
     repairLegacyDefaultTermsForCurrentYear,

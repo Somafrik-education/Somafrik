@@ -26,6 +26,7 @@ const EXPO_PROJECT_ID = "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5";
 const PREVIEW_API = CANONICAL_API_URLS.preview;
 const FORBIDDEN_PREVIEW_NEEDLES = [
   "api.somafrik.app",
+  "somafrik-api-preprod.onrender.com",
   "localhost",
   "127.0.0.1",
   "10.0.2.2",
@@ -37,8 +38,22 @@ function read(file) {
   return fs.readFileSync(file, "utf8");
 }
 
+function resolveSpawn(command, args = [], platform = process.platform, env = process.env) {
+  if (platform === "win32" && (command === "npx" || command === "npm")) {
+    return {
+      command: env.ComSpec || env.COMSPEC || "cmd.exe",
+      args: ["/d", "/c", `${command}.cmd`, ...args],
+    };
+  }
+  return {
+    command,
+    args,
+  };
+}
+
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const resolved = resolveSpawn(command, args);
+  const result = spawnSync(resolved.command, resolved.args, {
     encoding: "utf8",
     cwd: options.cwd || MOBILE,
     env: { ...process.env, ...(options.env || {}) },
@@ -46,7 +61,8 @@ function run(command, args, options = {}) {
   });
   if (result.status !== 0) {
     throw new Error(
-      `${command} ${args.join(" ")} failed:\n${result.stderr || result.stdout || result.error}`,
+      `${command} ${args.join(" ")} failed:\n`
+      + `${result.stderr || result.stdout || result.error}`,
     );
   }
   return result;
@@ -80,10 +96,8 @@ function parseExpoConfigJson(stdout) {
 
 function scanPreviewBundle(bundle) {
   assert.ok(bundle.length > 1000, "preview: bundle vide");
-  assert.ok(
-    bundle.includes(PREVIEW_API) || bundle.includes("somafrik-api-preprod.onrender.com"),
-    `preview: API préprod absente (${PREVIEW_API})`,
-  );
+  assert.ok(bundle.includes(PREVIEW_API), `preview: API préprod absente (${PREVIEW_API})`);
+  assert.ok(!bundle.includes("somafrik-api-preprod.onrender.com"), "preview: URL Render native interdite");
   assert.ok(!bundle.includes("api.somafrik.app"), "preview: API production présente");
   assert.doesNotMatch(bundle, /http:\/\/localhost/);
   assert.doesNotMatch(bundle, /http:\/\/127\.0\.0\.1/);
@@ -162,8 +176,13 @@ function logBlockedEasAuth() {
   console.log("Validation release (auth obligatoire) : SOMAFRIK_REQUIRE_EAS_AUTH=1");
 }
 
+function isCoreMode(argv = process.argv, env = process.env) {
+  return argv.includes("--core") || env.SOMAFRIK_PREVIEW_APK_CORE === "1";
+}
+
 function probeEasAuth() {
-  const result = spawnSync("npx", ["eas-cli", "project:info"], {
+  const resolved = resolveSpawn("npx", ["eas-cli", "project:info"]);
+  const result = spawnSync(resolved.command, resolved.args, {
     encoding: "utf8",
     cwd: MOBILE,
     env: process.env,
@@ -179,7 +198,8 @@ function probeEasAuth() {
   return outcome;
 }
 
-function main() {
+function main(options = {}) {
+  const core = options.core === true;
   const unit = spawnSync(process.execPath, ["scripts/verify-mobile-preview-apk.test.js"], {
     encoding: "utf8",
     cwd: MOBILE,
@@ -190,7 +210,8 @@ function main() {
     throw new Error("verify-mobile-preview-apk.test.js failed");
   }
 
-  assert.equal(PREVIEW_API, "https://somafrik-api-preprod.onrender.com");
+  assert.equal(PREVIEW_API, CANONICAL_API_URLS.preview);
+  assert.equal(CANONICAL_API_URLS.preview, "https://api-preprod.somafrik.app");
   assert.equal(DISPLAY_NAMES.preview, "Somafrik");
   assert.equal(ANDROID_PACKAGE, "com.somafrik.app");
   assert.equal(APP_SLUG, "somafrik");
@@ -262,6 +283,10 @@ function main() {
   const pkg = JSON.parse(read(path.join(MOBILE, "package.json")));
   assert.equal(pkg.scripts["build:preview"], "eas build --platform android --profile preview");
   assert.equal(pkg.scripts["verify:mobile-preview-apk"], "node scripts/verify-mobile-preview-apk.js");
+  assert.equal(
+    pkg.scripts["verify:mobile-preview-apk:core"],
+    "node scripts/verify-mobile-preview-apk.js --core",
+  );
 
   const gitignore = read(path.join(MOBILE, ".gitignore"));
   assert.match(gitignore, /^\*\.apk$/m);
@@ -278,7 +303,8 @@ function main() {
   assert.match(docs, /Nom affiché \| \*\*Somafrik\*\*/);
   assert.match(docs, /Badge \| \*\*Preview QA\*\*/);
   assert.doesNotMatch(docs, /lanceur doit afficher \*\*Somafrik QA\*\*/);
-  assert.match(docs, /somafrik-api-preprod\.onrender\.com/);
+  assert.match(docs, /https:\/\/api-preprod\.somafrik\.app/);
+  assert.doesNotMatch(docs, /somafrik-api-preprod\.onrender\.com/);
   assert.match(docs, /ne constitue pas un service Render/);
   assert.match(docs, /BLOCKED_EAS_AUTH|eas login/);
   assert.match(docs, /SOMAFRIK_REQUIRE_EAS_AUTH/);
@@ -287,7 +313,8 @@ function main() {
   assert.match(l10, /NO-GO/);
   assert.match(l10, /Admin School/);
   assert.match(l10, /Enseignant/);
-  assert.match(l10, /somafrik-api-preprod\.onrender\.com/);
+  assert.match(l10, /https:\/\/api-preprod\.somafrik\.app/);
+  assert.doesNotMatch(l10, /somafrik-api-preprod\.onrender\.com/);
   assert.match(l10, /GRANT/);
   assert.match(l10, /outbox/);
   assert.match(l10, /BLOCKED_EAS_AUTH/);
@@ -295,14 +322,13 @@ function main() {
   console.log("OK: protocole L10 smoke RC1 présent");
 
   const ci = read(path.join(ROOT, ".github", "workflows", "ci.yml"));
-  const security = read(path.join(ROOT, ".github", "workflows", "security.yml"));
   const rootPkg = read(path.join(ROOT, "package.json"));
-  assert.match(ci, /name: verify:mobile-preview-apk/);
+  // Nightly CI Full : commande dans le bloc Full domain regression (pas un step nommé).
+  // Security nightly : invariants mobile-security, pas le scan Expo / bundle Preview.
   assert.match(ci, /npm run verify:mobile-preview-apk/);
-  assert.match(security, /name: verify:mobile-preview-apk/);
-  assert.match(security, /npm run verify:mobile-preview-apk/);
+  assert.match(rootPkg, /"ci:security":/);
   assert.match(rootPkg, /verify:mobile-preview-apk/);
-  console.log("OK: CI + Security branchent verify:mobile-preview-apk");
+  console.log("OK: nightly CI branche verify:mobile-preview-apk");
 
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "somafrik-preview-apk-"));
   const exported = run(process.execPath, ["scripts/export-release-bundle.js", "preview"], {
@@ -318,6 +344,11 @@ function main() {
   fs.rmSync(path.join(MOBILE, "android"), { recursive: true, force: true });
   console.log("OK: prebuild Android preview inspecté puis supprimé (CNG, non commité)");
 
+  if (core) {
+    console.log("OK: verify:mobile-preview-apk:core — sans probe EAS");
+    return;
+  }
+
   const easAuth = probeEasAuth();
   console.log(`EAS project info: ${easAuth}`);
   console.log("verify:mobile-preview-apk OK");
@@ -328,11 +359,13 @@ module.exports = {
   isEasAuthMissing,
   interpretEasProjectInfo,
   probeEasAuth,
+  resolveSpawn,
+  isCoreMode,
 };
 
 if (require.main === module) {
   try {
-    main();
+    main({ core: isCoreMode() });
   } catch (error) {
     console.error(error);
     process.exit(1);

@@ -1,0 +1,23 @@
+{
+  "_note": "NFC-PRES-LOCAL-PR2 — vecteurs FICTIFS calculés par le Backend (rollCallOfflineProof.js + node:crypto). Clé de TEST : graine 32 × 0x01 (V-9). Aucune valeur réelle.",
+  "generator": "Mobile/scripts/generate-rc-offline-pr2-vectors.js",
+  "revocations": {
+    "keyId": "rc-pack-test-1",
+    "publicKey": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+    "list": {
+      "contractVersion": "rc-offline-1",
+      "sequence": 3,
+      "revokedKeyIds": [
+        "rc-pack-test-0",
+        "rc-pack-test-2"
+      ],
+      "issuedAt": "2026-11-08T16:02:00Z"
+    },
+    "signature": {
+      "alg": "Ed25519",
+      "keyId": "rc-pack-test-1",
+      "value": "ZbuStOCwa_3XExovD9rT_EqyJ6oaJAk_JGK2cM5asFAjzHRHU3Q_LiAhrpstBkr4QvM62msHGHMGd0xjTLQWAg"
+    },
+    "canonicalSha256": "ea8bbbc29919d79e8638a34239d0b15d8a799c2e93d353455cf3f217cac1574e"
+  }
+}

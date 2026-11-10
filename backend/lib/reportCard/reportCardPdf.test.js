@@ -463,6 +463,9 @@ test("report-card-qr-roundtrip-scan-exact-url", async () => {
   assert.ok(Buffer.isBuffer(rendered.qr.png) && rendered.qr.png.length > 0);
   assert.equal(rendered.qr.decoded, expected);
   assert.equal(rendered.qr.decoded, rendered.qr.url);
+  assert.doesNotMatch(rendered.html, /class="meta"|class="verify-url"|<h1>Bulletin<\/h1>/);
+  assert.doesNotMatch(rendered.html, /rc-1\s*·|https:\/\/somafrik\.app\/verify\/rc\//);
+  assert.match(rendered.html, /class="verify-label"/);
 });
 
 test("report-card-pdf-qr-not-clipped-or-page-split", async () => {

@@ -15,6 +15,7 @@
  * Exécution : DATABASE_URL=postgresql://... node backend/scripts/verify-admin-user-creation.js
  */
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -50,7 +51,7 @@ async function ensureDatabase(databaseUrl) {
 async function prepareDatabase(databaseUrl) {
   const isolatedUrl = await ensureDatabase(databaseUrl);
   const pool = new Pool({ connectionString: isolatedUrl });
-  const passwordHash = hashSecret("1234");
+  const superadminPasswordHash = hashSecret(superadminLoginPassword());
   try {
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
@@ -77,7 +78,7 @@ async function prepareDatabase(databaseUrl) {
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
        VALUES (NULL, 'SUPER-ADMIN-E2E', 'Super', 'AdminE2E', 'super-admin-e2e@test.local', $1, $1, 'SUPER_ADMIN', 'active')`,
-      [passwordHash],
+      [superadminPasswordHash],
     );
   } finally {
     await pool.end();
@@ -256,7 +257,7 @@ async function main() {
     const loginBi = loginByLeftover.get(SCHOOL_BI) || "";
     assert.ok(loginCd && loginCd !== SCHOOL_CD, `login_code CD attendu après boot, reçu ${loginCd}`);
     assert.ok(loginBi && loginBi !== SCHOOL_BI, `login_code BI attendu après boot, reçu ${loginBi}`);
-    const superadmin = await login("super-admin-e2e@test.local", "1234");
+    const superadmin = await login("super-admin-e2e@test.local", superadminLoginPassword());
 
     // P0 provisioning Superadmin : création directe Admin Pays BI + Admin School BI.
     const provisionPaysEmail = `country-admin-provision-bi-${stamp}@test.local`;

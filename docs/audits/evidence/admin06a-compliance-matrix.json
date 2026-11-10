@@ -1,0 +1,104 @@
+{
+  "audit": "ADMIN-06A",
+  "status": "DRAFT_HOLD",
+  "ready": false,
+  "merge": false,
+  "base": "develop@4fdc842e173c4d13121ef42cdad60762a1b4fdba",
+  "recommendation": "A",
+  "optionC": "FORBIDDEN",
+  "migrationRequired": false,
+  "cells": {
+    "A": "opérationnel",
+    "B": "partiel",
+    "C": "façade/local seulement",
+    "D": "interdit/inaccessible"
+  },
+  "authority": {
+    "voir_conformite": {
+      "SUPER_ADMIN": { "cell": "D", "proof": "canReadView(reports)=false; reports absent SUPER_ADMIN_ALLOWED_VIEWS; onglet filtré AdministrationLayout" },
+      "COUNTRY_ADMIN": { "cell": "C", "proof": "canReadView(reports)=true via exception Rapports + COUNTRY_PRIVILEGES; ReportsPage=MVP_COVERAGE" },
+      "SCHOOL_ADMIN": { "cell": "C", "proof": "Rapports:READ défaut; ReportsPage=MVP_COVERAGE aucune API" },
+      "utilisateur_etablissement": { "cell": "C", "proof": "Secrétaire/Préfet/Proviseur/Directeur/Comptable: Rapports:READ → onglet; Enseignant/Parent/Élève: D" },
+      "self": { "cell": "D", "proof": "pas de vue self-compliance; routes publiques hors Administration" }
+    },
+    "audit_logs": {
+      "SUPER_ADMIN": { "cell": "D", "proof": "C06A-AUD-01 requireAuth.guard PLATFORM_PERSONAL_DATA_DENIED; handler inatteignable" },
+      "COUNTRY_ADMIN": { "cell": "D", "proof": "C06A-AUD-02 idem guard" },
+      "SCHOOL_ADMIN": { "cell": "D", "proof": "C06A-AUD-03 requirePermission PERMISSION_DENIED (pas Audit:READ)" },
+      "utilisateur_etablissement": { "cell": "D", "proof": "C06A-AUD-04 Audit:READ passe RBAC puis handler refuse non SUPER/Admin Pays" },
+      "self": { "cell": "D", "proof": "aucun endpoint self-audit" }
+    },
+    "creer_demande_effacement": {
+      "SUPER_ADMIN": { "cell": "B", "proof": "POST /api/privacy/erasure-requests public; JWT optionnel; pas un workflow plateforme" },
+      "COUNTRY_ADMIN": { "cell": "B", "proof": "idem POST public" },
+      "SCHOOL_ADMIN": { "cell": "A", "proof": "POST public ou authentifié createErasureRequest" },
+      "utilisateur_etablissement": { "cell": "A", "proof": "POST public /suppression-compte" },
+      "self": { "cell": "A", "proof": "AccountDeletionPage + POST public; self/execute crée puis exécute" }
+    },
+    "lister_demandes": {
+      "SUPER_ADMIN": { "cell": "D", "proof": "GET dans guard + handler schoolCode=* → 403" },
+      "COUNTRY_ADMIN": { "cell": "D", "proof": "idem guard + schoolCode=*" },
+      "SCHOOL_ADMIN": { "cell": "A", "proof": "Utilisateurs:READ + JWT school concret; listPrivacyRequests(schoolCode)" },
+      "utilisateur_etablissement": { "cell": "B", "proof": "si Utilisateurs:READ; sinon PERMISSION_DENIED" },
+      "self": { "cell": "D", "proof": "pas de GET self-list" }
+    },
+    "executer_demande": {
+      "SUPER_ADMIN": { "cell": "D", "proof": "C06A-09 assertCanExecuteSchoolErasure + guard" },
+      "COUNTRY_ADMIN": { "cell": "D", "proof": "idem" },
+      "SCHOOL_ADMIN": { "cell": "A", "proof": "Utilisateurs:UPDATE + même schoolCode; processed + anonymize + revoke" },
+      "utilisateur_etablissement": { "cell": "D", "proof": "autre école 403; sans Utilisateurs:UPDATE RBAC deny" },
+      "self": { "cell": "A", "proof": "isSelf court-circuite assertCanExecuteSchoolErasure" }
+    },
+    "auto_effacement": {
+      "SUPER_ADMIN": { "cell": "B", "proof": "self/execute hors guard; anonymise le compte plateforme authentifié, pas une école tierce" },
+      "COUNTRY_ADMIN": { "cell": "B", "proof": "idem self" },
+      "SCHOOL_ADMIN": { "cell": "A", "proof": "POST /api/privacy/erasure-requests/self/execute" },
+      "utilisateur_etablissement": { "cell": "A", "proof": "requireAuth only" },
+      "self": { "cell": "A", "proof": "C06A-11 workflow distinct" }
+    },
+    "export_donnees": {
+      "SUPER_ADMIN": { "cell": "D", "proof": "guard + assertDataExportRead 403; ALL_PRIVILEGES ne suffit pas" },
+      "COUNTRY_ADMIN": { "cell": "D", "proof": "idem" },
+      "SCHOOL_ADMIN": { "cell": "A", "proof": "GET /api/data-export JWT school; query schoolCode ignoré; PII élèves/enseignants" },
+      "utilisateur_etablissement": { "cell": "B", "proof": "si Paramètres Établissement:READ; Web dataExport=school admin only" },
+      "self": { "cell": "D", "proof": "pas d'export self" }
+    },
+    "rapports_avances": {
+      "SUPER_ADMIN": { "cell": "D", "proof": "GET /api/v2/reports/advanced dans le deny; ne pas retirer" },
+      "COUNTRY_ADMIN": { "cell": "D", "proof": "idem guard" },
+      "SCHOOL_ADMIN": { "cell": "B", "proof": "RBAC Rapports:READ ouvre la route; handler ignore req; agrégats GLOBAUX non scopés" },
+      "utilisateur_etablissement": { "cell": "B", "proof": "si Rapports:READ; même fuite globale" },
+      "self": { "cell": "D", "proof": "n/a" }
+    },
+    "agregats_plateforme_non_pii": {
+      "SUPER_ADMIN": { "cell": "D", "proof": "C06A-15 aucun endpoint canonique" },
+      "COUNTRY_ADMIN": { "cell": "D", "proof": "aucun" },
+      "SCHOOL_ADMIN": { "cell": "D", "proof": "aucun" },
+      "utilisateur_etablissement": { "cell": "D", "proof": "aucun" },
+      "self": { "cell": "D", "proof": "aucun" }
+    }
+  },
+  "auditHttp": {
+    "C06A-AUD-01": { "role": "SUPER_ADMIN", "http": "403", "rbacCatalog": "ALL_PRIVILEGES listed", "rbacCanAccess": false, "guard": "deny", "handler": "unreachable (would allow SUPER)", "final": "PLATFORM_PERSONAL_DATA_DENIED" },
+    "C06A-AUD-02": { "role": "COUNTRY_ADMIN", "http": "403", "rbacCatalog": "COUNTRY_PRIVILEGES listed", "rbacCanAccess": false, "guard": "deny", "handler": "unreachable (would allow Admin Pays)", "final": "PLATFORM_PERSONAL_DATA_DENIED" },
+    "C06A-AUD-03": { "role": "SCHOOL_ADMIN", "http": "403", "rbacCatalog": "needs Audit:READ", "rbacCanAccess": false, "guard": "allow", "handler": "unreachable", "final": "PERMISSION_DENIED" },
+    "C06A-AUD-04": { "role": "school Audit:READ", "http": "403", "rbacCatalog": "Audit:READ", "rbacCanAccess": true, "guard": "allow", "handler": "deny non SUPER/Admin Pays", "final": "BusinessError 403 handler" }
+  },
+  "tests": {
+    "C06A-01": "PASS — ReportsPage MVP_COVERAGE façade",
+    "C06A-02": "PASS — Superadmin canReadView(reports)=false",
+    "C06A-03": "PASS — Country Admin canReadView(reports)=true",
+    "C06A-04": "PASS — School Admin canReadView(reports)=true; Enseignant false",
+    "C06A-05": "PASS — GET /api/audit Superadmin 403 guard",
+    "C06A-06": "PASS — GET /api/audit Country Admin 403 guard",
+    "C06A-07": "PASS — GET /api/audit School Admin 403 RBAC",
+    "C06A-08": "PASS — audit_logs old/new JSONB + user/contact PII possible",
+    "C06A-09": "PASS — platform cannot execute school erasure",
+    "C06A-10": "PASS — privacy list isolated by schoolCode",
+    "C06A-11": "PASS — self-erasure distinct",
+    "C06A-12": "PASS — data-export school JWT only, PII domains",
+    "C06A-13": "PASS — advanced reports unscoped + platform deny",
+    "C06A-14": "PASS — /confidentialite /suppression-compte cohérents",
+    "C06A-15": "PASS — aucun endpoint plateforme non-PII canonique"
+  }
+}

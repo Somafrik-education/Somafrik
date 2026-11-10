@@ -9,6 +9,7 @@ const {
   resolveLiveAssignmentsSyncSnapshot,
   liveSnapshotHasAssignmentsRead,
 } = require("./mobileSyncScope");
+const { toRoleKey, toRoleLabel } = require("./userRoleLifecycle");
 
 const SCHOOL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SCHOOL_CODE = "SCH-BULK-CD-0001";
@@ -34,6 +35,17 @@ function fakeRepairClient({ users, linkedStudentUserIds = [] }) {
       }
       if (source.includes("FROM students")) {
         const found = linked.has(params[0]);
+        return { rowCount: found ? 1 : 0, rows: found ? [{ ok: 1 }] : [] };
+      }
+      if (source.includes("status = 'revoked'")) {
+        const [userId, schoolId, roleKey] = params;
+        const found = roles.some(
+          (row) =>
+            row.user_id === userId &&
+            row.school_id === schoolId &&
+            String(row.role_key).toUpperCase() === String(roleKey).toUpperCase() &&
+            row.status === "revoked",
+        );
         return { rowCount: found ? 1 : 0, rows: found ? [{ ok: 1 }] : [] };
       }
       if (source.includes("INSERT INTO user_roles")) {
@@ -93,6 +105,28 @@ test("GREEN-B: backfill Démo crée SCHOOL_ADMIN + TEACHER dans user_roles et re
   assert.equal(client.roles.length, 2);
 });
 
+test("SEC-RBAC-REVOKE-01 : la réparation Démo ne réattribue jamais un rôle révoqué", async () => {
+  const client = fakeRepairClient({
+    users: [
+      { id: ADMIN_ID, user_code: "USR-DEMO-ADMIN", role: "SCHOOL_ADMIN" },
+      { id: TEACHER_ID, user_code: "USR-DEMO-TEACHER", role: "TEACHER" },
+    ],
+  });
+  await repairPublicDemoCanonicalRoles(client);
+  const teacherRole = client.roles.find((row) => row.user_id === TEACHER_ID);
+  teacherRole.status = "revoked";
+  teacherRole.revoked_at = new Date();
+
+  // Le seul enseignant ayant été révoqué, la preuve exige un enseignant actif :
+  // la réparation échoue explicitement au lieu de réattribuer le rôle.
+  await assert.rejects(repairPublicDemoCanonicalRoles(client), /PUBLIC_DEMO_ROLE_REPAIR_TEACHER_MISSING/);
+  assert.deepEqual(
+    client.roles.filter((row) => row.user_id === TEACHER_ID).map((row) => row.status),
+    ["revoked"],
+    "aucune ligne TEACHER active recréée",
+  );
+});
+
 test("GREEN-B: réparation refuse un rôle plateforme dans l'école Démo", async () => {
   const client = fakeRepairClient({
     users: [
@@ -145,7 +179,12 @@ test("DEMO-PRES-RED-01 — rôle live SCHOOL_ADMIN donne un scope assignments sc
 
   assert.equal(snapshot.scope.scopeKind, "school-wide");
   assert.equal(liveSnapshotHasAssignmentsRead(snapshot.input), true);
-  assert.deepEqual(snapshot.input.roleKeys, ["SCHOOL_ADMIN"]);
+  // MONO-T0 — contrat actuel de l'entrée du hash de scope mobile : `roleKeys`
+  // contient les libellés internes (principalRoleList → toRoleLabel), comme
+  // déjà figé pour Classes dans mobileSyncScope.test.js. Le rôle reste celui
+  // relu en base (user_roles = SCHOOL_ADMIN), converti en libellé.
+  assert.deepEqual(snapshot.input.roleKeys, [toRoleLabel("SCHOOL_ADMIN")]);
+  assert.deepEqual(snapshot.input.roleKeys.map(toRoleKey), ["SCHOOL_ADMIN"]);
 });
 
 test("GREEN-B sécurité — aucun user_roles live => none même si le JWT dit Admin School", async () => {

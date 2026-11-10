@@ -1,4 +1,4 @@
-import { api } from "../api/client";
+import { ApiError, api, type RequestArgs } from "../api/client";
 import type { SchoolFeeItem } from "../types";
 import type { FinanceObligationProjection } from "./financePaymentWrite";
 
@@ -67,20 +67,24 @@ function mapCanonicalSchoolFeeItem(item: unknown, grid: FinanceFeeGrid): SchoolF
   };
 }
 
-async function listSchoolFeeItemsFromCanonicalGrids(): Promise<SchoolFeeItem[]> {
-  const grids = (await api.get<FinanceFeeGrid[]>("/finance/fee-grids")) ?? [];
+async function listSchoolFeeItemsFromCanonicalGrids(...init: RequestArgs): Promise<SchoolFeeItem[]> {
+  const grids = (await api.get<FinanceFeeGrid[]>("/finance/fee-grids", ...init)) ?? [];
   const details = await Promise.all(
     grids.map(async (grid) => {
       try {
         const detail = await api.get<{ grid?: FinanceFeeGrid; items?: unknown[] }>(
           `/finance/fee-grids/${encodeURIComponent(grid.id)}`,
+          ...init,
         );
         const payload = detail && !Array.isArray(detail) ? detail : null;
         return {
           grid: payload?.grid ?? grid,
           items: Array.isArray(payload?.items) ? payload.items : [],
         };
-      } catch {
+      } catch (error) {
+        // Refus serveur sur une grille : repli historique sans ses lignes.
+        // Délai, coupure ou annulation : on échoue plutôt que d'afficher une liste vide.
+        if (!(error instanceof ApiError)) throw error;
         return { grid, items: [] as unknown[] };
       }
     }),
@@ -142,7 +146,7 @@ export interface FinanceCatalog {
 }
 
 export const financeApi = {
-  listPayments: () => api.get<FinancePayment[]>("/payments"),
+  listPayments: (...init: RequestArgs) => api.get<FinancePayment[]>("/payments", ...init),
   getPayment: (paymentId: string) =>
     api.get<FinancePayment>(`/payments/${encodeURIComponent(paymentId)}`),
   createPayment: (payload: Record<string, unknown>, options?: { idempotencyKey?: string }) =>
@@ -161,18 +165,18 @@ export const financeApi = {
   replacePaymentMethods: (methods: FinancePaymentMethod[]) =>
     api.put<FinancePaymentMethod[]>("/finance/payment-methods", { methods }),
 
-  listPaymentStatuses: () => api.get<unknown[]>("/finance/payment-statuses"),
+  listPaymentStatuses: (...init: RequestArgs) => api.get<unknown[]>("/finance/payment-statuses", ...init),
   createPaymentStatus: (payload: Record<string, unknown>) =>
     api.post("/finance/payment-statuses", payload),
   patchPaymentStatus: (statusId: string, payload: Record<string, unknown>) =>
     api.patch(`/finance/payment-statuses/${encodeURIComponent(statusId)}`, payload),
 
-  listFeeGrids: () => api.get<FinanceFeeGrid[]>("/finance/fee-grids"),
+  listFeeGrids: (...init: RequestArgs) => api.get<FinanceFeeGrid[]>("/finance/fee-grids", ...init),
   createFeeGrid: (payload: Record<string, unknown>) =>
     api.post<FinanceFeeGrid>("/finance/fee-grids", payload),
   getFeeGrid: (gridId: string) =>
     api.get<{ grid: FinanceFeeGrid; items: unknown[] }>(`/finance/fee-grids/${encodeURIComponent(gridId)}`),
-  listSchoolFeeItems: () => listSchoolFeeItemsFromCanonicalGrids(),
+  listSchoolFeeItems: (...init: RequestArgs) => listSchoolFeeItemsFromCanonicalGrids(...init),
   updateFeeGrid: (gridId: string, payload: Record<string, unknown>) =>
     api.patch<FinanceFeeGrid>(`/finance/fee-grids/${encodeURIComponent(gridId)}`, payload),
   activateFeeGrid: (gridId: string) =>
@@ -192,11 +196,11 @@ export const financeApi = {
       },
     ),
 
-  listStudentFees: (studentId?: string) => {
+  listStudentFees: (studentId?: string, ...init: RequestArgs) => {
     const suffix = String(studentId ?? "").trim()
       ? `?studentId=${encodeURIComponent(String(studentId).trim())}`
       : "";
-    return api.get<FinanceObligationProjection[]>(`/finance/student-fees${suffix}`);
+    return api.get<FinanceObligationProjection[]>(`/finance/student-fees${suffix}`, ...init);
   },
   getStudentFee: (obligationId: string) =>
     api.get(`/finance/student-fees/${encodeURIComponent(obligationId)}`),

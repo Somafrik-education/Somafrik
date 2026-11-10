@@ -12,6 +12,7 @@ const path = require("path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_PRESENCE_TENANT_IT_DATABASE ?? "somafrik_presence_tenant_it")
@@ -336,7 +337,7 @@ async function main() {
   let child = null;
 
   function mint(payload) {
-    return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+    return mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   }
 
   try {
@@ -385,28 +386,28 @@ async function main() {
       [USER_NO_LOGIN, emptySchool.rows[0].id],
     );
 
-    const tokenA = mint({
+    const tokenA = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: PERMS,
     });
-    const tokenB = mint({
+    const tokenB = await mint({
       sub: USER_B,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_B,
       permissions: PERMS,
     });
-    const tokenTeacherA = mint({
+    const tokenTeacherA = await mint({
       sub: USER_TEACHER_A,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       schoolCode: LEFTOVER_A,
       permissions: TEACHER_PERMS,
     });
-    const tokenParent = mint({
+    const tokenParent = await mint({
       sub: USER_PARENT,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -414,27 +415,27 @@ async function main() {
       permissions: TEACHER_PERMS,
       studentIds: [],
     });
-    const tokenNoSub = mint({
+    const tokenNoSub = await mint({
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: PERMS,
     });
-    const tokenNoSchool = mint({
+    const tokenNoSchool = await mint({
       sub: USER_NO_SCHOOL,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: PERMS,
     });
-    const tokenNoLogin = mint({
+    const tokenNoLogin = await mint({
       sub: USER_NO_LOGIN,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_NO_LOGIN,
       permissions: PERMS,
     });
-    const tokenPaysCd = mint({
+    const tokenPaysCd = await mint({
       sub: USER_PAYS_CD,
       role: "Admin Pays",
       roleKeys: ["COUNTRY_ADMIN"],
@@ -442,7 +443,7 @@ async function main() {
       countryCode: "CD",
       permissions: PERMS,
     });
-    const tokenForgedB = mint({
+    const tokenForgedB = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
@@ -474,7 +475,9 @@ async function main() {
 
     const getForged = await request("/presences", { token: tokenForgedB });
     const forgedRows = unwrapList(getForged.data);
-    assert.ok(getForged.status === 200 || getForged.status === 403, `PR-02 status=${getForged.status}`);
+    // SEC-AUTH-04 : claim leftover B sur une session de A → refusé par le garde de
+    // session (SEC-TENANT-01) avant la route ; la session est révoquée.
+    assertSessionRefused(getForged, "PR-02 JWT leftover B", "SESSION_SCHOOL_ATTACHMENT_MISSING");
     assert.equal(
       forgedRows.some((row) => String(row.id) === PRESENCE_B || row.schoolCode === LOGIN_B || row.schoolCode === LEFTOVER_B),
       false,
@@ -522,13 +525,14 @@ async function main() {
     const countBForged = (
       await pool.query(`SELECT count(*)::int AS c FROM attendance WHERE school_id = $1`, [fixture.schoolBId])
     ).rows[0].c;
-    assert.ok([400, 403, 404, 409].includes(postForged.status), `PR-05 status=${postForged.status}`);
+    // SEC-AUTH-04 : session révoquée à PR-02 (claim leftover B) → refus de session.
+    assertSessionRefused(postForged, "PR-05 POST leftover B", "SESSION_REVOKED");
     assert.equal(countBForged, countBBefore, "PR-05 0 write B via leftover");
 
     const getNoSub = await request("/presences", { token: tokenNoSub });
-    assert.equal(getNoSub.status, 403, `PR-06 sans sub status=${getNoSub.status}`);
+    assertSessionRefused(getNoSub, "PR-06 sans sub", "SESSION_SUBJECT_MISMATCH");
     const getNoSchool = await request("/presences", { token: tokenNoSchool });
-    assert.equal(getNoSchool.status, 403, `PR-07 sans school_id status=${getNoSchool.status}`);
+    assertSessionRefused(getNoSchool, "PR-07 sans school_id", "SESSION_SCHOOL_ATTACHMENT_MISSING");
     const getNoLogin = await request("/presences", { token: tokenNoLogin });
     assert.equal(getNoLogin.status, 403, `PR-08 login_code vide status=${getNoLogin.status}`);
 
@@ -562,9 +566,11 @@ async function main() {
     assert.ok([400, 403, 404, 409].includes(teacherWriteB.status), `PR-11 status=${teacherWriteB.status}`);
     assert.equal(countBTeacher, countBBefore, "PR-11 enseignant A 0 write B");
 
+    // SEC-AUTH-04 : le claim leftover B est refusé (PR-02, PR-05) ; la traçabilité
+    // canonique A est vérifiée avec le jeton A.
     const postAudit = await request("/presences", {
       method: "POST",
-      token: tokenForgedB,
+      token: tokenA,
       body: {
         classCode: CLASS_A,
         className: "6ème A Lac",
@@ -582,7 +588,7 @@ async function main() {
     });
     assert.ok(
       postAudit.status === 201 || postAudit.status === 200,
-      `PR-audit POST leftover B status=${postAudit.status} body=${JSON.stringify(postAudit.data)}`,
+      `PR-audit POST (jeton A) status=${postAudit.status} body=${JSON.stringify(postAudit.data)}`,
     );
     const audits = await pool.query(
       `SELECT s.school_code, s.login_code

@@ -4,6 +4,7 @@
  * LOT 4 — parcours Finance HTTP (mémoire) : RBAC, annulation, cooldown, isolation.
  */
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const { canCancelPayment, cancelPayment } = require("../lib/financeService");
@@ -231,7 +232,7 @@ async function main() {
     const accountantToken = await login(accountant.identifier, "E2eTest!2026", "CD-2026-0001");
     const secretaryToken = await login(secretary.identifier, "E2eTest!2026", "CD-2026-0001");
     const directorToken = await login(director.identifier, "E2eTest!2026", "CD-2026-0001");
-    const superToken = await login("superadmin", "1234");
+    const superToken = await login("superadmin", superadminLoginPassword());
     const prefetToken = await login("prefet", "1234", "CD-2026-0001");
     const teacherToken = await login("ENS-0001", "1234", "CD-2026-0001");
 
@@ -345,20 +346,27 @@ async function main() {
     });
     assert.equal(accountantGrid.status, 403, "Comptable ne gère pas les grilles");
 
+    const openBeforePay = asFinanceRows((await request("/finance/student-fees", { token: adminToken })).data);
+    const payable = openBeforePay.find(
+      (row) =>
+        (row.studentId === studentCode || row.studentId === enrolled.data.student?.id || row.studentId === enrolled.data.id) &&
+        Number(row.balance) >= 10_000,
+    );
+    assert.ok(payable, "obligation ouverte requise avant l'encaissement");
     const pay = await request("/payments", {
       method: "POST",
       token: accountantToken,
       body: {
         studentId: studentCode,
-        items: [{ feeType: "Non imputé", amount: 10_000 }],
+        items: [{ obligationId: payable.id, feeType: "Inscription", amount: 10_000 }],
         method: "Espèces",
         date: "2026-08-13",
       },
     });
     assert.equal(pay.status, 201, JSON.stringify(pay.data));
-    assert.equal(Number(pay.data.allocatedAmount || 0), 0, "RBAC comptable : aucune allocation");
-    assert.equal(Number(pay.data.unallocatedAmount), 10_000);
-    assert.equal(pay.data.status, "Non imputé");
+    assert.equal(Number(pay.data.allocatedAmount), 10_000);
+    assert.equal(Number(pay.data.unallocatedAmount || 0), 0);
+    assert.equal(pay.data.status, "Payé");
 
     const cancel = await request(`/payments/${encodeURIComponent(pay.data.reference)}/cancel`, {
       method: "POST",
@@ -414,22 +422,27 @@ async function main() {
         items: [{ feeType: "Autre", label: "SuperAdmin", amount: 1_000, status: "Actif" }],
       },
     });
-    assert.equal(superGrid.status, 201, JSON.stringify(superGrid.data));
+    assert.equal(superGrid.status, 403, JSON.stringify(superGrid.data));
+    assert.equal(superGrid.data?.code, "PERMISSION_DENIED");
+    const superPayments = await request("/payments", { token: superToken });
+    assert.equal(superPayments.status, 403, JSON.stringify(superPayments.data));
+    const superSubscriptions = await request("/backoffice/subscriptions", { token: superToken });
+    assert.equal(superSubscriptions.status, 200, JSON.stringify(superSubscriptions.data));
 
     const directorPay = await request("/payments", {
       method: "POST",
       token: directorToken,
       body: {
         studentId: studentCode,
-        items: [{ feeType: "Non imputé", amount: 1 }],
+        items: [{ obligationId: payable.id, feeType: "Inscription", amount: 1 }],
         method: "Espèces",
         date: "2026-08-13",
       },
     });
     assert.equal(directorPay.status, 201, JSON.stringify(directorPay.data));
-    assert.equal(Number(directorPay.data.allocatedAmount || 0), 0);
-    assert.equal(Number(directorPay.data.unallocatedAmount), 1);
-    assert.equal(directorPay.data.status, "Non imputé");
+    assert.equal(Number(directorPay.data.allocatedAmount), 1);
+    assert.equal(Number(directorPay.data.unallocatedAmount || 0), 0);
+    assert.equal(directorPay.data.status, "Partiel");
 
     const paymentBody = {
       studentId: studentCode,
@@ -462,7 +475,7 @@ async function main() {
       token: secretaryToken,
       body: {
         studentId: studentCode,
-        items: [{ feeType: "Non imputé", amount: 1 }],
+        items: [{ obligationId: payable.id, feeType: "Inscription", amount: 1 }],
         method: "Espèces",
         date: "2026-08-13",
         schoolId: "other-school",
@@ -472,9 +485,9 @@ async function main() {
     });
     assert.equal(secretaryPay.status, 201, JSON.stringify(secretaryPay.data));
     assert.match(String(secretaryPay.data.reference), /^CD-2026-0001-\d{4}-PAY-/);
-    assert.equal(Number(secretaryPay.data.allocatedAmount || 0), 0);
-    assert.equal(Number(secretaryPay.data.unallocatedAmount), 1);
-    assert.equal(secretaryPay.data.status, "Non imputé");
+    assert.equal(Number(secretaryPay.data.allocatedAmount), 1);
+    assert.equal(Number(secretaryPay.data.unallocatedAmount || 0), 0);
+    assert.equal(secretaryPay.data.status, "Partiel");
 
     const rateStudent = await request(`/classes/${encodeURIComponent(createdClass.data.classCode)}/students`, {
       method: "POST",

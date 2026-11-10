@@ -11,6 +11,7 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_COM_C2_IT_DATABASE ?? "somafrik_com_c2_it")
@@ -138,8 +139,8 @@ async function stopChild(child) {
   });
 }
 
-function mintAccess(tokens, payload) {
-  return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+function mintAccess({ tokens, repository }, payload) {
+  return mintSessionAccessToken({ tokens, repository, payload: { mustChangePassword: false, ...payload } });
 }
 
 function claims(overrides) {
@@ -379,16 +380,16 @@ async function main() {
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
 
-    const adminA = mintAccess(
-      tokens,
+    const adminA = await mintAccess(
+      { tokens, repository: repo },
       claims({ sub: ADMIN_A, schoolCode: "SCH-COM-A", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
     );
-    const parentA = mintAccess(
-      tokens,
+    const parentA = await mintAccess(
+      { tokens, repository: repo },
       claims({ sub: PARENT_A, schoolCode: "SCH-COM-A", role: "Parent", roleKeys: ["PARENT"] }),
     );
-    const parentA2 = mintAccess(
-      tokens,
+    const parentA2 = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: PARENT_A2,
         schoolCode: "SCH-COM-A",
@@ -397,8 +398,8 @@ async function main() {
         studentIds: ["COM-STU-A"],
       }),
     );
-    const teacherA = mintAccess(
-      tokens,
+    const teacherA = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: TEACHER_A,
         schoolCode: "SCH-COM-A",
@@ -407,20 +408,20 @@ async function main() {
         classNames: ["6ème A"],
       }),
     );
-    const teacherA2 = mintAccess(
-      tokens,
+    const teacherA2 = await mintAccess(
+      { tokens, repository: repo },
       claims({ sub: TEACHER_A2, schoolCode: "SCH-COM-A", role: "Enseignant", roleKeys: ["TEACHER"] }),
     );
-    const adminB = mintAccess(
-      tokens,
+    const adminB = await mintAccess(
+      { tokens, repository: repo },
       claims({ sub: ADMIN_B, schoolCode: "SCH-COM-B", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] }),
     );
-    const parentB = mintAccess(
-      tokens,
+    const parentB = await mintAccess(
+      { tokens, repository: repo },
       claims({ sub: PARENT_B, schoolCode: "SCH-COM-B", role: "Parent", roleKeys: ["PARENT"] }),
     );
-    const superSa = mintAccess(
-      tokens,
+    const superSa = await mintAccess(
+      { tokens, repository: repo },
       claims({
         sub: SUPER_SA,
         schoolCode: "*",
@@ -674,8 +675,8 @@ async function main() {
       "C2-04 lecture Parent ne change pas unread Admin",
     );
 
-    const parentNoJwtStudents = mintAccess(
-      tokens,
+    const parentNoJwtStudents = await mintAccess(
+      { tokens, repository: repo },
       claims({ sub: PARENT_A, schoolCode: "SCH-COM-A", role: "Parent", roleKeys: ["PARENT"] }),
     );
     const convsNoStudents = unwrapList(

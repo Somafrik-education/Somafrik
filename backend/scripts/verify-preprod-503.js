@@ -11,6 +11,7 @@
  * Production (api.somafrik.app / somafrik.app) refusée.
  */
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const { spawn, execSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -344,7 +345,7 @@ async function main() {
 
   const creds = local
     ? {
-        superadmin: { identifier: "superadmin", password: "1234" },
+        superadmin: { identifier: "superadmin", password: superadminLoginPassword() },
         country: { identifier: "admin-rdc", password: "1234" },
         school: { identifier: "admin", password: "1234", schoolCode: "CD-2026-0001" },
       }

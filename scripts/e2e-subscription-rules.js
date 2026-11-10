@@ -15,20 +15,25 @@ const FEATURE_RULES = {
   write_notes: ["full", "limited"],
 };
 
-function parseFrDate(value) {
+/** ISO « AAAA-MM-JJ » ou « JJ-MM-AAAA » / « JJ/MM/AAAA » (cf. schoolSubscriptionAccessService). */
+function parseSubscriptionDate(value) {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
   const raw = String(value ?? "").trim();
   if (!raw) return null;
-  const parts = raw.split(/[-/]/);
-  if (parts.length === 3) {
-    const [d, m, y] = parts.map(Number);
-    if (d && m && y) return new Date(y, m - 1, d);
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[T\s])/);
+  const fr = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (iso || fr) {
+    const [y, m, d] = iso ? [iso[1], iso[2], iso[3]].map(Number) : [fr[3], fr[2], fr[1]].map(Number);
+    const date = new Date(y, m - 1, d);
+    const valid = date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+    return valid ? date : null;
   }
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function computeDelinquencyDays(subscription, today = new Date()) {
-  const due = parseFrDate(subscription?.endDate ?? subscription?.nextRenewalDate);
+  const due = parseSubscriptionDate(subscription?.endDate ?? subscription?.nextRenewalDate);
   if (!due) return 0;
   const diff = today.getTime() - due.getTime();
   return diff > 0 ? Math.floor(diff / (1000 * 60 * 60 * 24)) : 0;

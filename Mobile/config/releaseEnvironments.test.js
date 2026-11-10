@@ -25,7 +25,7 @@ assert.equal(CANONICAL_API_URLS.production, "https://api.somafrik.app");
 assert.notEqual(CANONICAL_API_URLS.preproduction, CANONICAL_API_URLS.production);
 assert.equal(ANDROID_PACKAGE, "com.somafrik.app");
 assert.equal(APP_VERSION, "1.2.1");
-assert.equal(ANDROID_VERSION_CODE, 13);
+assert.equal(ANDROID_VERSION_CODE, 25);
 assert.ok(Number.isInteger(ANDROID_VERSION_CODE) && ANDROID_VERSION_CODE > 0);
 for (const profile of RELEASE_PROFILES) {
   assert.equal(DISPLAY_NAMES[profile], "Somafrik", `${profile}: nom launcher doit être Somafrik`);
@@ -121,7 +121,23 @@ assert.equal(eas.build.preproduction.autoIncrement, true);
 assert.equal(eas.build.production.autoIncrement, true);
 assert.equal(eas.build.preview.distribution, "internal");
 assert.equal(eas.build.preview.android.buildType, "apk");
+assert.equal(CANONICAL_API_URLS.preview, "https://api-preprod.somafrik.app");
 assert.equal(eas.build.preview.env.EXPO_PUBLIC_API_URL, CANONICAL_API_URLS.preview);
+assert.equal(eas.build.preview.env.EXPO_PUBLIC_API_URL_PREVIEW, CANONICAL_API_URLS.preview);
+assert.equal(eas.build.preview.env.EXPO_PUBLIC_API_URL, eas.build.preview.env.EXPO_PUBLIC_API_URL_PREVIEW);
+const previewDocs = [
+  path.join(__dirname, "..", "..", "docs", "mobile", "PREVIEW-APK.md"),
+  path.join(__dirname, "..", "..", "docs", "mobile", "L10-APK-RC1-SMOKE.md"),
+];
+for (const doc of previewDocs) {
+  const text = fs.readFileSync(doc, "utf8");
+  assert.match(text, /https:\/\/api-preprod\.somafrik\.app/, `${path.basename(doc)}: URL Preview canonique`);
+  assert.doesNotMatch(
+    text,
+    /somafrik-api-preprod\.onrender\.com/,
+    `${path.basename(doc)}: URL Render native interdite`,
+  );
+}
 for (const profile of RELEASE_PROFILES) {
   assert.ok(
     !Object.prototype.hasOwnProperty.call(eas.build[profile].env, "EXPO_PUBLIC_DEMO_PIN"),

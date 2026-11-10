@@ -54,6 +54,8 @@ const ALL_STEP_KEYS = Object.freeze([...REQUIRED_STEP_KEYS, ...COMPLEMENTARY_STE
 const PAYLOAD_KEYS = Object.freeze([
   "completedSteps",
   "currentStep",
+  "finalized",
+  "finalizedAt",
   "lastValidStep",
   "nextStepKey",
   "nextStepLabel",

@@ -61,4 +61,27 @@ describe("studentDossierFromApi — inscription PostgreSQL canonique", () => {
     });
     expect(workspace?.enrollments[0]?.source).not.toBe("MIGRATION");
   });
+
+  it("mappe parentPhone/parentEmail et birthPlace vers l'identité affichée", () => {
+    const workspace = buildStudentWorkspaceFromDossier({
+      ...canonicalStudent(),
+      parentPhone: "+243800000001",
+      parentEmail: "parent@test.local",
+      birthPlace: "Kinshasa",
+    });
+
+    expect(workspace?.overview.phone).toBe("+243800000001");
+    expect(workspace?.overview.email).toBe("parent@test.local");
+    expect(workspace?.overview.birthPlace).toBe("Kinshasa");
+  });
+
+  it("relit les informations complémentaires depuis le GET canonique", () => {
+    const ws = buildStudentWorkspaceFromDossier({
+      ...canonicalStudent(), nationality: "CD", address: "Rue des écoles", preferredName: "Nana",
+    });
+    expect(ws?.overview.nationality).toBe("CD");
+    expect(ws?.overview.address).toBe("Rue des écoles");
+    expect(ws?.overview.fullName).not.toContain("Nana");
+  });
 });
+

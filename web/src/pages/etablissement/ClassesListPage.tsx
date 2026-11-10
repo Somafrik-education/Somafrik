@@ -37,6 +37,10 @@ import {
   isActiveClass,
 } from "../../lib/classHeadTeacher";
 import { ClassHeadTeacherAssignModal } from "../../components/classes/ClassHeadTeacherAssignModal";
+import { StudentCardBatchDialog } from "../../components/students/StudentCardBatchDialog";
+import { StudentCardBatchPdfDialog } from "../../components/students/StudentCardBatchPdfDialog";
+import { canIssueClassStudentCards, CLASS_CARD_BATCH_BUTTON_LABEL } from "../../lib/studentCardBatchSession";
+import { CLASS_CARD_PDF_BUTTON_LABEL } from "../../lib/studentCardBatchPdf";
 
 export { composeClassPreviewName, getClassDisplayName, isPedagogicalSeriesCode };
 
@@ -86,6 +90,7 @@ export function ClassesListPage() {
   const { showToast } = useToast();
   const permissionCtx = usePermissionContext();
   const permissions = getEntityFeaturePermissions(permissionCtx, "classes", "Classes");
+  const canIssueCards = canIssueClassStudentCards(permissionCtx);
   const canAssignHeadTeacher = canAssignClassHeadTeacher(permissionCtx);
   const { activeSchool } = useActiveSchool();
   const selectedSchoolForYears = useMemo(() => {
@@ -103,6 +108,8 @@ export function ClassesListPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<SchoolClass | null>(null);
   const [assigning, setAssigning] = useState<SchoolClass | null>(null);
+  const [cardClass, setCardClass] = useState<SchoolClass | null>(null);
+  const [pdfOpen, setPdfOpen] = useState(false);
   const [form, setForm] = useState<ClassFormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
@@ -314,6 +321,11 @@ export function ClassesListPage() {
                 {classHasHeadTeacher(row) ? HEAD_TEACHER_COPY.modify : HEAD_TEACHER_COPY.assign}
               </Button>
             ) : null}
+            {canIssueCards ? (
+              <Button type="button" variant="secondary" size="sm" onClick={() => setCardClass(row)}>
+                {CLASS_CARD_BATCH_BUTTON_LABEL}
+              </Button>
+            ) : null}
             <Link
               className="text-sm underline"
               to={`/etablissement/classes/${encodeURIComponent(row.classCode)}/eleves`}
@@ -339,7 +351,7 @@ export function ClassesListPage() {
         ),
       },
     ],
-    [canAssignHeadTeacher, permissions.canUpdate, deactivate, labels.groupLabel, labels.levelLabel, labels.trackLabel],
+    [canAssignHeadTeacher, canIssueCards, permissions.canUpdate, deactivate, labels.groupLabel, labels.levelLabel, labels.trackLabel],
   );
 
   if (!permissions.canRead) {
@@ -394,9 +406,16 @@ export function ClassesListPage() {
           ) : null
         }
         secondaryActions={
-          <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
-            Actualiser
-          </Button>
+          <>
+            {canIssueCards ? (
+              <Button type="button" variant="secondary" onClick={() => setPdfOpen(true)}>
+                {CLASS_CARD_PDF_BUTTON_LABEL}
+              </Button>
+            ) : null}
+            <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
+              Actualiser
+            </Button>
+          </>
         }
       >
         {loading ? (
@@ -548,6 +567,17 @@ export function ClassesListPage() {
           </div>
         </form>
       </Modal>
+
+      <StudentCardBatchDialog
+        open={Boolean(cardClass)}
+        classCode={cardClass?.classCode ?? ""}
+        className={cardClass ? getClassDisplayName(cardClass) : ""}
+        schoolName={activeSchool?.name ?? null}
+        school={activeSchool}
+        onClose={() => setCardClass(null)}
+      />
+
+      <StudentCardBatchPdfDialog open={pdfOpen} onClose={() => setPdfOpen(false)} />
 
       <ClassHeadTeacherAssignModal
         open={Boolean(assigning)}

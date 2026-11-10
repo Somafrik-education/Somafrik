@@ -436,63 +436,91 @@ function createReportCardPublication({
     return record;
   }
 
-  function publish({ tenant, payload, lineage, command } = {}) {
+  function buildRecord(schoolId, payload, sealed, lineage, command) {
+    const publicId = crypto.randomUUID();
+    const token = generateToken();
+    const wrapped = wrapToken(token, wrapping, tokenBinding(payload, publicId));
+    const commandId = (command && command.commandId) || (lineage && lineage.command_id) || null;
+    const commandRow =
+      commandId &&
+      Object.freeze({
+        school_id: schoolId,
+        report_card_id: payload.report_card_id,
+        command_id: commandId,
+        reason: (command && command.reason) || (lineage && lineage.correction_reason) || null,
+        source_version:
+          (command && command.sourceVersion) || (lineage && lineage.corrected_from_version) || null,
+        result_version: payload.published_snapshot_version,
+        public_id: publicId,
+      });
+    const record = {
+      report_card_id: payload.report_card_id,
+      published_snapshot_version: payload.published_snapshot_version,
+      school_id: schoolId,
+      status: "PUBLISHED",
+      verification_status: VERIFICATION_STATES[0],
+      public_id: publicId,
+      token_hash: hashToken(token),
+      token_ciphertext: wrapped.token_ciphertext,
+      wrapping_key_id: wrapped.wrapping_key_id,
+      snapshot_sha256: sealed.snapshot_sha256,
+      snapshot_signature: sealed.snapshot_signature,
+      signing_key_id: sealed.signing_key_id,
+      sealed,
+      corrected_from_version: lineage && lineage.corrected_from_version,
+      correction_reason: lineage && lineage.correction_reason,
+      actor_id: lineage && lineage.actor_id,
+      command_id: commandId,
+    };
+    return { record, supersedeReportCardId: payload.report_card_id, command: commandRow };
+  }
+
+  function sealForPublication(tenant, payload) {
     if (!payload || typeof payload !== "object") throw new ReportCardPublicationError("INVALID_PAYLOAD");
     rejectBranchKeys(payload);
     const schoolId = assertTenant(tenant, payload.school_id);
     assertPublishablePayload(payload);
-    const sealed = sealSnapshot(payload, signingKey);
+    return { schoolId, sealed: sealSnapshot(payload, signingKey) };
+  }
+
+  function publish({ tenant, payload, lineage, command } = {}) {
+    const { schoolId, sealed } = sealForPublication(tenant, payload);
     return withCardLock(schoolId, payload.report_card_id, () =>
       thenable(persistence.find(schoolId, payload.report_card_id, payload.published_snapshot_version), (existing) => {
         if (existing) {
           if (existing.snapshot_sha256 !== sealed.snapshot_sha256) throw new IdempotencyConflict();
           return existing;
         }
-        const publicId = crypto.randomUUID();
-        const token = generateToken();
-        const wrapped = wrapToken(token, wrapping, tokenBinding(payload, publicId));
-        const commandId = (command && command.commandId) || (lineage && lineage.command_id) || null;
-        const commandRow =
-          commandId &&
-          Object.freeze({
-            school_id: schoolId,
-            report_card_id: payload.report_card_id,
-            command_id: commandId,
-            reason: (command && command.reason) || (lineage && lineage.correction_reason) || null,
-            source_version:
-              (command && command.sourceVersion) || (lineage && lineage.corrected_from_version) || null,
-            result_version: payload.published_snapshot_version,
-            public_id: publicId,
-          });
-        const record = {
-          report_card_id: payload.report_card_id,
-          published_snapshot_version: payload.published_snapshot_version,
-          school_id: schoolId,
-          status: "PUBLISHED",
-          verification_status: VERIFICATION_STATES[0],
-          public_id: publicId,
-          token_hash: hashToken(token),
-          token_ciphertext: wrapped.token_ciphertext,
-          wrapping_key_id: wrapped.wrapping_key_id,
-          snapshot_sha256: sealed.snapshot_sha256,
-          snapshot_signature: sealed.snapshot_signature,
-          signing_key_id: sealed.signing_key_id,
-          sealed,
-          corrected_from_version: lineage && lineage.corrected_from_version,
-          correction_reason: lineage && lineage.correction_reason,
-          actor_id: lineage && lineage.actor_id,
-          command_id: commandId,
-        };
-        return thenable(
-          persistence.insertPublication({
-            record,
-            supersedeReportCardId: payload.report_card_id,
-            command: commandRow,
-          }),
-          (inserted) => inserted
-        );
+        const entry = buildRecord(schoolId, payload, sealed, lineage, command);
+        return thenable(persistence.insertPublication(entry), (inserted) => inserted);
       })
     );
+  }
+
+  /**
+   * BULLETIN-PUBLISH-01 — publication d'un lot (bulletins d'une classe) :
+   * même validation et même scellement que publish(). PostgreSQL : une seule
+   * transaction, tout ou rien (insertPublications). Mémoire : tout le lot est
+   * contrôlé avant la première insertion.
+   */
+  async function publishBatch({ tenant, payloads, lineage } = {}) {
+    if (!Array.isArray(payloads) || payloads.length < 1) throw new ReportCardPublicationError("INVALID_PAYLOAD");
+    const prepared = payloads.map((payload) => ({ payload, ...sealForPublication(tenant, payload) }));
+    const ids = new Set(prepared.map((item) => `${item.payload.report_card_id}\0${item.payload.published_snapshot_version}`));
+    if (ids.size !== prepared.length) throw new ReportCardPublicationError("INVALID_PAYLOAD");
+    const entries = prepared.map(({ schoolId, payload, sealed }) => buildRecord(schoolId, payload, sealed, lineage, null));
+    if (typeof persistence.insertPublications === "function") {
+      return persistence.insertPublications({ entries });
+    }
+    for (const entry of entries) {
+      const existing = await Promise.resolve(
+        persistence.find(entry.record.school_id, entry.record.report_card_id, entry.record.published_snapshot_version)
+      );
+      if (existing) throw new IdempotencyConflict();
+    }
+    const out = [];
+    for (const entry of entries) out.push(await Promise.resolve(persistence.insertPublication(entry)));
+    return out;
   }
 
   function lookup({ tenant, reportCardId, version } = {}) {
@@ -626,6 +654,7 @@ function createReportCardPublication({
 
   return {
     publish,
+    publishBatch,
     lookup,
     reprintUrl,
     payloadForRender: payloadForRenderPublished,

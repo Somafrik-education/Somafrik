@@ -41,6 +41,7 @@ const EVENT_EXTERNAL_CHANNEL_POLICY = Object.freeze({
   "finance.payment.due": ["PUSH", "EMAIL"],
   "planning.timetable.changed": ["PUSH", "EMAIL"],
   "planning.teacher.replacement": ["PUSH", "EMAIL"],
+  "notification.manual": ["PUSH", "EMAIL"],
 });
 
 const EVENT_MANDATORY_CHANNEL_POLICY = Object.freeze({

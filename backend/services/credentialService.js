@@ -20,20 +20,75 @@ function hashSecret(secret) {
   return `${HASH_PREFIX}$${salt}$${hash}`;
 }
 
+function isHashedSecret(value) {
+  return String(value ?? "").startsWith(`${HASH_PREFIX}$`);
+}
+
+function firstPlainSecret(...values) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text && !isHashedSecret(text)) {
+      return text;
+    }
+  }
+  return "";
+}
+
+/**
+ * P0-02 — materialise passwordHash/pinHash depuis les champs clair du compte mémoire.
+ * Ne réécrit jamais un hash scrypt déjà présent. Ne strippe pas password/pin versionnés
+ * (seed établissement 1234 hors périmètre P0-02).
+ */
+function materializeAccountSecretHashes(user) {
+  if (!user || typeof user !== "object") {
+    return user;
+  }
+
+  if (!isHashedSecret(user.passwordHash)) {
+    const secret = firstPlainSecret(user.password, user.temporaryPassword, user.passwordHash);
+    if (secret) {
+      user.passwordHash = hashSecret(secret);
+    }
+  }
+
+  if (!isHashedSecret(user.pinHash)) {
+    const secret = firstPlainSecret(user.pin, user.temporaryPassword, user.password, user.pinHash);
+    if (secret) {
+      user.pinHash = hashSecret(secret);
+    }
+  }
+
+  return user;
+}
+
 function verifySecret(secret, storedHash) {
   if (!secret || !storedHash) {
     return false;
   }
 
-  if (!String(storedHash).startsWith(`${HASH_PREFIX}$`)) {
-    return String(secret) === String(storedHash);
+  const stored = String(storedHash);
+  if (!stored.startsWith(`${HASH_PREFIX}$`)) {
+    return false;
   }
 
-  const [, salt, expectedHash] = String(storedHash).split("$");
-  const hash = crypto.scryptSync(String(secret), salt, 64);
-  const expected = Buffer.from(expectedHash, "hex");
+  const parts = stored.split("$");
+  if (parts.length !== 3 || !parts[1] || !parts[2]) {
+    return false;
+  }
 
+  const expected = Buffer.from(parts[2], "hex");
+  if (expected.length === 0) {
+    return false;
+  }
+
+  const hash = crypto.scryptSync(String(secret), parts[1], 64);
   return expected.length === hash.length && crypto.timingSafeEqual(expected, hash);
 }
 
-module.exports = { generateTemporarySecret, hashSecret, verifySecret };
+module.exports = {
+  generateTemporarySecret,
+  hashSecret,
+  verifySecret,
+  isHashedSecret,
+  materializeAccountSecretHashes,
+};

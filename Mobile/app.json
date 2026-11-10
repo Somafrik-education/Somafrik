@@ -17,16 +17,26 @@
         "expo-image-picker",
         {
           "photosPermission": "Somafrik utilise vos photos pour ajouter la photo du compte.",
-          "cameraPermission": "Somafrik utilise l'appareil photo pour prendre la photo du compte.",
+          "cameraPermission": "Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.",
           "microphonePermission": false
         }
-      ]
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      "./plugins/withSomafrikNfcAndroid"
     ],
     "android": {
       "package": "com.somafrik.app",
-      "versionCode": 24,
+      "versionCode": 25,
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "android.permission.NFC"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/somafrik-android-adaptive-foreground.png",

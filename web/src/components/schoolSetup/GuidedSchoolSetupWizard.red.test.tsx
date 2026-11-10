@@ -2,20 +2,23 @@
  * RED — rendu Web de l'assistant guidé (W2–W6, W8).
  * Échoue tant que GuidedSchoolSetupWizard n'existe pas.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
+import { ApiError } from "../../api/client";
 
-const { completeStep, getGuided } = vi.hoisted(() => ({
+const { completeStep, getGuided, finalize } = vi.hoisted(() => ({
   completeStep: vi.fn(),
   getGuided: vi.fn(),
+  finalize: vi.fn(),
 }));
 
 vi.mock("../../lib/schoolSetupGuidedApi", () => ({
   schoolSetupGuidedApi: {
     get: (...args: unknown[]) => getGuided(...args),
     completeStep: (...args: unknown[]) => completeStep(...args),
+    finalize: (...args: unknown[]) => finalize(...args),
   },
 }));
 
@@ -47,6 +50,7 @@ describe("RED — GuidedSchoolSetupWizard UX", () => {
   beforeEach(() => {
     completeStep.mockReset();
     getGuided.mockReset();
+    finalize.mockReset();
     getGuided.mockResolvedValue(payload40);
     completeStep.mockResolvedValue({
       ...payload40,
@@ -136,10 +140,16 @@ describe("RED — GuidedSchoolSetupWizard UX", () => {
     steps: payload40.steps.map((step) => ({ ...step, done: true, unlocked: true })),
   };
 
-  it("HOLD — à 100 % Terminer la configuration appelle onFinish sans re-POST", async () => {
+  const finalized100 = {
+    ...payload100,
+    finalized: true,
+    finalizedAt: "2026-09-21T00:00:00.000Z",
+  };
+
+  it("HOLD — à 100 % Terminer confirme le backend avant le succès", async () => {
     const user = userEvent.setup();
     const onFinish = vi.fn();
-    getGuided.mockResolvedValue(payload100);
+    finalize.mockResolvedValue(finalized100);
     const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
     render(
       <MemoryRouter>
@@ -149,14 +159,18 @@ describe("RED — GuidedSchoolSetupWizard UX", () => {
     expect(screen.getByText("Étape 10 sur 10")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Vérifier la configuration" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Terminer la configuration" }));
-    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(finalize).toHaveBeenCalledTimes(1);
     expect(completeStep).not.toHaveBeenCalled();
+    expect(onFinish).not.toHaveBeenCalled();
+    expect(await screen.findByText("Configuration de votre établissement terminée")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Accéder au tableau de bord" }));
+    expect(onFinish).toHaveBeenCalledTimes(1);
   });
 
   it("HOLD — Vérifier la configuration puis Terminer reste possible à 100 %", async () => {
     const user = userEvent.setup();
     const onFinish = vi.fn();
-    getGuided.mockResolvedValue(payload100);
+    finalize.mockResolvedValue(finalized100);
     const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
     render(
       <MemoryRouter>
@@ -167,8 +181,58 @@ describe("RED — GuidedSchoolSetupWizard UX", () => {
     expect(screen.getByText("Étape 1 sur 10")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Terminer la configuration" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Terminer la configuration" }));
-    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(finalize).toHaveBeenCalledTimes(1);
     expect(completeStep).not.toHaveBeenCalled();
+    expect(await screen.findByText("Configuration de votre établissement terminée")).toBeInTheDocument();
+  });
+
+  it("une erreur API n'affiche pas la réussite", async () => {
+    const user = userEvent.setup();
+    const onFinish = vi.fn();
+    finalize.mockRejectedValue(
+      new ApiError("Étapes obligatoires incomplètes : Élèves.", 409, "SETUP_INCOMPLETE", {
+        missingSteps: [{ key: "students", label: "Élèves" }],
+      }),
+    );
+    const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
+    render(
+      <MemoryRouter>
+        <GuidedSchoolSetupWizard payload={payload100} onFinish={onFinish} />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: "Terminer la configuration" }));
+    expect(await screen.findByText("Étapes obligatoires à corriger : Élèves.")).toBeInTheDocument();
+    expect(screen.queryByText("Configuration de votre établissement terminée")).not.toBeInTheDocument();
+    expect(onFinish).not.toHaveBeenCalled();
+  });
+
+  it("un double clic ne finalise qu'une fois", async () => {
+    const onFinish = vi.fn();
+    finalize.mockResolvedValue(finalized100);
+    const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
+    render(
+      <MemoryRouter>
+        <GuidedSchoolSetupWizard payload={payload100} onFinish={onFinish} />
+      </MemoryRouter>,
+    );
+    const button = screen.getByRole("button", { name: "Terminer la configuration" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(finalize).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Configuration de votre établissement terminée")).toBeInTheDocument();
+  });
+
+  it("une configuration déjà terminée n'est pas présentée comme inachevée", async () => {
+    const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
+    render(
+      <MemoryRouter>
+        <GuidedSchoolSetupWizard payload={finalized100} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Configuration de votre établissement terminée")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Terminer la configuration" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Accéder au tableau de bord" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Ouvrir les comptes utilisateurs/ })).toBeInTheDocument();
   });
 
   it("W8 — reprend à l'étape courante fournie par le serveur", async () => {

@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const { ACADEMIC_RULE_PROFILE_SCHEMA_SQL } = require("../../db/academicRuleProfileSchema");
 const { REPORT_CARD_SCHEMA_SQL } = require("../../db/reportCardSchemaSql");
 const { REPORT_CARD_CONFIGURATION_SQL } = require("../../db/reportCardConfigurationSql");
+const { applyClassScopeMigrationIfRequested } = require("./reportCardClassScope.support");
 const { REPORT_CARD_SOURCE_ARTIFACT_SQL } = require("../../db/reportCardSourceArtifactSql");
 const { createAcademicRuleProfilePgStore } = require("../../db/academicRuleProfilePgStore");
 const { createReportCardSchemaPgStore } = require("../../db/reportCardSchemaPgStore");
@@ -187,6 +188,7 @@ async function openLot11Pg() {
   await pool.query(ACADEMIC_RULE_PROFILE_SCHEMA_SQL);
   await pool.query(REPORT_CARD_SCHEMA_SQL);
   await pool.query(REPORT_CARD_CONFIGURATION_SQL);
+  await applyClassScopeMigrationIfRequested(pool);
   await pool.query(REPORT_CARD_SOURCE_ARTIFACT_SQL);
 
   const profileStore = createAcademicRuleProfilePgStore(pool);

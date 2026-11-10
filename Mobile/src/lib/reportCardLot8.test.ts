@@ -147,7 +147,10 @@ test("report-card-lot8-mobile-rbac-server-authoritative", () => {
   const screen = readRel("Mobile/src/screens/ReportCardsScreen.tsx");
   const joined = `${api}\n${screen}`;
   assert.equal(joined.includes("REPORT_CARD_CONFIGURE"), false);
-  assert.equal(joined.includes("REPORT_CARD_PUBLISH"), false);
+  // Reissue PR2 is a separate explicit action: the screen can check this precise token,
+  // while the LOT8 publication read API must remain read-only.
+  assert.match(screen, /REPORT_CARD_PUBLISH/);
+  assert.doesNotMatch(api, /REPORT_CARD_PUBLISH/);
   assert.doesNotMatch(screen, /role\s*===\s*["']Admin School["']/);
   assert.doesNotMatch(api, /method:\s*["']POST["']/);
   assert.doesNotMatch(api, /method:\s*["']PUT["']/);

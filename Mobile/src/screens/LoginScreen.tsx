@@ -140,7 +140,7 @@ export default function LoginScreen({ navigation, route }: Props) {
         buildMobileLoginPayload({
           role: identity.role,
           identifier: identifier.trim(),
-          ...(identity.role === "parent_student"
+          ...((identity.role === "parent_student" || identity.role === "student")
             ? { password: password.trim() }
             : { pin: password.trim() }),
           schoolCode: school?.code,

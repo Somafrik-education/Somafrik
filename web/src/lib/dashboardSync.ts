@@ -3,8 +3,19 @@ import type { DomainKey } from "./domainLoaders";
 /** Same-tab signal after a write that must refresh the establishment dashboard. */
 export const DASHBOARD_SYNC_EVENT = "somafrik:dashboard-activities-changed";
 
-/** Agreed delay for another session. Not a server push channel. */
-export const DASHBOARD_SYNC_INTERVAL_MS = 10_000;
+/** Light KPI refresh while the dashboard tab is visible. */
+export const DASHBOARD_KPI_INTERVAL_MS = 60_000;
+
+/** Recent-activity refresh while the dashboard tab is visible. */
+export const DASHBOARD_ACTIVITY_INTERVAL_MS = 60_000;
+
+/** Manual refresh from the top bar. Does not reload the six full lists. */
+export const DASHBOARD_KPI_REFRESH_EVENT = "somafrik:dashboard-kpis-refresh";
+
+export function dashboardDataIsStale(lastSuccessAt: number | null, now: number, intervalMs: number) {
+  if (lastSuccessAt == null) return true;
+  return now - lastSuccessAt >= intervalMs;
+}
 
 export const DASHBOARD_METRIC_DOMAINS = [
   "students",

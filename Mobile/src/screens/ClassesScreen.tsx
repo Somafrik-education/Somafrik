@@ -10,8 +10,9 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
-import { useAdminData } from "../context/AdminDataContext";
+import { L1_FOCUS_MAX_AGE_MS, useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
+import StudentCardNfcBatchControl from "../components/StudentCardNfcBatchControl";
 import { canReadRoute } from "../domain/security/permissions";
 import {
   scopedClassesForSession,
@@ -40,6 +41,7 @@ import { isMetricReady, metricLabelFromSnapshot } from "../lib/dataTruth";
 import { filterClassesByQuery, USABILITY_TEST_IDS } from "../lib/mobileUsability";
 import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import ClassMutationControls from "../components/ClassMutationControls";
+import L1FreshnessNote from "../components/L1FreshnessNote";
 import ClassHeadTeacherControls from "../components/ClassHeadTeacherControls";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
 import FormField from "../components/FormField";
@@ -115,7 +117,9 @@ export default function ClassesScreen({ navigation }: any) {
         setIsLoading(true);
       }
 
-      Promise.all([loadClasses(), loadStudents(), loadPresences(), loadTeachers(), loadAssignments()])
+      // PERF-PR5 : retour d'écran — lectures L1 partagées, pas de relecture si réponse récente (30 s).
+      const focus = { maxAgeMs: L1_FOCUS_MAX_AGE_MS };
+      Promise.all([loadClasses(focus), loadStudents(focus), loadPresences(), loadTeachers(), loadAssignments(focus)])
         .catch(() => null)
         .finally(() => {
           if (!cancelled) {
@@ -204,6 +208,8 @@ export default function ClassesScreen({ navigation }: any) {
           </Text>
         </View>
       ) : null}
+
+      <L1FreshnessNote snapshot={classesSnapshot} permissionsBootstrap={permissionsBootstrap} />
 
       {offlineActionMessage ? (
         <View style={styles.offlineActionBanner} testID={OFFLINE_TEST_IDS.actionMessage}>
@@ -380,6 +386,7 @@ export default function ClassesScreen({ navigation }: any) {
                   <Text style={styles.openButtonText}>{SCOLARITE_COPY.openClassStudents}</Text>
                 </TouchableOpacity>
               ) : null}
+              <StudentCardNfcBatchControl key={`${resourceScopeKey}:${item.id}`} schoolClass={item} mutationsBlocked={mutationsBlocked} />
               <ClassMutationControls
                 row={item}
                 networkRequired={mutationsBlocked}

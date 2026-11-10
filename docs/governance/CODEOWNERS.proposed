@@ -1,0 +1,7 @@
+# R15 — MODÈLE NON ACTIF. Ne devient effectif qu'une fois copié en .github/CODEOWNERS
+# avec le login personnel réel du CTO (jamais le compte partagé Somafrik),
+# et seulement si le Ruleset exige l'approbation des propriétaires de code.
+# Voir docs/governance/MERGE-AUTHORIZATION.md §6.
+*            @<login-personnel-cto>
+/.github/    @<login-personnel-cto>
+/scripts/governance/    @<login-personnel-cto>

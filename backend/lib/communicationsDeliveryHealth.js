@@ -10,19 +10,10 @@
 const { uuidOrNull } = require("./principalIdentity");
 const { getCountryCodeFromScope } = require("./countryScope");
 const { createSqlDeliveryAdapter } = require("./communicationChannelFanout");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 function principalRoleKeys(principal) {
   return Array.isArray(principal?.roleKeys) ? principal.roleKeys.map((item) => String(item)) : [];
-}
-
-function isSuperAdminPrincipal(principal) {
-  const role = String(principal?.role || "");
-  const keys = principalRoleKeys(principal);
-  return (
-    role === "Super Administrateur Somafrik" ||
-    role === "Super Administrateur OKAFRIK" ||
-    keys.includes("SUPER_ADMIN")
-  );
 }
 
 function isCountryAdminPrincipal(principal) {

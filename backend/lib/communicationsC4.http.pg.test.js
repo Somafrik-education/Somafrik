@@ -9,6 +9,8 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { drainOutbox } = require("./communicationsNotificationsService");
+const { dispatchProcessedEvents } = require("./communicationsDispatcher");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_COM_C4_IT_DATABASE ?? "somafrik_com_c4_it")
@@ -24,6 +26,7 @@ const STUDENT_USER_A = "a4000000-0000-4000-8000-000000000004";
 const ADMIN_B = "b4000000-0000-4000-8000-000000000001";
 const PARENT_B = "b4000000-0000-4000-8000-000000000002";
 const SUPER_SA = "c4000000-0000-4000-8000-000000000001";
+const SECRETARY_A = "a4000000-0000-4000-8000-000000000005";
 const CLASS_A = "d4000000-0000-4000-8000-000000000001";
 const TEACHER_ROW_A = "e4000000-0000-4000-8000-000000000001";
 const SUBJECT_A = "f4000000-0000-4000-8000-000000000001";
@@ -149,13 +152,17 @@ async function setRoleModuleGrant(pool, roleKey, moduleKey, { create = false, re
   }
 }
 
-function mint(tokens, overrides) {
-  return tokens.createAccessToken({
+function mint({ tokens, repository }, overrides) {
+  return mintSessionAccessToken({
+    tokens,
+    repository,
+    payload: {
     mustChangePassword: false,
     role: "Admin School",
     roleKeys: ["SCHOOL_ADMIN"],
     permissions: ["Notifications:READ", "Notifications:CREATE", "Notifications:UPDATE"],
     ...overrides,
+  },
   });
 }
 
@@ -190,6 +197,17 @@ async function seed(pool) {
       ($1,$7,'SCHOOL_ADMIN','active'),($2,$7,'PARENT','active'),($3,$7,'PARENT','active'),
       ($4,$8,'SCHOOL_ADMIN','active'),($5,$8,'PARENT','active'),($6,NULL,'SUPER_ADMIN','active')`,
     [ADMIN_A,PARENT_A,PARENT_A2,ADMIN_B,PARENT_B,SUPER_SA,schoolA,schoolB],
+  );
+
+  // SEC-NOTIF-P0-01 : gestionnaire autorisé à gérer les notifications mais NON destinataire.
+  await pool.query(
+    `INSERT INTO users (id,school_id,user_code,first_name,last_name,email,role,status,must_change_password)
+     VALUES ($1,$2,'SEC-C4-A','Secretaire','A','sec-c4-a@test.local','Secrétaire','active',FALSE)`,
+    [SECRETARY_A,schoolA],
+  );
+  await pool.query(
+    `INSERT INTO user_roles (user_id,school_id,role_key,status) VALUES ($1,$2,'SECRETARY','active')`,
+    [SECRETARY_A,schoolA],
   );
 
   await pool.query(
@@ -257,6 +275,7 @@ async function seed(pool) {
   for (const role of ["SCHOOL_ADMIN","PARENT","STUDENT","SUPER_ADMIN"]) {
     await setRoleModuleGrant(pool, role, "notifications", { create: role === "SCHOOL_ADMIN" || role === "SUPER_ADMIN", read: true, update: role === "SCHOOL_ADMIN" || role === "SUPER_ADMIN" });
   }
+  await setRoleModuleGrant(pool, "SECRETARY", "notifications", { create: false, read: true, update: true });
   await setRoleModuleGrant(pool, "SCHOOL_ADMIN", "messages", { create: true, read: true, update: true });
   await setRoleModuleGrant(pool, "PARENT", "messages", { create: true, read: true, update: true });
   await setRoleModuleGrant(pool, "SCHOOL_ADMIN", "announcements", { create: true, read: true, update: true });
@@ -311,13 +330,14 @@ async function main() {
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
 
-    const adminA = mint(tokens, { sub: ADMIN_A, schoolCode: "SCH-C4-A", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
-    const parentA = mint(tokens, { sub: PARENT_A, schoolCode: "SCH-C4-A", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ","Messages:READ","Messages:CREATE","Announcements:READ"] });
-    const parentA2 = mint(tokens, { sub: PARENT_A2, schoolCode: "SCH-C4-A", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
-    const studentA = mint(tokens, { sub: STUDENT_USER_A, schoolCode: "SCH-C4-A", role: "Élève / Étudiant", roleKeys: ["STUDENT"], permissions: ["Notifications:READ"] });
-    const adminB = mint(tokens, { sub: ADMIN_B, schoolCode: "SCH-C4-B", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
-    const parentB = mint(tokens, { sub: PARENT_B, schoolCode: "SCH-C4-B", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
-    const superSa = mint(tokens, { sub: SUPER_SA, schoolCode: "*", role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], permissions: ["ALL_PRIVILEGES"] });
+    const adminA = await mint({ tokens, repository: repo }, { sub: ADMIN_A, schoolCode: "SCH-C4-A", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
+    const parentA = await mint({ tokens, repository: repo }, { sub: PARENT_A, schoolCode: "SCH-C4-A", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ","Messages:READ","Messages:CREATE","Announcements:READ"] });
+    const parentA2 = await mint({ tokens, repository: repo }, { sub: PARENT_A2, schoolCode: "SCH-C4-A", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
+    const studentA = await mint({ tokens, repository: repo }, { sub: STUDENT_USER_A, schoolCode: "SCH-C4-A", role: "Élève / Étudiant", roleKeys: ["STUDENT"], permissions: ["Notifications:READ"] });
+    const adminB = await mint({ tokens, repository: repo }, { sub: ADMIN_B, schoolCode: "SCH-C4-B", role: "Admin School", roleKeys: ["SCHOOL_ADMIN"] });
+    const secretaryA = await mint({ tokens, repository: repo }, { sub: SECRETARY_A, schoolCode: "SCH-C4-A", role: "Secrétaire", roleKeys: ["SECRETARY"] });
+    const parentB = await mint({ tokens, repository: repo }, { sub: PARENT_B, schoolCode: "SCH-C4-B", role: "Parent", roleKeys: ["PARENT"], permissions: ["Notifications:READ"] });
+    const superSa = await mint({ tokens, repository: repo }, { sub: SUPER_SA, schoolCode: "*", role: "Super Administrateur Somafrik", roleKeys: ["SUPER_ADMIN"], permissions: ["ALL_PRIVILEGES"] });
 
     const store = repo.getClientsStore();
     async function outboxCount(sourceId) {
@@ -347,9 +367,25 @@ async function main() {
     assert.match(messageN.publishedAt, /^\d{4}-\d{2}-\d{2}T/);
     assert.equal(messageN.navigationTarget?.type, "conversation", "C4-01 navigation conversation exacte");
     assert.ok(messageN.navigationTarget?.conversationId, "C4-01 conversationId présent");
+    assert.equal(messageN.navigationTarget?.messageId, message.data.id, "NOTIF-CONTRACT messageId source dans cible");
     const adminOwnMessageN = unwrap((await request("/backoffice/internal-notifications", { token: adminA })).data)
       .find((row) => row.sourceEntityId === message.data.id);
     assert.equal(adminOwnMessageN, undefined, "C4-01 expéditeur non destinataire");
+
+    // SEC-NOTIF-P0-01 : GET ciblé refuse un manager non destinataire, même avec UPDATE.
+    // Sur develop avant correction, ces deux assertions sont attendues ROUGES (200 au lieu de 404).
+    const parentP0Get = await request(`/backoffice/internal-notifications/${messageN.id}`, { token: parentA });
+    assert.equal(parentP0Get.status, 200, "P0-01 destinataire parent peut lire le détail");
+    const adminP0Get = await request(`/backoffice/internal-notifications/${messageN.id}`, { token: adminA });
+    assert.equal(adminP0Get.status, 404, "P0-01 admin non destinataire refusé");
+    const secretaryP0Get = await request(`/backoffice/internal-notifications/${messageN.id}`, { token: secretaryA });
+    assert.equal(secretaryP0Get.status, 404, "P0-01 secrétaire Notifications:UPDATE non destinataire refusée");
+    const secretaryList = unwrap((await request("/backoffice/internal-notifications", { token: secretaryA })).data);
+    assert.equal(secretaryList.some((row) => row.id === messageN.id), false, "P0-01 notification privée absente de sa liste");
+    const secretaryRead = await request(`/backoffice/internal-notifications/${messageN.id}/read`, { method: "PATCH", token: secretaryA });
+    const secretaryArchive = await request(`/backoffice/internal-notifications/${messageN.id}/archive`, { method: "PATCH", token: secretaryA });
+    assert.equal(secretaryRead.status, 404, "P0-01 secrétaire ne peut marquer lu");
+    assert.equal(secretaryArchive.status, 404, "P0-01 secrétaire ne peut archiver");
     await drainOutbox(store, { limit: 20 });
     assert.equal(await notificationCount(`communication.message.created:${message.data.id}`), 1, "C4-13 retry dispatcher sans doublon");
 
@@ -556,6 +592,17 @@ async function main() {
     assert.ok([403,404].includes(studentDownload.status), "C4-10 même école non recipient bloqué");
     const bDownload = await downloadNotificationFile(parentB, upload.data.id);
     assert.ok([403,404].includes(bDownload.status), "C4-10 école B bloquée");
+    // SEC-NOTIF-P0-01 : l'auteur peut revoir son envoi, un autre manager ne peut lire ni détail ni PJ.
+    const manualAuthor = await request(`/backoffice/internal-notifications/${manual.data.id}`, { token: adminA });
+    assert.equal(manualAuthor.status, 200, "P0-01 auteur de sa propre notification manuelle");
+    const manualAuthorFile = await downloadNotificationFile(adminA, upload.data.id);
+    assert.equal(manualAuthorFile.status, 200, "P0-01 auteur télécharge sa propre pièce jointe");
+    const secretaryManual = await request(`/backoffice/internal-notifications/${manual.data.id}`, { token: secretaryA });
+    assert.equal(secretaryManual.status, 404, "P0-01 secrétaire ni auteur ni destinataire refusée");
+    const secretaryFile = await downloadNotificationFile(secretaryA, upload.data.id);
+    assert.equal(secretaryFile.status, 404, "P0-01 secrétaire ni auteur ni destinataire ne télécharge pas la PJ");
+    const parentManualDetail = await request(`/backoffice/internal-notifications/${manual.data.id}`, { token: parentA });
+    assert.equal(parentManualDetail.status, 200, "P0-01 destinataire de la notification manuelle autorisé");
 
     const exe = await uploadNotificationFile(adminA, { fileName: "virus.exe", mimeType: "application/pdf", body: Buffer.from("MZ executable") });
     assert.equal(exe.status, 400, "C4-10 .exe refusé");
@@ -663,6 +710,105 @@ async function main() {
     assert.equal(await notificationCount(`attendance.student.absent:${committedPending}`), 0, "C4-14 pas encore dispatché");
     await drainOutbox(store, { limit: 20 });
     assert.equal(await notificationCount(`attendance.student.absent:${committedPending}`), 1, "C4-14 dispatcher ultérieur crée la notification");
+
+    // P0 PUSH — Annonce Tous + createManual school-wide → sendToTokens, isolation school_id.
+    const TOKEN_PARENT_A = "ExponentPushToken[c4-p0-parent-a]";
+    const TOKEN_PARENT_B = "ExponentPushToken[c4-p0-parent-b]";
+    await pool.query(
+      `INSERT INTO mobile_push_devices (
+         user_id, school_id, expo_push_token, platform, backend_environment, app_profile
+       ) VALUES
+         ($1,$2,$3,'android','preproduction','preproduction'),
+         ($4,$5,$6,'android','preproduction','preproduction')`,
+      [PARENT_A, fixtures.schoolA, TOKEN_PARENT_A, PARENT_B, fixtures.schoolB, TOKEN_PARENT_B],
+    );
+    const envPush = { NODE_ENV: "test", APP_ENV: "preproduction" };
+    const recordingPush = () => {
+      const sent = [];
+      return {
+        sent,
+        async sendToTokens(tokens, message) {
+          sent.push({ tokens: [...tokens], title: message?.title, data: message?.data });
+          return { sent: tokens.length };
+        },
+      };
+    };
+    async function dispatchPush(processed, pushClient) {
+      await dispatchProcessedEvents({
+        store,
+        repository: repo,
+        processed,
+        pushStore: repo.getMobilePushStore(),
+        pushClient,
+        mailer: { async sendMail() {} },
+        env: envPush,
+        logger: { error() {}, info() {} },
+      });
+    }
+    function parseKinds(context) {
+      const parsed = typeof context === "string" ? JSON.parse(context || "{}") : (context || {});
+      return Array.isArray(parsed.kinds) ? parsed.kinds : [];
+    }
+
+    const announcementTous = await request("/backoffice/announcements", {
+      method: "POST",
+      token: adminA,
+      headers: { "Idempotency-Key": randomUUID() },
+      body: { title: "Réunion P0 Tous", message: "Samedi 9h", audience: "Tous" },
+    });
+    assert.equal(announcementTous.status, 201, `P0 annonce Tous: ${JSON.stringify(announcementTous.data)}`);
+    const announcementProcessed = await drainOutbox(store, { limit: 50 });
+    const parentTousCtx = (await pool.query(
+      `SELECT r.recipient_kind, r.recipient_context
+         FROM notification_recipients r
+         JOIN communication_notifications n ON n.id = r.notification_id
+        WHERE n.source_entity_id = $1 AND r.user_id = $2`,
+      [announcementTous.data.id, PARENT_A],
+    )).rows[0];
+    assert.ok(parentTousCtx, "P0 Parent A destinataire de l'annonce Tous");
+    assert.equal(parseKinds(parentTousCtx.recipient_context).includes("PARENT"), true, "P0 snapshot kinds PARENT");
+    const parentBTous = await count(
+      pool,
+      `SELECT count(*)::int c FROM notification_recipients r
+       JOIN communication_notifications n ON n.id = r.notification_id
+       WHERE n.source_entity_id = $1 AND r.user_id = $2`,
+      [announcementTous.data.id, PARENT_B],
+    );
+    assert.equal(parentBTous, 0, "P0 annonce Tous isolée school_id");
+    const pushAnn = recordingPush();
+    await dispatchPush(announcementProcessed, pushAnn);
+    const annTokens = pushAnn.sent.flatMap((row) => row.tokens);
+    assert.equal(annTokens.includes(TOKEN_PARENT_A), true, "P0 Annonce Tous → sendToTokens OUI");
+    assert.equal(annTokens.includes(TOKEN_PARENT_B), false, "P0 Annonce Tous → token école B NON");
+
+    const manualTousKey = randomUUID();
+    const manualTous = await request("/backoffice/internal-notifications", {
+      method: "POST",
+      token: adminA,
+      headers: { "Idempotency-Key": manualTousKey },
+      body: { title: "Notif métier P0", body: "Message admin Tous" },
+    });
+    assert.equal(manualTous.status, 201, `P0 createManual: ${JSON.stringify(manualTous.data)}`);
+    const manualEventKey = `notification.manual:${fixtures.schoolA}:${manualTousKey}`;
+    assert.equal(
+      await count(pool, `SELECT count(*)::int c FROM communication_event_outbox WHERE event_key=$1`, [manualEventKey]),
+      1,
+      "P0 createManual enqueue outbox",
+    );
+    const manualParentCtx = (await pool.query(
+      `SELECT r.recipient_kind, r.recipient_context
+         FROM notification_recipients r
+        WHERE r.notification_id = $1 AND r.user_id = $2`,
+      [manualTous.data.id, PARENT_A],
+    )).rows[0];
+    assert.ok(manualParentCtx, "P0 createManual Parent A destinataire");
+    assert.equal(parseKinds(manualParentCtx.recipient_context).includes("PARENT"), true, "P0 createManual snapshot PARENT");
+    const manualProcessed = await drainOutbox(store, { limit: 50 });
+    const pushManual = recordingPush();
+    await dispatchPush(manualProcessed, pushManual);
+    const manualTokens = pushManual.sent.flatMap((row) => row.tokens);
+    assert.equal(manualTokens.includes(TOKEN_PARENT_A), true, "P0 createManual → sendToTokens OUI");
+    assert.equal(manualTokens.includes(TOKEN_PARENT_B), false, "P0 createManual → token école B NON");
 
     console.log("COM-C4 GO — notifications internes, outbox, read/unread, tenant, RBAC et PJ validés.");
   } finally {

@@ -24,17 +24,16 @@
     "verify:db-config": "node scripts/verify-db-config.js",
     "verify:idempotency-boot-preflight": "node scripts/verify-idempotency-boot-preflight.js",
     "verify:runtime-bootstrap": "node scripts/verify-idempotency-boot-preflight.js && node scripts/verify-runtime-bootstrap.js",
-    "postinstall": "node ./node_modules/puppeteer/install.mjs"
+    "postinstall": "node ./node_modules/puppeteer/install.mjs && node scripts/verify-puppeteer-browser.js"
   },
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.2",
     "jsqr": "^1.4.0",
-    "mongoose": "^8.24.0",
-    "nodemailer": "^6.10.1",
+    "nodemailer": "^10.2.1",
     "pg": "^8.21.0",
-    "puppeteer": "^25.3.0",
+    "puppeteer": "^25.13.0",
     "qrcode": "^1.5.4",
     "somafrik-workspace": "file:.."
   },

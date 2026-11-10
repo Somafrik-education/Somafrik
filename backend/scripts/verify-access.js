@@ -1,3 +1,4 @@
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("assert");
 
 const baseUrl = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
@@ -5,7 +6,7 @@ const baseUrl = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
 const accounts = {
   superadmin: {
     loginPath: "/backoffice/login",
-    payload: { identifier: "superadmin", password: "1234" },
+    payload: { identifier: "superadmin", password: superadminLoginPassword() },
   },
   countryAdmin: {
     loginPath: "/backoffice/login",

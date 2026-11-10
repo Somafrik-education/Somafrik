@@ -52,7 +52,8 @@ async function main() {
     await pool.query("DELETE FROM backoffice_state WHERE state_key = 'default'");
     console.log("Instantané backoffice_state supprimé.");
     console.log("Redémarrez le backend : docker compose restart backend");
-    console.log("Puis reconnectez-vous (superadmin / 1234) sur http://localhost:5173/web/connexion");
+    console.log("Redémarrez le backend : docker compose restart backend");
+    console.log("Puis reconnectez-vous (identifiant superadmin, mot de passe local non versionné) sur http://localhost:5173/web/connexion");
   } finally {
     await pool.end();
   }

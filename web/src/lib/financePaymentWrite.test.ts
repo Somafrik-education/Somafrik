@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  UNALLOCATED_FEE_TYPE,
   UNALLOCATED_TARGET,
   assertNoFeeTypeOnlyImputation,
   buildFinancePaymentItems,
@@ -31,10 +30,10 @@ describe("F5 contrat d'écriture Web", () => {
     ).toThrow(/FINANCE_OBLIGATION_ID_REQUIRED/);
   });
 
-  it("seul __unallocated__ explicite produit Non imputé", () => {
-    expect(buildFinancePaymentItems([{ obligationId: UNALLOCATED_TARGET, amount: 100 }])).toEqual([
-      { feeType: UNALLOCATED_FEE_TYPE, amount: 100 },
-    ]);
+  it("refuse __unallocated__ : aucun paiement libre", () => {
+    expect(() => buildFinancePaymentItems([{ obligationId: UNALLOCATED_TARGET, amount: 100 }])).toThrow(
+      /FINANCE_UNALLOCATED_FORBIDDEN/,
+    );
     expect(buildFinancePaymentItems([{ obligationId: "obl-1", amount: 40, feeType: "Scolarité" }])).toEqual([
       { obligationId: "obl-1", amount: 40, feeType: "Scolarité", feeLabel: "Scolarité" },
     ]);
@@ -49,7 +48,19 @@ describe("F5 contrat d'écriture Web", () => {
     );
   });
 
-  it("aligne Web et Mobile sur obligationId + Non imputé", () => {
+  it("aligne Web et Mobile sur des obligations ouvertes", () => {
+    expect(() =>
+      buildFinancePaymentWritePayload({
+        studentId: "stu-1",
+        classId: "class-1",
+        paymentMethod: "Espèces",
+        paidAt: "2026-09-05",
+        lines: [
+          { obligationId: "obl-insc", amount: 10_000, feeType: "Inscription" },
+          { obligationId: UNALLOCATED_TARGET, amount: 2_000 },
+        ],
+      }),
+    ).toThrow(/FINANCE_UNALLOCATED_FORBIDDEN/);
     const payload = buildFinancePaymentWritePayload({
       studentId: "stu-1",
       classId: "class-1",
@@ -58,13 +69,11 @@ describe("F5 contrat d'écriture Web", () => {
       lines: [
         { obligationId: "obl-insc", amount: 10_000, feeType: "Inscription" },
         { obligationId: "obl-sco", amount: 15_000, feeType: "Scolarité" },
-        { obligationId: UNALLOCATED_TARGET, amount: 2_000 },
       ],
     });
     expect(payload.items).toEqual([
       { obligationId: "obl-insc", amount: 10_000, feeType: "Inscription", feeLabel: "Inscription" },
       { obligationId: "obl-sco", amount: 15_000, feeType: "Scolarité", feeLabel: "Scolarité" },
-      { feeType: UNALLOCATED_FEE_TYPE, amount: 2_000 },
     ]);
     expect(payload.method).toBe("Espèces");
     expect(payload.paymentMethod).toBe("Espèces");

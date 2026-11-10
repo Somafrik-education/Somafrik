@@ -1,6 +1,8 @@
 const seedData = require("../data");
 const { COURSE_ROUTE_PERMISSIONS } = require("../lib/coursesRbacPolicy");
 const { isPlatformPersonalDataForbidden } = require("../lib/platformPersonalDataGuard");
+const { isSchoolFinanceForbiddenForSuperadmin } = require("../lib/financeSchoolScope");
+const { omitAllPrivilegesForUnboundSchoolDomain } = require("../lib/allPrivilegesSchoolDomainDeny");
 
 const roleAliases = {
   super_admin: "Super Administrateur Somafrik",
@@ -95,7 +97,41 @@ const routePermissions = {
   "GET /api/students/:id/report.pdf": ["Élèves:READ", "Notes:READ", "Bulletins:READ", "Voir bulletins", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/students/:id/payments": ["Paiements:READ", "Gérer paiements", "Voir paiements", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "PATCH /api/students/:id": ["Élèves:UPDATE", "Gérer élèves", "ALL_PRIVILEGES"],
-  "GET /api/audit": ["Audit:READ", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
+  "GET /api/students/:id/cards": ["Élèves:READ", "Voir élèves"],
+  // CARTE-PR2 : la route ne donne accès qu'à la validité ; chaque section est filtrée en aval.
+  "POST /api/student-cards/verify": ["Élèves:READ", "Voir élèves", "Gérer élèves", "Présences:CREATE", "Présences:UPDATE"],
+  "POST /api/student-cards": ["Élèves:UPDATE", "Gérer élèves"],
+  // CARTE-BATCH-API-02 — même permission que l'émission unitaire. Lecture du lot comprise :
+  // le statut sert à reprendre une préparation, jamais à relire un secret.
+  "POST /api/classes/:classCode/student-cards/batches": ["Élèves:UPDATE", "Gérer élèves"],
+  "GET /api/classes/:classCode/student-cards/batches/:batchId": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/classes/:classCode/student-cards/batches/:batchId/receipt": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/classes/:classCode/student-cards/batches/:batchId/activate": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/classes/:classCode/student-cards/batches/:batchId/abort": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/student-cards/:id/nfc-confirm": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/student-cards/:id/nfc-retry": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/student-cards/:id/nfc-provision": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/student-cards/:id/lost": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/student-cards/:id/revoke": ["Élèves:UPDATE", "Gérer élèves"],
+  "POST /api/student-cards/:id/replace": ["Élèves:UPDATE", "Gérer élèves"],
+  // NFC-ROLES-ACCESS-01 : drapeaux carte (sans donnée d'élève), nécessaires aussi au droit d'appel dédié.
+  "GET /api/student-cards/capabilities": ["Présences:CREATE", "Présences:UPDATE", "Présences — Effectuer l'appel (NFC/QR):CREATE"],
+  "POST /api/student-cards/scan": ["Présences:CREATE", "Présences:UPDATE"],
+  "POST /api/student-cards/roll-call/scan": ["Présences:CREATE", "Présences:UPDATE"],
+  "POST /api/student-cards/roll-call/validate": ["Présences:CREATE", "Présences:UPDATE"],
+  // CARTE-PR3-B : liste d'appel nominative, mêmes droits que la saisie de l'appel.
+  "GET /api/student-cards/roll-call/roster": ["Présences:CREATE", "Présences:UPDATE"],
+  "GET /api/student-cards/roll-call/overview": ["Présences:READ"],
+  // NFC-PRES-LOCAL-PR1b : pack hors ligne nominatif, mêmes droits que la liste d'appel.
+  // NFC-ROLES-ACCESS-01 : droit dédié « Présences — Effectuer l'appel (NFC/QR) », indépendant de la consultation des classes.
+  "GET /api/student-cards/roll-call/offline/v1/pack": ["Présences — Effectuer l'appel (NFC/QR):CREATE"],
+  "GET /api/student-cards/roll-call/offline/v1/classes": ["Présences — Effectuer l'appel (NFC/QR):CREATE"],
+  // NFC-PRES-LOCAL-PR1c : synchronisation d'un appel hors ligne, mêmes droits que la validation en ligne.
+  "POST /api/student-cards/roll-call/offline/v1/sync": ["Présences — Effectuer l'appel (NFC/QR):CREATE"],
+  // CARTE-PR3-A1 : contrôle d'entrée au portail, permission dédiée (aucun droit implicite).
+  "POST /api/student-cards/entry-scan": ["Contrôle d'entrée:CREATE"],
+  "GET /api/student-cards/entries": ["Contrôle d'entrée:READ"],
+  "GET /api/audit": ["Audit:READ"],
   "GET /api/privacy/erasure-requests": ["Utilisateurs:READ", "Gérer utilisateurs"],
   "POST /api/privacy/erasure-requests/:requestId/execute": ["Utilisateurs:UPDATE", "Gérer utilisateurs"],
   "GET /api/assignments": [
@@ -154,6 +190,7 @@ const routePermissions = {
   "GET /api/v2/school-setup/status": ["Paramètres Établissement:READ"],
   "GET /api/v2/school-setup/guided": ["Paramètres Établissement:READ"],
   "POST /api/v2/school-setup/guided/steps/:stepKey/complete": ["Paramètres Établissement:UPDATE"],
+  "POST /api/v2/school-setup/guided/complete": ["Paramètres Établissement:UPDATE"],
   "POST /api/v2/academic-years": ["Années Académiques:CREATE", "ALL_PRIVILEGES"],
   "PATCH /api/v2/academic-years/:id": ["Années Académiques:UPDATE", "ALL_PRIVILEGES"],
   "GET /api/v2/exams": ["Examens:READ", "Valider examens", "Organiser examens", "Gérer cours", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
@@ -164,6 +201,7 @@ const routePermissions = {
   "PATCH /api/backoffice/countries/:code": ["Contrôler tous les pays", "ALL_PRIVILEGES"],
   "GET /api/backoffice/subscriptions": ["Gérer abonnements", "Suivre abonnements pays", "ALL_PRIVILEGES"],
   "GET /api/backoffice/trial-requests": ["ALL_PRIVILEGES"],
+  "GET /api/backoffice/platform-compliance": ["ALL_PRIVILEGES"],
   "POST /api/backoffice/subscriptions": ["Gérer abonnements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "PATCH /api/backoffice/subscriptions/:subscriptionId": ["Gérer abonnements", "ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
   "GET /api/backoffice/notifications": ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES"],
@@ -184,9 +222,20 @@ const routePermissions = {
   "GET /api/backoffice/rbac/permissions": ["ALL_PRIVILEGES"],
   "GET /api/backoffice/rbac/permissions/effective": ["ALL_PRIVILEGES"],
   "PATCH /api/backoffice/rbac/permissions": ["ALL_PRIVILEGES"],
+  "POST /api/backoffice/rbac/permissions/reset": ["ALL_PRIVILEGES"],
   "POST /api/backoffice/rbac/roles": ["ALL_PRIVILEGES", "Rôles Établissement:CREATE"],
   "PATCH /api/backoffice/rbac/roles/:roleId": ["ALL_PRIVILEGES", "Rôles Établissement:UPDATE"],
+  "PATCH /api/backoffice/rbac/roles/:roleId/display-label": ["ALL_PRIVILEGES"],
+  "POST /api/backoffice/rbac/roles/:roleId/display-label/reset": ["ALL_PRIVILEGES"],
+  "GET /api/backoffice/rbac/role-display-labels": [
+    "ALL_PRIVILEGES",
+    "COUNTRY_PRIVILEGES",
+    "Utilisateurs:READ",
+    "Gérer utilisateurs",
+    "Rôles Établissement:READ",
+  ],
   "POST /api/backoffice/rbac/roles/:roleId/archive": ["ALL_PRIVILEGES", "Rôles Établissement:UPDATE"],
+  "GET /api/backoffice/rbac/history": ["ALL_PRIVILEGES"],
   "DELETE /api/students/:id": ["Élèves:DELETE", "Gérer élèves", "ALL_PRIVILEGES"],
   "GET /api/backoffice/dashboard-chart-config": ["ALL_PRIVILEGES"],
   "PUT /api/backoffice/dashboard-chart-config": ["ALL_PRIVILEGES"],
@@ -232,6 +281,8 @@ const routePermissions = {
   "POST /api/backoffice/contacts/:contactId/provision-account": ["Contacts:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/backoffice/relations": ["Relations:READ", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/backoffice/relations": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "PATCH /api/backoffice/relations/:relationId": ["Relations:UPDATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
+  "POST /api/backoffice/relations/:relationId/archive": ["Relations:UPDATE", "Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/parents/identity": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "GET /api/parents/relations": ["Relations:READ", "Élèves:READ", "Voir élèves", "Voir enfant", "Gérer élèves", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
   "POST /api/parents/link": ["Relations:CREATE", "Gérer utilisateurs", "COUNTRY_PRIVILEGES", "ALL_PRIVILEGES"],
@@ -384,9 +435,6 @@ const routePermissions = {
   "GET /api/data-export": [
     "Paramètres Établissement:READ",
     "Paramètres Établissement:UPDATE",
-    "Gérer planning académique",
-    "ALL_PRIVILEGES",
-    "COUNTRY_PRIVILEGES",
   ],
   "GET /api/school-settings": [
     "Paramètres Établissement:READ",
@@ -569,6 +617,12 @@ const routePermissions = {
 
 const PERMISSION_DENIED = "PERMISSION_DENIED";
 
+// PERF-PR3 : listes paginées /api/v2/*. Alias des routes historiques (mêmes tableaux,
+// aucun droit nouveau) ; les routes gardent requirePermission(<clé historique>).
+routePermissions["GET /api/v2/presences"] = routePermissions["GET /api/presences"];
+routePermissions["GET /api/v2/payments"] = routePermissions["GET /api/payments"];
+routePermissions["GET /api/v2/notes"] = routePermissions["GET /api/notes"];
+
 class RbacService {
   constructor(rolePermissions = seedData.rolePermissions) {
     this.rolePermissions = rolePermissions;
@@ -580,10 +634,6 @@ class RbacService {
   }
 
   canAccess(principal, routeKey) {
-    if (process.env.SOMAFRIK_AUTH_OPTIONAL === "true") {
-      return true;
-    }
-
     const requiredPermissions = routePermissions[routeKey];
     if (!Array.isArray(requiredPermissions) || requiredPermissions.length === 0) {
       return false;
@@ -599,7 +649,17 @@ class RbacService {
       return false;
     }
 
-    const permissions = new Set(principal.permissions ?? this.permissionsFor(principal.role));
+    // P1-01 : ALL_PRIVILEGES ne transforme pas Superadmin en Finance scolaire globale.
+    if (isSchoolFinanceForbiddenForSuperadmin(principal, routeKey)) {
+      return false;
+    }
+
+    // P1-12 : ALL_PRIVILEGES seul n'ouvre pas le domaine scolaire.
+    const permissions = omitAllPrivilegesForUnboundSchoolDomain(
+      principal,
+      routeKey,
+      new Set(principal.permissions ?? this.permissionsFor(principal.role)),
+    );
     return requiredPermissions.some((permission) => permissions.has(permission));
   }
 }

@@ -28,8 +28,12 @@ function sourceGuards() {
   const createPayment = service.slice(createStart, cancelStart);
   assert.doesNotMatch(createPayment, /reconcileUnallocatedPaymentsInTx/);
   assert.doesNotMatch(createPayment, /openObligationsMatchingFeeType/);
-  assert.match(createPayment, /obligationId est requis pour imputer un paiement/);
-  assert.match(createPayment, /feeLabel = "Non imputé"/);
+  assert.match(createPayment, /obligationId est requis pour affecter un encaissement à un frais ouvert/);
+  assert.match(service, /FINANCE_PAYMENT_EXCEEDS_BALANCE/);
+  assert.match(service, /FINANCE_NO_OPEN_OBLIGATION/);
+  assert.match(createPayment, /F4_ERROR\.PAYMENT_EXCEEDS_BALANCE/);
+  assert.match(createPayment, /refuseWhenNothingIsDue/);
+  assert.doesNotMatch(createPayment, /feeLabel = "Non imputé"/);
 
   assert.doesNotMatch(paid, /Math\.max\(money\(fee\.amountPaid\),\s*fromAlloc\)/);
   assert.match(paid, /withPaidAmount\(fee, fromAlloc\)/);

@@ -6,7 +6,13 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { mobileRoot, androidDir, loadBuildEnv, runGradle } = require("./build-android-env");
+const {
+  mobileRoot,
+  androidDir,
+  ensureLocalProperties,
+  loadBuildEnv,
+  runGradle,
+} = require("./build-android-env");
 const { ANDROID_VERSION_CODE } = require("../config/releaseEnvironments");
 
 const profile = process.argv[2] || process.env.EXPO_PUBLIC_RELEASE_PROFILE || "production";
@@ -53,6 +59,8 @@ function readNativeVersionCode() {
 }
 
 runExpoPrebuild();
+// prebuild --clean supprime android/, donc le local.properties ecrit par loadBuildEnv.
+ensureLocalProperties(process.env.ANDROID_HOME);
 const nativeVersionCode = readNativeVersionCode();
 if (nativeVersionCode !== ANDROID_VERSION_CODE) {
   console.error(

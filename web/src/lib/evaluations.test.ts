@@ -445,6 +445,17 @@ describe("canEnterGradesForEvaluation — brouillon/ouverte/validée", () => {
     expect(resolveCanonicalClassId(classes, "Inconnue")).toBeUndefined();
   });
 
+  it("resolveCanonicalClassId : nom porté par plusieurs classes ⇒ aucun classId arbitraire (MONO-FIX-A4)", () => {
+    const homonyms = [
+      { id: "uuid-6a-1", name: "6ème A" },
+      { id: "uuid-6a-2", name: "6eme a" },
+      { id: "uuid-6b", name: "6ème B" },
+    ];
+    expect(resolveCanonicalClassId(homonyms, "6ème A")).toBeUndefined();
+    expect(resolveCanonicalClassId(homonyms, "6ème A", "uuid-6a-2")).toBe("uuid-6a-2");
+    expect(resolveCanonicalClassId(homonyms, "6ème B")).toBe("uuid-6b");
+  });
+
   it("studentMatchesEvaluationClass : classId prioritaire, sinon nom", () => {
     const evaluation = {
       id: "e1",

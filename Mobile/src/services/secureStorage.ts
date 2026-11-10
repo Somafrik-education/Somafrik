@@ -11,7 +11,11 @@ const EFFECTIVE_PERMISSIONS_SNAPSHOT_KEY = "somafrik.effectivePermissionsSnapsho
 
 export type SessionProfile = {
   role: string;
+  roleLabel?: string;
+  roleKey?: string;
   roleKeys?: string[];
+  effectiveRoleLabel?: string;
+  effectiveRoleLabels?: unknown;
   permissions?: string[];
   user: Record<string, unknown>;
   school?: Record<string, unknown>;

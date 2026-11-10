@@ -551,11 +551,11 @@ async function run() {
   assert.equal(readyOffline.source, "l1-cache");
   assert.equal(shouldSkipMetierGet("ready_offline"), true);
 
+  // Réponse HTTP reçue (refus ou panne serveur) : jamais de repli sur le cache.
   for (const [label, error] of [
     ["403", httpError(403, "FORBIDDEN")],
     ["401", httpError(401, "UNAUTHORIZED")],
     ["500", httpError(500, "SERVER")],
-    ["timeout", httpError(0, "TIMEOUT")],
   ] as const) {
     networkCalls = 0;
     const snapshot = await loadL1BackedSnapshot({
@@ -572,6 +572,24 @@ async function run() {
     assert.notEqual(snapshot.source, "l1-cache", `${label} aucun fallback cache`);
     assert.equal(snapshot.status, "error", `${label} n'est pas offline`);
     assert.deepEqual(snapshot.data, []);
+  }
+  // PERF-PR5 : délai et serveur injoignable (aucune réponse HTTP) → dernière copie L1, signalée.
+  for (const [label, error] of [
+    ["timeout", httpError(0, "TIMEOUT")],
+    ["backend-unreachable", httpError(0, "BACKEND_UNREACHABLE")],
+  ] as const) {
+    const snapshot = await loadL1BackedSnapshot({
+      session: sessionA,
+      permissionsBootstrap: "ready",
+      resource: "classes",
+      fetchNetwork: async () => {
+        throw error;
+      },
+      project: (read) => projectL1Classes(read),
+    });
+    assert.equal(snapshot.source, "l1-cache", `${label} → copie L1`);
+    assert.equal(snapshot.refreshFailed, true, `${label} signalé comme non actualisé`);
+    assert.ok(snapshot.cachedAt, `${label} : date issue des métadonnées L1`);
   }
   assert.equal(isStrictNetworkUnavailable(httpError(0, "TIMEOUT")), false);
   assert.equal(isStrictNetworkUnavailable(httpError(500, "SERVER")), false);

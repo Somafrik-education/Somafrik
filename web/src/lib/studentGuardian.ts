@@ -381,6 +381,8 @@ export function collectStudentGuardianRelationRecords(input: {
   guardianRelations?: readonly StudentGuardianRelation[];
   persons?: readonly Person[];
   referenceDate?: Date;
+  /** Les dossiers PostgreSQL canoniques ne doivent jamais inventer une relation legacy. */
+  allowLegacyFallback?: boolean;
 }): StudentGuardianRelationRecord[] {
   const {
     student,
@@ -388,6 +390,7 @@ export function collectStudentGuardianRelationRecords(input: {
     guardianRelations = [],
     persons = [],
     referenceDate,
+    allowLegacyFallback = true,
   } = input;
 
   const forStudent = guardianRelations.filter(
@@ -395,7 +398,7 @@ export function collectStudentGuardianRelationRecords(input: {
   );
 
   if (forStudent.length === 0) {
-    return deriveGuardiansFromLegacyStudent(student);
+    return allowLegacyFallback ? deriveGuardiansFromLegacyStudent(student) : [];
   }
 
   return forStudent.map((relation) => {

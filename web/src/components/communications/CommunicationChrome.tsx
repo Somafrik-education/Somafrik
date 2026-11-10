@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "../ui/Button";
 import { EntityListSearch } from "@/design-system";
 import { canReadView } from "../../lib/permissions";
+import { resolveWebNotificationsHref } from "../../lib/webSchoolDomainDeny";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import {
   COM_FILTER_ALL,
@@ -82,7 +83,7 @@ export function CommunicationChrome({
             type="button"
             size="sm"
             variant={surface === "notifications" ? "primary" : "secondary"}
-            onClick={() => navigate("/notifications")}
+            onClick={() => navigate(resolveWebNotificationsHref(ctx.user))}
           >
             {COM_SURFACE_NOTIFICATIONS}
           </Button>

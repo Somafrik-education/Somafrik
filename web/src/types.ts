@@ -284,6 +284,17 @@ export interface UserAccount {
   email?: string;
   /** Libellé du rôle d'accès primaire (pas le type métier). */
   role?: string;
+  /** Clé canonique du rôle d'accès primaire. Jamais un alias d'affichage. */
+  roleKey?: string;
+  /** Libellé visuel résolu (display_label ou role). Hors RBAC. */
+  effectiveRoleLabel?: string;
+  /** Contrats d'affichage multi-rôle (#872). Hors RBAC. */
+  effectiveRoleLabels?: Array<{
+    roleKey: string;
+    defaultLabel: string;
+    displayLabel?: string | null;
+    effectiveLabel: string;
+  }>;
   /** Libellés des rôles d'accès. */
   roles?: string[];
   /** Clés canoniques des rôles d'accès (TEACHER, SECRETARY, …). */
@@ -488,6 +499,15 @@ export interface StudentFee {
   dueDate?: string;
   periodLabel?: string;
   createdAt?: string;
+  studentDbId?: string;
+  canonicalStudentId?: string;
+  studentCode?: string;
+  studentStatus?: string;
+  hasActiveEnrollment?: boolean | null;
+  enrollmentStatus?: string;
+  schoolMismatch?: boolean;
+  orphanFinance?: boolean;
+  studentExists?: boolean;
 }
 
 /** Historique de modification d'un tarif (EXG-FRAIS-018). */
@@ -552,6 +572,17 @@ export interface StudentUnpaidRow {
   feeIds: string[];
   lastReminderAt?: string;
   reminderCount: number;
+  canonicalStudentId?: string;
+  collectionEligible?: boolean;
+  integrityCategory?:
+    | "missing"
+    | "orphan_finance"
+    | "school_mismatch"
+    | "archived"
+    | "no_active_enrollment"
+    | "unverified_identity"
+    | "identity_mismatch"
+    | "active";
 }
 
 /** Statistiques tableau de bord impayés (IMP-017 à IMP-019). */

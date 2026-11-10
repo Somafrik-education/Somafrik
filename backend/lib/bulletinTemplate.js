@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ALLOWED_LOGO_MIME, MAX_SCHOOL_LOGO_BYTES, sniffLogoMime } = require("./schoolLogo");
 
 const TEMPLATE_DIR = path.join(__dirname, "..", "templates", "bulletin");
 
@@ -16,11 +17,17 @@ function readAsset(relativePath) {
   return fs.readFileSync(path.join(TEMPLATE_DIR, relativePath), "utf8");
 }
 
+/**
+ * SEC-PDF-01 — le logo est lu côté serveur et incorporé en `data:` ; type
+ * détecté sur le contenu (PNG, JPEG, WebP) et taille plafonnée. Sinon : pas de logo.
+ */
 function loadLogoDataUrl(logoPath) {
+  if (!logoPath) return "";
   try {
     const buffer = fs.readFileSync(logoPath);
-    const ext = path.extname(logoPath).toLowerCase();
-    const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+    if (buffer.length > MAX_SCHOOL_LOGO_BYTES) return "";
+    const mime = sniffLogoMime(buffer);
+    if (!mime || !ALLOWED_LOGO_MIME[mime]) return "";
     return `data:${mime};base64,${buffer.toString("base64")}`;
   } catch {
     return "";

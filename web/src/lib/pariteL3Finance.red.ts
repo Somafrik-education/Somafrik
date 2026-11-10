@@ -65,7 +65,8 @@ const cases: { id: string; title: string; run: () => void }[] = [
     title: "Libellé KPI Obligations élèves",
     run() {
       const overview = read("components/payments/FinancePaymentsOverview.tsx");
-      assert.match(overview, /Obligations élèves/, "libellé encore « Obligations »");
+      assert.match(overview, /label="Obligation"/, "le bandeau doit afficher Obligation");
+      assert.doesNotMatch(overview, /Obligations élèves/, "le compteur technique ne doit plus être une quatrième carte");
       assert.doesNotMatch(
         overview,
         /label=["']Obligations["']/,
@@ -99,18 +100,16 @@ const cases: { id: string; title: string; run: () => void }[] = [
   },
   {
     id: "FIN-L3-04-C",
-    title: "Montant encaissé = cash ; amountPaid = Montant imputé aux obligations",
+    title: "Encaissé provient du cash, tandis que la dette reste issue des obligations",
     run() {
       const overview = read("components/payments/FinancePaymentsOverview.tsx");
-      assert.match(
-        overview,
-        /Montant imputé aux obligations/,
-        "amountPaid est encore libellé Montant encaissé",
-      );
-      const encaissé = overview.indexOf('label="Montant encaissé"');
-      const imputé = overview.indexOf("Montant imputé aux obligations");
-      assert.ok(encaissé >= 0 && imputé >= 0, "les deux libellés doivent coexister");
-      assert.notEqual(encaissé, imputé);
+      const helper = read("lib/paymentAmountBreakdown.ts");
+      assert.match(overview, /label="Encaissé" value=\{cashLabel\}/);
+      assert.match(overview, /label="Reste à payer" value=\{remainingLabel\}/);
+      assert.doesNotMatch(overview, /Montant imputé aux obligations/);
+      assert.match(helper, /cashLabel: cash\.collectedLabel/);
+      assert.match(helper, /allocatedLabel: formatted\.collectedLabel/);
+      assert.match(helper, /remainingLabel: formatted\.remainingLabel/);
     },
   },
   {

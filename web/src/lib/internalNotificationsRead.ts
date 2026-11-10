@@ -24,12 +24,18 @@ export function useInternalNotificationsUnreadCount(enabled: boolean, schoolCode
       };
     }
 
+    // P0-WEB-01 : focus + visibilitychange arrivent ensemble ; un seul appel en vol.
+    let inFlight = false;
     async function refresh() {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const result = await internalNotificationsApi.unreadCount(schoolCode ?? undefined);
         if (!cancelled) setCount(Math.max(0, Number(result.count) || 0));
       } catch {
         if (!cancelled) setCount(0);
+      } finally {
+        inFlight = false;
       }
     }
 

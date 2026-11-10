@@ -7,6 +7,7 @@ import {
   toEditableEnrollment,
   toEditableGuardianContact,
   toEditableStudentIdentity,
+  toEditableStudentIdentityFromDossier,
 } from "../lib/studentEditingAdapters";
 import {
   canUpdateStudentWorkspace,
@@ -24,6 +25,12 @@ import {
   shouldUseHttpC18Repository,
   wrapRepositoryWithHttpC18,
 } from "../lib/studentEnrollmentHttpRepository";
+import { wrapRepositoryWithHttpAdministrative } from "../lib/studentAdministrativeHttp";
+import {
+  shouldUseHttpStudentIdentityRepository,
+  wrapRepositoryWithHttpIdentity,
+} from "../lib/studentIdentityHttp";
+import type { SchoolStudent } from "../lib/studentsApi";
 import type {
   EditableEnrollment,
   EditableGuardianContact,
@@ -53,6 +60,13 @@ export interface StudentEditingContextValue {
   enrollmentRecords: StudentEnrollmentRecord[];
   /** À appeler après un succès d'édition pour relire le store mock. */
   refreshFromStore: () => void;
+}
+
+export interface UseStudentEditingContextOptions {
+  /** Dossier GET /api/students/:code — autorité d'identité (updatedAt + parentPhone). */
+  dossier?: SchoolStudent | null;
+  /** Après PATCH identité réussi : refetch GET + liste DataContext. */
+  onIdentityPersisted?: () => void | Promise<void>;
 }
 
 interface SharedEditingSession {
@@ -92,6 +106,7 @@ function getSharedSession(studentId: string): SharedEditingSession {
  */
 export function useStudentEditingContext(
   studentId: string,
+  options: UseStudentEditingContextOptions = {},
 ): StudentEditingContextValue {
   const { state } = useData();
   const permissionCtx = usePermissionContext();
@@ -99,6 +114,8 @@ export function useStudentEditingContext(
   const sessionRef = useRef(session);
   sessionRef.current = session;
   const [revision, setRevision] = useState(0);
+  const dossier = options.dossier ?? null;
+  const onIdentityPersisted = options.onIdentityPersisted;
 
   const refreshFromStore = useCallback(() => {
     const current = sessionRef.current;
@@ -119,7 +136,13 @@ export function useStudentEditingContext(
   return useMemo(() => {
     const normalizedId = studentId.trim();
     const student = state.students.find((item) => item.id === normalizedId);
-    const schoolCode = student?.schoolCode?.trim() || "";
+    const schoolCode =
+      String(dossier?.schoolCode ?? "").trim() ||
+      student?.schoolCode?.trim() ||
+      "";
+    const identityKey = String(
+      dossier?.studentCode || student?.id || normalizedId,
+    ).trim();
     const authContext = toEditAuthorizationContext(permissionCtx, schoolCode);
     const store = session.store;
 
@@ -152,7 +175,7 @@ export function useStudentEditingContext(
       "student.enrollments.close",
     );
 
-    if (!student) {
+    if (!student && !dossier) {
       return {
         identity: null,
         guardians: [],
@@ -173,7 +196,7 @@ export function useStudentEditingContext(
       };
     }
 
-    if (session.seededStudentId !== student.id) {
+    if (student && session.seededStudentId !== student.id) {
       store.identities.clear();
       store.guardians.clear();
       store.administrative.clear();
@@ -248,31 +271,66 @@ export function useStudentEditingContext(
       }
     }
 
+    if (dossier) {
+      store.identities.set(
+        identityKey,
+        toEditableStudentIdentityFromDossier(dossier),
+      );
+      const adminKey = student?.id ?? identityKey;
+      store.administrative.set(
+        adminKey,
+        toEditableAdministrativeDetails({
+          studentId: adminKey,
+          schoolCode: String(dossier.schoolCode ?? schoolCode).trim(),
+          administrativeNotes: dossier.administrativeNotes ?? null,
+          preferredContactChannel: null,
+          updatedAt: dossier.updatedAt ?? dossier.createdAt ?? null,
+        }),
+      );
+    }
+
+    const aggregateId = student?.id ?? identityKey;
     const guardians = [...store.guardians.values()].filter(
-      (item) => item.studentId === student.id,
+      (item) => item.studentId === aggregateId,
     );
     const enrollments = [...store.enrollments.values()].filter(
-      (item) => item.studentId === student.id,
+      (item) => item.studentId === aggregateId,
     );
     const schoolClasses = [...store.schoolClasses.values()].filter(
       (item) =>
         item.schoolCode.trim().toLowerCase() === schoolCode.toLowerCase(),
     );
 
-    const repository = shouldUseHttpC18Repository()
-      ? wrapRepositoryWithHttpC18(session.repository, {
-          studentId: student.id,
-          schoolCode,
-          onUpdated: (item) => {
-            store.enrollments.set(`${item.studentId}:${item.enrollmentId}`, item);
-          },
-        })
-      : session.repository;
+    let repository = session.repository;
+    if (shouldUseHttpStudentIdentityRepository()) {
+      repository = wrapRepositoryWithHttpIdentity(repository, {
+        onUpdated: (identity) => {
+          store.identities.set(identity.studentId, identity);
+        },
+        onPersisted: onIdentityPersisted,
+      });
+      repository = wrapRepositoryWithHttpAdministrative(repository, {
+        studentCode: String(dossier?.studentCode ?? "").trim(),
+        onUpdated: (details) => {
+          store.administrative.set(details.studentId, details);
+        },
+        onPersisted: onIdentityPersisted,
+      });
+    }
+    if (shouldUseHttpC18Repository()) {
+      repository = wrapRepositoryWithHttpC18(repository, {
+        studentId: aggregateId,
+        schoolCode,
+        onUpdated: (item) => {
+          store.enrollments.set(`${item.studentId}:${item.enrollmentId}`, item);
+        },
+      });
+    }
 
     return {
-      identity: store.identities.get(student.id) ?? null,
+      identity: store.identities.get(identityKey) ?? store.identities.get(aggregateId) ?? null,
       guardians,
-      administrative: store.administrative.get(student.id) ?? null,
+      administrative: store.administrative.get(aggregateId) ?? null,
       enrollments,
       schoolClasses,
       authContext,
@@ -287,5 +345,14 @@ export function useStudentEditingContext(
       enrollmentRecords: enrollments.map(fromEditableEnrollment),
       refreshFromStore,
     };
-  }, [studentId, state, permissionCtx, revision, refreshFromStore, session]);
+  }, [
+    studentId,
+    state,
+    permissionCtx,
+    revision,
+    refreshFromStore,
+    session,
+    dossier,
+    onIdentityPersisted,
+  ]);
 }

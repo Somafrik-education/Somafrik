@@ -1,0 +1,108 @@
+name: NFC PR2 native proof (Hermes S13 + SQLCipher Android)
+
+# Exécution RÉELLE sur Android (émulateur x86_64 accéléré par KVM), pas une simulation Node :
+#  - gate S13 : vecteurs du contrat rejoués par le moteur Hermes de l'APK ;
+#  - base d'appel SQLCipher : cipher_version, écriture, fermeture, force-stop, relecture,
+#    refus avec mauvaise clé et sans clé, en-tête de fichier chiffré.
+# L'APK est une APK de RECETTE (entrée App.rcNativeProof.tsx), signature de test, jamais publiée.
+# Aucun secret, aucune clé de pack, aucun flag produit.
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - "Mobile/src/offline/rollCall/**"
+      - "Mobile/src/offline/l1/database.ts"
+      - "Mobile/App.rcNativeProof.tsx"
+      - "Mobile/metro.config.js"
+      - "Mobile/package.json"
+      - "Mobile/package-lock.json"
+      - "Mobile/scripts/run-rc-offline-native-proof.js"
+      - "docs/audits/NFC-PRES-LOCAL-PR0-vectors.json"
+      - "docs/audits/NFC-PRES-LOCAL-PR2-vectors.json"
+      - ".github/workflows/nfc-pr2-native-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nfc-pr2-native-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-proof:
+    name: Hermes S13 + SQLCipher on Android emulator (exact HEAD)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      EXPO_PUBLIC_RELEASE_PROFILE: preview
+      EAS_BUILD_PROFILE: preview
+      EXPO_PUBLIC_API_URL: https://api-preprod.somafrik.app
+      EXPO_PUBLIC_API_URL_PREVIEW: https://api-preprod.somafrik.app
+      EXPO_PUBLIC_DEMO_MODE: "false"
+      SOMAFRIK_RC_NATIVE_PROOF_ENTRY: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            Mobile/package-lock.json
+      - name: Install workspace and Mobile
+        run: npm ci && npm ci --prefix Mobile
+      - name: Node parity before any native build (same suite as Hermes)
+        working-directory: Mobile
+        run: npx --yes tsx --test src/offline/rollCall/crypto/rollCallCrypto.test.ts
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: false
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - name: Generate Android (recette entry)
+        working-directory: Mobile
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Compile x86_64 recette APK (Hermes, test signature only)
+        working-directory: Mobile/android
+        run: ./gradlew :app:assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=x86_64
+      - name: Bundle contains the recette entry and the shared vectors
+        run: |
+          set -euo pipefail
+          APK=Mobile/android/app/build/outputs/apk/release/app-release.apk
+          test -f "$APK"
+          unzip -l "$APK" | grep -q "assets/index.android.bundle"
+          unzip -p "$APK" assets/index.android.bundle | strings | grep -q "RC_NATIVE_PROOF"
+          unzip -p "$APK" assets/index.android.bundle | strings | grep -q "somafrik.rc-offline.pack.v1"
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run proof on Android emulator (API 34, x86_64)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          disable-animations: true
+          script: ANDROID_APK=Mobile/android/app/build/outputs/apk/release/app-release.apk node Mobile/scripts/run-rc-offline-native-proof.js --evidence Mobile/dist/rc-native-proof
+      - name: Upload native proof evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-native-proof-${{ github.event.pull_request.head.sha || github.sha }}
+          path: Mobile/dist/rc-native-proof/*
+          if-no-files-found: warn
+          retention-days: 30

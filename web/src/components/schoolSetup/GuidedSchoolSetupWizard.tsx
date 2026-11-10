@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button, Card, InlineAlert, WizardLayout } from "@/design-system";
 import { ApiError } from "../../api/client";
@@ -31,7 +31,9 @@ export function GuidedSchoolSetupWizard({
   const [viewingStep, setViewingStep] = useState(payload.currentStep);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorTitle, setErrorTitle] = useState("Sauvegarde impossible");
   const [saved, setSaved] = useState(false);
+  const finishLock = useRef(false);
 
   useEffect(() => {
     setCurrent(payload);
@@ -43,7 +45,9 @@ export function GuidedSchoolSetupWizard({
   const copy = GUIDED_STEP_COPY[stepKey];
   const href = GUIDED_WEB_LINKS[stepKey];
   const isLast = viewingStep === 10;
-  const canFinish = current.percent >= 100 || isLast;
+  const canFinish =
+    !current.finalized && (current.percent >= 100 || isLast || current.status === "operational");
+  const canContinue = !current.finalized && !isLast && current.percent < 100;
   const heading = guidedStepHeading(viewingStep);
 
   const bar = useMemo(() => progressBar(current.percent), [current.percent]);
@@ -51,6 +55,7 @@ export function GuidedSchoolSetupWizard({
   async function saveAndContinue() {
     setSaving(true);
     setError(null);
+    setErrorTitle("Sauvegarde impossible");
     setSaved(false);
     try {
       const next = await schoolSetupGuidedApi.completeStep(stepKey);
@@ -72,14 +77,40 @@ export function GuidedSchoolSetupWizard({
     }
   }
 
-  async function finishSetup() {
-    if (current.percent >= 100) {
-      onFinish?.();
-      return;
+  function failureMessage(err: unknown) {
+    if (err instanceof ApiError) {
+      const details = err.details as { missingSteps?: Array<{ label?: string }> } | undefined;
+      const labels = Array.isArray(details?.missingSteps)
+        ? details.missingSteps.map((step) => String(step?.label ?? "").trim()).filter(Boolean)
+        : [];
+      if (labels.length) {
+        return `Étapes obligatoires à corriger : ${labels.join(", ")}.`;
+      }
+      return err.message || "Finalisation impossible. Vérifiez votre connexion puis réessayez.";
     }
-    const next = await saveAndContinue();
-    if (Number(next?.percent ?? 0) >= 100) {
-      onFinish?.();
+    return "Finalisation impossible. Vérifiez votre connexion puis réessayez.";
+  }
+
+  async function finishSetup() {
+    if (finishLock.current || current.finalized) return;
+    finishLock.current = true;
+    setSaving(true);
+    setError(null);
+    setErrorTitle("Finalisation impossible");
+    setSaved(false);
+    try {
+      const next = await schoolSetupGuidedApi.finalize();
+      if (!next?.finalized) {
+        setError("La finalisation n'a pas été confirmée par le serveur.");
+        return;
+      }
+      setCurrent(next);
+      onCompleted?.(next);
+    } catch (err: unknown) {
+      setError(failureMessage(err));
+    } finally {
+      finishLock.current = false;
+      setSaving(false);
     }
   }
 
@@ -89,9 +120,15 @@ export function GuidedSchoolSetupWizard({
         <div className="space-y-1">
           <h2 className="text-xl font-black text-ink">Configuration de votre établissement</h2>
           <p className="text-sm font-semibold text-ink">{heading || `Étape ${viewingStep} sur 10`}</p>
-          <p className="text-sm text-muted" aria-live="polite">
-            {guidedProgressLabel(current)}
-          </p>
+          {current.finalized ? (
+            <InlineAlert tone="success" title="Configuration de votre établissement terminée">
+              Vous pouvez consulter ou modifier les paramètres autorisés. Le statut terminé est conservé.
+            </InlineAlert>
+          ) : (
+            <p className="text-sm text-muted" aria-live="polite">
+              {guidedProgressLabel(current)}
+            </p>
+          )}
           <p className="font-mono text-xs tracking-wide text-brand" aria-hidden="true">
             {bar} {current.percent} %
           </p>
@@ -144,7 +181,7 @@ export function GuidedSchoolSetupWizard({
             </InlineAlert>
           ) : null}
           {error ? (
-            <InlineAlert tone="danger" title="Sauvegarde impossible">
+            <InlineAlert tone="danger" title={errorTitle}>
               {error}
             </InlineAlert>
           ) : null}
@@ -164,23 +201,36 @@ export function GuidedSchoolSetupWizard({
             Précédent
           </Button>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="tertiary" onClick={() => onLeave?.()}>
-              Quitter et reprendre plus tard
-            </Button>
+            {current.finalized ? null : (
+              <Button type="button" variant="tertiary" onClick={() => onLeave?.()}>
+                Quitter et reprendre plus tard
+              </Button>
+            )}
+            {canContinue ? (
+              <Button type="button" onClick={() => void saveAndContinue()} disabled={saving}>
+                {saving ? "Enregistrement…" : "Enregistrer et continuer"}
+              </Button>
+            ) : null}
             {canFinish ? (
               <>
                 <Button type="button" variant="secondary" onClick={() => setViewingStep(1)}>
                   Vérifier la configuration
                 </Button>
-                <Button type="button" onClick={() => void finishSetup()} disabled={saving}>
+                <Button
+                  type="button"
+                  onClick={() => void finishSetup()}
+                  disabled={saving}
+                  aria-busy={saving}
+                >
                   {saving ? "Enregistrement…" : "Terminer la configuration"}
                 </Button>
               </>
-            ) : (
-              <Button type="button" onClick={() => void saveAndContinue()} disabled={saving}>
-                {saving ? "Enregistrement…" : "Enregistrer et continuer"}
+            ) : null}
+            {current.finalized ? (
+              <Button type="button" onClick={() => onFinish?.()}>
+                Accéder au tableau de bord
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
       </WizardLayout.StickyActions>

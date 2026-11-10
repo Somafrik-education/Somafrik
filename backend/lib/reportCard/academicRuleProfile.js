@@ -269,6 +269,24 @@ function validateSpec(raw) {
 
   const pass_rule = normalizePassRule(raw.pass_rule, { aggregation });
 
+  const subjects =
+    raw.subjects === undefined
+      ? null
+      : normalizeSubjects(raw.subjects, {
+          periodIds: periodIdSet,
+          componentIds: new Set(score_components.map((component) => component.id)),
+          calculable: Boolean(aggregation && roundingStage),
+        });
+
+  const fact_sources =
+    raw.fact_sources === undefined
+      ? null
+      : normalizeFactSources(raw.fact_sources, {
+          subjects,
+          periodIds: normalizedPeriods.map((period) => period.id),
+          componentIds: score_components.map((component) => component.id),
+        });
+
   const spec = {
     engine_id: ENGINE_ID,
     layer: LAYERS[0],
@@ -283,8 +301,271 @@ function validateSpec(raw) {
       : { enabled: rankingEnabled, ties },
     ...(aggregation ? { aggregation } : {}),
     ...(pass_rule ? { pass_rule } : {}),
+    ...(subjects ? { subjects } : {}),
+    ...(fact_sources ? { fact_sources } : {}),
   };
   return spec;
+}
+
+/**
+ * BULLETIN-PUBLISH-01 — sources des notes réelles (clé optionnelle `fact_sources`).
+ *
+ *   components: { <COMPOSANTE>: { evaluation_types: [codes], aggregation: "weighted_average" | "sum" } }
+ *   periods:    { <PÉRIODE>:    { term_names: [noms de trimestre] } }
+ *
+ * Correspondance explicite et exhaustive : chaque composante et chaque période
+ * du profil doit être déclarée ; un code ou un nom ne peut désigner qu'une seule
+ * cible (sinon AMBIGUOUS_FACT_SOURCE). Codes : forme canonique evaluation_types.code ;
+ * noms : minuscules, sans accents, espaces réduits. Valeur inconnue au calcul :
+ * anomalie bloquante, jamais une conversion silencieuse.
+ */
+const FACT_AGGREGATIONS = Object.freeze(["weighted_average", "sum"]);
+
+function normalizeEvaluationTypeCode(value) {
+  const { normalizeCode } = require("../evaluationTypesManagement");
+  return normalizeCode(value);
+}
+
+function normalizeTermName(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeSourceList(raw, normalizer, seen, target) {
+  if (!Array.isArray(raw) || raw.length < 1) throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+  const values = [];
+  for (const item of raw) {
+    if (typeof item !== "string") throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+    const value = normalizer(item);
+    if (!value) throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+    if (seen.has(value)) throw new AcademicRuleProfileError("AMBIGUOUS_FACT_SOURCE", `valeur ${value} déjà associée à ${seen.get(value)}`);
+    seen.set(value, target);
+    values.push(value);
+  }
+  return values.sort();
+}
+
+function normalizeFactSources(raw, { subjects, periodIds, componentIds }) {
+  if (!subjects) throw new AcademicRuleProfileError("FACT_SOURCES_REQUIRE_SUBJECTS");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+  rejectCountrySchoolKeys(raw);
+  const rawComponents = raw.components;
+  const rawPeriods = raw.periods;
+  if (!rawComponents || typeof rawComponents !== "object" || Array.isArray(rawComponents)) {
+    throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+  }
+  if (!rawPeriods || typeof rawPeriods !== "object" || Array.isArray(rawPeriods)) {
+    throw new AcademicRuleProfileError("INVALID_FACT_SOURCES");
+  }
+  for (const key of Object.keys(rawComponents)) {
+    if (!componentIds.includes(key)) throw new AcademicRuleProfileError("UNKNOWN_FACT_SOURCE_COMPONENT");
+  }
+  for (const key of Object.keys(rawPeriods)) {
+    if (!periodIds.includes(key)) throw new AcademicRuleProfileError("UNKNOWN_FACT_SOURCE_PERIOD");
+  }
+  const seenCodes = new Map();
+  const components = {};
+  for (const componentId of [...componentIds].sort()) {
+    const entry = rawComponents[componentId];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new AcademicRuleProfileError("FACT_SOURCE_COMPONENT_MISSING");
+    }
+    if (!FACT_AGGREGATIONS.includes(entry.aggregation)) throw new AcademicRuleProfileError("INVALID_FACT_AGGREGATION");
+    components[componentId] = {
+      evaluation_types: normalizeSourceList(entry.evaluation_types, normalizeEvaluationTypeCode, seenCodes, componentId),
+      aggregation: entry.aggregation,
+    };
+  }
+  const seenTerms = new Map();
+  const periods = {};
+  for (const periodId of [...periodIds].sort()) {
+    const entry = rawPeriods[periodId];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new AcademicRuleProfileError("FACT_SOURCE_PERIOD_MISSING");
+    }
+    periods[periodId] = { term_names: normalizeSourceList(entry.term_names, normalizeTermName, seenTerms, periodId) };
+  }
+  return { components, periods };
+}
+
+/**
+ * BULLETIN-MODEL-01 — règles par matière (clé optionnelle `subjects`).
+ * Absente : comportement v1 inchangé (spécification et hash identiques).
+ *
+ * Entrée :
+ *   { id, order?, parent_id?, components?: { <COMPOSANTE>: { max, coefficient? } },
+ *     period_overrides?: { <PÉRIODE>: { <COMPOSANTE>: { max, coefficient? } | "not_applicable" } },
+ *     periods?: "always" | { include: [...] } | { exclude: [...] } }
+ *
+ * - matière simple : sans parent, avec composantes ;
+ * - matière composée : référencée comme parent, SANS composante (ses totaux sont
+ *   la somme de ses sous-matières : aucune double comptabilisation possible) ;
+ * - sous-matière : avec parent (un seul niveau), avec composantes.
+ * Une composante absente d'une matière est NON APPLICABLE pour cette matière.
+ */
+const SUBJECT_ID_MAX_LENGTH = 64;
+const SUBJECT_KINDS = Object.freeze(["simple", "composite", "sub"]);
+const COMPONENT_NOT_APPLICABLE = "not_applicable";
+
+function normalizeSubjectId(value) {
+  if (typeof value !== "string") throw new AcademicRuleProfileError("INVALID_SUBJECT_ID");
+  const id = value.trim();
+  // eslint-disable-next-line no-control-regex
+  if (!id || id.length > SUBJECT_ID_MAX_LENGTH || /[\u0000-\u001f\u007f]/.test(id)) {
+    throw new AcademicRuleProfileError("INVALID_SUBJECT_ID");
+  }
+  return id;
+}
+
+function normalizeSubjectComponentRule(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new AcademicRuleProfileError("INVALID_SUBJECT_MAX");
+  }
+  rejectCountrySchoolKeys(raw);
+  if (typeof raw.max !== "number" || !Number.isFinite(raw.max) || raw.max <= 0) {
+    throw new AcademicRuleProfileError("INVALID_SUBJECT_MAX");
+  }
+  const rule = { max: raw.max };
+  if (raw.coefficient !== undefined) {
+    if (typeof raw.coefficient !== "number" || !Number.isFinite(raw.coefficient) || raw.coefficient <= 0) {
+      throw new AcademicRuleProfileError("INVALID_SUBJECT_COEFFICIENT");
+    }
+    rule.coefficient = raw.coefficient;
+  }
+  return rule;
+}
+
+function normalizeSubjectComponents(raw, componentIds) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).length === 0) {
+    throw new AcademicRuleProfileError("SUBJECT_WITHOUT_COMPONENTS");
+  }
+  const components = {};
+  for (const componentId of Object.keys(raw).sort()) {
+    if (!componentIds.has(componentId)) throw new AcademicRuleProfileError("UNKNOWN_SUBJECT_COMPONENT");
+    components[componentId] = normalizeSubjectComponentRule(raw[componentId]);
+  }
+  return components;
+}
+
+function normalizePeriodOverrides(raw, { periodIds, componentIds }) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new AcademicRuleProfileError("INVALID_PERIOD_OVERRIDE");
+  }
+  const overrides = {};
+  for (const periodId of Object.keys(raw).sort()) {
+    if (!periodIds.has(periodId)) throw new AcademicRuleProfileError("INVALID_PERIOD_OVERRIDE");
+    const perPeriod = raw[periodId];
+    if (!perPeriod || typeof perPeriod !== "object" || Array.isArray(perPeriod) || Object.keys(perPeriod).length === 0) {
+      throw new AcademicRuleProfileError("INVALID_PERIOD_OVERRIDE");
+    }
+    overrides[periodId] = {};
+    for (const componentId of Object.keys(perPeriod).sort()) {
+      if (!componentIds.has(componentId)) throw new AcademicRuleProfileError("UNKNOWN_SUBJECT_COMPONENT");
+      const value = perPeriod[componentId];
+      overrides[periodId][componentId] =
+        value === COMPONENT_NOT_APPLICABLE ? COMPONENT_NOT_APPLICABLE : normalizeSubjectComponentRule(value);
+    }
+  }
+  return overrides;
+}
+
+function normalizeSubjectPeriods(raw, periodIds) {
+  const dimension = parseApplicabilityDimension(raw, PERIOD_APPLICABILITY_MODES);
+  if (dimension.mode === "include" || dimension.mode === "exclude") {
+    for (const id of dimension.ids) {
+      if (!periodIds.has(id)) throw new AcademicRuleProfileError("INVALID_APPLICABILITY");
+    }
+  }
+  return dimension;
+}
+
+function normalizeSubjects(raw, { periodIds, componentIds, calculable }) {
+  if (!calculable) throw new AcademicRuleProfileError("SUBJECT_RULES_REQUIRE_AGGREGATION");
+  if (!Array.isArray(raw) || raw.length < 1) throw new AcademicRuleProfileError("INVALID_SUBJECTS");
+  const entries = raw.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new AcademicRuleProfileError("INVALID_SUBJECTS");
+    rejectCountrySchoolKeys(item);
+    const order = item.order == null ? index + 1 : Number(item.order);
+    if (!Number.isInteger(order) || order < 1) throw new AcademicRuleProfileError("INVALID_SUBJECT_ORDER");
+    return {
+      raw: item,
+      id: normalizeSubjectId(item.id),
+      order,
+      parent_id: item.parent_id == null ? null : normalizeSubjectId(item.parent_id),
+    };
+  });
+  const byId = new Map();
+  for (const entry of entries) {
+    if (byId.has(entry.id)) throw new AcademicRuleProfileError("DUPLICATE_SUBJECT");
+    byId.set(entry.id, entry);
+  }
+  const parentIds = new Set();
+  for (const entry of entries) {
+    if (entry.parent_id == null) continue;
+    const parent = byId.get(entry.parent_id);
+    if (!parent) throw new AcademicRuleProfileError("UNKNOWN_PARENT_SUBJECT");
+    if (parent.id === entry.id || parent.parent_id != null) {
+      throw new AcademicRuleProfileError("SUBJECT_NESTING_TOO_DEEP");
+    }
+    parentIds.add(parent.id);
+  }
+  const normalized = entries.map((entry) => {
+    const { raw: item } = entry;
+    const composite = parentIds.has(entry.id);
+    const kind = composite ? "composite" : entry.parent_id ? "sub" : "simple";
+    const subject = { id: entry.id, order: entry.order, kind };
+    if (entry.parent_id) subject.parent_id = entry.parent_id;
+    if (composite) {
+      if (item.components !== undefined || item.period_overrides !== undefined) {
+        throw new AcademicRuleProfileError("COMPOSITE_WITH_COMPONENTS");
+      }
+      if (item.periods !== undefined) throw new AcademicRuleProfileError("INVALID_SUBJECTS");
+      return subject;
+    }
+    subject.components = normalizeSubjectComponents(item.components, componentIds);
+    if (item.period_overrides !== undefined) {
+      subject.period_overrides = normalizePeriodOverrides(item.period_overrides, { periodIds, componentIds });
+    }
+    if (item.periods !== undefined) subject.periods = normalizeSubjectPeriods(item.periods, periodIds);
+    return subject;
+  });
+  return canonicalSubjectOrder(normalized);
+}
+
+/** Ordre canonique : matières de premier niveau (ordre, id), chacune suivie de ses sous-matières. */
+function canonicalSubjectOrder(subjects) {
+  const byOrder = (left, right) => left.order - right.order || left.id.localeCompare(right.id);
+  const topLevel = subjects.filter((subject) => !subject.parent_id).sort(byOrder);
+  const ordered = [];
+  for (const subject of topLevel) {
+    ordered.push(subject);
+    ordered.push(...subjects.filter((child) => child.parent_id === subject.id).sort(byOrder));
+  }
+  return ordered;
+}
+
+/**
+ * Règle effective d'une composante pour (matière, période) dans un profil à
+ * règles par matière. États : NOT_CONFIGURED, COMPOSITE, NOT_APPLICABLE, APPLICABLE.
+ */
+function resolveSubjectComponentRule(profile, subjectId, periodId, componentId) {
+  const subject = (profile.subjects || []).find((item) => item.id === subjectId);
+  if (!subject) return { state: "NOT_CONFIGURED" };
+  if (subject.kind === "composite") return { state: "COMPOSITE" };
+  if (subject.periods && !dimensionApplies(subject.periods, { id: periodId })) {
+    return { state: "NOT_APPLICABLE", reason: "PERIOD_NOT_APPLICABLE" };
+  }
+  const override = subject.period_overrides?.[periodId]?.[componentId];
+  if (override === COMPONENT_NOT_APPLICABLE) return { state: "NOT_APPLICABLE", reason: "COMPONENT_NOT_APPLICABLE" };
+  const rule = override || subject.components[componentId];
+  if (!rule) return { state: "NOT_APPLICABLE", reason: "COMPONENT_NOT_APPLICABLE" };
+  const component = profile.score_components.find((item) => item.id === componentId);
+  const coefficient = rule.coefficient ?? component?.coefficient ?? profile.aggregation.coefficient_default;
+  return { state: "APPLICABLE", max: rule.max, weight: coefficient };
 }
 
 function normalizeAggregation(raw) {
@@ -499,4 +780,9 @@ module.exports = {
   isCalculablePassRule,
   assignRanks,
   assertScoreBounds,
+  SUBJECT_KINDS,
+  resolveSubjectComponentRule,
+  FACT_AGGREGATIONS,
+  normalizeEvaluationTypeCode,
+  normalizeTermName,
 };

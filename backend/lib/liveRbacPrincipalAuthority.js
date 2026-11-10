@@ -50,7 +50,8 @@ function repositoryWithAuthoritativeRoleKeys(repository, roleKeys) {
   const authoritative = roleKeys.length ? [...roleKeys] : [LIVE_RBAC_EMPTY_ROLE];
   return new Proxy(repository, {
     get(target, prop, receiver) {
-      if (prop === "listActiveUserRoleKeys") {
+      // Rôles déjà résolus et bornés à l'établissement ci-dessus : aucune autre lecture.
+      if (prop === "listActiveUserRoleKeys" || prop === "listActiveUserRoleKeysForSchool") {
         return async () => [...authoritative];
       }
       const value = Reflect.get(target, prop, receiver);

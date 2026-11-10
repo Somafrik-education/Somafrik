@@ -26,15 +26,20 @@ function newRequestCode() {
   return `PRV-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
-function sanitizePrivacyRequest(row) {
+function sanitizePrivacyRequest(row, displayIndex) {
   if (!row) return null;
+  const { toRoleKey } = require("./userRoleLifecycle");
+  const { resolveVisibleRoleLabel } = require("./roleDisplayLabels");
+  const stored = row.role_label ?? row.roleLabel ?? "";
+  const roleKey = toRoleKey(row.role_key ?? row.roleKey ?? stored);
   return {
     id: row.id,
     requestCode: row.request_code ?? row.requestCode,
     schoolCode: row.school_code ?? row.schoolCode ?? "",
     identifier: row.identifier ?? "",
     contactEmail: row.contact_email ?? row.contactEmail ?? "",
-    roleLabel: row.role_label ?? row.roleLabel ?? "",
+    roleKey: roleKey || undefined,
+    roleLabel: resolveVisibleRoleLabel(roleKey || stored, displayIndex, stored),
     requestType: row.request_type ?? row.requestType ?? "erasure",
     status: row.status,
     reason: row.reason ?? "",

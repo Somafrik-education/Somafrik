@@ -1,25 +1,63 @@
 const crypto = require("crypto");
 const {
+  MAX_ACCESS_TOKEN_LIFETIME_SECONDS,
   resolveAccessTokenTtlSeconds,
   resolveRefreshTokenTtlSeconds,
 } = require("../lib/authTokenPolicy");
+
+/** SEC-JWT-01a — audience des jetons d'accès (émise et exigée). */
+const ACCESS_TOKEN_AUDIENCE = "somafrik-api";
+/** Tolérance d'horloge explicite pour iat / nbf (secondes), strictement bornée. */
+const CLOCK_SKEW_SECONDS = 60;
+/** Mode HS256 : seuls ces paramètres d'en-tête sont admis (kid, jku, x5u, jwk, x5c, crit… refusés). */
+const ALLOWED_HEADER_PARAMS = new Set(["alg", "typ"]);
+
+/**
+ * SEC-JWT-01a — aucun secret public de repli. JWT_SECRET absent :
+ * - production : refus (en plus du contrôle de démarrage assertProductionSecrets) ;
+ * - ailleurs : secret aléatoire éphémère propre au processus (jetons invalides au
+ *   redémarrage). Les tests reproductibles et les déploiements multi-instance
+ *   doivent définir JWT_SECRET explicitement.
+ */
+let ephemeralDevelopmentSecret = null;
+function resolveSigningSecret(env = process.env) {
+  const configured = String(env.JWT_SECRET ?? "");
+  if (configured) return configured;
+  // Production : aucun secret → aucune signature ni vérification (requireSecret) ;
+  // le démarrage est refusé par assertProductionSecrets avec la liste complète.
+  if (String(env.NODE_ENV ?? "").trim().toLowerCase() === "production") return null;
+  if (!ephemeralDevelopmentSecret) {
+    ephemeralDevelopmentSecret = crypto.randomBytes(48).toString("base64url");
+  }
+  return ephemeralDevelopmentSecret;
+}
+
+function isIntegerSeconds(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
 
 class TokenService {
   constructor({
     issuer = "somafrik-api",
     accessTokenTtlSeconds,
     refreshTokenTtlSeconds,
-    secret = process.env.JWT_SECRET || "somafrik-dev-secret-change-me",
+    secret,
     env = process.env,
   } = {}) {
     this.issuer = issuer;
+    this.audience = ACCESS_TOKEN_AUDIENCE;
     this.accessTokenTtlSeconds = Number.isFinite(Number(accessTokenTtlSeconds))
       ? Number(accessTokenTtlSeconds)
       : resolveAccessTokenTtlSeconds(env);
     this.refreshTokenTtlSeconds = Number.isFinite(Number(refreshTokenTtlSeconds))
       ? Number(refreshTokenTtlSeconds)
       : resolveRefreshTokenTtlSeconds(env);
-    this.secret = secret;
+    this.secret = secret || resolveSigningSecret(env);
+  }
+
+  requireSecret() {
+    if (!this.secret) throw new Error("JWT_SECRET est obligatoire en production.");
+    return this.secret;
   }
 
   createAccessToken(subject) {
@@ -66,7 +104,7 @@ class TokenService {
 
     const signedPart = `${encodedHeader}.${encodedPayload}`;
     const expectedSignature = this.base64Url(
-      crypto.createHmac("sha256", this.secret).update(signedPart).digest()
+      crypto.createHmac("sha256", this.requireSecret()).update(signedPart).digest()
     );
 
     const actual = Buffer.from(signature);
@@ -82,6 +120,12 @@ class TokenService {
     if (!Object.prototype.hasOwnProperty.call(header, "typ") || header.typ !== "JWT") {
       throw new Error("Type d'en-tête JWT invalide");
     }
+    // SEC-JWT-01a : politique fermée — la clé n'est jamais désignée par le jeton.
+    for (const param of Object.keys(header)) {
+      if (!ALLOWED_HEADER_PARAMS.has(param)) {
+        throw new Error("Paramètre d'en-tête JWT non autorisé");
+      }
+    }
 
     const payload = this.decodeJwtJson(encodedPayload, "Charge");
 
@@ -93,8 +137,39 @@ class TokenService {
       throw new Error("Type de token invalide");
     }
 
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+    // SEC-JWT-01a : exp et iat obligatoires et numériques pour tout jeton signé
+    // (accès, refresh, curseur) ; tous les jetons émis par sign() les portent déjà.
+    if (!isIntegerSeconds(payload.exp) || !isIntegerSeconds(payload.iat)) {
+      throw new Error("Validité JWT invalide");
+    }
+    // Expiration dès exp <= now (exp exclu), contrôlée en premier pour garder le
+    // contrat « expiré » des appelants (ex. curseur Mobile → 409 réconciliation).
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp <= now) {
       throw new Error("Token expire");
+    }
+    // Fenêtre de validité non vide : un jeton dont exp <= iat n'est jamais valide.
+    if (payload.exp <= payload.iat) {
+      throw new Error("Validité JWT invalide");
+    }
+    if (payload.iat > now + CLOCK_SKEW_SECONDS) {
+      throw new Error("Emission JWT dans le futur");
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, "nbf")) {
+      if (!isIntegerSeconds(payload.nbf) || payload.nbf > now + CLOCK_SKEW_SECONDS) {
+        throw new Error("Token pas encore valide");
+      }
+    }
+
+    if (expectedType === "access") {
+      if (payload.exp - payload.iat > MAX_ACCESS_TOKEN_LIFETIME_SECONDS) {
+        throw new Error("Duree de vie JWT excessive");
+      }
+      // Audience exacte (chaîne) : un jeton d'accès sans aud (émis avant SEC-JWT-01a)
+      // est refusé ; les clients le renouvellent par refresh.
+      if (payload.aud !== this.audience) {
+        throw new Error("Audience JWT invalide");
+      }
     }
 
     return payload;
@@ -118,7 +193,7 @@ class TokenService {
   }
 
   sealRefreshToken(token) {
-    const key = crypto.createHash("sha256").update(this.secret).digest();
+    const key = crypto.createHash("sha256").update(this.requireSecret()).digest();
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
     const encrypted = Buffer.concat([cipher.update(String(token), "utf8"), cipher.final()]);
@@ -131,7 +206,7 @@ class TokenService {
     if (parts.length !== 4 || parts[0] !== "v1") {
       throw new Error("Jeton de grâce invalide");
     }
-    const key = crypto.createHash("sha256").update(this.secret).digest();
+    const key = crypto.createHash("sha256").update(this.requireSecret()).digest();
     const iv = Buffer.from(parts[1], "base64url");
     const encrypted = Buffer.from(parts[2], "base64url");
     const tag = Buffer.from(parts[3], "base64url");
@@ -145,6 +220,8 @@ class TokenService {
     const header = { alg: "HS256", typ: "JWT" };
     const completePayload = {
       ...payload,
+      // SEC-JWT-01a : audience imposée par le serveur pour les jetons d'accès.
+      ...(payload?.typ === "access" ? { aud: this.audience } : {}),
       iss: this.issuer,
       iat: now,
       exp: now + ttlSeconds,
@@ -152,7 +229,7 @@ class TokenService {
     const encodedHeader = this.base64Url(JSON.stringify(header));
     const encodedPayload = this.base64Url(JSON.stringify(completePayload));
     const signature = this.base64Url(
-      crypto.createHmac("sha256", this.secret).update(`${encodedHeader}.${encodedPayload}`).digest()
+      crypto.createHmac("sha256", this.requireSecret()).update(`${encodedHeader}.${encodedPayload}`).digest()
     );
 
     return `${encodedHeader}.${encodedPayload}.${signature}`;
@@ -167,4 +244,4 @@ class TokenService {
   }
 }
 
-module.exports = { TokenService };
+module.exports = { TokenService, ACCESS_TOKEN_AUDIENCE, CLOCK_SKEW_SECONDS };

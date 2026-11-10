@@ -69,6 +69,20 @@ describe("P0 production RBAC web", () => {
     expect(canResetTargetUserPassword(teacher, target)).toBe(false);
   });
 
+  it("Admin Pays avec COUNTRY_PRIVILEGES peut réinitialiser un SCHOOL_ADMIN", () => {
+    const country = ctx({
+      role: "Admin Pays",
+      permissions: ["COUNTRY_PRIVILEGES"],
+    });
+    expect(
+      canResetTargetUserPassword(country, {
+        role: "Admin School",
+        roleKeys: ["SCHOOL_ADMIN"],
+        status: "Actif",
+      } as UserAccount),
+    ).toBe(true);
+  });
+
   it("Parent / Élève restent limités à leurs vues lecture", () => {
     const parent = ctx({
       role: "Parent",

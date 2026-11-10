@@ -1,0 +1,60 @@
+{
+  "lot": "AUDIT-ROLE-LABELS-01",
+  "status": "DRAFT_HOLD",
+  "verdict": "OPTION_B",
+  "ctoReview": "PASS",
+  "implementationOrder": ["ROLE-LABELS-API-01", "ROLE-LABELS-WEB-01", "ROLE-LABELS-MOBILE-01"],
+  "frozenDefaults": {
+    "SCHOOL_ADMIN": "Admin School",
+    "STUDENT": "Élève / Étudiant",
+    "TEACHER": "Enseignant"
+  },
+  "collisionRule": "visible labels must never be converted back to roleKey; toRoleKey(Directeur)=PRINCIPAL",
+  "base": "be63efa6948c5baaa468408157be7f56d6398c30",
+  "admin02b": "COMPLET_BACKEND_PARTIEL_UI",
+  "p0": [],
+  "roles": [
+    {"roleKey": "SUPER_ADMIN", "roleCode": "SUPER_ADMIN", "roleName": "Super Administrateur Somafrik", "defaultLabel": "Super Administrateur Somafrik", "scope": "platform", "systemProtected": true, "schoolAssignable": false},
+    {"roleKey": "COUNTRY_ADMIN", "roleCode": "COUNTRY_ADMIN", "roleName": "Admin Pays", "defaultLabel": "Admin Pays", "scope": "country", "systemProtected": true, "schoolAssignable": false},
+    {"roleKey": "SCHOOL_ADMIN", "roleCode": "SCHOOL_ADMIN", "roleName": "Admin School", "defaultLabel": "Admin School", "scope": "school", "systemProtected": true, "schoolAssignable": false},
+    {"roleKey": "PROVISEUR", "roleCode": "PROVISEUR", "roleName": "Proviseur", "defaultLabel": "Proviseur", "scope": "school", "systemProtected": false, "schoolAssignable": true},
+    {"roleKey": "PREFET_ETUDES", "roleCode": "PREFET_ETUDES", "roleName": "Préfet des études", "defaultLabel": "Préfet des études", "scope": "school", "systemProtected": false, "schoolAssignable": true},
+    {"roleKey": "PRINCIPAL", "roleCode": "PRINCIPAL", "roleName": "Directeur", "defaultLabel": "Directeur", "scope": "school", "systemProtected": false, "schoolAssignable": true},
+    {"roleKey": "SECRETARY", "roleCode": "SECRETARY", "roleName": "Secrétaire", "defaultLabel": "Secrétaire", "scope": "school", "systemProtected": false, "schoolAssignable": true},
+    {"roleKey": "TEACHER", "roleCode": "TEACHER", "roleName": "Enseignant", "defaultLabel": "Enseignant", "scope": "school", "systemProtected": false, "schoolAssignable": true},
+    {"roleKey": "PARENT", "roleCode": "PARENT", "roleName": "Parent", "defaultLabel": "Parent", "scope": "school", "systemProtected": false, "schoolAssignable": false},
+    {"roleKey": "STUDENT", "roleCode": "STUDENT", "roleName": "Élève / Étudiant", "defaultLabel": "Élève / Étudiant", "scope": "school", "systemProtected": false, "schoolAssignable": false},
+    {"roleKey": "ACCOUNTANT", "roleCode": "ACCOUNTANT", "roleName": "Comptable", "defaultLabel": "Comptable", "scope": "school", "systemProtected": false, "schoolAssignable": true},
+    {"roleKey": "SUPERVISOR", "roleCode": "SUPERVISOR", "roleName": "Surveillant", "defaultLabel": "Surveillant", "scope": "school", "systemProtected": false, "schoolAssignable": true}
+  ],
+  "proofExamples": [
+    {"roleKey": "SCHOOL_ADMIN", "defaultLabel": "Admin School", "displayLabel": "Directeur", "effectiveLabel": "Directeur", "toRoleKey": "SCHOOL_ADMIN"},
+    {"roleKey": "STUDENT", "defaultLabel": "Élève / Étudiant", "displayLabel": "Étudiant", "effectiveLabel": "Étudiant", "toRoleKey": "STUDENT"},
+    {"roleKey": "TEACHER", "defaultLabel": "Enseignant", "displayLabel": "Professeur", "effectiveLabel": "Professeur", "toRoleKey": "TEACHER"}
+  ],
+  "web": [
+    {"surface": "Topbar", "file": "web/src/components/layout/Topbar.tsx", "field": "displayRoleName(visibleRoleLabel(user))", "expected": "effectiveRoleLabel", "verdict": "PARTIEL"},
+    {"surface": "Recherche globale", "file": "web/src/components/layout/GlobalSearch.tsx", "field": "displayRoleName(visibleRoleLabel(u))", "expected": "effectiveRoleLabel", "verdict": "PARTIEL"},
+    {"surface": "Session / profil sécurité", "file": "web/src/pages/parametres/SecuritySettingsPage.tsx", "field": "user.role", "expected": "effectiveRoleLabel", "verdict": "KO"},
+    {"surface": "UsersPage table", "file": "web/src/pages/UsersPage.tsx", "field": "formatAccessRolesDisplay → effectiveRoleLabel", "expected": "effectiveRoleLabel", "verdict": "PARTIEL"},
+    {"surface": "UsersPage filtre / création", "file": "web/src/pages/UsersPage.tsx", "field": "user.role / creatableRoles labels", "expected": "effectiveLabel catalogue", "verdict": "KO"},
+    {"surface": "UsersPage attribuer", "file": "web/src/pages/UsersPage.tsx", "field": "role.roleName", "expected": "effectiveLabel", "verdict": "KO"},
+    {"surface": "PermissionsPage onglet Rôles", "file": "web/src/pages/PermissionsPage.tsx", "field": "roleCode / defaultLabel / displayLabel / effectiveLabel", "expected": "contrat ADMIN-02B", "verdict": "OK"},
+    {"surface": "PermissionsPage sélecteur matrice", "file": "web/src/pages/PermissionsPage.tsx", "field": "effectiveLabel (roleCode)", "expected": "effectiveLabel", "verdict": "OK"},
+    {"surface": "Configuration rôles affectables", "file": "web/src/pages/ConfigurationPage.tsx", "field": "displayRoleName(effectiveLabel)", "expected": "effectiveLabel", "verdict": "PARTIEL"},
+    {"surface": "Messages destinataires", "file": "web/src/pages/MessagesConversationsPage.tsx", "field": "user.roleLabel", "expected": "effectiveRoleLabel", "verdict": "KO"},
+    {"surface": "Conformité privacy", "file": "web/src/pages/SchoolComplianceDashboard.tsx", "field": "row.roleLabel", "expected": "effectiveRoleLabel", "verdict": "KO"},
+    {"surface": "HelpHost", "file": "web/src/help/HelpHost.tsx", "field": "session.user.role", "expected": "clé technique OK / affichage non", "verdict": "HORS_SCOPE"}
+  ],
+  "mobile": [
+    {"surface": "Drawer", "file": "Mobile/src/components/RoleNavigationDrawer.tsx", "field": "visibleRoleLabel || identity.roleLabel || ROLE_LABELS", "expected": "effectiveRoleLabel", "verdict": "KO"},
+    {"surface": "Header", "file": "Mobile/src/components/MobileAppHeader.tsx", "field": "schoolName only", "expected": "n/a", "verdict": "HORS_SCOPE"},
+    {"surface": "Accueil spaceLabel", "file": "Mobile/src/lib/roleHomeConfig.ts", "field": "template Espace …", "expected": "texte métier statique", "verdict": "HORS_SCOPE"},
+    {"surface": "Login identify", "file": "Mobile/src/screens/LoginScreen.tsx", "field": "identity.roleLabel", "expected": "effectiveLabel catalogue", "verdict": "PARTIEL"},
+    {"surface": "Users list", "file": "Mobile/src/screens/UsersScreen.tsx", "field": "displayRoleName(formatAccessRolesDisplay)", "expected": "effectiveRoleLabel", "verdict": "KO"},
+    {"surface": "normalizeUser", "file": "Mobile/src/lib/canonicalResourceNormalize.ts", "field": "drops effectiveRoleLabel", "expected": "conserver effectiveRoleLabel", "verdict": "NON_BRANCHE"},
+    {"surface": "Profil parent", "file": "Mobile/src/screens/ParentProfileScreen.tsx", "field": "Espace parent", "expected": "texte métier", "verdict": "HORS_SCOPE"},
+    {"surface": "Multi-rôle session", "file": "n/a", "field": "aucun sélecteur", "expected": "labels distincts TEACHER+SCHOOL_ADMIN", "verdict": "KO"},
+    {"surface": "Modal attribuer", "file": "Mobile/src/components/UserMutationControls.tsx", "field": "role.roleName", "expected": "effectiveLabel", "verdict": "KO"}
+  ]
+}

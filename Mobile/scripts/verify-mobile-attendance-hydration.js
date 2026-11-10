@@ -52,6 +52,8 @@ function main() {
   assert.match(attendance, /overlayPresenceOutboxOnAttendance/);
   assert.match(attendance, /classId: identity\.classId/);
   assert.match(attendance, /filterStudentsByClassIdentity/);
+  assert.match(attendance, /const classStudents = studentsData/);
+  assert.doesNotMatch(attendance, /const classStudents = establishmentStudents/);
   assert.doesNotMatch(attendance, /rollCallInitialStatus/);
   assert.doesNotMatch(attendance, /statusActionActive/);
   assert.doesNotMatch(attendance, /attendance\[student\.id\] \?\? \{ status: "Présent"/);

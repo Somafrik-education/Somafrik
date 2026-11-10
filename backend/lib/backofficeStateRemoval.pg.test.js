@@ -10,48 +10,67 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const shouldRun = Boolean(DATABASE_URL);
 
 test("persistance résiduelle PG sans lecture backoffice_state", { skip: !shouldRun }, async () => {
+  // This test must not depend on schemas/seeds accidentally left by previous
+  // commands in Full regression. All fixture DDL + data live in one transaction.
+  const { randomUUID } = require("node:crypto");
+  const { assertDisposableLocalDatabaseUrl } = require("./disposableTestDatabaseGuard");
+  assertDisposableLocalDatabaseUrl(DATABASE_URL);
   const pool = new Pool({ connectionString: DATABASE_URL });
-  const repo = {
-    pool,
-    async query(sql, params) {
-      return pool.query(sql, params);
-    },
-    async one(sql, params) {
-      const result = await pool.query(sql, params);
-      return result.rows[0] ?? null;
-    },
-    async all(sql, params) {
-      const result = await pool.query(sql, params);
-      return result.rows;
-    },
-    async getSchoolByCode(code) {
-      return this.one(`SELECT * FROM schools WHERE school_code = $1`, [code]);
-    },
-  };
+  const client = await pool.connect();
+  const schema = `residual_it_${randomUUID().replace(/-/g, "")}`;
+  try {
+    await client.query("BEGIN");
+    await client.query(`CREATE SCHEMA "${schema}"`);
+    await client.query(`SET LOCAL search_path TO "${schema}", public`);
+    await client.query(`CREATE TABLE schools (
+      id UUID PRIMARY KEY,
+      school_code VARCHAR(32) NOT NULL UNIQUE
+    )`);
+    const { RESIDUAL_STATE_SCHEMA_SQL } = require("../db/residualStateSchema");
+    await client.query(RESIDUAL_STATE_SCHEMA_SQL);
+    const fixtureId = randomUUID();
+    await client.query("INSERT INTO schools (id, school_code) VALUES ($1, $2)", [fixtureId, "CD-2026-0001"]);
 
-  const { RESIDUAL_STATE_SCHEMA_SQL } = require("../db/residualStateSchema");
-  await repo.query(RESIDUAL_STATE_SCHEMA_SQL);
+    const repo = {
+      pool,
+      async query(sql, params) {
+        return client.query(sql, params);
+      },
+      async one(sql, params) {
+        const result = await client.query(sql, params);
+        return result.rows[0] ?? null;
+      },
+      async all(sql, params) {
+        const result = await client.query(sql, params);
+        return result.rows;
+      },
+      async getSchoolByCode(code) {
+        return this.one("SELECT * FROM schools WHERE school_code = $1", [code]);
+      },
+    };
 
-  const school = await repo.getSchoolByCode("CD-2026-0001");
-  if (school) {
     const store = createResidualPgStore(repo);
-    const saved = await store.saveAcademicConfig(school.school_code, {
-      schoolCode: school.school_code,
-    });
-    assert.equal(saved.schoolCode, school.school_code);
+    const saved = await store.saveAcademicConfig("CD-2026-0001", { schoolCode: "CD-2026-0001" });
+    assert.equal(saved.schoolCode, "CD-2026-0001");
     const projection = await store.listProjection();
-    assert.ok(projection.academicConfigs[school.school_code]);
+    assert.ok(projection.academicConfigs["CD-2026-0001"]);
     assert.deepEqual(projection.exams, []);
     assert.deepEqual(projection.bulletins, []);
     assert.deepEqual(projection.documents, []);
 
     await assert.rejects(
-      () => store.replaceDomainRecords("exam", school.school_code, [{ id: "EXAM-PG-CD" }]),
+      () => store.replaceDomainRecords("exam", "CD-2026-0001", [{ id: "EXAM-PG-CD" }]),
       (error) => error.code === "LEGACY_EXAMS_WRITE_FORBIDDEN" && error.statusCode === 400,
     );
+  } finally {
+    // Transaction rollback also removes the fixture schema and its tables.
+    try {
+      await client.query("ROLLBACK");
+    } finally {
+      client.release();
+      await pool.end();
+    }
   }
-
-  await pool.end();
 });
 
 test("saveBackOfficeState rejette toute écriture snapshot", () => {

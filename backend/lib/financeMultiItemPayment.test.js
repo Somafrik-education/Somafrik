@@ -50,14 +50,45 @@ const admin = {
   permissions: ["Paiements:UPDATE"],
 };
 
-const ESTHER_ITEMS = [
-  { feeType: "Non imputé", feeLabel: "Minerval / scolarité", amount: 500 },
-  { feeType: "Non imputé", feeLabel: "Frais d'examen", amount: 1 },
-  { feeType: "Non imputé", feeLabel: "Frais de cantine", amount: 40 },
-];
+function estherItems(ids) {
+  return [
+    { obligationId: ids[0], feeType: "Scolarité", feeLabel: "Minerval / scolarité", amount: 500 },
+    { obligationId: ids[1], feeType: "Examen", feeLabel: "Frais d'examen", amount: 1 },
+    { obligationId: ids[2], feeType: "Cantine", feeLabel: "Frais de cantine", amount: 40 },
+  ];
+}
+
+function seedEstherFees(store) {
+  const specs = [
+    ["obl-min", "Scolarité", "Minerval / scolarité", 1000],
+    ["obl-exam", "Examen", "Frais d'examen", 10],
+    ["obl-can", "Cantine", "Frais de cantine", 100],
+  ];
+  for (const [id, feeType, label, amount] of specs) {
+    store.tables.studentFees.push({
+      id,
+      school_id: "school-a",
+      school_code: "CD-2026-0001",
+      student_id: "stu-esther",
+      student_code: "CD-2026-0001-STU-ESTHER",
+      fee_type: feeType,
+      label,
+      currency: "CDF",
+      amount_due: amount,
+      amount_paid: 0,
+      exemption: 0,
+      discount: 0,
+      balance: amount,
+      status: "À payer",
+      profile_payload: {},
+    });
+  }
+  return specs.map((row) => row[0]);
+}
 
 async function main() {
   const store = createStore();
+  const ESTHER_ITEMS = estherItems(seedEstherFees(store));
   const created = await store.createSchoolPayment(
     {
       studentId: "CD-2026-0001-STU-ESTHER",
@@ -74,10 +105,10 @@ async function main() {
   assert.equal(created.totalAmount, 541);
   assert.equal(created.amount, 541);
   assert.equal(created.items.length, 3);
-  assert.equal(Number(created.allocatedAmount || 0), 0);
-  assert.equal(Number(created.unallocatedAmount), 541);
-  assert.equal(created.status, "Non imputé");
-  assert.equal(store.tables.allocations.length, 0, "reçu multi-libellés sans dette cible");
+  assert.equal(Number(created.allocatedAmount || 0), 541);
+  assert.equal(Number(created.unallocatedAmount), 0);
+  assert.equal(created.status, "Partiel");
+  assert.equal(store.tables.allocations.length, 3, "une affectation par frais ouvert");
   assert.match(created.reference, /PAY-0001$/);
   const uniqueRefs = new Set(store.tables.payments.map((row) => row.payment_code));
   assert.equal(uniqueRefs.size, 1, "une seule référence");

@@ -8,8 +8,8 @@ import { ApiError } from "../../api/client";
 import {
   SCALE_OPTIONS,
   createEvaluation,
-  resolveCanonicalClassId,
   resolveDefaultPeriod,
+  getSchoolPeriodNames,
   courseOptionsForClass,
 } from "../../lib/evaluations";
 import { evaluationTypesApi, type CanonicalEvaluationType } from "../../lib/evaluationTypesApi";
@@ -19,6 +19,7 @@ import { scopedTeachers } from "../../lib/establishment";
 import { getTeacherDisplayName } from "../../lib/pedagogySync";
 import { isSuperAdminRole } from "../../lib/orgHierarchy";
 import { PEDAGOGY_COPY } from "../../lib/pedagogyParityContract";
+import { classNamesMatch } from "../../lib/classRules";
 
 interface EvaluationFormModalProps {
   open: boolean;
@@ -27,6 +28,7 @@ interface EvaluationFormModalProps {
   state: BackOfficeState;
   schoolCode: string;
   classNames: string[];
+  classes: Array<Record<string, unknown>>;
   user: SessionUser | null;
   initial?: Evaluation | null;
 }
@@ -50,19 +52,54 @@ export function EvaluationFormModal({
   state,
   schoolCode,
   classNames,
+  classes,
   user,
   initial,
 }: EvaluationFormModalProps) {
   const teachers = scopedTeachers(user, state);
   const defaultPeriod = resolveDefaultPeriod(state, schoolCode);
+  const periodOptions = useMemo(() => getSchoolPeriodNames(state, schoolCode), [state, schoolCode]);
   const backoffice = isSuperAdminRole(user?.role);
 
   const [catalog, setCatalog] = useState<CanonicalEvaluationType[]>([]);
   const [catalogError, setCatalogError] = useState("");
-  const [className, setClassName] = useState(initial?.className ?? classNames[0] ?? "");
+  // La valeur de chaque option est l'identifiant canonique, jamais un nom.
+  const classOptions = useMemo(() => classes
+    .filter((row) => classNames.some((name) => classNamesMatch(row.name ?? row.className, name)))
+    .map((row) => ({
+      id: String(row.id ?? "").trim(),
+      name: String(row.name ?? row.className ?? "").trim(),
+      code: String(row.classCode ?? row.class_code ?? row.code ?? "").trim(),
+      year: String(row.academicYearLabel ?? row.academicYearName ?? row.academicYear ?? "").trim(),
+    }))
+    .filter((row) => row.id && row.name), [classes, classNames]);
+  const [classId, setClassId] = useState("");
+  const selectedClass = classOptions.find((row) => row.id === classId);
+  const className = selectedClass?.name ?? "";
+  useEffect(() => {
+    if (!open) return;
+    const existing = String(initial?.classId ?? "").trim();
+    if (existing && classOptions.some((row) => row.id === existing)) {
+      setClassId(existing);
+    } else if (initial?.className) {
+      const matching = classOptions.filter((row) => classNamesMatch(row.name, initial.className));
+      setClassId(matching.length === 1 ? matching[0].id : "");
+    } else {
+      // Une seule classe proposée : aucune ambiguïté, présélection (comportement historique).
+      // Plusieurs classes, dont des homonymes : choix explicite obligatoire.
+      setClassId(classOptions.length === 1 ? classOptions[0].id : "");
+    }
+  }, [open, initial?.id, initial?.classId, initial?.className, classOptions]);
   const [subject, setSubject] = useState(initial?.subject ?? "");
   const [teacherId, setTeacherId] = useState(initial?.teacherId ?? "");
   const [period, setPeriod] = useState(initial?.period ?? defaultPeriod);
+  useEffect(() => {
+    if (!open) return;
+    const initialPeriod = initial?.period;
+    setPeriod(initialPeriod && periodOptions.includes(initialPeriod)
+      ? initialPeriod
+      : periodOptions.includes(defaultPeriod) ? defaultPeriod : periodOptions[0] ?? "");
+  }, [open, initial?.id, initial?.period, defaultPeriod, periodOptions]);
   const [evaluationTypeId, setEvaluationTypeId] = useState(initial?.evaluationTypeId ?? "");
   const [title, setTitle] = useState(initial?.title ?? "");
   const [date, setDate] = useState(periodDateToInput(initial?.date));
@@ -106,14 +143,16 @@ export function EvaluationFormModal({
         state,
         user,
         schoolCode,
+        classId: selectedClass?.id,
+        classCode: selectedClass?.code,
         className,
       }),
-    [state, user, schoolCode, className],
+    [state, user, schoolCode, selectedClass?.id, selectedClass?.code, className],
   );
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!className || !subject || !title.trim()) return;
+    if (!selectedClass || !subject || !title.trim() || !periodOptions.includes(period)) return;
     if (!evaluationTypeId) {
       setCatalogError("Aucun type d'évaluation actif n'est disponible.");
       return;
@@ -125,15 +164,10 @@ export function EvaluationFormModal({
     }
 
     const teacher = teachers.find((row) => String(row.id) === teacherId);
-    const classId = resolveCanonicalClassId(
-      state.classes as Array<Record<string, unknown>> | undefined,
-      className,
-      initial?.classId,
-    );
     const payload = {
       schoolCode,
-      classId,
-      className,
+      classId: selectedClass.id,
+      className: selectedClass.name,
       subject,
       teacherId: teacherId || undefined,
       teacherName: teacher ? getTeacherDisplayName(teacher) : undefined,
@@ -164,7 +198,7 @@ export function EvaluationFormModal({
           <Button variant="secondary" onClick={onClose}>
             Annuler
           </Button>
-          <Button form="evaluation-form" type="submit" disabled={!catalog.length}>
+          <Button form="evaluation-form" type="submit" disabled={!catalog.length || !selectedClass || !subject || !periodOptions.includes(period)}>
             Enregistrer
           </Button>
         </>
@@ -175,12 +209,18 @@ export function EvaluationFormModal({
         <Field label="Classe" htmlFor="eval-class" required>
           <Select
             id="eval-class"
-            value={className}
+            value={classId}
             onChange={(e) => {
-              setClassName(e.target.value);
+              setClassId(e.target.value);
               setSubject("");
             }}
-            options={classNames.map((name) => ({ value: name, label: name }))}
+            options={[
+              { value: "", label: "Choisir une classe" },
+              ...classOptions.map((row) => ({
+                value: row.id,
+                label: row.name + " — " + (row.code || row.id) + (row.year ? " — " + row.year : ""),
+              })),
+            ]}
           />
         </Field>
         <Field label="Cours" htmlFor="eval-subject" required>
@@ -213,7 +253,15 @@ export function EvaluationFormModal({
           />
         </Field>
         <Field label="Période" htmlFor="eval-period" required>
-          <Input id="eval-period" value={period} onChange={(e) => setPeriod(e.target.value)} required />
+          <Select
+            id="eval-period"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            options={[
+              { value: "", label: "Choisir une période" },
+              ...periodOptions.map((name) => ({ value: name, label: name })),
+            ]}
+          />
         </Field>
         <Field label="Type" htmlFor="eval-type" required>
           <Select

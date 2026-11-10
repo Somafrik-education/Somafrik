@@ -1,4 +1,4 @@
-import { Alert, ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ActivityIndicator, FlatList, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -6,7 +6,50 @@ import ChoiceChips from "../components/ChoiceChips";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
-import { canManagePresences, canReadRoute } from "../domain/security/permissions";
+import { canManagePresences, canReadFeeGrids, canReadRoute } from "../domain/security/permissions";
+import StudentCardQrScannerModal from "../components/StudentCardQrScannerModal";
+import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal";
+import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
+import StudentCardClassRollCallModal from "../components/StudentCardClassRollCallModal";
+import OfflineRollCallModal from "../components/OfflineRollCallModal";
+import RollCallClassPickerModal from "../components/RollCallClassPickerModal";
+import { resolveRollCallLauncher } from "../lib/rollCallLauncher";
+import OfflineRollCallSyncList from "../components/OfflineRollCallSyncList";
+import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
+import { SYNC_COPY } from "../offline/rollCall/sync/syncStatus";
+import { OFFLINE_ROLL_CALL_COPY } from "../offline/rollCall/session/offlineRollCall";
+import { CLASS_ROLL_CALL_COPY, type ClassRollCallDraft } from "../lib/studentCardClassRollCall";
+import StudentCardRollCallOverview from "../components/StudentCardRollCallOverview";
+import { canShowRollCallSupervisionOnAttendance, rollCallActor } from "../lib/studentCardRollCallRoles";
+import {
+  COLLECTIVE_ROLL_CALL_COPY,
+  rollCallScopeKey,
+  type RollCallDraft,
+  type RollCallMode,
+} from "../lib/studentCardRollCall";
+import { startClassRollCallContext, startRollCallSession } from "../lib/studentCardRollCallSession";
+import { getStudentCardCapabilities } from "../services/studentCardScanApi";
+import StudentCardEntryControlModal from "../components/StudentCardEntryControlModal";
+import { ENTRY_CONTROL_COPY, entryControlActor, entryControlMedia } from "../lib/studentCardEntryControl";
+import StudentCardVerifyModal from "../components/StudentCardVerifyModal";
+import { CARD_VERIFY_COPY } from "../lib/studentCardVerify";
+import {
+  STUDENT_CARD_SCAN_COPY,
+  applyQrConfirmedPresence,
+  attendanceClassScopeKey,
+  isAttendanceAuthorReady,
+  classifyStudentCardCapabilitiesFailure,
+  isStudentCardNfcFinanceEnabled,
+  isStudentCardOfflineRollCallEnabled,
+  isStudentCardQrScannerVisible,
+  isStudentCardScanFinanceEnabled,
+  isoAttendanceDate,
+  resolveStudentCardNfcAttendanceControl,
+  sanitizeStudentCardCapabilities,
+  studentCardNfcAttendanceStatusMessage,
+  type StudentCardScanSettings,
+} from "../lib/studentCardScan";
+import { STUDENT_CARD_NFC_COPY, decideOpenQrFromNfcFallback } from "../lib/studentCardNfc";
 import {
   classNameMatches,
   resolveStudentApiId,
@@ -34,6 +77,7 @@ import { METRIC_PENDING_LABEL } from "../lib/dataTruth";
 import { savePresences } from "../services/api";
 import { clearConfirmedAttendanceDirty } from "../lib/attendanceDraft";
 import {
+  applyLocalRollCallMarks,
   applyRollCallStatus,
   assertRollCallReadyToSave,
   confirmRollCallEntries,
@@ -48,11 +92,18 @@ import {
   rollCallEntryFromPresence,
   rollCallQueuedAlertBody,
   rollCallSourceLabel,
+  provisionalStudentIds,
   shouldPreserveLocalAttendanceDraft,
   type AttendanceStatus,
   type RollCallEntry,
   ROLL_CALL_COPY,
 } from "../lib/attendanceTruth";
+import {
+  createLocalRollCallStatusLoader,
+  localRollCallScopeKey,
+  statusesForScope,
+  type LocalStatusesResult,
+} from "../offline/rollCall/session/localRollCallStatusLoader";
 import { attendanceStatusTheme } from "../lib/attendanceStatusTheme";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
@@ -114,7 +165,6 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     presencesSnapshot,
     assignmentsSnapshot,
     resourceScopeKey,
-    establishmentStudents,
   } = useAdminData();
   const saveLockRef = useRef(createInFlightLock());
   const intentionRef = useRef(createIntentionStore());
@@ -130,7 +180,10 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     }),
     [teachersData, assignmentsData, classesData, assignmentsSnapshot.source],
   );
-  const classStudents = establishmentStudents;
+  // `studentsData` est déjà la projection tenant-scopée du contexte. L'appel doit
+  // consommer exactement ce roster canonique, comme la liste des classes, sans
+  // appliquer une seconde projection qui peut vider les élèves ENROLLED.
+  const classStudents = studentsData;
   const assignedClasses = useMemo(
     () => listScopedAttendanceClasses(studentsData, classesData, session, scopeState),
     [studentsData, classesData, session, scopeState],
@@ -147,6 +200,45 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [outboxUnavailable, setOutboxUnavailable] = useState(false);
   const [replaySending, setReplaySending] = useState(false);
   const replaySendingRef = useRef(false);
+  const [cardSettings, setCardSettings] = useState<StudentCardScanSettings | null>(null);
+  // CARTE-PR2 : vérification de carte, affichage limité à ce que le serveur autorise.
+  const [cardVerifyOpen, setCardVerifyOpen] = useState(false);
+  const [cardCapabilitiesStatus, setCardCapabilitiesStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [cardCapabilitiesFailure, setCardCapabilitiesFailure] = useState<"permission" | "technical" | null>(null);
+  const [capabilitiesReload, setCapabilitiesReload] = useState(0);
+  const [entryControlOpen, setEntryControlOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [nfcScannerOpen, setNfcScannerOpen] = useState(false);
+  // CARTE-PR1 : brouillons d'appel collectif en mémoire seulement, un par établissement / classe / date.
+  const [rollCallDrafts, setRollCallDrafts] = useState<Record<string, { draft: RollCallDraft; source: "nfc" | "qr" }>>({});
+  const [rollCallOpen, setRollCallOpen] = useState(false);
+  // CARTE-PR3-M2 : appel de classe complet (enseignant), brouillon en mémoire par classe et date.
+  const [classRollCalls, setClassRollCalls] = useState<
+    Record<string, { context: { scopeKey: string; sessionId: string; classId: string; date: string }; draft: ClassRollCallDraft | null }>
+  >({});
+  const [classRollCallKey, setClassRollCallKey] = useState("");
+  const [openedRollCallKey, setOpenedRollCallKey] = useState("");
+  const capabilitiesScopeKey = [
+    resourceScopeKey,
+    String(session?.user?.id ?? ""),
+    String(session?.role ?? ""),
+    String(session?.school?.id ?? session?.school?.code ?? ""),
+    String(capabilitiesReload),
+  ].join("\0");
+  const [appliedCapabilitiesScope, setAppliedCapabilitiesScope] = useState(capabilitiesScopeKey);
+  if (appliedCapabilitiesScope !== capabilitiesScopeKey) {
+    setAppliedCapabilitiesScope(capabilitiesScopeKey);
+    setCardSettings(null);
+    setCardCapabilitiesFailure(null);
+    setCardCapabilitiesStatus(canLoadCardCapabilities(session) ? "loading" : "ready");
+  }
+  const capabilitiesFresh = appliedCapabilitiesScope === capabilitiesScopeKey;
+  const visibleCardSettings = capabilitiesFresh ? cardSettings : null;
+  const visibleCapabilitiesStatus = capabilitiesFresh
+    ? cardCapabilitiesStatus
+    : canLoadCardCapabilities(session) ? "loading" : "ready";
+  const visibleCapabilitiesFailure = capabilitiesFresh ? cardCapabilitiesFailure : null;
+  const selectedClassScopeKey = attendanceClassScopeKey(selectedClass);
 
   const todayLabel = formatAttendanceDate(new Date());
   const currentHour = formatAttendanceHour(new Date());
@@ -158,7 +250,40 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       void loadTeachers();
       void loadClasses();
       void loadAssignments();
-    }, [loadStudents, loadPresences, loadTeachers, loadClasses, loadAssignments, resourceScopeKey]),
+      let cancelled = false;
+      setCardSettings(null);
+      setCardCapabilitiesFailure(null);
+      if (!canLoadCardCapabilities(session)) {
+        setCardCapabilitiesStatus("ready");
+        return () => {
+          cancelled = true;
+        };
+      }
+      setCardCapabilitiesStatus("loading");
+      void getStudentCardCapabilities()
+        .then((row) => {
+          if (cancelled) return;
+          const sanitized = sanitizeStudentCardCapabilities(row);
+          if (!sanitized) {
+            setCardSettings(null);
+            setCardCapabilitiesFailure("technical");
+            setCardCapabilitiesStatus("error");
+            return;
+          }
+          setCardSettings(sanitized);
+          setCardCapabilitiesFailure(null);
+          setCardCapabilitiesStatus("ready");
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setCardSettings(null);
+          setCardCapabilitiesFailure(classifyStudentCardCapabilitiesFailure(error));
+          setCardCapabilitiesStatus("error");
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [loadStudents, loadPresences, loadTeachers, loadClasses, loadAssignments, resourceScopeKey, session, capabilitiesReload]),
   );
 
   useEffect(() => {
@@ -167,7 +292,14 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
 
   useEffect(() => {
     setExpandedStudentId(null);
-  }, [selectedClass]);
+    setScannerOpen(false);
+    setNfcScannerOpen(false);
+  }, [selectedClassScopeKey]);
+
+  useEffect(() => {
+    setScannerOpen(false);
+    setNfcScannerOpen(false);
+  }, [resourceScopeKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -296,10 +428,192 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const selectedIds = selectedRows.map((student) => student.id);
   const canUpdatePresences = canManagePresences(session);
   const canOpenStudentDetail = canReadRoute(session, "StudentDetail");
+  const canOpenQrScanner = isStudentCardQrScannerVisible({
+    canUpdatePresences,
+    settings: visibleCardSettings,
+    selectedClass,
+  });
+  const nfcControl = resolveStudentCardNfcAttendanceControl({
+    canUpdatePresences,
+    settings: visibleCardSettings,
+    selectedClass,
+    capabilitiesStatus: visibleCapabilitiesStatus,
+    capabilitiesFailure: visibleCapabilitiesFailure,
+    platformOs: Platform.OS,
+  });
+  const scanAuthorReady = isAttendanceAuthorReady(authorDecision);
+  // CARTE-UX-ROLE-01 : parcours selon les clés de rôle canoniques ; le serveur attribue l'auteur.
+  const actor = rollCallActor(session);
+  const entryActor = entryControlActor(session);
+  const entryMedia = entryControlMedia({ settings: visibleCardSettings, platformOs: Platform.OS });
+  const canOpenEntryControl = entryActor && (entryMedia.nfc || entryMedia.qr);
+  const rollCallSchoolCode = String(session?.school?.code ?? session?.user?.schoolCode ?? "");
+  const rollCallKeyFor = (mode: RollCallMode) =>
+    selectedClass
+      ? rollCallScopeKey({
+          resourceScopeKey,
+          schoolCode: rollCallSchoolCode,
+          classId: selectedClass.classId,
+          date: isoAttendanceDate(),
+          mode,
+        })
+      : "";
+  const classRollCall = actor.teacher ? classRollCalls[rollCallKeyFor("teacher")] : undefined;
+  // NFC-ROLES-ACCESS-01 — actions de carte de l'écran Présences, SANS classe ouverte : chacune selon
+  // SA permission (droit dédié « Présences — Effectuer l'appel (NFC/QR) » pour l'appel et la liste
+  // des appels). Le serveur fixe le périmètre (classes affectées ou établissement) et revérifie tout.
+  const launcher = resolveRollCallLauncher({
+    session,
+    actor,
+    settings: visibleCardSettings,
+    platformOs: Platform.OS,
+    hasLocalRollCallStore: Boolean(rollCallRuntime().current()),
+  });
+  const canOpenOfflineSyncList = launcher.canCheckCalls;
+  const [rollCallPickerOpen, setRollCallPickerOpen] = useState(false);
+  const [rollCallTarget, setRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
+  const [rollCallClassNames, setRollCallClassNames] = useState<Record<string, string>>({});
+  const rollCallIdentity = rollCallRuntime().identityFor(session);
+  const rollCallPickerScope = rollCallIdentity ? [rollCallIdentity.environmentId, rollCallIdentity.schoolId, rollCallIdentity.userId].join("|") : "";
+  // NFC-PRES-LOCAL-PR4 — appels hors connexion du compte (synchronisation, correction après not_recorded).
+  const [offlineSyncListOpen, setOfflineSyncListOpen] = useState(false);
+  const [offlineRollCallTarget, setOfflineRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
+  const offlineClassName = (classId: string) => {
+    if (rollCallClassNames[classId]) return rollCallClassNames[classId];
+    const match = assignedClasses.find((entry) => String(entry.classId ?? "").toLowerCase() === classId);
+    return String(match?.className ?? match?.classCode ?? "Classe");
+  };
+  const openedClassRollCall = classRollCallKey ? classRollCalls[classRollCallKey] : undefined;
+  const openClassRollCall = () => {
+    const key = rollCallKeyFor("teacher");
+    if (!selectedClass?.classId || !key || !actor.teacher) return;
+    if (!classRollCalls[key]) {
+      const context = startClassRollCallContext({ scopeKey: key, classId: String(selectedClass.classId), date: isoAttendanceDate() });
+      setClassRollCalls((current) => ({ ...current, [key]: { context, draft: null } }));
+    }
+    setScannerOpen(false);
+    setNfcScannerOpen(false);
+    setClassRollCallKey(key);
+  };
+  const dropClassRollCall = (key: string) => {
+    setClassRollCallKey("");
+    setClassRollCalls((current) => {
+      const copy = { ...current };
+      delete copy[key];
+      return copy;
+    });
+  };
+  const directionRollCall = actor.direction ? rollCallDrafts[rollCallKeyFor("direction")] : undefined;
+  const rollCall = openedRollCallKey ? rollCallDrafts[openedRollCallKey] : undefined;
+  const setRollCallDraft = (key: string, next: { draft: RollCallDraft; source: "nfc" | "qr" } | null) => {
+    setRollCallDrafts((current) => {
+      const copy = { ...current };
+      if (next) copy[key] = next;
+      else delete copy[key];
+      return copy;
+    });
+  };
+  const openRollCall = (source: "nfc" | "qr", mode: RollCallMode) => {
+    const key = rollCallKeyFor(mode);
+    if (!selectedClass?.classId || !key) return;
+    if (mode === "teacher" ? !actor.teacher : !actor.direction) return;
+    if (!rollCallDrafts[key]) {
+      setRollCallDraft(key, {
+        source,
+        draft: startRollCallSession({
+          scopeKey: key,
+          classId: String(selectedClass.classId),
+          date: isoAttendanceDate(),
+          mode,
+        }),
+      });
+    }
+    setScannerOpen(false);
+    setNfcScannerOpen(false);
+    setOpenedRollCallKey(key);
+    setRollCallOpen(true);
+  };
+  const rollCallButton = (testID: string, label: string, onPress: () => void) => (
+    <TouchableOpacity
+      key={testID}
+      testID={testID}
+      style={styles.scanButton}
+      onPress={onPress}
+      disabled={actionsLocked}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: actionsLocked }}
+    >
+      <Ionicons name="people-outline" size={18} color="#0F172A" />
+      <Text style={styles.scanButtonText}>{label}</Text>
+    </TouchableOpacity>
+  );
+  const canReadScanFinance = canReadFeeGrids(session) && isStudentCardScanFinanceEnabled(visibleCardSettings);
+  const canReadNfcScanFinance = canReadFeeGrids(session) && isStudentCardNfcFinanceEnabled(visibleCardSettings);
+
+  useEffect(() => {
+    if (!canOpenQrScanner) setScannerOpen(false);
+  }, [canOpenQrScanner]);
+
+  useEffect(() => {
+    if (nfcControl !== "ready") setNfcScannerOpen(false);
+  }, [nfcControl]);
+
+  // NFC-STATUT-PRESENCE-01 — présences enregistrées par l'appel NFC hors connexion (SQLCipher),
+  // superposées à l'affichage : un scan fait passer l'élève d'« Absent » provisoire à « Présent »
+  // immédiatement, sans réseau. Jamais écrites par l'appel manuel : l'appel NFC les synchronise.
+  // Revue CTO : portée stable environnement / établissement / compte / classe / date. Une lecture
+  // SQLCipher tardive d'un autre compte, d'une autre classe ou d'un autre jour n'est jamais affichée.
+  const localRollCallIdentity = rollCallRuntime().identityFor(session);
+  const localRollCallScope = localRollCallIdentity && selectedClass?.classId
+    ? { ...localRollCallIdentity, classId: String(selectedClass.classId).toLowerCase(), date: isoAttendanceDate() }
+    : null;
+  const localRollCallKey = localRollCallScopeKey(localRollCallScope);
+  const [localRollCallResult, setLocalRollCallResult] = useState<LocalStatusesResult | null>(null);
+  const classStudentsRef = useRef(classStudents);
+  classStudentsRef.current = classStudents;
+  const loadPresencesRef = useRef(loadPresences);
+  loadPresencesRef.current = loadPresences;
+  const localLoaderRef = useRef<ReturnType<typeof createLocalRollCallStatusLoader> | null>(null);
+  localLoaderRef.current ??= createLocalRollCallStatusLoader({
+    currentAccount: () => rollCallRuntime().current(),
+    // État remplacé seulement s'il change : aucune boucle de rendu.
+    apply: (result) => setLocalRollCallResult((current) => (
+      current && current.scopeKey === result.scopeKey && JSON.stringify(current.statuses) === JSON.stringify(result.statuses) ? current : result
+    )),
+  });
+  const reloadLocalRollCallStatuses = useCallback(async () => {
+    await localLoaderRef.current?.reload(classStudentsRef.current);
+  }, []);
+  const classStudentKeys = classStudents.map((student) => String(student.id ?? "")).join("|");
+  useEffect(() => {
+    // Purge synchrone : rien de l'ancienne portée ne reste affiché, puis lecture de la nouvelle.
+    setLocalRollCallResult(null);
+    localLoaderRef.current?.setScope(localRollCallScope);
+    void reloadLocalRollCallStatuses().catch(() => undefined);
+    // Synchronisation d'un appel NFC : relecture locale, puis données serveur qui font foi.
+    const unsubscribe = rollCallRuntime().subscribeSync(() => {
+      void reloadLocalRollCallStatuses().catch(() => undefined);
+      void loadPresencesRef.current();
+    });
+    return () => {
+      unsubscribe();
+      localLoaderRef.current?.cancel();
+    };
+    // localRollCallScope est entièrement décrit par localRollCallKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localRollCallKey, classStudentKeys, reloadLocalRollCallStatuses]);
+  const localRollCallStatuses = useMemo(
+    () => statusesForScope(localRollCallResult, localRollCallKey),
+    [localRollCallResult, localRollCallKey],
+  );
+  const shownAttendance = useMemo(
+    () => applyLocalRollCallMarks(attendance, localRollCallStatuses),
+    [attendance, localRollCallStatuses],
+  );
 
   const dailyStats = useMemo(
-    () => getRollCallDraftStats(selectedIds, attendance),
-    [attendance, selectedIds],
+    () => getRollCallDraftStats(selectedIds, shownAttendance),
+    [shownAttendance, selectedIds],
   );
 
   const setAttendanceStatus = (studentId: string, nextStatus: AttendanceStatus) => {
@@ -344,7 +658,11 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     ));
   };
 
-  const saveCall = async (identity: AttendanceClassIdentity) => {
+  /**
+   * `provisional` : décision explicite de l'enseignant sur les absences provisoires
+   * (NFC-STATUT-PRESENCE-01). Sans décision, l'enregistrement demande confirmation et n'écrit rien.
+   */
+  const saveCall = async (identity: AttendanceClassIdentity, provisional?: "confirm" | "exclude") => {
     if (!saveLockRef.current.tryBegin()) return;
     if (!canUpdatePresences) {
       saveLockRef.current.end();
@@ -377,10 +695,33 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       return;
     }
 
-    const ready = assertRollCallReadyToSave(rows.map((student) => student.id), attendance);
+    const ready = assertRollCallReadyToSave(rows.map((student) => student.id), shownAttendance);
     if (!ready.ok) {
       saveLockRef.current.end();
       Alert.alert(ROLL_CALL_COPY.incompleteSave, ROLL_CALL_COPY.incompleteSaveBody);
+      return;
+    }
+
+    // Absences provisoires : jamais écrites sans confirmation explicite.
+    const provisionalIds = provisionalStudentIds(rows.map((student) => student.id), shownAttendance);
+    if (provisionalIds.length && !provisional) {
+      saveLockRef.current.end();
+      Alert.alert(ROLL_CALL_COPY.confirmAbsencesTitle, ROLL_CALL_COPY.confirmAbsencesBody(provisionalIds.length), [
+        { text: ROLL_CALL_COPY.cancel, style: "cancel" },
+        { text: ROLL_CALL_COPY.saveWithoutProvisional, onPress: () => void saveCall(identity, "exclude") },
+        { text: ROLL_CALL_COPY.confirmAbsences, onPress: () => void saveCall(identity, "confirm") },
+      ]);
+      return;
+    }
+    // Présences NFC locales : enregistrées et synchronisées par l'appel NFC, jamais renvoyées ici.
+    const provisionalSet = new Set(provisionalIds);
+    const sentRows = rows.filter((student) => {
+      if (shownAttendance[student.id]?.source === "nfc_local") return false;
+      return provisional === "confirm" || !provisionalSet.has(student.id);
+    });
+    if (!sentRows.length) {
+      saveLockRef.current.end();
+      Alert.alert(ROLL_CALL_COPY.incompleteSave, ROLL_CALL_COPY.nothingToSave);
       return;
     }
 
@@ -405,12 +746,12 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     if (authorTeacherId) {
       setAuthorByIntention((current) => persistAttendanceAuthorSelection(current, intentionId, authorTeacherId));
     }
-    const entries = Object.fromEntries(rows.map((student) => [student.id, attendance[student.id]]));
+    const entries = Object.fromEntries(sentRows.map((student) => [student.id, shownAttendance[student.id]]));
     const absentCount = Object.values(entries).filter((entry) => entry.status === "Absent").length;
     const lateCount = Object.values(entries).filter((entry) => entry.status === "Retard").length;
     const justifiedCount = Object.values(entries).filter((entry) => entry.status === "Justifié").length;
 
-    const presencePayload = rows.map((student) => {
+    const presencePayload = sentRows.map((student) => {
       const entry = entries[student.id];
       const status = entry.status as AttendanceStatus;
       const studentApiId = String(student.id ?? resolveStudentApiId(student));
@@ -460,7 +801,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         request: () => savePresences(payload, { idempotencyKey: key }),
       });
       if (submitted.outcome === "queued") {
-        const studentIds = rows.map((student) => student.id);
+        const studentIds = sentRows.map((student) => student.id);
         setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
         setSaveHint(ROLL_CALL_COPY.queued);
         const connectivityKind = submitted.error
@@ -476,7 +817,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         return;
       }
       if (submitted.outcome === "in_flight") {
-        const studentIds = rows.map((student) => student.id);
+        const studentIds = sentRows.map((student) => student.id);
         setAttendance((current) => markRollCallSyncState(current, studentIds, "queued"));
         setReplaySending(true);
         replaySendingRef.current = true;
@@ -492,7 +833,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         return;
       }
       if (submitted.outcome !== "confirmed") {
-        const studentIds = rows.map((student) => student.id);
+        const studentIds = sentRows.map((student) => student.id);
         if (submitted.persistFailed) {
           setSaveHint(ROLL_CALL_COPY.persistFailedTitle);
           Alert.alert(ROLL_CALL_COPY.persistFailedTitle, ROLL_CALL_COPY.persistFailedBody);
@@ -527,7 +868,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       ]);
       applyConfirmedPresences(savedPresences);
       const refreshed = await loadPresences();
-      const studentIds = rows.map((student) => student.id);
+      const studentIds = sentRows.map((student) => student.id);
       setAttendance((current) => {
         const confirmed = confirmRollCallEntries(clearConfirmedAttendanceDirty(current, studentIds), studentIds);
         if (refreshed === false) return confirmed;
@@ -537,7 +878,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
       setSaveHint("");
       Alert.alert(
         ROLL_CALL_COPY.syncedAlertTitle,
-        `${identity.className} • ${rows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\n${ROLL_CALL_COPY.postgres}.`
+        `${identity.className} • ${sentRows.length} élève(s)\n${absentCount} absent(s), ${lateCount} retard(s), ${justifiedCount} absence(s) justifiée(s).\n${ROLL_CALL_COPY.postgres}.`
       );
     } catch (error) {
       if (isOutboxSendingLock(error)) {
@@ -564,6 +905,33 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     }
   };
 
+  const applyQrScanToRollCall = (studentId: string, studentCode: string) => {
+    const rosterId =
+      selectedRows.find((row) => {
+        const keys = [row.id, row.matricule, row.publicId, resolveStudentApiId(row)];
+        return keys.some((key) => {
+          const value = String(key ?? "").trim();
+          return Boolean(value) && (value === studentId || value === studentCode);
+        });
+      })?.id ?? studentId;
+    if (!rosterId) return;
+    setAttendance((current) => applyQrConfirmedPresence(current, rosterId));
+    applyConfirmedPresences([
+      {
+        id: `QR-${rosterId}-${todayLabel}`,
+        publicId: `QR-${rosterId}-${todayLabel}`,
+        studentId: rosterId,
+        date: todayLabel,
+        present: true,
+        status: "Présent",
+        classId: selectedClass?.classId,
+        classCode: selectedClass?.classCode,
+        className: selectedClass?.className,
+      },
+    ]);
+    void loadPresences();
+  };
+
   const selectedClassCourses = selectedClassAssignments.map((assignment) => String(assignment.course ?? ""));
   const selectedCourseLabel = resolveClassCourseLabel(selectedClassCourses);
   const selectedClassStats = selectedClass ? dailyStats : null;
@@ -573,12 +941,153 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
     studentsData,
   );
 
+  const nfcStatusMessage = studentCardNfcAttendanceStatusMessage(nfcControl);
+  const nfcStatus = nfcStatusMessage ? (
+    nfcControl === "capabilities_error" ? (
+      <TouchableOpacity
+        testID="attendance-nfc-status"
+        accessibilityRole="button"
+        accessibilityLabel={nfcStatusMessage}
+        onPress={() => setCapabilitiesReload((value) => value + 1)}
+        style={styles.scanButton}
+      >
+        <Text style={styles.scanButtonText}>{nfcStatusMessage}</Text>
+      </TouchableOpacity>
+    ) : (
+      <Text testID="attendance-nfc-status" style={styles.unavailable}>
+        {nfcStatusMessage}
+      </Text>
+    )
+  ) : null;
+
+  // NFC-ROLES-ACCESS-01 : actions de carte et fenêtres communes à la liste des classes et à une classe.
+  const rollCallButtonLocked = actionsLocked;
+  const cardActions = (
+    <View testID="attendance-card-actions">
+      {launcher.canVerifyCard ? (
+        <TouchableOpacity
+          testID="attendance-card-verify"
+          style={styles.scanButton}
+          onPress={() => {
+            setScannerOpen(false);
+            setNfcScannerOpen(false);
+            setCardVerifyOpen(true);
+          }}
+          disabled={rollCallButtonLocked}
+          accessibilityRole="button"
+          accessibilityLabel={CARD_VERIFY_COPY.button}
+          accessibilityState={{ disabled: rollCallButtonLocked }}
+        >
+          <Ionicons name="shield-checkmark-outline" size={18} color="#0F172A" />
+          <Text style={styles.scanButtonText}>{CARD_VERIFY_COPY.button}</Text>
+        </TouchableOpacity>
+      ) : null}
+      {launcher.canStartRollCall
+        ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setRollCallPickerOpen(true))
+        : null}
+      {launcher.canCheckCalls
+        ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.checkCalls, () => setOfflineSyncListOpen(true))
+        : null}
+    </View>
+  );
+  const rollCallModals = (
+    <>
+    {offlineSyncListOpen ? (
+      <Modal visible animationType="slide" onRequestClose={() => setOfflineSyncListOpen(false)}>
+        <View style={styles.offlineSyncModal} testID="offline-sync-modal">
+          <View style={styles.offlineSyncHeader}>
+            <Text style={styles.offlineSyncTitle} accessibilityRole="header">{SYNC_COPY.listTitle}</Text>
+            <TouchableOpacity testID="offline-sync-close" onPress={() => setOfflineSyncListOpen(false)} accessibilityRole="button" accessibilityLabel="Fermer">
+              <Ionicons name="close" size={24} color="#0F172A" />
+            </TouchableOpacity>
+          </View>
+          {/* NFC-ROLES-FINAL-01 : « Mes appels locaux » — base SQLCipher du compte connecté uniquement.
+              Les appels de l'établissement relèvent de la supervision serveur (aperçu de l'écran). */}
+          <Text style={styles.meta} testID="offline-sync-local-scope">{SYNC_COPY.localScope}</Text>
+          <ScrollView>
+            <OfflineRollCallSyncList
+              session={session}
+              classNameOf={offlineClassName}
+              onCorrected={(target) => {
+                setOfflineSyncListOpen(false);
+                setOfflineRollCallTarget({ ...target, className: offlineClassName(target.classId) });
+              }}
+            />
+          </ScrollView>
+        </View>
+      </Modal>
+    ) : null}
+    {offlineRollCallTarget && canOpenOfflineSyncList ? (
+      <OfflineRollCallModal
+        visible
+        session={session}
+        classId={offlineRollCallTarget.classId}
+        className={offlineRollCallTarget.className}
+        date={offlineRollCallTarget.date}
+        nfcAvailable={launcher.nfcAvailable}
+        qrAvailable={launcher.qrAvailable}
+        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
+        onClose={() => {
+          setOfflineRollCallTarget(null);
+          void reloadLocalRollCallStatuses().catch(() => undefined);
+          void loadPresences();
+        }}
+      />
+    ) : null}
+    {launcher.canStartRollCall && rollCallPickerOpen ? (
+      <RollCallClassPickerModal
+        visible
+        scopeKey={rollCallPickerScope}
+        onClose={() => setRollCallPickerOpen(false)}
+        onSelect={(target) => {
+          setRollCallPickerOpen(false);
+          setRollCallClassNames((current) => ({ ...current, [target.classId]: target.className }));
+          setRollCallTarget({ ...target, date: isoAttendanceDate() });
+        }}
+      />
+    ) : null}
+    {rollCallTarget && launcher.canStartRollCall ? (
+      <OfflineRollCallModal
+        visible
+        session={session}
+        classId={rollCallTarget.classId}
+        className={rollCallTarget.className}
+        date={rollCallTarget.date}
+        nfcAvailable={launcher.nfcAvailable}
+        qrAvailable={launcher.qrAvailable}
+        onLocalChange={() => void reloadLocalRollCallStatuses().catch(() => undefined)}
+        onClose={() => {
+          setRollCallTarget(null);
+          void reloadLocalRollCallStatuses().catch(() => undefined);
+          void loadPresences();
+        }}
+      />
+    ) : null}
+    {launcher.canVerifyCard ? (
+      <StudentCardVerifyModal
+        visible={cardVerifyOpen}
+        source={launcher.nfcAvailable ? "nfc" : "qr"}
+        onClose={() => setCardVerifyOpen(false)}
+      />
+    ) : null}
+    </>
+  );
+
   if (!selectedClass) {
     return (
+      <>
       <ScrollView style={styles.container} contentContainerStyle={contentStyle}>
         <StudentsScopeAlert />
         <Text style={styles.title}>Présences</Text>
         <Text style={styles.subtitle}>Sélectionnez une classe • {todayLabel} à {currentHour}</Text>
+        {canOpenEntryControl ? (
+          <TouchableOpacity testID="attendance-entry-control" style={styles.scanButton} onPress={() => setEntryControlOpen(true)} accessibilityRole="button" accessibilityLabel={ENTRY_CONTROL_COPY.button} accessibilityHint={ENTRY_CONTROL_COPY.subtitle}>
+            <Ionicons name="enter-outline" size={18} color="#0F172A" />
+            <Text style={styles.scanButtonText}>{ENTRY_CONTROL_COPY.button}</Text>
+          </TouchableOpacity>
+        ) : null}
+        {cardActions}
+        {nfcStatus}
         <Text style={styles.sectionTitle}>Mes classes</Text>
         <View testID="attendance-class-list" style={isTablet ? styles.classGridTablet : undefined}>
           {assignedClasses.length === 0 ? (
@@ -616,10 +1125,14 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
           })}
         </View>
       </ScrollView>
+      {canOpenEntryControl ? <StudentCardEntryControlModal visible={entryControlOpen} media={entryMedia} onClose={() => setEntryControlOpen(false)} /> : null}
+      {rollCallModals}
+      </>
     );
   }
 
   return (
+    <>
     <FlatList
       style={styles.container}
       contentContainerStyle={contentStyle}
@@ -737,6 +1250,9 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
                 </TouchableOpacity>
               </View>
             )}
+            {nfcControl === "ready" ? null : nfcStatus}
+            {cardActions}
+            {canShowRollCallSupervisionOnAttendance(session) ? <StudentCardRollCallOverview date={isoAttendanceDate()} /> : null}
             {outboxUnavailable ? (
               <Text testID="attendance-outbox-unavailable" style={styles.unavailable}>
                 {ROLL_CALL_COPY.outboxUnavailable} — {ROLL_CALL_COPY.outboxUnavailableBody}
@@ -750,7 +1266,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </>
       }
       renderItem={({ item: student }) => {
-        const entry = attendance[student.id] ?? rollCallEntryFromPresence(undefined);
+        const entry = shownAttendance[student.id] ?? rollCallEntryFromPresence(undefined);
         const status = entry.status;
         const sourceLabel = outboxUnavailable
           ? ROLL_CALL_COPY.outboxUnavailable
@@ -875,7 +1391,105 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </View>
       }
     />
+    {selectedClass && canOpenQrScanner ? (
+      <StudentCardQrScannerModal
+        visible={scannerOpen}
+        selectedClass={selectedClass}
+        resourceScopeKey={resourceScopeKey}
+        schoolCode={String(session?.school?.code ?? session?.user?.schoolCode ?? "")}
+        author={authorDecision}
+        attendanceDate={isoAttendanceDate()}
+        financeEnabled={canReadScanFinance}
+        onClose={() => setScannerOpen(false)}
+        onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    {selectedClass && openedClassRollCall ? (
+      <StudentCardClassRollCallModal
+        visible
+        context={openedClassRollCall.context}
+        className={String(selectedClass.className ?? selectedClass.classCode ?? "")}
+        draft={openedClassRollCall.draft}
+        nfcAvailable={nfcControl === "ready"}
+        qrAvailable={canOpenQrScanner}
+        onDraftChange={(draft) =>
+          setClassRollCalls((current) => {
+            const entry = current[draft.scopeKey];
+            return entry ? { ...current, [draft.scopeKey]: { ...entry, draft } } : current;
+          })
+        }
+        onClose={() => setClassRollCallKey("")}
+        onAbandon={() => dropClassRollCall(openedClassRollCall.context.scopeKey)}
+        onValidated={(message) => {
+          dropClassRollCall(openedClassRollCall.context.scopeKey);
+          setSaveHint(message);
+          void loadPresences();
+        }}
+      />
+    ) : null}
+    {selectedClass && rollCall ? (
+      <StudentCardRollCallModal
+        visible={rollCallOpen}
+        source={rollCall.source}
+        draft={rollCall.draft}
+        className={String(selectedClass.className ?? selectedClass.classCode ?? "")}
+        rosterSize={selectedRows.length}
+        onDraftChange={(draft) => setRollCallDraft(rollCall.draft.scopeKey, { source: rollCall.source, draft })}
+        onClose={() => setRollCallOpen(false)}
+        onAbandon={() => {
+          setRollCallOpen(false);
+          setRollCallDraft(rollCall.draft.scopeKey, null);
+        }}
+        onExpired={() =>
+          setRollCallDraft(rollCall.draft.scopeKey, {
+            source: rollCall.source,
+            draft: startRollCallSession(rollCall.draft),
+          })
+        }
+        onValidated={(_recorded, message) => {
+          setRollCallOpen(false);
+          setRollCallDraft(rollCall.draft.scopeKey, null);
+          setSaveHint(message);
+          void loadPresences();
+        }}
+      />
+    ) : null}
+    {selectedClass && nfcControl === "ready" ? (
+      <StudentCardNfcScannerModal
+        visible={nfcScannerOpen}
+        selectedClass={selectedClass}
+        resourceScopeKey={resourceScopeKey}
+        schoolCode={String(session?.school?.code ?? session?.user?.schoolCode ?? "")}
+        author={authorDecision}
+        attendanceDate={isoAttendanceDate()}
+        financeEnabled={canReadNfcScanFinance}
+        qrFallbackEnabled={canOpenQrScanner}
+        onClose={() => setNfcScannerOpen(false)}
+        onFallbackQr={() => {
+          setNfcScannerOpen(false);
+          if (
+            decideOpenQrFromNfcFallback({
+              canOpenQrScanner,
+              authorReady: scanAuthorReady.ok,
+            })
+          ) {
+            setScannerOpen(true);
+          }
+        }}
+        onAttendanceRecorded={(view) => applyQrScanToRollCall(view.studentId, view.studentCode)}
+      />
+    ) : null}
+    {rollCallModals}
+    </>
   );
+}
+
+/**
+ * NFC-ROLES-ACCESS-01 : drapeaux carte (sans donnée d'élève) chargés pour la saisie des présences
+ * OU le droit d'appel dédié (route GET /api/student-cards/capabilities, mêmes droits côté serveur).
+ */
+function canLoadCardCapabilities(session: Parameters<typeof canManagePresences>[0]) {
+  return canManagePresences(session) || rollCallActor(session).rollCall;
 }
 
 function StatPill({
@@ -944,6 +1558,9 @@ function normalizeAttendanceDateKey(value?: string) {
 }
 
 const styles = StyleSheet.create({
+  offlineSyncModal: { flex: 1, padding: 16, paddingTop: 48, backgroundColor: "#F8FAFC" },
+  offlineSyncHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  offlineSyncTitle: { fontSize: 20, fontWeight: "700", color: "#0F172A" },
   container: { flex: 1, backgroundColor: "#F8FAFC" },
   content: { padding: 20 },
   title: { fontSize: 32, fontWeight: "900", color: "#0F172A" },
@@ -1034,6 +1651,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   saveText: { color: "#FFFFFF", fontWeight: "900" },
+  scanButton: {
+    marginTop: 8,
+    marginBottom: 8,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    padding: 12,
+    minHeight: MIN_TOUCH_TARGET_DP,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  scanButtonText: { color: "#0F172A", fontWeight: "900", marginLeft: 8 },
   studentRow: {
     backgroundColor: "#FFFFFF",
     borderRadius: 18,

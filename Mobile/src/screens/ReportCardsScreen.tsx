@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import FormField from "../components/FormField";
 import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -9,6 +10,8 @@ import { ReportCardWorkflowCards } from "../components/ReportCardWorkflowCards";
 import QueryStateView from "../components/QueryStateView";
 import StudentSwitcher from "../components/StudentSwitcher";
 import { ReportCardSnapshotView } from "../components/bulletin/ReportCardSnapshotView";
+import { ReportCardPresentationView } from "../components/bulletin/ReportCardPresentationView";
+import type { ReportCardPresentation } from "../lib/reportCardPresentationMobile";
 import { downloadReportCardPdf } from "../services/api";
 import {
   DATA_TRUTH_COPY,
@@ -19,11 +22,20 @@ import {
   type ResourceSnapshot,
 } from "../lib/dataTruth";
 import {
+  getReportCardPresentation,
   getReportCardPublicationSnapshot,
   listReportCardPublications,
   type ReportCardPublicationRow,
 } from "../lib/reportCardPublicationApi";
-import { listPublishedVersionHistory, type PublishedVersionRow } from "../lib/reportCardHistoryApi";
+import {
+  listPublishedVersionHistory,
+  type PublishedVersionRow,
+} from "../lib/reportCardHistoryApi";
+import {
+  previewReportCardReissue,
+  publishReportCardReissue,
+  type ReissuePreview,
+} from "../lib/reportCardReissueApi";
 import { listReportCardRequests, type ReportCardWorkflowRequest } from "../lib/reportCardWorkflowApi";
 import {
   SNAPSHOT_SLOT_PERCENTAGE,
@@ -59,7 +71,19 @@ type PublishedBulletinCard = {
   template?: RenderingTemplate | null;
   student: SnapshotStudent;
   versionHistory: PublishedVersionRow[];
+  /** BULLETIN-UI-01 — périmètre et classe figés dans le snapshot (filtres). */
+  periodScope: string;
+  classId: string;
 };
+
+type ResultsState =
+  | { status: "loading" }
+  | { status: "ready"; views: ReportCardPresentation[] }
+  | { status: "none" }
+  | { status: "forbidden" }
+  | { status: "error" };
+
+const ALL_FILTER = "";
 
 function bulletinErrorSnapshot(
   error: unknown,
@@ -103,15 +127,27 @@ function cardsFromPublication(
       template,
       student,
       versionHistory,
+      periodScope: String((payload as { period_scope?: unknown }).period_scope ?? ""),
+      classId: String((payload as { class_id?: unknown }).class_id ?? ""),
     };
   });
+}
+
+function periodScopeLabel(scope: string) {
+  if (!scope) return "Période";
+  return scope === "ANNUAL" ? "Bilan annuel" : scope;
 }
 
 export default function ReportCardsScreen() {
   const stackPaddingBottom = useStackScreenBottomPadding();
   const contentStyle = [styles.content, { paddingBottom: stackPaddingBottom }];
-  const { session, selectedStudentId } = useAuth();
-  const { studentsData } = useAdminData();
+  const { session, selectedStudentId, permissionsBootstrap } = useAuth();
+  const canReissue = permissionsBootstrap === "ready" &&
+    (session?.permissions ?? session?.user?.permissions)?.includes("REPORT_CARD_PUBLISH") === true;
+  const { studentsData, classesData } = useAdminData();
+  const [periodFilter, setPeriodFilter] = useState(ALL_FILTER);
+  const [classFilter, setClassFilter] = useState(ALL_FILTER);
+  const [resultsByCard, setResultsByCard] = useState<Record<string, ResultsState>>({});
   const [expandedReportCardId, setExpandedReportCardId] = useState<string | null>(null);
   const [reportCardsSnapshot, setReportCardsSnapshot] = useState<ResourceSnapshot<PublishedBulletinCard>>({
     status: "idle",
@@ -123,6 +159,9 @@ export default function ReportCardsScreen() {
   );
   const [workflowMessage, setWorkflowMessage] = useState("");
   const [expandedWorkflowId, setExpandedWorkflowId] = useState<string | null>(null);
+  const [reissueDraft, setReissueDraft] = useState<{ cardId: string; reportCardId: string; preview: ReissuePreview; commandId: string } | null>(null);
+  const [reissueReason, setReissueReason] = useState("");
+  const [reissueBusy, setReissueBusy] = useState(false);
 
   const loadReportCards = useCallback(async () => {
     setReportCardsSnapshot((current) => ({ ...current, status: "loading" }));
@@ -197,7 +236,7 @@ export default function ReportCardsScreen() {
     [session, selectedStudentId],
   );
 
-  const rows = useMemo(() => {
+  const scopedRows = useMemo(() => {
     if (reportCardsSnapshot.status !== "success") return [];
     if (studentScope.unscoped) {
       const allowed = new Set(studentsData.map((student) => student.id).filter(Boolean));
@@ -206,6 +245,43 @@ export default function ReportCardsScreen() {
     }
     return filterRowsByStudentScope(reportCardsSnapshot.data, studentScope);
   }, [reportCardsSnapshot, studentScope, studentsData]);
+
+  const periodOptions = useMemo(
+    () => [...new Set(scopedRows.map((card) => card.periodScope).filter(Boolean))],
+    [scopedRows],
+  );
+  const classOptions = useMemo(
+    () => [...new Set(scopedRows.map((card) => card.classId).filter(Boolean))],
+    [scopedRows],
+  );
+  const rows = useMemo(
+    () =>
+      scopedRows.filter(
+        (card) =>
+          (!periodFilter || card.periodScope === periodFilter) && (!classFilter || card.classId === classFilter),
+      ),
+    [scopedRows, periodFilter, classFilter],
+  );
+
+  const classLabel = (classId: string) => classesData.find((item) => item.id === classId)?.name || "Classe";
+
+  const loadResults = async (card: PublishedBulletinCard) => {
+    setResultsByCard((current) => ({ ...current, [card.id]: { status: "loading" } }));
+    try {
+      const views = await getReportCardPresentation(card.reportCardId, card.version);
+      const own = (views || []).filter((view) => view.student.code === card.studentId);
+      setResultsByCard((current) => ({
+        ...current,
+        [card.id]: own.length ? { status: "ready", views: own } : { status: "none" },
+      }));
+    } catch (error) {
+      const statusCode = error instanceof ApiClientError ? error.status : undefined;
+      setResultsByCard((current) => ({
+        ...current,
+        [card.id]: statusCode === 401 || statusCode === 403 ? { status: "forbidden" } : { status: "error" },
+      }));
+    }
+  };
 
   const openPdf = async (card: PublishedBulletinCard) => {
     try {
@@ -226,6 +302,69 @@ export default function ReportCardsScreen() {
     }
   };
 
+  // La sélection du bulletin et l’aperçu ne publient rien : confirmation explicite après motif.
+  const prepareReissue = async (card: PublishedBulletinCard) => {
+    if (!canReissue || reissueBusy) return;
+    setReissueBusy(true);
+    setReissueDraft(null);
+    try {
+      const preview = await previewReportCardReissue(card.reportCardId, card.version);
+      if (!preview.expected_draft_sha256 || !preview.header?.title) throw new Error("En-tête manquant");
+      setReissueReason("");
+      setReissueDraft({
+        cardId: card.id,
+        reportCardId: card.reportCardId,
+        preview,
+        commandId: `mobile-reissue-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      });
+    } catch (error) {
+      Alert.alert("Réémission refusée", error instanceof Error ? error.message : "Vérifiez le modèle actif, vos droits et les notes.");
+    } finally {
+      setReissueBusy(false);
+    }
+  };
+
+  const confirmReissue = () => {
+    if (!canReissue || reissueBusy || !reissueDraft) return;
+    if (!reissueReason.trim()) {
+      Alert.alert("Motif obligatoire", "Indiquez pourquoi le bulletin doit être réémis.");
+      return;
+    }
+    const selected = reissueDraft;
+    const reason = reissueReason.trim();
+    Alert.alert(
+      "Publier une nouvelle version officielle",
+      `Remplacer v${selected.preview.source_version} par v${selected.preview.proposed_version} avec le nouvel en-tête et un nouveau QR ? L'ancienne version restera dans l'historique.`,
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Confirmer",
+          onPress: () => {
+            void (async () => {
+              setReissueBusy(true);
+              try {
+                const result = await publishReportCardReissue(selected.reportCardId, {
+                  sourceVersion: selected.preview.source_version,
+                  expectedDraftSha256: selected.preview.expected_draft_sha256,
+                  commandId: selected.commandId,
+                  reason,
+                });
+                setReissueDraft(null);
+                setReissueReason("");
+                await loadReportCards();
+                Alert.alert("Bulletin réémis", `Version v${result.published_snapshot_version} créée. Vérifiez son PDF et son QR.`);
+              } catch (error) {
+                Alert.alert("Réémission non confirmée", error instanceof Error ? error.message : "Vérifiez l'historique avant de réessayer.");
+              } finally {
+                setReissueBusy(false);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
   const showQueryState =
     reportCardsSnapshot.status !== "success" || rows.length === 0;
 
@@ -240,6 +379,26 @@ export default function ReportCardsScreen() {
           ? `${rows.length} bulletin(s) disponible(s)`
           : "Documents publiés par l'établissement"}
       </Text>
+      {periodOptions.length > 1 || (isBulletinStaff && classOptions.length > 1) ? (
+        <View style={styles.filters} testID="report-card-filters">
+          {periodOptions.length > 1 ? (
+            <FilterChips
+              label="Période"
+              value={periodFilter}
+              onChange={setPeriodFilter}
+              options={periodOptions.map((value) => ({ value, label: periodScopeLabel(value) }))}
+            />
+          ) : null}
+          {isBulletinStaff && classOptions.length > 1 ? (
+            <FilterChips
+              label="Classe"
+              value={classFilter}
+              onChange={setClassFilter}
+              options={classOptions.map((value) => ({ value, label: classLabel(value) }))}
+            />
+          ) : null}
+        </View>
+      ) : null}
       {isBulletinStaff ? (
         <View style={styles.workflowBlock}>
           <Text style={styles.workflowTitle}>État du workflow bulletin</Text>
@@ -299,7 +458,10 @@ export default function ReportCardsScreen() {
                   <Metric label="Rang" value={rankLabel} />
                   <Metric label="Publié le" value={card.publishedAt || "—"} />
                 </View>
-                <ReportCardSnapshotView payload={card.payload} template={card.template} studentId={card.studentId} />
+                <ResultsBlock state={resultsByCard[card.id]} onLoad={() => void loadResults(card)} />
+                {resultsByCard[card.id]?.status === "ready" ? null : (
+                  <ReportCardSnapshotView payload={card.payload} template={card.template} studentId={card.studentId} />
+                )}
                 {card.versionHistory.length > 0 ? (
                   <View style={styles.historyBlock}>
                     <Text style={styles.historyTitle}>Historique des versions</Text>
@@ -318,6 +480,46 @@ export default function ReportCardsScreen() {
                     ))}
                   </View>
                 ) : null}
+
+                {canReissue && card.versionHistory.some((entry) =>
+                  entry.published_snapshot_version === card.version && entry.verification_status === "ACTIVE"
+                ) ? (
+                  <View style={styles.historyBlock}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      disabled={reissueBusy}
+                      onPress={() => void prepareReissue(card)}
+                      testID="report-card-reissue-preview-button"
+                    >
+                      <Text style={styles.historyTitle}>Réémettre avec le modèle actif</Text>
+                    </TouchableOpacity>
+                    {reissueDraft?.cardId === card.id ? (
+                      <View>
+                        {reissueDraft.preview.header.lines?.map((line) => <Text key={line} style={styles.historyRow}>{line}</Text>)}
+                        <Text style={styles.historyTitle}>{reissueDraft.preview.header.title}</Text>
+                        <Text style={styles.historyRow}>v{reissueDraft.preview.source_version} → v{reissueDraft.preview.proposed_version}</Text>
+                        <Text style={styles.hint}>Les notes restent inchangées. L'ancien bulletin restera dans l'historique.</Text>
+                        <Text style={styles.hint}>Aperçu textuel non officiel : contrôler le PDF signé et le QR après publication en préproduction.</Text>
+                        <FormField label={"Motif de réémission"} type="text" hideVisibleLabel
+                          accessibilityLabel="Motif de réémission"
+                          placeholder="Motif de réémission obligatoire"
+                          value={reissueReason}
+                          onChangeText={setReissueReason}
+                          inputStyle={{ borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8, padding: 10, marginVertical: 8 }}
+                        />
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          style={[styles.pdfButton, (reissueBusy || !reissueReason.trim()) && styles.pdfButtonDisabled]}
+                          disabled={reissueBusy || !canReissue || !reissueReason.trim()}
+                          onPress={confirmReissue}
+                          testID="report-card-reissue-confirm-button"
+                        >
+                          <Text style={styles.pdfText}>Confirmer la nouvelle version officielle</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
                 <TouchableOpacity
                   activeOpacity={0.85}
                   style={[styles.pdfButton, !isPublished && styles.pdfButtonDisabled]}
@@ -333,6 +535,73 @@ export default function ReportCardsScreen() {
         </View>
       )}
     </ScrollView>
+  );
+}
+
+function ResultsBlock({ state, onLoad }: { state: ResultsState | undefined; onLoad: () => void }) {
+  if (state?.status === "ready") {
+    return (
+      <View>
+        {state.views.map((view) => (
+          <ReportCardPresentationView key={view.student.code} view={view} />
+        ))}
+      </View>
+    );
+  }
+  return (
+    <View style={styles.resultsBlock}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        style={styles.resultsButton}
+        disabled={state?.status === "loading"}
+        onPress={onLoad}
+        testID="report-card-show-results"
+      >
+        <Text style={styles.resultsButtonText}>
+          {state?.status === "loading" ? "Chargement des résultats…" : "Voir les résultats par matière"}
+        </Text>
+      </TouchableOpacity>
+      {state?.status === "none" ? (
+        <Text style={styles.hint}>Résultats détaillés non disponibles pour ce bulletin : ouvrez le PDF officiel.</Text>
+      ) : null}
+      {state?.status === "forbidden" ? (
+        <Text style={styles.hint}>Vos droits ne permettent pas de consulter ce bulletin.</Text>
+      ) : null}
+      {state?.status === "error" ? (
+        <Text style={styles.hint}>Impossible de charger les résultats. Réessayez.</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function FilterChips({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <View style={styles.filterRow}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <View style={styles.chips}>
+        {[{ value: ALL_FILTER, label: "Toutes" }, ...options].map((option) => (
+          <TouchableOpacity
+            key={option.value || "all"}
+            style={[styles.chip, option.value === value && styles.chipActive]}
+            onPress={() => onChange(option.value)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: option.value === value }}
+          >
+            <Text style={[styles.chipText, option.value === value && styles.chipTextActive]}>{option.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -372,4 +641,30 @@ const styles = StyleSheet.create({
   workflowBlock: { marginBottom: 18, gap: 8 },
   workflowTitle: { color: "#0F172A", fontSize: 18, fontWeight: "900" },
   hint: { color: "#64748B", fontSize: 13, fontWeight: "700", marginBottom: 8 },
+  filters: { gap: 8, marginBottom: 12 },
+  filterRow: { gap: 4 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chip: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#FFFFFF",
+  },
+  chipActive: { backgroundColor: "#2563EB", borderColor: "#2563EB" },
+  chipText: { color: "#334155", fontWeight: "800", fontSize: 12 },
+  chipTextActive: { color: "#FFFFFF" },
+  resultsBlock: { marginBottom: 12, gap: 6 },
+  resultsButton: {
+    minHeight: MIN_TOUCH_TARGET_DP,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 10,
+  },
+  resultsButtonText: { color: "#2563EB", fontWeight: "900" },
 });

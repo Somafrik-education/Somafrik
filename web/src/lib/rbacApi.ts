@@ -4,6 +4,10 @@ export type RbacRole = {
   id: string;
   roleCode: string;
   roleName: string;
+  roleKey?: string;
+  defaultLabel?: string;
+  displayLabel?: string | null;
+  effectiveLabel?: string;
   scope: string;
   displayOrder: number;
   status: "active" | "archived";
@@ -39,6 +43,8 @@ export type RbacActionLock = {
   reason: "role_invariant" | "dependency" | null;
 };
 
+export type RbacGrantSource = "school" | "country" | "global" | "none";
+
 export type RbacModule = {
   moduleKey: string;
   moduleName: string;
@@ -50,6 +56,8 @@ export type RbacModule = {
   canUpdate?: boolean;
   canDelete?: boolean;
   configured?: boolean;
+  source?: RbacGrantSource;
+  inherited?: boolean;
   actions?: RbacAction[];
   dependencies?: Record<string, RbacAction[]>;
   mandatory?: Partial<RbacActionFlags>;
@@ -82,10 +90,44 @@ export type RbacPatchPermissionsPayload = {
   grants: RbacCrudGrant[];
 };
 
+export type RbacResetOverridePayload = {
+  roleKey: string;
+  countryCode?: string;
+  schoolCode?: string;
+  moduleKey: string;
+  expectedUpdatedAt?: string | null;
+};
+
 export type RbacConfiguredQuery = {
   roleKey: string;
   countryCode?: string;
   schoolCode?: string;
+};
+
+export type RbacHistoryQuery = {
+  limit?: number;
+  offset?: number;
+};
+
+export type RbacHistoryItem = {
+  id: string;
+  createdAt: string | null;
+  actor: string;
+  action: string;
+  role: string;
+  roleKey?: string | null;
+  moduleKey?: string | null;
+  scope: string;
+  before: string;
+  after: string;
+  summary: string;
+};
+
+export type RbacHistoryPage = {
+  items: RbacHistoryItem[];
+  limit: number;
+  offset: number;
+  hasMore: boolean;
 };
 
 export const rbacApi = {
@@ -99,9 +141,23 @@ export const rbacApi = {
   },
   patchPermissions: (payload: RbacPatchPermissionsPayload) =>
     api.patch<RbacConfiguredMatrix>("/backoffice/rbac/permissions", payload),
+  resetOverride: (payload: RbacResetOverridePayload) =>
+    api.post<RbacConfiguredMatrix>("/backoffice/rbac/permissions/reset", payload),
   createRole: (payload: Record<string, unknown>) => api.post<RbacRole>("/backoffice/rbac/roles", payload),
   updateRole: (roleId: string, payload: Record<string, unknown>) =>
     api.patch<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}`, payload),
+  updateRoleDisplayLabel: (roleId: string, displayLabel: string) =>
+    api.patch<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}/display-label`, { displayLabel }),
+  resetRoleDisplayLabel: (roleId: string) =>
+    api.post<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}/display-label/reset`, {}),
+  listRoleDisplayLabels: () => api.get<{ items: Array<{ roleKey: string; defaultLabel: string; displayLabel: string | null; effectiveLabel: string }> }>("/backoffice/rbac/role-display-labels"),
   archiveRole: (roleId: string) =>
     api.post<RbacRole>(`/backoffice/rbac/roles/${encodeURIComponent(roleId)}/archive`, {}),
+  getHistory: (query: RbacHistoryQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.limit != null) params.set("limit", String(query.limit));
+    if (query.offset != null) params.set("offset", String(query.offset));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return api.get<RbacHistoryPage>(`/backoffice/rbac/history${suffix}`);
+  },
 };

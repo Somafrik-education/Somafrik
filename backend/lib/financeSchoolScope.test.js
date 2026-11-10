@@ -71,7 +71,7 @@ test("F8-P0-004: schoolCode vide + financeLoginCode A n'autorise pas B", () => {
   );
 });
 
-test("F8-P0-004: Superadmin request-scoped A ne sort pas de A", () => {
+test("P1-01: Superadmin request-scoped A n'obtient pas la Finance de A", () => {
   const principal = {
     role: "Super Administrateur Somafrik",
     schoolCode: "",
@@ -80,18 +80,19 @@ test("F8-P0-004: Superadmin request-scoped A ne sort pas de A", () => {
     financeLoginCode: "SCH-F8-A",
   };
   const scope = resolveFinanceSchoolScope(principal);
-  assert.equal(scope.mode, "schools");
+  assert.equal(scope.mode, "none");
+  assert.equal(schoolCodeInScope("SCH-F8-A", scope), false);
   assert.equal(schoolCodeInScope("SCH-F8-B", scope), false);
 });
 
-test("F8-P0-004: Superadmin global sans request scope reste global", () => {
+test("P1-01: Superadmin global sans request scope n'est plus mode all", () => {
   const principal = {
     role: "Super Administrateur Somafrik",
     schoolCode: "",
   };
   const scope = resolveFinanceSchoolScope(principal);
-  assert.equal(scope.mode, "all");
-  assert.equal(schoolCodeInScope("SCH-F8-B", scope), true);
+  assert.equal(scope.mode, "none");
+  assert.equal(schoolCodeInScope("SCH-F8-B", scope), false);
 });
 
 test("F8-P1-006: Admin Pays n'utilise pas le préfixe schoolCode comme autorité pays", () => {
@@ -160,11 +161,9 @@ test("GP-005: attach sans `one` fail-closed (leftover JWT ignoré)", async () =>
   assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
 });
 
-test("GP-005: Superadmin request-scoped résout leftover → login_code", async () => {
-  const one = async (sql, params) => {
-    assert.match(String(sql), /FROM schools/i);
-    assert.equal(params[0], "CD-2026-0001");
-    return { login_code: "CD-LAC-26-001" };
+test("P1-01: Superadmin request-scoped n'attache pas de membership Finance", async () => {
+  const one = async () => {
+    throw new Error("lookup école interdit pour Superadmin");
   };
   const attached = await attachFinanceMembershipScope(
     {
@@ -175,8 +174,8 @@ test("GP-005: Superadmin request-scoped résout leftover → login_code", async 
     },
     one,
   );
-  assert.equal(attached.financeLoginCode, "CD-LAC-26-001");
-  assert.deepEqual(resolveFinanceSchoolScope(attached).codes, ["CD-LAC-26-001"]);
+  assert.equal(attached.financeLoginCode, undefined);
+  assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
 });
 
 test("GP-005: sqlSchoolPredicate cible login_code uniquement (aucun repli leftover)", () => {
@@ -227,9 +226,11 @@ test("GP-005: rôle établissement request-scoped reste membership UUID", async 
   assert.notEqual(attached.financeLoginCode, oldLogin);
 });
 
-test("GP-005: Superadmin request-scoped login_code vide fail-closed", async () => {
+test("P1-01: Superadmin request-scoped n'ouvre pas la Finance même si login_code est vide", async () => {
   const leftover = "CD-2026-0001";
-  const one = async () => ({ login_code: "   " });
+  const one = async () => {
+    throw new Error("lookup école interdit pour Superadmin");
+  };
   const attached = await attachFinanceMembershipScope(
     {
       role: "Super Administrateur Somafrik",
@@ -239,7 +240,7 @@ test("GP-005: Superadmin request-scoped login_code vide fail-closed", async () =
     },
     one,
   );
-  assert.equal(attached.financeLoginCode, "");
+  assert.equal(attached.financeLoginCode, undefined);
   assert.equal(resolveFinanceSchoolScope(attached).mode, "none");
 });
 

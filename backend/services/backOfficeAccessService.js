@@ -1,6 +1,6 @@
 const { BusinessError } = require("./authService");
 const { CommunicationService } = require("./communicationService");
-const { verifySecret } = require("./credentialService");
+const { verifySecret, materializeAccountSecretHashes } = require("./credentialService");
 const {
   getLoginAttemptKey,
   assertLoginNotLocked,
@@ -16,6 +16,11 @@ const {
   sanitizeUsersForResponse,
 } = require("../lib/sanitizeUserForResponse");
 const { attachCanonicalSchoolIdentity } = require("../lib/sessionSchoolIdentity");
+const { isPlatformScopePrincipal } = require("../lib/platformScopePrincipal");
+const {
+  isPlatformSuperadminAccount,
+  rejectsKnownSuperadminSecret,
+} = require("../lib/superadminSeedSecret");
 
 const SUPER_ADMIN_ROLE = "Super Administrateur Somafrik";
 const LEGACY_SUPER_ADMIN_ROLE = "Super Administrateur OKAFRIK";
@@ -46,7 +51,9 @@ class BackOfficeAccessService {
   }) {
     this.school = school;
     this.schools = schools;
-    this.userAccounts = userAccounts;
+    this.userAccounts = Array.isArray(userAccounts)
+      ? userAccounts.map((user) => materializeAccountSecretHashes(user))
+      : userAccounts;
     this.students = students;
     this.relations = relations;
     this.countries = countries;
@@ -165,7 +172,8 @@ class BackOfficeAccessService {
         return exact;
       }
 
-      const platform = matches.find((account) => account.schoolCode === "*");
+      // SEC-TENANT-01 : seul un compte plateforme sert de repli "*" ; jamais un compte scolaire sans école.
+      const platform = matches.find((account) => account.schoolCode === "*" && isPlatformScopePrincipal(account));
       if (platform) {
         return platform;
       }
@@ -185,6 +193,9 @@ class BackOfficeAccessService {
 
   verifyPassword(user, password) {
     const normalizedPassword = String(password ?? "");
+    if (isPlatformSuperadminAccount(user) && rejectsKnownSuperadminSecret(normalizedPassword)) {
+      return false;
+    }
 
     if (user.passwordHash && verifySecret(normalizedPassword, user.passwordHash)) {
       return true;
@@ -194,12 +205,7 @@ class BackOfficeAccessService {
       return true;
     }
 
-    const temporaryPassword = String(user.temporaryPassword ?? "").trim();
-    if (temporaryPassword && temporaryPassword === normalizedPassword) {
-      return true;
-    }
-
-    return String(user.password ?? "") === normalizedPassword;
+    return false;
   }
 
   isPlatformAdmin(user) {

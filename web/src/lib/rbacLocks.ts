@@ -89,6 +89,15 @@ export function applyMandatoryOverlay(flags: RbacCrudFlags, mandatory: RbacActio
   };
 }
 
+export function crudFlagsEqual(left: RbacCrudFlags, right: RbacCrudFlags): boolean {
+  return (
+    left.canCreate === right.canCreate &&
+    left.canRead === right.canRead &&
+    left.canUpdate === right.canUpdate &&
+    left.canDelete === right.canDelete
+  );
+}
+
 export function toggleCrudFlag(
   current: RbacCrudFlags,
   field: keyof RbacCrudFlags,

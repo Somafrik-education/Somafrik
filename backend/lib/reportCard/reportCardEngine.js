@@ -23,7 +23,14 @@ const {
   ROUNDING_STAGE_V1,
   RANKING_METRIC_V1,
   PASS_RULE_METRIC_V1,
+  resolveSubjectComponentRule,
 } = require("./academicRuleProfile");
+const {
+  FACT_STATUSES,
+  expectedMissingCells,
+  computeSubjectTotals,
+  assignSubjectRanks,
+} = require("./reportCardSubjectTotals");
 const { validateSpec: validateSchemaSpec, validateAgainstProfile } = require("./reportCardSchema");
 
 const AGGREGATE_SLOTS = new Set([
@@ -195,6 +202,7 @@ function assertRequestedSlots(profile, schema) {
 }
 
 function aggregateWeighted(profile, cells, { periodId, scoreComponentId } = {}) {
+  if (Array.isArray(profile.subjects)) return aggregateSubjectWeighted(cells, { periodId, scoreComponentId });
   let points = 0;
   let maxPoints = 0;
   let maxComplete = true;
@@ -221,6 +229,61 @@ function aggregateWeighted(profile, cells, { periodId, scoreComponentId } = {}) 
     }
   }
   return { points, max_points: maxComplete ? maxPoints : null };
+}
+
+/**
+ * BULLETIN-MODEL-01 — agrégat à règles par matière : chaque cellule porte son
+ * maximum et son poids effectifs. Une note MISSING ne rapporte aucun point mais
+ * son maximum reste attendu (jamais 0 silencieux, jamais de % gonflé).
+ */
+function aggregateSubjectWeighted(cells, { periodId, scoreComponentId } = {}) {
+  let points = 0;
+  let maxPoints = 0;
+  for (const cell of cells) {
+    if (periodId && cell.period_id !== periodId) continue;
+    if (scoreComponentId && cell.score_component_id !== scoreComponentId) continue;
+    if (cell.kind === "NUMERIC") {
+      points += cell.internal * cell.weight;
+      maxPoints += cell.max * cell.weight;
+    } else if (cell.kind === "MISSING") {
+      maxPoints += cell.max * cell.weight;
+    }
+  }
+  return { points, max_points: maxPoints };
+}
+
+/**
+ * BULLETIN-PUBLISH-01 — périmètre de calcul (profils à règles par matière).
+ * Défaut : toutes les périodes + bilan annuel (comportement BULLETIN-MODEL-01).
+ * Bulletin trimestriel : périodes listées, sans bilan annuel. Bilan annuel :
+ * toutes les périodes. Une période hors périmètre n'est ni attendue ni comptée.
+ */
+function resolveScope(profile, rawScope) {
+  const all = [...profile.periods].sort((a, b) => a.order - b.order).map((period) => period.id);
+  if (!Array.isArray(profile.subjects)) return null;
+  if (rawScope == null) {
+    return { periods: all, periodSet: new Set(all), annual: profile.annual !== false, full: true };
+  }
+  if (typeof rawScope !== "object" || Array.isArray(rawScope) || !Array.isArray(rawScope.periods)) {
+    throw new ReportCardEngineError("INVALID_PERIOD_SCOPE");
+  }
+  const requested = new Set(rawScope.periods.map((id) => String(id)));
+  if (requested.size === 0 || [...requested].some((id) => !all.includes(id))) {
+    throw new ReportCardEngineError("INVALID_PERIOD_SCOPE");
+  }
+  const periods = all.filter((id) => requested.has(id));
+  const full = periods.length === all.length;
+  const annual = rawScope.annual === true;
+  if (annual && (!full || profile.annual === false)) throw new ReportCardEngineError("INVALID_PERIOD_SCOPE");
+  return { periods, periodSet: new Set(periods), annual, full };
+}
+
+/** Slot hors périmètre : jamais calculé sur des cellules absentes. */
+function slotOutOfScope(scopeCtx, column, periodId) {
+  if (!scopeCtx) return false;
+  if (periodId && !scopeCtx.periodSet.has(periodId)) return true;
+  const annualSlot = column.slot === "ANNUAL_POINTS" || column.slot === "ANNUAL_MAX" || column.slot === "DECISION";
+  return annualSlot && !periodId && !scopeCtx.annual;
 }
 
 function numericSlot(internal, profile) {
@@ -344,7 +407,7 @@ function collectPresence(schema, ctx) {
   return presence.sort(comparePresence);
 }
 
-function computeSlots(profile, schema, cells, ranksByColumn) {
+function computeSlots(profile, schema, cells, ranksByColumn, scopeCtx = null) {
   const slots = [];
   for (const { section, column } of schemaColumns(schema)) {
     if (column.kind !== "computed_slot") continue;
@@ -357,12 +420,20 @@ function computeSlots(profile, schema, cells, ranksByColumn) {
       ...(scope.periodId ? { period_id: scope.periodId } : {}),
       ...(scope.scoreComponentId ? { score_component_id: scope.scoreComponentId } : {}),
     };
+    if (slotOutOfScope(scopeCtx, column, scope.periodId)) {
+      slots.push({ ...identity, kind: "NOT_APPLICABLE", reason: "OUT_OF_SCOPE" });
+      continue;
+    }
     if (column.slot === "RANK") {
       if (!profile.ranking.enabled) {
         slots.push({ ...identity, kind: "NOT_APPLICABLE", reason: "RANKING_DISABLED" });
         continue;
       }
       const rank = ranksByColumn.get(`${section.id}\0${column.id}`);
+      if (rank === undefined && scopeCtx) {
+        slots.push({ ...identity, kind: "NOT_APPLICABLE", reason: "INCOMPLETE" });
+        continue;
+      }
       slots.push({ ...identity, kind: "RANK", internal: rank, exposed: rank });
       continue;
     }
@@ -399,7 +470,7 @@ function computeSlots(profile, schema, cells, ranksByColumn) {
   return slots.sort(compareSlot);
 }
 
-function validateFactRows(profile, rows, periodIds, componentIds) {
+function validateFactRows(profile, rows, periodIds, componentIds, scopeCtx = null) {
   const seenFacts = new Set();
   for (const row of rows) {
     if (!row || typeof row !== "object") throw new ReportCardEngineError("INVALID_FACTS");
@@ -416,6 +487,14 @@ function validateFactRows(profile, rows, periodIds, componentIds) {
       const numeric = Number(row.raw_score);
       if (!Number.isFinite(numeric)) throw new ReportCardEngineError("INVALID_FACTS");
     }
+    if (Array.isArray(profile.subjects)) {
+      if (row.fact_status != null && !FACT_STATUSES.includes(row.fact_status)) {
+        throw new ReportCardEngineError("INVALID_FACTS");
+      }
+      const rule = resolveSubjectComponentRule(profile, String(row.subject_id), row.period_id, row.score_component_id);
+      if (rule.state === "COMPOSITE") throw new ReportCardEngineError("COMPOSITE_SUBJECT_FACT");
+      if (scopeCtx && !scopeCtx.periodSet.has(row.period_id)) throw new ReportCardEngineError("OUT_OF_SCOPE_FACT");
+    }
     const key = factSemanticKey(row);
     if (seenFacts.has(key)) throw new ReportCardEngineError("DUPLICATE_FACT");
     seenFacts.add(key);
@@ -431,7 +510,59 @@ function groupByStudent(rows) {
   return students;
 }
 
-function buildCells(profile, studentId, rows) {
+function buildSubjectCell(profile, studentId, row) {
+  const rule = resolveSubjectComponentRule(profile, String(row.subject_id), row.period_id, row.score_component_id);
+  const cell = {
+    student_id: studentId,
+    subject_id: row.subject_id,
+    period_id: row.period_id,
+    score_component_id: row.score_component_id,
+  };
+  const hasScore = row.raw_score != null && row.raw_score !== "";
+  if (rule.state === "NOT_CONFIGURED") {
+    return { ...cell, kind: "NOT_CONFIGURED", internal: null, exposed: null };
+  }
+  if (rule.state === "NOT_APPLICABLE") {
+    if (hasScore && row.fact_status !== "CANCELLED") {
+      throw new ReportCardEngineError("FACT_FOR_NOT_APPLICABLE_COMPONENT");
+    }
+    return { ...cell, kind: "NOT_APPLICABLE", internal: null, exposed: null };
+  }
+  const expected = { ...cell, max: rule.max, weight: rule.weight };
+  if (row.fact_status === "UNPUBLISHED" || row.fact_status === "CANCELLED") {
+    return { ...expected, kind: "MISSING", reason: row.fact_status, internal: null, exposed: null };
+  }
+  if (!hasScore) {
+    return { ...expected, kind: "MISSING", reason: "NOT_ENTERED", internal: null, exposed: null };
+  }
+  const numericValue = Number(row.raw_score);
+  try {
+    assertScoreBounds({ numericScore: numericValue, max: rule.max });
+  } catch (err) {
+    wrapEngineError(err, "INVALID_FACTS");
+  }
+  return {
+    ...expected,
+    kind: "NUMERIC",
+    internal: numericValue,
+    exposed: roundNumber(numericValue, profile.rounding.decimals, profile.rounding.mode),
+  };
+}
+
+function compareCell(a, b) {
+  return (
+    compareId(a.subject_id, b.subject_id) ||
+    compareId(a.period_id, b.period_id) ||
+    compareId(a.score_component_id, b.score_component_id)
+  );
+}
+
+function buildCells(profile, studentId, rows, scopeCtx = null) {
+  if (Array.isArray(profile.subjects)) {
+    const cells = rows.map((row) => buildSubjectCell(profile, studentId, row));
+    const periods = scopeCtx ? scopeCtx.periods : undefined;
+    return [...cells, ...expectedMissingCells(profile, studentId, cells, periods)].sort(compareCell);
+  }
   return rows
     .map((row) => {
       const component = componentById(profile, row.score_component_id);
@@ -471,15 +602,29 @@ function buildCells(profile, studentId, rows) {
     );
 }
 
-function computeRanksByColumn(profile, schema, cohortCells) {
+function hasMissingInScope(cells, { periodId, scoreComponentId } = {}) {
+  return cells.some(
+    (cell) =>
+      cell.kind === "MISSING" &&
+      (!periodId || cell.period_id === periodId) &&
+      (!scoreComponentId || cell.score_component_id === scoreComponentId)
+  );
+}
+
+function computeRanksByColumn(profile, schema, cohortCells, scopeCtx = null) {
   const ranksByStudent = new Map();
   const rankColumns = schemaColumns(schema).filter(
     ({ column }) => column.kind === "computed_slot" && column.slot === "RANK" && profile.ranking.enabled
   );
-  const studentIds = [...cohortCells.keys()];
   for (const { section, column } of rankColumns) {
     const keyed = `${section.id}\0${column.id}`;
     const scope = columnScope(section, column);
+    if (slotOutOfScope(scopeCtx, column, scope.periodId)) continue;
+    // Profils à règles par matière : un élève au résultat incomplet n'est pas classé.
+    const studentIds = [...cohortCells.keys()].filter(
+      (studentId) => !scopeCtx || !hasMissingInScope(cohortCells.get(studentId), scope)
+    );
+    if (!studentIds.length) continue;
     const values = studentIds.map((studentId) => ({
       studentId,
       pct: computePercentageValue(profile, cohortCells.get(studentId), scope),
@@ -497,6 +642,25 @@ function computeRanksByColumn(profile, schema, cohortCells) {
   return ranksByStudent;
 }
 
+/**
+ * BULLETIN-PUBLISH-01 — liste des élèves de la classe (profils à règles par
+ * matière) : un élève inscrit sans aucune note figure au bulletin avec toutes
+ * ses notes attendues MISSING, jamais absent ni à zéro.
+ */
+function resolveRoster(profile, rawRoster, facts) {
+  if (rawRoster == null) return [];
+  if (!Array.isArray(profile.subjects) || !Array.isArray(rawRoster)) {
+    throw new ReportCardEngineError("INVALID_ROSTER");
+  }
+  const roster = rawRoster.map((id) => requireNonEmptyId(id, "INVALID_ROSTER")).map(String);
+  if (new Set(roster).size !== roster.length) throw new ReportCardEngineError("INVALID_ROSTER");
+  const allowed = new Set(roster);
+  if (facts.some((row) => !allowed.has(String(row.student_id)))) {
+    throw new ReportCardEngineError("ROSTER_MISMATCH");
+  }
+  return roster;
+}
+
 function computeReportCard(input = {}) {
   const { facts = [], provenance = null, tenant = null, cohort = null } = input;
   if (!Array.isArray(facts)) throw new ReportCardEngineError("INVALID_FACTS");
@@ -512,23 +676,31 @@ function computeReportCard(input = {}) {
   const tenantOut = assertTenant(tenant, facts);
   const periodIds = new Set(profile.periods.map((period) => period.id));
   const componentIds = new Set(profile.score_components.map((component) => component.id));
-  validateFactRows(profile, facts, periodIds, componentIds);
+  const scopeCtx = resolveScope(profile, input.scope);
+  if (input.scope != null && !scopeCtx) throw new ReportCardEngineError("INVALID_PERIOD_SCOPE");
+  validateFactRows(profile, facts, periodIds, componentIds, scopeCtx);
   assertRequestedSlots(profile, schema);
+  const roster = resolveRoster(profile, input.roster, facts);
 
   const rankEnabled = schemaColumns(schema).some(
     ({ column }) => column.kind === "computed_slot" && column.slot === "RANK" && profile.ranking.enabled
   );
   if (rankEnabled) {
-    if (!Array.isArray(cohort) || cohort.length < 1) throw new ReportCardEngineError("COHORT_REQUIRED");
-    validateFactRows(profile, cohort, periodIds, componentIds);
+    if (!Array.isArray(cohort) || (cohort.length < 1 && roster.length < 1)) {
+      throw new ReportCardEngineError("COHORT_REQUIRED");
+    }
+    validateFactRows(profile, cohort, periodIds, componentIds, scopeCtx);
     assertTenant(tenant, cohort);
   }
 
   const slotIds = new Set(requestedSlots(schema));
   const students = groupByStudent(facts);
+  for (const studentId of roster) {
+    if (!students.has(studentId)) students.set(studentId, []);
+  }
   const factCells = new Map();
   for (const studentId of students.keys()) {
-    factCells.set(studentId, buildCells(profile, studentId, students.get(studentId)));
+    factCells.set(studentId, buildCells(profile, studentId, students.get(studentId), scopeCtx));
   }
 
   let ranksByStudent = new Map();
@@ -536,7 +708,10 @@ function computeReportCard(input = {}) {
     const cohortGroups = groupByStudent(cohort);
     const cohortCells = new Map();
     for (const studentId of cohortGroups.keys()) {
-      cohortCells.set(studentId, buildCells(profile, studentId, cohortGroups.get(studentId)));
+      cohortCells.set(studentId, buildCells(profile, studentId, cohortGroups.get(studentId), scopeCtx));
+    }
+    for (const studentId of roster) {
+      if (!cohortCells.has(studentId)) cohortCells.set(studentId, buildCells(profile, studentId, [], scopeCtx));
     }
     for (const studentId of students.keys()) {
       if (!cohortCells.has(studentId)) throw new ReportCardEngineError("COHORT_INCOMPLETE");
@@ -544,7 +719,7 @@ function computeReportCard(input = {}) {
         throw new ReportCardEngineError("COHORT_MISMATCH");
       }
     }
-    ranksByStudent = computeRanksByColumn(profile, schema, cohortCells);
+    ranksByStudent = computeRanksByColumn(profile, schema, cohortCells, scopeCtx);
   }
 
   const calculable = hasCalculableAggregation(profile);
@@ -557,8 +732,16 @@ function computeReportCard(input = {}) {
       slotIds,
     };
     const presence = collectPresence(schema, ctx);
-    const slots = computeSlots(profile, schema, cells, ranksByStudent.get(studentId) || new Map());
+    const slots = computeSlots(profile, schema, cells, ranksByStudent.get(studentId) || new Map(), scopeCtx);
     const result = { student_id: studentId, cells, slots, presence };
+    if (Array.isArray(profile.subjects)) {
+      result.subject_totals = computeSubjectTotals(
+        profile,
+        cells,
+        (value) => roundNumber(value, profile.rounding.decimals, profile.rounding.mode),
+        scopeCtx
+      );
+    }
     if (calculable) {
       const period_aggregates = periodAggregatesFor(profile, cells);
       result.period_aggregates = period_aggregates;
@@ -573,6 +756,8 @@ function computeReportCard(input = {}) {
     }
     return result;
   });
+
+  if (Array.isArray(profile.subjects)) assignSubjectRanks(profile, studentResults);
 
   const output = {
     engine_id: ENGINE_ID,

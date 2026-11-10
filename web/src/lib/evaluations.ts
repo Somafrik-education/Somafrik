@@ -330,8 +330,11 @@ export function resolveCanonicalClassId(
 ): string | undefined {
   const existing = String(existingClassId ?? "").trim();
   if (existing) return existing;
-  const match = (classes ?? []).find((row) => classNamesMatch(row.name ?? row.className, className));
-  const id = String(match?.id ?? "").trim();
+  // MONO-FIX-A4 : un nom porté par plusieurs classes ne désigne aucune classe ;
+  // jamais de « premier résultat ». Sans classId, l'API refuse explicitement le nom ambigu.
+  const matches = (classes ?? []).filter((row) => classNamesMatch(row.name ?? row.className, className));
+  if (matches.length !== 1) return undefined;
+  const id = String(matches[0]?.id ?? "").trim();
   return id || undefined;
 }
 

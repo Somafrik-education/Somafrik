@@ -26,6 +26,7 @@ function createEstablishmentRolesMemoryStore(seed = {}) {
       display_order: role.displayOrder ?? 0,
       status: role.status ?? "active",
       school_assignable: role.schoolAssignable !== false,
+      display_label: role.displayLabel ?? role.display_label ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -78,6 +79,7 @@ function createEstablishmentRolesMemoryStore(seed = {}) {
         display_order: input.displayOrder ?? 0,
         status: "active",
         school_assignable: input.schoolAssignable !== false,
+        display_label: input.displayLabel ?? null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -85,6 +87,20 @@ function createEstablishmentRolesMemoryStore(seed = {}) {
       permissions.set(row.id, [...(input.permissions ?? [])]);
       delegationPermissions.set(row.id, [...(input.delegationPermissions ?? [])]);
       return hydrateRole(row);
+    },
+    async updateRoleDisplayLabel(roleId, displayLabel) {
+      const index = roles.findIndex((row) => row.id === roleId);
+      if (index < 0) return null;
+      roles[index] = {
+        ...roles[index],
+        display_label: displayLabel,
+        updated_at: new Date().toISOString(),
+      };
+      return hydrateRole(roles[index]);
+    },
+    async listRoleDisplayContracts() {
+      const { applyRoleDisplayContract } = require("../lib/roleDisplayLabels");
+      return roles.map((row) => applyRoleDisplayContract(row));
     },
     async updateRole(roleId, patch) {
       const index = roles.findIndex((row) => row.id === roleId && row.status === "active");

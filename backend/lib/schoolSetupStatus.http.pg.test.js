@@ -13,6 +13,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("path");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 if (process.env.GITHUB_ACTIONS && !DATABASE_URL) {
@@ -303,7 +304,7 @@ test(
     let child = null;
 
     function mint(payload) {
-      return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+      return mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
     }
 
     try {
@@ -341,28 +342,28 @@ test(
       );
       assert.equal(termsAfterBoot.rows[0].c, 0, "fixture A doit rester sans période après boot serveur");
 
-      const tokenA = mint({
+      const tokenA = await mint({
         sub: USER_A,
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
         schoolCode: LEFTOVER_A,
         permissions: SETUP_PERMISSIONS,
       });
-      const tokenForgedB = mint({
+      const tokenForgedB = await mint({
         sub: USER_A,
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
         schoolCode: LEFTOVER_B,
         permissions: SETUP_PERMISSIONS,
       });
-      const tokenNoSchool = mint({
+      const tokenNoSchool = await mint({
         sub: USER_NO_SCHOOL,
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
         schoolCode: LEFTOVER_A,
         permissions: SETUP_PERMISSIONS,
       });
-      const tokenNoSub = mint({
+      const tokenNoSub = await mint({
         role: "Admin School",
         roleKeys: ["SCHOOL_ADMIN"],
         schoolCode: LEFTOVER_A,
@@ -373,6 +374,8 @@ test(
       assertReadyAWithoutPeriods(membership, fixture);
 
       const forgedJwt = await request(SETUP_PATH, { token: tokenForgedB });
+      // SEC-AUTH-04 : claim leftover B sur une session de A → garde de session.
+      assertSessionRefused(forgedJwt, "setup JWT leftover B", "SESSION_SCHOOL_ATTACHMENT_MISSING");
       assertClosedOrReadyA(forgedJwt, fixture);
 
       const forgedHeader = await request(SETUP_PATH, {
@@ -382,19 +385,13 @@ test(
       assertClosedOrReadyA(forgedHeader, fixture);
 
       const noSchool = await request(SETUP_PATH, { token: tokenNoSchool });
-      assert.ok(
-        noSchool.status === 401 || noSchool.status === 403,
-        `membership absent fail-closed, jamais fallback leftover JWT (status=${noSchool.status} body=${JSON.stringify(noSchool.data)})`,
-      );
+      assertSessionRefused(noSchool, "membership absent fail-closed", "SESSION_SCHOOL_ATTACHMENT_MISSING");
       assert.notEqual(noSchool.status, 200);
       assert.equal(noSchool.data?.status, undefined);
       assert.equal(leaksSchoolB(noSchool.data, fixture), false);
 
       const noSub = await request(SETUP_PATH, { token: tokenNoSub });
-      assert.ok(
-        noSub.status === 401 || noSub.status === 403,
-        `sub absent fail-closed (status=${noSub.status} body=${JSON.stringify(noSub.data)})`,
-      );
+      assertSessionRefused(noSub, "sub absent fail-closed", "SESSION_SUBJECT_MISMATCH");
       assert.notEqual(noSub.status, 200);
 
       await pool.query(

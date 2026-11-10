@@ -62,6 +62,23 @@ test("backfill est idempotent", () => {
   assert.equal(second, 0);
 });
 
+test("SEC-RBAC-REVOKE-01 : un rôle révoqué n'est jamais recréé par le backfill mémoire", () => {
+  const tables = { schools: [seedData.school], userRoles: [] };
+  assert.ok(backfillMemoryUserRolesFromSeedAccounts(tables, seedData.userAccounts) > 0);
+  const target = tables.userRoles[0];
+  target.status = "revoked";
+  target.revoked_at = new Date();
+  const activeBefore = tables.userRoles.filter((row) => row.status === "active").length;
+
+  assert.equal(backfillMemoryUserRolesFromSeedAccounts(tables, seedData.userAccounts), 0);
+  const sameTuple = tables.userRoles.filter(
+    (row) =>
+      row.user_id === target.user_id && row.school_id === target.school_id && row.role_key === target.role_key,
+  );
+  assert.deepEqual(sameTuple.map((row) => row.status), ["revoked"], "aucune ligne active recréée");
+  assert.equal(tables.userRoles.filter((row) => row.status === "active").length, activeBefore, "autres rôles intacts");
+});
+
 async function withDemoSeed(fn) {
   const previous = process.env.SOMAFRIK_SKIP_DEMO_SEED;
   process.env.SOMAFRIK_SKIP_DEMO_SEED = "false";

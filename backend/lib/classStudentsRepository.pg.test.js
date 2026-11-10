@@ -151,6 +151,22 @@ async function setupFixture(pool) {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_payload JSONB NOT NULL DEFAULT '{}'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS user_id UUID;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS administrative_notes TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS preferred_name TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS nationality TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE students DROP CONSTRAINT IF EXISTS students_preferred_name_len_check;
+    ALTER TABLE students ADD CONSTRAINT students_preferred_name_len_check
+      CHECK (preferred_name IS NULL OR char_length(preferred_name) <= 120);
+    ALTER TABLE students DROP CONSTRAINT IF EXISTS students_nationality_len_check;
+    ALTER TABLE students ADD CONSTRAINT students_nationality_len_check
+      CHECK (nationality IS NULL OR char_length(nationality) <= 120);
+    ALTER TABLE students DROP CONSTRAINT IF EXISTS students_address_len_check;
+    ALTER TABLE students ADD CONSTRAINT students_address_len_check
+      CHECK (address IS NULL OR char_length(address) <= 500);
+    ALTER TABLE students DROP CONSTRAINT IF EXISTS students_administrative_notes_len_check;
+    ALTER TABLE students ADD CONSTRAINT students_administrative_notes_len_check
+      CHECK (administrative_notes IS NULL OR char_length(administrative_notes) <= 2000);
     CREATE TABLE IF NOT EXISTS identity_counters (
       school_id UUID NOT NULL REFERENCES schools(id),
       creation_year SMALLINT NOT NULL,
@@ -1046,6 +1062,65 @@ async function main() {
       new Date(microUpdated.updatedAt).getTime() > new Date(jsonToken).getTime(),
       "updated_at est strictement supérieur à la milliseconde JSON du token",
     );
+    const pgTokenForUuid = (value) =>
+      value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+
+    // FICHE-FIX-04 : GET et PATCH acceptent exactement les mêmes identifiants
+    // sous school_id canonique ; l'UPDATE reste indexé par id + OCC.
+    const studentUuidRows = await pool.query(
+      "SELECT id FROM students WHERE student_code = $1",
+      [micro.student.studentCode],
+    );
+    assert.equal(studentUuidRows.rowCount, 1);
+    const studentUuid = String(studentUuidRows.rows[0].id);
+    const uuidRead = await studentsRepo.getByStudentCode(studentUuid, "CD-2026-0001");
+    assert.equal(uuidRead.studentCode, micro.student.studentCode);
+    const uuidUpdated = await studentsRepo.updateByStudentCode(studentUuid, "CD-2026-0001", {
+      birthPlace: "Bujumbura",
+      expectedUpdatedAt: pgTokenForUuid(uuidRead.updatedAt),
+    });
+    assert.equal(uuidUpdated.studentCode, micro.student.studentCode);
+    assert.equal(uuidUpdated.birthPlace, "Bujumbura");
+    const sqlByUuid = await pool.query(
+      "SELECT student_code, birth_place FROM students WHERE id = $1",
+      [studentUuid],
+    );
+    assert.equal(sqlByUuid.rows[0].student_code, micro.student.studentCode);
+    assert.equal(sqlByUuid.rows[0].birth_place, "Bujumbura");
+    const uuidReload = await studentsRepo.getByStudentCode(studentUuid, "CD-2026-0001");
+    assert.equal(uuidReload.birthPlace, "Bujumbura");
+    const codeUpdatedAfterUuid = await studentsRepo.updateByStudentCode(
+      micro.student.studentCode, "CD-2026-0001", {
+        birthPlace: "Gitega",
+        expectedUpdatedAt: pgTokenForUuid(uuidReload.updatedAt),
+      },
+    );
+    assert.equal(codeUpdatedAfterUuid.studentCode, micro.student.studentCode);
+    assert.equal((await studentsRepo.getByStudentCode(studentUuid, "CD-2026-0001")).birthPlace, "Gitega");
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(studentUuid, "CD-2026-0001", {
+        birthPlace: "stale",
+        expectedUpdatedAt: pgTokenForUuid(uuidRead.updatedAt),
+      }),
+      (error) => error.statusCode === 409,
+      "PATCH UUID avec ancien jeton OCC doit rester refusé",
+    );
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(studentUuid, "BI-2026-0001", {
+        birthPlace: "interdit",
+        expectedUpdatedAt: pgTokenForUuid(codeUpdatedAfterUuid.updatedAt),
+      }),
+      (error) => error.statusCode === 404,
+      "UUID d'un autre établissement ne donne aucun accès",
+    );
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode("00000000-0000-4000-8000-000000000000", "CD-2026-0001", {
+        birthPlace: "interdit",
+        expectedUpdatedAt: pgTokenForUuid(codeUpdatedAfterUuid.updatedAt),
+      }),
+      (error) => error.statusCode === 404,
+    );
+    assert.equal((await studentsRepo.getByStudentCode(studentUuid, "CD-2026-0001")).birthPlace, "Gitega");
 
     const occRace = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
       firstName: "Occ",
@@ -1109,6 +1184,226 @@ async function main() {
       assert.equal(finalRow.parentPhone, "+243800009991");
       assert.notEqual(finalRow.firstName, "OccAlpha");
     }
+
+    const pgToken = (value) =>
+      value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+    // FICHE03 — cycle d'écriture, GET, concurrence, contraintes et tenant isolé.
+    const extraEnrollment = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+      firstName: "Extra", lastName: "Student",
+    });
+    const extraCode = extraEnrollment.student.studentCode;
+    const extraBefore = await studentsRepo.getByStudentCode(extraCode, "CD-2026-0001");
+    assert.equal(extraBefore.preferredName, null);
+    assert.equal(extraBefore.nationality, null);
+    assert.equal(extraBefore.address, null);
+    const extraSaved = await studentsRepo.updateByStudentCode(extraCode, "CD-2026-0001", {
+      preferredName: "Nana", nationality: "CD", address: "Avenue de la Paix",
+      expectedUpdatedAt: pgToken(extraBefore.updatedAt),
+    });
+    assert.deepEqual(
+      [extraSaved.preferredName, extraSaved.nationality, extraSaved.address, extraSaved.lastName],
+      ["Nana", "CD", "Avenue de la Paix", "Student"],
+    );
+    const extraSql = await pool.query(
+      "SELECT preferred_name, nationality, address FROM students WHERE student_code = $1",
+      [extraCode],
+    );
+    assert.deepEqual(
+      [extraSql.rows[0].preferred_name, extraSql.rows[0].nationality, extraSql.rows[0].address],
+      ["Nana", "CD", "Avenue de la Paix"],
+    );
+    const extraReload = await studentsRepo.getByStudentCode(extraCode, "CD-2026-0001");
+    assert.equal(extraReload.preferredName, "Nana");
+    const extraCleared = await studentsRepo.updateByStudentCode(extraCode, "CD-2026-0001", {
+      address: null, expectedUpdatedAt: pgToken(extraReload.updatedAt),
+    });
+    assert.equal(extraCleared.address, null);
+    assert.equal(extraCleared.nationality, "CD");
+    assert.equal(extraCleared.preferredName, "Nana");
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(extraCode, "CD-2026-0001", {
+        nationality: "BI", expectedUpdatedAt: pgToken(extraReload.updatedAt),
+      }), (error) => error.statusCode === 409,
+    );
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(extraCode, "BI-2026-0001", {
+        address: "interdit", expectedUpdatedAt: pgToken(extraCleared.updatedAt),
+      }), (error) => error.statusCode === 404,
+    );
+    await assert.rejects(
+      () => studentsRepo.updateByStudentCode(extraCode, "CD-2026-0001", {
+        nationality: "x".repeat(121), expectedUpdatedAt: pgToken(extraCleared.updatedAt),
+      }), (error) => error.statusCode === 400,
+    );
+    await assert.rejects(
+      () => pool.query("UPDATE students SET address = $1 WHERE student_code = $2",
+        ["x".repeat(501), extraCode]),
+      (error) => error.code === "23514",
+    );
+    const extraAfterErrors = await studentsRepo.getByStudentCode(extraCode, "CD-2026-0001");
+    assert.equal(extraAfterErrors.nationality, "CD");
+    assert.equal(extraAfterErrors.address, null);
+
+    const noted = await studentsRepo.enroll(activeClass.classCode, "CD-2026-0001", {
+      firstName: "Note",
+      lastName: "Fixture",
+    });
+    const beforeNotes = await studentsRepo.getByStudentCode(noted.student.studentCode, "CD-2026-0001");
+    assert.equal(beforeNotes.administrativeNotes, null);
+    const savedNotes = await studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+      administrativeNotes: "  Note   fixture  ",
+      expectedUpdatedAt: pgToken(beforeNotes.updatedAt),
+    });
+    assert.equal(savedNotes.administrativeNotes, "Note fixture");
+    assert.equal(savedNotes.firstName, "Note");
+    const savedSql = await pool.query(
+      `SELECT administrative_notes, first_name FROM students WHERE student_code = $1`,
+      [noted.student.studentCode],
+    );
+    assert.equal(savedSql.rows[0].administrative_notes, "Note fixture");
+
+    const secondNotes = await studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+      administrativeNotes: "Seconde valeur",
+      expectedUpdatedAt: pgToken(savedNotes.updatedAt),
+    });
+    assert.equal(secondNotes.administrativeNotes, "Seconde valeur");
+    const secondSql = await pool.query(
+      `SELECT administrative_notes FROM students WHERE student_code = $1`,
+      [noted.student.studentCode],
+    );
+    assert.equal(secondSql.rows[0].administrative_notes, "Seconde valeur");
+
+    const clearedNotes = await studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+      administrativeNotes: "",
+      expectedUpdatedAt: pgToken(secondNotes.updatedAt),
+    });
+    assert.equal(clearedNotes.administrativeNotes, null);
+    const clearedSql = await pool.query(
+      `SELECT administrative_notes FROM students WHERE student_code = $1`,
+      [noted.student.studentCode],
+    );
+    assert.equal(clearedSql.rows[0].administrative_notes, null);
+
+    const restoredNotes = await studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+      administrativeNotes: "Reste",
+      firstName: "NotePrenom",
+      expectedUpdatedAt: pgToken(clearedNotes.updatedAt),
+    });
+    assert.equal(restoredNotes.firstName, "NotePrenom");
+    assert.equal(restoredNotes.administrativeNotes, "Reste");
+
+    const identityKeepsNotes = await studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+      lastName: "Fixture",
+      expectedUpdatedAt: pgToken(restoredNotes.updatedAt),
+    });
+    assert.equal(identityKeepsNotes.administrativeNotes, "Reste");
+    assert.equal(identityKeepsNotes.lastName, "Fixture");
+
+    const notesKeepName = await studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+      administrativeNotes: "Sans toucher le prénom",
+      expectedUpdatedAt: pgToken(identityKeepsNotes.updatedAt),
+    });
+    assert.equal(notesKeepName.firstName, "NotePrenom");
+    assert.equal(notesKeepName.administrativeNotes, "Sans toucher le prénom");
+
+    await assert.rejects(
+      () =>
+        studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+          administrativeNotes: "conflit perdu",
+          expectedUpdatedAt: pgToken(identityKeepsNotes.updatedAt),
+        }),
+      (error) => error.statusCode === 409,
+    );
+    const afterConflict = await pool.query(
+      `SELECT administrative_notes, first_name FROM students WHERE student_code = $1`,
+      [noted.student.studentCode],
+    );
+    assert.equal(afterConflict.rows[0].administrative_notes, "Sans toucher le prénom");
+    assert.equal(afterConflict.rows[0].first_name, "NotePrenom");
+
+    await assert.rejects(
+      () =>
+        studentsRepo.updateByStudentCode(noted.student.studentCode, "BI-2026-0001", {
+          administrativeNotes: "fuite",
+          expectedUpdatedAt: pgToken(notesKeepName.updatedAt),
+        }),
+      (error) => error.statusCode === 404,
+    );
+    const afterOtherSchool = await pool.query(
+      `SELECT administrative_notes FROM students WHERE student_code = $1`,
+      [noted.student.studentCode],
+    );
+    assert.equal(afterOtherSchool.rows[0].administrative_notes, "Sans toucher le prénom");
+
+    await assert.rejects(
+      () =>
+        studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+          firstName: "Refuse",
+          administrativeNotes: "<b>html</b>",
+          expectedUpdatedAt: pgToken(notesKeepName.updatedAt),
+        }),
+      (error) => error.statusCode === 400,
+    );
+    const afterHtml = await pool.query(
+      `SELECT administrative_notes, first_name FROM students WHERE student_code = $1`,
+      [noted.student.studentCode],
+    );
+    assert.equal(afterHtml.rows[0].first_name, "NotePrenom");
+    assert.equal(afterHtml.rows[0].administrative_notes, "Sans toucher le prénom");
+
+    await assert.rejects(
+      () =>
+        pool.query(`UPDATE students SET administrative_notes = $1 WHERE student_code = $2`, [
+          "x".repeat(2001),
+          noted.student.studentCode,
+        ]),
+      (error) => error.code === "23514",
+    );
+
+    const roster = await studentsRepo.listByClassCode(activeClass.classCode, "CD-2026-0001");
+    const rosterRow = roster.find((row) => row.studentCode === noted.student.studentCode);
+    assert.ok(rosterRow);
+    assert.equal(Object.hasOwn(rosterRow, "administrativeNotes"), false);
+
+    const baseDb = createDbAdapter(pool);
+    const failingRepo = createClassStudentsRepository({
+      ...baseDb,
+      async one(sql, params = []) {
+        if (/\bUPDATE\s+students\b/i.test(String(sql))) {
+          const error = new Error("simulated postgres write failure");
+          error.code = "57014";
+          throw error;
+        }
+        return baseDb.one(sql, params);
+      },
+    });
+    await assert.rejects(
+      () =>
+        failingRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+          administrativeNotes: "ne doit pas passer",
+          expectedUpdatedAt: pgToken(notesKeepName.updatedAt),
+        }),
+      (error) => error.code === "57014",
+    );
+    const afterPgFailure = await pool.query(
+      `SELECT administrative_notes FROM students WHERE student_code = $1`,
+      [noted.student.studentCode],
+    );
+    assert.equal(afterPgFailure.rows[0].administrative_notes, "Sans toucher le prénom");
+
+    const beforeLines = await studentsRepo.getByStudentCode(noted.student.studentCode, "CD-2026-0001");
+    const multiline = await studentsRepo.updateByStudentCode(noted.student.studentCode, "CD-2026-0001", {
+      administrativeNotes: "  Ligne un  \n\n  Ligne  deux  \nLigne trois",
+      expectedUpdatedAt: pgToken(beforeLines.updatedAt),
+    });
+    assert.equal(multiline.administrativeNotes, "Ligne un\n\nLigne deux\nLigne trois");
+    const multilineSql = await pool.query(
+      `SELECT administrative_notes FROM students WHERE student_code = $1`,
+      [noted.student.studentCode],
+    );
+    assert.equal(multilineSql.rows[0].administrative_notes, "Ligne un\n\nLigne deux\nLigne trois");
+    const reloadedLines = await studentsRepo.getByStudentCode(noted.student.studentCode, "CD-2026-0001");
+    assert.equal(reloadedLines.administrativeNotes, "Ligne un\n\nLigne deux\nLigne trois");
 
     console.log("classStudentsRepository.pg.test.js: OK");
   } finally {

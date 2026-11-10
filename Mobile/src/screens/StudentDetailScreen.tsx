@@ -1,10 +1,10 @@
+import FormField from "../components/FormField";
 import {
   ScrollView,
   Text,
   StyleSheet,
   View,
   TouchableOpacity,
-  TextInput,
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,7 +15,11 @@ import { RootStackParamList } from "../navigation/AppNavigator";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import StudentSwitcher from "../components/StudentSwitcher";
+import { StudentCardNfcEnrollmentPanel } from "../components/StudentCardNfcEnrollmentPanel";
+import { studentCardEnrollmentAccess } from "../lib/studentCardEnrollmentAccess";
 import ExpandableEntityCard from "../components/ExpandableEntityCard";
+import { StudentDocumentsPanel } from "../components/StudentDocumentsPanel";
+import { studentDocumentsAccess } from "../lib/studentDocumentsAccess";
 import { canReadRoute } from "../domain/security/permissions";
 import { useFloatingTabBarLayout } from "../lib/screenLayout";
 import {
@@ -55,12 +59,14 @@ import {
 } from "../lib/studentEnrollmentC18Access";
 import {
   classifyGuardiansLoad,
+  filterActiveParentRelations,
   guardiansCardSubtitle,
   type GuardiansLoadState,
 } from "../lib/studentFicheGuardians";
 import { shouldBlockUnsupportedMutations } from "../offline/l1/readModel";
 import { OFFLINE_COPY } from "../lib/offlineModeSpec";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
+import { parentLinkSuccessFeedback } from "../lib/parentLinkingPresentation";
 import { DISPLAY_DATE_HINT, toApiDate } from "../lib/dates";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentDetail">;
@@ -124,6 +130,8 @@ export default function StudentDetailScreen({
   const canSeePayments = canReadRoute(session, "StudentPayments");
   const canLink = canLinkParentMobile(session);
   const canArchive = canArchiveParentRelationMobile(session);
+  const documentPermissions = studentDocumentsAccess(session);
+  const cardPermissions = studentCardEnrollmentAccess(session);
   const mutationsBlocked = shouldBlockUnsupportedMutations({
     source: "network",
     permissionsBootstrap,
@@ -166,9 +174,7 @@ export default function StudentDetailScreen({
       }
       try {
         const relations = await getParentRelations(canonicalId);
-        const active = (relations as GuardianRow[]).filter(
-          (item) => String(item.status ?? "active").toLowerCase() !== "archived",
-        );
+        const active = filterActiveParentRelations(relations as GuardianRow[]);
         setGuardians(active);
         setGuardiansState(classifyGuardiansLoad({ loading: false, error: null, items: active }));
       } catch (error) {
@@ -266,16 +272,18 @@ export default function StudentDetailScreen({
     }
     setLinkError("");
     try {
-      await linkParent({
+      const linked = await linkParent({
         studentId: String(student.studentCode ?? student.id ?? studentId),
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
+        ...(firstName.trim() ? { firstName: firstName.trim() } : {}),
+        ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
         phone: phone.trim(),
       });
       setFirstName("");
       setLastName("");
       setPhone("");
       await loadFiche();
+      const feedback = parentLinkSuccessFeedback(linked);
+      Alert.alert(feedback.title, feedback.message);
     } catch (error) {
       setLinkError(error instanceof Error ? error.message : "Liaison impossible.");
     }
@@ -353,14 +361,14 @@ export default function StudentDetailScreen({
         ) : null}
         {showAssign ? (
           <View>
-            <TextInput
-              style={styles.input}
+            <FormField label={"Code classe"} type="code"
+              inputStyle={styles.input}
               placeholder="Code classe"
               value={classCodeInput}
               onChangeText={setClassCodeInput}
             />
-            <TextInput
-              style={styles.input}
+            <FormField label={"Date effective"} type="date"
+              inputStyle={styles.input}
               placeholder={`Date effective (${DISPLAY_DATE_HINT})`}
               value={assignEffectiveDate}
               onChangeText={setAssignEffectiveDate}
@@ -386,8 +394,8 @@ export default function StudentDetailScreen({
         ) : null}
         {showTransfer ? (
           <View>
-            <TextInput
-              style={styles.input}
+            <FormField label={"Établissement de destination"} type="text"
+              inputStyle={styles.input}
               placeholder="Établissement de destination"
               value={transferDest}
               onChangeText={setTransferDest}
@@ -474,9 +482,12 @@ export default function StudentDetailScreen({
           : null}
         {canLink ? (
           <View>
-            <TextInput style={styles.input} placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
-            <TextInput style={styles.input} placeholder="Nom" value={lastName} onChangeText={setLastName} />
-            <TextInput style={styles.input} placeholder="Téléphone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+            <Text style={styles.fieldLabel}>Prénom du parent</Text>
+            <FormField label={"Prénom du parent"} type="name" hideVisibleLabel inputStyle={styles.input} accessibilityLabel="Prénom du parent" placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
+            <Text style={styles.fieldLabel}>Nom du parent</Text>
+            <FormField label={"Nom du parent"} type="name" hideVisibleLabel inputStyle={styles.input} accessibilityLabel="Nom du parent" placeholder="Nom" value={lastName} onChangeText={setLastName} />
+            <Text style={styles.fieldLabel}>Téléphone du parent</Text>
+            <FormField label={"Téléphone du parent"} type="phone" hideVisibleLabel inputStyle={styles.input} accessibilityLabel="Téléphone du parent" placeholder="Téléphone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             {linkError ? <Text style={styles.error}>{linkError}</Text> : null}
             <TouchableOpacity
               style={styles.create}
@@ -488,7 +499,31 @@ export default function StudentDetailScreen({
               <Text style={styles.createText}>Lier un responsable</Text>
             </TouchableOpacity>
           </View>
-        ) : null}
+        ) : (
+          <Text style={styles.info}>
+            Vous n'avez pas l'autorisation de lier un parent. Demandez à l'administration de vérifier vos droits.
+          </Text>
+        )}
+      </ExpandableEntityCard>
+
+      {cardPermissions.canRead ? <ExpandableEntityCard title="Carte élève NFC" subtitle="Encodage et affectation" badge="" testID="student-fiche-nfc-card">
+        <StudentCardNfcEnrollmentPanel key={`${resourceScopeKey}:${canonicalStudentId}`} studentId={canonicalStudentId}
+          canRead={cardPermissions.canRead} canUpdate={cardPermissions.canUpdate} mutationsBlocked={mutationsBlocked} />
+      </ExpandableEntityCard> : null}
+
+      <ExpandableEntityCard
+        title="Documents"
+        subtitle="Pièces administratives"
+        badge=""
+        testID="student-fiche-documents-card"
+      >
+        <StudentDocumentsPanel
+          studentId={canonicalStudentId}
+          canRead={documentPermissions.canRead}
+          canCreate={documentPermissions.canCreate}
+          canUpdate={documentPermissions.canUpdate}
+          mutationsBlocked={mutationsBlocked}
+        />
       </ExpandableEntityCard>
 
       <ExpandableEntityCard
@@ -640,6 +675,12 @@ const styles = StyleSheet.create({
   archive: {
     color: "#B91C1C",
     fontWeight: "800",
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 4,
   },
   input: {
     minHeight: MIN_TOUCH_TARGET_DP,

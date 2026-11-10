@@ -55,7 +55,8 @@ assert.doesNotMatch(home, /metricLabelFromSnapshot\(studentsSnapshot, \(rows\) =
 
 assert.match(students, /establishmentStudents/);
 assert.match(classes, /establishmentStudents/);
-assert.match(attendance, /establishmentStudents/);
+assert.match(attendance, /const classStudents = studentsData/);
+assert.doesNotMatch(attendance, /establishmentStudents/, "Appel consomme le roster L1 tenant-scopé sans seconde projection");
 
 assert.match(l1Projection, /schoolId: partition.schoolId/);
 
