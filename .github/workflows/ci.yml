@@ -46,6 +46,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || 'develop' }}
+      # Gradle/Android build must run on a supported Java, not ubuntu-latest's
+      # ambient JDK (class major 69 = Java 25, incompatible with this wrapper).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify Java for Android Gradle
+        run: |
+          java -version
+          test "$(javac -version 2>&1 | awk '{print $2}' | cut -d. -f1)" = 17
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
