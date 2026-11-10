@@ -54,7 +54,7 @@ Contrat Play pour **un seul** `applicationId` `com.somafrik.app` (préprod Inter
 | `preproduction.autoIncrement` | `true` — chaque AAB store consomme N+1 |
 | `production.autoIncrement` | `true` — même compteur remote Android |
 | `version` (user-facing) | `1.2.1` dans `app.json` (piloté localement) |
-| `android.versionCode` dans `app.json` | Baseline Git **13** pour prebuild local uniquement. **Ignoré par EAS Build** dès que le remote est initialisé. |
+| `android.versionCode` dans `app.json` | **25** (release v25 ; plus haut versionCode Play Console confirmé par le propriétaire : 24). Utilisé par le prebuild local et `build-android-aab.js`. **Ignoré par EAS Build** : le compteur remote doit valoir 24 avant `eas build --profile production` pour produire 25. |
 
 **Interdit :** `appVersionSource: local` + `autoIncrement` sur préprod et prod. Expo ne persiste l’incrément local que si le changement est commité, ce qui est ingérable en CI et peut produire deux AAB avec le même `versionCode` Play.
 
