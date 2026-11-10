@@ -67,6 +67,10 @@ jobs:
           npm run build
       - name: verify:school-code-v2
         run: npm run verify:school-code-v2
+      - name: verify:mobile-usability
+        run: npm run verify:mobile-usability
+      - name: verify:mobile-network-resilience
+        run: npm run verify:mobile-network-resilience
       - name: Full domain regression
         run: |
           set -euo pipefail
@@ -98,7 +102,6 @@ jobs:
           npm run verify:mobile-evaluations-v2
           npm run verify:mobile-planning-v2
           npm --prefix Mobile run verify:mobile-domain-hydration
-          npm run verify:mobile-usability
           npm run verify:mobile-form-fields
           npm run verify:mobile-home-data-truth
           npm run verify:mobile-school-scope-transport
