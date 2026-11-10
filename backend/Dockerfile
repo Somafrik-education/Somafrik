@@ -39,6 +39,10 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 WORKDIR /app
 
 COPY backend/package*.json ./
+# npm ci exécute postinstall, qui vérifie Chromium avec ce script et son
+# helper : ils doivent exister avant npm ci, pas uniquement après.
+COPY backend/scripts/verify-puppeteer-browser.js ./scripts/verify-puppeteer-browser.js
+COPY backend/lib/reportCard/pdfBrowserExecutable.js ./lib/reportCard/pdfBrowserExecutable.js
 RUN npm ci --omit=dev
 
 COPY backend/ .
