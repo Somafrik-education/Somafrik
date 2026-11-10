@@ -73,77 +73,99 @@ jobs:
         run: npm run verify:mobile-network-resilience
       - name: Full domain regression
         run: |
-          set -euo pipefail
-          npm --prefix web run verify:student-enrollment
-          npm run verify:class-student-enrollment
-          npm run verify:teacher-account-creation
-          npm run verify:teachers-lifecycle
-          npm run verify:teacher-login-scope
-          npm run verify:schools-legacy-cleanup
-          npm run verify:finance-legacy-cleanup
-          npm run verify:pedagogy-management
-          npm run verify:planning-v2-weekly
-          npm run verify:planning-v2-web
-          npm run verify:planning-rooms
-          npm run verify:planning-replacements
-          npm run verify:planning-course-options
-          npm run verify:teacher-course-canonical-reconcile
-          npm run verify:pedagogy-legacy-cleanup
-          npm run verify:help-v1a-catalogue
-          npm run verify:help-v1b-web
-          npm run verify:finance-domain-invariants
-          npm run verify:finance-fee-type-canonical
-          npm run verify:finance-obligation-lifecycle
-          npm run verify:finance-management
-          npm run verify:finance-multi-item-payment
-          npm run verify:finance-web-mobile-convergence
-          npm run verify:finance-rbac
-          npm run verify:mobile-data-truth
-          npm run verify:mobile-evaluations-v2
-          npm run verify:mobile-planning-v2
-          npm --prefix Mobile run verify:mobile-domain-hydration
-          npm run verify:mobile-form-fields
-          npm run verify:mobile-home-data-truth
-          npm run verify:mobile-school-scope-transport
-          npm run verify:mobile-no-catalog-runtime-data
-          npm run verify:mobile-canonical-route-map
-          npm run verify:mobile-canonical-role-identity
-          npm run verify:mobile-live-permissions-refresh
-          npm run verify:mobile-cta-rbac-alignment
-          npm run verify:mobile-attendance-hydration
-          npm run verify:mobile-class-attendance-rate
-          npm run verify:mobile-ui-e2e-scaffold
-          npm run test:mobile-ui-e2e-runtime
-          npm run verify:mobile-release-readiness
-          npm run verify:mobile-preview-apk
-          npm run verify:mobile-network-resilience
-          npm run verify:platform-management
-          npm run verify:platform-legacy-cleanup
-          npm run verify:clients-management
-          npm run verify:user-role-lifecycle
-          npm run verify:users-login-identity
-          npm run verify:parent-linking
-          npm run verify:presences-roster
-          npm run verify:education-reference-data
-          npm run verify:establishment-roles-data
-          npm run verify:functional-rbac
-          npm run verify:supabase-data-api-lockdown
-          npm run verify:function-search-path
-          npm run verify:platform-personal-data-deny
-          npm run verify:planning-rbac-reconcile
-          npm run verify:evaluation-types-data
-          npm run verify:school-settings-data
-          npm run verify:student-access-cards
-          npm run verify:documents-exams-data
-          npm run verify:login-lockout-data
-          npm run verify:data-export-safety
-          npm run verify:clients-legacy-cleanup
-          npm run verify:backoffice-state-removal
-          npm run verify:canonical-state-convergence
-          npm run verify:sync-end-to-end
-          node scripts/verify-remove-legacy-sync-core.js
-          npm run verify:students-fiche-consolidation
-          npm run verify:teachers-domain-constraints-boot
+          # Conserver TOUS les tests bloquants, mais recueillir chaque code de sortie.
+          # Aucun test masqué : la commande retourne 1 si au moins un contrôle échoue.
+          set -uo pipefail
+          failures=()
+          successes=0
+          run_check() {
+            local label="$*"
+            local status=0
+            echo "::group::$label"
+            "$@" || status=$?
+            echo "::endgroup::"
+            if (( status != 0 )); then
+              failures+=("$label (exit $status)")
+              echo "::error title=Release regression failed::$label (exit $status)"
+            else
+              successes=$((successes + 1))
+            fi
+          }
+          run_check npm --prefix web run verify:student-enrollment
+          run_check npm run verify:class-student-enrollment
+          run_check npm run verify:teacher-account-creation
+          run_check npm run verify:teachers-lifecycle
+          run_check npm run verify:teacher-login-scope
+          run_check npm run verify:schools-legacy-cleanup
+          run_check npm run verify:finance-legacy-cleanup
+          run_check npm run verify:pedagogy-management
+          run_check npm run verify:planning-v2-weekly
+          run_check npm run verify:planning-v2-web
+          run_check npm run verify:planning-rooms
+          run_check npm run verify:planning-replacements
+          run_check npm run verify:planning-course-options
+          run_check npm run verify:teacher-course-canonical-reconcile
+          run_check npm run verify:pedagogy-legacy-cleanup
+          run_check npm run verify:help-v1a-catalogue
+          run_check npm run verify:help-v1b-web
+          run_check npm run verify:finance-domain-invariants
+          run_check npm run verify:finance-fee-type-canonical
+          run_check npm run verify:finance-obligation-lifecycle
+          run_check npm run verify:finance-management
+          run_check npm run verify:finance-multi-item-payment
+          run_check npm run verify:finance-web-mobile-convergence
+          run_check npm run verify:finance-rbac
+          run_check npm run verify:mobile-data-truth
+          run_check npm run verify:mobile-evaluations-v2
+          run_check npm run verify:mobile-planning-v2
+          run_check npm --prefix Mobile run verify:mobile-domain-hydration
+          run_check npm run verify:mobile-form-fields
+          run_check npm run verify:mobile-home-data-truth
+          run_check npm run verify:mobile-school-scope-transport
+          run_check npm run verify:mobile-no-catalog-runtime-data
+          run_check npm run verify:mobile-canonical-route-map
+          run_check npm run verify:mobile-canonical-role-identity
+          run_check npm run verify:mobile-live-permissions-refresh
+          run_check npm run verify:mobile-cta-rbac-alignment
+          run_check npm run verify:mobile-attendance-hydration
+          run_check npm run verify:mobile-class-attendance-rate
+          run_check npm run verify:mobile-ui-e2e-scaffold
+          run_check npm run test:mobile-ui-e2e-runtime
+          run_check npm run verify:mobile-release-readiness
+          run_check npm run verify:mobile-preview-apk
+          run_check npm run verify:mobile-network-resilience
+          run_check npm run verify:platform-management
+          run_check npm run verify:platform-legacy-cleanup
+          run_check npm run verify:clients-management
+          run_check npm run verify:user-role-lifecycle
+          run_check npm run verify:users-login-identity
+          run_check npm run verify:parent-linking
+          run_check npm run verify:presences-roster
+          run_check npm run verify:education-reference-data
+          run_check npm run verify:establishment-roles-data
+          run_check npm run verify:functional-rbac
+          run_check npm run verify:supabase-data-api-lockdown
+          run_check npm run verify:function-search-path
+          run_check npm run verify:platform-personal-data-deny
+          run_check npm run verify:planning-rbac-reconcile
+          run_check npm run verify:evaluation-types-data
+          run_check npm run verify:school-settings-data
+          run_check npm run verify:student-access-cards
+          run_check npm run verify:documents-exams-data
+          run_check npm run verify:login-lockout-data
+          run_check npm run verify:data-export-safety
+          run_check npm run verify:clients-legacy-cleanup
+          run_check npm run verify:backoffice-state-removal
+          run_check npm run verify:canonical-state-convergence
+          run_check npm run verify:sync-end-to-end
+          run_check node scripts/verify-remove-legacy-sync-core.js
+          run_check npm run verify:students-fiche-consolidation
+          run_check npm run verify:teachers-domain-constraints-boot
+          echo "Release regression: $successes PASS, ${#failures[@]} FAIL / $((successes + ${#failures[@]})) checks"
+          if (( ${#failures[@]} > 0 )); then
+            printf 'FAIL: %s\\n' "${failures[@]}"
+            exit 1
+          fi
       - name: Build preproduction backend image
         env:
           POSTGRES_DB: somafrik
