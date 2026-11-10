@@ -89,12 +89,14 @@ function main() {
   assert.match(login, /passwordFieldErrors\.confirmPassword/);
 
   const ciWorkflow = fs.readFileSync(path.join(REPO, ".github", "workflows", "ci.yml"), "utf8");
-  assert.match(ciWorkflow, /npm run verify:mobile-form-fields/);
+  // Nightly release regression and the independent Security deep scan must both
+  // run the canonical FormField gate. Security Nightly has one job (security),
+  // not a second Tests job: require an explicit, blocking step in that job.
+  assert.match(ciWorkflow, /- name: Full domain regression[\s\S]*?npm run verify:mobile-form-fields/);
   const securityWorkflow = fs.readFileSync(path.join(REPO, ".github", "workflows", "security.yml"), "utf8");
-  assert.ok(
-    (securityWorkflow.match(/npm run verify:mobile-form-fields/g) ?? []).length >= 2,
-    "Security doit exécuter verify:mobile-form-fields dans le job Security et la suite Tests",
-  );
+  assert.match(securityWorkflow, /security:\s*\n\s*name: Security deep scan/);
+  assert.match(securityWorkflow, /- name: verify:mobile-form-fields\s*\n\s*run: npm run verify:mobile-form-fields/);
+  assert.doesNotMatch(securityWorkflow, /continue-on-error:\s*true/);
 
   console.log("OK: FormField canonique, erreurs par champ, notifications awaitées et garde-fou exécuté en CI/Security");
 }
