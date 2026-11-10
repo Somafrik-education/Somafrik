@@ -65,6 +65,8 @@ jobs:
           npm run lint
           npm run typecheck
           npm run build
+      - name: verify:school-code-v2
+        run: npm run verify:school-code-v2
       - name: Full domain regression
         run: |
           set -euo pipefail
@@ -74,7 +76,6 @@ jobs:
           npm run verify:teachers-lifecycle
           npm run verify:teacher-login-scope
           npm run verify:schools-legacy-cleanup
-          npm run verify:school-code-v2
           npm run verify:finance-legacy-cleanup
           npm run verify:pedagogy-management
           npm run verify:planning-v2-weekly
