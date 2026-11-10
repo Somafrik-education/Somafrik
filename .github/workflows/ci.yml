@@ -163,7 +163,7 @@ jobs:
           run_check npm run verify:teachers-domain-constraints-boot
           echo "Release regression: $successes PASS, ${#failures[@]} FAIL / $((successes + ${#failures[@]})) checks"
           if (( ${#failures[@]} > 0 )); then
-            printf 'FAIL: %s\\n' "${failures[@]}"
+            printf 'FAIL: %s\n' "${failures[@]}"
             exit 1
           fi
       - name: Build preproduction backend image
