@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
-import { Alert, Linking, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import FormField from "../components/FormField";
+import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
@@ -499,12 +500,12 @@ export default function ReportCardsScreen() {
                         <Text style={styles.historyRow}>v{reissueDraft.preview.source_version} → v{reissueDraft.preview.proposed_version}</Text>
                         <Text style={styles.hint}>Les notes restent inchangées. L'ancien bulletin restera dans l'historique.</Text>
                         <Text style={styles.hint}>Aperçu textuel non officiel : contrôler le PDF signé et le QR après publication en préproduction.</Text>
-                        <TextInput
+                        <FormField label={"Motif de réémission"} type="text" hideVisibleLabel
                           accessibilityLabel="Motif de réémission"
                           placeholder="Motif de réémission obligatoire"
                           value={reissueReason}
                           onChangeText={setReissueReason}
-                          style={{ borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8, padding: 10, marginVertical: 8 }}
+                          inputStyle={{ borderWidth: 1, borderColor: "#9CA3AF", borderRadius: 8, padding: 10, marginVertical: 8 }}
                         />
                         <TouchableOpacity
                           activeOpacity={0.85}
