@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import FormField from "./FormField";
 import {
   ActivityIndicator,
   Alert,
@@ -8,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -255,9 +255,9 @@ export default function StudentCardRollCallModal({
           <View style={styles.directionCard} testID="roll-call-direction-notice">
             <Text style={styles.directionText}>{COLLECTIVE_ROLL_CALL_COPY.directionNotice}</Text>
             <Text style={styles.label}>{COLLECTIVE_ROLL_CALL_COPY.justificationLabel}</Text>
-            <FormField label={COLLECTIVE_ROLL_CALL_COPY.justificationLabel} type="multiline" hideVisibleLabel
+            <TextInput
               testID="roll-call-justification"
-              inputStyle={styles.input}
+              style={styles.input}
               value={justification}
               onChangeText={setJustification}
               editable={!validating}
