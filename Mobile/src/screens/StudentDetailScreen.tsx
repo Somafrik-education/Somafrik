@@ -1,5 +1,5 @@
-import {
 import FormField from "../components/FormField";
+import {
   ScrollView,
   Text,
   StyleSheet,
