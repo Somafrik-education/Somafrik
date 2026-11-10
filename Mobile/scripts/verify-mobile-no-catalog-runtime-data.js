@@ -19,7 +19,6 @@ const ALLOWED_VALUE_IMPORTS = new Set([
   "MessagesScreen.tsx",
 ]);
 
-
 /** Type-only imports are erased; value imports from catalog remain forbidden. */
 const CATALOG_VALUE_IMPORT = /(?:^|\n)\s*import\s+(?!type\b)(?:\{[^}]*\}|[^\n;]+?)\s+from\s*["']\.\.\/data\/catalog["']/gm;
 
@@ -74,7 +73,7 @@ function main() {
     }
     const valueImport = catalogValueImport(source);
     if (valueImport && !ALLOWED_VALUE_IMPORTS.has(name)) {
-      hits.push(`${name} value-import catalog ${valueImport[0]}`);
+      hits.push(`${name} value-import catalog ${valueImport}`);
     }
   }
   assert.deepStrictEqual(hits, [], `catalog runtime data interdite:\n${hits.join("\n")}`);
