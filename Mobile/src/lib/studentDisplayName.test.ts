@@ -61,7 +61,10 @@ const list = read("screens/StudentsScreen.tsx");
 const detail = read("screens/StudentDetailScreen.tsx");
 assert.match(list, /studentDisplayName\(student\)/);
 assert.match(detail, /studentDisplayName\(student\)/);
-assert.match(list, /student\.name\.toLowerCase\(\)\.includes\(normalizedQuery\)/);
+// Le filtre cherche dans le nom et le matricule, avec normalisation des accents.
+assert.match(list, /\[student\.name,\s*student\.matricule\]\.some/);
+assert.match(list, /normalize\("NFD"\)/);
+assert.match(list, /includes\(normalizedQuery\)/);
 assert.doesNotMatch(list, /\[student\.firstName,\s*student\.name\]/);
 assert.doesNotMatch(detail, /\[student\.firstName,\s*student\.name\]/);
 assert.doesNotMatch(list, /firstName \+ .*name/);
