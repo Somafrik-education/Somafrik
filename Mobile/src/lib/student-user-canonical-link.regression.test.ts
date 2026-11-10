@@ -184,7 +184,8 @@ describe("M7 — paiements fail-closed sans fiche students", () => {
   it("élève lié ne voit que ses paiements students.id", () => {
     const scope = resolveMobileStudentScope({
       role: "student",
-      selectedStudentId: S1,
+      selectedStudentId: otherStudentId, // forged/stale selection cannot replace authenticated link
+      user: { id: U1, linkedStudent: { studentId: S1 } },
       children: [],
     });
     const scoped = filterRowsByStudentScope(paymentsData, scope);
