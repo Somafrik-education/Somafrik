@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
+import FormField from "../components/FormField";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -274,11 +274,11 @@ export default function ExamsScreen() {
           ) : null}
           {status === "success" ? (
             <>
-              <TextInput
+              <FormField label={"Rechercher un examen"} type="search" hideVisibleLabel
                 value={search}
                 onChangeText={setSearch}
                 placeholder="Rechercher un examen"
-                style={styles.search}
+                inputStyle={styles.search}
               />
               <ChipRow label="Classe" value={classFilter} options={classOptions} onChange={setClassFilter} />
               <ChipRow label="Période" value={periodFilter} options={periodOptions} onChange={setPeriodFilter} />
@@ -298,12 +298,12 @@ export default function ExamsScreen() {
                   ["examType", "Type"],
                 ] as const
               ).map(([key, label]) => (
-                <TextInput
+                <FormField label={label}
                   key={key}
                   value={form[key]}
                   onChangeText={(value) => setForm((current) => ({ ...current, [key]: value }))}
                   placeholder={label}
-                  style={styles.search}
+                  inputStyle={styles.search}
                 />
               ))}
               <TouchableOpacity
@@ -361,12 +361,12 @@ export default function ExamsScreen() {
                     ["examType", "Type"],
                   ] as const
                 ).map(([key, label]) => (
-                  <TextInput
+                  <FormField label={label}
                     key={key}
                     value={editForm[key]}
                     onChangeText={(value) => setEditForm((current) => ({ ...current, [key]: value }))}
                     placeholder={label}
-                    style={styles.search}
+                    inputStyle={styles.search}
                   />
                 ))}
                 <TouchableOpacity

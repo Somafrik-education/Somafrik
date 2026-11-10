@@ -1,10 +1,10 @@
+import FormField from "../components/FormField";
 import {
   ScrollView,
   Text,
   StyleSheet,
   View,
   TouchableOpacity,
-  TextInput,
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -361,14 +361,14 @@ export default function StudentDetailScreen({
         ) : null}
         {showAssign ? (
           <View>
-            <TextInput
-              style={styles.input}
+            <FormField label={"Code classe"} type="code"
+              inputStyle={styles.input}
               placeholder="Code classe"
               value={classCodeInput}
               onChangeText={setClassCodeInput}
             />
-            <TextInput
-              style={styles.input}
+            <FormField label={"Date effective"} type="date"
+              inputStyle={styles.input}
               placeholder={`Date effective (${DISPLAY_DATE_HINT})`}
               value={assignEffectiveDate}
               onChangeText={setAssignEffectiveDate}
@@ -394,8 +394,8 @@ export default function StudentDetailScreen({
         ) : null}
         {showTransfer ? (
           <View>
-            <TextInput
-              style={styles.input}
+            <FormField label={"Établissement de destination"} type="text"
+              inputStyle={styles.input}
               placeholder="Établissement de destination"
               value={transferDest}
               onChangeText={setTransferDest}
@@ -483,11 +483,11 @@ export default function StudentDetailScreen({
         {canLink ? (
           <View>
             <Text style={styles.fieldLabel}>Prénom du parent</Text>
-            <TextInput style={styles.input} accessibilityLabel="Prénom du parent" placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
+            <FormField label={"Prénom du parent"} type="name" hideVisibleLabel inputStyle={styles.input} accessibilityLabel="Prénom du parent" placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
             <Text style={styles.fieldLabel}>Nom du parent</Text>
-            <TextInput style={styles.input} accessibilityLabel="Nom du parent" placeholder="Nom" value={lastName} onChangeText={setLastName} />
+            <FormField label={"Nom du parent"} type="name" hideVisibleLabel inputStyle={styles.input} accessibilityLabel="Nom du parent" placeholder="Nom" value={lastName} onChangeText={setLastName} />
             <Text style={styles.fieldLabel}>Téléphone du parent</Text>
-            <TextInput style={styles.input} accessibilityLabel="Téléphone du parent" placeholder="Téléphone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
+            <FormField label={"Téléphone du parent"} type="phone" hideVisibleLabel inputStyle={styles.input} accessibilityLabel="Téléphone du parent" placeholder="Téléphone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             {linkError ? <Text style={styles.error}>{linkError}</Text> : null}
             <TouchableOpacity
               style={styles.create}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import FormField from "../components/FormField";
 import {
   Modal,
   Pressable,
@@ -6,7 +7,6 @@ import {
   StyleSheet,
   Text,
   Switch,
-  TextInput,
   View,
 } from "react-native";
 import {
@@ -138,12 +138,12 @@ function BrowseView({
 
   return (
     <View style={styles.stack}>
-      <TextInput
+      <FormField label={"Rechercher dans l’aide"} type="search" hideVisibleLabel
         value={query}
         onChangeText={onQueryChange}
         placeholder="Rechercher dans l’aide"
         accessibilityLabel="Rechercher dans l’aide"
-        style={styles.search}
+        inputStyle={styles.search}
         testID="help-search"
       />
       {searching ? (
