@@ -500,7 +500,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
     expect(await screen.findByText(/Catalogue de cours indisponible/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Erreur interne catalogue/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/Aucun cours canonique/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Aucun cours n.est disponible pour cet établissement/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Enregistrer l'affectation/i })).toBeDisabled();
   });
 
@@ -510,7 +510,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
     renderPage();
     await screen.findByText("Ndiaye");
     await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
-    expect(await screen.findByText(/Aucun cours canonique/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Aucun cours n.est disponible pour cet établissement/i)).toBeInTheDocument();
     expect(screen.queryByText(/Catalogue de cours indisponible/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Mathématiques" })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Français" })).not.toBeInTheDocument();
@@ -609,7 +609,7 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
       status: "active",
     }]);
     teacherAssignmentsApiMock.remove.mockResolvedValue({ id: "asg-1", deleted: true });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const browserConfirm = vi.spyOn(window, "confirm");
     try {
       renderPage();
       await screen.findByText("Ndiaye");
@@ -618,12 +618,49 @@ describe("TeachersListPage (fiche métier, sans création d'identité)", () => {
       expect(within(section).getByText("6ème A · Mathématiques")).toBeInTheDocument();
       expect(within(section).queryByText("5ème A · Français")).not.toBeInTheDocument();
       await user.click(within(section).getByRole("button", { name: "Retirer" }));
+      const confirmation = within(section).getByRole("group", { name: "Confirmer le retrait du cours" });
+      expect(within(confirmation).getByText("Retirer ce cours ?")).toBeInTheDocument();
+      expect(within(confirmation).getByText(/Les notes et les présences déjà enregistrées seront conservées/)).toBeInTheDocument();
+      expect(teacherAssignmentsApiMock.remove).not.toHaveBeenCalled();
+      await user.click(within(confirmation).getByRole("button", { name: "Annuler le retrait" }));
+      expect(teacherAssignmentsApiMock.remove).not.toHaveBeenCalled();
+      await user.click(within(section).getByRole("button", { name: "Retirer" }));
+      await user.click(within(section).getByRole("button", { name: "Confirmer le retrait" }));
       await waitFor(() => expect(teacherAssignmentsApiMock.remove).toHaveBeenCalledWith("asg-1"));
       await waitFor(() => expect(within(section).queryByText("6ème A · Mathématiques")).not.toBeInTheDocument());
+      expect(browserConfirm).not.toHaveBeenCalled();
       expect(screen.getByLabelText(/Classe/i)).toHaveValue("");
     } finally {
-      confirm.mockRestore();
+      browserConfirm.mockRestore();
     }
+  });
+
+  it("rend le retrait visible mais indisponible sans le droit Affectations:DELETE", async () => {
+    const user = userEvent.setup();
+    assignmentPermissions.canDelete = false;
+    teacherAssignmentsApiMock.list.mockResolvedValue([{
+      id: "asg-1",
+      teacherId: "CD-2026-0001-ENS-0001",
+      className: "6ème A",
+      course: "Mathématiques",
+      status: "active",
+    }]);
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
+    const section = await screen.findByRole("region", { name: "Affectations actuelles" });
+    expect(await within(section).findByText("6ème A · Mathématiques")).toBeInTheDocument();
+    expect(within(section).getByRole("button", { name: "Retirer" })).toBeDisabled();
+    expect(within(section).getByText(/pas l'autorisation de les retirer/i)).toBeInTheDocument();
+    expect(teacherAssignmentsApiMock.remove).not.toHaveBeenCalled();
+  });
+
+  it("n'affiche pas de vocabulaire technique dans la fenêtre d'affectation", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("Ndiaye");
+    await user.click(screen.getAllByRole("button", { name: "Affecter un cours" })[0]);
+    expect(screen.queryByText(/Références canoniques|schoolCode|PostgreSQL|côté serveur/i)).not.toBeInTheDocument();
   });
 
   it("conserve les choix de classe et cours lorsque la lecture des affectations échoue", async () => {

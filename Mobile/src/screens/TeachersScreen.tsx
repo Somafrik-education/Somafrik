@@ -70,7 +70,7 @@ export default function TeachersScreen() {
           <Text style={styles.title} testID={NAVIGATION_TEST_IDS.teachersTitle}>
             Enseignants
           </Text>
-          <Text style={styles.subtitle}>Équipe pédagogique chargée depuis PostgreSQL</Text>
+          <Text style={styles.subtitle}>Consultez les enseignants et leurs cours</Text>
           <FormField
             label="Recherche"
             type="search"
@@ -141,7 +141,7 @@ export default function TeachersScreen() {
       }}
       ListFooterComponent={
         <Text style={styles.lifecycleHint}>
-          L’attribution et le retrait des droits de la matrice RBAC restent disponibles uniquement sur le Web. L’identité enseignant se crée via Utilisateurs, puis par attribution du rôle Enseignant.
+          Pour ajouter un enseignant, créez son compte dans Utilisateurs et attribuez-lui le rôle Enseignant. Les autorisations se gèrent depuis le site Web.
         </Text>
       }
     />
