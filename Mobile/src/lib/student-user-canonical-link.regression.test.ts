@@ -24,6 +24,7 @@ import {
   filterRowsByStudentScope,
   findStudentByIdentity,
   resolveMobileStudentScope,
+  resolveParentSafeStudentId,
   resolveSessionStudentId,
   sessionStudentAliasKeys,
 } from "./canonicalStudentIdentity";
@@ -228,6 +229,45 @@ describe("M7 — paiements fail-closed sans fiche students", () => {
       reportSrc,
       /visibleStudentIds\.length \? visibleStudentIds\.includes\(card\.studentId\) : true/,
     );
+  });
+});
+
+describe("M7b — route forgée et sélection non fiable", () => {
+  const S2 = "33333333-3333-4333-8333-333333333333";
+  const S3 = "44444444-4444-4444-8444-444444444444";
+
+  it("élève lié ignore route et sélection forgées", () => {
+    const user = { id: U1, linkedStudent: { studentId: S1, studentCode: CODE_B } };
+    assert.equal(resolveParentSafeStudentId({
+      role: "student", routeStudentId: S2, selectedStudentId: S3, user,
+    }), S1);
+    const keys = sessionStudentAliasKeys({ role: "student", selectedStudentId: S2, user });
+    assert.ok(keys.includes(S1));
+    assert.ok(keys.includes(CODE_B));
+    assert.ok(!keys.includes(S2));
+    assert.ok(!keys.includes(S3));
+    assert.ok(!keys.includes(U1));
+  });
+
+  it("élève sans liaison reste fail-closed malgré route et sélection", () => {
+    const user = { id: U1 };
+    assert.equal(resolveParentSafeStudentId({
+      role: "student", routeStudentId: S2, selectedStudentId: S3, user,
+    }), null);
+    assert.deepEqual(sessionStudentAliasKeys({ role: "student", selectedStudentId: S2, user }), []);
+  });
+
+  it("parent multi-enfants : seul un enfant lié est sélectionnable", () => {
+    const children = [{ id: S1 }, { id: S2 }, { id: S3 }];
+    assert.equal(resolveParentSafeStudentId({
+      role: "parent_student", selectedStudentId: S2, children,
+    }), S2);
+    assert.equal(resolveParentSafeStudentId({
+      role: "parent_student", routeStudentId: "unlinked", children,
+    }), null);
+    assert.equal(resolveParentSafeStudentId({
+      role: "parent_student", selectedStudentId: "unlinked", routeStudentId: S1, children,
+    }), null);
   });
 });
 
