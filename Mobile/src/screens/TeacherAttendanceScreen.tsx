@@ -14,6 +14,8 @@ import StudentCardClassRollCallModal from "../components/StudentCardClassRollCal
 import OfflineRollCallModal from "../components/OfflineRollCallModal";
 import RollCallClassPickerModal from "../components/RollCallClassPickerModal";
 import { resolveRollCallLauncher } from "../lib/rollCallLauncher";
+import { loadRollCallClasses, matchDirectRollCallTarget } from "../lib/rollCallDirectStart";
+import { listOfflineRollCallClasses } from "../services/rollCallOfflineApi";
 import OfflineRollCallSyncList from "../components/OfflineRollCallSyncList";
 import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
 import { SYNC_COPY } from "../offline/rollCall/sync/syncStatus";
@@ -475,6 +477,39 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [rollCallClassNames, setRollCallClassNames] = useState<Record<string, string>>({});
   const rollCallIdentity = rollCallRuntime().identityFor(session);
   const rollCallPickerScope = rollCallIdentity ? [rollCallIdentity.environmentId, rollCallIdentity.schoolId, rollCallIdentity.userId].join("|") : "";
+  // PRES-LOCAL-NAV-01 — classe déjà ouverte : l'appel local s'ouvre directement sur elle, sans
+  // seconde sélection, si la liste serveur du compte la propose (mêmes droits que le sélecteur).
+  // Sinon, le sélecteur habituel. Un seul démarrage à la fois : jamais deux ouvertures.
+  const rollCallStartingRef = useRef(false);
+  const rollCallStartScopeRef = useRef("");
+  rollCallStartScopeRef.current = `${rollCallPickerScope}\0${selectedClassScopeKey}`;
+  const startLocalRollCall = () => {
+    if (rollCallStartingRef.current) return;
+    const opened = selectedClass;
+    if (!opened) {
+      setRollCallPickerOpen(true);
+      return;
+    }
+    rollCallStartingRef.current = true;
+    const scope = rollCallPickerScope;
+    const startScope = rollCallStartScopeRef.current;
+    void loadRollCallClasses(scope, listOfflineRollCallClasses)
+      .then((list) => matchDirectRollCallTarget(opened, list.classes))
+      .catch(() => null)
+      .then((target) => {
+        // Compte, établissement ou classe changés pendant la lecture : rien n'est ouvert.
+        if (rollCallStartScopeRef.current !== startScope) return;
+        if (!target) {
+          setRollCallPickerOpen(true);
+          return;
+        }
+        setRollCallClassNames((current) => ({ ...current, [target.classId]: target.className }));
+        setRollCallTarget({ ...target, date: isoAttendanceDate() });
+      })
+      .finally(() => {
+        rollCallStartingRef.current = false;
+      });
+  };
   // NFC-PRES-LOCAL-PR4 — appels hors connexion du compte (synchronisation, correction après not_recorded).
   const [offlineSyncListOpen, setOfflineSyncListOpen] = useState(false);
   const [offlineRollCallTarget, setOfflineRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
@@ -983,7 +1018,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </TouchableOpacity>
       ) : null}
       {launcher.canStartRollCall
-        ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setRollCallPickerOpen(true))
+        ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, startLocalRollCall)
         : null}
       {launcher.canCheckCalls
         ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.checkCalls, () => setOfflineSyncListOpen(true))
