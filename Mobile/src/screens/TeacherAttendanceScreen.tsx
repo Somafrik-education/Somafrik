@@ -12,7 +12,8 @@ import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal
 import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
 import StudentCardClassRollCallModal from "../components/StudentCardClassRollCallModal";
 import OfflineRollCallModal from "../components/OfflineRollCallModal";
-import RollCallClassPickerModal from "../components/RollCallClassPickerModal";
+import RollCallClassPickerModal, { loadRollCallClasses } from "../components/RollCallClassPickerModal";
+import { findAuthorizedRollCallClass } from "../lib/rollCallOpenClass";
 import { resolveRollCallLauncher } from "../lib/rollCallLauncher";
 import OfflineRollCallSyncList from "../components/OfflineRollCallSyncList";
 import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
@@ -473,6 +474,37 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [rollCallPickerOpen, setRollCallPickerOpen] = useState(false);
   const [rollCallTarget, setRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
   const [rollCallClassNames, setRollCallClassNames] = useState<Record<string, string>>({});
+  // APPEL-NAV-01 — classe déjà ouverte : l'appel s'ouvre directement, sans seconde sélection.
+  // Même liste serveur (et même repli hors connexion) que le sélecteur ; classe hors de cette
+  // liste ou liste indisponible → sélecteur, inchangé. Un seul déclenchement à la fois.
+  const selectedClassIdRef = useRef("");
+  selectedClassIdRef.current = String(selectedClass?.classId ?? "");
+  const rollCallOpeningRef = useRef(false);
+  const openRollCallTarget = (target: { classId: string; className: string }) => {
+    setRollCallClassNames((current) => ({ ...current, [target.classId]: target.className }));
+    setRollCallTarget({ ...target, date: isoAttendanceDate() });
+  };
+  const startOfflineRollCall = () => {
+    const openedClassId = selectedClassIdRef.current;
+    if (!openedClassId) {
+      setRollCallPickerOpen(true);
+      return;
+    }
+    if (rollCallOpeningRef.current || rollCallTarget) return;
+    rollCallOpeningRef.current = true;
+    void loadRollCallClasses(rollCallPickerScope)
+      .then(({ classes }) => findAuthorizedRollCallClass(classes, openedClassId))
+      .catch(() => null)
+      .then((target) => {
+        // Classe changée pendant la lecture : on n'ouvre rien pour l'ancienne.
+        if (selectedClassIdRef.current !== openedClassId) return;
+        if (target) openRollCallTarget(target);
+        else setRollCallPickerOpen(true);
+      })
+      .finally(() => {
+        rollCallOpeningRef.current = false;
+      });
+  };
   const rollCallIdentity = rollCallRuntime().identityFor(session);
   const rollCallPickerScope = rollCallIdentity ? [rollCallIdentity.environmentId, rollCallIdentity.schoolId, rollCallIdentity.userId].join("|") : "";
   // NFC-PRES-LOCAL-PR4 — appels hors connexion du compte (synchronisation, correction après not_recorded).
@@ -983,7 +1015,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </TouchableOpacity>
       ) : null}
       {launcher.canStartRollCall
-        ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setRollCallPickerOpen(true))
+        ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, startOfflineRollCall)
         : null}
       {launcher.canCheckCalls
         ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.checkCalls, () => setOfflineSyncListOpen(true))
@@ -1041,8 +1073,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         onClose={() => setRollCallPickerOpen(false)}
         onSelect={(target) => {
           setRollCallPickerOpen(false);
-          setRollCallClassNames((current) => ({ ...current, [target.classId]: target.className }));
-          setRollCallTarget({ ...target, date: isoAttendanceDate() });
+          openRollCallTarget(target);
         }}
       />
     ) : null}

@@ -28,6 +28,24 @@ export const ROLL_CALL_PICKER_COPY = {
 /** Dernière liste par compte + établissement (jamais partagée entre comptes). */
 const lastLists = new Map<string, RollCallClassOption[]>();
 
+/**
+ * Liste des classes ouvertes à l'appel pour CE compte : serveur, sinon dernière liste connue du
+ * même compte et du même établissement. Rejette si aucune des deux n'est disponible.
+ * Partagée par le sélecteur et par l'ouverture directe depuis une classe déjà ouverte
+ * (APPEL-NAV-01), pour que les deux parcours appliquent exactement le même périmètre.
+ */
+export async function loadRollCallClasses(scopeKey: string): Promise<{ classes: RollCallClassOption[]; cached: boolean }> {
+  try {
+    const result = await listOfflineRollCallClasses();
+    lastLists.set(scopeKey, result.classes);
+    return { classes: result.classes, cached: false };
+  } catch (error) {
+    const cached = scopeKey ? lastLists.get(scopeKey) : undefined;
+    if (cached) return { classes: cached, cached: true };
+    throw error;
+  }
+}
+
 type Props = {
   visible: boolean;
   /** Clé de portée du compte connecté (environnement | établissement | compte). */
@@ -49,16 +67,13 @@ export default function RollCallClassPickerModal({ visible, scopeKey, onSelect, 
     if (!visible) return;
     let cancelled = false;
     setState({ kind: "loading" });
-    void listOfflineRollCallClasses()
+    void loadRollCallClasses(scopeKey)
       .then((result) => {
         if (cancelled) return;
-        lastLists.set(scopeKey, result.classes);
-        setState({ kind: "ready", classes: result.classes, cached: false });
+        setState({ kind: "ready", classes: result.classes, cached: result.cached });
       })
       .catch(() => {
-        if (cancelled) return;
-        const cached = scopeKey ? lastLists.get(scopeKey) : undefined;
-        setState(cached ? { kind: "ready", classes: cached, cached: true } : { kind: "error" });
+        if (!cancelled) setState({ kind: "error" });
       });
     return () => {
       cancelled = true;
