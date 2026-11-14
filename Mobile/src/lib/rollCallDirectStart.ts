@@ -7,33 +7,56 @@
  * la synchronisation : GET …/roll-call/offline/v1/classes). Sinon — classe absente, liste
  * indisponible sans copie du compte, identifiant non canonique — le sélecteur habituel s'ouvre.
  *
- * Hors connexion : dernière liste obtenue pour CE compte et CET établissement (mémoire du
- * processus, jamais persistée), partagée avec le sélecteur. Le serveur revérifie tout à la sync.
+ * Hors connexion (PRES-LOCAL-NAV-01, revue CTO) : dernière liste obtenue pour CE compte et CET
+ * établissement, en mémoire du processus seulement (jamais persistée), partagée avec le sélecteur et
+ * soumise à une expiration explicite (`ROLL_CALL_CLASS_LIST_TTL_MS`). Elle ne sert QUE si le serveur
+ * est injoignable (réseau, délai, 5xx). Une réponse 4xx du serveur — droits retirés (401/403), route
+ * absente — fait foi : la copie du compte est purgée et rien n'est ouvert hors sélecteur. Le serveur
+ * revérifie tout au pack et à la synchronisation.
  */
 import type { RollCallClassOption } from "../services/rollCallOfflineApi";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** Durée maximale d'usage hors connexion d'une liste (une journée de classe). */
+export const ROLL_CALL_CLASS_LIST_TTL_MS = 12 * 60 * 60 * 1000;
+
 /** Dernière liste par compte + établissement (jamais partagée entre comptes). */
-const lastLists = new Map<string, RollCallClassOption[]>();
+const lastLists = new Map<string, { classes: RollCallClassOption[]; at: number }>();
 
 export type RollCallClassList = { classes: RollCallClassOption[]; cached: boolean };
 
 /**
- * Liste des classes ouvertes à l'appel : réseau d'abord, puis dernière liste du MÊME compte.
- * Rejette si aucune des deux n'est disponible.
+ * Le serveur a répondu (4xx) : décision d'autorisation qui fait foi. Réseau, délai, serveur
+ * injoignable ou 5xx : pas de décision, la copie récente du compte peut servir.
+ */
+export function isAuthoritativeRollCallListRefusal(error: unknown): boolean {
+  const status = error && typeof error === "object" ? (error as { status?: unknown }).status : undefined;
+  return typeof status === "number" && status >= 400 && status < 500;
+}
+
+/**
+ * Liste des classes ouvertes à l'appel : réseau d'abord, puis dernière liste NON EXPIRÉE du MÊME
+ * compte si le serveur est injoignable. Rejette sinon (refus serveur, aucune copie, copie expirée).
  */
 export async function loadRollCallClasses(
   scopeKey: string,
   fetchClasses: () => Promise<{ classes: RollCallClassOption[] }>,
+  now: () => number = Date.now,
 ): Promise<RollCallClassList> {
   try {
     const result = await fetchClasses();
-    if (scopeKey) lastLists.set(scopeKey, result.classes);
+    if (scopeKey) lastLists.set(scopeKey, { classes: result.classes, at: now() });
     return { classes: result.classes, cached: false };
   } catch (error) {
+    if (isAuthoritativeRollCallListRefusal(error)) {
+      if (scopeKey) lastLists.delete(scopeKey);
+      throw error;
+    }
     const cached = scopeKey ? lastLists.get(scopeKey) : undefined;
-    if (cached) return { classes: cached, cached: true };
+    const age = cached ? now() - cached.at : Number.POSITIVE_INFINITY;
+    if (cached && age >= 0 && age <= ROLL_CALL_CLASS_LIST_TTL_MS) return { classes: cached.classes, cached: true };
+    if (cached && scopeKey) lastLists.delete(scopeKey);
     throw error;
   }
 }

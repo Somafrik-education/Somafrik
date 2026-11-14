@@ -13,7 +13,9 @@ import test from "node:test";
 import { ROLL_CALL_PERMISSION, rollCallActor } from "./studentCardRollCallRoles";
 import { resolveRollCallLauncher } from "./rollCallLauncher";
 import {
+  ROLL_CALL_CLASS_LIST_TTL_MS,
   canonicalRollCallClassId,
+  isAuthoritativeRollCallListRefusal,
   loadRollCallClasses,
   matchDirectRollCallTarget,
   resetRollCallClassListsForTests,
@@ -75,23 +77,63 @@ test("hors connexion : dernière liste du MÊME compte uniquement ; sinon échec
   await assert.rejects(loadRollCallClasses("", offline), "portée inconnue : aucune copie");
 });
 
-test("écran Présences : classe ouverte → appel direct ; liste des classes → sélecteur", () => {
+test("revue CTO — refus serveur (4xx, droits retirés) : copie du compte purgée, jamais réutilisée", async () => {
+  for (const status of [401, 403, 404]) {
+    resetRollCallClassListsForTests();
+    const scope = `env|school|refus-${status}`;
+    await loadRollCallClasses(scope, async () => ({ classes: [option(CLASS_A, "6e A")] }));
+    const refused = Object.assign(new Error("refus"), { status });
+    assert.equal(isAuthoritativeRollCallListRefusal(refused), true);
+    await assert.rejects(loadRollCallClasses(scope, async () => { throw refused; }), `${status} : pas de repli`);
+    // Puis coupure réseau : la copie d'avant le refus n'existe plus.
+    await assert.rejects(loadRollCallClasses(scope, async () => { throw new Error("network"); }), `${status} : copie purgée`);
+  }
+});
+
+test("revue CTO — serveur injoignable (réseau 0, délai, 5xx) : copie récente seulement, expiration explicite", async () => {
+  for (const unreachable of [
+    Object.assign(new Error("offline"), { status: 0 }),
+    Object.assign(new Error("timeout"), { status: undefined }),
+    Object.assign(new Error("5xx"), { status: 503 }),
+  ]) {
+    assert.equal(isAuthoritativeRollCallListRefusal(unreachable), false);
+    resetRollCallClassListsForTests();
+    let clock = 1_000_000;
+    const now = () => clock;
+    await loadRollCallClasses("env|school|a", async () => ({ classes: [option(CLASS_A, "6e A")] }), now);
+    clock += ROLL_CALL_CLASS_LIST_TTL_MS;
+    assert.equal((await loadRollCallClasses("env|school|a", async () => { throw unreachable; }, now)).cached, true, "à la limite");
+    clock += 1;
+    await assert.rejects(loadRollCallClasses("env|school|a", async () => { throw unreachable; }, now), "expirée");
+    clock -= 1;
+    await assert.rejects(loadRollCallClasses("env|school|a", async () => { throw unreachable; }, now), "purgée après expiration");
+  }
+  // Horloge reculée : copie non datable, jamais utilisée.
+  resetRollCallClassListsForTests();
+  let clock = 5_000_000;
+  await loadRollCallClasses("env|school|b", async () => ({ classes: [option(CLASS_A, "6e A")] }), () => clock);
+  clock -= 1;
+  await assert.rejects(loadRollCallClasses("env|school|b", async () => { throw new Error("network"); }, () => clock));
+});
+
+test("revue CTO — droits retirés pour une classe : la nouvelle liste serveur remplace la copie", async () => {
+  resetRollCallClassListsForTests();
+  await loadRollCallClasses("env|school|c", async () => ({ classes: [option(CLASS_A, "6e A")] }));
+  await loadRollCallClasses("env|school|c", async () => ({ classes: [option(CLASS_B, "5e B")] }));
+  const offline = await loadRollCallClasses("env|school|c", async () => { throw new Error("network"); });
+  assert.equal(matchDirectRollCallTarget({ classId: CLASS_A }, offline.classes), null);
+});
+
+test("écran Présences : bouton relié au hook de démarrage ; sélecteur partageant la même liste", () => {
   const screen = readFileSync(path.join(__dirname, "../screens/TeacherAttendanceScreen.tsx"), "utf8");
   const picker = readFileSync(path.join(__dirname, "../components/RollCallClassPickerModal.tsx"), "utf8");
   assert.match(screen, /rollCallButton\("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY\.start, startLocalRollCall\)/);
-  // Sans classe ouverte : sélecteur inchangé.
-  assert.match(screen, /if \(!opened\) \{\s*\n\s*setRollCallPickerOpen\(true\);/);
-  // Classe ouverte : liste serveur du compte, puis cible directe ou repli sur le sélecteur.
-  assert.match(screen, /loadRollCallClasses\(scope, listOfflineRollCallClasses\)/);
-  assert.match(screen, /matchDirectRollCallTarget\(opened, list\.classes\)/);
-  assert.match(screen, /if \(!target\) \{\s*\n\s*setRollCallPickerOpen\(true\);/);
-  // Une seule ouverture à la fois, abandon si la portée change pendant la lecture.
-  assert.match(screen, /if \(rollCallStartingRef\.current\) return;/);
-  assert.match(screen, /if \(rollCallStartScopeRef\.current !== startScope\) return;/);
+  assert.match(screen, /const startLocalRollCall = useLocalRollCallStart\(\{\s*\n\s*scopeKey: rollCallPickerScope,\s*\n\s*selectedClass,\s*\n\s*fetchClasses: listOfflineRollCallClasses,\s*\n\s*onOpenPicker: \(\) => setRollCallPickerOpen\(true\),/);
   // Même fenêtre d'appel local (même moteur, même brouillon SQLite), toujours gardée par le droit.
   assert.equal((screen.match(/setRollCallTarget\(\{ \.\.\.target, date: isoAttendanceDate\(\) \}\)/g) ?? []).length, 2);
   assert.match(screen, /\{rollCallTarget && launcher\.canStartRollCall \? \(/);
-  // Le sélecteur partage la même mémoire de liste par compte.
+  assert.match(screen, /\{launcher\.canStartRollCall\s*\n\s*\? rollCallButton\("attendance-offline-roll-call"/);
+  // Le sélecteur partage la même mémoire de liste par compte (même expiration, même purge).
   assert.match(picker, /loadRollCallClasses\(scopeKey, listOfflineRollCallClasses\)/);
   assert.doesNotMatch(picker, /new Map</);
 });
