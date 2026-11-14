@@ -54,7 +54,8 @@ test("écran Présences : trois actions de carte, aucun ancien bouton d'appel co
   assert.match(screen, /testID="attendance-card-verify"/);
   assert.match(screen, /launcher\.canVerifyCard \?/);
   // 2. Démarrer l'appel NFC/QR — sélecteur de classe autorisée, puis moteur local-first.
-  assert.match(screen, /rollCallButton\("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY\.start, \(\) => setRollCallPickerOpen\(true\)\)/);
+  // APPEL-NAV-01 : sans classe ouverte → sélecteur ; classe ouverte → appel direct (voir rollCallOpenClass.test.ts).
+  assert.match(screen, /rollCallButton\("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY\.start, startOfflineRollCall\)/);
   assert.match(screen, /<RollCallClassPickerModal/);
   assert.match(screen, /setRollCallTarget\(\{ \.\.\.target, date: isoAttendanceDate\(\) \}\)/);
   assert.doesNotMatch(screen, /canOpenOfflineRollCall|offlineRollCallOpen/, "plus aucune dépendance à une classe ouverte");
