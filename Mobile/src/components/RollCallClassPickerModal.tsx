@@ -12,6 +12,7 @@ import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacit
 import { Ionicons } from "@expo/vector-icons";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { listOfflineRollCallClasses, type RollCallClassOption } from "../services/rollCallOfflineApi";
+import { loadRollCallClasses } from "../lib/rollCallDirectStart";
 
 export const ROLL_CALL_PICKER_COPY = {
   title: "Choisir la classe de l'appel",
@@ -24,9 +25,6 @@ export const ROLL_CALL_PICKER_COPY = {
   close: "Fermer",
   enrolled: (count: number) => `${count} élève(s)`,
 } as const;
-
-/** Dernière liste par compte + établissement (jamais partagée entre comptes). */
-const lastLists = new Map<string, RollCallClassOption[]>();
 
 type Props = {
   visible: boolean;
@@ -49,16 +47,15 @@ export default function RollCallClassPickerModal({ visible, scopeKey, onSelect, 
     if (!visible) return;
     let cancelled = false;
     setState({ kind: "loading" });
-    void listOfflineRollCallClasses()
+    // PRES-LOCAL-NAV-01 : dernière liste du compte partagée avec l'ouverture directe d'une classe.
+    void loadRollCallClasses(scopeKey, listOfflineRollCallClasses)
       .then((result) => {
         if (cancelled) return;
-        lastLists.set(scopeKey, result.classes);
-        setState({ kind: "ready", classes: result.classes, cached: false });
+        setState({ kind: "ready", classes: result.classes, cached: result.cached });
       })
       .catch(() => {
         if (cancelled) return;
-        const cached = scopeKey ? lastLists.get(scopeKey) : undefined;
-        setState(cached ? { kind: "ready", classes: cached, cached: true } : { kind: "error" });
+        setState({ kind: "error" });
       });
     return () => {
       cancelled = true;
