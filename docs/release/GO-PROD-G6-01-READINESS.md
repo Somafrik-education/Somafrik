@@ -40,6 +40,8 @@ Légende : **PASS** = vérifié sur le SHA indiqué. **NOT VERIFIED** = non exé
 
 ## 3. CI du HEAD exact `27e53778` (G6-04 LOT B)
 
+**Gate CI : PASS** (confirmé par le CTO, G6-06).
+
 **35 checks : 35 SUCCESS / 0 FAILURE / 0 SKIPPED / 0 CANCELLED**, tous terminés sur `head_sha = 27e53778efa3c8e4fd5999cf0bf14694142dcbb2` (`run_attempt 1`), relevé à 15:43 UTC le 16/11.
 
 | Workflow | Run | Jobs | Statut |
