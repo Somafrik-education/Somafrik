@@ -7,11 +7,12 @@
  * Hors connexion : dernière liste obtenue pour CE compte et CET établissement (mémoire du
  * processus, jamais persistée), clairement signalée. Le serveur revérifie tout au pack et à la sync.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { listOfflineRollCallClasses, type RollCallClassOption } from "../services/rollCallOfflineApi";
+import { createScopedRollCallClassLoader } from "../lib/rollCallOpenClass";
 
 export const ROLL_CALL_PICKER_COPY = {
   title: "Choisir la classe de l'appel",
@@ -25,8 +26,18 @@ export const ROLL_CALL_PICKER_COPY = {
   enrolled: (count: number) => `${count} élève(s)`,
 } as const;
 
-/** Dernière liste par compte + établissement (jamais partagée entre comptes). */
-const lastLists = new Map<string, RollCallClassOption[]>();
+/**
+ * Liste des classes ouvertes à l'appel pour CE compte : serveur, sinon dernière liste connue du
+ * même compte et du même établissement (mémoire du processus, jamais partagée entre comptes).
+ * Partagée par le sélecteur et par l'ouverture directe depuis une classe déjà ouverte
+ * (APPEL-NAV-01), pour que les deux parcours appliquent exactement le même périmètre.
+ * Liée à l'identité : une réponse revenue sous une autre clé est rejetée et n'entre pas en cache.
+ */
+const rollCallClassLoader = createScopedRollCallClassLoader<RollCallClassOption>(listOfflineRollCallClasses);
+
+export function loadRollCallClasses(scopeKey: string, currentScope: () => string) {
+  return rollCallClassLoader.load(scopeKey, currentScope);
+}
 
 type Props = {
   visible: boolean;
@@ -44,21 +55,21 @@ type State =
 export default function RollCallClassPickerModal({ visible, scopeKey, onSelect, onClose }: Props) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [reload, setReload] = useState(0);
+  // Clé de portée à jour à chaque rendu : la réponse n'est retenue que si elle n'a pas changé.
+  const scopeRef = useRef(scopeKey);
+  scopeRef.current = scopeKey;
 
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
     setState({ kind: "loading" });
-    void listOfflineRollCallClasses()
+    void loadRollCallClasses(scopeKey, () => scopeRef.current)
       .then((result) => {
         if (cancelled) return;
-        lastLists.set(scopeKey, result.classes);
-        setState({ kind: "ready", classes: result.classes, cached: false });
+        setState({ kind: "ready", classes: result.classes, cached: result.cached });
       })
       .catch(() => {
-        if (cancelled) return;
-        const cached = scopeKey ? lastLists.get(scopeKey) : undefined;
-        setState(cached ? { kind: "ready", classes: cached, cached: true } : { kind: "error" });
+        if (!cancelled) setState({ kind: "error" });
       });
     return () => {
       cancelled = true;
