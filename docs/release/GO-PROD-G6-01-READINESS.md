@@ -1,8 +1,8 @@
-# GO-PROD-G6 (01 → 04) — Rapport de préparation G6, Somafrik v25
+# GO-PROD-G6 (01 → 05) — Rapport de préparation G6, Somafrik v25
 
 | Champ | Valeur |
 |---|---|
-| Mandats | GO-PROD-G6-01, G6-02, G6-03 puis G6-04, 16/11/2026 (#720, #719, #1145, #1165, #921 ; décisions CTO #720#issuecomment-6916895891 et #720#issuecomment-6917128162) |
+| Mandats | GO-PROD-G6-01 → G6-05, 16/11/2026 (#720, #719, #1145, #1165, #921 ; décisions CTO #720#issuecomment-6916895891 et #720#issuecomment-6917128162) |
 | Candidate | **`27e53778efa3c8e4fd5999cf0bf14694142dcbb2`** (PR #1145, `release/go-prod-v25-reconciled`), tree `2f48f9a4892c2d8739eda69bc52aeb315358497e` |
 | `develop` | `8faa002b74a4b2b564463859eb21185b2d98dfdd` (après les merges CTO de #1168 puis #1166) |
 | `main` | `ef8bc9517ffc94aa770743713d0f561f92a9fc1e` |
@@ -17,12 +17,12 @@ Légende : **PASS** = vérifié sur le SHA indiqué. **NOT VERIFIED** = non exé
 
 | Phase | Résultat | Résumé |
 |---|---|---|
-| G0 — Git baseline | **PASS** | Tree candidate `27e53778` = tree `develop@8faa002b` ; `main` ancêtre ; seuls #1168 et #1166 ajoutés depuis `738e2873` |
+| G0 — Git baseline | **PASS** | Tree candidate `27e53778` = tree `develop@8faa002b`. **Diff indépendant CTO : 0 fichier** entre candidate et `develop`. `main` ancêtre |
 | G1 — RC1 | **PASS (CI) / NOT VERIFIED (préprod, perf, appareil)** | CI du HEAD `27e53778` : §3. E2E préprod, performance, mobile physique non exécutés |
 | G2 — Builds | **PASS (Web, image backend, boot PG 17) / NOT VERIFIED (AAB)** | §4 |
 | G3 — Préproduction | **NOT VERIFIED** | Hôtes préprod injoignables depuis le conteneur |
 | G4 — Android / Play | **FAIL (signature) / NOT VERIFIED (Play, 16 KB, SHA-256)** | Config conforme ; signature d'upload absente |
-| G5 — PostgreSQL / Render | **WAIVED partiel + PASS technique + NOT VERIFIED (Render)** | **Sauvegarde des données fictives : WAIVED sur décision du propriétaire.** PG 17 et migrations PASS ; AutoDeploy non neutralisé (GO requis) |
+| G5 — PostgreSQL / Render | **WAIVED partiel + PASS technique + Render vérifié CTO (risque ouvert)** | **Sauvegarde des données fictives : WAIVED sur décision du propriétaire.** PG 17 et migrations PASS. Render API et Web : `main`, `autoDeploy=yes` (vérifié CTO) ; neutralisation à exécuter (GO) |
 | G6 — GO/NO-GO | **HOLD** | Blocages opérationnels uniquement, aucun P0/P1 de code reproduit (§10, §11) |
 
 ## 2. G0 — Baseline Git (G6-04 LOT A)
@@ -36,6 +36,7 @@ Légende : **PASS** = vérifié sur le SHA indiqué. **NOT VERIFIED** = non exé
 | Merge-base `develop` / candidate | `8faa002b` ; ahead 25 / behind 0 | PASS |
 | Merge-base `main` / candidate | `ef8bc951` ; ahead 405 / behind 0 ; 1 361 fichiers, +197 530 / −7 198 (1 355 validés + 4 docs G5 + 2 fichiers NFC ; script L4-09 et `schoolSettingsManagement.js` déjà dans la liste) | PASS |
 | Diff `738e2873 → 27e53778` | 4 fichiers, +291 / −1 : uniquement #1168 et #1166 | PASS |
+| Diff indépendant CTO (G6-05) | **0 fichier** entre candidate `27e53778` et `develop@8faa002b` | PASS (CTO) |
 
 ## 3. CI du HEAD exact `27e53778` (G6-04 LOT B)
 
@@ -90,17 +91,17 @@ Sources : `docs/release/GO-PROD-G5-01-*.md` (#1165, mergée), validation à blan
 | 4 migrations manuelles exclues du déploiement | `20261104_report_card_catalog`, `20261105_report_card_class_scope` (exclue par décision CTO), `20261105_report_card_official_assets_privileges`, `20261106_report_card_official_assets`. Aucune n'est exécutée au boot (code et validation à blanc) |
 | Stockages du healthcheck | `SOMAFRIK_COMMUNICATION_STORAGE` et `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE` obligatoires, hors `/tmp`, sinon `/api/health` répond 503 (constaté) |
 
-### Render (LOT B) — état réel NOT VERIFIED, procédure prête, STOP avant modification
+### Render — état vérifié directement par le CTO (G6-05)
 
 | Point | Statut |
 |---|---|
-| Configuration des services API `srv-dac22v8jo6nc739b3t9g` et Web `srv-dac39n8u01pc73flept0` | NOT VERIFIED par Claude (Render inaccessible). Déclaré CTO : `main`, `autoDeploy=yes`, déclencheur `commit` |
-| Commits actuellement déployés | NOT VERIFIED. Lecture possible sans dashboard : `GET https://api.somafrik.app/api/health` → `gitSha` (`RENDER_GIT_COMMIT`, déjà présent sur `main`) |
-| Montage des deux stockages sur l'API prod | NOT VERIFIED |
-| Désactivation de l'AutoDeploy sans interruption | NOT VERIFIED. À constater avant/après : instance et commit live inchangés, aucun nouveau deploy, health OK |
-| Procédures | **Prêtes** : `GO-PROD-G5-01-RENDER-RUNBOOK.md` §2 (relevé), §3 (`autoDeploy` → `no` par dashboard ou `PATCH /v1/services/{id}` `{"autoDeploy":"no"}`), §4 (deploy manuel du SHA exact, API puis Web), §5 (rollback Render vers `ef8bc951`, valable car `20261105` est exclue) |
-
-**Aucune modification Render effectuée. GO CTO requis** pour l'exécution des §2 et §3 par un détenteur de l'accès.
+| API `srv-dac22v8jo6nc739b3t9g` | Branche `main`, **`autoDeploy=yes`** : **vérifié directement par le CTO** |
+| Web `srv-dac39n8u01pc73flept0` | Branche `main`, **`autoDeploy=yes`** : **vérifié directement par le CTO** |
+| Disque persistant API | **`/var/data`, 1 Go** : vérifié par le CTO. Les chemins `SOMAFRIK_COMMUNICATION_STORAGE` et `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE` doivent pointer sous ce disque (hors `/tmp`), sinon `/api/health` répond 503 (constaté à blanc) : à contrôler à l'étape G7-1 |
+| Derniers déploiements / commit live | À relever à l'étape G7-1 (dashboard, ou `GET https://api.somafrik.app/api/health` → `gitSha`) |
+| `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED` en production | À contrôler à l'étape G7-2 : absente ou différente de `true` |
+| Neutralisation de l'AutoDeploy | **Non exécutée** ; procédure prête (`GO-PROD-G5-01-RENDER-RUNBOOK.md` §3) ; **GO CTO requis** |
+| Accès de Claude | Aucun (Render injoignable depuis le conteneur) : Claude ne vérifie ni ne modifie Render |
 
 ## 7. NFC #921 — confinement pour la release (LOT D)
 
@@ -136,7 +137,7 @@ Limite : le 409 est prouvé au niveau du parseur commun, pas par un appel HTTP e
 | Déclencheurs | `workflow_dispatch` + `push` sur `main` filtré `paths: .github/workflows/eas-production-aab.yml` | PASS (lu) |
 | Effet exact d'un merge #1145 | Le fichier diffère entre `main` et la candidate (1 ligne : contrôle de permissions `CAMERA,android.permission.NFC`). Le push du merge sur `main` **déclenche** donc le job `build-aab` : `eas-cli@23.2.0 build --platform android --profile production --non-interactive`, `autoIncrement` avec `appVersionSource: remote` (le compteur EAS s'incrémente et peut produire un versionCode ≠ 25), puis téléchargement de l'AAB en artefact GitHub (30 jours). **Aucun `eas submit` : pas de publication Play.** Requiert le secret `EXPO_TOKEN` (échec immédiat s'il est absent) | Risque **P1** confirmé |
 | Autres workflows sur `main` | Aucun (analyse des blocs `on:` des 50+ workflows) | PASS |
-| Désactivation temporaire (préparée, **non exécutée**) | Interface : *Actions → « EAS Production AAB » → … → Disable workflow*. API : `PUT /repos/Somafrik-education/Somafrik/actions/workflows/eas-production-aab.yml/disable`. Contrôle : `GET …/actions/workflows/eas-production-aab.yml` → `"state": "disabled_manually"` | Prête, GO requis |
+| Désactivation temporaire (préparée, **non exécutée : neutralisation encore à réaliser**) | Interface : *Actions → « EAS Production AAB » → … → Disable workflow*. API : `PUT /repos/Somafrik-education/Somafrik/actions/workflows/eas-production-aab.yml/disable`. Contrôle : `GET …/actions/workflows/eas-production-aab.yml` → `"state": "disabled_manually"` | Prête, GO requis |
 | Réactivation ultérieure | *Enable workflow* ou `PUT …/enable` → `"state": "active"`. La réactivation **ne rejoue pas** les push passés : aucun build rétroactif. Pendant la désactivation, `workflow_dispatch` est aussi bloqué | Prête |
 | `eas.json` | Non modifié (consigne) | — |
 
@@ -164,13 +165,13 @@ Réutilisation des preuves CI sur le même code produit. Aucun smoke préprod n'
 
 | ID | Gravité | Élément | État |
 |---|---|---|---|
-| R1 | **P0** | `autoDeploy=yes` sur la prod + 17 migrations au boot : un merge dans `main` met en production sans étape humaine | Ouvert. Levée : §6, GO CTO + opérateur Render |
+| R1 | **P0** | `autoDeploy=yes` sur API et Web (vérifié CTO) + 17 migrations au boot : un merge dans `main` met en production sans étape humaine | Ouvert. Levée : G7-3 et G7-5, GO CTO |
 | R2 | **P1** | Merge #1145 → build EAS production automatique (§8) | Ouvert. Levée : désactivation du workflow, GO CTO |
 | R3 | **P1** | AAB signé debug par le chemin local ; clé d'upload absente | Ouvert. Levée : procédure de signature hors dépôt et empreinte comparée à Play Console |
 | R4 | ~~P1~~ **levé** | NFC #921 activable par un admin d'établissement | **Levé** : #1166 mergée et incluse dans `27e53778` (§7). Reste la consigne d'exploitation sur `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED` |
 | R5 | P0 (tracker) | #921 encodage physique non homologué | **Accepté par le CTO**, NFC désactivé en production par le verrou (R4 levé) |
 | R6 | P0 (tracker) | #499 permissions de stockage | Retirées dans le manifeste source ; manifeste fusionné NOT VERIFIED (avec l'AAB) |
-| R7 | P1 | Stockages persistants Render, condition du healthcheck | Montage en prod NOT VERIFIED |
+| R7 | P1 | Stockages persistants : condition du healthcheck | Disque API `/var/data` 1 Go vérifié CTO ; variables de chemin à contrôler (G7-1) |
 
 Aucune issue ouverte ne porte les labels `P0` ou `P1` (recherche du 16/11). R5 et R6 portent « P0 » dans leur titre. #730 (DNS préprod, 20/09) : la config candidate utilise `api-preprod.somafrik.app`, runtime NOT VERIFIED.
 
@@ -185,27 +186,28 @@ Le code candidat `27e53778` ne présente **aucun P0/P1 de code reproduit**. Le c
 
 Le smoke préprod et le smoke mobile natif restent NOT VERIFIED (§12, étape 8).
 
-## 12. Préparation opérationnelle et séquence G7 proposée (G6-04 LOT E)
+## 12. Checklist d'exécution G7 (G6-05 LOT C)
 
-**Préparé, non exécuté.** Toutes les étapes marquées « GO » exigent une décision CTO explicite et un opérateur disposant des accès : Claude n'a accès ni à Render, ni à GitHub Actions en écriture de paramètres, ni à Play Console. Ordre impératif :
+**Préparée, rien n'est exécuté dans G6-05.** Les étapes 3, 4, 7 et 9 exigent un GO CTO explicite. Claude n'a aucun accès à Render ni aux paramètres GitHub Actions. Ordre impératif : chaque étape suppose la précédente prouvée.
 
-| # | Étape | Commande / lieu | Preuve attendue (non sensible) | Statut |
+| # | Action | Comment | Preuve à consigner | GO |
 |---|---|---|---|---|
-| 1 | **Relevé Render** (lecture seule) des services API `srv-dac22v8jo6nc739b3t9g` et Web `srv-dac39n8u01pc73flept0` | `GO-PROD-G5-01-RENDER-RUNBOOK.md` §2 ; `GET https://api.somafrik.app/api/health` → `gitSha` | Branche, `autoDeploy`, commit live, état des derniers deploys, disque monté pour `SOMAFRIK_COMMUNICATION_STORAGE` et `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE`, **absence de `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED=true`** | À faire |
-| 2 | **AutoDeploy → `no`** (API puis Web) | Dashboard *Settings → Build & Deploy → Auto-Deploy : Off* ou `PATCH /v1/services/{id}` `{"autoDeploy":"no"}` (runbook §3) | Avant/après : `autoDeploy=no`, **aucun nouveau deploy**, commit live et instance inchangés, health OK | **GO requis** |
-| 3 | **Désactiver « EAS Production AAB »** | *Actions → EAS Production AAB → Disable workflow*, ou `PUT /repos/Somafrik-education/Somafrik/actions/workflows/eas-production-aab.yml/disable` | `GET …/workflows/eas-production-aab.yml` → `"state": "disabled_manually"` | **GO requis** |
-| 4 | **Merge #1145 → `main`** (CTO) | GitHub, après diff indépendant | SHA du commit de merge sur `main` ; **aucun deploy Render déclenché** ; **aucun run EAS** dans *Actions* | **GO requis** |
-| 5 | **Deploy manuel de l'API** au SHA exact | *Manual Deploy → Deploy a specific commit* ou `POST /v1/services/srv-dac22v8jo6nc739b3t9g/deploys` `{"commitId":"<SHA main>"}` | Logs de boot jusqu'à la fin de `init()` (17 migrations de boot) ; `/api/health` → `ok` et `gitSha` = SHA déployé | **GO requis** |
-| 6 | **Deploy manuel du Web** au même SHA | Idem, service `srv-dac39n8u01pc73flept0` | Web accessible, appel API OK | **GO requis** |
-| 7 | Les 4 migrations manuelles restent **hors fenêtre** | — | Aucune exécution (`20261105_report_card_class_scope` exclue par décision CTO) | Consigne |
-| 8 | **Smokes post-déploiement** (comptes de test fictifs) | Web et API | Login par rôle (Superadmin, Admin Pays, Directeur, Secrétaire, Enseignant, Parent / Élève), présences, notes, bulletins, finance (paiement), communication ; capacité NFC = `false` ; QR OK | À exécuter |
-| 9 | **Rollback applicatif** si un smoke est bloquant | Render *Rollback* vers le deploy `ef8bc951` (API puis Web) | Health OK sur `ef8bc951`. Valable car le schéma v25 est additif et `20261105` n'est pas appliquée (`GO-PROD-G5-01-MIGRATIONS.md` §5.1) | Préparé |
-| 10 | **G7-Android** (lot séparé) | Build local `Mobile/scripts/build-android-aab.js production`, signature d'upload hors dépôt, `zipalign -c -P 16`, `sha256sum`, contrôle d'empreinte du certificat et du versionCode maximum dans Play Console | AAB signé upload, versionCode > maximum Play, 16 KB OK, SHA-256 publié. **Aucun upload sans GO** | **GO requis** |
-| 11 | Réactivation éventuelle d'AutoDeploy et d'EAS | Décision ultérieure | — | Hors G7 |
+| 1 | **Contrôler Render** : derniers deploys et variables du healthcheck | Dashboard API et Web (lecture) ; `GET https://api.somafrik.app/api/health` | Commit live (`gitSha`), statut des 3 derniers deploys, `SOMAFRIK_COMMUNICATION_STORAGE` et `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE` sous `/var/data`, health `ok` | Lecture |
+| 2 | **Vérifier `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED`** sur l'API prod | Variables d'environnement du service API | Absente, ou différente de `true` | Lecture |
+| 3 | **Désactiver AutoDeploy**, API puis Web | *Settings → Build & Deploy → Auto-Deploy : Off*, ou `PATCH /v1/services/{id}` `{"autoDeploy":"no"}` | Avant/après : `autoDeploy=no`, aucun nouveau deploy, commit live inchangé, health `ok` | **Oui** |
+| 4 | **Désactiver « EAS Production AAB »** | *Actions → EAS Production AAB → … → Disable workflow*, ou `PUT /repos/Somafrik-education/Somafrik/actions/workflows/eas-production-aab.yml/disable` | `GET …/actions/workflows/eas-production-aab.yml` → `"state": "disabled_manually"` | **Oui** |
+| 5 | **Vérifier les deux désactivations** avant tout merge | Relire Render (×2) et l'état du workflow | Les trois états capturés | — |
+| 6 | **Diff CTO final** de #1145 | GitHub | HEAD exact `27e53778`, CI terminale verte | CTO |
+| 7 | **Merger #1145 dans `main`** | GitHub | SHA du merge sur `main` | **Oui** |
+| 8 | **Vérifier l'absence de déclenchement** | Render *Events* (API, Web) ; GitHub *Actions* | Aucun deploy Render, aucun run « EAS Production AAB » après le merge | — |
+| 9 | **Déployer manuellement** l'API, puis le Web, au commit exact | *Manual Deploy → Deploy a specific commit*, ou `POST /v1/services/{id}/deploys` `{"commitId":"<SHA main>"}` | Logs de boot jusqu'à la fin de `init()`, `/api/health` → `ok` avec `gitSha` = SHA déployé ; Web servi | **Oui** |
+| 10 | **Smokes essentiels**, documentés | Web et API, comptes fictifs | Login par rôle ; présences, notes, bulletins, finance, communication ; capacité NFC `false`, QR OK | — |
 
-Points d'attention :
-- **Étape 4 :** le merge ne doit intervenir **qu'après** les preuves des étapes 2 et 3.
-- **Étape 5 :** les index non concurrents sur `students` et `subjects` bloquent brièvement les écritures pendant le boot. Données fictives : risque faible, mais le deploy doit se faire hors usage.
+**Rollback applicatif** (si un smoke est bloquant) : Render *Rollback* vers `ef8bc951`, API puis Web. Valable car le schéma v25 est additif et `20261105_report_card_class_scope` n'est pas appliquée.
 
-`GO-PROD-G6-04 — DRAFT / HOLD — STOP POUR DIFF CTO INDÉPENDANT.`
-**PAS MERGE MAIN. PAS DÉPLOIEMENT PROD. PAS UPLOAD PLAY.**
+**Hors G7 Web/API :**
+- publication Android (lot séparé : signature d'upload, versionCode Play, 16 KB, SHA-256 de l'AAB) ;
+- réactivation d'AutoDeploy et d'EAS ;
+- les 4 migrations manuelles.
+
+`GO-PROD-G6-05 — DRAFT / HOLD — PAS MERGE MAIN / PAS PROD / PAS PLAY.`
