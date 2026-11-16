@@ -12,7 +12,8 @@ import StudentCardNfcScannerModal from "../components/StudentCardNfcScannerModal
 import StudentCardRollCallModal from "../components/StudentCardRollCallModal";
 import StudentCardClassRollCallModal from "../components/StudentCardClassRollCallModal";
 import OfflineRollCallModal from "../components/OfflineRollCallModal";
-import RollCallClassPickerModal from "../components/RollCallClassPickerModal";
+import RollCallClassPickerModal, { loadRollCallClasses } from "../components/RollCallClassPickerModal";
+import { createDirectRollCallOpener } from "../lib/rollCallOpenClass";
 import { resolveRollCallLauncher } from "../lib/rollCallLauncher";
 import OfflineRollCallSyncList from "../components/OfflineRollCallSyncList";
 import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
@@ -473,8 +474,34 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
   const [rollCallPickerOpen, setRollCallPickerOpen] = useState(false);
   const [rollCallTarget, setRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
   const [rollCallClassNames, setRollCallClassNames] = useState<Record<string, string>>({});
+  // APPEL-NAV-01 — classe déjà ouverte : l'appel s'ouvre directement, sans seconde sélection.
+  // Même liste serveur (et même repli hors connexion) que le sélecteur ; classe hors de cette
+  // liste ou liste indisponible → sélecteur. Classe ET identité (environnement | établissement |
+  // compte) capturées au départ : réponse revenue après un changement de l'une ou l'autre → rien.
   const rollCallIdentity = rollCallRuntime().identityFor(session);
   const rollCallPickerScope = rollCallIdentity ? [rollCallIdentity.environmentId, rollCallIdentity.schoolId, rollCallIdentity.userId].join("|") : "";
+  const rollCallLiveRef = useRef({ scope: rollCallPickerScope, classId: "", open: false });
+  rollCallLiveRef.current = { scope: rollCallPickerScope, classId: String(selectedClass?.classId ?? ""), open: rollCallTarget !== null };
+  const openRollCallTarget = (target: { classId: string; className: string }) => {
+    setRollCallClassNames((current) => ({ ...current, [target.classId]: target.className }));
+    setRollCallTarget({ ...target, date: isoAttendanceDate() });
+  };
+  const openRollCallTargetRef = useRef(openRollCallTarget);
+  openRollCallTargetRef.current = openRollCallTarget;
+  const directRollCallRef = useRef<ReturnType<typeof createDirectRollCallOpener> | null>(null);
+  if (!directRollCallRef.current) {
+    directRollCallRef.current = createDirectRollCallOpener({
+      load: loadRollCallClasses,
+      currentScope: () => rollCallLiveRef.current.scope,
+      currentClassId: () => rollCallLiveRef.current.classId,
+      isRollCallOpen: () => rollCallLiveRef.current.open,
+      onOpen: (target) => openRollCallTargetRef.current(target),
+      onPicker: () => setRollCallPickerOpen(true),
+    });
+  }
+  const startOfflineRollCall = () => {
+    void directRollCallRef.current?.start();
+  };
   // NFC-PRES-LOCAL-PR4 — appels hors connexion du compte (synchronisation, correction après not_recorded).
   const [offlineSyncListOpen, setOfflineSyncListOpen] = useState(false);
   const [offlineRollCallTarget, setOfflineRollCallTarget] = useState<{ classId: string; className: string; date: string } | null>(null);
@@ -983,7 +1010,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         </TouchableOpacity>
       ) : null}
       {launcher.canStartRollCall
-        ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, () => setRollCallPickerOpen(true))
+        ? rollCallButton("attendance-offline-roll-call", OFFLINE_ROLL_CALL_COPY.start, startOfflineRollCall)
         : null}
       {launcher.canCheckCalls
         ? rollCallButton("attendance-offline-sync-list", SYNC_COPY.checkCalls, () => setOfflineSyncListOpen(true))
@@ -1041,8 +1068,7 @@ export default function TeacherAttendanceScreen({ navigation }: any) {
         onClose={() => setRollCallPickerOpen(false)}
         onSelect={(target) => {
           setRollCallPickerOpen(false);
-          setRollCallClassNames((current) => ({ ...current, [target.classId]: target.className }));
-          setRollCallTarget({ ...target, date: isoAttendanceDate() });
+          openRollCallTarget(target);
         }}
       />
     ) : null}
