@@ -3,6 +3,11 @@
 const seedData = require("../data");
 const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 const {
+  STUDENT_CARD_NFC_NOT_HOMOLOGATED,
+  applyStudentCardNfcReleaseGate,
+  isStudentCardNfcActivationBlocked,
+} = require("./studentCardNfcReleaseGate");
+const {
   STUDENT_CARD_HOLDER_KINDS,
   MAX_HOLDER_LEVEL_OVERRIDES,
   normalizeHolderKind,
@@ -34,6 +39,7 @@ const SCHOOL_SETTINGS_ERROR = Object.freeze({
   INVALID_STUDENT_CARD_FLAG: "INVALID_STUDENT_CARD_FLAG",
   INVALID_STUDENT_CARD_HOLDER: "INVALID_STUDENT_CARD_HOLDER",
   INVALID_STUDENT_CARD_HOLDER_LEVEL: "INVALID_STUDENT_CARD_HOLDER_LEVEL",
+  STUDENT_CARD_NFC_NOT_HOMOLOGATED,
 });
 
 const PERIOD_MODES = Object.freeze(["trimestre", "semestre", "periode"]);
@@ -209,7 +215,8 @@ function mapStudentCardFlags(row = {}) {
   for (const field of STUDENT_CARD_FLAG_FIELDS) {
     mapped[field.api] = coerceFailClosedBoolean(row?.[field.column]);
   }
-  return mapped;
+  // GO-PROD-G6-02 / #921 : verrou plateforme NFC (voir studentCardNfcReleaseGate.js).
+  return applyStudentCardNfcReleaseGate(mapped);
 }
 
 function resolveStudentCardFlags(patch = {}, current = {}) {
@@ -503,6 +510,14 @@ function parseSettingsPatch(payload) {
         400,
         "Indicateur carte élève invalide (booléen true ou false attendu).",
         SCHOOL_SETTINGS_ERROR.INVALID_STUDENT_CARD_FLAG,
+        { key: field.api },
+      );
+    }
+    if (field.api === "studentCardNfcEnabled" && isStudentCardNfcActivationBlocked(patch[field.api])) {
+      throw createSchoolSettingsError(
+        409,
+        "L'encodage NFC des cartes élèves n'est pas encore disponible sur cette plateforme.",
+        SCHOOL_SETTINGS_ERROR.STUDENT_CARD_NFC_NOT_HOMOLOGATED,
         { key: field.api },
       );
     }
