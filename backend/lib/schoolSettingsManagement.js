@@ -2,6 +2,7 @@
 
 const seedData = require("../data");
 const { isSuperAdminPrincipal } = require("./superadminPrincipal");
+const { isProductionEnv } = require("./authTokenPolicy");
 const {
   STUDENT_CARD_HOLDER_KINDS,
   MAX_HOLDER_LEVEL_OVERRIDES,
@@ -34,6 +35,7 @@ const SCHOOL_SETTINGS_ERROR = Object.freeze({
   INVALID_STUDENT_CARD_FLAG: "INVALID_STUDENT_CARD_FLAG",
   INVALID_STUDENT_CARD_HOLDER: "INVALID_STUDENT_CARD_HOLDER",
   INVALID_STUDENT_CARD_HOLDER_LEVEL: "INVALID_STUDENT_CARD_HOLDER_LEVEL",
+  STUDENT_CARD_NFC_NOT_HOMOLOGATED: "STUDENT_CARD_NFC_NOT_HOMOLOGATED",
 });
 
 const PERIOD_MODES = Object.freeze(["trimestre", "semestre", "periode"]);
@@ -51,6 +53,17 @@ const STUDENT_CARD_FLAG_FIELDS = Object.freeze([
 ]);
 
 const STUDENT_CARD_FLAG_API_KEYS = Object.freeze(STUDENT_CARD_FLAG_FIELDS.map((field) => field.api));
+
+/**
+ * GO-PROD-G6-02 / #921 — verrou plateforme de l'encodage NFC non homologué.
+ * En production, le NFC carte élève reste désactivé pour tous les établissements
+ * tant que la plateforme ne l'autorise pas explicitement
+ * (SOMAFRIK_STUDENT_CARD_NFC_ALLOWED=true). Hors production : inchangé.
+ */
+function isStudentCardNfcPlatformAllowed(env = process.env) {
+  if (!isProductionEnv(env)) return true;
+  return String(env.SOMAFRIK_STUDENT_CARD_NFC_ALLOWED ?? "").trim().toLowerCase() === "true";
+}
 
 const DEFAULT_TRIMESTRE_NAMES = Object.freeze(["Trimestre 1", "Trimestre 2", "Trimestre 3"]);
 const DEFAULT_SEMESTRE_NAMES = Object.freeze(["Semestre 1", "Semestre 2"]);
@@ -209,6 +222,7 @@ function mapStudentCardFlags(row = {}) {
   for (const field of STUDENT_CARD_FLAG_FIELDS) {
     mapped[field.api] = coerceFailClosedBoolean(row?.[field.column]);
   }
+  if (!isStudentCardNfcPlatformAllowed()) mapped.studentCardNfcEnabled = false;
   return mapped;
 }
 
@@ -506,6 +520,14 @@ function parseSettingsPatch(payload) {
         { key: field.api },
       );
     }
+    if (field.api === "studentCardNfcEnabled" && patch[field.api] === true && !isStudentCardNfcPlatformAllowed()) {
+      throw createSchoolSettingsError(
+        409,
+        "L'encodage NFC des cartes élèves n'est pas encore disponible sur cette plateforme.",
+        SCHOOL_SETTINGS_ERROR.STUDENT_CARD_NFC_NOT_HOMOLOGATED,
+        { key: field.api },
+      );
+    }
     next[field.api] = patch[field.api];
   }
   if (hasOwn(patch, "studentCardHolderKind")) {
@@ -581,6 +603,7 @@ module.exports = {
   resolveStudentCardFlags,
   isStudentCardMasterEnabled,
   isStudentCardCapabilityEnabled,
+  isStudentCardNfcPlatformAllowed,
   mapStudentCardHolder,
   resolveStudentCardHolderSettings,
   parseStudentCardHolderLevels,
