@@ -22,6 +22,8 @@ export type SchoolNotificationEventRule = {
 export type SchoolNotificationSettings = {
   schoolCode: string;
   events: Record<SchoolNotificationEvent, SchoolNotificationEventRule>;
+  /** false = règles par défaut affichées, aucune règle enregistrée pour l'établissement. */
+  configured?: boolean;
 };
 
 export type SchoolNotificationSettingsPatch = {
@@ -39,4 +41,25 @@ export function patchSchoolNotificationSettings(schoolCode: string, patch: Schoo
     `/backoffice/establishments/${encodeURIComponent(schoolCode)}/notification-settings`,
     patch,
   );
+}
+
+const DISPLAY_CHANNELS: SchoolNotificationChannel[] = ["IN_APP", "PUSH", "EMAIL"];
+
+/**
+ * PROD-V25-POSTSMOKE-01 — toutes les règles affichées (valeurs par défaut comprises), limitées aux
+ * destinataires autorisés, pour les enregistrer telles quelles (canal absent = activé, comme à l'écran).
+ */
+export function patchFromDisplayedRules(settings: SchoolNotificationSettings): SchoolNotificationSettingsPatch {
+  const events: SchoolNotificationSettingsPatch["events"] = {};
+  for (const [event, rule] of Object.entries(settings.events) as Array<[SchoolNotificationEvent, SchoolNotificationEventRule]>) {
+    if (!rule) continue;
+    const byRecipient: Partial<Record<SchoolNotificationRecipient, Partial<SchoolNotificationChannels>>> = {};
+    for (const recipient of rule.allowedRecipients) {
+      byRecipient[recipient] = Object.fromEntries(
+        DISPLAY_CHANNELS.map((channel) => [channel, rule[recipient]?.[channel] ?? true]),
+      ) as SchoolNotificationChannels;
+    }
+    events[event] = byRecipient;
+  }
+  return { events };
 }
