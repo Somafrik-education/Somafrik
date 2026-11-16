@@ -18,7 +18,7 @@ Légende : **PASS** = vérifié sur le SHA indiqué. **NOT VERIFIED** = non exé
 | Phase | Résultat | Résumé |
 |---|---|---|
 | G0 — Git baseline | **PASS** | Tree candidate `27e53778` = tree `develop@8faa002b`. **Diff indépendant CTO : 0 fichier** entre candidate et `develop`. `main` ancêtre |
-| G1 — RC1 | **PASS (CI) / NOT VERIFIED (préprod, perf, appareil)** | CI du HEAD `27e53778` : §3. E2E préprod, performance, mobile physique non exécutés |
+| G1 — RC1 | **PASS (CI 35/35) / NOT VERIFIED (préprod, perf, appareil)** | CI terminale du HEAD `27e53778` : 35/35 SUCCESS (§3). E2E préprod, performance, mobile physique non exécutés |
 | G2 — Builds | **PASS (Web, image backend, boot PG 17) / NOT VERIFIED (AAB)** | §4 |
 | G3 — Préproduction | **NOT VERIFIED** | Hôtes préprod injoignables depuis le conteneur |
 | G4 — Android / Play | **FAIL (signature) / NOT VERIFIED (Play, 16 KB, SHA-256)** | Config conforme ; signature d'upload absente |
@@ -40,7 +40,15 @@ Légende : **PASS** = vérifié sur le SHA indiqué. **NOT VERIFIED** = non exé
 
 ## 3. CI du HEAD exact `27e53778` (G6-04 LOT B)
 
-**En cours** au moment de cette révision ; statut terminal publié dans la révision suivante. Aucun échec observé.
+**35 checks : 35 SUCCESS / 0 FAILURE / 0 SKIPPED / 0 CANCELLED**, tous terminés sur `head_sha = 27e53778efa3c8e4fd5999cf0bf14694142dcbb2` (`run_attempt 1`), relevé à 15:43 UTC le 16/11.
+
+| Workflow | Run | Jobs | Statut |
+|---|---|---|---|
+| PR Gates | [43891444629](https://github.com/Somafrik-education/Somafrik/actions/runs/43891444629) | Scope, Secrets, Quality, Core tests, Backend unit (fast), **Risk-targeted** (L4-09 inclus), LOT 0–8 parity, Backend PostgreSQL shards 1–3, shards complete, **Required** | SUCCESS (fin 15:17 UTC) |
+| Release gate | [43891444980](https://github.com/Somafrik-education/Somafrik/actions/runs/43891444980) | Resolve candidate SHA, Full backend baseline unit + **PostgreSQL**, **Full regression** (domain regression, image backend préprod, bootstrap runtime guard), **Release gate** | SUCCESS (fin 15:34 UTC) |
+| Autres | voir #1145 | RBAC HTTP live API, NFC SQLite, Demo contract / entry-api / web-runtime / vitrine, Branding, UI French copy, MIG-WORKERS POC / CLOUD | SUCCESS |
+
+Aucun gate modifié, désactivé, relancé ni contourné.
 
 Historique : `738e2873` (sans #1166) : **35/35 SUCCESS** (PR Gates [43870631539](https://github.com/Somafrik-education/Somafrik/actions/runs/43870631539), Release gate [43870631683](https://github.com/Somafrik-education/Somafrik/actions/runs/43870631683)). #1166 seule sur `f49ff264` : 19 SUCCESS / 7 ignorés par Scope / 0 échec.
 
@@ -179,7 +187,7 @@ Aucune issue ouverte ne porte les labels `P0` ou `P1` (recherche du 16/11). R5 e
 
 Le code candidat `27e53778` ne présente **aucun P0/P1 de code reproduit**. Le confinement NFC est levé (R4). Les blocages restants sont **opérationnels** (R1, R2, R3, R7). GO G7 proposé dès que ces conditions sont levées et prouvées :
 
-1. CI terminale verte sur `27e53778` (§3).
+1. ~~CI terminale verte sur `27e53778`~~ **acquise : 35/35 SUCCESS** (§3).
 2. **AutoDeploy `no`** sur les deux services Render, avec preuve avant/après, et relevé de l'environnement API (stockages montés, `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED` absente). GO CTO + opérateur Render.
 3. **Workflow « EAS Production AAB » désactivé** (`disabled_manually`) avant le merge.
 4. Mise en production Web/API possible **indépendamment** de la publication Android. La publication Play (R3 : signature d'upload, versionCode > maximum Play, 16 KB, SHA-256) est un lot G7-Android séparé.
