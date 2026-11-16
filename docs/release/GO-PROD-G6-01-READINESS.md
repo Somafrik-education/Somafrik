@@ -1,13 +1,13 @@
-# GO-PROD-G6-01 / G6-02 / G6-03 — Rapport de préparation G6, Somafrik v25
+# GO-PROD-G6 (01 → 04) — Rapport de préparation G6, Somafrik v25
 
 | Champ | Valeur |
 |---|---|
-| Mandats | GO-PROD-G6-01, G6-02 puis G6-03, 16/11/2026 (#720, #719, #1145, #1165, #921 ; décisions CTO #720#issuecomment-6916895891 et #720#issuecomment-6917128162) |
-| Candidate | **`738e28730c49fc6dfbee29b0f7357421655e44c5`** (PR #1145, `release/go-prod-v25-reconciled`) |
-| `develop` | `5bdc25606d9008b7a6f63f8cde735f0d18fb05c0` (après merge de #1168 par le CTO ; `c2d5938` au moment de la réconciliation de la candidate) |
+| Mandats | GO-PROD-G6-01, G6-02, G6-03 puis G6-04, 16/11/2026 (#720, #719, #1145, #1165, #921 ; décisions CTO #720#issuecomment-6916895891 et #720#issuecomment-6917128162) |
+| Candidate | **`27e53778efa3c8e4fd5999cf0bf14694142dcbb2`** (PR #1145, `release/go-prod-v25-reconciled`), tree `2f48f9a4892c2d8739eda69bc52aeb315358497e` |
+| `develop` | `8faa002b74a4b2b564463859eb21185b2d98dfdd` (après les merges CTO de #1168 puis #1166) |
 | `main` | `ef8bc9517ffc94aa770743713d0f561f92a9fc1e` |
-| Correctif NFC hors candidate | PR Draft #1166 **`f49ff264a26134ae90d9e6f5fb54578b58be8c6c`**, en qualification, non mergée (verrou NFC, §7) |
-| Exception CI L4-09 | PR #1168 **mergée** par le CTO dans `develop@5bdc2560` |
+| Verrou NFC | PR #1166 **mergée** par le CTO (`develop@8faa002b`, tree identique au HEAD qualifié `f49ff264`) ; **inclus dans la candidate** |
+| Exception CI L4-09 | PR #1168 **mergée** par le CTO (`develop@5bdc2560`) ; incluse dans la candidate |
 | Exécutant | Claude Code (conteneur cloud : aucun accès réseau à Render, Supabase, Google Play, `*.somafrik.app`, `exp.host` ; aucun identifiant ni clé d'upload) |
 | **Décision proposée** | **HOLD**, puis GO conditionnel dès que les conditions du §11 sont levées |
 
@@ -17,38 +17,31 @@ Légende : **PASS** = vérifié sur le SHA indiqué. **NOT VERIFIED** = non exé
 
 | Phase | Résultat | Résumé |
 |---|---|---|
-| G0 — Git baseline | **PASS** | Tree candidate = tree `develop` ; `main` ancêtre ; diff produit nul depuis `8124d331` |
-| G1 — RC1 | **PASS (CI 35/35) / NOT VERIFIED (préprod, perf, appareil)** | CI terminale verte sur `738e2873` (§3). E2E préprod, performance, mobile physique non exécutés |
+| G0 — Git baseline | **PASS** | Tree candidate `27e53778` = tree `develop@8faa002b` ; `main` ancêtre ; seuls #1168 et #1166 ajoutés depuis `738e2873` |
+| G1 — RC1 | **PASS (CI) / NOT VERIFIED (préprod, perf, appareil)** | CI du HEAD `27e53778` : §3. E2E préprod, performance, mobile physique non exécutés |
 | G2 — Builds | **PASS (Web, image backend, boot PG 17) / NOT VERIFIED (AAB)** | §4 |
 | G3 — Préproduction | **NOT VERIFIED** | Hôtes préprod injoignables depuis le conteneur |
 | G4 — Android / Play | **FAIL (signature) / NOT VERIFIED (Play, 16 KB, SHA-256)** | Config conforme ; signature d'upload absente |
 | G5 — PostgreSQL / Render | **WAIVED partiel + PASS technique + NOT VERIFIED (Render)** | **Sauvegarde des données fictives : WAIVED sur décision du propriétaire.** PG 17 et migrations PASS ; AutoDeploy non neutralisé (GO requis) |
 | G6 — GO/NO-GO | **HOLD** | Blocages opérationnels uniquement, aucun P0/P1 de code reproduit (§10, §11) |
 
-## 2. G0 — Baseline Git (LOT A)
+## 2. G0 — Baseline Git (G6-04 LOT A)
 
 | Contrôle | Résultat | Statut |
 |---|---|---|
-| SHAs relevés à nouveau (16/11, 13:03 UTC) | Candidate `738e2873`, `develop` `c2d5938`, `main` `ef8bc951` : inchangés | PASS |
-| Après #1168 (16/11) | `develop` = `5bdc2560` : +1 commit, uniquement `scripts/verify-school-setup-lot4-red.ts` (+57, gate CI). **La candidate n'a plus exactement le tree de `develop`** ; écart sans fichier produit. Réconciliation prévue avec l'intégration de #1166, sur décision CTO | Constat |
-| Réconciliation | `738e2873` = merge de `8124d331` + `develop@c2d5938` (#1165, 4 docs). Aucun conflit, aucun force-push | PASS |
-| Git tree candidate = `develop` | `79af41be3bb6b3f79658cec83e38d1d97ca4a78c` | PASS |
-| `develop...candidate` / `main...candidate` | 24 / 0 ; 402 / 0 | PASS |
-| Diff produit `8124d331 → 738e2873` | 0 fichier hors `docs/release/` | PASS |
+| SHAs relevés avant action (16/11, G6-04) | `develop` `8faa002b`, `main` `ef8bc951`, candidate `738e2873`, #1167 `36de4494` : conformes au mandat | PASS |
+| Contenu de `develop` intégré | #1168 (`5bdc2560`, `scripts/verify-school-setup-lot4-red.ts` +57) et #1166 (`8faa002b`, `studentCardNfcReleaseGate.js` +40, son test +178, `schoolSettingsManagement.js` +16/−1). Tree de `develop@8faa002b` **identique** au HEAD qualifié de #1166 `f49ff264` | PASS |
+| Réconciliation | `27e53778efa3c8e4fd5999cf0bf14694142dcbb2` = merge de `738e2873` + `develop@8faa002b`. Aucun conflit, aucun force-push | PASS |
+| Git tree candidate = `develop` | `2f48f9a4892c2d8739eda69bc52aeb315358497e` des deux côtés | PASS |
+| Merge-base `develop` / candidate | `8faa002b` ; ahead 25 / behind 0 | PASS |
+| Merge-base `main` / candidate | `ef8bc951` ; ahead 405 / behind 0 ; 1 361 fichiers, +197 530 / −7 198 (1 355 validés + 4 docs G5 + 2 fichiers NFC ; script L4-09 et `schoolSettingsManagement.js` déjà dans la liste) | PASS |
+| Diff `738e2873 → 27e53778` | 4 fichiers, +291 / −1 : uniquement #1168 et #1166 | PASS |
 
-## 3. CI finale du HEAD exact `738e2873` (LOT A)
+## 3. CI du HEAD exact `27e53778` (G6-04 LOT B)
 
-**35 checks / 35 SUCCESS / 0 échec / 0 en cours / 0 ignoré**, relevé le 16/11 après 13:36 UTC, tous sur `head_sha = 738e28730c49fc6dfbee29b0f7357421655e44c5`, `run_attempt 1`.
+**En cours** au moment de cette révision ; statut terminal publié dans la révision suivante. Aucun échec observé.
 
-| Workflow | Run | Jobs | Statut |
-|---|---|---|---|
-| PR Gates | [43870631539](https://github.com/Somafrik-education/Somafrik/actions/runs/43870631539) | Scope, Secrets, Quality, Core tests, Backend unit (fast), **Risk-targeted**, LOT 0–8 parity, Backend PostgreSQL shards 1–3, shards complete, **Required** | SUCCESS (fin 13:11 UTC) |
-| Release gate | [43870631683](https://github.com/Somafrik-education/Somafrik/actions/runs/43870631683) | Resolve candidate SHA, Full backend baseline (unit + **PostgreSQL**), **Full regression** (domain regression, build image backend préprod, bootstrap runtime guard), Release gate | SUCCESS (fin 13:36 UTC) |
-| Autres | voir #1145 | RBAC HTTP live API, NFC SQLite, Demo contract / entry-api / web-runtime / vitrine, Branding, UI French copy, MIG-WORKERS POC / CLOUD | SUCCESS |
-
-Aucun check n'a été désactivé, relancé ni contourné.
-
-Rappel : le code produit est identique à `8124d331`, où **33/33 checks étaient SUCCESS** (Release gate [43849660056](https://github.com/Somafrik-education/Somafrik/actions/runs/43849660056), PR Gates [43849659302](https://github.com/Somafrik-education/Somafrik/actions/runs/43849659302)).
+Historique : `738e2873` (sans #1166) : **35/35 SUCCESS** (PR Gates [43870631539](https://github.com/Somafrik-education/Somafrik/actions/runs/43870631539), Release gate [43870631683](https://github.com/Somafrik-education/Somafrik/actions/runs/43870631683)). #1166 seule sur `f49ff264` : 19 SUCCESS / 7 ignorés par Scope / 0 échec.
 
 ## 4. G2 — Builds
 
@@ -111,32 +104,30 @@ Sources : `docs/release/GO-PROD-G5-01-*.md` (#1165, mergée), validation à blan
 
 ## 7. NFC #921 — confinement pour la release (LOT D)
 
-| Vérification | Constat sur la candidate `738e2873` | Statut |
+| Vérification | Constat sur la candidate `27e53778` (verrou #1166 inclus) | Statut |
 |---|---|---|
 | Flags NFC désactivés par défaut | `student_card_enabled`, `_qr_`, `_nfc_`, `_attendance_`, `_finance_check_`, `_offline_roll_call_` : `BOOLEAN NOT NULL DEFAULT FALSE` (`backend/db/schoolSettingsSchema.js:16-21`) | PASS |
 | Backend fail-closed si le NFC est désactivé | `assertNfcEnabled` exige `studentCardEnabled && studentCardNfcEnabled`, sinon 404 `STUDENT_CARD_NFC_DISABLED` (`studentCardsNfcEncoding.js:21-26`), appelé par le cycle de vie (`studentCardsNfcLifecycle.js:49`) et le diagnostic (`studentCardsNfcDiagnosis.js:230`). Seul `true` booléen active (`coerceFailClosedBoolean`) | PASS |
-| **Aucun établissement ne peut activer l'encodage** | **FAIL sur la candidate** : tout principal avec `Paramètres Établissement:UPDATE`, `Gérer planning académique` ou `ALL_PRIVILEGES` peut passer `studentCardNfcEnabled` à `true` (`assertSchoolSettingsWrite`). Aucun verrou plateforme | **FAIL → correctif proposé** |
+| **Aucun établissement ne peut activer l'encodage** | **Corrigé par #1166** : en `NODE_ENV=production` sans `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED=true`, le NFC est lu `false` même si la base contient `true`, et l'activation reçoit **409 `STUDENT_CARD_NFC_NOT_HOMOLOGATED`** pour tout rôle, y compris un administrateur d'établissement (RBAC inchangé). Vérifié sur `27e53778` : 14/14 tests du verrou ; contrôle direct en production sans clé → `allowed=false`, `studentCardNfcEnabled=false`, `studentCardQrEnabled=true`, PATCH → 409 | **PASS** |
 | Pas de contournement RBAC | L'écriture est gardée par `assertSchoolSettingsWrite` ; les endpoints NFC par le RBAC Élèves (CI : suites `studentCardsNfc*`, `rbacMatrix`) | PASS (CI) |
 | Fonctionnalités non NFC utilisables | QR, présences et finance ne dépendent pas du flag NFC (`isStudentCardCapabilityEnabled` par capacité) | PASS (code) |
 | APPEL-GLOBAL-01 | Non touché | PASS |
 
-**Correctif minimal — PR Draft [#1166](https://github.com/Somafrik-education/Somafrik/pull/1166)**, HEAD `f49ff264a26134ae90d9e6f5fb54578b58be8c6c`, base et merge-base `develop@5bdc2560`, ahead 3 / behind 0, 3 fichiers, +234 / −1 : `studentCardNfcReleaseGate.js` (nouveau), son test (nouveau) et le câblage dans `schoolSettingsManagement.js` (+16/−1). **En qualification, non mergée.**
+**Verrou #1166, mergé et inclus.** Fichiers : `backend/lib/studentCardNfcReleaseGate.js`, `backend/lib/studentCardNfcReleaseGate.test.js`, câblage dans `backend/lib/schoolSettingsManagement.js`.
 
-Le gate L4-09 bloquait la première version. Il a été traité par l'exception ancrée à liste fermée **#1168, mergée par le CTO**, sans neutraliser aucun contrôle.
+Lecture et écriture des flags passent par ce point unique : capacités HTTP, `assertNfcEnabled` (réservation, confirmation, réessai, récupération, diagnostic → 404 `STUDENT_CARD_NFC_DISABLED`), pack et synchronisation d'appel hors connexion, et les deux routes `PATCH …/school-settings`.
 
-En `NODE_ENV=production`, sans `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED=true` :
-- lecture : `studentCardNfcEnabled` est forcé à `false`, valeurs déjà en base comprises ;
-- écriture : `true` est refusé en 409 `STUDENT_CARD_NFC_NOT_HOMOLOGATED`.
+QR, présences, finance et autres paramètres sont inchangés. Hors production : inchangé. #921 (NFC physique) n'est pas repris.
 
-QR et hors production inchangés. Tests locaux sur `f49ff264` :
-- verrou 14/14 (déjà actif en base, encodage 404, admin 409, capacités, hors connexion, QR) ; RED sur `develop` : 6 échecs ;
-- unitaires carte, NFC, paramètres : 163/0 ;
-- PostgreSQL via l'exécuteur officiel (22 fichiers) : 114/0/0 ;
-- L4-09 PASS.
+Tests sur `27e53778` :
+- verrou 14/14 ;
+- unitaires carte, NFC, paramètres 163/0 ;
+- L4-09 PASS ;
+- PostgreSQL (exécuteur officiel, 22 fichiers) 114/0/0 sur `f49ff264`, de tree identique.
 
-Le 409 est prouvé au niveau du parseur commun aux deux routes `PATCH …/school-settings` ; il n'y a pas d'appel HTTP en `NODE_ENV=production` (le harnais impose `test`). CI GitHub du HEAD exact : voir le rapport de livraison G6-03.
+Limite : le 409 est prouvé au niveau du parseur commun, pas par un appel HTTP en production (le harnais impose `NODE_ENV=test`).
 
-**Décision CTO requise :** intégrer #1166 à la candidate (nouveau HEAD, CI complète et diff indépendant), ou accepter le risque d'activation administrative.
+**Consigne d'exploitation :** `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED` doit rester **absente** (ou différente de `true`) sur le service API de production tant que #921 n'est pas homologuée. Contrôle à faire au relevé Render (§12, étape 1).
 
 ## 8. Workflow EAS automatique (LOT C)
 
@@ -176,8 +167,8 @@ Réutilisation des preuves CI sur le même code produit. Aucun smoke préprod n'
 | R1 | **P0** | `autoDeploy=yes` sur la prod + 17 migrations au boot : un merge dans `main` met en production sans étape humaine | Ouvert. Levée : §6, GO CTO + opérateur Render |
 | R2 | **P1** | Merge #1145 → build EAS production automatique (§8) | Ouvert. Levée : désactivation du workflow, GO CTO |
 | R3 | **P1** | AAB signé debug par le chemin local ; clé d'upload absente | Ouvert. Levée : procédure de signature hors dépôt et empreinte comparée à Play Console |
-| R4 | **P1 (confinement)** | NFC #921 activable par un admin d'établissement sur la candidate | Correctif #1166 (`f49ff264`) en qualification ; #1168 (gate) mergée. Levée : merge de #1166 par le CTO puis réconciliation de #1145 |
-| R5 | P0 (tracker) | #921 encodage physique non homologué | Accepté par le CTO **si le NFC reste désactivé** : conditionné à R4 |
+| R4 | ~~P1~~ **levé** | NFC #921 activable par un admin d'établissement | **Levé** : #1166 mergée et incluse dans `27e53778` (§7). Reste la consigne d'exploitation sur `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED` |
+| R5 | P0 (tracker) | #921 encodage physique non homologué | **Accepté par le CTO**, NFC désactivé en production par le verrou (R4 levé) |
 | R6 | P0 (tracker) | #499 permissions de stockage | Retirées dans le manifeste source ; manifeste fusionné NOT VERIFIED (avec l'AAB) |
 | R7 | P1 | Stockages persistants Render, condition du healthcheck | Montage en prod NOT VERIFIED |
 
@@ -185,15 +176,36 @@ Aucune issue ouverte ne porte les labels `P0` ou `P1` (recherche du 16/11). R5 e
 
 ## 11. G6 — Recommandation : **HOLD**, GO conditionnel
 
-Le code candidat ne présente **aucun P0/P1 de code reproduit**, hors confinement NFC corrigé par #1166. Les blocages restants sont **opérationnels**. GO G7 proposé dès que ces conditions sont levées et prouvées dans #720 :
+Le code candidat `27e53778` ne présente **aucun P0/P1 de code reproduit**. Le confinement NFC est levé (R4). Les blocages restants sont **opérationnels** (R1, R2, R3, R7). GO G7 proposé dès que ces conditions sont levées et prouvées :
 
-1. CI terminale verte sur le HEAD final : **acquise sur `738e2873` (35/35)** ; à refaire sur le nouveau HEAD après intégration de #1166.
-2. **Décision CTO sur #1166** : intégration (recommandée) ou acceptation du risque d'activation.
-3. **AutoDeploy `no`** sur les deux services Render, avec preuve avant/après (GO + opérateur).
-4. **Workflow « EAS Production AAB » désactivé** (`disabled_manually`) avant le merge.
-5. Pour la publication Play (G4/G7, lot séparé) : clé d'upload, versionCode > maximum Play, contrôle 16 KB, SHA-256 de l'AAB.
+1. CI terminale verte sur `27e53778` (§3).
+2. **AutoDeploy `no`** sur les deux services Render, avec preuve avant/après, et relevé de l'environnement API (stockages montés, `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED` absente). GO CTO + opérateur Render.
+3. **Workflow « EAS Production AAB » désactivé** (`disabled_manually`) avant le merge.
+4. Mise en production Web/API possible **indépendamment** de la publication Android. La publication Play (R3 : signature d'upload, versionCode > maximum Play, 16 KB, SHA-256) est un lot G7-Android séparé.
 
-Le smoke préprod et le smoke mobile natif restent NOT VERIFIED. Je recommande de les exécuter juste après le deploy manuel, avant toute ouverture aux utilisateurs.
+Le smoke préprod et le smoke mobile natif restent NOT VERIFIED (§12, étape 8).
 
-`GO-PROD-G6-03 — #1166 DRAFT / HOLD — STOP POUR DIFF CTO INDÉPENDANT.`
-**PAS READY. PAS MERGE MAIN. PAS DÉPLOIEMENT PRODUCTION. PAS UPLOAD PLAY.**
+## 12. Préparation opérationnelle et séquence G7 proposée (G6-04 LOT E)
+
+**Préparé, non exécuté.** Toutes les étapes marquées « GO » exigent une décision CTO explicite et un opérateur disposant des accès : Claude n'a accès ni à Render, ni à GitHub Actions en écriture de paramètres, ni à Play Console. Ordre impératif :
+
+| # | Étape | Commande / lieu | Preuve attendue (non sensible) | Statut |
+|---|---|---|---|---|
+| 1 | **Relevé Render** (lecture seule) des services API `srv-dac22v8jo6nc739b3t9g` et Web `srv-dac39n8u01pc73flept0` | `GO-PROD-G5-01-RENDER-RUNBOOK.md` §2 ; `GET https://api.somafrik.app/api/health` → `gitSha` | Branche, `autoDeploy`, commit live, état des derniers deploys, disque monté pour `SOMAFRIK_COMMUNICATION_STORAGE` et `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE`, **absence de `SOMAFRIK_STUDENT_CARD_NFC_ALLOWED=true`** | À faire |
+| 2 | **AutoDeploy → `no`** (API puis Web) | Dashboard *Settings → Build & Deploy → Auto-Deploy : Off* ou `PATCH /v1/services/{id}` `{"autoDeploy":"no"}` (runbook §3) | Avant/après : `autoDeploy=no`, **aucun nouveau deploy**, commit live et instance inchangés, health OK | **GO requis** |
+| 3 | **Désactiver « EAS Production AAB »** | *Actions → EAS Production AAB → Disable workflow*, ou `PUT /repos/Somafrik-education/Somafrik/actions/workflows/eas-production-aab.yml/disable` | `GET …/workflows/eas-production-aab.yml` → `"state": "disabled_manually"` | **GO requis** |
+| 4 | **Merge #1145 → `main`** (CTO) | GitHub, après diff indépendant | SHA du commit de merge sur `main` ; **aucun deploy Render déclenché** ; **aucun run EAS** dans *Actions* | **GO requis** |
+| 5 | **Deploy manuel de l'API** au SHA exact | *Manual Deploy → Deploy a specific commit* ou `POST /v1/services/srv-dac22v8jo6nc739b3t9g/deploys` `{"commitId":"<SHA main>"}` | Logs de boot jusqu'à la fin de `init()` (17 migrations de boot) ; `/api/health` → `ok` et `gitSha` = SHA déployé | **GO requis** |
+| 6 | **Deploy manuel du Web** au même SHA | Idem, service `srv-dac39n8u01pc73flept0` | Web accessible, appel API OK | **GO requis** |
+| 7 | Les 4 migrations manuelles restent **hors fenêtre** | — | Aucune exécution (`20261105_report_card_class_scope` exclue par décision CTO) | Consigne |
+| 8 | **Smokes post-déploiement** (comptes de test fictifs) | Web et API | Login par rôle (Superadmin, Admin Pays, Directeur, Secrétaire, Enseignant, Parent / Élève), présences, notes, bulletins, finance (paiement), communication ; capacité NFC = `false` ; QR OK | À exécuter |
+| 9 | **Rollback applicatif** si un smoke est bloquant | Render *Rollback* vers le deploy `ef8bc951` (API puis Web) | Health OK sur `ef8bc951`. Valable car le schéma v25 est additif et `20261105` n'est pas appliquée (`GO-PROD-G5-01-MIGRATIONS.md` §5.1) | Préparé |
+| 10 | **G7-Android** (lot séparé) | Build local `Mobile/scripts/build-android-aab.js production`, signature d'upload hors dépôt, `zipalign -c -P 16`, `sha256sum`, contrôle d'empreinte du certificat et du versionCode maximum dans Play Console | AAB signé upload, versionCode > maximum Play, 16 KB OK, SHA-256 publié. **Aucun upload sans GO** | **GO requis** |
+| 11 | Réactivation éventuelle d'AutoDeploy et d'EAS | Décision ultérieure | — | Hors G7 |
+
+Points d'attention :
+- **Étape 4 :** le merge ne doit intervenir **qu'après** les preuves des étapes 2 et 3.
+- **Étape 5 :** les index non concurrents sur `students` et `subjects` bloquent brièvement les écritures pendant le boot. Données fictives : risque faible, mais le deploy doit se faire hors usage.
+
+`GO-PROD-G6-04 — DRAFT / HOLD — STOP POUR DIFF CTO INDÉPENDANT.`
+**PAS MERGE MAIN. PAS DÉPLOIEMENT PROD. PAS UPLOAD PLAY.**
