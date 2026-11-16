@@ -13,11 +13,12 @@ export const ROLE_SELECTION_COPY = {
   openLoginButton: "Ouvrir la connexion",
   successMessage: "Établissement trouvé. Vous pouvez continuer.",
   nextStepHint:
-    "Saisissez votre téléphone, email ou identifiant enseignant, puis votre PIN ou mot de passe.",
+    "Saisissez votre téléphone, email ou identifiant de connexion, puis votre mot de passe.",
 } as const;
 
 export const LOGIN_SCREEN_COPY = {
-  identifierHint: "Saisissez le téléphone, l'email ou l'identifiant enseignant lié à votre compte.",
+  /** AUTH-MOBILE-01 : consigne commune à tous les profils (élève, étudiant, parent, enseignant, administration). */
+  identifierHint: "Saisissez le téléphone, l'email ou l'identifiant de connexion lié à votre compte.",
   identifierLabel: "Identifiant",
   identifierPlaceholder: "Ex. +243 8xx xxx xxx",
   roleLabel: "Rôle détecté",
@@ -43,7 +44,12 @@ export const ERROR_MESSAGES = {
   invalidCredentials: "Identifiant ou mot de passe incorrect.",
   emptySchoolCode: "Veuillez saisir le code établissement.",
   emptyFields: "Veuillez saisir votre identifiant et votre mot de passe.",
+  emptyIdentifier: "Veuillez saisir votre identifiant.",
+  emptyPassword: "Veuillez saisir votre mot de passe.",
   networkError: "Connexion impossible. Vérifiez votre réseau et réessayez.",
+  accountLocked: "Trop de tentatives. Réessayez dans quelques minutes.",
+  mobileAccessDenied: "Ce compte n'a pas accès à l'application mobile. Contactez votre établissement.",
+  serverUnavailable: "Service momentanément indisponible. Réessayez dans quelques instants.",
 } as const;
 
 export const ERROR_TEST_IDS = {
@@ -86,13 +92,62 @@ export function resolveSecretFieldCopy(role?: string): { label: string; placehol
 
 export function resolveLoginEmptyFieldsError(role?: string): string {
   if (usesNumericPinSecret(role)) return ERROR_MESSAGES.emptyFields;
-  return "Veuillez saisir votre identifiant et votre mot de passe.";
+  return ERROR_MESSAGES.emptyFields;
 }
 
-export function mapLoginApiError(rawMessage = "", role?: string): string {
+/**
+ * Validation locale contextualisée (identifiant vide / mot de passe vide / les deux).
+ * Retourne `null` si les deux champs sont renseignés.
+ */
+export function resolveLoginFieldsError(identifier: string, password: string): string | null {
+  const missingIdentifier = !String(identifier ?? "").trim();
+  const missingPassword = !String(password ?? "").trim();
+  if (missingIdentifier && missingPassword) return ERROR_MESSAGES.emptyFields;
+  if (missingIdentifier) return ERROR_MESSAGES.emptyIdentifier;
+  if (missingPassword) return ERROR_MESSAGES.emptyPassword;
+  return null;
+}
+
+function statusOf(status?: number | null): number {
+  const value = Number(status);
+  return Number.isFinite(value) ? value : 0;
+}
+
+/** 403 métier (établissement / pays suspendu, accès mobile refusé) : message serveur si lisible. */
+function forbiddenMessage(rawMessage: string): string {
+  const message = String(rawMessage ?? "").trim();
+  return isUserFriendlyErrorMessage(message) ? message : ERROR_MESSAGES.mobileAccessDenied;
+}
+
+/**
+ * Erreur d'identification (`POST /identify`) : ne distingue jamais un compte d'un autre
+ * établissement d'un compte inexistant (isolation établissement), ni ne relaie le message brut.
+ */
+export function mapIdentifyApiError(rawMessage = "", status?: number | null): string {
+  const code = statusOf(status);
+  if (code === 403) return forbiddenMessage(rawMessage);
+  if (code === 423 || code === 429) return ERROR_MESSAGES.accountLocked;
+  if (code >= 500) return ERROR_MESSAGES.serverUnavailable;
+  if (code === 0 && rawMessage && !/introuvable|invalide|aucun compte|champs manquants/i.test(rawMessage)) {
+    return ERROR_MESSAGES.networkError;
+  }
+  return ERROR_MESSAGES.invalidIdentifier;
+}
+
+export function mapLoginApiError(rawMessage = "", role?: string, status?: number | null): string {
   const message = String(rawMessage).trim();
   const normalized = message.toLowerCase();
   const pinRole = usesNumericPinSecret(role);
+  const code = statusOf(status);
+  if (code === 423 || code === 429 || normalized.includes("verrouillé") || normalized.includes("trop de tentatives")) {
+    return ERROR_MESSAGES.accountLocked;
+  }
+  if (code === 403) return forbiddenMessage(message);
+  if (code >= 500) return ERROR_MESSAGES.serverUnavailable;
+  if (normalized.includes("champs manquants")) {
+    // Ne jamais relayer le message brut du serveur : les champs sont validés localement avant envoi.
+    return ERROR_MESSAGES.invalidCredentials;
+  }
   if (!message) {
     return pinRole ? ERROR_MESSAGES.invalidPin : ERROR_MESSAGES.invalidCredentials;
   }
@@ -104,6 +159,9 @@ export function mapLoginApiError(rawMessage = "", role?: string): string {
   }
   if (normalized.includes("identifiant invalide") || normalized.includes("compte introuvable")) {
     return ERROR_MESSAGES.invalidIdentifier;
+  }
+  if (code === 401 || code === 400 || code === 404) {
+    return pinRole ? ERROR_MESSAGES.invalidPin : ERROR_MESSAGES.invalidCredentials;
   }
   if (TECHNICAL_PATTERN.test(message) || message.length > 100 || message.includes("\n")) {
     return pinRole ? ERROR_MESSAGES.invalidPin : ERROR_MESSAGES.invalidCredentials;
@@ -125,6 +183,8 @@ export const ROLE_SELECTION_TEST_IDS = {
   schoolCard: "role-school-card",
   schoolName: "role-school-name",
   schoolLogo: "role-school-logo",
+  schoolLogoImage: "role-school-logo-image",
+  schoolLogoFallback: "role-school-logo-fallback",
   openLoginButton: "role-open-login-button",
   nextStepHint: "role-next-step-hint",
   errorBanner: ERROR_TEST_IDS.roleSelectionErrorBanner,
@@ -134,6 +194,8 @@ export const LOGIN_TEST_IDS = {
   screen: "login-screen",
   schoolName: "login-school-name",
   schoolLogo: "login-school-logo",
+  schoolLogoImage: "login-school-logo-image",
+  schoolLogoFallback: "login-school-logo-fallback",
   identifierInput: "login-identifier-input",
   passwordInput: "login-password-input",
   roleBadge: "login-role-badge",
