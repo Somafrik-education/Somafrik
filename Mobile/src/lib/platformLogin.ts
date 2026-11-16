@@ -42,6 +42,18 @@ export function platformLoginSubtitle(context?: PlatformLoginContext | null): st
   return "Plateforme";
 }
 
+/**
+ * Rôles dont le backend lit exclusivement `password` (cf. `authService.resolveLoginSecret`).
+ * Les autres rôles sont lus via `pin || password`.
+ * AUTH-MOBILE-01 : `student` envoyait `pin` alors que le backend n'attend que `password`
+ * → secret vide côté serveur → « Champs manquants » malgré des champs renseignés.
+ */
+const PASSWORD_FIELD_ROLES = new Set(["parent_student", "student"]);
+
+export function usesPasswordLoginField(role?: string | null): boolean {
+  return PASSWORD_FIELD_ROLES.has(String(role ?? ""));
+}
+
 export function buildMobileLoginPayload(input: {
   role: MobileLoginRole;
   identifier: string;
@@ -60,7 +72,7 @@ export function buildMobileLoginPayload(input: {
     role: input.role,
     identifier: input.identifier,
   };
-  if (input.role === "parent_student") {
+  if (usesPasswordLoginField(input.role)) {
     payload.password = String(input.password ?? "");
   } else {
     payload.pin = String(input.password ?? input.pin ?? "");
