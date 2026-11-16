@@ -35,6 +35,24 @@ const GUIDED_STEP_LABELS = Object.freeze({
   users: "Utilisateurs et droits",
 });
 
+/**
+ * PROD-V25-POSTSMOKE-01 — condition réellement vérifiée par stepSatisfied(), exprimée pour
+ * l'utilisateur. Aucune règle n'est assouplie : ce texte décrit seulement ce qui manque.
+ */
+const GUIDED_STEP_REQUIREMENTS = Object.freeze({
+  establishment: "Renseignez le nom, le pays, l'adresse, le téléphone et la devise de l'établissement.",
+  academicYear: "Créez une année scolaire en cours ou ouverte, avec ses dates de début et de fin.",
+  structure: "Activez au moins un niveau et une filière, puis créez au moins une classe.",
+  subjects: "Créez au moins une matière.",
+  teachers: "Créez au moins un enseignant et affectez-le à au moins un cours.",
+  students: "Inscrivez au moins un élève dans une classe.",
+  finance: "Créez au moins une grille de frais ou un mode de paiement.",
+  pedagogy: "Créez au moins un type d'évaluation.",
+  communication:
+    "Aucune règle de notification n'est enregistrée pour cet établissement. Ouvrez Paramètres › Notifications et enregistrez les règles (les règles par défaut affichées ne sont pas encore enregistrées).",
+  users: "Créez au moins un utilisateur pour l'établissement.",
+});
+
 const GUIDED_STEP_TOTAL = 10;
 const GUIDED_OPERATIONAL_STEP_TOTAL = 6;
 const REQUIRED_STEP_KEYS = GUIDED_STEP_KEYS.slice(0, GUIDED_OPERATIONAL_STEP_TOTAL);
@@ -365,7 +383,12 @@ async function completeGuidedStep(input = {}) {
   }
 
   if (!stepSatisfied(stepKey, snapshot)) {
-    const error = new BusinessError(409, "STEP_NOT_SATISFIED: données requises absentes.");
+    const requirement = GUIDED_STEP_REQUIREMENTS[stepKey];
+    const error = new BusinessError(
+      409,
+      `Étape « ${GUIDED_STEP_LABELS[stepKey]} » non satisfaite : ${requirement}`,
+      { stepKey, stepLabel: GUIDED_STEP_LABELS[stepKey], requirement },
+    );
     error.code = "STEP_NOT_SATISFIED";
     throw error;
   }
@@ -433,6 +456,7 @@ async function finalizeSchoolSetupGuided(input = {}) {
 module.exports = {
   GUIDED_STEP_KEYS,
   GUIDED_STEP_LABELS,
+  GUIDED_STEP_REQUIREMENTS,
   GUIDED_STEP_TOTAL,
   GUIDED_OPERATIONAL_STEP_TOTAL,
   deriveGuidedProgress,
