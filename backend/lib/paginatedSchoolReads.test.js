@@ -149,3 +149,49 @@ test("statut et filtres inconnus refusés", async () => {
   await assert.rejects(reads.listPaymentsPage(repository, context, { studentId: "a b" }), (e) => e.statusCode === 400);
   assert.equal(repository.sql.length, 0);
 });
+
+test("G7-RELEASE-PAGINATION-01 : curseur timestamp conservé à la microseconde", () => {
+  const fp = reads.fingerprint(["notes", SCHOOL]);
+  const micro = "2026-11-04T08:00:00.123456Z";
+  const decoded = reads.decodeCursor(reads.encodeCursor(micro, ROW_ID, fp), fp, "timestamp");
+  assert.equal(decoded.key, micro, "aucune troncature à la milliseconde");
+  // Anciens curseurs (milliseconde, ou ISO non UTC) toujours acceptés.
+  assert.equal(
+    reads.decodeCursor(reads.encodeCursor("2026-11-04T08:00:00.123Z", ROW_ID, fp), fp, "timestamp").key,
+    "2026-11-04T08:00:00.123Z",
+  );
+  assert.equal(
+    reads.decodeCursor(reads.encodeCursor("2026-11-04T09:00:00+01:00", ROW_ID, fp), fp, "timestamp").key,
+    "2026-11-04T08:00:00.000Z",
+  );
+  for (const bad of ["pas-une-date", "2026-11-04T08:00:00.1234567Z"]) {
+    const cursor = reads.encodeCursor(bad, ROW_ID, fp);
+    if (bad === "pas-une-date") {
+      assert.throws(() => reads.decodeCursor(cursor, fp, "timestamp"), (error) => error.statusCode === 400);
+    } else {
+      // Plus de 6 décimales : hors format exact, normalisé par Date (jamais injecté tel quel).
+      assert.match(reads.decodeCursor(cursor, fp, "timestamp").key, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    }
+  }
+  assert.equal(
+    reads.cursorTimestampSql("g.updated_at"),
+    `to_char(g.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+  );
+});
+
+test("G7-RELEASE-PAGINATION-01 : notes et paiements encodent la clé SQL microseconde", async () => {
+  const scope = { schoolId: SCHOOL };
+  const principal = { role: "Directeur", schoolId: SCHOOL };
+  const key = "2026-11-04T08:00:00.123456Z";
+  const rows = [
+    { id: ROW_ID, updated_at: new Date("2026-11-04T08:00:00.123Z"), pagination_cursor_key: key },
+    { id: OTHER, updated_at: new Date("2026-11-04T08:00:00.123Z"), pagination_cursor_key: key },
+  ];
+  const repo = recordingRepository(rows);
+  const context = await reads.resolveReadContext(repo, principal, scope, async () => null);
+  const page = await reads.listNotesPage(repo, context, { limit: "1" });
+  const encoded = JSON.parse(Buffer.from(page.nextCursor, "base64url").toString("utf8"));
+  assert.equal(encoded.k, key, "la clé vient de PostgreSQL, pas d'un Date JavaScript");
+  assert.match(repo.sql.at(-1).text, /to_char\(g\.updated_at AT TIME ZONE 'UTC'/);
+  assert.deepEqual(page.items, [{ id: ROW_ID }], "colonne technique absente du DTO");
+});

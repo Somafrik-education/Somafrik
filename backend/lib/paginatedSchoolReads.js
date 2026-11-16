@@ -115,6 +115,26 @@ function fingerprint(parts) {
   return crypto.createHash("sha256").update(JSON.stringify(parts)).digest("hex").slice(0, 16);
 }
 
+/**
+ * G7-RELEASE-PAGINATION-01 — clé de curseur timestamp à la microseconde.
+ * PostgreSQL stocke `timestamptz` à la microseconde ; un `Date` JavaScript ne garde que
+ * la milliseconde. La clé est donc produite par PostgreSQL (`cursorTimestampSql`) et
+ * transportée telle quelle, sans repasser par `Date`.
+ */
+const CURSOR_TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
+
+function cursorTimestampSql(column) {
+  return `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+}
+
+function normalizeCursorTimestamp(value) {
+  const raw = String(value ?? "");
+  // Clé exacte (format produit par cursorTimestampSql, ou ancien curseur à la milliseconde) : inchangée.
+  if (CURSOR_TIMESTAMP_RE.test(raw) && Number.isFinite(Date.parse(raw))) return raw;
+  // Toute autre forme ISO valide reste acceptée, normalisée en UTC.
+  return new Date(raw).toISOString();
+}
+
 function encodeCursor(key, id, fp) {
   return Buffer.from(JSON.stringify({ v: 1, k: key, id, f: fp })).toString("base64url");
 }
@@ -134,7 +154,7 @@ function decodeCursor(raw, fp, keyKind) {
   const keyOk = keyKind === "date" ? isRealDate(decoded.k) : Number.isFinite(Date.parse(decoded.k));
   if (!keyOk) throw badRequest("Curseur invalide.");
   if (decoded.f !== fp) throw badRequest("Curseur invalide pour ces filtres.");
-  return { key: keyKind === "date" ? decoded.k : new Date(decoded.k).toISOString(), id: decoded.id };
+  return { key: keyKind === "date" ? decoded.k : normalizeCursorTimestamp(decoded.k), id: decoded.id };
 }
 
 function isParentOrStudent(principal) {
@@ -309,7 +329,8 @@ async function listNotesPage(repository, context, query = {}) {
   params.push(limit + 1);
   const direction = desc ? "DESC" : "ASC";
   const rows = await repository.all(
-    `SELECT g.*, s.school_code, st.student_code, c.name AS class_name, sub.name AS subject_name,
+    `SELECT g.*, ${cursorTimestampSql("g.updated_at")} AS pagination_cursor_key,
+            s.school_code, st.student_code, c.name AS class_name, sub.name AS subject_name,
             COALESCE(
               (SELECT sc.coefficient FROM school_courses sc
                 WHERE sc.school_id = g.school_id AND sc.class_id = g.class_id
@@ -336,7 +357,7 @@ async function listNotesPage(repository, context, query = {}) {
      LIMIT $${params.length}`,
     params,
   );
-  const { page, hasMore, nextCursor } = pageOf(rows, limit, (row) => new Date(row.updated_at).toISOString(), fp);
+  const { page, hasMore, nextCursor } = pageOf(rows, limit, (row) => row.pagination_cursor_key, fp);
   return { items: page.map((row) => repository.mapGrade(row)), nextCursor, hasMore };
 }
 
@@ -396,7 +417,8 @@ async function listPaymentsPage(repository, context, query = {}) {
   params.push(limit + 1);
   const direction = desc ? "DESC" : "ASC";
   const rows = await repository.all(
-    `SELECT p.*, s.school_code, s.login_code, st.student_code,
+    `SELECT p.*, ${cursorTimestampSql("p.created_at")} AS pagination_cursor_key,
+            s.school_code, s.login_code, st.student_code,
             NULLIF(btrim(concat_ws(' ', st.first_name, st.last_name)), '') AS student_display_name,
             cls.name AS student_class_name
      FROM payments p
@@ -415,7 +437,7 @@ async function listPaymentsPage(repository, context, query = {}) {
      LIMIT $${params.length}`,
     params,
   );
-  const { page, hasMore, nextCursor } = pageOf(rows, limit, (row) => new Date(row.created_at).toISOString(), fp);
+  const { page, hasMore, nextCursor } = pageOf(rows, limit, (row) => row.pagination_cursor_key, fp);
   if (!page.length) return { items: [], nextCursor, hasMore };
 
   const ids = page.map((row) => row.id);
@@ -455,6 +477,8 @@ module.exports = {
   parseRange,
   encodeCursor,
   decodeCursor,
+  cursorTimestampSql,
+  normalizeCursorTimestamp,
   fingerprint,
   assertStaff,
   resolveReadContext,
