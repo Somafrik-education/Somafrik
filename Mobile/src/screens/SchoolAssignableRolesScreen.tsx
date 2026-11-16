@@ -3,13 +3,20 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SchoolSettingsDenied, useSchoolSettingsAccess } from "../components/SchoolSettingsGate";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
-import { listAssignableEstablishmentRoles, type AssignableEstablishmentRole } from "../services/schoolSettingsApi";
+import { indexRoleDisplayCatalog } from "../lib/roleDisplayLabels";
+import {
+  listAssignableEstablishmentRoles,
+  listRoleDisplayLabels,
+  type AssignableEstablishmentRole,
+} from "../services/schoolSettingsApi";
 
 export default function SchoolAssignableRolesScreen() {
   const { canOpen } = useSchoolSettingsAccess("SchoolAssignableRoles");
   const { horizontalPadding, contentMaxWidth } = useResponsiveLayout();
   const bottomPadding = useStackScreenBottomPadding();
-  const [roles, setRoles] = useState<AssignableEstablishmentRole[]>([]);
+  const [roles, setRoles] = useState<
+    Array<AssignableEstablishmentRole & { effectiveLabel?: string }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -17,8 +24,20 @@ export default function SchoolAssignableRolesScreen() {
     setLoading(true);
     setError("");
     try {
-      const payload = await listAssignableEstablishmentRoles();
-      setRoles(payload.roles ?? []);
+      const [payload, display] = await Promise.all([
+        listAssignableEstablishmentRoles(),
+        listRoleDisplayLabels().catch(() => ({ items: [] })),
+      ]);
+      const catalog = indexRoleDisplayCatalog(Array.isArray(display?.items) ? display.items : []);
+      setRoles(
+        (payload.roles ?? []).map((role) => {
+          const roleKey = String(role.roleCode ?? "").trim().toUpperCase();
+          return {
+            ...role,
+            effectiveLabel: catalog.get(roleKey)?.effectiveLabel || role.roleName,
+          };
+        }),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible de charger les rôles disponibles.");
     } finally {
@@ -56,7 +75,7 @@ export default function SchoolAssignableRolesScreen() {
       {!loading && !roles.length ? <Text style={styles.meta}>Aucun rôle affectable pour cet établissement.</Text> : null}
       {roles.map((role) => (
         <View key={role.id} style={styles.card}>
-          <Text style={styles.cardTitle}>{role.roleName}</Text>
+          <Text style={styles.cardTitle}>{role.effectiveLabel || role.roleName}</Text>
           <Text style={styles.meta}>{role.roleCode}</Text>
           <View style={styles.wrap}>
             {(role.permissions ?? []).length ? (

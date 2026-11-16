@@ -23,6 +23,7 @@ function main() {
   assert.match(read("backend/db/postgresRepository.js"), /ensureSupabaseDataApiLockdown/);
   assert.match(read("docs/compliance/supabase-data-api-lockdown.md"), /Data API/);
   assert.equal(SENSITIVE_BUSINESS_TABLES.length >= 8, true);
+  assert.ok(SENSITIVE_BUSINESS_TABLES.includes("student_access_cards"));
   console.log("verify-supabase-data-api-lockdown (statique): SUCCESS");
 }
 

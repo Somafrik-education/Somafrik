@@ -1,4 +1,4 @@
-import { api } from "../api/client";
+import { api, type RequestArgs } from "../api/client";
 
 export interface SchoolStudentEnrollment {
   id: string;
@@ -62,6 +62,9 @@ export interface SchoolStudent {
   gender: string;
   birthDate: string;
   birthPlace?: string;
+  preferredName?: string | null;
+  nationality?: string | null;
+  address?: string | null;
   photoUrl?: string;
   classId?: string | null;
   className: string;
@@ -71,6 +74,8 @@ export interface SchoolStudent {
   schoolPublicCode?: string;
   parentPhone: string;
   parentEmail: string;
+  /** Notes internes d'établissement. null = effacées. Absent des listes qui ne sélectionnent pas la colonne. */
+  administrativeNotes?: string | null;
   status: string;
   enrollmentId: string | null;
   enrollmentDate: string;
@@ -97,13 +102,18 @@ export interface UpdateSchoolStudentPayload {
   gender?: string | null;
   birthDate?: string | null;
   birthPlace?: string | null;
+  preferredName?: string | null;
+  nationality?: string | null;
+  address?: string | null;
   parentPhone?: string | null;
   parentEmail?: string | null;
+  /** null ou chaîne vide : effacement. Absent : la colonne n'est pas modifiée. */
+  administrativeNotes?: string | null;
   expectedUpdatedAt: string;
 }
 
 export const studentsApi = {
-  list: () => api.get<SchoolStudent[]>("/students"),
+  list: (...init: RequestArgs) => api.get<SchoolStudent[]>("/students", ...init),
 
   get: (studentCode: string) =>
     api.get<SchoolStudent>(`/students/${encodeURIComponent(studentCode)}`),

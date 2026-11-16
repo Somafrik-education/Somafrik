@@ -9,6 +9,7 @@ const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
 const { TEST_CONFIRM } = require("./mobilePushDevicesService");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_PUSH_N1_IT_DATABASE ?? "somafrik_push_n1_it")
@@ -92,8 +93,8 @@ async function stopChild(child) {
   });
 }
 
-function mintAccess(tokens, payload) {
-  return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+function mintAccess({ tokens, repository }, payload) {
+  return mintSessionAccessToken({ tokens, repository, payload: { mustChangePassword: false, ...payload } });
 }
 
 async function seed(pool) {
@@ -211,42 +212,42 @@ async function main() {
     child.stdout.on("data", () => {});
     await waitForHealth(child, stderrRef);
 
-    const tokenA = mintAccess(tokens, {
+    const tokenA = await mintAccess({ tokens, repository: repo }, {
       sub: USER_A,
       schoolCode: "SCH-PUSH-A",
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       permissions: [],
     });
-    const tokenAJwtPushTest = mintAccess(tokens, {
+    const tokenAJwtPushTest = await mintAccess({ tokens, repository: repo }, {
       sub: USER_A,
       schoolCode: "SCH-PUSH-A",
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       permissions: ["Push:TEST"],
     });
-    const tokenB = mintAccess(tokens, {
+    const tokenB = await mintAccess({ tokens, repository: repo }, {
       sub: USER_B,
       schoolCode: "SCH-PUSH-A",
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       permissions: [],
     });
-    const tokenSa = mintAccess(tokens, {
+    const tokenSa = await mintAccess({ tokens, repository: repo }, {
       sub: USER_SA,
       schoolCode: "SCH-PUSH-A",
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
       permissions: ["ALL_PRIVILEGES"],
     });
-    const tokenSaStar = mintAccess(tokens, {
+    const tokenSaStar = await mintAccess({ tokens, repository: repo }, {
       sub: USER_SA,
       schoolCode: "*",
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
       permissions: ["ALL_PRIVILEGES"],
     });
-    const tokenSaSchoolB = mintAccess(tokens, {
+    const tokenSaSchoolB = await mintAccess({ tokens, repository: repo }, {
       sub: USER_SA,
       schoolCode: "SCH-PUSH-B",
       role: "Super Administrateur Somafrik",

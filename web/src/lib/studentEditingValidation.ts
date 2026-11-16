@@ -239,8 +239,10 @@ function validateIdentityCommand(
     "address",
   ] as const) {
     const value = merged[field];
-    if (value && value.length > MAX_TEXT) {
-      errors.push(err(field, "MAX_LENGTH", "Valeur trop longue."));
+    // Contrat PATCH PostgreSQL : 120 caractères pour identité, 500 pour adresse.
+    const maxLength = field === "address" ? MAX_TEXT : 120;
+    if (value && value.length > maxLength) {
+      errors.push(err(field, "MAX_LENGTH", `Valeur trop longue (max ${maxLength}).`));
     }
   }
 

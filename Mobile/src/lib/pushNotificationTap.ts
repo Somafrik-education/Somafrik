@@ -1,7 +1,8 @@
 import {
-  resolvePushNavigationData,
+  resolveNotificationPushData,
   type AllowedPushDestination,
   type AllowedPushNavigationParams,
+  type ResolvedNotificationNavigation,
 } from "./pushNotificationDestinations";
 
 export type PushTapResponse = {
@@ -19,14 +20,13 @@ export type PushTapGate = {
   isAuthenticated: () => boolean;
 };
 
-type PushNavigationTarget = {
-  destination: AllowedPushDestination;
-  params?: AllowedPushNavigationParams;
-};
+type PushNavigationTarget = ResolvedNotificationNavigation;
 
+/** Le 3ᵉ argument porte le résultat complet du résolveur (notificationId, schoolCode). */
 type NavigatePush = (
   destination: AllowedPushDestination,
   params?: AllowedPushNavigationParams,
+  resolved?: ResolvedNotificationNavigation,
 ) => void;
 
 const consumedIds = new Set<string>();
@@ -45,7 +45,7 @@ export function identityOfPushResponse(response: PushTapResponse): string {
 
 export function navigationFromPushResponse(response: PushTapResponse): PushNavigationTarget {
   const data = response?.notification?.request?.content?.data;
-  return resolvePushNavigationData(data);
+  return resolveNotificationPushData(data);
 }
 
 export function destinationFromPushResponse(response: PushTapResponse): AllowedPushDestination {
@@ -67,7 +67,7 @@ export function consumePushTapResponse(
   if (identity) consumedIds.add(identity);
   const target = navigationFromPushResponse(response);
   if (canNavigate(gate)) {
-    navigate(target.destination, target.params);
+    navigate(target.destination, target.params, target);
     pendingNavigation = null;
     return "navigated";
   }
@@ -80,8 +80,9 @@ export function flushPendingPushNavigation(
   gate: PushTapGate,
 ): boolean {
   if (!pendingNavigation || !canNavigate(gate)) return false;
-  navigate(pendingNavigation.destination, pendingNavigation.params);
+  const target = pendingNavigation;
   pendingNavigation = null;
+  navigate(target.destination, target.params, target);
   return true;
 }
 

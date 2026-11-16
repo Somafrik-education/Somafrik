@@ -20,8 +20,7 @@
     "/parametres/finances",
     "/parametres/abonnements",
     "/parametres/notifications",
-    "/parametres/documents",
-    "/parametres/bulletins-configuration",
+    "/parametres/bulletins-catalogue",
     "/parametres/graphiques",
     "/parametres/securite",
     "/parametres/apparence",
@@ -32,6 +31,10 @@
     "/parametres/mon-abonnement/paiements",
     "/parametres/mon-abonnement/changer-offre",
     "/parametres/mon-abonnement/resiliation"
+  ],
+  "redirectedParametresRoutes": [
+    { "route": "/parametres/documents", "redirectsTo": "/parametres/bulletins-catalogue", "reason": "BULLETIN-CATALOG-01 : éditeur GrapesJS retiré de l'UI (code historique conservé, non routé)" },
+    { "route": "/parametres/bulletins-configuration", "redirectsTo": "/parametres/bulletins-catalogue", "reason": "BULLETIN-CATALOG-01 : éditeur de gabarit LOT 6 retiré de l'UI (code historique conservé, non routé)" }
   ],
   "cards": [
     {
@@ -264,45 +267,9 @@
       "superadminRoute": "/administration/permissions"
     },
     {
-      "id": "documents",
-      "title": "Documents",
-      "route": "/parametres/documents",
-      "hubStatus": "available",
-      "scope": "platform",
-      "status": "PLATEFORME_UNIQUEMENT",
-      "web": true,
-      "mobile": false,
-      "parity": false,
-      "roles": ["Superadmin"],
-      "permissions": ["view:bulletinDesign", "canDesignBulletins"],
-      "permissionRead": "Superadmin (bulletinDesign)",
-      "permissionCreate": "Superadmin (templates bulletin GrapesJS)",
-      "permissionUpdate": "Superadmin",
-      "permissionDelete": "selon API reportCardTemplates",
-      "mutations": true,
-      "apis": ["reportCardTemplatesApi", "BulletinGrapesEditor", "PDF preview"],
-      "postgres": true,
-      "prerequisites": ["Superadmin", "établissement/classe cibles"],
-      "dependencies": ["Notes/bulletins runtime"],
-      "limitations": [
-        "Hub Superadmin n'affiche PAS cette carte (SUPERADMIN_SETTING_PATHS)",
-        "Hub école : canReadView(bulletinDesign)=false",
-        "Livré : éditeur modèles bulletin + QR",
-        "Non livré dans cette carte : reçus, attestations, en-têtes établissement"
-      ],
-      "knownIssues": [
-        "TYPE A — promesse hub trop large",
-        "TYPE C — carte établissement alors que Superadmin only, et absente du hub Superadmin"
-      ],
-      "helpEligible": false,
-      "helpWriteEligible": false,
-      "verdict": ["PLATFORM_ONLY", "HOLD_HELP"],
-      "coherenceClass": "TYPE A"
-    },
-    {
-      "id": "bulletins-configuration",
-      "title": "Configuration bulletins",
-      "route": "/parametres/bulletins-configuration",
+      "id": "bulletins-catalogue",
+      "title": "Catalogue des bulletins",
+      "route": "/parametres/bulletins-catalogue",
       "hubStatus": "available",
       "scope": "platform",
       "status": "PLATEFORME_UNIQUEMENT",
@@ -311,25 +278,27 @@
       "parity": false,
       "roles": ["Superadmin"],
       "permissions": ["view:reportCardConfiguration", "canDesignBulletins", "REPORT_CARD_CONFIGURE"],
-      "permissionRead": "Superadmin (reportCardConfiguration)",
-      "permissionCreate": "NO_ACCESS (soumission établissement)",
-      "permissionUpdate": "Superadmin (revue / gabarit / activation LOT 6)",
-      "permissionDelete": "NO_ACCESS",
+      "permissionRead": "Superadmin (reportCardConfiguration) — modèles, aperçus fictifs, disponibilité, historique",
+      "permissionCreate": "NO_ACCESS (modèles définis par Somafrik)",
+      "permissionUpdate": "Superadmin (disponibilité par pays, confirmation explicite, audit)",
+      "permissionDelete": "NO_ACCESS (retrait d'un pays = non disponible, aucune révocation)",
       "mutations": true,
-      "apis": ["/api/report-card/admin/*"],
+      "apis": ["/api/report-card/catalog/admin", "/api/report-card/catalog/admin/models/:modelId/countries/:countryId", "/api/report-card/catalog/admin/audit"],
       "postgres": true,
-      "prerequisites": ["Superadmin", "école cible explicite"],
-      "dependencies": ["LOT 6 configuration", "LOT 1/2 versions existantes"],
+      "prerequisites": ["Superadmin", "migration 20261104_report_card_catalog appliquée manuellement (sinon 503 CATALOG_UNAVAILABLE)", "pays canoniques (countries)"],
+      "dependencies": ["LOT 6 configuration (activation côté établissement)", "moteur somafrik.report_card.v1 (aperçus)"],
       "limitations": [
-        "Pas une carte établissement",
-        "École soumet via /bulletins/modele, pas ce hub",
-        "Pas de mint QR ni recalcul"
+        "Aucun éditeur de gabarit : le Superadmin gère seulement la disponibilité par pays",
+        "Aucun accès aux élèves, notes ni bulletins",
+        "Configuration par l'établissement via /bulletins/modele, pas ce hub",
+        "Configuration par classe hors périmètre (BULLETIN-CATALOG-01)"
       ],
       "knownIssues": [],
       "helpEligible": false,
       "helpWriteEligible": false,
       "verdict": ["PLATFORM_ONLY", "HOLD_HELP"],
-      "coherenceClass": "TYPE E"
+      "coherenceClass": "TYPE E",
+      "replaces": ["/parametres/documents", "/parametres/bulletins-configuration"]
     },
     {
       "id": "securite",

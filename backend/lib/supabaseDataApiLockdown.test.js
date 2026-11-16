@@ -37,6 +37,7 @@ test("P0-1 : tables métier sensibles couvertes par le gate", () => {
     "audit_logs",
     "sessions",
     "mobile_push_devices",
+    "student_access_cards",
   ]) {
     assert.ok(SENSITIVE_BUSINESS_TABLES.includes(table), table);
   }

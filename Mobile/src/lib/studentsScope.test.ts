@@ -210,6 +210,19 @@ const thirteen = Array.from({ length: 13 }, (_, index) => student(index));
 }
 
 {
+  const leaked = thirteen.slice(0, 3);
+  for (const role of ["super_admin", "country_admin"] as const) {
+    const projection = projectScopedStudentsForSession(
+      { role, user: { schoolCode: "*" } },
+      leaked,
+    );
+    assert.equal(projection.received, 3, `${role} reçoit encore le payload brut`);
+    assert.equal(projection.kept, 0, `P1-04 ${role} ne projette aucun élève`);
+    assert.equal(projection.students.length, 0);
+  }
+}
+
+{
   const parent = {
     role: "parent_student",
     user: { id: "parent-1", schoolCode: LEFTOVER_A, children: [{ id: thirteen[0].id }] },

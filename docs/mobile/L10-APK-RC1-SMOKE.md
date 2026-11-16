@@ -21,7 +21,7 @@ Ce n’est **pas** :
 API obligatoire :
 
 ```text
-https://somafrik-api-preprod.onrender.com
+https://api-preprod.somafrik.app
 ```
 
 Identité APK :
@@ -66,7 +66,7 @@ Si un NO-GO est constaté : **stop terrain**, ticket P0/P1, pas de poursuite des
 2. `eas whoami` puis `eas project:info` (projectId `47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5`).
 3. `eas build --platform android --profile preview` — attendre **finished**.
 4. Télécharger l’APK, **désinstaller** toute `com.somafrik.app` (Play / autre signature), installer l’APK Preview (**Somafrik**).
-5. Confirmer le badge **Preview QA** et le texte login `API : https://somafrik-api-preprod.onrender.com/api`.
+5. Confirmer le badge **Preview QA** et le texte login `API : https://api-preprod.somafrik.app/api`.
 
 Interdit : `eas submit`, Play, PIN démo, comptes production.
 
@@ -157,7 +157,7 @@ Chaque action ci-dessous doit être **absente**, **lecture seule**, ou **refus e
 
 Pour chaque rôle, conserver :
 
-- capture login (badge + `API : https://somafrik-api-preprod.onrender.com/api`) ;
+- capture login (badge + `API : https://api-preprod.somafrik.app/api`) ;
 - capture Home après foreground ;
 - une liste hydratée ;
 - un write pédagogique réussi **vérifié** (réapparaît après kill/relaunch, ou visible Web préprod) ;

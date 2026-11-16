@@ -12,7 +12,7 @@ export function StudentDocumentsList({ documents }: StudentDocumentsListProps) {
     <Card className="p-6" data-testid="student-documents-list">
       <SectionHeader
         title="Liste des documents"
-        description="Pièces du dossier administratif, triées par priorité de traitement."
+        description="Pièces requises et documents déposés, triés par priorité de traitement."
       />
 
       {documents.length === 0 ? (

@@ -279,11 +279,13 @@ export function buildStudentWorkspaceOverview({
     matricule: student.matricule.trim() || null,
     gender: normalizeOptionalValue(person?.gender ?? student.gender),
     birthDate: normalizeOptionalValue(person?.birthDate ?? student.birthDate),
-    birthPlace: normalizeOptionalValue(person?.birthPlace),
-    nationality: normalizeOptionalValue(person?.nationality),
+    birthPlace: normalizeOptionalValue(
+      person?.birthPlace ?? String(student.birthPlace ?? ""),
+    ),
+    nationality: normalizeOptionalValue(person?.nationality ?? student.nationality),
     phone: normalizeOptionalValue(person?.phone ?? student.phone),
     email: normalizeOptionalValue(person?.email ?? student.email),
-    address: normalizeOptionalValue(person?.address),
+    address: normalizeOptionalValue(person?.address ?? student.address),
     enrollmentStatus: currentEnrollment?.status ?? null,
     enrollmentDate: normalizeOptionalValue(
       currentEnrollment?.enrolledAt ??

@@ -2,6 +2,7 @@
  * Helpers partagés pour les tests E2E API Somafrik.
  */
 const assert = require("assert");
+const { nonProductionFallbackPassword } = require("../backend/lib/superadminSeedSecret");
 
 const base = process.env.SOMAFRIK_API_URL || "http://127.0.0.1:5000/api";
 
@@ -468,8 +469,8 @@ const ADMIN_PASSWORD =
 const E2E_PARENT_PIN = process.env.SOMAFRIK_E2E_PARENT_PIN || "847392";
 const E2E_TEACHER_PIN = process.env.SOMAFRIK_E2E_TEACHER_PIN || "529481";
 const E2E_WRONG_PIN = process.env.SOMAFRIK_E2E_WRONG_PIN || "638274";
-/** Mots de passe connus des jeux de données locaux (seed, wipe --bootstrap, E2E). */
-const KNOWN_SUPERADMIN_PASSWORDS = ["1234", "E2eTest!2026", "change-me-now"];
+/** Mots de passe connus des jeux de données locaux (seed non-prod, E2E). 1234 n'est plus accepté pour Superadmin. */
+const KNOWN_SUPERADMIN_PASSWORDS = [nonProductionFallbackPassword(), "E2eTest!2026"];
 
 async function setupActiveSchool(superToken, stamp) {
   const schoolName = `E2E School ${stamp}`;

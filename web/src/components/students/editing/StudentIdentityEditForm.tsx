@@ -154,7 +154,8 @@ export function StudentIdentityEditForm({
         />
       </div>
       <p className="sm:col-span-2 text-xs text-muted">
-        Matricule et identifiant non modifiables.
+        Matricule et identifiant non modifiables. Téléphone et e-mail sont les
+        coordonnées parent enregistrées en base.
       </p>
     </form>
   );
@@ -171,6 +172,7 @@ function Field({
   date = false,
   required,
   autoFocus,
+  hint,
 }: {
   id: string;
   label: string;
@@ -182,6 +184,7 @@ function Field({
   date?: boolean;
   required?: boolean;
   autoFocus?: boolean;
+  hint?: string;
 }) {
   return (
     <div>
@@ -222,6 +225,8 @@ function Field({
         <p id={`${id}-error`} className="mt-1 text-xs text-danger" role="alert">
           {error}
         </p>
+      ) : hint ? (
+        <p className="mt-1 text-xs text-muted">{hint}</p>
       ) : null}
     </div>
   );

@@ -15,6 +15,8 @@ const {
 const { createReportCardConfiguration } = require("./reportCard/reportCardConfiguration");
 const { createReportCardPublication } = require("./reportCard/reportCardPublication");
 const { createReportCardInitialPublication } = require("./reportCard/reportCardInitialPublication");
+const { createReportCardClassPublication } = require("./reportCard/reportCardClassPublication");
+const { createSubjectHierarchyPgStore } = require("../db/subjectHierarchyPgStore");
 const { createReportCardSourceArtifact } = require("./reportCard/reportCardSourceArtifact");
 const { createDiskSourceStorage } = require("./reportCard/reportCardSourceStorage");
 const { createReportCardSourceArtifactPgStore } = require("../db/reportCardSourceArtifactPgStore");
@@ -224,7 +226,56 @@ function createReportCardHttpRuntime(repository, env = process.env, overrides = 
     });
   }
 
-  return { configuration, publication, getFacts, getProfile, getSchema, factsStore, publishInitial, sourceArtifact };
+  // BULLETIN-CLASSE-01 / L3 — identité de l'établissement (en-tête, logo figé).
+  const identityStore =
+    overrides.identityStore ||
+    (db ? require("../db/reportCardOfficialIdentityStore").createReportCardOfficialIdentityStore(db.pool || db) : null);
+
+  const classPublication =
+    overrides.classPublication ||
+    (publication && factsStore && db
+      ? createReportCardClassPublication({
+          publication,
+          factsStore,
+          configuration,
+          catalogStore: overrides.catalogStore || createSubjectHierarchyPgStore(db.pool || db),
+          identityStore,
+        })
+      : null);
+
+  // BULLETIN-UI-01 — libellés d'affichage, bornés à l'établissement du bulletin.
+  const labelsStore =
+    overrides.labelsStore || (db ? require("../db/reportCardPresentationLabelsStore").createReportCardPresentationLabelsPgStore(db.pool || db) : null);
+  async function getPresentationLabels(args = {}) {
+    if (!labelsStore) return {};
+    return labelsStore.getLabels(args);
+  }
+
+  // BULLETIN-CATALOG-01 — catalogue (tables créées par migration explicite, jamais au démarrage).
+  const catalog =
+    overrides.catalog ||
+    (db
+      ? require("./reportCard/reportCardCatalog").createReportCardCatalog({
+          store: overrides.reportCardCatalogStore || require("../db/reportCardCatalogPgStore").createReportCardCatalogPgStore(db.pool || db),
+          configuration,
+          identityStore,
+        })
+      : null);
+
+  return {
+    catalog,
+    identityStore,
+    configuration,
+    publication,
+    getFacts,
+    getProfile,
+    getSchema,
+    factsStore,
+    publishInitial,
+    sourceArtifact,
+    classPublication,
+    getPresentationLabels,
+  };
 }
 
 function createReportCardHttpBindings({
@@ -267,6 +318,11 @@ function createReportCardHttpBindings({
     getSchema: (args) => getRuntime().getSchema && getRuntime().getSchema(args),
     getSourceArtifact: () => getRuntime().sourceArtifact,
     publishInitial: (args) => getRuntime().publishInitial(args),
+    getClassPublication: () => getRuntime().classPublication,
+    getCatalog: () => getRuntime().catalog,
+    getIdentityStore: () => getRuntime().identityStore,
+    getPresentationLabels: (args) =>
+      getRuntime().getPresentationLabels ? getRuntime().getPresentationLabels(args) : {},
     resolveActor,
     resolveSchoolId,
     internalAuth,

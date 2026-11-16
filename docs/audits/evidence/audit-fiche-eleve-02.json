@@ -1,0 +1,245 @@
+{
+  "meta": {
+    "audit": "AUDIT-FICHE-ELEVE-02",
+    "complement": "AUDIT-FICHE-ELEVE-02B in audit-fiche-eleve-02b.json replays Express HTTP and the browser. The notProven list below applies only to this repository probe.",
+    "baseSha": "72aea41b15f234afc867530f6728a3a239d1914f",
+    "database": "somafrik_p0_data_api_it",
+    "databaseUrlHost": "127.0.0.1:5432",
+    "method": "Production buildIdentityPatchPayload (esbuild of web/src/lib/studentIdentityHttp.ts) + production createClassStudentsRepository.updateByStudentCode/getByStudentCode against real PostgreSQL. Fixture student inserted then deleted.",
+    "notProven": [
+      "No authenticated browser session",
+      "No Network panel capture of a real click",
+      "Express route PATCH/GET not invoked (no JWT)",
+      "React fiche reload not observed"
+    ],
+    "fixtureCleanup": {
+      "leftoverStudents": 0,
+      "leftoverSchools": 0,
+      "leftoverCountries": 0
+    },
+    "schoolCode": "AUDIT-F2",
+    "studentCode": "AUDIT-F2-ELEVE",
+    "role": "none — repository called directly, RBAC middleware not replayed"
+  },
+  "scenarios": [
+    {
+      "id": "F2-01-payload-builder",
+      "built": {
+        "ok": true,
+        "payload": {
+          "expectedUpdatedAt": "2026-08-25T16:21:38.644Z",
+          "firstName": "Awa",
+          "lastName": "Diallo",
+          "gender": "Féminin",
+          "birthDate": "2012-04-12",
+          "birthPlace": "Kinshasa",
+          "parentPhone": "+243811111111",
+          "parentEmail": "awa@test.local"
+        }
+      },
+      "addressInPayload": false,
+      "nationalityInPayload": false,
+      "preferredNameInPayload": false
+    },
+    {
+      "id": "F2-01-phone-plus-dropped-fields",
+      "payload": {
+        "expectedUpdatedAt": "2026-08-25T16:21:38.644Z",
+        "firstName": "Awa",
+        "lastName": "Diallo",
+        "gender": "Féminin",
+        "birthDate": "2012-04-12",
+        "birthPlace": "Kinshasa",
+        "parentPhone": "+243811111111",
+        "parentEmail": "awa@test.local"
+      },
+      "repositoryReturn": {
+        "parentPhone": "+243811111111",
+        "firstName": "Awa",
+        "gender": "Féminin",
+        "birthDate": "12-04-2012",
+        "updatedAt": "2026-10-09T21:03:21.251Z"
+      },
+      "sqlAfter": {
+        "id": "a79ec00a-5804-4046-a2dd-49152be564c7",
+        "student_code": "AUDIT-F2-ELEVE",
+        "first_name": "Awa",
+        "last_name": "Diallo",
+        "gender": "Féminin",
+        "birth_date": "2012-04-12",
+        "birth_place": "Kinshasa",
+        "parent_phone": "+243811111111",
+        "parent_email": "awa@test.local",
+        "updated_at": "2026-10-09T21:03:21.251Z",
+        "updated_at_text": "2026-10-09 21:03:21.251+00"
+      },
+      "getAfter": {
+        "parentPhone": "+243811111111",
+        "gender": "Féminin",
+        "birthDate": "12-04-2012",
+        "parentEmail": "awa@test.local",
+        "updatedAt": "2026-10-09T21:03:21.251Z"
+      },
+      "rowWritten": true
+    },
+    {
+      "id": "F2-02-four-fields",
+      "payload": {
+        "expectedUpdatedAt": "2026-10-09T21:03:21.251Z",
+        "firstName": "Awa",
+        "lastName": "Diallo",
+        "gender": "Masculin",
+        "birthDate": "2015-03-15",
+        "birthPlace": "Kinshasa",
+        "parentPhone": "+243822222222",
+        "parentEmail": "nouveau@test.local"
+      },
+      "sqlAfter": {
+        "id": "a79ec00a-5804-4046-a2dd-49152be564c7",
+        "student_code": "AUDIT-F2-ELEVE",
+        "first_name": "Awa",
+        "last_name": "Diallo",
+        "gender": "Masculin",
+        "birth_date": "2015-03-15",
+        "birth_place": "Kinshasa",
+        "parent_phone": "+243822222222",
+        "parent_email": "nouveau@test.local",
+        "updated_at": "2026-10-09T21:03:21.270Z",
+        "updated_at_text": "2026-10-09 21:03:21.27+00"
+      },
+      "getAfter": {
+        "parentPhone": "+243822222222",
+        "parentEmail": "nouveau@test.local",
+        "gender": "Masculin",
+        "birthDate": "15-03-2015",
+        "firstName": "Awa",
+        "updatedAt": "2026-10-09T21:03:21.270Z"
+      },
+      "repositoryBirthDate": "15-03-2015"
+    },
+    {
+      "id": "F2-03-second-save",
+      "tokenUsed": "2026-10-09T21:03:21.270Z",
+      "payload": {
+        "expectedUpdatedAt": "2026-10-09T21:03:21.270Z",
+        "firstName": "Amina"
+      },
+      "sqlFirstName": "Amina",
+      "sqlPhone": "+243822222222",
+      "sqlUpdatedAt": "2026-10-09 21:03:21.289+00",
+      "returnedFirstName": "Amina",
+      "tokenAdvanced": true
+    },
+    {
+      "id": "uuid-vs-student-code",
+      "studentUuid": "a79ec00a-5804-4046-a2dd-49152be564c7",
+      "patchByUuid": {
+        "status": 404,
+        "message": "Élève introuvable."
+      },
+      "getByUuidFirstName": "Amina"
+    },
+    {
+      "id": "expectedUpdatedAt-microseconds-644600",
+      "stored": "2026-08-25 16:21:38.644600+00",
+      "jsonToken": "2026-08-25T16:21:38.644Z",
+      "dateIso": "2026-08-25T16:21:38.644Z",
+      "result": {
+        "ok": true,
+        "phone": "+243833333333",
+        "token": "2026-08-25T16:21:38.644Z"
+      },
+      "sqlAfter": {
+        "id": "a79ec00a-5804-4046-a2dd-49152be564c7",
+        "student_code": "AUDIT-F2-ELEVE",
+        "first_name": "Amina",
+        "last_name": "Diallo",
+        "gender": "Masculin",
+        "birth_date": "2015-03-15",
+        "birth_place": "Kinshasa",
+        "parent_phone": "+243833333333",
+        "parent_email": "nouveau@test.local",
+        "updated_at": "2026-10-09T21:03:21.316Z",
+        "updated_at_text": "2026-10-09 21:03:21.316+00"
+      }
+    }
+  ],
+  "sqlWrites": [
+    {
+      "rowCount": 1,
+      "command": "UPDATE",
+      "sql": "UPDATE students SET updated_at = TIMESTAMPTZ '2026-08-25 16:21:38.644244+00' WHERE student_code = $1"
+    },
+    {
+      "rowCount": 1,
+      "command": "UPDATE",
+      "sql": "UPDATE students SET first_name = $1, last_name = $2, gender = $3, birth_date = $4, birth_place = $5, parent_phone = $6, parent_email = $7, updated_at = GREATEST( date_trunc('milliseconds', clock_timestamp()), date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond' ) WHERE id = $8 AND school_id = $9 AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $10::timestamptz) "
+    },
+    {
+      "rowCount": 1,
+      "command": "UPDATE",
+      "sql": "UPDATE students SET first_name = $1, last_name = $2, gender = $3, birth_date = $4, birth_place = $5, parent_phone = $6, parent_email = $7, updated_at = GREATEST( date_trunc('milliseconds', clock_timestamp()), date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond' ) WHERE id = $8 AND school_id = $9 AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $10::timestamptz) "
+    },
+    {
+      "rowCount": 1,
+      "command": "UPDATE",
+      "sql": "UPDATE students SET first_name = $1, last_name = $2, gender = $3, birth_date = $4, birth_place = $5, parent_phone = $6, parent_email = $7, updated_at = GREATEST( date_trunc('milliseconds', clock_timestamp()), date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond' ) WHERE id = $8 AND school_id = $9 AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $10::timestamptz) "
+    },
+    {
+      "rowCount": 1,
+      "command": "UPDATE",
+      "sql": "UPDATE students SET updated_at = TIMESTAMPTZ '2026-08-25 16:21:38.644600+00' WHERE student_code = $1"
+    },
+    {
+      "rowCount": 1,
+      "command": "UPDATE",
+      "sql": "UPDATE students SET first_name = $1, last_name = $2, gender = $3, birth_date = $4, birth_place = $5, parent_phone = $6, parent_email = $7, updated_at = GREATEST( date_trunc('milliseconds', clock_timestamp()), date_trunc('milliseconds', updated_at) + INTERVAL '1 millisecond' ) WHERE id = $8 AND school_id = $9 AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $10::timestamptz) "
+    }
+  ],
+  "studentsColumns": [
+    "id",
+    "school_id",
+    "student_code",
+    "first_name",
+    "last_name",
+    "gender",
+    "birth_date",
+    "birth_place",
+    "photo_url",
+    "parent_phone",
+    "parent_email",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  "studentsTriggers": [],
+  "before": {
+    "sql": {
+      "id": "a79ec00a-5804-4046-a2dd-49152be564c7",
+      "student_code": "AUDIT-F2-ELEVE",
+      "first_name": "Awa",
+      "last_name": "Diallo",
+      "gender": "Féminin",
+      "birth_date": "2012-04-12",
+      "birth_place": "Kinshasa",
+      "parent_phone": "+243800000001",
+      "parent_email": "awa@test.local",
+      "updated_at": "2026-08-25T16:21:38.644Z",
+      "updated_at_text": "2026-08-25 16:21:38.644244+00"
+    },
+    "get": {
+      "studentCode": "AUDIT-F2-ELEVE",
+      "id": "AUDIT-F2-ELEVE",
+      "firstName": "Awa",
+      "lastName": "Diallo",
+      "gender": "Féminin",
+      "birthDate": "12-04-2012",
+      "birthPlace": "Kinshasa",
+      "parentPhone": "+243800000001",
+      "parentEmail": "awa@test.local",
+      "updatedAt": "2026-08-25T16:21:38.644Z",
+      "updatedAtType": "Date"
+    },
+    "jsonToken": "2026-08-25T16:21:38.644Z"
+  }
+}

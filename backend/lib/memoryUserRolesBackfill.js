@@ -65,6 +65,17 @@ function hasActiveRole(tables, userId, schoolId, roleKey) {
   );
 }
 
+/** SEC-RBAC-REVOKE-01 — même règle que PostgreSQL : une révocation explicite n'est jamais renversée. */
+function hasRevokedRole(tables, userId, schoolId, roleKey) {
+  return (tables.userRoles ?? []).some(
+    (row) =>
+      String(row.user_id ?? "") === userId &&
+      String(row.school_id ?? "") === schoolId &&
+      String(row.role_key ?? "").toUpperCase() === String(roleKey).toUpperCase() &&
+      row.status === "revoked",
+  );
+}
+
 /**
  * Miroir mémoire du backfill PostgreSQL `user_roles` depuis `users.role`.
  * Uniquement les comptes seed rattachés à un établissement (pas `schoolCode=*`).
@@ -91,6 +102,9 @@ function backfillMemoryUserRolesFromSeedAccounts(tables, userAccounts = []) {
     const linked = findCanonicalLinkedStudent(tables.students, userId);
     for (const roleKey of roleKeysFromAccount(user)) {
       if (hasActiveRole(tables, userId, schoolId, roleKey)) {
+        continue;
+      }
+      if (hasRevokedRole(tables, userId, schoolId, roleKey)) {
         continue;
       }
       if (linked && roleKey !== "STUDENT") {

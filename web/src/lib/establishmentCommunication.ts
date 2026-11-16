@@ -7,14 +7,13 @@ const PARENT_STUDENT_ROLES = new Set(["parent", "eleve / etudiant", "eleve", "et
 export type CommunicationView = "messages" | "notifications" | "announcements";
 
 export const PLATFORM_COMMUNICATION_VIEWS = new Set<CommunicationView>([
-  "messages",
   "notifications",
   "announcements",
 ]);
 
-const PLATFORM_COMMUNICATION_FEATURES = new Set(["Messages", "Notifications"]);
+const PLATFORM_COMMUNICATION_FEATURES = new Set(["Notifications"]);
 
-/** Super Admin / Admin Pays : notifications système, messages et annonces plateforme. */
+/** Super Admin / Admin Pays : notifications système et annonces plateforme, pas les messages scolaires. */
 export function isPlatformCommunicationUser(ctx: PermissionContext): boolean {
   const role = ctx.user?.role;
   if (!role) return false;

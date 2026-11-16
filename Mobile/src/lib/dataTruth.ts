@@ -3,6 +3,7 @@
  * PostgreSQL/API = autorité. Jamais [] pour masquer une erreur. Jamais catalog.ts en SoT métier.
  */
 import { isRecognizedTransportFailure } from "./connectivity";
+import { financeScreenFeeLabel } from "./financeObligationStatus";
 
 export type ResourceStatus = "idle" | "loading" | "success" | "empty" | "error" | "offline";
 
@@ -15,6 +16,12 @@ export type ResourceSnapshot<T> = {
   /** Provenance. `l1-cache` + empty = vide métier confirmé ; `offline` = cache indisponible. */
   source?: ResourceSnapshotSource;
   cachedAt?: string | null;
+  /** PERF-PR5 — copie L1 affichée pendant qu'une actualisation réseau est en cours. */
+  refreshing?: boolean;
+  /** PERF-PR5 — actualisation réseau impossible (délai, réseau, serveur injoignable) : dernière copie L1. */
+  refreshFailed?: boolean;
+  /** PERF-PR5 — refus d'accès (401/403) : aucune copie locale ne doit rester affichée. */
+  accessDenied?: boolean;
 };
 
 export function unwrapList(payload: unknown): unknown[] {
@@ -299,11 +306,11 @@ export function paymentItemCount(payment: CanonicalPayment): number {
 }
 
 export function paymentItemsDetail(payment: CanonicalPayment): string {
-  if (payment.itemsDetail) return payment.itemsDetail;
+  if (payment.itemsDetail) return financeScreenFeeLabel(payment.itemsDetail) || payment.itemsDetail;
   const count = paymentItemCount(payment);
   if (count <= 1) {
     const items = paymentItems(payment);
-    return items[0]?.feeLabel || items[0]?.feeType || payment.feeType || "1 libellé";
+    return financeScreenFeeLabel(items[0]?.feeLabel || items[0]?.feeType || payment.feeType) || "1 libellé";
   }
   return `${count} libellés`;
 }
@@ -328,7 +335,7 @@ export function isCancelledStatus(status?: string): boolean {
 }
 
 export function paymentStatusLabel(status?: string): string {
-  if (isUnallocatedStatus(status)) return "Non imputé";
+  if (isUnallocatedStatus(status)) return "Non affecté";
   if (isPaidStatus(status)) return "Payé";
   const value = String(status ?? "").trim();
   if (/attente|pending/i.test(value)) return "En attente";

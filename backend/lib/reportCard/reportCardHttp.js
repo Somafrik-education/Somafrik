@@ -1,5 +1,7 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 /**
  * LOT 7 — HTTP établissement / Superadmin / verify public.
  * Consomme LOT 6 (configuration) et LOT 4 (lookupPublic). Aucun mint, aucun recalcul.
@@ -8,6 +10,7 @@
 const express = require("express");
 const { VERIFY_HEADERS } = require("../../contracts/reportCard/contract");
 const { toPublicArtifact } = require("./reportCardSourceArtifact");
+const { buildStudentPresentation, hasSubjectTotals } = require("./reportCardPresentation");
 
 const PERM_CONFIGURE = "REPORT_CARD_CONFIGURE";
 const PERM_APPROVE = "REPORT_CARD_SCHOOL_APPROVE_TEMPLATE";
@@ -15,6 +18,8 @@ const PERM_READ = "REPORT_CARD_READ";
 const PERM_REPRINT = "REPORT_CARD_REPRINT";
 const PERM_CORRECT = "REPORT_CARD_CORRECT";
 const PERM_REVOKE = "REPORT_CARD_REVOKE";
+const PERM_GENERATE = "REPORT_CARD_GENERATE";
+const PERM_PUBLISH = "REPORT_CARD_PUBLISH";
 const VERIFICATION_ACTIVE = "ACTIVE";
 const HISTORICAL_STATUSES = new Set(["ACTIVE", "SUPERSEDED", "REVOKED"]);
 
@@ -41,7 +46,49 @@ const HTTP_STATUS = Object.freeze({
   MAPPING_REQUIRED: 409,
   STORAGE_UNAVAILABLE: 503,
   ARTIFACT_NOT_FOUND: 404,
+  // BULLETIN-PUBLISH-01
+  REPORT_CARD_INCOMPLETE: 422,
+  REISSUE_UNAVAILABLE: 503,
+  REISSUE_SOURCE_NOT_ACTIVE: 409,
+  REISSUE_SOURCE_INVALID: 409,
+  REISSUE_SCOPE_MISMATCH: 409,
+  REISSUE_STUDENT_MISMATCH: 409,
+  REISSUE_GRADES_CHANGED: 409,
+  REISSUE_TEMPLATE_MISSING: 409,
+  REISSUE_HEADER_MISSING: 409,
+  REISSUE_REASON_REQUIRED: 400,
+  REISSUE_COMMAND_REQUIRED: 400,
+  REISSUE_COMMAND_CONFLICT: 409,
+  INVALID_PEDAGOGICAL_DATA: 422,
+  PROFILE_NOT_PUBLISHABLE: 422,
+  INVALID_PERIOD_SCOPE: 400,
+  CLASS_REQUIRED: 400,
+  MODEL_KEY_REQUIRED: 400,
+  DRAFT_CONFIRMATION_REQUIRED: 400,
+  DRAFT_CHANGED: 409,
+  PUBLICATION_ALREADY_EXISTS: 409,
+  MODEL_NOT_BOUND: 409,
+  CLASS_NOT_FOUND: 404,
+  CLASS_SCOPE_INVALID: 400,
+  CLASS_SCOPE_UNAVAILABLE: 503,
+  OFFICIAL_IDENTITY_UNAVAILABLE: 503,
+  OFFICIAL_ASSETS_UNAVAILABLE: 503,
+  OFFICIAL_ASSET_INTEGRITY: 500,
+  // BULLETIN-CATALOG-01
+  CONFIGURATION_INVALID: 422,
+  CATALOG_MODEL_UNKNOWN: 404,
+  CATALOG_MODEL_NOT_AVAILABLE: 403,
+  CATALOG_MODEL_RETIRED: 409,
+  CATALOG_MODEL_REQUIRED: 400,
+  CATALOG_CONFIGURATION_REQUIRED: 409,
+  CATALOG_UNAVAILABLE: 503,
+  COUNTRY_UNKNOWN: 409,
+  CONFIRMATION_REQUIRED: 400,
+  AVAILABILITY_INVALID: 400,
 });
+
+/** Codes dont le détail (anomalies pédagogiques, sans donnée nominative) est renvoyé au demandeur habilité. */
+const DETAILED_CODES = new Set(["REPORT_CARD_INCOMPLETE", "INVALID_PEDAGOGICAL_DATA", "PUBLICATION_ALREADY_EXISTS", "CONFIGURATION_INVALID"]);
 
 function parseCapability(value) {
   if (typeof value !== "string") return null;
@@ -192,9 +239,11 @@ function mapError(err) {
   if (err && (!err.code || /^[0-9A-Z]{5}$/.test(String(err.code))) && !HTTP_STATUS[code]) {
     console.error("[report-card] unmapped error", code, err.message || err);
   }
+  const body = { ok: false, code, error: { code } };
+  if (DETAILED_CODES.has(code) && Array.isArray(err.details)) body.details = err.details;
   return {
     status: HTTP_STATUS[code] || 400,
-    body: { ok: false, code, error: { code } },
+    body,
   };
 }
 
@@ -230,7 +279,7 @@ function requestedSchoolId(req) {
   return req.body?.schoolId || req.query?.schoolId || req.query?.school_id || null;
 }
 
-async function handleVerify(req, res, { publication, logger }) {
+async function handleVerify(req, res, { publication, logger, officialPresentation }) {
   applyVerifyHeaders(res);
   const raw =
     typeof req.body?.capability === "string"
@@ -265,10 +314,15 @@ async function handleVerify(req, res, { publication, logger }) {
     if (!verification_status) {
       return res.status(409).json({ ok: false, reason: "not_verifiable" });
     }
+    // Render strictly from the verified signed snapshot, never live grades.
+    const display = typeof officialPresentation === "function"
+      ? await officialPresentation(result.payload, verification_status)
+      : {};
     return res.status(200).json({
       ok: true,
       payload: result.payload,
       verification_status,
+      ...display,
     });
   } catch (err) {
     return res.status(409).json({ ok: false, reason: err.code || "not_verifiable" });
@@ -299,7 +353,72 @@ function registerReportCardHttp(app, deps = {}) {
         deps.correction ||
         (typeof deps.getCorrection === "function" ? deps.getCorrection() : null) ||
         (publication ? getOrCreateCorrection(publication) : null),
+      classPublication: classPublicationService(),
     };
+  }
+
+  /**
+   * BULLETIN-UI-01 — présentation par matières d'un payload (snapshot publié ou
+   * brouillon). Lecture seule : résultats du moteur + profil ÉPINGLÉ par la
+   * provenance + libellés de l'établissement du bulletin. null quand le payload
+   * n'a pas de totaux par matière (bulletins historiques : rendu générique).
+   */
+  function identityStore() {
+    return deps.identityStore || (typeof deps.getIdentityStore === "function" ? deps.getIdentityStore() : null);
+  }
+
+  /** Octets du logo figé (empreinte vérifiée), ou null si le bulletin n'en a pas. */
+  async function frozenLogo(schoolId, payload) {
+    const sha = payload && payload.official_identity ? payload.official_identity.logo_sha256 : null;
+    if (!sha) return null;
+    const store = identityStore();
+    if (!store) throw coded("OFFICIAL_ASSETS_UNAVAILABLE");
+    const logo = await store.getLogo(schoolId, sha);
+    if (!logo) return null;
+    const actual = crypto.createHash("sha256").update(logo.bytes).digest("hex");
+    if (actual !== sha) throw coded("OFFICIAL_ASSET_INTEGRITY");
+    return logo;
+  }
+
+  async function presentationFor({ payload, schoolId, template, meta }) {
+    if (!hasSubjectTotals(payload)) return null;
+    const getProfile = typeof deps.getProfile === "function" ? deps.getProfile : null;
+    const ref = payload.provenance && payload.provenance.profile;
+    if (!getProfile || !ref) return null;
+    const tenant = { schoolId, actorSchoolId: schoolId };
+    const found = await Promise.resolve(getProfile({ tenant, ref }));
+    const profile = found && Array.isArray(found.subjects) ? found : found && found.spec;
+    if (!profile || !Array.isArray(profile.subjects)) return null;
+    const students = payload.students;
+    const subjectCodes = new Set();
+    for (const student of students) for (const row of student.subject_totals.rows) subjectCodes.add(row.subject_id);
+    const getLabels = typeof deps.getPresentationLabels === "function" ? deps.getPresentationLabels : null;
+    const labels = getLabels
+      ? (await Promise.resolve(
+          getLabels({
+            schoolId,
+            classId: payload.class_id,
+            academicYearId: payload.academic_year_id,
+            subjectCodes: [...subjectCodes],
+            studentCodes: students.map((student) => student.student_id),
+          })
+        )) || {}
+      : {};
+    const presentation = (template && template.presentation) || {};
+    return students.map((student) =>
+      buildStudentPresentation({
+        student,
+        profile,
+        labels,
+        presentation,
+        meta: { ...meta, period_scope: payload.period_scope ?? null },
+        identity: payload.official_identity || null,
+      })
+    );
+  }
+
+  function classPublicationService() {
+    return deps.classPublication || (typeof deps.getClassPublication === "function" ? deps.getClassPublication() : null);
   }
 
   function requireSourceArtifact() {
@@ -329,6 +448,11 @@ function registerReportCardHttp(app, deps = {}) {
       getFacts: typeof deps.getFacts === "function" ? deps.getFacts : null,
       getProfile: typeof deps.getProfile === "function" ? deps.getProfile : null,
       getSchema: typeof deps.getSchema === "function" ? deps.getSchema : null,
+      recomputeSubjectStudent: (args) => {
+        const service = classPublicationService();
+        if (!service || typeof service.recomputeStudent !== "function") throw coded("FACTS_REQUIRED");
+        return service.recomputeStudent(args);
+      },
     });
     cachedCorrectionPublication = publication;
     return cachedCorrection;
@@ -357,9 +481,141 @@ function registerReportCardHttp(app, deps = {}) {
     return resolved;
   }
 
+  // -------------------------------------------------------------------------
+  // BULLETIN-CATALOG-01 — catalogue des modèles et disponibilité par pays.
+  // Superadmin : modèles, pays, disponibilité, historique (aucune donnée d'élève).
+  // Établissement : modèles autorisés dans SON pays (serveur), configuration, activation.
+  // -------------------------------------------------------------------------
+  function catalogService() {
+    const catalog = deps.catalog || (typeof deps.getCatalog === "function" ? deps.getCatalog() : null);
+    if (!catalog) throw coded("CATALOG_UNAVAILABLE");
+    return catalog;
+  }
+
+  app.get(
+    "/api/report-card/catalog/admin",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, ...(await catalogService().adminOverview({ actor })) });
+    })
+  );
+
+  app.put(
+    "/api/report-card/catalog/admin/models/:modelId/countries/:countryId",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const result = await catalogService().setAvailability({
+        actor,
+        modelId: req.params.modelId,
+        countryId: req.params.countryId,
+        available: req.body?.available,
+        confirm: req.body?.confirm,
+      });
+      res.json({ ok: true, ...result });
+    })
+  );
+
+  app.get(
+    "/api/report-card/catalog/admin/audit",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const audit = await catalogService().adminAudit({ actor, modelId: req.query?.modelId });
+      res.json({ ok: true, audit });
+    })
+  );
+
+  app.get(
+    "/api/report-card/catalog",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, ...(await catalogService().schoolCatalog({ actor, classId: req.query?.classId })) });
+    })
+  );
+
+  app.get(
+    "/api/report-card/catalog/models/:modelId/configuration",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, ...(await catalogService().configurationContext({ actor, modelId: req.params.modelId, classId: req.query?.classId })) });
+    })
+  );
+
+  app.post(
+    "/api/report-card/catalog/models/:modelId/preview",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const preview = await catalogService().preview({ actor, modelId: req.params.modelId, input: req.body?.input, classId: req.body?.classId });
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, preview });
+    })
+  );
+
+  app.put(
+    "/api/report-card/catalog/models/:modelId/configuration",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      res.json({ ok: true, ...(await catalogService().save({ actor, modelId: req.params.modelId, input: req.body?.input, classId: req.body?.classId })) });
+    })
+  );
+
+  app.post(
+    "/api/report-card/catalog/models/:modelId/activate",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const result = await catalogService().activate({
+        actor,
+        modelId: req.params.modelId,
+        confirm: req.body?.confirm,
+        commandId: req.body?.commandId,
+        classId: req.body?.classId,
+      });
+      res.json({ ok: true, ...result });
+    })
+  );
+
   app.post("/api/public/report-cards/verify", (req, res) => {
-    const { publication } = services();
-    return handleVerify(req, res, { publication, logger });
+    const { publication, getTemplate } = services();
+    return handleVerify(req, res, {
+      publication,
+      logger,
+      async officialPresentation(payload, verificationStatus) {
+        const schoolId = payload.school_id;
+        if (!schoolId || !hasSubjectTotals(payload)) return { presentation: null };
+        const template = await resolvePublishedTemplate(payload, schoolId, getTemplate);
+        const presentation = await presentationFor({
+          payload,
+          schoolId,
+          template,
+          meta: {
+            official: true,
+            report_card_id: payload.report_card_id,
+            version: payload.published_snapshot_version,
+            published_at: payload.published_at,
+            verification_status: verificationStatus,
+          },
+        });
+        if (!presentation) return { presentation: null };
+        const hasLogo = presentation.some((view) => view.header && view.header.logo);
+        const logo = hasLogo ? await frozenLogo(schoolId, payload) : null;
+        if (hasLogo && !logo) throw coded("OFFICIAL_ASSETS_UNAVAILABLE");
+        if (logo && !["image/png", "image/jpeg"].includes(logo.media_type)) throw coded("OFFICIAL_ASSET_INTEGRITY");
+        return {
+          presentation,
+          ...(logo ? { logo_data_uri: `data:${logo.media_type};base64,${Buffer.from(logo.bytes).toString("base64")}` } : {}),
+        };
+      },
+    });
   });
 
   app.get(
@@ -591,12 +847,21 @@ function registerReportCardHttp(app, deps = {}) {
         requireActive: false,
       });
       assertPdfQrScopeSafe(unscopedPayload, actor);
+      const presentation = await presentationFor({
+        payload,
+        schoolId,
+        template,
+        meta: { official: true, report_card_id: req.params.reportCardId, version, published_at: payload.published_at },
+      });
+      const logo = presentation ? await frozenLogo(schoolId, payload) : null;
       const rendered = await pdf.render({
         tenant,
         reportCardId: req.params.reportCardId,
         version,
         renderingTemplate: template,
         payload,
+        ...(presentation ? { presentation } : {}),
+        ...(logo ? { logoDataUri: `data:${logo.media_type};base64,${Buffer.from(logo.bytes).toString("base64")}` } : {}),
       });
       res.setHeader("Content-Type", "application/pdf");
       res.send(rendered.pdf);
@@ -621,6 +886,67 @@ function registerReportCardHttp(app, deps = {}) {
         getTemplate,
       });
       res.json({ ok: true, payload, template });
+    })
+  );
+
+  // BULLETIN-UI-01 — bulletin publié présenté par matières (lecture du snapshot figé).
+  app.get(
+    "/api/report-card/publications/:reportCardId/presentation",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_READ);
+      const { publication, getTemplate } = services();
+      const version = Number(req.query.version);
+      const { payload, template, record } = await consultPublishedSnapshot({
+        publication,
+        actor,
+        schoolId,
+        reportCardId: req.params.reportCardId,
+        version,
+        getTemplate,
+        requireActive: false,
+      });
+      const presentation = await presentationFor({
+        payload,
+        schoolId,
+        template,
+        meta: {
+          official: true,
+          report_card_id: req.params.reportCardId,
+          version,
+          published_at: payload.published_at,
+          verification_status: record.verification_status,
+        },
+      });
+      res.json({ ok: true, verification_status: record.verification_status, presentation });
+    })
+  );
+
+  // BULLETIN-CLASSE-01 / L3 — logo FIGÉ d'un bulletin publié (empreinte du contenu signé).
+  app.get(
+    "/api/report-card/publications/:reportCardId/logo",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_READ);
+      const { publication, getTemplate } = services();
+      const { payload } = await consultPublishedSnapshot({
+        publication,
+        actor,
+        schoolId,
+        reportCardId: req.params.reportCardId,
+        version: Number(req.query.version),
+        getTemplate,
+        requireActive: false,
+      });
+      const logo = await frozenLogo(schoolId, payload);
+      if (!logo) throw coded("REQUEST_NOT_FOUND");
+      res.setHeader("Content-Type", logo.media_type);
+      res.setHeader("Cache-Control", "private, max-age=86400, immutable");
+      res.send(logo.bytes);
     })
   );
 
@@ -689,6 +1015,113 @@ function registerReportCardHttp(app, deps = {}) {
         requireActive: false,
       });
       res.json({ ok: true, payload, template });
+    })
+  );
+
+  function classPublicationArgs(actor, schoolId, body = {}) {
+    return {
+      tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+      actor,
+      classId: body.classId,
+      academicYearId: body.academicYearId,
+      modelKey: body.modelKey,
+      period: body.period,
+      expectedDraftSha256: body.expectedDraftSha256,
+    };
+  }
+
+  // BULLETIN-PUBLISH-01 — brouillon non officiel (aucune écriture).
+  app.post(
+    "/api/report-card/publications/preview",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_GENERATE);
+      const { classPublication } = services();
+      if (!classPublication || typeof classPublication.preview !== "function") throw coded("REQUEST_NOT_FOUND");
+      const draft = await classPublication.preview(classPublicationArgs(actor, schoolId, req.body || {}));
+      // BULLETIN-UI-01 — aperçu par matières : document NON OFFICIEL (official:false).
+      const students = Array.isArray(draft.students) ? draft.students : [];
+      const presentation = await presentationFor({
+        payload: {
+          provenance: draft.provenance,
+          class_id: draft.class_id,
+          academic_year_id: draft.academic_year_id,
+          period_scope: draft.period_scope,
+          students,
+          ...(draft.official_identity ? { official_identity: draft.official_identity } : {}),
+        },
+        schoolId,
+        template: await resolvePublishedTemplate({ provenance: draft.provenance }, schoolId, services().getTemplate).catch(() => null),
+        meta: { official: false },
+      });
+      if (presentation) students.forEach((student, index) => { student.presentation = presentation[index]; });
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ ok: true, draft });
+    })
+  );
+
+  // BULLETIN-PUBLISH-01 — publication officielle de l'empreinte de brouillon validée.
+  app.post(
+    "/api/report-card/publications",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_PUBLISH);
+      const { classPublication } = services();
+      if (!classPublication || typeof classPublication.publish !== "function") throw coded("REQUEST_NOT_FOUND");
+      const result = await classPublication.publish(classPublicationArgs(actor, schoolId, req.body || {}));
+      res.status(result.status === "PUBLISHED" ? 201 : 200).json({ ok: true, ...result });
+    })
+  );
+
+  // BULLETIN-REEMISSION-01 / PR0 : aperçu de réémission, aucune écriture.
+  app.post(
+    "/api/report-card/publications/:reportCardId/reissues/preview",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_PUBLISH);
+      const { createReportCardReissuePreview } = require("./reportCardReissue");
+      const { publication, classPublication, getTemplate } = services();
+      const reissue = createReportCardReissuePreview({ publication, classPublication, getTemplate });
+      const result = await reissue.preview({
+        tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+        reportCardId: req.params.reportCardId,
+        sourceVersion: req.body?.sourceVersion,
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.json(result);
+    })
+  );
+
+  // BULLETIN-REEMISSION-01 / PR1 : création explicite d'une vN+1, jamais d'écrasement.
+  app.post(
+    "/api/report-card/publications/:reportCardId/reissues",
+    auth,
+    route(async (req, res) => {
+      const actor = await actorFrom(req);
+      const schoolId = schoolIdForSchoolActor(actor);
+      requireToken(actor, PERM_PUBLISH);
+      const { createReportCardReissuePublisher } = require("./reportCardReissuePublish");
+      const { publication, classPublication, getTemplate } = services();
+      const service = createReportCardReissuePublisher({
+        publication, classPublication, getTemplate, identityStore: identityStore(),
+      });
+      const result = await service.publish({
+        tenant: { schoolId, actorSchoolId: actor.actorSchoolId },
+        actor,
+        reportCardId: req.params.reportCardId,
+        sourceVersion: req.body?.sourceVersion,
+        reason: req.body?.reason,
+        commandId: req.body?.commandId,
+        expectedDraftSha256: req.body?.expectedDraftSha256,
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.status(result.status === "REISSUED" ? 201 : 200).json({ ok: true, ...result });
     })
   );
 

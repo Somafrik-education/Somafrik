@@ -11,6 +11,7 @@ const path = require("path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_ACADEMIC_YEAR_GP002_IT_DATABASE ?? "somafrik_academic_year_gp002_it")
@@ -263,7 +264,7 @@ async function main() {
   let child = null;
 
   function mint(payload) {
-    return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+    return mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   }
 
   try {
@@ -323,48 +324,48 @@ async function main() {
       [USER_NO_LOGIN, emptySchool.rows[0].id],
     );
 
-    const tokenA = mint({
+    const tokenA = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: ["Années Académiques:READ", "Années Académiques:CREATE", "Années Académiques:UPDATE"],
     });
-    const tokenB = mint({
+    const tokenB = await mint({
       sub: USER_B,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_B,
       permissions: ["Années Académiques:READ", "Années Académiques:CREATE", "Années Académiques:UPDATE"],
     });
-    const tokenNoSub = mint({
+    const tokenNoSub = await mint({
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: ["Années Académiques:READ", "Années Académiques:CREATE", "Années Académiques:UPDATE", "ALL_PRIVILEGES"],
     });
-    const tokenNoSchool = mint({
+    const tokenNoSchool = await mint({
       sub: USER_NO_SCHOOL,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: ["Années Académiques:READ", "Années Académiques:CREATE", "Années Académiques:UPDATE"],
     });
-    const tokenNoLogin = mint({
+    const tokenNoLogin = await mint({
       sub: USER_NO_LOGIN,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: "CD-2026-0099",
       permissions: ["Années Académiques:READ", "Années Académiques:CREATE", "Années Académiques:UPDATE"],
     });
-    const tokenSuper = mint({
+    const tokenSuper = await mint({
       sub: USER_SUPER,
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
       schoolCode: "*",
       permissions: ["ALL_PRIVILEGES"],
     });
-    const tokenPaysCd = mint({
+    const tokenPaysCd = await mint({
       sub: USER_PAYS_CD,
       role: "Admin Pays",
       roleKeys: ["COUNTRY_ADMIN"],
@@ -372,7 +373,7 @@ async function main() {
       countryCode: "CD",
       permissions: ["Années Académiques:READ", "Années Académiques:CREATE", "Années Académiques:UPDATE"],
     });
-    const tokenForgedB = mint({
+    const tokenForgedB = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
@@ -419,10 +420,8 @@ async function main() {
 
     const getForgedJwt = await request("/v2/academic-years", { token: tokenForgedB });
     const forgedYears = unwrapList(getForgedJwt.data);
-    assert.ok(
-      getForgedJwt.status === 403 || forgedYears.every((row) => row.schoolCode === LOGIN_A || row.schoolId === fixture.schoolAId),
-      `P0-4 JWT leftover B: ${getForgedJwt.status} ${JSON.stringify(getForgedJwt.data)}`,
-    );
+    // SEC-AUTH-04 : claim leftover B sur une session de A → garde de session.
+    assertSessionRefused(getForgedJwt, "P0-4 JWT leftover B", "SESSION_SCHOOL_ATTACHMENT_MISSING");
     assert.equal(
       forgedYears.some((row) => row.schoolCode === LOGIN_B || row.schoolId === fixture.schoolBId),
       false,
@@ -445,17 +444,19 @@ async function main() {
     );
 
     const getNoSub = await request("/v2/academic-years", { token: tokenNoSub });
-    assert.ok(getNoSub.status === 403 || getNoSub.status === 401, `P0-5 sans sub: ${getNoSub.status}`);
+    assertSessionRefused(getNoSub, "P0-5 sans sub", "SESSION_SUBJECT_MISMATCH");
     assert.equal(unwrapList(getNoSub.data).some((row) => row.schoolCode === LOGIN_B || row.schoolCode === LEFTOVER_A), false);
 
     const getNoSchool = await request("/v2/academic-years", { token: tokenNoSchool });
-    assert.equal(getNoSchool.status, 403, `P0-6 sans school_id: ${JSON.stringify(getNoSchool.data)}`);
+    // SEC-AUTH-04 : compte sans school_id avec claim leftover → refusé par le garde de
+    // session (SEC-TENANT-01) avant la route ; la session est révoquée.
+    assertSessionRefused(getNoSchool, "P0-6 sans school_id", "SESSION_SCHOOL_ATTACHMENT_MISSING");
     const postNoSchool = await request("/v2/academic-years", {
       method: "POST",
       token: tokenNoSchool,
       body: yearBody("2028-2029"),
     });
-    assert.equal(postNoSchool.status, 403, "P0-6 POST sans school_id");
+    assertSessionRefused(postNoSchool, "P0-6 POST sans school_id", "SESSION_REVOKED");
 
     const getNoLogin = await request("/v2/academic-years", { token: tokenNoLogin });
     assert.equal(getNoLogin.status, 403, `P0-7 login_code vide: ${JSON.stringify(getNoLogin.data)}`);

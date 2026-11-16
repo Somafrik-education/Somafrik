@@ -47,9 +47,14 @@ async function main() {
   const runtimeSrc = readFileSync(path.join(here, "../components/PushNotificationsRuntime.tsx"), "utf8");
   const navigatorSrc = readFileSync(path.join(here, "../navigation/AppNavigator.tsx"), "utf8");
   const navigateSrc = readFileSync(path.join(here, "pushNotificationNavigate.ts"), "utf8");
+  const openerSrc = readFileSync(path.join(here, "pushNotificationOpener.ts"), "utf8");
+  const openSrc = readFileSync(path.join(here, "notificationNavigationOpen.ts"), "utf8");
 
-  assert.match(runtimeSrc, /dispatchRegisteredPushNavigation/);
-  assert.match(navigatorSrc, /dispatchRegisteredPushNavigation/);
+  // NOTIF-MOBILE-NAV : runtime et onReady passent par le même ouvreur, qui dispatche via la route enregistrée.
+  assert.match(runtimeSrc, /createPushNotificationOpener/);
+  assert.match(navigatorSrc, /createPushNotificationOpener/);
+  assert.match(openerSrc, /openResolvedNotification/);
+  assert.match(openSrc, /dispatchRegisteredPushNavigation/);
   assert.match(runtimeSrc, /consumeInitialPushResponse/);
   assert.match(runtimeSrc, /addNotificationResponseReceivedListener/);
   assert.match(runtimeSrc, /flushPendingPushNavigation/);

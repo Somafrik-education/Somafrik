@@ -38,9 +38,18 @@ export function financePaymentStatusLabel(status: unknown): string {
   if (value.includes("attente") || value === "pending") return "En attente";
   if (value.includes("refus") || value.includes("echou") || value === "failed") return "Refusé";
   if (value.includes("trop-percu") || value.includes("trop percu")) return "Trop-perçu";
-  if (value.includes("partiel")) return "Partiellement imputé";
+  if (value.includes("non imput") || value.includes("a imputer") || value === "non affecte") return "Non affecté";
+  if (value.includes("partiel")) return "Encaissement partiel";
   if (value === "paye" || value === "paid" || value === "confirme" || value === "enregistre") {
     return "Payé";
   }
   return String(status ?? "").trim() || "—";
+}
+
+/** Présentation d'un libellé de ligne. Le feeType persisté reste inchangé. */
+export function financeScreenFeeLabel(label: unknown): string {
+  const value = normalizeStatus(label);
+  if (!value) return "";
+  if (value.includes("non imput") || value.includes("a imputer")) return "Non affecté à un frais";
+  return String(label ?? "").trim();
 }

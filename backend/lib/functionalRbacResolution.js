@@ -25,6 +25,22 @@ function emptyCrud() {
   return { canCreate: false, canRead: false, canUpdate: false, canDelete: false };
 }
 
+function crudEqual(left, right) {
+  return (
+    Boolean(left?.canCreate) === Boolean(right?.canCreate) &&
+    Boolean(left?.canRead) === Boolean(right?.canRead) &&
+    Boolean(left?.canUpdate) === Boolean(right?.canUpdate) &&
+    Boolean(left?.canDelete) === Boolean(right?.canDelete)
+  );
+}
+
+function grantSource(grant) {
+  if (!grant) return "none";
+  const scope = grant.scopeType || grant.scope_type;
+  if (scope === "school" || scope === "country" || scope === "global") return scope;
+  return "none";
+}
+
 function orCrud(left, right) {
   return {
     canCreate: Boolean(left.canCreate || right.canCreate),
@@ -184,6 +200,9 @@ function resolveEffectivePermissionSet(roleKeys, grants, scope = {}) {
 }
 
 function moduleMatchesNormalized(module, normalized) {
+  if (module.moduleKey === "audit") {
+    return normalized === "audit" || normalized.startsWith("audit ");
+  }
   const moduleNorm = module.moduleName
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -269,7 +288,9 @@ function permissionToken(moduleKey, action) {
 module.exports = {
   emptyCrud,
   orCrud,
+  crudEqual,
   crudFromRow,
+  grantSource,
   pickGrant,
   indexGrants,
   applySuperAdminInvariants,

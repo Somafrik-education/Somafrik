@@ -24,11 +24,6 @@ h1 {
   margin: 0 0 8px;
 }
 
-.meta {
-  margin: 0 0 16px;
-  font-size: 10pt;
-}
-
 table.cells {
   width: 100%;
   border-collapse: collapse;
@@ -70,8 +65,113 @@ table.slots {
   image-rendering: pixelated;
 }
 
-.verify-url {
+.verify-label {
+  margin: 2mm 0 0;
   font-size: 8pt;
-  word-break: break-all;
-  max-width: 70mm;
+  text-align: center;
 }
+
+/* BULLETIN-UI-01 — présentation par matières (modèles A et B). */
+/* Saut de page ENTRE deux élèves seulement : le QR de vérification reste sur la page du bulletin. */
+.student-card + .student-card {
+  page-break-before: always;
+  break-before: page;
+}
+
+.identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2mm 8mm;
+  margin: 0 0 4mm;
+  font-size: 9.5pt;
+}
+
+.identity dt {
+  font-weight: 700;
+}
+
+.identity dd {
+  margin: 0;
+}
+
+table.results {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 7.5pt;
+  margin-bottom: 4mm;
+}
+
+table.results th,
+table.results td {
+  border: 1px solid #dbe3ee;
+  padding: 1.2mm 1mm;
+  text-align: center;
+}
+
+table.results td.subject,
+table.results th.subject {
+  text-align: left;
+  min-width: 34mm;
+}
+
+table.results tr.composite td {
+  font-weight: 700;
+  background: #eee;
+}
+
+table.results tr.child td.subject {
+  padding-left: 5mm;
+}
+
+table.results tr.summary td {
+  font-weight: 700;
+}
+
+table.results td.max {
+  color: #444;
+}
+
+table.results td.missing {
+  font-style: italic;
+}
+
+.incomplete {
+  font-weight: 700;
+  margin: 0 0 3mm;
+}
+
+.signatures {
+  display: flex;
+  justify-content: space-between;
+  gap: 6mm;
+  margin: 6mm 0;
+  page-break-inside: avoid;
+}
+
+.signature {
+  flex: 1;
+  border-bottom: 1px dashed #94a3b8;
+  padding-bottom: 8mm;
+  min-height: 18mm;
+  text-align: center;
+  font-size: 9pt;
+}
+
+/* Note en échec (valeur < seuil × maximum de sa cellule) : rouge et soulignée. */
+table.results td.failing,
+table.results span.failing {
+  color: #b91c1c;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 1.5px;
+}
+
+/* BULLETIN-CLASSE-01 / L3 — en-tête configurable. */
+.report-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.report-header.layout-logo_center { flex-direction: column; text-align: center; }
+.report-header .header-logo { max-height: 64px; max-width: 120px; object-fit: contain; }
+.report-header .header-text { flex: 1; width: 100%; }
+.report-header .header-line { margin: 0; font-size: 9pt; }
+.report-header .header-title { margin: 4px 0 0; font-size: 13pt; letter-spacing: 0.02em; }
+.report-header .header-title.title-left { text-align: left; }
+.report-header .header-title.title-center { text-align: center; }

@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -56,7 +56,17 @@ async function login() {
   return result.data;
 }
 
+function runPlaintextPasswordTests() {
+  const result = spawnSync(
+    process.execPath,
+    ["--test", "backend/services/credentialService.test.js", "backend/lib/authPlaintextPassword.test.js"],
+    { cwd: ROOT, stdio: "inherit" },
+  );
+  assert.equal(result.status, 0, "P0-02 plaintext password tests failed");
+}
+
 async function main() {
+  runPlaintextPasswordTests();
   const child = spawn("node", ["backend/scripts/dev-memory.js"], {
     cwd: ROOT,
     env: {

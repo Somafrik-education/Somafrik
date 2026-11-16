@@ -4,15 +4,21 @@ import { Bell, LogOut, Mail, Megaphone, Menu, RefreshCw, Settings2 } from "lucid
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { useActiveSchool } from "../../context/ActiveSchoolContext";
-import { displayRoleName, getInitials } from "../../lib/format";
+import { getInitials, isInternalSchoolRole } from "../../lib/format";
+import { visibleRoleLabel } from "../../lib/roleDisplayLabels";
 import { scopedNotifications } from "../../lib/scope";
 import { useAnnouncementsUnreadCount } from "../../lib/announcementsRead";
 import { useInternalNotificationsUnreadCount } from "../../lib/internalNotificationsRead";
 import { useMessagesUnreadCount } from "../../lib/messagesRead";
 import { canReadView, hasBackOfficePermission } from "../../lib/permissions";
-import { isPlatformCommunicationUser } from "../../lib/establishmentCommunication";
+import {
+  hasWebInternalNotificationScope,
+  resolveWebNotificationsHref,
+} from "../../lib/webSchoolDomainDeny";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { domainsForPath } from "../../lib/routeDomainMap";
+import { DASHBOARD_KPI_REFRESH_EVENT } from "../../lib/dashboardSync";
+import { demoRuntimeEnabled } from "../../lib/featureFlags";
 import { Button } from "../ui/Button";
 import { CommunicationPreferencesPanel } from "../account/CommunicationPreferencesPanel";
 
@@ -52,14 +58,16 @@ function TopbarIcon({
 export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () => void }) {
   const location = useLocation();
   const { session, logout } = useAuth();
-  const { state, loading, error, refresh } = useData();
+  const { state, loading, error, refresh, domainStatus, retryDomains } = useData();
+  // PERF-PR4 : un domaine en échec se relance seul, sans recharger les autres.
+  const failedDomainCount = Object.values(domainStatus ?? {}).filter((entry) => entry?.status === "error").length;
   const { activeSchoolCode } = useActiveSchool();
   const ctx = usePermissionContext();
   const user = session?.user;
   const [preferencesOpen, setPreferencesOpen] = useState(false);
 
   const canReadNotifications = canReadView(ctx, "notifications");
-  const hasInternalNotificationScope = Boolean(activeSchoolCode && activeSchoolCode !== "*");
+  const hasInternalNotificationScope = hasWebInternalNotificationScope(user, activeSchoolCode);
   const canPollC4Unread = hasBackOfficePermission(ctx, "Notifications", "READ") && hasInternalNotificationScope;
   const internalUnreadCount = useInternalNotificationsUnreadCount(
     canPollC4Unread,
@@ -70,17 +78,14 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
     : canReadNotifications
       ? scopedNotifications(user ?? null, state).filter((n) => n.status !== "Lu").length
       : 0;
-  const notificationsHref = hasInternalNotificationScope
-    ? "/notifications"
-    : isPlatformCommunicationUser(ctx)
-      ? "/notifications-plateforme"
-      : "/notifications";
+  // Superadmin / Admin Pays : toujours /notifications-plateforme, jamais Inbox C4.
+  const notificationsHref = resolveWebNotificationsHref(user);
 
   const canReadMessages = canReadView(ctx, "messages");
-  const unreadMessages = useMessagesUnreadCount(canReadMessages, activeSchoolCode);
+  const unreadMessages = useMessagesUnreadCount(canReadMessages, activeSchoolCode, user);
 
   const canReadAnnouncements = canReadView(ctx, "announcements");
-  const unreadAnnouncements = useAnnouncementsUnreadCount(canReadAnnouncements, activeSchoolCode);
+  const unreadAnnouncements = useAnnouncementsUnreadCount(canReadAnnouncements, activeSchoolCode, user);
   const canOpenPersonalPreferences = Boolean(user?.schoolCode && user.schoolCode !== "*");
 
   return (
@@ -110,9 +115,23 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
             {error}
           </p>
         ) : null}
+        {failedDomainCount > 0 && !loading ? (
+          <button
+            type="button"
+            onClick={() => void retryDomains().catch(() => undefined)}
+            className="hidden text-xs font-semibold text-danger underline md:block"
+          >
+            Réessayer
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => {
+            const dashboard = location.pathname === "/tableau-de-bord" || location.pathname.startsWith("/tableau-de-bord/");
+            if (!demoRuntimeEnabled && dashboard && isInternalSchoolRole(session?.user?.role)) {
+              window.dispatchEvent(new Event(DASHBOARD_KPI_REFRESH_EVENT));
+              return;
+            }
             const domains = domainsForPath(location.pathname, ctx);
             void refresh(domains.length > 0 ? domains : undefined);
           }}
@@ -154,7 +173,7 @@ export function Topbar({ title, onMenuOpen }: { title: string; onMenuOpen?: () =
             <p className="text-sm font-semibold leading-tight text-ink">
               {user?.firstName} {user?.lastName}
             </p>
-            <p className="text-xs text-muted">{displayRoleName(user?.role)}</p>
+            <p className="text-xs text-muted">{visibleRoleLabel(user)}</p>
           </div>
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-sm font-bold text-brand">
             {getInitials(user?.firstName, user?.lastName)}

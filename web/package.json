@@ -22,9 +22,9 @@
     "test:school-setup-web-lot1-red": "vitest run src/lib/schoolSetupWeb.red.test.ts src/pages/parametres/SettingsHubPage.schoolSetup.red.test.tsx",
     "test:school-setup-guided-red": "vitest run src/lib/schoolSetupGuidedWeb.red.test.ts src/components/schoolSetup/GuidedSchoolSetupWizard.red.test.tsx",
     "test:l308-red": "vitest run src/components/payments/QuickPaymentModal.l308.studentSelector.test.tsx src/lib/financeL308PaymentStudent.parity.test.ts",
+    "test:role-labels-web-01": "vitest run src/lib/roleLabelsWeb01.test.ts src/lib/roleDisplayLabels.test.ts src/lib/auditRoleLabels01.audit.test.ts src/lib/messagesRoleIdentity.test.ts src/pages/UsersPage.roleLabels.test.tsx src/pages/UsersPage.createTeacherIdentity.test.tsx",
     "test:watch": "vitest",
     "test:hydration-red": "vitest run --config vitest.hydration.config.ts",
-
     "verify:student-workspace-shell": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-workspace-shell.ts",
     "verify:student-enrollment": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-enrollment.ts",
     "verify:student-guardians": "VITE_API_URL=${VITE_API_URL:-https://api.somafrik.app} npx --yes vite-node scripts/verify-student-guardians.ts",
@@ -35,6 +35,7 @@
     "verify:canonical-state-convergence": "vitest run src/lib/canonicalStateConvergence.test.ts src/lib/backofficeStateMerge.test.ts src/lib/syncOutbox.test.ts"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "@hookform/resolvers": "^5.4.0",
     "@radix-ui/react-label": "^2.1.11",
     "@radix-ui/react-slot": "^1.3.0",
@@ -46,7 +47,10 @@
     "date-fns": "^3.6.0",
     "framer-motion": "^12.42.2",
     "grapesjs": "^0.22.6",
+    "jsqr": "^1.4.0",
     "lucide-react": "^1.23.0",
+    "pdf-lib": "^1.17.1",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.80.0",
@@ -62,6 +66,7 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20.19.43",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.10",
     "@types/react-dom": "^18.3.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",

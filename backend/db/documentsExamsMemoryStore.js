@@ -17,10 +17,13 @@ const {
   classifyResidualDocument,
   ignoreClientScope,
   examStatusLabel,
+  hasOwn,
+  prepareSchoolDocumentWrite,
 } = require("../lib/documentsExamsManagement");
 
 function createDocumentsExamsMemoryStore(seed = {}) {
   const schools = new Map();
+  const students = [];
   const exams = [];
   const reportCards = [];
   const templates = [];
@@ -35,8 +38,22 @@ function createDocumentsExamsMemoryStore(seed = {}) {
     return entry;
   }
 
+  function rememberStudent(student) {
+    if (!student) return null;
+    const entry = {
+      id: student.id ?? randomUUID(),
+      school_id: student.school_id ?? student.schoolId,
+      student_code: asTrimmed(student.student_code ?? student.studentCode),
+      first_name: asTrimmed(student.first_name ?? student.firstName),
+      last_name: asTrimmed(student.last_name ?? student.lastName),
+    };
+    students.push(entry);
+    return entry;
+  }
+
   for (const school of seed.schools ?? []) rememberSchool(school);
   if (seed.school) rememberSchool(seed.school);
+  for (const student of seed.students ?? []) rememberStudent(student);
 
   function schoolByCode(schoolCode) {
     return schools.get(asTrimmed(schoolCode).toUpperCase()) ?? null;
@@ -46,9 +63,30 @@ function createDocumentsExamsMemoryStore(seed = {}) {
     throw createDocumentsExamsError(404, `${label} introuvable.`, DOCUMENTS_EXAMS_ERROR.NOT_FOUND);
   }
 
+  function resolveStudent(schoolId, payload) {
+    const raw = asTrimmed(payload?.studentId);
+    if (!raw) {
+      throw createDocumentsExamsError(400, "Élève obligatoire.", DOCUMENTS_EXAMS_ERROR.STUDENT_REQUIRED);
+    }
+    const row = students.find(
+      (item) =>
+        item.school_id === schoolId &&
+        (String(item.id) === raw || asTrimmed(item.student_code) === raw),
+    );
+    if (!row) throw createDocumentsExamsError(404, "Élève introuvable.", DOCUMENTS_EXAMS_ERROR.NOT_FOUND);
+    return row;
+  }
+
+  function studentDisplayName(student) {
+    return [student?.first_name, student?.last_name].filter(Boolean).join(" ");
+  }
+
   return {
     registerSchool(school) {
       return rememberSchool(school);
+    },
+    registerStudent(student) {
+      return rememberStudent(student);
     },
     async getSchoolByCode(schoolCode) {
       return schoolByCode(schoolCode);
@@ -285,19 +323,26 @@ function createDocumentsExamsMemoryStore(seed = {}) {
       }));
     },
     async insertSchoolDocument(schoolId, payload) {
-      const body = ignoreClientScope(payload);
+      const body = prepareSchoolDocumentWrite(payload);
       const title = asTrimmed(body.title);
       if (!title) throw createDocumentsExamsError(400, "Titre de document obligatoire.");
       const school = [...schools.values()].find((item) => item.id === schoolId);
+      let studentId = null;
+      let studentName = "";
+      if (asTrimmed(body.studentId)) {
+        const student = resolveStudent(schoolId, body);
+        studentId = student.id;
+        studentName = studentDisplayName(student);
+      }
       const row = {
         id: randomUUID(),
         school_id: schoolId,
         school_code: school?.school_code,
-        student_id: body.studentId || null,
-        student_name: asTrimmed(body.studentName),
+        student_id: studentId,
+        student_name: studentName,
         document_type: asTrimmed(body.documentType) || "document",
         title,
-        storage_key: asTrimmed(body.storageKey) || null,
+        storage_key: null,
         mime_type: asTrimmed(body.mimeType) || null,
         status: asTrimmed(body.status) || "available",
         created_at: new Date().toISOString(),
@@ -309,9 +354,13 @@ function createDocumentsExamsMemoryStore(seed = {}) {
     async updateSchoolDocument(schoolId, documentId, payload) {
       const row = documents.find((item) => item.id === documentId && item.school_id === schoolId);
       if (!row) notFound("Document");
-      const body = ignoreClientScope(payload);
-      if (body.title) row.title = asTrimmed(body.title);
-      if (body.status) row.status = asTrimmed(body.status);
+      const body = prepareSchoolDocumentWrite(payload);
+      if (hasOwn(body, "title") && asTrimmed(body.title)) row.title = asTrimmed(body.title);
+      if (hasOwn(body, "documentType") && asTrimmed(body.documentType)) {
+        row.document_type = asTrimmed(body.documentType);
+      }
+      if (hasOwn(body, "status") && body.status) row.status = body.status;
+      if (hasOwn(body, "mimeType")) row.mime_type = asTrimmed(body.mimeType) || null;
       row.updated_at = new Date().toISOString();
       return mapSchoolDocumentRow(row, { schoolCode: row.school_code, studentName: row.student_name });
     },

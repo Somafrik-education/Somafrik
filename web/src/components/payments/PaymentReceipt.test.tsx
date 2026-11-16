@@ -64,6 +64,10 @@ describe("PaymentReceipt multi-libellés", () => {
     );
 
     expect(screen.getByText("Saisi par")).toBeInTheDocument();
+    expect(screen.getByText("Non affecté")).toBeInTheDocument();
+    expect(screen.getByText("Affecté aux frais ouverts")).toBeInTheDocument();
+    expect(screen.getByText("Non affecté à un frais")).toBeInTheDocument();
+    expect(screen.queryByText(/imput/i)).not.toBeInTheDocument();
     expect(screen.getByText("Administrateur Nuru")).toBeInTheDocument();
     expect(screen.queryByText("USR-2026-00005")).not.toBeInTheDocument();
   });
@@ -135,7 +139,7 @@ describe("PaymentReceipt multi-libellés", () => {
     expect(screen.queryByText("Partiellement payé")).not.toBeInTheDocument();
   });
 
-  it("traduit un statut historique Partiel en imputation, pas en créance", () => {
+  it("traduit un statut historique Partiel en encaissement partiel, pas en créance", () => {
     render(
       <PaymentReceipt
         payment={{
@@ -151,7 +155,8 @@ describe("PaymentReceipt multi-libellés", () => {
         }}
       />,
     );
-    expect(screen.getByText("Partiellement imputé")).toBeInTheDocument();
+    expect(screen.getByText("Encaissement partiel")).toBeInTheDocument();
+    expect(screen.queryByText(/imput/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Partiellement payé")).not.toBeInTheDocument();
   });
 

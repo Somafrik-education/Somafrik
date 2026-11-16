@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { EstablishmentChart } from "../../lib/dashboardCharts";
 import type { DashboardPeriodContext } from "../../lib/dashboardChartPeriod";
+import { readChartPeriod, type ChartPeriod } from "../../lib/chartPeriod";
 import { DashboardChartGrid } from "../charts/DashboardChartGrid";
 
 /** LOT 2: a single central chart; only charts already authorized for this role are offered. */
@@ -9,11 +10,15 @@ export function EstablishmentChartSwitcher({
   periodContext,
   orderUserKey,
   showTypeBadge,
+  serverPeriod,
+  onServerPeriodChange,
 }: {
   charts: EstablishmentChart[];
   periodContext: DashboardPeriodContext;
   orderUserKey?: string;
   showTypeBadge: boolean;
+  serverPeriod?: ChartPeriod;
+  onServerPeriodChange?: (period: ChartPeriod) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string>(() => charts[0]?.id ?? "");
 
@@ -24,6 +29,11 @@ export function EstablishmentChartSwitcher({
   }, [charts, selectedId]);
 
   const selectedChart = charts.find((chart) => chart.id === selectedId) ?? charts[0];
+
+  useEffect(() => {
+    if (!onServerPeriodChange || !selectedChart) return;
+    onServerPeriodChange(readChartPeriod(selectedChart.id));
+  }, [onServerPeriodChange, selectedChart]);
 
   if (!selectedChart) {
     return (
@@ -59,6 +69,8 @@ export function EstablishmentChartSwitcher({
         orderScope="establishment"
         orderUserKey={orderUserKey}
         showTypeBadge={showTypeBadge}
+        serverPeriod={serverPeriod}
+        onServerPeriodChange={onServerPeriodChange}
       />
     </section>
   );

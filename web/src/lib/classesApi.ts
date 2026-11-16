@@ -1,4 +1,4 @@
-import { api } from "../api/client";
+import { api, type RequestArgs } from "../api/client";
 
 export type ClassStatus = "active" | "inactive";
 
@@ -57,7 +57,7 @@ export interface UpdateClassPayload {
 }
 
 export const classesApi = {
-  list: () => api.get<SchoolClass[]>("/classes"),
+  list: (...init: RequestArgs) => api.get<SchoolClass[]>("/classes", ...init),
 
   create: (payload: CreateClassPayload) => api.post<SchoolClass>("/classes", payload),
 

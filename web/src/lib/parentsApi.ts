@@ -1,3 +1,4 @@
+import type { ParentLinkResponse } from "./studentParentRelations";
 import { api } from "../api/client";
 
 export type LinkParentPayload = {
@@ -29,7 +30,7 @@ export const parentsApi = {
     const suffix = new URLSearchParams({ studentId }).toString();
     return api.get<{ items?: Record<string, unknown>[] }>(`/parents/relations?${suffix}`);
   },
-  linkParent: (payload: LinkParentPayload) => api.post("/parents/link", payload),
+  linkParent: (payload: LinkParentPayload) => api.post<ParentLinkResponse>("/parents/link", payload),
   archiveRelation: (relationId: string) =>
     api.patch(`/parents/relations/${encodeURIComponent(relationId)}`, { status: "archived" }),
 };

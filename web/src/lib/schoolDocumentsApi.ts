@@ -2,12 +2,16 @@ import { api } from "../api/client";
 
 export type CanonicalSchoolDocument = {
   id: string;
+  schoolId: string;
   schoolCode: string;
   studentId?: string | null;
   studentName?: string;
   documentType: string;
   title: string;
+  mimeType?: string | null;
   status: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export const schoolDocumentsApi = {

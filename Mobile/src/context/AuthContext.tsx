@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import { Alert, AppState, type AppStateStatus } from "react-native";
 import {
   LoginResponse,
   getEffectivePermissions,
@@ -14,6 +14,8 @@ import { canRestorePersistedSession } from "../lib/dataTruth";
 import { dismissPendingPushNavigation } from "../lib/pushNotificationTap";
 import { blockOutboxOnLogout } from "../lib/outbox";
 import { invalidateL1CacheSession } from "../offline/l1/lifecycle";
+import { rollCallRuntime } from "../offline/rollCall/runtime/rollCallRuntime";
+import { createLogoutFlow, LOGOUT_COPY } from "../offline/rollCall/runtime/logoutFlow";
 import {
   parseEffectivePermissionsSnapshotV1,
   persistOfflineSnapshotIfCurrent,
@@ -69,7 +71,11 @@ function asPersistedProfile(profile: Awaited<ReturnType<typeof getSessionProfile
   if (!profile?.user) return null;
   return {
     role: profile.role as LoginResponse["role"],
+    roleLabel: profile.roleLabel,
+    roleKey: profile.roleKey,
     roleKeys: profile.roleKeys,
+    effectiveRoleLabel: profile.effectiveRoleLabel as LoginResponse["effectiveRoleLabel"],
+    effectiveRoleLabels: profile.effectiveRoleLabels as LoginResponse["effectiveRoleLabels"],
     permissions: profile.permissions,
     user: profile.user as LoginResponse["user"],
     school: profile.school as LoginResponse["school"],
@@ -131,12 +137,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!current?.user) return;
         await saveSessionProfile({
           role: current.role,
+          roleLabel: current.roleLabel,
+          roleKey: current.roleKey,
           roleKeys: next.roleKeys,
+          effectiveRoleLabel: current.effectiveRoleLabel ?? current.user?.effectiveRoleLabel,
+          effectiveRoleLabels: current.effectiveRoleLabels ?? current.user?.effectiveRoleLabels,
           permissions: next.permissions,
           user: {
             ...(current.user as unknown as Record<string, unknown>),
             permissions: next.permissions,
             roleKeys: next.roleKeys,
+            effectiveRoleLabel: current.user?.effectiveRoleLabel ?? current.effectiveRoleLabel,
+            effectiveRoleLabels: current.user?.effectiveRoleLabels ?? current.effectiveRoleLabels,
           },
           ...(current.school ? { school: current.school as unknown as Record<string, unknown> } : {}),
         });
@@ -255,6 +267,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setSessionExpiredHandler(() => {
+      // NFC-PRES-LOCAL-PR3 : fin de session forcée, aucun effacement des appels en attente.
+      void rollCallRuntime().forcedLogout();
       clearAuthenticatedState();
     });
     return () => setSessionExpiredHandler(null);
@@ -335,12 +349,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSelectedStudentId(studentId);
   }, []);
 
+  /**
+   * NFC-PRES-LOCAL-PR3 — déconnexion et appels hors connexion (contrat PR0 §5.3), voir
+   * `offline/rollCall/runtime/logoutFlow.ts` :
+   *  - aucun appel en attente connu (tous les profils sans appel NFC, dont Parent) : session vidée
+   *    immédiatement, sans attendre SQLite ; le stockage est traité ensuite, sans jamais effacer
+   *    un appel en attente ;
+   *  - appel(s) en attente vérifié(s), ou lecture SQLCipher en échec : confirmation explicite
+   *    AVANT la déconnexion ; annulée → l'utilisateur reste connecté ; rien n'est effacé.
+   */
+  const logoutFlowRef = useRef<ReturnType<typeof createLogoutFlow> | null>(null);
+  if (!logoutFlowRef.current) {
+    logoutFlowRef.current = createLogoutFlow({
+      runtime: rollCallRuntime(),
+      getSession: () => sessionRef.current,
+      confirm: (request) =>
+        new Promise<boolean>((resolve) => {
+          const pending = request.kind === "pending";
+          Alert.alert(
+            pending ? LOGOUT_COPY.pendingTitle : LOGOUT_COPY.unverifiedTitle,
+            pending ? LOGOUT_COPY.pendingMessage(request.pending) : LOGOUT_COPY.unverifiedMessage,
+            [
+              { text: LOGOUT_COPY.stay, style: "cancel", onPress: () => resolve(false) },
+              { text: LOGOUT_COPY.leave, style: "destructive", onPress: () => resolve(true) },
+            ],
+            { cancelable: true, onDismiss: () => resolve(false) },
+          );
+        }),
+    });
+  }
+
   const logout = useCallback(() => {
-    clearRequestSchoolScope();
-    clearStoredSchoolCode();
-    clearAuthenticatedState();
-    void blockOutboxOnLogout().finally(() => {
-      void logoutSession().catch(() => undefined);
+    logoutFlowRef.current?.request(() => {
+      clearRequestSchoolScope();
+      clearStoredSchoolCode();
+      clearAuthenticatedState();
+      void blockOutboxOnLogout().finally(() => {
+        void logoutSession().catch(() => undefined);
+      });
     });
   }, [clearAuthenticatedState]);
 

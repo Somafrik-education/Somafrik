@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useNavigation, usePreventRemove } from "@react-navigation/native";
 import { MIN_TOUCH_TARGET_DP } from "../../lib/mobileUsability";
 import { schoolSetupGuidedApi, type GuidedSetupPayload } from "../../lib/schoolSetupGuidedApi";
+import { ApiClientError } from "../../services/httpClient";
 import {
   GUIDED_MOBILE_LINKS,
   GUIDED_STEP_COPY,
@@ -33,6 +34,7 @@ export function GuidedSchoolSetupWizard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const finishLock = useRef(false);
 
   usePreventRemove(false, () => undefined);
 
@@ -46,7 +48,9 @@ export function GuidedSchoolSetupWizard({
   const copy = GUIDED_STEP_COPY[stepKey];
   const route = GUIDED_MOBILE_LINKS[stepKey];
   const isLast = viewingStep === 10;
-  const canFinish = current.percent >= 100 || isLast;
+  const canFinish =
+    !current.finalized && (current.percent >= 100 || isLast || current.status === "operational");
+  const canContinue = !current.finalized && !isLast && current.percent < 100;
 
   async function saveAndContinue() {
     setSaving(true);
@@ -68,14 +72,39 @@ export function GuidedSchoolSetupWizard({
     }
   }
 
-  async function finishSetup() {
-    if (current.percent >= 100) {
-      onFinish?.();
-      return;
+  function failureMessage(err: unknown) {
+    if (err instanceof ApiClientError) {
+      const details = err.details as { missingSteps?: Array<{ label?: string }> } | undefined;
+      const labels = Array.isArray(details?.missingSteps)
+        ? details.missingSteps.map((step) => String(step?.label ?? "").trim()).filter(Boolean)
+        : [];
+      if (labels.length) {
+        return `Étapes obligatoires à corriger : ${labels.join(", ")}.`;
+      }
+      return err.message || "Finalisation impossible. Vérifiez votre connexion puis réessayez.";
     }
-    const next = await saveAndContinue();
-    if (Number(next?.percent ?? 0) >= 100) {
-      onFinish?.();
+    return "Finalisation impossible. Vérifiez votre connexion puis réessayez.";
+  }
+
+  async function finishSetup() {
+    if (finishLock.current || current.finalized) return;
+    finishLock.current = true;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const next = await schoolSetupGuidedApi.finalize();
+      if (!next?.finalized) {
+        setError("La finalisation n'a pas été confirmée par le serveur.");
+        return;
+      }
+      setCurrent(next);
+      onCompleted?.(next);
+    } catch (err: unknown) {
+      setError(failureMessage(err));
+    } finally {
+      finishLock.current = false;
+      setSaving(false);
     }
   }
 
@@ -86,9 +115,15 @@ export function GuidedSchoolSetupWizard({
         <Text style={styles.heading} numberOfLines={1}>
           {guidedStepHeading(viewingStep) || `Étape ${viewingStep} sur 10`}
         </Text>
-        <Text style={styles.percent} numberOfLines={1}>
-          {guidedProgressLabel(current)}
-        </Text>
+        {current.finalized ? (
+          <Text testID="guided-setup-finalized" style={styles.ok}>
+            Configuration de votre établissement terminée
+          </Text>
+        ) : (
+          <Text style={styles.percent} numberOfLines={1}>
+            {guidedProgressLabel(current)}
+          </Text>
+        )}
         <Text style={styles.bar} numberOfLines={1}>
           {progressBar(current.percent)} {current.percent} %
         </Text>
@@ -117,16 +152,29 @@ export function GuidedSchoolSetupWizard({
         >
           <Text style={styles.secondaryText}>Précédent</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.btn, styles.tertiary]}
-          onPress={() => onLeave?.()}
-          accessibilityRole="button"
-          accessibilityLabel="Quitter et reprendre plus tard"
-        >
-          <Text style={styles.tertiaryText} numberOfLines={2}>
-            Quitter et reprendre plus tard
-          </Text>
-        </TouchableOpacity>
+        {current.finalized ? null : (
+          <TouchableOpacity
+            style={[styles.btn, styles.tertiary]}
+            onPress={() => onLeave?.()}
+            accessibilityRole="button"
+            accessibilityLabel="Quitter et reprendre plus tard"
+          >
+            <Text style={styles.tertiaryText} numberOfLines={2}>
+              Quitter et reprendre plus tard
+            </Text>
+          </TouchableOpacity>
+        )}
+        {canContinue ? (
+          <TouchableOpacity
+            style={[styles.btn, styles.primary]}
+            disabled={saving}
+            onPress={() => void saveAndContinue()}
+            accessibilityRole="button"
+            accessibilityLabel="Enregistrer et continuer"
+          >
+            <Text style={styles.primaryText}>{saving ? "Enregistrement…" : "Enregistrer et continuer"}</Text>
+          </TouchableOpacity>
+        ) : null}
         {canFinish ? (
           <>
             <TouchableOpacity
@@ -143,21 +191,22 @@ export function GuidedSchoolSetupWizard({
               onPress={() => void finishSetup()}
               accessibilityRole="button"
               accessibilityLabel="Terminer la configuration"
+              accessibilityState={{ disabled: saving, busy: saving }}
             >
               <Text style={styles.primaryText}>{saving ? "Enregistrement…" : "Terminer la configuration"}</Text>
             </TouchableOpacity>
           </>
-        ) : (
+        ) : null}
+        {current.finalized ? (
           <TouchableOpacity
             style={[styles.btn, styles.primary]}
-            disabled={saving}
-            onPress={() => void saveAndContinue()}
+            onPress={() => onFinish?.()}
             accessibilityRole="button"
-            accessibilityLabel="Enregistrer et continuer"
+            accessibilityLabel="Accéder au tableau de bord"
           >
-            <Text style={styles.primaryText}>{saving ? "Enregistrement…" : "Enregistrer et continuer"}</Text>
+            <Text style={styles.primaryText}>Accéder au tableau de bord</Text>
           </TouchableOpacity>
-        )}
+        ) : null}
       </View>
     </View>
   );

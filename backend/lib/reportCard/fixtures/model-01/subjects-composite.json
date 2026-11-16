@@ -1,0 +1,525 @@
+{
+  "id": "fixture.qualification.subjects-composite",
+  "title": "Qualification BULLETIN-MODEL-01 — matières composées de sous-matières (données fictives)",
+  "qualification_only": true,
+  "not_a_country_pack": true,
+  "engine_id": "somafrik.report_card.v1",
+  "tenant": {
+    "schoolId": "school-b",
+    "actorSchoolId": "school-b"
+  },
+  "profile": {
+    "period_mode": "term",
+    "periods": [
+      "T1",
+      "T2",
+      "T3"
+    ],
+    "annual": true,
+    "score_components": [
+      {
+        "id": "TJ",
+        "applicability": "always"
+      },
+      {
+        "id": "EX",
+        "applicability": "always"
+      }
+    ],
+    "missing_score": "NOT_APPLICABLE_not_zero",
+    "rounding": {
+      "decimals": 2,
+      "mode": "half_up",
+      "stage": "display_only"
+    },
+    "ranking": {
+      "enabled": false,
+      "ties": "competition",
+      "metric": "PERCENTAGE"
+    },
+    "aggregation": {
+      "mode": "weighted_sum",
+      "coefficient_default": 1,
+      "percentage": "points_over_max_100"
+    },
+    "pass_rule": {
+      "metric": "PERCENTAGE",
+      "threshold": 50
+    },
+    "subjects": [
+      {
+        "id": "FRANCAIS",
+        "order": 1
+      },
+      {
+        "id": "FR_ECRIT",
+        "parent_id": "FRANCAIS",
+        "order": 1,
+        "components": {
+          "TJ": {
+            "max": 40
+          },
+          "EX": {
+            "max": 60
+          }
+        }
+      },
+      {
+        "id": "FR_LECTURE",
+        "parent_id": "FRANCAIS",
+        "order": 2,
+        "components": {
+          "TJ": {
+            "max": 20
+          },
+          "EX": {
+            "max": 30
+          }
+        }
+      },
+      {
+        "id": "FR_DICTEE",
+        "parent_id": "FRANCAIS",
+        "order": 3,
+        "components": {
+          "TJ": {
+            "max": 20
+          },
+          "EX": {
+            "max": 30
+          }
+        }
+      },
+      {
+        "id": "MATHEMATIQUES",
+        "order": 2
+      },
+      {
+        "id": "MATH_MENTAL",
+        "parent_id": "MATHEMATIQUES",
+        "order": 1,
+        "components": {
+          "TJ": {
+            "max": 20
+          },
+          "EX": {
+            "max": 30
+          }
+        }
+      },
+      {
+        "id": "MATH_ECRIT",
+        "parent_id": "MATHEMATIQUES",
+        "order": 2,
+        "components": {
+          "TJ": {
+            "max": 30
+          },
+          "EX": {
+            "max": 70
+          }
+        }
+      },
+      {
+        "id": "ARTS",
+        "order": 3
+      },
+      {
+        "id": "ARTS_PLASTIQUES",
+        "parent_id": "ARTS",
+        "order": 1,
+        "components": {
+          "TJ": {
+            "max": 20
+          }
+        }
+      },
+      {
+        "id": "MUSIQUE",
+        "parent_id": "ARTS",
+        "order": 2,
+        "components": {
+          "TJ": {
+            "max": 20
+          }
+        }
+      },
+      {
+        "id": "EPS",
+        "parent_id": "ARTS",
+        "order": 3,
+        "components": {
+          "TJ": {
+            "max": 20
+          }
+        }
+      },
+      {
+        "id": "ANGLAIS",
+        "order": 4,
+        "components": {
+          "TJ": {
+            "max": 20
+          },
+          "EX": {
+            "max": 30
+          }
+        }
+      }
+    ]
+  },
+  "schema": {
+    "sections": [
+      {
+        "id": "TOTALS",
+        "order": 1,
+        "kind": "totals",
+        "columns": [
+          {
+            "id": "COL_T1_POINTS",
+            "order": 1,
+            "kind": "computed_slot",
+            "slot": "PERIOD_POINTS",
+            "period_id": "T1"
+          },
+          {
+            "id": "COL_T1_MAX",
+            "order": 2,
+            "kind": "computed_slot",
+            "slot": "PERIOD_MAX",
+            "period_id": "T1"
+          },
+          {
+            "id": "COL_PERCENTAGE",
+            "order": 3,
+            "kind": "computed_slot",
+            "slot": "PERCENTAGE"
+          }
+        ]
+      }
+    ],
+    "identity_fields": [
+      {
+        "id": "STUDENT_NAME",
+        "order": 1
+      }
+    ]
+  },
+  "facts": [
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_ECRIT",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 30
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_ECRIT",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 45
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_LECTURE",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 15
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_LECTURE",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_DICTEE",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 18
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_DICTEE",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 21
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_MENTAL",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 16
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_MENTAL",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_ECRIT",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_ECRIT",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 56
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "ARTS_PLASTIQUES",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 15
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MUSIQUE",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 18
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "EPS",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 17
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "ANGLAIS",
+      "period_id": "T1",
+      "score_component_id": "TJ",
+      "raw_score": 14
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "ANGLAIS",
+      "period_id": "T1",
+      "score_component_id": "EX",
+      "raw_score": 21
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_ECRIT",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 30
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_ECRIT",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 45
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_LECTURE",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 15
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_LECTURE",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_DICTEE",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 18
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_DICTEE",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 21
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_MENTAL",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 16
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_MENTAL",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_ECRIT",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_ECRIT",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 56
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "ARTS_PLASTIQUES",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 15
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MUSIQUE",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 18
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "EPS",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 17
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "ANGLAIS",
+      "period_id": "T2",
+      "score_component_id": "TJ",
+      "raw_score": 14
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "ANGLAIS",
+      "period_id": "T2",
+      "score_component_id": "EX",
+      "raw_score": 21
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_ECRIT",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 30
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_ECRIT",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 45
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_LECTURE",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 15
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_LECTURE",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_DICTEE",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 18
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "FR_DICTEE",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 21
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_MENTAL",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 16
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_MENTAL",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_ECRIT",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 24
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MATH_ECRIT",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 56
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "ARTS_PLASTIQUES",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 15
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "MUSIQUE",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 18
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "EPS",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 17
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "ANGLAIS",
+      "period_id": "T3",
+      "score_component_id": "TJ",
+      "raw_score": 14
+    },
+    {
+      "student_id": "STU1",
+      "subject_id": "ANGLAIS",
+      "period_id": "T3",
+      "score_component_id": "EX",
+      "raw_score": 21
+    }
+  ]
+}

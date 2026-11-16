@@ -119,44 +119,44 @@ async function main() {
   assert.notEqual(listed.status, "Non imputé");
 
   const none = createStore();
-  const orphan = await none.createSchoolPayment(
-    {
-      studentId: MAEVA,
-      classId: CLASS_ID,
-      items: [{ feeType: "Non imputé", amount: 150 }],
-      method: "Espèces",
-      date: "2026-08-24",
-    },
-    admin,
+  await assert.rejects(
+    () =>
+      none.createSchoolPayment(
+        {
+          studentId: MAEVA,
+          classId: CLASS_ID,
+          items: [{ feeType: "Non imputé", amount: 150 }],
+          method: "Espèces",
+          date: "2026-08-24",
+        },
+        admin,
+      ),
+    (error) => error.statusCode === 422 && error.code === "FINANCE_NO_OPEN_OBLIGATION",
   );
-  assert.equal(orphan.status, "Non imputé");
-  assert.equal(Number(orphan.unallocatedAmount), 150);
-  assert.equal(Number(orphan.allocatedAmount), 0);
   const feesNone = await none.listFinanceStudentFees(admin);
   assert.equal(feesNone.reduce((sum, row) => sum + Number(row.amountPaid), 0), 0);
-  const cash = (await none.listProjection()).payments.find((row) => row.reference === orphan.reference || row.id === orphan.id);
-  assert.equal(cash.status, "Non imputé");
-  assert.equal(Number(cash.unallocatedAmount), 150);
+  assert.equal(none.tables.payments.length, 0);
 
   const partialAlloc = createStore();
   await seedMensualite(partialAlloc, 100);
   const partialObligation = (await partialAlloc.listFinanceStudentFees(admin)).find((row) => row.studentId === MAEVA);
-  const partialPay = await partialAlloc.createSchoolPayment(
-    {
-      studentId: MAEVA,
-      classId: CLASS_ID,
-      items: [{ obligationId: partialObligation.id, feeType: "Scolarité", amount: 150 }],
-      method: "Espèces",
-      date: "2026-08-24",
-    },
-    admin,
+  await assert.rejects(
+    () =>
+      partialAlloc.createSchoolPayment(
+        {
+          studentId: MAEVA,
+          classId: CLASS_ID,
+          items: [{ obligationId: partialObligation.id, feeType: "Scolarité", amount: 150 }],
+          method: "Espèces",
+          date: "2026-08-24",
+        },
+        admin,
+      ),
+    (error) => error.statusCode === 422 && error.code === "FINANCE_PAYMENT_EXCEEDS_BALANCE",
   );
-  assert.equal(Number(partialPay.amount), 150);
-  assert.equal(Number(partialPay.allocatedAmount), 100);
-  assert.equal(Number(partialPay.unallocatedAmount), 50);
-  assert.equal(partialPay.status, "Trop-perçu");
-  assert.notEqual(partialPay.status, "Payé");
-  assert.notEqual(partialPay.status, "Partiel");
+  const untouched = (await partialAlloc.listFinanceStudentFees(admin)).find((row) => row.studentId === MAEVA);
+  assert.equal(Number(untouched.balance), 100);
+  assert.equal(partialAlloc.tables.payments.length, 0);
 
   const covered = createStore();
   await seedMensualite(covered, 150);

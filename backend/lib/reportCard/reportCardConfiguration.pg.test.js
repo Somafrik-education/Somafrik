@@ -7,6 +7,7 @@ const { REPORT_CARD_SCHEMA_SQL } = require("../../db/reportCardSchemaSql");
 const { createAcademicRuleProfilePgStore } = require("../../db/academicRuleProfilePgStore");
 const { createReportCardSchemaPgStore } = require("../../db/reportCardSchemaPgStore");
 const { ENGINE_ID } = require("../../contracts/reportCard/contract");
+const { applyClassScopeMigrationIfRequested } = require("./reportCardClassScope.support");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 let Pool = null;
@@ -186,6 +187,7 @@ describe("report-card-configuration PG atomic/idempotent/isolation", { skip: !sh
       await pool.query(ACADEMIC_RULE_PROFILE_SCHEMA_SQL);
       await pool.query(REPORT_CARD_SCHEMA_SQL);
       await pool.query(lot6.sql);
+      await applyClassScopeMigrationIfRequested(pool);
 
       const version = await pool.query("SHOW server_version");
       assert.match(String(version.rows[0].server_version), /^16\./);

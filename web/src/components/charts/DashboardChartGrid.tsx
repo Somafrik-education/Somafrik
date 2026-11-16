@@ -70,11 +70,13 @@ function DashboardChartCard({
   reorderable,
   onDragStart,
   onDragEnd,
+  serverApplied = false,
 }: {
   chart: ChartConfig;
   period: ChartPeriod;
   onPeriodChange: (period: ChartPeriod) => void;
   periodContext: DashboardPeriodContext;
+  serverApplied?: boolean;
   showTypeBadge: boolean;
   compact: boolean;
   index: number;
@@ -83,8 +85,8 @@ function DashboardChartCard({
   onDragEnd: () => void;
 }) {
   const appliedChart = useMemo(
-    () => applyPeriodToDashboardChart(chart, period, periodContext),
-    [chart, period, periodContext],
+    () => (serverApplied ? chart : applyPeriodToDashboardChart(chart, period, periodContext)),
+    [chart, period, periodContext, serverApplied],
   );
 
   const description =
@@ -138,6 +140,9 @@ function DashboardChartGridItem({
   onDragOver,
   onDrop,
   onDragLeave,
+  serverApplied = false,
+  serverPeriod,
+  onServerPeriodChange,
 }: {
   chart: ChartConfig;
   periodContext: DashboardPeriodContext;
@@ -152,21 +157,25 @@ function DashboardChartGridItem({
   onDragOver: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDrop: (event: DragEvent<HTMLDivElement>, index: number) => void;
   onDragLeave: (index: number) => void;
+  serverApplied?: boolean;
+  serverPeriod?: ChartPeriod;
+  onServerPeriodChange?: (period: ChartPeriod) => void;
 }) {
   const [period, setPeriod] = useState<ChartPeriod>(() => readChartPeriod(chart.id));
 
   useEffect(() => {
-    setPeriod(readChartPeriod(chart.id));
-  }, [chart.id]);
+    setPeriod(serverPeriod ?? readChartPeriod(chart.id));
+  }, [chart.id, serverPeriod]);
 
   const colSpanClass = useMemo(
-    () => chartColSpanClass(chart, period, periodContext),
-    [chart, period, periodContext],
+    () => (serverApplied ? "" : chartColSpanClass(chart, period, periodContext)),
+    [chart, period, periodContext, serverApplied],
   );
 
   function handlePeriodChange(next: ChartPeriod) {
     saveChartPeriod(chart.id, next);
     setPeriod(next);
+    onServerPeriodChange?.(next);
   }
 
   return (
@@ -189,6 +198,7 @@ function DashboardChartGridItem({
         reorderable={reorderable}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
+        serverApplied={serverApplied}
       />
     </div>
   );
@@ -203,6 +213,8 @@ export function DashboardChartGrid({
   emptyMessage = "Aucun graphique disponible pour votre rôle dans ce périmètre.",
   singleColumn = false,
   compact = false,
+  serverPeriod,
+  onServerPeriodChange,
 }: {
   charts: ChartConfig[];
   periodContext: DashboardPeriodContext;
@@ -212,6 +224,8 @@ export function DashboardChartGrid({
   emptyMessage?: string;
   singleColumn?: boolean;
   compact?: boolean;
+  serverPeriod?: ChartPeriod;
+  onServerPeriodChange?: (period: ChartPeriod) => void;
 }) {
   const [orderedIds, setOrderedIds] = useState<string[]>(() =>
     applyChartOrder(charts, orderScope, orderUserKey).map((chart) => chart.id),
@@ -328,6 +342,9 @@ export function DashboardChartGrid({
             onDragLeave={(itemIndex) => {
               if (overIndex === itemIndex) setOverIndex(null);
             }}
+            serverApplied={Boolean(onServerPeriodChange)}
+            serverPeriod={serverPeriod}
+            onServerPeriodChange={onServerPeriodChange}
           />
         ))}
       </div>

@@ -16,6 +16,7 @@ const {
   classifyResidualReportCard,
   classifyResidualDocument,
   ignoreClientScope,
+  prepareSchoolDocumentWrite,
 } = require("../lib/documentsExamsManagement");
 
 function createDocumentsExamsPgStore(repo) {
@@ -547,6 +548,18 @@ function createDocumentsExamsPgStore(repo) {
     return fallback?.layout && typeof fallback.layout === "object" ? fallback.layout : null;
   }
 
+  async function hydrateSchoolDocument(row) {
+    if (!row) return null;
+    const school = await one(`SELECT school_code FROM schools WHERE id = $1`, [row.school_id]);
+    const student = row.student_id
+      ? await one(`SELECT first_name, last_name FROM students WHERE id = $1`, [row.student_id])
+      : null;
+    return mapSchoolDocumentRow(row, {
+      schoolCode: school?.school_code,
+      studentName: student ? [student.first_name, student.last_name].filter(Boolean).join(" ") : "",
+    });
+  }
+
   async function listSchoolDocuments(schoolId) {
     const rows = await all(
       `SELECT d.*, s.school_code, st.first_name, st.last_name
@@ -566,12 +579,12 @@ function createDocumentsExamsPgStore(repo) {
   }
 
   async function insertSchoolDocument(schoolId, payload, createdBy) {
-    const body = ignoreClientScope(payload);
+    const body = prepareSchoolDocumentWrite(payload);
     const title = asTrimmed(body.title);
     const documentType = asTrimmed(body.documentType) || "document";
     if (!title) throw createDocumentsExamsError(400, "Titre de document obligatoire.");
     let studentId = null;
-    if (body.studentId) {
+    if (asTrimmed(body.studentId)) {
       studentId = (await resolveStudent(schoolId, body)).id;
     }
     const row = await one(
@@ -583,13 +596,13 @@ function createDocumentsExamsPgStore(repo) {
         studentId,
         documentType,
         title,
-        asTrimmed(body.storageKey) || null,
+        null,
         asTrimmed(body.mimeType) || null,
         asTrimmed(body.status) || "available",
         isUuid(createdBy) ? createdBy : null,
       ],
     );
-    return mapSchoolDocumentRow(row);
+    return hydrateSchoolDocument(row);
   }
 
   async function updateSchoolDocument(schoolId, documentId, payload) {
@@ -598,10 +611,10 @@ function createDocumentsExamsPgStore(repo) {
       [documentId, schoolId],
       "Document",
     );
-    const body = ignoreClientScope(payload);
+    const body = prepareSchoolDocumentWrite(payload);
     const row = await one(
       `UPDATE school_documents
-       SET title = $3, document_type = $4, storage_key = $5, mime_type = $6, status = $7, updated_at = NOW()
+       SET title = $3, document_type = $4, mime_type = $5, status = $6, updated_at = NOW()
        WHERE id = $1 AND school_id = $2
        RETURNING *`,
       [
@@ -609,12 +622,11 @@ function createDocumentsExamsPgStore(repo) {
         schoolId,
         hasOwn(body, "title") ? asTrimmed(body.title) : current.title,
         hasOwn(body, "documentType") ? asTrimmed(body.documentType) : current.document_type,
-        hasOwn(body, "storageKey") ? asTrimmed(body.storageKey) || null : current.storage_key,
         hasOwn(body, "mimeType") ? asTrimmed(body.mimeType) || null : current.mime_type,
         hasOwn(body, "status") ? asTrimmed(body.status) : current.status,
       ],
     );
-    return mapSchoolDocumentRow(row);
+    return hydrateSchoolDocument(row);
   }
 
   async function archiveSchoolDocument(schoolId, documentId) {
@@ -627,7 +639,7 @@ function createDocumentsExamsPgStore(repo) {
       `UPDATE school_documents SET status = 'archived', updated_at = NOW() WHERE id = $1 AND school_id = $2 RETURNING *`,
       [documentId, schoolId],
     );
-    return mapSchoolDocumentRow(row);
+    return hydrateSchoolDocument(row);
   }
 
   async function listActiveResidual(schoolId, domain) {

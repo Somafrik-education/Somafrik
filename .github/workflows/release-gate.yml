@@ -1,0 +1,94 @@
+name: Release gate
+
+# CI-FAST-01 — niveau C (RELEASE GATE) : avant toute release, la totalité des
+# suites lourdes sur le SHA CANDIDAT EXACT (tête de la PR vers main, ou SHA
+# donné à la main) — jamais sur un commit de fusion recalculé :
+#   - baseline backend MONO-T0 complète (unitaires + PostgreSQL, série, couverture) ;
+#   - régression complète (CI Full Nightly) ;
+#   - le candidat doit contenir main (sinon le SHA testé n'est pas ce qui serait livré).
+# Le contrôle « Release gate » n'est vert que si TOUT a réussi. Il ne déploie
+# rien et ne fusionne rien. Voir docs/project/CI-FAST-01.md.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "SHA candidat exact (40 caractères hexadécimaux)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gate-${{ github.event.pull_request.number || inputs.sha }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    name: Resolve candidate SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || inputs.sha }}
+      - id: resolve
+        name: Resolve and check the candidate
+        env:
+          CANDIDATE: ${{ github.event.pull_request.head.sha || inputs.sha }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$CANDIDATE" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::SHA candidat invalide « $CANDIDATE » (40 caractères hexadécimaux exigés, pas une branche)." >&2
+            exit 1
+          fi
+          test "$(git rev-parse HEAD)" = "$CANDIDATE"
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor origin/main "$CANDIDATE"; then
+            echo "::error::Le candidat $CANDIDATE ne contient pas origin/main : le SHA testé ne serait pas le SHA livré." >&2
+            exit 1
+          fi
+          echo "sha=$CANDIDATE" >> "$GITHUB_OUTPUT"
+          echo "Candidat : \`$CANDIDATE\` (contient origin/main \`$(git rev-parse origin/main)\`)" >> "$GITHUB_STEP_SUMMARY"
+
+  backend-baseline:
+    name: Full backend baseline
+    needs: candidate
+    uses: ./.github/workflows/backend-test-baseline.yml
+    with:
+      ref: ${{ needs.candidate.outputs.sha }}
+
+  full-regression:
+    name: Full regression
+    needs: candidate
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.candidate.outputs.sha }}
+
+  gate:
+    name: Release gate
+    if: always()
+    needs: [candidate, backend-baseline, full-regression]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every release suite must succeed on the candidate
+        env:
+          CANDIDATE: ${{ needs.candidate.result }}
+          SHA: ${{ needs.candidate.outputs.sha }}
+          BASELINE: ${{ needs.backend-baseline.result }}
+          REGRESSION: ${{ needs.full-regression.result }}
+        run: |
+          set -euo pipefail
+          echo "candidate=$CANDIDATE sha=$SHA backend-baseline=$BASELINE full-regression=$REGRESSION"
+          # Aucun « skipped » accepté au niveau C : tout s'exécute, tout réussit.
+          for result in "$CANDIDATE" "$BASELINE" "$REGRESSION"; do
+            [ "$result" = "success" ] || { echo "::error::Release gate : $result" >&2; exit 1; }
+          done
+          echo "✔ Release gate vert pour \`$SHA\`" >> "$GITHUB_STEP_SUMMARY"

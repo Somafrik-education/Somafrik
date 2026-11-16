@@ -10,22 +10,16 @@ type Props = {
 export function FinancePaymentsOverview({
   expectedLabel,
   cashLabel,
-  allocatedLabel,
   remainingLabel,
-  obligationCount,
-  recentPaymentCount,
 }: Props) {
   return (
     <section
-      className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+      className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
       aria-label="Synthèse financière"
     >
-      <Kpi label="Montant attendu" value={expectedLabel} />
-      <Kpi label="Montant encaissé" value={cashLabel} />
-      <Kpi label="Montant imputé aux obligations" value={allocatedLabel} />
+      <Kpi label="Obligation" value={expectedLabel} />
+      <Kpi label="Encaissé" value={cashLabel} />
       <Kpi label="Reste à payer" value={remainingLabel} />
-      <Kpi label="Obligations élèves" value={String(obligationCount)} />
-      <Kpi label="Paiements récents" value={String(recentPaymentCount)} />
     </section>
   );
 }

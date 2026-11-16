@@ -31,6 +31,8 @@ describe("OpenObligationCards", () => {
 
   it("empty state si aucune obligation ouverte", () => {
     render(<OpenObligationCards currency="CDF" obligations={[]} />);
-    expect(screen.getByText(/Aucune obligation ouverte/)).toBeInTheDocument();
+    expect(
+      screen.getByText("Aucune somme n'est exigible pour cet élève. L'encaissement est désactivé."),
+    ).toBeInTheDocument();
   });
 });

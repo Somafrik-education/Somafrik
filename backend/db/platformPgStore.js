@@ -15,6 +15,7 @@ const {
   mapRolePermissionsRows,
   mapDashboardChartConfigRows,
 } = require("../lib/platformManagement");
+const { SUBSCRIPTIONS_WITH_SCHOOL_SQL } = require("./subscriptionAccessSql");
 
 function createPlatformPgStore(repo) {
   function bind(client) {
@@ -320,6 +321,11 @@ function createPlatformPgStore(repo) {
     },
     getSchoolByCode: (code) => bind(repo).getSchoolByCode(code),
     getCountryByCode: (code) => bind(repo).getCountryByCode(code),
+    /** P0-WEB-01 — abonnements seuls (même SQL et même transformation que listProjection). */
+    async listSubscriptionsWithRows() {
+      const rows = await repo.all(SUBSCRIPTIONS_WITH_SCHOOL_SQL);
+      return { rows, subscriptions: rows.map(mapSubscriptionRow) };
+    },
     async listProjection() {
       const [
         countryRows,
@@ -334,13 +340,7 @@ function createPlatformPgStore(repo) {
         chartRows,
       ] = await Promise.all([
         repo.all("SELECT * FROM countries ORDER BY created_at, iso_code"),
-        repo.all(
-          `SELECT sub.*, s.school_code, c.iso_code AS country_code, c.name AS country_name
-           FROM subscriptions sub
-           JOIN schools s ON s.id = sub.school_id
-           JOIN countries c ON c.id = s.country_id
-           ORDER BY sub.created_at`,
-        ),
+        repo.all(SUBSCRIPTIONS_WITH_SCHOOL_SQL),
         repo.all(
           `SELECT n.*, s.school_code, COALESCE(c.iso_code, n.profile_payload->>'countryCode') AS country_code
            FROM notifications n

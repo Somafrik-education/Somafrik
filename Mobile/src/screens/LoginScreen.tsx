@@ -15,7 +15,8 @@ import FormField from "../components/FormField";
 import { Ionicons } from "@expo/vector-icons";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/AppNavigator";
-import { IdentifyResponse, changePassword, identifyAccount, login, persistAuthenticatedSession, LoginResponse, getApiBaseUrl } from "../services/api";
+import { IdentifyResponse, changePassword, identifyAccount, login, persistAuthenticatedSession, LoginResponse } from "../services/api";
+import { ApiClientError } from "../services/httpClient";
 import { useAuth } from "../context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { shouldShowDemoLogin } from "../config/env";
@@ -26,9 +27,10 @@ import {
   MIN_TOUCH_TARGET,
   ERROR_MESSAGES,
   canSubmitLogin,
+  mapIdentifyApiError,
   mapLoginApiError,
   resolveIdentifierKeyboardType,
-  resolveLoginEmptyFieldsError,
+  resolveLoginFieldsError,
   resolveSecretFieldCopy,
   resolveSecretKeyboardType,
 } from "../lib/loginScreenSpec";
@@ -41,7 +43,7 @@ import {
 import { MOBILE_ACCESSIBILITY_COPY } from "../lib/mobileAccessibilitySpec";
 import KeyboardAwareScreen from "../components/KeyboardAwareScreen";
 import { USABILITY_TEST_IDS } from "../lib/mobileUsability";
-import { schoolLogoDisplayUri } from "../lib/schoolLogo";
+import SchoolLogoMark from "../components/SchoolLogoMark";
 import {
   resetSchoolSetupWizardSessionDismiss,
   resolveMobilePostLoginNavigation,
@@ -108,10 +110,15 @@ export default function LoginScreen({ navigation, route }: Props) {
         });
         setIdentity(result);
         setErrorMessage(null);
-      } catch {
+      } catch (error) {
         setIdentity(null);
         if (normalizedIdentifier.length >= 3) {
-          setErrorMessage(ERROR_MESSAGES.invalidIdentifier);
+          setErrorMessage(
+            mapIdentifyApiError(
+              error instanceof Error ? error.message : "",
+              error instanceof ApiClientError ? error.status : undefined,
+            ),
+          );
         }
       } finally {
         setIsIdentifying(false);
@@ -122,8 +129,9 @@ export default function LoginScreen({ navigation, route }: Props) {
   }, [accessRole, accessRoleLabel, identifier, isPlatformLogin, school]);
 
   const handleLogin = async () => {
-    if (!identifier.trim() || !password.trim()) {
-      setErrorMessage(resolveLoginEmptyFieldsError(identity?.role));
+    const fieldsError = resolveLoginFieldsError(identifier, password);
+    if (fieldsError) {
+      setErrorMessage(fieldsError);
       return;
     }
 
@@ -140,9 +148,9 @@ export default function LoginScreen({ navigation, route }: Props) {
         buildMobileLoginPayload({
           role: identity.role,
           identifier: identifier.trim(),
-          ...(identity.role === "parent_student"
-            ? { password: password.trim() }
-            : { pin: password.trim() }),
+          // AUTH-MOBILE-01 : le routage pin/password par rôle est porté par buildMobileLoginPayload
+          // (student et parent_student → password, autres rôles → pin).
+          password: password.trim(),
           schoolCode: school?.code,
           platformContext,
         }),
@@ -161,7 +169,11 @@ export default function LoginScreen({ navigation, route }: Props) {
       await completeLogin(session);
     } catch (error) {
       setErrorMessage(
-        mapLoginApiError(error instanceof Error ? error.message : "", identity?.role),
+        mapLoginApiError(
+          error instanceof Error ? error.message : "",
+          identity?.role,
+          error instanceof ApiClientError ? error.status : undefined,
+        ),
       );
     } finally {
       setIsLoading(false);
@@ -264,7 +276,6 @@ export default function LoginScreen({ navigation, route }: Props) {
   const identifierKeyboard = resolveIdentifierKeyboardType(identifier);
   const secretKeyboard = resolveSecretKeyboardType(identity?.role);
   const secretCopy = resolveSecretFieldCopy(identity?.role);
-  const schoolLogoUri = schoolLogoDisplayUri(school, getApiBaseUrl());
 
   return (
     <SafeAreaView
@@ -280,7 +291,13 @@ export default function LoginScreen({ navigation, route }: Props) {
       >
       <View style={styles.schoolLogo} testID={LOGIN_TEST_IDS.schoolLogo}>
         {school ? (
-          schoolLogoUri ? <Image source={{ uri: schoolLogoUri }} style={styles.schoolLogoImage} /> : null
+          <SchoolLogoMark
+            school={school}
+            size={88}
+            imageStyle={styles.schoolLogoImage}
+            imageTestID={LOGIN_TEST_IDS.schoolLogoImage}
+            fallbackTestID={LOGIN_TEST_IDS.schoolLogoFallback}
+          />
         ) : (
           <Image source={somafrikLogo} style={styles.schoolLogoImage} />
         )}

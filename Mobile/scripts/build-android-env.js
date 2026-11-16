@@ -169,6 +169,7 @@ function runGradle(task) {
 module.exports = {
   mobileRoot,
   androidDir,
+  ensureLocalProperties,
   loadBuildEnv,
   runGradle,
 };

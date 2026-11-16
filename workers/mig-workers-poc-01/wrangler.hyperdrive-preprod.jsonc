@@ -1,0 +1,27 @@
+// LOT 1 — Binding Hyperdrive vers Supabase PREPROD uniquement.
+// Pas de secrets, DNS, queue ni Browser Run dans cette configuration.
+// Compte PostgreSQL limité au schema somafrik_workers_poc.
+// Deployment uniquement après contrôle indépendant + validation CTO.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "somafrik-mig-workers-cloud-01",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "iconv-lite": "./src/iconvLiteShim.cjs"
+  },
+  "workers_dev": true,
+  "preview_urls": false,
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "81eb6233ead64dcba878bd31cab644bf"
+    }
+  ],
+  "vars": {
+    "APP_ENV": "workers-poc",
+    "SOMAFRIK_POC": "mig-workers-cloud-hyperdrive-lot1",
+    "POC_DB_TARGET": "supabase-preprod-hyperdrive"
+  }
+}

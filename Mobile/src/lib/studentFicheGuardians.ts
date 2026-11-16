@@ -34,3 +34,11 @@ export function guardiansCardSubtitle(state: GuardiansLoadState, count: number):
   if (state === "empty") return "Aucun responsable lié";
   return `${count} responsable(s)`;
 }
+
+/** Même règle que le Web : seules les relations actives PostgreSQL sont affichées. */
+export function filterActiveParentRelations<T extends { status?: string | null }>(rows: T[]): T[] {
+  return rows.filter((row) => {
+    const status = String(row.status ?? "").trim().toLowerCase();
+    return status === "actif" || status === "active";
+  });
+}

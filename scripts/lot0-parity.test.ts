@@ -22,13 +22,19 @@ function read(rel: string) {
   return fs.readFileSync(path.join(ROOT, rel), "utf8");
 }
 
-test("PARITY-001 défaut d'appel Web Présent === Mobile Présent", () => {
-  assert.equal(rollCallInitialStatus(undefined), "Présent");
-  assert.equal(hydrateRollCallStatus(undefined), "Présent");
-  assert.equal(hydrateRollCallStatus(null), "Présent");
+/**
+ * PARITY-001 — divergence VOLONTAIRE (décision CTO NFC-STATUT-PRESENCE-01, 08/11/2026) :
+ * le Web garde « Présent » par défaut ; le Mobile affiche « Absent » PROVISOIRE (source `unset`),
+ * qu'un scan NFC fait passer à « Présent » et qui n'est jamais écrit sans confirmation explicite.
+ * Ce test verrouille les deux valeurs : toute évolution du Web doit le mettre à jour explicitement.
+ */
+test("PARITY-001 défaut d'appel : Web Présent, Mobile Absent provisoire non écrit (divergence décidée)", () => {
+  assert.equal(rollCallInitialStatus(undefined), "Présent", "Web inchangé");
+  assert.equal(hydrateRollCallStatus(undefined), "Absent");
+  assert.equal(hydrateRollCallStatus(null), "Absent");
   const unset = emptyRollCallEntry();
-  assert.equal(unset.status, "Présent");
-  assert.equal(unset.source, "unset");
+  assert.equal(unset.status, "Absent");
+  assert.equal(unset.source, "unset", "valeur d'affichage, pas une confirmation PostgreSQL");
 });
 
 test("PARITY-001b KPI brouillon incomplet fail-closed", () => {

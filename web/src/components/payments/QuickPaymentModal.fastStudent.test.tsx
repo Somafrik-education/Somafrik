@@ -246,14 +246,15 @@ describe("IMP-FAST — QuickPaymentModal contrat UUID ↔ code public", () => {
     expect(within(feeSelect).queryByRole("option", { name: /Uniforme/i })).not.toBeInTheDocument();
   });
 
-  it("P1-ESTHER — élève sans obligation ⇒ Non imputé uniquement", async () => {
+  it("P1-ESTHER — élève sans obligation ⇒ encaissement désactivé", async () => {
     listStudentFees.mockResolvedValue([]);
     render(<QuickPaymentModal open onClose={() => undefined} initialStudentId={STUDENT_UUID} />);
     const modal = await screen.findByTestId("quick-payment-modal");
     await waitFor(() => expect(screen.getByTestId("quick-payment-selected-student")).toBeInTheDocument());
-    expect(modal).toHaveTextContent(/Aucune obligation ouverte/i);
-    const feeSelect = screen.getByLabelText(/Frais concerné/i) as HTMLSelectElement;
-    expect(feeSelect.value).toBe("__unallocated__");
+    expect(modal).toHaveTextContent(/Aucune somme n'est exigible pour cet élève/i);
+    expect(screen.queryByLabelText(/Frais concerné/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer l'encaissement" })).toBeDisabled();
+    expect(modal).not.toHaveTextContent(/Non imputé/i);
   });
 
   it("IMP-FAST-GREEN-11 — QuickPaymentModal standard (Paiements) conserve la recherche élève", async () => {

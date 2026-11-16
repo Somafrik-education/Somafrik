@@ -18,9 +18,41 @@ const {
   DISPLAY_NAMES,
 } = require("../config/releaseEnvironments");
 const { evidenceLogLine, writeAabEvidence } = require("./aabEvidence");
+const { resolveSpawn } = require("./verify-mobile-preview-apk");
 
 const MOBILE = path.join(__dirname, "..");
 const ANDROID = path.join(MOBILE, "android");
+const IOS = path.join(MOBILE, "ios");
+const CANONICAL_CAMERA_PERMISSION =
+  "Somafrik utilise l’appareil photo pour prendre la photo du compte et scanner les cartes élève par QR code.";
+
+const PROFILE_API_ENV_KEYS = {
+  development: "EXPO_PUBLIC_API_URL_DEV",
+  preview: "EXPO_PUBLIC_API_URL_PREVIEW",
+  preproduction: "EXPO_PUBLIC_API_URL_PREPRODUCTION",
+  production: "EXPO_PUBLIC_API_URL_PRODUCTION",
+};
+
+function prebuildEnvForProfile(profile) {
+  const apiUrl = CANONICAL_API_URLS[profile];
+  const profileApiKey = PROFILE_API_ENV_KEYS[profile];
+  const env = {
+    CI: "1",
+    EXPO_PUBLIC_RELEASE_PROFILE: profile,
+    EAS_BUILD_PROFILE: profile,
+    EXPO_PUBLIC_API_URL: apiUrl,
+    EXPO_PUBLIC_DEMO_MODE: "false",
+    EXPO_PUBLIC_DEMO_PIN: "",
+  };
+  if (profileApiKey && apiUrl) {
+    env[profileApiKey] = apiUrl;
+  }
+  return env;
+}
+
+function mergeSpawnEnv(overlay, parentEnv = process.env) {
+  return { ...parentEnv, ...(overlay || {}) };
+}
 
 function read(file) {
   return fs.readFileSync(file, "utf8");
@@ -32,10 +64,11 @@ function resolveAndroidSdk() {
 }
 
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
+  const resolved = resolveSpawn(command, args);
+  const result = spawnSync(resolved.command, resolved.args, {
     encoding: "utf8",
     cwd: options.cwd || MOBILE,
-    env: { ...process.env, ...(options.env || {}) },
+    env: mergeSpawnEnv(options.env, process.env),
     maxBuffer: 20 * 1024 * 1024,
   });
   if (result.status !== 0) {
@@ -91,6 +124,39 @@ function inspectGeneratedAndroid(profile) {
   const granted = permissions.filter((attr) => !isRemovedPermission(attr)).map(permissionName);
   assert.ok(names.includes("android.permission.INTERNET") || granted.includes("android.permission.INTERNET"), `${profile}: INTERNET manquant`);
   assert.ok(granted.includes("android.permission.CAMERA"), `${profile}: CAMERA manquant`);
+  assert.ok(granted.includes("android.permission.NFC"), `${profile}: NFC manquant`);
+  const nfcPermissionAttrs = permissions.filter((attr) => permissionName(attr) === "android.permission.NFC");
+  assert.ok(
+    nfcPermissionAttrs.every((attr) => !isRemovedPermission(attr)),
+    `${profile}: NFC a tools:node=remove`,
+  );
+
+  const featureBlocks = [...manifest.matchAll(/<uses-feature\b([^>]*)\/?>/g)].map((match) => match[1] || "");
+  const nfcFeatures = featureBlocks.filter((block) => /android:name="android\.hardware\.nfc"/.test(block));
+  assert.ok(nfcFeatures.length > 0, `${profile}: uses-feature android.hardware.nfc manquant`);
+  assert.ok(
+    nfcFeatures.every((block) => /android:required="false"/.test(block)),
+    `${profile}: android.hardware.nfc required doit être false`,
+  );
+  assert.ok(
+    nfcFeatures.every((block) => !/android:required="true"/.test(block)),
+    `${profile}: android.hardware.nfc required=true interdit`,
+  );
+
+  const sdk = readAndroidSdkVersions();
+  assert.ok(Number.isInteger(sdk.compileSdk) && sdk.compileSdk >= 31, `${profile}: compileSdk ${sdk.compileSdk} < 31`);
+  assert.ok(
+    Number.isInteger(sdk.minSdk) && sdk.minSdk < 31,
+    `${profile}: STOP — minSdk relevé à ${sdk.minSdk} (interdit ; contrainte NFC = compileSdk >= 31)`,
+  );
+  for (const blocked of [
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.READ_CONTACTS",
+    "android.permission.CALL_PHONE",
+  ]) {
+    assert.ok(!granted.includes(blocked), `${profile}: ${blocked} accordé (interdit)`);
+  }
 
   const mustRemove = [
     "android.permission.READ_MEDIA_IMAGES",
@@ -123,7 +189,7 @@ function inspectGeneratedAndroid(profile) {
     if (name === "android.permission.POST_NOTIFICATIONS" || name === "android.permission.VIBRATE") {
       continue;
     }
-    assert.notEqual(name, "android.permission.NFC", `${profile}: NFC présent`);
+    if (name === "android.permission.NFC") continue;
     assert.notEqual(name, "android.permission.ACCESS_FINE_LOCATION", `${profile}: localisation présente`);
   }
 
@@ -142,12 +208,116 @@ function inspectGeneratedAndroid(profile) {
   }
 
   console.log(
-    `PROOF ${profile}: CAMERA granted ; READ_MEDIA_IMAGES not granted ; `
+    `PROOF ${profile}: CAMERA granted ; NFC granted ; hardware.nfc required=false ; `
+      + `compileSdk=${sdk.compileSdk} minSdk=${sdk.minSdk} source=${sdk.source} ; READ_MEDIA_IMAGES not granted ; `
       + `READ/WRITE_EXTERNAL_STORAGE tools:node=remove`
       + ` (${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off)`,
   );
   console.log(`OK: prebuild ${profile} — ${ANDROID_PACKAGE} / ${expectedName} / versionCode ${versionCode} / HTTPS / backup off`);
-  return { versionCode };
+  return { versionCode, compileSdk: sdk.compileSdk, minSdk: sdk.minSdk };
+}
+
+function readAndroidSdkVersions() {
+  const appGradle = read(path.join(ANDROID, "app", "build.gradle"));
+  assert.match(appGradle, /compileSdk rootProject\.ext\.compileSdkVersion/);
+  assert.match(appGradle, /minSdkVersion rootProject\.ext\.minSdkVersion/);
+  assert.doesNotMatch(appGradle, /minSdkVersion\s+31\b/, "STOP: minSdk literal 31 dans app/build.gradle");
+
+  const props = fs.existsSync(path.join(ANDROID, "gradle.properties"))
+    ? read(path.join(ANDROID, "gradle.properties"))
+    : "";
+  const propMin = (props.match(/^\s*android\.minSdkVersion\s*=\s*(\d+)/m) || [])[1];
+  const propCompile = (props.match(/^\s*android\.compileSdkVersion\s*=\s*(\d+)/m) || [])[1];
+  if (propMin) {
+    assert.ok(Number(propMin) < 31, `STOP: gradle.properties android.minSdkVersion=${propMin}`);
+  }
+
+  const catalogPath = path.join(MOBILE, "node_modules", "react-native", "gradle", "libs.versions.toml");
+  assert.ok(fs.existsSync(catalogPath), "catalogue SDK React Native manquant");
+  const catalog = read(catalogPath);
+  const catalogMin = Number((catalog.match(/^minSdk\s*=\s*"(\d+)"/m) || [])[1] || NaN);
+  const catalogCompile = Number((catalog.match(/^compileSdk\s*=\s*"(\d+)"/m) || [])[1] || NaN);
+  return {
+    minSdk: propMin ? Number(propMin) : catalogMin,
+    compileSdk: propCompile ? Number(propCompile) : catalogCompile,
+    source: propMin || propCompile ? "gradle.properties" : "react-native/gradle/libs.versions.toml",
+  };
+}
+
+function findIosInfoPlist() {
+  const found = [];
+  if (!fs.existsSync(IOS)) return found;
+  const stack = [IOS];
+  while (stack.length) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "Pods" || entry.name === "build") continue;
+        stack.push(full);
+      } else if (entry.name === "Info.plist") {
+        found.push(full);
+      }
+    }
+  }
+  return found;
+}
+
+function findIosEntitlements() {
+  const found = [];
+  if (!fs.existsSync(IOS)) return found;
+  const stack = [IOS];
+  while (stack.length) {
+    const current = stack.pop();
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "Pods" || entry.name === "build") continue;
+        stack.push(full);
+      } else if (entry.name.endsWith(".entitlements")) {
+        found.push(full);
+      }
+    }
+  }
+  return found;
+}
+
+function inspectGeneratedIos() {
+  const plists = findIosInfoPlist();
+  assert.ok(plists.length > 0, "iOS: Info.plist manquant après prebuild");
+  let cameraOk = false;
+  for (const file of plists) {
+    const plist = read(file);
+    if (plist.includes("NSCameraUsageDescription")) {
+      assert.ok(
+        plist.includes(CANONICAL_CAMERA_PERMISSION),
+        `${path.relative(MOBILE, file)}: NSCameraUsageDescription doit être la chaîne duale`,
+      );
+      cameraOk = true;
+    }
+    assert.doesNotMatch(plist, /NFCReaderUsageDescription/, `${path.relative(MOBILE, file)}: NFC iOS interdit`);
+    assert.doesNotMatch(plist, /NSUserTrackingUsageDescription/, `${path.relative(MOBILE, file)}: tracking interdit`);
+    assert.doesNotMatch(
+      plist,
+      /NSMicrophoneUsageDescription/,
+      `${path.relative(MOBILE, file)}: microphone scanner interdit`,
+    );
+  }
+  assert.ok(cameraOk, "iOS: NSCameraUsageDescription absente");
+  for (const file of findIosEntitlements()) {
+    assert.doesNotMatch(read(file), /com\.apple\.developer\.nfc|iso7816|felica/i, `${path.relative(MOBILE, file)}: entitlement NFC iOS interdit`);
+  }
+  console.log("PROOF ios: NSCameraUsageDescription duale ; NFC/tracking/micro absents");
+}
+
+function prebuildIos() {
+  console.log("prebuild ios --clean");
+  run("npx", ["expo", "prebuild", "--platform", "ios", "--clean", "--no-install"], {
+    env: prebuildEnvForProfile("production"),
+  });
+  inspectGeneratedIos();
 }
 
 function collectAndroidManifests(root) {
@@ -172,17 +342,18 @@ function collectAndroidManifests(root) {
 
 function prebuildProfile(profile) {
   const apiUrl = CANONICAL_API_URLS[profile];
+  const profileApiKey = PROFILE_API_ENV_KEYS[profile];
   console.log(`prebuild android --clean (${profile})`);
-  run("npx", ["expo", "prebuild", "--platform", "android", "--clean", "--no-install"], {
-    env: {
-      CI: "1",
-      EXPO_PUBLIC_RELEASE_PROFILE: profile,
-      EAS_BUILD_PROFILE: profile,
-      EXPO_PUBLIC_API_URL: apiUrl,
-      EXPO_PUBLIC_DEMO_MODE: "false",
-      EXPO_PUBLIC_DEMO_PIN: "",
-    },
-  });
+  const env = prebuildEnvForProfile(profile);
+  if (profileApiKey && apiUrl) {
+    assert.equal(env[profileApiKey], apiUrl);
+  }
+  assert.equal(env.EXPO_PUBLIC_API_URL, apiUrl);
+  run(
+    "npx",
+    ["expo", "prebuild", "--platform", "android", "--clean", "--no-install"],
+    { env },
+  );
   return inspectGeneratedAndroid(profile);
 }
 
@@ -302,13 +473,18 @@ function runNativeProof() {
   }
 
   fs.rmSync(ANDROID, { recursive: true, force: true });
-  console.log("OK: android/ régénéré puis supprimé (CNG, non commité)");
+  prebuildIos();
+  fs.rmSync(IOS, { recursive: true, force: true });
+  console.log("OK: android/ et ios/ régénérés puis supprimés (CNG, non commité)");
 }
 
 module.exports = {
   runNativeProof,
   inspectGeneratedAndroid,
   prebuildProfile,
+  PROFILE_API_ENV_KEYS,
+  prebuildEnvForProfile,
+  mergeSpawnEnv,
 };
 
 if (require.main === module) {

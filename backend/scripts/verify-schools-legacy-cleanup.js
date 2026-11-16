@@ -6,6 +6,7 @@
  * state.schools reste une projection de lecture.
  */
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const path = require("path");
@@ -203,7 +204,7 @@ async function runHttpGuards() {
 
     const login = await request("/backoffice/login", {
       method: "POST",
-      body: { identifier: "superadmin@somafrik.app", password: "1234" },
+      body: { identifier: "superadmin@somafrik.app", password: superadminLoginPassword() },
     });
     assert.equal(login.status, 200, JSON.stringify(login.data));
     const token = login.data.accessToken || login.data.token;

@@ -19,6 +19,29 @@ const DEFAULT_TEMPLATE = {
   ],
 };
 
+/**
+ * BULLETIN-UI-01 — style de présentation dans le gabarit de rendu existant
+ * (`presentation.style`). Le JSON reste la source : un JSON invalide n'est pas modifié.
+ */
+function presentationStyleOf(templateJson: string): string {
+  try {
+    const spec = JSON.parse(templateJson) as { presentation?: { style?: string } };
+    return spec.presentation?.style || "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+function withPresentationStyle(templateJson: string, style: string): string {
+  try {
+    const spec = JSON.parse(templateJson) as Record<string, unknown> & { presentation?: Record<string, unknown> };
+    spec.presentation = { ...(spec.presentation ?? {}), style };
+    return JSON.stringify(spec, null, 2);
+  } catch {
+    return templateJson;
+  }
+}
+
 type Draft = {
   profileId: string;
   profileVersion: string;
@@ -295,6 +318,20 @@ export function ReportCardSuperadminWorkflowPage() {
                       value={draft.schemaVersion}
                       onChange={(event) => patchDraft(request.id, { schemaVersion: event.target.value })}
                     />
+                  </label>
+                  <label>
+                    Présentation du bulletin
+                    <select
+                      data-testid="report-card-presentation-style"
+                      value={presentationStyleOf(draft.templateJson)}
+                      onChange={(event) =>
+                        patchDraft(request.id, { templateJson: withPresentationStyle(draft.templateJson, event.target.value) })
+                      }
+                    >
+                      <option value="auto">Automatique (selon les matières du modèle)</option>
+                      <option value="simple">Tableau classique — matières simples</option>
+                      <option value="hierarchical">Tableau hiérarchique — matières composées</option>
+                    </select>
                   </label>
                   <label>
                     Gabarit de rendu

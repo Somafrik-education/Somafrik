@@ -39,6 +39,19 @@ function ctxForRole(role: string, permissions = permissionsForRole(role)): Permi
 }
 
 describe("P0 [RED] — matrice rôles × domaines (chargements excessifs)", () => {
+  it("RBAC-WEB-ENSEIGNANT-01 : aucune fiche administrative chargée par la scolarité enseignant", () => {
+    const teacher = ctxForRole("Enseignant", ["Élèves:READ", "Classes:READ", "Affectations:READ", "Établissements:READ"]);
+    const domains = domainsForPath("/etablissement/vue-ensemble", teacher);
+    expect(domains).toContain("students");
+    expect(domains).toContain("classes");
+    expect(domains).toContain("assignments");
+    expect(domains).not.toContain("schools");
+    expect(canLoadDomain(teacher, "schools")).toBe(false);
+    expect(layoutDomainsForContext(teacher)).not.toContain("schools");
+    const admin = ctxForRole(SCHOOL_ADMIN_ROLE);
+    expect(canLoadDomain(admin, "schools")).toBe(true);
+  });
+
   it("[RED] RED-4 / RED-5 un rôle sans Messages:READ ne doit pas hydrater messages sur le tableau de bord", () => {
     const teacherWithoutMessages = ctxForRole("Enseignant", [
       "Notes:READ",

@@ -76,6 +76,14 @@ jobs:
           npm run verify:function-search-path
           npm run verify:platform-personal-data-deny
           npm run verify:preprod-503-local
+      - name: verify:school-code-v2
+        run: npm run verify:school-code-v2
+      - name: verify:mobile-usability
+        run: npm run verify:mobile-usability
+      - name: verify:mobile-network-resilience
+        run: npm run verify:mobile-network-resilience
+      - name: verify:mobile-form-fields
+        run: npm run verify:mobile-form-fields
       - name: Runtime bootstrap security
         env:
           NODE_ENV: test

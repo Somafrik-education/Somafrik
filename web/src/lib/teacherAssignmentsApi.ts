@@ -11,6 +11,15 @@ export type TeacherAssignmentPayload = {
   assignmentRole?: string;
 };
 
+export type TeacherAssignmentRecord = {
+  id: string;
+  teacherId: string;
+  className: string;
+  course: string;
+  subject?: string;
+  status?: string;
+};
+
 function canonicalPayload(payload: TeacherAssignmentPayload): TeacherAssignmentPayload {
   const canonical = { ...payload } as TeacherAssignmentPayload & Record<string, unknown>;
   delete canonical.schoolCode;
@@ -21,6 +30,7 @@ function canonicalPayload(payload: TeacherAssignmentPayload): TeacherAssignmentP
 }
 
 export const teacherAssignmentsApi = {
+  list: () => api.get<TeacherAssignmentRecord[]>("/assignments"),
   create: (payload: TeacherAssignmentPayload) =>
     api.post<Record<string, unknown>>("/assignments", canonicalPayload(payload)),
   update: (assignmentId: string, payload: TeacherAssignmentPayload) =>

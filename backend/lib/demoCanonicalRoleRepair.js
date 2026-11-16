@@ -74,6 +74,24 @@ async function hasLinkedStudentProfile(client, userId, schoolId) {
   return result.rowCount > 0;
 }
 
+/**
+ * SEC-RBAC-REVOKE-01 — un rôle explicitement révoqué n'est jamais « réparé »
+ * à partir de users.role : seul un nouvel octroi via l'API peut le réactiver.
+ */
+async function hasExplicitRevocation(client, { userId, schoolId, roleKey }) {
+  const result = await client.query(
+    `SELECT 1
+     FROM user_roles
+     WHERE user_id = $1
+       AND school_id = $2
+       AND upper(role_key) = upper($3)
+       AND status = 'revoked'
+     LIMIT 1`,
+    [userId, schoolId, roleKey],
+  );
+  return result.rowCount > 0;
+}
+
 async function ensureActiveCanonicalRole(client, { userId, schoolId, roleKey }) {
   const result = await client.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, granted_by, granted_at, status)
@@ -120,6 +138,7 @@ async function roleProof(client, schoolId) {
  * Aucun rôle plateforme n'est accepté et aucun autre établissement n'est touché.
  *
  * Ce backfill est idempotent : il n'insère qu'une ligne active manquante.
+ * Un rôle explicitement révoqué n'est jamais réinséré (compté dans skippedRevoked).
  */
 async function repairPublicDemoCanonicalRoles(
   client,
@@ -136,6 +155,7 @@ async function repairPublicDemoCanonicalRoles(
   const users = await loadPublicDemoUsers(client, schoolId);
   let inserted = 0;
   let considered = 0;
+  let skippedRevoked = 0;
 
   for (const user of users) {
     const roleKey = normalizeDemoRoleKey(user.role);
@@ -153,6 +173,10 @@ async function repairPublicDemoCanonicalRoles(
     }
 
     considered += 1;
+    if (await hasExplicitRevocation(client, { userId: user.id, schoolId, roleKey })) {
+      skippedRevoked += 1;
+      continue;
+    }
     if (await ensureActiveCanonicalRole(client, { userId: user.id, schoolId, roleKey })) {
       inserted += 1;
     }
@@ -172,6 +196,7 @@ async function repairPublicDemoCanonicalRoles(
     loginCode: normalizeLoginCode(school.login_code),
     users: considered,
     inserted,
+    skippedRevoked,
     ...proof,
   };
 }

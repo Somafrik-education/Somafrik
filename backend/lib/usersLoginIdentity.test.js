@@ -122,10 +122,11 @@ test("AuthService accepte CD-IK-26-001 avec GK-26-00001", async () => {
     subscriptions: [],
   });
 
-  assert.deepEqual(service.identify({ schoolCode: "CD-IK-26-001", identifier: "GK-26-00001" }), {
-    role: "school_admin",
-    roleLabel: "Admin Établissement",
-  });
+  const identified = service.identify({ schoolCode: "CD-IK-26-001", identifier: "GK-26-00001" });
+  assert.equal(identified.role, "school_admin");
+  assert.equal(identified.roleKey, "SCHOOL_ADMIN");
+  assert.equal(identified.roleLabel, "Admin School");
+  assert.equal(identified.effectiveRoleLabel, "Admin School");
 
   const result = await service.login({
     role: "school_admin",

@@ -1,7 +1,8 @@
 import type { DomainKey } from "./domainLoaders";
 import { filterDomainsByPermissions, layoutDomainsForContext } from "./domainPermissions";
 import type { PermissionContext } from "./permissions";
-import { isParentRole } from "./format";
+import { isInternalSchoolRole, isParentRole } from "./format";
+import { isParentPresenceRole } from "./presenceRoster";
 
 const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   {
@@ -13,12 +14,6 @@ const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
       "subscriptions",
       "dashboardChartConfig",
       "rolePermissions",
-      "students",
-      "teachers",
-      "classes",
-      "payments",
-      "studentFees",
-      "presences",
     ],
   },
   {
@@ -53,6 +48,8 @@ const ROUTE_DOMAIN_RULES: { prefix: string; domains: DomainKey[] }[] = [
   { prefix: "/parametres/roles-droits", domains: ["academicConfigs", "users", "rolePermissions"] },
   { prefix: "/parametres/annee-scolaire", domains: ["academicConfigs", "schools"] },
   { prefix: "/parametres/documents", domains: ["documents", "academicConfigs"] },
+  // Catalogue des bulletins (Superadmin) : données chargées par la page elle-même.
+  { prefix: "/parametres/bulletins-catalogue", domains: [] },
   { prefix: "/parametres/graphiques", domains: ["dashboardChartConfig", "rolePermissions"] },
   { prefix: "/parametres", domains: ["academicConfigs", "schools", "rolePermissions", "users"] },
   { prefix: "/administration", domains: ["users", "schools", "countries"] },
@@ -66,7 +63,15 @@ export function domainsForPath(pathname: string, ctx: PermissionContext): Domain
   const parentPublishedBulletins =
     isParentRole(ctx.user?.role) &&
     (pathname === "/bulletins" || pathname.startsWith("/bulletins/"));
-  const routeDomains = parentPublishedBulletins ? [] : (match?.domains ?? []);
+  // PERF-PR3 : l'écran Présences du personnel lit /api/v2/presences (jour courant,
+  // pages SQL) ; l'historique complet n'est plus amorcé pour lui.
+  const pagedPresences =
+    (pathname === "/presences" || pathname.startsWith("/presences/")) &&
+    isInternalSchoolRole(ctx.user?.role) &&
+    !isParentPresenceRole(ctx.user?.role, (ctx.user as { roleKeys?: unknown } | null)?.roleKeys);
+  const routeDomains = (parentPublishedBulletins ? [] : (match?.domains ?? [])).filter(
+    (domain) => !(pagedPresences && domain === "presences"),
+  );
   const combined = [...new Set([...layoutDomainsForContext(ctx), ...routeDomains])];
   return filterDomainsByPermissions(combined, ctx);
 }

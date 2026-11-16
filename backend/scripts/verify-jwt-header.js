@@ -20,6 +20,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 
 const ROOT = path.join(__dirname, "..", "..");
 const BACKEND_DIR = path.join(__dirname, "..");
@@ -361,7 +362,7 @@ async function request(base, pathName, { method = "GET", token, queryToken, quer
 
 async function login(base) {
   const identifier = process.env.SOMAFRIK_VERIFY_IDENTIFIER || "superadmin@somafrik.app";
-  const password = process.env.SOMAFRIK_VERIFY_PASSWORD || "1234";
+  const password = process.env.SOMAFRIK_VERIFY_PASSWORD || superadminLoginPassword();
   const loginRes = await fetch(`${base}/backoffice/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

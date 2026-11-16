@@ -20,6 +20,7 @@ import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { useAdminData } from "../context/AdminDataContext";
 import { canMutateEntity, canReadEntity, isSuperAdminSessionRole } from "../domain/security/permissions";
+import { shouldSkipSchoolTenantHydration } from "../lib/platformSchoolDomainDeny";
 import { canArchiveAnnouncement } from "../lib/mobileCtaRbacAlignment";
 import { announcementRowKey, mergeAnnouncementsByKey, sortAnnouncementsByPublishedAt } from "../lib/communicationPagination";
 import { filterCommunicationRows, excerptCommunication } from "../lib/communicationListFilter";
@@ -83,7 +84,9 @@ export default function AnnouncementsScreen() {
     }
     setAnnouncementsSnapshot((current) => ({ status: "loading", data: current.data }));
     try {
-      const page = await getCanonicalAnnouncementsPage(activeSchoolCode);
+      const page = await getCanonicalAnnouncementsPage(activeSchoolCode, {
+        includeSchool: !shouldSkipSchoolTenantHydration(session),
+      });
       setAnnouncementsSnapshot(snapshotFromSuccess(page.items));
       setSchoolCursor(page.schoolCursor);
       setPlatformCursor(page.platformCursor);
@@ -92,7 +95,7 @@ export default function AnnouncementsScreen() {
       setSchoolCursor(null);
       setPlatformCursor(null);
     }
-  }, [canRead, activeSchoolCode]);
+  }, [canRead, activeSchoolCode, session]);
 
   const loadMoreAnnouncements = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
@@ -103,7 +106,7 @@ export default function AnnouncementsScreen() {
       const page = await getCanonicalAnnouncementsPage(activeSchoolCode, {
         schoolCursor: pendingSchoolCursor,
         platformCursor: pendingPlatformCursor,
-        includeSchool: Boolean(pendingSchoolCursor),
+        includeSchool: Boolean(pendingSchoolCursor) && !shouldSkipSchoolTenantHydration(session),
         includePlatform: Boolean(pendingPlatformCursor),
       });
       setAnnouncementsSnapshot((current) =>
@@ -116,7 +119,7 @@ export default function AnnouncementsScreen() {
     } finally {
       setLoadingMore(false);
     }
-  }, [activeSchoolCode, schoolCursor, platformCursor, nextCursor, loadingMore]);
+  }, [activeSchoolCode, schoolCursor, platformCursor, nextCursor, loadingMore, session]);
 
   const refreshList = useCallback(() => {
     void load();

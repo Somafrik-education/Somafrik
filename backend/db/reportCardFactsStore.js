@@ -206,7 +206,73 @@ function createReportCardFactsPgStore(db) {
     });
   }
 
-  return { listFacts, resolveCohort };
+  /**
+   * BULLETIN-PUBLISH-01 — inscrits actifs de la classe pour l'année (établissement
+   * imposé). Un élève inscrit sans note figure au bulletin (notes MISSING).
+   */
+  async function listClassCohort({ schoolId, classId, academicYearId } = {}) {
+    if (!schoolId || !classId || !academicYearId) return [];
+    return withClient(async (client) => {
+      const result = await client.query(
+        `SELECT st.id::text AS student_uuid, st.student_code, st.school_id::text AS student_school_id
+           FROM enrollments e
+           JOIN students st ON st.id = e.student_id
+          WHERE e.school_id = $1 AND e.class_id = $2 AND e.academic_year_id = $3
+            AND lower(btrim(e.status)) IN ('active', 'enrolled')
+            AND COALESCE(st.status, 'active') <> 'archived'
+          ORDER BY st.student_code COLLATE "C"`,
+        [schoolId, classId, academicYearId]
+      );
+      return result.rows;
+    });
+  }
+
+  /**
+   * BULLETIN-PUBLISH-01 — toutes les notes de la classe (publiées ou non), avec les
+   * références nécessaires au rattachement : élève, matière (+ parent), trimestre,
+   * évaluation (statut, type, maximum, coefficient), cours de la classe (matière ou
+   * matière principale). Les écarts d'établissement sont renvoyés pour être signalés.
+   */
+  async function listClassGradeSources({ schoolId, classId, academicYearId } = {}) {
+    if (!schoolId || !classId || !academicYearId) return [];
+    return withClient(async (client) => {
+      const result = await client.query(
+        `SELECT g.id::text AS grade_id, g.school_id::text AS grade_school_id,
+                st.id::text AS student_uuid, st.student_code, st.school_id::text AS student_school_id,
+                sub.subject_code, sub.school_id::text AS subject_school_id, sub.status AS subject_status,
+                parent.subject_code AS subject_parent_code,
+                t.name AS term_name, t.academic_year_id::text AS term_year_id,
+                e.id::text AS evaluation_id, e.school_id::text AS evaluation_school_id,
+                e.status AS evaluation_status, e.active AS evaluation_active,
+                et.code AS evaluation_type_code, e.evaluation_type AS evaluation_type_text,
+                COALESCE(e.max_score, g.max_score) AS max_score,
+                COALESCE(e.coefficient, g.coefficient, 1) AS coefficient,
+                g.score, g.grade_status, g.publication_status,
+                (SELECT sc.id::text
+                   FROM school_courses sc
+                  WHERE sc.school_id = c.school_id
+                    AND sc.class_id = g.class_id
+                    AND sc.status = 'active'
+                    AND (sc.subject_id = g.subject_id OR sc.subject_id = sub.parent_subject_id)
+                  ORDER BY (sc.subject_id = g.subject_id) DESC, sc.id
+                  LIMIT 1) AS course_id
+           FROM grades g
+           JOIN classes c ON c.id = g.class_id
+           JOIN students st ON st.id = g.student_id
+           JOIN subjects sub ON sub.id = g.subject_id
+           LEFT JOIN subjects parent ON parent.id = sub.parent_subject_id
+           JOIN terms t ON t.id = g.term_id
+           LEFT JOIN evaluations e ON e.id = g.evaluation_id
+           LEFT JOIN evaluation_types et ON et.id = e.evaluation_type_id
+          WHERE c.school_id = $1 AND g.class_id = $2 AND c.academic_year_id = $3
+          ORDER BY g.id`,
+        [schoolId, classId, academicYearId]
+      );
+      return result.rows;
+    });
+  }
+
+  return { listFacts, resolveCohort, listClassCohort, listClassGradeSources };
 }
 
 function createMemoryFactsStore(seed = []) {

@@ -43,7 +43,27 @@ test("Mobile AdminCrud écoles : écran mort absent", () => {
 test("login / rôle : école sans logo ≠ fallback Somafrik", () => {
   const login = read("Mobile/src/screens/LoginScreen.tsx");
   const roles = read("Mobile/src/screens/RoleSelectionScreen.tsx");
-  assert.match(login, /schoolLogoDisplayUri|schoolHasLogo/);
+  // AUTH-MOBILE-01 : les deux écrans délèguent l'affichage du logo établissement à SchoolLogoMark.
+  const logoMark = read("Mobile/src/components/SchoolLogoMark.tsx");
+  assert.match(logoMark, /schoolLogoDisplayUri\(/);
+  assert.match(logoMark, /from "\.\.\/lib\/schoolLogo"/);
+  // Le remplacement est neutre (initiales) : ni logo plateforme, ni URL saisie.
+  assert.match(logoMark, /schoolLogoInitials\(/);
+  assert.doesNotMatch(logoMark, /somafrik-logo|somafrikLogo|logoUrl/i);
+  for (const screen of [login, roles]) {
+    assert.match(screen, /<SchoolLogoMark[\s\S]{0,40}school=\{school\}/);
+    assert.doesNotMatch(screen, /schoolLogoDisplayUri|logoUrl/);
+  }
+  // Login : le logo Somafrik n'apparaît que dans la branche plateforme (aucune école).
+  assert.match(login, /\{school \? \(\s*<SchoolLogoMark[\s\S]{0,300}?\) : \(\s*<Image source=\{somafrikLogo\}/);
+  assert.equal((login.match(/somafrikLogo/g) || []).length, 2, "déclaration + branche plateforme uniquement");
+  // Saisie du code : le logo Somafrik reste l'en-tête de l'application, jamais dans la carte établissement.
+  const schoolCard = roles.slice(
+    roles.indexOf("ROLE_SELECTION_TEST_IDS.schoolCard"),
+    roles.indexOf("ROLE_SELECTION_TEST_IDS.schoolName"),
+  );
+  assert.match(schoolCard, /<SchoolLogoMark/);
+  assert.doesNotMatch(schoolCard, /somafrikLogo|somafrik-logo/);
   assert.doesNotMatch(
     login,
     /school\?\.logoUrl \?[\s\S]{0,180}somafrikLogo/,

@@ -29,6 +29,7 @@ const {
   isSchoolWideRecipientKind,
   recipientCategoriesFromContext,
   resolveUserRecipientCategories,
+  expandSchoolWideRecipientKinds,
 } = require("./schoolNotificationPolicy");
 
 const DEFAULT_LIMIT = 50;
@@ -73,15 +74,6 @@ function notFound() {
   return createClientsError(404, "Notification introuvable.", CLIENTS_ERROR.FORBIDDEN);
 }
 
-function principalPermissions(principal) {
-  return new Set(Array.isArray(principal?.permissions) ? principal.permissions.map(String) : []);
-}
-
-function canManage(principal) {
-  const perms = principalPermissions(principal);
-  return perms.has("Notifications:UPDATE") || perms.has("ALL_PRIVILEGES") || perms.has("COUNTRY_PRIVILEGES");
-}
-
 function normalizeKind(raw) {
   const value = asTrimmed(raw).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   if (["parent", "parents"].includes(value)) return "parent";
@@ -102,6 +94,19 @@ function parseAudience(payload) {
   return { scope: "classes", classIds, recipientKinds: kinds };
 }
 
+async function snapshotRecipientKinds(tx, { userId, schoolId, kind, context = {} }) {
+  const rawKinds = Array.isArray(context.kinds) && context.kinds.length
+    ? context.kinds
+    : [kind].filter(Boolean);
+  const kinds = await expandSchoolWideRecipientKinds(tx, {
+    userId,
+    schoolId,
+    kind,
+    kinds: rawKinds,
+  });
+  return kinds;
+}
+
 async function resolveManualRecipients(tx, schoolId, audience) {
   const ids = new Map();
   const add = (userId, kind, context = {}) => {
@@ -109,14 +114,24 @@ async function resolveManualRecipients(tx, schoolId, audience) {
     if (id) ids.set(id, { userId: id, kind, context });
   };
   if (audience.scope === "school") {
-    const rows = await tx.listSchoolActiveUserIds(schoolId);
-    for (const row of rows) add(row.user_id || row.id, "school", { scope: "school" });
+    const rows = typeof tx.listSchoolActiveUserIds === "function" ? await tx.listSchoolActiveUserIds(schoolId) : [];
+    for (const row of rows) {
+      const userId = row.user_id || row.id;
+      const kinds = await snapshotRecipientKinds(tx, {
+        userId,
+        schoolId,
+        kind: "school",
+        context: { kinds: ["school"] },
+      });
+      if (!kinds.length) continue;
+      add(userId, "school", { scope: "school", kinds });
+    }
     return [...ids.values()];
   }
   if (audience.scope === "roles") {
     for (const kind of audience.recipientKinds) {
       for (const row of await tx.listSchoolUserIdsByRecipientKind(schoolId, kind)) {
-        add(row.user_id || row.id, kind, { scope: "roles" });
+        add(row.user_id || row.id, kind, { scope: "roles", kinds: [kind] });
       }
     }
     return [...ids.values()];
@@ -129,7 +144,9 @@ async function resolveManualRecipients(tx, schoolId, audience) {
     if (kind === "teacher") rows = await tx.listClassTeacherUserIds(schoolId, audience.classIds);
     if (kind === "student") rows = await tx.listClassStudentUserIds(schoolId, audience.classIds);
     if (kind === "staff") rows = await tx.listSchoolUserIdsByRecipientKind(schoolId, "staff");
-    for (const row of rows) add(row.user_id || row.id, kind, { scope: "classes", classIds: audience.classIds });
+    for (const row of rows) {
+      add(row.user_id || row.id, kind, { scope: "classes", classIds: audience.classIds, kinds: [kind] });
+    }
   }
   return [...ids.values()];
 }
@@ -172,22 +189,21 @@ function mapNotification(row, extras = {}) {
   };
 }
 
-async function loadVisible(tx, notificationId, schoolId, userId, management = false) {
+async function loadVisible(tx, notificationId, schoolId, userId) {
   const row = await tx.one(
-    `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind, r.recipient_context
+    `SELECT n.*, s.school_code, r.user_id AS recipient_user_id,
+            r.read_at, r.archived_at AS recipient_archived_at, r.recipient_kind, r.recipient_context
      FROM communication_notifications n
      JOIN schools s ON s.id = n.school_id
-     LEFT JOIN notification_recipients r ON r.notification_id = n.id AND r.user_id = $2
+     LEFT JOIN notification_recipients r ON r.notification_id = n.id AND r.user_id = $2 AND r.school_id = n.school_id
      WHERE n.id::text = $1 AND n.school_id = $3::uuid`,
     [notificationId, userId, schoolId],
   );
-  if (!row || (!row.read_at && !row.recipient_archived_at && !management)) {
-    const recipient = row
-      ? await tx.one(`SELECT 1 FROM notification_recipients WHERE notification_id = $1 AND user_id = $2`, [row.id, userId])
-      : null;
-    if (!recipient && !management) throw notFound();
-  }
-  if (!row) throw notFound();
+  // Notifications:UPDATE n'autorise jamais la lecture des notifications privées d'autrui.
+  // Seul l'auteur d'une notification manuelle conserve le droit de consulter son propre envoi.
+  const authorOfManual = row?.event_type === "notification.manual"
+    && row?.sender_user_id != null && String(row.sender_user_id) === String(userId);
+  if (!row || (!row.recipient_user_id && !authorOfManual)) throw notFound();
   return row;
 }
 
@@ -305,7 +321,7 @@ async function get(store, notificationId, principal, query = {}) {
   if (!userId) throw createClientsError(403, "Non authentifié.", CLIENTS_ERROR.FORBIDDEN);
   const { school, schoolCode, tx } = await requireSchool(store, principal, query);
   if (!(await isInAppVisible(tx, { userId, schoolId: school.id }))) throw notFound();
-  const row = await loadVisible(tx, notificationId, school.id, userId, canManage(principal));
+  const row = await loadVisible(tx, notificationId, school.id, userId);
   const viewerCategories = await resolveUserRecipientCategories(tx, { userId, schoolId: school.id });
   if (!(await allowsInAppForRow(tx, school.id, row, true, viewerCategories))) throw notFound();
   const attachments = (await hydrateAttachments(tx, [row.id])).get(String(row.id)) ?? [];
@@ -507,6 +523,13 @@ async function createManual(store, rawPayload, principal, auditMeta, idempotency
         });
       }
     }
+    await tx.query(
+      `INSERT INTO communication_event_outbox (
+         event_key, event_type, school_id, actor_user_id, source_entity_type, source_entity_id, payload, status
+       ) VALUES ($1,'notification.manual',$2,$3,'notification',$4,$5::jsonb,'pending')
+       ON CONFLICT (event_key) DO NOTHING`,
+      [eventKey, school.id, userId, row.source_entity_id || row.id, JSON.stringify({ audience })],
+    );
     const recipientRow = await tx.one(
       `SELECT n.*, s.school_code, r.read_at, r.archived_at AS recipient_archived_at
        FROM communication_notifications n JOIN schools s ON s.id = n.school_id
@@ -528,11 +551,15 @@ async function downloadAttachment(store, attachmentId, principal, query = {}) {
   if (attachment.status === "uploaded" && !attachment.entity_id) {
     if (String(attachment.uploaded_by_user_id) !== String(userId)) throw notFound();
   } else {
-    const recipient = await tx.one(
-      `SELECT 1 FROM notification_recipients WHERE notification_id = $1::uuid AND user_id = $2::uuid AND school_id = $3::uuid`,
+    const authorized = await tx.one(
+      `SELECT 1 FROM communication_notifications n
+       LEFT JOIN notification_recipients r
+         ON r.notification_id = n.id AND r.user_id = $2::uuid AND r.school_id = n.school_id
+       WHERE n.id = $1::uuid AND n.school_id = $3::uuid
+         AND (r.user_id IS NOT NULL OR (n.event_type = 'notification.manual' AND n.sender_user_id = $2::uuid))`,
       [attachment.entity_id, userId, school.id],
     );
-    if (!recipient && !canManage(principal)) throw notFound();
+    if (!authorized) throw notFound();
   }
   const bytes = await readAttachmentBytes(attachment.storage_key);
   return { bytes, fileName: attachment.file_name, mimeType: attachment.mime_type };
@@ -593,7 +620,7 @@ async function eventSpec(tx, event) {
     for (const row of rows) add(row.user_id, "participant", { conversationId: message.conversation_id });
     title = "Nouveau message";
     body = "Vous avez reçu un nouveau message.";
-    navigationTarget = { type: "conversation", conversationId: message.conversation_id };
+    navigationTarget = { type: "conversation", conversationId: message.conversation_id, messageId: message.id };
   } else if (eventType === "communication.announcement.published") {
     const announcement = await tx.one(`SELECT id, title FROM announcements WHERE id = $1 AND school_id = $2`, [sourceId, schoolId]);
     if (!announcement) throw new Error("Annonce source introuvable");
@@ -611,9 +638,16 @@ async function eventSpec(tx, event) {
           }
         })()
         : (row.audience_reason || {});
-      const kinds = Array.isArray(parsed.kinds) && parsed.kinds.length
+      const rawKinds = Array.isArray(parsed.kinds) && parsed.kinds.length
         ? parsed.kinds
         : [row.recipient_kind].filter(Boolean);
+      const kinds = await snapshotRecipientKinds(tx, {
+        userId: row.user_id,
+        schoolId,
+        kind: row.recipient_kind,
+        context: { kinds: rawKinds },
+      });
+      if (!kinds.length) continue;
       addExact(row.user_id, row.recipient_kind, { announcementId: sourceId, kinds });
     }
     title = "Nouvelle annonce";

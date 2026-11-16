@@ -64,8 +64,8 @@ describe("domainsForPath — /notes n'hydrate pas les domaines globaux d'affecta
   });
 });
 
-describe("domainsForPath — tableau de bord hydrate l'assiette de paiement", () => {
-  it("charge studentFees et presences pour un Admin établissement avec Paiements:READ", () => {
+describe("domainsForPath — tableau de bord ne recharge plus les listes KPI", () => {
+  it("laisse l'assiette de paiement aux écrans finances", () => {
     const ctx: PermissionContext = {
       user: {
         role: "Admin School",
@@ -82,9 +82,10 @@ describe("domainsForPath — tableau de bord hydrate l'assiette de paiement", ()
       rolePermissions: {},
     };
     const domains = domainsForPath("/tableau-de-bord", ctx);
-    expect(domains).toContain("studentFees");
-    expect(domains).toContain("presences");
-    expect(domains).toContain("payments");
+    expect(domains).not.toContain("studentFees");
+    expect(domains).not.toContain("presences");
+    expect(domains).not.toContain("payments");
+    expect(domainsForPath("/finances", ctx)).toEqual(expect.arrayContaining(["studentFees", "payments"]));
   });
 });
 
@@ -105,9 +106,18 @@ describe("domainsForPath — /presences hydrate les élèves", () => {
       rolePermissions: {},
     };
     const domains = domainsForPath("/presences", ctx);
-    expect(domains).toContain("presences");
+    // PERF-PR3 : le personnel lit /api/v2/presences (jour courant) ; l'historique n'est plus amorcé.
+    expect(domains).not.toContain("presences");
     expect(domains).toContain("classes");
     expect(domains).toContain("students");
+  });
+
+  it("un parent garde l'historique des présences de son enfant (route historique)", () => {
+    const ctx: PermissionContext = {
+      user: { role: "Parent", schoolCode: "CD-IN-26-001", permissions: ["Présences:READ", "Élèves:READ"] },
+      rolePermissions: {},
+    };
+    expect(domainsForPath("/presences", ctx)).toContain("presences");
   });
 
   it("n'ajoute pas students sans Élèves:READ", () => {

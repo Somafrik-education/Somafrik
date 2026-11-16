@@ -10,9 +10,74 @@ const {
   EXPO_PROJECT_ID,
   isEasAuthMissing,
   interpretEasProjectInfo,
+  resolveSpawn,
+  isCoreMode,
 } = require("./verify-mobile-preview-apk");
 
+const { CANONICAL_API_URLS } = require("../config/releaseEnvironments");
 const SRC = fs.readFileSync(path.join(__dirname, "verify-mobile-preview-apk.js"), "utf8");
+const EAS = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "..", "eas.json"), "utf8").replace(/^\uFEFF/, ""),
+);
+
+assert.equal(CANONICAL_API_URLS.preview, "https://api-preprod.somafrik.app");
+assert.equal(EAS.build.preview.env.EXPO_PUBLIC_API_URL, CANONICAL_API_URLS.preview);
+assert.equal(EAS.build.preview.env.EXPO_PUBLIC_API_URL_PREVIEW, CANONICAL_API_URLS.preview);
+assert.doesNotMatch(
+  SRC,
+  /bundle\.includes\(PREVIEW_API\)\s*\|\|\s*bundle\.includes\("somafrik-api-preprod\.onrender\.com"\)/,
+);
+assert.match(SRC, /CANONICAL_API_URLS\.preview/);
+
+assert.deepStrictEqual(
+  resolveSpawn("npx", ["expo", "config"], "win32", { ComSpec: "C:\\Windows\\System32\\cmd.exe" }),
+  {
+    command: "C:\\Windows\\System32\\cmd.exe",
+    args: ["/d", "/c", "npx.cmd", "expo", "config"],
+  },
+);
+assert.deepStrictEqual(
+  resolveSpawn("npm", ["run", "test"], "win32", { ComSpec: "cmd.exe" }),
+  {
+    command: "cmd.exe",
+    args: ["/d", "/c", "npm.cmd", "run", "test"],
+  },
+);
+assert.deepStrictEqual(
+  resolveSpawn("npx", ["expo", "config"], "linux", {}),
+  {
+    command: "npx",
+    args: ["expo", "config"],
+  },
+);
+assert.deepStrictEqual(
+  resolveSpawn("node", ["-v"], "win32", { ComSpec: "cmd.exe" }),
+  {
+    command: "node",
+    args: ["-v"],
+  },
+);
+assert.doesNotMatch(SRC, /shell:\s*true/);
+assert.doesNotMatch(SRC, /spawnSync\(\s*["']npx(?:\.cmd)?["']/);
+assert.match(SRC, /resolveSpawn/);
+const nativeSrc = fs.readFileSync(path.join(__dirname, "verify-native-prebuild.js"), "utf8");
+assert.match(nativeSrc, /resolveSpawn/);
+assert.doesNotMatch(nativeSrc, /shell:\s*true/);
+const winWf = fs.readFileSync(
+  path.join(__dirname, "..", "..", ".github", "workflows", "mobile-preview-windows.yml"),
+  "utf8",
+);
+assert.match(winWf, /windows-latest/);
+assert.match(winWf, /verify-mobile-preview-apk\.test\.js/);
+assert.match(winWf, /npx expo config --type public --json/);
+assert.match(winWf, /verify:mobile-preview-apk:core/);
+assert.doesNotMatch(winWf, /npm run verify:mobile-preview-apk(?!:core)/);
+assert.equal(isCoreMode(["node", "scripts/verify-mobile-preview-apk.js", "--core"], {}), true);
+assert.equal(isCoreMode(["node", "scripts/verify-mobile-preview-apk.js"], { SOMAFRIK_PREVIEW_APK_CORE: "1" }), true);
+assert.equal(isCoreMode(["node", "scripts/verify-mobile-preview-apk.js"], {}), false);
+assert.match(SRC, /if \(core\)/);
+assert.match(SRC, /probeEasAuth\(\)/);
+require("./verify-native-prebuild.test.js");
 
 assert.equal(EXPO_PROJECT_ID, "47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5");
 assert.doesNotMatch(

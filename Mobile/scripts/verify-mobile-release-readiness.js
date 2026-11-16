@@ -23,6 +23,131 @@ function read(file) {
   return fs.readFileSync(file, "utf8");
 }
 
+function unquoteYamlScalar(value) {
+  const raw = String(value ?? "").trim();
+  if (
+    (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2)
+    || (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2)
+  ) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+
+/** Extraits des scripts réellement exécutés par les steps GitHub `run:`. */
+function extractYamlRunScripts(source) {
+  const scripts = [];
+  const lines = String(source || "").split(/\r?\n/);
+  let index = 0;
+  while (index < lines.length) {
+    const match = lines[index].match(/^([ \t]*)(?:-\s+)?run:\s*(.*?)\s*$/);
+    if (!match) {
+      index += 1;
+      continue;
+    }
+    const indent = match[1].length;
+    const rest = match[2];
+    if (/^[|>][+-]?(?:\s.*)?$/.test(rest)) {
+      const collected = [];
+      index += 1;
+      while (index < lines.length) {
+        const next = lines[index];
+        if (next.trim() === "") {
+          collected.push("");
+          index += 1;
+          continue;
+        }
+        const leading = next.match(/^[ \t]*/)[0].length;
+        if (leading > indent) {
+          collected.push(next);
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      scripts.push(collected.join("\n"));
+      continue;
+    }
+    scripts.push(unquoteYamlScalar(rest));
+    index += 1;
+  }
+  return scripts;
+}
+
+function stripShellCommentLines(script) {
+  return String(script || "")
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim();
+      return trimmed.length > 0 && !trimmed.startsWith("#");
+    })
+    .join("\n");
+}
+
+function unquoteShell(value) {
+  const raw = String(value ?? "").trim();
+  if (
+    (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2)
+    || (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2)
+  ) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+
+function splitShellSegments(script) {
+  return String(script || "").split(/\s*(?:&&|\|\||[;\n|&])\s*/);
+}
+
+function looksLikeEasSubmitCommand(segment) {
+  let current = String(segment || "").trim();
+  if (!current || /^(echo|printf)\b/.test(current)) return false;
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const afterEnv = current.replace(
+      /^(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+)+/,
+      "",
+    ).trim();
+    if (afterEnv !== current) {
+      current = afterEnv;
+      continue;
+    }
+    const afterCommand = current.replace(/^command(?:\s+-p)?\s+/, "").trim();
+    if (afterCommand !== current) {
+      current = afterCommand;
+      continue;
+    }
+    const afterNpx = current.replace(/^npx(?:\s+--yes)?\s+/, "").trim();
+    if (afterNpx !== current) {
+      current = afterNpx;
+      continue;
+    }
+    const wrapped = current.match(/^(?:bash|sh|dash|zsh|ksh)\s+-[a-zA-Z]*c[a-zA-Z]*\s+([\s\S]+)$/);
+    if (wrapped) {
+      current = unquoteShell(wrapped[1]).trim();
+      continue;
+    }
+    break;
+  }
+  return /^eas\s+submit\b/.test(current);
+}
+
+function scriptHasExecutableEasSubmit(script) {
+  return splitShellSegments(stripShellCommentLines(script)).some(looksLikeEasSubmitCommand);
+}
+
+function workflowHasExecutableEasSubmit(source) {
+  return extractYamlRunScripts(source).some(scriptHasExecutableEasSubmit);
+}
+
+function assertNoExecutableEasSubmit(source, label) {
+  assert.equal(
+    workflowHasExecutableEasSubmit(source),
+    false,
+    `${label}: commande eas submit interdite dans un step run:`,
+  );
+}
+
 function pngInfo(filePath) {
   const buf = fs.readFileSync(filePath);
   const isPng = buf.length >= 24
@@ -138,9 +263,11 @@ function main() {
   assert.doesNotMatch(JSON.stringify(appJson), /usesCleartextTraffic/);
   assert.doesNotMatch(JSON.stringify(appJson), /SchoolLink|schoollink/i);
   const permissions = appJson.expo.android.permissions || [];
-  assert.deepStrictEqual(permissions, ["CAMERA"]);
+  // Liste exacte, alignée sur verify-android-release-readiness.js et verify-mobile-security.js :
+  // CAMERA (photo + QR) et NFC (appel par carte élève, #920). Tout ajout doit être justifié ici.
+  assert.deepStrictEqual(permissions, ["CAMERA", "android.permission.NFC"]);
   assert.ok(!permissions.includes("READ_MEDIA_IMAGES"), "app.json ne doit plus déclarer READ_MEDIA_IMAGES");
-  console.log("OK: app.json package/version/permissions/schema (CAMERA only)");
+  console.log("OK: app.json package/version/permissions/schema (CAMERA + NFC only)");
 
   const appConfig = read(path.join(MOBILE, "app.config.js"));
   assert.match(appConfig, /expo-build-properties/);
@@ -257,18 +384,26 @@ function main() {
   assert.match(aabWorkflow, /name: Android AAB/);
   assert.match(aabWorkflow, /SOMAFRIK_REQUIRE_AAB/);
   assert.match(aabWorkflow, /android-actions\/setup-android/);
-  assert.doesNotMatch(aabWorkflow, /eas submit/);
+  assertNoExecutableEasSubmit(aabWorkflow, "mobile-release-build.yml");
   // Security nightly : invariants mobile-security, pas le scan Expo doctor / bundles.
   assert.match(security, /npm run verify:mobile-security/);
-  assert.doesNotMatch(security, /eas submit/);
+  assertNoExecutableEasSubmit(security, "security.yml");
   console.log("OK: nightly CI release-readiness + preview-apk ; AAB Gradle = mobile-release-build.yml");
 
   console.log("verify:mobile-release-readiness OK");
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(error);
-  process.exit(1);
+module.exports = {
+  extractYamlRunScripts,
+  workflowHasExecutableEasSubmit,
+  assertNoExecutableEasSubmit,
+};
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error);
+    process.exit(1);
+  }
 }

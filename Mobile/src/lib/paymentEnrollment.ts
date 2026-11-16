@@ -214,6 +214,12 @@ function financeObligationIdRequired(): Error & { code: string } {
   return error;
 }
 
+function financeUnallocatedForbidden(): Error & { code: string } {
+  const error = new Error("FINANCE_UNALLOCATED_FORBIDDEN") as Error & { code: string };
+  error.code = "FINANCE_UNALLOCATED_FORBIDDEN";
+  return error;
+}
+
 function isOpenObligation(fee: PaymentFeeRow): boolean {
   if (fee.archivedAt || fee.archived_at) return false;
   const status = trim(fee.status)
@@ -322,8 +328,14 @@ export function preselectPaymentObligationId(
   fees: PaymentFeeRow[],
 ): string {
   const options = collectOpenPaymentFees(studentId, fees);
+  const dated = options.filter((option) => /^\d{4}-\d{2}-\d{2}(?:$|T)/.test(option.dueDate || "") && !Number.isNaN(Date.parse(option.dueDate!)));
+  if (dated.length) {
+    return dated.reduce((latest, option) =>
+      Date.parse(option.dueDate!) > Date.parse(latest.dueDate!) ? option : latest,
+    ).obligationId;
+  }
   if (options.length === 1) return options[0].obligationId;
-  return UNALLOCATED_TARGET;
+  return "";
 }
 
 export function paymentFeeIdentityFromStudent(
@@ -351,7 +363,7 @@ export function isFreshPaymentFeeResponse(input: {
 
 /**
  * Applique un GET scoped seulement s'il correspond à l'élève courant.
- * Recalcule la préselection (1 obligation ouverte → son id, sinon Non imputé).
+ * Recalcule la préselection (échéance datée la plus récente, sinon règle de repli).
  */
 export function applyScopedPaymentFeeDraft(input: {
   session: number;
@@ -373,7 +385,7 @@ export function buildFinancePaymentItems(lines: FinancePaymentWriteLine[]): Arra
   return lines.map((line) => {
     const amount = typeof line.amount === "number" ? line.amount : Number(line.amount);
     if (isUnallocatedTarget(line.obligationId)) {
-      return { feeType: UNALLOCATED_FEE_TYPE, amount };
+      throw financeUnallocatedForbidden();
     }
     const obligationId = trim(line.obligationId);
     if (!obligationId) {
@@ -395,7 +407,8 @@ function assertNoFeeTypeOnlyImputation(items: Array<Record<string, unknown>>) {
   for (const item of items) {
     const obligationId = trim(item.obligationId);
     const feeType = trim(item.feeType || item.feeLabel || item.label);
-    if (!obligationId && feeType !== UNALLOCATED_FEE_TYPE) {
+    if (!obligationId) {
+      if (feeType === UNALLOCATED_FEE_TYPE) throw financeUnallocatedForbidden();
       throw financeObligationIdRequired();
     }
   }

@@ -254,6 +254,83 @@ CREATE TABLE IF NOT EXISTS students (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- CARTE-PR1 — clé composite pour FK tenant-safe student_access_cards.
+CREATE UNIQUE INDEX IF NOT EXISTS students_school_id_id_uidx
+  ON students (school_id, id);
+
+-- FICHE-FIX-01 — notes administratives internes à l'établissement.
+-- Aucune colonne canonique existante : student.observations est un champ UI,
+-- enrollments.close_notes / transfer_notes et les observations de bulletin
+-- appartiennent à d'autres domaines. Texte brut, 2000 caractères maximum.
+ALTER TABLE students ADD COLUMN IF NOT EXISTS administrative_notes TEXT;
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_administrative_notes_len_check;
+ALTER TABLE students ADD CONSTRAINT students_administrative_notes_len_check
+  CHECK (administrative_notes IS NULL OR char_length(administrative_notes) <= 2000);
+
+
+-- FICHE-FIX-03 — compléments d'identité de l'élève (tenant students.school_id).
+-- Champs distincts du nom légal et des coordonnées parentales ; null = non renseigné.
+ALTER TABLE students ADD COLUMN IF NOT EXISTS preferred_name TEXT;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS nationality TEXT;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_preferred_name_len_check;
+ALTER TABLE students ADD CONSTRAINT students_preferred_name_len_check
+  CHECK (preferred_name IS NULL OR char_length(preferred_name) <= 120);
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_nationality_len_check;
+ALTER TABLE students ADD CONSTRAINT students_nationality_len_check
+  CHECK (nationality IS NULL OR char_length(nationality) <= 120);
+ALTER TABLE students DROP CONSTRAINT IF EXISTS students_address_len_check;
+ALTER TABLE students ADD CONSTRAINT students_address_len_check
+  CHECK (address IS NULL OR char_length(address) <= 500);
+
+-- CARTE-PR1 — médiateur d'identification révocable. Secret plaintext interdit.
+CREATE TABLE IF NOT EXISTS student_access_cards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  school_id UUID NOT NULL REFERENCES schools(id),
+  student_id UUID NOT NULL,
+  public_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  medium TEXT NOT NULL,
+  status TEXT NOT NULL,
+  issued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ,
+  revoke_reason TEXT,
+  replaced_by_card_id UUID,
+  created_by_user_id UUID REFERENCES users(id),
+  last_scan_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT student_access_cards_public_id_key UNIQUE (public_id),
+  CONSTRAINT student_access_cards_token_hash_key UNIQUE (token_hash),
+  CONSTRAINT student_access_cards_token_hash_sha256_check
+    CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+  CONSTRAINT student_access_cards_medium_check
+    CHECK (medium IN ('nfc', 'qr', 'nfc_qr')),
+  CONSTRAINT student_access_cards_status_check
+    CHECK (status IN ('issued', 'active', 'lost', 'revoked', 'replaced')),
+  CONSTRAINT student_access_cards_lifecycle_check CHECK (
+    (status IN ('issued', 'active') AND revoked_at IS NULL AND replaced_by_card_id IS NULL)
+    OR (status IN ('lost', 'revoked') AND revoked_at IS NOT NULL AND replaced_by_card_id IS NULL)
+    OR (status = 'replaced' AND revoked_at IS NOT NULL AND replaced_by_card_id IS NOT NULL)
+  ),
+  CONSTRAINT student_access_cards_replaced_not_self_check
+    CHECK (replaced_by_card_id IS NULL OR replaced_by_card_id <> id),
+  CONSTRAINT student_access_cards_school_student_id_key UNIQUE (school_id, student_id, id),
+  CONSTRAINT student_access_cards_student_tenant_fk
+    FOREIGN KEY (school_id, student_id)
+    REFERENCES students (school_id, id),
+  CONSTRAINT student_access_cards_replaced_by_same_student_fk
+    FOREIGN KEY (school_id, student_id, replaced_by_card_id)
+    REFERENCES student_access_cards (school_id, student_id, id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS student_access_cards_one_active_per_student
+  ON student_access_cards (school_id, student_id)
+  WHERE status = 'active';
+
+CREATE INDEX IF NOT EXISTS idx_student_access_cards_school_student
+  ON student_access_cards (school_id, student_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS enrollments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id),
@@ -342,17 +419,53 @@ CREATE INDEX IF NOT EXISTS idx_evaluation_types_school_status
   ON evaluation_types (school_id, status, display_order);
 
 -- LOT 4 : paramètres établissement scalaires (périodes = terms)
+-- CARTE-PR0 : flags carte élève, tous FALSE par défaut (fail-closed)
 CREATE TABLE IF NOT EXISTS school_settings (
   school_id UUID PRIMARY KEY REFERENCES schools(id) ON DELETE CASCADE,
   period_mode TEXT NOT NULL DEFAULT 'trimestre',
   default_scale NUMERIC(6,2) NOT NULL DEFAULT 20,
   report_card_mode TEXT NOT NULL DEFAULT 'period',
+  student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_qr_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_nfc_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  student_card_offline_roll_call_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT school_settings_period_mode_check CHECK (period_mode IN ('trimestre', 'semestre', 'periode')),
   CONSTRAINT school_settings_report_card_mode_check CHECK (report_card_mode IN ('period', 'annual', 'custom')),
   CONSTRAINT school_settings_default_scale_check CHECK (default_scale > 0 AND default_scale <= 100)
 );
+
+ALTER TABLE school_settings
+  ADD COLUMN IF NOT EXISTS student_card_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_qr_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_nfc_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_attendance_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_finance_check_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS student_card_offline_roll_call_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- CARTE-CYCLE-01 — titulaire de carte (NULL = non configuré) + surcharges par niveau d'enseignement.
+ALTER TABLE school_settings
+  ADD COLUMN IF NOT EXISTS student_card_holder_kind TEXT,
+  ADD COLUMN IF NOT EXISTS student_card_holder_levels JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+DO $$
+BEGIN
+  ALTER TABLE school_settings
+    ADD CONSTRAINT school_settings_student_card_holder_kind_check
+    CHECK (student_card_holder_kind IS NULL OR student_card_holder_kind IN ('eleve', 'etudiant'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE school_settings
+    ADD CONSTRAINT school_settings_student_card_holder_levels_check
+    CHECK (jsonb_typeof(student_card_holder_levels) = 'object');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE OR REPLACE FUNCTION ensure_school_settings_for_school()
 RETURNS trigger
@@ -969,3 +1082,88 @@ CREATE INDEX IF NOT EXISTS idx_student_documents_student_id ON student_documents
 CREATE INDEX IF NOT EXISTS idx_audit_logs_filters ON audit_logs(school_id, user_id, action, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_login_lockouts_scope_identifier ON login_lockouts(school_scope, identifier_normalized);
 CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(user_id, session_code) WHERE revoked_at IS NULL;
+
+-- NFC-ENC-01 — extend the canonical card, never create a parallel UID registry.
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_uid TEXT;
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_tag_type TEXT;
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_encoding_state TEXT;
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_encoded_at TIMESTAMPTZ;
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_locked_at TIMESTAMPTZ;
+DO $nfc_constraints$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'student_access_cards_nfc_check' AND conrelid = 'student_access_cards'::regclass) THEN
+    ALTER TABLE student_access_cards ADD CONSTRAINT student_access_cards_nfc_check CHECK (
+      (nfc_uid IS NULL AND nfc_tag_type IS NULL AND nfc_encoding_state IS NULL
+       AND nfc_encoded_at IS NULL AND nfc_locked_at IS NULL)
+      OR (nfc_uid IS NOT NULL AND nfc_uid ~ '^04[0-9A-F]{12}$'
+       AND nfc_tag_type IS NOT NULL AND nfc_tag_type IN ('NTAG213', 'NTAG216')
+       AND medium IN ('nfc', 'nfc_qr')
+       AND nfc_encoding_state IS NOT NULL
+       AND ((nfc_encoding_state = 'pending' AND nfc_encoded_at IS NULL AND nfc_locked_at IS NULL)
+         OR (nfc_encoding_state = 'encoded' AND nfc_encoded_at IS NOT NULL AND nfc_locked_at IS NULL)
+         OR (nfc_encoding_state = 'locked' AND nfc_encoded_at IS NOT NULL AND nfc_locked_at IS NOT NULL)))
+    );
+  END IF;
+END $nfc_constraints$;
+-- Historical bindings remain reserved after loss/revocation (never silently reuse a card).
+CREATE UNIQUE INDEX IF NOT EXISTS student_access_cards_nfc_uid_unique
+  ON student_access_cards(nfc_uid) WHERE nfc_uid IS NOT NULL;
+
+-- NFC-PROG-02: extend the canonical registry; no parallel cards or plaintext tokens.
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_operation_id UUID;
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_reservation_expires_at TIMESTAMPTZ;
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_replaces_card_id UUID;
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_retry_operation_ids UUID[] NOT NULL DEFAULT '{}';
+
+-- Upgrade only legacy NFC pending bindings from #909. Preserve UID/history and
+-- original issuance time: restarting must never grant another 30 minutes.
+UPDATE student_access_cards
+   SET status = CASE WHEN status = 'active' THEN 'issued' ELSE status END,
+       nfc_operation_id = gen_random_uuid(),
+       nfc_reservation_expires_at = issued_at + INTERVAL '30 minutes'
+ WHERE nfc_encoding_state = 'pending' AND nfc_operation_id IS NULL;
+
+DO $nfc_reservations$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'student_access_cards_nfc_reservation_check' AND conrelid = 'student_access_cards'::regclass) THEN
+    ALTER TABLE student_access_cards ADD CONSTRAINT student_access_cards_nfc_reservation_check CHECK (
+      (nfc_operation_id IS NULL AND nfc_reservation_expires_at IS NULL
+       AND nfc_replaces_card_id IS NULL AND cardinality(nfc_retry_operation_ids) = 0)
+      OR (nfc_uid IS NOT NULL AND nfc_operation_id IS NOT NULL
+       AND nfc_reservation_expires_at IS NOT NULL AND nfc_reservation_expires_at > issued_at)
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'student_access_cards_nfc_pending_nonactive_check' AND conrelid = 'student_access_cards'::regclass) THEN
+    ALTER TABLE student_access_cards ADD CONSTRAINT student_access_cards_nfc_pending_nonactive_check CHECK (
+      nfc_encoding_state IS DISTINCT FROM 'pending'
+      OR (status IN ('issued', 'revoked') AND nfc_operation_id IS NOT NULL
+          AND nfc_reservation_expires_at IS NOT NULL)
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'student_access_cards_nfc_replaces_tenant_fk' AND conrelid = 'student_access_cards'::regclass) THEN
+    ALTER TABLE student_access_cards ADD CONSTRAINT student_access_cards_nfc_replaces_tenant_fk
+      FOREIGN KEY (school_id, student_id, nfc_replaces_card_id)
+      REFERENCES student_access_cards(school_id, student_id, id);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'student_access_cards_nfc_replaces_not_self' AND conrelid = 'student_access_cards'::regclass) THEN
+    ALTER TABLE student_access_cards ADD CONSTRAINT student_access_cards_nfc_replaces_not_self
+      CHECK (nfc_replaces_card_id IS NULL OR nfc_replaces_card_id <> id);
+  END IF;
+END $nfc_reservations$;
+CREATE UNIQUE INDEX IF NOT EXISTS student_access_cards_nfc_operation_unique
+  ON student_access_cards(school_id, nfc_operation_id) WHERE nfc_operation_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS student_access_cards_one_pending_nfc_per_student
+  ON student_access_cards(school_id, student_id)
+  WHERE status = 'issued' AND nfc_encoding_state = 'pending';
+
+-- NFC-P0-R2: recovery metadata on the canonical card row (no parallel registry).
+-- Additive and idempotent: existing rows get count 0 and no expiry timestamp.
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_recovery_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE student_access_cards ADD COLUMN IF NOT EXISTS nfc_last_expired_at TIMESTAMPTZ;
+DO $nfc_recovery$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'student_access_cards_nfc_recovery_check' AND conrelid = 'student_access_cards'::regclass) THEN
+    ALTER TABLE student_access_cards ADD CONSTRAINT student_access_cards_nfc_recovery_check CHECK (
+      nfc_recovery_count >= 0
+      AND (nfc_recovery_count = 0 OR nfc_uid IS NOT NULL)
+      AND (nfc_last_expired_at IS NULL OR nfc_uid IS NOT NULL)
+    );
+  END IF;
+END $nfc_recovery$;

@@ -67,6 +67,12 @@ function prepareDemoSeedIntegrity() {
     seedData.subscriptions.length,
     ...normalizedSubscriptions,
   );
+  const { applySuperadminSeedSecrets } = require("./superadminSeedSecret");
+  applySuperadminSeedSecrets(seedData);
+  const { materializeAccountSecretHashes } = require("../services/credentialService");
+  for (const user of seedData.userAccounts ?? []) {
+    materializeAccountSecretHashes(user);
+  }
   demoSeedIntegrityPrepared = true;
 }
 
@@ -98,6 +104,9 @@ function assertProductionSecurityConfiguration(env = process.env) {
       "Configuration de production invalide : SOMAFRIK_DB_REQUIRED=false est interdit (PostgreSQL obligatoire, aucun fallback mémoire).",
     );
   }
+
+  const { assertProductionSuperadminSecret } = require("./superadminSeedSecret");
+  assertProductionSuperadminSecret(env);
 }
 
 module.exports = {

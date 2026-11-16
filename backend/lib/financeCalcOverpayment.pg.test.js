@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Parité PostgreSQL de FIN-CALC-RED-001 (Oscar 1+1).
+ * Parité PostgreSQL de FIN-SEC-01 : un dépassement de 1 CDF est refusé.
  * Si DATABASE_URL est absent : SKIP explicite (pas un vert artificiel du scénario).
  *
  * Fail-closed avant tout DDL :
@@ -11,9 +11,8 @@
  *     seulement si current_database() = cette base IT et l'hôte URL est loopback
  *     (inet_server_addr loopback, ou IPv4 privée Docker si l'URL est localhost)
  *
- * `verify:finance-management` enchaîne la suite mémoire avec `&&` : tant que les
- * RED mémoire échouent, ce fichier n'est pas exécuté en CI. La parité PG n'est
- * donc pas démontrée tant que le harness n'a pas atteint ce fichier.
+ * `verify:finance-management` enchaîne la suite mémoire puis ce fichier.
+ * Un encaissement de 2 CDF sur un solde de 1 CDF doit rester 422, sans ligne payments.
  */
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
@@ -24,7 +23,7 @@ const { createFinancePgStore } = require("../db/financePgStore");
 const { FINANCE_SCHEMA_SQL } = require("../db/financeSchema");
 const { createTxAdapter } = require("../db/txAdapter");
 const { money } = require("./financeManagement");
-const { PARTIAL_STATUS } = require("./financeUnallocatedCash");
+const { F4_ERROR } = require("./financeService");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_FINANCE_CALC_RED_IT_DATABASE ?? "somafrik_finance_calc_red_it")
@@ -286,7 +285,7 @@ describe("FIN-CALC-RED PostgreSQL — garde-fou DROP SCHEMA", () => {
 });
 
 describe("FIN-CALC-RED PostgreSQL", { skip: !DATABASE_URL }, () => {
-  it("FIN-CALC-RED-001 PG overpayment 1 CDF settles obligation and preserves 1 CDF unallocated", async () => {
+  it("FIN-SEC-01 PG dépassement de 1 CDF refusé, solde et paiement intacts", async () => {
     const sourceRefusal = sourceUrlRefusal(DATABASE_URL);
     assert.equal(sourceRefusal, null, sourceRefusal || "source DATABASE_URL accepted for isolated IT");
     const isolatedUrl = await ensureIsolatedDatabase(DATABASE_URL, IT_DATABASE);
@@ -378,25 +377,50 @@ describe("FIN-CALC-RED PostgreSQL", { skip: !DATABASE_URL }, () => {
       const fee = fees.find((row) => String(row.studentId).includes("OSCAR")) || fees[0];
       assert.equal(money(fee.balance), 1);
 
+      await assert.rejects(
+        () =>
+          store.createSchoolPayment(
+            {
+              studentId: "CD-IN-26-001-STU-OSCAR",
+              items: [{ obligationId: fee.id, amount: 2 }],
+              method: "Espèces",
+              date: "2026-09-07",
+            },
+            admin,
+          ),
+        (error) =>
+          error.statusCode === 422 &&
+          error.code === F4_ERROR.PAYMENT_EXCEEDS_BALANCE &&
+          /1 CDF/.test(error.message),
+      );
+
+      const afterReject = (await store.listFinanceStudentFees(admin)).find((row) => row.id === fee.id);
+      assert.equal(money(afterReject.balance), 1);
+      const rejectedRows = await pool.query(
+        `SELECT amount_paid, balance, status FROM student_fee_obligations WHERE id = $1`,
+        [afterReject.dbId || afterReject.id],
+      );
+      assert.equal(Number(rejectedRows.rows[0].balance), 1);
+      assert.equal(Number(rejectedRows.rows[0].amount_paid), 0);
+      const none = await pool.query(`SELECT count(*)::int AS n FROM payments`);
+      assert.equal(none.rows[0].n, 0);
+
       const payment = await store.createSchoolPayment(
         {
           studentId: "CD-IN-26-001-STU-OSCAR",
-          items: [{ obligationId: fee.id, amount: 2 }],
+          items: [{ obligationId: fee.id, amount: 1 }],
           method: "Espèces",
           date: "2026-09-07",
         },
         admin,
       );
-
-      assert.equal(money(payment.amount), 2);
+      assert.equal(money(payment.amount), 1);
       assert.equal(money(payment.allocatedAmount), 1);
-      assert.equal(money(payment.unallocatedAmount), 1);
-      assert.equal(money(payment.allocatedAmount) + money(payment.unallocatedAmount), money(payment.amount));
+      assert.equal(money(payment.unallocatedAmount), 0);
 
       const after = (await store.listFinanceStudentFees(admin)).find((row) => row.id === fee.id);
       assert.equal(money(after.balance), 0);
       assert.equal(after.status, "Payé");
-
       const persisted = await pool.query(
         `SELECT amount_paid, balance, status FROM student_fee_obligations WHERE id = $1`,
         [after.dbId || after.id],
@@ -409,9 +433,6 @@ describe("FIN-CALC-RED PostgreSQL", { skip: !DATABASE_URL }, () => {
       assert.equal(Number(persisted.rows[0].amount_paid), Number(summed.rows[0].allocated));
       assert.equal(Number(persisted.rows[0].balance), 0);
       assert.equal(String(persisted.rows[0].status), "Payé");
-
-      assert.notEqual(payment.status, PARTIAL_STATUS);
-      assert.doesNotMatch(String(payment.status), /partiel/i);
     } finally {
       await pool.end();
     }

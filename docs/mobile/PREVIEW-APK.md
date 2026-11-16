@@ -15,7 +15,7 @@ Expo / EAS
    ↓
 installation directe sur téléphone Android
    ↓
-https://somafrik-api-preprod.onrender.com
+https://api-preprod.somafrik.app
    ↓
 PostgreSQL préproduction
 ```
@@ -33,7 +33,7 @@ PostgreSQL préproduction
 | Package | `com.somafrik.app` |
 | Slug Expo | `somafrik` |
 | projectId Expo | `47b217aa-3d96-4d50-a9f5-fc0ec8a3cef5` (existant, ne pas inventer) |
-| API | `https://somafrik-api-preprod.onrender.com` |
+| API | `https://api-preprod.somafrik.app` |
 | HTTPS only | oui |
 | Demo credentials / PIN | interdits |
 | API production | interdite |

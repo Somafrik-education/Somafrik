@@ -2,6 +2,8 @@ import type { Ionicons } from "@expo/vector-icons";
 import type { AdminEntity } from "../context/AdminDataContext";
 import { canReadEntity, canReadRoute, canReadView } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
+import { entryControlActor } from "../lib/studentCardEntryControl";
+import { canDiagnoseNfc } from "../lib/studentCardNfcDiagnosis";
 import { ENTITY_VIEW_MAP } from "../lib/constants";
 
 export type DrawerSectionId = "quotidien" | "admin" | "outils";
@@ -50,6 +52,8 @@ const I = {
   studentPayments: { label: "Paiements", icon: "card-outline" as const, route: "StudentPayments", view: "StudentPayments" },
   mobilePayment: { label: "Paiements", icon: "phone-portrait-outline" as const, route: "MobilePayment", view: "MobilePayment" },
   attendance: { label: "Présences", icon: "checkbox-outline" as const, route: "TeacherAttendance", view: "TeacherAttendance" },
+  nfcDiagnosis: { label: "Diagnostic NFC", icon: "scan-outline" as const, route: "NfcDiagnosis", view: "NfcDiagnosis" },
+  entryControl: { label: "Contrôle d’entrée", icon: "enter-outline" as const, route: "EntryControl", view: "EntryControl" },
   studentNotes: { label: "Notes", icon: "book-outline" as const, route: "StudentNotes", view: "StudentNotes" },
   studentPresences: { label: "Présences", icon: "calendar-outline" as const, route: "StudentPresences", view: "StudentPresences" },
   grades: { label: "Notes", icon: "reader-outline" as const, route: "TeacherGrades", view: "TeacherGrades" },
@@ -75,6 +79,7 @@ const platformItems: RoleDrawerItem[] = [
 
 const schoolAdminItems: RoleDrawerItem[] = [
   quotidien(I.schooling),
+  quotidien(I.nfcDiagnosis),
   quotidien(I.students),
   quotidien(I.classes),
   quotidien(I.attendance),
@@ -85,6 +90,7 @@ const schoolAdminItems: RoleDrawerItem[] = [
   quotidien(I.classStats),
   quotidien(I.exams),
   quotidien(I.timetable),
+  quotidien(I.entryControl),
   admin(I.users),
   admin(I.reportCards),
   admin(I.announcements),
@@ -113,6 +119,7 @@ const prefetItems: RoleDrawerItem[] = [
   quotidien(I.messages),
   quotidien(I.announcements),
   quotidien(I.internalNotifications),
+  quotidien(I.entryControl),
   admin(I.users),
   admin(I.structure),
   admin(I.settings),
@@ -137,6 +144,7 @@ const principalItems: RoleDrawerItem[] = [
   quotidien(I.messages),
   quotidien(I.announcements),
   quotidien(I.internalNotifications),
+  quotidien(I.entryControl),
   admin(I.users),
   admin(I.structure),
   admin(I.settings),
@@ -157,6 +165,7 @@ const secretaryItems: RoleDrawerItem[] = [
   quotidien(I.announcements),
   quotidien(I.internalNotifications),
   quotidien(I.reportCards),
+  quotidien(I.entryControl),
   admin(I.users),
   admin(I.grades),
   admin(I.classStats),
@@ -230,6 +239,7 @@ const supervisorItems: RoleDrawerItem[] = [
   quotidien(I.reportCards),
   quotidien(I.payments),
   quotidien(I.feeGrids),
+  quotidien(I.entryControl),
   admin(I.users),
   admin(I.structure),
   admin(I.settings),
@@ -296,6 +306,8 @@ export function getRoleDrawerCatalog(role?: string): RoleDrawerItem[] {
 }
 
 export function isRoleDrawerItemAllowed(session: any, item: RoleDrawerItem): boolean {
+  if (item.route === "EntryControl") return entryControlActor(session);
+  if (item.route === "NfcDiagnosis") return canDiagnoseNfc(session);
   if (item.route === "Messages" || item.view === "Messages") {
     return canAccessMessagesRoute(session);
   }

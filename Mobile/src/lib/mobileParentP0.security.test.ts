@@ -393,11 +393,20 @@ const cases: { id: string; title: string; run: () => void }[] = [
     id: "PARENT-P0-18",
     title: "Teacher/Admin/Student auth non régressés",
     run() {
-      assert.equal(resolveSecretKeyboardType("student"), "number-pad");
+      // #1116 / AUTH-MOBILE-01 : l'élève se connecte par mot de passe (plus de PIN numérique).
+      assert.equal(resolveSecretKeyboardType("student"), "default");
       assert.equal(resolveSecretKeyboardType("school_admin"), "default");
       assert.equal(resolveSecretKeyboardType("teacher"), "default");
-      assert.equal(resolveSecretFieldCopy("student").label, "PIN");
-      assert.equal(mapLoginApiError("PIN incorrect", "student"), ERROR_MESSAGES.invalidPin);
+      assert.equal(resolveSecretFieldCopy("student").label, LOGIN_SCREEN_COPY.passwordLabel);
+      assert.equal(mapLoginApiError("PIN incorrect", "student"), ERROR_MESSAGES.invalidCredentials);
+      const studentPayload = buildMobileLoginPayload({
+        role: "student",
+        identifier: "eleve1",
+        password: "Pass1234",
+        schoolCode: SCHOOL_A,
+      });
+      assert.equal(studentPayload.password, "Pass1234");
+      assert.equal(Object.prototype.hasOwnProperty.call(studentPayload, "pin"), false);
       const teacherPayload = buildMobileLoginPayload({
         role: "teacher",
         identifier: "prof",
@@ -423,7 +432,7 @@ const cases: { id: string; title: string; run: () => void }[] = [
       assert.equal(Object.prototype.hasOwnProperty.call(parentPinOnly, "pin"), false);
       assert.equal(parentPinOnly.password, "");
       const loginSrc = read("screens/LoginScreen.tsx");
-      assert.match(loginSrc, /identity\.role === "parent_student"/);
+      assert.match(loginSrc, /buildMobileLoginPayload\(/);
       assert.doesNotMatch(
         loginSrc,
         /pin: password\.trim\(\),\s*password: password\.trim\(\)/,

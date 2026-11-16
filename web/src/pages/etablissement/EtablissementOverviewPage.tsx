@@ -36,7 +36,7 @@ import {
 import { projectScopedStudents } from "../../lib/studentsScope";
 import { countUniqueParentsInRelations } from "../../lib/relations";
 import { scopedUsers } from "../../lib/scope";
-import { ACTIVE_USERS_KPI_LABEL, normalize } from "../../lib/format";
+import { ACTIVE_USERS_KPI_LABEL, isSchoolAdminRole, normalize } from "../../lib/format";
 import {
   SCOLARITE_COPY,
   countStudentsWithoutClass,
@@ -100,6 +100,12 @@ export function EtablissementOverviewPage() {
   }, [activeSchoolCode]);
 
   useEffect(() => {
+    // Widget de configuration réservé à Admin School : ne pas appeler le
+    // statut administratif pour un enseignant, qui recevrait HTTP 403.
+    if (!isSchoolAdminRole(ctx.user?.role)) {
+      setSetupPayload(null);
+      return;
+    }
     let cancelled = false;
     void schoolSetupStatusApi
       .get()
@@ -114,7 +120,7 @@ export function EtablissementOverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeSchoolCode]);
+  }, [activeSchoolCode, ctx.user?.role]);
 
   if (hydrationStatus === "idle" || hydrationStatus === "loading") {
     return <LoadingState message={SCOLARITE_COPY.loading} />;

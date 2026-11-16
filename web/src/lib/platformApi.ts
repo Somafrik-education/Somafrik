@@ -1,24 +1,26 @@
-import { api } from "../api/client";
+import { api, type RequestArgs } from "../api/client";
 
 export const platformApi = {
-  listCountries: () => api.get<unknown[]>("/backoffice/countries"),
+  listCountries: (...init: RequestArgs) => api.get<unknown[]>("/backoffice/countries", ...init),
   createCountry: (payload: Record<string, unknown>) => api.post("/backoffice/countries", payload),
   updateCountry: (code: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/countries/${encodeURIComponent(code)}`, payload),
 
-  listSubscriptions: () => api.get<unknown[]>("/backoffice/subscriptions"),
+  listSubscriptions: (...init: RequestArgs) => api.get<unknown[]>("/backoffice/subscriptions", ...init),
   upsertSubscription: (payload: Record<string, unknown>) => api.post("/backoffice/subscriptions", payload),
   patchSubscription: (subscriptionId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/subscriptions/${encodeURIComponent(subscriptionId)}`, payload),
 
-  listNotifications: () => api.get<unknown[]>("/backoffice/notifications"),
+  listNotifications: (...init: RequestArgs) => api.get<unknown[]>("/backoffice/notifications", ...init),
   createNotification: (payload: Record<string, unknown>) => api.post("/backoffice/notifications", payload),
   updateNotification: (notificationId: string, payload: Record<string, unknown>) =>
     api.patch(`/backoffice/notifications/${encodeURIComponent(notificationId)}`, payload),
 
-  getRolePermissions: () => api.get<Record<string, string[]>>("/backoffice/role-permissions"),
+  getRolePermissions: (...init: RequestArgs) =>
+    api.get<Record<string, string[]>>("/backoffice/role-permissions", ...init),
 
-  getDashboardChartConfig: () => api.get<Record<string, unknown>>("/backoffice/dashboard-chart-config"),
+  getDashboardChartConfig: (...init: RequestArgs) =>
+    api.get<Record<string, unknown>>("/backoffice/dashboard-chart-config", ...init),
   saveDashboardChartConfig: (payload: Record<string, unknown>) => api.put("/backoffice/dashboard-chart-config", payload),
 
   upsertSubscriptionOffer: (payload: Record<string, unknown>) => api.post("/backoffice/subscription-offers", payload),

@@ -11,6 +11,7 @@ const path = require("node:path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { assertSessionRefused, mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_PLATFORM_ANN_IT_DATABASE ?? "somafrik_platform_ann_it")
@@ -143,8 +144,8 @@ async function stopChild(child) {
   });
 }
 
-function mintAccess(tokens, payload) {
-  return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+function mintAccess({ tokens, repository }, payload) {
+  return mintSessionAccessToken({ tokens, repository, payload: { mustChangePassword: false, ...payload } });
 }
 
 async function setRoleModuleGrant(pool, roleKey, flags) {
@@ -351,63 +352,63 @@ async function main() {
       [REVOKED_U, SUPER_SA],
     );
 
-    const superSa = mintAccess(tokens, {
+    const superSa = await mintAccess({ tokens, repository: repo }, {
       sub: SUPER_SA,
       schoolCode: "*",
       role: "Super Administrateur Somafrik",
       roleKeys: ["SUPER_ADMIN"],
       permissions: SUPER_PERMS,
     });
-    const countryA = mintAccess(tokens, {
+    const countryA = await mintAccess({ tokens, repository: repo }, {
       sub: COUNTRY_A,
       schoolCode: "*",
       role: "Admin Pays",
       roleKeys: ["COUNTRY_ADMIN"],
       permissions: READ_PERMS,
     });
-    const countryB = mintAccess(tokens, {
+    const countryB = await mintAccess({ tokens, repository: repo }, {
       sub: COUNTRY_B,
       schoolCode: "*",
       role: "Admin Pays",
       roleKeys: ["COUNTRY_ADMIN"],
       permissions: READ_PERMS,
     });
-    const schoolA = mintAccess(tokens, {
+    const schoolA = await mintAccess({ tokens, repository: repo }, {
       sub: SCHOOL_A,
       schoolCode: "SCH-PA-A",
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       permissions: SCHOOL_WRITE,
     });
-    const schoolB = mintAccess(tokens, {
+    const schoolB = await mintAccess({ tokens, repository: repo }, {
       sub: SCHOOL_B,
       schoolCode: "SCH-PA-B",
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       permissions: SCHOOL_WRITE,
     });
-    const teacherA = mintAccess(tokens, {
+    const teacherA = await mintAccess({ tokens, repository: repo }, {
       sub: TEACHER_A,
       schoolCode: "SCH-PA-A",
       role: "Enseignant",
       roleKeys: ["TEACHER"],
       permissions: READ_PERMS,
     });
-    const parentA = mintAccess(tokens, {
+    const parentA = await mintAccess({ tokens, repository: repo }, {
       sub: PARENT_A,
       schoolCode: "SCH-PA-A",
       role: "Parent",
       roleKeys: ["PARENT"],
       permissions: READ_PERMS,
     });
-    const studentA = mintAccess(tokens, {
+    const studentA = await mintAccess({ tokens, repository: repo }, {
       sub: STUDENT_A,
       schoolCode: "SCH-PA-A",
       role: "Élève / Étudiant",
       roleKeys: ["STUDENT"],
       permissions: READ_PERMS,
     });
-    const inactive = mintAccess(tokens, {
+    const inactive = await mintAccess({ tokens, repository: repo }, {
       sub: INACTIVE_U,
       schoolCode: "SCH-PA-A",
       role: "Parent",
@@ -491,7 +492,12 @@ async function main() {
     assert.equal((await request(`/backoffice/platform-announcements/${pa04.data.id}`, { token: teacherA })).status, 200);
     assert.equal((await request(`/backoffice/platform-announcements/${pa04.data.id}`, { token: parentA })).status, 200);
     assert.equal((await request(`/backoffice/platform-announcements/${pa04.data.id}`, { token: studentA })).status, 200);
-    assert.ok([403, 404].includes((await request(`/backoffice/platform-announcements/${pa04.data.id}`, { token: inactive })).status));
+    // SEC-AUTH-04 : compte inactif → session révoquée par le garde (SEC-TENANT-01) avant la route.
+    assertSessionRefused(
+      await request(`/backoffice/platform-announcements/${pa04.data.id}`, { token: inactive }),
+      "PA-04 compte inactif",
+      "SESSION_ACCOUNT_INACTIVE",
+    );
 
     const beforeCount = Number(
       (await pool.query(`SELECT count(*)::int AS c FROM platform_announcements`)).rows[0].c,

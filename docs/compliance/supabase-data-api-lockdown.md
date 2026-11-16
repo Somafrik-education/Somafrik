@@ -33,7 +33,7 @@ Le rôle applicatif (propriétaire des tables / `DATABASE_URL`) conserve ses dro
 - statique : SQL, boot `ensureSupabaseDataApiLockdown()`, absence de client Data API
 - PostgreSQL (si `DATABASE_URL`) : recrée un schéma, simule des grants larges `anon`/`authenticated`/`PUBLIC`, applique la migration, exige **permission denied** (`42501`) sur au moins :
 
-`users`, `students`, `teachers`, `contacts`, `payments`, `audit_logs`, `sessions`, `mobile_push_devices`
+`users`, `students`, `teachers`, `contacts`, `payments`, `audit_logs`, `sessions`, `mobile_push_devices`, `student_access_cards`
 
 Inventaire lu (non bloquant) : fonctions `SECURITY DEFINER` et vues du schéma `public`.
 

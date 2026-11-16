@@ -227,10 +227,10 @@ const countryAdminMessages = liveSession({
   permissions: ["Messages:READ"],
   schoolCode: "*",
 });
-assert.equal(hasSecurityPermission(countryAdminMessages, "Messages", "READ"), true);
+assert.equal(hasSecurityPermission(countryAdminMessages, "Messages", "READ"), false);
 assert.equal(hasSecurityPermission(countryAdminMessages, "Notifications", "READ"), false);
-assert.equal(canReadRoute(countryAdminMessages, "Messages"), true);
-assert.equal(canReadView(countryAdminMessages, "Messages"), true);
+assert.equal(canReadRoute(countryAdminMessages, "Messages"), false);
+assert.equal(canReadView(countryAdminMessages, "Messages"), false);
 assert.equal(canReadView(countryAdminMessages, "Announcements"), false);
 
 const countryAdminNotifications = liveSession({

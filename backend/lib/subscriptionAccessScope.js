@@ -2,6 +2,7 @@
 
 const { BusinessError } = require("../services/authService");
 const { matchesSchoolLookup } = require("./schoolCodeV2");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 function asTrimmed(value) {
   return String(value ?? "").trim();
@@ -11,11 +12,6 @@ function sameSchoolId(left, right) {
   const a = asTrimmed(left).toLowerCase();
   const b = asTrimmed(right).toLowerCase();
   return Boolean(a && b && a === b);
-}
-
-function isSuperAdminPrincipal(principal) {
-  const role = asTrimmed(principal?.role);
-  return role === "Super Administrateur Somafrik" || role === "Super Administrateur OKAFRIK";
 }
 
 function isCountryAdminPrincipal(principal) {

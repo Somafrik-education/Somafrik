@@ -4,6 +4,10 @@ export type EstablishmentRole = {
   id: string;
   roleCode: string;
   roleName: string;
+  roleKey?: string;
+  defaultLabel?: string;
+  displayLabel?: string | null;
+  effectiveLabel?: string;
   scope: "school" | "platform" | "country";
   displayOrder: number;
   status: "active" | "archived";

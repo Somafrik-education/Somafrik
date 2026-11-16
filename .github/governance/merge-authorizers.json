@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "_comment": "R15 — lu par .github/workflows/merge-authorization.yml sur la branche CIBLE de la PR. Liste vide = aucune PR autorisable (fail-closed). Ajouter ici le login GitHub personnel du CTO, distinct du compte partagé Somafrik, uniquement par une PR approuvée par le CTO.",
+  "protectedTargets": ["develop", "main"],
+  "authorizers": [],
+  "deniedActors": ["Somafrik"],
+  "requiredChecks": {
+    "develop": ["Required"],
+    "main": ["Required"]
+  }
+}

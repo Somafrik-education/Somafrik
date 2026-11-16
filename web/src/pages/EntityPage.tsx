@@ -52,7 +52,6 @@ import {
   defaultNewContactDraft,
 } from "./entity-page/contactAccountWorkflow";
 import {
-  buildRelationDeleteAuditEntry,
   buildRelationPreSubmitPlan,
   defaultNewRelationDraft,
 } from "./entity-page/parentChildRelationWorkflow";
@@ -287,13 +286,18 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       !disableCreate &&
       !module?.planningManaged &&
       module?.key !== "payments" &&
+      // BULLETIN-UX-02 : pas de création générique de bulletin ; les bulletins
+      // naissent du parcours canonique (configuration, aperçu, publication).
+      module?.key !== "bulletins" &&
       !entityCreateViaContactsOnly(module?.key ?? "");
   const allowDelete = isParentChildMode
     ? canArchiveParentAction
-    : canDelete &&
-      module?.key !== "students" &&
-      !module?.planningManaged &&
-      module?.key !== "payments";
+    : module?.key === "relations"
+      ? canArchiveParentAction || canUpdate || canDelete
+      : canDelete &&
+        module?.key !== "students" &&
+        !module?.planningManaged &&
+        module?.key !== "payments";
 
   // ELEVE-001 / ENS-001 : créer une fiche à partir d'un contact existant.
   const linkableContactKind: "student" | "teacher" | null =
@@ -357,10 +361,10 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         scoped.filter((row) => normalize(String(row.status ?? "")) !== "archive"),
       );
     }
-    const q = search.trim().toLowerCase();
+    const q = normalize(search);
     if (!q) return scoped;
     return scoped.filter((row) =>
-      Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(q)),
+      Object.values(row).some((value) => normalize(value).includes(q)),
     );
   }, [module, search, scopeUser, state, isParentChildMode, classScope]);
 
@@ -961,8 +965,11 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     if (module.key === "relations") {
       try {
         await persistClientsMutation(
-          () => clientsApi.createRelation(workingItem),
-          "Relation enregistrée",
+          () =>
+            exists
+              ? clientsApi.updateRelation(String(linkedItem.id), workingItem)
+              : clientsApi.createRelation(workingItem),
+          exists ? "Relation modifiée" : "Relation enregistrée",
           () => setEditing(null),
         );
       } catch {
@@ -1030,7 +1037,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         return;
       }
       try {
-        showToast("Utilisez Enregistrer un encaissement. Chaque montant vise un frais ouvert, sinon il reste non imputé.", "error");
+        showToast("Utilisez Enregistrer un encaissement. Chaque montant doit viser un frais encore dû.", "error");
       } catch {
         /* toast */
       }
@@ -1224,18 +1231,21 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       return;
     }
 
-    if (module.key === "relations" && isParentChildMode && isParentChildBundleRow(row)) {
-      if (!canArchiveParentAction) {
+    if (module.key === "relations") {
+      if (!canArchiveParentAction && !canUpdate && !canDelete) {
         showToast("Archivage non autorisé pour votre rôle.", "error");
         return;
       }
-      const ids = relationIdsFromParentChildRow(row);
+      const ids =
+        isParentChildMode && isParentChildBundleRow(row)
+          ? relationIdsFromParentChildRow(row)
+          : [String(row.id)];
       if (!ids.length) {
         showToast("Relation introuvable.", "error");
         return;
       }
       const archiveConfirmed = await confirm({
-        title: "Archiver la liaison parent-enfant ?",
+        title: isParentChildMode ? "Archiver la liaison parent-enfant ?" : "Archiver cette relation ?",
         description: "La relation sera archivée. Aucune suppression physique n'est effectuée.",
         confirmLabel: "Archiver",
       });
@@ -1243,10 +1253,10 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       setBusy(true);
       try {
         for (const relationId of ids) {
-          await parentsApi.archiveRelation(relationId);
+          await clientsApi.archiveRelation(relationId);
         }
         await refresh(["relations", "users", "contacts"]);
-        showToast("Liaisons parent-enfant archivées", "success");
+        showToast(isParentChildMode ? "Liaisons parent-enfant archivées" : "Relation archivée", "success");
       } catch (error) {
         showToast(parentLinkErrorMessage(error), "error");
       } finally {
@@ -1329,11 +1339,6 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
       deletePatch.auditLog = appendAuditLog(
         state.auditLog,
         buildContactDeleteAuditEntry(scopeUser, row),
-      );
-    } else if (module.key === "relations") {
-      deletePatch.auditLog = appendAuditLog(
-        state.auditLog,
-        buildRelationDeleteAuditEntry(scopeUser, row),
       );
     } else {
       const genericDeleteAudit = appendGenericDeleteAudit(
@@ -1590,6 +1595,17 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   const primaryActions = (
     <>
+        {module.key === "bulletins" && canRead ? (
+        <Button
+          size="sm"
+          type="button"
+          variant="secondary"
+          data-testid="report-card-management-cta"
+          onClick={() => navigate("/bulletins/gestion")}
+        >
+          Gérer les bulletins
+        </Button>
+      ) : null}
         {module.key === "bulletins" && canCreate ? (
         <Button
           size="sm"
@@ -1597,7 +1613,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
           data-testid="report-card-request-model-cta"
           onClick={() => navigate("/bulletins/modele")}
         >
-          Demander un modèle de bulletin
+          Configurer un bulletin
         </Button>
       ) : null}
         {module.key === "payments" && financeActions.canCreatePayment ? (

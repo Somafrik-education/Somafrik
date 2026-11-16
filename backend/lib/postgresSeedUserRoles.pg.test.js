@@ -10,6 +10,7 @@ const { spawn } = require("node:child_process");
 const path = require("node:path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
+const { hasExited, stopChildProcess, waitForNoDatabaseSessions } = require("./pgTestLifecycle");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_SEED_USER_ROLES_IT_DATABASE ?? "somafrik_seed_user_roles_it")
@@ -18,6 +19,8 @@ const IT_DATABASE = String(process.env.SOMAFRIK_SEED_USER_ROLES_IT_DATABASE ?? "
 const ROOT = path.resolve(__dirname, "../..");
 const HTTP_PORT = Number(process.env.SOMAFRIK_SEED_USER_ROLES_HTTP_PORT ?? 19874);
 const JWT_SECRET = process.env.JWT_SECRET || "ci-test-secret-with-enough-length-for-production-checks";
+// Sessions du test lui-même : exclues du contrôle « plus aucune session serveur ».
+const TEST_APPLICATION_NAME = "somafrik_seed_user_roles_test";
 
 const FINANCE_READS = [
   "/payments",
@@ -79,19 +82,47 @@ async function waitForHealth(child, stderrRef) {
   throw new Error(`Backend health timeout\n${stderrRef.value}`);
 }
 
-async function stopChild(child) {
-  if (!child || child.exitCode != null) return;
-  child.kill("SIGTERM");
-  await new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
-    }, 5000);
-    child.on("exit", () => {
-      clearTimeout(timer);
-      resolve();
-    });
+async function startServer(isolatedUrl) {
+  const serverEnv = {
+    ...process.env,
+    NODE_ENV: "development",
+    PORT: String(HTTP_PORT),
+    DATABASE_URL: isolatedUrl,
+    JWT_SECRET,
+    SOMAFRIK_DB_REQUIRED: "true",
+    SOMAFRIK_API_ONLY: "true",
+  };
+  delete serverEnv.SOMAFRIK_SKIP_DEMO_SEED;
+  const child = spawn(process.execPath, ["backend/server.js"], {
+    cwd: ROOT,
+    env: serverEnv,
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  const stderrRef = { value: "" };
+  child.stderr.on("data", (chunk) => {
+    stderrRef.value += String(chunk);
+  });
+  child.stdout.on("data", () => {});
+  try {
+    await waitForHealth(child, stderrRef);
+  } catch (error) {
+    await stopChildProcess(child);
+    throw error;
+  }
+  return child;
+}
+
+/**
+ * Arrête le serveur et attend que PostgreSQL ait fermé toutes ses sessions sur
+ * la base isolée. Sans cela, la DDL du second boot entre en concurrence avec le
+ * travail de fond du serveur encore vivant (deadlock 40P01).
+ */
+async function stopServerAndReleaseDatabase(child, pool) {
+  await stopChildProcess(child);
+  const remaining = await waitForNoDatabaseSessions(pool, IT_DATABASE, {
+    ignoreApplicationName: TEST_APPLICATION_NAME,
+  });
+  assert.equal(remaining, 0, `sessions serveur encore ouvertes sur ${IT_DATABASE} après l'arrêt du serveur`);
 }
 
 function enableDemoSeed() {
@@ -106,6 +137,17 @@ async function countActiveRoles(pool) {
     `SELECT COUNT(*)::int AS count FROM user_roles WHERE status = 'active' AND revoked_at IS NULL`,
   );
   return result.rows[0].count;
+}
+
+/** Affectations actives, identifiées ligne à ligne (comparaison stricte avant/après boot). */
+async function activeRoleRows(pool) {
+  const result = await pool.query(
+    `SELECT id::text AS id, user_id::text AS user_id, school_id::text AS school_id, role_key
+     FROM user_roles
+     WHERE status = 'active' AND revoked_at IS NULL
+     ORDER BY id`,
+  );
+  return result.rows;
 }
 
 async function login(identifier, schoolCode) {
@@ -135,34 +177,22 @@ async function main() {
     await reset.end();
   }
 
-  const pool = new Pool({ connectionString: isolatedUrl });
+  const pool = new Pool({ connectionString: isolatedUrl, application_name: TEST_APPLICATION_NAME });
   let child = null;
+  let second = null;
+  // Dernier recours si le processus de test se termine sans passer par finally :
+  // aucun serveur enfant orphelin (port et sessions PostgreSQL libérés).
+  const killOrphan = () => {
+    if (child && !hasExited(child)) child.kill("SIGKILL");
+  };
+  process.once("exit", killOrphan);
 
   try {
-    const serverEnv = {
-      ...process.env,
-      NODE_ENV: "development",
-      PORT: String(HTTP_PORT),
-      DATABASE_URL: isolatedUrl,
-      JWT_SECRET,
-      SOMAFRIK_DB_REQUIRED: "true",
-      SOMAFRIK_API_ONLY: "true",
-    };
-    delete serverEnv.SOMAFRIK_SKIP_DEMO_SEED;
-    child = spawn(process.execPath, ["backend/server.js"], {
-      cwd: ROOT,
-      env: serverEnv,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const stderrRef = { value: "" };
-    child.stderr.on("data", (chunk) => {
-      stderrRef.value += String(chunk);
-    });
-    child.stdout.on("data", () => {});
-    await waitForHealth(child, stderrRef);
+    child = await startServer(isolatedUrl);
 
     const activeAfterSeed = await countActiveRoles(pool);
     assert.ok(activeAfterSeed > 0, "seed frais : user_roles actif non vide");
+    const activeRowsAfterSeed = await activeRoleRows(pool);
 
     const schools = await pool.query(
       `SELECT id, school_code, login_code
@@ -235,13 +265,6 @@ async function main() {
     );
     assert.equal(duplicates.rowCount, 0, "aucune affectation active dupliquée");
 
-    const second = createPostgresRepository(isolatedUrl);
-    await second.ensureUserRolesCanonicalSchema();
-    await second.ensureSeededUserRoles();
-    await second.pool.end();
-    const activeAfterSecondBoot = await countActiveRoles(pool);
-    assert.equal(activeAfterSecondBoot, activeAfterSeed, "second passage : aucun doublon user_roles");
-
     const cdPayments = await pool.query(
       `SELECT p.payment_code
        FROM payments p
@@ -273,10 +296,11 @@ async function main() {
       assert.doesNotMatch(biList.text, new RegExp(code), `fuite paiement ${code} vers l'école BI`);
     }
 
-    await pool.query(
+    const revokedByTest = await pool.query(
       `UPDATE user_roles
        SET status = 'revoked', revoked_at = NOW()
-       WHERE user_id = $1 AND role_key = 'SCHOOL_ADMIN' AND status = 'active'`,
+       WHERE user_id = $1 AND role_key = 'SCHOOL_ADMIN' AND status = 'active'
+       RETURNING id`,
       [adminCd.rows[0].id],
     );
     for (const pathName of FINANCE_READS) {
@@ -286,10 +310,51 @@ async function main() {
 
     const activeAfterHttp = await countActiveRoles(pool);
     assert.ok(activeAfterHttp < activeAfterSeed, "la révocation retire l'affectation active");
+
+    // Second boot du schéma user_roles sur une base libérée : serveur arrêté et
+    // toutes ses sessions fermées (sinon deadlock 40P01 avec son travail de fond).
+    // Il a lieu après les contrôles HTTP car server.js ne redémarre pas sur une
+    // base déjà amorcée par la démo (CANONICAL_SCHOOL_COURSE_AMBIGUOUS).
+    await stopServerAndReleaseDatabase(child, pool);
+    child = null;
+    // Retour exact à l'état post-seed : seules les lignes révoquées par ce test
+    // sont réactivées. Le second boot est ainsi vérifié sur l'état du seed,
+    // comme avant (la réactivation au boot d'un rôle révoqué est un constat
+    // produit distinct, documenté dans docs/project/BACKEND-TEST-BASELINE.md).
+    const restored = await pool.query(
+      `UPDATE user_roles
+       SET status = 'active', revoked_at = NULL
+       WHERE id::text = ANY($1::text[]) AND status = 'revoked'`,
+      [revokedByTest.rows.map((row) => String(row.id))],
+    );
+    assert.equal(restored.rowCount, revokedByTest.rowCount, "état post-seed restauré avant le second boot");
+    assert.deepEqual(await activeRoleRows(pool), activeRowsAfterSeed, "état post-seed restauré avant le second boot");
+    second = createPostgresRepository({ connectionString: isolatedUrl, application_name: TEST_APPLICATION_NAME });
+    await second.ensureUserRolesCanonicalSchema();
+    await second.ensureSeededUserRoles();
+    await second.pool.end();
+    second = null;
+    const activeAfterSecondBoot = await countActiveRoles(pool);
+    assert.equal(activeAfterSecondBoot, activeAfterSeed, "second passage : aucun doublon user_roles");
+    assert.deepEqual(await activeRoleRows(pool), activeRowsAfterSeed, "second passage : affectations actives inchangées");
+    const duplicatesAfterSecondBoot = await pool.query(
+      `SELECT user_id, school_id, role_key, COUNT(*)::int AS count
+       FROM user_roles
+       WHERE status = 'active' AND revoked_at IS NULL
+       GROUP BY user_id, school_id, role_key
+       HAVING COUNT(*) > 1`,
+    );
+    assert.equal(duplicatesAfterSecondBoot.rowCount, 0, "second passage : aucune affectation active dupliquée");
     console.log("postgresSeedUserRoles.pg.test.js OK");
   } finally {
-    await stopChild(child);
+    // Le nettoyage continue même si l'arrêt échoue ; l'échec reste visible.
+    await stopChildProcess(child).catch((error) => {
+      console.error(`FAIL arrêt du serveur enfant : ${error.message}`);
+      process.exitCode = 1;
+    });
+    if (second) await second.pool.end().catch(() => {});
     await pool.end();
+    process.removeListener("exit", killOrphan);
   }
 }
 

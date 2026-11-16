@@ -24,7 +24,7 @@ const superAdmin = session("super_admin", ["ALL_PRIVILEGES", "COUNTRY_PRIVILEGES
 
 assert.equal(canReadRoute(schoolUser, "InternalNotifications"), true);
 assert.equal(canReadView(superAdmin, "PlatformNotifications"), true);
-assert.equal(canReadRoute(superAdmin, "InternalNotifications"), true);
+assert.equal(canReadRoute(superAdmin, "InternalNotifications"), false);
 
 assert.equal(hasSchoolNotificationContext(schoolUser, ""), true, "session établissement = contexte école");
 assert.equal(hasSchoolNotificationContext(superAdmin, "*"), false);
@@ -38,8 +38,8 @@ assert.equal(
 );
 assert.equal(
   resolveNotificationsInboxRoute(superAdmin, "CD-IN-26-001"),
-  "InternalNotifications",
-  "si un contexte école est explicitement actif, la seule inbox Mobile est C4",
+  null,
+  "P1-04 : Superadmin ne reçoit aucune inbox scolaire C4, même avec école active",
 );
 assert.equal(
   resolveNotificationsInboxRoute(superAdmin, "*"),

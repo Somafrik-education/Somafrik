@@ -317,7 +317,7 @@ export default function UnpaidScreen() {
                           : `${new Intl.NumberFormat("fr-FR").format(total.amount)} · devise non renseignée`}
                       </Text>
                     ))}
-                    <Text style={styles.summaryLabel}>Reste dû</Text>
+                    <Text style={styles.summaryLabel}>Reste à payer</Text>
                   </View>
                 </View>
                 <Text style={styles.sectionTitle}>Élèves concernés</Text>
@@ -375,7 +375,7 @@ export default function UnpaidScreen() {
               <Text style={styles.detailValue}>{formatFinanceAmount(item.amountExpected, item.currency)}</Text>
               <Text style={styles.detailLabel}>Montant alloué aux impayés ouverts</Text>
               <Text style={styles.detailValue}>{formatFinanceAmount(item.amountPaid, item.currency)}</Text>
-              <Text style={styles.detailLabel}>Reste dû</Text>
+              <Text style={styles.detailLabel}>Reste à payer</Text>
               <Text style={styles.detailValue}>{formatFinanceAmount(item.amountDue, item.currency)}</Text>
               <Text style={styles.detailLabel}>Échéance</Text>
               <Text style={styles.detailValue}>{formatFinanceDate(item.dueDate)}</Text>

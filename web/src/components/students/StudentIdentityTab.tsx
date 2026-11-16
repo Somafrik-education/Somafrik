@@ -1,10 +1,13 @@
 import { useStudentEditingContext } from "../../hooks/useStudentEditingContext";
 import type { StudentWorkspaceViewModel } from "../../lib/studentWorkspaceViewModel";
+import type { SchoolStudent } from "../../lib/studentsApi";
 import { Card, SectionHeader } from "../../design-system";
 import { StudentEditingPanel } from "./editing/StudentEditingPanel";
 
 interface StudentIdentityTabProps {
   workspace: StudentWorkspaceViewModel;
+  dossier?: SchoolStudent | null;
+  onIdentityPersisted?: () => void | Promise<void>;
 }
 
 interface IdentityFieldProps {
@@ -28,8 +31,13 @@ function IdentityField({ label, value }: IdentityFieldProps) {
 
 export function StudentIdentityTab({
   workspace,
+  dossier = null,
+  onIdentityPersisted,
 }: StudentIdentityTabProps) {
-  const editing = useStudentEditingContext(workspace.studentId);
+  const editing = useStudentEditingContext(workspace.studentId, {
+    dossier,
+    onIdentityPersisted,
+  });
 
   return (
     <div className="space-y-6">
@@ -41,6 +49,7 @@ export function StudentIdentityTab({
 
         <dl className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           <IdentityField label="Sexe" value={workspace.genderLabel} />
+          <IdentityField label="Nom d'usage" value={dossier?.preferredName?.trim() || "—"} />
           <IdentityField
             label="Date de naissance"
             value={workspace.birthDateLabel}
@@ -61,13 +70,24 @@ export function StudentIdentityTab({
           <div className="sm:col-span-2 xl:col-span-3">
             <IdentityField label="Adresse" value={workspace.addressLabel} />
           </div>
+          <div className="sm:col-span-2 xl:col-span-3">
+            <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Notes administratives
+            </dt>
+            <dd
+              className="mt-1 whitespace-pre-wrap break-words text-sm font-medium text-ink"
+              data-testid="student-administrative-notes"
+            >
+              {dossier?.administrativeNotes?.trim() || "—"}
+            </dd>
+          </div>
         </dl>
       </Card>
 
       <Card className="p-6">
         <SectionHeader
           title="Édition contrôlée"
-          description="Les modifications passent par validation, ChangeSet et confirmation. Médical et documents restent en lecture seule."
+          description="Les champs d’identité, le nom d’usage, la nationalité, l’adresse et les notes administratives sont enregistrés en PostgreSQL. Le canal de contact préféré reste hors contrat."
         />
         <div className="mt-6">
           <StudentEditingPanel

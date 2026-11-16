@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "somafrik-mig-workers-poc-01",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "iconv-lite": "./src/iconvLiteShim.cjs"
+  },
+  // Le binding Browser Run est dans wrangler.browser-run.jsonc, non déployé.
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "APP_ENV": "workers-poc",
+    "SOMAFRIK_POC": "mig-workers-poc-01"
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "NOTIFY_QUEUE",
+        "queue": "somafrik-poc-notifications"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "somafrik-poc-notifications",
+        "max_batch_size": 1
+      }
+    ]
+  }
+}

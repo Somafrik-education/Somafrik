@@ -26,6 +26,36 @@ test("assertDataExportRead refuse un enseignant", () => {
   );
 });
 
+test("EX06B2-01→07 non-SCHOOL_ADMIN ne passent pas assertDataExportRead", () => {
+  const denied = [
+    { role: "Proviseur", permissions: ["Paramètres Établissement:READ"], schoolCode: "CD-2026-0001" },
+    { role: "Préfet des études", permissions: ["Paramètres Établissement:READ"], schoolCode: "CD-2026-0001" },
+    { role: "Secrétaire", permissions: ["Paramètres Établissement:UPDATE"], schoolCode: "CD-2026-0001" },
+    { role: "Enseignant", permissions: ["Gérer planning académique"], schoolCode: "CD-2026-0001" },
+    { role: "Comptable", permissions: ["ALL_PRIVILEGES"], schoolCode: "CD-2026-0001" },
+    { role: "Admin Pays", permissions: ["COUNTRY_PRIVILEGES"], schoolCode: "*", countryCode: "CD" },
+    { role: "Super Administrateur Somafrik", permissions: ["ALL_PRIVILEGES"], schoolCode: "*" },
+  ];
+  for (const principal of denied) {
+    assert.throws(
+      () => assertDataExportRead(principal),
+      (error) => error.statusCode === 403 && error.code === DATA_EXPORT_ERROR.FORBIDDEN,
+      JSON.stringify(principal),
+    );
+  }
+});
+
+test("EX06B2-08 SCHOOL_ADMIN concret + Paramètres READ est autorisé", () => {
+  assert.doesNotThrow(() =>
+    assertDataExportRead({
+      role: "Admin School",
+      roleKeys: ["SCHOOL_ADMIN"],
+      permissions: ["Paramètres Établissement:READ"],
+      schoolCode: "CD-2026-0001",
+    }),
+  );
+});
+
 test("Superadmin / Admin Pays sont refusés (export établissement interdit)", () => {
   assert.throws(
     () => assertDataExportRead({ role: "Super Administrateur Somafrik", schoolCode: "*" }),

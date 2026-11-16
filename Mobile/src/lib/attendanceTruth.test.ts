@@ -25,8 +25,9 @@ import {
 import { rollCallInitialStatus } from "../domain/metrics/schoolMetrics";
 
 function run() {
-  assert.equal(hydrateRollCallStatus(undefined), "Présent");
-  assert.equal(hydrateRollCallStatus(null), "Présent");
+  // NFC-STATUT-PRESENCE-01 : aucune ligne du jour → « Absent » provisoire (jamais écrit tel quel).
+  assert.equal(hydrateRollCallStatus(undefined), "Absent");
+  assert.equal(hydrateRollCallStatus(null), "Absent");
   assert.equal(hydrateRollCallStatus({ present: true, status: "Présent" }), "Présent");
   assert.equal(hydrateRollCallStatus({ present: false, status: "Absent" }), "Absent");
   assert.equal(hydrateRollCallStatus({ present: true, status: "Retard" }), "Retard");
@@ -55,10 +56,10 @@ function run() {
   );
 
   const unset = rollCallEntryFromPresence(undefined);
-  assert.equal(unset.status, "Présent");
+  assert.equal(unset.status, "Absent");
   assert.equal(unset.source, "unset");
   assert.equal(shouldPreserveLocalAttendanceDraft(unset), false);
-  assert.equal(emptyRollCallEntry().status, "Présent");
+  assert.equal(emptyRollCallEntry().status, "Absent");
 
   const confirmed = rollCallEntryFromPresence({ status: "Absent", present: false });
   assert.equal(confirmed.source, "postgres");
@@ -82,7 +83,9 @@ function run() {
   const roster = ["a", "b", "c", "d"];
   const hydratedDefault = Object.fromEntries(roster.map((id) => [id, emptyRollCallEntry()]));
   assert.equal(assertRollCallReadyToSave(roster, hydratedDefault).ok, true);
-  assert.equal(getRollCallDraftStats(roster, hydratedDefault).rate, 100);
+  // Absences provisoires : affichées comme absentes (taux 0 %), jamais confirmées.
+  assert.equal(getRollCallDraftStats(roster, hydratedDefault).absent, 4);
+  assert.equal(getRollCallDraftStats(roster, hydratedDefault).rate, 0);
   const emptyStats = getRollCallDraftStats(roster, {});
   assert.equal(emptyStats.present, 0);
   assert.equal(emptyStats.absent, 0);

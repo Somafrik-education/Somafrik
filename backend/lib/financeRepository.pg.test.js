@@ -204,7 +204,7 @@ async function main() {
     const skippedTotal = first.skipped + second.skipped;
     assert.equal(createdTotal, 1);
     assert.equal(skippedTotal, 1);
-    const fees = await store.listFinanceStudentFees();
+    const fees = await store.listFinanceStudentFees(admin);
     assert.equal(fees.length, 1);
     const inscription = fees[0];
 
@@ -219,13 +219,13 @@ async function main() {
       admin,
     );
     assert.match(payment.reference, /^CD-2026-0001-\d{4}-PAY-/);
-    const paid = (await store.listFinanceStudentFees())[0];
+    const paid = (await store.listFinanceStudentFees(admin))[0];
     assert.equal(Number(paid.balance), 0);
 
     const cancelled = await store.cancelSchoolPayment(payment.reference, "Saisie erronée", admin);
     assert.equal(cancelled.status, "Annulé");
     assert.equal(String(cancelled.cancelledBy), String(admin.sub));
-    const restored = (await store.listFinanceStudentFees())[0];
+    const restored = (await store.listFinanceStudentFees(admin))[0];
     assert.equal(Number(restored.balance), 40_000);
     const cancelAudit = await pool.query(
       `SELECT * FROM audit_logs WHERE action = 'cancel_payment' AND entity_id = $1`,
@@ -266,7 +266,7 @@ async function main() {
     assert.equal(paymentsAfterFailedCreate.rowCount, 0);
     const createAudits = await pool.query(`SELECT * FROM audit_logs WHERE action = 'create_payment'`);
     assert.equal(createAudits.rowCount, 1);
-    const obligationAfterFailedCreate = (await store.listFinanceStudentFees())[0];
+    const obligationAfterFailedCreate = (await store.listFinanceStudentFees(admin))[0];
     assert.equal(Number(obligationAfterFailedCreate.balance), 40_000);
 
     const concurrentPayment = await store.createSchoolPayment(
@@ -286,7 +286,7 @@ async function main() {
     restoreCancelAudit();
     const stillOpen = await store.getSchoolPayment(concurrentPayment.reference, admin);
     assert.notEqual(stillOpen.status, "Annulé");
-    assert.equal(Number((await store.listFinanceStudentFees())[0].balance), 0);
+    assert.equal(Number((await store.listFinanceStudentFees(admin))[0].balance), 0);
     const cancelAuditsAfterFailed = await pool.query(
       `SELECT * FROM audit_logs WHERE action = 'cancel_payment' AND entity_id = $1`,
       [concurrentPayment.reference],
@@ -309,7 +309,7 @@ async function main() {
       [concurrentPayment.dbId],
     );
     assert.equal(openAllocations.rowCount, 0);
-    const reversedOnce = (await store.listFinanceStudentFees())[0];
+    const reversedOnce = (await store.listFinanceStudentFees(admin))[0];
     assert.equal(Number(reversedOnce.balance), 40_000);
     const cancelledRow = await pool.query("SELECT cancelled_by FROM payments WHERE payment_code = $1", [
       concurrentPayment.reference,
@@ -326,15 +326,30 @@ async function main() {
        VALUES ($1, $2, $3, $4, 'active')`,
       [schoolA.rows[0].id, esther.rows[0].id, klass.rows[0].id, year.rows[0].id],
     );
+    const estherObligationIds = [];
+    for (const [label, feeType, amount, period] of [
+      ["Versement 1", "Scolarité", 1000, "V1"],
+      ["Versement 2", "Examen", 10, "V2"],
+      ["Versement 3", "Cantine", 100, "V3"],
+    ]) {
+      const inserted = await pool.query(
+        `INSERT INTO student_fee_obligations (
+           school_id, student_id, fee_type, label, currency, period_label,
+           initial_amount, amount_due, amount_paid, balance, status
+         ) VALUES ($1,$2,$3,$4,'CDF',$5,$6,$6,0,$6,'À payer') RETURNING id`,
+        [schoolA.rows[0].id, esther.rows[0].id, feeType, label, period, amount],
+      );
+      estherObligationIds.push(inserted.rows[0].id);
+    }
     const paymentsBefore = (await pool.query(`SELECT count(*)::int AS c FROM payments`)).rows[0].c;
     const itemsBefore = (await pool.query(`SELECT count(*)::int AS c FROM payment_items`)).rows[0].c;
     const multi = await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-ESTHER",
         items: [
-          { feeType: "Non imputé", feeLabel: "Versement 1", amount: 500 },
-          { feeType: "Non imputé", feeLabel: "Versement 2", amount: 1 },
-          { feeType: "Non imputé", feeLabel: "Versement 3", amount: 40 },
+          { obligationId: estherObligationIds[0], feeType: "Scolarité", feeLabel: "Versement 1", amount: 500 },
+          { obligationId: estherObligationIds[1], feeType: "Examen", feeLabel: "Versement 2", amount: 1 },
+          { obligationId: estherObligationIds[2], feeType: "Cantine", feeLabel: "Versement 3", amount: 40 },
         ],
         paymentMethod: "cash",
         paidAt: "2026-08-19",
@@ -344,7 +359,8 @@ async function main() {
     );
     assert.equal(multi.totalAmount, 541);
     assert.equal(multi.items.length, 3);
-    assert.equal(multi.unallocatedAmount, 541);
+    assert.equal(Number(multi.allocatedAmount), 541);
+    assert.equal(Number(multi.unallocatedAmount), 0);
     assert.equal((await pool.query(`SELECT count(*)::int AS c FROM payments`)).rows[0].c, paymentsBefore + 1);
     assert.equal((await pool.query(`SELECT count(*)::int AS c FROM payment_items`)).rows[0].c, itemsBefore + 3);
     const refs = await pool.query(`SELECT DISTINCT payment_code FROM payments WHERE student_id = (SELECT id FROM students WHERE student_code = 'CD-2026-0001-STU-ESTHER')`);
@@ -403,7 +419,7 @@ async function main() {
     const sameDayA = await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-0001",
-        items: [{ feeType: "Non imputé", feeLabel: "Cantine", amount: 10 }],
+        items: [{ obligationId: restored.id, feeType: "Inscription", feeLabel: "Cantine", amount: 10 }],
         method: "Espèces",
         date: "2026-08-21",
       },
@@ -412,7 +428,7 @@ async function main() {
     const sameDayB = await store.createSchoolPayment(
       {
         studentId: "CD-2026-0001-STU-0001",
-        items: [{ feeType: "Non imputé", feeLabel: "Transport", amount: 11 }],
+        items: [{ obligationId: restored.id, feeType: "Inscription", feeLabel: "Transport", amount: 11 }],
         method: "Espèces",
         date: "2026-08-21",
       },
@@ -478,7 +494,7 @@ async function main() {
       {
         studentId: "CD-2026-0001-STU-0001",
         classId: klassB.rows[0].id,
-        items: [{ feeType: "Non imputé", amount: 13 }],
+        items: [{ obligationId: restored.id, feeType: "Inscription", amount: 13 }],
         method: "Espèces",
         date: "2026-08-29",
       },
@@ -486,7 +502,8 @@ async function main() {
     );
     assert.equal(picked.className, "5ème B");
     assert.equal(String(picked.classId), String(klassB.rows[0].id));
-    assert.equal(picked.status, "Non imputé");
+    assert.equal(picked.status, "Partiel");
+    assert.equal(Number(picked.unallocatedAmount), 0);
 
     const foreignClass = await pool.query(
       `INSERT INTO academic_years (school_id, name, status)
@@ -643,23 +660,26 @@ async function main() {
     );
     assert.equal(Number(concFee.amountPaid), 0, "historique sans obligationId ne paie aucune dette");
 
-    const payOver = await store.createSchoolPayment(
-      {
-        studentId: "CD-2026-0001-STU-RATE",
-        items: [{ obligationId: afterRecon.id, feeType: "Scolarité", amount: 600 }],
-        method: "Espèces",
-        date: "2026-08-24",
-      },
-      admin,
+    await assert.rejects(
+      () =>
+        store.createSchoolPayment(
+          {
+            studentId: "CD-2026-0001-STU-RATE",
+            items: [{ obligationId: afterRecon.id, feeType: "Scolarité", amount: 600 }],
+            method: "Espèces",
+            date: "2026-08-24",
+          },
+          admin,
+        ),
+      (error) => error.statusCode === 422 && error.code === "FINANCE_PAYMENT_EXCEEDS_BALANCE",
     );
-    assert.equal(Number(payOver.overpaymentAmount), 100);
     const paidTotal = await pool.query(
       `SELECT COALESCE(SUM(amount),0)::numeric AS total
        FROM payment_allocations
        WHERE reversed_at IS NULL AND school_id = $1 AND obligation_id = $2`,
       [schoolA.rows[0].id, afterRecon.dbId],
     );
-    assert.equal(Number(paidTotal.rows[0].total), 500, "jamais plus de 500 sur une dette 500");
+    assert.equal(Number(paidTotal.rows[0].total), 0, "un dépassement n'alloue rien");
 
     const studentB = await pool.query(`SELECT id FROM students WHERE student_code = 'BI-2026-0001-STU-0001'`);
     const collide = await pool.query(
@@ -676,10 +696,12 @@ async function main() {
     const listedA = await store.listFinanceStudentFees(admin);
     assert.equal(listedA.some((row) => String(row.dbId) === String(collide.rows[0].id)), false);
     assert.equal(listedA.every((row) => row.schoolCode === "CD-2026-0001"), true);
-    const platform = await store.listFinanceStudentFees({
+    const superNone = await store.listFinanceStudentFees({
       role: "Super Administrateur Somafrik",
       schoolCode: "*",
     });
+    assert.equal(superNone.length, 0, "P1-01 Superadmin ne liste pas les obligations scolaires");
+    const platform = await store.listFinanceStudentFees(adminB);
     const collided = platform.find((row) => String(row.dbId) === String(collide.rows[0].id));
     assert.ok(collided);
     assert.equal(Number(collided.amountPaid), 0, "allocation A jamais projetée sur B malgré identifiant collisionné");

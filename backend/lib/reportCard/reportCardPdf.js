@@ -208,6 +208,162 @@ function renderStudentTables(payload, template) {
     .join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// BULLETIN-UI-01 — présentation par matières (modèles A « simple » et B
+// « hiérarchique »). Entrée : sortie de reportCardPresentation (valeurs déjà
+// calculées par le moteur, lues dans le snapshot). Aucun calcul ici.
+// ---------------------------------------------------------------------------
+
+function display(value) {
+  return value == null || value === "" ? "—" : String(value);
+}
+
+function scoreCell(cell) {
+  if (!cell || cell.state === "NOT_APPLICABLE") return `<td class="na">—</td>`;
+  if (cell.state === "NUMERIC") {
+    return cell.failing
+      ? `<td class="failing" data-failing>${escapeHtml(display(cell.value))}</td>`
+      : `<td>${escapeHtml(display(cell.value))}</td>`;
+  }
+  return `<td class="missing" data-missing>${escapeHtml("Manquante")}</td>`;
+}
+
+function presentationHeaderRows(view) {
+  const components = view.components;
+  const perPeriod = components.length + 1;
+  const first = [`<th rowspan="3" class="subject">Matières</th>`];
+  const second = [];
+  const third = [];
+  for (const period of view.periods) {
+    first.push(`<th colspan="${perPeriod * 2}" data-period="${escapeHtml(period.id)}">${escapeHtml(period.label)}</th>`);
+    second.push(`<th colspan="${perPeriod}">Maxima</th><th colspan="${perPeriod}">Obtenu</th>`);
+    for (let pass = 0; pass < 2; pass += 1) {
+      for (const component of components) third.push(`<th>${escapeHtml(component.label)}</th>`);
+      third.push(`<th>Total</th>`);
+    }
+  }
+  if (view.totals.annual) {
+    first.push(`<th colspan="2" rowspan="2">Total annuel</th>`);
+    third.push(`<th>Max</th><th>Obtenu</th>`);
+  }
+  return `<tr>${first.join("")}</tr><tr>${second.join("")}</tr><tr>${third.join("")}</tr>`;
+}
+
+function presentationRow(view, row) {
+  const cells = [];
+  const classes = [row.kind === "composite" ? "composite" : "leaf", row.level ? "child" : "top"].join(" ");
+  const label = row.group_label ? `${row.group_label} — ${row.label}` : row.label;
+  cells.push(`<td class="subject">${escapeHtml(label)}</td>`);
+  for (const period of view.periods) {
+    const total = row.periods[period.id] || {};
+    for (const component of view.components) {
+      const cell = total.components ? total.components[component.id] : null;
+      cells.push(`<td class="max">${escapeHtml(row.kind === "composite" ? "" : display(cell && cell.max))}</td>`);
+    }
+    cells.push(`<td class="max">${escapeHtml(display(total.max))}</td>`);
+    for (const component of view.components) {
+      cells.push(row.kind === "composite" ? `<td></td>` : scoreCell(total.components ? total.components[component.id] : null));
+    }
+    cells.push(`<td class="sum${total.failing ? " failing" : ""}"${total.failing ? " data-failing" : ""}>${escapeHtml(display(total.points))}</td>`);
+  }
+  if (view.totals.annual) {
+    cells.push(`<td class="max">${escapeHtml(display(row.annual && row.annual.max))}</td>`);
+    const annualFailing = Boolean(row.annual && row.annual.failing);
+    cells.push(`<td class="sum${annualFailing ? " failing" : ""}"${annualFailing ? " data-failing" : ""}>${escapeHtml(display(row.annual && row.annual.points))}</td>`);
+  }
+  return `<tr class="${classes}" data-subject="${escapeHtml(row.subject_id)}" data-kind="${escapeHtml(row.kind)}">${cells.join("")}</tr>`;
+}
+
+function rankLabel(rank, cohortSize) {
+  if (!rank) return "—";
+  if (rank.value == null) return "Non classé";
+  return cohortSize ? `${rank.value} / ${cohortSize}` : String(rank.value);
+}
+
+function summaryRows(view) {
+  const lines = [];
+  const span = view.components.length * 2 + 1;
+  // `pick` renvoie du HTML déjà échappé.
+  const row = (label, pick) => {
+    const cells = [`<td class="subject">${escapeHtml(label)}</td>`];
+    for (const period of view.periods) {
+      const total = view.totals.periods[period.id];
+      cells.push(`<td colspan="${span}" class="sum" data-period-total="${escapeHtml(period.id)}">${pick(total)}</td>`);
+      cells.push(`<td></td>`);
+    }
+    if (view.totals.annual) cells.push(`<td colspan="2" class="sum" data-annual-total>${pick(view.totals.annual)}</td>`);
+    return `<tr class="summary">${cells.join("")}</tr>`;
+  };
+  // Total : seuls les points obtenus peuvent être en échec, jamais le maximum.
+  lines.push(
+    row("Total", (total) => {
+      if (!total) return "—";
+      const points = escapeHtml(display(total.points));
+      const shown = total.failing ? `<span class="failing" data-failing>${points}</span>` : points;
+      return `${shown} / ${escapeHtml(display(total.max))}`;
+    })
+  );
+  lines.push(row("Pourcentage", (total) => escapeHtml(total && total.percentage != null ? `${total.percentage} %` : "—")));
+  lines.push(row("Rang", (total) => escapeHtml(rankLabel(total && total.rank, view.cohort_size))));
+  return lines.join("\n");
+}
+
+const LOGO_DATA_URI_RE = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+
+/**
+ * BULLETIN-CLASSE-01 / L3 — en-tête configuré (éléments, disposition, lignes, titre) ; logo figé
+ * uniquement sous forme de data URI vérifiée (aucune ressource externe).
+ */
+function renderHeader(view, logoDataUri) {
+  const header = view.header;
+  const logo = header.logo && logoDataUri && LOGO_DATA_URI_RE.test(logoDataUri)
+    ? `<img class="header-logo" data-header-logo src="${logoDataUri}" alt="Logo de l'établissement" />`
+    : "";
+  const lines = header.lines.map((line) => `<p class="header-line">${escapeHtml(line)}</p>`).join("");
+  const title = header.title ? `<h2 class="header-title title-${header.title_align === "center" ? "center" : "left"}" data-header-title>${escapeHtml(header.title)}</h2>` : "";
+  const items = header.items
+    .map((item) => `<div data-header-item="${escapeHtml(item.id)}"><dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(display(item.value))}</dd></div>`)
+    .join("");
+  return `<header class="report-header layout-${escapeHtml(header.layout)}" data-header>
+      ${logo}<div class="header-text">${lines}${title}</div>
+    </header>
+    <dl class="identity">${items}</dl>`;
+}
+
+function renderPresentationStudent(view, logoDataUri = null) {
+  const identity = [
+    ["Établissement", view.school.name],
+    ["Élève", view.student.name],
+    ["Matricule", view.student.code],
+    ["Classe", view.class_name],
+    ["Année scolaire", view.academic_year],
+  ]
+    .map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(display(value))}</dd></div>`)
+    .join("");
+  const incomplete = view.status === "INCOMPLETE" ? `<p class="incomplete" data-incomplete>Résultats incomplets : notes manquantes.</p>` : "";
+  const decision =
+    view.decision && view.decision.passed != null
+      ? `<p data-decision>Décision : ${escapeHtml(view.decision.passed ? "Admis(e)" : "Non admis(e)")}</p>`
+      : "";
+  const signatures = view.signatures.length
+    ? `<div class="signatures" data-signatures>${view.signatures
+        .map((label) => `<div class="signature"><span>${escapeHtml(label)}</span></div>`)
+        .join("")}</div>`
+    : "";
+  const top = view.header ? renderHeader(view, logoDataUri) : `<dl class="identity">${identity}</dl>`;
+  return `<section class="student-card" data-student="${escapeHtml(view.student.code)}" data-style="${escapeHtml(view.style)}">
+      ${top}
+      ${incomplete}
+      <table class="results" data-results>
+        <thead>${presentationHeaderRows(view)}</thead>
+        <tbody>${view.rows.map((row) => presentationRow(view, row)).join("\n")}
+        ${summaryRows(view)}</tbody>
+      </table>
+      ${decision}
+      ${signatures}
+    </section>`;
+}
+
 function embeddedFontCss() {
   if (!fs.existsSync(PRINT_FONT_PATH)) {
     throw new ReportCardPdfError("PDF_FONT_UNAVAILABLE");
@@ -226,17 +382,16 @@ function embeddedFontCss() {
 `;
 }
 
-function buildHtml(payload, qr, template) {
+function buildHtml(payload, qr, template, presentation = null, logoDataUri = null) {
   const htmlTemplate = fs.readFileSync(path.join(TEMPLATE_DIR, "canonical.html"), "utf8");
   const css = `${embeddedFontCss()}${fs.readFileSync(path.join(TEMPLATE_DIR, "canonical.css"), "utf8")}`;
   return htmlTemplate
     .replaceAll("{{INLINE_CSS}}", css)
-    .replaceAll("{{REPORT_CARD_ID}}", escapeHtml(payload.report_card_id))
-    .replaceAll("{{VERSION}}", escapeHtml(payload.published_snapshot_version))
-    .replaceAll("{{PUBLISHED_AT}}", escapeHtml(payload.published_at))
-    .replaceAll("{{STUDENTS}}", renderStudentTables(payload, template))
-    .replaceAll("{{QR_DATA_URL}}", qr.dataUrl)
-    .replaceAll("{{QR_URL}}", escapeHtml(qr.url));
+    .replaceAll(
+      "{{STUDENTS}}",
+      presentation ? presentation.map((view) => renderPresentationStudent(view, logoDataUri)).join("\n") : renderStudentTables(payload, template)
+    )
+    .replaceAll("{{QR_DATA_URL}}", qr.dataUrl);
 }
 
 function assertHtmlString(html) {
@@ -274,10 +429,13 @@ async function resolveEmbeddedFont(page) {
 
 async function renderPdfAfterCommit({ html, qr } = {}) {
   const documentHtml = assertHtmlString(html);
+  const { findPdfBrowserExecutable } = require("./pdfBrowserExecutable");
+  const executablePath = findPdfBrowserExecutable();
+  if (!executablePath) throw new ReportCardPdfError("PDF_BROWSER_UNAVAILABLE");
   const puppeteer = require("puppeteer");
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    executablePath,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--font-render-hinting=none"],
   });
   try {
@@ -352,13 +510,20 @@ function sameStudentIds(left, right) {
   return true;
 }
 
+function samePresentationStudents(presentation, payload) {
+  if (!Array.isArray(presentation)) return false;
+  const codes = new Set(presentation.map((view) => String(view && view.student && view.student.code)));
+  const ids = studentIdSet(payload);
+  return codes.size === presentation.length && codes.size === ids.size && [...ids].every((id) => codes.has(id));
+}
+
 function createReportCardPdf({ publication, pdfDriver } = {}) {
   if (!publication || typeof publication.payloadForRender !== "function") {
     throw new ReportCardPdfError("PUBLICATION_REQUIRED");
   }
   const driver = pdfDriver || renderPdfAfterCommit;
 
-  function render({ tenant, reportCardId, version, renderingTemplate, payload: providedPayload } = {}) {
+  function render({ tenant, reportCardId, version, renderingTemplate, payload: providedPayload, presentation = null, logoDataUri = null } = {}) {
     return Promise.resolve().then(() => {
       const template = normalizeRenderingTemplate(renderingTemplate);
       return thenable(publication.payloadForRender({ tenant, reportCardId, version }), (canonicalPayload) => {
@@ -368,7 +533,11 @@ function createReportCardPdf({ publication, pdfDriver } = {}) {
         }
         return thenable(publication.reprintUrl({ tenant, reportCardId, version }), (url) =>
           thenable(buildPrintableQr(url), (qr) => {
-            const html = buildHtml(payload, qr, template);
+            // BULLETIN-UI-01 : la présentation doit couvrir exactement les élèves du payload rendu.
+            if (presentation != null && !samePresentationStudents(presentation, payload)) {
+              throw new ReportCardPdfError("PDF_QR_SCOPE_MISMATCH");
+            }
+            const html = buildHtml(payload, qr, template, presentation, logoDataUri);
             return thenable(driver({ html, qr, payload }), (raw) => {
               const unwrapped = unwrapDriverResult(raw);
               return Object.freeze({
@@ -392,6 +561,8 @@ function createReportCardPdf({ publication, pdfDriver } = {}) {
 }
 
 module.exports = {
+  buildHtml,
+  renderPresentationStudent,
   createReportCardPdf,
   ReportCardPdfError,
   normalizeRenderingTemplate,

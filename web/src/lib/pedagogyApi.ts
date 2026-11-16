@@ -1,4 +1,4 @@
-import { api } from "../api/client";
+import { api, type RequestArgs } from "../api/client";
 
 function withQuery(path: string, query?: Record<string, string | undefined | null>): string {
   const params = new URLSearchParams();
@@ -19,14 +19,14 @@ export type CourseScheduleOccurrenceProjection = {
 };
 
 export const pedagogyApi = {
-  listCourses: () => api.get<unknown[]>("/courses"),
+  listCourses: (...init: RequestArgs) => api.get<unknown[]>("/courses", ...init),
   createCourse: (payload: Record<string, unknown>) => api.post("/courses", payload),
   updateCourse: (courseId: string, payload: Record<string, unknown>) =>
     api.patch(`/courses/${encodeURIComponent(courseId)}`, payload),
   deleteCourse: (courseId: string) => api.delete(`/courses/${encodeURIComponent(courseId)}`),
 
   /** Définitions weekly (sans from/to). */
-  listCourseSchedules: () => api.get<unknown[]>("/course-schedules"),
+  listCourseSchedules: (...init: RequestArgs) => api.get<unknown[]>("/course-schedules", ...init),
   /**
    * Cours planifiables canoniques — gated Planning de cours:READ,
    * indépendant du domaine Web `courses` / `Matières:READ`.

@@ -11,6 +11,7 @@ const { test } = require("node:test");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 if (process.env.GITHUB_ACTIONS && !DATABASE_URL) {
@@ -130,7 +131,7 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
   process.env.SOMAFRIK_DB_REQUIRED = "true";
   const repo = createPostgresRepository(isolatedUrl);
   const tokens = new TokenService({ secret: JWT_SECRET });
-  const mint = (payload) => tokens.createAccessToken({ mustChangePassword: false, ...payload });
+  const mint = (payload) => mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   const pool = new Pool({ connectionString: isolatedUrl });
   let child = null;
 
@@ -277,21 +278,21 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
     await waitForHealth(child, stderrRef);
 
     const adminPerms = ["ALL_PRIVILEGES", "Élèves:UPDATE", "Élèves:READ", "Relations:CREATE", "Relations:READ"];
-    const tokenA = mint({
+    const tokenA = await mint({
       sub: USER_A,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_A,
       permissions: adminPerms,
     });
-    const tokenB = mint({
+    const tokenB = await mint({
       sub: USER_B,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],
       schoolCode: LEFTOVER_B,
       permissions: adminPerms,
     });
-    const tokenTeacher = mint({
+    const tokenTeacher = await mint({
       sub: USER_TEACHER,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
@@ -300,7 +301,7 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
       classCodes: [CLASS_A],
       assignments: [{ classCode: CLASS_A, status: "active" }],
     });
-    const tokenParent = mint({
+    const tokenParent = await mint({
       sub: USER_PARENT,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -308,7 +309,7 @@ test("LOT 2 C18 + relations HTTP PG RBAC/tenant fail-closed", { timeout: 90_000 
       permissions: ["Voir enfant", "Élèves:READ"],
       studentIds: [STUDENT_A, codeA],
     });
-    const tokenStudent = mint({
+    const tokenStudent = await mint({
       sub: USER_STUDENT,
       role: "Élève / Étudiant",
       roleKeys: ["STUDENT"],

@@ -2,7 +2,7 @@
  * Recette runtime wizard guidé Mobile — vrais composants RN.
  * Jamais chargé en production (entrée Metro SOMAFRIK_GUIDED_SETUP_UX_SMOKE_ENTRY=1).
  */
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -45,6 +45,8 @@ function payloadAt(percent: number): GuidedSetupPayload {
       unlocked: index <= completedCount,
     })),
     updatedAt: "2026-09-20T00:00:00.000Z",
+    finalized: false,
+    finalizedAt: null,
   };
 }
 
@@ -60,13 +62,21 @@ function HomeScreen() {
 }
 
 function WizardScreen({ navigation }: { navigation: { navigate: (name: string) => void } }) {
-  const [percent, setPercent] = useState(0);
-  const payload = useMemo(() => payloadAt(percent), [percent]);
+  const [payload, setPayload] = useState(() => payloadAt(0));
 
   schoolSetupGuidedApi.completeStep = async () => {
-    const next = Math.min(100, percent + 10);
-    setPercent(next);
-    return payloadAt(next);
+    const next = payloadAt(Math.min(100, payload.percent + 10));
+    setPayload(next);
+    return next;
+  };
+  schoolSetupGuidedApi.finalize = async () => {
+    const next = {
+      ...payloadAt(100),
+      finalized: true,
+      finalizedAt: "2026-09-21T00:00:00.000Z",
+    };
+    setPayload(next);
+    return next;
   };
 
   return (
@@ -78,7 +88,7 @@ function WizardScreen({ navigation }: { navigation: { navigate: (name: string) =
             key={value}
             testID={`guided-setup-resume-${value}`}
             style={styles.chip}
-            onPress={() => setPercent(value)}
+            onPress={() => setPayload(payloadAt(value))}
           >
             <Text style={styles.chipText}>Reprendre {value} %</Text>
           </Pressable>
@@ -90,7 +100,7 @@ function WizardScreen({ navigation }: { navigation: { navigate: (name: string) =
       <GuidedSchoolSetupWizard
         payload={payload}
         onLeave={() => navigation.navigate("Home")}
-        onCompleted={(next) => setPercent(next.percent)}
+        onCompleted={setPayload}
         onFinish={() => navigation.navigate("Home")}
       />
     </ScrollView>

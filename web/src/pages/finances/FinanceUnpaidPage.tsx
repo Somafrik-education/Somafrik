@@ -39,11 +39,12 @@ import { usePermissionContext } from "../../lib/usePermissionContext";
 import { useDeepLinkId } from "../../lib/notificationDeepLink";
 import { resolveFinanceUiActions } from "../../lib/financeActionPermissions";
 import { QuickPaymentModal } from "../../components/payments/QuickPaymentModal";
+import { canonicalStudentUuid, unpaidCollectionBlockMessage } from "../../lib/studentIntegrity";
 import { financeApi } from "../../lib/financeApi";
 import { createFinanceIdempotencyKey } from "../../lib/financeIdempotency";
 import { ApiError } from "../../api/client";
 import { formatFinanceAmount, formatFinanceDate, resolveFinanceCurrency } from "../../lib/financeCurrency";
-import { financeObligationStatusLabel, financePaymentStatusLabel } from "../../lib/financeObligationStatus";
+import { financeObligationStatusLabel, financePaymentStatusLabel, financeScreenFeeLabel } from "../../lib/financeObligationStatus";
 import { EmptyState, LoadingState } from "../../design-system";
 
 type UnpaidLoadStatus = "idle" | "loading" | "ready" | "forbidden" | "unauthenticated" | "error";
@@ -313,7 +314,7 @@ export function FinanceUnpaidPage() {
           <Button variant="secondary" size="sm" onClick={() => setDetailStudentId(row.studentId)}>
             Détail
           </Button>
-          {canRegisterPayment ? (
+          {canRegisterPayment && row.collectionEligible === true ? (
             <Button
               variant="secondary"
               size="sm"
@@ -322,6 +323,15 @@ export function FinanceUnpaidPage() {
             >
               Enregistrer un paiement
             </Button>
+          ) : null}
+          {canRegisterPayment && row.collectionEligible !== true ? (
+            <p
+              className="max-w-xs text-right text-xs text-danger"
+              role="alert"
+              data-testid={`unpaid-collection-blocked-${row.studentId}`}
+            >
+              {unpaidCollectionBlockMessage(row.integrityCategory)}
+            </p>
           ) : null}
           {canRemind && !ownScopeOnly ? (
             <Button size="sm" onClick={() => openReminderModal(row)}>
@@ -332,6 +342,9 @@ export function FinanceUnpaidPage() {
       ),
     },
   ];
+
+  const paymentLedgerRow = ledgerRows.find((row) => row.studentId === paymentStudentId);
+  const paymentCanonicalId = canonicalStudentUuid(paymentLedgerRow?.canonicalStudentId);
 
   return (
     <>
@@ -521,7 +534,7 @@ export function FinanceUnpaidPage() {
                 <ul className="mt-2 space-y-1">
                   {detail.payments.map((payment, index) => (
                     <li key={String(payment.id ?? index)} className="flex justify-between gap-2 text-muted">
-                      <span>{String(payment.label ?? payment.feeType ?? "Paiement")}</span>
+                      <span>{financeScreenFeeLabel(payment.label ?? payment.feeType) || "Paiement"}</span>
                       <span>
                       {formatFinanceAmount(Number(payment.amount ?? 0), String(payment.currency ?? detail.row.currency))}
                       {" · "}
@@ -560,7 +573,8 @@ export function FinanceUnpaidPage() {
       <QuickPaymentModal
         open={Boolean(paymentStudentId)}
         mode="quick-student"
-        initialStudentId={paymentStudentId ?? undefined}
+        initialStudentId={paymentCanonicalId || undefined}
+        initialStudentCode={paymentLedgerRow?.matricule}
         unpaidRemaining={rows.find((row) => row.studentId === paymentStudentId)?.amountDue}
         unpaidFeeIds={rows.find((row) => row.studentId === paymentStudentId)?.feeIds}
         onClose={() => setPaymentStudentId(null)}

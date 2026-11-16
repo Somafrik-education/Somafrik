@@ -2,6 +2,7 @@
 
 const { getCountryCodeFromScope } = require("./countryScope");
 const { randomBytes } = require("node:crypto");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 const CLIENTS_ERROR = Object.freeze({
   TENANT_MISMATCH: "TENANT_MISMATCH",
@@ -32,8 +33,6 @@ const CLIENTS_ERROR = Object.freeze({
   PARENT_NAME_REQUIRED: "PARENT_NAME_REQUIRED",
   PARENT_RELATION_TYPE_INVALID: "PARENT_RELATION_TYPE_INVALID",
 });
-
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 
 const ROLE_TO_DB = {
   "Super Administrateur Somafrik": "SUPER_ADMIN",
@@ -78,10 +77,6 @@ function validatePersonName(value, field = "name", maxLength = 120) {
     throw createClientsError(400, `${field} invalide.`);
   }
   return normalized;
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
 
 function isCountryAdminPrincipal(principal) {
@@ -282,6 +277,9 @@ function schoolPublicProjectionFromSchool(school, fallbackSchoolCode = "*") {
 function mapUserRow(row) {
   const profile = parsePayload(row.profile_payload);
   const role = ROLE_FROM_DB[row.role] ?? row.role;
+  const { toRoleKey } = require("./userRoleLifecycle");
+  const { resolveEffectiveRoleLabel } = require("./roleDisplayLabels");
+  const roleKey = toRoleKey(role);
   const schoolCode = row.school_code ?? (role === "Admin Pays" ? "*" : "");
   const identityCode = row.identity_code ?? profile.identityCode ?? "";
   const loginCode = row.login_code ?? profile.identifier ?? "";
@@ -300,6 +298,11 @@ function mapUserRow(row) {
     phone: row.phone ?? "",
     email: row.email ?? "",
     role,
+    roleKey,
+    effectiveRoleLabel: resolveEffectiveRoleLabel({
+      defaultLabel: role,
+      displayLabel: row.display_label ?? row.displayLabel ?? row.effectiveRoleLabel,
+    }),
     secondaryRoles: profile.secondaryRoles ?? [],
     scopeLevel: role === "Super Administrateur Somafrik" ? "Global" : role === "Admin Pays" ? "Pays" : "Établissement",
     countryScope: row.country_name ?? profile.countryScope ?? "",
@@ -351,8 +354,16 @@ function mapContactRow(row) {
   };
 }
 
+function normalizeRelationPrincipalFlag(value) {
+  const raw = asTrimmed(value).toLowerCase();
+  if (value === true || raw === "oui" || raw === "true" || raw === "1") return "Oui";
+  if (value === false || raw === "non" || raw === "false" || raw === "0") return "Non";
+  return "";
+}
+
 function mapRelationRow(row) {
   const profile = parsePayload(row.profile_payload);
+  const principalFlag = normalizeRelationPrincipalFlag(profile.isPrincipal ?? profile.is_principal);
   return {
     id: row.id,
     relationType: row.relation_type === "parent_student" ? "Parent → Élève" : row.relation_type,
@@ -362,7 +373,24 @@ function mapRelationRow(row) {
     toStudentName: profile.toStudentName ?? row.student_name ?? "",
     schoolCode: row.school_code,
     status: fromDbStatus(row.status),
+    isPrincipal: principalFlag || "Non",
     createdAt: formatDate(row.created_at),
+  };
+}
+
+/** Projection audit_logs : identifiants + statut, jamais les noms de personnes. */
+function mapRelationAuditValue(row) {
+  if (!row) return null;
+  const profile = parsePayload(row.profile_payload);
+  const principalFlag = normalizeRelationPrincipalFlag(profile.isPrincipal ?? profile.is_principal);
+  return {
+    id: row.id,
+    relationType: row.relation_type === "parent_student" ? "Parent → Élève" : (row.relation_type ?? row.relationType),
+    fromContactId: row.contact_id ?? row.fromContactId,
+    toStudentId: row.student_id ?? row.toStudentId,
+    schoolCode: row.school_code ?? row.schoolCode,
+    status: fromDbStatus(row.status),
+    isPrincipal: principalFlag || "Non",
   };
 }
 
@@ -476,7 +504,9 @@ module.exports = {
   mapUserRow,
   mapUserRowToAuthAccount,
   mapContactRow,
+  normalizeRelationPrincipalFlag,
   mapRelationRow,
+  mapRelationAuditValue,
   mapMessageRow,
   mapAnnouncementRow,
 };

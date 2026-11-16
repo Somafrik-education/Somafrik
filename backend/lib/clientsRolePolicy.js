@@ -10,7 +10,8 @@ const {
   isCountryAdminPrincipal,
 } = require("./clientsManagement");
 
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
+const { isSuperAdminRoleToken, SUPER_ADMIN_ROLES } = require("./superadminPrincipal");
+
 const COUNTRY_ADMIN_ROLE = "Admin Pays";
 const PROVISION_CONTACT_ROLE = "Parent";
 const TEACHER_ROLE = "Enseignant";
@@ -48,7 +49,7 @@ function normalizeAssignableRole(role) {
 }
 
 function isSuperAdminRole(roleLabel) {
-  return SUPER_ADMIN_ROLES.has(normalizeAssignableRole(roleLabel));
+  return isSuperAdminRoleToken(normalizeAssignableRole(roleLabel));
 }
 
 function isCountryAdminRole(roleLabel) {

@@ -16,7 +16,7 @@ function run() {
     unallocatedAmount: 150,
     studentId: "CD-2026-0001-STU-MAEVA",
   });
-  assert.equal(paymentStatusLabel(maeva.status), "Non imputé");
+  assert.equal(paymentStatusLabel(maeva.status), "Non affecté");
   assert.equal(isPaidStatus(maeva.status), false);
   const leftover = getPaymentCashKpi([maeva]);
   assert.equal(leftover.collectedAmount, 150);

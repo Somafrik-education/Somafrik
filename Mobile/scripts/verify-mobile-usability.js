@@ -202,7 +202,10 @@ function main() {
   assert.match(announcements, /FlatList/);
   assert.match(teachers, /onRefresh=\{\(\) => void load\(\)\}/);
   assert.match(users, /onRefresh=\{\(\) => void load\(\)\}/);
-  assert.match(announcements, /onRefresh=\{\(\) => void load\(\)\}/);
+  // Annonces : le refresh ciblé recharge les données admin ET la page canonique paginée.
+  // Vérifier le callback réel, pas une ancienne forme JSX inline.
+  assert.match(announcements, /const refreshList = useCallback\(\(\) => \{\s*void load\(\);\s*void loadFirstPage\(\);\s*\}, \[load, loadFirstPage\]\)/);
+  assert.match(announcements, /onRefresh=\{refreshList\}/);
   for (const [name, file] of [
     ["Teachers", teachers],
     ["Users", users],

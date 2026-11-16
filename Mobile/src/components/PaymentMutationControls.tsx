@@ -10,7 +10,6 @@ import { createIntentionStore } from "../lib/mutationGuard";
 import { isOfflineContext } from "../lib/connectivity";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import {
-  UNALLOCATED_TARGET,
   applyScopedPaymentFeeDraft,
   buildFinancePaymentWritePayload,
   collectActivePaymentClasses,
@@ -66,6 +65,7 @@ export default function PaymentMutationControls({
   const intentionsRef = useRef(createIntentionStore());
   const sessionGenRef = useRef(0);
   const selectionGenRef = useRef(0);
+  const manualFeeSelectionRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [scopedFees, setScopedFees] = useState<PaymentFeeRow[] | null>(null);
   const [saving, setSaving] = useState(false);
@@ -76,7 +76,7 @@ export default function PaymentMutationControls({
   const [studentQuery, setStudentQuery] = useState("");
   const [classId, setClassId] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([
-    { id: newLineId(), obligationId: UNALLOCATED_TARGET, amount: "" },
+    { id: newLineId(), obligationId: "", amount: "" },
   ]);
   const amountRef = useRef<TextInput>(null);
   const [method, setMethod] = useState("");
@@ -114,15 +114,14 @@ export default function PaymentMutationControls({
   );
   const feeOptions = useMemo(() => collectOpenPaymentFees(feeIdentity, activeFees), [feeIdentity, activeFees]);
   const obligationChips = useMemo(
-    () => [
-      { id: UNALLOCATED_TARGET, label: "Non imputé" },
-      ...feeOptions.map((item) => ({
+    () =>
+      feeOptions.map((item) => ({
         id: item.obligationId,
         label: `${item.label} · reste ${formatFinanceAmount(item.balance, item.currency || currency)}`,
       })),
-    ],
     [feeOptions, currency],
   );
+  const nothingDue = Boolean(studentId) && feeOptions.length === 0;
 
   const applyDraftLines = (
     identity: ReturnType<typeof paymentFeeIdentityFromStudent>,
@@ -155,7 +154,7 @@ export default function PaymentMutationControls({
       });
       if (!accepted) return;
       setScopedFees(accepted.fees);
-      applyDraftLines(identity, accepted.fees);
+      if (!manualFeeSelectionRef.current) applyDraftLines(identity, accepted.fees);
     } catch {
       if (
         !isFreshPaymentFeeResponse({
@@ -171,6 +170,7 @@ export default function PaymentMutationControls({
   };
 
   const applyStudent = (nextStudentId: string) => {
+    manualFeeSelectionRef.current = false;
     const responseSelection = ++selectionGenRef.current;
     const responseSession = sessionGenRef.current;
     setStudentId(nextStudentId);
@@ -195,6 +195,7 @@ export default function PaymentMutationControls({
     intentionsRef.current.rotate(PAYMENT_DRAFT_INTENTION);
     sessionGenRef.current += 1;
     selectionGenRef.current = 0;
+    manualFeeSelectionRef.current = false;
     setScopedFees(null);
     setError("");
     setConfirmation("");
@@ -231,6 +232,10 @@ export default function PaymentMutationControls({
     if (saving) return;
     if (!paymentMethods?.length || !resolvedMethod || !paymentMethods.includes(resolvedMethod)) {
       setError("Catalogue des moyens de paiement indisponible.");
+      return;
+    }
+    if (nothingDue) {
+      setError("Aucune somme n'est exigible pour cet élève. L'encaissement est désactivé.");
       return;
     }
     const nextErrors = validateFinancePaymentLinesDraft({
@@ -314,7 +319,7 @@ export default function PaymentMutationControls({
           setOpen(false);
         }}
         onSubmit={() => void submit()}
-        submitDisabled={!paymentMethods?.length || !resolvedMethod || !studentId}
+        submitDisabled={!paymentMethods?.length || !resolvedMethod || !studentId || nothingDue}
       >
         <FormField
           label="Élève"
@@ -399,19 +404,22 @@ export default function PaymentMutationControls({
               ))
             ) : (
               <Text style={styles.openEmpty}>
-                Aucune obligation ouverte. Le montant saisi sera enregistré en non imputé.
+                Aucune somme n'est exigible pour cet élève. L'encaissement est désactivé.
               </Text>
             )}
           </View>
         ) : null}
-        {lines.map((line, index) => (
+        {nothingDue ? null : lines.map((line, index) => (
           <View key={line.id} testID={`payment-line-${index}`}>
             <ChoiceChips
               label="Frais concerné"
               required
               options={obligationChips}
               selectedId={line.obligationId}
-              onSelect={(id) => updateLine(line.id, { obligationId: id })}
+              onSelect={(id) => {
+                manualFeeSelectionRef.current = true;
+                updateLine(line.id, { obligationId: id });
+              }}
               disabled={saving || !studentId}
               error={fieldErrors.obligationId || fieldErrors[`obligationId-${index}`]}
             />
@@ -438,12 +446,17 @@ export default function PaymentMutationControls({
             ) : null}
           </View>
         ))}
+        {nothingDue ? null : (
         <TouchableOpacity
           style={styles.addLine}
           onPress={() =>
             setLines((current) => [
               ...current,
-              { id: newLineId(), obligationId: UNALLOCATED_TARGET, amount: "" },
+              {
+                id: newLineId(),
+                obligationId: feeOptions.length === 1 ? feeOptions[0].obligationId : "",
+                amount: "",
+              },
             ])
           }
           disabled={saving}
@@ -453,6 +466,7 @@ export default function PaymentMutationControls({
         >
           <Text style={styles.addLineText}>Ajouter une ligne</Text>
         </TouchableOpacity>
+        )}
         <ChoiceChips
           label="Moyen de paiement"
           options={(paymentMethods ?? []).map((item) => ({

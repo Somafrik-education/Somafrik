@@ -11,11 +11,22 @@ const {
   nextMonotonicUpdatedAt,
   looksLikeUuid,
   PROTECTED_SYSTEM_ROLE_KEYS,
+  RBAC_AUDIT_ACTIONS,
+  RBAC_HISTORY_ACTIONS,
+  sanitizeRbacAuditValue,
+  rbacAuditActor,
+  clampRbacHistoryLimit,
+  clampRbacHistoryOffset,
 } = require("./functionalRbacManagement");
 const {
   resolveEffectivePermissionSet,
   parsePermissionStringsToModuleCrud,
   emptyCrud,
+  crudEqual,
+  crudFromRow,
+  grantSource,
+  pickGrant,
+  indexGrants,
 } = require("./functionalRbacResolution");
 const { assertSuperAdmin, asTrimmed, normalizeRoleCode } = require("./establishmentRolesManagement");
 const { toRoleKey, toRoleLabel } = require("./userRoleLifecycle");
@@ -46,6 +57,7 @@ async function writeRbacAudit(tx, principal, auditMeta, entry) {
   if (typeof tx.recordAudit !== "function") {
     throw createFunctionalRbacError(500, "Audit indisponible dans la transaction.", FUNCTIONAL_RBAC_ERROR.FORBIDDEN);
   }
+  const actor = rbacAuditActor(principal);
   await tx.recordAudit(
     {
       schoolCode: entry.schoolCode || principal?.schoolCode,
@@ -53,13 +65,35 @@ async function writeRbacAudit(tx, principal, auditMeta, entry) {
       action: entry.action,
       entityType: entry.entityType,
       entityId: String(entry.entityId ?? ""),
-      oldValue: entry.oldValue,
-      newValue: entry.newValue,
+      oldValue: sanitizeRbacAuditValue(entry.oldValue == null ? null : { ...actor, ...entry.oldValue }),
+      newValue: sanitizeRbacAuditValue(entry.newValue == null ? null : { ...actor, ...entry.newValue }),
       ipAddress: auditMeta?.ipAddress,
       userAgent: auditMeta?.userAgent,
     },
     tx,
   );
+}
+
+function crudSnapshot(row) {
+  return {
+    canCreate: Boolean(row?.canCreate),
+    canRead: Boolean(row?.canRead),
+    canUpdate: Boolean(row?.canUpdate),
+    canDelete: Boolean(row?.canDelete),
+  };
+}
+
+function permissionAuditScope(scope, extra = {}) {
+  return {
+    roleKey: extra.roleKey || null,
+    moduleKey: extra.moduleKey || null,
+    scopeType: scope?.scopeType || null,
+    countryId: scope?.countryId || null,
+    schoolId: scope?.schoolId || null,
+    countryCode: scope?.countryCode || null,
+    schoolCode: scope?.schoolCode || null,
+    source: extra.source || scope?.scopeType || null,
+  };
 }
 
 function actorId(principal) {
@@ -94,6 +128,9 @@ async function ensureFunctionalRbacBootstrap(repo) {
   await reconcileCanonicalAnnouncementsGrants(store, repo);
   const { reconcileCanonicalSystemRoles } = require("./systemRolesReconciliation");
   await reconcileCanonicalSystemRoles(repo);
+  // NFC-ROLES-ACCESS-01 : droit dédié « Présences — Effectuer l'appel (NFC/QR) », copie UNIQUE des titulaires existants.
+  const { backfillRollCallGrantsFromAttendance } = require("./rollCallRbacCompat");
+  await backfillRollCallGrantsFromAttendance(repo);
 }
 
 async function ensurePlatformRolesInCatalog(repo) {
@@ -229,6 +266,10 @@ async function backfillGlobalGrantsFromLegacyMaps(repo, store) {
     const roleKey = toRoleKey(roleName);
     if (!roleKey) continue;
     const modulesCrud = parsePermissionStringsToModuleCrud(permissions);
+    // NFC-ROLES-ACCESS-01 : rôle sans grant, droit d'appel dérivé de ses propres présences (compatibilité).
+    const { legacyRollCallCrud, ROLL_CALL_MODULE_KEY } = require("./rollCallRbacCompat");
+    const rollCall = legacyRollCallCrud(roleKey, modulesCrud.attendance);
+    if (rollCall) modulesCrud[ROLL_CALL_MODULE_KEY] = rollCall;
     for (const module of listFunctionalModules()) {
       const crud = modulesCrud[module.moduleKey] || emptyCrud();
       if (!crud.canCreate && !crud.canRead && !crud.canUpdate && !crud.canDelete) continue;
@@ -375,6 +416,8 @@ async function getConfiguredPermissions(repo, query, principal) {
     countryId: scope.countryId,
     schoolId: scope.schoolId,
   });
+  const roleGrants = await store.listGrantsForRoles([roleKey]);
+  const grantIndex = indexGrants(roleGrants);
   const updatedAt = await store.maxUpdatedAtForScope({
     roleKey,
     scopeType: scope.scopeType,
@@ -383,20 +426,26 @@ async function getConfiguredPermissions(repo, query, principal) {
   });
   const byModule = Object.fromEntries(grants.map((grant) => [grant.moduleKey, grant]));
   const modules = listFunctionalModules().map((module) => {
-    const grant = byModule[module.moduleKey];
-    const flags = overlayMandatoryFlags(roleKey, module.moduleKey, {
-      canCreate: Boolean(grant?.canCreate),
-      canRead: Boolean(grant?.canRead),
-      canUpdate: Boolean(grant?.canUpdate),
-      canDelete: Boolean(grant?.canDelete),
+    const scopeGrant = byModule[module.moduleKey];
+    const effectiveGrant = pickGrant(grantIndex, roleKey, module.moduleKey, {
+      schoolId: scope.schoolId,
+      countryId: scope.countryId,
     });
+    const source = grantSource(effectiveGrant);
+    const flags = overlayMandatoryFlags(
+      roleKey,
+      module.moduleKey,
+      crudFromRow(effectiveGrant) || emptyCrud(),
+    );
     return {
       moduleKey: module.moduleKey,
       moduleName: module.moduleName,
       appliesWeb: module.appliesWeb,
       appliesMobile: module.appliesMobile,
       ...flags,
-      configured: Boolean(grant),
+      configured: Boolean(scopeGrant),
+      source,
+      inherited: Boolean(effectiveGrant) && source !== scope.scopeType,
       ...moduleContractDto(roleKey, module.moduleKey, flags),
     };
   });
@@ -422,6 +471,7 @@ async function getEffectivePermissionsConfigured(repo, query, principal) {
   }
   const scope = await resolveScopeIds(store, query);
   const grants = await store.listGrantsForRoles([roleKey]);
+  const grantIndex = indexGrants(grants);
   const resolved = resolveEffectivePermissionSet([roleKey], grants, {
     schoolId: scope.schoolId,
     countryId: scope.countryId,
@@ -432,11 +482,21 @@ async function getEffectivePermissionsConfigured(repo, query, principal) {
     scopeType: scope.scopeType,
     countryCode: scope.countryCode,
     schoolCode: scope.schoolCode,
-    modules: listFunctionalModules().map((module) => ({
-      moduleKey: module.moduleKey,
-      moduleName: module.moduleName,
-      ...(resolved.modules[module.moduleKey] || emptyCrud()),
-    })),
+    modules: listFunctionalModules().map((module) => {
+      const effectiveGrant = pickGrant(grantIndex, roleKey, module.moduleKey, {
+        schoolId: scope.schoolId,
+        countryId: scope.countryId,
+      });
+      const source = grantSource(effectiveGrant);
+      return {
+        moduleKey: module.moduleKey,
+        moduleName: module.moduleName,
+        ...(resolved.modules[module.moduleKey] || emptyCrud()),
+        source,
+        configured: source === scope.scopeType,
+        inherited: Boolean(effectiveGrant) && source !== scope.scopeType,
+      };
+    }),
     permissions: resolved.permissions,
   };
 }
@@ -453,21 +513,6 @@ function sanitizeGrantPatch(rawGrant) {
     canUpdate: Boolean(rawGrant.canUpdate ?? rawGrant.can_update),
     canDelete: Boolean(rawGrant.canDelete ?? rawGrant.can_delete),
   };
-}
-
-function diffGrant(before, after) {
-  const events = [];
-  for (const action of ["canCreate", "canRead", "canUpdate", "canDelete"]) {
-    const was = Boolean(before?.[action]);
-    const next = Boolean(after[action]);
-    if (was === next) continue;
-    events.push({
-      action: next ? "ROLE_PERMISSION_GRANTED" : "ROLE_PERMISSION_REVOKED",
-      field: action,
-      moduleKey: after.moduleKey,
-    });
-  }
-  return events;
 }
 
 async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta) {
@@ -521,10 +566,35 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
 
       const beforeRows = await scopedStore.listGrantsForScope(scopeLock);
       const beforeByModule = Object.fromEntries(beforeRows.map((row) => [row.moduleKey, row]));
+      const roleGrants = await scopedStore.listGrantsForRoles([roleKey]);
+      const grantIndex = indexGrants(roleGrants);
       const saved = [];
-      const auditEvents = [];
+      const written = [];
       for (const grant of grants) {
-        const before = beforeByModule[grant.moduleKey] || emptyCrud();
+        const beforeRow = beforeByModule[grant.moduleKey] || null;
+        if (!beforeRow) {
+          const inheritedGrant = pickGrant(grantIndex, roleKey, grant.moduleKey, {
+            schoolId: scope.schoolId,
+            countryId: scope.countryId,
+          });
+          const inheritedFlags = overlayMandatoryFlags(
+            roleKey,
+            grant.moduleKey,
+            crudFromRow(inheritedGrant) || emptyCrud(),
+          );
+          if (crudEqual(grant, inheritedFlags)) {
+            saved.push({
+              moduleKey: grant.moduleKey,
+              ...inheritedFlags,
+              skipped: true,
+              source: grantSource(inheritedGrant),
+            });
+            continue;
+          }
+        } else if (crudEqual(beforeRow, grant)) {
+          saved.push({ ...beforeRow, skipped: true });
+          continue;
+        }
         const after = await scopedStore.upsertGrant({
           roleKey,
           scopeType: scope.scopeType,
@@ -535,28 +605,35 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
           updatedBy: actorId(principal),
         });
         saved.push(after);
-        for (const event of diffGrant(before, grant)) {
-          auditEvents.push(event);
-        }
+        written.push(after);
       }
 
-      await writeRbacAudit(scopeRepo, principal, auditMeta, {
-        action: "ROLE_PERMISSION_MATRIX_UPDATED",
-        entityType: "role_module_permissions",
-        entityId: `${roleKey}:${scope.scopeType}:${scope.schoolCode || scope.countryCode || "global"}`,
-        schoolCode: scope.schoolCode,
-        oldValue: { grants: beforeRows, scope },
-        newValue: { grants: saved, scope },
-      });
-      for (const event of auditEvents) {
-        await writeRbacAudit(scopeRepo, principal, auditMeta, {
-          action: event.action,
-          entityType: "role_module_permissions",
-          entityId: `${roleKey}:${event.moduleKey}`,
-          schoolCode: scope.schoolCode,
-          oldValue: { moduleKey: event.moduleKey, field: event.field },
-          newValue: { moduleKey: event.moduleKey, field: event.field, after: grants.find((g) => g.moduleKey === event.moduleKey) },
-        });
+      if (written.length) {
+        for (const after of written) {
+          const beforeRow = beforeByModule[after.moduleKey] || null;
+          await writeRbacAudit(scopeRepo, principal, auditMeta, {
+            action: RBAC_AUDIT_ACTIONS.PERMISSION_OVERRIDE_CREATE_OR_UPDATE,
+            entityType: "role_module_permissions",
+            entityId: `${roleKey}:${after.moduleKey}:${scope.scopeType}:${scope.schoolCode || scope.countryCode || "global"}`,
+            schoolCode: scope.schoolCode,
+            oldValue: {
+              ...permissionAuditScope(scope, {
+                roleKey,
+                moduleKey: after.moduleKey,
+                source: beforeRow ? scope.scopeType : "none",
+              }),
+              crud: crudSnapshot(beforeRow || emptyCrud()),
+            },
+            newValue: {
+              ...permissionAuditScope(scope, {
+                roleKey,
+                moduleKey: after.moduleKey,
+                source: scope.scopeType,
+              }),
+              crud: crudSnapshot(after),
+            },
+          });
+        }
       }
 
       const updatedAt = await scopedStore.maxUpdatedAtForScope(scopeLock);
@@ -568,6 +645,107 @@ async function patchConfiguredPermissions(repo, rawPayload, principal, auditMeta
         updatedAt,
         grants: saved,
       };
+    } finally {
+      if (typeof scopedStore.unlockFunctionalRbacScope === "function") {
+        await scopedStore.unlockFunctionalRbacScope(scopeLock);
+      }
+    }
+  });
+}
+
+async function resetConfiguredPermissionOverrides(repo, rawPayload, principal, auditMeta) {
+  assertSuperAdmin(principal);
+  const payload = rawPayload ?? {};
+  const roleKey = toRoleKey(payload.roleKey || payload.role);
+  if (!roleKey) {
+    throw createFunctionalRbacError(400, "role_key obligatoire.", FUNCTIONAL_RBAC_ERROR.INVALID_ROLE);
+  }
+  const moduleKey = asTrimmed(payload.moduleKey || payload.module_key);
+  if (!moduleKey || !isKnownModuleKey(moduleKey)) {
+    throw createFunctionalRbacError(400, `module_key obligatoire et connu.`, FUNCTIONAL_RBAC_ERROR.INVALID_MODULE);
+  }
+  const store = rbacStore(repo);
+
+  return repo.withTransaction(async (tx) => {
+    const scopeRepo = repo.createTxScope(tx);
+    const scopedStore = rbacStore(scopeRepo);
+    const scope = await resolveScopeIds(scopedStore, payload);
+    if (scope.scopeType !== "school") {
+      throw createFunctionalRbacError(
+        400,
+        "Le reset d'override ne s'applique qu'à un établissement.",
+        FUNCTIONAL_RBAC_ERROR.INVALID_SCOPE,
+      );
+    }
+    const scopeLock = {
+      roleKey,
+      scopeType: scope.scopeType,
+      countryId: scope.countryId,
+      schoolId: scope.schoolId,
+    };
+    try {
+      if (typeof scopedStore.lockFunctionalRbacScope === "function") {
+        await scopedStore.lockFunctionalRbacScope(scopeLock);
+      }
+      const currentUpdatedAt = await scopedStore.maxUpdatedAtForScope(scopeLock);
+      const expected = payload.expectedUpdatedAt;
+      if (currentUpdatedAt && expected && !timestampsEqual(currentUpdatedAt, expected)) {
+        throw createFunctionalRbacError(
+          409,
+          "Conflit de concurrence : la matrice a été modifiée. Rechargez avant d'enregistrer.",
+          FUNCTIONAL_RBAC_ERROR.CONFLICT,
+          { expectedUpdatedAt: expected, actualUpdatedAt: currentUpdatedAt },
+        );
+      }
+      if (currentUpdatedAt && !expected) {
+        throw createFunctionalRbacError(
+          409,
+          "expectedUpdatedAt obligatoire pour éviter un last-write-wins.",
+          FUNCTIONAL_RBAC_ERROR.CONFLICT,
+          { actualUpdatedAt: currentUpdatedAt },
+        );
+      }
+
+      const beforeRows = await scopedStore.listGrantsForScope(scopeLock);
+      const target = beforeRows.find((row) => row.moduleKey === moduleKey);
+      if (target && typeof scopedStore.archiveGrant === "function") {
+        await scopedStore.archiveGrant({
+          id: target.id,
+          updatedBy: actorId(principal),
+          updatedAt: nextMonotonicUpdatedAt(currentUpdatedAt),
+        });
+        const remaining = await scopedStore.listGrantsForRoles([roleKey]);
+        const inheritedGrant = pickGrant(indexGrants(remaining), roleKey, moduleKey, {
+          schoolId: scope.schoolId,
+          countryId: scope.countryId,
+        });
+        const inheritedFlags = overlayMandatoryFlags(
+          roleKey,
+          moduleKey,
+          crudFromRow(inheritedGrant) || emptyCrud(),
+        );
+        await writeRbacAudit(scopeRepo, principal, auditMeta, {
+          action: RBAC_AUDIT_ACTIONS.PERMISSION_OVERRIDE_RESET,
+          entityType: "role_module_permissions",
+          entityId: `${roleKey}:${moduleKey}:${scope.schoolCode}`,
+          schoolCode: scope.schoolCode,
+          oldValue: {
+            ...permissionAuditScope(scope, { roleKey, moduleKey, source: "school" }),
+            crud: crudSnapshot(target),
+          },
+          newValue: {
+            ...permissionAuditScope(scope, {
+              roleKey,
+              moduleKey,
+              source: grantSource(inheritedGrant),
+            }),
+            crud: crudSnapshot(inheritedFlags),
+            inherited: true,
+          },
+        });
+      }
+
+      return getConfiguredPermissions(scopeRepo, payload, principal);
     } finally {
       if (typeof scopedStore.unlockFunctionalRbacScope === "function") {
         await scopedStore.unlockFunctionalRbacScope(scopeLock);
@@ -591,20 +769,21 @@ async function collectPrincipalRoleKeys(repo, principal) {
   const seen = new Set();
 
   const userId = asTrimmed(principal?.sub || principal?.id);
-  let liveKeys = null;
-  if (userId && typeof repo.listActiveUserRoleKeys === "function") {
-    try {
-      const loaded = await repo.listActiveUserRoleKeys(userId);
-      if (Array.isArray(loaded)) liveKeys = loaded;
-    } catch {
-      liveKeys = null;
-    }
-  }
-
-  const usedLiveRoles = Array.isArray(liveKeys) && liveKeys.length > 0;
-  if (usedLiveRoles) {
-    for (const value of liveKeys) addRoleKey(roleKeys, seen, value);
-  } else {
+  // SEC-AUTH-05 (fail-closed) : rôles actifs relus en base. Rôles retirés ou
+  // validation impossible → aucun rôle. Les revendications du jeton ne servent de
+  // repli que pour un compte dont l'absence d'historique user_roles est établie.
+  //
+  // Sans sujet : évaluation interne d'un jeu de rôles explicite (ex. mobileSyncScope,
+  // rôles déjà relus et bornés à l'établissement). Aucun jeton n'y arrive : depuis
+  // SEC-AUTH-04, requireAuth refuse tout jeton sans `sub` lié à sa session.
+  const { loadLiveRoleState } = require("./liveRoleState");
+  // SEC-TENANT-02 : principal rattaché (schoolId canonique vérifié par requireAuth,
+  // ou émis à la connexion / au refresh) → rôles de cet établissement uniquement.
+  const schoolId = asTrimmed(principal?.schoolId);
+  const live = userId ? await loadLiveRoleState(repo, userId, { schoolId }) : { status: "explicit", keys: null };
+  if (live.status === "active") {
+    for (const value of live.keys) addRoleKey(roleKeys, seen, value);
+  } else if (live.status === "legacy" || live.status === "explicit") {
     if (Array.isArray(principal?.roleKeys)) {
       for (const value of principal.roleKeys) addRoleKey(roleKeys, seen, value);
     }
@@ -629,6 +808,10 @@ function syntheticGrantsFromLegacyMap(roleKeys, legacyMap, grantedRoleKeys) {
       ? legacyMap[label]
       : permissionList(legacyMap[roleKey]);
     const modulesCrud = parsePermissionStringsToModuleCrud(permissions);
+    // NFC-ROLES-ACCESS-01 : rôle sans grant, droit d'appel dérivé de ses propres présences (compatibilité).
+    const { legacyRollCallCrud, ROLL_CALL_MODULE_KEY } = require("./rollCallRbacCompat");
+    const rollCall = legacyRollCallCrud(roleKey, modulesCrud.attendance);
+    if (rollCall) modulesCrud[ROLL_CALL_MODULE_KEY] = rollCall;
     for (const module of listFunctionalModules()) {
       const crud = modulesCrud[module.moduleKey] || emptyCrud();
       if (!crud.canCreate && !crud.canRead && !crud.canUpdate && !crud.canDelete) continue;
@@ -671,6 +854,15 @@ async function resolveEffectivePermissionsForPrincipal(repo, principal) {
     const legacyMap = await loadLegacyRolePermissionMaps(repo);
     const { mergePermissionsForRoles } = require("./userRoleLifecycle");
     const permissions = mergePermissionsForRoles(roleKeys, legacyMap);
+    // NFC-ROLES-ACCESS-01 : même dérivation, rôle par rôle (jamais par union des rôles).
+    const { legacyRollCallCrud, ROLL_CALL_PERMISSION } = require("./rollCallRbacCompat");
+    const rollCallFromOwnRole = roleKeys.some((roleKey) => legacyRollCallCrud(
+      roleKey,
+      parsePermissionStringsToModuleCrud(mergePermissionsForRoles([roleKey], legacyMap)).attendance,
+    ));
+    if (rollCallFromOwnRole) {
+      for (const token of [ROLL_CALL_PERMISSION, "Présences — Effectuer l'appel (NFC/QR):READ"]) if (!permissions.includes(token)) permissions.push(token);
+    }
     return {
       roleKeys,
       permissions,
@@ -717,6 +909,95 @@ function getModuleOrThrow(moduleKey) {
   return module;
 }
 
+function parseAuditJson(value) {
+  if (value == null) return null;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function formatAuditCrud(crud) {
+  if (!crud || typeof crud !== "object") return "";
+  const flags = [
+    crud.canCreate ? "C" : "-",
+    crud.canRead ? "R" : "-",
+    crud.canUpdate ? "U" : "-",
+    crud.canDelete ? "D" : "-",
+  ].join("");
+  return flags === "----" ? "aucun" : flags;
+}
+
+function formatAuditScope(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  if (payload.schoolCode) return `école ${payload.schoolCode}`;
+  if (payload.countryCode) return `pays ${payload.countryCode}`;
+  if (payload.scopeType === "school") return "établissement";
+  if (payload.scopeType === "country") return "pays";
+  if (payload.scopeType === "global") return "global";
+  return payload.scope || payload.source || "";
+}
+
+function summarizeAuditSide(payload) {
+  if (!payload || typeof payload !== "object") return "—";
+  if (payload.crud) {
+    const source = payload.source && payload.source !== "none" ? ` (${payload.source})` : "";
+    return `${formatAuditCrud(payload.crud)}${source}`;
+  }
+  if (payload.status === "archived") return `archivé (${payload.roleName || payload.roleKey || ""})`.trim();
+  if (payload.oldDisplayLabel !== undefined || payload.newDisplayLabel !== undefined) {
+    return payload.newDisplayLabel || "défaut";
+  }
+  if (payload.roleName) return payload.roleName;
+  return "—";
+}
+
+function mapRbacHistoryItem(row) {
+  const oldValue = sanitizeRbacAuditValue(parseAuditJson(row.oldValue ?? row.old_value));
+  const newValue = sanitizeRbacAuditValue(parseAuditJson(row.newValue ?? row.new_value));
+  const payload = newValue || oldValue || {};
+  const before = summarizeAuditSide(oldValue);
+  const after = summarizeAuditSide(newValue);
+  return {
+    id: row.id,
+    createdAt: row.createdAt || row.created_at || null,
+    actor: payload.actor || oldValue?.actor || row.actor || row.userCode || row.user_code || "system",
+    action: row.action,
+    role: payload.roleName || payload.roleKey || oldValue?.roleName || oldValue?.roleKey || "",
+    roleKey: payload.roleKey || oldValue?.roleKey || null,
+    moduleKey: payload.moduleKey || oldValue?.moduleKey || null,
+    scope: formatAuditScope(payload) || formatAuditScope(oldValue),
+    before,
+    after,
+    summary: `${before} → ${after}`,
+  };
+}
+
+async function listRbacAuditHistory(repo, query, principal) {
+  assertSuperAdmin(principal);
+  if (typeof repo.getAuditLogs !== "function") {
+    throw createFunctionalRbacError(500, "Journal d'audit indisponible.", FUNCTIONAL_RBAC_ERROR.FORBIDDEN);
+  }
+  const limit = clampRbacHistoryLimit(query?.limit);
+  const offset = clampRbacHistoryOffset(query?.offset);
+  const rows = await repo.getAuditLogs({
+    actions: [...RBAC_HISTORY_ACTIONS],
+    limit: limit + 1,
+    offset,
+  });
+  const list = Array.isArray(rows) ? rows : [];
+  const hasMore = list.length > limit;
+  return {
+    items: list.slice(0, limit).map(mapRbacHistoryItem),
+    limit,
+    offset,
+    hasMore,
+  };
+}
+
 module.exports = {
   rbacStore,
   functionalRbacAuditMetaFromRequest,
@@ -725,6 +1006,9 @@ module.exports = {
   getConfiguredPermissions,
   getEffectivePermissionsConfigured,
   patchConfiguredPermissions,
+  resetConfiguredPermissionOverrides,
+  listRbacAuditHistory,
+  collectPrincipalRoleKeys,
   resolveEffectivePermissionsForPrincipal,
   archiveRbacRole,
   throwLegacyRolePermissionsWrite,

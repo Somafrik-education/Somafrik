@@ -94,7 +94,7 @@ test("AUDIT-COM-RED-04 — Web Messages : mark-read rafraîchit la liste unreadC
   );
   assert.match(
     loadThread,
-    /loadConversations\(\{\s*silent:\s*true\s*\}\)/,
+    /loadConversations\(\{\s*silent:\s*true(?:,\s*epoch)?\s*\}\)/,
     "régression Lot C : après markRead, loadThread ne recharge plus la liste unreadCount",
   );
   assert.match(

@@ -28,6 +28,7 @@ import { noteConnectivityFailure, noteConnectivitySuccess } from "../lib/connect
 import { clearRequestSchoolScope, setRequestSchoolScope } from "../lib/requestSchoolScope";
 import { normalize } from "../lib/format";
 import { hasPlatformBackofficePrivilege } from "../domain/security/permissions";
+import { shouldSkipSchoolTenantHydration } from "../lib/platformSchoolDomainDeny";
 import { scopeBackOfficeForSession, scopedSchools, type PlatformNotification } from "../lib/scope";
 import {
   applyCreatedPlatformNotification,
@@ -39,6 +40,7 @@ import {
 import { getAcademicConfig, getAssignments, getClasses, getCourses, getPlanningWeekly, getPlanningCourseOptions, getSchoolRooms, getCourseScheduleReplacements, getEvaluations, getNotes, getPayments, getStudentFees, getPresences, getReportCards, getStudents, getSubjects, createPlatformNotification, updatePlatformNotification, createClientsAnnouncement, updateClientsAnnouncement, sendClientsMessage, createClientsUser, updateClientsUser, BackOfficeStatePayload, type CanonicalReportCard, type CanonicalStudentFee } from "../services/api";
 import {
   getCanonicalAnnouncements,
+  getCanonicalAnnouncementsPage,
   getCanonicalCountries,
   getCanonicalMessages,
   getCanonicalNotifications,
@@ -82,6 +84,19 @@ import {
   type StudentScopeProjection,
 } from "../lib/studentsScope";
 import { loadL1BackedSnapshot } from "../offline/l1/readModel";
+import type { L1Resource } from "../offline/l1/types";
+import { applyCacheFirst, createL1LoadCoordinator, isCurrentL1ReadAuthorization, settleL1Snapshot } from "../offline/l1/l1LoadCoordinator";
+
+/**
+ * PERF-PR5 — options de lecture des 5 ressources L1.
+ * Sans option : lecture réseau systématique (rafraîchissement explicite, après mutation).
+ * `maxAgeMs` : retour d'écran — réutilise une lecture en cours, ou ne relit pas si la
+ * dernière réponse réseau de la même portée a moins de `maxAgeMs`.
+ */
+export type L1LoadOptions = { maxAgeMs?: number };
+
+/** Fraîcheur courte pour un retour d'écran (PERF-PR5). */
+export const L1_FOCUS_MAX_AGE_MS = 30_000;
 import {
   classRowsForJoin,
   projectL1Assignments,
@@ -143,10 +158,11 @@ type AdminDataContextValue = {
   loadStudentFees: () => Promise<void>;
   loadUsers: () => Promise<void>;
   loadTeachers: () => Promise<void>;
-  loadStudents: () => Promise<void>;
-  loadClasses: () => Promise<void>;
-  loadAssignments: () => Promise<void>;
-  loadSchoolCourses: () => Promise<void>;
+  /** PERF-PR5 — `{ maxAgeMs }` : retour d'écran (lecture partagée, saut si réponse réseau récente). */
+  loadStudents: (options?: L1LoadOptions) => Promise<void>;
+  loadClasses: (options?: L1LoadOptions) => Promise<void>;
+  loadAssignments: (options?: L1LoadOptions) => Promise<void>;
+  loadSchoolCourses: (options?: L1LoadOptions) => Promise<void>;
   loadAnnouncements: () => Promise<void>;
   loadMessages: () => Promise<void>;
   loadSchools: () => Promise<void>;
@@ -154,7 +170,7 @@ type AdminDataContextValue = {
   loadSubscriptions: () => Promise<void>;
   loadNotifications: () => Promise<void>;
   loadCourseSchedules: () => Promise<void>;
-  loadPlanningWeekly: () => Promise<void>;
+  loadPlanningWeekly: (options?: L1LoadOptions) => Promise<void>;
   loadPlanningCourseOptions: () => Promise<void>;
   loadRooms: () => Promise<void>;
   loadReplacements: () => Promise<void>;
@@ -361,6 +377,12 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     [session, activeSchoolCode, requiresSchoolSelection],
   );
   const resourceScopeKeyRef = useRef(resourceScopeKey);
+  // PERF-PR5 — déduplication, fraîcheur et générations des lectures L1.
+  const l1CoordinatorRef = useRef(createL1LoadCoordinator());
+  const permissionsBootstrapRef = useRef(permissionsBootstrap);
+  // Ref synchronisée au rendu : une promesse résolue avant l'effet de purge reste invalidée.
+  permissionsBootstrapRef.current = permissionsBootstrap;
+  const previousPermissionsBootstrapRef = useRef(permissionsBootstrap);
   resourceScopeKeyRef.current = resourceScopeKey;
   const principalScopeKeyRef = useRef(principalScopeKey);
   principalScopeKeyRef.current = principalScopeKey;
@@ -368,6 +390,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const previousResourceKeyRef = useRef<string | null>(null);
 
   const resetTenantResourceCaches = useCallback(() => {
+    l1CoordinatorRef.current.reset();
     setStudentsData([]);
     setTeachersData([]);
     setClassesData([]);
@@ -403,7 +426,29 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     setMessagesSnapshot(emptyResourceSnapshot());
   }, []);
 
+  // Une transition d'autorisations invalide les lectures et la fraîcheur, même lorsque
+  // l'utilisateur et l'établissement ne changent pas (ready -> refus -> ready).
+  useEffect(() => {
+    if (previousPermissionsBootstrapRef.current === permissionsBootstrap) return;
+    previousPermissionsBootstrapRef.current = permissionsBootstrap;
+    l1CoordinatorRef.current.reset();
+    if (permissionsBootstrap === "ready" || permissionsBootstrap === "ready_offline") return;
+    // Au refus, ne conserver aucune copie L1 précédemment affichée.
+    setStudentsData([]);
+    setClassesData([]);
+    setAssignmentsData([]);
+    setCoursesData([]);
+    setStudentsSnapshot(emptyResourceSnapshot());
+    setClassesSnapshot(emptyResourceSnapshot());
+    setAssignmentsSnapshot(emptyResourceSnapshot());
+    setSchoolCoursesSnapshot(emptyResourceSnapshot());
+    setCourseSchedulesSnapshot(emptyResourceSnapshot());
+  }, [permissionsBootstrap]);
+
   const markTenantResourcesSwitching = useCallback(() => {
+    // PERF-PR5 : changement d'établissement — lectures en cours obsolètes, fraîcheurs effacées
+    // (un retour A → B → A relit A au lieu de garder un écran vidé).
+    l1CoordinatorRef.current.reset();
     const loadingEmpty = { status: "loading" as const, data: [] };
     setStudentsData([]);
     setTeachersData([]);
@@ -583,10 +628,13 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshBackOfficeState = useCallback(async () => {
-    if (!session) {
+    if (!session || shouldSkipSchoolTenantHydration(session)) {
       return;
     }
     const scope = resourceScopeKeyRef.current;
+    // PERF-PR5 : relecture complète (après mutation ou synchronisation) — toute lecture L1
+    // antérieure encore en vol devient obsolète et aucune fraîcheur ne saute la suivante.
+    l1CoordinatorRef.current.reset();
 
     setSyncStatus("syncing");
 
@@ -654,7 +702,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadPayments = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setPaymentsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -669,7 +717,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadStudentFees = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setStudentFeesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -699,7 +747,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadTeachers = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setTeachersSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -713,103 +761,139 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
-  const loadStudents = useCallback(async () => {
-    if (!session) return;
-    const scope = resourceScopeKeyRef.current;
-    setStudentsSnapshot((current) => ({ ...current, status: "loading" }));
-    try {
-      const snapshot = await loadL1BackedSnapshot({
-        session,
-        permissionsBootstrap,
+  // PERF-PR5 — lectures L1 : déduplication, fraîcheur courte, génération et cache-first.
+
+  const runL1BackedLoad = useCallback(
+    <T,>(input: {
+      resource: L1Resource;
+      options?: L1LoadOptions;
+      setSnapshot: (update: (current: ResourceSnapshot<T>) => ResourceSnapshot<T>) => void;
+      setData?: (update: (current: T[]) => T[]) => void;
+      fetchNetwork: () => Promise<T[]>;
+      project: Parameters<typeof loadL1BackedSnapshot<T>>[0]["project"];
+      /** Échec inattendu : jamais avalé, toujours exposé dans le snapshot. */
+      toFailure: (error: unknown, current: ResourceSnapshot<T>) => ResourceSnapshot<T>;
+    }): Promise<void> => {
+      if (!session || shouldSkipSchoolTenantHydration(session)) return Promise.resolve();
+      // Aucun GET ni cache L1 lorsque les droits ne sont pas encore validés.
+      if (permissionsBootstrap !== "ready" && permissionsBootstrap !== "ready_offline") return Promise.resolve();
+      const scope = resourceScopeKeyRef.current;
+      const readPermissionsBootstrap = permissionsBootstrap;
+      // La clé porte la portée et l’état des droits ; aucun héritage entre états.
+      const key = `${scope}|${readPermissionsBootstrap ?? ""}|${input.resource}`;
+      const ticket = l1CoordinatorRef.current.begin(key, input.options?.maxAgeMs);
+      if (ticket.kind === "join") return ticket.promise;
+      if (ticket.kind === "skip") return Promise.resolve();
+      // Une réponse plus ancienne (lecture remplacée, autre portée) n'est jamais appliquée.
+      const isCurrent = () => isCurrentL1ReadAuthorization({
+        startScope: scope,
+        currentScope: resourceScopeKeyRef.current,
+        startPermissionsBootstrap: readPermissionsBootstrap,
+        currentPermissionsBootstrap: permissionsBootstrapRef.current,
+        generationCurrent: ticket.isCurrent(),
+      });
+
+      input.setSnapshot((current) => ({ ...current, status: "loading" }));
+      return ticket.track(
+        (async () => {
+          try {
+            const snapshot = await loadL1BackedSnapshot<T>({
+              session,
+              permissionsBootstrap,
+              resource: input.resource,
+              fetchNetwork: input.fetchNetwork,
+              project: input.project,
+              onCacheSnapshot: (cached) => {
+                if (!isCurrent()) return;
+                input.setSnapshot((current) => applyCacheFirst(current, cached));
+                input.setData?.((current) => (current.length ? current : cached.data));
+              },
+            });
+            if (!isCurrent()) return;
+            const decision = settleL1Snapshot(snapshot);
+            if (decision.fresh === "mark") ticket.markFresh();
+            if (decision.fresh === "clear") ticket.clearFresh();
+            if (decision.data === "clear") input.setData?.(() => []);
+            if (decision.data === "replace") input.setData?.(() => snapshot.data);
+            input.setSnapshot(decision.snapshot);
+          } catch (error) {
+            if (!isCurrent()) return;
+            input.setSnapshot((current) => input.toFailure(error, current));
+          }
+        })(),
+      );
+    },
+    [session, permissionsBootstrap],
+  );
+
+  const loadStudents = useCallback(
+    (options?: L1LoadOptions) =>
+      runL1BackedLoad<Student>({
         resource: "students",
+        options,
+        setSnapshot: setStudentsSnapshot,
+        setData: setStudentsData,
         fetchNetwork: async () => (await getStudents()) as Student[],
         project: async (read) => projectL1Students(read, await classRowsForJoin(session)),
-      });
-      if (resourceScopeKeyRef.current !== scope) return;
-      if ((snapshot.status === "error" || snapshot.status === "offline") && snapshot.data.length === 0) {
-        setStudentsSnapshot((current) => ({ ...snapshot, data: current.data }));
-        return;
-      }
-      setStudentsData(snapshot.data);
-      setStudentsSnapshot(snapshot);
-    } catch (error) {
-      if (resourceScopeKeyRef.current !== scope) return;
-      setStudentsSnapshot((current) => snapshotFromFailure(error, current.data));
-    }
-  }, [session, permissionsBootstrap]);
+        toFailure: (error, current) => snapshotFromFailure(error, current.data),
+      }),
+    [runL1BackedLoad, session],
+  );
 
-  const loadClasses = useCallback(async () => {
-    if (!session) return;
-    const scope = resourceScopeKeyRef.current;
-    setClassesSnapshot((current) => ({ ...current, status: "loading" }));
-    try {
-      const snapshot = await loadL1BackedSnapshot({
-        session,
-        permissionsBootstrap,
+  const loadClasses = useCallback(
+    (options?: L1LoadOptions) =>
+      runL1BackedLoad<SchoolClass>({
         resource: "classes",
+        options,
+        setSnapshot: setClassesSnapshot,
+        setData: setClassesData,
         fetchNetwork: async () => (await getClasses()) as SchoolClass[],
         project: (read) => projectL1Classes(read),
-      });
-      if (resourceScopeKeyRef.current !== scope) return;
-      setClassesData(snapshot.data);
-      setClassesSnapshot(snapshot);
-    } catch (error) {
-      if (resourceScopeKeyRef.current !== scope) return;
-      setClassesSnapshot((current) => snapshotFromFailure(error, current.data));
-    }
-  }, [session, permissionsBootstrap]);
+        toFailure: (error, current) => snapshotFromFailure(error, current.data),
+      }),
+    [runL1BackedLoad],
+  );
 
-  const loadAssignments = useCallback(async () => {
-    if (!session) return;
-    const scope = resourceScopeKeyRef.current;
-    setAssignmentsSnapshot((current) => ({ ...current, status: "loading" }));
-    try {
-      const snapshot = await loadL1BackedSnapshot({
-        session,
-        permissionsBootstrap,
+  const loadAssignments = useCallback(
+    (options?: L1LoadOptions) =>
+      runL1BackedLoad({
         resource: "assignments",
+        options,
+        setSnapshot: setAssignmentsSnapshot,
+        setData: setAssignmentsData,
         fetchNetwork: async () => getAssignments(),
         project: async (read) =>
           filterL1AssignmentsForTeacherSession(
             projectL1Assignments(read, await classRowsForJoin(session)),
             session,
           ),
-      });
-      if (resourceScopeKeyRef.current !== scope) return;
-      setAssignmentsData(snapshot.data);
-      setAssignmentsSnapshot(snapshot);
-    } catch (error) {
-      if (resourceScopeKeyRef.current !== scope) return;
-      setAssignmentsSnapshot((current) => snapshotFromFailure(error, current.data));
-    }
-  }, [session, permissionsBootstrap]);
+        toFailure: (error, current) => snapshotFromFailure(error, current.data),
+      }),
+    [runL1BackedLoad, session],
+  );
 
-  const loadSchoolCourses = useCallback(async () => {
-    if (!session) return;
-    const scope = resourceScopeKeyRef.current;
-    setSchoolCoursesSnapshot((current) => ({ ...current, status: "loading" }));
-    try {
-      const snapshot = await loadL1BackedSnapshot({
-        session,
-        permissionsBootstrap,
+  const loadSchoolCourses = useCallback(
+    (options?: L1LoadOptions) =>
+      runL1BackedLoad({
         resource: "school-courses",
+        options,
+        setSnapshot: setSchoolCoursesSnapshot,
         fetchNetwork: async () => listSchoolClassCourses(),
         project: async (read) => projectL1SchoolCourses(read, await classRowsForJoin(session)),
-      });
-      if (resourceScopeKeyRef.current !== scope) return;
-      setSchoolCoursesSnapshot(snapshot);
-    } catch (error) {
-      if (resourceScopeKeyRef.current !== scope) return;
-      setSchoolCoursesSnapshot((current) => snapshotFromFailure(error, current.data));
-    }
-  }, [session, permissionsBootstrap]);
+        toFailure: (error, current) => snapshotFromFailure(error, current.data),
+      }),
+    [runL1BackedLoad, session],
+  );
 
   const loadAnnouncements = useCallback(async () => {
     if (!session) return;
     const scope = resourceScopeKeyRef.current;
     setAnnouncementsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
-      const rows = await getCanonicalAnnouncements(activeSchoolCode);
+      const skipSchool = shouldSkipSchoolTenantHydration(session);
+      const rows = skipSchool
+        ? (await getCanonicalAnnouncementsPage(undefined, { includeSchool: false })).items
+        : await getCanonicalAnnouncements(activeSchoolCode);
       if (resourceScopeKeyRef.current !== scope) return;
       setAnnouncementsData(rows);
       setAnnouncementsSnapshot(snapshotFromSuccess(rows));
@@ -820,7 +904,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session, activeSchoolCode]);
 
   const loadMessages = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setMessagesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -886,28 +970,21 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session]);
 
-  const loadPlanningWeekly = useCallback(async () => {
-    if (!session) return;
-    const scope = resourceScopeKeyRef.current;
-    setCourseSchedulesSnapshot((current) => ({ ...current, status: "loading" }));
-    try {
-      const snapshot = await loadL1BackedSnapshot({
-        session,
-        permissionsBootstrap,
+  const loadPlanningWeekly = useCallback(
+    (options?: L1LoadOptions) =>
+      runL1BackedLoad({
         resource: "course-schedules",
+        options,
+        setSnapshot: setCourseSchedulesSnapshot,
         fetchNetwork: async () => getPlanningWeekly(),
         project: async (read) => projectL1CourseSchedules(read, await classRowsForJoin(session)),
-      });
-      if (resourceScopeKeyRef.current !== scope) return;
-      setCourseSchedulesSnapshot(snapshot);
-    } catch (error) {
-      if (resourceScopeKeyRef.current !== scope) return;
-      setCourseSchedulesSnapshot((current) => snapshotFromFailure(error, current.data));
-    }
-  }, [session, permissionsBootstrap]);
+        toFailure: (error, current) => snapshotFromFailure(error, current.data),
+      }),
+    [runL1BackedLoad, session],
+  );
 
   const loadPlanningCourseOptions = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setPlanningCourseOptionsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -921,7 +998,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadRooms = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setRoomsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -935,7 +1012,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadReplacements = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setReplacementsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -949,7 +1026,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadReportCards = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setReportCardsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -963,7 +1040,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, [session]);
 
   const loadEvaluations = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -979,7 +1056,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   const loadEvaluation = useCallback(
     async (evaluationId: string) => {
       const key = String(evaluationId ?? "").trim();
-      if (!session || !key) return null;
+      if (!session || !key || shouldSkipSchoolTenantHydration(session)) return null;
       const scope = resourceScopeKeyRef.current;
       setEvaluationsSnapshot((current) => ({ ...current, status: "loading" }));
       try {
@@ -1002,7 +1079,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   );
 
   const loadNotes = useCallback(async () => {
-    if (!session) return;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return;
     const scope = resourceScopeKeyRef.current;
     setNotesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -1024,7 +1101,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loadPresences = useCallback(async () => {
-    if (!session) return false;
+    if (!session || shouldSkipSchoolTenantHydration(session)) return false;
     const scope = resourceScopeKeyRef.current;
     setPresencesSnapshot((current) => ({ ...current, status: "loading" }));
     try {
@@ -1042,7 +1119,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
 
   const loadEvaluationGrades = useCallback(
     async (evaluationId: string) => {
-      if (!session) return [];
+      if (!session || shouldSkipSchoolTenantHydration(session)) return [];
       const scope = resourceScopeKeyRef.current;
       setNotesSnapshot((current) => ({ ...current, status: "loading" }));
       try {
@@ -1103,7 +1180,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
         setActiveSchoolCodeState("");
         clearStoredSchoolCode();
       }
-    } else if (resourceChanged) {
+    } else if (resourceChanged && !shouldSkipSchoolTenantHydration(session)) {
       markTenantResourcesSwitching();
     }
     if (!plan.loadPrincipal && !plan.loadTenant) {
@@ -1119,6 +1196,11 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       void loaders.loadSubscriptions();
       void loaders.loadNotifications();
     }
+    if (shouldSkipSchoolTenantHydration(session)) {
+      void loaders.loadUsers();
+      void loaders.loadAnnouncements();
+      return;
+    }
     const tenantReady =
       !requiresSchoolSelection || Boolean(activeSchoolCode && activeSchoolCode !== ALL_SCHOOLS_CODE);
     const skipTenantUntilSchoolChosen = requiresSchoolSelection && plan.resetKind === "principal";
@@ -1132,6 +1214,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       void loaders.loadMessages();
     }
   }, [
+    session,
     principalScopeKey,
     resourceScopeKey,
     requiresSchoolSelection,
@@ -1148,6 +1231,7 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     const handleOnline = () => {
+      if (shouldSkipSchoolTenantHydration(session)) return;
       refreshBackOfficeState().catch(() => null);
     };
 

@@ -275,12 +275,16 @@ describe("RED Web — W1 à W10", () => {
     );
   });
 
-  it("HOLD — à 100 % Terminer la configuration renvoie au Tableau de bord", () => {
+  it("HOLD — à 100 % Terminer confirme la finalisation puis ouvre le Tableau de bord", () => {
     const wizard = read(WIZARD_PATH);
     const settings = read(SETTINGS_PATH);
+    const api = read(API_PATH);
     assertHas(wizard, "onFinish", "HOLD: GuidedSchoolSetupWizard doit exposer onFinish");
+    assertHas(wizard, "finalize", "HOLD: Terminer doit appeler la finalisation canonique");
+    assertHas(wizard, "Configuration de votre établissement terminée", "HOLD: succès confirmé visible");
     assertHas(settings, "onFinish", "HOLD: settings doit brancher onFinish");
-    assertHas(settings, "/tableau-de-bord", "HOLD: Terminer → /tableau-de-bord");
+    assertHas(settings, "/tableau-de-bord", "HOLD: accès Tableau de bord");
+    assertHas(api, "/v2/school-setup/guided/complete", "HOLD: client finalisation canonique");
   });
 
   it("W10 — une configuration complète supprime l'état configuration requise", async () => {
@@ -290,6 +294,20 @@ describe("RED Web — W1 à W10", () => {
     assert.equal(complete.percent, 100);
     assert.equal(shouldShowGuidedSetupDashboardCard({ payload: complete, role: "Admin School" }), false);
     assert.equal(shouldShowSchoolSetupWelcome({ payload: complete, role: "Admin School" }), false);
+    assert.equal(
+      shouldShowGuidedSetupDashboardCard({
+        payload: guidedPayload(40, { finalized: true }),
+        role: "Admin School",
+      }),
+      false,
+    );
+    assert.equal(
+      shouldShowSchoolSetupWelcome({
+        payload: guidedPayload(0, { finalized: true }),
+        role: "Admin School",
+      }),
+      false,
+    );
     assertHas(read(CARD_PATH), /percent\s*===?\s*100|status.*operational|shouldShowGuidedSetupDashboardCard/, "W10: masquage 100 %");
   });
 });

@@ -221,6 +221,13 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
         shouldShowGuidedSetupDashboardCard({ payload: guidedPayload(100), role: "school_admin" }),
         false,
       );
+      assert.equal(
+        shouldShowGuidedSetupDashboardCard({
+          payload: guidedPayload(40, { finalized: true }),
+          role: "school_admin",
+        }),
+        false,
+      );
     },
   },
   {
@@ -267,6 +274,13 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       assertHas(wizard, "onFinish", "M15 onFinish manquant sur le wizard");
       assertHas(settings, "onFinish", "M15 settings ne branche pas onFinish");
       assertHas(settings, /navigate\(\s*["']Home["']/, "M15 Terminer → Home");
+      assertHas(wizard, "finalize", "M15 Terminer doit appeler la finalisation canonique");
+      assertHas(wizard, "Configuration de votre établissement terminée", "M15 succès confirmé manquant");
+      const api = read(API_PATH);
+      assertHas(api, "/v2/school-setup/guided/complete", "M15 client finalisation canonique");
+      const finalizeAt = api.indexOf("finalize:");
+      assert.ok(finalizeAt >= 0, "M15 finalize absent du client");
+      assert.doesNotMatch(api.slice(finalizeAt, finalizeAt + 220), /schoolId|schoolCode/, "M15 schoolId client interdit");
     },
   },
   {

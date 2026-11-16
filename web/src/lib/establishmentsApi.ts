@@ -1,4 +1,4 @@
-import { api, getAccessToken } from "../api/client";
+import { api, getAccessToken, type RequestArgs } from "../api/client";
 import { API_URL } from "./apiUrl";
 import type { School } from "../types";
 
@@ -20,10 +20,11 @@ export interface SubscriptionAccessInfo {
 
 export const establishmentsApi = {
   /** Catalogue plateforme (Superadmin / Admin Pays). Interdit à SCHOOL_ADMIN. */
-  list: () => api.get<School[]>("/backoffice/establishments"),
+  list: (...init: RequestArgs) => api.get<School[]>("/backoffice/establishments", ...init),
 
   /** Profil mono-tenant. SCHOOL_ADMIN : uniquement son membership. */
-  get: (code: string) => api.get<School>(`/backoffice/establishments/${encodeURIComponent(code)}`),
+  get: (code: string, ...init: RequestArgs) =>
+    api.get<School>(`/backoffice/establishments/${encodeURIComponent(code)}`, ...init),
 
   create: (payload: Partial<School>, force = false) =>
     api.post<{ school: School }>("/backoffice/establishments", { ...payload, force }),

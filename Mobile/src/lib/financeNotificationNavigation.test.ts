@@ -64,7 +64,11 @@ assert.deepEqual(
   { destination: "StudentPayments", params: { studentId: STUDENT_ID } },
 );
 assert.equal(resolveInternalNotificationNavigationTarget({ type: "finance_obligation" }), null);
-assert.equal(resolveInternalNotificationNavigationTarget({ type: "attendance", studentId: STUDENT_ID }), null);
+// NOTIF-MOBILE-NAV : une absence ouvre désormais les présences de l'élève (ex-anomalie A02).
+assert.deepEqual(
+  resolveInternalNotificationNavigationTarget({ type: "attendance", studentId: STUDENT_ID }),
+  { destination: "StudentPresences", params: { studentId: STUDENT_ID } },
+);
 assert.deepEqual(
   resolveInternalNotificationNavigationTarget({
     type: "conversation",
@@ -213,6 +217,8 @@ assert.match(announcementsSrc, /announcementId/);
 assert.match(announcementsSrc, /getCanonicalAnnouncementById/);
 assert.match(announcementsSrc, /nextCursor/);
 const navigatorSrc = readFileSync(join(srcRoot, "navigation/AppNavigator.tsx"), "utf8");
-assert.match(navigatorSrc, /dispatchRegisteredPushNavigation/);
+// NOTIF-MOBILE-NAV : onReady délègue à l'ouvreur commun, qui dispatche via la route enregistrée.
+assert.match(navigatorSrc, /createPushNotificationOpener/);
+assert.match(readFileSync(join(srcRoot, "lib/notificationNavigationOpen.ts"), "utf8"), /dispatchRegisteredPushNavigation/);
 
 console.log("OK Mobile financeNotificationNavigation.test.ts");

@@ -2,10 +2,10 @@
 
 const crypto = require("crypto");
 const {
-  SUPER_ADMIN_ROLES,
   SCHOOL_WIDE_STUDENT_READ_ROLES,
   collectTeacherAssignmentRefs,
 } = require("./classStudentsAuthz");
+const { isPlatformAdminPrincipal } = require("./platformPersonalDataGuard");
 const {
   principalHasRole,
   principalHasAnyRole,
@@ -85,12 +85,12 @@ function resolveClassesSyncScope(principal) {
   if (!principal) {
     return emptyScope();
   }
+  if (isPlatformAdminPrincipal(principal)) {
+    return emptyScope();
+  }
   const liveRoles = principalRoleList(principal);
   if (!liveRoles.length) {
     return emptyScope();
-  }
-  if (SUPER_ADMIN_ROLES.has(principal.role) || principalHasAnyRole(principal, SUPER_ADMIN_ROLES)) {
-    return { scopeKind: "school-wide", classIds: [], classCodes: [] };
   }
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
     return { scopeKind: "school-wide", classIds: [], classCodes: [] };
@@ -326,6 +326,9 @@ async function loadLiveTeacherAssignments(repository, userId, schoolId) {
  * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
  */
 async function resolveLiveClassesSyncSnapshot(repository, principal, schoolRef = {}) {
+  if (isPlatformAdminPrincipal(principal)) {
+    return computeClassesScopeHash({ role: "", roles: [], roleKeys: [] }, schoolRef);
+  }
   const roleKeys = await loadLiveRoleKeys(repository, principal, schoolRef);
   const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
   const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
@@ -397,12 +400,12 @@ function resolveStudentsSyncScope(principal) {
   if (!principal) {
     return emptyStudentScope();
   }
+  if (isPlatformAdminPrincipal(principal)) {
+    return emptyStudentScope();
+  }
   const liveRoles = principalRoleList(principal);
   if (!liveRoles.length) {
     return emptyStudentScope();
-  }
-  if (SUPER_ADMIN_ROLES.has(principal.role) || principalHasAnyRole(principal, SUPER_ADMIN_ROLES)) {
-    return { scopeKind: "school-wide", classIds: [], classCodes: [], studentIds: [] };
   }
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
     return { scopeKind: "school-wide", classIds: [], classCodes: [], studentIds: [] };
@@ -547,6 +550,9 @@ async function loadLiveSelfStudentIds(repository, userId, schoolId) {
  * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
  */
 async function resolveLiveStudentsSyncSnapshot(repository, principal, schoolRef = {}) {
+  if (isPlatformAdminPrincipal(principal)) {
+    return computeStudentsScopeHash({ role: "", roles: [], roleKeys: [] }, schoolRef);
+  }
   const roleKeys = await loadLiveRoleKeys(repository, principal, schoolRef);
   const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
   const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
@@ -634,12 +640,12 @@ function resolveAssignmentsSyncScope(principal) {
   if (!principal) {
     return emptyAssignmentScope();
   }
+  if (isPlatformAdminPrincipal(principal)) {
+    return emptyAssignmentScope();
+  }
   const liveRoles = principalRoleList(principal);
   if (!liveRoles.length) {
     return emptyAssignmentScope();
-  }
-  if (SUPER_ADMIN_ROLES.has(principal.role) || principalHasAnyRole(principal, SUPER_ADMIN_ROLES)) {
-    return { scopeKind: "school-wide", teacherId: "", assignmentIds: [] };
   }
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
     return { scopeKind: "school-wide", teacherId: "", assignmentIds: [] };
@@ -763,6 +769,9 @@ function resolveAssignmentsLiveSchoolId(principal = {}, schoolRef = {}) {
  * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
  */
 async function resolveLiveAssignmentsSyncSnapshot(repository, principal, schoolRef = {}) {
+  if (isPlatformAdminPrincipal(principal)) {
+    return computeAssignmentsScopeHash({ role: "", roles: [], roleKeys: [] }, schoolRef);
+  }
   const rawUserId = resolvePrincipalUserRef(principal);
   const schoolId = resolveAssignmentsLiveSchoolId(principal, schoolRef);
   const liveSchoolRef = { ...schoolRef, schoolId };
@@ -863,12 +872,12 @@ function resolveSchoolCoursesSyncScope(principal) {
   if (!principal) {
     return emptySchoolCourseScope();
   }
+  if (isPlatformAdminPrincipal(principal)) {
+    return emptySchoolCourseScope();
+  }
   const liveRoles = principalRoleList(principal);
   if (!liveRoles.length) {
     return emptySchoolCourseScope();
-  }
-  if (SUPER_ADMIN_ROLES.has(principal.role) || principalHasAnyRole(principal, SUPER_ADMIN_ROLES)) {
-    return { scopeKind: "school-wide", teacherId: "", assignmentIds: [], coursePairs: [] };
   }
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
     return { scopeKind: "school-wide", teacherId: "", assignmentIds: [], coursePairs: [] };
@@ -964,6 +973,9 @@ async function loadLiveTeacherAssignmentPairsForSync(repository, schoolId, teach
  * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
  */
 async function resolveLiveSchoolCoursesSyncSnapshot(repository, principal, schoolRef = {}) {
+  if (isPlatformAdminPrincipal(principal)) {
+    return computeSchoolCoursesScopeHash({ role: "", roles: [], roleKeys: [] }, schoolRef);
+  }
   const roleKeys = await loadLiveRoleKeys(repository, principal, schoolRef);
   const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
   const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);
@@ -1034,12 +1046,12 @@ function resolveCourseSchedulesSyncScope(principal) {
   if (!principal) {
     return emptyCourseScheduleScope();
   }
+  if (isPlatformAdminPrincipal(principal)) {
+    return emptyCourseScheduleScope();
+  }
   const liveRoles = principalRoleList(principal);
   if (!liveRoles.length) {
     return emptyCourseScheduleScope();
-  }
-  if (SUPER_ADMIN_ROLES.has(principal.role) || principalHasAnyRole(principal, SUPER_ADMIN_ROLES)) {
-    return { scopeKind: "school-wide", teacherId: "", assignmentIds: [], coursePairs: [] };
   }
   if (principalHasAnyRole(principal, SCHOOL_WIDE_STUDENT_READ_ROLES)) {
     return { scopeKind: "school-wide", teacherId: "", assignmentIds: [], coursePairs: [] };
@@ -1105,6 +1117,9 @@ function computeCourseSchedulesScopeHash(principal, schoolRef = {}) {
  * @param {{ schoolCode?: string, schoolId?: string }} schoolRef
  */
 async function resolveLiveCourseSchedulesSyncSnapshot(repository, principal, schoolRef = {}) {
+  if (isPlatformAdminPrincipal(principal)) {
+    return computeCourseSchedulesScopeHash({ role: "", roles: [], roleKeys: [] }, schoolRef);
+  }
   const roleKeys = await loadLiveRoleKeys(repository, principal, schoolRef);
   const permissions = await loadLivePermissions(repository, roleKeys, schoolRef);
   const labels = roleKeys.map((key) => toRoleLabel(key)).filter(Boolean);

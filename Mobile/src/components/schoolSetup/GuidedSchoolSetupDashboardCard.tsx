@@ -15,7 +15,7 @@ export function GuidedSchoolSetupDashboardCard({
   role?: string;
   onResume: () => void;
 }) {
-  if (!shouldShowGuidedSetupDashboardCard({ payload, role }) || payload.percent === 100) {
+  if (!shouldShowGuidedSetupDashboardCard({ payload, role }) || payload.percent === 100 || payload.finalized) {
     return null;
   }
   const next = guidedNextStepLabel(payload) || payload.nextStepLabel || "la prochaine étape";

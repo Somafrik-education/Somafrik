@@ -263,7 +263,7 @@ export function ParentDashboardPage() {
           value={paymentsPermission.canRead ? metrics.remainingLabel : "Non autorisé"}
           detail={
             paymentsPermission.canRead
-              ? `Attendu ${metrics.expectedLabel} · imputé ${metrics.paidLabel}`
+              ? `Obligation ${metrics.expectedLabel} · Encaissé ${metrics.paymentLabel}`
               : "Accès non disponible"
           }
           to={DASHBOARD_LINKS.payments}

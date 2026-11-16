@@ -27,7 +27,7 @@ export function OpenObligationCards({
   if (!obligations.length) {
     return (
       <p className="rounded-xl border border-dashed border-line bg-slate-50 px-4 py-3 text-sm text-muted">
-        Aucune obligation ouverte pour cet élève. Le montant saisi sera enregistré en non imputé.
+        Aucune somme n'est exigible pour cet élève. L'encaissement est désactivé.
       </p>
     );
   }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import type { StudentEnrollmentRecord } from "../lib/studentEnrollment";
 import { buildStudentWorkspaceFromDossier } from "../lib/studentDossierFromApi";
@@ -42,30 +42,38 @@ export function useStudentWorkspace(
   const [dossier, setDossier] = useState<SchoolStudent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [revision, setRevision] = useState(0);
 
   const normalizedStudentId = studentId.trim();
+  const loadedStudentIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       if (!normalizedStudentId) {
+        loadedStudentIdRef.current = null;
         setDossier(null);
         setError(null);
         setLoading(false);
         return;
       }
 
-      setLoading(true);
+      const studentChanged = loadedStudentIdRef.current !== normalizedStudentId;
+      if (studentChanged) {
+        loadedStudentIdRef.current = null;
+        setDossier(null);
+        setLoading(true);
+      }
       setError(null);
       try {
         const row = await studentsApi.get(normalizedStudentId);
         if (!cancelled) {
+          loadedStudentIdRef.current = normalizedStudentId;
           setDossier(row);
         }
       } catch (err) {
         if (!cancelled) {
+          loadedStudentIdRef.current = null;
           setDossier(null);
           setError(mapError(err));
         }
@@ -80,7 +88,19 @@ export function useStudentWorkspace(
     return () => {
       cancelled = true;
     };
-  }, [normalizedStudentId, revision]);
+  }, [normalizedStudentId]);
+
+  const refresh = useCallback(async () => {
+    if (!normalizedStudentId) return;
+    try {
+      const row = await studentsApi.get(normalizedStudentId);
+      loadedStudentIdRef.current = normalizedStudentId;
+      setDossier(row);
+      setError(null);
+    } catch (err) {
+      setError(mapError(err));
+    }
+  }, [normalizedStudentId]);
 
   const workspace = useMemo(() => {
     if (!dossier) return null;
@@ -104,8 +124,6 @@ export function useStudentWorkspace(
     dossier,
     loading,
     error,
-    refresh: async () => {
-      setRevision((value) => value + 1);
-    },
+    refresh,
   };
 }

@@ -26,6 +26,7 @@ const path = require("path");
 const { Pool } = require("pg");
 const { createPostgresRepository } = require("../db/repositoryFactory");
 const { TokenService } = require("../services/tokenService");
+const { mintSessionAccessToken } = require("./testAccessSession");
 
 const DATABASE_URL = String(process.env.DATABASE_URL ?? "").trim();
 const IT_DATABASE = String(process.env.SOMAFRIK_PARENT_ATT_ISO_IT_DATABASE ?? "somafrik_parent_att_iso_it")
@@ -441,7 +442,7 @@ async function main() {
   const results = [];
 
   function mint(payload) {
-    return tokens.createAccessToken({ mustChangePassword: false, ...payload });
+    return mintSessionAccessToken({ tokens, repository: repo, payload: { mustChangePassword: false, ...payload } });
   }
 
   function check(id, title, fn) {
@@ -508,7 +509,7 @@ async function main() {
     });
     await waitForHealth(child, stderrRef);
 
-    const tokenParentA = mint({
+    const tokenParentA = await mint({
       sub: USER_PARENT_A,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -516,7 +517,7 @@ async function main() {
       permissions: PARENT_PERMS,
       studentIds: maevaKeys,
     });
-    const tokenParentTwo = mint({
+    const tokenParentTwo = await mint({
       sub: USER_PARENT_TWO,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -524,7 +525,7 @@ async function main() {
       permissions: PARENT_PERMS,
       studentIds: [...maevaKeys, ...siblingKeys],
     });
-    const tokenParentEmpty = mint({
+    const tokenParentEmpty = await mint({
       sub: USER_PARENT_EMPTY,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -532,7 +533,7 @@ async function main() {
       permissions: PARENT_PERMS,
       studentIds: [],
     });
-    const tokenParentB = mint({
+    const tokenParentB = await mint({
       sub: USER_PARENT_B,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -540,7 +541,7 @@ async function main() {
       permissions: PARENT_PERMS,
       studentIds: studentBKeys,
     });
-    const tokenParentCanonical = mint({
+    const tokenParentCanonical = await mint({
       sub: USER_PARENT_A,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -548,7 +549,7 @@ async function main() {
       permissions: PARENT_PERMS,
       studentIds: [],
     });
-    const tokenParentForgedJwt = mint({
+    const tokenParentForgedJwt = await mint({
       sub: USER_PARENT_A,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -556,14 +557,14 @@ async function main() {
       permissions: PARENT_PERMS,
       studentIds: [...maevaKeys, ...aishaKeys],
     });
-    const tokenParentRoleKeysOnly = mint({
+    const tokenParentRoleKeysOnly = await mint({
       sub: USER_PARENT_A,
       roleKeys: ["PARENT"],
       schoolCode: LOGIN_A,
       permissions: PARENT_PERMS,
       studentIds: [],
     });
-    const tokenParentStale = mint({
+    const tokenParentStale = await mint({
       sub: USER_PARENT_STALE,
       role: "Parent",
       roleKeys: ["PARENT"],
@@ -571,7 +572,7 @@ async function main() {
       permissions: PARENT_PERMS,
       studentIds: maevaKeys,
     });
-    const tokenTeacher = mint({
+    const tokenTeacher = await mint({
       sub: USER_TEACHER,
       role: "Enseignant",
       roleKeys: ["TEACHER"],
@@ -579,7 +580,7 @@ async function main() {
       permissions: STAFF_PERMS,
       assignments: [{ classCode: CLASS_2A, classId: fixture.class2AId, status: "active" }],
     });
-    const tokenAdmin = mint({
+    const tokenAdmin = await mint({
       sub: USER_ADMIN,
       role: "Admin School",
       roleKeys: ["SCHOOL_ADMIN"],

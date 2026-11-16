@@ -9,7 +9,7 @@ import RoleDashboardLayout, {
   type RoleDashboardAction,
   type RoleDashboardKpi,
 } from "../components/RoleDashboardLayout";
-import { useAdminData } from "../context/AdminDataContext";
+import { L1_FOCUS_MAX_AGE_MS, useAdminData } from "../context/AdminDataContext";
 import StudentsScopeAlert from "../components/StudentsScopeAlert";
 import { formatPaymentCashAmounts } from "../lib/paymentCashKpi";
 import { formatPaymentOverviewAmounts } from "../lib/paymentAmountBreakdown";
@@ -232,15 +232,26 @@ export default function HomeScreen({ navigation }: any) {
   useFocusEffect(
     useCallback(() => {
       if (canReadEntity(session, "users")) void loadUsers();
-      if (canReadEntity(session, "students")) void loadStudents();
-      if (canReadEntity(session, "classes") || canReadRoute(session, "Classes")) void loadClasses();
-      if (canReadRoute(session, "TeacherAttendance") || canReadEntity(session, "students")) void loadPresences();
+      // PERF-PR5 : retour d'écran — lectures L1 partagées, pas de relecture si réponse récente (30 s).
+      const focus = { maxAgeMs: L1_FOCUS_MAX_AGE_MS };
+      if (canReadEntity(session, "students")) void loadStudents(focus);
+      if (canReadEntity(session, "classes") || canReadRoute(session, "Classes")) void loadClasses(focus);
+      if (
+        canReadRoute(session, "TeacherAttendance") ||
+        canReadEntity(session, "students") ||
+        ((session?.role === "parent_student" || session?.role === "student") &&
+          canReadRoute(session, "StudentPresences"))
+      ) void loadPresences();
       if (session?.role === "teacher" || canReadEntity(session, "teachers")) {
         void loadTeachers();
-        void loadClasses();
+        void loadClasses(focus);
       }
-      if (session?.role === "teacher") void loadAssignments();
-      if (canReadEntity(session, "payments")) {
+      if (session?.role === "teacher") void loadAssignments(focus);
+      if (
+        canReadEntity(session, "payments") ||
+        ((session?.role === "parent_student" || session?.role === "student") &&
+          canReadRoute(session, "StudentPayments"))
+      ) {
         void loadPayments();
         void loadStudentFees();
       }
@@ -312,7 +323,7 @@ export default function HomeScreen({ navigation }: any) {
         linkedCount: parentLinkedCount,
       })
     : isParentLike
-      ? selectedStudent?.name ?? "Élève"
+      ? selectedStudent?.name ?? (session?.role === "student" ? userName : "Élève")
       : userName;
   const identityContext = isTeacher
     ? assignedClasses.join(", ") || currentSchool.name
@@ -453,7 +464,7 @@ export default function HomeScreen({ navigation }: any) {
         )
       : null,
     pendingPayments: canReadEntity(session, "payments")
-      ? kpi("pendingPayments", "time-outline", receivableLabel, "À percevoir", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
+      ? kpi("pendingPayments", "time-outline", receivableLabel, "Reste à payer", "#EA580C", "#FFF7ED", () => navigation.navigate("Payments"))
       : null,
     paidPayments: canReadEntity(session, "payments")
       ? kpi("paidPayments", "checkmark-circle-outline", collectedLabel, "Encaissé", "#16A34A", "#ECFDF5", () => navigation.navigate("Payments"))

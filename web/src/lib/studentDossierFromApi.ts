@@ -75,6 +75,9 @@ function toDomainStudent(dossier: SchoolStudent): Student {
     gender: dossier.gender,
     birthDate: dossier.birthDate,
     birthPlace: dossier.birthPlace,
+    preferredName: dossier.preferredName,
+    nationality: dossier.nationality,
+    address: dossier.address,
     photoUrl: dossier.photoUrl,
     phone: dossier.parentPhone,
     email: dossier.parentEmail,
@@ -203,6 +206,8 @@ export function buildStudentWorkspaceFromDossier(
   return buildStudentWorkspace({
     studentId: student.id,
     academicYear,
+    // Le GET PostgreSQL est canonique : 0 relation = 0 responsable officiel.
+    allowLegacyGuardians: false,
     data: {
       students: [student],
       persons,

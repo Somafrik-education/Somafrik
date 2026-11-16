@@ -14,6 +14,12 @@ on:
 permissions:
   contents: read
 
+# CI-FAST-01 : une nouvelle poussée sur la PR annule l'exécution précédente
+# (les autres déclencheurs ne sont jamais annulés).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   date-contract:
     name: Verify JJ-MM-AAAA Web/Mobile

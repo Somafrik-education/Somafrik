@@ -1,5 +1,6 @@
 "use strict";
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -115,7 +116,7 @@ async function main() {
     await waitForHealth(child);
     const school = await login("admin", "1234", "CD-2026-0001");
     const schoolBi = await login("admin", "1234", "BI-2026-0002");
-    const superadmin = await login("superadmin", "1234");
+    const superadmin = await login("superadmin", superadminLoginPassword());
     const teacherSeed = await login("ENS-0001", "1234", "CD-2026-0001");
 
     const legacy = await request("/backoffice/state", {

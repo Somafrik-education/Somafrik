@@ -138,6 +138,11 @@ test("mapSettingsRow expose les scalaires canoniques", () => {
   assert.equal(publicRow.periodMode, "trimestre");
   assert.equal(publicRow.defaultScale, 20);
   assert.equal(publicRow.reportCardMode, "period");
+  assert.equal(publicRow.studentCardEnabled, false);
+  assert.equal(publicRow.studentCardQrEnabled, false);
+  assert.equal(publicRow.studentCardNfcEnabled, false);
+  assert.equal(publicRow.studentCardAttendanceEnabled, false);
+  assert.equal(publicRow.studentCardFinanceCheckEnabled, false);
   assert.ok(PERIOD_MODES.includes(publicRow.periodMode));
   assert.ok(REPORT_CARD_MODES.includes(publicRow.reportCardMode));
 });

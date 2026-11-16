@@ -1,0 +1,44 @@
+// MIG-WORKERS-CLOUD-01 — configuration préparée, non déployée.
+// Aucun account_id, aucune route, aucun secret, aucun localConnectionString.
+// workers_dev et preview_urls restent faux : pas d'URL publique.
+// Les identifiants PENDING_CTO_AUTHORIZATION ne sont pas des ressources Cloudflare.
+// Ne pas exécuter wrangler deploy avec ce fichier.
+{
+  "$schema": "../mig-workers-poc-01/node_modules/wrangler/config-schema.json",
+  "name": "somafrik-mig-workers-cloud-01",
+  "main": "../mig-workers-poc-01/src/index.js",
+  "compatibility_date": "2026-10-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "iconv-lite": "../mig-workers-poc-01/src/iconvLiteShim.cjs"
+  },
+  "workers_dev": false,
+  "preview_urls": false,
+  "browser": {
+    "binding": "BROWSER"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "PENDING_CTO_AUTHORIZATION"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "NOTIFY_QUEUE",
+        "queue": "somafrik-cloud-01-notifications"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "somafrik-cloud-01-notifications",
+        "max_batch_size": 1
+      }
+    ]
+  },
+  "vars": {
+    "APP_ENV": "workers-poc",
+    "SOMAFRIK_POC": "mig-workers-cloud-01"
+  }
+}

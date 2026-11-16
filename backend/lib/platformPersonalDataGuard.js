@@ -10,12 +10,9 @@
  * Ce module ne dépend pas de rbacService ni de data.js (évite les cycles).
  */
 
-const PLATFORM_PERSONAL_DATA_DENY = "PLATFORM_PERSONAL_DATA_DENIED";
+const { isSuperAdminPrincipal, SUPER_ADMIN_ROLE_LABELS } = require("./superadminPrincipal");
 
-const SUPER_ADMIN_ROLE_LABELS = Object.freeze([
-  "Super Administrateur Somafrik",
-  "Super Administrateur OKAFRIK",
-]);
+const PLATFORM_PERSONAL_DATA_DENY = "PLATFORM_PERSONAL_DATA_DENIED";
 
 const COUNTRY_ADMIN_ROLE_LABELS = Object.freeze(["Admin Pays"]);
 
@@ -93,6 +90,31 @@ const PERSONAL_DATA_FEATURE_PREFIXES = Object.freeze(
 const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "GET /api/students",
   "GET /api/students/:id",
+  "GET /api/students/:id/cards",
+  "POST /api/student-cards/verify",
+  "POST /api/student-cards",
+  "POST /api/classes/:classCode/student-cards/batches",
+  "GET /api/classes/:classCode/student-cards/batches/:batchId",
+  "POST /api/classes/:classCode/student-cards/batches/:batchId/receipt",
+  "POST /api/classes/:classCode/student-cards/batches/:batchId/activate",
+  "POST /api/classes/:classCode/student-cards/batches/:batchId/abort",
+  "POST /api/student-cards/:id/nfc-confirm",
+  "POST /api/student-cards/:id/nfc-retry",
+  "POST /api/student-cards/:id/nfc-provision",
+  "POST /api/student-cards/:id/lost",
+  "POST /api/student-cards/:id/revoke",
+  "POST /api/student-cards/:id/replace",
+  "GET /api/student-cards/capabilities",
+  "POST /api/student-cards/scan",
+  "POST /api/student-cards/roll-call/scan",
+  "POST /api/student-cards/roll-call/validate",
+  "GET /api/student-cards/roll-call/roster",
+  "GET /api/student-cards/roll-call/overview",
+  "GET /api/student-cards/roll-call/offline/v1/pack",
+  "POST /api/student-cards/roll-call/offline/v1/sync",
+  "GET /api/student-cards/roll-call/offline/v1/classes",
+  "POST /api/student-cards/entry-scan",
+  "GET /api/student-cards/entries",
   "GET /api/students/:studentId/enrollments",
   "POST /api/students/:studentId/enrollments/:enrollmentId/validate",
   "POST /api/students/:studentId/enrollments/:enrollmentId/assign-class",
@@ -106,6 +128,15 @@ const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "GET /api/classes/:classCode/students",
   "POST /api/classes/:classCode/students",
   "GET /api/mobile-sync/l1/students",
+  "GET /api/mobile-sync/l1/school-courses",
+  "GET /api/mobile-sync/l1/course-schedules",
+  "GET /api/course-schedules",
+  "POST /api/course-schedules",
+  "PATCH /api/course-schedules/:scheduleId",
+  "DELETE /api/course-schedules/:scheduleId",
+  "GET /api/classes/:classCode/head-teacher/candidates",
+  "PUT /api/classes/:classCode/head-teacher",
+  "DELETE /api/classes/:classCode/head-teacher",
   "POST /api/backoffice/import/students/validate",
   "GET /api/teachers",
   "GET /api/teachers/:teacherCode",
@@ -119,15 +150,18 @@ const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "GET /api/mobile-sync/l1/assignments",
   "POST /api/backoffice/users/create-teacher",
   "GET /api/notes",
+  "GET /api/v2/notes",
   "GET /api/students/:id/notes",
   "POST /api/notes",
   "GET /api/evaluations",
   "POST /api/evaluations",
   "PATCH /api/evaluations/:evaluationId",
   "GET /api/presences",
+  "GET /api/v2/presences",
   "GET /api/students/:id/presences",
   "POST /api/presences",
   "GET /api/payments",
+  "GET /api/v2/payments",
   "GET /api/payments/:paymentId",
   "POST /api/payments",
   "POST /api/payments/:paymentId/cancel",
@@ -175,6 +209,8 @@ const SCHOOL_PERSONAL_DATA_FORBIDDEN_FOR_PLATFORM = Object.freeze([
   "POST /api/backoffice/contacts/:contactId/provision-account",
   "GET /api/backoffice/relations",
   "POST /api/backoffice/relations",
+  "PATCH /api/backoffice/relations/:relationId",
+  "POST /api/backoffice/relations/:relationId/archive",
   "GET /api/parents/identity",
   "GET /api/parents/relations",
   "POST /api/parents/link",
@@ -239,6 +275,7 @@ const PLATFORM_ADMIN_ALLOWED = Object.freeze([
   "POST /api/users/:id/reset-password",
   "GET /api/backoffice/subscriptions",
   "GET /api/backoffice/trial-requests",
+  "GET /api/backoffice/platform-compliance",
   "POST /api/backoffice/subscriptions",
   "PATCH /api/backoffice/subscriptions/:subscriptionId",
   "GET /api/backoffice/subscription-access",
@@ -254,9 +291,14 @@ const PLATFORM_ADMIN_ALLOWED = Object.freeze([
   "GET /api/backoffice/rbac/permissions",
   "GET /api/backoffice/rbac/permissions/effective",
   "PATCH /api/backoffice/rbac/permissions",
+  "POST /api/backoffice/rbac/permissions/reset",
   "POST /api/backoffice/rbac/roles",
   "PATCH /api/backoffice/rbac/roles/:roleId",
+  "PATCH /api/backoffice/rbac/roles/:roleId/display-label",
+  "POST /api/backoffice/rbac/roles/:roleId/display-label/reset",
+  "GET /api/backoffice/rbac/role-display-labels",
   "POST /api/backoffice/rbac/roles/:roleId/archive",
+  "GET /api/backoffice/rbac/history",
   "GET /api/backoffice/dashboard-chart-config",
   "PUT /api/backoffice/dashboard-chart-config",
   "GET /api/backoffice/notifications",
@@ -292,9 +334,6 @@ const PLATFORM_ADMIN_ALLOWED = Object.freeze([
   "GET /api/classes",
   "POST /api/classes",
   "PATCH /api/classes/:classCode",
-  "GET /api/classes/:classCode/head-teacher/candidates",
-  "PUT /api/classes/:classCode/head-teacher",
-  "DELETE /api/classes/:classCode/head-teacher",
   "GET /api/mobile-sync/l1/classes",
 ]);
 
@@ -310,12 +349,6 @@ function roleKeySet(principal) {
     if (normalized) keys.add(normalized);
   }
   return keys;
-}
-
-function isSuperAdminPrincipal(principal) {
-  const label = asTrimmed(principal?.role);
-  if (SUPER_ADMIN_ROLE_LABELS.includes(label)) return true;
-  return roleKeySet(principal).has("SUPER_ADMIN");
 }
 
 function isCountryAdminPrincipal(principal) {

@@ -426,8 +426,9 @@ const countryPrivileges = liveSession({
 assert.equal(canAccessPlatformNotifications(countryPrivileges), true);
 assert.equal(canReadView(countryPrivileges, "PlatformNotifications"), true);
 assert.equal(canReadRoute(countryPrivileges, "PlatformNotifications"), true);
-assert.equal(canAccessBackofficeMessagesComposer(countryPrivileges), true);
-assert.equal(canShowStaffMessagesComposer(countryPrivileges), true);
+assert.equal(canAccessBackofficeMessagesComposer(countryPrivileges), false);
+assert.equal(canShowStaffMessagesComposer(countryPrivileges), false);
+assert.equal(canAccessMessagesRoute(countryPrivileges), false);
 assert.equal(canArchiveAnnouncement(countryPrivileges), true);
 
 const superAdmin = liveSession({
@@ -439,8 +440,9 @@ const superAdmin = liveSession({
 });
 assert.equal(canAccessPlatformNotifications(superAdmin), true);
 assert.equal(canReadView(superAdmin, "PlatformNotifications"), true);
-assert.equal(canAccessBackofficeMessagesComposer(superAdmin), true);
-assert.equal(canShowStaffMessagesComposer(superAdmin), true);
+assert.equal(canAccessBackofficeMessagesComposer(superAdmin), false);
+assert.equal(canShowStaffMessagesComposer(superAdmin), false);
+assert.equal(canAccessMessagesRoute(superAdmin), false);
 assert.equal(canArchiveAnnouncement(superAdmin), true);
 
 assert.equal(

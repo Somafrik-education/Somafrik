@@ -45,6 +45,12 @@ export function studentSnapshotPeriod(student: SnapshotStudent): string {
   return periods.join(" · ");
 }
 
+function periodScopeLabel(scope: unknown): string {
+  const value = String(scope ?? "").trim();
+  if (!value) return "";
+  return value === "ANNUAL" ? "Bilan annuel" : value;
+}
+
 export function cardsFromPublishedSnapshot(
   publication: ReportCardPublicationRow,
   snapshot: ReportCardPublicationSnapshot | null,
@@ -63,7 +69,8 @@ export function cardsFromPublishedSnapshot(
       reportCardId: publication.report_card_id,
       version,
       studentId,
-      period: studentSnapshotPeriod(student),
+      // BULLETIN-UI-01 : périmètre figé dans le snapshot (publication de classe), sinon périodes des cellules.
+      period: periodScopeLabel((snapshot.payload as { period_scope?: unknown }).period_scope) || studentSnapshotPeriod(student),
       publishedAt: String(snapshot.payload.published_at ?? ""),
       verificationStatus: String(publication.verification_status ?? "ACTIVE"),
       payload: snapshot.payload,

@@ -1,6 +1,7 @@
 const { AccountIdentifier } = require("./accountIdentifier");
-const { verifySecret } = require("./credentialService");
+const { verifySecret, materializeAccountSecretHashes } = require("./credentialService");
 const { resolveParentChildren } = require("../lib/parentChildren");
+const { isPlatformScopePrincipal } = require("../lib/platformScopePrincipal");
 const {
   getLoginAttemptKey,
   assertLoginNotLocked,
@@ -12,6 +13,10 @@ const {
   sanitizeUserForResponse,
   sanitizeUsersForResponse,
 } = require("../lib/sanitizeUserForResponse");
+const {
+  isPlatformSuperadminAccount,
+  rejectsKnownSuperadminSecret,
+} = require("../lib/superadminSeedSecret");
 
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOGIN_LOCK_DURATION_MS = 15 * 60 * 1000;
@@ -69,14 +74,22 @@ function buildTeacherNameKeys(teacher = {}, user = {}) {
   return keys;
 }
 
+/**
+ * Une affectation appartient-elle à cet enseignant ?
+ *
+ * Correctif MONO-T1-A1 : dès que l'affectation référence un enseignant
+ * (teacherId, sinon teacherCode), seule cette référence fait foi. Le repli
+ * par nom ne vaut que pour une affectation sans aucune référence : sinon un
+ * homonyme (même prénom et nom dans l'établissement) hériterait des classes
+ * d'un autre enseignant.
+ */
 function assignmentMatchesTeacher(assignment = {}, teacher = {}, user = {}) {
-  const teacherId = String(teacher.id ?? "").trim();
-  const teacherPublicId = String(teacher.publicId ?? "").trim();
-  const userId = String(user.id ?? "").trim();
-  const ref = String(assignment.teacherId ?? "").trim();
-
-  if (ref && (ref === teacherId || ref === teacherPublicId || (userId && ref === userId))) {
-    return true;
+  const ref = String(assignment.teacherId ?? "").trim() || String(assignment.teacherCode ?? "").trim();
+  if (ref) {
+    const ownRefs = [teacher.id, teacher.publicId, teacher.teacherCode, user.id]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean);
+    return ownRefs.includes(ref);
   }
 
   const nameKeys = buildTeacherNameKeys(teacher, user);
@@ -288,6 +301,14 @@ class BusinessError extends Error {
   }
 }
 
+/**
+ * SEC-TENANT-01 — schoolCode "*" n'est un joker de tenant que pour un compte
+ * plateforme. Un compte scolaire sans rattachement ne correspond à aucune école.
+ */
+function matchesPlatformScope(user, userSchool) {
+  return userSchool === "*" && isPlatformScopePrincipal(user);
+}
+
 class AuthService {
   constructor({
     school,
@@ -305,13 +326,15 @@ class AuthService {
     this.teachers = teachers;
     this.students = students;
     this.relations = relations;
-    this.userAccounts = userAccounts;
+    this.userAccounts = Array.isArray(userAccounts)
+      ? userAccounts.map((user) => materializeAccountSecretHashes(user))
+      : userAccounts;
     this.countries = countries;
     this.subscriptions = subscriptions;
     this.assignments = assignments;
   }
 
-  identify({ schoolCode, identifier }) {
+  identify({ schoolCode, identifier }, displayIndex) {
     this.assertRequiredFields({ identifier }, "Champs manquants");
     const requestedSchool = String(schoolCode ?? "").trim();
     if (!requestedSchool) {
@@ -324,7 +347,7 @@ class AuthService {
       if (!managedMobileRole || !this.isPlatformMobileRole(managedMobileRole.role)) {
         throw new BusinessError(400, "Champs manquants");
       }
-      return managedMobileRole;
+      return this.decorateIdentifiedRole(managedMobileRole, platformUser, displayIndex);
     }
 
     const schoolContext = this.assertSchoolCanConnect(requestedSchool);
@@ -348,13 +371,18 @@ class AuthService {
       );
     }
 
-    return managedMobileRole;
+    return this.decorateIdentifiedRole(managedMobileRole, managedUser, displayIndex);
+  }
+
+  decorateIdentifiedRole(managedMobileRole, user, displayIndex) {
+    const { decorateIdentifyRole } = require("../lib/roleDisplayLabels");
+    return decorateIdentifyRole(managedMobileRole, user, displayIndex);
   }
 
   resolveLoginSecret({ role, password, pin } = {}) {
     const passwordValue = String(password ?? "");
     const pinValue = String(pin ?? "");
-    if (role === "parent_student") {
+    if (role === "parent_student" || role === "student") {
       return passwordValue;
     }
     return pinValue || passwordValue;
@@ -524,7 +552,7 @@ class AuthService {
     const matches = this.userAccounts.filter((user) => {
       const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
       return (
-        (userSchool === "*" || tenantKeys.has(userSchool)) &&
+        (tenantKeys.has(userSchool) || matchesPlatformScope(user, userSchool)) &&
         this.userMatchesIdentifier(user, identifier)
       );
     });
@@ -563,7 +591,7 @@ class AuthService {
     return this.userAccounts.find((user) => {
       const userSchool = String(user.schoolCode ?? "").trim().toUpperCase();
       return (
-        (userSchool === "*" || tenantKeys.has(userSchool)) &&
+        (tenantKeys.has(userSchool) || matchesPlatformScope(user, userSchool)) &&
         String(user.id) === String(teacher.userId)
       );
     });
@@ -622,7 +650,10 @@ class AuthService {
       email: user.email,
       role: sessionRole,
       roles: user.roles,
+      roleKey: user.roleKey,
       roleKeys: user.roleKeys,
+      effectiveRoleLabel: user.effectiveRoleLabel,
+      effectiveRoleLabels: user.effectiveRoleLabels,
       scopeLevel: user.scopeLevel,
       countryScope: user.countryScope,
       countryCode: user.countryCode,
@@ -655,7 +686,10 @@ class AuthService {
           schoolCode: base.schoolCode,
           role: sessionRole,
           roles: user.roles,
+          roleKey: user.roleKey,
           roleKeys: user.roleKeys,
+          effectiveRoleLabel: user.effectiveRoleLabel,
+          effectiveRoleLabels: user.effectiveRoleLabels,
           assignments,
           assignedClasses,
           courses,
@@ -811,27 +845,19 @@ class AuthService {
     }
 
     const normalizedSecret = String(secret ?? "");
-    const parentOnly = options.role === "parent_student";
+    if (isPlatformSuperadminAccount(user, options) && rejectsKnownSuperadminSecret(normalizedSecret)) {
+      return false;
+    }
+    const passwordOnly = options.role === "parent_student" || options.role === "student";
 
     if (user.passwordHash && verifySecret(normalizedSecret, user.passwordHash)) {
       return true;
     }
 
-    if (!parentOnly && user.pinHash && verifySecret(normalizedSecret, user.pinHash)) {
+    if (!passwordOnly && user.pinHash && verifySecret(normalizedSecret, user.pinHash)) {
       return true;
     }
 
-    const temporaryPassword = String(user.temporaryPassword ?? "").trim();
-    if (temporaryPassword && temporaryPassword === normalizedSecret) {
-      return true;
-    }
-
-    if (String(user.password ?? "") === normalizedSecret) {
-      return true;
-    }
-    if (!parentOnly && String(user.pin ?? "") === normalizedSecret) {
-      return true;
-    }
     return false;
   }
 

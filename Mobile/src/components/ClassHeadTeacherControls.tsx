@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import FormField from "./FormField";
 import {
   ActivityIndicator,
   Alert,
@@ -7,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
@@ -187,14 +187,14 @@ export default function ClassHeadTeacherControls({
             <Text style={styles.title}>
               {hasHeadTeacher ? HEAD_TEACHER_COPY.modalTitleModify : HEAD_TEACHER_COPY.modalTitleAssign}
             </Text>
-            <TextInput
+            <FormField label={HEAD_TEACHER_COPY.search} type="search" hideVisibleLabel
               accessibilityLabel={HEAD_TEACHER_COPY.search}
               placeholder={HEAD_TEACHER_COPY.search}
               value={query}
               onChangeText={setQuery}
               autoCorrect={false}
               autoCapitalize="none"
-              style={styles.search}
+              inputStyle={styles.search}
             />
             {loading ? (
               <ActivityIndicator color="#2563EB" style={{ marginVertical: 16 }} />

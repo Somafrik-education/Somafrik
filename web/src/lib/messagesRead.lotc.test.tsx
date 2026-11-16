@@ -29,4 +29,16 @@ describe("useMessagesUnreadCount", () => {
     await waitFor(() => expect(unreadCount).toHaveBeenCalledTimes(2));
     expect(result.current).toBe(4);
   });
+
+  it("P1-03 changement d'établissement remet le compteur à 0 avant le prochain GET", async () => {
+    unreadCount.mockResolvedValueOnce({ count: 4 }).mockResolvedValueOnce({ count: 1 });
+    const { result, rerender } = renderHook(
+      ({ school }) => useMessagesUnreadCount(true, school),
+      { initialProps: { school: "SCH-A" } },
+    );
+    await waitFor(() => expect(result.current).toBe(4));
+    rerender({ school: "SCH-B" });
+    expect(result.current).toBe(0);
+    await waitFor(() => expect(result.current).toBe(1));
+  });
 });

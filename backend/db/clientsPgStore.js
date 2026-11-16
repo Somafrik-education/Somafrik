@@ -16,6 +16,19 @@ const { sqlUsersScope } = require("../lib/usersSchoolScope");
 
 const USER_SCHOOL_SELECT = `s.school_code, s.login_code AS school_login_code, s.name AS school_name`;
 
+async function loadRoleDisplayIndex(queryable) {
+  const { loadRoleDisplayIndexFromRepo } = require("../lib/roleDisplayLabels");
+  return loadRoleDisplayIndexFromRepo(queryable);
+}
+
+function attachDisplayLabelToUserRow(row, index) {
+  if (!row) return row;
+  const { toRoleKey } = require("../lib/userRoleLifecycle");
+  const { lookupRoleDisplayContract } = require("../lib/roleDisplayLabels");
+  const contract = lookupRoleDisplayContract(index, toRoleKey(row.role)) || lookupRoleDisplayContract(index, row.role);
+  return { ...row, display_label: contract?.displayLabel ?? null };
+}
+
 function userSchoolReturningSql(schoolIdSql) {
   return `(SELECT school_code FROM schools WHERE id = ${schoolIdSql}) AS school_code,
           (SELECT login_code FROM schools WHERE id = ${schoolIdSql}) AS school_login_code,
@@ -27,11 +40,23 @@ function createClientsPgStore(repo) {
     const one = (sql, params) => (client.one ? client.one(sql, params) : repo.one(sql, params));
     const all = (sql, params) => (client.all ? client.all(sql, params) : repo.all(sql, params));
     const query = (sql, params) => (client.query ? client.query(sql, params) : repo.query(sql, params));
-
-    return {
+    const queryable = {
       one,
       all,
       query,
+      rootRepository: repo,
+      getEstablishmentRolesStore() {
+        return typeof repo.getEstablishmentRolesStore === "function"
+          ? repo.getEstablishmentRolesStore()
+          : null;
+      },
+    };
+    const { createRoleDisplayIndexLoader } = require("../lib/roleDisplayLabels");
+    const loadRoleDisplayIndexOnce = createRoleDisplayIndexLoader(queryable);
+
+    return {
+      ...queryable,
+      loadRoleDisplayIndexOnce,
       async getSchoolByCode(code) {
         const normalized = asTrimmed(code).toUpperCase();
         if (!normalized) return null;
@@ -63,7 +88,7 @@ function createClientsPgStore(repo) {
         return one("SELECT * FROM countries WHERE iso_code = $1", [normalized]);
       },
       async getUserById(id) {
-        return one(
+        const row = await one(
           `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
            FROM users u
            LEFT JOIN schools s ON s.id = u.school_id
@@ -71,9 +96,11 @@ function createClientsPgStore(repo) {
            WHERE u.id::text = $1 OR u.user_code = $1`,
           [id],
         );
+        const index = await loadRoleDisplayIndexOnce();
+        return attachDisplayLabelToUserRow(row, index);
       },
       async listSchoolUsers(schoolId) {
-        return all(
+        const rows = await all(
           `SELECT u.*, ${USER_SCHOOL_SELECT}, c.iso_code AS country_code, c.name AS country_name
            FROM users u
            LEFT JOIN schools s ON s.id = u.school_id
@@ -81,6 +108,8 @@ function createClientsPgStore(repo) {
            WHERE u.school_id = $1 AND COALESCE(u.status, 'active') = 'active'`,
           [schoolId],
         );
+        const index = await loadRoleDisplayIndexOnce();
+        return rows.map((row) => attachDisplayLabelToUserRow(row, index));
       },
       async insertUser(row) {
         return one(
@@ -180,15 +209,28 @@ function createClientsPgStore(repo) {
         );
         return rows.map((row) => row.role_key);
       },
+      /** SEC-AUTH-05 — le compte a-t-il au moins un enregistrement user_roles (actif ou retiré) ? */
+      async userHasRoleHistory(userId) {
+        const id = String(userId ?? "").trim();
+        // user_roles.user_id est un UUID : un autre identifiant n'a aucun historique.
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return false;
+        const rows = await all("SELECT 1 FROM user_roles WHERE user_id = $1::uuid LIMIT 1", [id]);
+        return rows.length > 0;
+      },
       async listActiveUserRoleKeysForSchool(userId, schoolId) {
         const uid = String(userId ?? "").trim();
         const sid = String(schoolId ?? "").trim();
         if (!uid || !sid) return [];
+        // SEC-TENANT-02 : lecture sur le chemin de chaque requête protégée. Comparaison
+        // en UUID (index idx_user_roles_user) au lieu d'un cast texte (parcours complet).
+        // Un identifiant non UUID ne correspond à aucune ligne, comme avant.
+        const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!UUID.test(uid) || !UUID.test(sid)) return [];
         const rows = await all(
           `SELECT role_key
            FROM user_roles
-           WHERE user_id::text = $1
-             AND school_id::text = $2
+           WHERE user_id = $1::uuid
+             AND school_id = $2::uuid
              AND status = 'active'
              AND revoked_at IS NULL
            ORDER BY granted_at ASC`,
@@ -599,6 +641,22 @@ function createClientsPgStore(repo) {
            RETURNING *`,
           [id],
         ).then(async (saved) => (saved ? this.getRelationById(saved.id) : null));
+      },
+      async updateRelation(id, patch) {
+        const saved = await one(
+          `UPDATE contact_relations
+           SET contact_id = $2, student_id = $3, relation_type = $4, profile_payload = $5::jsonb, updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [
+            id,
+            patch.contactId,
+            patch.studentId,
+            patch.relationType || "parent_student",
+            JSON.stringify(patch.profile ?? {}),
+          ],
+        );
+        return saved ? this.getRelationById(saved.id) : null;
       },
       async insertConversation(row) {
         return one(
@@ -1589,6 +1647,12 @@ function createClientsPgStore(repo) {
 
   const store = {
     bind,
+    rootRepository: repo,
+    getEstablishmentRolesStore() {
+      return typeof repo.getEstablishmentRolesStore === "function"
+        ? repo.getEstablishmentRolesStore()
+        : null;
+    },
     getSchoolByCode: (code) => bind({}).getSchoolByCode(code),
     getSchoolById: (id) => bind({}).getSchoolById(id),
     getCountryByCode: (code) => bind({}).getCountryByCode(code),
@@ -1629,11 +1693,16 @@ function createClientsPgStore(repo) {
         users.map((row) => row.id),
         rolesByUser,
       );
+      const { decorateUserWithRoleDisplay } = require("../lib/roleDisplayLabels");
+      const displayIndex = await loadRoleDisplayIndex(repo);
       return users.map((row) =>
-        userRoleLifecycleService.hydrateUser(
-          row,
-          rolesByUser.get(String(row.id)) ?? [],
-          profiles.get(String(row.id)),
+        decorateUserWithRoleDisplay(
+          userRoleLifecycleService.hydrateUser(
+            attachDisplayLabelToUserRow(row, displayIndex),
+            rolesByUser.get(String(row.id)) ?? [],
+            profiles.get(String(row.id)),
+          ),
+          displayIndex,
         ),
       );
     },
@@ -1694,12 +1763,17 @@ function createClientsPgStore(repo) {
          LEFT JOIN users u ON u.id = a.created_by
          ORDER BY a.created_at DESC`,
       );
+      const { decorateUserWithRoleDisplay } = require("../lib/roleDisplayLabels");
+      const displayIndex = await loadRoleDisplayIndex(repo);
       return {
         users: users.map((row) =>
-          userRoleLifecycleService.hydrateUser(
-            row,
-            rolesByUser.get(String(row.id)) ?? [],
-            profiles.get(String(row.id)),
+          decorateUserWithRoleDisplay(
+            userRoleLifecycleService.hydrateUser(
+              attachDisplayLabelToUserRow(row, displayIndex),
+              rolesByUser.get(String(row.id)) ?? [],
+              profiles.get(String(row.id)),
+            ),
+            displayIndex,
           ),
         ),
         contacts: contacts.map(mapContactRow),
@@ -1720,6 +1794,8 @@ function createClientsPgStore(repo) {
     updateContact: (...args) => clientsService.updateContact(store, ...args),
     provisionContactAccount: (...args) => clientsService.provisionContactAccount(store, ...args),
     createRelation: (...args) => clientsService.createRelation(store, ...args),
+    updateRelation: (...args) => clientsService.updateRelation(store, ...args),
+    archiveRelation: (...args) => clientsService.archiveRelation(store, ...args),
     linkParent: (...args) => {
       const { linkParent } = require("../lib/parentLinking");
       return linkParent(store, ...args);

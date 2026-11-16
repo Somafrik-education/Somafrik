@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isStudentMessageTarget } from "./messagesRoleIdentity";
 
 const srcRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative: string) => fs.readFileSync(path.join(srcRoot, relative), "utf8");
@@ -59,7 +60,22 @@ assert.doesNotMatch(messages, /ExpandableCommunicationCard/);
 assert.doesNotMatch(messages, /Archiver/);
 assert.match(messages, /accessibilityLabel=\{item\.title\}/);
 assert.match(messages, /Modal visible=\{Boolean\(selectedConversation\)\}/);
-assert.match(messages, /function isStudentMessageTarget/);
+assert.match(
+  messages,
+  /isStudentMessageTarget.*from "\.\.\/lib\/messagesRoleIdentity"/,
+);
+assert.equal(
+  isStudentMessageTarget({ roleKey: "STUDENT", roleLabel: "Apprenant" }),
+  true,
+);
+assert.equal(
+  isStudentMessageTarget({ kind: "student", roleLabel: "Directeur" }),
+  true,
+);
+assert.equal(
+  isStudentMessageTarget({ roleLabel: "Élève / Étudiant" }),
+  false,
+);
 assert.match(messages, /teacherSession \? rows\.filter\(\(row\) => !isStudentMessageTarget\(row\)\) : rows/);
 assert.match(messages, /const teacherStudentThreadBlocked/);
 assert.match(messages, /canReplyInThread = canSend && scopeReady && !teacherStudentThreadBlocked/);

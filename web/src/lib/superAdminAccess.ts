@@ -10,13 +10,12 @@ export const SUPER_ADMIN_PLATFORM_VIEWS = [
   "schools",
   "subscriptions",
   "contacts",
-  "relations",
   "users",
   "permissions",
   "chartSettings",
   "notifications",
-  "messages",
   "announcements",
+  "reports",
 ] as const;
 
 export const SUPER_ADMIN_SCHOOL_SETTINGS_VIEWS = ["configuration"] as const;
@@ -35,7 +34,6 @@ export const SUPER_ADMIN_ALLOWED_FEATURES = new Set([
   "Établissements",
   "Abonnements",
   "Contacts",
-  "Relations",
   "Utilisateurs",
   "Référentiels pédagogiques",
   "Notifications",

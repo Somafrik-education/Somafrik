@@ -1,6 +1,7 @@
 "use strict";
 
 const { getCountryCodeFromScope } = require("./countryScope");
+const { isSuperAdminPrincipal } = require("./superadminPrincipal");
 
 const EDUCATION_REFERENCE_ERROR = Object.freeze({
   FORBIDDEN: "FORBIDDEN",
@@ -21,7 +22,6 @@ const EDUCATION_REFERENCE_ERROR = Object.freeze({
   LEGACY_ACADEMIC_REFERENCE_AMBIGUOUS: "LEGACY_ACADEMIC_REFERENCE_AMBIGUOUS",
 });
 
-const SUPER_ADMIN_ROLES = new Set(["Super Administrateur Somafrik", "Super Administrateur OKAFRIK"]);
 const STREAM_TYPES = new Set(["filiere", "serie", "option"]);
 
 /** Libellés UI génériques — jamais un vocabulaire RDC/Burundi comme défaut mondial. */
@@ -56,10 +56,6 @@ function createEducationReferenceError(status, message, code, details) {
   error.code = code || EDUCATION_REFERENCE_ERROR.FORBIDDEN;
   if (details) error.details = details;
   return error;
-}
-
-function isSuperAdminPrincipal(principal) {
-  return SUPER_ADMIN_ROLES.has(asTrimmed(principal?.role));
 }
 
 function isCountryAdminPrincipal(principal) {

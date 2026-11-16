@@ -26,7 +26,10 @@
  * — aucune valeur n'y provient d'une entrée utilisateur.
  */
 const TARGET_RESOURCES = Object.freeze({
-  conversation: [{ key: "conversationId", table: "school_conversations" }],
+  conversation: [
+    { key: "conversationId", table: "school_conversations" },
+    { key: "messageId", table: "school_messages" },
+  ],
   announcement: [{ key: "announcementId", table: "announcements" }],
   attendance: [
     { key: "attendanceId", table: "attendance" },

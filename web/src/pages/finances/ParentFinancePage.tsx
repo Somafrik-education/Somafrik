@@ -173,11 +173,10 @@ export function ParentFinancePage() {
         </Card>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Montant attendu" value={model.expectedLabel} />
-        <Metric label="Montant imputé" value={model.allocatedLabel} />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <Metric label="Obligation" value={model.expectedLabel} />
+        <Metric label="Encaissé" value={model.collectedLabel} />
         <Metric label="Reste à payer" value={model.remainingLabel} />
-        <Metric label="Paiements reçus" value={model.collectedLabel} />
       </div>
 
       <Card className="overflow-hidden p-0">

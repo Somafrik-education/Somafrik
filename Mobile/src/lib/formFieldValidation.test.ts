@@ -174,16 +174,14 @@ const foreignClass = validatePaymentDraft({
 assert.equal(foreignClass.classId, "Classe invalide pour cet élève.");
 
 assert.equal(
-  hasFieldErrors(
-    validatePaymentDraft({
-      studentId: "st-1",
-      amount: "25000",
-      classId: "class-6a",
-      classOptions: [{ classId: "class-6a" }],
-      obligationId: "__unallocated__",
-    }),
-  ),
-  false,
+  validatePaymentDraft({
+    studentId: "st-1",
+    amount: "25000",
+    classId: "class-6a",
+    classOptions: [{ classId: "class-6a" }],
+    obligationId: "__unallocated__",
+  }).obligationId,
+  "Les paiements libres, les avances et les trop-perçus sont interdits.",
 );
 
 const announcement = validateAnnouncementDraft({ title: "  ", message: "Hello" });

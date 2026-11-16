@@ -3,7 +3,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const seedData = require("../data");
-const { isStudentDemoAccount, resolveStudentDemoLoginIdentity, shouldSeedDemoData } = require("./demoSeedPolicy");
+const { isStudentDemoAccount, resolveStudentDemoLoginIdentity, shouldSeedDemoData, assertProductionSecurityConfiguration } = require("./demoSeedPolicy");
+const { superadminLoginPassword } = require("./superadminSeedSecret");
+
+// P0-02 : branché ici pour rester dans verify:users-login-identity sans toucher package.json
+// (release-governance se déclenche sur package.json et pin origin/main hors périmètre).
+require("../services/credentialService.test.js");
+require("./authPlaintextPassword.test.js");
 
 test("isStudentDemoAccount reconnaît le compte démo Élève avant toute ligne students", () => {
   const student = seedData.userAccounts.find((user) => user.id === "USER-STUDENT-0001");
@@ -57,6 +63,20 @@ test("resolveStudentDemoLoginIdentity n'emprunte pas le contact parent", () => {
   assert.equal(marieLogin.phone, "");
 });
 
+test("l'abonnement seed CD-2026-0001 autorise encore la connexion à la date du jour", () => {
+  const { resolveSchoolAccess } = require("../services/schoolSubscriptionAccessService");
+  const access = resolveSchoolAccess("CD-2026-0001", {
+    schools: seedData.platformSchools,
+    subscriptions: seedData.subscriptions,
+  });
+  assert.notEqual(
+    access.level,
+    "blocked",
+    `seed CD-2026-0001 bloqué (${access.lifecycle}, ${access.daysLate} j) — renouveler endDate démo`,
+  );
+  assert.ok(["full", "limited"].includes(access.level));
+});
+
 test("les écritures users du seed démo restent uniques par établissement+email", () => {
   const planned = [];
   for (const user of seedData.userAccounts) {
@@ -88,4 +108,41 @@ test("les écritures users du seed démo restent uniques par établissement+emai
   }
   const duplicates = [...groups.entries()].filter(([, sources]) => sources.length > 1);
   assert.deepEqual(duplicates, [], "aucune collision school+email dans le seed prévu");
+});
+
+test("SKIP_DEMO_SEED=true n'est pas suffisant : production refuse aussi un bootstrap Superadmin 1234", () => {
+  assert.throws(
+    () =>
+      assertProductionSecurityConfiguration({
+        NODE_ENV: "production",
+        SOMAFRIK_SKIP_DEMO_SEED: "true",
+        BOOTSTRAP_SUPERADMIN_PASSWORD: "1234",
+      }),
+    /Superadmin/,
+  );
+});
+
+test("le seed démo n'applique pas 1234 au Superadmin", () => {
+  assert.equal(shouldSeedDemoData({ NODE_ENV: "test" }), true);
+  const superadmin = seedData.userAccounts.find((user) => user.id === "USER-SUPERADMIN");
+  assert.ok(superadmin);
+  assert.equal(superadmin.password, superadminLoginPassword());
+  assert.notEqual(superadmin.password, "1234");
+  assert.ok(String(superadmin.password).length >= 12);
+});
+
+test("P0-02 le seed mémoire materialise des hash scrypt pour la connexion", () => {
+  assert.equal(shouldSeedDemoData({ NODE_ENV: "test" }), true);
+  const { verifySecret } = require("../services/credentialService");
+  const admin = seedData.userAccounts.find((user) => user.id === "USER-ADMIN1");
+  assert.ok(admin);
+  assert.match(String(admin.passwordHash), /^scrypt\$/);
+  assert.equal(verifySecret("1234", admin.passwordHash), true);
+  assert.equal(admin.password, "1234");
+
+  const superadmin = seedData.userAccounts.find((user) => user.id === "USER-SUPERADMIN");
+  assert.ok(superadmin);
+  assert.match(String(superadmin.passwordHash), /^scrypt\$/);
+  assert.equal(verifySecret("1234", superadmin.passwordHash), false);
+  assert.equal(verifySecret(superadminLoginPassword(), superadmin.passwordHash), true);
 });

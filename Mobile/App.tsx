@@ -8,6 +8,7 @@ import { AuthProvider } from "./src/context/AuthContext";
 import { AdminDataProvider } from "./src/context/AdminDataContext";
 import OutboxRuntime from "./src/components/OutboxRuntime";
 import L1CacheRuntime from "./src/offline/l1/L1CacheRuntime";
+import RollCallOfflineRuntime from "./src/offline/rollCall/runtime/RollCallOfflineRuntime";
 import NativeSqlCipherBootProbe from "./src/offline/l1/NativeSqlCipherBootProbe";
 import PushNotificationsRuntime from "./src/components/PushNotificationsRuntime";
 import EnvironmentBadge from "./src/components/EnvironmentBadge";
@@ -60,6 +61,7 @@ export default function App() {
             <AdminDataProvider>
               <OutboxRuntime />
               <L1CacheRuntime />
+              <RollCallOfflineRuntime />
               <PushNotificationsRuntime />
               <AppNavigator />
               <EnvironmentBadge />

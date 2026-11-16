@@ -78,14 +78,14 @@ describe("FIN-L3-08 PARITÉ — Web ↔ Mobile sélecteur élève", () => {
       classId: L308_CLASS_ID,
       paymentMethod: L308_METHOD,
       paidAt: L308_DATE,
-      lines: [{ obligationId: "__unallocated__", amount: L308_AMOUNT, label: "Non imputé" }],
+      lines: [{ obligationId: "obl-l308", amount: L308_AMOUNT, label: "Scolarité" }],
     });
     const mobilePayload = mobileWrite({
       studentId: L308_HOMONYM_A.studentId,
       classId: L308_CLASS_ID,
       method: L308_METHOD,
       date: L308_DATE,
-      lines: [{ obligationId: "__unallocated__", amount: L308_AMOUNT, label: "Non imputé" }],
+      lines: [{ obligationId: "obl-l308", amount: L308_AMOUNT, label: "Scolarité" }],
     });
     expect(webPayload.studentId).toBe(mobilePayload.studentId);
     expect(webPayload.studentId).toBe(L308_HOMONYM_A.studentId);

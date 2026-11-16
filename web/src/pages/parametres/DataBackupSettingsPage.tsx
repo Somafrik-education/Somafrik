@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { Database, DatabaseBackup, Download, FileSpreadsheet } from "lucide-react";
 import { useData } from "../../context/DataContext";
 import { useAuth } from "../../context/AuthContext";
@@ -6,6 +7,7 @@ import { useActiveSchool } from "../../context/ActiveSchoolContext";
 import { getScopedEntityRows, type SchoolEntityKey } from "../../lib/entityModules";
 import { rowsToCsv, downloadCsv } from "../../lib/csv";
 import { api } from "../../api/client";
+import { shouldDenyWebSchoolDomain } from "../../lib/webSchoolDomainDeny";
 import {
   Button,
   Card,
@@ -81,16 +83,18 @@ export function SettingsDataPage() {
   const [busy, setBusy] = useState(false);
 
   const user = session?.user ?? null;
+  const denied = shouldDenyWebSchoolDomain(user);
   const jwtSchool = user?.schoolCode && user.schoolCode !== "*" ? user.schoolCode : "";
   const exportSchoolCode = jwtSchool || activeSchoolCode || "";
 
   const datasetRows = useMemo(() => {
     const map = new Map<SchoolEntityKey, Row[]>();
+    if (denied) return map;
     DATASETS.forEach((dataset) => {
       map.set(dataset.key, getScopedEntityRows(dataset.key, user, state) as Row[]);
     });
     return map;
-  }, [state, user]);
+  }, [denied, state, user]);
 
   function handleExportCsv(dataset: DatasetConfig) {
     const rows = datasetRows.get(dataset.key) ?? [];
@@ -105,6 +109,7 @@ export function SettingsDataPage() {
   }
 
   async function handleCanonicalExport() {
+    if (denied) return;
     setBusy(true);
     try {
       const query = exportSchoolCode ? `?schoolCode=${encodeURIComponent(exportSchoolCode)}` : "";
@@ -118,6 +123,10 @@ export function SettingsDataPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (denied) {
+    return <Navigate to="/parametres" replace />;
   }
 
   return (

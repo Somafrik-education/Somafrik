@@ -173,12 +173,12 @@ function mergeUserRowsPreservingCredentials(prev: Row[] = [], remote: Row[] = []
       if (String(existing.temporaryPassword ?? "").trim()) {
         merged.temporaryPassword = existing.temporaryPassword;
       }
-      if (existing.mustChangePassword != null) {
-        merged.mustChangePassword = existing.mustChangePassword;
-      }
-      if (existing.hasTemporaryPassword != null) {
-        merged.hasTemporaryPassword = existing.hasTemporaryPassword;
-      }
+    }
+    if (row.mustChangePassword == null && existing.mustChangePassword != null) {
+      merged.mustChangePassword = existing.mustChangePassword;
+    }
+    if (row.hasTemporaryPassword == null && existing.hasTemporaryPassword != null) {
+      merged.hasTemporaryPassword = existing.hasTemporaryPassword;
     }
     return merged;
   });

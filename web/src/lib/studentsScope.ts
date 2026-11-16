@@ -1,5 +1,4 @@
 import type { BackOfficeState, SessionUser, UserAccount } from "../types";
-import { COUNTRY_ADMIN_ROLE, isSuperAdminRole } from "./orgHierarchy";
 import {
   buildUserScopeTrace,
   isSchoolScopedRole,
@@ -8,6 +7,7 @@ import {
   type SchoolScopeErrorCode,
   type UserScopeTrace,
 } from "./schoolCanonicalIdentity";
+import { shouldDenyWebSchoolDomain } from "./webSchoolDomainDeny";
 
 type StudentRow = Record<string, unknown> & {
   schoolId?: string;
@@ -132,11 +132,11 @@ export function projectScopedStudents(
   if (!user) {
     return emptyProjection(null, received, null);
   }
-  if (isSuperAdminRole(user.role)) {
-    return withStudents(user, received, received, null);
+  if (shouldDenyWebSchoolDomain(user)) {
+    return emptyProjection(user, received, null);
   }
-  if (user.role === COUNTRY_ADMIN_ROLE || !isSchoolScopedRole(user.role)) {
-    return withStudents(user, received, received, null);
+  if (!isSchoolScopedRole(user.role)) {
+    return emptyProjection(user, received, null);
   }
 
   const identity = resolveSessionSchoolIdentity(user);

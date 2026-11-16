@@ -1,0 +1,185 @@
+name: Backend test baseline (MONO-T0)
+
+# Exécute la TOTALITÉ des tests backend node:test (unitaires puis PostgreSQL),
+# avec mesure de couverture séparée. Les exceptions sont déclarées dans
+# scripts/backend-test-baseline.manifest.json et vérifiées, jamais ignorées.
+# Documentation : docs/project/BACKEND-TEST-BASELINE.md
+#
+# CI-FAST-01 — niveau B (FULL CI) : baseline complète, série, avec couverture.
+# Ne tourne plus sur chaque PR (le niveau A, PR Gates, exécute la sélection
+# backend en lots et bloque via « Required ») ; tourne chaque nuit, après
+# chaque fusion dans develop, à la demande, et dans le niveau C (release-gate.yml)
+# sur le SHA candidat exact. Un échec planifié ou post-fusion ouvre / met à jour
+# une issue « ci:full-failure » (ci-full-failure-report.yml : visible, jamais silencieux).
+# Voir docs/project/CI-FAST-01.md.
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "backend/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/backend-test-baseline*"
+      - "scripts/fixtures/backend-test-baseline/**"
+      - "scripts/ci-pg-select*"
+      - "scripts/ci-baseline-*"
+      - "scripts/ci-fast-01*"
+      - "scripts/mono-t1-route-inventory*"
+      - "docs/project/MONO-T1-RBAC-MATRIX.json"
+      - "docs/project/MONO-T1-ROUTES.*"
+      - ".github/workflows/backend-test-baseline.yml"
+  schedule:
+    - cron: "45 2 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "SHA (40 caractères) ou branche à tester ; vide = branche choisie"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        description: "SHA candidat exact (niveau C)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Appel du niveau C : un groupe par SHA. Fusions successives dans develop :
+  # la plus récente remplace l'exécution en cours (elle contient la précédente).
+  group: backend-test-baseline-${{ github.event_name }}-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+env:
+  NODE_VERSION: "22.12.0"
+
+jobs:
+  unit:
+    name: Backend unit tests + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          npm ci
+          for attempt in 1 2 3; do
+            if npm ci --prefix backend; then break; fi
+            if [ "$attempt" -eq 3 ]; then echo "npm ci backend failed after 3 attempts"; exit 1; fi
+            echo "Retrying backend install (Puppeteer Chrome archive)"
+            rm -rf "$HOME/.cache/puppeteer/chrome"
+          done
+      - name: Baseline guard tests and CI-FAST-01 tools (no database)
+        run: node --test scripts/backend-test-baseline.test.js scripts/ci-fast-01.test.js
+      - name: MONO-T1 route inventory is up to date (no database)
+        # Relevé runtime des routes de backend/server.js (base loopback injoignable,
+        # aucun port ouvert) comparé à docs/project/MONO-T1-ROUTES.{json,md}.
+        run: node scripts/mono-t1-route-inventory.js --check
+      - name: Run backend unit baseline
+        run: node scripts/backend-test-baseline.js unit --coverage
+      - name: Upload unit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-baseline-unit
+          path: |
+            backend-test-baseline/unit/*.json
+            backend-test-baseline/unit/*.md
+            backend-test-baseline/unit/coverage-lcov.info
+          if-no-files-found: warn
+          retention-days: 14
+
+  pg:
+    name: Backend PostgreSQL tests + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          # Base sentinelle exigée par scripts/backend-test-baseline-guards.js.
+          POSTGRES_DB: somafrik_disposable_test_cluster
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      # Cluster éphémère du job, dédié aux tests. DATABASE_URL n'est jamais lue par
+      # l'exécuteur : il crée et supprime ses propres bases somafrik_test_run_*.
+      SOMAFRIK_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/somafrik_disposable_test_cluster
+      JWT_SECRET: ci-test-secret-with-enough-length-for-production-checks
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          npm ci
+          for attempt in 1 2 3; do
+            if npm ci --prefix backend; then break; fi
+            if [ "$attempt" -eq 3 ]; then echo "npm ci backend failed after 3 attempts"; exit 1; fi
+            echo "Retrying backend install (Puppeteer Chrome archive)"
+            rm -rf "$HOME/.cache/puppeteer/chrome"
+          done
+      # BULLETIN-SEC-01 : pdftotext lit le texte des bulletins PDF générés
+      # (bulletinSec01.http.pg.test.js). En CI, son absence fait échouer ces tests.
+      - name: Install poppler-utils (pdftotext)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          pdftotext -v
+      - name: Declare the job cluster disposable (sentinel comment)
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d somafrik_disposable_test_cluster -v ON_ERROR_STOP=1 \
+            -c "COMMENT ON DATABASE somafrik_disposable_test_cluster IS 'somafrik:disposable-test-cluster'"
+          psql -h localhost -U postgres -d somafrik_disposable_test_cluster -Atc "SHOW server_version"
+      - name: Baseline guard tests (real cluster)
+        run: node --test scripts/backend-test-baseline.test.js
+      - name: Run backend PostgreSQL baseline
+        run: node scripts/backend-test-baseline.js pg --coverage
+      - name: Upload PostgreSQL results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-baseline-pg
+          path: |
+            backend-test-baseline/pg/*.json
+            backend-test-baseline/pg/*.md
+            backend-test-baseline/pg/coverage/lcov.info
+            backend-test-baseline/pg/coverage/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14

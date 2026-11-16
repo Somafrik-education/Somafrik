@@ -1,4 +1,5 @@
 import { normalize } from "./format";
+import { formatVisibleRoleLabels, visibleRoleLabel } from "./roleDisplayLabels";
 
 export type BusinessProfileKind = "student_login" | "teacher" | "staff" | "unassigned" | "conflict";
 
@@ -11,6 +12,14 @@ export type BusinessProfileUser = {
   activeRoles?: string[];
   secondaryRoles?: string[];
   roleKeys?: string[];
+  roleKey?: string;
+  effectiveRoleLabel?: string;
+  effectiveRoleLabels?: Array<{
+    roleKey: string;
+    defaultLabel: string;
+    displayLabel?: string | null;
+    effectiveLabel: string;
+  }>;
   assignmentStatus?: string;
   businessProfileLabel?: string;
   businessProfileConflict?: boolean;
@@ -99,6 +108,8 @@ export function formatBusinessProfileKind(row: BusinessProfileUser): string {
 
 /** Rôles d'accès uniquement. Distinct du type métier. */
 export function formatAccessRolesDisplay(row: BusinessProfileUser): string {
+  const visible = formatVisibleRoleLabels(row) || visibleRoleLabel(row);
+  if (visible) return visible;
   if (isStudentLinkedAccount(row)) return STUDENT_ACCESS_ROLE_LABEL;
   const labels = [
     ...(Array.isArray(row.activeRoles) ? row.activeRoles : []),

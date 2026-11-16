@@ -434,6 +434,51 @@ WHERE p.amount > 0
   AND NOT EXISTS (
     SELECT 1 FROM payment_items i WHERE i.payment_id = p.id
   );
+
+-- FIN-SEC-01 — un nouvel encaissement scolaire doit être couvert, au commit,
+-- par des affectations qui égalent son montant. Le drapeau de session est posé
+-- par la transaction d'encaissement. Les écritures historiques et les insertions
+-- hors de ce drapeau (seeds, reçus déjà enregistrés) ne sont pas réécrites.
+CREATE OR REPLACE FUNCTION payments_assert_collection_covered()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  enforce TEXT;
+  allocated NUMERIC(12,2);
+  status TEXT;
+BEGIN
+  enforce := current_setting('somafrik.enforce_collection_cover', true);
+  IF enforce IS DISTINCT FROM 'on' THEN
+    RETURN NULL;
+  END IF;
+
+  status := lower(btrim(COALESCE(NEW.payment_status, '')));
+  IF NEW.cancelled_at IS NOT NULL OR status IN ('cancelled', 'annule', 'pending') THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT COALESCE(SUM(pa.amount), 0)
+    INTO allocated
+    FROM payment_allocations pa
+   WHERE pa.payment_id = NEW.id
+     AND pa.reversed_at IS NULL;
+
+  IF allocated + 0.005 < COALESCE(NEW.amount, 0) OR allocated > COALESCE(NEW.amount, 0) + 0.005 THEN
+    RAISE EXCEPTION 'FINANCE_PAYMENT_NOT_COVERED'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_payments_collection_covered ON payments;
+CREATE CONSTRAINT TRIGGER trg_payments_collection_covered
+  AFTER INSERT ON payments
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW
+  EXECUTE FUNCTION payments_assert_collection_covered();
 `;
 
 module.exports = { FINANCE_SCHEMA_SQL };

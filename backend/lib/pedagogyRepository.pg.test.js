@@ -1218,7 +1218,7 @@ async function main() {
     );
     assert.equal(Number(teacherUpdated.score ?? teacherUpdated.value), 15, "NOTES-P1 : UPDATE note après affectation restaurée");
 
-    const projection = await store.listProjection();
+    const projection = await store.listProjection({ platform: true });
     const schoolCourses = projection.courses.filter((row) => row.schoolCode === "CD-2026-0001");
     const schoolSlots = projection.courseSchedules.filter(
       (row) => String(row.schoolId) === String(fixture.schoolA),

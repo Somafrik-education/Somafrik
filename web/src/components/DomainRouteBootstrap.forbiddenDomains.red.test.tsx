@@ -140,7 +140,8 @@ describe("P0/P1 — pages globales indépendantes des domaines Communication", (
       </Providers>,
     );
 
-    await waitForPathCall(ctl, (path) => path === "/students");
+    await waitForPathCall(ctl, (path) => path.startsWith("/dashboard/school-kpis"));
+    expect(ctl.calls.some((call) => call.path === "/students" || call.path === "/presences" || call.path === "/payments")).toBe(false);
     await waitFor(() => {
       expect(screen.getByLabelText(/Rafraîchir les données/i)).toBeEnabled();
     }, { timeout: 5000 });

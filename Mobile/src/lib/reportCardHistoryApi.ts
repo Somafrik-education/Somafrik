@@ -23,3 +23,4 @@ export async function listPublishedVersionHistory(reportCardId: string) {
   );
   return Array.isArray(data?.versions) ? data.versions : [];
 }
+

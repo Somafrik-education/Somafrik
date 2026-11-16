@@ -82,17 +82,9 @@ const SETTING_CARDS: SettingCard[] = [
     view: "configuration",
   },
   {
-    to: "/parametres/documents",
-    title: "Documents",
-    description: "Modèles de bulletins, reçus, attestations, en-têtes et QR code.",
-    icon: FileText,
-    status: "available",
-    view: "bulletinDesign",
-  },
-  {
-    to: "/parametres/bulletins-configuration",
-    title: "Configuration bulletins",
-    description: "File d'attente, gabarit générique et activation du modèle de bulletin.",
+    to: "/parametres/bulletins-catalogue",
+    title: "Catalogue des bulletins",
+    description: "Modèles de bulletin proposés aux établissements et disponibilité par pays.",
     icon: FileText,
     status: "available",
     view: "reportCardConfiguration",
@@ -111,7 +103,7 @@ const SETTING_CARDS: SettingCard[] = [
     description: "Export CSV d'extrait affiché et export JSON versionné. La restauration complète n'est pas disponible.",
     icon: DatabaseBackup,
     status: "available",
-    view: "configuration",
+    view: "dataExport",
   },
   {
     to: "/parametres/notifications",
@@ -163,13 +155,9 @@ const SUPERADMIN_SETTING_PATHS = new Set<string>([
   "/parametres/abonnements",
   "/parametres/graphiques",
   "/parametres/securite",
-  "/parametres/donnees",
-  "/parametres/bulletins-configuration",
+  "/parametres/bulletins-catalogue",
 ]);
-const COUNTRY_ADMIN_SETTING_PATHS = new Set<string>([
-  "/parametres/abonnements",
-  "/parametres/donnees",
-]);
+const COUNTRY_ADMIN_SETTING_PATHS = new Set<string>(["/parametres/abonnements"]);
 
 /** Hub Paramètres : grille de cartes par domaine de configuration (P-006). */
 export function SettingsHubPage() {

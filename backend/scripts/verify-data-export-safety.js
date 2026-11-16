@@ -1,5 +1,6 @@
 "use strict";
 
+const { superadminLoginPassword } = require("../lib/superadminSeedSecret");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -155,7 +156,7 @@ async function runMemorySuite() {
       admin: { identifier: "admin", password: "1234", schoolCode: "CD-2026-0001" },
       otherAdmin: { identifier: "admin", password: "1234", schoolCode: "BI-2026-0002" },
       teacher: { identifier: "ENS-0001", password: "1234", schoolCode: "CD-2026-0001" },
-      superadmin: { identifier: "superadmin", password: "1234" },
+      superadmin: { identifier: "superadmin", password: superadminLoginPassword() },
     });
   } finally {
     child.kill("SIGTERM");
@@ -166,6 +167,7 @@ async function preparePgHttpDatabase(databaseUrl) {
   const isolatedUrl = await ensureIsolatedDatabase(databaseUrl, PG_HTTP_DATABASE);
   const pool = new Pool({ connectionString: isolatedUrl });
   const passwordHash = hashSecret("1234");
+  const superadminPasswordHash = hashSecret(superadminLoginPassword());
   try {
     await pool.query("DROP SCHEMA public CASCADE");
     await pool.query("CREATE SCHEMA public");
@@ -217,7 +219,7 @@ async function preparePgHttpDatabase(databaseUrl) {
     await pool.query(
       `INSERT INTO users (school_id, user_code, first_name, last_name, email, password_hash, pin_hash, role, status)
        VALUES (NULL, 'SUPER-EXP', 'Super', 'Admin', 'super-export@test.cd', $1, $1, 'SUPER_ADMIN', 'active')`,
-      [passwordHash],
+      [superadminPasswordHash],
     );
     return { isolatedUrl };
   } finally {
@@ -247,7 +249,7 @@ async function runPgSuite(databaseUrl) {
       admin: { identifier: "admin-export@test.cd", password: "1234", schoolCode: "CD-2026-0001" },
       otherAdmin: { identifier: "admin-bi-export@test.bi", password: "1234", schoolCode: "BI-2026-0002" },
       teacher: { identifier: "ens-export@test.cd", password: "1234", schoolCode: "CD-2026-0001" },
-      superadmin: { identifier: "super-export@test.cd", password: "1234" },
+      superadmin: { identifier: "super-export@test.cd", password: superadminLoginPassword() },
     });
 
     const pool = new Pool({ connectionString: prepared.isolatedUrl });
