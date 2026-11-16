@@ -6,6 +6,7 @@
 | Candidate | `8124d331e3ef1a39ceea150e3c96e3e65a88ce7c` (inchangée par ce mandat) |
 | Branche documentaire | `audit/go-prod-g5-01`, depuis `develop@b925ba9a1d58eb099dc62c8277fb4a9ddaa21e68` |
 | Exécutant | Claude Code (environnement cloud sans accès Supabase ni Render : proxy 403, aucun identifiant) |
+| Révision | v2 : corrections du runbook de restauration demandées par la revue CTO de #1165 ; décisions CTO du 16/11 intégrées |
 | Recommandation G5 | **FAIL / NOT VERIFIED : G5 reste bloquant.** |
 
 Documents associés :
@@ -30,7 +31,9 @@ Documents associés :
 
 ## 2. Lot B — Restauration isolée
 
-**NOT VERIFIED.** Aucune destination isolée n'est disponible dans cet environnement, et aucune n'a été autorisée. Je n'ai créé aucune infrastructure. La procédure complète, gratuite (conteneur local `postgres:17` sans réseau), est dans le runbook de restauration, avec ses critères PASS.
+**NOT VERIFIED** pour une vraie sauvegarde. Une **validation à blanc** sur base vide (réseau interne, PG 17, boot v25 puis `main`, labo 20261105) a été exécutée : runbook §9.
+
+Détail : aucune sauvegarde de production n'est accessible, et l'extraction d'un dump n'est pas autorisée (décision CTO du 16/11). Aucune infrastructure payante n'a été créée : la validation à blanc a utilisé un daemon Docker local éphémère, supprimé ensuite. La procédure complète et gratuite (conteneur `postgres:17` sur un réseau Docker `--internal`, API de test sur ce même réseau) est dans le runbook de restauration, avec ses critères PASS.
 
 ## 3. Lot C — Migrations (synthèse ; détail dans `MIGRATIONS.md`)
 
@@ -75,21 +78,21 @@ Documents associés :
 |---|---|---|---|
 | R1 | **P0** | Aucune restauration PostgreSQL prouvée ; sauvegardes non auditées | Runbook de restauration §1–5, exécuté par un détenteur de l'accès |
 | R2 | **P0** | `autoDeploy=yes` + migrations au boot : un merge dans `main` modifie la prod sans étape humaine | Runbook Render §3, avant tout merge, sur GO CTO |
-| R3 | **P1** | Rollback applicatif non prouvé à l'exécution | Runbook de restauration §6 |
-| R4 | **P1** | `20261105_report_card_class_scope` casse l'API `main` (bulletins, voire boot) | Point de non-retour : hors fenêtre de déploiement ; rollback SQL avant tout retour à `main` |
-| R5 | **P1** | Index non concurrents sur `students` et `subjects` au boot | Mesurer sur la copie restaurée ; décider s'il faut une PR `CONCURRENTLY` hors boot |
-| R6 | P2 | Migrations testées seulement sur PG 16, production en 17 | Restauration et boot sur `postgres:17` (runbook §3, §6) |
-| R7 | P2 | Disques persistants Render non couverts par la sauvegarde PostgreSQL | Inventaire et sauvegarde séparés |
+| R3 | **P1** | Rollback applicatif non prouvé avec des données réelles (prouvé à vide sur PG 17, runbook §9) | Runbook de restauration §6 sur copie restaurée |
+| R4 | **P1** | `20261105_report_card_class_scope` casse l'API `main` (bulletins, voire boot) | **Décision CTO 16/11 : non appliquée pendant le déploiement v25.** Rollback SQL avant tout retour à `main` si elle est appliquée plus tard |
+| R5 | **P1** | Index non concurrents sur `students` et `subjects` au boot | **Décision CTO 16/11 : pas de PR corrective immédiate.** Mesure sur PostgreSQL 17 (runbook §6.1), puis décision |
+| R6 | P2 | Migrations testées en CI seulement sur PG 16 ; boot v25 validé à vide sur PG 17.12 (runbook §9) | Boot sur copie restaurée `postgres:17` (runbook §6) |
+| R7 | **P1** | Disques persistants Render non couverts par la sauvegarde PostgreSQL. **L'API est `not_ready` (503) sans `SOMAFRIK_COMMUNICATION_STORAGE` ni `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE`** (constaté à l'exécution, runbook §9) | Inventaire et sauvegarde séparés des deux stockages ; vérifier leur montage sur le service API de production |
 | R8 | P2 | Pas de table de suivi des migrations : état de la prod non traçable | Relevé des métadonnées en lecture seule (MIGRATIONS §6.1) |
 | R9 | P2 | 17 migrations sur 21 sans script inverse ; privilèges `20261105` sans script inverse | Acceptable si R3 est prouvé (schéma additif conservé) |
 
 ## 7. Actions restantes (par un détenteur des accès, sur GO CTO)
 
 1. Audit des sauvegardes Supabase en lecture seule ; publication des métadonnées.
-2. Dump logique chiffré, puis restauration sur `postgres:17` isolé ; contrôles de cohérence ; mesure du RTO.
+2. Dump logique chiffré (**extraction non autorisée à ce jour** : GO CTO explicite requis), puis restauration sur `postgres:17` dans un réseau Docker interne ; vérification d'empreinte ; contrôles de cohérence ; mesure du RTO.
 3. Boot v25 puis boot `main` sur la copie, avec smoke (preuve R3, mesure R5).
 4. Relevé de la configuration Render des deux services ; neutralisation de l'AutoDeploy sur GO spécifique, avec preuve avant/après.
-5. Décision CTO sur `20261105_report_card_class_scope` et sur les index `CONCURRENTLY`.
+5. Décisions CTO déjà prises le 16/11 (#1165) : `20261105_report_card_class_scope` hors fenêtre v25 ; index mesurés avant toute PR corrective.
 
 **Une PR documentaire verte ne qualifie pas G5.**
 

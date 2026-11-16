@@ -96,12 +96,15 @@ Ordre d'exécution = ordre lexicographique des noms de fichiers. Au boot, l'ordr
 
 Analyse statique de `main` exécuté sur un schéma v25 :
 
-- **17 migrations de boot : compatible a priori.** Elles sont additives, sans colonne `NOT NULL` sans défaut, et sans trigger actif pour l'API `main`. Le boot de `main` rejoue son propre DDL `IF NOT EXISTS`, qui ne devrait pas entrer en conflit. **Ce n'est pas prouvé à l'exécution.**
+- **17 migrations de boot : compatible a priori, et confirmé à vide** : `main@ef8bc95` démarre sans erreur sur un schéma PG 17 migré par le boot v25 (runbook §9). **Non prouvé avec des données réelles.**
+- Détail de l'analyse : Elles sont additives, sans colonne `NOT NULL` sans défaut, et sans trigger actif pour l'API `main`. Le boot de `main` rejoue son propre DDL `IF NOT EXISTS`, qui ne devrait pas entrer en conflit. **Ce n'est pas prouvé à l'exécution.**
 - **`20261105_report_card_class_scope` : INCOMPATIBLE, confirmé dans le code.**
   1. `main` exécute `INSERT INTO report_card_active_bindings … ON CONFLICT (school_id, model_key) DO UPDATE` (`backend/db/reportCardConfigurationPgStore.js:244` sur `main`). Après la migration, la PK devient `(id)` et l'unicité `(school_id, model_key)` ne survit que sous la forme d'un **index partiel** `WHERE class_id IS NULL`. PostgreSQL refuse un `ON CONFLICT` sans le prédicat correspondant : l'**activation d'un modèle de bulletin échoue** sur l'API `main`.
   2. Au boot, `main` exécute sans condition `CREATE UNIQUE INDEX IF NOT EXISTS uq_report_card_configuration_one_active ON report_card_configuration_requests (school_id, model_key) WHERE status = 'ACTIVE'` (`reportCardConfigurationSql.js:113`), index supprimé par la migration. S'il existe à la fois une configuration ACTIVE établissement et une configuration ACTIVE classe pour le même modèle, **la création échoue et l'API `main` ne démarre pas**.
 
-**Règle proposée :** `20261105_report_card_class_scope` est un **point de non-retour applicatif**. Ne pas l'appliquer pendant la fenêtre de déploiement v25. L'appliquer seulement une fois v25 stabilisée, avec une décision CTO dédiée. Pour revenir à `main` ensuite, exécuter d'abord `20261105_report_card_class_scope.rollback.sql`, après vérification qu'aucune configuration de classe ne doit être conservée.
+**Confirmé à l'exécution le 16/11** (validation à blanc sur PostgreSQL 17, base vide, runbook §9) : avant la migration, l'`INSERT … ON CONFLICT (school_id, model_key)` de `main` est accepté ; après, PostgreSQL répond `there is no unique or exclusion constraint matching the ON CONFLICT specification`. L'échec du boot (point 2) reste conditionnel aux données et n'est pas reproduit.
+
+**Règle (décision CTO du 16/11) :** `20261105_report_card_class_scope` est un **point de non-retour applicatif**. Ne pas l'appliquer pendant la fenêtre de déploiement v25. L'appliquer seulement une fois v25 stabilisée, avec une décision CTO dédiée. Pour revenir à `main` ensuite, exécuter d'abord `20261105_report_card_class_scope.rollback.sql`, après vérification qu'aucune configuration de classe ne doit être conservée.
 
 **Preuve requise pour PASS :** sur une copie restaurée de production, démarrer la candidate (boot = 17 migrations), puis arrêter et démarrer `main@ef8bc95` sur cette même base. Smoke : login, présences, notes, finance, bulletins (activation de modèle incluse). Voir `GO-PROD-G5-01-RESTORE-RUNBOOK.md` §6.
 
@@ -123,5 +126,5 @@ Analyse statique de `main` exécuté sur un schéma v25 :
 
 1. Lire en production (accès autorisé, lecture seule) quelles colonnes, tables, contraintes et index v25 existent déjà, pour reconstituer l'état réel : il n'existe pas de table de suivi des migrations. Requêtes de métadonnées uniquement : `information_schema.columns`, `pg_constraint`, `pg_indexes`.
 2. Exécuter le runbook de restauration jusqu'au §6 (boot v25, puis rollback applicatif `main`) sur PostgreSQL 17. Mesurer les durées et verrous des migrations de boot.
-3. Décision CTO sur `20261105_report_card_class_scope` : hors fenêtre de déploiement.
-4. Décision CTO : faut-il une PR séparée pour créer les index de `20261006` et `20261103` avec `CONCURRENTLY` hors boot ? Je ne l'ai pas faite : c'est un changement de code.
+3. **Décidé par le CTO le 16/11 (#1165)** : `20261105_report_card_class_scope` n'est pas appliquée pendant le déploiement v25.
+4. **Décidé par le CTO le 16/11 (#1165)** : pas de PR corrective immédiate pour les index de `20261006` et `20261103`. Les mesurer d'abord sur PostgreSQL 17 (runbook §6.1), puis décider.

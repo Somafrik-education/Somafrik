@@ -23,7 +23,8 @@
 |---|---|---|
 | Branche suivie | `main` attendu | Déclaré CTO ; NOT VERIFIED par Claude |
 | `autoDeploy` / déclencheur | `yes` / `commit` | Déclaré CTO ; NOT VERIFIED par Claude |
-| Commit actuellement live | SHA du dernier deploy `live` ; attendu `ef8bc951…` ou antérieur | NOT VERIFIED |
+| Commit actuellement live | SHA du dernier deploy `live` ; attendu `ef8bc951…` ou antérieur. Lecture possible aussi sans dashboard : `GET https://api.somafrik.app/api/health` → champ `gitSha` (alimenté par `RENDER_GIT_COMMIT`, `backend/lib/deployGitSha.js`, déjà présent sur `main@ef8bc95`). Lecture HTTP publique, sans authentification ni modification | NOT VERIFIED |
+| Stockages persistants de l'API | Montage effectif de `SOMAFRIK_COMMUNICATION_STORAGE` et `SOMAFRIK_REPORT_CARD_SOURCE_STORAGE` : sans eux, `/api/health` répond 503 `not_ready` (constaté à blanc, runbook de restauration §9) | NOT VERIFIED |
 | État des 5 derniers deploys | `live`, `deactivated`, `build_failed`… | NOT VERIFIED |
 | Service suspendu ou actif | MIG-AUD-01 a observé `x-render-routing: suspend` (HTTP 503) le 29/10/2026 sur la prod | **À revérifier : si la prod est suspendue, un merge ne la relance pas forcément, mais le risque reste entier à la réactivation** |
 | Disque persistant monté (API) | Nom, point de montage, taille | NOT VERIFIED (`docs/render.md:85`) |
