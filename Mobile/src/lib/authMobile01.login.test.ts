@@ -11,9 +11,11 @@ import path from "node:path";
 import { buildMobileLoginPayload, usesPasswordLoginField } from "./platformLogin";
 import {
   ERROR_MESSAGES,
+  FORBIDDEN_LOGIN_MESSAGES,
   LOGIN_SCREEN_COPY,
   LOGIN_TEST_IDS,
   ROLE_SELECTION_COPY,
+  classifyForbiddenLoginError,
   isUserFriendlyErrorMessage,
   mapIdentifyApiError,
   mapLoginApiError,
@@ -182,7 +184,7 @@ const cases: Case[] = [
       assert.equal(mapLoginApiError("Internal error at /api/login", "teacher", 500), ERROR_MESSAGES.serverUnavailable);
       assert.equal(
         mapLoginApiError("Etablissement suspendu. Connexion indisponible.", "teacher", 403),
-        "Etablissement suspendu. Connexion indisponible.",
+        FORBIDDEN_LOGIN_MESSAGES.schoolSuspended,
       );
       assert.equal(mapLoginApiError("TypeError: undefined jwt stack", "teacher", 403), ERROR_MESSAGES.mobileAccessDenied);
     },
@@ -218,8 +220,10 @@ const cases: Case[] = [
         mapIdentifyApiError("Aucun compte utilisateur trouvé. Contactez l'administration de l'établissement.", 404),
         ERROR_MESSAGES.invalidIdentifier,
       );
-      assert.equal(mapIdentifyApiError("Ce compte utilisateur n'est pas autorisé sur l'application mobile.", 403),
-        "Ce compte utilisateur n'est pas autorisé sur l'application mobile.");
+      assert.equal(
+        mapIdentifyApiError("Ce compte utilisateur n'est pas autorisé sur l'application mobile.", 403),
+        ERROR_MESSAGES.mobileAccessDenied,
+      );
       assert.equal(mapIdentifyApiError("Impossible de joindre le serveur Somafrik."), ERROR_MESSAGES.networkError);
       assert.equal(mapIdentifyApiError("boom", 502), ERROR_MESSAGES.serverUnavailable);
     },
@@ -290,6 +294,71 @@ const cases: Case[] = [
       assert.doesNotMatch(login, /\{ pin: password\.trim\(\) \}/);
       assert.match(login, /resolveLoginFieldsError\(identifier, password\)/);
       assert.match(login, /mapIdentifyApiError\(/);
+    },
+  },
+  {
+    id: "AUTH-M01-13",
+    title: "403 : liste blanche de catégories métier, jamais le texte serveur brut",
+    async run() {
+      attachMemoryLoginLockoutStore();
+      const allowed = new Set<string>(Object.values(FORBIDDEN_LOGIN_MESSAGES));
+      const collect = async (school: Record<string, unknown>, user: Record<string, unknown>, mode: "identify" | "login") => {
+        const service = new AuthService({
+          school,
+          schools: [school],
+          teachers: [],
+          students: [],
+          userAccounts: [account({ id: "U-X", identifier: "cible", role: "Enseignant", passwordHash: hashSecret("Cible2026!"), ...user })],
+          countries: [],
+          subscriptions: [],
+        });
+        try {
+          if (mode === "identify") service.identify({ schoolCode: SCHOOL_A.loginCode, identifier: "cible" });
+          else await service.login(mobilePayload("teacher", "cible", "Cible2026!"));
+        } catch (error) {
+          const e = error as { statusCode?: number; message: string };
+          assert.equal(e.statusCode, 403, e.message);
+          return e.message;
+        }
+        throw new Error("403 attendu");
+      };
+      // Messages 403 réellement émis par le backend (AuthService non modifié).
+      const real: Array<[string, string]> = [
+        [await collect({ ...SCHOOL_A, status: "Suspendu" }, {}, "login"), "schoolSuspended"],
+        [await collect({ ...SCHOOL_A, validationStatus: "En attente de validation" }, {}, "identify"), "schoolPendingValidation"],
+        [await collect(SCHOOL_A, { status: "Inactif" }, "identify"), "accountInactive"],
+        [await collect(SCHOOL_A, { status: "Suspendu" }, "login"), "accountInactive"],
+        [await collect(SCHOOL_A, { accessChannel: "BackOffice" }, "identify"), "mobileAccessDenied"],
+        // Textes backend non déclenchables sans fixture pays / abonnement (copiés de la source).
+        ["Pays suspendu. Connexion indisponible pour ce pays.", "countrySuspended"],
+        ["L'accès à la plateforme est suspendu pour cet établissement (abonnement expiré ou impayé).", "schoolSubscription"],
+        ["L'accès est temporairement limité. Veuillez contacter l'administration de votre établissement ou régulariser l'abonnement.", "schoolSubscription"],
+        ["Ce compte utilisateur n'est pas autorisé sur l'application mobile.", "mobileAccessDenied"],
+      ];
+      for (const [raw, category] of real) {
+        assert.equal(classifyForbiddenLoginError(raw), category, raw);
+        for (const shown of [mapLoginApiError(raw, "teacher", 403), mapIdentifyApiError(raw, 403)]) {
+          assert.ok(allowed.has(shown), `hors liste blanche : ${shown}`);
+          assert.equal(shown, FORBIDDEN_LOGIN_MESSAGES[category as keyof typeof FORBIDDEN_LOGIN_MESSAGES]);
+        }
+      }
+      // Messages 403 arbitraires / sensibles : jamais relayés, même lisibles ou préfixés.
+      const hostile = [
+        "Accès refusé pour jean.dupont@ecole.cd (rôle Comptable, école SCH-OTHER)",
+        "Etablissement suspendu. Détails : user_id=U-42, token=abc",
+        "Compte suspendu par admin@somafrik.cd le 2026-11-01",
+        "Forbidden",
+        "",
+        "Pays suspendu\nstack: at authService.js:788",
+      ];
+      for (const raw of hostile) {
+        for (const shown of [mapLoginApiError(raw, "teacher", 403), mapIdentifyApiError(raw, 403)]) {
+          assert.ok(allowed.has(shown), `hors liste blanche : ${shown}`);
+          assert.doesNotMatch(shown, /@|U-42|token|SCH-OTHER|Comptable|stack|2026/);
+        }
+      }
+      // Les deux constantes affichées passent le filtre technique historique.
+      for (const text of allowed) assert.ok(isUserFriendlyErrorMessage(text), text);
     },
   },
 ];

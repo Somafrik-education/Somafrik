@@ -113,10 +113,53 @@ function statusOf(status?: number | null): number {
   return Number.isFinite(value) ? value : 0;
 }
 
-/** 403 métier (établissement / pays suspendu, accès mobile refusé) : message serveur si lisible. */
+/**
+ * AUTH-MOBILE-01 (audit CTO) — 403 : liste blanche de catégories métier explicites.
+ * Le texte serveur ne sert QU'À classer ; le message affiché est toujours une constante
+ * Mobile. Toute réponse non reconnue → message générique (fail-closed).
+ * Le statut fin du compte (inactif / suspendu / supprimé / en attente) est volontairement
+ * regroupé en une seule catégorie.
+ */
+export const FORBIDDEN_LOGIN_MESSAGES = {
+  schoolSuspended: "Établissement suspendu. Connexion indisponible.",
+  schoolPendingValidation: "Établissement en attente de validation. Connexion indisponible.",
+  countrySuspended: "Connexion indisponible pour ce pays.",
+  schoolSubscription:
+    "L'accès est suspendu pour cet établissement. Contactez l'administration de votre établissement.",
+  accountInactive: "Ce compte n'est pas actif. Contactez l'administration de votre établissement.",
+  mobileAccessDenied: ERROR_MESSAGES.mobileAccessDenied,
+} as const;
+
+export type ForbiddenLoginCategory = keyof typeof FORBIDDEN_LOGIN_MESSAGES;
+
+const FORBIDDEN_CATEGORY_RULES: ReadonlyArray<[ForbiddenLoginCategory, RegExp]> = [
+  ["countrySuspended", /^pays suspendu\b/],
+  ["schoolPendingValidation", /^etablissement en attente de validation\b/],
+  ["schoolSuspended", /^etablissement suspendu\b/],
+  ["schoolSubscription", /^l'acces (a la plateforme )?est (suspendu|temporairement limite)\b/],
+  ["accountInactive", /^(ce compte n'est plus actif|ce compte est inactif|compte suspendu|compte en attente de validation)\b/],
+];
+
+function normalizeForbiddenText(rawMessage: string): string {
+  return String(rawMessage ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u2019`]/g, "'")
+    .trim()
+    .toLowerCase();
+}
+
+export function classifyForbiddenLoginError(rawMessage = ""): ForbiddenLoginCategory {
+  const text = normalizeForbiddenText(rawMessage);
+  if (!text || text.length > 200 || text.includes("\n")) return "mobileAccessDenied";
+  for (const [category, rule] of FORBIDDEN_CATEGORY_RULES) {
+    if (rule.test(text)) return category;
+  }
+  return "mobileAccessDenied";
+}
+
 function forbiddenMessage(rawMessage: string): string {
-  const message = String(rawMessage ?? "").trim();
-  return isUserFriendlyErrorMessage(message) ? message : ERROR_MESSAGES.mobileAccessDenied;
+  return FORBIDDEN_LOGIN_MESSAGES[classifyForbiddenLoginError(rawMessage)];
 }
 
 /**
