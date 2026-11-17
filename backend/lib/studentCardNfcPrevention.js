@@ -11,7 +11,8 @@ function nfcRecoverable(card) {
     && card.nfc_uid != null
     && card.nfc_encoding_state === "pending"
     && card.nfc_encoded_at == null
-    && card.nfc_locked_at == null;
+    && card.nfc_locked_at == null
+    && card.nfc_replaces_card_id == null;
 }
 
 module.exports = { nfcRecoverable };
