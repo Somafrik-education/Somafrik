@@ -1,0 +1,9 @@
+ok 1 - CLOCK-01 RED — horloge réelle au 2e lancement : la preuve voit expired (défaut reproduit, J+3 inchangée)
+not ok 2 - CLOCK-01 GREEN — horloge contrôlée des vecteurs : brouillon et appel clôturé survivent au relancement
+  error: |-
+    withProofClock manquant (offlineRollCallProofHelpers)
+ok 3 - CLOCK-01 — la règle métier J+3 reste appliquée à l'horloge réelle (runPurge non modifié)
+not ok 4 - CLOCK-01 — contrat de l'entrée de recette : SQLCipher et PR3 sous horloge contrôlée, PR4 sous horloge réelle
+  error: 'SQLCipher : manager sous horloge contrôlée'
+# pass 2
+# fail 2
