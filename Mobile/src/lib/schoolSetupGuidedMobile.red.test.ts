@@ -326,6 +326,21 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       assertLacks(wizard, /completeStep\([^)]*reset|completedSteps:\s*\[\]/, "M13 reset au back interdit");
     },
   },
+  {
+    id: "M-A7",
+    title: "AUDIT-SETUP-GUIDED-10-01 / A7 — erreur de chargement de l'assistant affichée, jamais de repli silencieux 3/3",
+    run() {
+      const settings = read(SETTINGS_PATH);
+      assertLacks(settings, /\.catch\(\(\)\s*=>\s*\{\s*if \(!cancelled\) setGuided\(null\);?\s*\}\)/, "A7 erreur guidée avalée");
+      assertHas(settings, 'testID="guided-setup-load-error"', "A7 erreur guidée non affichée");
+      assertHas(settings, "Impossible de charger l'assistant de configuration", "A7 message explicite manquant");
+      assertHas(settings, /HTTP \$\{/, "A7 code HTTP non affiché");
+      assertHas(settings, "Réessayer", "A7 action de reprise manquante");
+      assertHas(settings, 'testID="guided-setup-fallback-notice"', "A7 repli 3/3 non annoncé");
+      // Pendant le chargement de l'assistant, l'ancien parcours 3/3 n'est pas affiché.
+      assertHas(settings, /guidedState\.kind === "error"/, "A7 le repli 3/3 doit dépendre d'une erreur explicite");
+    },
+  },
 ];
 
 async function main() {
