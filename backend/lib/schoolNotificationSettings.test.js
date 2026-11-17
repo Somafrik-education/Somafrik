@@ -1032,3 +1032,30 @@ test("Lot I n'importe aucun SDK provider et n'utilise pas backoffice_state", () 
   assert.doesNotMatch(src, /backoffice_state|localStorage/);
   assert.doesNotMatch(src, /fanOutNotificationChannels/);
 });
+
+test("PROD-V25-POSTSMOKE-01 — configured signale l'absence de règle enregistrée, par établissement", async () => {
+  const policy = requirePolicy();
+  const store = policy.createMemorySchoolNotificationStore({
+    schools: [
+      { id: SCHOOL_A, school_code: "SCH-A" },
+      { id: SCHOOL_B, school_code: "SCH-B" },
+    ],
+  });
+  const adminA = adminPrincipal("SCH-A");
+  const adminB = adminPrincipal("SCH-B", { sub: USER_B });
+  assert.equal((await policy.getSchoolNotificationSettings(store, adminA, "SCH-A")).configured, false);
+  assert.equal((await policy.getSchoolNotificationSettings(store, adminB, "SCH-B")).configured, false);
+  const saved = await policy.patchSchoolNotificationSettings(store, adminA, "SCH-A", {
+    events: { STUDENT_ABSENT: { PARENT: { IN_APP: true } } },
+  });
+  assert.equal(saved.configured, true);
+  assert.equal((await policy.getSchoolNotificationSettings(store, adminA, "SCH-A")).configured, true);
+  // Isolation : l'enregistrement de A ne configure pas B.
+  assert.equal((await policy.getSchoolNotificationSettings(store, adminB, "SCH-B")).configured, false);
+  // RBAC inchangé : A ne lit ni n'écrit B.
+  await assert.rejects(() => policy.getSchoolNotificationSettings(store, adminA, "SCH-B"), (error) => error.statusCode === 403);
+  await assert.rejects(
+    () => policy.patchSchoolNotificationSettings(store, adminA, "SCH-B", { events: { STUDENT_ABSENT: { PARENT: { IN_APP: true } } } }),
+    (error) => error.statusCode === 403,
+  );
+});

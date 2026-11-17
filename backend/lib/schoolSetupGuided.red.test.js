@@ -882,3 +882,46 @@ test("B4b — une étape persistée redevient invalide si les données requises 
   assert.ok(!regressed.completedSteps.includes("establishment"));
   assert.ok(regressed.percent < 100);
 });
+
+test("PROD-V25-POSTSMOKE-01 — Communication non satisfaite : condition manquante explicite, étape non marquée", async () => {
+  const mod = requireGuided();
+  const store = memoryProgressStore();
+  const snapshot = through("pedagogy");
+  assert.equal(snapshot.notificationsConfigured, false);
+  // Étapes 1 à 8 enregistrées : la reprise doit arriver sur « Communication ».
+  for (const key of ALL_STEP_KEYS.slice(0, 8)) {
+    await completeStep(mod, { principal: schoolAdminA(), stepKey: key, one: MEMBERSHIP_LOOKUP, progressStore: store, loadSnapshot: async () => snapshot });
+  }
+  await assert.rejects(
+    () => completeStep(mod, { principal: schoolAdminA(), stepKey: "communication", one: MEMBERSHIP_LOOKUP, progressStore: store, loadSnapshot: async () => snapshot }),
+    (error) => {
+      assert.equal(error.statusCode, 409);
+      assert.equal(error.code, "STEP_NOT_SATISFIED");
+      assert.match(error.message, /Communication/);
+      assert.match(error.message, /Aucune règle de notification n'est enregistrée/);
+      assert.match(error.message, /Paramètres › Notifications/);
+      assert.deepEqual(error.details, {
+        stepKey: "communication",
+        stepLabel: "Communication",
+        requirement: mod.GUIDED_STEP_REQUIREMENTS.communication,
+      });
+      return true;
+    },
+  );
+  const after = await getGuided(mod, { principal: schoolAdminA(), one: MEMBERSHIP_LOOKUP, progressStore: store, loadSnapshot: async () => snapshot });
+  assert.ok(!after.completedSteps.includes("communication"), "jamais marquée sans validation Backend");
+  assert.equal(after.nextStepKey, "communication");
+  assert.equal(after.currentStep, 9);
+  // Une fois une règle enregistrée, la même étape passe.
+  const configured = { ...snapshot, notificationsConfigured: true };
+  const done = await completeStep(mod, { principal: schoolAdminA(), stepKey: "communication", one: MEMBERSHIP_LOOKUP, progressStore: store, loadSnapshot: async () => configured });
+  assert.ok(done.completedSteps.includes("communication"));
+});
+
+test("PROD-V25-POSTSMOKE-01 — chaque étape guidée a une condition explicite", () => {
+  const mod = requireGuided();
+  for (const key of ALL_STEP_KEYS) {
+    assert.equal(typeof mod.GUIDED_STEP_REQUIREMENTS[key], "string", key);
+    assert.ok(mod.GUIDED_STEP_REQUIREMENTS[key].length > 10, key);
+  }
+});

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Card, InlineAlert, SectionHeader } from "../../design-system";
 import { ApiError } from "../../api/client";
+import { NFC_NOT_HOMOLOGATED_CODE, studentCardSaveErrorMessage } from "../../lib/studentCardSettingsErrors";
 import { useOptionalActiveSchool } from "../../context/ActiveSchoolContext";
 import { schoolSettingsApi, type SchoolSettings } from "../../lib/schoolSettingsApi";
 import { educationReferenceApi, type EducationLevel } from "../../lib/educationReferenceApi";
@@ -66,6 +67,9 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
   const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  /** Vrai dès que le serveur a refusé le NFC (verrou plateforme) : l'option est alors désactivée. */
+  const [nfcLocked, setNfcLocked] = useState(false);
   /** Niveaux actifs de l'établissement ; null = liste indisponible (surcharges non modifiables). */
   const [levels, setLevels] = useState<EducationLevel[] | null>(null);
 
@@ -108,12 +112,13 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
     if (!draft || !canUpdate) return;
     setPending(true);
     setNotice(null);
+    setSaveError(null);
     try {
       const saved = await schoolSettingsApi.patch(
         {
           studentCardEnabled: draft.studentCardEnabled,
           studentCardQrEnabled: draft.studentCardQrEnabled,
-          studentCardNfcEnabled: draft.studentCardNfcEnabled,
+          studentCardNfcEnabled: nfcLocked ? false : draft.studentCardNfcEnabled,
           studentCardAttendanceEnabled: draft.studentCardAttendanceEnabled,
           studentCardFinanceCheckEnabled: draft.studentCardFinanceCheckEnabled,
           studentCardOfflineRollCallEnabled: draft.studentCardOfflineRollCallEnabled,
@@ -134,7 +139,11 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
       setDraft(draftFromSettings(saved));
       setNotice("Paramètres de carte enregistrés. Les cartes déjà émises ne sont pas modifiées.");
     } catch (error) {
-      setNotice(error instanceof ApiError ? "Enregistrement refusé." : "Enregistrement impossible.");
+      if (error instanceof ApiError && error.code === NFC_NOT_HOMOLOGATED_CODE) {
+        setNfcLocked(true);
+        setDraft({ ...draft, studentCardNfcEnabled: false });
+      }
+      setSaveError(studentCardSaveErrorMessage(error));
     } finally {
       setPending(false);
     }
@@ -180,12 +189,13 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
               <input
                 type="checkbox"
                 checked={draft.studentCardNfcEnabled}
-                disabled={!masterOn}
+                disabled={!masterOn || nfcLocked}
                 onChange={(event) =>
                   setDraft({ ...draft, studentCardNfcEnabled: event.target.checked })
                 }
               />
               NFC
+              {nfcLocked ? <span className="text-xs text-muted">(non homologué : indisponible)</span> : null}
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -304,6 +314,11 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
           </fieldset>
           <p className="text-sm text-muted">Le Web ne programme pas la puce NFC et ne lit aucun badge.</p>
         </fieldset>
+      ) : null}
+      {saveError ? (
+        <InlineAlert tone="danger" title="Paramètres de carte non enregistrés">
+          {saveError}
+        </InlineAlert>
       ) : null}
       {notice ? <p className="text-sm text-ink">{notice}</p> : null}
       {draft && canUpdate ? (
