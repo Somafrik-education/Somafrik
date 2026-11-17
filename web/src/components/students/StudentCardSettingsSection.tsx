@@ -317,7 +317,12 @@ function StudentCardSettingsForm({ schoolCode }: { schoolCode: string }) {
       ) : null}
       {saveError ? (
         <InlineAlert tone="danger" title="Paramètres de carte non enregistrés">
-          {saveError}
+          <p>{saveError}</p>
+          {nfcLocked && draft && canUpdate ? (
+            <Button type="button" onClick={() => void save()} disabled={pending}>
+              Enregistrer les autres paramètres sans NFC
+            </Button>
+          ) : null}
         </InlineAlert>
       ) : null}
       {notice ? <p className="text-sm text-ink">{notice}</p> : null}
