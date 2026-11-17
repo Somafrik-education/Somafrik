@@ -89,6 +89,24 @@ describe("PROD-V25-POSTSMOKE-01 — carte élève : refus explicite et verrou NF
     expect(await screen.findByText(/Paramètres de carte enregistrés/)).toBeInTheDocument();
   });
 
+  it("propose un bouton explicite pour sauvegarder les autres paramètres sans NFC après refus", async () => {
+    const user = userEvent.setup();
+    getSettings.mockResolvedValue({ ...base, studentCardEnabled: true, studentCardQrEnabled: true, studentCardNfcEnabled: false });
+    patchSettings
+      .mockRejectedValueOnce(NFC_REFUSAL)
+      .mockImplementationOnce(async (payload: Record<string, unknown>) => ({ ...base, ...payload }));
+    render(<StudentCardSettingsSection />);
+    await user.click(await screen.findByRole("checkbox", { name: "NFC" }));
+    await user.click(screen.getByRole("button", { name: "Enregistrer la carte élève" }));
+    const retry = await screen.findByRole("button", { name: "Enregistrer les autres paramètres sans NFC" });
+    expect(screen.getByRole("checkbox", { name: /^NFC/ })).toBeDisabled();
+    await user.click(retry);
+    await waitFor(() => expect(patchSettings).toHaveBeenCalledTimes(2));
+    expect(patchSettings.mock.calls[1][0]).toMatchObject({ studentCardNfcEnabled: false, studentCardQrEnabled: true });
+    expect(await screen.findByText(/Paramètres de carte enregistrés/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enregistrer les autres paramètres sans NFC" })).toBeNull();
+  });
+
   it("NFC désactivé : un autre refus affiche le motif serveur, le statut HTTP et le code", async () => {
     const user = userEvent.setup();
     getSettings.mockResolvedValue({ ...base, studentCardEnabled: true, studentCardQrEnabled: true });
