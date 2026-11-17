@@ -980,8 +980,11 @@ export function UsersPage() {
                       setEditing(applyRoleChangeToUser(editing, "", session, state));
                       return;
                     }
+                    // Le libellé API peut être personnalisé (ex. « Directeur »).
+                    // L'identité métier de création reste le rôle canonique, jamais ce libellé.
+                    const canonicalRole = defaultLabelForRoleKey(selected.roleKey) || selected.roleName;
                     setEditing({
-                      ...applyRoleChangeToUser(editing, selected.roleName, session, state),
+                      ...applyRoleChangeToUser(editing, canonicalRole, session, state),
                       roleKey: selected.roleKey,
                     });
                   }}
@@ -996,6 +999,14 @@ export function UsersPage() {
                     ...decoratedCreatableRoles.map((role) => ({ value: role.roleKey, label: role.optionLabel })),
                   ]}
                 />
+                {(isSuperadminView || isCountryAdminView) &&
+                assignableApiAvailable === true &&
+                !decoratedCreatableRoles.some((role) => role.roleKey === "SCHOOL_ADMIN") ? (
+                  <p role="alert" className="mt-2 text-sm text-red-700">
+                    Le catalogue des rôles ne propose pas Admin School (SCHOOL_ADMIN).
+                    La création d'un administrateur d'établissement est indisponible tant que le rôle n'est pas fourni par l'API.
+                  </p>
+                ) : null}
               </Field>
             ) : null}
             <Field
