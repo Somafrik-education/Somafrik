@@ -95,6 +95,8 @@ describe("studentCardPolicy", () => {
       .toBe("Une carte active existe déjà. La liste a été actualisée.");
     expect(studentCardErrorMessage(new ApiError("détail", 403, "PLATFORM_PERSONAL_DATA_DENIED"))).toBe("Accès refusé.");
     expect(studentCardErrorMessage(new ApiError("fuite", 404, "STUDENT_CARD_NOT_FOUND"))).not.toContain("fuite");
+    expect(studentCardErrorMessage(new ApiError("détail secret", 409, "STUDENT_CARD_NFC_UID_EXISTS"))).toContain("Diagnostiquer une carte NFC");
+    expect(studentCardErrorMessage(new ApiError("détail secret", 409, "STUDENT_CARD_NFC_UID_EXISTS"))).not.toContain("détail secret");
   });
 
   it("prépare une identité imprimée sans données interdites", () => {
