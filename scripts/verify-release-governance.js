@@ -21,12 +21,16 @@ const path = require("node:path");
 
 const CORE = path.join(__dirname, "verify-release-governance-core.js");
 const EXPECTED_CORE_BLOB = "3d7b2381b5412bbc7395b61592ed2199a2ca3035";
-const CURRENT_MAIN = "ef8bc9517ffc94aa770743713d0f561f92a9fc1e";
+const CURRENT_MAIN = "fcf09327d2716967ffcd10a69347f06c2fbffb7a";
 
 // Historique explicitement autorisé présent sur origin/main mais absent de develop.
 // L'ancien pin #674 (9f4badc6) et les promotions #500–#509 sont désormais
-// ancêtres de develop (réconciliation #800). Reste main-only : promotions
-// AAB v24 (#799/#801/#802/#803) et promotions contrôlées #823/#825/#827.
+// ancêtres de develop (réconciliation #800). Restent main-only :
+// - promotions AAB v24 (#799/#801/#802/#803) et promotions contrôlées #823/#825/#827 ;
+// - release v25 : 16 merges de réconciliation du candidat (tree identique au commit
+//   develop fusionné), promotion #1145 (c8263b9b, tree = 773dccc0), intégration
+//   post-smoke 0759547b (tree = develop@4560495b) et merge #1173 (fcf09327).
+// Preuve Git : docs/release/RELEASE-GOVERNANCE-RECONCILE-MAIN-fcf09327.md.
 const CURRENT_MAIN_ONLY = [
   "372b7aac11fb4b2fda7b8c45ae0a3f7d9f38e7c3",
   "295c044e43dc5b50cd56d419aa24a34b62c8bebe",
@@ -39,6 +43,25 @@ const CURRENT_MAIN_ONLY = [
   "8d981efe651112957c32572acd44028d14881349",
   "24e1eb8e923157d5b20100198643711664807c3b",
   "ef8bc9517ffc94aa770743713d0f561f92a9fc1e",
+  "d7b35fe117bcaac823af280711611f5cd63526b2",
+  "bedefe4d4c9d746fed13f3e777bab6cc7a573cfd",
+  "6328638081883967b52680c66031fc376991e350",
+  "e00a2bb4c4b24f298d0c648f504d5f08a7008974",
+  "963f769b32b7f99f55a854892888018a57a79d2b",
+  "bd9978dc008111eafd9fb243030f71dc6b9c7e6c",
+  "4e7d12a3008d4f76ad3fe199cd47034413a6a3fa",
+  "700d9658256dc1feb0d0a0de9904c3443d2362f5",
+  "4edb4f42bd72e655190630f65e76e654039a9532",
+  "51d3fa54af04b065fe92976f0dfdb515ca2b093c",
+  "0a7969e0d6cd47012753189e1693bc893d720f0a",
+  "8124d331e3ef1a39ceea150e3c96e3e65a88ce7c",
+  "738e28730c49fc6dfbee29b0f7357421655e44c5",
+  "27e53778efa3c8e4fd5999cf0bf14694142dcbb2",
+  "351a2137e739457b50978098de7b3ede8ebd6701",
+  "773dccc0612455debdf077e0b8582c4389bc8f84",
+  "c8263b9bd436a8d01872988875495ee9d0425fb6",
+  "0759547b8bb00bb2c70bcc32cdf873fb23a89f58",
+  "fcf09327d2716967ffcd10a69347f06c2fbffb7a",
 ];
 
 function replaceExactlyOnce(source, before, after, label) {
@@ -160,7 +183,7 @@ source = replaceExactlyOnce(
 source = replaceExactlyOnce(
   source,
   '    console.log("PASS RG-MAIN-ONLY 2 commits stale (6ff61106, b5074565) ; tree #109 ⊂ develop");',
-  '    console.log("PASS RG-MAIN-ONLY live pin ef8bc951 ; 11 commits main-only explicitement autorisés");',
+  '    console.log("PASS RG-MAIN-ONLY live pin fcf09327 ; 30 commits main-only explicitement autorisés");',
   "main-only log",
 );
 
