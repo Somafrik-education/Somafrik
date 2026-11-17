@@ -130,6 +130,6 @@ describe("Planning V2 — payload d'écriture Web", () => {
     expect(message).toMatch(/2ème A/);
     expect(message).toMatch(/Mon établissement/);
     expect(message).toMatch(/Enseignants/);
-    expect(message).toMatch(/Ne recréez pas la matière/i);
+    expect(message).toMatch(/Ne recréez pas le cours/i);
   });
 });
