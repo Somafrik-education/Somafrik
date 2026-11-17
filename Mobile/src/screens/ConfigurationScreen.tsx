@@ -18,7 +18,6 @@ type SettingsCard = {
     | "SchoolYearSettings"
     | "SchoolPedagogicalStructure"
     | "SchoolAssignableRoles"
-    | "SchoolNotificationSettings"
     | "Users";
   view: string;
 };
@@ -47,12 +46,6 @@ const sections: SettingsCard[] = [
     description: "Niveaux, filières, groupes et cours configurés par classe.",
     route: "SchoolPedagogicalStructure",
     view: "SchoolPedagogicalStructure",
-  },
-  {
-    title: "Notifications",
-    description: "Événements, destinataires et canaux des notifications de l'établissement.",
-    route: "SchoolNotificationSettings",
-    view: "SchoolNotificationSettings",
   },
   {
     title: "Rôles disponibles",

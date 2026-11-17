@@ -112,12 +112,17 @@ test("A6-06 — écran natif : accès, écriture réservée à UPDATE, erreurs v
   assert.doesNotMatch(screen, /catch\s*\(\s*\)\s*\{\s*\}/, "aucune erreur avalée");
 });
 
-test("A6-07 — navigation : écran enregistré, carte Paramètres et lien de l'étape 9", () => {
+test("A6-07 — navigation : écran enregistré, atteint depuis l'étape 9, sans septième carte Paramètres (PARITY-019)", () => {
   const nav = read(path.join(mobileSrc, "navigation/AppNavigator.tsx"));
   assert.match(nav, /canReadView\(session, "SchoolNotificationSettings"\)/);
   assert.match(nav, /name="SchoolNotificationSettings" component=\{SchoolNotificationSettingsScreen\}/);
-  const config = read(path.join(mobileSrc, "screens/ConfigurationScreen.tsx"));
-  assert.match(config, /route: "SchoolNotificationSettings"/);
   const guided = read(path.join(mobileSrc, "lib/schoolSetupGuidedMobile.ts"));
-  assert.match(guided, /communication: "SchoolNotificationSettings"/);
+  assert.match(guided, /communication: "SchoolNotificationSettings"/, "l'étape 9 ouvre l'écran natif");
+  const wizard = read(path.join(mobileSrc, "components/schoolSetup/GuidedSchoolSetupWizard.tsx"));
+  assert.match(wizard, /navigation\.navigate\(route\)/, "le lien de l'étape est bien navigué");
+  // PARITY-019 : la configuration Mobile garde exactement ses six cartes opérationnelles.
+  const config = read(path.join(mobileSrc, "screens/ConfigurationScreen.tsx"));
+  const cards = [...config.matchAll(/route:\s*"([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(cards.length, 6, "pas de septième carte");
+  assert.ok(!cards.includes("SchoolNotificationSettings"), "accès Notifications hors des cartes Paramètres");
 });
