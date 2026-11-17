@@ -357,6 +357,9 @@ async function getSchoolNotificationSettings(store, principal, schoolCode) {
   return {
     schoolCode: school.school_code || school.code || code,
     events: overlayRows(rows).events,
+    // PROD-V25-POSTSMOKE-01 : false = règles par défaut affichées, rien d'enregistré pour
+    // l'établissement (condition de l'étape guidée « Communication »).
+    configured: rows.length > 0,
   };
 }
 
