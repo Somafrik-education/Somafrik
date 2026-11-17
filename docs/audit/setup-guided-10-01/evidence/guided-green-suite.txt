@@ -1,0 +1,137 @@
+✔ contrat — module schoolSetupGuided exporte derive / get / complete + 10 étapes (13.365699ms)
+✔ contrat — GET/POST guided déclarés (auth + permission, sans :schoolCode, LOT 0 intact) (2.726822ms)
+✔ B16 — GET/POST guidés sans DDL/ensure schema par requête ; ensure réservé au boot repository (4.940547ms)
+✔ B1 — nouvel établissement → configuration_required, 0 %, étape 1 (1.07855ms)
+✔ B2 — validation d'une étape valide est persistée (0.712079ms)
+✔ B3 — reprise : un nouveau GET restaure l'étape courante (0.625958ms)
+✔ B4 — la progression n'augmente que si l'étape est réellement valide (0.752073ms)
+✔ B5 — impossible de valider une étape dépendante si la précédente n'est pas satisfaite (0.681898ms)
+✔ B6 — pas opérationnel avant validation des étapes 1 à 6 (0.943594ms)
+✔ B7 — étapes 1 à 6 valides → operational, 60 % (0.732615ms)
+✔ B8 — un admin établissement ne lit ni ne modifie la progression d'un autre établissement (0.542947ms)
+✔ B9 — un utilisateur sans permission UPDATE ne peut pas modifier la configuration (0.310099ms)
+✔ B10 — revalider une étape déjà terminée est idempotent, percent ≤ 100 (0.944736ms)
+✔ B11 — un enseignant sans affectation classe/matière ne valide pas l'étape 5 (1.131393ms)
+✔ B12 — 0 inscription Classe→Élève + studentCount orphelin ne valide pas l'étape 6 (1.121683ms)
+✔ B14 — row school_setup_progress absente + données canoniques existantes → bootstrap, pas 0 % (0.265593ms)
+✔ B15 — bootstrap 1→6 + POST finance ⇒ 70 %, jamais régression à 0 % (0.667297ms)
+✔ B13 — parcours 0 → 10 % → reprise 40/50/60 % operational → 100 % (1.783209ms)
+✔ B4b — une étape persistée redevient invalide si les données requises disparaissent (0.242141ms)
+✔ PROD-V25-POSTSMOKE-01 — Communication non satisfaite : condition manquante explicite, étape non marquée (0.847456ms)
+✔ PROD-V25-POSTSMOKE-01 — chaque étape guidée a une condition explicite (0.101207ms)
+✔ LOT 0 intact : GET /api/v2/school-setup/status et pas de setup_status (2.779047ms)
+✔ aucun endpoint Student legacy ni création globale élève dans le guidé (1.802127ms)
+✔ HOLD — bootstrap dérivé si curseur absent ; pas de token statut persisté dans le schéma guidé (0.286505ms)
+✔ HOLD — étape 5 exige une affectation active ; étape 6 ignore studentCount orphelin (0.358988ms)
+✔ HOLD — un seul assistant visible et Terminer quitte vers le tableau de bord (0.355762ms)
+✔ HOLD — schéma guidé assuré au boot repository, pas dans GET/POST request-time (6.926077ms)
+✔ RBAC guidé réutilise Paramètres Établissement (pas de nouveau moteur RBAC) (0.53382ms)
+✔ contrat — GET /api/v2/school-setup/status est déclaré (auth + permission, sans :schoolCode) (1.385364ms)
+✔ contrat — RBAC mappe la route sur Paramètres Établissement:READ (permission existante) (2.1119ms)
+✔ invariant — aucune colonne persistée setup_status (état dérivé, pas stocké) (0.131607ms)
+✔ ST-08 — handler/module sans localStorage/AsyncStorage (0.277573ms)
+✔ contrat — module schoolSetupStatus exporte derive / resolveTenant / getStatus (12.494782ms)
+✔ ST-01 — école persistée vide → NOT_STARTED, core 0/3 (0.411636ms)
+✔ ST-02 — année courante/open seule → IN_PROGRESS (0.20651ms)
+✔ ST-02 — structure = niveau ET groupe ; un seul des deux ne suffit pas (0.16978ms)
+✔ ST-03 — année + niveau/groupe activés + classe, sans terms → READY, optional.periods=false (0.314361ms)
+✔ ST-03b — mêmes core + terms → READY inchangé, optional.periods=true (0.342379ms)
+✔ ST-04 — perte d'un signal core après READY → IN_PROGRESS ou NOT_STARTED (0.32394ms)
+✔ ST-12 — optional.* ne change jamais status (0.159338ms)
+✔ ST-06 — schoolCode client (query/body/header/params) ignoré ou 400/403 ; jamais l'école B (0.808188ms)
+✔ ST-06 — leftover JWT schoolCode B + membership A → tenant A, jamais B (0.13481ms)
+✔ ST-06b — token école A → données A uniquement ; pas de path :schoolCode (0.487226ms)
+✔ ST-06 — getSchoolSetupStatus ne charge jamais le snapshot de B depuis un token A (0.205869ms)
+✔ ST-06-RT-01 — membership PG autoritaire : principal JWT = sub + leftover schoolCode, sans champs synthétiques (0.366703ms)
+✔ ST-06-RT-02 — JWT forgé : sub A + leftover schoolCode B → 403 ou payload A, jamais B (0.229315ms)
+✔ ST-06-RT-03 — header X-Somafrik-School-Code B forgé : 400/403 ou payload A, jamais B (0.24807ms)
+✔ ST-06-RT-04 — membership absent/invalide → fail-closed 401/403, jamais fallback leftover JWT (0.513566ms)
+✔ ST-05 — deux admins du même school_id → JSON métier identique (0.235228ms)
+✔ ST-09 — mustChangePassword / last_login_at absents du payload (0.656548ms)
+✔ ST-10 — même snapshot PG → même JSON Web et Mobile (0.291645ms)
+✔ ST-11 — payload sans routes Web/Mobile (0.142866ms)
+✔ G1 — RBAC LOT 0 = Paramètres Établissement:READ uniquement (0.253006ms)
+✔ G2 — effectiveSchoolId / academicYearSchoolId ne sont pas l'autorité tenant (0.358835ms)
+✔ G3 — erreur SQL ne devient pas NOT_STARTED (0.617687ms)
+✔ G4 — année = is_current TRUE ou status open (pas active) (1.400341ms)
+✔ G6 — classe historique Y1 ne satisfait pas core.classes de Y2 current/open (0.756417ms)
+✔ ST-05/ST-10 — token école B ne reproduit pas le JSON de A (0.27163ms)
+ℹ tests 58
+ℹ suites 0
+ℹ pass 58
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 106.051311
+
+ RUN  v4.1.10 web
+
+
+ Test Files  6 passed (6)
+      Tests  61 passed (61)
+   Start at  07:58:05
+   Duration  3.48s (transform 1.72s, setup 775ms, import 2.11s, tests 1.99s, environment 4.20s)
+
+GUIDED Mobile school-setup RED — 19 vert / 0 rouge / 19 cas
+  PASS M-SRC
+  PASS M1
+  PASS M2
+  PASS M3
+  PASS M4
+  PASS M5
+  PASS M6
+  PASS M7
+  PASS M8
+  PASS M9
+  PASS M10
+  PASS M11
+  PASS M12
+  PASS M14
+  PASS M15
+  PASS M16
+  PASS M17
+  PASS M13
+  PASS M-AUDIT10-08
+SCHOOL_SETUP_GUIDED_MOBILE_RED {"passedIds":["M-SRC","M1","M2","M3","M4","M5","M6","M7","M8","M9","M10","M11","M12","M14","M15","M16","M17","M13","M-AUDIT10-08"],"failedIds":[],"expectedIds":["M-SRC","M1","M2","M3","M4","M5","M6","M7","M8","M9","M10","M11","M12","M14","M15","M16","M17","M13","M-AUDIT10-08"]}
+OK: guided Mobile school-setup
+TAP version 13
+# Subtest: school_admin + NOT_STARTED → Home puis SchoolSetup
+ok 1 - school_admin + NOT_STARTED → Home puis SchoolSetup
+  ---
+  duration_ms: 1.720236
+  type: 'test'
+  ...
+# Subtest: teacher / parent / student → pas de GET setup, pas d'auto-open
+ok 2 - teacher / parent / student → pas de GET setup, pas d'auto-open
+  ---
+  duration_ms: 0.253672
+  type: 'test'
+  ...
+# Subtest: API setup KO → Home accessible, pas de boucle SchoolSetup
+ok 3 - API setup KO → Home accessible, pas de boucle SchoolSetup
+  ---
+  duration_ms: 0.238028
+  type: 'test'
+  ...
+# Subtest: mustChangePassword → aucun setup avant changement de secret
+ok 4 - mustChangePassword → aucun setup avant changement de secret
+  ---
+  duration_ms: 0.132167
+  type: 'test'
+  ...
+# Subtest: IN_PROGRESS ne déclenche pas l'auto-open
+ok 5 - IN_PROGRESS ne déclenche pas l'auto-open
+  ---
+  duration_ms: 0.267886
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 210.792783

@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 web
+
+
+ Test Files  7 passed (7)
+      Tests  63 passed (63)
+   Start at  07:56:55
+   Duration  4.31s (transform 1.86s, setup 924ms, import 2.10s, tests 2.52s, environment 4.97s)
+
