@@ -512,4 +512,28 @@ describe("StudentCardTab", () => {
       expect(screen.getByTestId("student-card-name")).toHaveTextContent("Kabila Amina");
     });
   });
+  it("R3-3 P1 : une réservation annulée/expirée peut être signalée pour sécurité, jamais sans droit", async () => {
+    const user = userEvent.setup();
+    api.getSettings.mockResolvedValue(flags({ studentCardNfcEnabled: true }));
+    api.list.mockResolvedValue({ cards: [
+      { id: "cancelled", publicId: "CANCELLED", medium: "nfc", status: "revoked", revokeReason: "nfc_cancelled", nfcRecoverable: true },
+      { id: "expired", publicId: "EXPIRED", medium: "nfc", status: "revoked", revokeReason: "nfc_reservation_expired", nfcRecoverable: true },
+      { id: "secured", publicId: "SECURED", medium: "nfc", status: "revoked", revokeReason: "revoked", nfcRecoverable: false },
+    ] });
+    api.revoke.mockResolvedValue({ status: "revoked", revokeReason: "revoked" });
+    const { unmount } = render(<StudentCardTab workspace={workspace} canManage schoolCode="CD-1" />);
+    expect((await screen.findAllByRole("button", { name: "Signaler une carte NFC suspecte" })).length).toBe(2);
+    const cancelled = screen.getByRole("article", { name: "Carte CANCELLED" });
+    await user.click(within(cancelled).getByRole("button", { name: "Signaler une carte NFC suspecte" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/UID restera réservé/)).toBeInTheDocument();
+    expect(api.revoke).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Révoquer" }));
+    await waitFor(() => expect(api.revoke).toHaveBeenCalledWith("cancelled", "revoked"));
+    unmount();
+    render(<StudentCardTab workspace={workspace} canManage={false} schoolCode="CD-1" />);
+    expect(await screen.findByText("ID carte : CANCELLED")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Signaler une carte NFC suspecte" })).toBeNull();
+  });
+
 });

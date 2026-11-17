@@ -310,6 +310,12 @@ export function StudentCardTab({
                     {card.nfcRecoverable === true ? (
                       <p className="text-sm text-muted">Réservation NFC annulée ou expirée sans encodage confirmé. UID conservé dans l’historique ; réattribution interdite. Diagnostic et validation CTO requis.</p>
                     ) : null}
+                    {canManage && card.status === "revoked" && card.nfcRecoverable === true
+                      && ["nfc_cancelled", "nfc_reservation_expired"].includes(card.revokeReason ?? "") ? (
+                      <Button type="button" variant="danger" onClick={() => { setRevokeReason("revoked"); setPendingAction({ card, action: "revoke" }); }}>
+                        Signaler une carte NFC suspecte
+                      </Button>
+                    ) : null}
                     {canManage && card.status === "issued" && card.nfc?.state === "pending" ? (
                       <Button type="button" variant="secondary" onClick={() => { setRevokeReason(null); setPendingAction({ card, action: "revoke" }); }}>
                         Annuler ou révoquer la réservation NFC
@@ -355,8 +361,11 @@ export function StudentCardTab({
           ) : null}
           <Modal
             open={pendingAction !== null}
-            title={pendingAction ? ACTION_COPY[pendingAction.action].title : ""}
-            description={pendingAction ? ACTION_COPY[pendingAction.action].description : undefined}
+            title={pendingAction?.action === "revoke" && pendingAction.card.status === "revoked"
+                ? "Confirmer la révocation de sécurité" : pendingAction ? ACTION_COPY[pendingAction.action].title : ""}
+            description={pendingAction?.action === "revoke" && pendingAction.card.status === "revoked"
+                ? "Signaler cette réservation NFC comme suspecte. L’UID restera réservé et aucune écriture de puce ne sera effectuée."
+                : pendingAction ? ACTION_COPY[pendingAction.action].description : undefined}
             onClose={() => {
               if (!actionBusy) setPendingAction(null);
             }}

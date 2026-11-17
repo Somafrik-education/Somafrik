@@ -326,13 +326,14 @@ async function transitionStudentCardNfc(repo, cardId, principal, meta, scope, ta
   authorize(principal, scope, target === "lost" ? "POST /api/student-cards/:id/lost" : "POST /api/student-cards/:id/revoke");
   return transaction(repo, principal, meta, scope, async ({ store, audit, cardForUpdate }) => {
     const card = await cardForUpdate(cardId);
-    // A3/A5: a security revocation prevails over an administrative cancellation (escalation,
-    // audited, UID kept). A cancellation never downgrades a revoked card: replay, no mutation.
-    if (target === "revoked" && card.status === "revoked" && reason === "revoked" && card.revoke_reason === "nfc_cancelled") {
-      const escalated = await store.escalateNfcCancellation(scope.schoolId, card.id);
+    // A3/A5: security prevails over pending NFC administrative cancellation OR expiration.
+    // The original audit remains intact, UID remains reserved, and R2 recovery is denied.
+    if (target === "revoked" && card.status === "revoked" && reason === "revoked"
+      && ["nfc_cancelled", "nfc_reservation_expired"].includes(card.revoke_reason)) {
+      const escalated = await store.escalateNfcReservationSecurity(scope.schoolId, card.id);
       if (!escalated) throw error("STUDENT_CARD_INVALID_STATE", "La carte a changé pendant l’opération.");
       await audit("student_card_nfc_cancellation_escalated", escalated,
-        { status: "revoked", reason: "nfc_cancelled" }, { status: "revoked", reason: "revoked" });
+        { status: "revoked", reason: card.revoke_reason }, { status: "revoked", reason: "revoked" });
       return mapCardListItem(escalated);
     }
     if (card.status === target) return replay(card);

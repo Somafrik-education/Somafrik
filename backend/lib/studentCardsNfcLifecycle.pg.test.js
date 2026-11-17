@@ -338,6 +338,34 @@ pg("R3-3 A3 unordered races always end as a security revocation", async f => {
     await assertSecurityRevoked(f, card);
   }
 });
+pg("R3-3 P1 expired pending reservation escalates to security, with an audit and preserved UID", async f => {
+  const card = await f.issue();
+  await f.expire(card.id);
+  const expired = await f.row(card.id);
+  assert.equal(expired.revoke_reason, "nfc_reservation_expired");
+  const secured = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  assert.equal(secured.status, "revoked");
+  assert.equal(secured.revokeReason, "revoked");
+  assert.equal(secured.nfcRecoverable, false);
+  const stored = await assertSecurityRevoked(f, card);
+  assert.equal(stored.revoked_at.getTime(), expired.revoked_at.getTime(), "original expiration timestamp unchanged");
+  assert.equal(await f.countAudit(escalationAudit), 1);
+  const trace = await f.repo.one("SELECT old_value,new_value FROM audit_logs WHERE action=$1", [escalationAudit]);
+  assert.deepEqual(trace.old_value, {status: "revoked", reason: "nfc_reservation_expired"});
+  assert.deepEqual(trace.new_value, {status: "revoked", reason: "revoked"});
+  const replay = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  assert.equal(replay.idempotentReplay, true);
+  assert.equal(await f.countAudit(escalationAudit), 1);
+  await assert.rejects(f.issue({studentId: f.students[1]}), {code: "STUDENT_CARD_NFC_UID_EXISTS"});
+});
+pg("R3-3 P1 security cannot be downgraded to expiration or administrative cancellation", async f => {
+  const card = await f.issue();
+  await f.expire(card.id);
+  await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  const downgrade = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "nfc_cancelled");
+  assert.equal(downgrade.revokeReason, "revoked");
+  assert.equal(await f.countAudit(escalationAudit), 1);
+});
 pg("revocation and lost observations are idempotent and transactional",async f=>{
   const card=await f.issue();await f.confirm(card);await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,'lost');
   await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,'lost');assert.equal(await f.countAudit('student_card_lost'),1);

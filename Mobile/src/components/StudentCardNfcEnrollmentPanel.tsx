@@ -128,7 +128,11 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
         ? "Réservation non confirmée : vérifier que la carte n’a pas été écrite. L’UID restera réservé ; aucune réattribution n’est possible ici."
         : "La réservation sera définitivement révoquée pour sécurité. L’UID restera réservé.",
       [{ text: "Retour", style: "cancel" }, { text: "Confirmer", style: nonSensitive ? "default" : "destructive", onPress: () => void (async () => {
-        if (!permitted.current || !foreground.current || !live.current || busy.current || !enabled || card.status !== "issued" || card.nfc?.state !== "pending") return;
+        const pendingCancellation = card.status === "issued" && card.nfc?.state === "pending";
+        const securityEscalation = reason === "revoked" && card.status === "revoked"
+          && card.nfcRecoverable === true
+          && ["nfc_cancelled", "nfc_reservation_expired"].includes(card.revokeReason ?? "");
+        if (!permitted.current || !foreground.current || !live.current || busy.current || !enabled || !(pendingCancellation || securityEscalation)) return;
         const requestStudent = studentId; const captured = ++generation.current;
         busy.current = true; setWorking(true);
         try {
@@ -202,6 +206,9 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
       {card.nfc ? <Text>{card.nfc.tagType} · {stateLabels[card.nfc.state]}</Text> : null}
       {nfcRevokeReasonLabel(card.revokeReason) ? <Text>Motif : {nfcRevokeReasonLabel(card.revokeReason)}</Text> : null}
       {card.nfcRecoverable === true ? <Text>Réservation administrativement récupérable après contrôle CTO. UID toujours réservé ; aucun transfert autorisé.</Text> : null}
+      {permitted.current && enabled && card.status === "revoked" && card.nfcRecoverable === true
+        && ["nfc_cancelled", "nfc_reservation_expired"].includes(card.revokeReason ?? "")
+        ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Signaler une carte NFC suspecte" disabled={working} onPress={() => confirmCancellation(card, "revoked")} style={{ padding: 12, opacity: working ? 0.5 : 1 }}><Text>Signaler une carte NFC suspecte</Text></TouchableOpacity> : null}
       {permitted.current && enabled && card.status === "issued" && card.nfc?.state === "pending"
         ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Annuler ou révoquer la réservation NFC" disabled={working} onPress={() => cancelPending(card)} style={{ padding: 12, opacity: working ? 0.5 : 1 }}><Text>Annuler ou révoquer la réservation NFC</Text></TouchableOpacity> : null}
       {canProgram && cards && canRecoverExpiredNfcCard(card, cards)

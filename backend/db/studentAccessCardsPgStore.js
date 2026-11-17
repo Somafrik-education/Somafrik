@@ -242,9 +242,9 @@ function createStudentAccessCardsPgStore(repo) {
     return null;
   }
 
-  // R3-3 A3/A5 — the only reason change allowed on a revoked card: an administrative
-  // NFC cancellation escalated to a security revocation. Never the reverse, never the UID.
-  async function escalateNfcCancellation(schoolId, cardId) {
+  // R3-3 — only a pending, physically unconfirmed NFC cancellation/expiration
+  // may be escalated to a security revocation. Never the reverse, never the UID.
+  async function escalateNfcReservationSecurity(schoolId, cardId) {
     return one(
       `UPDATE student_access_cards
           SET revoke_reason = 'revoked',
@@ -252,7 +252,11 @@ function createStudentAccessCardsPgStore(repo) {
         WHERE id = $1
           AND school_id = $2
           AND status = 'revoked'
-          AND revoke_reason = 'nfc_cancelled'
+          AND revoke_reason IN ('nfc_cancelled', 'nfc_reservation_expired')
+          AND nfc_uid IS NOT NULL
+          AND nfc_encoding_state = 'pending'
+          AND nfc_encoded_at IS NULL
+          AND nfc_locked_at IS NULL
         RETURNING *`,
       [cardId, schoolId],
     );
@@ -480,7 +484,7 @@ function createStudentAccessCardsPgStore(repo) {
     insert,
     markLost,
     markRevoked,
-    escalateNfcCancellation,
+    escalateNfcReservationSecurity,
     replaceAtomic,
   };
 }

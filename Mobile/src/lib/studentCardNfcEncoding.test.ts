@@ -860,3 +860,31 @@ test("R3-3 A3/A5 — libellés de motif et message de résultat fidèles au Back
   assert.match(nfcRevocationResultCopy({ status: "revoked", revokeReason: "revoked" })!, /^Révocation de sécurité enregistrée/);
   assert.equal(nfcRevocationResultCopy({ status: "issued", revokeReason: null }), null);
 });
+
+test("R3-3 P1 panneau : révocation de sécurité possible après annulation, sans nouvelle lecture NFC", async () => {
+  const card: EnrollmentCard = { ...PENDING_NFC_CARD, status: "revoked", revokeReason: "nfc_cancelled", nfcRecoverable: true };
+  const panel = await panelHarness.render({ cards: [card], canRead: true, canUpdate: true });
+  try {
+    const reasons: unknown[] = [];
+    panelHarness.state.server.revokeReservation = async (_card, reason) => {
+      reasons.push(reason);
+      return { ...card, revokeReason: "revoked", nfcRecoverable: false };
+    };
+    await panel.press("Signaler une carte NFC suspecte");
+    assert.equal(panelHarness.state.alerts.at(-1), "Confirmer la révocation de sécurité");
+    assert.deepEqual(reasons, []);
+    await panel.alertOption("Confirmer");
+    assert.deepEqual(reasons, ["revoked"]);
+    assert.ok(panelHarness.state.texts.some(t => t.startsWith("Révocation de sécurité enregistrée")));
+    assert.ok(!panelHarness.state.calls.some(c => ["nfc-request", "nfc-write"].includes(c)));
+  } finally { await panel.unmount(); }
+});
+test("R3-3 P1 panneau : expiration peut être signalée, aucune escalade si hors ligne", async () => {
+  const expired: EnrollmentCard = { ...PENDING_NFC_CARD, status: "revoked", revokeReason: "nfc_reservation_expired", nfcRecoverable: true };
+  const blocked = await panelHarness.render({ cards: [expired], canRead: true, canUpdate: true, mutationsBlocked: true });
+  try { assert.equal(blocked.button("Signaler une carte NFC suspecte"), undefined); }
+  finally { await blocked.unmount(); }
+  const allowed = await panelHarness.render({ cards: [expired], canRead: true, canUpdate: true });
+  try { assert.ok(allowed.button("Signaler une carte NFC suspecte")); }
+  finally { await allowed.unmount(); }
+});
