@@ -12,6 +12,7 @@ import {
   studentCardActions,
   studentCardDocumentTitle,
   studentCardErrorMessage,
+  studentCardRevokeReasonLabel,
   studentCardPrintIdentityKeys,
   STUDENT_CARD_HOLDER_TITLES,
   STUDENT_CARD_SCREEN_PLACEHOLDERS,
@@ -97,6 +98,13 @@ describe("studentCardPolicy", () => {
     expect(studentCardErrorMessage(new ApiError("fuite", 404, "STUDENT_CARD_NOT_FOUND"))).not.toContain("fuite");
     expect(studentCardErrorMessage(new ApiError("détail secret", 409, "STUDENT_CARD_NFC_UID_EXISTS"))).toContain("Diagnostiquer une carte NFC");
     expect(studentCardErrorMessage(new ApiError("détail secret", 409, "STUDENT_CARD_NFC_UID_EXISTS"))).not.toContain("détail secret");
+  });
+
+  it("R3-3 A3/A5 — distingue annulation administrative et révocation de sécurité", () => {
+    expect(studentCardRevokeReasonLabel("revoked")).toBe("Révocation de sécurité");
+    expect(studentCardRevokeReasonLabel("nfc_cancelled")).toBe("Annulation administrative (réservation NFC non confirmée)");
+    expect(studentCardRevokeReasonLabel("nfc_reservation_expired")).toBe("Réservation NFC expirée");
+    expect(studentCardRevokeReasonLabel("sortie")).toBe("sortie");
   });
 
   it("prépare une identité imprimée sans données interdites", () => {

@@ -70,6 +70,24 @@ export const NFC_PHASE_COPY: Record<NfcPhase, string> = {
   success: "Carte NFC programmée et activée avec succès.", error: "Opération interrompue. Reprenez l’opération existante.",
   expired: "Réservation expirée. Cette carte ne peut plus être activée.", resume: "Reprendre l’opération",
 };
+// R3-3 A3/A5 — motif réellement enregistré par le Backend ; une sécurité prime sur une annulation.
+const REVOKE_REASON_LABELS: Record<string, string> = {
+  revoked: "Révocation de sécurité",
+  nfc_cancelled: "Annulation administrative (réservation non confirmée)",
+  nfc_reservation_expired: "Réservation expirée",
+  nfc_abandoned: "Réservation abandonnée",
+  lost: "Perte déclarée",
+};
+export function nfcRevokeReasonLabel(reason: string | null | undefined): string | null {
+  if (!reason) return null;
+  return REVOKE_REASON_LABELS[reason] ?? "Motif enregistré";
+}
+export function nfcRevocationResultCopy(card: Pick<EnrollmentCard, "status" | "revokeReason">): string | null {
+  if (card.status !== "revoked") return null;
+  return card.revokeReason === "nfc_cancelled"
+    ? "Annulation administrative enregistrée. L’UID reste réservé ; aucune carte n’a été réattribuée."
+    : `${nfcRevokeReasonLabel(card.revokeReason) ?? "Révocation"} enregistrée. L’UID reste réservé ; aucune carte n’a été réattribuée.`;
+}
 export function nfcFailure(code: string): Error & { code: string } {
   return Object.assign(new Error(code), { code });
 }

@@ -242,6 +242,22 @@ function createStudentAccessCardsPgStore(repo) {
     return null;
   }
 
+  // R3-3 A3/A5 — the only reason change allowed on a revoked card: an administrative
+  // NFC cancellation escalated to a security revocation. Never the reverse, never the UID.
+  async function escalateNfcCancellation(schoolId, cardId) {
+    return one(
+      `UPDATE student_access_cards
+          SET revoke_reason = 'revoked',
+              updated_at = NOW()
+        WHERE id = $1
+          AND school_id = $2
+          AND status = 'revoked'
+          AND revoke_reason = 'nfc_cancelled'
+        RETURNING *`,
+      [cardId, schoolId],
+    );
+  }
+
   async function replaceAtomicOn(db, options) {
     const schoolId = asTrimmed(options.schoolId);
     const oldCardId = asTrimmed(options.oldCardId);
@@ -464,6 +480,7 @@ function createStudentAccessCardsPgStore(repo) {
     insert,
     markLost,
     markRevoked,
+    escalateNfcCancellation,
     replaceAtomic,
   };
 }

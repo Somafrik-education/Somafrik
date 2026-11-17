@@ -22,6 +22,7 @@ import {
   studentCardActions,
   studentCardErrorMessage,
   studentCardMediumLabel,
+  studentCardRevokeReasonLabel,
   studentCardStatusLabel,
   type StudentCardAction,
   type StudentCardSettingsGate,
@@ -305,7 +306,7 @@ export function StudentCardTab({
                     </div>
                     <p className="text-sm">ID carte : {card.publicId}</p>
                     <p className="text-sm text-muted">Émise le {formatIssuedAt(card.issuedAt)}</p>
-                    {card.revokeReason ? <p className="text-sm text-muted">Motif : {card.revokeReason}</p> : null}
+                    {card.revokeReason ? <p className="text-sm text-muted">Motif : {studentCardRevokeReasonLabel(card.revokeReason)}</p> : null}
                     {card.nfcRecoverable === true ? (
                       <p className="text-sm text-muted">Réservation NFC annulée ou expirée sans encodage confirmé. UID conservé dans l’historique ; réattribution interdite. Diagnostic et validation CTO requis.</p>
                     ) : null}

@@ -4,7 +4,7 @@ import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollme
 import { createIdempotencyKey } from "../lib/networkResilience";
 import { StudentCardQrCaptureModal } from "./StudentCardQrCaptureModal";
 import {
-  canRecoverExpiredNfcCard, createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure,
+  canRecoverExpiredNfcCard, createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure, nfcRevocationResultCopy, nfcRevokeReasonLabel,
   type CardRereadInput, type EnrollmentCard, type NfcEncoderHardware, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
@@ -134,8 +134,9 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
         try {
           if (typeof api.revokeReservation !== "function") throw nfcFailure("NFC_BACKEND_UNSUPPORTED");
           const result = await api.revokeReservation(card, reason);
-          if (live.current && boundStudent.current === requestStudent && generation.current === captured && result.status === "revoked") {
-            setMessage("Réservation révoquée. L’UID reste réservé ; aucune carte n’a été réattribuée.");
+          const recorded = nfcRevocationResultCopy(result);
+          if (live.current && boundStudent.current === requestStudent && generation.current === captured && recorded) {
+            setMessage(recorded);
           }
         } catch (error) {
           if (live.current && boundStudent.current === requestStudent && generation.current === captured) setMessage(nfcErrorCopy(error));
@@ -199,6 +200,7 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     {cards?.map((card) => <View key={card.id} style={{ paddingVertical: 10 }}>
       <Text>Carte {card.publicId} — {statusLabels[card.status] || "État inconnu"}</Text>
       {card.nfc ? <Text>{card.nfc.tagType} · {stateLabels[card.nfc.state]}</Text> : null}
+      {nfcRevokeReasonLabel(card.revokeReason) ? <Text>Motif : {nfcRevokeReasonLabel(card.revokeReason)}</Text> : null}
       {card.nfcRecoverable === true ? <Text>Réservation administrativement récupérable après contrôle CTO. UID toujours réservé ; aucun transfert autorisé.</Text> : null}
       {permitted.current && enabled && card.status === "issued" && card.nfc?.state === "pending"
         ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Annuler ou révoquer la réservation NFC" disabled={working} onPress={() => cancelPending(card)} style={{ padding: 12, opacity: working ? 0.5 : 1 }}><Text>Annuler ou révoquer la réservation NFC</Text></TouchableOpacity> : null}

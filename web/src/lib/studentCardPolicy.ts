@@ -114,6 +114,19 @@ export function studentCardMediumLabel(medium: StudentCardMedium): string {
   }
 }
 
+/** R3-3 A3/A5 — libellé du motif réellement enregistré par le Backend (code inconnu affiché tel quel). */
+const REVOKE_REASON_LABELS: Record<string, string> = {
+  revoked: "Révocation de sécurité",
+  nfc_cancelled: "Annulation administrative (réservation NFC non confirmée)",
+  nfc_reservation_expired: "Réservation NFC expirée",
+  nfc_abandoned: "Réservation NFC abandonnée",
+  lost: "Perte déclarée",
+};
+
+export function studentCardRevokeReasonLabel(reason: string): string {
+  return REVOKE_REASON_LABELS[reason] ?? reason;
+}
+
 export type StudentCardAction = "lost" | "revoke" | "replace";
 
 export function studentCardActions(status: StudentCardStatus): readonly StudentCardAction[] {

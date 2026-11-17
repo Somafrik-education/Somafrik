@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import Module, { createRequire } from "node:module";
 import React, { act } from "react";
-import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcErrorCopy, nfcFailure,
+import { createIndividualNfcFlow, createNfcEnrollmentApi, encodeNfcCard, verifyNfcCard, identifyNtag, normalizeNtagUid, ndefForCard, nfcErrorCopy, nfcFailure, nfcRevocationResultCopy, nfcRevokeReasonLabel,
   type EnrollmentCard, type IssuedNfcCard, type NfcEncoderHardware, type NfcEnrollmentApi, type FlowControl, type NfcPhase } from "./studentCardNfcEncoding";
 import { studentCardEnrollmentAccess } from "./studentCardEnrollmentAccess";
 const UID = "04112233445566";
@@ -338,7 +338,8 @@ const panelHarness = (() => {
   type QrProps = { visible: boolean; title: string; onToken: (token: string) => void; onCancel: () => void };
   type AlertButton = { text: string; onPress?: () => void };
   type Chip = { uid: string; storage: number; encoded: number[]; writes: number; failWrite: boolean };
-  type Server = { provision?: (...a: unknown[]) => Promise<unknown>; confirmProvision?: (...a: unknown[]) => Promise<unknown>; verify?: (...a: unknown[]) => Promise<unknown> };
+  type Server = { provision?: (...a: unknown[]) => Promise<unknown>; confirmProvision?: (...a: unknown[]) => Promise<unknown>; verify?: (...a: unknown[]) => Promise<unknown>;
+    revokeReservation?: (...a: unknown[]) => Promise<unknown> };
   const state = { cards: [] as EnrollmentCard[], buttons: [] as PanelButton[], calls: [] as string[], alerts: [] as string[], qr: null as QrProps | null,
     texts: [] as string[], alertButtons: [] as AlertButton[], chip: null as Chip | null, server: {} as Server };
   const ndefLib = nodeRequire("react-native-nfc-manager/dist/ndef-lib");
@@ -366,6 +367,7 @@ const panelHarness = (() => {
       async list(studentId: string) { state.calls.push(`list:${studentId}`); state.calls.push("list"); return { cards: structuredClone(state.cards), nfcEnabled: true }; },
       issue: record("issue"), replace: record("replace"), retry: record("retry"), confirm: record("confirm"),
       provision: server("provision"), confirmProvision: server("confirmProvision"), verify: server("verify"),
+      revokeReservation: server("revokeReservation"),
     } },
     // Capture QR (caméra) simulée : le test présente le QR imprimé via onToken.
     "./StudentCardQrCaptureModal": { StudentCardQrCaptureModal: (props: QrProps) => { state.qr = props; return null; } },
@@ -790,4 +792,71 @@ test("R3-3 Mobile uses explicit cancellation reason and does not read/write the 
   assert.equal(requests[0].options?.method, "POST");
   assert.deepEqual(JSON.parse(requests[0].options!.body!), { reason: "nfc_cancelled" });
   assert.match(nfcErrorCopy(nfcFailure("STUDENT_CARD_NFC_UID_EXISTS")), /Diagnostiquer une carte NFC/);
+});
+
+// R3-3 A3/A5 — panneau Android : motif explicite, double confirmation, motif relu du Backend.
+const PENDING_NFC_CARD: EnrollmentCard = { id: "p1", publicId: "P".repeat(22), medium: "nfc", status: "issued",
+  nfc: { ...identity, state: "pending", operationId: "11111111-1111-4111-8111-111111111111", expiresAt: "2999-01-01T00:00:00.000Z" } };
+const CANCEL_OR_REVOKE = "Annuler ou révoquer la réservation NFC";
+test("R3-3 A3/A5 (panneau) — révocation de sécurité : choix explicite puis confirmation avant tout appel", async () => {
+  const panel = await panelHarness.render({ cards: [PENDING_NFC_CARD], canRead: true, canUpdate: true });
+  try {
+    const reasons: unknown[] = [];
+    panelHarness.state.server.revokeReservation = async (_card, reason) => { reasons.push(reason); return { ...PENDING_NFC_CARD, status: "revoked", revokeReason: "revoked", nfcRecoverable: false }; };
+    await panel.press(CANCEL_OR_REVOKE);
+    assert.equal(panelHarness.state.alerts.at(-1), "Motif de révocation NFC");
+    assert.deepEqual(panelHarness.state.alertButtons.map((b) => b.text), ["Retour", "Annulation administrative", "Sécurité"]);
+    await panel.alertOption("Sécurité");
+    assert.equal(panelHarness.state.alerts.at(-1), "Confirmer la révocation de sécurité");
+    assert.deepEqual(reasons, [], "aucune mutation avant la confirmation");
+    await panel.alertOption("Confirmer");
+    assert.deepEqual(reasons, ["revoked"]);
+    assert.ok(panelHarness.state.texts.some((t) => t.startsWith("Révocation de sécurité enregistrée")), panelHarness.state.texts.join(" | "));
+    assert.ok(!panelHarness.state.calls.some((c) => ["nfc-request", "nfc-write"].includes(c)), "aucune lecture ni écriture de puce");
+  } finally { await panel.unmount(); }
+});
+test("R3-3 A3-2 (panneau) — annulation perdante en course : le message reflète la révocation de sécurité enregistrée", async () => {
+  const panel = await panelHarness.render({ cards: [PENDING_NFC_CARD], canRead: true, canUpdate: true });
+  try {
+    const reasons: unknown[] = [];
+    panelHarness.state.server.revokeReservation = async (_card, reason) => { reasons.push(reason); return { ...PENDING_NFC_CARD, status: "revoked", revokeReason: "revoked", nfcRecoverable: false, idempotentReplay: true }; };
+    await panel.press(CANCEL_OR_REVOKE);
+    await panel.alertOption("Annulation administrative");
+    assert.equal(panelHarness.state.alerts.at(-1), "Confirmer l’annulation");
+    const back = panelHarness.state.alertButtons.find((b) => b.text === "Retour");
+    assert.ok(back && back.onPress === undefined, "« Retour » ferme la confirmation sans action");
+    assert.deepEqual(reasons, [], "aucune mutation sans « Confirmer »");
+    await panel.press(CANCEL_OR_REVOKE);
+    await panel.alertOption("Annulation administrative");
+    await panel.alertOption("Confirmer");
+    assert.deepEqual(reasons, ["nfc_cancelled"]);
+    assert.ok(panelHarness.state.texts.some((t) => t.startsWith("Révocation de sécurité enregistrée")), panelHarness.state.texts.join(" | "));
+    assert.ok(!panelHarness.state.texts.some((t) => t.startsWith("Annulation administrative enregistrée")));
+  } finally { await panel.unmount(); }
+});
+test("R3-3 A3/A5 (panneau) — hors ligne : aucune annulation ni révocation proposée", async () => {
+  const panel = await panelHarness.render({ cards: [PENDING_NFC_CARD], canRead: true, canUpdate: true, mutationsBlocked: true });
+  try { assert.equal(panel.button(CANCEL_OR_REVOKE), undefined); }
+  finally { await panel.unmount(); }
+});
+test("R3-3 A12 (panneau) — carte révoquée pour sécurité : motif affiché, jamais présentée comme récupérable", async () => {
+  const panel = await panelHarness.render({ cards: [{ ...PENDING_NFC_CARD, status: "revoked", revokeReason: "revoked", nfcRecoverable: false }], canRead: true, canUpdate: true });
+  try {
+    assert.ok(panelHarness.state.texts.includes("Motif : Révocation de sécurité"), panelHarness.state.texts.join(" | "));
+    assert.ok(!panelHarness.state.texts.some((t) => /récupérable/.test(t)));
+    assert.equal(panel.button(CANCEL_OR_REVOKE), undefined);
+  } finally { await panel.unmount(); }
+  const cancelled = await panelHarness.render({ cards: [{ ...PENDING_NFC_CARD, status: "revoked", revokeReason: "nfc_cancelled", nfcRecoverable: true }], canRead: true, canUpdate: true });
+  try {
+    assert.ok(panelHarness.state.texts.includes("Motif : Annulation administrative (réservation non confirmée)"));
+    assert.ok(panelHarness.state.texts.some((t) => /récupérable après contrôle CTO/.test(t)));
+  } finally { await cancelled.unmount(); }
+});
+test("R3-3 A3/A5 — libellés de motif et message de résultat fidèles au Backend", () => {
+  assert.equal(nfcRevokeReasonLabel("revoked"), "Révocation de sécurité");
+  assert.equal(nfcRevokeReasonLabel(null), null);
+  assert.equal(nfcRevokeReasonLabel("code-inconnu"), "Motif enregistré");
+  assert.match(nfcRevocationResultCopy({ status: "revoked", revokeReason: "nfc_cancelled" })!, /^Annulation administrative enregistrée/);
+  assert.match(nfcRevocationResultCopy({ status: "revoked", revokeReason: "revoked" })!, /^Révocation de sécurité enregistrée/);
+  assert.equal(nfcRevocationResultCopy({ status: "issued", revokeReason: null }), null);
 });
