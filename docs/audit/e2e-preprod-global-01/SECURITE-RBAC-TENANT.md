@@ -1,8 +1,33 @@
 # E2E-PREPROD-GLOBAL-01 — Sécurité, RBAC et isolation des établissements
 
-**Statut : analyse statique et automatisée uniquement.** Aucun test de sécurité authentifié n'a été exécuté en préproduction (voir `RAPPORT-FINAL-CTO.md` §2). Rien ici n'est un PASS E2E.
+Ce document mêle trois natures de preuve, signalées à chaque fois :
+- **[E2E préprod]** : exécuté contre `api-preprod.somafrik.app` ;
+- **[Code]** : analyse statique ;
+- **[Auto]** : tests automatisés.
 
-Source : `develop@763d9bd8` (`backend/server.js`, `backend/services/rbacService.js`).
+Aucun test **authentifié** n'a été exécuté en préproduction : il n'y a pas de comptes de test (voir `RAPPORT-FINAL-CTO.md` §2).
+
+Sources :
+- code : `develop@93f98e44` (`backend/server.js`, `backend/services/rbacService.js`) ;
+- préproduction : API `gitSha=93f98e44`, lu le 2026-11-17 à 12:14 UTC.
+
+## 0. [E2E préprod] Refus sans authentification (E2E-009), exécuté le 2026-11-17
+
+- **GET :** 138 routes protégées appelées sans jeton, avec des identifiants inexistants (`E2E-NONEXISTENT-0000`) → **138 × 401**, message uniforme `{"message":"Authentification JWT requise"}`, aucune donnée.
+- **Écritures :** 196 routes protégées (POST, PUT, PATCH, DELETE) appelées sans jeton, corps vide `{}` et identifiants inexistants → **196 × 401**, même message. Les 7 routes publiques ont été exclues : connexion, identification, refresh, essai, effacement, et la route de déverrouillage E2E.
+- **Route de diagnostic :** `GET /api/debug/notes-authz-trace` → **404**. La route n'existe pas en préproduction, donc `SOMAFRIK_AUTHZ_TRACE≠1`.
+- **Débit :** contrôlé, une requête toutes les 200 ms. Aucune écriture possible : tout est refusé avant le gestionnaire.
+- **Preuves :** `preuves/E2E-009-unauth-sweep.tsv`, `preuves/E2E-009-unauth-write-sweep.tsv`.
+
+**Résultat : aucune route protégée n'est accessible sans authentification. Aucun P0 constaté sur ce périmètre.**
+
+## 0 bis. Points non vérifiables à ce stade
+
+- **`SOMAFRIK_E2E` / `POST /api/backoffice/e2e/clear-login-lockout` (E2E-013) : BLOCKED.**
+  - La clé API Render enregistrée est refusée (401).
+  - Appeler directement la route n'est pas une méthode acceptable : si la variable valait `true`, l'appel **effacerait** les compteurs de verrouillage, ce qui est une suppression de données, interdite.
+  - **[Code]** En production, `assertLoginLockoutProductionGuards` refuse de démarrer avec `SOMAFRIK_E2E=true`. En préproduction, aucune garde équivalente n'existe.
+- **#1178, côté base (C03 et C06) : BLOCKED,** faute d'accès PostgreSQL de préproduction en lecture seule. Les requêtes de comptage prêtes sont dans l'issue.
 
 ## 1. Surface non authentifiée
 

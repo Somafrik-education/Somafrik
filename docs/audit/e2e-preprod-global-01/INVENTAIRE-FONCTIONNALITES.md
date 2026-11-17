@@ -1,8 +1,8 @@
 # E2E-PREPROD-GLOBAL-01 — Inventaire des fonctionnalités
 
-Source : dépôt `develop@763d9bd8` (inventaire statique, généré par script).
+Source : dépôt `develop@93f98e44` (inventaire statique, généré par script).
 
-**Total : 347 routes API, 108 routes Web, 41 écrans Mobile, soit 496 entrées. 0 entrée non classée.**
+**Total : 347 routes API, 108 routes Web, 42 écrans Mobile, soit 497 entrées. 0 entrée non classée.**
 
 Méthode :
 - routes API : `app.<méthode>("/…")` dans `backend/server.js` ;
@@ -24,7 +24,7 @@ Le classement par domaine (A à O du mandat) repose sur des mots-clés : il sert
 | H. Notes, évaluations et examens | 26 | 3 | 4 |
 | I. Bulletins scolaires | 10 | 6 | 1 |
 | J. Finances | 39 | 15 | 5 |
-| K. Communication et notifications | 52 | 11 | 3 |
+| K. Communication et notifications | 52 | 11 | 4 |
 | L. Parents et élèves connectés | 8 | 2 | 1 |
 | M. Tableaux de bord et rapports | 10 | 6 | 1 |
 | N. Cartes élèves, QR et NFC | 27 | 0 | 2 |
@@ -363,7 +363,7 @@ Le classement par domaine (A à O du mandat) repose sur des mots-clés : il sert
 
 **Web (11) :** `/administration/contacts`, `/annonces`, `/communication`, `/communication/annonces`, `/communication/messages`, `/contacts`, `/messages`, `/notifications`, `/notifications-plateforme`, `contacts`, `notifications`
 
-**Mobile (3) :** `Announcements`, `InternalNotifications`, `Messages`
+**Mobile (4) :** `Announcements`, `InternalNotifications`, `Messages`, `SchoolNotificationSettings`
 
 | Méthode | Route API | Permissions RBAC |
 |---|---|---|

@@ -1,0 +1,7 @@
+{
+ "status": "ok",
+ "database": "postgresql",
+ "version": "1.0.0",
+ "gitSha": "93f98e44746607ba53c6997d76bbf1e126601e85",
+ "timestamp": "2026-11-17T12:14:31.747Z"
+}
