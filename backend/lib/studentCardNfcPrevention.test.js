@@ -18,5 +18,6 @@ test("R3-3: only cancelled/expired pending NFC records are administratively elig
     { status: "active" }, { status: "issued" }, { nfc_uid: null },
     { nfc_encoding_state: "encoded" }, { nfc_encoding_state: "locked" },
     { nfc_encoded_at: new Date() }, { nfc_locked_at: new Date() },
+    { nfc_replaces_card_id: "previous-card" },
   ]) assert.equal(nfcRecoverable(reservation(overrides)), false, JSON.stringify(overrides));
 });
