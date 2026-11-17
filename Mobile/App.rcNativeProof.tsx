@@ -35,6 +35,8 @@ import {
   openOfflineRollCall,
   prepareOfflinePack,
   processCard,
+  RC_PROOF_VECTOR_NOW_MS,
+  withProofClock,
 } from "./src/offline/rollCall/session/offlineRollCallProofHelpers";
 import { safeLogger } from "./src/services/safeLogger";
 
@@ -78,7 +80,8 @@ async function refusesToRead(open: () => Promise<{ execAsync(sql: string): Promi
 async function runSqlCipherProof(): Promise<string> {
   const platform = createNativeRollCallPlatform();
   if (!platform) return "platform=unavailable";
-  const manager = createRollCallAccountManager(platform);
+  // NFC-HERMES-CLOCK-01 : appel daté du 2026-11-09 → horloge des vecteurs aux deux lancements.
+  const manager = createRollCallAccountManager(withProofClock(platform, RC_PROOF_VECTOR_NOW_MS));
   const opened = await manager.activate(IDENTITY);
   if (!opened.ok) return `open=failed code=${opened.code}`;
   const account = (opened as { account: RcActiveAccount }).account;
@@ -97,7 +100,7 @@ async function runSqlCipherProof(): Promise<string> {
         publicId: `NATIVEPROOFCARD${String(i).padStart(7, "0")}`,
         proof: "P".repeat(43),
         medium: i % 2 ? "qr" : "nfc",
-        scannedAt: new Date().toISOString(),
+        scannedAt: new Date(RC_PROOF_VECTOR_NOW_MS).toISOString(),
         match: null,
       });
     }
@@ -149,7 +152,8 @@ async function runPr3PipelineProof(): Promise<string> {
   const platform = createNativeRollCallPlatform();
   if (!platform) return "pr3=platform_unavailable";
   const input = vectors.inputs as Record<string, string>;
-  const manager = createRollCallAccountManager(platform);
+  // NFC-HERMES-CLOCK-01 : même horloge que le contexte PR3 (vecteurs) pour la purge d'activation.
+  const manager = createRollCallAccountManager(withProofClock(platform, RC_PROOF_VECTOR_NOW_MS));
   const opened = await manager.activate({ environmentId: "nativeproof-00000000", userId: input.actorUserId, schoolId: input.schoolId });
   if (!opened.ok) return `pr3=open_failed code=${opened.code}`;
   const base = (opened as { account: RcActiveAccount }).account.ctx;
@@ -163,7 +167,7 @@ async function runPr3PipelineProof(): Promise<string> {
     }
     // Horloge et identifiants déterministes = ceux des vecteurs (sessionId …0004, scanId …0006, operationId …0008).
     const ids = [input.sessionId, input.scanId, "00000000-0000-4000-8000-000000000008"];
-    const ctx: RcContext = { ...base, nowMs: () => Date.parse("2026-11-09T07:31:02Z"), randomUUID: () => ids.shift() ?? "00000000-0000-4000-8000-0000000000ff" };
+    const ctx: RcContext = { ...base, nowMs: () => RC_PROOF_VECTOR_NOW_MS, randomUUID: () => ids.shift() ?? "00000000-0000-4000-8000-0000000000ff" };
     const keyring = validatePackKeyring("recette", [{ keyId: "rc-pack-test-1", publicKey: vectors.expected["V-9_ed25519_test_pub_raw"], status: "active" }]);
     const envelopeText = JSON.stringify({
       pack: vectors.testPack,
