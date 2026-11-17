@@ -125,10 +125,11 @@ describe("Planning V2 — payload d'écriture Web", () => {
     expect(options[0]?.name).toBe("Mathématiques");
   });
 
-  it("ne dit jamais de recréer le cours dans Mon établissement", () => {
+  it("oriente vers l'affectation sans recréer la matière", () => {
     const message = planningNoSchedulableCoursesMessage("2ème A");
     expect(message).toMatch(/2ème A/);
-    expect(message).not.toMatch(/Mon établissement/);
-    expect(message).toMatch(/ne le recréez pas/i);
+    expect(message).toMatch(/Mon établissement/);
+    expect(message).toMatch(/Enseignants/);
+    expect(message).toMatch(/Ne recréez pas la matière/i);
   });
 });
