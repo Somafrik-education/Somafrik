@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: A6-01 — droits : même règle que les autres écrans Paramètres établissement
+ok 1 - A6-01 — droits : même règle que les autres écrans Paramètres établissement
+  ---
+  duration_ms: 2.666649
+  type: 'test'
+  ...
+# Subtest: A6-02 — lignes affichées : destinataires autorisés uniquement, canal absent = activé (comme le Web)
+ok 2 - A6-02 — lignes affichées : destinataires autorisés uniquement, canal absent = activé (comme le Web)
+  ---
+  duration_ms: 11.601876
+  type: 'test'
+  ...
+# Subtest: A6-03 — « Enregistrer ces règles » envoie toutes les règles affichées (même patch que le Web)
+ok 3 - A6-03 — « Enregistrer ces règles » envoie toutes les règles affichées (même patch que le Web)
+  ---
+  duration_ms: 0.679377
+  type: 'test'
+  ...
+# Subtest: A6-04 — un interrupteur n'envoie que la cellule modifiée
+ok 4 - A6-04 — un interrupteur n'envoie que la cellule modifiée
+  ---
+  duration_ms: 0.468286
+  type: 'test'
+  ...
+# Subtest: A6-05 — client : même endpoint que le Web, établissement explicite
+ok 5 - A6-05 — client : même endpoint que le Web, établissement explicite
+  ---
+  duration_ms: 0.346196
+  type: 'test'
+  ...
+# Subtest: A6-06 — écran natif : accès, écriture réservée à UPDATE, erreurs visibles, rechargement au focus
+ok 6 - A6-06 — écran natif : accès, écriture réservée à UPDATE, erreurs visibles, rechargement au focus
+  ---
+  duration_ms: 0.352375
+  type: 'test'
+  ...
+# Subtest: A6-07 — navigation : écran enregistré, carte Paramètres et lien de l'étape 9
+ok 7 - A6-07 — navigation : écran enregistré, carte Paramètres et lien de l'étape 9
+  ---
+  duration_ms: 0.311242
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 241.34136

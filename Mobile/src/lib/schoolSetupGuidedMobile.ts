@@ -25,7 +25,7 @@ export const GUIDED_MOBILE_LINKS = {
   students: "Classes",
   finance: "FeeGrids",
   pedagogy: "TeacherGrades",
-  communication: "InternalNotifications",
+  communication: "SchoolNotificationSettings",
   users: "Users",
 } as const;
 
