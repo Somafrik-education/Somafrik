@@ -341,6 +341,7 @@ pg("R3-3 A3 unordered races always end as a security revocation", async f => {
 pg("R3-3 P1 expired pending reservation escalates to security, with an audit and preserved UID", async f => {
   const card = await f.issue();
   await f.expire(card.id);
+  await assert.rejects(f.confirm(card), {code: "STUDENT_CARD_NFC_EXPIRED"});
   const expired = await f.row(card.id);
   assert.equal(expired.revoke_reason, "nfc_reservation_expired");
   const secured = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
@@ -361,6 +362,7 @@ pg("R3-3 P1 expired pending reservation escalates to security, with an audit and
 pg("R3-3 P1 security cannot be downgraded to expiration or administrative cancellation", async f => {
   const card = await f.issue();
   await f.expire(card.id);
+  await assert.rejects(f.confirm(card), {code: "STUDENT_CARD_NFC_EXPIRED"});
   await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
   const downgrade = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "nfc_cancelled");
   assert.equal(downgrade.revokeReason, "revoked");
