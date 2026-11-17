@@ -1003,8 +1003,8 @@ export function UsersPage() {
                 assignableApiAvailable === true &&
                 !decoratedCreatableRoles.some((role) => role.roleKey === "SCHOOL_ADMIN") ? (
                   <p role="alert" className="mt-2 text-sm text-red-700">
-                    Le catalogue des rôles ne propose pas Admin School (SCHOOL_ADMIN).
-                    La création d'un administrateur d'établissement est indisponible tant que le rôle n'est pas fourni par l'API.
+                    Le catalogue des rôles ne propose pas le rôle Administrateur d'établissement.
+                    La création de ce compte est indisponible tant que le rôle n'est pas fourni par l'API.
                   </p>
                 ) : null}
               </Field>
