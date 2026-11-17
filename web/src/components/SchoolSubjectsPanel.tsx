@@ -53,7 +53,7 @@ export function SchoolSubjectsPanel({ canCreate }: { canCreate: boolean }) {
       });
       setName("");
       setCode("");
-      showToast("Matière enregistrée. Affectez-la à une classe et à un enseignant avant de la planifier.", "success");
+      showToast("Cours enregistré. Affectez-le à une classe et à un enseignant avant de le planifier.", "success");
       await load();
     } catch (err) {
       showToast(formatCaughtApiError(err, "Création de cours impossible."), "error");
@@ -66,7 +66,7 @@ export function SchoolSubjectsPanel({ canCreate }: { canCreate: boolean }) {
     <div className="space-y-4">
       <SectionHeader
         title="Cours"
-        description="Matières de l’établissement. Pour les afficher dans le planning, affectez chaque matière à une classe et à un enseignant depuis Mon établissement → Enseignants."
+        description="Cours de l’établissement. Pour les afficher dans le planning, affectez chaque cours à une classe et à un enseignant depuis Mon établissement → Enseignants."
       />
       {error ? (
         <InlineAlert tone="danger" title="Catalogue de cours indisponible">
