@@ -185,6 +185,7 @@ export const routeFeatureMap: Record<string, string> = {
   SchoolYearSettings: "Paramètres Établissement",
   SchoolPedagogicalStructure: "Paramètres Établissement",
   SchoolAssignableRoles: "Paramètres Établissement",
+  SchoolNotificationSettings: "Paramètres Établissement",
   PlatformNotifications: "Notifications",
   InternalNotifications: "Notifications",
   Permissions: "Droits par rôle",
