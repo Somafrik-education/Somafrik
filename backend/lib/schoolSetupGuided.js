@@ -53,6 +53,18 @@ const GUIDED_STEP_REQUIREMENTS = Object.freeze({
   users: "Créez au moins un utilisateur pour l'établissement.",
 });
 
+/**
+ * AUDIT-SETUP-GUIDED-10-01 — champs exigés par l'étape « Informations établissement »,
+ * dans l'ordre du formulaire Profil. Sert uniquement à nommer ce qui manque.
+ */
+const ESTABLISHMENT_FIELDS = Object.freeze([
+  { key: "name", label: "Nom", flag: "hasName" },
+  { key: "country", label: "Pays", flag: "hasCountry" },
+  { key: "address", label: "Adresse", flag: "hasAddress" },
+  { key: "phone", label: "Téléphone", flag: "hasPhone" },
+  { key: "currency", label: "Devise", flag: "hasCurrency" },
+]);
+
 const GUIDED_STEP_TOTAL = 10;
 const GUIDED_OPERATIONAL_STEP_TOTAL = 6;
 const REQUIRED_STEP_KEYS = GUIDED_STEP_KEYS.slice(0, GUIDED_OPERATIONAL_STEP_TOTAL);
@@ -99,6 +111,29 @@ function stepSatisfied(stepKey, snapshot = {}) {
     default:
       return false;
   }
+}
+
+function missingEstablishmentFields(snapshot = {}) {
+  return ESTABLISHMENT_FIELDS.filter((field) => !snapshot[field.flag]).map(({ key, label }) => ({ key, label }));
+}
+
+/** Condition manquante d'une étape, avec les champs précis pour l'étape 1. */
+function stepRequirementDetails(stepKey, snapshot) {
+  const details = {
+    stepKey,
+    stepLabel: GUIDED_STEP_LABELS[stepKey],
+    requirement: GUIDED_STEP_REQUIREMENTS[stepKey],
+  };
+  if (stepKey === "establishment") {
+    const missingFields = missingEstablishmentFields(snapshot);
+    if (missingFields.length) {
+      details.missingFields = missingFields;
+      details.requirement = `champ${missingFields.length > 1 ? "s" : ""} manquant${missingFields.length > 1 ? "s" : ""} : ${missingFields
+        .map((field) => field.label.toLowerCase())
+        .join(", ")}. Complétez-le${missingFields.length > 1 ? "s" : ""} dans Paramètres › Profil établissement.`;
+    }
+  }
+  return details;
 }
 
 function normalizeCompleted(list) {
@@ -267,7 +302,14 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
     params,
   );
   const profile = school?.profile_payload && typeof school.profile_payload === "object" ? school.profile_payload : {};
-  const currency = String(profile.currency ?? school?.country_currency ?? "").trim();
+  // Mêmes règles de lecture que l'API profil (`mapEstablishmentRow`) : l'assistant évalue
+  // exactement la valeur présentée à l'utilisateur. Une chaîne vide ne masque pas le repli.
+  const currency = String(profile.currency || school?.country_currency || "").trim();
+  const address = school?.address || profile.address || "";
+  const phone = school?.phone || profile.phone || "";
+  // AUDIT-SETUP-GUIDED-10-01 — seules les données réellement utilisables comptent :
+  // une matière, un enseignant, un type d'évaluation ou un compte archivé, ou une
+  // inscription retirée, ne satisfont plus leur étape.
   const [
     datedYearCount,
     enrolledStudentCount,
@@ -275,6 +317,8 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
     paymentMethodCount,
     evaluationTypeCount,
     userCount,
+    activeSubjectCount,
+    activeTeacherCount,
   ] = await Promise.all([
     countExact(
       one,
@@ -291,8 +335,10 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
       `SELECT COUNT(*)::int AS c
        FROM enrollments e
        INNER JOIN students st ON st.id = e.student_id
+       INNER JOIN classes cl ON cl.id = e.class_id AND cl.school_id = st.school_id
        WHERE st.school_id::text = $1
-         AND e.class_id IS NOT NULL`,
+         AND e.class_id IS NOT NULL
+         AND lower(btrim(COALESCE(e.status, ''))) IN ('active', 'enrolled')`,
       params,
     ),
     countExact(
@@ -302,6 +348,7 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
        INNER JOIN teachers t ON t.id = ta.teacher_id
        WHERE t.school_id::text = $1
          AND ta.status = 'active'
+         AND t.status = 'active'
          AND ta.class_id IS NOT NULL
          AND ta.subject_id IS NOT NULL`,
       params,
@@ -317,24 +364,37 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
       one,
       `SELECT COUNT(*)::int AS c
        FROM evaluation_types
-       WHERE school_id::text = $1`,
+       WHERE school_id::text = $1 AND status = 'active'`,
       params,
     ),
     countExact(
       one,
       `SELECT COUNT(*)::int AS c
        FROM users
-       WHERE school_id::text = $1`,
+       WHERE school_id::text = $1 AND status = 'active'`,
+      params,
+    ),
+    countExact(
+      one,
+      `SELECT COUNT(*)::int AS c FROM subjects WHERE school_id::text = $1 AND status = 'active'`,
+      params,
+    ),
+    countExact(
+      one,
+      `SELECT COUNT(*)::int AS c FROM teachers WHERE school_id::text = $1 AND status = 'active'`,
       params,
     ),
   ]);
 
   return {
     ...base,
+    // Remplace, pour l'assistant uniquement, les compteurs bruts du statut LOT 0.
+    subjectCount: activeSubjectCount,
+    teacherCount: activeTeacherCount,
     hasName: filled(school?.name),
     hasCountry: Boolean(school?.country_id),
-    hasAddress: filled(school?.address),
-    hasPhone: filled(school?.phone),
+    hasAddress: filled(address),
+    hasPhone: filled(phone),
     hasCurrency: filled(currency),
     hasAcademicYearDates: datedYearCount >= 1,
     enrolledStudentCount,
@@ -376,18 +436,23 @@ async function completeGuidedStep(input = {}) {
   for (let index = 0; index < stepIndex; index += 1) {
     const previous = GUIDED_STEP_KEYS[index];
     if (!stepSatisfied(previous, snapshot)) {
-      const error = new BusinessError(409, "STEP_DEPENDENCY: l'étape précédente n'est pas satisfaite.");
+      const details = { ...stepRequirementDetails(previous, snapshot), blockedStepKey: stepKey };
+      const error = new BusinessError(
+        409,
+        `Étape « ${GUIDED_STEP_LABELS[previous]} » à compléter d'abord : ${details.requirement}`,
+        details,
+      );
       error.code = "STEP_DEPENDENCY";
       throw error;
     }
   }
 
   if (!stepSatisfied(stepKey, snapshot)) {
-    const requirement = GUIDED_STEP_REQUIREMENTS[stepKey];
+    const details = stepRequirementDetails(stepKey, snapshot);
     const error = new BusinessError(
       409,
-      `Étape « ${GUIDED_STEP_LABELS[stepKey]} » non satisfaite : ${requirement}`,
-      { stepKey, stepLabel: GUIDED_STEP_LABELS[stepKey], requirement },
+      `Étape « ${GUIDED_STEP_LABELS[stepKey]} » non satisfaite : ${details.requirement}`,
+      details,
     );
     error.code = "STEP_NOT_SATISFIED";
     throw error;
@@ -459,6 +524,7 @@ module.exports = {
   GUIDED_STEP_REQUIREMENTS,
   GUIDED_STEP_TOTAL,
   GUIDED_OPERATIONAL_STEP_TOTAL,
+  missingEstablishmentFields,
   deriveGuidedProgress,
   stepSatisfied,
   getSchoolSetupGuided,

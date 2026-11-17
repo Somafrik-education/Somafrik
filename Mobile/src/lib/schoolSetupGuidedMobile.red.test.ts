@@ -326,6 +326,16 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       assertLacks(wizard, /completeStep\([^)]*reset|completedSteps:\s*\[\]/, "M13 reset au back interdit");
     },
   },
+  {
+    id: "M-AUDIT10-08",
+    title: "AUDIT-SETUP-GUIDED-10-01 — étape 8 ouvre l'écran où l'on crée un type d'évaluation",
+    async run() {
+      const contract = await loadContract();
+      assert.equal(contract.GUIDED_MOBILE_LINKS.pedagogy, "SchoolYearSettings");
+      const screen = read(path.join(mobileSrc, "screens/SchoolYearSettingsScreen.tsx"));
+      assertHas(screen, "createEvaluationType(", "l'écran cible doit permettre de créer un type d'évaluation");
+    },
+  },
 ];
 
 async function main() {

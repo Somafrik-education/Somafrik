@@ -25,7 +25,7 @@ export const GUIDED_WEB_LINKS = {
   teachers: "/etablissement/enseignants",
   students: "/etablissement/classes",
   finance: "/finances/frais",
-  pedagogy: "/notes",
+  pedagogy: "/parametres/annee-scolaire",
   communication: "/parametres/notifications",
   users: "/etablissement/comptes-utilisateurs",
 } as const;
@@ -71,8 +71,8 @@ export const GUIDED_STEP_COPY: Record<
   },
   pedagogy: {
     title: "Paramètres pédagogiques",
-    description: "Accès guidé aux notes, présences, coefficients et bulletins déjà disponibles.",
-    cta: "Ouvrir les notes",
+    description: "Créez au moins un type d'évaluation (devoir, interrogation, examen…) dans l'année scolaire.",
+    cta: "Ouvrir les types d'évaluation",
   },
   communication: {
     title: "Communication",

@@ -24,7 +24,7 @@ export const GUIDED_MOBILE_LINKS = {
   teachers: "Teachers",
   students: "Classes",
   finance: "FeeGrids",
-  pedagogy: "TeacherGrades",
+  pedagogy: "SchoolYearSettings",
   communication: "InternalNotifications",
   users: "Users",
 } as const;
@@ -60,7 +60,7 @@ export const GUIDED_STEP_COPY: Record<(typeof GUIDED_STEP_KEYS)[number], { title
   },
   pedagogy: {
     title: "Paramètres pédagogiques",
-    description: "Notes, présences, coefficients et bulletins déjà disponibles.",
+    description: "Créez au moins un type d'évaluation (devoir, interrogation, examen…) dans l'année scolaire.",
   },
   communication: {
     title: "Communication",
