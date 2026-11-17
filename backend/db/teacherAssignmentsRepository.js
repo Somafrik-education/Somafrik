@@ -212,7 +212,7 @@ function createTeacherAssignmentsRepository(db) {
         `INSERT INTO school_courses
            (school_id, class_id, subject_id, teacher_id, course_code, coefficient, status)
          SELECT $1::uuid, $2::uuid, sub.id, $4::uuid, $5,
-                COALESCE(sub.coefficient, 1), 'active'
+                COALESCE((to_jsonb(sub)->>'coefficient')::numeric, 1), 'active'
          FROM subjects sub
          WHERE sub.id = $3::uuid AND sub.school_id = $1::uuid
            AND sub.status = 'active'
