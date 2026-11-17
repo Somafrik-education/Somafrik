@@ -322,11 +322,28 @@ async function retryStudentCardNfc(repo, cardId, payload, principal, meta, scope
 }
 
 async function transitionStudentCardNfc(repo, cardId, principal, meta, scope, target, reason) {
-  reason = ["lost", "revoked", "nfc_abandoned"].includes(reason) ? reason : target;
+  reason = ["lost", "revoked", "nfc_abandoned", "nfc_cancelled"].includes(reason) ? reason : target;
   authorize(principal, scope, target === "lost" ? "POST /api/student-cards/:id/lost" : "POST /api/student-cards/:id/revoke");
   return transaction(repo, principal, meta, scope, async ({ store, audit, cardForUpdate }) => {
     const card = await cardForUpdate(cardId);
+    // A3/A5: security prevails over pending NFC administrative cancellation OR expiration.
+    // The original audit remains intact, UID remains reserved, and R2 recovery is denied.
+    if (target === "revoked" && card.status === "revoked" && reason === "revoked"
+      && ["nfc_cancelled", "nfc_reservation_expired"].includes(card.revoke_reason)) {
+      const escalated = await store.escalateNfcReservationSecurity(scope.schoolId, card.id);
+      if (!escalated) throw error("STUDENT_CARD_INVALID_STATE", "La carte a changé pendant l’opération.");
+      await audit("student_card_nfc_cancellation_escalated", escalated,
+        { status: "revoked", reason: card.revoke_reason }, { status: "revoked", reason: "revoked" });
+      return mapCardListItem(escalated);
+    }
     if (card.status === target) return replay(card);
+    // nfc_cancelled means administrative cancellation of an unconfirmed reservation,
+    // NEVER a security revocation or an encoded/locked card. No UID is released.
+    if (reason === "nfc_cancelled" && !(target === "revoked" && card.status === "issued"
+      && card.nfc_encoding_state === "pending" && card.nfc_encoded_at == null
+      && card.nfc_locked_at == null && card.nfc_uid)) {
+      throw error("STUDENT_CARD_NFC_CANCEL_NOT_ALLOWED", "Cette carte ne peut pas être annulée comme réservation non encodée.");
+    }
     if (card.status !== "active" && !(target === "revoked" && card.status === "issued")) throw error("STUDENT_CARD_INVALID_STATE", "Transition de carte impossible.");
     const updated = target === "lost" ? await store.markLost(scope.schoolId, card.id, reason)
       : await store.markRevoked(scope.schoolId, card.id, reason);

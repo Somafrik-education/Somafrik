@@ -48,6 +48,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   STUDENT_CARD_ACTIVE_ALREADY_EXISTS: "Une carte active existe déjà. La liste a été actualisée.",
   STUDENT_CARD_INVALID_STATE: "Cette carte n’est plus dans un état qui autorise cette action.",
   STUDENT_CARD_NOT_FOUND: "Carte introuvable.",
+  STUDENT_CARD_NFC_UID_EXISTS: "Cette carte physique est déjà affectée. Utilisez « Diagnostiquer une carte NFC » sur Android ; aucune nouvelle attribution n’est autorisée.",
+  STUDENT_CARD_NFC_CANCEL_NOT_ALLOWED: "Annulation non sensible refusée : seule une réservation NFC non confirmée peut être annulée de cette manière.",
   STUDENT_CARD_HOLDER_UNDETERMINED: STUDENT_CARD_HOLDER_UNDETERMINED_NOTICE,
   PERMISSION_DENIED: "Action non autorisée.",
   PLATFORM_PERSONAL_DATA_DENIED: "Accès refusé.",
@@ -110,6 +112,19 @@ export function studentCardMediumLabel(medium: StudentCardMedium): string {
     default:
       return medium;
   }
+}
+
+/** R3-3 A3/A5 — libellé du motif réellement enregistré par le Backend (code inconnu affiché tel quel). */
+const REVOKE_REASON_LABELS: Record<string, string> = {
+  revoked: "Révocation de sécurité",
+  nfc_cancelled: "Annulation administrative (réservation NFC non confirmée)",
+  nfc_reservation_expired: "Réservation NFC expirée",
+  nfc_abandoned: "Réservation NFC abandonnée",
+  lost: "Perte déclarée",
+};
+
+export function studentCardRevokeReasonLabel(reason: string): string {
+  return REVOKE_REASON_LABELS[reason] ?? reason;
 }
 
 export type StudentCardAction = "lost" | "revoke" | "replace";

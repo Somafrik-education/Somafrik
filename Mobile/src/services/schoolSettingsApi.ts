@@ -7,6 +7,10 @@ import { ApiClientError, httpRequest } from "./httpClient";
 import { getAccessToken } from "./secureStorage";
 import { resolveApiRootUrl } from "../config/env";
 import type { CanonicalEvaluationType, EducationSchoolCatalog } from "./api";
+import type {
+  SchoolNotificationSettings,
+  SchoolNotificationSettingsPatch,
+} from "../lib/schoolNotificationSettingsMobile";
 
 export type SchoolSettings = {
   schoolId?: string;
@@ -120,6 +124,29 @@ function normalizeClassCourse(row: unknown): SchoolClassCourseRecord | null {
     coefficient: Number.isFinite(coefficient) ? coefficient : undefined,
     status: String(item.status ?? "active"),
   };
+}
+
+function notificationSettingsPath(schoolCode: string) {
+  const code = String(schoolCode ?? "").trim();
+  if (!code || code === "*") {
+    throw new ApiClientError("Aucun établissement actif.", 400);
+  }
+  return `/backoffice/establishments/${encodeURIComponent(code)}/notification-settings`;
+}
+
+/** A6 — même endpoint et mêmes droits que le Web (Paramètres › Notifications). */
+export function getSchoolNotificationSettings(schoolCode: string) {
+  return httpRequest<SchoolNotificationSettings>(notificationSettingsPath(schoolCode));
+}
+
+export function patchSchoolNotificationSettings(
+  schoolCode: string,
+  patch: SchoolNotificationSettingsPatch,
+) {
+  return httpRequest<SchoolNotificationSettings>(notificationSettingsPath(schoolCode), {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
 }
 
 export function getSchoolSettings(schoolCode?: string) {

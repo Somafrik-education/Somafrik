@@ -22,6 +22,7 @@ import {
   studentCardActions,
   studentCardErrorMessage,
   studentCardMediumLabel,
+  studentCardRevokeReasonLabel,
   studentCardStatusLabel,
   type StudentCardAction,
   type StudentCardSettingsGate,
@@ -88,6 +89,7 @@ export function StudentCardTab({
   const [issueOpen, setIssueOpen] = useState(false);
   const [pendingIssue, setPendingIssue] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [revokeReason, setRevokeReason] = useState<"revoked" | "nfc_cancelled" | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const cardScopeKey = `${resolvedSchoolCode}:${workspace.studentId}`;
@@ -107,6 +109,7 @@ export function StudentCardTab({
     setHolder(null);
     setIssueOpen(false);
     setPendingAction(null);
+    setRevokeReason(null);
     setPendingIssue(false);
     setActionBusy(false);
     setNotice(null);
@@ -202,7 +205,8 @@ export function StudentCardTab({
       if (action.action === "lost") {
         await studentCardsApi.markLost(action.card.id);
       } else if (action.action === "revoke") {
-        await studentCardsApi.revoke(action.card.id);
+        if (action.card.status === "issued" && !revokeReason) return;
+        await studentCardsApi.revoke(action.card.id, action.card.status === "issued" ? revokeReason! : "revoked");
       } else {
         const replaced = await studentCardsApi.replace(action.card.id);
         if (!scopeIsCurrent(requestScope)) return;
@@ -302,7 +306,21 @@ export function StudentCardTab({
                     </div>
                     <p className="text-sm">ID carte : {card.publicId}</p>
                     <p className="text-sm text-muted">Émise le {formatIssuedAt(card.issuedAt)}</p>
-                    {card.revokeReason ? <p className="text-sm text-muted">Motif : {card.revokeReason}</p> : null}
+                    {card.revokeReason ? <p className="text-sm text-muted">Motif : {studentCardRevokeReasonLabel(card.revokeReason)}</p> : null}
+                    {card.nfcRecoverable === true ? (
+                      <p className="text-sm text-muted">Réservation NFC annulée ou expirée sans encodage confirmé. UID conservé dans l’historique ; réattribution interdite. Diagnostic et validation CTO requis.</p>
+                    ) : null}
+                    {canManage && card.status === "revoked" && card.nfcRecoverable === true
+                      && ["nfc_cancelled", "nfc_reservation_expired"].includes(card.revokeReason ?? "") ? (
+                      <Button type="button" variant="danger" onClick={() => { setRevokeReason("revoked"); setPendingAction({ card, action: "revoke" }); }}>
+                        Signaler une carte NFC suspecte
+                      </Button>
+                    ) : null}
+                    {canManage && card.status === "issued" && card.nfc?.state === "pending" ? (
+                      <Button type="button" variant="secondary" onClick={() => { setRevokeReason(null); setPendingAction({ card, action: "revoke" }); }}>
+                        Annuler ou révoquer la réservation NFC
+                      </Button>
+                    ) : null}
                     {actions.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
                         {actions.includes("lost") ? (
@@ -311,7 +329,7 @@ export function StudentCardTab({
                           </Button>
                         ) : null}
                         {actions.includes("revoke") ? (
-                          <Button type="button" variant="danger" onClick={() => setPendingAction({ card, action: "revoke" })}>
+                          <Button type="button" variant="danger" onClick={() => { setRevokeReason("revoked"); setPendingAction({ card, action: "revoke" }); }}>
                             Révoquer
                           </Button>
                         ) : null}
@@ -343,8 +361,11 @@ export function StudentCardTab({
           ) : null}
           <Modal
             open={pendingAction !== null}
-            title={pendingAction ? ACTION_COPY[pendingAction.action].title : ""}
-            description={pendingAction ? ACTION_COPY[pendingAction.action].description : undefined}
+            title={pendingAction?.action === "revoke" && pendingAction.card.status === "revoked"
+                ? "Confirmer la révocation de sécurité" : pendingAction ? ACTION_COPY[pendingAction.action].title : ""}
+            description={pendingAction?.action === "revoke" && pendingAction.card.status === "revoked"
+                ? "Signaler cette réservation NFC comme suspecte. L’UID restera réservé et aucune écriture de puce ne sera effectuée."
+                : pendingAction ? ACTION_COPY[pendingAction.action].description : undefined}
             onClose={() => {
               if (!actionBusy) setPendingAction(null);
             }}
@@ -353,12 +374,20 @@ export function StudentCardTab({
                 <Button type="button" variant="secondary" disabled={actionBusy} onClick={() => setPendingAction(null)}>
                   Annuler
                 </Button>
-                <Button type="button" disabled={actionBusy} onClick={() => void confirmAction()}>
+                <Button type="button" disabled={actionBusy || (pendingAction?.action === "revoke" && pendingAction.card.status === "issued" && !revokeReason)} onClick={() => void confirmAction()}>
                   {pendingAction ? ACTION_COPY[pendingAction.action].confirm : "Confirmer"}
                 </Button>
               </>
             }
           >
+            {pendingAction?.action === "revoke" && pendingAction.card.status === "issued" ? (
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Motif obligatoire — choisir après vérification physique</legend>
+                <label className="flex gap-2"><input type="radio" name="nfc-revoke-reason" checked={revokeReason === "nfc_cancelled"} onChange={() => setRevokeReason("nfc_cancelled")} /> Annulation administrative (réservation non confirmée ; puce à vérifier)</label>
+                <label className="flex gap-2"><input type="radio" name="nfc-revoke-reason" checked={revokeReason === "revoked"} onChange={() => setRevokeReason("revoked")} /> Révocation de sécurité (carte suspecte ou compromise)</label>
+                <p className="text-sm text-muted">Dans les deux cas, l’UID reste réservé. Aucun transfert ni effacement n’est réalisé.</p>
+              </fieldset>
+            ) : null}
             <p className="text-sm text-muted">La liste des cartes sera relue depuis le serveur.</p>
           </Modal>
         </>
