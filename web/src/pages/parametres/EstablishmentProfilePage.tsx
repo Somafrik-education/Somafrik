@@ -92,6 +92,11 @@ export function EstablishmentProfilePage() {
       showToast(validationError, "error");
       return;
     }
+    // AUDIT-SETUP-GUIDED-10-01 : l'étape « Informations établissement » exige l'adresse.
+    if (!current.address?.trim()) {
+      showToast("L'adresse est obligatoire.", "error");
+      return;
+    }
 
     const patch: Partial<School> = {
       name: current.name.trim(),
@@ -209,15 +214,26 @@ export function EstablishmentProfilePage() {
                   />
                 </FormField>
                 <div className="sm:col-span-2">
-                  <FormField label="Adresse" htmlFor="profile-address">
+                  <FormField label="Adresse" htmlFor="profile-address" required>
                     <Input
                       id="profile-address"
                       value={draft.address ?? ""}
                       onChange={(e) => setDraft({ ...draft, address: e.target.value })}
+                      required
                       disabled={!canEdit || busy}
                     />
                   </FormField>
                 </div>
+                <FormField label="Devise" htmlFor="profile-currency">
+                  <Input
+                    id="profile-currency"
+                    value={draft.currency ?? ""}
+                    placeholder="—"
+                    readOnly
+                    disabled
+                    className="bg-slate-50"
+                  />
+                </FormField>
               </div>
             </section>
 

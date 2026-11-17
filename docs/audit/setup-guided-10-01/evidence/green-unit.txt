@@ -1,0 +1,442 @@
+TAP version 13
+# Subtest: configuration obligatoire complète : finalisation confirmée et rechargée
+ok 1 - configuration obligatoire complète : finalisation confirmée et rechargée
+  ---
+  duration_ms: 2.314092
+  type: 'test'
+  ...
+# Subtest: étape obligatoire manquante : blocage explicite, aucune écriture
+ok 2 - étape obligatoire manquante : blocage explicite, aucune écriture
+  ---
+  duration_ms: 3.743525
+  type: 'test'
+  ...
+# Subtest: les étapes facultatives ne bloquent pas la finalisation
+ok 3 - les étapes facultatives ne bloquent pas la finalisation
+  ---
+  duration_ms: 0.456622
+  type: 'test'
+  ...
+# Subtest: double finalisation : une seule écriture, horodatage stable
+ok 4 - double finalisation : une seule écriture, horodatage stable
+  ---
+  duration_ms: 0.341821
+  type: 'test'
+  ...
+# Subtest: configuration déjà terminée : une donnée retirée ne réinitialise pas le statut
+ok 5 - configuration déjà terminée : une donnée retirée ne réinitialise pas le statut
+  ---
+  duration_ms: 0.438537
+  type: 'test'
+  ...
+# Subtest: utilisateur non autorisé : accès refusé, aucune écriture
+ok 6 - utilisateur non autorisé : accès refusé, aucune écriture
+  ---
+  duration_ms: 0.564904
+  type: 'test'
+  ...
+# Subtest: autre établissement : le schoolId client est ignoré
+ok 7 - autre établissement : le schoolId client est ignoré
+  ---
+  duration_ms: 0.605031
+  type: 'test'
+  ...
+# Subtest: Web et Mobile appellent le même POST canonique, sans schoolId
+ok 8 - Web et Mobile appellent le même POST canonique, sans schoolId
+  ---
+  duration_ms: 2.525184
+  type: 'test'
+  ...
+# Subtest: réponse HTTP : les étapes obligatoires manquantes sont exposées
+ok 9 - réponse HTTP : les étapes obligatoires manquantes sont exposées
+  ---
+  duration_ms: 67.530031
+  type: 'test'
+  ...
+# Subtest: AUDIT10-U-01 — anomalie prod : seule l'adresse manque → le message nomme l'adresse et uniquement elle
+ok 10 - AUDIT10-U-01 — anomalie prod : seule l'adresse manque → le message nomme l'adresse et uniquement elle
+  ---
+  duration_ms: 3.055711
+  type: 'test'
+  ...
+# Subtest: AUDIT10-U-02 — plusieurs champs manquants : tous sont listés, dans l'ordre du formulaire
+ok 11 - AUDIT10-U-02 — plusieurs champs manquants : tous sont listés, dans l'ordre du formulaire
+  ---
+  duration_ms: 0.353185
+  type: 'test'
+  ...
+# Subtest: AUDIT10-U-03 — une fois l'adresse saisie, la même étape passe (réévaluation sans reconnexion)
+ok 12 - AUDIT10-U-03 — une fois l'adresse saisie, la même étape passe (réévaluation sans reconnexion)
+  ---
+  duration_ms: 0.614326
+  type: 'test'
+  ...
+# Subtest: AUDIT10-U-04 — dépendance bloquée : le message nomme l'étape précédente non satisfaite
+ok 13 - AUDIT10-U-04 — dépendance bloquée : le message nomme l'étape précédente non satisfaite
+  ---
+  duration_ms: 0.337011
+  type: 'test'
+  ...
+# Subtest: AUDIT10-U-05 — les autres étapes gardent leur condition explicite (contrat PROD-V25-POSTSMOKE-01 inchangé)
+ok 14 - AUDIT10-U-05 — les autres étapes gardent leur condition explicite (contrat PROD-V25-POSTSMOKE-01 inchangé)
+  ---
+  duration_ms: 0.450452
+  type: 'test'
+  ...
+# Subtest: contrat — module schoolSetupGuided exporte derive / get / complete + 10 étapes
+ok 15 - contrat — module schoolSetupGuided exporte derive / get / complete + 10 étapes
+  ---
+  duration_ms: 21.170885
+  type: 'test'
+  ...
+# Subtest: contrat — GET/POST guided déclarés (auth + permission, sans :schoolCode, LOT 0 intact)
+ok 16 - contrat — GET/POST guided déclarés (auth + permission, sans :schoolCode, LOT 0 intact)
+  ---
+  duration_ms: 2.95979
+  type: 'test'
+  ...
+# Subtest: B16 — GET/POST guidés sans DDL/ensure schema par requête ; ensure réservé au boot repository
+ok 17 - B16 — GET/POST guidés sans DDL/ensure schema par requête ; ensure réservé au boot repository
+  ---
+  duration_ms: 6.024935
+  type: 'test'
+  ...
+# Subtest: B1 — nouvel établissement → configuration_required, 0 %, étape 1
+ok 18 - B1 — nouvel établissement → configuration_required, 0 %, étape 1
+  ---
+  duration_ms: 1.608636
+  type: 'test'
+  ...
+# Subtest: B2 — validation d'une étape valide est persistée
+ok 19 - B2 — validation d'une étape valide est persistée
+  ---
+  duration_ms: 1.21923
+  type: 'test'
+  ...
+# Subtest: B3 — reprise : un nouveau GET restaure l'étape courante
+ok 20 - B3 — reprise : un nouveau GET restaure l'étape courante
+  ---
+  duration_ms: 1.023101
+  type: 'test'
+  ...
+# Subtest: B4 — la progression n'augmente que si l'étape est réellement valide
+ok 21 - B4 — la progression n'augmente que si l'étape est réellement valide
+  ---
+  duration_ms: 1.310586
+  type: 'test'
+  ...
+# Subtest: B5 — impossible de valider une étape dépendante si la précédente n'est pas satisfaite
+ok 22 - B5 — impossible de valider une étape dépendante si la précédente n'est pas satisfaite
+  ---
+  duration_ms: 1.029234
+  type: 'test'
+  ...
+# Subtest: B6 — pas opérationnel avant validation des étapes 1 à 6
+ok 23 - B6 — pas opérationnel avant validation des étapes 1 à 6
+  ---
+  duration_ms: 1.416853
+  type: 'test'
+  ...
+# Subtest: B7 — étapes 1 à 6 valides → operational, 60 %
+ok 24 - B7 — étapes 1 à 6 valides → operational, 60 %
+  ---
+  duration_ms: 0.895244
+  type: 'test'
+  ...
+# Subtest: B8 — un admin établissement ne lit ni ne modifie la progression d'un autre établissement
+ok 25 - B8 — un admin établissement ne lit ni ne modifie la progression d'un autre établissement
+  ---
+  duration_ms: 0.590574
+  type: 'test'
+  ...
+# Subtest: B9 — un utilisateur sans permission UPDATE ne peut pas modifier la configuration
+ok 26 - B9 — un utilisateur sans permission UPDATE ne peut pas modifier la configuration
+  ---
+  duration_ms: 0.420371
+  type: 'test'
+  ...
+# Subtest: B10 — revalider une étape déjà terminée est idempotent, percent ≤ 100
+ok 27 - B10 — revalider une étape déjà terminée est idempotent, percent ≤ 100
+  ---
+  duration_ms: 0.827608
+  type: 'test'
+  ...
+# Subtest: B11 — un enseignant sans affectation classe/matière ne valide pas l'étape 5
+ok 28 - B11 — un enseignant sans affectation classe/matière ne valide pas l'étape 5
+  ---
+  duration_ms: 1.329719
+  type: 'test'
+  ...
+# Subtest: B12 — 0 inscription Classe→Élève + studentCount orphelin ne valide pas l'étape 6
+ok 29 - B12 — 0 inscription Classe→Élève + studentCount orphelin ne valide pas l'étape 6
+  ---
+  duration_ms: 1.36491
+  type: 'test'
+  ...
+# Subtest: B14 — row school_setup_progress absente + données canoniques existantes → bootstrap, pas 0 %
+ok 30 - B14 — row school_setup_progress absente + données canoniques existantes → bootstrap, pas 0 %
+  ---
+  duration_ms: 0.363226
+  type: 'test'
+  ...
+# Subtest: B15 — bootstrap 1→6 + POST finance ⇒ 70 %, jamais régression à 0 %
+ok 31 - B15 — bootstrap 1→6 + POST finance ⇒ 70 %, jamais régression à 0 %
+  ---
+  duration_ms: 0.659866
+  type: 'test'
+  ...
+# Subtest: B13 — parcours 0 → 10 % → reprise 40/50/60 % operational → 100 %
+ok 32 - B13 — parcours 0 → 10 % → reprise 40/50/60 % operational → 100 %
+  ---
+  duration_ms: 2.318668
+  type: 'test'
+  ...
+# Subtest: B4b — une étape persistée redevient invalide si les données requises disparaissent
+ok 33 - B4b — une étape persistée redevient invalide si les données requises disparaissent
+  ---
+  duration_ms: 0.275449
+  type: 'test'
+  ...
+# Subtest: PROD-V25-POSTSMOKE-01 — Communication non satisfaite : condition manquante explicite, étape non marquée
+ok 34 - PROD-V25-POSTSMOKE-01 — Communication non satisfaite : condition manquante explicite, étape non marquée
+  ---
+  duration_ms: 1.032894
+  type: 'test'
+  ...
+# Subtest: PROD-V25-POSTSMOKE-01 — chaque étape guidée a une condition explicite
+ok 35 - PROD-V25-POSTSMOKE-01 — chaque étape guidée a une condition explicite
+  ---
+  duration_ms: 0.160825
+  type: 'test'
+  ...
+# Subtest: LOT 0 intact : GET /api/v2/school-setup/status et pas de setup_status
+ok 36 - LOT 0 intact : GET /api/v2/school-setup/status et pas de setup_status
+  ---
+  duration_ms: 2.88883
+  type: 'test'
+  ...
+# Subtest: aucun endpoint Student legacy ni création globale élève dans le guidé
+ok 37 - aucun endpoint Student legacy ni création globale élève dans le guidé
+  ---
+  duration_ms: 1.837544
+  type: 'test'
+  ...
+# Subtest: HOLD — bootstrap dérivé si curseur absent ; pas de token statut persisté dans le schéma guidé
+ok 38 - HOLD — bootstrap dérivé si curseur absent ; pas de token statut persisté dans le schéma guidé
+  ---
+  duration_ms: 0.280786
+  type: 'test'
+  ...
+# Subtest: HOLD — étape 5 exige une affectation active ; étape 6 ignore studentCount orphelin
+ok 39 - HOLD — étape 5 exige une affectation active ; étape 6 ignore studentCount orphelin
+  ---
+  duration_ms: 0.457806
+  type: 'test'
+  ...
+# Subtest: HOLD — un seul assistant visible et Terminer quitte vers le tableau de bord
+ok 40 - HOLD — un seul assistant visible et Terminer quitte vers le tableau de bord
+  ---
+  duration_ms: 0.432705
+  type: 'test'
+  ...
+# Subtest: HOLD — schéma guidé assuré au boot repository, pas dans GET/POST request-time
+ok 41 - HOLD — schéma guidé assuré au boot repository, pas dans GET/POST request-time
+  ---
+  duration_ms: 4.802433
+  type: 'test'
+  ...
+# Subtest: RBAC guidé réutilise Paramètres Établissement (pas de nouveau moteur RBAC)
+ok 42 - RBAC guidé réutilise Paramètres Établissement (pas de nouveau moteur RBAC)
+  ---
+  duration_ms: 0.4739
+  type: 'test'
+  ...
+# Subtest: contrat — GET /api/v2/school-setup/status est déclaré (auth + permission, sans :schoolCode)
+ok 43 - contrat — GET /api/v2/school-setup/status est déclaré (auth + permission, sans :schoolCode)
+  ---
+  duration_ms: 1.547035
+  type: 'test'
+  ...
+# Subtest: contrat — RBAC mappe la route sur Paramètres Établissement:READ (permission existante)
+ok 44 - contrat — RBAC mappe la route sur Paramètres Établissement:READ (permission existante)
+  ---
+  duration_ms: 2.025066
+  type: 'test'
+  ...
+# Subtest: invariant — aucune colonne persistée setup_status (état dérivé, pas stocké)
+ok 45 - invariant — aucune colonne persistée setup_status (état dérivé, pas stocké)
+  ---
+  duration_ms: 0.146323
+  type: 'test'
+  ...
+# Subtest: ST-08 — handler/module sans localStorage/AsyncStorage
+ok 46 - ST-08 — handler/module sans localStorage/AsyncStorage
+  ---
+  duration_ms: 0.319176
+  type: 'test'
+  ...
+# Subtest: contrat — module schoolSetupStatus exporte derive / resolveTenant / getStatus
+ok 47 - contrat — module schoolSetupStatus exporte derive / resolveTenant / getStatus
+  ---
+  duration_ms: 12.758936
+  type: 'test'
+  ...
+# Subtest: ST-01 — école persistée vide → NOT_STARTED, core 0/3
+ok 48 - ST-01 — école persistée vide → NOT_STARTED, core 0/3
+  ---
+  duration_ms: 0.646761
+  type: 'test'
+  ...
+# Subtest: ST-02 — année courante/open seule → IN_PROGRESS
+ok 49 - ST-02 — année courante/open seule → IN_PROGRESS
+  ---
+  duration_ms: 0.260945
+  type: 'test'
+  ...
+# Subtest: ST-02 — structure = niveau ET groupe ; un seul des deux ne suffit pas
+ok 50 - ST-02 — structure = niveau ET groupe ; un seul des deux ne suffit pas
+  ---
+  duration_ms: 0.156561
+  type: 'test'
+  ...
+# Subtest: ST-03 — année + niveau/groupe activés + classe, sans terms → READY, optional.periods=false
+ok 51 - ST-03 — année + niveau/groupe activés + classe, sans terms → READY, optional.periods=false
+  ---
+  duration_ms: 0.505298
+  type: 'test'
+  ...
+# Subtest: ST-03b — mêmes core + terms → READY inchangé, optional.periods=true
+ok 52 - ST-03b — mêmes core + terms → READY inchangé, optional.periods=true
+  ---
+  duration_ms: 0.69801
+  type: 'test'
+  ...
+# Subtest: ST-04 — perte d'un signal core après READY → IN_PROGRESS ou NOT_STARTED
+ok 53 - ST-04 — perte d'un signal core après READY → IN_PROGRESS ou NOT_STARTED
+  ---
+  duration_ms: 0.378711
+  type: 'test'
+  ...
+# Subtest: ST-12 — optional.* ne change jamais status
+ok 54 - ST-12 — optional.* ne change jamais status
+  ---
+  duration_ms: 0.270035
+  type: 'test'
+  ...
+# Subtest: ST-06 — schoolCode client (query/body/header/params) ignoré ou 400/403 ; jamais l'école B
+ok 55 - ST-06 — schoolCode client (query/body/header/params) ignoré ou 400/403 ; jamais l'école B
+  ---
+  duration_ms: 1.221069
+  type: 'test'
+  ...
+# Subtest: ST-06 — leftover JWT schoolCode B + membership A → tenant A, jamais B
+ok 56 - ST-06 — leftover JWT schoolCode B + membership A → tenant A, jamais B
+  ---
+  duration_ms: 0.206785
+  type: 'test'
+  ...
+# Subtest: ST-06b — token école A → données A uniquement ; pas de path :schoolCode
+ok 57 - ST-06b — token école A → données A uniquement ; pas de path :schoolCode
+  ---
+  duration_ms: 0.728513
+  type: 'test'
+  ...
+# Subtest: ST-06 — getSchoolSetupStatus ne charge jamais le snapshot de B depuis un token A
+ok 58 - ST-06 — getSchoolSetupStatus ne charge jamais le snapshot de B depuis un token A
+  ---
+  duration_ms: 0.248687
+  type: 'test'
+  ...
+# Subtest: ST-06-RT-01 — membership PG autoritaire : principal JWT = sub + leftover schoolCode, sans champs synthétiques
+ok 59 - ST-06-RT-01 — membership PG autoritaire : principal JWT = sub + leftover schoolCode, sans champs synthétiques
+  ---
+  duration_ms: 0.594362
+  type: 'test'
+  ...
+# Subtest: ST-06-RT-02 — JWT forgé : sub A + leftover schoolCode B → 403 ou payload A, jamais B
+ok 60 - ST-06-RT-02 — JWT forgé : sub A + leftover schoolCode B → 403 ou payload A, jamais B
+  ---
+  duration_ms: 0.36998
+  type: 'test'
+  ...
+# Subtest: ST-06-RT-03 — header X-Somafrik-School-Code B forgé : 400/403 ou payload A, jamais B
+ok 61 - ST-06-RT-03 — header X-Somafrik-School-Code B forgé : 400/403 ou payload A, jamais B
+  ---
+  duration_ms: 0.410592
+  type: 'test'
+  ...
+# Subtest: ST-06-RT-04 — membership absent/invalide → fail-closed 401/403, jamais fallback leftover JWT
+ok 62 - ST-06-RT-04 — membership absent/invalide → fail-closed 401/403, jamais fallback leftover JWT
+  ---
+  duration_ms: 0.637325
+  type: 'test'
+  ...
+# Subtest: ST-05 — deux admins du même school_id → JSON métier identique
+ok 63 - ST-05 — deux admins du même school_id → JSON métier identique
+  ---
+  duration_ms: 0.406512
+  type: 'test'
+  ...
+# Subtest: ST-09 — mustChangePassword / last_login_at absents du payload
+ok 64 - ST-09 — mustChangePassword / last_login_at absents du payload
+  ---
+  duration_ms: 0.826746
+  type: 'test'
+  ...
+# Subtest: ST-10 — même snapshot PG → même JSON Web et Mobile
+ok 65 - ST-10 — même snapshot PG → même JSON Web et Mobile
+  ---
+  duration_ms: 0.494309
+  type: 'test'
+  ...
+# Subtest: ST-11 — payload sans routes Web/Mobile
+ok 66 - ST-11 — payload sans routes Web/Mobile
+  ---
+  duration_ms: 0.246057
+  type: 'test'
+  ...
+# Subtest: G1 — RBAC LOT 0 = Paramètres Établissement:READ uniquement
+ok 67 - G1 — RBAC LOT 0 = Paramètres Établissement:READ uniquement
+  ---
+  duration_ms: 0.424404
+  type: 'test'
+  ...
+# Subtest: G2 — effectiveSchoolId / academicYearSchoolId ne sont pas l'autorité tenant
+ok 68 - G2 — effectiveSchoolId / academicYearSchoolId ne sont pas l'autorité tenant
+  ---
+  duration_ms: 0.422355
+  type: 'test'
+  ...
+# Subtest: G3 — erreur SQL ne devient pas NOT_STARTED
+ok 69 - G3 — erreur SQL ne devient pas NOT_STARTED
+  ---
+  duration_ms: 1.012652
+  type: 'test'
+  ...
+# Subtest: G4 — année = is_current TRUE ou status open (pas active)
+ok 70 - G4 — année = is_current TRUE ou status open (pas active)
+  ---
+  duration_ms: 1.673589
+  type: 'test'
+  ...
+# Subtest: G6 — classe historique Y1 ne satisfait pas core.classes de Y2 current/open
+ok 71 - G6 — classe historique Y1 ne satisfait pas core.classes de Y2 current/open
+  ---
+  duration_ms: 0.946173
+  type: 'test'
+  ...
+# Subtest: ST-05/ST-10 — token école B ne reproduit pas le JSON de A
+ok 72 - ST-05/ST-10 — token école B ne reproduit pas le JSON de A
+  ---
+  duration_ms: 0.393872
+  type: 'test'
+  ...
+1..72
+# tests 72
+# suites 0
+# pass 72
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 256.072452

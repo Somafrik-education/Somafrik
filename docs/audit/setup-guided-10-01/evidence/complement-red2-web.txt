@@ -1,0 +1,558 @@
+
+ RUN  v4.1.10 
+
+ ❯ src/components/schoolSetup/GuidedSchoolSetupWizard.red.test.tsx (12 tests | 2 failed) 1102ms
+     × W-O3-1 — finalisée et encore conforme : terminée et conforme 10ms
+     × W-O3-2 — finalisée mais une étape obligatoire ne l'est plus : alerte explicite avec l'étape à corriger 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/schoolSetup/GuidedSchoolSetupWizard.red.test.tsx > AUDIT-SETUP-GUIDED-10-01 / O3 — finalisée historiquement ≠ conforme aujourd'hui > W-O3-1 — finalisée et encore conforme : terminée et conforme
+TestingLibraryElementError: Unable to find an element with the text: /finalisée le 01-10-2026/i. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col gap-4"[39m
+    [36m>[39m
+      [36m<header[39m
+        [33mclass[39m=[32m"shrink-0"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1"[39m
+        [36m>[39m
+          [36m<h2[39m
+            [33mclass[39m=[32m"text-xl font-black text-ink"[39m
+          [36m>[39m
+            [0mConfiguration de votre établissement[0m
+          [36m</h2>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-sm font-semibold text-ink"[39m
+          [36m>[39m
+            [0mÉtape 7 sur 10[0m
+          [36m</p>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"rounded-xl border px-4 py-3 text-sm text-ink border-teal/30 bg-teal/10"[39m
+            [33mrole[39m=[32m"status"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"min-w-0 space-y-1"[39m
+              [36m>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"font-semibold"[39m
+                [36m>[39m
+                  [0mConfiguration de votre établissement terminée[0m
+                [36m</p>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"text-sm"[39m
+                [36m>[39m
+                  [0mVous pouvez consulter ou modifier les paramètres autorisés. Le statut terminé est conservé.[0m
+                [36m</div>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<p[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"font-mono text-xs tracking-wide text-brand"[39m
+          [36m>[39m
+            [0m██████░░░░[0m
+            [0m [0m
+            [0m60[0m
+            [0m %[0m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</header>[39m
+      [36m<nav[39m
+        [33maria-label[39m=[32m"Étapes du parcours"[39m
+        [33mclass[39m=[32m"shrink-0"[39m
+      [36m>[39m
+        [36m<ol[39m
+          [33maria-label[39m=[32m"Étapes du parcours"[39m
+          [33mclass[39m=[32m"flex flex-wrap gap-1"[39m
+        [36m>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand/10 text-brand"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m1[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mInformations établissement[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand/10 text-brand"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m2[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mAnnée scolaire[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand/10 text-brand"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m3[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mStructure pédagogique[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand/10 text-brand"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m4[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mMatières[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m5[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mEnseignants[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mdisabled[39m=[32m""[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m6[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mÉlèves[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand text-white"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m7[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mFinance[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mdisabled[39m=[32m""[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m8[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mParamètres pédagogiques[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mdisabled[39m=[32m""[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m9[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mCommunication[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mdisabled[39m=[32m""[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m10[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mUtilisateurs et droits[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+        [36m</ol>[39m
+      [36m</nav>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Étape courante"[39m
+        [33mclass[39m=[32m"min-h-0 flex-1"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"rounded-2xl border border-line bg-white shadow-card space-y-3 p-5"[39m
+        [36m>[39m
+          [36m<h3[39m
+            [33mclass[39m=[32m"text-lg font-black text-ink"[39m
+          [36m>[39m
+            [0mFinance[0m
+          [36m</h3>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-sm text-muted"[39m
+          [36m>[39m
+            [0mAccès guidé aux frais scolaires, tarifs, échéances et moyens de paiement existants.[0m
+          [36m</p>[39m
+          [36m<a[39m
+            [33mclass[39m=[32m"inline-flex min-h-11 items-center font-semibold text-brand underline-offset-2 hover:underline"[39m
+            [33mhref[39m=[32m"/finances/frais"[39m
+          [36m>[39m
+            [0mOuvrir les frais et tarifs[0m
+            [0m →[0m
+          [36m</a>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<footer[39m
+        [33maria-label[39m=[32m"Actions de l'assistant"[39m
+        [33mclass[39m=[32m"sticky bottom-0 z-10 shrink-0 border-t border-line bg-white/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/80"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex flex-wrap items-center justify-between gap-2"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold outline-none transition focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 border border-line bg-white text-ink hover:bg-slate-50 focus-visible:ring-brand/20 min-h-10 px-4 py-2 text-sm"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [0mPrécédent[0m
+          [36m</button>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex flex-wrap gap-2"[39m
+          [36m>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold outline-none transition focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 bg-brand text-white hover:bg-brand-700 focus-visible:ring-brand/30 min-h-10 px-4 py-2 text-sm"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0mAccéder au tableau de bord[0m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</footer>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError ../../../../../../../..web/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../../../../../../..web/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../../../../../../..web/node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ ../../../../../../../..web/node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/components/schoolSetup/GuidedSchoolSetupWizard.red.test.tsx:267:19
+    265|       </MemoryRouter>,
+    266|     );
+    267|     expect(screen.getByText(/finalisée le 01-10-2026/i)).toBeInTheDocu…
+       |                   ^
+    268|     expect(screen.getByText(/conforme aujourd'hui/i)).toBeInTheDocumen…
+    269|     expect(screen.queryByText(/plus conforme/i)).not.toBeInTheDocument…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/components/schoolSetup/GuidedSchoolSetupWizard.red.test.tsx > AUDIT-SETUP-GUIDED-10-01 / O3 — finalisée historiquement ≠ conforme aujourd'hui > W-O3-2 — finalisée mais une étape obligatoire ne l'est plus : alerte explicite avec l'étape à corriger
+TestingLibraryElementError: Unable to find an element with the text: /n'est plus conforme aujourd'hui/i. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col gap-4"[39m
+    [36m>[39m
+      [36m<header[39m
+        [33mclass[39m=[32m"shrink-0"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1"[39m
+        [36m>[39m
+          [36m<h2[39m
+            [33mclass[39m=[32m"text-xl font-black text-ink"[39m
+          [36m>[39m
+            [0mConfiguration de votre établissement[0m
+          [36m</h2>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-sm font-semibold text-ink"[39m
+          [36m>[39m
+            [0mÉtape 5 sur 10[0m
+          [36m</p>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"rounded-xl border px-4 py-3 text-sm text-ink border-teal/30 bg-teal/10"[39m
+            [33mrole[39m=[32m"status"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"min-w-0 space-y-1"[39m
+              [36m>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"font-semibold"[39m
+                [36m>[39m
+                  [0mConfiguration de votre établissement terminée[0m
+                [36m</p>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"text-sm"[39m
+                [36m>[39m
+                  [0mVous pouvez consulter ou modifier les paramètres autorisés. Le statut terminé est conservé.[0m
+                [36m</div>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<p[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"font-mono text-xs tracking-wide text-brand"[39m
+          [36m>[39m
+            [0m████░░░░░░[0m
+            [0m [0m
+            [0m40[0m
+            [0m %[0m
+          [36m</p>[39m
+        [36m</div>[39m
+      [36m</header>[39m
+      [36m<nav[39m
+        [33maria-label[39m=[32m"Étapes du parcours"[39m
+        [33mclass[39m=[32m"shrink-0"[39m
+      [36m>[39m
+        [36m<ol[39m
+          [33maria-label[39m=[32m"Étapes du parcours"[39m
+          [33mclass[39m=[32m"flex flex-wrap gap-1"[39m
+        [36m>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand/10 text-brand"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m1[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mInformations établissement[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand/10 text-brand"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m2[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mAnnée scolaire[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand/10 text-brand"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m3[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mStructure pédagogique[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand/10 text-brand"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m4[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mMatières[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-brand text-white"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m5[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mEnseignants[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mdisabled[39m=[32m""[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m6[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mÉlèves[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mdisabled[39m=[32m""[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m7[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mFinance[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mdisabled[39m=[32m""[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m8[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mParamètres pédagogiques[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mdisabled[39m=[32m""[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m9[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mCommunication[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+          [36m<li>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"min-h-9 rounded-lg px-2 text-xs font-semibold bg-slate-100 text-muted"[39m
+              [33mdisabled[39m=[32m""[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m10[0m
+              [36m<span[39m
+                [33mclass[39m=[32m"sr-only"[39m
+              [36m>[39m
+                [0mUtilisateurs et droits[0m
+              [36m</span>[39m
+            [36m</button>[39m
+          [36m</li>[39m
+        [36m</ol>[39m
+      [36m</nav>[39m
+      [36m<section[39m
+        [33maria-label[39m=[32m"Étape courante"[39m
+        [33mclass[39m=[32m"min-h-0 flex-1"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"rounded-2xl border border-line bg-white shadow-card space-y-3 p-5"[39m
+        [36m>[39m
+          [36m<h3[39m
+            [33mclass[39m=[32m"text-lg font-black text-ink"[39m
+          [36m>[39m
+            [0mEnseignants[0m
+          [36m</h3>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-sm text-muted"[39m
+          [36m>[39m
+            [0mCréer les enseignants depuis les comptes, puis les affecter aux classes et matières.[0m
+          [36m</p>[39m
+          [36m<a[39m
+            [33mclass[39m=[32m"inline-flex min-h-11 items-center font-semibold text-brand underline-offset-2 hover:underline"[39m
+            [33mhref[39m=[32m"/etablissement/enseignants"[39m
+          [36m>[39m
+            [0mOuvrir les enseignants[0m
+            [0m →[0m
+          [36m</a>[39m
+        [36m</div>[39m
+      [36m</section>[39m
+      [36m<footer[39m
+        [33maria-label[39m=[32m"Actions de l'assistant"[39m
+        [33mclass[39m=[32m"sticky bottom-0 z-10 shrink-0 border-t border-line bg-white/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/80"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex flex-wrap items-center justify-between gap-2"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold outline-none transition focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 border border-line bg-white text-ink hover:bg-slate-50 focus-visible:ring-brand/20 min-h-10 px-4 py-2 text-sm"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [0mPrécédent[0m
+          [36m</button>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex flex-wrap gap-2"[39m
+          [36m>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold outline-none transition focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 bg-brand text-white hover:bg-brand-700 focus-visible:ring-brand/30 min-h-10 px-4 py-2 text-sm"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0mAccéder au tableau de bord[0m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</footer>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError ../../../../../../../..web/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../../../../../../..web/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../../../../../../..web/node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ ../../../../../../../..web/node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/components/schoolSetup/GuidedSchoolSetupWizard.red.test.tsx:284:26
+    282|       </MemoryRouter>,
+    283|     );
+    284|     const alert = screen.getByText(/n'est plus conforme aujourd'hui/i);
+       |                          ^
+    285|     expect(alert).toBeInTheDocument();
+    286|     expect(screen.getByText(/finalisée le 01-10-2026/i)).toBeInTheDocu…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 10 passed (12)
+   Start at  08:11:15
+   Duration  2.16s (transform 476ms, setup 172ms, import 179ms, tests 1.10s, environment 572ms)
+
