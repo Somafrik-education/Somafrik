@@ -224,7 +224,7 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
   it("refuse d'inventer SCHOOL_ADMIN si le catalogue API retourne un tableau vide", async () => {
     vi.mocked(clientsApi.listAssignableRoles).mockResolvedValue({ roles: [] });
     openCreateForm();
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("SCHOOL_ADMIN"));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Administrateur d'établissement"));
     expect(screen.getByLabelText(/^Rôle/i).querySelector('option[value="SCHOOL_ADMIN"]')).toBeNull();
     expect(clientsApi.provisionUser).not.toHaveBeenCalled();
   });
