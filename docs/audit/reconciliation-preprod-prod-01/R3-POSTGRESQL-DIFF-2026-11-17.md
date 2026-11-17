@@ -77,6 +77,20 @@ Requêtes de comptage avec jointures par identifiant et comparaison `school_id I
 
 **Verdict : aucune incohérence existante détectée sur ces six relations et cette requête, dans les deux bases.** Cela **ne clôt pas** #1178 : les contraintes de FK sont unitaires et n'empêchent pas de nouvelles références cross-tenant incorrectes. Les lignes orphelines, autres chemins d'écriture, transactions concurrentes et accès API ne sont pas couverts par ces six comptages. **Correction indépendante nécessaire**, avec tests RED/GREEN et examen des écritures avant migration.
 
+## 3 bis. Comptages supplémentaires des contraintes divergentes
+
+**Requêtes `SELECT COUNT(*)` complémentaires exécutées dans les deux environnements, sans exposition de lignes :**
+
+| Anomalie recherchée | Préprod | Production |
+|---|---:|---:|
+| Doublons de présence pour (school_id,student_id,attendance_date), nombre d'exemplaires excédentaires | 0 | 0 |
+| Notes `score < 0` | 0 | 0 |
+| Notes `score > max_score` | 0 | 0 |
+| `report_card_correction_commands.source_version < 1` | 0 | 0 |
+| `report_card_correction_commands.result_version < 1` | 0 | 0 |
+
+**Interprétation :** les lignes actuelles ne présentent pas ces cinq anomalies, mais l'absence de contrainte à l'un des environnements reste un risque pour les **écritures futures**. Les valeurs NULL, opérations concurrentes et autres contraintes n'ont pas toutes été testées ; aucune règle ne doit être copiée à l'aveugle.
+
 ## 4. Historique des migrations Supabase
 
 Inventaire read-only de `supabase_migrations.schema_migrations` (versions, noms et MD5 du texte des statements, pas de texte des migrations récupéré).
