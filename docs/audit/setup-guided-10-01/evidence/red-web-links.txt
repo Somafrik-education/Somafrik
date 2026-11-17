@@ -1,0 +1,15 @@
+    346|   it("W-AUDIT10-08 — étape 8 ouvre la page où l'on crée un type d'éval…
+    347|     const contract = await loadContract();
+    348|     assert.equal(contract.GUIDED_WEB_LINKS.pedagogy, "/parametres/anne…
+       |            ^
+    349|     const config = read(path.join(webSrc, "pages/ConfigurationPage.tsx…
+    350|     const yearSection = config.indexOf('inSection("annee-scolaire")');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 17 passed (18)
+   Start at  07:56:10
+   Duration  1.03s (transform 126ms, setup 139ms, import 65ms, tests 67ms, environment 622ms)
+
