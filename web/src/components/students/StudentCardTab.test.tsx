@@ -300,7 +300,7 @@ describe("StudentCardTab", () => {
       expect(screen.queryByText(/Réservation NFC annulée ou expirée/)).toBeNull();
     });
 
-    it("affiche une annulation administrative récupérable, sans action de mutation", async () => {
+    it("affiche une annulation récupérable et propose uniquement une révocation de sécurité confirmée", async () => {
       api.list.mockResolvedValue({
         cards: [{ ...pending, status: "revoked", revokeReason: "nfc_cancelled", nfcRecoverable: true }],
       });
@@ -308,7 +308,9 @@ describe("StudentCardTab", () => {
       const article = await screen.findByRole("article", { name: "Carte CARD-N" });
       expect(within(article).getByText("Motif : Annulation administrative (réservation NFC non confirmée)")).toBeInTheDocument();
       expect(within(article).getByText(/UID conservé dans l’historique ; réattribution interdite/)).toBeInTheDocument();
-      expect(within(article).queryByRole("button")).toBeNull();
+      expect(within(article).getAllByRole("button")).toHaveLength(1);
+      expect(within(article).getByRole("button", { name: "Signaler une carte NFC suspecte" })).toBeInTheDocument();
+      expect(api.revoke).not.toHaveBeenCalled();
     });
   });
 
