@@ -117,6 +117,34 @@ describe("HOLD — SchoolSetupSettingsPage wizard exclusif", () => {
     expect(screen.getByText(/Progression : 3 \/ 3/)).toBeInTheDocument();
   });
 
+  it("affiche une erreur guidée explicite et ne présente le 3/3 qu'après cet échec", async () => {
+    getGuided.mockRejectedValueOnce(new Error("réseau assistant indisponible"));
+    render(
+      <MemoryRouter>
+        <SchoolSetupSettingsPage />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText("Assistant de configuration")).not.toBeInTheDocument();
+    expect(await screen.findByText(/réseau assistant indisponible/)).toBeInTheDocument();
+    expect(screen.getByText(/parcours simplifié en 3 étapes/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Réessayer le chargement" })).toBeInTheDocument();
+  });
+
+  it("réessaie le guidé et remplace le parcours 3/3 après récupération", async () => {
+    const user = userEvent.setup();
+    getGuided.mockRejectedValueOnce(new Error("indisponible")).mockResolvedValueOnce(guided40);
+    render(
+      <MemoryRouter>
+        <SchoolSetupSettingsPage />
+      </MemoryRouter>,
+    );
+    await screen.findByText(/indisponible/);
+    await user.click(screen.getByRole("button", { name: "Réessayer le chargement" }));
+    expect(await screen.findByText("Étape 5 sur 10")).toBeInTheDocument();
+    expect(screen.queryByText("Assistant de configuration")).not.toBeInTheDocument();
+    expect(screen.queryByText(/parcours simplifié en 3 étapes/)).not.toBeInTheDocument();
+  });
+
   it("à 100 % Terminer confirme puis propose le Tableau de bord", async () => {
     const user = userEvent.setup();
     getGuided.mockResolvedValue(guided100);
