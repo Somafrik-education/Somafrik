@@ -21,9 +21,14 @@ export function SchoolSetupSettingsPage() {
   const [payload, setPayload] = useState<SchoolSetupPayload | null>(null);
   const [guided, setGuided] = useState<GuidedSetupPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [guidedError, setGuidedError] = useState<string | null>(null);
+  const [guidedLoading, setGuidedLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setGuidedLoading(true);
+    setGuidedError(null);
     void Promise.allSettled([schoolSetupStatusApi.get(), schoolSetupGuidedApi.get()]).then(([statusResult, guidedResult]) => {
       if (cancelled) return;
       if (statusResult.status === "fulfilled") {
@@ -39,12 +44,23 @@ export function SchoolSetupSettingsPage() {
       }
       if (guidedResult.status === "fulfilled") {
         setGuided(guidedResult.value);
+        setGuidedError(null);
+      } else {
+        setGuided(null);
+        const reason = guidedResult.reason;
+        const suffix = reason instanceof ApiError
+          ? ` (HTTP ${reason.status}${reason.code ? `, ${reason.code}` : ""})`
+          : "";
+        setGuidedError(`Impossible de charger l’assistant de configuration en 10 étapes${suffix}. ${
+          reason instanceof Error ? reason.message : "Veuillez réessayer."
+        }`);
       }
+      setGuidedLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   return (
     <FormLayout>
@@ -60,7 +76,18 @@ export function SchoolSetupSettingsPage() {
             {error}
           </InlineAlert>
         ) : null}
-        {!payload && !error ? <LoadingState message="Chargement de la configuration…" /> : null}
+        {guidedError ? (
+          <InlineAlert tone="danger" title="Assistant complet indisponible">
+            <p>{guidedError}</p>
+            <button type="button" onClick={() => setReloadKey((key) => key + 1)}>
+              Réessayer le chargement
+            </button>
+            {payload ? (
+              <p>Le parcours simplifié en 3 étapes reste accessible, mais ne remplace pas la configuration complète en 10 étapes.</p>
+            ) : null}
+          </InlineAlert>
+        ) : null}
+        {(!payload && !error) || guidedLoading ? <LoadingState message="Chargement de la configuration…" /> : null}
         {guided ? (
           <GuidedSchoolSetupWizard
             payload={guided}
@@ -68,7 +95,7 @@ export function SchoolSetupSettingsPage() {
             onCompleted={setGuided}
             onFinish={() => navigate("/tableau-de-bord", { replace: true })}
           />
-        ) : payload ? (
+        ) : payload && guidedError ? (
           <SchoolSetupWizard payload={payload} onLater={() => navigate("/etablissement", { replace: true })} />
         ) : null}
         {payload ? (
