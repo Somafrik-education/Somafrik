@@ -92,6 +92,8 @@ function asId(value) {
   return String(value ?? "").trim();
 }
 
+const { nfcRecoverable } = require("./studentCardNfcPrevention");
+
 function mapCardListItem(row) {
   if (!row) return null;
   return {
@@ -102,6 +104,7 @@ function mapCardListItem(row) {
     issuedAt: row.issued_at,
     revokedAt: row.revoked_at,
     revokeReason: row.revoke_reason,
+    nfcRecoverable: nfcRecoverable(row),
     replacedByCardId: row.replaced_by_card_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
