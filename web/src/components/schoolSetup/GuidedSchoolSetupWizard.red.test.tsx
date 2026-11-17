@@ -246,3 +246,45 @@ describe("RED — GuidedSchoolSetupWizard UX", () => {
     expect(screen.getByText("Étape 5 sur 10")).toBeInTheDocument();
   });
 });
+
+describe("AUDIT-SETUP-GUIDED-10-01 / O3 — finalisée historiquement ≠ conforme aujourd'hui", () => {
+  it("W-O3-1 — finalisée et encore conforme : terminée et conforme", async () => {
+    const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
+    const done = {
+      ...payload40,
+      status: "operational" as const,
+      percent: 60,
+      currentStep: 7,
+      lastValidStep: 6,
+      finalized: true,
+      finalizedAt: "2026-10-01T09:00:00.000Z",
+    };
+    render(
+      <MemoryRouter>
+        <GuidedSchoolSetupWizard payload={done} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/finalisée le 01-10-2026/i)).toBeInTheDocument();
+    expect(screen.getByText(/conforme aujourd'hui/i)).toBeInTheDocument();
+    expect(screen.queryByText(/plus conforme/i)).not.toBeInTheDocument();
+  });
+
+  it("W-O3-2 — finalisée mais une étape obligatoire ne l'est plus : alerte explicite avec l'étape à corriger", async () => {
+    const { GuidedSchoolSetupWizard } = await import("./GuidedSchoolSetupWizard");
+    const drifted = {
+      ...payload40,
+      finalized: true,
+      finalizedAt: "2026-10-01T09:00:00.000Z",
+    };
+    render(
+      <MemoryRouter>
+        <GuidedSchoolSetupWizard payload={drifted} />
+      </MemoryRouter>,
+    );
+    const alert = screen.getByText(/n'est plus conforme aujourd'hui/i);
+    expect(alert).toBeInTheDocument();
+    expect(screen.getByText(/finalisée le 01-10-2026/i)).toBeInTheDocument();
+    expect(screen.getByText(/« Enseignants »/)).toBeInTheDocument();
+    expect(screen.queryByText(/Configuration de votre établissement terminée/)).not.toBeInTheDocument();
+  });
+});

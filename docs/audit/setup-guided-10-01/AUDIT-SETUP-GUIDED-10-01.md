@@ -97,10 +97,10 @@ Mécanismes transverses vérifiés (tests existants B1 à B16, puis AUDIT10) :
 | A6 | **P1** | Mobile : aucun écran ne permet d'enregistrer les règles de notification, donc l'étape 9 ne peut pas être satisfaite depuis le Mobile | Écran absent ; le lien ouvre la boîte de réception | `Mobile/src/lib/schoolSetupGuidedMobile.ts`, nouvel écran | **Ouvert** : PR séparée proposée (écran natif sur `PATCH /api/backoffice/establishments/:code/notification-settings`, équivalent de `SettingsNotificationsPage`) |
 | A7 | P2 | Mobile : une erreur de `GET /v2/school-setup/guided` est avalée, et l'écran revient silencieusement à l'ancien assistant 3/3 | `.catch(() => setGuided(null))` | `Mobile/src/screens/SchoolSetupSettingsScreen.tsx` | **Ouvert** : PR séparée, car ce fichier relève du périmètre contrôlé LOT 4 (L4-09) |
 
-Observations, sans correctif, pour décision CTO :
-- **O1.** L'étape 10 est satisfaite dès que l'administrateur lui-même existe, ce qui est toujours vrai pour qui ouvre l'assistant. C'est conforme au mandat (« au moins un utilisateur ») mais peu discriminant. Faut-il exiger un second compte ?
-- **O2.** L'étape 7 compte une grille de frais quel que soit son statut (`Brouillon` compris) et son année. C'est conforme au mandat. Faut-il exiger une grille publiée et de l'année courante ?
-- **O3.** Après finalisation, le statut « terminé » est conservé même si des données disparaissent, mais la progression affichée reste recalculée. C'est la décision CONFIG-FINAL-01, à confirmer.
+Décisions CTO sur les observations :
+- **O1 :** ne pas exiger un deuxième utilisateur à l'étape 10. Règle inchangée.
+- **O2 :** ne pas exiger une grille publiée à l'étape 7. Règle inchangée.
+- **O3 :** conserver `finalizedAt` comme historique, et distinguer une configuration finalisée historiquement d'une configuration conforme aujourd'hui. **Implémenté** (§11).
 
 ## 5. Tests RED → GREEN
 
@@ -194,3 +194,53 @@ Aucun fichier LOT 0 (`schoolSetupStatus.js`) ni LOT 4, aucune migration, aucun m
 - le diff CTO et la CI sur la PR restent à obtenir.
 
 `AUDIT-SETUP-GUIDED-10-01 — DRAFT / HOLD — AUCUN MERGE NI DÉPLOIEMENT SANS GO CTO.`
+
+## 11. Complément CTO (après l'audit GitHub de `61c9efd7`)
+
+### 11.1 Caractérisation des affectations et des inscriptions
+
+Règles canoniques de référence :
+- **affectation utilisable** (`teacherAssignmentsRepository.resolveReferences`) : enseignant actif, **classe active** et **matière active**, toutes deux du **même établissement** ;
+- **classe** : `inactive` est le tombstone canonique (`classesRepository`, contrainte `classes_status_check IN ('active','inactive')`) ;
+- **inscription courante** : `active` ou `enrolled` (`studentIntegrity`, trigger finance `enrollmentC18Schema`).
+
+Résultats, mesurés sur PostgreSQL 16 réel. RED sur `61c9efd7` (`evidence/complement-red2-pg.txt`), GREEN après correctif (`evidence/complement-green2-pg.txt`) :
+
+| ID | Cas | Base de données | Assistant sur `61c9efd7` | Incohérence prouvée | Après correctif |
+|---|---|---|---|---|---|
+| C01 | Affectation active sur une **classe inactive** | Acceptée | Étape 5 **satisfaite** | **Oui** | Non comptée |
+| C02 | Affectation active sur une **matière archivée** | Acceptée | Étape 5 **satisfaite** | **Oui** | Non comptée |
+| C03 | Affectation vers une classe ou une matière **d'un autre établissement** | **Acceptée** (aucune contrainte de tenant en base) | Étape 5 **satisfaite** | **Oui** | Non comptée |
+| C04 | Inscription active dans une **classe inactive** | Acceptée | Étape 6 **satisfaite** | **Oui** | Non comptée |
+| C05 | **Seule classe inactive** | — | Étape 3 **satisfaite** (compteur LOT 0 sans filtre de statut) | **Oui** | Non satisfaite (compteur propre à l'assistant ; LOT 0 inchangé) |
+| C06 | Inscription vers une classe d'un autre établissement | **Acceptée** | Déjà non comptée (premier correctif de #1174) | Non (déjà corrigé) | Non comptée |
+
+**Correctif minimal** (`schoolSetupGuided.js` uniquement) :
+- les jointures de l'assistant appliquent exactement la règle canonique (classe et matière actives et du même établissement) ;
+- l'assistant a son propre compteur de classes, identique à celui du LOT 0 mais sans les tombstones.
+
+**Constat hors périmètre, à décider par le CTO :**
+- **C03 et C06.** La base accepte des affectations et des inscriptions qui pointent vers une classe ou une matière d'un autre établissement. Seule la couche applicative l'empêche aujourd'hui. Aucune contrainte n'est ajoutée ici (ce serait une migration) ; une PR dédiée est à envisager.
+- **`approved`.** `classStudentsRepository` lit aussi les inscriptions `approved` comme courantes, alors qu'aucun code ne les écrit. L'assistant suit la règle stricte, celle de la finance et de `studentIntegrity`. Sans impact connu sur les données.
+
+### 11.2 O3 : finalisée historiquement ≠ conforme aujourd'hui
+
+`finalizedAt` est conservé tel quel : la finalisation n'est jamais réécrite. La conformité d'aujourd'hui, c'est le `status` recalculé sur les données actuelles. Le Web et le Mobile utilisent un helper commun `guidedFinalizedState()`, et le contrat d'API est inchangé.
+
+| État | Affichage Web | Affichage Mobile |
+|---|---|---|
+| Finalisée et `operational` | Succès : « Configuration finalisée le JJ-MM-AAAA, et conforme aujourd'hui » | `guided-setup-finalized` : « … conforme aujourd'hui » |
+| Finalisée mais non conforme | Avertissement : « Configuration finalisée le JJ-MM-AAAA, mais elle n'est plus conforme aujourd'hui … Étape à corriger : « X » » | `guided-setup-finalized-not-compliant` : même message |
+
+Tests : Web W-O3-1 et W-O3-2, Mobile M-O3. RED sur `61c9efd7` : 2 échecs Web, 1 échec Mobile (`evidence/complement-red2-web.txt`, `evidence/complement-red2-mobile.txt`). GREEN ensuite.
+
+### 11.3 Résultats GREEN du complément
+
+| Contrôle | Résultat |
+|---|---|
+| PostgreSQL `schoolSetupGuided.audit10.pg.test.js` | **17 / 17** |
+| Runner CI PostgreSQL (3 fichiers guidés) | **22 PASS / 0 FAIL** |
+| Baseline backend unit | **2958 PASS / 0 FAIL / 3 SKIP** |
+| `verify:school-setup-guided-green` | **PASS** (backend 58, Web 63, Mobile 20 / 20) |
+| L4-09 | PASS (N/A, chantier guidé) |
+| `tsc` Web et Mobile | 0 erreur |

@@ -327,6 +327,36 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
     },
   },
   {
+    id: "M-O3",
+    title: "AUDIT-SETUP-GUIDED-10-01 / O3 — finalisée historiquement ≠ conforme aujourd'hui",
+    async run() {
+      const contract = await loadContract();
+      assert.equal(typeof contract.guidedFinalizedState, "function", "guidedFinalizedState manquant");
+      assert.equal(contract.guidedFinalizedState({ finalized: false, status: "operational" }), null);
+      assert.deepEqual(
+        contract.guidedFinalizedState({
+          finalized: true,
+          finalizedAt: "2026-10-01T09:00:00.000Z",
+          status: "operational",
+          nextStepLabel: "Finance",
+        }),
+        { compliant: true, finalizedOn: "01-10-2026", stepToFix: null },
+      );
+      assert.deepEqual(
+        contract.guidedFinalizedState({
+          finalized: true,
+          finalizedAt: "2026-10-01T09:00:00.000Z",
+          status: "configuration_required",
+          nextStepLabel: "Enseignants",
+        }),
+        { compliant: false, finalizedOn: "01-10-2026", stepToFix: "Enseignants" },
+      );
+      const wizard = read(WIZARD_PATH);
+      assertHas(wizard, "guided-setup-finalized-not-compliant", "état « finalisée, plus conforme » non rendu");
+      assertHas(wizard, "n'est plus conforme aujourd'hui", "message de non-conformité absent");
+    },
+  },
+  {
     id: "M-AUDIT10-08",
     title: "AUDIT-SETUP-GUIDED-10-01 — étape 8 ouvre l'écran où l'on crée un type d'évaluation",
     async run() {

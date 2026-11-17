@@ -337,3 +337,104 @@ test("AUDIT10-PG-ISO — isolation : les données d'un autre établissement ne s
   const other = await snapshotOf(state.ids.other.schoolId);
   assert.deepEqual(satisfiedSteps(other), [...GUIDED_STEP_KEYS]);
 });
+
+/*
+ * COMPLÉMENT CTO — caractérisation des affectations et inscriptions inutilisables.
+ * Règle canonique d'une affectation utilisable (teacherAssignmentsRepository.resolveReferences) :
+ * enseignant actif, classe active ET matière active, toutes deux du même établissement.
+ * Une classe `inactive` est le tombstone canonique (classesRepository) : elle n'est plus utilisable.
+ */
+
+async function insertForeignClassAndSubject() {
+  const foreign = state.ids.other;
+  return { classId: foreign.classId, subjectId: foreign.subjectId };
+}
+
+async function tryInsert(sql, params) {
+  try {
+    await state.pool.query(sql, params);
+    return { accepted: true };
+  } catch (error) {
+    return { accepted: false, code: error.code, message: error.message };
+  }
+}
+
+test("AUDIT10-PG-C01 — affectation sur une classe inactive (tombstone) : l'étape 5 n'est pas satisfaite", async () => {
+  const fixture = await seedSchool(state.ids.countryId, "TACLS");
+  await state.pool.query(`UPDATE classes SET status = 'inactive' WHERE id = $1`, [fixture.classId]);
+  const snapshot = await snapshotOf(fixture.schoolId);
+  assert.equal(stepSatisfied("teachers", snapshot), false);
+});
+
+test("AUDIT10-PG-C02 — affectation sur une matière archivée : l'étape 5 n'est pas satisfaite", async () => {
+  const fixture = await seedSchool(state.ids.countryId, "TASUB");
+  // Une seconde matière active garde l'étape 4 satisfaite : seule l'affectation est en cause.
+  await state.pool.query(
+    `INSERT INTO subjects (school_id, subject_code, name, status) VALUES ($1, 'FRA-TASUB', 'Français', 'active')`,
+    [fixture.schoolId],
+  );
+  await state.pool.query(`UPDATE subjects SET status = 'archived' WHERE id = $1`, [fixture.subjectId]);
+  const snapshot = await snapshotOf(fixture.schoolId);
+  assert.equal(stepSatisfied("subjects", snapshot), true);
+  assert.equal(stepSatisfied("teachers", snapshot), false);
+});
+
+test("AUDIT10-PG-C03 — affectation vers une classe ou une matière d'un autre établissement : refusée ou non comptée", async () => {
+  const fixture = await seedSchool(state.ids.countryId, "TAXSC");
+  await state.pool.query(`DELETE FROM teacher_assignments WHERE school_id = $1`, [fixture.schoolId]);
+  const foreign = await insertForeignClassAndSubject();
+  const crossClass = await tryInsert(
+    `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+     VALUES ($1, $2, $3, $4, $5, 'active')`,
+    [fixture.schoolId, fixture.teacherId, foreign.classId, fixture.subjectId, fixture.yearId],
+  );
+  const crossSubject = await tryInsert(
+    `INSERT INTO teacher_assignments (school_id, teacher_id, class_id, subject_id, academic_year_id, status)
+     VALUES ($1, $2, $3, $4, $5, 'active')`,
+    [fixture.schoolId, fixture.teacherId, fixture.classId, foreign.subjectId, fixture.yearId],
+  );
+  console.log(`# CARACTERISATION C03 ${JSON.stringify({ crossClass, crossSubject })}`);
+  const snapshot = await snapshotOf(fixture.schoolId);
+  assert.equal(stepSatisfied("teachers", snapshot), false, "aucune affectation hors établissement ne satisfait l'étape 5");
+});
+
+test("AUDIT10-PG-C04 — inscription dans une classe inactive (tombstone) : l'étape 6 n'est pas satisfaite", async () => {
+  const fixture = await seedSchool(state.ids.countryId, "ENCLS");
+  // Une autre classe active garde l'étape 3 satisfaite : seule l'inscription est en cause.
+  const groupB = await insertId(
+    `INSERT INTO education_class_groups (country_id, group_code, name, status) VALUES ($1, 'G-ENCLS-B', 'B', 'active') RETURNING id`,
+    [state.ids.countryId],
+  );
+  await state.pool.query(`INSERT INTO school_class_groups (school_id, group_id, status) VALUES ($1, $2, 'active')`, [fixture.schoolId, groupB]);
+  await state.pool.query(
+    `INSERT INTO classes (school_id, academic_year_id, class_code, name, level, status, level_id, group_id, group_code)
+     SELECT school_id, academic_year_id, 'CLS-ENCLS-B', '6ème B', level, 'active', level_id, $2, 'B'
+     FROM classes WHERE id = $1`,
+    [fixture.classId, groupB],
+  );
+  await state.pool.query(`UPDATE teacher_assignments SET class_id = (SELECT id FROM classes WHERE class_code = 'CLS-ENCLS-B') WHERE school_id = $1`, [fixture.schoolId]);
+  await state.pool.query(`UPDATE classes SET status = 'inactive' WHERE id = $1`, [fixture.classId]);
+  const snapshot = await snapshotOf(fixture.schoolId);
+  assert.equal(stepSatisfied("structure", snapshot), true);
+  assert.equal(stepSatisfied("teachers", snapshot), true);
+  assert.equal(stepSatisfied("students", snapshot), false);
+});
+
+test("AUDIT10-PG-C05 — seule classe inactive (tombstone) : l'étape 3 n'est pas satisfaite", async () => {
+  const fixture = await seedSchool(state.ids.countryId, "STCLS");
+  await state.pool.query(`UPDATE classes SET status = 'inactive' WHERE id = $1`, [fixture.classId]);
+  const snapshot = await snapshotOf(fixture.schoolId);
+  assert.equal(stepSatisfied("structure", snapshot), false);
+});
+
+test("AUDIT10-PG-C06 — inscription vers une classe d'un autre établissement : refusée ou non comptée", async () => {
+  const fixture = await seedSchool(state.ids.countryId, "ENXSC");
+  await state.pool.query(`DELETE FROM enrollments WHERE school_id = $1`, [fixture.schoolId]);
+  const cross = await tryInsert(
+    `INSERT INTO enrollments (school_id, student_id, class_id, academic_year_id, status) VALUES ($1, $2, $3, $4, 'ENROLLED')`,
+    [fixture.schoolId, fixture.studentId, state.ids.other.classId, fixture.yearId],
+  );
+  console.log(`# CARACTERISATION C06 ${JSON.stringify({ cross })}`);
+  const snapshot = await snapshotOf(fixture.schoolId);
+  assert.equal(stepSatisfied("students", snapshot), false);
+});

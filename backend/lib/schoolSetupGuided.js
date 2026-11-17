@@ -319,6 +319,7 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
     userCount,
     activeSubjectCount,
     activeTeacherCount,
+    activeClassCount,
   ] = await Promise.all([
     countExact(
       one,
@@ -335,7 +336,9 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
       `SELECT COUNT(*)::int AS c
        FROM enrollments e
        INNER JOIN students st ON st.id = e.student_id
-       INNER JOIN classes cl ON cl.id = e.class_id AND cl.school_id = st.school_id
+       INNER JOIN classes cl ON cl.id = e.class_id
+         AND cl.school_id = st.school_id
+         AND COALESCE(cl.status, 'active') = 'active'
        WHERE st.school_id::text = $1
          AND e.class_id IS NOT NULL
          AND lower(btrim(COALESCE(e.status, ''))) IN ('active', 'enrolled')`,
@@ -346,6 +349,14 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
       `SELECT COUNT(*)::int AS c
        FROM teacher_assignments ta
        INNER JOIN teachers t ON t.id = ta.teacher_id
+       -- Règle canonique (teacherAssignmentsRepository.resolveReferences) : classe et
+       -- matière actives, du même établissement que l'enseignant.
+       INNER JOIN classes cl ON cl.id = ta.class_id
+         AND cl.school_id = t.school_id
+         AND COALESCE(cl.status, 'active') = 'active'
+       INNER JOIN subjects sub ON sub.id = ta.subject_id
+         AND sub.school_id = t.school_id
+         AND COALESCE(sub.status, 'active') = 'active'
        WHERE t.school_id::text = $1
          AND ta.status = 'active'
          AND t.status = 'active'
@@ -384,6 +395,18 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
       `SELECT COUNT(*)::int AS c FROM teachers WHERE school_id::text = $1 AND status = 'active'`,
       params,
     ),
+    // Même requête que le statut LOT 0, sans les classes `inactive` (tombstone canonique).
+    countExact(
+      one,
+      `SELECT COUNT(*)::int AS c
+       FROM classes c
+       INNER JOIN academic_years y ON y.id = c.academic_year_id
+       WHERE c.school_id::text = $1
+         AND y.school_id::text = $1
+         AND COALESCE(c.status, 'active') = 'active'
+         AND (y.is_current = TRUE OR lower(btrim(COALESCE(y.status, ''))) = 'open')`,
+      params,
+    ),
   ]);
 
   return {
@@ -391,6 +414,7 @@ async function loadSchoolSetupGuidedSnapshot(one, schoolId) {
     // Remplace, pour l'assistant uniquement, les compteurs bruts du statut LOT 0.
     subjectCount: activeSubjectCount,
     teacherCount: activeTeacherCount,
+    classCount: activeClassCount,
     hasName: filled(school?.name),
     hasCountry: Boolean(school?.country_id),
     hasAddress: filled(address),

@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from "./dates";
 import { isSchoolAdminRole } from "./format";
 import type { GuidedSetupPayload } from "./schoolSetupGuidedApi";
 
@@ -121,4 +122,20 @@ export function shouldShowGuidedSetupDashboardCard(input: GuidedSetupGateInput =
   if (!input.payload) return false;
   if (input.payload.finalized) return false;
   return input.payload.percent < 100;
+}
+
+/**
+ * AUDIT-SETUP-GUIDED-10-01 / O3 — `finalizedAt` reste un historique. La conformité
+ * d'aujourd'hui est le `status` recalculé par le Backend sur les données actuelles.
+ */
+export function guidedFinalizedState(
+  payload: Pick<GuidedSetupPayload, "finalized" | "finalizedAt" | "status" | "nextStepLabel">,
+): { compliant: boolean; finalizedOn: string; stepToFix: string | null } | null {
+  if (!payload.finalized) return null;
+  const compliant = payload.status === "operational";
+  return {
+    compliant,
+    finalizedOn: formatDateForDisplay(payload.finalizedAt ?? null),
+    stepToFix: compliant ? null : payload.nextStepLabel ?? null,
+  };
 }
