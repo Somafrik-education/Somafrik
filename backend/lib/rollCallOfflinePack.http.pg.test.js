@@ -459,7 +459,12 @@ async function main() {
     assert.equal(p.mode, "teacher");
     assert.equal(p.classId, classA1);
     assert.equal(p.date, today);
-    assert.equal(p.timeZone, zone);
+    // Le service renvoie l'identifiant CANONIQUE (Intl.DateTimeFormat#resolvedOptions). Node canonicalise
+    // « Etc/GMT » en « UTC » : c'est la valeur que choisit afternoonZone() quand le test s'exécute pendant
+    // l'heure UTC 14. On compare donc à l'identifiant canonique, et on prouve l'équivalence des fenêtres.
+    const canonicalZone = new Intl.DateTimeFormat("en-US", { timeZone: zone }).resolvedOptions().timeZone;
+    assert.equal(p.timeZone, canonicalZone);
+    assert.deepEqual(computePackWindow(canonicalZone, today), computePackWindow(zone, today), "même fenêtre pour l'identifiant fourni et son canonique");
     const window = computePackWindow(zone, today);
     assert.equal(p.notBefore, isoSeconds(window.notBefore));
     assert.equal(p.expiresAt, isoSeconds(window.expiresAt));
