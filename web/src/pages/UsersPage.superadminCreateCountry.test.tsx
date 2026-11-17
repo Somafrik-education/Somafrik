@@ -192,6 +192,43 @@ describe("UsersPage — Superadmin création sans pays RDC par défaut", () => {
     expect(clientsApi.grantUserRole).not.toHaveBeenCalled();
   });
 
+  it("crée Admin School malgré un libellé API personnalisé, avec identité SCHOOL_ADMIN canonique", async () => {
+    vi.mocked(clientsApi.listAssignableRoles).mockResolvedValue({
+      roles: [
+        { roleKey: "COUNTRY_ADMIN", roleName: "Admin Pays" },
+        { roleKey: "SCHOOL_ADMIN", roleName: "Directeur" },
+      ],
+    });
+    vi.mocked(clientsApi.provisionUser).mockResolvedValue({
+      id: "user-bi-directeur",
+      schoolCode: "BI-2026-0001",
+      countryCode: "BI",
+      roleKeys: ["SCHOOL_ADMIN"],
+    });
+    openCreateForm();
+    fireEvent.change(screen.getByLabelText(/^Prénom/i), { target: { value: "Grace" } });
+    fireEvent.change(screen.getByLabelText(/^Nom/i), { target: { value: "Ndayishimiye" } });
+    await waitFor(() => expect(screen.getByLabelText(/^Rôle/i).querySelector('option[value="SCHOOL_ADMIN"]')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText(/^Rôle/i), { target: { value: "SCHOOL_ADMIN" } });
+    fireEvent.change(screen.getByLabelText(/Pays/i), { target: { value: "BI" } });
+    fireEvent.change(screen.getByLabelText(/Établissement/i), { target: { value: "BI-2026-0001" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(clientsApi.provisionUser).toHaveBeenCalledTimes(1));
+    expect(clientsApi.provisionUser).toHaveBeenCalledWith(
+      expect.objectContaining({ roleKey: "SCHOOL_ADMIN", countryCode: "BI", schoolCode: "BI-2026-0001" }),
+    );
+    expect(clientsApi.createUser).not.toHaveBeenCalled();
+    expect(clientsApi.grantUserRole).not.toHaveBeenCalled();
+  });
+
+  it("refuse d'inventer SCHOOL_ADMIN si le catalogue API retourne un tableau vide", async () => {
+    vi.mocked(clientsApi.listAssignableRoles).mockResolvedValue({ roles: [] });
+    openCreateForm();
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("SCHOOL_ADMIN"));
+    expect(screen.getByLabelText(/^Rôle/i).querySelector('option[value="SCHOOL_ADMIN"]')).toBeNull();
+    expect(clientsApi.provisionUser).not.toHaveBeenCalled();
+  });
+
   it("soumet Admin Pays BI via provision, sans établissement ni GRANT", async () => {
     vi.mocked(clientsApi.provisionUser).mockResolvedValue({
       id: "user-pays-bi-1",
