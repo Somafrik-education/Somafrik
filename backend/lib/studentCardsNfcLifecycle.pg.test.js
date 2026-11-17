@@ -173,6 +173,33 @@ pg("no immediate legacy replacement of a physically associated NFC card",async f
   await assert.rejects(replaceStudentCard(f.repo,card.id,f.principal,{},f.scope),{code:'STUDENT_CARD_NFC_REPLACEMENT_REQUIRED'});
   assert.equal((await f.row(card.id)).status,'active');
 });
+pg("R3-3 cancellation is restricted to pending unconfirmed NFC and never frees UID", async f => {
+  const reservation = await f.issue();
+  const cancelled = await revokeStudentCard(f.repo, reservation.id, f.principal, {}, f.scope, "nfc_cancelled");
+  assert.equal(cancelled.status, "revoked");
+  assert.equal(cancelled.revokeReason, "nfc_cancelled");
+  assert.equal(cancelled.nfcRecoverable, true);
+  const historic = await f.row(reservation.id);
+  assert.equal(historic.nfc_uid, f.identity.uid);
+  assert.equal(historic.revoke_reason, "nfc_cancelled");
+  await assert.rejects(f.issue({studentId:f.students[1]}), {code:"STUDENT_CARD_NFC_UID_EXISTS"});
+  const active = await f.issue({studentId:f.students[1],nfc:{...f.identity,uid:"04AABBCCDDEE22"}});
+  await f.confirm(active,{uid:"04AABBCCDDEE22"});
+  await assert.rejects(revokeStudentCard(f.repo, active.id, f.principal, {}, f.scope, "nfc_cancelled"),
+    {code:"STUDENT_CARD_NFC_CANCEL_NOT_ALLOWED"});
+  assert.equal((await f.row(active.id)).status, "active");
+  const qr = await issueStudentCard(f.repo,{studentId:f.students[2],medium:"qr"},f.principal,{},f.scope);
+  await assert.rejects(revokeStudentCard(f.repo,qr.id,f.principal,{},f.scope,"nfc_cancelled"),
+    {code:"STUDENT_CARD_NFC_CANCEL_NOT_ALLOWED"});
+});
+pg("R3-3 security revocation stays ineligible and cannot be reclassified", async f => {
+  const card = await f.issue();
+  const revoked = await revokeStudentCard(f.repo,card.id,f.principal,{},f.scope,"revoked");
+  assert.equal(revoked.nfcRecoverable,false);
+  const replay = await revokeStudentCard(f.repo,card.id,f.principal,{},f.scope,"nfc_cancelled");
+  assert.equal(replay.revokeReason,"revoked");
+  assert.equal((await f.row(card.id)).revoke_reason,"revoked");
+});
 pg("revocation and lost observations are idempotent and transactional",async f=>{
   const card=await f.issue();await f.confirm(card);await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,'lost');
   await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,'lost');assert.equal(await f.countAudit('student_card_lost'),1);
