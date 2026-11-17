@@ -2,6 +2,7 @@
 export type NtagIdentity = { uid: string; tagType: "NTAG213" | "NTAG216" };
 export type EnrollmentCard = {
   id: string; publicId: string; medium: string; status: string; revokeReason?: string | null;
+  /** Advisory only; UID is never released by R3-3. */ nfcRecoverable?: boolean;
   nfc: (NtagIdentity & { state: "pending" | "encoded" | "locked"; operationId: string | null; expiresAt: string | null; replacesCardId?: string | null }) | null;
 };
 export type IssuedNfcCard = EnrollmentCard & { cardToken?: string; tokenAvailable?: boolean; idempotentReplay?: boolean; reissued?: boolean };
@@ -59,6 +60,7 @@ export interface NfcEnrollmentApi {
   confirmProvision?(card: EnrollmentCard, body: NfcProvisionBody & { challenge: string }, studentId?: string): Promise<EnrollmentCard & { idempotentReplay?: boolean }>;
   /** Lecture seule : POST /student-cards/verify avec cardId → matchesCard. */
   verify?(card: EnrollmentCard, cardToken: string): Promise<CardRereadCheck>;
+  revokeReservation?(card: EnrollmentCard, reason: "nfc_cancelled" | "revoked"): Promise<EnrollmentCard>;
 }
 export type NfcPhase = "initial" | "reservation" | "waiting" | "writing" | "verification" | "confirmation" | "success" | "error" | "expired" | "resume";
 export const NFC_PHASE_COPY: Record<NfcPhase, string> = {
@@ -113,7 +115,8 @@ export function nfcErrorCopy(error: unknown): string {
     STUDENT_CARD_NFC_CONFLICT: "Une opération NFC concurrente existe pour cet élève. Actualisez l’état des cartes.",
     STUDENT_CARD_NFC_OPERATION_CONFLICT: "Une opération NFC concurrente existe pour cet élève. Actualisez l’état des cartes.",
     STUDENT_CARD_NFC_RESERVATION_EXISTS: "Une réservation NFC est déjà en cours pour cet élève. Reprenez-la au lieu d’en créer une nouvelle.",
-    STUDENT_CARD_NFC_UID_EXISTS: "Cette carte physique est déjà affectée. Son UID reste dans l’historique.",
+    STUDENT_CARD_NFC_UID_EXISTS: "Cette carte physique est déjà affectée. Utilisez « Diagnostiquer une carte NFC » en lecture seule ; l’UID reste réservé.",
+    STUDENT_CARD_NFC_CANCEL_NOT_ALLOWED: "Annulation refusée : seule une réservation NFC non confirmée peut recevoir ce motif.",
     NFC_WRITE_UNCONFIRMED: "Écriture NFC non confirmée (carte retirée ou session interrompue). Ne considérez pas la carte comme vierge : relisez-la avant toute nouvelle tentative.",
     NFC_CONFIRM_UNCONFIRMED: "La carte a été écrite et relue, mais l’activation serveur n’est pas confirmée. Ne réécrivez pas : actualisez puis utilisez « Reprendre l’opération — relire et confirmer ».",
     NFC_RECOVERY_USE_R1: "Diagnostic : la carte contient déjà le jeton Somafrik de cette carte. Utilisez « Récupérer cette carte NFC sans la réécrire ». Aucune écriture effectuée.",
@@ -166,6 +169,7 @@ export function cardTokenFromQr(value: unknown): string {
 function publicCard(card: EnrollmentCard): EnrollmentCard {
   return {
     id: card.id, publicId: card.publicId, medium: card.medium, status: card.status, revokeReason: card.revokeReason ?? null,
+    nfcRecoverable: card.nfcRecoverable === true,
     nfc: card.nfc ? { uid: card.nfc.uid, tagType: card.nfc.tagType, state: card.nfc.state, operationId: card.nfc.operationId ?? null,
       expiresAt: card.nfc.expiresAt ?? null, replacesCardId: card.nfc.replacesCardId ?? null } : null,
   };
@@ -525,6 +529,7 @@ export function createNfcEnrollmentApi(request: <T>(path: string, options?: { me
       return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-provision/confirm`, { ...body, ...(studentId ? { studentId } : {}) });
     },
     verify(card, cardToken) { return post("/student-cards/verify", { cardToken, cardId: card.id }); },
+    revokeReservation(card, reason) { return post(`/student-cards/${encodeURIComponent(card.id)}/revoke`, { reason }); },
     confirm(card, cardToken, locked, studentId) {
       if (!card.nfc) throw nfcFailure("STUDENT_CARD_INVALID_STATE");
       return post(`/student-cards/${encodeURIComponent(card.id)}/nfc-confirm`, { uid: card.nfc.uid, tagType: card.nfc.tagType, cardToken, locked, studentId, operationId: card.nfc.operationId });
