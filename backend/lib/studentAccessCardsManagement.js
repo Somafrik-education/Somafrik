@@ -417,6 +417,7 @@ async function revokeStudentCard(repo, cardId, principal, auditMeta, schoolScope
   if (card.nfc_uid) {
     return require("./studentCardsNfcLifecycle").transitionStudentCardNfc(repo, cardId, principal, auditMeta, schoolScope, "revoked", reason || "revoked");
   }
+  if (reason === "nfc_cancelled") throw studentCardError(409, "Réservation NFC nécessaire pour cette annulation.", "STUDENT_CARD_NFC_CANCEL_NOT_ALLOWED");
   if (card.status === "revoked") {
     return mapCardListItem(card);
   }
