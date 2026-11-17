@@ -36,7 +36,7 @@
 - Utilisateurs : choix d'un rôle custom `SCHOOL_ADMIN` utilise la clé/identité canonique ; alerte si l'API ne renvoie pas le rôle, sans fallback non autorisé.
 - Le **repli silencieux 10 étapes → ancien 3/3 Web** n'est pas inclus dans les six commits promouvables : correction séparée **#1184 Draft**, reportée comme non bloquante. Ne pas considérer ce défaut fermé.
 
-### Mobile (10 fichiers produit + 5 fichiers tests)
+### Mobile (12 fichiers produit et de harness + 3 fichiers de tests)
 
 - Une vue native de configuration des notifications est ajoutée ; la route est protégée par `Paramètres Établissement`, son édition par `UPDATE` ; les mises à jour sont effectuées via API existante.
 - L'écran de configuration guidée affiche un échec réseau plutôt que le 3/3 silencieux, avec réessai.
