@@ -92,6 +92,8 @@ function asId(value) {
   return String(value ?? "").trim();
 }
 
+const { nfcRecoverable } = require("./studentCardNfcPrevention");
+
 function mapCardListItem(row) {
   if (!row) return null;
   return {
@@ -102,6 +104,7 @@ function mapCardListItem(row) {
     issuedAt: row.issued_at,
     revokedAt: row.revoked_at,
     revokeReason: row.revoke_reason,
+    nfcRecoverable: nfcRecoverable(row),
     replacedByCardId: row.replaced_by_card_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -414,6 +417,7 @@ async function revokeStudentCard(repo, cardId, principal, auditMeta, schoolScope
   if (card.nfc_uid) {
     return require("./studentCardsNfcLifecycle").transitionStudentCardNfc(repo, cardId, principal, auditMeta, schoolScope, "revoked", reason || "revoked");
   }
+  if (reason === "nfc_cancelled") throw studentCardError(409, "Réservation NFC nécessaire pour cette annulation.", "STUDENT_CARD_NFC_CANCEL_NOT_ALLOWED");
   if (card.status === "revoked") {
     return mapCardListItem(card);
   }

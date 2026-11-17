@@ -7,6 +7,7 @@ import {
   GUIDED_STEP_COPY,
   GUIDED_STEP_KEYS,
   GUIDED_WEB_LINKS,
+  guidedFinalizedState,
   guidedProgressLabel,
   guidedStepHeading,
 } from "../../lib/schoolSetupGuidedWeb";
@@ -51,6 +52,7 @@ export function GuidedSchoolSetupWizard({
   const heading = guidedStepHeading(viewingStep);
 
   const bar = useMemo(() => progressBar(current.percent), [current.percent]);
+  const finalizedState = guidedFinalizedState(current);
 
   async function saveAndContinue() {
     setSaving(true);
@@ -120,9 +122,16 @@ export function GuidedSchoolSetupWizard({
         <div className="space-y-1">
           <h2 className="text-xl font-black text-ink">Configuration de votre établissement</h2>
           <p className="text-sm font-semibold text-ink">{heading || `Étape ${viewingStep} sur 10`}</p>
-          {current.finalized ? (
+          {finalizedState?.compliant ? (
             <InlineAlert tone="success" title="Configuration de votre établissement terminée">
-              Vous pouvez consulter ou modifier les paramètres autorisés. Le statut terminé est conservé.
+              Configuration finalisée le {finalizedState.finalizedOn}, et conforme aujourd'hui. Vous pouvez consulter ou
+              modifier les paramètres autorisés.
+            </InlineAlert>
+          ) : finalizedState ? (
+            <InlineAlert tone="warning" title="Configuration finalisée, à mettre à jour">
+              Configuration finalisée le {finalizedState.finalizedOn}, mais elle n'est plus conforme aujourd'hui : une étape
+              obligatoire n'est plus satisfaite.
+              {finalizedState.stepToFix ? ` Étape à corriger : « ${finalizedState.stepToFix} ».` : null}
             </InlineAlert>
           ) : (
             <p className="text-sm text-muted" aria-live="polite">

@@ -8,6 +8,7 @@ import {
   GUIDED_MOBILE_LINKS,
   GUIDED_STEP_COPY,
   GUIDED_STEP_KEYS,
+  guidedFinalizedState,
   guidedProgressLabel,
   guidedStepHeading,
 } from "../../lib/schoolSetupGuidedMobile";
@@ -51,6 +52,7 @@ export function GuidedSchoolSetupWizard({
   const canFinish =
     !current.finalized && (current.percent >= 100 || isLast || current.status === "operational");
   const canContinue = !current.finalized && !isLast && current.percent < 100;
+  const finalizedState = guidedFinalizedState(current);
 
   async function saveAndContinue() {
     setSaving(true);
@@ -115,9 +117,15 @@ export function GuidedSchoolSetupWizard({
         <Text style={styles.heading} numberOfLines={1}>
           {guidedStepHeading(viewingStep) || `Étape ${viewingStep} sur 10`}
         </Text>
-        {current.finalized ? (
+        {finalizedState?.compliant ? (
           <Text testID="guided-setup-finalized" style={styles.ok}>
-            Configuration de votre établissement terminée
+            Configuration de votre établissement terminée. Finalisée le {finalizedState.finalizedOn}, conforme aujourd'hui.
+          </Text>
+        ) : finalizedState ? (
+          <Text testID="guided-setup-finalized-not-compliant" style={styles.err}>
+            Configuration finalisée le {finalizedState.finalizedOn}, mais elle n'est plus conforme aujourd'hui : une étape
+            obligatoire n'est plus satisfaite.
+            {finalizedState.stepToFix ? ` Étape à corriger : « ${finalizedState.stepToFix} ».` : ""}
           </Text>
         ) : (
           <Text style={styles.percent} numberOfLines={1}>

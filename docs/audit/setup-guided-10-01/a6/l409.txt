@@ -1,0 +1,13 @@
+L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.
+LOT 4 school-setup RED — 9 vert / 0 rouge / 9 cas
+  PASS L4-01
+  PASS L4-02
+  PASS L4-03
+  PASS L4-04
+  PASS L4-05
+  PASS L4-06
+  PASS L4-07
+  PASS L4-08
+  PASS L4-09
+SCHOOL_SETUP_LOT4_RED {"passedIds":["L4-01","L4-02","L4-03","L4-04","L4-05","L4-06","L4-07","L4-08","L4-09"],"failedIds":[],"expectedIds":["L4-01","L4-02","L4-03","L4-04","L4-05","L4-06","L4-07","L4-08","L4-09"]}
+OK: LOT 4 school-setup (contrats GREEN)
