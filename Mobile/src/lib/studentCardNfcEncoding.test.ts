@@ -774,3 +774,20 @@ test("CTO-2 — carte NFC associée : UID, modèle ou état non encodé différe
   const ok = provisionFixture(ENCODED_QR_CARD); ok.setValue(ndefForCard(TOKEN));
   assert.equal((await rereading(ok).reread(ENCODED_QR_CARD, { medium: "nfc" })).verified, true, "contrôle positif : même UID, modèle et état encodé");
 });
+
+
+test("R3-3 Mobile uses explicit cancellation reason and does not read/write the NFC chip", async () => {
+  const requests: Array<{ path: string; options: { method?: string; body?: string } | undefined }> = [];
+  const client = createNfcEnrollmentApi(async <T>(path: string, options?: { method?: string; body?: string }) => {
+    requests.push({ path, options });
+    return { id: "c1", publicId: "A".repeat(22), status: "revoked", nfcRecoverable: true } as T;
+  });
+  const card = fixture().card;
+  const result = await client.revokeReservation!(card, "nfc_cancelled");
+  assert.equal(result.status, "revoked");
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].path, "/student-cards/c1/revoke");
+  assert.equal(requests[0].options?.method, "POST");
+  assert.deepEqual(JSON.parse(requests[0].options!.body!), { reason: "nfc_cancelled" });
+  assert.match(nfcErrorCopy(nfcFailure("STUDENT_CARD_NFC_UID_EXISTS")), /Diagnostiquer une carte NFC/);
+});
