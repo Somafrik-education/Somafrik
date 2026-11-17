@@ -11,6 +11,9 @@ export interface StudentAccessCard {
   issuedAt?: string | null;
   revokedAt?: string | null;
   revokeReason?: string | null;
+  /** Advisory only: does not authorize reuse or transfer of the NFC UID. */
+  nfcRecoverable?: boolean;
+  nfc?: { state?: "pending" | "encoded" | "locked"; encodedAt?: string | null; lockedAt?: string | null } | null;
   replacedByCardId?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;

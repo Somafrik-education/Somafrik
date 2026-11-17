@@ -4,7 +4,7 @@ import { studentCardEnrollmentApi as api } from "../services/studentCardEnrollme
 import { createIdempotencyKey } from "../lib/networkResilience";
 import { StudentCardQrCaptureModal } from "./StudentCardQrCaptureModal";
 import {
-  canRecoverExpiredNfcCard, createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure,
+  canRecoverExpiredNfcCard, createIndividualNfcFlow, NFC_PHASE_COPY, nfcErrorCopy, nfcFailure, nfcRevocationResultCopy, nfcRevokeReasonLabel,
   type CardRereadInput, type EnrollmentCard, type NfcEncoderHardware, type NfcPhase,
 } from "../lib/studentCardNfcEncoding";
 
@@ -113,6 +113,44 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
       if (live.current) { setWorking(false); if (refreshAllowed.current) setRefresh((value) => value + 1); }
     }
   }
+  function cancelPending(card: EnrollmentCard) {
+    if (!permitted.current || !foreground.current || !live.current || busy.current || !enabled) return;
+    Alert.alert("Motif de révocation NFC", "Choisissez selon l’état constaté. Aucune action ne libère l’UID ni ne modifie la puce.", [
+      { text: "Retour", style: "cancel" },
+      { text: "Annulation administrative", onPress: () => confirmCancellation(card, "nfc_cancelled") },
+      { text: "Sécurité", style: "destructive", onPress: () => confirmCancellation(card, "revoked") },
+    ]);
+  }
+  function confirmCancellation(card: EnrollmentCard, reason: "nfc_cancelled" | "revoked") {
+    const nonSensitive = reason === "nfc_cancelled";
+    Alert.alert(nonSensitive ? "Confirmer l’annulation" : "Confirmer la révocation de sécurité",
+      nonSensitive
+        ? "Réservation non confirmée : vérifier que la carte n’a pas été écrite. L’UID restera réservé ; aucune réattribution n’est possible ici."
+        : "La réservation sera définitivement révoquée pour sécurité. L’UID restera réservé.",
+      [{ text: "Retour", style: "cancel" }, { text: "Confirmer", style: nonSensitive ? "default" : "destructive", onPress: () => void (async () => {
+        const pendingCancellation = card.status === "issued" && card.nfc?.state === "pending";
+        const securityEscalation = reason === "revoked" && card.status === "revoked"
+          && card.nfcRecoverable === true
+          && ["nfc_cancelled", "nfc_reservation_expired"].includes(card.revokeReason ?? "");
+        if (!permitted.current || !foreground.current || !live.current || busy.current || !enabled || !(pendingCancellation || securityEscalation)) return;
+        const requestStudent = studentId; const captured = ++generation.current;
+        busy.current = true; setWorking(true);
+        try {
+          if (typeof api.revokeReservation !== "function") throw nfcFailure("NFC_BACKEND_UNSUPPORTED");
+          const result = await api.revokeReservation(card, reason);
+          const recorded = nfcRevocationResultCopy(result);
+          if (live.current && boundStudent.current === requestStudent && generation.current === captured && recorded) {
+            setMessage(recorded);
+          }
+        } catch (error) {
+          if (live.current && boundStudent.current === requestStudent && generation.current === captured) setMessage(nfcErrorCopy(error));
+        } finally {
+          busy.current = false;
+          if (live.current && boundStudent.current === requestStudent) { setWorking(false); setRefresh(value => value + 1); }
+        }
+      })() }],
+    );
+  }
   function replace(card: EnrollmentCard) {
     Alert.alert("Confirmer le remplacement", "L’ancienne carte restera active jusqu’à l’écriture, la relecture et la confirmation serveur de la nouvelle carte.", [
       { text: "Conserver", style: "cancel" },
@@ -166,6 +204,13 @@ export function StudentCardNfcEnrollmentPanel({ studentId, canRead, canUpdate, m
     {cards?.map((card) => <View key={card.id} style={{ paddingVertical: 10 }}>
       <Text>Carte {card.publicId} — {statusLabels[card.status] || "État inconnu"}</Text>
       {card.nfc ? <Text>{card.nfc.tagType} · {stateLabels[card.nfc.state]}</Text> : null}
+      {nfcRevokeReasonLabel(card.revokeReason) ? <Text>Motif : {nfcRevokeReasonLabel(card.revokeReason)}</Text> : null}
+      {card.nfcRecoverable === true ? <Text>Réservation administrativement récupérable après contrôle CTO. UID toujours réservé ; aucun transfert autorisé.</Text> : null}
+      {permitted.current && enabled && card.status === "revoked" && card.nfcRecoverable === true
+        && ["nfc_cancelled", "nfc_reservation_expired"].includes(card.revokeReason ?? "")
+        ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Signaler une carte NFC suspecte" disabled={working} onPress={() => confirmCancellation(card, "revoked")} style={{ padding: 12, opacity: working ? 0.5 : 1 }}><Text>Signaler une carte NFC suspecte</Text></TouchableOpacity> : null}
+      {permitted.current && enabled && card.status === "issued" && card.nfc?.state === "pending"
+        ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="Annuler ou révoquer la réservation NFC" disabled={working} onPress={() => cancelPending(card)} style={{ padding: 12, opacity: working ? 0.5 : 1 }}><Text>Annuler ou révoquer la réservation NFC</Text></TouchableOpacity> : null}
       {canProgram && cards && canRecoverExpiredNfcCard(card, cards)
         ? button("Récupérer cette carte NFC sans la réécrire", () => {
           Alert.alert("Vérifier la carte d’origine",
