@@ -439,6 +439,7 @@ test("PG: create/update/delete convergent avec school_courses sans écraser un t
         school_id uuid NOT NULL,
         subject_code text,
         name text,
+        coefficient numeric NOT NULL DEFAULT 1,
         status text
       );
       CREATE TEMP TABLE teachers (
