@@ -1,0 +1,90 @@
+✔ le banc ne vise aucune base fixe et ne vide aucun schéma (1.1222ms)
+✔ cible non locale, prod ou préprod refusée (1.074106ms)
+✔ base préexistante refusée, échec nettoyé, sentinelle intacte (439.021396ms)
+[teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+[teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+[teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+[teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+[users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+[parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+[parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+[education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+[establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+[evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+[school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+[documents-exams] inventaire residual : 0 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+[documents-exams] inventaire statuts exams : unknown=0
+✔ démarrage sur table existante, finalisation à 60 % et persistance après reconnexion (2070.631148ms)
+ℹ finalized_at ajouté au démarrage sur une table existante, finalisation 60 % conservée après reconnexion
+[teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+[teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+[teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+[teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+[users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+[parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+[parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+[education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+[establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+[evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+[school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+[documents-exams] inventaire residual : 0 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+[documents-exams] inventaire statuts exams : unknown=0
+✔ AUDIT10-PG-00 — établissement complet : les 10 étapes sont satisfaites sur données PostgreSQL réelles (2146.258836ms)
+✔ AUDIT10-PG-01 — anomalie prod : adresse vide → seule l'adresse est signalée manquante (16.290367ms)
+✔ AUDIT10-PG-02 — devise : `currency: ""` dans profile_payload ne masque pas la devise du pays (lecture canonique) (26.097614ms)
+✔ AUDIT10-PG-03 — adresse/téléphone historiques dans profile_payload : l'assistant lit la valeur présentée par l'API (17.999667ms)
+✔ AUDIT10-PG-04 — matière archivée : l'étape 4 n'est plus satisfaite (16.465039ms)
+✔ AUDIT10-PG-05 — enseignant archivé (affectation encore active) : l'étape 5 n'est plus satisfaite (16.0082ms)
+✔ AUDIT10-PG-06 — inscription retirée (WITHDRAWN) : l'étape 6 n'est plus satisfaite (16.229653ms)
+✔ AUDIT10-PG-06b — inscription `active` (minuscule) reste une inscription valide (16.673518ms)
+✔ AUDIT10-PG-08 — type d'évaluation archivé : l'étape 8 n'est plus satisfaite (17.336412ms)
+✔ AUDIT10-PG-10 — utilisateur archivé seul : l'étape 10 n'est plus satisfaite (15.477536ms)
+✔ AUDIT10-PG-ISO — isolation : les données d'un autre établissement ne satisfont aucune étape (57.942876ms)
+[teachers-domain] inventaire read-only (school_id, user_id) : 0 groupe(s) en doublon ; aucun doublon
+[teachers-domain] contraintes satisfaites (index teachers_school_user_unique présent, 0 doublon)
+[teacher-assignments] inventaire read-only (affectations actives) : 0 groupe(s) en doublon
+[teacher-assignments] contrainte active satisfaite (index uq_teacher_assignments_active_tuple)
+[users-identity] inventaire read-only (email/téléphone) : 0 groupe(s) en doublon
+[parent-linking] inventaire contacts (school_id, user_id) actifs : 0 groupe(s) en doublon
+[parent-linking] inventaire relations actives : 0 groupe(s) en doublon
+[education-reference] inventaire legacy JSON levels/tracks : 0 établissement(s)
+[establishment-roles] inventaire legacy JSON userRoles : 0 établissement(s)
+[evaluation-types] inventaire legacy JSON evaluationTypes : 0 établissement(s), 0 ambigu(s)
+[school-settings] inventaire legacy academic-config : 0 établissement(s), 0 ambigu(s)
+[documents-exams] inventaire residual : 0 établissement(s), exams=0 bulletins=0 documents=0 ambigu(s)
+[documents-exams] inventaire statuts exams : unknown=0
+✔ ST-06-HTTP / ST-03-HTTP — membership PG autoritaire + READY sans période (3685.731012ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8959.987195
+
+## Baseline tests backend — pg
+
+Fichiers de test du mode : 3 (dont 0 sous régime d'exception)
+
+Plan CI-FAST-01 : sélection targeted (3 / 173 fichiers).
+
+Variables de base retirées de l'environnement des tests : `SOMAFRIK_TEST_PG_URL`.
+
+Cluster de test vérifié (base sentinelle, commentaire, bases toutes de test) — PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1).
+
+Base source des tests : `postgres` du cluster vérifié ; base NFC `nfc_encoding_test` créée et possédée par cette exécution (`somafrik:test-run:2843_e0a18bc30873`).
+
+| Catégorie | Nombre |
+|---|---|
+| PASS | 16 |
+| FAIL | 0 |
+| SKIP | 0 |
+| TODO | 0 |
+| Échecs attendus vérifiés (manifeste) | 0 / 0 |
+
+Couverture pg : non demandée.
+
+Limite connue : backend/server.js est lancé dans des processus enfants arrêtés par signal ; sa couverture HTTP n'est pas collectée.
+
+✔ Baseline pg verte.

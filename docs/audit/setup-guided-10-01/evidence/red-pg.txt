@@ -1,0 +1,174 @@
+TAP version 13
+# Subtest: AUDIT10-PG-00 — établissement complet : les 10 étapes sont satisfaites sur données PostgreSQL réelles
+ok 1 - AUDIT10-PG-00 — établissement complet : les 10 étapes sont satisfaites sur données PostgreSQL réelles
+  ---
+  duration_ms: 2053.460688
+  type: 'test'
+  ...
+# Subtest: AUDIT10-PG-01 — anomalie prod : adresse vide → seule l'adresse est signalée manquante
+ok 2 - AUDIT10-PG-01 — anomalie prod : adresse vide → seule l'adresse est signalée manquante
+  ---
+  duration_ms: 18.566895
+  type: 'test'
+  ...
+# Subtest: AUDIT10-PG-02 — devise : `currency: ""` dans profile_payload ne masque pas la devise du pays (lecture canonique)
+not ok 3 - AUDIT10-PG-02 — devise : `currency: ""` dans profile_payload ne masque pas la devise du pays (lecture canonique)
+  ---
+  duration_ms: 15.106588
+  type: 'test'
+  location: 'backend/lib/schoolSetupGuided.audit10.pg.test.js:240:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    l'assistant doit lire la même devise que l'API profil
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (backend/lib/schoolSetupGuided.audit10.pg.test.js:249:10)
+  ...
+# Subtest: AUDIT10-PG-03 — adresse/téléphone historiques dans profile_payload : l'assistant lit la valeur présentée par l'API
+not ok 4 - AUDIT10-PG-03 — adresse/téléphone historiques dans profile_payload : l'assistant lit la valeur présentée par l'API
+  ---
+  duration_ms: 13.911105
+  type: 'test'
+  location: 'backend/lib/schoolSetupGuided.audit10.pg.test.js:253:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (backend/lib/schoolSetupGuided.audit10.pg.test.js:268:10)
+  ...
+# Subtest: AUDIT10-PG-04 — matière archivée : l'étape 4 n'est plus satisfaite
+not ok 5 - AUDIT10-PG-04 — matière archivée : l'étape 4 n'est plus satisfaite
+  ---
+  duration_ms: 13.647744
+  type: 'test'
+  location: 'backend/lib/schoolSetupGuided.audit10.pg.test.js:272:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (backend/lib/schoolSetupGuided.audit10.pg.test.js:276:10)
+  ...
+# Subtest: AUDIT10-PG-05 — enseignant archivé (affectation encore active) : l'étape 5 n'est plus satisfaite
+not ok 6 - AUDIT10-PG-05 — enseignant archivé (affectation encore active) : l'étape 5 n'est plus satisfaite
+  ---
+  duration_ms: 10.64172
+  type: 'test'
+  location: 'backend/lib/schoolSetupGuided.audit10.pg.test.js:279:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (backend/lib/schoolSetupGuided.audit10.pg.test.js:283:10)
+  ...
+# Subtest: AUDIT10-PG-06 — inscription retirée (WITHDRAWN) : l'étape 6 n'est plus satisfaite
+not ok 7 - AUDIT10-PG-06 — inscription retirée (WITHDRAWN) : l'étape 6 n'est plus satisfaite
+  ---
+  duration_ms: 14.43062
+  type: 'test'
+  location: 'backend/lib/schoolSetupGuided.audit10.pg.test.js:286:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (backend/lib/schoolSetupGuided.audit10.pg.test.js:290:10)
+  ...
+# Subtest: AUDIT10-PG-06b — inscription `active` (minuscule) reste une inscription valide
+ok 8 - AUDIT10-PG-06b — inscription `active` (minuscule) reste une inscription valide
+  ---
+  duration_ms: 11.745148
+  type: 'test'
+  ...
+# Subtest: AUDIT10-PG-08 — type d'évaluation archivé : l'étape 8 n'est plus satisfaite
+not ok 9 - AUDIT10-PG-08 — type d'évaluation archivé : l'étape 8 n'est plus satisfaite
+  ---
+  duration_ms: 12.181001
+  type: 'test'
+  location: 'backend/lib/schoolSetupGuided.audit10.pg.test.js:300:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (backend/lib/schoolSetupGuided.audit10.pg.test.js:304:10)
+  ...
+# Subtest: AUDIT10-PG-10 — utilisateur archivé seul : l'étape 10 n'est plus satisfaite
+not ok 10 - AUDIT10-PG-10 — utilisateur archivé seul : l'étape 10 n'est plus satisfaite
+  ---
+  duration_ms: 17.092962
+  type: 'test'
+  location: 'backend/lib/schoolSetupGuided.audit10.pg.test.js:307:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (backend/lib/schoolSetupGuided.audit10.pg.test.js:311:10)
+  ...
+# Subtest: AUDIT10-PG-ISO — isolation : les données d'un autre établissement ne satisfont aucune étape
+ok 11 - AUDIT10-PG-ISO — isolation : les données d'un autre établissement ne satisfont aucune étape
+  ---
+  duration_ms: 44.282855
+  type: 'test'
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 4
+# fail 7
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2422.387761
