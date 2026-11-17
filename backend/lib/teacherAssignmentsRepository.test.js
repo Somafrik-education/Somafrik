@@ -105,6 +105,21 @@ function createMemoryAdapter() {
         );
         return conflict ? { id: conflict.id, teacher_code: mapped(conflict).teacher_code } : null;
       }
+      if (text.startsWith("INSERT INTO SCHOOL_COURSES")) {
+        const [schoolId, classId, subjectId, teacherId, courseCode] = params;
+        const exists = schoolCourses.some((row) => row.school_id === schoolId &&
+          row.class_id === classId && row.subject_id === subjectId && row.status === "active");
+        if (exists) return null;
+        const subject = subjects.find((row) => row.id === subjectId &&
+          row.school_id === schoolId && row.status === "active");
+        if (!subject) return null;
+        const id = `course-${schoolCourses.length + 1}`;
+        schoolCourses.push({
+          id, school_id: schoolId, class_id: classId,
+          subject_id: subjectId, teacher_id: teacherId, course_code: courseCode, status: "active",
+        });
+        return { id };
+      }
       if (text.startsWith("INSERT INTO TEACHER_ASSIGNMENTS")) {
         const row = {
           id: `assignment-${assignments.length + 1}`,
@@ -226,6 +241,28 @@ function createMemoryAdapter() {
   };
   return adapter;
 }
+
+test("la création d'affectation matérialise le cours canonique absent sans doublon", async () => {
+  const adapter = createMemoryAdapter();
+  adapter.__schoolCourses.length = 0;
+  const repo = createTeacherAssignmentsRepository(adapter);
+  const created = await repo.create(
+    { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+    "CD-2026-0001",
+  );
+  assert.ok(created.id);
+  assert.equal(adapter.__schoolCourses.length, 1);
+  assert.equal(adapter.__schoolCourses[0].teacher_id, "teacher-1");
+  assert.match(adapter.__schoolCourses[0].course_code, /^ASSIGN-/);
+  await assert.rejects(
+    () => repo.create(
+      { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+      "CD-2026-0001",
+    ),
+    (error) => error.statusCode === 409,
+  );
+  assert.equal(adapter.__schoolCourses.length, 1);
+});
 
 test("CRUD affectation, conflit et isolation établissement", async () => {
   const adapter = createMemoryAdapter();
@@ -425,14 +462,18 @@ test("PG: create/update/delete convergent avec school_courses sans écraser un t
         updated_at timestamptz NOT NULL DEFAULT now()
       );
       CREATE TEMP TABLE school_courses (
-        id uuid PRIMARY KEY,
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         school_id uuid NOT NULL,
         class_id uuid NOT NULL,
         subject_id uuid NOT NULL,
         teacher_id uuid,
+        course_code text NOT NULL,
+        coefficient numeric NOT NULL DEFAULT 1,
         status text NOT NULL,
         updated_at timestamptz NOT NULL DEFAULT now()
       );
+      CREATE UNIQUE INDEX ON school_courses (school_id, class_id, subject_id)
+        WHERE status = 'active';
     `);
 
     await client.query(
@@ -460,7 +501,7 @@ test("PG: create/update/delete convergent avec school_courses sans écraser un t
       [ids.teacher1, ids.teacher2, ids.school, ids.user1, ids.user2],
     );
     await client.query(
-      "INSERT INTO school_courses (id, school_id, class_id, subject_id, teacher_id, status) VALUES ($1,$2,$3,$4,NULL,'active')",
+      "INSERT INTO school_courses (id, school_id, class_id, subject_id, teacher_id, course_code, status) VALUES ($1,$2,$3,$4,NULL,'FIXTURE-MATH','active')",
       [ids.course, ids.school, ids.klass, ids.subject],
     );
 
@@ -479,6 +520,30 @@ test("PG: create/update/delete convergent avec school_courses sans écraser un t
       },
     };
     const repository = createTeacherAssignmentsRepository(adapter);
+
+    // Le cours n'existe pas encore : l'affectation doit le créer dans la
+    // même transaction, puis les réaffectations doivent conserver son UUID.
+    await client.query("DELETE FROM school_courses WHERE id = $1", [ids.course]);
+    const createdWithoutCourse = await repository.create(
+      { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
+      "CD-2026-0001",
+    );
+    const materialized = await client.query(
+      "SELECT id, teacher_id, course_code FROM school_courses WHERE school_id = $1",
+      [ids.school],
+    );
+    assert.equal(materialized.rowCount, 1);
+    assert.equal(String(materialized.rows[0].teacher_id), ids.teacher1);
+    assert.match(materialized.rows[0].course_code, /^ASSIGN-/);
+    await repository.remove(createdWithoutCourse.id, "CD-2026-0001");
+    await client.query(
+      "DELETE FROM school_courses WHERE id = $1",
+      [materialized.rows[0].id],
+    );
+    await client.query(
+      "INSERT INTO school_courses (id, school_id, class_id, subject_id, teacher_id, course_code, status) VALUES ($1,$2,$3,$4,NULL,'FIXTURE-MATH','active')",
+      [ids.course, ids.school, ids.klass, ids.subject],
+    );
 
     const created = await repository.create(
       { teacherCode: "CD-2026-0001-ENS-0001", classCode: "CLS-6A", subjectCode: "SUB-MATH" },
