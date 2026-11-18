@@ -1,6 +1,45 @@
+import { execFileSync } from "node:child_process";
 import { fileURLToPath, URL } from "node:url";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import {
+  assertAllowedDeployBranch,
+  buildInfoJson,
+  buildShaMetaTag,
+  resolveBuildProvenance,
+} from "./src/lib/buildProvenance";
+
+function readLocalGit(args: string[]): string | null {
+  try {
+    return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * LOT 5 — publie la provenance du build (build-info.json + meta) et applique le garde-fou
+ * de branche (opt-in via SOMAFRIK_ALLOWED_DEPLOY_BRANCHES). Actif uniquement en `vite build`.
+ */
+function buildProvenancePlugin(env: Record<string, string | undefined>): Plugin {
+  const provenance = resolveBuildProvenance(env, {
+    sha: readLocalGit(["rev-parse", "HEAD"]),
+    branch: readLocalGit(["rev-parse", "--abbrev-ref", "HEAD"]),
+  });
+  return {
+    name: "somafrik-build-provenance",
+    apply: "build",
+    buildStart() {
+      assertAllowedDeployBranch(env, provenance);
+    },
+    transformIndexHtml(html) {
+      return html.replace("</head>", `    ${buildShaMetaTag(provenance)}\n  </head>`);
+    },
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "build-info.json", source: buildInfoJson(provenance) });
+    },
+  };
+}
 
 function normalizeBasePath(value: string | undefined): string {
   const raw = String(value ?? "/").trim() || "/";
@@ -54,7 +93,7 @@ export default defineConfig(({ mode }) => {
   const basePath = normalizeBasePath(env.VITE_BASE_PATH);
 
   return {
-    plugins: [webBaseRedirectPlugin(basePath), react()],
+    plugins: [webBaseRedirectPlugin(basePath), react(), buildProvenancePlugin({ ...process.env, ...env })],
     base: basePath,
     resolve: {
       alias: {
