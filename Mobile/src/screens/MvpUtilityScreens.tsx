@@ -9,6 +9,8 @@ import {
   resolveMobileStudentScope,
 } from "../lib/canonicalStudentIdentity";
 import { useStackScreenBottomPadding } from "../lib/screenLayout";
+import Constants from "expo-constants";
+import { describeAppBuild } from "../lib/appBuildInfo";
 
 function ScreenShell({
   title,
@@ -157,6 +159,7 @@ export function SynchronizationScreen() {
 
 export function SupportScreen() {
   const { session } = useAuth();
+  const buildInfo = describeAppBuild(Constants.expoConfig);
 
   return (
     <ScreenShell title="Support" subtitle="Point de contact MVP pour assistance et suivi.">
@@ -171,6 +174,12 @@ export function SupportScreen() {
         title="Perimetre"
         value={session?.school?.name ?? "Somafrik"}
         detail="Les demandes support seront journalisees dans le centre d'assistance lors de l'evolution P1."
+      />
+      <InfoCard
+        icon="information-circle-outline"
+        title="Version de l'application"
+        value={buildInfo.value}
+        detail={buildInfo.detail}
       />
     </ScreenShell>
   );
