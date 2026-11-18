@@ -59,15 +59,19 @@ function resolveMobileBuildProvenance({ env = process.env, profile, cwd, git = r
   }
   const gitBranch = clean(env.GITHUB_HEAD_REF) || clean(env.GITHUB_REF_NAME) || clean(git(["rev-parse", "--abbrev-ref", "HEAD"], cwd)) || null;
   const channel = isEas ? "eas" : clean(env.GITHUB_ACTIONS) === "true" ? "github-actions" : "local";
+  // Expo sérialise un `null` d'`extra` en objet vide dans assets/app.config : les champs
+  // absents sont donc omis plutôt que mis à null.
+  const branch = gitBranch === "HEAD" ? "" : clean(gitBranch);
+  const easBuildId = clean(env.EAS_BUILD_ID);
   return {
-    gitSha,
+    ...(gitSha ? { gitSha } : {}),
     gitShaSource: shaSource,
-    gitBranch: gitBranch === "HEAD" ? null : gitBranch,
-    profile: clean(profile) || null,
+    ...(branch ? { gitBranch: branch } : {}),
+    ...(clean(profile) ? { profile: clean(profile) } : {}),
     channel,
     // EAS gère un versionCode distant ; hors EAS, la valeur statique d'app config s'applique.
     versionCodeSource: isEas ? "eas-remote" : "app-config",
-    easBuildId: clean(env.EAS_BUILD_ID) || null,
+    ...(easBuildId ? { easBuildId } : {}),
   };
 }
 
