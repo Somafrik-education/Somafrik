@@ -16,7 +16,7 @@ assert.deepEqual(
     profile: "production",
     git: noGit,
   }),
-  { gitSha: SHA, gitShaSource: "eas", gitBranch: null, profile: "production", channel: "eas", versionCodeSource: "eas-remote", easBuildId: "abc-123" },
+  { gitSha: SHA, gitShaSource: "eas", profile: "production", channel: "eas", versionCodeSource: "eas-remote", easBuildId: "abc-123" },
 );
 
 // GitHub Actions (job APK preview) : l'arbre extrait (git local) prime sur GITHUB_SHA,
@@ -41,11 +41,14 @@ const local = resolveMobileBuildProvenance({
   profile: "preview",
   git: (args) => (args[0] === "rev-parse" && args[1] === "HEAD" ? SHA : "HEAD"),
 });
-assert.deepEqual([local.gitSha, local.gitShaSource, local.gitBranch, local.channel], [SHA, "git", null, "local"]);
+assert.deepEqual([local.gitSha, local.gitShaSource, local.gitBranch, local.channel], [SHA, "git", undefined, "local"]);
+// Aucun champ null (Expo les transformerait en {} dans assets/app.config).
+assert.ok(Object.values(local).every((value) => value !== null && typeof value !== "object"), JSON.stringify(local));
 
 // Aucun SHA complet : provenance inconnue, jamais approximative.
 const unknown = resolveMobileBuildProvenance({ env: { GITHUB_SHA: "8467944" }, profile: "preview", git: noGit });
-assert.deepEqual([unknown.gitSha, unknown.gitShaSource], [null, "unknown"]);
+assert.deepEqual([unknown.gitSha, unknown.gitShaSource], [undefined, "unknown"]);
+assert.ok(!("gitSha" in unknown), "SHA inconnu : champ omis, jamais approximatif");
 
 // versionCode hors EAS : statique par défaut, surchargeable par un entier valide uniquement.
 assert.equal(resolveLocalVersionCode(25, {}), 25);

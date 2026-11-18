@@ -66,6 +66,24 @@ test("Signature de test sur un canal Play : refusée", () => {
   assert.ok(errors.some((error) => error.startsWith("SIGNATURE_TEST_SUR_CANAL_PRODUCTION")));
 });
 
+test("Mention négative du Play Store dans le canal : pas de faux positif", () => {
+  const { errors } = buildRegistryEntry({
+    kind: "apk", file: "x.apk", fileSha256: "0", appConfig: appConfig(PROVENANCE),
+    badging: { versionCode: "25" }, signature: { subject: "CN=Android Debug" },
+    options: { channel: "Validation testeurs préprod (signature de test, non distribuable Play)" },
+  });
+  assert.deepEqual(errors, []);
+});
+
+test("Champ sérialisé en {} par Expo : traité comme absent", () => {
+  const { entry, errors } = buildRegistryEntry({
+    kind: "apk", file: "x.apk", fileSha256: "0", appConfig: appConfig({ ...PROVENANCE, easBuildId: {}, gitSha: {} }),
+    badging: { versionCode: "25" }, options: {},
+  });
+  assert.equal(entry.easBuildId, null);
+  assert.ok(errors.some((error) => error.startsWith("SHA_ABSENT")));
+});
+
 test("parseArgs", () => {
   assert.deepEqual(parseArgs(["a.apk", "--expect-sha", SHA.toUpperCase(), "--channel", "smoke", "--registry", "r.jsonl"]), {
     file: "a.apk", expectSha: SHA, channel: "smoke", registry: "r.jsonl",

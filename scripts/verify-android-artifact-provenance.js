@@ -85,33 +85,37 @@ function readSignature(file, kind) {
 /** Partie pure, testée : entrée de registre + contrôles. */
 function buildRegistryEntry({ kind, file, fileSha256, appConfig, badging = {}, signature = {}, options = {} }) {
   const provenance = appConfig?.extra?.buildProvenance ?? null;
+  // Valeurs scalaires uniquement (un champ sérialisé en {} vaut « absent »).
+  const scalar = (value) => (value == null || typeof value === "object" ? null : value);
   const versionCode = options.versionCode ?? badging.versionCode ?? appConfig?.android?.versionCode ?? null;
   const entry = {
     artifact: path.basename(file),
     kind,
-    gitSha: provenance?.gitSha ?? null,
-    gitBranch: provenance?.gitBranch ?? null,
+    gitSha: scalar(provenance?.gitSha),
+    gitBranch: scalar(provenance?.gitBranch),
     versionCode: versionCode == null ? null : String(versionCode),
-    versionCodeSource: provenance?.versionCodeSource ?? null,
+    versionCodeSource: scalar(provenance?.versionCodeSource),
     versionName: badging.versionName ?? appConfig?.version ?? null,
-    profile: provenance?.profile ?? appConfig?.extra?.releaseProfile ?? null,
+    profile: scalar(provenance?.profile) ?? scalar(appConfig?.extra?.releaseProfile),
     apiUrl: appConfig?.extra?.apiUrl ?? null,
     packageName: badging.packageName ?? appConfig?.android?.package ?? null,
     sha256: fileSha256,
     signatureSubject: signature.subject ?? null,
     signatureSha256: signature.sha256 ?? null,
-    buildChannel: provenance?.channel ?? null,
-    easBuildId: provenance?.easBuildId ?? null,
+    buildChannel: scalar(provenance?.channel),
+    easBuildId: scalar(provenance?.easBuildId),
     distributionChannel: options.channel ?? "non distribué",
   };
   const errors = [];
   if (!provenance) errors.push("PROVENANCE_ABSENTE : extra.buildProvenance manquant (binaire antérieur au LOT 2 ?)");
-  else if (!FULL_SHA.test(String(provenance.gitSha || ""))) errors.push("SHA_ABSENT : provenance sans commit complet");
+  else if (!FULL_SHA.test(String(entry.gitSha || ""))) errors.push("SHA_ABSENT : provenance sans commit complet");
   if (options.expectSha && entry.gitSha && entry.gitSha !== options.expectSha) {
     errors.push(`SHA_DIFFERENT : binaire ${entry.gitSha} ≠ attendu ${options.expectSha}`);
   }
   if (!entry.versionCode) errors.push("VERSION_CODE_ABSENT");
-  if (/Android Debug/i.test(String(entry.signatureSubject || "")) && /production|play/i.test(String(entry.distributionChannel))) {
+  // Canal Play = libellé commençant par « Play » / « Google Play » (ex. « Play production »,
+  // « Google Play interne ») ; une mention négative (« non distribuable Play ») ne compte pas.
+  if (/Android Debug/i.test(String(entry.signatureSubject || "")) && /^\s*(google\s+)?play\b/i.test(String(entry.distributionChannel))) {
     errors.push("SIGNATURE_TEST_SUR_CANAL_PRODUCTION : signature debug interdite pour une distribution Play");
   }
   return { entry, errors };
