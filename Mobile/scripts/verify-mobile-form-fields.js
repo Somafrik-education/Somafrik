@@ -78,7 +78,9 @@ function main() {
   assert.match(student, /placeholder="Ex\. Esther"/);
   assert.match(student, /placeholder="Ex\. Okito"/);
   assert.match(student, /placeholder="Ex\. \+243 8xx xxx xxx"/);
-  assert.match(student, /Téléphone du parent/);
+  // LOT 3 : libellé partagé Web/Mobile (PARENT_FORM_COPY.enrollmentPhone = « Téléphone du parent »).
+  assert.match(student, /PARENT_FORM_COPY\.enrollmentPhone/);
+  assert.match(fs.readFileSync(path.join(SRC, "lib", "parentFormCopy.ts"), "utf8"), /enrollmentPhone: "Téléphone du parent"/);
   assert.doesNotMatch(student, /Prénom et nom sont obligatoires/);
 
   assert.equal(fs.existsSync(path.join(SRC, "screens", "AdminCrudScreen.tsx")), false);
