@@ -7372,6 +7372,18 @@ async function issueRefreshedAccessToken(session, payload) {
     );
   }
 
+  // PARITE-WEB-MOBILE-RECOVERY-01 / LOT 1 : le périmètre Élève (studentIds) est recalculé comme
+  // à la connexion ; sans lui, l'élève ne voit plus ses propres données après un refresh.
+  const { resolveRefreshStudentScope } = require("./lib/refreshStudentScope");
+  const studentScopeFields = principalHasRole({ role: sessionRole, roleKeys }, "Élève / Étudiant")
+    ? resolveRefreshStudentScope({
+        authService: (await getRuntime()).authService,
+        userId: session.user_id,
+        sessionRole,
+        roleKeys,
+      })
+    : {};
+
   // REFRESH-R1 : mêmes libellés/roleKeys que le principal de connexion.
   // Les rôles restent relus en direct : aucune attribution révoquée n'est restaurée.
   const liveDisplay = displayRoles(roleKeys);
@@ -7394,6 +7406,7 @@ async function issueRefreshedAccessToken(session, payload) {
     publicId: payload.publicId,
     mustChangePassword,
     ...assignmentFields,
+    ...studentScopeFields,
   });
   return { accessToken, permissions };
 }

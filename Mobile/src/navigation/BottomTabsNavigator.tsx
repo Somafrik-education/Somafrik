@@ -16,6 +16,7 @@ import { tabTestIdForTabName } from "../lib/mobileNavigationSpec";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { TAB_BAR_CONTENT_HEIGHT, TAB_LABEL_FONT_SIZE, shortBottomTabLabel } from "../lib/mobileUxV1Layout";
 import MobileAppHeader from "../components/MobileAppHeader";
+import ScreenErrorBoundary from "../components/ScreenErrorBoundary";
 
 const Tab = createBottomTabNavigator();
 
@@ -70,6 +71,12 @@ export default function BottomTabsNavigator() {
 
   return (
     <Tab.Navigator
+      // LOT 1 / LOT 7 : erreur de rendu d'un onglet affichée explicitement, onglets toujours accessibles.
+      screenLayout={({ children, route }) => (
+        <ScreenErrorBoundary routeName={route.name} routeKey={route.key}>
+          {children}
+        </ScreenErrorBoundary>
+      )}
       screenOptions={({ route, navigation }) => ({
         headerShown: true,
         headerStatusBarHeight: 0,
