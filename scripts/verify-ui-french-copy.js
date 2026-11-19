@@ -235,7 +235,8 @@ function main() {
 
   const teachers = fs.readFileSync(path.join(ROOT, "Mobile", "src", "screens", "TeachersScreen.tsx"), "utf8");
   assert.doesNotMatch(teachers, /GRANT\s*\/\s*REVOKE|Web[- ]only/i);
-  assert.match(teachers, /attribution et le retrait des droits/i);
+  assert.match(teachers, /Les autorisations se gèrent depuis le site Web/i);
+  assert.doesNotMatch(teachers, /PostgreSQL|matrice RBAC|références canoniques/i);
 
   const webPermissions = fs.readFileSync(path.join(ROOT, "web", "src", "pages", "PermissionsPage.tsx"), "utf8");
   assert.doesNotMatch(webPermissions, /label\s*:\s*["'](?:CREATE|READ|UPDATE|DELETE)["']/);

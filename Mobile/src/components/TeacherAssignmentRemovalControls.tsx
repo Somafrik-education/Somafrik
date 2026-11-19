@@ -16,12 +16,12 @@ export default function TeacherAssignmentRemovalControls({
   onChanged: () => Promise<void> | void;
 }) {
   const { session } = useAuth();
-  const { canDelete } = resolveEntityCrudAccess(session, "assignments");
+  const { canRead, canDelete } = resolveEntityCrudAccess(session, "assignments");
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const rows = removableAssignmentsForTeacher(teacherCode, assignments);
 
-  if (!canDelete || !rows.length) return null;
+  if (!canRead || !rows.length) return null;
 
   const remove = (assignment: TeacherAssignment) => {
     const id = String(assignment.id ?? "").trim();
@@ -60,7 +60,10 @@ export default function TeacherAssignmentRemovalControls({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Affectations actives</Text>
+      <Text style={styles.title}>Cours attribués</Text>
+      {!canDelete ? (
+        <Text style={styles.hint}>Vous pouvez consulter ces cours, mais vous n’avez pas l’autorisation de les retirer. Demandez l’accès à la gestion des affectations.</Text>
+      ) : null}
       {rows.map((assignment) => {
         const id = String(assignment.id);
         return (
@@ -72,9 +75,9 @@ export default function TeacherAssignmentRemovalControls({
               testID={`teacher-assignment-remove-${id}`}
               accessibilityRole="button"
               accessibilityLabel={`Retirer l'affectation ${assignment.course || assignment.subject} de ${assignment.className}`}
-              accessibilityState={{ disabled: Boolean(removingId), busy: removingId === id }}
-              style={[styles.button, Boolean(removingId) && styles.disabled]}
-              disabled={Boolean(removingId)}
+              accessibilityState={{ disabled: !canDelete || Boolean(removingId), busy: removingId === id }}
+              style={[styles.button, (!canDelete || Boolean(removingId)) && styles.disabled]}
+              disabled={!canDelete || Boolean(removingId)}
               onPress={() => remove(assignment)}
             >
               <Text style={styles.buttonText}>{removingId === id ? "Retrait…" : "Retirer"}</Text>
@@ -90,6 +93,7 @@ export default function TeacherAssignmentRemovalControls({
 const styles = StyleSheet.create({
   container: { marginTop: 12, gap: 8 },
   title: { fontWeight: "800", color: "#0F172A" },
+  hint: { color: "#64748B", fontWeight: "600" },
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
   description: { flex: 1, color: "#334155", fontWeight: "600" },
   button: { minHeight: MIN_TOUCH_TARGET_DP, justifyContent: "center", paddingHorizontal: 14, borderRadius: 10, backgroundColor: "#FEE2E2" },
