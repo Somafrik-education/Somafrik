@@ -85,6 +85,12 @@ jobs:
 
       # LOT 2 (PARITE-WEB-MOBILE-RECOVERY-01) — l'AAB doit embarquer la provenance du commit source ;
       # l'entrée de registre (commit → versionCode distant → profil → SHA256 → signature) est archivée.
+      # keytool (lecture de la signature de l'AAB) : JDK explicite, pas de dépendance à l'image.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
       - name: Verify AAB provenance and write registry entry
         working-directory: Mobile
         shell: bash

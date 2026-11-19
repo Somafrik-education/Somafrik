@@ -61,7 +61,7 @@ test("AAB EAS : versionCode distant fourni explicitement", () => {
 test("Signature de test sur un canal Play : refusée", () => {
   const { errors } = buildRegistryEntry({
     kind: "apk", file: "x.apk", fileSha256: "0", appConfig: appConfig(PROVENANCE),
-    badging: { versionCode: "25" }, signature: { subject: "CN=Android Debug" }, options: { channel: "Play production" },
+    badging: { versionCode: "25" }, signature: { subject: "CN=Android Debug", sha256: "fa".repeat(32) }, options: { expectSha: SHA, channel: "Play production" },
   });
   assert.ok(errors.some((error) => error.startsWith("SIGNATURE_TEST_SUR_CANAL_PRODUCTION")));
 });
@@ -69,8 +69,8 @@ test("Signature de test sur un canal Play : refusée", () => {
 test("Mention négative du Play Store dans le canal : pas de faux positif", () => {
   const { errors } = buildRegistryEntry({
     kind: "apk", file: "x.apk", fileSha256: "0", appConfig: appConfig(PROVENANCE),
-    badging: { versionCode: "25" }, signature: { subject: "CN=Android Debug" },
-    options: { channel: "Validation testeurs préprod (signature de test, non distribuable Play)" },
+    badging: { versionCode: "25" }, signature: { subject: "CN=Android Debug", sha256: "fa".repeat(32) },
+    options: { expectSha: SHA, channel: "Validation testeurs préprod (signature de test, non distribuable Play)" },
   });
   assert.deepEqual(errors, []);
 });
@@ -82,6 +82,32 @@ test("Champ sérialisé en {} par Expo : traité comme absent", () => {
   });
   assert.equal(entry.easBuildId, null);
   assert.ok(errors.some((error) => error.startsWith("SHA_ABSENT")));
+});
+
+test("Revue CTO : commit attendu obligatoire et complet", () => {
+  const base = { kind: "apk", file: "x.apk", fileSha256: "0", appConfig: appConfig(PROVENANCE), badging: { versionCode: "25" }, signature: { subject: "CN=X", sha256: "fa".repeat(32) } };
+  for (const expectSha of [undefined, "", "6e91be1"]) {
+    const { errors } = buildRegistryEntry({ ...base, options: { expectSha } });
+    assert.ok(errors.some((error) => error.startsWith("EXPECT_SHA_MANQUANT")), String(expectSha));
+  }
+  assert.deepEqual(buildRegistryEntry({ ...base, options: { expectSha: SHA } }).errors, []);
+});
+
+test("Revue CTO : signature non extraite = échec, jamais une vérification réussie", () => {
+  for (const signature of [{}, { subject: "CN=X", sha256: null }, { subject: "CN=X", sha256: "abc" }]) {
+    const { errors } = buildRegistryEntry({
+      kind: "apk", file: "x.apk", fileSha256: "0", appConfig: appConfig(PROVENANCE),
+      badging: { versionCode: "25" }, signature, options: { expectSha: SHA },
+    });
+    assert.ok(errors.some((error) => error.startsWith("SIGNATURE_ABSENTE")), JSON.stringify(signature));
+  }
+});
+
+test("Revue CTO : registre écrit seulement après succès (ordre dans la CLI)", () => {
+  const source = require("node:fs").readFileSync(require.resolve("./verify-android-artifact-provenance"), "utf8");
+  const cli = source.slice(source.indexOf("if (require.main === module)"));
+  assert.ok(cli.indexOf("process.exit(1)") < cli.indexOf("appendFileSync"), "appendFileSync doit suivre le contrôle d'erreurs");
+  assert.match(cli, /!options\.file \|\| !FULL_SHA\.test/);
 });
 
 test("parseArgs", () => {
