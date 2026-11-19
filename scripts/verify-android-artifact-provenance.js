@@ -109,8 +109,15 @@ function buildRegistryEntry({ kind, file, fileSha256, appConfig, badging = {}, s
   const errors = [];
   if (!provenance) errors.push("PROVENANCE_ABSENTE : extra.buildProvenance manquant (binaire antérieur au LOT 2 ?)");
   else if (!FULL_SHA.test(String(entry.gitSha || ""))) errors.push("SHA_ABSENT : provenance sans commit complet");
-  if (options.expectSha && entry.gitSha && entry.gitSha !== options.expectSha) {
+  // Revue CTO #1195 : aucune acceptation sans commit attendu explicite et complet.
+  if (!FULL_SHA.test(String(options.expectSha || ""))) {
+    errors.push("EXPECT_SHA_MANQUANT : --expect-sha <sha40> obligatoire (commit attendu complet)");
+  } else if (entry.gitSha && entry.gitSha !== options.expectSha) {
     errors.push(`SHA_DIFFERENT : binaire ${entry.gitSha} ≠ attendu ${options.expectSha}`);
+  }
+  // Revue CTO #1195 : une signature non extraite n'est jamais une vérification réussie.
+  if (!/^[0-9a-f]{64}$/.test(String(entry.signatureSha256 || ""))) {
+    errors.push("SIGNATURE_ABSENTE : empreinte SHA-256 du certificat de signature non extraite");
   }
   if (!entry.versionCode) errors.push("VERSION_CODE_ABSENT");
   // Canal Play = libellé commençant par « Play » / « Google Play » (ex. « Play production »,
@@ -140,18 +147,19 @@ module.exports = { buildRegistryEntry, inspectArtifact, parseArgs };
 
 if (require.main === module) {
   const options = parseArgs(process.argv.slice(2));
-  if (!options.file) {
+  if (!options.file || !FULL_SHA.test(String(options.expectSha || ""))) {
     console.error("Usage : verify-android-artifact-provenance.js <apk|aab> --expect-sha <sha40> [--channel …] [--version-code …] [--registry …]");
     process.exit(2);
   }
   try {
     const { entry, errors } = inspectArtifact(options.file, options);
     console.log(JSON.stringify(entry, null, 2));
-    if (options.registry) fs.appendFileSync(options.registry, `${JSON.stringify(entry)}\n`);
     if (errors.length) {
       for (const error of errors) console.error(`✗ ${error}`);
       process.exit(1);
     }
+    // Registre écrit uniquement pour un binaire entièrement vérifié.
+    if (options.registry) fs.appendFileSync(options.registry, `${JSON.stringify(entry)}\n`);
     console.log("✔ Provenance Android vérifiée.");
   } catch (error) {
     console.error(`✗ ${error.message}`);
