@@ -7374,12 +7374,16 @@ async function issueRefreshedAccessToken(session, payload) {
 
   // PARITE-WEB-MOBILE-RECOVERY-01 / LOT 1 : le périmètre Élève (studentIds) est recalculé comme
   // à la connexion ; sans lui, l'élève ne voit plus ses propres données après un refresh.
-  const { resolveRefreshStudentScope } = require("./lib/refreshStudentScope");
-  const studentScopeFields = principalHasRole({ role: sessionRole, roleKeys }, "Élève / Étudiant")
+  const { isStudentSession, resolveRefreshStudentScope } = require("./lib/refreshStudentScope");
+  // Rôle choisi à la connexion (PostgreSQL : session_role, car sess.role est masqué par
+  // users.role dans findSessionByCode ; mémoire : role). Un compte multirôle connecté comme
+  // Parent n'obtient jamais de studentIds (revue CTO #1195).
+  const loginSessionRole = session.session_role ?? session.role;
+  const studentScopeFields = sessionRole !== "Sans affectation" && isStudentSession(loginSessionRole, roleKeys)
     ? resolveRefreshStudentScope({
         authService: (await getRuntime()).authService,
         userId: session.user_id,
-        sessionRole,
+        sessionRole: loginSessionRole,
         roleKeys,
       })
     : {};

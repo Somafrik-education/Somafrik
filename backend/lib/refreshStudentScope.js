@@ -14,9 +14,19 @@
  * comme à la connexion. Les autres rôles ne sont pas concernés.
  */
 const { getPrincipalStudentIds } = require("./principalStudentIds");
-const { principalHasRole } = require("./userRoleLifecycle");
+const { toRoleKey } = require("./userRoleLifecycle");
 
 const STUDENT_ROLE_LABEL = "Élève / Étudiant";
+
+/**
+ * Session Élève = rôle de la session (choisi à la connexion) égal à Élève ET rôle Élève toujours
+ * attribué en direct. Un compte multirôle connecté comme Enseignant ou Parent n'a pas de
+ * studentIds à la connexion : il n'en reçoit pas non plus au refresh (revue CTO #1195).
+ */
+function isStudentSession(sessionRole, roleKeys) {
+  const studentKey = toRoleKey(STUDENT_ROLE_LABEL);
+  return toRoleKey(sessionRole) === studentKey && (roleKeys ?? []).map(toRoleKey).includes(studentKey);
+}
 
 /**
  * @param {{
@@ -28,7 +38,7 @@ const STUDENT_ROLE_LABEL = "Élève / Étudiant";
  * @returns {{ studentIds?: string[] }} champs à fusionner dans le jeton (vide si rôle non Élève)
  */
 function resolveRefreshStudentScope({ authService, userId, sessionRole, roleKeys }) {
-  if (!principalHasRole({ role: sessionRole, roleKeys }, STUDENT_ROLE_LABEL)) return {};
+  if (!isStudentSession(sessionRole, roleKeys)) return {};
   const uid = String(userId ?? "").trim();
   const accounts = Array.isArray(authService?.userAccounts) ? authService.userAccounts : [];
   const user = uid ? accounts.find((account) => String(account?.id ?? "").trim() === uid) : null;
@@ -37,4 +47,4 @@ function resolveRefreshStudentScope({ authService, userId, sessionRole, roleKeys
   return { studentIds: getPrincipalStudentIds({ role: "student", user: mobileUser }) };
 }
 
-module.exports = { resolveRefreshStudentScope, STUDENT_ROLE_LABEL };
+module.exports = { isStudentSession, resolveRefreshStudentScope, STUDENT_ROLE_LABEL };

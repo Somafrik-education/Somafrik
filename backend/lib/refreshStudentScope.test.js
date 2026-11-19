@@ -56,10 +56,31 @@ test("Autres rôles : aucun champ ajouté (Enseignant et Parent gardent leurs m�
   assert.deepEqual(resolveRefreshStudentScope({ authService: auth, userId: "U-STU", sessionRole: "Parent", roleKeys: ["PARENT"] }), {});
 });
 
+test("Multirôle (revue CTO) : seule une session ouverte comme Élève reçoit studentIds", () => {
+  const auth = service();
+  const multi = ["TEACHER", "STUDENT"];
+  // Connecté comme Élève : périmètre Élève (comme à la connexion).
+  assert.deepEqual(
+    resolveRefreshStudentScope({ authService: auth, userId: "U-STU", sessionRole: "Élève / Étudiant", roleKeys: multi }).studentIds,
+    [STUDENT_UUID, "CD-IN-EL-26-001"],
+  );
+  // Connecté comme Enseignant ou Parent : aucun studentIds (la connexion n'en émet pas).
+  assert.deepEqual(resolveRefreshStudentScope({ authService: auth, userId: "U-STU", sessionRole: "Enseignant", roleKeys: multi }), {});
+  assert.deepEqual(resolveRefreshStudentScope({ authService: auth, userId: "U-STU", sessionRole: "Parent", roleKeys: ["PARENT", "STUDENT"] }), {});
+  // Rôle Élève retiré depuis la connexion : fail-closed.
+  assert.deepEqual(resolveRefreshStudentScope({ authService: auth, userId: "U-STU", sessionRole: "Élève / Étudiant", roleKeys: ["TEACHER"] }), {});
+  assert.deepEqual(resolveRefreshStudentScope({ authService: auth, userId: "U-STU", sessionRole: "Sans affectation", roleKeys: [] }), {});
+});
+
 test("issueRefreshedAccessToken fusionne le périmètre Élève dans le jeton rafraîchi", () => {
   const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
   const body = server.slice(server.indexOf("async function issueRefreshedAccessToken"));
   const fn = body.slice(0, body.indexOf("\n}\n"));
-  assert.match(fn, /resolveRefreshStudentScope\(\{/);
+  // Rôle de session issu de la connexion (session_role), jamais users.role masquant sess.role.
+  assert.match(fn, /const loginSessionRole = session\.session_role \?\? session\.role;/);
+  assert.match(fn, /sessionRole !== "Sans affectation" && isStudentSession\(loginSessionRole, roleKeys\)\s*\? resolveRefreshStudentScope\(\{/);
+  const repo = fs.readFileSync(path.join(__dirname, "..", "db", "postgresRepository.js"), "utf8");
+  const find = repo.slice(repo.indexOf("async findSessionByCode"), repo.indexOf("async rotateSessionRefresh"));
+  assert.match(find, /sess\.role AS session_role/);
   assert.match(fn, /\.\.\.assignmentFields,\s*\.\.\.studentScopeFields,\s*\}\);/);
 });
