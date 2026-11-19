@@ -215,3 +215,62 @@ Ce défaut existait avant #1169. Il était masqué parce qu'aucun Élève ne pou
 - **Canal Play et builds EAS 25/26** : non vérifiés ; à identifier sur les consoles EAS et Play.
 - **Frontière d'erreur** : comportement garanti par le mécanisme React standard. Aucune erreur de rendu n'a été provoquée sur l'appareil (aucune n'a été rencontrée).
 - **Badges légal / financier** : décision sur le modèle de données requise.
+
+## 12. Revue CTO indépendante de #1195 — compléments
+
+### 12.1 Vérificateur APK/AAB (`scripts/verify-android-artifact-provenance.js`)
+- `--expect-sha` complet (40 hex) **obligatoire** : sinon `EXPECT_SHA_MANQUANT`, et la CLI sort en code 2 avant toute inspection.
+- Empreinte SHA-256 du certificat **obligatoire** (64 hex) : une signature non extraite donne `SIGNATURE_ABSENTE`, jamais un succès.
+- Registre écrit **uniquement après** succès.
+- Effet constaté en CI sur d27afa2 : le job « NFC APK preview exact HEAD » a échoué avec `SIGNATURE_ABSENTE`. Les runners sélectionnent build-tools 37, dont `apksigner` imprime `V2 Signer: certificate SHA-256 digest:` au lieu de `Signer #1 certificate SHA-256 digest:`. Le contrôle durci a donc correctement refusé.
+  - Correctif aed0c94 : `parseApksignerCerts` gère les deux formats. La règle est la même que dans `Mobile/scripts/verify-student-card-nfc-apk.py` : un seul certificat, sinon échec.
+  - Échec reproduit puis corrigé localement avec build-tools 37.0.0. Job vert sur aed0c94.
+
+### 12.2 Gouvernance release
+Le pin `CURRENT_MAIN` périmé (rouge aussi sur `develop`) est traité dans **une PR distincte, #1196 (GOV-RELEASE-01)** :
+- référence approuvée actualisée à `e223e30e` ;
+- interdictions conservées ;
+- échec vérifié si `main` se déplace de façon inattendue.
+
+#1196 est entièrement verte. Le contrôle `release-governance` de #1195 restera rouge tant que #1196 n'est pas validée. Le workflow n'a été ni désactivé ni contourné.
+
+### 12.3 Smoke Android rejoué (APK x86_64 du code d27afa2 ; aed0c94 ne modifie que `scripts/`)
+Conditions :
+- émulateur Android 12 ;
+- API locale du même commit ;
+- jeton d'accès de 180 s ;
+- « refresh » = application fermée, attente de 200 s (> durée de vie du jeton), réouverture.
+
+| Compte | Écrans | Avant refresh | Après refresh |
+|---|---|---|---|
+| Élève seul (CD-IN-EL-26-002) | Accueil, Fiche, Notes, Présence, Frais ; classe « 6ème A » (fiche, frais, `/classes` 304) ; Bulletins | Données affichées, 0 erreur JS | Identique ; `/auth/refresh` 200, `/students/<id>` 304, listes 304 ; 0 erreur JS |
+| Parent (lié via « Créer ou lier un parent ») | Accueil, Enfant, Notes, Présence, Paiements | Données de l'enfant, 0 erreur JS | — |
+| Parent sans enfant lié | idem | « Aucun enfant lié » explicite, 0 erreur JS | — |
+| Administrateur | Accueil + 4 onglets | OK, 0 erreur JS | — |
+| Secrétaire | Accueil + 4 onglets | OK, 0 erreur JS | — |
+| Enseignant | Accueil, Classes (5ème B, 6ème A), Appel, Évaluations | OK, 0 erreur JS | — |
+| Multirôle Élève + Parent (CD-IN-EL-26-001) | Accueil + 4 onglets | Espace Parent (pas de choix de rôle), états explicites, 0 erreur JS | — |
+
+- L'Élève n'a pas d'écran « Classes » dans son menu : la classe est affichée sur la fiche.
+- Bulletins (Élève) : état explicite « Bulletin introuvable » + « Réessayer ». Le 404 vient de l'environnement local : le service de publication des bulletins n'y est pas configuré, et la route répond `REQUEST_NOT_FOUND` avant tout contrôle de périmètre.
+
+### 12.4 Multirôle incluant Élève — `studentIds`
+**Jeton (correctif d27afa2).** Le rôle de session vient de `sess.role AS session_role` : `users.role` ne masque plus le rôle choisi à la connexion. Mesures sur l'API :
+
+| Session | Connexion | Refresh |
+|---|---|---|
+| Élève seul | studentIds = [uuid, matricule] | identiques |
+| Multirôle, session Élève | studentIds = [uuid, matricule] | identiques |
+| Multirôle, session Parent | studentIds = [] | absent |
+
+Pour la session Parent, la valeur absente n'élargit rien : `hydrateParentPrincipal` réécrit `studentIds` à chaque requête.
+
+**Défaut préexistant, non corrigé ici (décision CTO requise).**
+- Constat : un compte Élève + Parent connecté **comme Élève** voit ses données vides **dès la connexion**, sans aucun refresh : fiche 404, listes vides.
+- Cause : `principalIsParent` (`backend/lib/parentScope.js`, depuis ea3ae91c1, 2026-09-21) renvoie vrai dès que `roleKeys` contient PARENT. `hydrateParentPrincipal` remplace alors les `studentIds` Élève du jeton par les enfants du parent.
+- Facteur aggravant : au refresh, le libellé de rôle du jeton devient `Parent` (REFRESH-R1, préexistant).
+- Pourquoi pas dans cette PR : le correctif touche le périmètre Parent, qui est sensible pour la sécurité. Il sort du LOT 1.
+- Proposition :
+  1. Dans `principalIsParent`, s'appuyer sur le rôle de session plutôt que sur l'ensemble des `roleKeys`.
+  2. Conserver au refresh le libellé du rôle de session.
+  3. Ajouter un choix de rôle à la connexion mobile multirôle.
