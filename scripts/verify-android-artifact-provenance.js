@@ -65,13 +65,32 @@ function readApkBadging(file) {
   return pkg ? { packageName: pkg[1], versionCode: pkg[2], versionName: pkg[3] } : {};
 }
 
+/**
+ * Empreinte du certificat de signataire depuis `apksigner verify --print-certs`.
+ * Build-tools 37 (runners GitHub) : « V2 Signer: certificate SHA-256 digest: … » (ou « V2 Signer #1: … ») ;
+ * build-tools ≤ 36.1 : « Signer #1 certificate SHA-256 digest: … ». Même règle que
+ * Mobile/scripts/verify-student-card-nfc-apk.py : un seul certificat, sinon échec ; aucune empreinte inventée.
+ */
+function parseApksignerCerts(output) {
+  const text = String(output || "");
+  const normalize = (raw) => {
+    const value = String(raw || "").trim();
+    if (/^[0-9a-f]{64}$/i.test(value)) return value.toLowerCase();
+    const parts = value.split(/[:\s]+/);
+    return parts.length === 32 && parts.every((part) => /^[0-9a-f]{2}$/i.test(part)) ? parts.join("").toLowerCase() : null;
+  };
+  const digests = [...text.matchAll(/^.*?[ \t]certificate SHA-256 digest:[ \t]*(.*?)[ \t]*$/gm)].map((match) => normalize(match[1]));
+  const subjects = [...text.matchAll(/^.*?[ \t]certificate DN:[ \t]*(\S.*?)[ \t]*$/gm)].map((match) => match[1]);
+  const unique = [...new Set(digests)];
+  const valid = unique.length === 1 && unique[0] !== null && !/DOES NOT VERIFY/.test(text);
+  const uniqueSubjects = [...new Set(subjects)];
+  return { subject: uniqueSubjects.length === 1 ? uniqueSubjects[0] : null, sha256: valid ? unique[0] : null };
+}
+
 function readSignature(file, kind) {
   try {
     if (kind === "apk") {
-      const out = execFileSync(buildTool("apksigner"), ["verify", "--print-certs", file]).toString("utf8");
-      const dn = out.match(/Signer #1 certificate DN: (.+)/);
-      const digest = out.match(/Signer #1 certificate SHA-256 digest: ([0-9a-f]+)/);
-      return { subject: dn ? dn[1].trim() : null, sha256: digest ? digest[1] : null };
+      return parseApksignerCerts(execFileSync(buildTool("apksigner"), ["verify", "--print-certs", file]).toString("utf8"));
     }
     const out = execFileSync("keytool", ["-printcert", "-jarfile", file]).toString("utf8");
     const owner = out.match(/Owner: (.+)/);
@@ -143,7 +162,7 @@ function inspectArtifact(file, options = {}) {
   });
 }
 
-module.exports = { buildRegistryEntry, inspectArtifact, parseArgs };
+module.exports = { buildRegistryEntry, inspectArtifact, parseApksignerCerts, parseArgs };
 
 if (require.main === module) {
   const options = parseArgs(process.argv.slice(2));
