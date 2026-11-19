@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildRegistryEntry, parseArgs } = require("./verify-android-artifact-provenance");
+const { buildRegistryEntry, parseApksignerCerts, parseArgs } = require("./verify-android-artifact-provenance");
 
 const SHA = "8467944526563b956bfd50370079af9e9355b533";
 const OTHER = "99cb7915190dfc11dc1d21742df7507bb21b789f";
@@ -108,6 +108,19 @@ test("Revue CTO : registre écrit seulement après succès (ordre dans la CLI)",
   const cli = source.slice(source.indexOf("if (require.main === module)"));
   assert.ok(cli.indexOf("process.exit(1)") < cli.indexOf("appendFileSync"), "appendFileSync doit suivre le contrôle d'erreurs");
   assert.match(cli, /!options\.file \|\| !FULL_SHA\.test/);
+});
+
+test("apksigner build-tools 36 et 37 : même empreinte extraite ; ambiguïté = échec", () => {
+  const fp = "fa".repeat(32);
+  const v36 = `Signer #1 certificate DN: CN=Android Debug, O=Android\nSigner #1 certificate SHA-256 digest: ${fp}\n`;
+  const v37 = `V2 Signer: certificate DN: CN=Android Debug, O=Android\nV2 Signer: certificate SHA-256 digest: ${fp}\nV3 Signer: certificate DN: CN=Android Debug, O=Android\nV3 Signer: certificate SHA-256 digest: ${fp}\n`;
+  const colons = `V2 Signer #1: certificate SHA-256 digest: ${fp.match(/../g).join(":").toUpperCase()}\n`;
+  for (const out of [v36, v37, colons]) assert.equal(parseApksignerCerts(out).sha256, fp);
+  assert.equal(parseApksignerCerts(v37).subject, "CN=Android Debug, O=Android");
+  assert.equal(parseApksignerCerts(`${v37}V2 Signer #2: certificate SHA-256 digest: ${"ab".repeat(32)}\n`).sha256, null);
+  assert.equal(parseApksignerCerts("V2 Signer: certificate SHA-256 digest: abc\n").sha256, null);
+  assert.equal(parseApksignerCerts("").sha256, null);
+  assert.equal(parseApksignerCerts(`DOES NOT VERIFY\n${v36}`).sha256, null);
 });
 
 test("parseArgs", () => {
