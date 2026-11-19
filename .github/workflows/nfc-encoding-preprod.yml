@@ -204,6 +204,13 @@ jobs:
           done
       - name: Verify packaged API, native permissions, signature and secret patterns
         run: python3 Mobile/scripts/verify-student-card-nfc-apk.py Mobile/android/app/build/outputs/apk/release/app-release.apk --output Mobile/dist/nfc-evidence
+      # LOT 2 (PARITE-WEB-MOBILE-RECOVERY-01) — l'APK doit embarquer le commit exact extrait par ce job.
+      - name: Verify APK provenance and write registry entry
+        run: |
+          set -euo pipefail
+          node scripts/verify-android-artifact-provenance.js Mobile/android/app/build/outputs/apk/release/app-release.apk \
+            --expect-sha "$(git rev-parse HEAD)" --channel "CI preview (signature de test, non distribuable)" \
+            --registry Mobile/dist/nfc-evidence/android-artifact-registry.jsonl
       - name: Upload sanitized signature diagnostic when verification fails
         if: failure()
         uses: actions/upload-artifact@v4
