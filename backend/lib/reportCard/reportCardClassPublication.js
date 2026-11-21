@@ -94,7 +94,7 @@ function createReportCardClassPublication({ publication, factsStore, configurati
 
   function requireDeps() {
     if (!publication || typeof publication.publishBatch !== "function") fail("PUBLICATION_REQUIRED");
-    for (const name of ["resolveCohort", "listClassCohort", "listClassGradeSources"]) {
+    for (const name of ["resolveCohort", "listClassCohort", "listClassGradeSources", "listClassEvaluationSources"]) {
       if (!factsStore || typeof factsStore[name] !== "function") fail("FACTS_REQUIRED");
     }
     if (!catalogStore || typeof catalogStore.listSchoolSubjectCatalog !== "function") fail("FACTS_REQUIRED");
@@ -130,9 +130,10 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     } catch (err) {
       fail("INVALID_PEDAGOGICAL_DATA", [{ code: err.code || "CATALOG_MISMATCH", severity: BLOCKING }]);
     }
-    const [cohort, gradeRows] = await Promise.all([
+    const [cohort, gradeRows, evaluationRows] = await Promise.all([
       factsStore.listClassCohort({ schoolId, classId: cohortRow.classId, academicYearId: cohortRow.academicYearId }),
       factsStore.listClassGradeSources({ schoolId, classId: cohortRow.classId, academicYearId: cohortRow.academicYearId }),
+      factsStore.listClassEvaluationSources({ schoolId, classId: cohortRow.classId, academicYearId: cohortRow.academicYearId }),
     ]);
     const built = buildPublicationFacts({
       profile,
@@ -141,6 +142,7 @@ function createReportCardClassPublication({ publication, factsStore, configurati
       periods: scope.periods,
       cohort,
       gradeRows,
+      evaluationRows,
     });
     let computed;
     try {
@@ -266,7 +268,7 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     if (!result.publishable) {
       fail("REPORT_CARD_INCOMPLETE", draftView(result).students.filter((item) => item.status !== "COMPLETE").map((item) => ({
         student_id: item.student_id,
-        issues: item.issues.length ? item.issues : item.subject_totals.issues,
+        issues: [...item.issues, ...(item.subject_totals.issues || [])],
       })).concat(result.issues.filter((item) => item.severity === BLOCKING && !item.student_id).map((item) => ({ issues: [item] }))));
     }
     const states = await existingState(tenant, result.students);
@@ -342,7 +344,7 @@ function createReportCardClassPublication({ publication, factsStore, configurati
     const item = result.students.find((entry) => entry.report_card_id === payload.report_card_id);
     if (!item) fail("FACTS_REQUIRED");
     if (!item.complete || result.issues.some((entry) => entry.severity === BLOCKING && !entry.student_id)) {
-      fail("REPORT_CARD_INCOMPLETE", [{ student_id: item.student.student_id, issues: item.issues.length ? item.issues : item.student.subject_totals.issues }]);
+      fail("REPORT_CARD_INCOMPLETE", [{ student_id: item.student.student_id, issues: [...item.issues, ...(item.student.subject_totals.issues || [])] }]);
     }
     return { student: item.student, content_sha256: item.content_sha256 };
   }

@@ -322,7 +322,7 @@ test("moteur : élève incomplet jamais classé ; élève inscrit sans note pré
 // Service : brouillon, validation, publication (mémoire).
 // ---------------------------------------------------------------------------
 
-function memoryHarness({ rows = simpleRows(), cohort = cohortSimple } = {}) {
+function memoryHarness({ rows = simpleRows(), cohort = cohortSimple, evaluations = null } = {}) {
   const profileStore = createAcademicRuleProfileStore();
   const schemaStore = createReportCardSchemaStore();
   const createdP = profileStore.createProfile({ schoolId: SCHOOL, actorSchoolId: SCHOOL, profileKey: "pub01", spec: support.simpleProfile(), activate: true });
@@ -331,11 +331,26 @@ function memoryHarness({ rows = simpleRows(), cohort = cohortSimple } = {}) {
   const signingKey = generateSigningKey("rc-ed25519-1");
   const wrapping = generateWrappingKey("rc-wrap-1");
   const publication = createReportCardPublication({ signingKey, wrapping, wrappingKeys: [wrapping], signingKeys: [signingKey] });
-  const state = { rows, cohort };
+  const state = { rows, cohort, evaluations };
   const factsStore = {
     resolveCohort: ({ schoolId, classId, academicYearId }) => (schoolId === SCHOOL && classId === CLASS && academicYearId === YEAR ? { classId, academicYearId } : null),
     listClassCohort: () => state.cohort,
     listClassGradeSources: () => state.rows,
+    listClassEvaluationSources: () => state.evaluations ?? [...new Map(state.rows
+      .filter((row) => row.evaluation_id && row.evaluation_status === "published" && row.evaluation_active !== false)
+      .map((row) => [row.evaluation_id, {
+        evaluation_id: row.evaluation_id,
+        evaluation_school_id: row.evaluation_school_id,
+        evaluation_title: "Évaluation " + row.evaluation_id,
+        evaluation_status: row.evaluation_status,
+        evaluation_active: row.evaluation_active,
+        subject_code: row.subject_code,
+        subject_school_id: row.subject_school_id,
+        term_name: row.term_name,
+        term_year_id: row.term_year_id,
+        evaluation_type_code: row.evaluation_type_code,
+        evaluation_type_text: row.evaluation_type_text,
+      }])).values()],
   };
   const catalogStore = {
     listSchoolSubjectCatalog: () =>
@@ -389,6 +404,82 @@ test("service : brouillon non officiel déterministe ; publication de l'empreint
   await expectRejects(h.service.publish({ ...h.args, actor: { actorId: "u1" }, expectedDraftSha256: changed.draft_sha256 }), "PUBLICATION_ALREADY_EXISTS");
   const unchanged = await h.publication.payloadForRender({ tenant: h.tenant, reportCardId: published.publications[0].report_card_id, version: 1 });
   assert.deepEqual(unchanged, payload, "snapshot officiel figé");
+});
+
+test("BULLETIN-NOTES-02 : type non mappé détecté UNE FOIS au niveau classe, même avec une seule note", async () => {
+  const h = memoryHarness();
+  await h.activate();
+  const sample = h.state.rows.find((row) => row.student_code === "STU1" && row.subject_code === "MATHEMATIQUES" && row.term_name === "Trimestre 1");
+  assert.ok(sample);
+  const oral = {
+    ...sample, grade_id: "oral-g1", evaluation_id: "oral-eval", score: 15,
+    evaluation_type_code: "orale", evaluation_type_text: "Orale",
+  };
+  h.state.rows.push(oral);
+  h.state.evaluations = [{
+    evaluation_id: "oral-eval", evaluation_school_id: SCHOOL, subject_school_id: SCHOOL,
+    subject_code: "MATHEMATIQUES", term_name: "Trimestre 1", term_year_id: YEAR,
+    evaluation_title: "LES ADVERBES", evaluation_type_code: "orale",
+    evaluation_status: "published", evaluation_active: true,
+  }];
+  const draft = await h.service.preview(h.args);
+  const global = draft.issues.filter((item) => item.code === "EVALUATION_TYPE_UNMAPPED");
+  assert.equal(global.length, 1);
+  assert.equal(global[0].student_id, undefined, "anomalie commune à la classe");
+  assert.equal(global[0].evaluation_title, "LES ADVERBES");
+  assert.equal(global[0].evaluation_type, "orale");
+  assert.equal(global[0].subject_id, "MATHEMATIQUES");
+  assert.ok(!draft.students.some((row) => row.issues.some((item) => item.code === "EVALUATION_TYPE_UNMAPPED")));
+  assert.equal(draft.publishable, false);
+  await expectRejects(h.service.publish({ ...h.args, actor: { actorId: "u1" }, expectedDraftSha256: draft.draft_sha256 }), "REPORT_CARD_INCOMPLETE");
+});
+
+test("BULLETIN-NOTES-02 : type non mappé détecté sans AUCUNE note, contrôle classe fail-closed", async () => {
+  const h = memoryHarness({ evaluations: [{
+    evaluation_id: "oral-empty", evaluation_school_id: SCHOOL, subject_school_id: SCHOOL,
+    evaluation_title: "Oral sans saisie", subject_code: "MATHEMATIQUES",
+    term_name: "Trimestre 1", term_year_id: YEAR, evaluation_type_code: "orale",
+    evaluation_status: "published", evaluation_active: true,
+  }] });
+  await h.activate();
+  const draft = await h.service.preview(h.args);
+  assert.equal(draft.issues.filter((issue) => issue.code === "EVALUATION_TYPE_UNMAPPED").length, 1);
+  assert.equal(draft.publishable, false);
+});
+
+test("BULLETIN-NOTES-02 : évaluation publiée mappée sans note détectée pour chaque inscrit", async () => {
+  const h = memoryHarness({ evaluations: [{
+    evaluation_id: "mapped-empty", evaluation_school_id: SCHOOL, subject_school_id: SCHOOL,
+    evaluation_title: "Contrôle de mathématiques", subject_code: "MATHEMATIQUES",
+    term_name: "Trimestre 1", term_year_id: YEAR, evaluation_type_code: "interrogation",
+    evaluation_status: "published", evaluation_active: true,
+  }] });
+  await h.activate();
+  const draft = await h.service.preview(h.args);
+  const missing = draft.issues.filter((item) => item.code === "EVALUATION_GRADE_MISSING");
+  assert.equal(missing.length, 2);
+  assert.deepEqual(missing.map((row) => row.student_id).sort(), ["STU1", "STU2"]);
+  assert.ok(missing.every((row) => row.evaluation_title === "Contrôle de mathématiques"));
+  assert.equal(draft.publishable, false);
+  const t1 = await h.service.preview({ ...h.args, period: "T1" });
+  assert.equal(t1.issues.filter((item) => item.code === "EVALUATION_GRADE_MISSING").length, 2);
+});
+
+test("BULLETIN-NOTES-02 : scope T2 et tenant étrangers exclus, sans fuite d'élèves", async () => {
+  const h = memoryHarness({ evaluations: [
+    {
+      evaluation_id: "other-period", evaluation_school_id: SCHOOL, subject_school_id: SCHOOL,
+      subject_code: "MATHEMATIQUES", evaluation_title: "T2 Oral",
+      term_name: "Trimestre 2", term_year_id: YEAR, evaluation_type_code: "orale",
+    },
+  ] });
+  await h.activate();
+  const draft = await h.service.preview({ ...h.args, period: "T1" });
+  assert.equal(draft.issues.filter((item) => item.evaluation_id === "other-period").length, 0);
+  h.state.evaluations = [{ ...h.state.evaluations[0], evaluation_school_id: OTHER, term_name: "Trimestre 1" }];
+  const crossTenant = await h.service.preview({ ...h.args, period: "T1" });
+  assert.ok(crossTenant.issues.some((item) => item.code === "FOREIGN_SCHOOL_DATA"));
+  assert.equal(crossTenant.publishable, false);
 });
 
 test("service : bulletin incomplet refusé avec le détail ; brouillon affichable", async () => {
