@@ -689,6 +689,15 @@ export function CoursePlanningPage() {
           ) : null}
         </div>
 
+        {selectedClassName && courseOptionsStatus === "ok" && classCourses.length === 0 ? (
+          <div role="status" data-testid="planning-unassigned-course-guidance" className="no-print mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-slate-800">
+            <p className="font-semibold">Aucun cours affecté et planifiable pour cette classe.</p>
+            <p className="mt-1">Les cours créés dans Paramètres sont disponibles pour l’affectation, mais ne sont pas automatiquement inscrits au planning. Affectez un cours à cette classe et à un enseignant actif avant de créer un créneau.</p>
+            <Button type="button" variant="secondary" className="mt-3" onClick={() => navigate("/etablissement/enseignants")}>
+              Gérer les affectations
+            </Button>
+          </div>
+        ) : null}
         <div className="relative mt-4">
           <CoursePlanningCalendar
             key={`${selectedClassName}__${selectedPeriodName}`}

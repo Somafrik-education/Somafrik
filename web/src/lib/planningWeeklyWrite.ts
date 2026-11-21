@@ -56,7 +56,7 @@ export function mapPlanningCourseOptions(items: unknown[] | undefined | null): P
 
 export function planningNoSchedulableCoursesMessage(className: string): string {
   const label = className.trim() || "cette classe";
-  return `Aucun cours planifiable n'est visible pour « ${label} ». Le cours peut déjà exister en base — ne le recréez pas. Vérifiez qu'il est actif, rattaché à un enseignant actif, et autorisé pour ce compte.`;
+  return `Aucun cours planifiable pour « ${label} ». Les cours créés dans Paramètres doivent d’abord être affectés à cette classe et à un enseignant actif dans Mon établissement → Enseignants. Ne recréez pas le cours.`;
 }
 
 export function listSchoolCoursesForClass(
