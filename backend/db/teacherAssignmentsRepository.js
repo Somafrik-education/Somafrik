@@ -1,5 +1,6 @@
 "use strict";
 
+const { randomUUID } = require("node:crypto");
 const {
   assignmentError,
   validateAssignmentInput,
@@ -201,8 +202,36 @@ function createTeacherAssignmentsRepository(db) {
     reader,
     { schoolId, classId, subjectId, teacherId, replaceableTeacherId = null },
   ) {
-    const course = await lockActiveSchoolCourse(reader, schoolId, classId, subjectId);
-    if (!course) return { schoolCourseId: null, changed: false };
+    let course = await lockActiveSchoolCourse(reader, schoolId, classId, subjectId);
+    if (!course) {
+      // Affecter une matière doit également fournir le cours canonique attendu
+      // par Planning V2. L'opération est dans la même transaction que l'affectation.
+      // Le lock advisory d'établissement sérialise les mutations d'affectation ;
+      // l'index unique partiel protège aussi les créations concurrentes externes.
+      const created = await reader.one(
+        `INSERT INTO school_courses
+           (school_id, class_id, subject_id, teacher_id, course_code, coefficient, status)
+         SELECT $1::uuid, $2::uuid, sub.id, $4::uuid, $5,
+                COALESCE((to_jsonb(sub)->>'coefficient')::numeric, 1), 'active'
+         FROM subjects sub
+         WHERE sub.id = $3::uuid AND sub.school_id = $1::uuid
+           AND sub.status = 'active'
+         ON CONFLICT (school_id, class_id, subject_id) WHERE status = 'active'
+         DO NOTHING
+         RETURNING id`,
+        [schoolId, classId, subjectId, teacherId, `ASSIGN-${randomUUID()}`],
+      );
+      if (created) return { schoolCourseId: created.id, changed: true };
+      // En cas de concurrence avec la création canonique, valider son enseignant.
+      course = await lockActiveSchoolCourse(reader, schoolId, classId, subjectId);
+      if (!course) {
+        throw assignmentError(
+          409,
+          "Impossible de rattacher le cours à cette affectation.",
+          "ASSIGNMENT_SCHOOL_COURSE_MISSING",
+        );
+      }
+    }
 
     const currentTeacherId = String(course.teacher_id ?? "").trim();
     const targetTeacherId = String(teacherId ?? "").trim();
