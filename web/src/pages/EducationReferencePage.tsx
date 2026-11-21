@@ -203,7 +203,7 @@ export function EducationReferencePage() {
     <div className="space-y-6">
       <SectionHeader
         title="Référentiels pédagogiques"
-        description="Catalogue canonique par pays : niveaux, filières/options et groupes. Réservé au Super administrateur et à l’Administrateur pays. Aucun défaut RDC."
+        description="Définissez les niveaux, filières et groupes scolaires pour chaque pays. Les paramètres sont gérés par les administrateurs autorisés."
       />
 
       <Card className="p-4">
@@ -233,7 +233,7 @@ export function EducationReferencePage() {
             <Card className="p-6 space-y-4">
               <h2 className="text-lg font-semibold">Libellés d&apos;écran du pays</h2>
               <p className="text-sm text-muted">
-                Concepts canoniques : Niveau, Filière/Option, Groupe. L&apos;affichage peut varier selon le pays.
+                Personnalisez les noms des niveaux, filières et groupes selon l&apos;organisation scolaire du pays.
               </p>
               <form onSubmit={handleSaveLabels} className="grid gap-3 md:grid-cols-4 md:items-end">
                 <FormField label="Libellé niveau" htmlFor="edu-label-level" required>

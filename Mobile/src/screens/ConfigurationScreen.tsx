@@ -86,7 +86,7 @@ export default function ConfigurationScreen() {
     >
       <Text style={styles.title}>Paramètres</Text>
       <Text style={styles.subtitle}>
-        Paramètres opérationnels de l’établissement. Même source PostgreSQL, mêmes droits.
+        Consultez et modifiez les paramètres de votre établissement selon vos autorisations.
       </Text>
 
       <SchoolSelector />
