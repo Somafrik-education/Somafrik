@@ -7372,6 +7372,22 @@ async function issueRefreshedAccessToken(session, payload) {
     );
   }
 
+  // PARITE-WEB-MOBILE-RECOVERY-01 / LOT 1 : le périmètre Élève (studentIds) est recalculé comme
+  // à la connexion ; sans lui, l'élève ne voit plus ses propres données après un refresh.
+  const { isStudentSession, resolveRefreshStudentScope } = require("./lib/refreshStudentScope");
+  // Rôle choisi à la connexion (PostgreSQL : session_role, car sess.role est masqué par
+  // users.role dans findSessionByCode ; mémoire : role). Un compte multirôle connecté comme
+  // Parent n'obtient jamais de studentIds (revue CTO #1195).
+  const loginSessionRole = session.session_role ?? session.role;
+  const studentScopeFields = sessionRole !== "Sans affectation" && isStudentSession(loginSessionRole, roleKeys)
+    ? resolveRefreshStudentScope({
+        authService: (await getRuntime()).authService,
+        userId: session.user_id,
+        sessionRole: loginSessionRole,
+        roleKeys,
+      })
+    : {};
+
   // REFRESH-R1 : mêmes libellés/roleKeys que le principal de connexion.
   // Les rôles restent relus en direct : aucune attribution révoquée n'est restaurée.
   const liveDisplay = displayRoles(roleKeys);
@@ -7394,6 +7410,7 @@ async function issueRefreshedAccessToken(session, payload) {
     publicId: payload.publicId,
     mustChangePassword,
     ...assignmentFields,
+    ...studentScopeFields,
   });
   return { accessToken, permissions };
 }

@@ -83,6 +83,25 @@ jobs:
             echo "Artifact: somafrik-production.aab"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # LOT 2 (PARITE-WEB-MOBILE-RECOVERY-01) — l'AAB doit embarquer la provenance du commit source ;
+      # l'entrée de registre (commit → versionCode distant → profil → SHA256 → signature) est archivée.
+      # keytool (lecture de la signature de l'AAB) : JDK explicite, pas de dépendance à l'image.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Verify AAB provenance and write registry entry
+        working-directory: Mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_CODE="$(jq -r 'if type=="array" then .[0].appBuildVersion else .appBuildVersion end // empty' eas-build.json)"
+          node ../scripts/verify-android-artifact-provenance.js somafrik-production.aab \
+            --expect-sha "$SOURCE_SHA" --version-code "$VERSION_CODE" \
+            --channel "EAS production (non soumis au Play Store)" --registry android-artifact-registry.jsonl
+          cat android-artifact-registry.jsonl >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload AAB evidence
         uses: actions/upload-artifact@v4
         with:
@@ -91,5 +110,6 @@ jobs:
             Mobile/somafrik-production.aab
             Mobile/somafrik-production.aab.sha256
             Mobile/eas-build.json
+            Mobile/android-artifact-registry.jsonl
           if-no-files-found: error
           retention-days: 30
