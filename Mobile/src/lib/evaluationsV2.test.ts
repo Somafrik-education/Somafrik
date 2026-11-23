@@ -27,7 +27,7 @@ import {
   EVALUATIONS_V2_INVALID_COEFFICIENT,
   EVALUATIONS_V2_MISSING_TEACHER,
 } from "./evaluationsV2";
-import { canonicalStudentGeneralAverage } from "./pedagogyAverage";
+import { averagePeriodOptions, canonicalCourseAverage, canonicalStudentGeneralAverage, courseOptionsFromNotes, notesForAveragePeriod } from "./pedagogyAverage";
 
 function run() {
   assert.equal(fromEvaluationStatus("locked"), "Validée");
@@ -283,6 +283,34 @@ function run() {
     }),
   ]);
   assert.equal(Number(flatForbidden.average?.toFixed(1)), 16.4);
+
+  // SMOKE-MOY-01 — périodisation et coefficients à deux niveaux (pas de somme plate).
+  const termGrades = [
+    normalizeGrade({ id: "t1-m1", evaluationId: "t1-m1", studentId: "s1", subject: "Mathématiques", period: "Trimestre 1", value: 8, scale: 10, coefficient: 2, evaluationCoefficient: 1, gradeStatus: "graded" }),
+    normalizeGrade({ id: "t1-m2", evaluationId: "t1-m2", studentId: "s1", subject: "Mathématiques", period: "Trimestre 1", value: 20, scale: 20, coefficient: 2, evaluationCoefficient: 3, gradeStatus: "graded" }),
+    normalizeGrade({ id: "t1-f", evaluationId: "t1-f", studentId: "s1", subject: "Français", period: "Trimestre 1", value: 12, scale: 20, coefficient: 1, evaluationCoefficient: 1, gradeStatus: "graded" }),
+    normalizeGrade({ id: "t2-m", evaluationId: "t2-m", studentId: "s1", subject: "Mathématiques", period: "Trimestre 2", value: 5, scale: 20, coefficient: 2, evaluationCoefficient: 2, gradeStatus: "graded" }),
+    normalizeGrade({ id: "t2-f", evaluationId: "t2-f", studentId: "s1", subject: "Français", period: "Trimestre 2", value: 10, scale: 20, coefficient: 1, evaluationCoefficient: 1, gradeStatus: "graded" }),
+    normalizeGrade({ id: "t2-abs", evaluationId: "t2-abs", studentId: "s1", subject: "Français", period: "Trimestre 2", value: null, scale: 20, coefficient: 1, gradeStatus: "absent" }),
+  ];
+  assert.deepEqual(averagePeriodOptions(termGrades), ["Trimestre 1", "Trimestre 2"]);
+  assert.equal(notesForAveragePeriod(termGrades, "Trimestre 1").length, 3);
+  assert.equal(notesForAveragePeriod(termGrades, "Trimestre 2").length, 3);
+  const term1Average = canonicalStudentGeneralAverage(termGrades, "Trimestre 1");
+  const term2Average = canonicalStudentGeneralAverage(termGrades, "Trimestre 2");
+  const allPeriodsAverage = canonicalStudentGeneralAverage(termGrades);
+  // Math T1 = ((8/10*20)*1 + 20*3)/4 = 19 ; Français T1 = 12.
+  assert.ok(Math.abs((term1Average.average ?? 0) - ((19*2+12)/3)) < 0.000001);
+  assert.ok(Math.abs((term2Average.average ?? 0) - ((5*2+10)/3)) < 0.000001);
+  assert.notEqual(term1Average.average, allPeriodsAverage.average, "Toutes périodes n'est pas le bulletin T1");
+  assert.equal(term1Average.totalCourseCoefficients, 3, "les coefficients de cours ne se multiplient pas par le nombre d'évaluations");
+  assert.equal(term2Average.totalCourseCoefficients, 3);
+  assert.equal(canonicalCourseAverage(termGrades, "Mathématiques", "Trimestre 1").average, 19);
+  assert.equal(canonicalCourseAverage(termGrades, "Mathématiques", "Trimestre 2").average, 5);
+  assert.deepEqual(courseOptionsFromNotes(termGrades, "Trimestre 1"), ["Français", "Mathématiques"]);
+  assert.equal(canonicalStudentGeneralAverage(termGrades, "Trimestre 3").available, false);
+  const legacyWithoutPeriod = normalizeGrade({ id: "legacy", evaluationId: "legacy", studentId: "s1", subject: "Sciences", value: 10, scale: 20, coefficient: 1, gradeStatus: "graded" });
+  assert.equal(notesForAveragePeriod([legacyWithoutPeriod], "Trimestre 1").length, 1, "parité avec le backend pour une note historique sans période");
 
   const grades = [
     normalizeGrade({ id: "n1", evaluationId: "EVAL-1", studentId: "s1", value: 12, scale: 20 }),
