@@ -23,6 +23,7 @@ import {
 } from "../lib/evaluationsV2";
 import {
   averagePeriodOptions,
+  formatStudentNotesAverage,
   canonicalCourseAverage,
   canonicalStudentGeneralAverage,
   courseOptionsFromNotes,
@@ -132,7 +133,7 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
                   style={[styles.summaryValue, { color: "#FFFFFF" }]}
                   testID={EVALUATIONS_V2_TEST_IDS.average}
                 >
-                  {average.available ? `${average.average?.toFixed(1)}/20` : EVALUATIONS_V2_COPY.averageUnavailable}
+                  {average.available ? `${formatStudentNotesAverage(average.average ?? null)}/20` : EVALUATIONS_V2_COPY.averageUnavailable}
                 </Text>
                 <Text style={[styles.summaryMeta, { color: "#DBEAFE" }]}>
                   {average.available

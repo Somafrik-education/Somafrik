@@ -27,7 +27,7 @@ import {
   EVALUATIONS_V2_INVALID_COEFFICIENT,
   EVALUATIONS_V2_MISSING_TEACHER,
 } from "./evaluationsV2";
-import { averagePeriodOptions, canonicalCourseAverage, canonicalStudentGeneralAverage, courseOptionsFromNotes, notesForAveragePeriod } from "./pedagogyAverage";
+import { averagePeriodOptions, canonicalCourseAverage, canonicalStudentGeneralAverage, courseOptionsFromNotes, formatStudentNotesAverage, notesForAveragePeriod } from "./pedagogyAverage";
 
 function run() {
   assert.equal(fromEvaluationStatus("locked"), "Validée");
@@ -198,6 +198,13 @@ function run() {
     roster.map((row) => row.id),
     ["s1"],
   );
+
+  // SMOKE-MOY-01 : la précision affichée ne modifie jamais le calcul canonique.
+  assert.equal(formatStudentNotesAverage(9.05), "9.05");
+  assert.equal(formatStudentNotesAverage(9.1), "9.10");
+  assert.equal(formatStudentNotesAverage(2.5), "2.50");
+  assert.equal(formatStudentNotesAverage(11.875), "11.88");
+  assert.equal(formatStudentNotesAverage(null), "—");
 
   const naiveAverageForbidden = canonicalWeightedAverage([
     normalizeGrade({ evaluationId: "e1", studentId: "s1", value: 8, scale: 10, gradeStatus: "graded" }),
