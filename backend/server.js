@@ -2749,6 +2749,16 @@ app.get("/api/student-cards/roll-call/offline/v1/pack", requireAuth, requirePerm
   ));
 }));
 
+// NFC-ROLES-ACCESS-01 — classes sur lesquelles le compte peut effectuer l'appel NFC/QR (sélecteur
+// Mobile, sans fiche de classe) : même contrat que le pack et la synchronisation, données minimales.
+app.get("/api/student-cards/roll-call/offline/v1/classes", requireAuth, requirePermission("GET /api/student-cards/roll-call/offline/v1/classes"), asyncHandler(async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  requireStudentCardsPg();
+  const { listOfflineRollCallClasses } = require("./lib/rollCallOfflinePack");
+  const principal = await rollCallHttpPrincipal(req);
+  res.status(200).json(await listOfflineRollCallClasses(repository, studentCardsHttpScope(principal), principal));
+}));
+
 // NFC-PRES-LOCAL-PR1c — synchronisation transactionnelle d'un appel réalisé hors ligne.
 // Garde R (relire son propre ACK) dans la transaction AVANT toute lecture de rejeu ; garde W
 // (affectation, flags, abonnement, date, cartes) seulement si aucun appel n'est enregistré.

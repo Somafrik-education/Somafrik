@@ -115,6 +115,7 @@ describe("ADMIN-07 — autorité Web replay", () => {
     expect(page).toContain("preservedDirtyDrafts");
     expect(page).toContain("expectedUpdatedAt: matrix?.updatedAt ?? null");
     expect(page).toContain("setMatrix(next)");
-    expect((catalog.match(/moduleKey: "/g) ?? []).length).toBe(32);
+    // NFC-ROLES-ACCESS-01 : + module « Appel NFC/QR » (roll_call).
+    expect((catalog.match(/moduleKey: "/g) ?? []).length).toBe(33);
   });
 });

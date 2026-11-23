@@ -25,7 +25,7 @@ assert.equal(CANONICAL_API_URLS.production, "https://api.somafrik.app");
 assert.notEqual(CANONICAL_API_URLS.preproduction, CANONICAL_API_URLS.production);
 assert.equal(ANDROID_PACKAGE, "com.somafrik.app");
 assert.equal(APP_VERSION, "1.2.1");
-assert.equal(ANDROID_VERSION_CODE, 13);
+assert.equal(ANDROID_VERSION_CODE, 25);
 assert.ok(Number.isInteger(ANDROID_VERSION_CODE) && ANDROID_VERSION_CODE > 0);
 for (const profile of RELEASE_PROFILES) {
   assert.equal(DISPLAY_NAMES[profile], "Somafrik", `${profile}: nom launcher doit être Somafrik`);

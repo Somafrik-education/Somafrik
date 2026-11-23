@@ -1,0 +1,10 @@
+ok 1 - A6-01 — droits : même règle que les autres écrans Paramètres établissement
+ok 2 - A6-02 — lignes affichées : destinataires autorisés uniquement, canal absent = activé (comme le Web)
+ok 3 - A6-03 — « Enregistrer ces règles » envoie toutes les règles affichées (même patch que le Web)
+ok 4 - A6-04 — un interrupteur n'envoie que la cellule modifiée
+ok 5 - A6-05 — client : même endpoint que le Web, établissement explicite
+ok 6 - A6-06 — écran natif : accès, écriture réservée à UPDATE, erreurs visibles, rechargement au focus
+ok 7 - A6-07 — navigation : écran enregistré, atteint depuis l'étape 9, sans septième carte Paramètres (PARITY-019)
+# pass 7
+# fail 0
+pariteLot1PlatformSettingsBoundary.test.ts OK

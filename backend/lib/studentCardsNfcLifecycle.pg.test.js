@@ -173,6 +173,201 @@ pg("no immediate legacy replacement of a physically associated NFC card",async f
   await assert.rejects(replaceStudentCard(f.repo,card.id,f.principal,{},f.scope),{code:'STUDENT_CARD_NFC_REPLACEMENT_REQUIRED'});
   assert.equal((await f.row(card.id)).status,'active');
 });
+pg("R3-3 cancellation is restricted to pending unconfirmed NFC and never frees UID", async f => {
+  const reservation = await f.issue();
+  const cancelled = await revokeStudentCard(f.repo, reservation.id, f.principal, {}, f.scope, "nfc_cancelled");
+  assert.equal(cancelled.status, "revoked");
+  assert.equal(cancelled.revokeReason, "nfc_cancelled");
+  assert.equal(cancelled.nfcRecoverable, true);
+  const historic = await f.row(reservation.id);
+  assert.equal(historic.nfc_uid, f.identity.uid);
+  assert.equal(historic.revoke_reason, "nfc_cancelled");
+  await assert.rejects(f.issue({studentId:f.students[1]}), {code:"STUDENT_CARD_NFC_UID_EXISTS"});
+  const active = await f.issue({studentId:f.students[1],nfc:{...f.identity,uid:"04AABBCCDDEE22"}});
+  await f.confirm(active,{uid:"04AABBCCDDEE22"});
+  await assert.rejects(revokeStudentCard(f.repo, active.id, f.principal, {}, f.scope, "nfc_cancelled"),
+    {code:"STUDENT_CARD_NFC_CANCEL_NOT_ALLOWED"});
+  assert.equal((await f.row(active.id)).status, "active");
+  const qr = await issueStudentCard(f.repo,{studentId:f.students[2],medium:"qr"},f.principal,{},f.scope);
+  await assert.rejects(revokeStudentCard(f.repo,qr.id,f.principal,{},f.scope,"nfc_cancelled"),
+    {code:"STUDENT_CARD_NFC_CANCEL_NOT_ALLOWED"});
+});
+pg("R3-3 security revocation stays ineligible and cannot be reclassified", async f => {
+  const card = await f.issue();
+  const revoked = await revokeStudentCard(f.repo,card.id,f.principal,{},f.scope,"revoked");
+  assert.equal(revoked.nfcRecoverable,false);
+  const replay = await revokeStudentCard(f.repo,card.id,f.principal,{},f.scope,"nfc_cancelled");
+  assert.equal(replay.revokeReason,"revoked");
+  assert.equal((await f.row(card.id)).revoke_reason,"revoked");
+});
+// R3-3 A3/A5 — a security revocation always prevails over an administrative cancellation.
+// Only nfc_cancelled -> revoked is allowed (escalation, under lock, audited); never the reverse.
+const cancelReason = "nfc_cancelled";
+const escalationAudit = "student_card_nfc_cancellation_escalated";
+async function withStudentLockHeld(f, studentId, run) {
+  const blocker = await f.pool.connect();
+  try {
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT id FROM students WHERE id=$1 FOR UPDATE", [studentId]);
+    const blockerPid = (await blocker.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    const waiting = async (n) => {
+      for (let i = 0; i < 200; i += 1) {
+        const {rows} = await f.pool.query(`WITH RECURSIVE w(pid) AS (
+          SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))
+          UNION SELECT a.pid FROM pg_stat_activity a JOIN w ON w.pid = ANY(pg_blocking_pids(a.pid)))
+          SELECT count(*)::int AS n FROM w`, [blockerPid]);
+        if (rows[0].n >= n) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error(`expected ${n} transaction(s) waiting on the card lock`);
+    };
+    return await run({waiting, release: () => blocker.query("COMMIT")});
+  } finally { await blocker.query("ROLLBACK").catch(() => {}); blocker.release(); }
+}
+async function assertSecurityRevoked(f, card) {
+  const row = await f.row(card.id);
+  assert.equal(row.status, "revoked");
+  assert.equal(row.revoke_reason, "revoked");
+  assert.equal(row.nfc_uid, card.nfc.uid, "UID unchanged");
+  const listed = (await listStudentCards(f.repo, row.student_id, f.scope, f.principal, {})).find((c) => c.id === card.id);
+  assert.equal(listed.revokeReason, "revoked");
+  assert.equal(listed.nfcRecoverable, false);
+  return row;
+}
+pg("R3-3 A5/A12/A10 security revocation after cancellation escalates, is audited, keeps the UID reserved", async f => {
+  const card = await f.issue();
+  await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, cancelReason);
+  const before = await f.row(card.id);
+  const escalated = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  assert.equal(escalated.status, "revoked");
+  assert.equal(escalated.revokeReason, "revoked");
+  assert.equal(escalated.nfcRecoverable, false);
+  assert.notEqual(escalated.idempotentReplay, true, "a security revocation is never acknowledged as a silent replay");
+  const row = await assertSecurityRevoked(f, card);
+  assert.equal(row.revoked_at.getTime(), before.revoked_at.getTime(), "original revocation time preserved");
+  assert.equal(row.nfc_encoding_state, before.nfc_encoding_state);
+  assert.equal(await f.countAudit("student_card_revoked"), 1, "the cancellation trace is kept");
+  assert.equal(await f.countAudit(escalationAudit), 1);
+  const trace = await f.repo.one("SELECT old_value,new_value FROM audit_logs WHERE action=$1", [escalationAudit]);
+  assert.deepEqual(trace.old_value, {status: "revoked", reason: cancelReason});
+  assert.deepEqual(trace.new_value, {status: "revoked", reason: "revoked"});
+  await assert.rejects(f.issue({studentId: f.students[1]}), {code: "STUDENT_CARD_NFC_UID_EXISTS"});
+  await assert.rejects(f.issue({studentId: f.students[0], operationId: randomUUID()}), {code: "STUDENT_CARD_NFC_UID_EXISTS"});
+});
+pg("R3-3 A6/A11 repeated security revocation after escalation is an idempotent replay without new audit", async f => {
+  const card = await f.issue();
+  await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, cancelReason);
+  await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  const again = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  assert.equal(again.idempotentReplay, true);
+  assert.equal(again.revokeReason, "revoked");
+  const direct = await f.issue({studentId: f.students[1], nfc: {...f.identity, uid: "04AABBCCDDEE33"}});
+  await revokeStudentCard(f.repo, direct.id, f.principal, {}, f.scope, "revoked");
+  const replay = await revokeStudentCard(f.repo, direct.id, f.principal, {}, f.scope, "revoked");
+  assert.equal(replay.idempotentReplay, true);
+  assert.equal(await f.countAudit("student_card_revoked"), 2);
+  assert.equal(await f.countAudit(escalationAudit), 1);
+});
+pg("R3-3 A7 a security revocation is never downgraded to an administrative cancellation", async f => {
+  const card = await f.issue();
+  await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  const attempt = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, cancelReason);
+  assert.equal(attempt.revokeReason, "revoked");
+  assert.equal(attempt.nfcRecoverable, false);
+  await assertSecurityRevoked(f, card);
+  assert.equal(await f.countAudit("student_card_revoked"), 1);
+  assert.equal(await f.countAudit(escalationAudit), 0);
+});
+pg("R3-3 A8/A9 escalation is refused for another school and without permission (no mutation)", async f => {
+  const card = await f.issue();
+  await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, cancelReason);
+  const otherScope = {schoolId: f.b, loginCode: "CD-NFC-26-002"};
+  const otherPrincipal = {...f.principal, schoolCode: otherScope.loginCode, enrollmentSchoolId: f.b};
+  await assert.rejects(revokeStudentCard(f.repo, card.id, otherPrincipal, {}, otherScope, "revoked"),
+    (e) => /NOT_FOUND|TENANT_DENIED/.test(e.code));
+  const reader = {...f.principal, permissions: ["Élèves:READ"]};
+  await assert.rejects(revokeStudentCard(f.repo, card.id, reader, {}, f.scope, "revoked"), {code: "STUDENT_CARD_TENANT_DENIED"});
+  const row = await f.row(card.id);
+  assert.equal(row.revoke_reason, cancelReason);
+  assert.equal(row.nfc_uid, f.identity.uid);
+  assert.equal(await f.countAudit(escalationAudit), 0);
+});
+pg("R3-3 A3-1 cancellation takes the lock first, concurrent security revocation then escalates", async f => {
+  const card = await f.issue();
+  const [cancelled, revoked] = await withStudentLockHeld(f, f.students[0], async ({waiting, release}) => {
+    const first = revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, cancelReason);
+    await waiting(1);
+    const second = revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+    await waiting(2);
+    await release();
+    return Promise.all([first, second]);
+  });
+  assert.equal(cancelled.revokeReason, cancelReason);
+  assert.equal(revoked.revokeReason, "revoked");
+  assert.notEqual(revoked.idempotentReplay, true);
+  await assertSecurityRevoked(f, card);
+  assert.equal(await f.countAudit("student_card_revoked"), 1);
+  assert.equal(await f.countAudit(escalationAudit), 1);
+});
+pg("R3-3 A3-2 security revocation takes the lock first, concurrent cancellation does not replace it", async f => {
+  const card = await f.issue();
+  const [revoked, cancelled] = await withStudentLockHeld(f, f.students[0], async ({waiting, release}) => {
+    const first = revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+    await waiting(1);
+    const second = revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, cancelReason);
+    await waiting(2);
+    await release();
+    return Promise.all([first, second]);
+  });
+  assert.equal(revoked.revokeReason, "revoked");
+  assert.equal(cancelled.revokeReason, "revoked", "the cancellation reports the stored security reason");
+  await assertSecurityRevoked(f, card);
+  assert.equal(await f.countAudit("student_card_revoked"), 1);
+  assert.equal(await f.countAudit(escalationAudit), 0);
+});
+pg("R3-3 A3 unordered races always end as a security revocation", async f => {
+  for (let i = 0; i < 12; i += 1) {
+    const uid = `04A1B2C3D4E5${i.toString(16).padStart(2, "0").toUpperCase()}`;
+    const card = await f.issue({nfc: {...f.identity, uid}});
+    const calls = [
+      () => revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, cancelReason),
+      () => revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked"),
+    ];
+    if (i % 2) calls.reverse();
+    await Promise.all(calls.map((call) => call()));
+    await assertSecurityRevoked(f, card);
+  }
+});
+pg("R3-3 P1 expired pending reservation escalates to security, with an audit and preserved UID", async f => {
+  const card = await f.issue();
+  await f.expire(card.id);
+  await assert.rejects(f.confirm(card), {code: "STUDENT_CARD_NFC_EXPIRED"});
+  const expired = await f.row(card.id);
+  assert.equal(expired.revoke_reason, "nfc_reservation_expired");
+  const secured = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  assert.equal(secured.status, "revoked");
+  assert.equal(secured.revokeReason, "revoked");
+  assert.equal(secured.nfcRecoverable, false);
+  const stored = await assertSecurityRevoked(f, card);
+  assert.equal(stored.revoked_at.getTime(), expired.revoked_at.getTime(), "original expiration timestamp unchanged");
+  assert.equal(await f.countAudit(escalationAudit), 1);
+  const trace = await f.repo.one("SELECT old_value,new_value FROM audit_logs WHERE action=$1", [escalationAudit]);
+  assert.deepEqual(trace.old_value, {status: "revoked", reason: "nfc_reservation_expired"});
+  assert.deepEqual(trace.new_value, {status: "revoked", reason: "revoked"});
+  const replay = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  assert.equal(replay.idempotentReplay, true);
+  assert.equal(await f.countAudit(escalationAudit), 1);
+  await assert.rejects(f.issue({studentId: f.students[1]}), {code: "STUDENT_CARD_NFC_UID_EXISTS"});
+});
+pg("R3-3 P1 security cannot be downgraded to expiration or administrative cancellation", async f => {
+  const card = await f.issue();
+  await f.expire(card.id);
+  await assert.rejects(f.confirm(card), {code: "STUDENT_CARD_NFC_EXPIRED"});
+  await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "revoked");
+  const downgrade = await revokeStudentCard(f.repo, card.id, f.principal, {}, f.scope, "nfc_cancelled");
+  assert.equal(downgrade.revokeReason, "revoked");
+  assert.equal(await f.countAudit(escalationAudit), 1);
+});
 pg("revocation and lost observations are idempotent and transactional",async f=>{
   const card=await f.issue();await f.confirm(card);await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,'lost');
   await markStudentCardLost(f.repo,card.id,f.principal,{},f.scope,'lost');assert.equal(await f.countAudit('student_card_lost'),1);

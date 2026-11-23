@@ -46,6 +46,7 @@ import {
 import ConfigurationScreen from "../screens/ConfigurationScreen";
 import EstablishmentProfileScreen from "../screens/EstablishmentProfileScreen";
 import SchoolYearSettingsScreen from "../screens/SchoolYearSettingsScreen";
+import SchoolNotificationSettingsScreen from "../screens/SchoolNotificationSettingsScreen";
 import SchoolPedagogicalStructureScreen from "../screens/SchoolPedagogicalStructureScreen";
 import SchoolingHubScreen from "../screens/SchoolingHubScreen";
 import SchoolSetupSettingsScreen from "../screens/SchoolSetupSettingsScreen";
@@ -121,6 +122,7 @@ export type RootStackParamList = {
   SchoolYearSettings: undefined;
   SchoolPedagogicalStructure: undefined;
   SchoolAssignableRoles: undefined;
+  SchoolNotificationSettings: undefined;
   InternalNotifications: undefined;
 };
 
@@ -359,6 +361,9 @@ export default function AppNavigator() {
         )}
         {canReadView(session, "SchoolYearSettings") && (
           <Stack.Screen name="SchoolYearSettings" component={SchoolYearSettingsScreen} options={{ title: "Année scolaire" }} />
+        )}
+        {canReadView(session, "SchoolNotificationSettings") && (
+          <Stack.Screen name="SchoolNotificationSettings" component={SchoolNotificationSettingsScreen} options={{ title: "Notifications" }} />
         )}
         {canReadView(session, "SchoolPedagogicalStructure") && (
           <Stack.Screen

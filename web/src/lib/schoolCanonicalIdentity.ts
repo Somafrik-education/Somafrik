@@ -3,7 +3,7 @@ import { isSuperAdminRole, COUNTRY_ADMIN_ROLE } from "./orgHierarchy";
 
 /** login_code V2 : {ISO}-{INITIALES}-{YY}-{SEQ3} (ex. CD-IN-26-001). */
 const V2_SCHOOL_LOGIN_PATTERN = /^[A-Z]{2}-[A-Z0-9]{2,5}-\d{2}-\d{3}$/;
-/** leftover historique : {ISO}-{YYYY}-{NNNN} (ex. CD-2026-0001). Jamais une autorité. */
+/** leftover historique : {ISO}-{YYYY}-{NNNN} (ancien format numérique, non autorisé en connexion). Jamais une autorité. */
 const LEGACY_SCHOOL_CODE_PATTERN = /^[A-Z]{2}-\d{4}-\d{4}$/;
 
 export type SchoolScopeErrorCode =

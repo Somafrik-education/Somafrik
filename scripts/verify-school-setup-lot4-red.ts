@@ -401,6 +401,21 @@ const STUDENT_CARD_CYCLE_01_EXACT = new Set([
   "web/src/lib/schoolSettingsApi.ts",
 ]);
 
+// GO-PROD-G6-02 / #921 — NFC-RELEASE-GATE : verrou plateforme du NFC carte élève non homologué.
+// schoolSettingsManagement.js (point unique de lecture/écriture des flags carte) n'est admis
+// QUE lorsque le diff porte les DEUX ancres dédiées : le module du verrou et SON test.
+// Liste fermée de trois fichiers : aucun autre backend, aucune migration, aucun RBAC, aucun
+// fichier LOT 4 exclusif. Tout le reste demeure FAIL.
+const STUDENT_CARD_NFC_RELEASE_GATE_ANCHORS = Object.freeze([
+  "backend/lib/studentCardNfcReleaseGate.js",
+  "backend/lib/studentCardNfcReleaseGate.test.js",
+]);
+const STUDENT_CARD_NFC_RELEASE_GATE_EXACT = new Set([
+  "backend/lib/studentCardNfcReleaseGate.js",
+  "backend/lib/studentCardNfcReleaseGate.test.js",
+  "backend/lib/schoolSettingsManagement.js",
+]);
+
 // CARTE-BATCH-API-02 (#984) : préparation et activation des cartes QR par classe.
 // Fichiers exacts, admis uniquement lorsque le diff porte les DEUX ancres : le
 // module du protocole et SA migration datée. postgresRepository.js n'est admis
@@ -778,6 +793,56 @@ const NFC_PRES_LOCAL_PR1C_UNIQUE = new Set([
   "docs/student-card/NFC-PRES-LOCAL-PR1c-sync.md",
 ]);
 
+// NFC-ROLES-ACCESS-01 (droit dédié « Présences — Effectuer l'appel (NFC/QR) », appel direct depuis
+// Présences) : exception STRICTEMENT ancrée, évaluée AVANT les exceptions NFC précédentes (elle
+// modifie aussi des fichiers propres à PR1b, PR1c, PR3 et PR4). Déclenchée par un fichier propre au
+// chantier ; liste fermée exacte, aucune autorisation par préfixe.
+const NFC_ROLES_ACCESS_01_ANCHORS = Object.freeze([
+  "backend/lib/rollCallRbacCompat.js",
+  "Mobile/src/components/RollCallClassPickerModal.tsx",
+  "docs/audits/NFC-ROLES-ACCESS-01-appel-direct-20261109.md",
+]);
+const NFC_ROLES_ACCESS_01_EXACT = new Set([
+  "Mobile/src/components/RollCallClassPickerModal.tsx",
+  "Mobile/src/lib/nfcRolesFinal.test.ts",
+  "Mobile/src/lib/rollCallLauncher.ts",
+  "Mobile/src/lib/studentCardRollCallRoles.test.ts",
+  "Mobile/src/lib/studentCardRollCallRoles.ts",
+  "Mobile/src/screens/TeacherAttendanceScreen.tsx",
+  "Mobile/src/services/rollCallOfflineApi.ts",
+  "backend/lib/admin07AdministrationReplay.test.js",
+  "backend/lib/functionalModulesCatalog.js",
+  "backend/lib/functionalRbacService.js",
+  "backend/lib/platformPersonalDataGuard.js",
+  "backend/lib/rollCallOfflinePack.http.pg.test.js",
+  "backend/lib/rollCallOfflinePack.js",
+  "backend/lib/rollCallOfflineSync.http.pg.test.js",
+  "backend/lib/rollCallOfflineSync.js",
+  "backend/lib/rollCallOfflineSync.test.js",
+  "backend/lib/rollCallRbacCompat.js",
+  "backend/lib/rollCallRbacCompat.pg.test.js",
+  "backend/lib/rollCallRoles.http.pg.test.js",
+  "backend/lib/studentAccessCards.schema.test.js",
+  "backend/lib/studentCardCapabilities.test.js",
+  "backend/lib/studentCardRollCall.js",
+  "backend/scripts/verify-student-access-cards.js",
+  "backend/server.js",
+  "backend/services/rbacService.js",
+  "docs/audits/NFC-ROLES-ACCESS-01-appel-direct-20261109.md",
+  "docs/project/MONO-T1-RBAC-MATRIX.json",
+  "docs/project/MONO-T1-ROUTES.json",
+  "docs/project/MONO-T1-ROUTES.md",
+  "scripts/verify-school-setup-lot4-red.ts",
+  "web/src/lib/admin07AdministrationReplay.audit.test.ts",
+]);
+const NFC_ROLES_ACCESS_01_UNIQUE = new Set([
+  "backend/lib/rollCallRbacCompat.js",
+  "backend/lib/rollCallRbacCompat.pg.test.js",
+  "Mobile/src/components/RollCallClassPickerModal.tsx",
+  "Mobile/src/lib/rollCallLauncher.ts",
+  "docs/audits/NFC-ROLES-ACCESS-01-appel-direct-20261109.md",
+]);
+
 // NFC-PRES-LOCAL-PR4 (synchronisation Mobile des appels hors connexion) : exception distincte,
 // STRICTEMENT ancrée et évaluée avant PR3 et PR1c (PR4 modifie la modale d'appel PR3 et le test
 // PostgreSQL PR1c, section D). Déclenchée par un fichier propre à PR4 ; liste fermée exacte.
@@ -890,6 +955,18 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
         "L4-09 N/A: chantier guidé distinct (schoolSetupGuided); SchoolSetupSettingsPage peut être orchestré sans activer le périmètre LOT 4.",
     };
   }
+  // Exception NFC-ROLES-ACCESS-01 : ancres complètes, liste fermée exacte, aucun fichier LOT 4.
+  if (changed.some((file) => NFC_ROLES_ACCESS_01_UNIQUE.has(file))) {
+    const complete = NFC_ROLES_ACCESS_01_ANCHORS.every((file) => changed.includes(file));
+    const outside = changed.filter((file) => !NFC_ROLES_ACCESS_01_EXACT.has(file));
+    if (!complete || outside.length > 0 || exclusiveLot4.length > 0) {
+      return {
+        kind: "fail",
+        message: `L4-09: NFC-ROLES-ACCESS-01 hors liste/ancres : ${!complete ? "ancres manquantes ; " : ""}${[...new Set([...outside, ...exclusiveLot4])].join(", ")}`,
+      };
+    }
+    return { kind: "na", message: "L4-09 N/A: NFC-ROLES-ACCESS-01 droit d'appel dédié, ancres et liste fermée vérifiées." };
+  }
   // Exception limitée au lot PR4 : ancres complètes, liste fermée exacte, aucun fichier LOT 4.
   if (changed.some((file) => NFC_PRES_LOCAL_PR4_UNIQUE.has(file))) {
     const complete = NFC_PRES_LOCAL_PR4_ANCHORS.every((file) => changed.includes(file));
@@ -942,6 +1019,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
     const pr3EntryControl = changed.includes(STUDENT_CARD_PR3_A1_ANCHOR);
     const pr3RollCall = STUDENT_CARD_PR3_B_ANCHORS.every((anchor) => changed.includes(anchor));
     const cardCycle01 = STUDENT_CARD_CYCLE_01_ANCHORS.every((anchor) => changed.includes(anchor));
+    const nfcReleaseGate = STUDENT_CARD_NFC_RELEASE_GATE_ANCHORS.every((anchor) => changed.includes(anchor));
     const batchApi02 = STUDENT_CARD_BATCH_API_02_ANCHORS.every((anchor) => changed.includes(anchor));
     const batchWeb01 = STUDENT_CARD_BATCH_WEB_01_ANCHORS.every((anchor) => changed.includes(anchor));
     const batchPdf02 = STUDENT_CARD_BATCH_PDF_02_ANCHORS.every((anchor) => changed.includes(anchor));
@@ -985,6 +1063,7 @@ function evaluateLot4Scope(changed: readonly string[]): Lot409Verdict {
         && !(pr3EntryControl && STUDENT_CARD_PR3_A1_EXACT.has(file))
         && !(pr3RollCall && STUDENT_CARD_PR3_B_EXACT.has(file))
         && !(cardCycle01 && STUDENT_CARD_CYCLE_01_EXACT.has(file))
+        && !(nfcReleaseGate && STUDENT_CARD_NFC_RELEASE_GATE_EXACT.has(file))
         && !(batchApi02 && STUDENT_CARD_BATCH_API_02_EXACT.has(file))
         && !(batchWeb01 && STUDENT_CARD_BATCH_WEB_01_EXACT.has(file))
         && !(batchPdf02 && STUDENT_CARD_BATCH_PDF_02_EXACT.has(file))
@@ -1515,6 +1594,46 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
           `L4-09: ${pr3Only} sans le module du portail (ancre) doit rester FAIL`,
         );
       }
+
+      // NFC-RELEASE-GATE (GO-PROD-G6-02 / #921) : diff exact admis ; hors liste FAIL ; ancres obligatoires.
+      const nfcReleaseGateFiles = [...STUDENT_CARD_NFC_RELEASE_GATE_EXACT];
+      assert.equal(
+        evaluateLot4Scope(nfcReleaseGateFiles).kind,
+        "na",
+        "L4-09: diff exact NFC-RELEASE-GATE admis nominativement",
+      );
+      for (const [extra, label] of [
+        ["backend/lib/schoolSettingsService.js", "autre fichier school-settings"],
+        ["backend/db/schoolSettingsPgStore.js", "store school-settings"],
+        ["backend/db/migrations/20261116_student_card_nfc_gate.sql", "migration"],
+        ["backend/lib/schoolSetupStatus.js", "fichier LOT 4 exclusif"],
+        ["backend/lib/functionalRbacService.js", "fichier RBAC backend"],
+        ["web/src/lib/schoolSetupOptional.ts", "module Web LOT 4 exclusif"],
+      ]) {
+        assert.equal(
+          evaluateLot4Scope([...nfcReleaseGateFiles, extra]).kind,
+          "fail",
+          `L4-09: NFC-RELEASE-GATE + ${label} doit rester FAIL`,
+        );
+      }
+      for (const missingAnchor of STUDENT_CARD_NFC_RELEASE_GATE_ANCHORS) {
+        assert.equal(
+          evaluateLot4Scope(nfcReleaseGateFiles.filter((file) => file !== missingAnchor)).kind,
+          "fail",
+          `L4-09: NFC-RELEASE-GATE sans l'ancre ${missingAnchor} doit rester FAIL`,
+        );
+      }
+      // Réutilisation : schoolSettingsManagement.js avec un autre fichier Carte élève reste FAIL.
+      assert.equal(
+        evaluateLot4Scope(["web/src/components/students/StudentCardTab.tsx", "backend/lib/schoolSettingsManagement.js"]).kind,
+        "fail",
+        "L4-09: schoolSettingsManagement.js sans les ancres NFC-RELEASE-GATE doit rester FAIL",
+      );
+      assert.equal(
+        evaluateLot4Scope(["backend/lib/studentCardNfcReleaseGate.test.js", "backend/lib/schoolSettingsManagement.js"]).kind,
+        "fail",
+        "L4-09: schoolSettingsManagement.js avec une seule ancre NFC-RELEASE-GATE doit rester FAIL",
+      );
 
       // CARTE-CYCLE-01 (#978) : diff exact admis ; tout ajout hors liste reste FAIL, ancres obligatoires.
       const cycle01Files = [
@@ -2099,6 +2218,28 @@ const cases: { id: string; title: string; run: () => void | Promise<void> }[] = 
       );
       // L'exception PR1b reste inchangée et ne couvre pas PR1c.
       assert.equal(evaluateLot4Scope([...NFC_PRES_LOCAL_PR1B_EXACT, "backend/lib/rollCallOfflineSync.js"]).kind, "fail", "PR1b + module PR1c FAIL");
+
+      // NFC-ROLES-ACCESS-01 : exception nominative. Ancre manquante ou fichier externe → FAIL.
+      const accessFiles = [...NFC_ROLES_ACCESS_01_EXACT];
+      assert.equal(evaluateLot4Scope(accessFiles).kind, "na", "NFC-ROLES-ACCESS-01 exact admis");
+      for (const anchor of NFC_ROLES_ACCESS_01_ANCHORS) {
+        assert.equal(evaluateLot4Scope(accessFiles.filter((file) => file !== anchor)).kind, "fail", `ACCESS-01 sans ancre ${anchor} FAIL`);
+      }
+      for (const added of [
+        "backend/lib/financeManagement.js",
+        "backend/db/migrations/20261111_unrelated.sql",
+        "web/src/components/schoolSetup/SchoolSetupOptionalCompleteness.tsx",
+        "Mobile/src/navigation/AppNavigator.tsx",
+        ".github/workflows/pr-gates.yml",
+        "backend/lib/functionalRbacManagement.js",
+      ]) {
+        assert.equal(evaluateLot4Scope([...accessFiles, added]).kind, "fail", `ACCESS-01 + ${added} FAIL`);
+      }
+      assert.equal(
+        evaluateLot4Scope(["backend/lib/rollCallRbacCompat.js", "backend/lib/platformPersonalDataGuard.js"]).kind,
+        "fail",
+        "module ACCESS-01 isolé, sans ancres, FAIL",
+      );
 
       const live = evaluateLot4Scope(lot4ChangedFiles());
       console.log(live.message);

@@ -1,5 +1,6 @@
 import { useNavigation } from "@react-navigation/native";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import FormField from "./FormField";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { canReadRoute } from "../domain/security/permissions";
 import { canAccessMessagesRoute } from "../lib/mobileCtaRbacAlignment";
 import { useAuth } from "../context/AuthContext";
@@ -77,12 +78,12 @@ export default function CommunicationChrome({
           />
         ) : null}
       </View>
-      <TextInput
+      <FormField label={searchPlaceholder} type="search" hideVisibleLabel
         value={search}
         onChangeText={onSearch}
         placeholder={searchPlaceholder}
         accessibilityLabel={searchPlaceholder}
-        style={styles.search}
+        inputStyle={styles.search}
       />
       <View style={styles.filters}>
         <NavChip label={COM_FILTER_ALL} active={!unreadOnly} onPress={() => onUnreadOnly(false)} />

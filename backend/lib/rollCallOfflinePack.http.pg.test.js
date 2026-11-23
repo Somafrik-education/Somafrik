@@ -459,7 +459,12 @@ async function main() {
     assert.equal(p.mode, "teacher");
     assert.equal(p.classId, classA1);
     assert.equal(p.date, today);
-    assert.equal(p.timeZone, zone);
+    // Le service renvoie l'identifiant CANONIQUE (Intl.DateTimeFormat#resolvedOptions). Node canonicalise
+    // « Etc/GMT » en « UTC » : c'est la valeur que choisit afternoonZone() quand le test s'exécute pendant
+    // l'heure UTC 14. On compare donc à l'identifiant canonique, et on prouve l'équivalence des fenêtres.
+    const canonicalZone = new Intl.DateTimeFormat("en-US", { timeZone: zone }).resolvedOptions().timeZone;
+    assert.equal(p.timeZone, canonicalZone);
+    assert.deepEqual(computePackWindow(canonicalZone, today), computePackWindow(zone, today), "même fenêtre pour l'identifiant fourni et son canonique");
     const window = computePackWindow(zone, today);
     assert.equal(p.notBefore, isoSeconds(window.notBefore));
     assert.equal(p.expiresAt, isoSeconds(window.expiresAt));
@@ -561,13 +566,16 @@ async function main() {
     await pool.query("UPDATE teacher_assignments SET status = 'inactive' WHERE id = $1", [assignmentA1]);
     assert.equal((await pack(tokenTeacher, { classId: classA1, date: today })).data?.code, "ROLL_CALL_CLASS_FORBIDDEN", "affectation retirée");
     await pool.query("UPDATE teacher_assignments SET status = 'active' WHERE id = $1", [assignmentA1]);
-    // Permission effective absente (droits Présences retirés au rôle TEACHER).
-    await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: false, read: true, update: false });
+    // NFC-ROLES-ACCESS-01 : le pack dépend du droit dédié « Appel NFC/QR », pas des droits Présences.
+    await setRoleModuleGrant(pool, "TEACHER", "roll_call", { create: false, read: true, update: false });
     const noPermission = await pack(tokenTeacher, { classId: classA1, date: today });
-    assert.equal(noPermission.status, 403, `permission absente : ${noPermission.text}`);
+    assert.equal(noPermission.status, 403, `droit d'appel absent : ${noPermission.text}`);
     assert.equal(noPermission.data?.code, "PERMISSION_DENIED");
+    await setRoleModuleGrant(pool, "TEACHER", "roll_call", { create: true, read: true, update: false });
+    assert.equal((await pack(tokenTeacher, { classId: classA1, date: today })).status, 200, "droit d'appel rétabli");
+    await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: false, read: true, update: false });
+    assert.equal((await pack(tokenTeacher, { classId: classA1, date: today })).status, 200, "droits Présences retirés : le droit d'appel suffit");
     await setRoleModuleGrant(pool, "TEACHER", "attendance", { create: true, read: true, update: true });
-    assert.equal((await pack(tokenTeacher, { classId: classA1, date: today })).status, 200, "permission rétablie");
 
     // ---------- Flags ----------
     const setFlags = (flags) => pool.query(

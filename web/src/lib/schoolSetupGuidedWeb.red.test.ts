@@ -341,3 +341,16 @@ describe("RED Web — anti-régression périmètre", () => {
     assert.equal(mobileHits.length, 0, `fichiers Web guidés copiés dans Mobile: ${mobileHits.join(", ")}`);
   });
 });
+
+describe("AUDIT-SETUP-GUIDED-10-01 — liens de correction des étapes", () => {
+  it("W-AUDIT10-08 — étape 8 ouvre la page où l'on crée un type d'évaluation", async () => {
+    const contract = await loadContract();
+    assert.equal(contract.GUIDED_WEB_LINKS.pedagogy, "/parametres/annee-scolaire");
+    const config = read(path.join(webSrc, "pages/ConfigurationPage.tsx"));
+    const yearSection = config.indexOf('inSection("annee-scolaire")');
+    const structureSection = config.indexOf('inSection("structure")');
+    const panel = config.indexOf("<EvaluationTypesPanel");
+    assert.ok(yearSection >= 0 && panel > yearSection && panel < structureSection, "panneau des types dans la section Année scolaire");
+    assert.match(contract.GUIDED_STEP_COPY.pedagogy.cta, /type/i);
+  });
+});

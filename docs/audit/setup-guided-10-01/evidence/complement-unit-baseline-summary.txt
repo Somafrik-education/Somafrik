@@ -1,0 +1,7 @@
+| Catégorie | Nombre |
+| PASS | 2958 |
+| FAIL | 0 |
+| SKIP | 3 |
+| TODO | 0 |
+| Échecs attendus vérifiés (manifeste) | 0 / 0 |
+✔ Baseline unit verte.

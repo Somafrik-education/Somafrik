@@ -1,4 +1,5 @@
 import { formatDateTimeForDisplay } from "../lib/dates";
+import FormField from "../components/FormField";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -8,7 +9,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -264,9 +264,9 @@ export default function InternalNotificationsScreen() {
       {showComposer ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Nouvelle notification interne</Text>
-          <TextInput style={styles.input} placeholder="Titre" value={title} onChangeText={setTitle} />
-          <TextInput
-            style={[styles.input, styles.bodyInput]}
+          <FormField label={"Titre"} type="text" inputStyle={styles.input} placeholder="Titre" value={title} onChangeText={setTitle} />
+          <FormField label={"Message"} type="multiline"
+            inputStyle={[styles.input, styles.bodyInput]}
             placeholder="Message"
             value={body}
             onChangeText={setBody}

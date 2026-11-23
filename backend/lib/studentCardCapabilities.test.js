@@ -168,7 +168,7 @@ test("CAP source — GET capabilities aligné scan, pas school-settings", () => 
   const attendance = read("Mobile/src/screens/TeacherAttendanceScreen.tsx");
   const api = read("Mobile/src/services/studentCardScanApi.ts");
   assert.match(server, /app\.get\("\/api\/student-cards\/capabilities"/);
-  assert.match(rbacSrc, /"GET \/api\/student-cards\/capabilities": \["Présences:CREATE", "Présences:UPDATE"\]/);
+  assert.match(rbacSrc, /"GET \/api\/student-cards\/capabilities": \["Présences:CREATE", "Présences:UPDATE", "Présences — Effectuer l'appel \(NFC\/QR\):CREATE"\]/);
   assert.doesNotMatch(rbacSrc, /"GET \/api\/student-cards\/capabilities": \[[^\]]*Paramètres Établissement/);
   assert.match(api, /\/student-cards\/capabilities/);
   assert.doesNotMatch(api, /schoolCode/);

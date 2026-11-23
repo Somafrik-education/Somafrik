@@ -227,7 +227,7 @@ async function main() {
   console.log(`PASS AR-CONFIG package=${ANDROID_PACKAGE} scheme=${APP_SCHEME}`);
 
   assert.equal(APP_VERSION, "1.2.1");
-  assert.equal(ANDROID_VERSION_CODE, 13);
+  assert.equal(ANDROID_VERSION_CODE, 25);
   assert.ok(Number.isInteger(ANDROID_VERSION_CODE) && ANDROID_VERSION_CODE > 0);
   if (pkg.version !== APP_VERSION) {
     console.log(`HOLD AR-VERSION-npm Mobile/package.json=${pkg.version} ≠ app.json=${APP_VERSION} (Play lit app.json)`);

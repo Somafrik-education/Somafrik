@@ -42,3 +42,21 @@ export function schoolLogoDisplayUri(school: SchoolLogoSource, apiBaseUrl: strin
   if (!base) return null;
   return `${base}/schools/${encodeURIComponent(code)}/logo`;
 }
+
+/**
+ * AUTH-MOBILE-01 — remplacement neutre quand l'établissement n'a pas de logo
+ * (ou que son chargement échoue) : initiales du nom, jamais le logo plateforme.
+ */
+export function schoolLogoInitials(name?: string | null): string {
+  const words = String(name ?? "")
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .split(/[^A-Za-z0-9]+/)
+    .filter((word) => word.length > 0)
+    .filter((word, index, all) => all.length <= 2 || word.length > 2 || index === 0);
+  const initials = words
+    .slice(0, 2)
+    .map((word) => word[0].toUpperCase())
+    .join("");
+  return initials || "?";
+}

@@ -74,9 +74,13 @@ const login = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/LoginScreen.ts
 const roles = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/RoleSelectionScreen.tsx"), "utf8");
 const profile = fs.readFileSync(path.join(ROOT, "Mobile/src/screens/EstablishmentProfileScreen.tsx"), "utf8");
 
-assert.match(login, /schoolLogoDisplayUri/);
+// AUTH-MOBILE-01 : les écrans passent par SchoolLogoMark, qui seul résout l'URI via schoolLogoDisplayUri.
+const logoMark = fs.readFileSync(path.join(ROOT, "Mobile/src/components/SchoolLogoMark.tsx"), "utf8");
+assert.match(logoMark, /schoolLogoDisplayUri/);
+assert.doesNotMatch(logoMark, /logoUrl|somafrik-logo/);
+assert.match(login, /<SchoolLogoMark/);
 assert.doesNotMatch(login, /school\?\.logoUrl \?[\s\S]{0,220}somafrikLogo/);
-assert.match(roles, /schoolLogoDisplayUri/);
+assert.match(roles, /<SchoolLogoMark/);
 assert.doesNotMatch(roles, /school\.logoUrl \?[\s\S]{0,220}somafrikLogo/);
 assert.doesNotMatch(profile, /Logo \(URL\)/);
 assert.doesNotMatch(profile, /type="url"/);

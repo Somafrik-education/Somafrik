@@ -101,7 +101,11 @@ function main() {
   assert.match(rbac, /"GET \/api\/students\/:id\/cards": \["Élèves:READ", "Voir élèves"\]/);
   assert.match(rbac, /"POST \/api\/student-cards": \["Élèves:UPDATE", "Gérer élèves"\]/);
   assert.match(rbac, /"POST \/api\/student-cards\/scan": \["Présences:CREATE", "Présences:UPDATE"\]/);
-  assert.match(rbac, /"GET \/api\/student-cards\/capabilities": \["Présences:CREATE", "Présences:UPDATE"\]/);
+  // NFC-ROLES-ACCESS-01 : drapeaux carte lisibles avec l'écriture Présences OU le droit d'appel dédié ;
+  // liste EXACTE (aucune consultation Classes/Élèves, aucun jeton plateforme ou carte).
+  assert.match(rbac, /"GET \/api\/student-cards\/capabilities": \["Présences:CREATE", "Présences:UPDATE", "Présences — Effectuer l'appel \(NFC\/QR\):CREATE"\]/);
+  const capabilitiesRule = rbac.match(/"GET \/api\/student-cards\/capabilities": \[[^\]]*\]/)?.[0] ?? "";
+  assert.doesNotMatch(capabilitiesRule, /Classes:|Élèves:|ALL_PRIVILEGES|COUNTRY_PRIVILEGES|Paramètres Établissement|Cartes:/);
   assert.match(guard, /"GET \/api\/student-cards\/capabilities"/);
   assert.doesNotMatch(rbac, /Cartes:READ|Cartes:CREATE|Cartes:SCAN|QR:|NFC:/);
   assert.match(guard, /"POST \/api\/student-cards\/scan"/);

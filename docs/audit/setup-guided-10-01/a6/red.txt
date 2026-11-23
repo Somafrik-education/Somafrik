@@ -1,0 +1,24 @@
+not ok 1 - A6-01 — droits : même règle que les autres écrans Paramètres établissement
+  error: |-
+  name: 'AssertionError'
+not ok 2 - A6-02 — lignes affichées : destinataires autorisés uniquement, canal absent = activé (comme le Web)
+  error: 'Mobile/src/lib/schoolNotificationSettingsMobile.ts manquant'
+  name: 'AssertionError'
+not ok 3 - A6-03 — « Enregistrer ces règles » envoie toutes les règles affichées (même patch que le Web)
+  error: 'Mobile/src/lib/schoolNotificationSettingsMobile.ts manquant'
+  name: 'AssertionError'
+not ok 4 - A6-04 — un interrupteur n'envoie que la cellule modifiée
+  error: 'Mobile/src/lib/schoolNotificationSettingsMobile.ts manquant'
+  name: 'AssertionError'
+not ok 5 - A6-05 — client : même endpoint que le Web, établissement explicite
+  error: |-
+  name: 'AssertionError'
+not ok 6 - A6-06 — écran natif : accès, écriture réservée à UPDATE, erreurs visibles, rechargement au focus
+  error: 'SchoolNotificationSettingsScreen.tsx manquant'
+  name: 'AssertionError'
+not ok 7 - A6-07 — navigation : écran enregistré, carte Paramètres et lien de l'étape 9
+  error: |-
+  name: 'AssertionError'
+# tests 7
+# pass 0
+# fail 7

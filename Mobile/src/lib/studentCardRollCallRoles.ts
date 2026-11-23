@@ -10,13 +10,12 @@ const STAFF_ROLE_KEYS = new Set([...DIRECTION_ROLE_KEYS, "TEACHER", "SECRETARY",
 const PLATFORM_ROLE_KEYS = new Set(["SUPER_ADMIN", "COUNTRY_ADMIN"]);
 
 /**
- * NFC-ROLES-FINAL-01 — `rollCall` : accès au parcours unique « Démarrer l'appel NFC/QR »
- * (local-first) : enseignant, ou responsable scolaire (même liste que le serveur) disposant de
- * l'écriture des présences. Le serveur décide de la classe : enseignant → classes affectées ;
- * responsable → classes de son établissement si SON rôle accorde le droit.
+ * NFC-ROLES-ACCESS-01 — `rollCall` : bouton « Démarrer l'appel NFC/QR » de l'écran Présences, sans
+ * classe ouverte. Droit dédié « Présences — Effectuer l'appel (NFC/QR) », indépendant de la
+ * consultation des classes et des élèves. Tout rôle scolaire (clé canonique) peut le porter ; le
+ * serveur fixe le périmètre (enseignant → classes affectées ; autre rôle autorisé → établissement).
  */
-export const SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS = new Set(["SCHOOL_ADMIN", "PROVISEUR", "PRINCIPAL", "PREFET_ETUDES", "SECRETARY"]);
-const ROLL_CALL_WRITE_PERMISSIONS = ["Présences:CREATE", "Présences:UPDATE"];
+export const ROLL_CALL_PERMISSION = "Présences — Effectuer l'appel (NFC/QR):CREATE";
 
 export type RollCallActor = { teacher: boolean; direction: boolean; supervision: boolean; verify: boolean; rollCall: boolean };
 
@@ -28,14 +27,14 @@ export function rollCallActor(session: unknown): RollCallActor {
   if (keys.length === 0 || keys.some((key) => !STAFF_ROLE_KEYS.has(key) || PLATFORM_ROLE_KEYS.has(key))) return none;
   const permissions = new Set(identity.permissions);
   const isDirection = keys.some((key) => DIRECTION_ROLE_KEYS.has(key));
-  const canWritePresences = ROLL_CALL_WRITE_PERMISSIONS.some((permission) => permissions.has(permission));
   const teacher = keys.includes("TEACHER");
   return {
     teacher,
     direction: isDirection && permissions.has("Présences:UPDATE"),
     supervision: isDirection,
     verify: true,
-    rollCall: canWritePresences && (teacher || keys.some((key) => SCHOOL_WIDE_ROLL_CALL_ROLE_KEYS.has(key))),
+    // Clés déjà limitées au personnel scolaire ci-dessus (famille, plateforme, clé inconnue exclues).
+    rollCall: permissions.has(ROLL_CALL_PERMISSION),
   };
 }
 

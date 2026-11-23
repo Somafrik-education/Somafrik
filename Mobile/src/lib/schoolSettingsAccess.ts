@@ -9,6 +9,7 @@ export const SCHOOL_SETTINGS_VIEWS = [
   "SchoolYearSettings",
   "SchoolPedagogicalStructure",
   "SchoolAssignableRoles",
+  "SchoolNotificationSettings",
 ] as const;
 
 export type SchoolSettingsView = (typeof SCHOOL_SETTINGS_VIEWS)[number];

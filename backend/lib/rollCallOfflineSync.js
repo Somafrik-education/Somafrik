@@ -45,7 +45,7 @@ const { getIdempotencyTx } = require("./idempotencyTxContext");
 const {
   ROLL_CALL_ERROR,
   ROSTER_ENROLLMENT_SQL,
-  ROLL_CALL_CAPABLE_ROLE_KEYS,
+  isRollCallStaffKey,
   liveRollCallActor,
   assertRollCallCapableActor,
   assertRollCallEnabled,
@@ -205,8 +205,8 @@ async function guardReplayAccess(repo, principal, scope, batch) {
     throw replayForbidden();
   }
   const keys = principalRoleKeys(actor);
-  // NFC-ROLES-FINAL-01 : enseignant ou responsable scolaire (rôle actif relu en base), jamais plateforme.
-  if (![...keys].some((key) => ROLL_CALL_CAPABLE_ROLE_KEYS.has(key)) || [...keys].some((key) => PLATFORM_ROLE_KEYS.has(key))) {
+  // NFC-ROLES-FINAL-01 / ACCESS-01 : rôle scolaire (rôle actif relu en base), jamais plateforme ni famille.
+  if (![...keys].some(isRollCallStaffKey) || [...keys].some((key) => PLATFORM_ROLE_KEYS.has(key))) {
     throw replayForbidden();
   }
   return { ...actor, canonicalUserId };

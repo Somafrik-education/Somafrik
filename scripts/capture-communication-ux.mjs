@@ -23,7 +23,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "docs/audits/evidence");
 const WEB_PORT = 4177;
 const EXPO_PORT = 19017;
-const SCHOOL = "CD-2026-0001";
+const SCHOOL = "CD-IN-26-001";
 
 const ADMIN_PERMISSIONS = [
   "Utilisateurs:READ", "Utilisateurs:CREATE", "Utilisateurs:UPDATE", "Utilisateurs:DELETE", "Utilisateurs:SUSPEND",
@@ -266,7 +266,7 @@ async function captureWeb(browser) {
   await page.route("**/api/backoffice/**", fulfillApi);
   await page.addInitScript((session) => {
     sessionStorage.setItem("somafrik.web.session", JSON.stringify(session));
-    sessionStorage.setItem("somafrik.activeSchoolCode", "CD-2026-0001");
+    sessionStorage.setItem("somafrik.activeSchoolCode", SCHOOL);
   }, WEB_SESSION);
 
   for (const width of [1440, 1024]) {

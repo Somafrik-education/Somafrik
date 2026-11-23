@@ -371,6 +371,73 @@ async function main() {
     const classZero = new Set(A.students.filter((s) => s.classId === A.classIds[0]).map((s) => s.code));
     assert.ok(teacherPayments.all.length > 0 && teacherPayments.all.every((row) => classZero.has(row.studentId)));
 
+    // G7-RELEASE-PAGINATION-01 : curseurs à la microseconde. Plusieurs lignes partagent un
+    // horodatage identique et d'autres diffèrent dans la même milliseconde (.123456, .123457,
+    // .123999) : un curseur tronqué à .123 sautait des lignes (desc) ou les répétait (asc).
+    await pool.query(
+      `UPDATE grades g SET updated_at = ('2026-11-04T08:00:00.123456Z'::timestamptz
+              + ((r.n % 3) * CASE WHEN r.n % 3 = 2 THEN 271 ELSE 1 END) * interval '1 microsecond')
+         FROM (SELECT id, row_number() OVER (ORDER BY id) AS n FROM grades WHERE school_id = $1) r
+        WHERE g.id = r.id`,
+      [A.school],
+    );
+    await pool.query(
+      `UPDATE payments p SET created_at = ('2026-11-04T09:00:00.654321Z'::timestamptz
+              + ((r.n % 4) * CASE WHEN r.n % 4 = 3 THEN 333 ELSE 1 END) * interval '1 microsecond')
+         FROM (SELECT id, row_number() OVER (ORDER BY id) AS n FROM payments WHERE school_id = $1) r
+        WHERE p.id = r.id`,
+      [A.school],
+    );
+    const distinctMicros = async (table, column) =>
+      Number(
+        (
+          await pool.query(
+            `SELECT count(DISTINCT ${column}) AS n, count(DISTINCT date_trunc('milliseconds', ${column})) AS ms
+               FROM ${table} WHERE school_id = $1`,
+            [A.school],
+          )
+        ).rows[0].n,
+      );
+    assert.equal(await distinctMicros("grades", "updated_at"), 3, "3 horodatages distincts dans la même milliseconde");
+    assert.equal(await distinctMicros("payments", "created_at"), 4, "4 horodatages distincts dans la même milliseconde");
+    const expectedOrder = async (table, column, direction) =>
+      (
+        await pool.query(
+          `SELECT id::text FROM ${table} WHERE school_id = $1 ORDER BY ${column} ${direction}, id ${direction}`,
+          [A.school],
+        )
+      ).rows.map((row) => row.id);
+    for (const [label, sort, direction] of [["desc", undefined, "DESC"], ["asc", "updatedAt", "ASC"]]) {
+      for (const limit of [1, 2, 3, 5]) {
+        const walk = await collect((q) => reads.listNotesPage(repo, ctxA, { ...q, ...(sort ? { sort } : {}) }), limit);
+        assertNoDuplicates(walk.all);
+        assert.deepEqual(
+          walk.all.map((row) => String(row.id)),
+          await expectedOrder("grades", "updated_at", direction),
+          `notes ${label} limit=${limit} : aucune ligne sautée ni répétée, ordre PostgreSQL exact`,
+        );
+      }
+    }
+    for (const [label, sort, direction] of [["desc", undefined, "DESC"], ["asc", "createdAt", "ASC"]]) {
+      for (const limit of [1, 2, 3, 6]) {
+        const walk = await collect((q) => reads.listPaymentsPage(repo, ctxA, { ...q, ...(sort ? { sort } : {}) }), limit);
+        assertNoDuplicates(walk.all);
+        assert.deepEqual(
+          walk.all.map((row) => String(row.dbId)),
+          await expectedOrder("payments", "created_at", direction),
+          `paiements ${label} limit=${limit} : aucune ligne sautée ni répétée, ordre PostgreSQL exact`,
+        );
+      }
+    }
+    const microPage = await reads.listNotesPage(repo, ctxA, { limit: "1" });
+    const microKey = JSON.parse(Buffer.from(microPage.nextCursor, "base64url").toString("utf8")).k;
+    assert.match(microKey, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/, "clé de curseur à la microseconde");
+    // Filtres et curseur : le curseur reste lié à ses filtres (empreinte inchangée).
+    await assert.rejects(
+      () => reads.listNotesPage(repo, ctxA, { cursor: microPage.nextCursor, sort: "updatedAt" }),
+      /Curseur invalide pour ces filtres/,
+    );
+
     // Journée de plus de 4 000 présences : lue en entier, par jour puis par classe, sans plafond.
     const big = await seedBigDay(pool, country, "PGC", { classes: 3, students: 4100, day: DAYS[4] });
     const ctxC = { schoolId: big.school, classIds: null };

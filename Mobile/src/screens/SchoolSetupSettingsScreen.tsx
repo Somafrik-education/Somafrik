@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { SchoolSettingsDenied, useSchoolSettingsAccess } from "../components/SchoolSettingsGate";
 import { GuidedSchoolSetupWizard } from "../components/schoolSetup/GuidedSchoolSetupWizard";
@@ -26,6 +26,12 @@ export default function SchoolSetupSettingsScreen() {
   const [payload, setPayload] = useState<SchoolSetupPayload | null>(null);
   const [guided, setGuided] = useState<GuidedSetupPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A7 : l'état de l'assistant guidé est explicite. Une erreur n'est jamais remplacée
+  // silencieusement par l'ancien parcours 3/3.
+  const [guidedState, setGuidedState] = useState<{ kind: "loading" | "ready" | "error"; message?: string }>({
+    kind: "loading",
+  });
+  const [reloadKey, setReloadKey] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -44,18 +50,28 @@ export default function SchoolSetupSettingsScreen() {
             err instanceof ApiClientError ? err.message : "Impossible de charger le statut de configuration.",
           );
         });
+      setGuidedState({ kind: "loading" });
       void schoolSetupGuidedApi
         .get()
         .then((row) => {
-          if (!cancelled) setGuided(row);
+          if (cancelled) return;
+          setGuided(row);
+          setGuidedState({ kind: "ready" });
         })
-        .catch(() => {
-          if (!cancelled) setGuided(null);
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setGuided(null);
+          const status = err instanceof ApiClientError && err.status ? ` (HTTP ${err.status})` : "";
+          const detail = err instanceof Error && err.message ? ` : ${err.message}` : ".";
+          setGuidedState({
+            kind: "error",
+            message: `Impossible de charger l'assistant de configuration${status}${detail}`,
+          });
         });
       return () => {
         cancelled = true;
       };
-    }, []),
+    }, [reloadKey]),
   );
 
   if (!canOpen) {
@@ -82,7 +98,25 @@ export default function SchoolSetupSettingsScreen() {
           <Text style={styles.alertText}>{error}</Text>
         </View>
       ) : null}
-      {!payload && !error ? <ActivityIndicator color="#2563EB" /> : null}
+      {guidedState.kind === "error" ? (
+        <View style={styles.alert} testID="guided-setup-load-error" accessibilityRole="alert">
+          <Text style={styles.alertText}>{guidedState.message}</Text>
+          {payload ? (
+            <Text style={styles.alertText} testID="guided-setup-fallback-notice">
+              En attendant, voici les 3 étapes essentielles (parcours simplifié) : l'assistant complet en 10 étapes n'a
+              pas pu être chargé.
+            </Text>
+          ) : null}
+          <TouchableOpacity
+            style={styles.retry}
+            onPress={() => setReloadKey((key) => key + 1)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.retryText}>Réessayer</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+      {(!payload && !error) || (guidedState.kind === "loading" && !guided) ? <ActivityIndicator color="#2563EB" /> : null}
       {guided ? (
         <GuidedSchoolSetupWizard
           payload={guided}
@@ -91,11 +125,14 @@ export default function SchoolSetupSettingsScreen() {
           onFinish={() => navigation.navigate("Home")}
         />
       ) : payload ? (
-        <SchoolSetupWizard
-          payload={payload}
-          onOpenStep={(step) => navigation.navigate(step.to)}
-          onLater={() => navigation.goBack()}
-        />
+        // A7 : l'ancien parcours 3/3 n'apparaît qu'après une erreur explicite de l'assistant guidé.
+        guidedState.kind === "error" ? (
+          <SchoolSetupWizard
+            payload={payload}
+            onOpenStep={(step) => navigation.navigate(step.to)}
+            onLater={() => navigation.goBack()}
+          />
+        ) : null
       ) : null}
       {payload ? (
         <>
@@ -122,4 +159,14 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   alertText: { color: "#B91C1C", fontWeight: "700" },
+  retry: {
+    marginTop: 8,
+    minHeight: 44,
+    alignSelf: "flex-start",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: "#B91C1C",
+  },
+  retryText: { color: "#FFFFFF", fontWeight: "800" },
 });

@@ -4,6 +4,7 @@ import { canManageEstablishmentSettings } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import {
   getSchoolNotificationSettings,
+  patchFromDisplayedRules,
   patchSchoolNotificationSettings,
   type SchoolNotificationChannel,
   type SchoolNotificationEvent,
@@ -14,6 +15,7 @@ import {
 import {
   DashboardLayout,
   EmptyState,
+  Button,
   InlineAlert,
   SectionHeader,
   Switch,
@@ -119,6 +121,20 @@ export function SettingsNotificationsPage() {
   }, [schoolCode]);
 
   const rows = useMemo(() => rowsFromSettings(settings), [settings]);
+  const unsaved = Boolean(settings) && settings?.configured === false;
+
+  async function saveDisplayedRules() {
+    if (!settings || !canEdit || savingKey || loading) return;
+    setSavingKey("all");
+    setError("");
+    try {
+      setSettings(await patchSchoolNotificationSettings(schoolCode, patchFromDisplayedRules(settings)));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "L’enregistrement des règles a été refusé.");
+    } finally {
+      setSavingKey("");
+    }
+  }
 
   async function toggle(event: SchoolNotificationEvent, recipient: SchoolNotificationRecipient, channel: SchoolNotificationChannel) {
     if (!settings || !canEdit || savingKey || loading) return;
@@ -171,6 +187,20 @@ export function SettingsNotificationsPage() {
           <div className="space-y-4">
             {error ? (
               <InlineAlert tone="danger">{error}</InlineAlert>
+            ) : null}
+
+            {unsaved ? (
+              <InlineAlert tone="info" title="Règles par défaut non enregistrées">
+                Les règles ci-dessous sont les valeurs par défaut : aucune règle n’est encore enregistrée pour cet
+                établissement. L’étape « Communication » de la configuration guidée exige au moins une règle enregistrée.
+                {canEdit ? (
+                  <div className="mt-2">
+                    <Button type="button" onClick={() => void saveDisplayedRules()} disabled={Boolean(savingKey) || loading}>
+                      {savingKey === "all" ? "Enregistrement…" : "Enregistrer ces règles"}
+                    </Button>
+                  </div>
+                ) : null}
+              </InlineAlert>
             ) : null}
 
             {loading && !settings ? (
