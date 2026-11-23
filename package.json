@@ -337,7 +337,9 @@
     "mobile:host": "powershell -ExecutionPolicy Bypass -File scripts/mobile-host-expo.ps1",
     "mobile:host:tunnel": "powershell -ExecutionPolicy Bypass -File scripts/mobile-host-expo.ps1 -Tunnel",
     "firewall:dev": "powershell -ExecutionPolicy Bypass -File scripts/open-firewall-dev.ps1",
-    "verify:parent-e2e-contract": "node scripts/verify-parent-e2e-contract.js"
+    "verify:parent-e2e-contract": "node scripts/verify-parent-e2e-contract.js",
+    "test:parite-recovery-01": "npx --yes tsx Mobile/src/lib/parentFormParity.test.ts && npx --yes tsx Mobile/src/lib/studentRouteIdentity.test.ts && npx --yes tsx Mobile/src/lib/roleScopedHydration.test.ts && npx --yes tsx Mobile/src/lib/student-user-canonical-link.regression.test.ts && npx --yes tsx Mobile/src/lib/studentFicheGuardians.test.ts && npx --yes tsx Mobile/src/lib/appBuildInfo.test.ts && npx --yes tsx Mobile/src/lib/screenErrorBoundary.test.ts",
+    "test:artifact-provenance": "node Mobile/config/buildProvenance.test.js && node --test scripts/verify-android-artifact-provenance.test.js scripts/verify-web-api-provenance.test.js && npm --prefix Mobile run test:app-build-info"
   },
   "devDependencies": {
     "playwright": "^1.61.1"

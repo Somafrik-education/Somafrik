@@ -106,6 +106,7 @@ import {
   projectL1Students,
 } from "../offline/l1/uiProjection";
 import { listSchoolClassCourses, type SchoolClassCourseRecord } from "../services/schoolSettingsApi";
+import { shouldHydrateResource } from "../lib/roleScopedHydration";
 
 export type AdminEntity =
   | "students"
@@ -651,11 +652,12 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
       ] = await Promise.all([
         getStudents(),
         getClasses(),
-        getCourses(),
+        // LOT 7 : lectures hors droits non émises pour Élève / Parent (403 → échec du lot entier).
+        shouldHydrateResource(session, "courses") ? getCourses() : Promise.resolve(null),
         getNotes(),
         getPresences(),
         getAcademicConfig(),
-        getAssignments(),
+        shouldHydrateResource(session, "assignments") ? getAssignments() : Promise.resolve(null),
         getSubjects(),
       ]);
 
@@ -1191,9 +1193,9 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     }
     const loaders = scopedLoadersRef.current;
     if (plan.loadPrincipal) {
-      void loaders.loadSchools();
-      void loaders.loadCountries();
-      void loaders.loadSubscriptions();
+      if (shouldHydrateResource(session, "schools")) void loaders.loadSchools();
+      if (shouldHydrateResource(session, "countries")) void loaders.loadCountries();
+      if (shouldHydrateResource(session, "subscriptions")) void loaders.loadSubscriptions();
       void loaders.loadNotifications();
     }
     if (shouldSkipSchoolTenantHydration(session)) {
@@ -1206,8 +1208,8 @@ export function AdminDataProvider({ children }: { children: React.ReactNode }) {
     const skipTenantUntilSchoolChosen = requiresSchoolSelection && plan.resetKind === "principal";
     if (plan.loadTenant && tenantReady && !skipTenantUntilSchoolChosen) {
       void loaders.refreshBackOfficeState().catch(() => null);
-      void loaders.loadUsers();
-      void loaders.loadTeachers();
+      if (shouldHydrateResource(session, "users")) void loaders.loadUsers();
+      if (shouldHydrateResource(session, "teachers")) void loaders.loadTeachers();
       void loaders.loadPayments();
       void loaders.loadStudentFees();
       void loaders.loadAnnouncements();

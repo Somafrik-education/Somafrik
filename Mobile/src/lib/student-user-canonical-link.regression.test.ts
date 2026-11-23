@@ -182,9 +182,12 @@ describe("M7 — paiements fail-closed sans fiche students", () => {
   });
 
   it("élève lié ne voit que ses paiements students.id", () => {
+    // LOT 6 : l'identité vient de la liaison serveur (session.user) ; une sélection
+    // différente (forgée ou obsolète) ne peut pas l'élargir ni la remplacer.
     const scope = resolveMobileStudentScope({
       role: "student",
-      selectedStudentId: S1,
+      selectedStudentId: otherStudentId,
+      user: { id: U1, linkedStudent: { studentId: S1 } },
       children: [],
     });
     const scoped = filterRowsByStudentScope(paymentsData, scope);

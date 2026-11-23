@@ -62,6 +62,7 @@ import {
   relationIdsFromParentChildRow,
   validateLinkParentDraft,
 } from "./entity-page/linkParentWorkflow";
+import { PARENT_FORM_COPY } from "../lib/parentFormCopy";
 import {
   buildPaymentReceiptPrintPlan,
   PAYMENT_CANCEL_REASON_REQUIRED_MESSAGE,
@@ -110,6 +111,7 @@ import {
   isParentChildBundleRow,
 } from "../lib/relations";
 import { csvToObjects, downloadCsv, downloadExcel, rowsToCsv } from "../lib/csv";
+import { formatEntityExportRows } from "../lib/financeExportValues";
 import { normalize } from "../lib/format";
 import { useDeepLinkIds } from "../lib/notificationDeepLink";
 import { isSuperAdminRole } from "../lib/orgHierarchy";
@@ -630,7 +632,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
 
   function handleExportCsv() {
     if (!module) return;
-    const csv = rowsToCsv(rows as Record<string, unknown>[], getExportColumns());
+    const csv = rowsToCsv(formatEntityExportRows(module.key, rows as Record<string, unknown>[]), getExportColumns());
     downloadCsv(`${module.key}-${new Date().toISOString().slice(0, 10)}`, csv);
   }
 
@@ -638,7 +640,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
     if (!module) return;
     downloadExcel(
       `${module.key}-${new Date().toISOString().slice(0, 10)}`,
-      rows as Record<string, unknown>[],
+      formatEntityExportRows(module.key, rows as Record<string, unknown>[]),
       getExportColumns(),
     );
   }
@@ -1673,7 +1675,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
             setEditing({});
           }}
         >
-          {isParentChildMode ? "Lier un parent" : "Ajouter"}
+          {isParentChildMode ? PARENT_FORM_COPY.linkAction : "Ajouter"}
         </Button>
       ) : null}
     </>
@@ -1820,7 +1822,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         onClose={() => setEditing(null)}
         title={
           isParentChildMode
-            ? "Lier un parent"
+            ? PARENT_FORM_COPY.linkAction
             : editing?.id
               ? `Modifier — ${module.label}`
               : `Nouveau — ${module.label}`

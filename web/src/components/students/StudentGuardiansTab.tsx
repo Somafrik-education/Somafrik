@@ -6,6 +6,7 @@ import { activeLinkedParents, type LinkedParent } from "../../lib/studentParentR
 import { parentsApi } from "../../lib/parentsApi";
 import { canLinkParent } from "../../lib/permissions";
 import { usePermissionContext } from "../../lib/usePermissionContext";
+import { PARENT_FORM_COPY } from "../../lib/parentFormCopy";
 
 interface StudentGuardiansTabProps {
   workspace: StudentWorkspaceViewModel;
@@ -67,7 +68,7 @@ export function StudentGuardiansTab({ workspace }: StudentGuardiansTabProps) {
     const phone = form.phone.trim();
     const email = form.email.trim();
     if (!phone && !email) {
-      setActionError("Renseignez un téléphone ou un e-mail pour identifier le parent.");
+      setActionError(PARENT_FORM_COPY.missingContact);
       return;
     }
     setSubmitting(true);
@@ -107,7 +108,7 @@ export function StudentGuardiansTab({ workspace }: StudentGuardiansTabProps) {
     <div className="space-y-6" data-testid="student-guardians-tab">
       <Card className="p-6">
         <SectionHeader
-          title="Parents et tuteurs liés"
+          title={PARENT_FORM_COPY.sectionTitle}
           description="Uniquement les personnes réellement associées à cet élève dans l'établissement."
         />
         {loading ? (
@@ -119,17 +120,17 @@ export function StudentGuardiansTab({ workspace }: StudentGuardiansTabProps) {
               onClick={() => setReload((value) => value + 1)}>Réessayer</button>
           </div>
         ) : relations.length === 0 ? (
-          <EmptyState className="mt-6" title="Aucun parent ou tuteur lié" />
+          <EmptyState className="mt-6" title={PARENT_FORM_COPY.emptyList} />
         ) : (
           <ul className="mt-6 space-y-3">
             {relations.map((person) => (
               <li key={person.id} className="rounded-xl border border-line p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <strong className="text-ink">{person.name}</strong>
-                  {person.isPrincipal ? <span className="text-xs font-semibold text-brand">Principal</span> : null}
+                  {person.isPrincipal ? <span className="text-xs font-semibold text-brand">{PARENT_FORM_COPY.principalBadge}</span> : null}
                 </div>
                 <p className="mt-2 text-sm text-muted">
-                  Téléphone : {person.phone || "Non renseigné"} · E-mail : {person.email || "Non renseigné"}
+                  {PARENT_FORM_COPY.phone} : {person.phone || PARENT_FORM_COPY.notProvided} · {PARENT_FORM_COPY.email} : {person.email || PARENT_FORM_COPY.notProvided}
                 </p>
               </li>
             ))}
@@ -140,34 +141,34 @@ export function StudentGuardiansTab({ workspace }: StudentGuardiansTabProps) {
       {canLink ? (
         <Card className="p-6">
           <SectionHeader
-            title="Lier un parent"
+            title={PARENT_FORM_COPY.linkAction}
             description="Le compte existant est réutilisé si l'identité correspond ; sinon un compte Parent est créé avec ses accès."
           />
           <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={(event) => void submit(event)}>
             <label className="text-sm font-medium text-ink">
-              Prénom
+              {PARENT_FORM_COPY.firstName}
               <input className="mt-1 w-full rounded-lg border border-line p-3" value={form.firstName}
                 onChange={(event) => setForm((old) => ({ ...old, firstName: event.target.value }))} maxLength={120} />
             </label>
             <label className="text-sm font-medium text-ink">
-              Nom
+              {PARENT_FORM_COPY.lastName}
               <input className="mt-1 w-full rounded-lg border border-line p-3" value={form.lastName}
                 onChange={(event) => setForm((old) => ({ ...old, lastName: event.target.value }))} maxLength={120} />
             </label>
             <label className="text-sm font-medium text-ink">
-              Téléphone
+              {PARENT_FORM_COPY.phone}
               <input type="tel" className="mt-1 w-full rounded-lg border border-line p-3" value={form.phone}
                 onChange={(event) => setForm((old) => ({ ...old, phone: event.target.value }))} />
             </label>
             <label className="text-sm font-medium text-ink">
-              E-mail
+              {PARENT_FORM_COPY.email}
               <input type="email" className="mt-1 w-full rounded-lg border border-line p-3" value={form.email}
                 onChange={(event) => setForm((old) => ({ ...old, email: event.target.value }))} />
             </label>
             <div className="sm:col-span-2">
               <button disabled={submitting} type="submit"
                 className="rounded-lg bg-brand px-5 py-3 font-semibold text-white disabled:opacity-50">
-                {submitting ? "Liaison en cours…" : "Créer ou lier le parent"}
+                {submitting ? PARENT_FORM_COPY.linkPending : PARENT_FORM_COPY.linkAction}
               </button>
             </div>
           </form>

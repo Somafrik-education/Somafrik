@@ -54,6 +54,7 @@ import SchoolSetupWelcomeScreen from "../screens/SchoolSetupWelcomeScreen";
 import SchoolAssignableRolesScreen from "../screens/SchoolAssignableRolesScreen";
 import InternalNotificationsScreen from "../screens/InternalNotificationsScreen";
 import OfflineBanner from "../components/OfflineBanner";
+import ScreenErrorBoundary from "../components/ScreenErrorBoundary";
 import { HelpHost } from "../help/HelpHost";
 import { HelpUiProvider } from "../help/HelpUiContext";
 import { useAuth } from "../context/AuthContext";
@@ -270,7 +271,20 @@ export default function AppNavigator() {
         );
       }}
     >
-      <Stack.Navigator initialRouteName={session ? "Home" : "Welcome"}>
+      <Stack.Navigator
+        initialRouteName={session ? "Home" : "Welcome"}
+        // LOT 1 / LOT 7 : une exception de rendu reste confinée à l'écran et s'affiche
+        // explicitement (jamais d'écran blanc global silencieux).
+        screenLayout={({ children, route, navigation }) => (
+          <ScreenErrorBoundary
+            routeName={route.name}
+            routeKey={route.key}
+            onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
+          >
+            {children}
+          </ScreenErrorBoundary>
+        )}
+      >
         <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false }} />
         <Stack.Screen
           name="RoleSelection"

@@ -114,7 +114,7 @@ function assertPaymentConservation({ amount, allocations = [], unallocatedAmount
     unallocatedAmount == null ? expectedUnallocated : toMoney(unallocatedAmount);
   if (allocated - toMoney(total) > 0.001) {
     throw createInvariantError(
-      "Les imputations dépassent le paiement.",
+      "Les montants affectés aux frais dépassent le paiement.",
       INVARIANT_ERROR.CONSERVATION_VIOLATION,
       { amount: toMoney(total), allocated, unallocated: reported },
     );
@@ -122,7 +122,7 @@ function assertPaymentConservation({ amount, allocations = [], unallocatedAmount
   const conserved = toMoney(allocated + reported);
   if (Math.abs(conserved - toMoney(total)) > 0.001) {
     throw createInvariantError(
-      "Conservation paiement violée : imputé + non imputé ≠ montant.",
+      "Paiement incohérent : montant affecté aux frais + montant non affecté ≠ montant total.",
       INVARIANT_ERROR.CONSERVATION_VIOLATION,
       { amount: toMoney(total), allocated, unallocated: reported },
     );

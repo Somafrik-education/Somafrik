@@ -85,7 +85,9 @@ export function sessionStudentAliasKeys(input: {
   const children = input.children ?? user?.children ?? [];
 
   if (role === "student") {
-    const uuid = trim(input.selectedStudentId) || trim(linked?.studentId);
+    // LOT 6 : l'identité Élève vient uniquement de la liaison émise par le serveur ;
+    // une sélection ou une route ne peut jamais la remplacer.
+    const uuid = trim(linked?.studentId);
     if (!uuid) return [];
     return uniqueNonEmpty([
       uuid,
@@ -193,6 +195,11 @@ export function resolveParentSafeStudentId(input: {
 }): string | null {
   const selected = trim(input.selectedStudentId);
   const routed = trim(input.routeStudentId);
+  if (input.role === "student") {
+    // LOT 6 : un paramètre de route (deep link, notification) ou une sélection obsolète
+    // n'altère jamais l'élève authentifié. Sans liaison serveur : fail-closed (null).
+    return trim(input.user?.linkedStudent?.studentId) || null;
+  }
   const requested = input.role === "parent_student" ? selected || routed : routed || selected;
   if (!requested) return null;
   if (input.role === "parent_student" && !isLinkedParentStudent({
