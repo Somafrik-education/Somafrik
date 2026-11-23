@@ -146,22 +146,22 @@ export function StudentGuardiansTab({ workspace }: StudentGuardiansTabProps) {
           />
           <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={(event) => void submit(event)}>
             <label className="text-sm font-medium text-ink">
-              {PARENT_FORM_COPY.firstName}
+              {PARENT_FORM_COPY.linkFirstName}
               <input className="mt-1 w-full rounded-lg border border-line p-3" value={form.firstName}
                 onChange={(event) => setForm((old) => ({ ...old, firstName: event.target.value }))} maxLength={120} />
             </label>
             <label className="text-sm font-medium text-ink">
-              {PARENT_FORM_COPY.lastName}
+              {PARENT_FORM_COPY.linkLastName}
               <input className="mt-1 w-full rounded-lg border border-line p-3" value={form.lastName}
                 onChange={(event) => setForm((old) => ({ ...old, lastName: event.target.value }))} maxLength={120} />
             </label>
             <label className="text-sm font-medium text-ink">
-              {PARENT_FORM_COPY.phone}
+              {PARENT_FORM_COPY.linkPhone}
               <input type="tel" className="mt-1 w-full rounded-lg border border-line p-3" value={form.phone}
                 onChange={(event) => setForm((old) => ({ ...old, phone: event.target.value }))} />
             </label>
             <label className="text-sm font-medium text-ink">
-              {PARENT_FORM_COPY.email}
+              {PARENT_FORM_COPY.linkEmail}
               <input type="email" className="mt-1 w-full rounded-lg border border-line p-3" value={form.email}
                 onChange={(event) => setForm((old) => ({ ...old, email: event.target.value }))} />
             </label>

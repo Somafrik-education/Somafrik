@@ -22,7 +22,7 @@ function copyBlock(source: string): string {
   return match[1].split("\n").map((line) => line.trim()).filter((line) => line && !line.startsWith("/**") && !line.startsWith("*")).join("\n");
 }
 
-// 1. Vocabulaire identique Web / Mobile (terminologie CTO #1192).
+// 1. Vocabulaire identique Web / Mobile.
 assert.equal(copyBlock(read("web/src/lib/parentFormCopy.ts")), copyBlock(read("Mobile/src/lib/parentFormCopy.ts")));
 assert.equal(PARENT_FORM_COPY.sectionTitle, "Parents et responsables");
 assert.equal(PARENT_FORM_COPY.linkAction, "Créer ou lier un parent");
@@ -31,6 +31,11 @@ assert.deepEqual(
   ["Prénom", "Nom", "Téléphone", "E-mail"],
 );
 assert.equal(PARENT_FORM_COPY.principalBadge, "Principal");
+// Décision CTO définitive PARITÉ-SAFE-02 : libellés explicites du formulaire de liaison.
+assert.deepEqual(
+  [PARENT_FORM_COPY.linkFirstName, PARENT_FORM_COPY.linkLastName, PARENT_FORM_COPY.linkPhone, PARENT_FORM_COPY.linkEmail],
+  ["Prénom du parent", "Nom du parent", "Téléphone du parent", "E-mail du parent"],
+);
 
 // 2. Validation locale : téléphone OU e-mail (même message que le Web).
 assert.equal(validateParentLinkDraft({ phone: "", email: "" }), PARENT_FORM_COPY.missingContact);
@@ -57,11 +62,30 @@ assert.match(read("web/src/lib/studentParentRelations.ts"), /isPrincipal: row\.i
 // 5. Les écrans utilisent le vocabulaire partagé, plus aucun libellé divergent.
 const mobileFiche = read("Mobile/src/screens/StudentDetailScreen.tsx");
 assert.match(mobileFiche, /title=\{PARENT_FORM_COPY\.sectionTitle\}/);
-assert.match(mobileFiche, /label=\{PARENT_FORM_COPY\.email\}[^\n]*keyboardType="email-address"/);
+assert.match(mobileFiche, /label=\{PARENT_FORM_COPY\.linkEmail\}[^\n]*keyboardType="email-address"/);
 assert.match(mobileFiche, /validateParentLinkDraft\(\{ phone, email \}\)/);
 assert.match(mobileFiche, /buildParentLinkPayload\(/);
 assert.match(mobileFiche, /isPrincipalRelation\(guardian\)/);
-assert.doesNotMatch(mobileFiche, /Lier un responsable|Prénom du parent|Nom du parent/);
+assert.doesNotMatch(mobileFiche, /Lier un responsable/);
+// PARITÉ-SAFE-02 — non-régression : les trois champs de liaison restent présents, étiquetés
+// explicitement (label visible + accessibilityLabel) et reliés à leur état ; l'e-mail reste additif.
+for (const [key, state, setter] of [
+  ["linkFirstName", "firstName", "setFirstName"],
+  ["linkLastName", "lastName", "setLastName"],
+  ["linkPhone", "phone", "setPhone"],
+  ["linkEmail", "email", "setEmail"],
+] as const) {
+  const field = mobileFiche.split("\n").find((line) => line.includes(`label={PARENT_FORM_COPY.${key}}`));
+  assert.ok(field, `champ de liaison ${key} absent de la fiche Élève Mobile`);
+  assert.match(field, /<FormField /);
+  assert.ok(field.includes(`accessibilityLabel={PARENT_FORM_COPY.${key}}`), `${key} : accessibilityLabel explicite manquant`);
+  assert.ok(field.includes(`value={${state}}`), `${key} : champ non relié à l'état ${state}`);
+  assert.ok(field.includes(setter), `${key} : saisie non enregistrée (${setter})`);
+  assert.doesNotMatch(field, /hideVisibleLabel/, `${key} : libellé non visible`);
+}
+// Le formulaire reste rendu pour les rôles autorisés (canLinkParentMobile), dans la carte Responsables.
+assert.match(mobileFiche, /const canLink = canLinkParentMobile\(session\);/);
+assert.match(mobileFiche, /\{canLink \? \(\s*<View>\s*<Text style=\{styles\.fieldLabel\}>\{PARENT_FORM_COPY\.linkAction\}/);
 
 const mobileEnroll = read("Mobile/src/components/StudentMutationControls.tsx");
 assert.match(mobileEnroll, /label=\{PARENT_FORM_COPY\.enrollmentEmail\}/);
@@ -73,6 +97,9 @@ const webTab = read("web/src/components/students/StudentGuardiansTab.tsx");
 assert.match(webTab, /title=\{PARENT_FORM_COPY\.sectionTitle\}/);
 assert.match(webTab, /title=\{PARENT_FORM_COPY\.linkAction\}/);
 assert.doesNotMatch(webTab, /Parents et tuteurs liés|"Lier un parent"|Créer ou lier le parent/);
+for (const key of ["linkFirstName", "linkLastName", "linkPhone", "linkEmail"]) {
+  assert.ok(webTab.includes(`{PARENT_FORM_COPY.${key}}`), `Web : libellé ${key} absent du formulaire de liaison`);
+}
 const webEnroll = read("web/src/pages/etablissement/ClassStudentsPage.tsx");
 assert.match(webEnroll, /label=\{PARENT_FORM_COPY\.enrollmentPhone\}/);
 assert.match(webEnroll, /label=\{PARENT_FORM_COPY\.enrollmentEmail\}/);

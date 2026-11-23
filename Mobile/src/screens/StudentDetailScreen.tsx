@@ -502,10 +502,10 @@ export default function StudentDetailScreen({
         {canLink ? (
           <View>
             <Text style={styles.fieldLabel}>{PARENT_FORM_COPY.linkAction}</Text>
-            <FormField label={PARENT_FORM_COPY.firstName} type="name" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.firstName} placeholder={PARENT_FORM_COPY.firstName} value={firstName} onChangeText={setFirstName} testID="parent-link-first-name" />
-            <FormField label={PARENT_FORM_COPY.lastName} type="name" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.lastName} placeholder={PARENT_FORM_COPY.lastName} value={lastName} onChangeText={setLastName} testID="parent-link-last-name" />
-            <FormField label={PARENT_FORM_COPY.phone} type="phone" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.phone} placeholder={PARENT_FORM_COPY.phone} value={phone} onChangeText={(value) => { setPhone(value); setLinkError(""); }} keyboardType="phone-pad" testID="parent-link-phone" />
-            <FormField label={PARENT_FORM_COPY.email} type="email" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.email} placeholder={PARENT_FORM_COPY.email} value={email} onChangeText={(value) => { setEmail(value); setLinkError(""); }} keyboardType="email-address" autoCapitalize="none" testID="parent-link-email" />
+            <FormField label={PARENT_FORM_COPY.linkFirstName} type="name" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.linkFirstName} placeholder={PARENT_FORM_COPY.firstName} value={firstName} onChangeText={setFirstName} testID="parent-link-first-name" />
+            <FormField label={PARENT_FORM_COPY.linkLastName} type="name" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.linkLastName} placeholder={PARENT_FORM_COPY.lastName} value={lastName} onChangeText={setLastName} testID="parent-link-last-name" />
+            <FormField label={PARENT_FORM_COPY.linkPhone} type="phone" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.linkPhone} placeholder={PARENT_FORM_COPY.phone} value={phone} onChangeText={(value) => { setPhone(value); setLinkError(""); }} keyboardType="phone-pad" testID="parent-link-phone" />
+            <FormField label={PARENT_FORM_COPY.linkEmail} type="email" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.linkEmail} placeholder={PARENT_FORM_COPY.email} value={email} onChangeText={(value) => { setEmail(value); setLinkError(""); }} keyboardType="email-address" autoCapitalize="none" testID="parent-link-email" />
             {linkError ? <Text style={styles.error} accessibilityRole="alert">{linkError}</Text> : null}
             <TouchableOpacity
               style={styles.create}
