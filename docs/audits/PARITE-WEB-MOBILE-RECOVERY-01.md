@@ -279,7 +279,7 @@ Pour la session Parent, la valeur absente n'élargit rien : `hydrateParentPrinci
 
 ## Réconciliation PARITÉ-SAFE-02 (2026-11-23, décision CTO)
 
-Cette branche (`fix/parite-recovery-01-reconciled`, créée depuis `develop@7007139`) reprend #1195 **sans** deux lots repris dans des PR spécialisées :
+Cette branche (`fix/parite-recovery-01-reconciled`, **PR #1199**, créée depuis `develop@7007139`) reprend #1195 **sans** deux lots repris dans des PR spécialisées :
 
 | Lot | Commit #1195 | Repris par | Motif |
 |---|---|---|---|
@@ -289,3 +289,5 @@ Cette branche (`fix/parite-recovery-01-reconciled`, créée depuis `develop@7007
 Les lots 1, 2, 4, 5 et 7, leurs tests et leurs corrections de revue sont repris à l'identique (cherry-pick `-x`). L'écart avec la tête de #1195 (`22bf5c1e`) est **exactement** le contenu des deux commits retirés.
 
 `test:parite-recovery-01` n'exécute plus `parentFormParity.test.ts` ni `studentRouteIdentity.test.ts`. Ces tests sont désormais exécutés par #1197 (`test:parent-labels-safe-02`) et par #1141 (`verify:user-role-lifecycle`).
+
+HEAD des PR spécialisées au moment de la réconciliation : #1197 `fa4b61ff4`, #1141 `20b534da8`, #1196 `9e523c87e`. Une intégration combinée simulée de #1196, #1197, #1141, #1199, #1194 et #1198 sur `develop` ne produit aucun conflit. Résultats : `verify:release-governance` 34 PASS ; Web 341 fichiers et 1946 tests verts.
