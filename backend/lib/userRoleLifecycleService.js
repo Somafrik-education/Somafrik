@@ -228,6 +228,23 @@ async function syncPrimaryRole(tx, userId, roleKeys) {
   }
 }
 
+/**
+ * RBAC-LOGIN-01 — rôle personnalisé : revérifié DANS la transaction d'octroi, sous
+ * verrou FOR SHARE (un archivage concurrent attend ou a déjà gagné). Exactement une
+ * entrée active de portée établissement, sinon refus (fail-closed).
+ */
+async function assertCatalogRoleStillGrantable(tx, roleKey) {
+  if (isKnownRoleKey(roleKey) || typeof tx.lockCatalogRoleForGrant !== "function") return;
+  const rows = (await tx.lockCatalogRoleForGrant(roleKey)) ?? [];
+  const active = rows.filter((row) => String(row.status ?? "").trim().toLowerCase() === "active");
+  if (!active.length) {
+    throw createUserRoleError(409, "Rôle archivé ou inconnu.", USER_ROLE_ERROR.ROLE_INACTIVE);
+  }
+  if (active.length !== 1 || String(active[0].scope ?? "").trim().toLowerCase() !== "school") {
+    throw createUserRoleError(409, "Rôle non attribuable dans un établissement.", USER_ROLE_ERROR.ROLE_FORBIDDEN);
+  }
+}
+
 /** Clés détenues équivalentes à `roleKey` (normalizeRoleCode : casse, accents, séparateurs). */
 function equivalentRoleKeys(heldKeys = [], roleKey) {
   const { normalizeRoleCode } = require("./establishmentRolesManagement");
@@ -465,6 +482,7 @@ async function grantRole(store, userId, rawPayload, principal, auditMeta) {
       payload: rawPayload,
     });
     await assertBusinessProfileGrantAllowed(tx, locked, school, roleKey);
+    await assertCatalogRoleStillGrantable(tx, roleKey);
 
     let teacherEffect = null;
     try {

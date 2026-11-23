@@ -274,6 +274,22 @@ function createClientsPgStore(repo) {
         const { formatUserCode } = require("../lib/userRoleLifecycle");
         return formatUserCode(year, nextValue);
       },
+      /**
+       * RBAC-LOGIN-01 — octroi d'un rôle du catalogue : verrou FOR SHARE sur ses entrées
+       * jusqu'à la fin de la transaction (sérialisé avec l'archivage, FOR UPDATE).
+       */
+      async lockCatalogRoleForGrant(roleKey) {
+        const table = await one(`SELECT to_regclass('public.establishment_roles') AS ref`);
+        if (!table?.ref) return [];
+        return all(
+          `SELECT role_code, role_name, scope, status
+           FROM establishment_roles
+           WHERE somafrik_normalize_role_code(role_code) = somafrik_normalize_role_code($1)
+              OR somafrik_normalize_role_code(role_name) = somafrik_normalize_role_code($1)
+           FOR SHARE`,
+          [roleKey],
+        );
+      },
       async insertUserRole(row) {
         const { assertCanonicalStudentRolesLocked } = require("../lib/studentRoleLock");
         await assertCanonicalStudentRolesLocked(this, row.userId, {

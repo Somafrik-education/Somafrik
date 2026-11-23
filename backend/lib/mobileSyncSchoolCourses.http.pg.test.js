@@ -535,6 +535,13 @@ async function main() {
        VALUES ($1, $2, 'CUS-CRS-1', 'Cyrus', 'Ndala', 'custom-crs@test.local', NULL, 'active', FALSE)`,
       [CUSTOM_USER_ID, fixture.schoolA],
     );
+    // RBAC-LOGIN-01 : un rôle personnalisé n'a de droits que s'il existe, actif et de
+    // portée établissement, au catalogue (rôle hors catalogue = aucun droit, fail-closed).
+    await repo.pool.query(
+      `INSERT INTO establishment_roles (role_code, role_name, scope, status, school_assignable)
+       VALUES ('custom_role', 'Custom Role', 'school', 'active', TRUE)
+       ON CONFLICT DO NOTHING`,
+    );
     await repo.pool.query(
       `INSERT INTO user_roles (user_id, school_id, role_key, status)
        VALUES ($1, $2, 'CUSTOM_ROLE', 'active')`,

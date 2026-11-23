@@ -191,30 +191,40 @@ function createEstablishmentRolesPgStore(repo) {
   }
 
   /**
-   * RBAC-LOGIN-01 — archivage d'un rôle : invalide les sessions ouvertes des comptes
-   * qui le détiennent encore (user_roles actifs). Les clés sont comparées en majuscules.
+   * RBAC-LOGIN-01 — garde d'archivage : verrouille la ligne du catalogue (FOR UPDATE)
+   * jusqu'à la fin de la transaction. Un octroi concurrent du même rôle pose un
+   * FOR SHARE sur cette ligne : les deux opérations sont sérialisées.
    */
-  async function revokeSessionsForRoleKeys(roleKeys = [], reason = "role_archived") {
-    const keys = [...new Set((roleKeys || []).map((key) => asTrimmed(key).toUpperCase()).filter(Boolean))];
-    if (!keys.length) return 0;
-    const tables = await one(
-      `SELECT to_regclass('public.sessions') AS sessions, to_regclass('public.user_roles') AS user_roles`,
+  async function lockRoleForArchive(roleId) {
+    const row = await one(`SELECT * FROM establishment_roles WHERE id = $1::uuid FOR UPDATE`, [roleId]);
+    return hydrateRole(row);
+  }
+
+  /**
+   * RBAC-LOGIN-01 — affectations actives d'un rôle (clés équivalentes : casse,
+   * accents, séparateurs ; role_code ou role_name). Lu après le verrou : chaque
+   * instruction voit les octrois validés entre-temps (READ COMMITTED).
+   */
+  async function countActiveAssignmentsForRole(role) {
+    const table = await one(`SELECT to_regclass('public.user_roles') AS ref`);
+    if (!table?.ref) return { activeAssignments: 0, schools: 0 };
+    // Équivalence calculée par normalizeRoleCode (même règle que somafrik_normalize_role_code),
+    // sans dépendre de la fonction SQL : lignes regroupées par (clé, établissement).
+    const wanted = new Set([normalizeRoleCode(role?.roleCode), normalizeRoleCode(role?.roleName)].filter(Boolean));
+    const rows = await all(
+      `SELECT role_key, school_id, COUNT(*)::int AS n
+       FROM user_roles
+       WHERE status = 'active' AND revoked_at IS NULL
+       GROUP BY role_key, school_id`,
     );
-    if (!tables?.sessions || !tables?.user_roles) return 0;
-    const result = await query(
-      `UPDATE sessions
-       SET revoked_at = NOW(), revoke_reason = $2
-       WHERE revoked_at IS NULL
-         AND user_id IN (
-           SELECT ur.user_id
-           FROM user_roles ur
-           WHERE ur.status = 'active'
-             AND ur.revoked_at IS NULL
-             AND upper(ur.role_key) = ANY($1::text[])
-         )`,
-      [keys, reason],
-    );
-    return result?.rowCount ?? 0;
+    let activeAssignments = 0;
+    const schools = new Set();
+    for (const row of rows) {
+      if (!wanted.has(normalizeRoleCode(row.role_key))) continue;
+      activeAssignments += Number(row.n ?? 0);
+      schools.add(String(row.school_id ?? ""));
+    }
+    return { activeAssignments, schools: schools.size };
   }
 
   /**
@@ -316,7 +326,8 @@ function createEstablishmentRolesPgStore(repo) {
     listRoleDisplayContracts,
     archiveRole,
     listRoleCatalogStates,
-    revokeSessionsForRoleKeys,
+    lockRoleForArchive,
+    countActiveAssignmentsForRole,
     getPermissionsMap,
     inventoryLegacyUserRolesPayloads,
     seedDefaultRolesIfEmpty,

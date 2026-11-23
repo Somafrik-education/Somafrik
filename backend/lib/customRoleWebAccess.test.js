@@ -154,11 +154,33 @@ test("fail-closed : rôles, catalogue ou permissions illisibles", async () => {
   assert.equal((await resolveCustomRoleWebAccess({}, { userId: USER_ID, school })).allowed, false);
 });
 
-test("permissions effectives : archivé retiré, actif canonique, système intact", async () => {
-  const repo = fakeRepo();
-  const result = await canonicalizeCustomRoleKeys(repo, ["TEACHER", "CONSEILLER_PÉDAGOGIQUE", "conseiller_pedagogique", "ANCIEN_RÔLE", "INCONNU"]);
-  assert.deepEqual(result.roleKeys, ["TEACHER", "CONSEILLER_PEDAGOGIQUE", "INCONNU"]);
+test("permissions effectives : seul un rôle actif, unique, de portée établissement est conservé", async () => {
+  const catalog = [
+    ...CATALOG,
+    { roleCode: "double", roleName: "Double A", scope: "school", status: "active" },
+    { roleCode: "double_bis", roleName: "Double", scope: "school", status: "active" },
+  ];
+  const repo = fakeRepo({ catalog });
+  const result = await canonicalizeCustomRoleKeys(repo, [
+    "TEACHER",
+    "CONSEILLER_PÉDAGOGIQUE",
+    "conseiller_pedagogique",
+    "ANCIEN_RÔLE",
+    "INCONNU",
+    "AUDITEUR",
+    "DOUBLE",
+  ]);
+  assert.deepEqual(result.roleKeys, ["TEACHER", "CONSEILLER_PEDAGOGIQUE"]);
   assert.deepEqual([...result.activeCustomRoleKeys], ["CONSEILLER_PEDAGOGIQUE"]);
+  assert.deepEqual(
+    result.dropped.map((entry) => [entry.roleKey, entry.state]),
+    [
+      ["ANCIEN_RÔLE", CATALOG_ROLE_STATE.ARCHIVED],
+      ["INCONNU", CATALOG_ROLE_STATE.UNKNOWN],
+      ["AUDITEUR", CATALOG_ROLE_STATE.OTHER_SCOPE],
+      ["DOUBLE", CATALOG_ROLE_STATE.AMBIGUOUS],
+    ],
+  );
 });
 
 test("permissions effectives : catalogue illisible → rôles personnalisés retirés, système conservé", async () => {
@@ -166,9 +188,26 @@ test("permissions effectives : catalogue illisible → rôles personnalisés ret
   assert.deepEqual(result.roleKeys, ["SCHOOL_ADMIN"]);
 });
 
-test("permissions effectives : dépôt sans catalogue → inchangé", async () => {
+test("permissions effectives : dépôt sans catalogue → rôles personnalisés retirés (fail-closed)", async () => {
   const result = await canonicalizeCustomRoleKeys({}, ["SCHOOL_ADMIN", "CONSEILLER_PÉDAGOGIQUE"]);
-  assert.deepEqual(result.roleKeys, ["SCHOOL_ADMIN", "CONSEILLER_PÉDAGOGIQUE"]);
+  assert.deepEqual(result.roleKeys, ["SCHOOL_ADMIN"]);
+  assert.deepEqual(result.dropped, [{ roleKey: "CONSEILLER_PÉDAGOGIQUE", state: "catalog_missing" }]);
+});
+
+test("permissions effectives : rôles système jamais modifiés (Superadmin, Admin Pays, Enseignant, Parent, Élève)", async () => {
+  const keys = ["SUPER_ADMIN", "COUNTRY_ADMIN", "SCHOOL_ADMIN", "TEACHER", "PARENT", "STUDENT", "SUPERVISOR"];
+  for (const repo of [fakeRepo(), fakeRepo({ catalogError: true }), {}]) {
+    const result = await canonicalizeCustomRoleKeys(repo, keys);
+    assert.deepEqual(result.roleKeys, keys);
+    assert.equal(result.activeCustomRoleKeys.size, 0);
+  }
+});
+
+test("permissions effectives : un role_code ne donne jamais les droits d'un rôle système", async () => {
+  const catalog = [{ roleCode: "TEACHER", roleName: "Faux enseignant", scope: "school", status: "active" }];
+  const result = await canonicalizeCustomRoleKeys(fakeRepo({ catalog }), ["FAUX_ENSEIGNANT"]);
+  assert.deepEqual(result.roleKeys, []);
+  assert.equal(result.dropped[0].state, "canonical_system_collision");
 });
 
 test("portée de lecture : rôles personnalisés seuls, relus en base, fail-closed", async () => {

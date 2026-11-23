@@ -135,12 +135,21 @@ const ROLES = {
   ancien: { name: "Ancien rôle école", modules: [{ moduleKey: "classes", canRead: true }] },
   revocable: { name: "Agent révocable", modules: [{ moduleKey: "classes", canRead: true }] },
   plateforme: { name: "Auditeur plateforme", scope: "platform", modules: [{ moduleKey: "classes", canRead: true }] },
+  // Deux entrées actives équivalentes (role_code « double » et role_name « DOUBLE ») : ambigu.
+  doubleA: { name: "Double A", code: "double", modules: [{ moduleKey: "payments", canRead: true }] },
+  doubleB: { name: "DOUBLE", code: "double_bis", modules: [{ moduleKey: "payments", canRead: true }] },
+  course1: { name: "Rôle course un", modules: [{ moduleKey: "classes", canRead: true }] },
+  course2: { name: "Rôle course deux", modules: [{ moduleKey: "classes", canRead: true }] },
+  course3: { name: "Rôle course trois", modules: [{ moduleKey: "classes", canRead: true }] },
+  course4: { name: "Rôle verrou", modules: [{ moduleKey: "classes", canRead: true }] },
 };
+/** Grants d'une clé absente du catalogue (rôle inconnu / supprimé). */
+const PHANTOM_ROLE_KEY = "ROLE_FANTOME";
 
 /** Clé de user_roles telle que l'API l'écrit (assertGrantableRole → toRoleKey(role_name)). */
 const userRoleKey = (role) => toRoleKey(role.name);
 /** Clé des grants telle que la matrice RBAC l'écrit (UPPER(role_code)). */
-const grantRoleKey = (role) => normalizeRoleCode(role.name).toUpperCase();
+const grantRoleKey = (role) => (role.code ?? normalizeRoleCode(role.name)).toUpperCase();
 
 async function seed(pool) {
   const country = await pool.query(
@@ -163,7 +172,7 @@ async function seed(pool) {
     const inserted = await pool.query(
       `INSERT INTO establishment_roles (role_code, role_name, scope, status, school_assignable)
        VALUES ($1, $2, $3, 'active', TRUE) RETURNING id`,
-      [normalizeRoleCode(role.name), role.name, role.scope ?? "school"],
+      [role.code ?? normalizeRoleCode(role.name), role.name, role.scope ?? "school"],
     );
     role.id = inserted.rows[0].id;
     for (const grant of role.modules) {
@@ -174,6 +183,12 @@ async function seed(pool) {
       );
     }
   }
+
+  await pool.query(
+    `INSERT INTO role_module_permissions (role_key, scope_type, module_key, can_read, status)
+     VALUES ($1, 'global', 'payments', TRUE, 'active')`,
+    [PHANTOM_ROLE_KEY],
+  );
 
   const passwordHash = hashSecret(SECRET);
   const pinHash = hashSecret(PIN);
@@ -228,6 +243,13 @@ async function seed(pool) {
   await withRoles("teacherA", schoolA.id, [[schoolA.id, "TEACHER"]]);
   // Rôle système hors liste statique Web (Surveillant) : chemin dynamique, même règles.
   await withRoles("supervisorA", schoolA.id, [[schoolA.id, "SUPERVISOR"]]);
+  // Enseignant + rôles hors catalogue utilisable (inconnu, ambigu, hors portée) : ces
+  // rôles ne doivent rien ajouter aux droits de l'Enseignant.
+  await withRoles("teacherUnknown", schoolA.id, [[schoolA.id, "TEACHER"], [schoolA.id, PHANTOM_ROLE_KEY]]);
+  await withRoles("teacherAmbiguous", schoolA.id, [[schoolA.id, "TEACHER"], [schoolA.id, "DOUBLE"]]);
+  await withRoles("teacherPlatform", schoolA.id, [[schoolA.id, "TEACHER"], [schoolA.id, userRoleKey(ROLES.plateforme)]]);
+  await withRoles("parentA", schoolA.id, [[schoolA.id, "PARENT"]]);
+  for (const key of ["race1", "race2", "race3"]) await withRoles(key, schoolA.id, [[schoolA.id, "TEACHER"]]);
   await withRoles("superadmin", null, [[null, "SUPER_ADMIN"]]);
   await withRoles("pays", null, [[null, "COUNTRY_ADMIN"]]);
   return { schoolA, schoolB, users };
@@ -292,6 +314,81 @@ async function main() {
     const platformRoute = (token) => request("/backoffice/countries", { token });
     const usersRoute = (token) => request("/backoffice/users?page=1&limit=5", { token });
 
+    // RL01-14 — non-élargissement des rôles système : instantané comparable entre
+    // develop et cette branche (RBAC_LOGIN_01_SNAPSHOT=<fichier>), puis invariants.
+    const ROUTES = {
+      classes: "/classes",
+      students: "/students?page=1&limit=5",
+      teachers: "/teachers?page=1&limit=5",
+      countries: "/backoffice/countries",
+      schools: "/backoffice/schools",
+      users: "/backoffice/users?page=1&limit=5",
+      rbac: "/backoffice/rbac/catalog",
+    };
+    const systemSnapshot = {};
+    for (const [key, schoolCode] of [
+      ["superadmin", null],
+      ["pays", null],
+      ["adminA", schoolA.login_code],
+      ["teacherA", schoolA.login_code],
+      ["parentA", schoolA.login_code],
+    ]) {
+      const login = await webLogin(key, schoolCode);
+      const entry = {
+        login: login.status,
+        role: login.data?.user?.role ?? null,
+        webAccessProfile: login.data?.user?.webAccessProfile ?? null,
+        privilegeLevel: login.data?.dashboard?.privilegeLevel ?? null,
+        menus: login.data?.menus ?? null,
+        permissions: [...(login.data?.permissions ?? [])].sort(),
+        routes: {},
+      };
+      if (login.status === 200) {
+        for (const [name, route] of Object.entries(ROUTES)) {
+          entry.routes[name] = (await request(route, { token: login.data.accessToken })).status;
+        }
+        const effective = await request("/auth/effective-permissions", { token: login.data.accessToken });
+        entry.effectiveRoleKeys = effective.data?.roleKeys ?? null;
+      }
+      systemSnapshot[key] = entry;
+      check(entry.webAccessProfile === null, `RL01-14 ${key} : aucun profil de rôle personnalisé`);
+    }
+    if (process.env.RBAC_LOGIN_01_SNAPSHOT) {
+      require("fs").writeFileSync(process.env.RBAC_LOGIN_01_SNAPSHOT, `${JSON.stringify(systemSnapshot, null, 2)}\n`);
+    }
+    check(!systemSnapshot.teacherA.permissions.includes("ALL_PRIVILEGES"), "RL01-14 Enseignant sans ALL_PRIVILEGES");
+    check(!systemSnapshot.parentA.permissions.includes("ALL_PRIVILEGES"), "RL01-14 Parent sans ALL_PRIVILEGES");
+    check(!systemSnapshot.pays.permissions.includes("ALL_PRIVILEGES"), "RL01-14 Admin Pays sans ALL_PRIVILEGES");
+    check(systemSnapshot.superadmin.routes.teachers === 403, "RL01-14 Superadmin sans données scolaires");
+
+    // Jeton falsifié : la portée de lecture personnalisée ne vient jamais d'une revendication.
+    const teacherForge = await webLogin("teacherA");
+    if (assertStatus(teacherForge, 200, "RL01-14 connexion Enseignant (falsification)")) {
+      const [encodedHeader, encodedPayload] = String(teacherForge.data.accessToken).split(".");
+      const forgedPayload = Buffer.from(
+        JSON.stringify({ ...claims(teacherForge.data.accessToken), customRoleReadScope: { classes: true, students: true } }),
+      ).toString("base64url");
+      const forgedSignature = crypto
+        .createHmac("sha256", JWT_SECRET)
+        .update(`${encodedHeader}.${forgedPayload}`)
+        .digest("base64url");
+      const forged = `${encodedHeader}.${forgedPayload}.${forgedSignature}`;
+      const honestStudents = await studentsRoute(teacherForge.data.accessToken);
+      const forgedStudents = await studentsRoute(forged);
+      check(
+        forgedStudents.status === honestStudents.status &&
+          JSON.stringify(forgedStudents.data) === JSON.stringify(honestStudents.data),
+        `RL01-14 revendication customRoleReadScope ignorée (élèves ${honestStudents.status} → ${forgedStudents.status})`,
+      );
+      const honestClasses = await classesRoute(teacherForge.data.accessToken);
+      const forgedClasses = await classesRoute(forged);
+      check(
+        JSON.stringify(forgedClasses.data) === JSON.stringify(honestClasses.data),
+        "RL01-14 revendication customRoleReadScope ignorée (classes)",
+      );
+    }
+    ok("RL01-14 Superadmin / Admin Pays / Admin School / Enseignant / Parent : aucun élargissement, jeton falsifié sans effet");
+
     // RL01-01 — rôle personnalisé actif avec permission Web : connexion et accès autorisés.
     const custom = await webLogin("custom");
     if (assertStatus(custom, 200, "RL01-01 connexion Web rôle personnalisé actif")) {
@@ -326,31 +423,67 @@ async function main() {
     assertStatus(await webLogin("noperm"), 403, "RL01-02 rôle sans permission Web refusé");
     ok("RL01-02 rôle personnalisé sans permission : connexion refusée");
 
-    // RL01-03 — rôle archivé : session existante invalidée, nouvelle connexion refusée.
+    // RL01-03 — archivage : refusé (409 + audit) tant que le rôle est attribué ;
+    // autorisé après retrait des affectations (sessions invalidées par le retrait).
+    const auditRows = async (action, roleId) =>
+      (
+        await pool.query(
+          `SELECT action, new_value FROM audit_logs WHERE action = $1 AND entity_id = $2 ORDER BY created_at`,
+          [action, String(roleId)],
+        )
+      ).rows;
+    const roleStatus = async (roleId) =>
+      (await pool.query(`SELECT status FROM establishment_roles WHERE id = $1`, [roleId])).rows[0]?.status;
     const beforeArchive = await webLogin("archived");
     assertStatus(beforeArchive, 200, "RL01-03 connexion avant archivage");
     const superWeb = await webLogin("superadmin", null);
     assertStatus(superWeb, 200, "RL01-03 connexion Superadmin");
-    const archived = await request(`/backoffice/rbac/roles/${ROLES.ancien.id}/archive`, {
-      method: "POST",
-      token: superWeb.data.accessToken,
-      body: {},
-    });
-    assertStatus(archived, 200, "RL01-03 archivage du rôle");
-    assertStatus(await classesRoute(beforeArchive.data?.accessToken), [401, 403], "RL01-03 session existante après archivage");
-    assertStatus(
-      await request("/auth/refresh", { method: "POST", body: { refreshToken: beforeArchive.data?.refreshToken } }),
-      401,
-      "RL01-03 refresh après archivage",
+    const adminA = await webLogin("adminA");
+    assertStatus(adminA, 200, "RL01-03 connexion Admin School");
+    const archiveRole = (roleId) =>
+      request(`/backoffice/rbac/roles/${roleId}/archive`, { method: "POST", token: superWeb.data.accessToken, body: {} });
+    const refused = await archiveRole(ROLES.ancien.id);
+    assertStatus(refused, 409, "RL01-03 archivage d'un rôle attribué refusé");
+    check(await roleStatus(ROLES.ancien.id) === "active", "RL01-03 rôle toujours actif après refus");
+    const refusalAudit = await auditRows("ROLE_ARCHIVE_REFUSED", ROLES.ancien.id);
+    check(refusalAudit.length === 1, `RL01-03 audit du refus : ${refusalAudit.length}`);
+    const refusalValue = refusalAudit[0]?.new_value ?? {};
+    check(
+      refusalValue.reason === "ROLE_HAS_ACTIVE_ASSIGNMENTS" && refusalValue.activeAssignments === 1,
+      `RL01-03 audit du refus détaillé : ${JSON.stringify(refusalValue)}`,
     );
-    assertStatus(await webLogin("archived"), 403, "RL01-03 connexion après archivage");
-    ok("RL01-03 rôle archivé : sessions invalidées, connexion refusée");
+    check((await auditRows("ROLE_ARCHIVE", ROLES.ancien.id)).length === 0, "RL01-03 aucun audit d'archivage après refus");
+    assertStatus(await classesRoute(beforeArchive.data?.accessToken), 200, "RL01-03 accès inchangé après refus");
+    const revokeArchivedAssignment = await request(`/backoffice/users/${users.archived}/roles/revoke`, {
+      method: "POST",
+      token: adminA.data.accessToken,
+      body: { role: userRoleKey(ROLES.ancien) },
+    });
+    assertStatus(revokeArchivedAssignment, 200, "RL01-03 retrait de l'affectation");
+    assertStatus(await classesRoute(beforeArchive.data?.accessToken), 401, "RL01-03 session invalidée par le retrait");
+    const archived = await archiveRole(ROLES.ancien.id);
+    assertStatus(archived, 200, "RL01-03 archivage autorisé sans affectation active");
+    check(await roleStatus(ROLES.ancien.id) === "archived", "RL01-03 rôle archivé");
+    check((await auditRows("ROLE_ARCHIVE", ROLES.ancien.id)).length === 1, "RL01-03 audit d'archivage");
+    assertStatus(await archiveRole(ROLES.ancien.id), 404, "RL01-03 double archivage");
+    const regrantArchived = await request(`/backoffice/users/${users.archived}/roles/grant`, {
+      method: "POST",
+      token: adminA.data.accessToken,
+      body: { role: ROLES.ancien.name },
+    });
+    assertStatus(regrantArchived, [404, 409], "RL01-03 octroi d'un rôle archivé refusé");
+    const afterArchive = await webLogin("archived");
+    if (afterArchive.status === 200) {
+      check((afterArchive.data.permissions ?? []).length === 0, "RL01-03 aucun droit après archivage");
+      assertStatus(await classesRoute(afterArchive.data.accessToken), 403, "RL01-03 aucun accès après archivage");
+    } else {
+      assertStatus(afterArchive, 403, "RL01-03 connexion après archivage");
+    }
+    ok(`RL01-03 archivage : 409 + audit si attribué ; autorisé après retrait (connexion ensuite ${afterArchive.status})`);
 
     // RL01-04 — rôle révoqué par l'API : sessions invalidées, nouvelle connexion refusée.
     const beforeRevoke = await webLogin("revoked");
     assertStatus(beforeRevoke, 200, "RL01-04 connexion avant révocation");
-    const adminA = await webLogin("adminA");
-    assertStatus(adminA, 200, "RL01-04 connexion Admin School");
     const revoke = await request(`/backoffice/users/${users.revoked}/roles/revoke`, {
       method: "POST",
       token: adminA.data.accessToken,
@@ -473,18 +606,13 @@ async function main() {
     assertStatus(revokeDuplicate, 200, "RL01-11 révocation");
     check((await activeRoleRows(users.duplicate)).length === 0, `RL01-11 doublon encore actif : ${JSON.stringify(await activeRoleRows(users.duplicate))}`);
     assertStatus(await classesRoute(duplicate.data?.accessToken), 401, "RL01-11 session après révocation");
-    // Contrat de migration (userRolesMigration.pg.test.js) : un users.role désignant un rôle
-    // archivé bloque le démarrage. Procédure d'exploitation : retirer l'attribution archivée.
-    const revokeArchived = await request(`/backoffice/users/${users.archived}/roles/revoke`, {
-      method: "POST",
-      token: adminAgain.data.accessToken,
-      body: { role: userRoleKey(ROLES.ancien) },
-    });
-    assertStatus(revokeArchived, 200, "RL01-11 retrait de l'attribution du rôle archivé");
+    // Redémarrage après archivage autorisé (RL01-03) : le contrat de migration est respecté.
     await stopChild(child);
     await startServer();
     check((await activeRoleRows(users.duplicate)).length === 0, `RL01-11 rôle recréé au redémarrage : ${JSON.stringify(await activeRoleRows(users.duplicate))}`);
     check((await activeRoleRows(users.revoked)).length === 0, `RL01-11 rôle révoqué recréé au redémarrage : ${JSON.stringify(await activeRoleRows(users.revoked))}`);
+    check((await activeRoleRows(users.archived)).length === 0, `RL01-11 rôle archivé recréé au redémarrage : ${JSON.stringify(await activeRoleRows(users.archived))}`);
+    check(await roleStatus(ROLES.ancien.id) === "archived", "RL01-11 rôle toujours archivé après redémarrage");
     const customRows = await activeRoleRows(users.custom);
     check(customRows.length === 1, `RL01-11 aucun doublon créé au démarrage : ${JSON.stringify(customRows)}`);
     const afterRestart = await webLogin("duplicate");
@@ -494,7 +622,81 @@ async function main() {
       assertStatus(afterRestart, 403, "RL01-11 connexion après redémarrage");
     }
     assertStatus(await webLogin("custom"), 200, "RL01-11 rôle actif conservé après redémarrage");
-    ok("RL01-11 clés équivalentes : révocation complète, aucun rôle recréé au redémarrage");
+    ok("RL01-11 clés équivalentes et archivage : démarrage réussi, aucun rôle recréé");
+
+    // RL01-12 — rôles inconnu, ambigu ou hors portée : aucun droit ajouté (fail-closed).
+    const teacherRef = await webLogin("teacherA");
+    assertStatus(teacherRef, 200, "RL01-12 Enseignant de référence");
+    const refPerms = JSON.stringify([...(teacherRef.data.permissions ?? [])].sort());
+    for (const key of ["teacherUnknown", "teacherAmbiguous", "teacherPlatform"]) {
+      const login = await webLogin(key);
+      assertStatus(login, 200, `RL01-12 connexion ${key}`);
+      const perms = JSON.stringify([...(login.data?.permissions ?? [])].sort());
+      check(perms === refPerms, `RL01-12 ${key} : droits identiques à l'Enseignant (${perms} ≠ ${refPerms})`);
+      check(login.data?.user?.webAccessProfile === undefined, `RL01-12 ${key} sans profil personnalisé`);
+      const effective = await request("/auth/effective-permissions", { token: login.data?.accessToken });
+      const effectiveKeys = effective.data?.roleKeys ?? [];
+      check(
+        JSON.stringify(effectiveKeys) === JSON.stringify(["TEACHER"]),
+        `RL01-12 ${key} : rôles effectifs ${JSON.stringify(effectiveKeys)}`,
+      );
+    }
+    ok("RL01-12 rôles inconnu / ambigu / hors portée : retirés des droits effectifs");
+
+    // RL01-13 — octroi et archivage concurrents : jamais un rôle archivé encore attribué.
+    const raceOutcomes = [];
+    for (const [index, role] of [ROLES.course1, ROLES.course2, ROLES.course3].entries()) {
+      const userId = users[`race${index + 1}`];
+      const [grantResult, archiveResult] = await Promise.all([
+        request(`/backoffice/users/${userId}/roles/grant`, {
+          method: "POST",
+          token: adminAgain.data.accessToken,
+          body: { role: role.name },
+        }),
+        archiveRole(role.id),
+      ]);
+      const status = await roleStatus(role.id);
+      const active = (await activeRoleRows(userId)).filter((key) => key !== "TEACHER");
+      check(!(status === "archived" && active.length > 0), `RL01-13 rôle archivé encore attribué (${role.name})`);
+      check(
+        (grantResult.status === 200) !== (archiveResult.status === 200),
+        `RL01-13 exactement une opération gagne (octroi ${grantResult.status}, archivage ${archiveResult.status})`,
+      );
+      raceOutcomes.push(`${grantResult.status}/${archiveResult.status}`);
+    }
+    // Ordre inverse, déterministe : un octroi en cours (verrou FOR SHARE posé comme
+    // lockCatalogRoleForGrant) bloque l'archivage, qui voit ensuite l'affectation validée.
+    const lockClient = await pool.connect();
+    let lockedArchive;
+    let settledEarly = false;
+    try {
+      await lockClient.query("BEGIN");
+      await lockClient.query(
+        `SELECT 1 FROM establishment_roles
+         WHERE somafrik_normalize_role_code(role_code) = somafrik_normalize_role_code($1)
+            OR somafrik_normalize_role_code(role_name) = somafrik_normalize_role_code($1)
+         FOR SHARE`,
+        [userRoleKey(ROLES.course4)],
+      );
+      await lockClient.query(
+        `INSERT INTO user_roles (user_id, school_id, role_key, status) VALUES ($1, $2, $3, 'active')`,
+        [users.race1, schoolA.id, userRoleKey(ROLES.course4)],
+      );
+      const pending = archiveRole(ROLES.course4.id).then((result) => {
+        settledEarly = true;
+        return result;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      check(!settledEarly, "RL01-13 l'archivage attend la fin de l'octroi en cours");
+      await lockClient.query("COMMIT");
+      lockedArchive = await pending;
+    } finally {
+      await lockClient.query("ROLLBACK").catch(() => {});
+      lockClient.release();
+    }
+    assertStatus(lockedArchive, 409, "RL01-13 archivage après octroi validé");
+    check(await roleStatus(ROLES.course4.id) === "active", "RL01-13 rôle resté actif");
+    ok(`RL01-13 octroi / archivage concurrents sérialisés (octroi/archivage : ${raceOutcomes.join(", ")} ; verrou : archivage ${lockedArchive.status} après attente)`);
 
     if (REPRO) {
       for (const defect of defects) console.log(`DÉFAUT ${defect}`);

@@ -91,29 +91,36 @@ function canonicalCatalogRoleKey(catalog, roleKey) {
 }
 
 /**
- * Permissions effectives — rôles personnalisés relus contre le catalogue :
- *   - rôle archivé → retiré (aucun droit, même si des grants restent actifs) ;
- *   - rôle actif `scope = school` unique → clé canonique UPPER(role_code), celle
- *     des grants role_module_permissions (le libellé accentué stocké dans
- *     user_roles, ex. CONSEILLER_PÉDAGOGIQUE, ne correspond à aucun grant) ;
- *   - autre cas (hors catalogue, ambigu, autre portée) → inchangé.
- * Rôles système jamais touchés. Lecture du catalogue en échec → rôles
- * personnalisés retirés (fail-closed). Dépôt sans catalogue → inchangé.
+ * Permissions effectives — rôles personnalisés relus contre le catalogue (fail-closed) :
+ *   - actif, unique, `scope = school` → clé canonique UPPER(role_code), celle des
+ *     grants role_module_permissions (le libellé accentué stocké dans user_roles,
+ *     ex. CONSEILLER_PÉDAGOGIQUE, ne correspond à aucun grant) ;
+ *   - archivé, inconnu, ambigu (plusieurs entrées actives) ou hors portée
+ *     établissement → retiré : aucun droit ;
+ *   - catalogue illisible ou dépôt sans catalogue → tous les rôles personnalisés
+ *     retirés.
+ * Les rôles système (ROLE_FROM_DB : SUPER_ADMIN, COUNTRY_ADMIN, SCHOOL_ADMIN,
+ * TEACHER, PARENT, STUDENT, …) ne sont jamais modifiés ici.
  *
- * @returns {Promise<{ roleKeys: string[], activeCustomRoleKeys: Set<string> }>}
+ * @returns {Promise<{ roleKeys: string[], activeCustomRoleKeys: Set<string>, dropped: { roleKey: string, state: string }[] }>}
  */
 async function canonicalizeCustomRoleKeys(repo, roleKeys = []) {
   const keys = Array.isArray(roleKeys) ? roleKeys : [];
   const activeCustomRoleKeys = new Set();
-  if (!keys.some(isCustomRoleKey)) return { roleKeys: keys, activeCustomRoleKeys };
+  const dropped = [];
+  if (!keys.some(isCustomRoleKey)) return { roleKeys: keys, activeCustomRoleKeys, dropped };
+  const dropAllCustom = (state) => {
+    for (const key of keys) if (isCustomRoleKey(key)) dropped.push({ roleKey: key, state });
+    return { roleKeys: keys.filter((key) => !isCustomRoleKey(key)), activeCustomRoleKeys, dropped };
+  };
   let catalog;
   try {
     catalog = await loadRoleCatalogStates(repo);
   } catch {
     console.warn("[RBAC-LOGIN-01] catalogue des rôles indisponible : rôles personnalisés ignorés");
-    return { roleKeys: keys.filter((key) => !isCustomRoleKey(key)), activeCustomRoleKeys };
+    return dropAllCustom("catalog_unavailable");
   }
-  if (!catalog) return { roleKeys: keys, activeCustomRoleKeys };
+  if (!catalog) return dropAllCustom("catalog_missing");
   const next = [];
   const seen = new Set();
   const push = (key) => {
@@ -127,16 +134,20 @@ async function canonicalizeCustomRoleKeys(repo, roleKeys = []) {
       continue;
     }
     const state = classifyCatalogRoleKey(catalog, key);
-    if (state === CATALOG_ROLE_STATE.ARCHIVED) continue;
-    if (state === CATALOG_ROLE_STATE.ACTIVE_SCHOOL) {
-      const canonical = canonicalCatalogRoleKey(catalog, key) || key;
-      activeCustomRoleKeys.add(canonical);
-      push(canonical);
+    if (state !== CATALOG_ROLE_STATE.ACTIVE_SCHOOL) {
+      dropped.push({ roleKey: key, state });
       continue;
     }
-    push(key);
+    const canonical = canonicalCatalogRoleKey(catalog, key);
+    if (!canonical || !isCustomRoleKey(canonical)) {
+      // Un role_code qui désignerait un rôle système n'en reçoit jamais les droits.
+      dropped.push({ roleKey: key, state: "canonical_system_collision" });
+      continue;
+    }
+    activeCustomRoleKeys.add(canonical);
+    push(canonical);
   }
-  return { roleKeys: next, activeCustomRoleKeys };
+  return { roleKeys: next, activeCustomRoleKeys, dropped };
 }
 
 function webReadableModules(modules) {
