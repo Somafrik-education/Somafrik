@@ -104,7 +104,7 @@ vi.mock("../../lib/subscriptionAccessClient", () => ({
   subscriptionFeatureBlocked: () => null,
 }));
 
-describe("ParentChildRelationsPage — Créer ou lier un parent", () => {
+describe("ParentChildRelationsPage — Lier un responsable", () => {
   beforeEach(() => {
     updateMock.mockReset();
     refreshMock.mockReset();
@@ -127,7 +127,7 @@ describe("ParentChildRelationsPage — Créer ou lier un parent", () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Créer ou lier un parent" }));
+    await user.click(screen.getByRole("button", { name: "Lier un responsable" }));
     expect(screen.getByLabelText(/Élève/i)).toBeTruthy();
     expect(screen.queryByText(/Créez d'abord un compte Parent/i)).toBeNull();
 
@@ -164,7 +164,7 @@ describe("ParentChildRelationsPage — Créer ou lier un parent", () => {
         <ParentChildRelationsPage />
       </MemoryRouter>,
     );
-    await user.click(screen.getByRole("button", { name: "Créer ou lier un parent" }));
+    await user.click(screen.getByRole("button", { name: "Lier un responsable" }));
     await user.selectOptions(screen.getByLabelText(/Élève/i), "student-esther");
     await user.type(screen.getByLabelText(/^Téléphone/i), "+243811111111");
     await user.type(screen.getByLabelText(/^Nom/i), "OKITO");

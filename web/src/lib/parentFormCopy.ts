@@ -5,8 +5,9 @@
  */
 
 export const PARENT_FORM_COPY = {
-  sectionTitle: "Parents et responsables",
-  linkAction: "Créer ou lier un parent",
+  /** Décision CTO PARITÉ-SAFE-02 (finale) : titre et action d'origine restaurés. */
+  sectionTitle: "Responsables",
+  linkAction: "Lier un responsable",
   linkPending: "Liaison en cours…",
   firstName: "Prénom",
   lastName: "Nom",

@@ -24,8 +24,8 @@ function copyBlock(source: string): string {
 
 // 1. Vocabulaire identique Web / Mobile.
 assert.equal(copyBlock(read("web/src/lib/parentFormCopy.ts")), copyBlock(read("Mobile/src/lib/parentFormCopy.ts")));
-assert.equal(PARENT_FORM_COPY.sectionTitle, "Parents et responsables");
-assert.equal(PARENT_FORM_COPY.linkAction, "Créer ou lier un parent");
+assert.equal(PARENT_FORM_COPY.sectionTitle, "Responsables");
+assert.equal(PARENT_FORM_COPY.linkAction, "Lier un responsable");
 assert.deepEqual(
   [PARENT_FORM_COPY.firstName, PARENT_FORM_COPY.lastName, PARENT_FORM_COPY.phone, PARENT_FORM_COPY.email],
   ["Prénom", "Nom", "Téléphone", "E-mail"],
@@ -62,11 +62,14 @@ assert.match(read("web/src/lib/studentParentRelations.ts"), /isPrincipal: row\.i
 // 5. Les écrans utilisent le vocabulaire partagé, plus aucun libellé divergent.
 const mobileFiche = read("Mobile/src/screens/StudentDetailScreen.tsx");
 assert.match(mobileFiche, /title=\{PARENT_FORM_COPY\.sectionTitle\}/);
+// PARITÉ-SAFE-02 (finale) : bouton « Lier un responsable » restauré (texte + accessibilityLabel).
+assert.match(mobileFiche, /accessibilityLabel=\{PARENT_FORM_COPY\.linkAction\}/);
+assert.match(mobileFiche, /<Text style=\{styles\.createText\}>\{PARENT_FORM_COPY\.linkAction\}<\/Text>/);
+assert.doesNotMatch(mobileFiche, /Créer ou lier un parent|Parents et responsables/);
 assert.match(mobileFiche, /label=\{PARENT_FORM_COPY\.linkEmail\}[^\n]*keyboardType="email-address"/);
 assert.match(mobileFiche, /validateParentLinkDraft\(\{ phone, email \}\)/);
 assert.match(mobileFiche, /buildParentLinkPayload\(/);
 assert.match(mobileFiche, /isPrincipalRelation\(guardian\)/);
-assert.doesNotMatch(mobileFiche, /Lier un responsable/);
 // PARITÉ-SAFE-02 — non-régression : les trois champs de liaison restent présents, étiquetés
 // explicitement (label visible + accessibilityLabel) et reliés à leur état ; l'e-mail reste additif.
 for (const [key, state, setter] of [
@@ -96,7 +99,7 @@ assert.match(mobileEnroll, /email !== trimField\(row\.parentEmail \?\? ""\) \? \
 const webTab = read("web/src/components/students/StudentGuardiansTab.tsx");
 assert.match(webTab, /title=\{PARENT_FORM_COPY\.sectionTitle\}/);
 assert.match(webTab, /title=\{PARENT_FORM_COPY\.linkAction\}/);
-assert.doesNotMatch(webTab, /Parents et tuteurs liés|"Lier un parent"|Créer ou lier le parent/);
+assert.doesNotMatch(webTab, /Parents et tuteurs liés|"Lier un parent"|Créer ou lier le parent|Créer ou lier un parent/);
 for (const key of ["linkFirstName", "linkLastName", "linkPhone", "linkEmail"]) {
   assert.ok(webTab.includes(`{PARENT_FORM_COPY.${key}}`), `Web : libellé ${key} absent du formulaire de liaison`);
 }
