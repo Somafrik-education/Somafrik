@@ -21,7 +21,7 @@ const path = require("node:path");
 
 const CORE = path.join(__dirname, "verify-release-governance-core.js");
 const EXPECTED_CORE_BLOB = "3d7b2381b5412bbc7395b61592ed2199a2ca3035";
-const CURRENT_MAIN = "fcf09327d2716967ffcd10a69347f06c2fbffb7a";
+const CURRENT_MAIN = "e223e30e9e195dabff01e66a81afdf0164486dc2";
 
 // Historique explicitement autorisé présent sur origin/main mais absent de develop.
 // L'ancien pin #674 (9f4badc6) et les promotions #500–#509 sont désormais
@@ -30,7 +30,10 @@ const CURRENT_MAIN = "fcf09327d2716967ffcd10a69347f06c2fbffb7a";
 // - release v25 : 16 merges de réconciliation du candidat (tree identique au commit
 //   develop fusionné), promotion #1145 (c8263b9b, tree = 773dccc0), intégration
 //   post-smoke 0759547b (tree = develop@4560495b) et merge #1173 (fcf09327).
-// Preuve Git : docs/release/RELEASE-GOVERNANCE-RECONCILE-MAIN-fcf09327.md.
+// - promotion v25 #1191 (GOV-RELEASE-01) : réconciliation f56344de (parents fcf09327 +
+//   develop@84679445, tree = develop@84679445) et merge e223e30e (même tree).
+// Preuves Git : docs/release/RELEASE-GOVERNANCE-RECONCILE-MAIN-fcf09327.md et
+// docs/release/RELEASE-GOVERNANCE-RECONCILE-MAIN-e223e30.md.
 const CURRENT_MAIN_ONLY = [
   "372b7aac11fb4b2fda7b8c45ae0a3f7d9f38e7c3",
   "295c044e43dc5b50cd56d419aa24a34b62c8bebe",
@@ -62,6 +65,8 @@ const CURRENT_MAIN_ONLY = [
   "c8263b9bd436a8d01872988875495ee9d0425fb6",
   "0759547b8bb00bb2c70bcc32cdf873fb23a89f58",
   "fcf09327d2716967ffcd10a69347f06c2fbffb7a",
+  "f56344de0812dc7239f266c3147d9edcf6f9f4d6",
+  "e223e30e9e195dabff01e66a81afdf0164486dc2",
 ];
 
 function replaceExactlyOnce(source, before, after, label) {
@@ -183,7 +188,7 @@ source = replaceExactlyOnce(
 source = replaceExactlyOnce(
   source,
   '    console.log("PASS RG-MAIN-ONLY 2 commits stale (6ff61106, b5074565) ; tree #109 ⊂ develop");',
-  '    console.log("PASS RG-MAIN-ONLY live pin fcf09327 ; 30 commits main-only explicitement autorisés");',
+  '    console.log("PASS RG-MAIN-ONLY live pin e223e30e ; 32 commits main-only explicitement autorisés");',
   "main-only log",
 );
 
