@@ -505,6 +505,7 @@ jobs:
           npx --yes tsx Mobile/src/lib/roleSelectionLayout.test.ts
           npx --yes tsx Mobile/src/lib/progressiveDisclosureUx.test.ts
           node Mobile/scripts/verify-progressive-disclosure-red.js
+          npm run test:parent-labels-safe-02
 
       - name: Canonical sync
         if: needs.scope.outputs.sync == 'true'

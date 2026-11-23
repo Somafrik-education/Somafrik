@@ -62,6 +62,7 @@ import {
   relationIdsFromParentChildRow,
   validateLinkParentDraft,
 } from "./entity-page/linkParentWorkflow";
+import { PARENT_FORM_COPY } from "../lib/parentFormCopy";
 import {
   buildPaymentReceiptPrintPlan,
   PAYMENT_CANCEL_REASON_REQUIRED_MESSAGE,
@@ -1674,7 +1675,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
             setEditing({});
           }}
         >
-          {isParentChildMode ? "Lier un parent" : "Ajouter"}
+          {isParentChildMode ? PARENT_FORM_COPY.linkAction : "Ajouter"}
         </Button>
       ) : null}
     </>
@@ -1821,7 +1822,7 @@ function EntityPageContent({ entity, mode, classScope, disableCreate = false }: 
         onClose={() => setEditing(null)}
         title={
           isParentChildMode
-            ? "Lier un parent"
+            ? PARENT_FORM_COPY.linkAction
             : editing?.id
               ? `Modifier — ${module.label}`
               : `Nouveau — ${module.label}`

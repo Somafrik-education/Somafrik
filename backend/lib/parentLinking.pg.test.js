@@ -284,6 +284,45 @@ async function main() {
     assert.equal(again.created, false);
     assert.deepEqual(await counts(), { users: 1, contacts: 1, roles: 1, relations: 2 });
 
+    // PARITÉ-SAFE-02 — charge utile Mobile exacte (buildParentLinkPayload, fiche Élève) :
+    // champs « Prénom du parent » / « Nom du parent » / « Téléphone du parent » / e-mail additif.
+    // Contact absent transmis en chaîne vide ; la liaison doit être persistée et relue.
+    const emailOnly = await store.linkParent(
+      { studentId: esther.rows[0].id, firstName: "Aline", lastName: "MOBILE", phone: "", email: "aline.mobile.pg@test.local" },
+      principal,
+      auditMeta,
+    );
+    assert.equal(emailOnly.created, true);
+    const phoneOnly = await store.linkParent(
+      { studentId: esther.rows[0].id, firstName: "Jules", lastName: "MOBILE", phone: "+243822220002", email: "" },
+      principal,
+      auditMeta,
+    );
+    assert.equal(phoneOnly.created, true);
+    assert.notEqual(phoneOnly.user.id, emailOnly.user.id);
+    const reread = await store.listParentRelations({ studentId: esther.rows[0].id }, principal);
+    const byEmail = reread.items.find((row) => row.email === "aline.mobile.pg@test.local");
+    const byPhone = reread.items.find((row) => row.phone === "+243822220002");
+    assert.ok(byEmail, "liaison e-mail seul non persistée");
+    assert.ok(byPhone, "liaison téléphone seul non persistée");
+    assert.equal(byEmail.firstName, "Aline");
+    assert.equal(byEmail.lastName, "MOBILE");
+    assert.equal(byPhone.firstName, "Jules");
+    assert.equal(byPhone.lastName, "MOBILE");
+    // Réutilisation : même téléphone, nouvelle liaison sur un autre élève → même compte Parent.
+    const reusedPhone = await store.linkParent(
+      { studentId: sarah.rows[0].id, firstName: "Jules", lastName: "MOBILE", phone: "+243822220002", email: "" },
+      principal,
+      auditMeta,
+    );
+    assert.equal(reusedPhone.user.id, phoneOnly.user.id);
+    await assert.rejects(
+      () => store.linkParent({ studentId: esther.rows[0].id, firstName: "Sans", lastName: "CONTACT", phone: "", email: "" }, principal, auditMeta),
+      (error) => error.code === CLIENTS_ERROR.PARENT_IDENTITY_REQUIRED,
+    );
+    assert.deepEqual(await counts(), { users: 1, contacts: 1, roles: 1, relations: 2 });
+    console.log("parentLinking.pg.test.js PARITÉ-SAFE-02 Mobile payload (e-mail seul, téléphone seul, réutilisation) OK");
+
     const teacherUser = await store.withTransaction(async (tx) => {
       const user = await tx.insertUser({
         schoolId: schoolA.rows[0].id,

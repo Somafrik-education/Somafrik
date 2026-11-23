@@ -68,6 +68,13 @@ import { OFFLINE_COPY } from "../lib/offlineModeSpec";
 import { MIN_TOUCH_TARGET_DP } from "../lib/mobileUsability";
 import { parentLinkSuccessFeedback } from "../lib/parentLinkingPresentation";
 import { DISPLAY_DATE_HINT, toApiDate } from "../lib/dates";
+import {
+  PARENT_FORM_COPY,
+  buildParentLinkPayload,
+  isPrincipalRelation,
+  sortRelationsPrincipalFirst,
+  validateParentLinkDraft,
+} from "../lib/parentFormCopy";
 
 type Props = NativeStackScreenProps<RootStackParamList, "StudentDetail">;
 
@@ -79,6 +86,7 @@ type GuardianRow = {
   phone?: string;
   email?: string;
   status?: string;
+  isPrincipal?: unknown;
 };
 
 export default function StudentDetailScreen({
@@ -149,6 +157,7 @@ export default function StudentDetailScreen({
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [linkError, setLinkError] = useState("");
   const canMutateC18 = canMutateC18Mobile(session);
 
@@ -174,7 +183,7 @@ export default function StudentDetailScreen({
       }
       try {
         const relations = await getParentRelations(canonicalId);
-        const active = filterActiveParentRelations(relations as GuardianRow[]);
+        const active = sortRelationsPrincipalFirst(filterActiveParentRelations(relations as GuardianRow[]));
         setGuardians(active);
         setGuardiansState(classifyGuardiansLoad({ loading: false, error: null, items: active }));
       } catch (error) {
@@ -271,16 +280,19 @@ export default function StudentDetailScreen({
       return;
     }
     setLinkError("");
+    const missing = validateParentLinkDraft({ phone, email });
+    if (missing) {
+      setLinkError(missing);
+      return;
+    }
     try {
-      const linked = await linkParent({
-        studentId: String(student.studentCode ?? student.id ?? studentId),
-        ...(firstName.trim() ? { firstName: firstName.trim() } : {}),
-        ...(lastName.trim() ? { lastName: lastName.trim() } : {}),
-        phone: phone.trim(),
-      });
+      const linked = await linkParent(
+        buildParentLinkPayload(String(student.studentCode ?? student.id ?? studentId), { firstName, lastName, phone, email }),
+      );
       setFirstName("");
       setLastName("");
       setPhone("");
+      setEmail("");
       await loadFiche();
       const feedback = parentLinkSuccessFeedback(linked);
       Alert.alert(feedback.title, feedback.message);
@@ -431,7 +443,7 @@ export default function StudentDetailScreen({
       </ExpandableEntityCard>
 
       <ExpandableEntityCard
-        title="Responsables"
+        title={PARENT_FORM_COPY.sectionTitle}
         subtitle={guardiansCardSubtitle(guardiansState, guardians.length)}
         badge={guardiansState === "success" ? String(guardians.length) : ""}
         testID={STUDENT_FICHE_LOT2_TEST_IDS.guardiansCard}
@@ -455,7 +467,7 @@ export default function StudentDetailScreen({
         ) : null}
         {guardiansState === "empty" ? (
           <Text style={styles.info} testID={STUDENT_FICHE_LOT2_TEST_IDS.guardiansEmpty}>
-            Aucun responsable lié
+            {PARENT_FORM_COPY.emptyList}
           </Text>
         ) : null}
         {guardiansState === "success"
@@ -463,9 +475,16 @@ export default function StudentDetailScreen({
           <View key={guardian.id} style={styles.guardianRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.menuText}>
-                {guardian.name || `${guardian.firstName ?? ""} ${guardian.lastName ?? ""}`.trim() || "Responsable"}
+                {guardian.name || `${guardian.firstName ?? ""} ${guardian.lastName ?? ""}`.trim() || "Parent"}
+                {isPrincipalRelation(guardian) ? (
+                  <Text style={styles.principalBadge} testID={`student-guardian-principal-${guardian.id}`}>
+                    {`  ${PARENT_FORM_COPY.principalBadge}`}
+                  </Text>
+                ) : null}
               </Text>
-              <Text style={styles.info}>{guardian.phone || guardian.email || ""}</Text>
+              <Text style={styles.info}>
+                {`${PARENT_FORM_COPY.phone} : ${guardian.phone || PARENT_FORM_COPY.notProvided} · ${PARENT_FORM_COPY.email} : ${guardian.email || PARENT_FORM_COPY.notProvided}`}
+              </Text>
             </View>
             {canArchive ? (
               <TouchableOpacity
@@ -482,21 +501,20 @@ export default function StudentDetailScreen({
           : null}
         {canLink ? (
           <View>
-            <Text style={styles.fieldLabel}>Prénom du parent</Text>
-            <FormField label={"Prénom du parent"} type="name" hideVisibleLabel inputStyle={styles.input} accessibilityLabel="Prénom du parent" placeholder="Prénom" value={firstName} onChangeText={setFirstName} />
-            <Text style={styles.fieldLabel}>Nom du parent</Text>
-            <FormField label={"Nom du parent"} type="name" hideVisibleLabel inputStyle={styles.input} accessibilityLabel="Nom du parent" placeholder="Nom" value={lastName} onChangeText={setLastName} />
-            <Text style={styles.fieldLabel}>Téléphone du parent</Text>
-            <FormField label={"Téléphone du parent"} type="phone" hideVisibleLabel inputStyle={styles.input} accessibilityLabel="Téléphone du parent" placeholder="Téléphone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-            {linkError ? <Text style={styles.error}>{linkError}</Text> : null}
+            <Text style={styles.fieldLabel}>{PARENT_FORM_COPY.linkAction}</Text>
+            <FormField label={PARENT_FORM_COPY.linkFirstName} type="name" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.linkFirstName} placeholder={PARENT_FORM_COPY.firstName} value={firstName} onChangeText={setFirstName} testID="parent-link-first-name" />
+            <FormField label={PARENT_FORM_COPY.linkLastName} type="name" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.linkLastName} placeholder={PARENT_FORM_COPY.lastName} value={lastName} onChangeText={setLastName} testID="parent-link-last-name" />
+            <FormField label={PARENT_FORM_COPY.linkPhone} type="phone" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.linkPhone} placeholder={PARENT_FORM_COPY.phone} value={phone} onChangeText={(value) => { setPhone(value); setLinkError(""); }} keyboardType="phone-pad" testID="parent-link-phone" />
+            <FormField label={PARENT_FORM_COPY.linkEmail} type="email" inputStyle={styles.input} accessibilityLabel={PARENT_FORM_COPY.linkEmail} placeholder={PARENT_FORM_COPY.email} value={email} onChangeText={(value) => { setEmail(value); setLinkError(""); }} keyboardType="email-address" autoCapitalize="none" testID="parent-link-email" />
+            {linkError ? <Text style={styles.error} accessibilityRole="alert">{linkError}</Text> : null}
             <TouchableOpacity
               style={styles.create}
               onPress={() => void submitLink()}
               testID={STUDENT_FICHE_LOT2_TEST_IDS.linkParentButton}
               accessibilityRole="button"
-              accessibilityLabel="Lier un responsable"
+              accessibilityLabel={PARENT_FORM_COPY.linkAction}
             >
-              <Text style={styles.createText}>Lier un responsable</Text>
+              <Text style={styles.createText}>{PARENT_FORM_COPY.linkAction}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -701,4 +719,5 @@ const styles = StyleSheet.create({
   },
   createText: { color: "#FFFFFF", fontWeight: "900" },
   error: { color: "#B91C1C", fontWeight: "700", marginBottom: 8 },
+  principalBadge: { color: "#1D4ED8", fontSize: 12, fontWeight: "800" },
 });
