@@ -155,4 +155,29 @@ Le smoke n'est déclaré réussi que si chaque rubrique a été réellement ouve
 5. #1194, carte NFC (aucun chevauchement).
 6. Réalignement préprod Web et API depuis `develop`, smoke NFC #1189, puis smoke Android du §7.
 
+## 10. Réconciliation finale (décisions CTO du 23/11/2026)
+
+| Décision | Mise en œuvre | HEAD | Base et merge-base | Ahead / behind |
+|---|---|---|---|---|
+| #1197 : quatre libellés explicites, titre « Responsables », bouton « Lier un responsable » | Commit `fa4b61ff4` (copie partagée Web/Mobile) ; 9 mutations détectées | `fa4b61ff4bbf8274cbf24e45f3a327d25a67ecd5` | `develop@7007139` | 3 / 0 |
+| #1141 canonique, tests de la LOT 6 repris | Merge de `develop` (sans réécriture) et `studentRouteIdentity.test.ts` ; 4 mutations détectées, dont une couverte uniquement par ce test | `20b534da84cae10d349e7fb97d3557b20a09132c` | `develop@7007139` | 5 / 0 |
+| #1195 sans LOT 3 ni LOT 6 | Branche neuve, **#1199** ; écart avec #1195 égal exactement à `594bcb560` + `f5d034795` | `4d5aaecff5d9566319bcc4d45863f1e36dd961a0` | `develop@7007139` | 13 / 0 |
+| #1196 indépendante | Inchangée ; 34 PASS ; gate jamais désactivé | `9e523c87e832fcc39d60f88451b7df5dfc75b907` | `develop@7007139` | 1 / 0 |
+
+**Intégration combinée simulée** (`develop` + #1196 + #1197 + #1141 + #1199 + #1194 + #1198), sur une branche locale jamais poussée :
+- aucun conflit ;
+- `verify:release-governance` : 34 PASS ;
+- Web : 341 fichiers et 1946 tests ; `vite build` OK ;
+- parité Parent, identité Élève, recovery, liaison Parent (PG), rôles et sécurité Mobile : verts.
+
+**Ordre d'intégration proposé** (chaque étape après diff CTO) :
+1. #1196 ;
+2. #1197 ;
+3. #1141 ;
+4. #1199, puis fermeture de #1195 sans merge ;
+5. #1194 ;
+6. #1198, avec SHA à réactualiser après les merges.
+
+Le smoke Android natif reste à exécuter (§7). Les références SHA de ce rapport seront actualisées après chaque merge autorisé.
+
 `PARITÉ-SAFE-02 — CORRECTIONS PRÊTES POUR DIFF CTO / DRAFT / HOLD / NO MERGE`
