@@ -2448,6 +2448,8 @@ class PostgresRepository {
     if (!code) return null;
     return this.one(
       `SELECT sess.*, u.user_code, u.role, u.status AS user_status,
+              -- sess.role (rôle choisi à la connexion) est masqué par u.role : exposé à part.
+              sess.role AS session_role,
               s.school_code, s.login_code AS school_login_code,
               c.iso_code AS country_code
        FROM sessions sess

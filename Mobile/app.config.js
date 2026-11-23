@@ -15,6 +15,7 @@ const {
   resolveApiUrlForProfile,
   resolveReleaseProfile,
 } = require("./config/releaseEnvironments");
+const { resolveLocalVersionCode, resolveMobileBuildProvenance } = require("./config/buildProvenance");
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -69,6 +70,8 @@ module.exports = ({ config }) => {
       showEnvironmentBadge: profileShowsEnvironmentBadge(releaseProfile),
       displayName,
       httpsOnly: isProdProfile || releaseProfile === "preview",
+      // LOT 2 — commit, branche, profil, canal : identifie le binaire installé (écran Support, CI).
+      buildProvenance: resolveMobileBuildProvenance({ profile: releaseProfile, cwd: mobileRoot }),
     },
     ios: {
       ...config.ios,
@@ -78,7 +81,7 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: ANDROID_PACKAGE,
-      versionCode: ANDROID_VERSION_CODE,
+      versionCode: resolveLocalVersionCode(ANDROID_VERSION_CODE),
       // Google Play Photos & Videos policy: Somafrik only needs one-shot photo
       // selection for the account picture. Do not request broad gallery access.
       permissions: (config.android?.permissions ?? []).filter(

@@ -18,6 +18,7 @@ import {
 } from "../lib/formFieldValidation";
 import { deleteSchoolStudent, enrollClassStudent, updateSchoolStudent } from "../services/api";
 import SecretHandoffModal, { type OneShotCredentials } from "./SecretHandoffModal";
+import { PARENT_FORM_COPY } from "../lib/parentFormCopy";
 
 type ClassOption = { id?: string; name?: string; classCode?: string; publicId?: string };
 type StudentRow = {
@@ -64,6 +65,7 @@ export default function StudentMutationControls({
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [parentPhone, setParentPhone] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
   const [classCode, setClassCode] = useState("");
   const [handoff, setHandoff] = useState<OneShotCredentials | null>(null);
   const firstNameRef = useRef<TextInput>(null);
@@ -103,6 +105,7 @@ export default function StudentMutationControls({
     setFirstName("");
     setLastName("");
     setParentPhone("");
+    setParentEmail("");
     setClassCode(resolvePreferredClassCode(className, classOptions));
     setOpen(true);
   };
@@ -132,6 +135,7 @@ export default function StudentMutationControls({
       const first = trimField(firstName);
       const last = trimField(lastName);
       const phone = trimField(parentPhone);
+      const email = trimField(parentEmail);
       if (editing && row) {
         const expectedUpdatedAt = String(row.updatedAt ?? "").trim();
         if (!expectedUpdatedAt) {
@@ -141,6 +145,9 @@ export default function StudentMutationControls({
           firstName: first,
           lastName: last,
           parentPhone: phone,
+          // N'envoyer l'e-mail que s'il a été modifié : une ligne de liste sans parentEmail
+          // ne doit jamais effacer l'e-mail enregistré.
+          ...(email !== trimField(row.parentEmail ?? "") ? { parentEmail: email } : {}),
           expectedUpdatedAt,
         });
       } else {
@@ -148,6 +155,7 @@ export default function StudentMutationControls({
           firstName: first,
           lastName: last,
           parentPhone: phone || undefined,
+          parentEmail: email || undefined,
         });
         const login = String(enrolled.credentials?.login ?? "").trim();
         const secret = String(enrolled.credentials?.temporarySecret ?? "").trim();
@@ -248,7 +256,7 @@ export default function StudentMutationControls({
       />
       <FormField
         ref={parentPhoneRef}
-        label="Téléphone du parent"
+        label={PARENT_FORM_COPY.enrollmentPhone}
         optional
         type="phone"
         value={parentPhone}
@@ -260,6 +268,16 @@ export default function StudentMutationControls({
         error={fieldErrors.parentPhone}
         helperText="Le même numéro peut servir pour plusieurs frères et sœurs."
         editable={!saving}
+      />
+      <FormField
+        label={PARENT_FORM_COPY.enrollmentEmail}
+        optional
+        type="email"
+        value={parentEmail}
+        onChangeText={setParentEmail}
+        placeholder="Ex. parent@exemple.cd"
+        editable={!saving}
+        testID="student-enroll-parent-email"
       />
     </CanonicalMutationModal>
   );
@@ -286,6 +304,7 @@ export default function StudentMutationControls({
                     setFirstName(row.firstName || parts[0] || "");
                     setLastName(row.lastName || parts.slice(1).join(" "));
                     setParentPhone(row.parentPhone ?? "");
+                    setParentEmail(row.parentEmail ?? "");
                     setError("");
                     setFieldErrors({});
                     setOpen(true);

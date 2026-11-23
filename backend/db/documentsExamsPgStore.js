@@ -361,15 +361,31 @@ function createDocumentsExamsPgStore(repo) {
   }
 
   async function computeStudentAverage(schoolId, studentId, termId) {
-    const row = await one(
-      `SELECT AVG(g.score) AS average
+    // SMOKE-MOY-01 : les bulletins doivent partager la pondération canonique
+    // évaluations -> cours avec /10 et /20 ; jamais une moyenne brute non pondérée.
+    const { computeReportCardAverage } = require("../lib/reportCard/reportCardAverage");
+    const rows = await all(
+      `SELECT g.score, g.grade_status, e.max_score,
+              e.coefficient AS evaluation_coefficient,
+              sub.name AS subject_name,
+              COALESCE(
+                (SELECT sc.coefficient
+                 FROM school_courses sc
+                 WHERE sc.school_id = g.school_id
+                   AND sc.class_id = g.class_id
+                   AND sc.subject_id = g.subject_id
+                   AND sc.status = 'active'
+                 ORDER BY sc.created_at ASC, sc.id ASC
+                 LIMIT 1),
+                sub.coefficient, 1
+              ) AS subject_coefficient
        FROM grades g
        JOIN evaluations e ON e.id = g.evaluation_id
-       WHERE g.school_id = $1 AND g.student_id = $2 AND e.term_id = $3 AND g.score IS NOT NULL`,
+       JOIN subjects sub ON sub.id = g.subject_id
+       WHERE g.school_id = $1 AND g.student_id = $2 AND e.term_id = $3`,
       [schoolId, studentId, termId],
     );
-    const value = Number(row?.average);
-    return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
+    return computeReportCardAverage(rows, studentId);
   }
 
   async function hydrateReportCard(row) {

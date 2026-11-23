@@ -52,6 +52,7 @@ import { schoolSetupGuidedApi } from "../lib/schoolSetupGuidedApi";
 import { shouldShowSchoolSetupWelcome } from "../lib/schoolSetupGuidedMobile";
 import { schoolSetupStatusApi } from "../lib/schoolSetupStatusApi";
 import { validateAccountSecret } from "../lib/userAccountRules";
+import { isSchoolAdminRole } from "../lib/format";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 const somafrikLogo = require("../../assets/somafrik-logo.png");
@@ -197,6 +198,9 @@ export default function LoginScreen({ navigation, route }: Props) {
     });
     let openWelcome = false;
     try {
+      // LOT 7 : l'accueil de configuration ne concerne que l'administration scolaire
+      // (shouldShowSchoolSetupWelcome) ; aucun appel pour les autres rôles.
+      if (!isSchoolAdminRole(role)) throw new Error("not-school-admin");
       const guided = await schoolSetupGuidedApi.get();
       openWelcome = shouldShowSchoolSetupWelcome({
         payload: guided,
