@@ -274,3 +274,18 @@ Pour la session Parent, la valeur absente n'élargit rien : `hydrateParentPrinci
   1. Dans `principalIsParent`, s'appuyer sur le rôle de session plutôt que sur l'ensemble des `roleKeys`.
   2. Conserver au refresh le libellé du rôle de session.
   3. Ajouter un choix de rôle à la connexion mobile multirôle.
+
+---
+
+## Réconciliation PARITÉ-SAFE-02 (2026-11-23, décision CTO)
+
+Cette branche (`fix/parite-recovery-01-reconciled`, créée depuis `develop@7007139`) reprend #1195 **sans** deux lots repris dans des PR spécialisées :
+
+| Lot | Commit #1195 | Repris par | Motif |
+|---|---|---|---|
+| LOT 3, formulaires Parent | `594bcb560` | #1197 (PARITÉ-SAFE-02) | Libellés explicites « … du parent », titre « Responsables » et bouton « Lier un responsable » restaurés ; e-mail et validation conservés |
+| LOT 6, identité Élève | `f5d034795` | #1141 (canonique) | Code identique hors commentaires ; `studentRouteIdentity.test.ts` ajouté à #1141 |
+
+Les lots 1, 2, 4, 5 et 7, leurs tests et leurs corrections de revue sont repris à l'identique (cherry-pick `-x`). L'écart avec la tête de #1195 (`22bf5c1e`) est **exactement** le contenu des deux commits retirés.
+
+`test:parite-recovery-01` n'exécute plus `parentFormParity.test.ts` ni `studentRouteIdentity.test.ts`. Ces tests sont désormais exécutés par #1197 (`test:parent-labels-safe-02`) et par #1141 (`verify:user-role-lifecycle`).
