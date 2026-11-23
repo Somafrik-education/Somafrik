@@ -22,9 +22,11 @@ import {
   notesForStudent,
 } from "../lib/evaluationsV2";
 import {
+  averagePeriodOptions,
   canonicalCourseAverage,
   canonicalStudentGeneralAverage,
   courseOptionsFromNotes,
+  notesForAveragePeriod,
 } from "../lib/pedagogyAverage";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
 import {
@@ -73,25 +75,28 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
   );
 
   const [courseFilter, setCourseFilter] = useState("");
+  const [periodFilter, setPeriodFilter] = useState("");
 
   useEffect(() => {
     setCourseFilter("");
+    setPeriodFilter("");
   }, [studentId]);
 
   const studentNotes = studentAliasKeys.length
     ? notesForStudent(notesSnapshot.data, studentAliasKeys)
     : [];
-  const courseOptions = useMemo(() => courseOptionsFromNotes(studentNotes), [studentNotes]);
+  const periodOptions = useMemo(() => averagePeriodOptions(studentNotes), [studentNotes]);
+  const periodNotes = useMemo(() => notesForAveragePeriod(studentNotes, periodFilter), [studentNotes, periodFilter]);
+  const courseOptions = useMemo(() => courseOptionsFromNotes(studentNotes, periodFilter), [studentNotes, periodFilter]);
   const visibleNotes = useMemo(
-    () =>
-      courseFilter
-        ? studentNotes.filter((note) => String(note.subject ?? "").trim() === courseFilter)
-        : studentNotes,
-    [courseFilter, studentNotes],
+    () => courseFilter
+      ? periodNotes.filter((note) => String(note.subject ?? "").trim() === courseFilter)
+      : periodNotes,
+    [courseFilter, periodNotes],
   );
   const average = courseFilter
-    ? canonicalCourseAverage(studentNotes, courseFilter)
-    : canonicalStudentGeneralAverage(studentNotes);
+    ? canonicalCourseAverage(studentNotes, courseFilter, periodFilter)
+    : canonicalStudentGeneralAverage(studentNotes, periodFilter);
 
   return (
     <View style={styles.container} testID={STUDENT_SUB_SCREENS_TEST_IDS.notesScreen}>
@@ -121,7 +126,7 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
 
               <View style={[styles.summaryCard, { backgroundColor: "#2563EB" }]}>
                 <Text style={[styles.summaryLabel, { color: "#DBEAFE" }]}>
-                  {courseFilter ? `Moyenne ${courseFilter}` : "Moyenne générale"}
+                  {`${courseFilter ? `Moyenne ${courseFilter}` : "Moyenne générale"} · ${periodFilter || "Toutes périodes"}`}
                 </Text>
                 <Text
                   style={[styles.summaryValue, { color: "#FFFFFF" }]}
@@ -136,6 +141,24 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
                       : `Coef. évaluations ${average.totalCoefficients}`
                     : "Notes publiées uniquement"}
                 </Text>
+              </View>
+
+              <View style={chipStyles.chips} testID="student-notes-period-filter">
+                <TouchableOpacity
+                  style={[chipStyles.chip, !periodFilter && chipStyles.chipActive]}
+                  onPress={() => { setPeriodFilter(""); setCourseFilter(""); }}
+                >
+                  <Text style={[chipStyles.chipText, !periodFilter && chipStyles.chipTextActive]}>Toutes périodes</Text>
+                </TouchableOpacity>
+                {periodOptions.map((period) => (
+                  <TouchableOpacity
+                    key={period}
+                    style={[chipStyles.chip, periodFilter === period && chipStyles.chipActive]}
+                    onPress={() => { setPeriodFilter(period); setCourseFilter(""); }}
+                  >
+                    <Text style={[chipStyles.chipText, periodFilter === period && chipStyles.chipTextActive]}>{period}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
 
               <View style={chipStyles.chips}>
