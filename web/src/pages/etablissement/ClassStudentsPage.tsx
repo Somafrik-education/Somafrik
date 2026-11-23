@@ -21,6 +21,7 @@ import {
   type EnrollClassStudentPayload,
 } from "../../lib/classStudentsApi";
 import { normalizeOptionalParentPhone } from "../../lib/parentPhone";
+import { PARENT_FORM_COPY } from "../../lib/parentFormCopy";
 import { usePermissionContext } from "../../lib/usePermissionContext";
 import { getEntityFeaturePermissions } from "../../lib/permissions";
 import { DISPLAY_DATE_HINT } from "../../lib/dates";
@@ -302,7 +303,7 @@ export function ClassStudentsPage() {
             />
           </Field>
           <Field
-            label="Téléphone parent"
+            label={PARENT_FORM_COPY.enrollmentPhone}
             htmlFor="enroll-parent-phone"
             hint="Chiffres, espaces, +, - ou parenthèses"
           >
@@ -316,7 +317,7 @@ export function ClassStudentsPage() {
               }
             />
           </Field>
-          <Field label="Email parent" htmlFor="enroll-parent-email">
+          <Field label={PARENT_FORM_COPY.enrollmentEmail} htmlFor="enroll-parent-email">
             <Input
               id="enroll-parent-email"
               type="email"

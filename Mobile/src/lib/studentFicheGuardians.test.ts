@@ -6,10 +6,10 @@ import {
   guardiansCardSubtitle,
 } from "./studentFicheGuardians";
 
-test("PARITY-014 : 200 + liste vide → empty / Aucun responsable lié", () => {
+test("PARITY-014 : 200 + liste vide → empty / Aucun parent ou responsable lié", () => {
   const state = classifyGuardiansLoad({ loading: false, error: null, items: [] });
   assert.equal(state, "empty");
-  assert.equal(guardiansCardSubtitle(state, 0), "Aucun responsable lié");
+  assert.equal(guardiansCardSubtitle(state, 0), "Aucun parent ou responsable lié");
 });
 
 test("PARITY-014 : 200 + responsables → success, jamais empty", () => {
@@ -32,7 +32,7 @@ test("PARITY-014 : 403/500 ne deviennent pas « aucun responsable »", () => {
   assert.equal(forbidden, "error");
   assert.equal(server, "error");
   assert.equal(guardiansCardSubtitle(forbidden, 0), "Indisponible");
-  assert.notEqual(guardiansCardSubtitle(forbidden, 0), "Aucun responsable lié");
+  assert.notEqual(guardiansCardSubtitle(forbidden, 0), "Aucun parent ou responsable lié");
 });
 
 test("PARITY-014 : offline → état offline + Indisponible", () => {

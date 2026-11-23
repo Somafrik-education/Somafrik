@@ -1,3 +1,4 @@
+import { PARENT_FORM_COPY } from "./parentFormCopy";
 export type GuardiansLoadState = "loading" | "success" | "empty" | "error" | "offline";
 
 function errorStatus(error: unknown): number | undefined {
@@ -14,7 +15,7 @@ export function isOfflineLikeError(error: unknown): boolean {
 }
 
 /**
- * Ne rend « Aucun responsable lié » que sur 200 + liste vide.
+ * Ne rend « Aucun parent ou responsable lié » que sur 200 + liste vide.
  * 403 / 500 / réseau → error | offline, jamais empty.
  */
 export function classifyGuardiansLoad(input: {
@@ -31,7 +32,7 @@ export function classifyGuardiansLoad(input: {
 export function guardiansCardSubtitle(state: GuardiansLoadState, count: number): string {
   if (state === "loading") return "Chargement…";
   if (state === "error" || state === "offline") return "Indisponible";
-  if (state === "empty") return "Aucun responsable lié";
+  if (state === "empty") return PARENT_FORM_COPY.emptyList;
   return `${count} responsable(s)`;
 }
 
