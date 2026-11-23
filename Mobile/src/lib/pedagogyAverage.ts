@@ -79,3 +79,8 @@ export function canonicalCourseAverage(notes: CanonicalGrade[], subject: string,
   const subjectNotes = notesForAveragePeriod(notes, period).filter((note) => normalizeKey(note.subject) === wanted);
   return canonicalWeightedAverage(subjectNotes, { displayScale: 20 });
 }
+
+/** Format de restitution /20, parité avec le bulletin Web à deux décimales. */
+export function formatStudentNotesAverage(average: number | null): string {
+  return average !== null && Number.isFinite(average) ? average.toFixed(2) : "—";
+}
