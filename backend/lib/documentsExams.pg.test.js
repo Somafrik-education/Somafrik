@@ -137,6 +137,18 @@ async function resetBaseSchema(pool) {
   await pool.query(ESTABLISHMENT_ROLES_SCHEMA_SQL);
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260814_residual_state_canonical.sql"), "utf8"));
   await pool.query(DOCUMENTS_EXAMS_SCHEMA_SQL);
+  // Fixture isolée de documents/exams : schema.sql n'installe pas le module
+  // school_courses. Le calcul canonique du bulletin doit néanmoins pouvoir
+  // lire les coefficients de cours sur ce périmètre de test.
+  await pool.query(`CREATE TABLE school_courses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    school_id UUID NOT NULL,
+    class_id UUID NOT NULL,
+    subject_id UUID NOT NULL,
+    coefficient NUMERIC NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
 }
 
 async function seedSchools(pool) {
@@ -488,6 +500,12 @@ async function testReportCards(pool) {
     `INSERT INTO grades (school_id, student_id, class_id, subject_id, teacher_id, term_id, evaluation_id, grade_type, score, max_score, grade_status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, 'devoir', 14, 20, 'graded')`,
     [schoolAId, studentId, refs.classId, refs.subjectId, teacher.rows[0].id, refs.termId, evaluation.rows[0].id],
+  );
+  // Le coefficient scolaire actif est lu par la nouvelle projection SQL.
+  await pool.query(
+    `INSERT INTO school_courses (school_id, class_id, subject_id, coefficient, status)
+     VALUES ($1, $2, $3, 2, 'active')`,
+    [schoolAId, refs.classId, refs.subjectId],
   );
   const repo = createRepo(pool);
   const card = await generateReportCard(repo, { studentId, termId: refs.termId }, adminA, {});
