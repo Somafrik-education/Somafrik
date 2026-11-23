@@ -40,11 +40,14 @@ function storeWith({ prerequisites = { user_roles: true, normalize_fn: true }, c
 const isUnavailable = (error) => error?.statusCode === 503 && error?.code === "ROLE_ASSIGNMENTS_UNAVAILABLE";
 
 test("comptage filtré et agrégé dans PostgreSQL (une requête paramétrée, aucun chargement en Node.js)", async () => {
-  const { store, calls } = storeWith({ count: { active_assignments: 4, schools: 2, platform_assignments: 1 } });
+  const { store, calls } = storeWith({
+    count: { active_assignments: 4, schools: 2, platform_assignments: 1, active_rows: 5 },
+  });
   assert.deepEqual(await store.countActiveAssignmentsForRole(ROLE), {
     activeAssignments: 4,
     schools: 2,
     platformAssignments: 1,
+    activeRows: 5,
   });
   const countCall = calls.find((call) => call.sql === COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL);
   assert.deepEqual(countCall.params, ["delegue_de_classe", "Délégué de classe"]);
@@ -52,6 +55,13 @@ test("comptage filtré et agrégé dans PostgreSQL (une requête paramétrée, a
   assert.match(COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL, /ur\.status = 'active'/);
   assert.match(COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL, /ur\.revoked_at IS NULL/);
   assert.match(COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL, /COUNT\(DISTINCT ur\.school_id\)/);
+  // Affectations logiques : couples distincts (user_id, school_id), plateforme comprise.
+  assert.match(
+    COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL,
+    /COUNT\(DISTINCT \(ur\.user_id::text \|\| ':' \|\| COALESCE\(ur\.school_id::text, '\*'\)\)\)::int AS active_assignments/,
+  );
+  assert.match(COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL, /COUNT\(DISTINCT ur\.user_id\) FILTER \(WHERE ur\.school_id IS NULL\)/);
+  assert.match(COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL, /COUNT\(\*\)::int AS active_rows/);
   assert.doesNotMatch(COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL, /GROUP BY/);
 });
 
@@ -71,12 +81,18 @@ test("fail-closed : table ou fonction absente, lecture en échec, résultat inva
     storeWith({ prerequisitesError: new Error("down") }),
     storeWith({ countError: new Error("timeout") }),
     storeWith({ count: null }),
-    storeWith({ count: { active_assignments: "x", schools: 0, platform_assignments: 0 } }),
+    storeWith({ count: { active_assignments: "x", schools: 0, platform_assignments: 0, active_rows: 0 } }),
+    storeWith({ count: { active_assignments: 1, schools: 1, platform_assignments: 0 } }),
+    storeWith({ count: { active_assignments: -1, schools: 0, platform_assignments: 0, active_rows: 0 } }),
+    // Incohérences : moins de lignes que d'affectations, plus d'établissements que d'affectations.
+    storeWith({ count: { active_assignments: 2, schools: 1, platform_assignments: 0, active_rows: 1 } }),
+    storeWith({ count: { active_assignments: 1, schools: 2, platform_assignments: 0, active_rows: 2 } }),
+    storeWith({ count: { active_assignments: 1, schools: 0, platform_assignments: 2, active_rows: 2 } }),
   ];
   for (const { store } of cases) {
     await assert.rejects(store.countActiveAssignmentsForRole(ROLE), isUnavailable);
   }
-  const { store } = storeWith({ count: { active_assignments: 0, schools: 0, platform_assignments: 0 } });
+  const { store } = storeWith({ count: { active_assignments: 0, schools: 0, platform_assignments: 0, active_rows: 0 } });
   await assert.rejects(store.countActiveAssignmentsForRole({ roleCode: "", roleName: "" }), isUnavailable);
 });
 

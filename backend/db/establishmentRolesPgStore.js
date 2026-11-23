@@ -17,11 +17,23 @@ const ROLE_ASSIGNMENT_PREREQUISITES_SQL = `
 /**
  * RBAC-LOGIN-01 — $1 = role_code, $2 = role_name. Filtre et agrège dans PostgreSQL ;
  * prédicats alignés sur l'index partiel idx_user_roles_active_normalized_key.
+ *
+ * Définitions (lignes actives, non révoquées, de clé canonique équivalente) :
+ *   - active_assignments   : affectations LOGIQUES = couples distincts (user_id, school_id),
+ *                            school_id NULL compris (portée plateforme). Deux clés
+ *                            équivalentes d'un même compte au même endroit (ex.
+ *                            AGENT_RÉVOCABLE + agent_revocable) = 1 affectation ;
+ *   - schools              : établissements distincts (school_id non NULL) ;
+ *   - platform_assignments : comptes distincts affectés sans établissement (school_id NULL) ;
+ *   - active_rows          : lignes brutes (diagnostic : active_rows > active_assignments
+ *                            révèle des doublons de clés équivalentes).
+ * Invariant : active_assignments = (couples avec établissement) + platform_assignments.
  */
 const COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL = `
-  SELECT COUNT(*)::int AS active_assignments,
+  SELECT COUNT(DISTINCT (ur.user_id::text || ':' || COALESCE(ur.school_id::text, '*')))::int AS active_assignments,
          COUNT(DISTINCT ur.school_id)::int AS schools,
-         COUNT(*) FILTER (WHERE ur.school_id IS NULL)::int AS platform_assignments
+         COUNT(DISTINCT ur.user_id) FILTER (WHERE ur.school_id IS NULL)::int AS platform_assignments,
+         COUNT(*)::int AS active_rows
   FROM user_roles ur
   WHERE ur.status = 'active'
     AND ur.revoked_at IS NULL
@@ -254,8 +266,14 @@ function createEstablishmentRolesPgStore(repo) {
     const activeAssignments = Number(row?.active_assignments);
     const schools = Number(row?.schools);
     const platformAssignments = Number(row?.platform_assignments);
-    if (![activeAssignments, schools, platformAssignments].every(Number.isInteger)) throw unavailable();
-    return { activeAssignments, schools, platformAssignments };
+    const activeRows = Number(row?.active_rows);
+    const counts = [activeAssignments, schools, platformAssignments, activeRows];
+    if (!counts.every((value) => Number.isInteger(value) && value >= 0)) throw unavailable();
+    // Cohérence : une ligne au moins par affectation logique ; autant d'établissements au plus.
+    if (activeRows < activeAssignments || schools > activeAssignments || platformAssignments > activeAssignments) {
+      throw unavailable();
+    }
+    return { activeAssignments, schools, platformAssignments, activeRows };
   }
 
   /**

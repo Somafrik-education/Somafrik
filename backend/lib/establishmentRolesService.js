@@ -243,7 +243,11 @@ async function archiveRole(repo, roleId, principal, auditMeta) {
             409,
             "Archivage refusé : ce rôle est encore attribué. Retirez d'abord ses affectations actives.",
             ESTABLISHMENT_ROLES_ERROR.ROLE_HAS_ACTIVE_ASSIGNMENTS,
-            { activeAssignments: usage.activeAssignments, schools: usage.schools },
+            {
+              activeAssignments: usage.activeAssignments,
+              schools: usage.schools,
+              platformAssignments: usage.platformAssignments,
+            },
           );
         }
       }
@@ -273,6 +277,8 @@ async function archiveRole(repo, roleId, principal, auditMeta) {
             ...roleAuditSnapshot(refusal.role),
             reason: ESTABLISHMENT_ROLES_ERROR.ROLE_HAS_ACTIVE_ASSIGNMENTS,
             activeAssignments: refusal.usage.activeAssignments,
+            platformAssignments: refusal.usage.platformAssignments,
+            activeRows: refusal.usage.activeRows,
             schools: refusal.usage.schools,
           },
         });

@@ -146,6 +146,8 @@ const ROLES = {
   delegue: { name: "Délégué de classe", modules: [] },
   delegueBis: { name: "Délégué-de-Classe", code: "delegue_classe_bis", modules: [] },
   delegueAdjoint: { name: "Délégué de classe adjoint", modules: [] },
+  // RL01-16 — affectations logiques : deux clés équivalentes actives pour un même compte.
+  doublon: { name: "Agent double", modules: [{ moduleKey: "classes", canRead: true }] },
 };
 /** Grants d'une clé absente du catalogue (rôle inconnu / supprimé). */
 const PHANTOM_ROLE_KEY = "ROLE_FANTOME";
@@ -266,6 +268,11 @@ async function seed(pool) {
   await withRoles("delegueAdjointA", schoolA.id, [[schoolA.id, "DÉLÉGUÉ_DE_CLASSE_ADJOINT"]], { primaryRole: null });
   await withRoles("delegueBisA", schoolA.id, [[schoolA.id, "DELEGUE_CLASSE_BIS"]], { primaryRole: null });
   await withRoles("deleguePlatform", null, [[null, "DÉLÉGUÉ_DE_CLASSE"]], { primaryRole: null });
+  // RL01-16 — clé API (toRoleKey(role_name)) + clé backfill (role_code) actives ensemble.
+  await withRoles("dupA", schoolA.id, [[schoolA.id, userRoleKey(ROLES.doublon)], [schoolA.id, normalizeRoleCode(ROLES.doublon.name)]], { primaryRole: null });
+  await withRoles("dupB", schoolB.id, [[schoolB.id, userRoleKey(ROLES.doublon)]], { primaryRole: null });
+  await withRoles("dupPlatform", null, [[null, userRoleKey(ROLES.doublon)], [null, normalizeRoleCode(ROLES.doublon.name)]], { primaryRole: null });
+  await withRoles("adminB", schoolB.id, [[schoolB.id, "SCHOOL_ADMIN"]]);
   await withRoles("superadmin", null, [[null, "SUPER_ADMIN"]]);
   await withRoles("pays", null, [[null, "COUNTRY_ADMIN"]]);
   return { schoolA, schoolB, users };
@@ -729,10 +736,10 @@ async function main() {
     const roleRef = (role) => ({ roleCode: role.code ?? normalizeRoleCode(role.name), roleName: role.name });
     const expectedCounts = [
       // A1 + A2 (A), B1 (B), plateforme ; révoquée et « adjoint » exclues.
-      [ROLES.delegue, { activeAssignments: 4, schools: 2, platformAssignments: 1 }],
+      [ROLES.delegue, { activeAssignments: 4, schools: 2, platformAssignments: 1, activeRows: 4 }],
       // Son role_name se normalise en « delegue_de_classe » : il couvre aussi ces clés (prudent).
-      [ROLES.delegueBis, { activeAssignments: 5, schools: 2, platformAssignments: 1 }],
-      [ROLES.delegueAdjoint, { activeAssignments: 1, schools: 1, platformAssignments: 0 }],
+      [ROLES.delegueBis, { activeAssignments: 5, schools: 2, platformAssignments: 1, activeRows: 5 }],
+      [ROLES.delegueAdjoint, { activeAssignments: 1, schools: 1, platformAssignments: 0, activeRows: 1 }],
     ];
     for (const [role, expected] of expectedCounts) {
       const counted = await directStore(pool).countActiveAssignmentsForRole(roleRef(role));
@@ -820,6 +827,94 @@ async function main() {
       (await directStore(pool).countActiveAssignmentsForRole(roleRef(ROLES.delegueAdjoint))).activeAssignments === 1,
       "RL01-15 retour à la normale après incident",
     );
+    // RL01-16 — affectations LOGIQUES distinctes (user_id, school_id), pas lignes brutes.
+    const doublonRef = roleRef(ROLES.doublon);
+    const countDoublon = () => directStore(pool).countActiveAssignmentsForRole(doublonRef);
+    const sameCounts = (actual, expected) => JSON.stringify(actual) === JSON.stringify(expected);
+    const initial = await countDoublon();
+    check(
+      sameCounts(initial, { activeAssignments: 3, schools: 2, platformAssignments: 1, activeRows: 5 }),
+      `RL01-16 comptage initial (dupA×2 en A, dupB en B, plateforme×2) : ${JSON.stringify(initial)}`,
+    );
+    const dupKeysA = await activeRoleRows(users.dupA);
+    check(dupKeysA.length === 2, `RL01-16 deux clés équivalentes actives pour dupA : ${JSON.stringify(dupKeysA)}`);
+    const dupSession = await webLogin("dupA");
+    assertStatus(dupSession, 200, "RL01-16 connexion dupA (clés équivalentes)");
+    check(
+      JSON.stringify(dupSession.data?.permissions ?? []) === JSON.stringify(["Classes:READ"]),
+      `RL01-16 droits dupA dédoublonnés : ${JSON.stringify(dupSession.data?.permissions)}`,
+    );
+    const refused1 = await archiveRole(ROLES.doublon.id);
+    assertStatus(refused1, 409, "RL01-16 archivage refusé (3 affectations logiques)");
+    check(
+      sameCounts(refused1.data?.details, { activeAssignments: 3, schools: 2, platformAssignments: 1 }),
+      `RL01-16 détails du 409 : ${JSON.stringify(refused1.data?.details)}`,
+    );
+    const doublonAudits = async () =>
+      (await auditRows("ROLE_ARCHIVE_REFUSED", ROLES.doublon.id)).map((row) => row.new_value ?? {});
+    const audit1 = (await doublonAudits())[0] ?? {};
+    check(
+      audit1.activeAssignments === 3 && audit1.schools === 2 && audit1.platformAssignments === 1 && audit1.activeRows === 5,
+      `RL01-16 audit du refus (logiques 3, lignes 5) : ${JSON.stringify(audit1)}`,
+    );
+    // Retrait par l'API de dupA : les deux clés équivalentes tombent, une seule affectation logique en moins.
+    const adminBSession = await webLogin("adminB", schoolB.login_code);
+    assertStatus(adminBSession, 200, "RL01-16 connexion Admin School B");
+    const revokeDupA = await request(`/backoffice/users/${users.dupA}/roles/revoke`, {
+      method: "POST",
+      token: adminAgain.data.accessToken,
+      body: { role: userRoleKey(ROLES.doublon) },
+    });
+    assertStatus(revokeDupA, 200, "RL01-16 retrait dupA");
+    check((await activeRoleRows(users.dupA)).length === 0, `RL01-16 clés de dupA toutes révoquées : ${JSON.stringify(await activeRoleRows(users.dupA))}`);
+    assertStatus(await classesRoute(dupSession.data?.accessToken), 401, "RL01-16 session dupA invalidée");
+    const afterDupA = await countDoublon();
+    check(
+      sameCounts(afterDupA, { activeAssignments: 2, schools: 1, platformAssignments: 1, activeRows: 3 }),
+      `RL01-16 comptage après retrait dupA : ${JSON.stringify(afterDupA)}`,
+    );
+    const refused2 = await archiveRole(ROLES.doublon.id);
+    assertStatus(refused2, 409, "RL01-16 archivage toujours refusé (2 restantes)");
+    const audit2 = (await doublonAudits())[1] ?? {};
+    check(audit2.activeAssignments === 2 && audit2.activeRows === 3, `RL01-16 second audit : ${JSON.stringify(audit2)}`);
+    const revokeDupB = await request(`/backoffice/users/${users.dupB}/roles/revoke`, {
+      method: "POST",
+      token: adminBSession.data.accessToken,
+      body: { role: userRoleKey(ROLES.doublon) },
+    });
+    assertStatus(revokeDupB, 200, "RL01-16 retrait dupB (Admin School B)");
+    // Affectation plateforme d'un rôle d'établissement : non attribuable par l'API (donnée héritée) ;
+    // retirée comme une opération d'exploitation, puis comptée à 0.
+    await pool.query(
+      `UPDATE user_roles SET status = 'revoked', revoked_at = NOW() WHERE user_id = $1 AND status = 'active'`,
+      [users.dupPlatform],
+    );
+    const afterAll = await countDoublon();
+    check(
+      sameCounts(afterAll, { activeAssignments: 0, schools: 0, platformAssignments: 0, activeRows: 0 }),
+      `RL01-16 comptage après tous les retraits : ${JSON.stringify(afterAll)}`,
+    );
+    const archivedDoublon = await archiveRole(ROLES.doublon.id);
+    assertStatus(archivedDoublon, 200, "RL01-16 archivage autorisé à 0 affectation");
+    check((await auditRows("ROLE_ARCHIVE", ROLES.doublon.id)).length === 1, "RL01-16 audit d'archivage");
+    // Redémarrage : démarrage réussi, rien n'est recréé, rôle toujours archivé.
+    await stopChild(child);
+    await startServer();
+    for (const key of ["dupA", "dupB", "dupPlatform"]) {
+      check((await activeRoleRows(users[key])).length === 0, `RL01-16 ${key} : aucun rôle recréé au redémarrage`);
+    }
+    check(await roleStatus(ROLES.doublon.id) === "archived", "RL01-16 rôle toujours archivé après redémarrage");
+    check(
+      sameCounts(await countDoublon(), { activeAssignments: 0, schools: 0, platformAssignments: 0, activeRows: 0 }),
+      "RL01-16 comptage nul après redémarrage",
+    );
+    const dupAfterRestart = await webLogin("dupA");
+    if (dupAfterRestart.status === 200) {
+      check((dupAfterRestart.data?.permissions ?? []).length === 0, "RL01-16 dupA sans droit après redémarrage");
+    } else {
+      assertStatus(dupAfterRestart, 403, "RL01-16 connexion dupA après redémarrage");
+    }
+    ok("RL01-16 affectations logiques (user_id, school_id) : 3 / 5 lignes → 409 + audit exacts, retraits, archivage, redémarrage");
     ok(`RL01-15 comptage PostgreSQL exact (4 / 2 établissements), index ${usesIndex ? "utilisé" : "NON utilisé"}, fail-closed 503`);
 
     if (REPRO) {
