@@ -180,4 +180,19 @@ Le smoke n'est déclaré réussi que si chaque rubrique a été réellement ouve
 
 Le smoke Android natif reste à exécuter (§7). Les références SHA de ce rapport seront actualisées après chaque merge autorisé.
 
+## 11. Intégration de #1196 (mandat CTO « DÉBLOCAGE CI PARITÉ », 23/11/2026)
+
+| Élément | Valeur |
+|---|---|
+| HEAD #1196 vérifié avant merge | `9e523c87e832fcc39d60f88451b7df5dfc75b907` (1 / 0 sur `develop@7007139`) |
+| Checks à ce HEAD | `release-governance` vert ; PR Gates `Required` vert (Scope, Secrets, Quality et Core tests verts ; jobs métier ignorés par le filtrage, PR de gouvernance seule) ; `mergeable_state: clean` |
+| Simulation avant merge | `develop` + squash de #1196 : `verify:release-governance` rc 0, 34 PASS |
+| Merge (squash, verrouillé sur le HEAD) | `7c2be5d5bac94e128de2cb11b45f62da49426841` |
+| Nouveau HEAD `develop` | `7c2be5d5bac94e128de2cb11b45f62da49426841` (parent `70071390`) ; diff égal aux 2 fichiers de #1196 |
+| `main` | Inchangé : `e223e30e9e195dabff01e66a81afdf0164486dc2` ; `develop...main` = 2 / 32 |
+
+Les PR #1197, #1141 et #1199 ne sont pas mergées. #1195 reste en HOLD. Aucune modification de `main` et aucun déploiement.
+
+Prochaine étape : actualiser chaque PR suivante avec `develop@7c2be5d5`, dans l'ordre CTO, puis refaire pour chacune le contrôle complet (diff, merge-base, écart avec `develop`, suppressions, conflits, CI).
+
 `PARITÉ-SAFE-02 — CORRECTIONS PRÊTES POUR DIFF CTO / DRAFT / HOLD / NO MERGE`
