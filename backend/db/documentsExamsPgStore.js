@@ -362,7 +362,7 @@ function createDocumentsExamsPgStore(repo) {
 
   async function computeStudentAverage(schoolId, studentId, termId) {
     // SMOKE-MOY-01 : les bulletins doivent partager la pondération canonique
-    // évaluations -> cours avec /10 et /20, et non AVG(g.score) brut.
+    // évaluations -> cours avec /10 et /20 ; jamais une moyenne brute non pondérée.
     const { computeReportCardAverage } = require("../lib/reportCard/reportCardAverage");
     const rows = await all(
       `SELECT g.score, g.grade_status, e.max_score,
