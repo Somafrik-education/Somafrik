@@ -116,6 +116,9 @@ async function resetBaseSchema(pool) {
   await pool.query("CREATE SCHEMA public");
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/schema.sql"), "utf8"));
   await ensureClientsCanonicalBootstrap(pool, { info() {}, error() {} });
+  // RBAC-LOGIN-01 : comme au démarrage (ensureUserRolesCanonicalSchema), la fonction de
+  // normalisation précède toute lecture d'affectations ; sans elle l'archivage est refusé (503).
+  await pool.query(require("../db/userRolesSchema").NORMALIZE_ROLE_CODE_FUNCTION_SQL);
   await pool.query(fs.readFileSync(path.join(__dirname, "../db/migrations/20260814_residual_state_canonical.sql"), "utf8"));
 }
 

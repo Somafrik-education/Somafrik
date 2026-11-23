@@ -665,6 +665,7 @@ class PostgresRepository {
       STUDENT_ROLE_LOCK_TRIGGER_SQL,
       USER_ROLES_MIGRATION_AMBIGUOUS,
       NORMALIZE_ROLE_CODE_FUNCTION_SQL,
+      USER_ROLES_ACTIVE_NORMALIZED_KEY_INDEX_SQL,
       inventoryUnknownUsersRoleSql,
       inventoryUnknownSecondaryRolesSql,
       backfillFromUsersRoleSql,
@@ -707,6 +708,8 @@ class PostgresRepository {
       await this.query(backfillFromSecondaryRolesSql(catalogAvailable));
     }
     await this.query(STUDENT_ROLE_LOCK_TRIGGER_SQL);
+    // RBAC-LOGIN-01 : fonction et table présentes à ce stade.
+    await this.query(USER_ROLES_ACTIVE_NORMALIZED_KEY_INDEX_SQL);
   }
 
   /**

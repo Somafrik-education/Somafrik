@@ -142,6 +142,10 @@ const ROLES = {
   course2: { name: "Rôle course deux", modules: [{ moduleKey: "classes", canRead: true }] },
   course3: { name: "Rôle course trois", modules: [{ moduleKey: "classes", canRead: true }] },
   course4: { name: "Rôle verrou", modules: [{ moduleKey: "classes", canRead: true }] },
+  // RL01-15 — homonymes : même clé canonique « delegue_de_classe » par le nom de delegueBis.
+  delegue: { name: "Délégué de classe", modules: [] },
+  delegueBis: { name: "Délégué-de-Classe", code: "delegue_classe_bis", modules: [] },
+  delegueAdjoint: { name: "Délégué de classe adjoint", modules: [] },
 };
 /** Grants d'une clé absente du catalogue (rôle inconnu / supprimé). */
 const PHANTOM_ROLE_KEY = "ROLE_FANTOME";
@@ -250,6 +254,18 @@ async function seed(pool) {
   await withRoles("teacherPlatform", schoolA.id, [[schoolA.id, "TEACHER"], [schoolA.id, userRoleKey(ROLES.plateforme)]]);
   await withRoles("parentA", schoolA.id, [[schoolA.id, "PARENT"]]);
   for (const key of ["race1", "race2", "race3"]) await withRoles(key, schoolA.id, [[schoolA.id, "TEACHER"]]);
+  // RL01-15 — affectations homonymes sur deux établissements + plateforme + révoquée.
+  await withRoles("delegueA1", schoolA.id, [[schoolA.id, "DÉLÉGUÉ_DE_CLASSE"]], { primaryRole: null });
+  await withRoles("delegueA2", schoolA.id, [[schoolA.id, "delegue_de_classe"]], { primaryRole: null });
+  await withRoles("delegueB1", schoolB.id, [[schoolB.id, "DELEGUE_DE_CLASSE"]], { primaryRole: null });
+  await withRoles("delegueRevoked", schoolB.id, [[schoolB.id, "DÉLÉGUÉ_DE_CLASSE"]], { primaryRole: null });
+  await pool.query(
+    `UPDATE user_roles SET status = 'revoked', revoked_at = NOW() WHERE user_id = $1`,
+    [users.delegueRevoked],
+  );
+  await withRoles("delegueAdjointA", schoolA.id, [[schoolA.id, "DÉLÉGUÉ_DE_CLASSE_ADJOINT"]], { primaryRole: null });
+  await withRoles("delegueBisA", schoolA.id, [[schoolA.id, "DELEGUE_CLASSE_BIS"]], { primaryRole: null });
+  await withRoles("deleguePlatform", null, [[null, "DÉLÉGUÉ_DE_CLASSE"]], { primaryRole: null });
   await withRoles("superadmin", null, [[null, "SUPER_ADMIN"]]);
   await withRoles("pays", null, [[null, "COUNTRY_ADMIN"]]);
   return { schoolA, schoolB, users };
@@ -697,6 +713,114 @@ async function main() {
     assertStatus(lockedArchive, 409, "RL01-13 archivage après octroi validé");
     check(await roleStatus(ROLES.course4.id) === "active", "RL01-13 rôle resté actif");
     ok(`RL01-13 octroi / archivage concurrents sérialisés (octroi/archivage : ${raceOutcomes.join(", ")} ; verrou : archivage ${lockedArchive.status} après attente)`);
+
+    // RL01-15 — garde d'archivage : comptage exact dans PostgreSQL (clé canonique),
+    // plusieurs établissements, homonymes ; index et plan ; fail-closed.
+    const {
+      createEstablishmentRolesPgStore,
+      COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL,
+    } = require("../db/establishmentRolesPgStore");
+    const directStore = (db) =>
+      createEstablishmentRolesPgStore({
+        query: (sql, params) => db.query(sql, params),
+        one: async (sql, params) => (await db.query(sql, params)).rows[0] ?? null,
+        all: async (sql, params) => (await db.query(sql, params)).rows,
+      });
+    const roleRef = (role) => ({ roleCode: role.code ?? normalizeRoleCode(role.name), roleName: role.name });
+    const expectedCounts = [
+      // A1 + A2 (A), B1 (B), plateforme ; révoquée et « adjoint » exclues.
+      [ROLES.delegue, { activeAssignments: 4, schools: 2, platformAssignments: 1 }],
+      // Son role_name se normalise en « delegue_de_classe » : il couvre aussi ces clés (prudent).
+      [ROLES.delegueBis, { activeAssignments: 5, schools: 2, platformAssignments: 1 }],
+      [ROLES.delegueAdjoint, { activeAssignments: 1, schools: 1, platformAssignments: 0 }],
+    ];
+    for (const [role, expected] of expectedCounts) {
+      const counted = await directStore(pool).countActiveAssignmentsForRole(roleRef(role));
+      check(
+        JSON.stringify(counted) === JSON.stringify(expected),
+        `RL01-15 comptage ${role.name} : ${JSON.stringify(counted)} ≠ ${JSON.stringify(expected)}`,
+      );
+    }
+    const refusedDelegue = await archiveRole(ROLES.delegue.id);
+    assertStatus(refusedDelegue, 409, "RL01-15 archivage d'un rôle attribué dans deux établissements");
+    const delegueAudit = (await auditRows("ROLE_ARCHIVE_REFUSED", ROLES.delegue.id))[0]?.new_value ?? {};
+    check(
+      delegueAudit.activeAssignments === 4 && delegueAudit.schools === 2,
+      `RL01-15 audit du refus exact : ${JSON.stringify(delegueAudit)}`,
+    );
+    check(await roleStatus(ROLES.delegue.id) === "active", "RL01-15 rôle resté actif");
+
+    // Index et plan : volume réaliste (3 000 affectations actives d'un autre rôle).
+    await pool.query(
+      `INSERT INTO users (school_id, user_code, first_name, last_name, status, must_change_password)
+       SELECT $1, 'RL01-BULK-' || g, 'Bulk', 'U' || g, 'active', FALSE FROM generate_series(1, 3000) AS g`,
+      [schoolA.id],
+    );
+    await pool.query(
+      `INSERT INTO user_roles (user_id, school_id, role_key, status)
+       SELECT u.id, u.school_id, 'TEACHER', 'active' FROM users u WHERE u.user_code LIKE 'RL01-BULK-%'`,
+    );
+    await pool.query("ANALYZE user_roles");
+    const indexDef = (
+      await pool.query(`SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_user_roles_active_normalized_key'`)
+    ).rows[0]?.indexdef ?? "";
+    check(
+      /somafrik_normalize_role_code\(role_key\)/.test(indexDef) && /WHERE/.test(indexDef),
+      `RL01-15 index partiel présent : ${indexDef}`,
+    );
+    const planFor = async (forceIndex) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        if (forceIndex) await client.query("SET LOCAL enable_seqscan = off");
+        const explained = await client.query(`EXPLAIN (FORMAT JSON) ${COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL}`, [
+          "delegue_de_classe",
+          "Délégué de classe",
+        ]);
+        return JSON.stringify(explained.rows[0]["QUERY PLAN"]);
+      } finally {
+        await client.query("ROLLBACK").catch(() => {});
+        client.release();
+      }
+    };
+    const naturalPlan = await planFor(false);
+    const usesIndex = naturalPlan.includes("idx_user_roles_active_normalized_key");
+    check(usesIndex, `RL01-15 plan naturel sur l'index (3 000+ lignes) : ${naturalPlan.slice(0, 400)}`);
+    check(!/"Node Type":"Seq Scan"/.test(naturalPlan), "RL01-15 aucun parcours séquentiel de user_roles");
+    const afterBulk = await directStore(pool).countActiveAssignmentsForRole(roleRef(ROLES.delegue));
+    check(afterBulk.activeAssignments === 4, `RL01-15 comptage inchangé après volume : ${JSON.stringify(afterBulk)}`);
+
+    // Fail-closed : table ou fonction indisponible → 503, jamais « 0 » (transaction annulée).
+    const failClosed = async (sabotage, label) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(sabotage);
+        let error = null;
+        try {
+          await directStore(client).countActiveAssignmentsForRole(roleRef(ROLES.delegueAdjoint));
+        } catch (caught) {
+          error = caught;
+        }
+        check(
+          error?.statusCode === 503 && error?.code === "ROLE_ASSIGNMENTS_UNAVAILABLE",
+          `RL01-15 fail-closed (${label}) : ${error ? `${error.statusCode} ${error.code}` : "aucune erreur"}`,
+        );
+      } finally {
+        await client.query("ROLLBACK").catch(() => {});
+        client.release();
+      }
+    };
+    await failClosed("ALTER TABLE user_roles RENAME TO user_roles_rl01_hidden", "table user_roles");
+    await failClosed(
+      "ALTER FUNCTION somafrik_normalize_role_code(text) RENAME TO somafrik_normalize_role_code_rl01_hidden",
+      "fonction de normalisation",
+    );
+    check(
+      (await directStore(pool).countActiveAssignmentsForRole(roleRef(ROLES.delegueAdjoint))).activeAssignments === 1,
+      "RL01-15 retour à la normale après incident",
+    );
+    ok(`RL01-15 comptage PostgreSQL exact (4 / 2 établissements), index ${usesIndex ? "utilisé" : "NON utilisé"}, fail-closed 503`);
 
     if (REPRO) {
       for (const defect of defects) console.log(`DÉFAUT ${defect}`);

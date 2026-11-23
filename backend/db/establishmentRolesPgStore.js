@@ -9,6 +9,26 @@ const {
   sanitizePermissionList,
 } = require("../lib/establishmentRolesManagement");
 
+const ROLE_ASSIGNMENT_PREREQUISITES_SQL = `
+  SELECT to_regclass('public.user_roles') IS NOT NULL AS user_roles,
+         to_regprocedure('public.somafrik_normalize_role_code(text)') IS NOT NULL AS normalize_fn
+`;
+
+/**
+ * RBAC-LOGIN-01 — $1 = role_code, $2 = role_name. Filtre et agrège dans PostgreSQL ;
+ * prédicats alignés sur l'index partiel idx_user_roles_active_normalized_key.
+ */
+const COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL = `
+  SELECT COUNT(*)::int AS active_assignments,
+         COUNT(DISTINCT ur.school_id)::int AS schools,
+         COUNT(*) FILTER (WHERE ur.school_id IS NULL)::int AS platform_assignments
+  FROM user_roles ur
+  WHERE ur.status = 'active'
+    AND ur.revoked_at IS NULL
+    AND somafrik_normalize_role_code(ur.role_key)
+        = ANY (ARRAY[somafrik_normalize_role_code($1), somafrik_normalize_role_code($2)])
+`;
+
 function createEstablishmentRolesPgStore(repo) {
   const one = (...args) => repo.one(...args);
   const all = (...args) => repo.all(...args);
@@ -201,30 +221,41 @@ function createEstablishmentRolesPgStore(repo) {
   }
 
   /**
-   * RBAC-LOGIN-01 — affectations actives d'un rôle (clés équivalentes : casse,
-   * accents, séparateurs ; role_code ou role_name). Lu après le verrou : chaque
+   * RBAC-LOGIN-01 — affectations actives d'un rôle, comptées dans PostgreSQL.
+   * Clés équivalentes (casse, accents, séparateurs) via somafrik_normalize_role_code,
+   * appliquée au role_code et au role_name du rôle ; index partiel
+   * idx_user_roles_active_normalized_key. Lu après le verrou FOR UPDATE : chaque
    * instruction voit les octrois validés entre-temps (READ COMMITTED).
+   * Fail-closed : table, fonction ou lecture indisponible → erreur 503, jamais « 0 ».
    */
   async function countActiveAssignmentsForRole(role) {
-    const table = await one(`SELECT to_regclass('public.user_roles') AS ref`);
-    if (!table?.ref) return { activeAssignments: 0, schools: 0 };
-    // Équivalence calculée par normalizeRoleCode (même règle que somafrik_normalize_role_code),
-    // sans dépendre de la fonction SQL : lignes regroupées par (clé, établissement).
-    const wanted = new Set([normalizeRoleCode(role?.roleCode), normalizeRoleCode(role?.roleName)].filter(Boolean));
-    const rows = await all(
-      `SELECT role_key, school_id, COUNT(*)::int AS n
-       FROM user_roles
-       WHERE status = 'active' AND revoked_at IS NULL
-       GROUP BY role_key, school_id`,
-    );
-    let activeAssignments = 0;
-    const schools = new Set();
-    for (const row of rows) {
-      if (!wanted.has(normalizeRoleCode(row.role_key))) continue;
-      activeAssignments += Number(row.n ?? 0);
-      schools.add(String(row.school_id ?? ""));
+    const unavailable = () =>
+      createEstablishmentRolesError(
+        503,
+        "Vérification des affectations du rôle indisponible : archivage refusé.",
+        ESTABLISHMENT_ROLES_ERROR.ROLE_ASSIGNMENTS_UNAVAILABLE,
+      );
+    const roleCode = asTrimmed(role?.roleCode);
+    const roleName = asTrimmed(role?.roleName);
+    if (!roleCode && !roleName) throw unavailable();
+    let prerequisites;
+    try {
+      prerequisites = await one(ROLE_ASSIGNMENT_PREREQUISITES_SQL);
+    } catch {
+      throw unavailable();
     }
-    return { activeAssignments, schools: schools.size };
+    if (!prerequisites?.user_roles || !prerequisites?.normalize_fn) throw unavailable();
+    let row;
+    try {
+      row = await one(COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL, [roleCode, roleName]);
+    } catch {
+      throw unavailable();
+    }
+    const activeAssignments = Number(row?.active_assignments);
+    const schools = Number(row?.schools);
+    const platformAssignments = Number(row?.platform_assignments);
+    if (![activeAssignments, schools, platformAssignments].every(Number.isInteger)) throw unavailable();
+    return { activeAssignments, schools, platformAssignments };
   }
 
   /**
@@ -338,4 +369,6 @@ function createEstablishmentRolesPgStore(repo) {
 
 module.exports = {
   createEstablishmentRolesPgStore,
+  COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL,
+  ROLE_ASSIGNMENT_PREREQUISITES_SQL,
 };

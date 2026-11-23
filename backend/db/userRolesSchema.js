@@ -28,6 +28,16 @@ const STUDENT_ROLE_LOCK_TRIGGER_SQL = fs.readFileSync(
 
 const USER_ROLES_SCHEMA_SQL = [USER_ROLES_PRELOCK_SCHEMA_SQL, STUDENT_ROLE_LOCK_TRIGGER_SQL].join("\n");
 
+/**
+ * RBAC-LOGIN-01 — index partiel des affectations actives par clé canonique. Exécuté au
+ * démarrage APRÈS NORMALIZE_ROLE_CODE_FUNCTION_SQL et la création de user_roles ;
+ * volontairement hors USER_ROLES_SCHEMA_SQL (bancs qui n'installent pas la fonction).
+ */
+const USER_ROLES_ACTIVE_NORMALIZED_KEY_INDEX_SQL = fs.readFileSync(
+  path.join(__dirname, "migrations/20261123_user_roles_active_normalized_key_index.sql"),
+  "utf8",
+);
+
 const USER_ROLES_MIGRATION_AMBIGUOUS = "USER_ROLES_MIGRATION_AMBIGUOUS";
 
 const KNOWN_ROLE_KEYS_SQL = `
@@ -347,6 +357,7 @@ const BACKFILL_FROM_USERS_ROLE_SQL = backfillFromUsersRoleSql(false);
 const BACKFILL_FROM_SECONDARY_ROLES_SQL = backfillFromSecondaryRolesSql(false);
 
 module.exports = {
+  USER_ROLES_ACTIVE_NORMALIZED_KEY_INDEX_SQL,
   USER_ROLES_PRELOCK_SCHEMA_SQL,
   STUDENT_ROLE_LOCK_TRIGGER_SQL,
   USER_ROLES_SCHEMA_SQL,
