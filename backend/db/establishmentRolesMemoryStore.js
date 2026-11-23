@@ -45,6 +45,16 @@ function createEstablishmentRolesMemoryStore(seed = {}) {
   }
 
   return {
+    /** RBAC-LOGIN-01 — état minimal du catalogue (actifs et archivés), sans permissions. */
+    async listRoleCatalogStates() {
+      return roles.map((row) => ({
+        roleCode: row.role_code,
+        roleName: row.role_name,
+        scope: row.scope,
+        status: row.status === "archived" ? "archived" : "active",
+        schoolAssignable: Boolean(row.school_assignable),
+      }));
+    },
     async listRoles({ includeArchived = false, schoolAssignableOnly = false } = {}) {
       return roles
         .filter((row) => (includeArchived || row.status === "active"))

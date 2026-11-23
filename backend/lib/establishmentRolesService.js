@@ -220,22 +220,74 @@ async function archiveRole(repo, roleId, principal, auditMeta) {
   }
   const { assertNotProtectedArchive } = require("./functionalRbacManagement");
   assertNotProtectedArchive(existing.roleCode || existing.roleName);
-  return repo.withTransaction(async (tx) => {
-    const scope = repo.createTxScope(tx);
-    const scopedStore = rolesStore(scope);
-    const saved = await scopedStore.archiveRole(roleId);
-    if (!saved) {
-      throw createEstablishmentRolesError(404, "Rôle introuvable ou déjà archivé.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
-    }
-    await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
-      action: RBAC_AUDIT_ACTIONS.ROLE_ARCHIVE,
-      entityType: "establishment_role",
-      entityId: roleId,
-      oldValue: roleAuditSnapshot(existing),
-      newValue: roleAuditSnapshot(saved),
+  let refusal = null;
+  try {
+    return await repo.withTransaction(async (tx) => {
+      const scope = repo.createTxScope(tx);
+      // Store lié à la transaction (jamais l'instance en cache du dépôt) : le verrou et
+      // le comptage doivent s'exécuter sur la même connexion que l'archivage.
+      const scopedStore =
+        typeof scope?.query === "function" && typeof tx?.query === "function"
+          ? createEstablishmentRolesPgStore(scope)
+          : rolesStore(scope);
+      // RBAC-LOGIN-01 : garde transactionnelle — aucun archivage d'un rôle encore attribué.
+      if (typeof scopedStore.lockRoleForArchive === "function") {
+        const locked = await scopedStore.lockRoleForArchive(roleId);
+        if (!locked || locked.status !== "active") {
+          throw createEstablishmentRolesError(404, "Rôle introuvable ou déjà archivé.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
+        }
+        const usage = await scopedStore.countActiveAssignmentsForRole(locked);
+        if (usage.activeAssignments > 0) {
+          refusal = { role: locked, usage };
+          throw createEstablishmentRolesError(
+            409,
+            "Archivage refusé : ce rôle est encore attribué. Retirez d'abord ses affectations actives.",
+            ESTABLISHMENT_ROLES_ERROR.ROLE_HAS_ACTIVE_ASSIGNMENTS,
+            {
+              activeAssignments: usage.activeAssignments,
+              schools: usage.schools,
+              platformAssignments: usage.platformAssignments,
+            },
+          );
+        }
+      }
+      const saved = await scopedStore.archiveRole(roleId);
+      if (!saved) {
+        throw createEstablishmentRolesError(404, "Rôle introuvable ou déjà archivé.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
+      }
+      await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
+        action: RBAC_AUDIT_ACTIONS.ROLE_ARCHIVE,
+        entityType: "establishment_role",
+        entityId: roleId,
+        oldValue: roleAuditSnapshot(existing),
+        newValue: roleAuditSnapshot(saved),
+      });
+      return saved;
     });
-    return saved;
-  });
+  } catch (error) {
+    if (refusal && error?.code === ESTABLISHMENT_ROLES_ERROR.ROLE_HAS_ACTIVE_ASSIGNMENTS) {
+      // Audit du refus hors de la transaction annulée (sinon il serait perdu avec elle).
+      try {
+        await writeEstablishmentRolesAudit(repo, principal, auditMeta, {
+          action: RBAC_AUDIT_ACTIONS.ROLE_ARCHIVE_REFUSED,
+          entityType: "establishment_role",
+          entityId: roleId,
+          oldValue: roleAuditSnapshot(refusal.role),
+          newValue: {
+            ...roleAuditSnapshot(refusal.role),
+            reason: ESTABLISHMENT_ROLES_ERROR.ROLE_HAS_ACTIVE_ASSIGNMENTS,
+            activeAssignments: refusal.usage.activeAssignments,
+            platformAssignments: refusal.usage.platformAssignments,
+            activeRows: refusal.usage.activeRows,
+            schools: refusal.usage.schools,
+          },
+        });
+      } catch {
+        console.warn("[RBAC-LOGIN-01] audit du refus d'archivage indisponible");
+      }
+    }
+    throw error;
+  }
 }
 
 async function assertEstablishmentRoleAssignable(repo, roleLabel, principal) {

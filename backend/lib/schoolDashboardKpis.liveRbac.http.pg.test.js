@@ -120,6 +120,16 @@ async function seed(pool) {
      VALUES ($1, $2, 'KPI-STAFF', 'Kadi', 'Staff', 'kpi-staff@test.local', NULL, 'active', FALSE)`,
     [STAFF_USER, schoolId],
   );
+  // RBAC-LOGIN-01 : un rôle personnalisé n'a de droits que s'il existe, actif et de portée
+  // établissement, au catalogue (rôle hors catalogue = aucun droit, fail-closed).
+  for (const catalogRoleKey of [ROLE_KEY]) {
+    await pool.query(
+      `INSERT INTO establishment_roles (role_code, role_name, scope, status, school_assignable)
+       VALUES (lower($1), $1, 'school', 'active', TRUE)
+       ON CONFLICT DO NOTHING`,
+      [catalogRoleKey],
+    );
+  }
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status) VALUES ($1, $2, $3, 'active')`,
     [STAFF_USER, schoolId, ROLE_KEY],

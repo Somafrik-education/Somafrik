@@ -795,6 +795,7 @@ app.get("/api/classes", requireAuth, requirePermission("GET /api/classes"), asyn
   }
   tenantScopeService.assertSchoolAccess(req.principal, schoolCode);
   const rows = await repository.listSchoolClasses(schoolCode);
+  await attachCustomRoleReadScope(req);
   const { scopeSchoolClassesForPrincipal } = require("./lib/classStudentsAuthz");
   const {
     principalIsParentOrStudent,
@@ -1068,6 +1069,7 @@ app.get("/api/classes/:classCode/students", requireAuth, requirePermission("GET 
   );
   const classId = String(match?.classId ?? match?.id ?? rows[0]?.classId ?? "").trim();
   const className = String(match?.name ?? match?.className ?? rows[0]?.className ?? "").trim();
+  await attachCustomRoleReadScope(req);
   const {
     scopeClassStudentsForPrincipal,
   } = require("./lib/classStudentsAuthz");
@@ -2104,6 +2106,7 @@ app.get("/api/students", requireAuth, requirePermission("GET /api/students"), as
   const rows = await repository.listSchoolStudents(schoolCode);
   const { className } = req.query;
   const filtered = (rows ?? []).filter((student) => !className || student.className === className);
+  await attachCustomRoleReadScope(req);
   const {
     scopeSchoolStudentsForPrincipal,
   } = require("./lib/classStudentsAuthz");
@@ -5141,6 +5144,16 @@ async function getRuntime() {
     countries: dataset.countries,
     subscriptions: dataset.subscriptions,
     notifications: dataset.platformNotifications,
+    // RBAC-LOGIN-01 : rôles d'établissement hors liste statique validés sur PostgreSQL
+    // (user_roles de l'établissement + catalogue actif + permissions Web effectives).
+    resolveDynamicWebRoleAccess: (user, schoolContext) => {
+      const { resolveCustomRoleWebAccess } = require("./lib/customRoleWebAccess");
+      return resolveCustomRoleWebAccess(repository, {
+        userId: user?.id,
+        school: schoolContext,
+        countryCode: schoolContext?.countryCode,
+      });
+    },
   });
 
   return {
@@ -7843,6 +7856,17 @@ async function assertBoundAccessSession(principal) {
   return assertAccessSessionAccount({ principal, activeSession, repository, sessionId });
 }
 
+/**
+ * RBAC-LOGIN-01 — portée de lecture établissement des rôles personnalisés (classes,
+ * élèves), relue sur PostgreSQL pour cette requête uniquement (fail-closed).
+ */
+async function attachCustomRoleReadScope(req) {
+  const { resolveCustomRoleReadScope } = require("./lib/customRoleWebAccess");
+  const customRoleReadScope = await resolveCustomRoleReadScope(repository, req.principal);
+  req.principal = { ...req.principal, customRoleReadScope };
+  return req.principal;
+}
+
 function requireAuth(req, res, next) {
   (async () => {
     // S2.1 — auth exclusivement via header Bearer (plus de fallback query).
@@ -7866,6 +7890,11 @@ function requireAuth(req, res, next) {
     } catch (error) {
       if (error.statusCode) throw error;
       throw new BusinessError(401, "Authentification JWT requise");
+    }
+    // RBAC-LOGIN-01 : portée calculée par le serveur à chaque requête, jamais reprise d'un jeton.
+    if (req.principal && Object.prototype.hasOwnProperty.call(req.principal, "customRoleReadScope")) {
+      const { customRoleReadScope: _ignored, ...withoutScope } = req.principal;
+      req.principal = withoutScope;
     }
 
     // SEC-AUTH-04 : session obligatoire, active et appartenant au sujet du jeton.

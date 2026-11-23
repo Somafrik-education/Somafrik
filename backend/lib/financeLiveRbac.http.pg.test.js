@@ -202,6 +202,13 @@ async function seed(pool) {
        ($5, $7, 'DUAL-F6', 'Dual', 'Tenant', 'dual-f6@test.local', 'Comptable', 'active', FALSE)`,
     [ACCOUNTANT_A, LIVE_USER, ZERO_USER, NAMED_USER, DUAL_USER, schoolA.id, schoolB.id],
   );
+  // RBAC-LOGIN-01 : un rôle personnalisé n'a de droits que s'il existe, actif et de portée
+  // établissement, au catalogue (rôle hors catalogue = aucun droit, fail-closed).
+  await pool.query(
+    `INSERT INTO establishment_roles (role_code, role_name, scope, status, school_assignable)
+     VALUES ('f6_pay', 'F6 Paiements', 'school', 'active', TRUE)
+     ON CONFLICT DO NOTHING`,
+  );
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
      VALUES

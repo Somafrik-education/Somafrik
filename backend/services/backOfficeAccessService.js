@@ -17,6 +17,7 @@ const {
 } = require("../lib/sanitizeUserForResponse");
 const { attachCanonicalSchoolIdentity } = require("../lib/sessionSchoolIdentity");
 const { isPlatformScopePrincipal } = require("../lib/platformScopePrincipal");
+const { CUSTOM_ROLE_WEB_ACCESS_PROFILE } = require("../lib/customRoleWebAccess");
 const {
   isPlatformSuperadminAccount,
   rejectsKnownSuperadminSecret,
@@ -48,8 +49,13 @@ class BackOfficeAccessService {
     countries = [],
     subscriptions = [],
     notifications = [],
+    // RBAC-LOGIN-01 : (user, schoolContext) => Promise<{ allowed }>, lecture PostgreSQL
+    // canonique des rôles d'établissement. Absent → aucun rôle hors liste statique (fail-closed).
+    resolveDynamicWebRoleAccess = null,
   }) {
     this.school = school;
+    this.resolveDynamicWebRoleAccess =
+      typeof resolveDynamicWebRoleAccess === "function" ? resolveDynamicWebRoleAccess : null;
     this.schools = schools;
     this.userAccounts = Array.isArray(userAccounts)
       ? userAccounts.map((user) => materializeAccountSecretHashes(user))
@@ -97,7 +103,15 @@ class BackOfficeAccessService {
 
     const unaffect =
       !user.role || user.role === "Sans affectation" || user.assignmentStatus === "Sans affectation";
-    if (!unaffect && !canAccessWebPlatformRole(user.role) && user.accessChannel !== "BackOffice") {
+    // RBAC-LOGIN-01 : hors liste statique, l'accès Web n'est plus refusé d'office ;
+    // il est validé plus bas, une fois l'établissement résolu, par les rôles actifs
+    // du catalogue et les permissions effectives (fail-closed). Les rôles plateforme
+    // restent tous dans la liste statique et ne passent jamais par ce chemin.
+    const requiresDynamicRoleCheck =
+      !unaffect &&
+      !canAccessWebPlatformRole(user.role) &&
+      user.accessChannel !== "BackOffice";
+    if (requiresDynamicRoleCheck && (this.isPlatformAdmin(user) || !this.resolveDynamicWebRoleAccess)) {
       throw new BusinessError(403, "Ce compte n'a pas accès à la plateforme");
     }
 
@@ -126,6 +140,11 @@ class BackOfficeAccessService {
     this.assertScopeCanAccessSchool(user, schoolContext);
     this.assertSchoolCountryActive(user, schoolContext);
 
+    let dynamicWebAccess = null;
+    if (requiresDynamicRoleCheck) {
+      dynamicWebAccess = await this.assertDynamicWebRoleAccess(user, schoolContext);
+    }
+
     await clearFailedLoginAttempts(loginKey);
 
     const mustChangePassword =
@@ -133,7 +152,13 @@ class BackOfficeAccessService {
         ? false
         : Boolean(user.mustChangePassword) || Boolean(String(user.temporaryPassword ?? "").trim());
     const scopedSchoolCode = schoolContext?.code || resolvedSchoolCode || user.schoolCode || "";
-    const safeUser = attachCanonicalSchoolIdentity(sanitizeUserForResponse(user), schoolContext);
+    const sanitizedUser = sanitizeUserForResponse(user);
+    const safeUser = attachCanonicalSchoolIdentity(
+      dynamicWebAccess
+        ? { ...sanitizedUser, webAccessProfile: CUSTOM_ROLE_WEB_ACCESS_PROFILE }
+        : sanitizedUser,
+      schoolContext,
+    );
     const enrichedUser =
       user.role === "Parent"
         ? {
@@ -146,8 +171,44 @@ class BackOfficeAccessService {
       user: { ...enrichedUser, mustChangePassword },
       schoolContext,
       scope: this.getScope(user),
-      menus: this.getMenus(user),
-      dashboard: this.getDashboard(user),
+      menus: dynamicWebAccess ? this.getCustomRoleMenus() : this.getMenus(user),
+      dashboard: dynamicWebAccess ? this.getCustomRoleDashboard(user) : this.getDashboard(user),
+    };
+  }
+
+  /**
+   * RBAC-LOGIN-01 — rôle d'établissement hors liste statique : accès Web accordé
+   * uniquement si la résolution canonique l'autorise. Toute erreur refuse.
+   */
+  async assertDynamicWebRoleAccess(user, schoolContext) {
+    if (!schoolContext || this.isPlatformAdmin(user) || !this.resolveDynamicWebRoleAccess) {
+      throw new BusinessError(403, "Ce compte n'a pas accès à la plateforme");
+    }
+    let decision;
+    try {
+      decision = await this.resolveDynamicWebRoleAccess(user, schoolContext);
+    } catch {
+      decision = null;
+    }
+    if (decision?.allowed !== true) {
+      throw new BusinessError(403, "Ce compte n'a pas accès à la plateforme");
+    }
+    return decision;
+  }
+
+  /** Menus Web : la navigation réelle est filtrée côté client par les permissions effectives. */
+  getCustomRoleMenus() {
+    return ["Dashboard"];
+  }
+
+  /** Tableau de bord neutre : aucun libellé ni indicateur d'un rôle système. */
+  getCustomRoleDashboard(user) {
+    return {
+      profile: "Rôle d'établissement",
+      privilegeLevel: "SCHOOL_CUSTOM_ROLE",
+      kpis: [
+        { label: "Établissement", value: this.getScopedSchools(user).length },
+      ],
     };
   }
 

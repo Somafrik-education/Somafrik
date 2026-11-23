@@ -10,6 +10,7 @@ import {
 } from "react";
 import { api, ApiError, setAccessTokenProvider, setRefreshTokenProvider, setRotatedTokenPersister } from "../api/client";
 import { normalizePlatformRole } from "../lib/orgHierarchy";
+import { syncCustomSchoolRoleSession } from "../lib/customSchoolRoleSession";
 import type { LoginProfile, Session } from "../types";
 
 interface LoginInput {
@@ -46,8 +47,11 @@ function hasLiveDemoPermissions(value: Session | null): boolean {
 function loadStoredSession(): Session | null {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Session) : null;
+    const stored = raw ? (JSON.parse(raw) as Session) : null;
+    syncCustomSchoolRoleSession(stored?.user);
+    return stored;
   } catch {
+    syncCustomSchoolRoleSession(null);
     return null;
   }
 }
@@ -95,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const setSession = useCallback((next: Session | null) => {
+    syncCustomSchoolRoleSession(next?.user);
     sessionRef.current = next;
     setAccessTokenProvider(() => sessionRef.current?.accessToken ?? null);
     setRefreshTokenProvider(() => sessionRef.current?.refreshToken ?? null);

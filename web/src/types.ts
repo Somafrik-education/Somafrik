@@ -343,6 +343,8 @@ export interface UserAccount {
 
 export interface SessionUser extends UserAccount {
   mustChangePassword?: boolean;
+  /** RBAC-LOGIN-01 : « school_custom_role » si le serveur a validé un rôle d'établissement personnalisé. */
+  webAccessProfile?: string;
   /** Affectations pédagogiques projetées depuis le JWT (#248). */
   assignments?: Record<string, unknown>[];
   assignedClassIds?: string[];

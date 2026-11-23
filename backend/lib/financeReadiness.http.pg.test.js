@@ -232,6 +232,16 @@ async function seed(pool) {
        ($3, $5, 'ACC-F8-B', 'Bruno', 'B', 'acc-f8-b@test.local', 'Comptable', 'active', FALSE)`,
     [ACCOUNTANT_A, LIVE_USER, ACCOUNTANT_B, schoolA.id, schoolB.id],
   );
+  // RBAC-LOGIN-01 : un rôle personnalisé n'a de droits que s'il existe, actif et de portée
+  // établissement, au catalogue (rôle hors catalogue = aucun droit, fail-closed).
+  for (const catalogRoleKey of ['F8_PAY']) {
+    await pool.query(
+      `INSERT INTO establishment_roles (role_code, role_name, scope, status, school_assignable)
+       VALUES (lower($1), $1, 'school', 'active', TRUE)
+       ON CONFLICT DO NOTHING`,
+      [catalogRoleKey],
+    );
+  }
   await pool.query(
     `INSERT INTO user_roles (user_id, school_id, role_key, status)
      VALUES

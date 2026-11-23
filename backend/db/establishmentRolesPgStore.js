@@ -9,6 +9,38 @@ const {
   sanitizePermissionList,
 } = require("../lib/establishmentRolesManagement");
 
+const ROLE_ASSIGNMENT_PREREQUISITES_SQL = `
+  SELECT to_regclass('public.user_roles') IS NOT NULL AS user_roles,
+         to_regprocedure('public.somafrik_normalize_role_code(text)') IS NOT NULL AS normalize_fn
+`;
+
+/**
+ * RBAC-LOGIN-01 — $1 = role_code, $2 = role_name. Filtre et agrège dans PostgreSQL ;
+ * prédicats alignés sur l'index partiel idx_user_roles_active_normalized_key.
+ *
+ * Définitions (lignes actives, non révoquées, de clé canonique équivalente) :
+ *   - active_assignments   : affectations LOGIQUES = couples distincts (user_id, school_id),
+ *                            school_id NULL compris (portée plateforme). Deux clés
+ *                            équivalentes d'un même compte au même endroit (ex.
+ *                            AGENT_RÉVOCABLE + agent_revocable) = 1 affectation ;
+ *   - schools              : établissements distincts (school_id non NULL) ;
+ *   - platform_assignments : comptes distincts affectés sans établissement (school_id NULL) ;
+ *   - active_rows          : lignes brutes (diagnostic : active_rows > active_assignments
+ *                            révèle des doublons de clés équivalentes).
+ * Invariant : active_assignments = (couples avec établissement) + platform_assignments.
+ */
+const COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL = `
+  SELECT COUNT(DISTINCT (ur.user_id::text || ':' || COALESCE(ur.school_id::text, '*')))::int AS active_assignments,
+         COUNT(DISTINCT ur.school_id)::int AS schools,
+         COUNT(DISTINCT ur.user_id) FILTER (WHERE ur.school_id IS NULL)::int AS platform_assignments,
+         COUNT(*)::int AS active_rows
+  FROM user_roles ur
+  WHERE ur.status = 'active'
+    AND ur.revoked_at IS NULL
+    AND somafrik_normalize_role_code(ur.role_key)
+        = ANY (ARRAY[somafrik_normalize_role_code($1), somafrik_normalize_role_code($2)])
+`;
+
 function createEstablishmentRolesPgStore(repo) {
   const one = (...args) => repo.one(...args);
   const all = (...args) => repo.all(...args);
@@ -190,6 +222,78 @@ function createEstablishmentRolesPgStore(repo) {
     return hydrateRole(row);
   }
 
+  /**
+   * RBAC-LOGIN-01 — garde d'archivage : verrouille la ligne du catalogue (FOR UPDATE)
+   * jusqu'à la fin de la transaction. Un octroi concurrent du même rôle pose un
+   * FOR SHARE sur cette ligne : les deux opérations sont sérialisées.
+   */
+  async function lockRoleForArchive(roleId) {
+    const row = await one(`SELECT * FROM establishment_roles WHERE id = $1::uuid FOR UPDATE`, [roleId]);
+    return hydrateRole(row);
+  }
+
+  /**
+   * RBAC-LOGIN-01 — affectations actives d'un rôle, comptées dans PostgreSQL.
+   * Clés équivalentes (casse, accents, séparateurs) via somafrik_normalize_role_code,
+   * appliquée au role_code et au role_name du rôle ; index partiel
+   * idx_user_roles_active_normalized_key. Lu après le verrou FOR UPDATE : chaque
+   * instruction voit les octrois validés entre-temps (READ COMMITTED).
+   * Fail-closed : table, fonction ou lecture indisponible → erreur 503, jamais « 0 ».
+   */
+  async function countActiveAssignmentsForRole(role) {
+    const unavailable = () =>
+      createEstablishmentRolesError(
+        503,
+        "Vérification des affectations du rôle indisponible : archivage refusé.",
+        ESTABLISHMENT_ROLES_ERROR.ROLE_ASSIGNMENTS_UNAVAILABLE,
+      );
+    const roleCode = asTrimmed(role?.roleCode);
+    const roleName = asTrimmed(role?.roleName);
+    if (!roleCode && !roleName) throw unavailable();
+    let prerequisites;
+    try {
+      prerequisites = await one(ROLE_ASSIGNMENT_PREREQUISITES_SQL);
+    } catch {
+      throw unavailable();
+    }
+    if (!prerequisites?.user_roles || !prerequisites?.normalize_fn) throw unavailable();
+    let row;
+    try {
+      row = await one(COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL, [roleCode, roleName]);
+    } catch {
+      throw unavailable();
+    }
+    const activeAssignments = Number(row?.active_assignments);
+    const schools = Number(row?.schools);
+    const platformAssignments = Number(row?.platform_assignments);
+    const activeRows = Number(row?.active_rows);
+    const counts = [activeAssignments, schools, platformAssignments, activeRows];
+    if (!counts.every((value) => Number.isInteger(value) && value >= 0)) throw unavailable();
+    // Cohérence : une ligne au moins par affectation logique ; autant d'établissements au plus.
+    if (activeRows < activeAssignments || schools > activeAssignments || platformAssignments > activeAssignments) {
+      throw unavailable();
+    }
+    return { activeAssignments, schools, platformAssignments, activeRows };
+  }
+
+  /**
+   * RBAC-LOGIN-01 — état minimal du catalogue (actifs et archivés) en une requête,
+   * sans permissions : lu sur le chemin des requêtes protégées.
+   */
+  async function listRoleCatalogStates() {
+    const rows = await all(
+      `SELECT role_code, role_name, scope, status, school_assignable
+       FROM establishment_roles`,
+    );
+    return rows.map((row) => ({
+      roleCode: row.role_code,
+      roleName: row.role_name,
+      scope: row.scope,
+      status: row.status === "archived" ? "archived" : "active",
+      schoolAssignable: Boolean(row.school_assignable),
+    }));
+  }
+
   async function getPermissionsMap() {
     const rows = await all(
       `SELECT er.role_name, er.role_code, erp.permission
@@ -270,6 +374,9 @@ function createEstablishmentRolesPgStore(repo) {
     updateRoleDisplayLabel,
     listRoleDisplayContracts,
     archiveRole,
+    listRoleCatalogStates,
+    lockRoleForArchive,
+    countActiveAssignmentsForRole,
     getPermissionsMap,
     inventoryLegacyUserRolesPayloads,
     seedDefaultRolesIfEmpty,
@@ -280,4 +387,6 @@ function createEstablishmentRolesPgStore(repo) {
 
 module.exports = {
   createEstablishmentRolesPgStore,
+  COUNT_ACTIVE_ROLE_ASSIGNMENTS_SQL,
+  ROLE_ASSIGNMENT_PREREQUISITES_SQL,
 };
