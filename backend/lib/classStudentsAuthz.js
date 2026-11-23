@@ -27,6 +27,17 @@ const SCHOOL_WIDE_CLASS_READ_ROLES = new Set([...SCHOOL_WIDE_STUDENT_READ_ROLES,
 const ACTIVE_ASSIGNMENT_STATUSES = new Set(["active", "actif", "open", "ouverte"]);
 
 /**
+ * RBAC-LOGIN-01 — rôle personnalisé d'établissement : lecture établissement entière d'un
+ * module uniquement si le serveur l'a calculée pour cette requête
+ * (customRoleWebAccess.resolveCustomRoleReadScope, jamais lue depuis le jeton).
+ * @param {object} principal
+ * @param {"classes" | "students"} moduleKey
+ */
+function hasCustomRoleReadScope(principal, moduleKey) {
+  return principal?.customRoleReadScope?.[moduleKey] === true;
+}
+
+/**
  * @param {string} role
  * @returns {boolean}
  */
@@ -201,6 +212,10 @@ function scopeClassStudentsForPrincipal(principal, classContext, rows, resolveAu
     return rows;
   }
 
+  if (hasCustomRoleReadScope(principal, "students")) {
+    return rows;
+  }
+
   if (principalHasRole(principal, "Enseignant")) {
     if (!teacherHasActiveClassAssignment(principal, classContext)) {
       throw new BusinessError(403, "Accès refusé: classe hors périmètre.");
@@ -246,6 +261,10 @@ function scopeSchoolStudentsForPrincipal(principal, rows, resolveAuthorizedStude
     return rows;
   }
 
+  if (hasCustomRoleReadScope(principal, "students")) {
+    return rows;
+  }
+
   if (principalHasRole(principal, "Enseignant")) {
     const { classCodes, classIds } = collectTeacherAssignmentRefs(principal);
     if (!classCodes.size && !classIds.size) {
@@ -280,6 +299,10 @@ function scopeSchoolClassesForPrincipal(principal, rows) {
   }
 
   if (principalHasAnyRole(principal, SCHOOL_WIDE_CLASS_READ_ROLES)) {
+    return rows;
+  }
+
+  if (hasCustomRoleReadScope(principal, "classes")) {
     return rows;
   }
 

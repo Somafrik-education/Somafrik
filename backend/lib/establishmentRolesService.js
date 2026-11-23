@@ -227,6 +227,14 @@ async function archiveRole(repo, roleId, principal, auditMeta) {
     if (!saved) {
       throw createEstablishmentRolesError(404, "Rôle introuvable ou déjà archivé.", ESTABLISHMENT_ROLES_ERROR.ROLE_NOT_FOUND);
     }
+    // RBAC-LOGIN-01 : sessions des détenteurs invalidées dans la même transaction.
+    if (typeof scopedStore.revokeSessionsForRoleKeys === "function") {
+      const { toRoleKey } = require("./userRoleLifecycle");
+      await scopedStore.revokeSessionsForRoleKeys(
+        [toRoleKey(existing.roleName), toRoleKey(existing.roleCode), existing.roleCode],
+        "role_archived",
+      );
+    }
     await writeEstablishmentRolesAudit(scope, principal, auditMeta, {
       action: RBAC_AUDIT_ACTIONS.ROLE_ARCHIVE,
       entityType: "establishment_role",

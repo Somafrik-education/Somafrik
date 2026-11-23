@@ -190,6 +190,51 @@ function createEstablishmentRolesPgStore(repo) {
     return hydrateRole(row);
   }
 
+  /**
+   * RBAC-LOGIN-01 — archivage d'un rôle : invalide les sessions ouvertes des comptes
+   * qui le détiennent encore (user_roles actifs). Les clés sont comparées en majuscules.
+   */
+  async function revokeSessionsForRoleKeys(roleKeys = [], reason = "role_archived") {
+    const keys = [...new Set((roleKeys || []).map((key) => asTrimmed(key).toUpperCase()).filter(Boolean))];
+    if (!keys.length) return 0;
+    const tables = await one(
+      `SELECT to_regclass('public.sessions') AS sessions, to_regclass('public.user_roles') AS user_roles`,
+    );
+    if (!tables?.sessions || !tables?.user_roles) return 0;
+    const result = await query(
+      `UPDATE sessions
+       SET revoked_at = NOW(), revoke_reason = $2
+       WHERE revoked_at IS NULL
+         AND user_id IN (
+           SELECT ur.user_id
+           FROM user_roles ur
+           WHERE ur.status = 'active'
+             AND ur.revoked_at IS NULL
+             AND upper(ur.role_key) = ANY($1::text[])
+         )`,
+      [keys, reason],
+    );
+    return result?.rowCount ?? 0;
+  }
+
+  /**
+   * RBAC-LOGIN-01 — état minimal du catalogue (actifs et archivés) en une requête,
+   * sans permissions : lu sur le chemin des requêtes protégées.
+   */
+  async function listRoleCatalogStates() {
+    const rows = await all(
+      `SELECT role_code, role_name, scope, status, school_assignable
+       FROM establishment_roles`,
+    );
+    return rows.map((row) => ({
+      roleCode: row.role_code,
+      roleName: row.role_name,
+      scope: row.scope,
+      status: row.status === "archived" ? "archived" : "active",
+      schoolAssignable: Boolean(row.school_assignable),
+    }));
+  }
+
   async function getPermissionsMap() {
     const rows = await all(
       `SELECT er.role_name, er.role_code, erp.permission
@@ -270,6 +315,8 @@ function createEstablishmentRolesPgStore(repo) {
     updateRoleDisplayLabel,
     listRoleDisplayContracts,
     archiveRole,
+    listRoleCatalogStates,
+    revokeSessionsForRoleKeys,
     getPermissionsMap,
     inventoryLegacyUserRolesPayloads,
     seedDefaultRolesIfEmpty,

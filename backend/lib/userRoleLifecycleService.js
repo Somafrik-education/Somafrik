@@ -228,6 +228,14 @@ async function syncPrimaryRole(tx, userId, roleKeys) {
   }
 }
 
+/** Clés détenues équivalentes à `roleKey` (normalizeRoleCode : casse, accents, séparateurs). */
+function equivalentRoleKeys(heldKeys = [], roleKey) {
+  const { normalizeRoleCode } = require("./establishmentRolesManagement");
+  const wanted = normalizeRoleCode(roleKey);
+  if (!wanted) return [];
+  return [...new Set((heldKeys || []).filter((key) => normalizeRoleCode(key) === wanted))];
+}
+
 function assertNotSelfTarget(principal, targetUserId) {
   const actor = actorUserId(principal);
   if (actor && String(actor) === String(targetUserId)) {
@@ -578,7 +586,11 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
     }
 
     const beforeKeys = await loadRoleKeys(tx, locked.id);
-    if (!beforeKeys.includes(roleKey)) {
+    // RBAC-LOGIN-01 : clés équivalentes (casse, accents) = même rôle. Un rôle personnalisé
+    // peut être détenu sous toRoleKey(role_name) et sous son role_code (backfill) :
+    // la révocation les retire toutes, sinon le doublon garde les droits.
+    const equivalentKeys = equivalentRoleKeys(beforeKeys, roleKey);
+    if (!equivalentKeys.length) {
       throw createUserRoleError(404, "Ce rôle n'est pas attribué.", USER_ROLE_ERROR.ROLE_NOT_GRANTED);
     }
 
@@ -600,14 +612,17 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
       teacher = await assertTeacherRevokeAllowed(tx, locked, school);
     }
 
-    let revoked;
+    let revoked = null;
     try {
-      revoked = await tx.revokeUserRole({
-        userId: locked.id,
-        schoolId: school?.id ?? locked.school_id ?? null,
-        roleKey,
-        revokedBy: actorUserId(principal) || null,
-      });
+      for (const heldKey of equivalentKeys) {
+        const row = await tx.revokeUserRole({
+          userId: locked.id,
+          schoolId: school?.id ?? locked.school_id ?? null,
+          roleKey: heldKey,
+          revokedBy: actorUserId(principal) || null,
+        });
+        revoked = revoked || row;
+      }
     } catch (error) {
       mapGrantPgError(error);
     }
@@ -617,6 +632,13 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
 
     if (roleKey === TEACHER_KEY) {
       await deactivateTeacherProfile(tx, teacher);
+    }
+
+    // RBAC-LOGIN-01 : un rôle retiré invalide les sessions ouvertes du compte, dans la
+    // même transaction ; une nouvelle connexion relit les rôles encore actifs.
+    let sessionsRevoked = 0;
+    if (typeof tx.revokeUserSessions === "function") {
+      sessionsRevoked = await tx.revokeUserSessions(locked.id, "role_revoked");
     }
 
     const afterKeys = await loadRoleKeys(tx, locked.id);
@@ -639,6 +661,7 @@ async function revokeRole(store, userId, rawPayload, principal, auditMeta) {
         assignmentStatus: hydrated.assignmentStatus,
         operation: "REVOKE",
         teacherDeactivated: Boolean(teacher),
+        sessionsRevoked,
         actor: actorUserId(principal),
         revokedAt: new Date().toISOString(),
       },

@@ -1,4 +1,5 @@
 import { parsePeriodDate } from "./dates";
+import { isRegisteredCustomSchoolRole } from "./customSchoolRoleSession";
 
 export function normalize(value: unknown): string {
   return String(value ?? "")
@@ -221,6 +222,8 @@ export function isParentRole(role?: string): boolean {
 
 export function isInternalSchoolRole(role?: string): boolean {
   const key = normalizeRoleKey(role);
+  // RBAC-LOGIN-01 : rôle d'établissement personnalisé validé par le serveur à la connexion.
+  if (isRegisteredCustomSchoolRole(role)) return true;
   return [
     "admin school",
     "administrateur ecole",

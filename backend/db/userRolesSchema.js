@@ -211,6 +211,12 @@ function deterministicUserRolePredicateSql(mappedRole) {
  * octroi via l'API (grantUserRole) peut réactiver ce rôle.
  * Les index uniques ne portent que sur les lignes actives : sans ce prédicat,
  * `ON CONFLICT DO NOTHING` ne voit pas la révocation.
+ *
+ * RBAC-LOGIN-01 : l'équivalence est celle de somafrik_normalize_role_code (casse,
+ * accents, séparateurs) — l'API écrit toRoleKey(role_name) (ex. AGENT_RÉVOCABLE),
+ * le catalogue résout role_code (ex. agent_revocable) : même rôle. Sans cette
+ * équivalence, un rôle personnalisé déjà détenu était dupliqué au démarrage, et le
+ * doublon restait actif après une révocation.
  */
 function notExplicitlyRevokedSql(userIdExpr, schoolIdExpr, roleKeyExpr) {
   return `NOT EXISTS (
@@ -218,8 +224,21 @@ function notExplicitlyRevokedSql(userIdExpr, schoolIdExpr, roleKeyExpr) {
     FROM user_roles ur_revoked
     WHERE ur_revoked.user_id = ${userIdExpr}
       AND ur_revoked.school_id IS NOT DISTINCT FROM ${schoolIdExpr}
-      AND upper(ur_revoked.role_key) = upper(${roleKeyExpr})
+      AND somafrik_normalize_role_code(ur_revoked.role_key) = somafrik_normalize_role_code(${roleKeyExpr})
       AND ur_revoked.status = 'revoked'
+  )`;
+}
+
+/** RBAC-LOGIN-01 : aucun doublon actif d'un rôle déjà détenu sous une clé équivalente. */
+function notAlreadyHeldEquivalentSql(userIdExpr, schoolIdExpr, roleKeyExpr) {
+  return `NOT EXISTS (
+    SELECT 1
+    FROM user_roles ur_held
+    WHERE ur_held.user_id = ${userIdExpr}
+      AND ur_held.school_id IS NOT DISTINCT FROM ${schoolIdExpr}
+      AND somafrik_normalize_role_code(ur_held.role_key) = somafrik_normalize_role_code(${roleKeyExpr})
+      AND ur_held.status = 'active'
+      AND ur_held.revoked_at IS NULL
   )`;
 }
 
@@ -240,6 +259,7 @@ WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
     OR NOT ${linkedActiveStudentExistsSql("u.id")}
   )
   AND ${notExplicitlyRevokedSql("u.id", "u.school_id", `(${mappedRole})`)}
+  AND ${notAlreadyHeldEquivalentSql("u.id", "u.school_id", `(${mappedRole})`)}
 ON CONFLICT DO NOTHING
 `;
 }
@@ -263,6 +283,7 @@ FROM users u
 WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
   AND ${deterministicUserRolePredicateSql(mappedRole)}
   AND ${notExplicitlyRevokedSql("u.id", "u.school_id", `(${mappedRole})`)}
+  AND ${notAlreadyHeldEquivalentSql("u.id", "u.school_id", `(${mappedRole})`)}
 ON CONFLICT DO NOTHING
 `;
 }
@@ -278,7 +299,7 @@ WHERE u.role IS NOT NULL AND btrim(u.role) <> ''
     SELECT 1
     FROM user_roles ur
     WHERE ur.user_id = u.id
-      AND ur.role_key = (${mappedRole})
+      AND somafrik_normalize_role_code(ur.role_key) = somafrik_normalize_role_code(${mappedRole})
       AND ur.status = 'active'
       AND ur.revoked_at IS NULL
       AND ur.school_id IS NOT DISTINCT FROM u.school_id
@@ -315,6 +336,7 @@ WHERE btrim(elem) <> ''
     OR NOT ${linkedActiveStudentExistsSql("u.id")}
   )
   AND ${notExplicitlyRevokedSql("u.id", "u.school_id", `(${mappedRole})`)}
+  AND ${notAlreadyHeldEquivalentSql("u.id", "u.school_id", `(${mappedRole})`)}
 ON CONFLICT DO NOTHING
 `;
 }

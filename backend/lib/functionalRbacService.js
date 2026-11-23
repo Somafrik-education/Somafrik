@@ -248,10 +248,14 @@ function catalogPermissionList(establishmentMap, roleKey) {
   return undefined;
 }
 
-function applyEstablishmentCatalogFailClosed(roleKeys, establishmentMap) {
+function applyEstablishmentCatalogFailClosed(roleKeys, establishmentMap, matrixGovernedRoleKeys = null) {
   return (roleKeys || []).filter((roleKey) => {
     const normalized = String(roleKey || "").toUpperCase();
     if (PROTECTED_SYSTEM_ROLE_KEYS.has(normalized)) return true;
+    // RBAC-LOGIN-01 : rôle personnalisé actif au catalogue — ses droits viennent de la
+    // matrice role_module_permissions ; une liste de jetons hérités vide n'est pas un retrait
+    // (sans grant ni jeton, il reste sans aucun droit).
+    if (matrixGovernedRoleKeys?.has?.(normalized)) return true;
     const catalog = catalogPermissionList(establishmentMap, normalized);
     if (catalog === undefined) return true;
     return permissionList(catalog).length > 0;
@@ -834,7 +838,16 @@ async function resolveEffectivePermissionsForPrincipal(repo, principal) {
   } catch {
     establishmentMap = {};
   }
-  roleKeys = applyEstablishmentCatalogFailClosed(roleKeys, establishmentMap);
+  // RBAC-LOGIN-01 : rôles personnalisés relus au catalogue — archivé → aucun droit (même
+  // si ses grants restent actifs : archivage non cascadé) ; actif → clé canonique des
+  // grants (UPPER(role_code)) ; catalogue illisible → rôles personnalisés retirés.
+  const { canonicalizeCustomRoleKeys } = require("./customRoleWebAccess");
+  const canonical = await canonicalizeCustomRoleKeys(repo, roleKeys);
+  roleKeys = applyEstablishmentCatalogFailClosed(
+    canonical.roleKeys,
+    establishmentMap,
+    canonical.activeCustomRoleKeys,
+  );
 
   const store = rbacStore(repo);
   let schoolId = null;
