@@ -1,5 +1,6 @@
 import { normalize } from "./format";
 import { isSuperAdminRole, COUNTRY_ADMIN_ROLE } from "./orgHierarchy";
+import { hasSecurityPermission } from "../domain/security/permissions";
 
 type SessionLike = {
   role?: string; roleKey?: string; permissions?: unknown[];
@@ -13,10 +14,14 @@ export function studentCardEnrollmentAccess(session: SessionLike) {
     return isSuperAdminRole(role) || role === COUNTRY_ADMIN_ROLE ||
       ["country admin", "admin pays", "super admin", "parent", "parent student", "parent guardian", "student", "eleve", "eleve / etudiant"].includes(key);
   })) return { canRead: false, canUpdate: false };
-  const tokens = [
-    ...(Array.isArray(session.permissions) ? session.permissions : []),
-    ...(Array.isArray(session.user?.permissions) ? session.user.permissions : []),
-  ].map((token) => normalize(String(token)));
-  const canRead = ["Élèves:READ", "Voir élèves"].some((token) => tokens.includes(normalize(token)));
-  return { canRead, canUpdate: canRead && ["Élèves:UPDATE", "Gérer élèves"].some((token) => tokens.includes(normalize(token))) };
+
+  // Align with the canonical Mobile RBAC used to open the student detail route.
+  // Exact token checks hid NFC from authorized school staff when the live rights
+  // were expressed as Élèves:CRUD or other equivalent grants.
+  // This does not grant rights: the server remains authoritative for NFC writes.
+  const canRead = hasSecurityPermission(session, "Élèves", "READ");
+  return {
+    canRead,
+    canUpdate: canRead && hasSecurityPermission(session, "Élèves", "UPDATE"),
+  };
 }
