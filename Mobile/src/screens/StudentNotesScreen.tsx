@@ -30,6 +30,7 @@ import {
   notesForAveragePeriod,
 } from "../lib/pedagogyAverage";
 import { findStudentByIdentity, resolveParentSafeStudentId, sessionStudentAliasKeys } from "../lib/canonicalStudentIdentity";
+import { studentDisplayName } from "../lib/studentDisplayName";
 import {
   countLinkedParentChildren,
   parentChildNameFromSession,
@@ -44,7 +45,7 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
   const listContentStyle = [styles.listContent, { paddingBottom: scrollContentPaddingBottom }];
   const { session, selectedStudentId } = useAuth();
   useParentStudentRouteSelection(route?.params?.studentId);
-  const { studentsData, notesSnapshot, loadNotes } = useAdminData();
+  const { studentsData, notesSnapshot, loadStudents, loadNotes } = useAdminData();
   const studentId = resolveParentSafeStudentId({
     role: session?.role,
     routeStudentId: route?.params?.studentId,
@@ -63,16 +64,17 @@ export default function StudentNotesScreen({ route, navigation }: Partial<Props>
           childName: parentChildNameFromSession({
             user: session?.user,
             aliasKeys: studentAliasKeys,
-            rosterName: student?.name,
+            rosterName: student ? studentDisplayName(student) : undefined,
           }),
           linkedCount: countLinkedParentChildren(session?.user),
         })
-      : student?.name ?? session?.user?.name ?? "Élève";
+      : student ? studentDisplayName(student) : (session?.user?.name ?? "Élève");
 
   useFocusEffect(
     useCallback(() => {
+      void loadStudents();
       void loadNotes();
-    }, [loadNotes]),
+    }, [loadStudents, loadNotes]),
   );
 
   const [courseFilter, setCourseFilter] = useState("");
